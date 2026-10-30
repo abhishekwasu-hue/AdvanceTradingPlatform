@@ -238,13 +238,15 @@ export function useTerminalTicket(ticket: { target: TicketTarget; side: Side } |
   return useOrderTicket({ open: ticket !== null, target: ticket?.target ?? null, side: ticket?.side ?? "BUY", chainRows, onPlaced: () => onPlaced(), shortcuts: false });
 }
 
-export function OrderPanelV2({ ticket, state: t, onClear }: {
+export function OrderPanelV2({ ticket, state: t, onClear, paperBadge = true }: {
   ticket: { target: TicketTarget; side: Side } | null; state: OrderTicketState; onClear: () => void;
+  /** TERM-2 step 5 / CT-1 C8: false where the page already shows its one PAPER badge. */
+  paperBadge?: boolean;
 }) {
   if (!ticket) {
     return (
       <EmptyText testId="order-empty">
-        Pick a price on the option chain to start an order. The order is checked and shown to you before anything is placed.
+        Tap a price on the chain to start an order.
       </EmptyText>
     );
   }
@@ -255,7 +257,7 @@ export function OrderPanelV2({ ticket, state: t, onClear }: {
       <div className="px-space-4 pt-space-2">
         <div className="flex min-w-0 items-center gap-space-2">
           <p className="truncate text-t15 font-semibold text-fg">{label}</p>
-          <PracticeFrame />
+          {paperBadge && <PracticeFrame />}
         </div>
         <p className="text-t13 font-tabular text-fg-muted">LTP {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}</p>
       </div>
@@ -405,7 +407,7 @@ export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; term
                 <span className="shrink-0 font-tabular text-t13 text-fg-muted">{formatNumber(o.quantity, o.quantity % 1 ? 2 : 0)}</span>
                 <span className="shrink-0 text-t12 text-fg-muted">{formatTimeIST(o.created_at)}</span>
               </button>
-              <p className="pl-space-5 text-t12 text-fg-muted">{statusWords(o.status)}{o.mode === "PAPER" ? " · Practice" : ""}</p>
+              <p className="pl-space-5 text-t12 text-fg-muted">{statusWords(o.status)}{o.mode === "PAPER" ? "" : " · Live"}</p>
               {group === "rejected" && o.reasons.length > 0 && <p className="pl-space-5 text-t12 text-warn">{o.reasons[0]}</p>}
               {openId === o.id && (
                 <div className="pl-space-5" data-order-trail={o.id}>

@@ -920,7 +920,8 @@ export const api = {
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-enable`, { method: "POST" }),
   portfolioExposure: (livePrices = true) => request<PortfolioExposure>(`/portfolio/exposure?live_prices=${livePrices}`),
   // UI2-2: the v2 dashboard's market strip - three indices and the market state in one read-only call.
-  marketStrip: () => request<MarketStrip>("/market/strip"),
+  // CP-UX CU2: the Copilot's numbers strip adds SENSEX (BSE) with `sensex`.
+  marketStrip: (opts: { sensex?: boolean } = {}) => request<MarketStrip>(opts.sensex ? "/market/strip?sensex=true" : "/market/strip"),
   // AUD-T1: My day in one card (app/today/routes.py; flags ui_v2 + my_day_card, 404 while off). Read-only.
   myDay: () => request<MyDay>("/today/my-day"),
   // MO4: the daily rhythm (app/rhythm/routes.py; flags ui_v2 + daily_rhythm, 404 while off).

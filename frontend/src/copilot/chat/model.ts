@@ -1,6 +1,7 @@
 import { request } from "../../api/client";
 import type { AnalysisChart, AnalysisTable } from "../../optionChain/analyses";
 import type { StrategyDraft } from "../strategyDraft";
+import type { MarketStrip, StripIndex } from "../../dashboard/types";
 
 /**
  * Item 5 (owner's handover, the AI Copilot as a trader's brain), first slice: the chat-first Copilot page's data and its
@@ -20,7 +21,18 @@ export interface AiState {
   /** Settings redesign A (ai_one_key on only): the refusal code when nothing is connected, and whether the key is the user's own. */
   code?: string | null; own_key?: boolean;
 }
-export interface MarketLine { line: string | null; reason: string | null; as_of: string | null }
+export interface MarketLine {
+  line: string | null; reason: string | null; as_of: string | null;
+  /** CU2: the numbers strip's FII net in crore (null: not known) and its date. */
+  fii_net_crore?: number | null; fii_as_of?: string | null;
+}
+/** CU3: the chart answer's headline numbers (all from the tools): the last close, the trend word on the asked timeframe,
+ * the nearest stored area with its distance, and the chart the card draws (the Charts page's symbol and timeframe). */
+export interface AnswerHeadline {
+  symbol: string; price: number | null; price_label: string; as_of: string | null; trend: "up" | "down" | "sideways" | null; timeframe: string;
+  area: { side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number; distance_pct: number | null } | null;
+  chart: { symbol: string; exchange: string; timeframe: string } | null;
+}
 export interface ChatHome {
   top_line: string; ai: AiState; market_line: MarketLine; disclaimer: string; jobs: ChatJob[]; starters: string[];
 }
@@ -51,6 +63,8 @@ export interface ChatAnswer {
   followup?: { label: string; question: string } | null;
   /** UI-28 U7.7: what this answer's AI call cost (tokens and rupees; only when the AI worded it - the rules cost nothing). */
   usage?: { calls: number; tokens_input: number; tokens_output: number; cost_inr: number } | null;
+  /** CU3: the headline number row (the chart reader today; null or absent elsewhere). */
+  headline?: AnswerHeadline | null;
 }
 /** Job 6 added: the trader's own settings, a promise of returns, someone else's strategy. */
 export type RefusalKind = "order" | "advice" | "tip" | "settings" | "promise" | "copy";
@@ -153,4 +167,85 @@ export function answerRow(line: string): AnswerRow | null {
   const value = m[2].trim().replace(/\.$/, "");
   const signed = /^([+−-])\s?₹?\s?\d/.exec(value);
   return { label: m[1].trim(), value, dir: signed ? (signed[1] === "+" ? "up" : "down") : null };
+}
+
+/** CU2: the four chips under the numbers strip - each asks its job's own starter question (from the server). A job the
+ * server does not list is left out. */
+export const QUICK_JOBS: readonly { id: JobId; label: string }[] = [
+  { id: "brief", label: "Brief" }, { id: "chart", label: "Read chart" }, { id: "trade_check", label: "Check my trade" }, { id: "positions", label: "My positions" },
+];
+
+export function quickChips(jobs: readonly ChatJob[]): { id: JobId; label: string; question: string }[] {
+  return QUICK_JOBS.flatMap((q) => {
+    const job = jobs.find((j) => j.id === q.id);
+    return job ? [{ ...q, question: job.starter }] : [];
+  });
+}
+
+/** CU3: the nearest area as "Demand 24,520 – 24,610" (the side word only when the server knows it). */
+export function areaText(area: NonNullable<AnswerHeadline["area"]>, price: (v: number) => string): string {
+  const side = area.side ? `${area.side[0].toUpperCase()}${area.side.slice(1)} ` : "";
+  return `${side}${price(area.from)} – ${price(area.to)}`;
+}
+
+/** CU3: how far the price is from that area: "inside", or "229.5 (0.92%) above" / "below" (where the area sits). */
+export function distanceText(area: NonNullable<AnswerHeadline["area"]>, price: (v: number) => string): string {
+  if (area.where === "inside") return "Price is inside";
+  const pct = area.distance_pct === null ? "" : ` (${area.distance_pct.toFixed(2)}%)`;
+  return `${price(area.distance)}${pct} ${area.where}`;
+}
+
+/** CU3: the chart answer's levels to mark on the mini chart - the nearest area's two edges. */
+export function headlineLevels(h: AnswerHeadline | null | undefined): { price: number; title: string; tone: "up" | "down" | "neutral" }[] {
+  if (!h?.area) return [];
+  const tone = h.area.side === "demand" ? "up" : h.area.side === "supply" ? "down" : "neutral";
+  return [{ price: h.area.to, title: "Area top", tone }, { price: h.area.from, title: "Area bottom", tone }];
+}
+
+/** CU3 (strategy result card): the sections that stay on the card; every other one is theory and folds into Details. */
+export const STRATEGY_SHOWN: ReadonlySet<string> = new Set(["Values you decide", "Your draft on past data", "Is it enough to judge?"]);
+
+export interface AnswerParts {
+  /** The strategy's own rules, as chips. */
+  rules: string[];
+  /** The strategy's settings (timeframe, side, stop...), as chips. */
+  settings: string[];
+  shown: ChatAnswer["sections"];
+  folded: ChatAnswer["sections"];
+  blocksShown: AnswerBlock[];
+  blocksFolded: AnswerBlock[];
+}
+
+/**
+ * CU3: what the answer card shows and what goes behind its one "Details" tap.
+ * - A chart answer (with a headline row): the row, the mini chart and the action are the answer; its sections and
+ *   tables repeat them in words, so they fold.
+ * - A strategy answer (with a draft): the rules and settings become chips, "Values you decide" and the test results
+ *   stay; the theory (how I read your words, not supported yet, how I build it...) folds.
+ * - Any other answer: its sections and tables are the answer and stay.
+ */
+export function answerParts(answer: Pick<ChatAnswer, "job" | "sections" | "blocks" | "draft" | "headline">): AnswerParts {
+  const all = answer.sections;
+  if (answer.headline) return { rules: [], settings: [], shown: [], folded: [...all], blocksShown: [], blocksFolded: [...answer.blocks] };
+  if (answer.job === "strategy" && answer.draft) {
+    const ruleTexts = new Set((answer.draft.rules ?? []).map((r) => r.text));
+    const ruleSections = all.filter((s) => s.lines.length > 0 && s.lines.every((l) => ruleTexts.has(l)));
+    const settings = all.find((s) => s.title === "Your settings");
+    return {
+      rules: ruleSections.flatMap((s) => s.lines), settings: settings ? [...settings.lines] : [],
+      shown: all.filter((s) => STRATEGY_SHOWN.has(s.title)),
+      folded: all.filter((s) => !ruleSections.includes(s) && s !== settings && !STRATEGY_SHOWN.has(s.title)),
+      blocksShown: [...answer.blocks], blocksFolded: [],
+    };
+  }
+  return { rules: [], settings: [], shown: [...all], folded: [], blocksShown: [...answer.blocks], blocksFolded: [] };
+}
+
+/** CU2: the numbers strip's three index cells, in this order; an index the strip does not carry is its label alone. */
+export const NUMBERS_INDICES: readonly { key: string; label: string }[] = [
+  { key: "NIFTY 50", label: "NIFTY 50" }, { key: "NIFTY BANK", label: "BANK NIFTY" }, { key: "SENSEX", label: "SENSEX" },
+];
+
+export function numbersCells(strip: MarketStrip | null): { key: string; label: string; index: StripIndex | null }[] {
+  return NUMBERS_INDICES.map(({ key, label }) => ({ key, label, index: strip?.indices.find((i) => i.key === key) ?? null }));
 }

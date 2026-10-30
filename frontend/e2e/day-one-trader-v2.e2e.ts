@@ -419,7 +419,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await page.getByRole("button", { name: "Ask", exact: true }).click();
         const answer = page.locator("[data-answer]").last();
         await expect(answer).toContainText("2 of 4 symbols in My swing list pass this screen");
-        await answer.locator("[data-worked] summary").click();
+        await answer.locator("[data-details='copilot.answer'] summary").click();          // CP-UX CU3: behind the one Details tap
         await expect(answer.locator("[data-tools-used]")).toHaveText("Tools used: Screen builder, Your watchlist, Screener");
         await answer.scrollIntoViewIfNeeded();
         await shot("04b-copilot-answer");

@@ -352,6 +352,8 @@ class Answer:
     # CU1: the symbols this answer read (from its tool calls and its draft), and whether the question named none (the default was read)
     symbols: list[str] = field(default_factory=list)
     symbol_default: bool = False
+    # CU3: the answer card's headline numbers (the chart reader: price, trend, nearest area, distance; None elsewhere)
+    headline: dict[str, Any] | None = None
 
     def flag_on(self, name: str) -> bool:
         return self.flags is None or bool(self.flags.get(name))
@@ -370,7 +372,7 @@ class Answer:
                 "answer": "\n".join(self.summary), "sections": self.sections, "blocks": self.blocks, "unknowns": self.unknowns,
                 "worked": [s.as_dict() for s in self.worked], "action": self.action, "refused": self.refused, "starters": self.starters,
                 "concepts": self.concepts, "notes": self.notes, "disclaimer": DISCLAIMER, "source": "rules", "draft": self.draft,
-                "followup": self.followup, "symbols": self.symbols, "symbol_default": self.symbol_default,
+                "followup": self.followup, "symbols": self.symbols, "symbol_default": self.symbol_default, "headline": self.headline,
                 "tool_calls": [s.tool for s in self.worked if not s.tool.startswith("calc:") and s.tool not in NOT_TOOLS],
                 "tools_used": tools_used(self.worked)}
 
@@ -717,6 +719,48 @@ def _close_head(symbol: str, d: Dict[str, Any], tf: str) -> str:
     return f"{symbol}:"
 
 
+# CU3: the chart the answer card draws - the Charts page's own symbol names and timeframe ids.
+CHART_TF = {"1w": "week", "1d": "day", "1h": "60min", "15m": "15min"}
+
+
+def nearest_area(price: float, bands: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
+    """The stored area closest to the price: its side, from - to, and how far the price is from its near edge (0 inside),
+    in points and in percent of the price, with where the area sits ("below", "above", "inside"). Pure."""
+    best: tuple[float, dict[str, Any]] | None = None
+    for b in bands:
+        low, high = b.get("low"), b.get("high")
+        if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
+            continue
+        low, high = min(low, high), max(low, high)
+        where = "inside" if low <= price <= high else "below" if high < price else "above"
+        gap = 0.0 if where == "inside" else price - high if where == "below" else low - price
+        if best is None or gap < best[0]:
+            side = {"bullish": "demand", "bearish": "supply"}.get(_role_side(b.get("role")) or "")
+            best = (gap, {"side": side, "from": float(low), "to": float(high), "where": where, "distance": round(gap, 2),
+                          "distance_pct": round(gap / price * 100, 2) if price else None})
+    return best[1] if best else None
+
+
+def chart_headline(symbol: str, tf: str, res: ToolResult, zones: ToolResult) -> dict[str, Any] | None:
+    """CU3: the chart answer's headline row - the last close, the structure on the asked timeframe as a trend word, the
+    nearest stored area (from - to) and the distance to it - plus the chart the card draws. Only numbers the tools gave."""
+    if not res.ok:
+        return None
+    from app.ai.tools.copilot import INDEX_NAMES
+    d = res.data or {}
+    oc = d.get("official_close") or {}
+    price = oc.get("close") if oc.get("close") is not None else d.get("last_close")
+    state = d.get("chart_state") or {}
+    row = next((r for r in _structure_rows(res) if r.get("tf") == tf), None)
+    raw = state.get("direction") or (row or {}).get("direction")
+    trend = trend_words(raw) if raw and not (row or {}).get("short") else None
+    bands = (zones.data or {}).get("bands") or [] if zones.ok else []
+    area = nearest_area(float(price), bands) if isinstance(price, (int, float)) and price > 0 else None
+    return {"symbol": symbol, "price": price, "price_label": "Last close", "as_of": oc.get("date") or d.get("as_of"),
+            "trend": trend if trend in ("up", "down", "sideways") else None, "timeframe": TF_LABELS.get(tf, tf), "area": area,
+            "chart": {"symbol": INDEX_NAMES.get(symbol, symbol), "exchange": exchange_of(symbol), "timeframe": CHART_TF.get(tf, "day")}}
+
+
 async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
     symbol, tf = symbol_in(message), timeframe_in(message)
     res = await _call(answer, run, "get_chart_structure", f"{symbol} structure per timeframe", {"symbol": symbol, "timeframe": tf},
@@ -754,6 +798,7 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
             "rows": [{k: b.get(k) for k in ("role", "low", "high", "state", "touches")} for b in (zones.data or {}).get("bands") or []]}})
     else:
         answer.unknowns.append(_zones_unknown(symbol, zones, res) + ".")
+    answer.headline = chart_headline(symbol, tf, res, zones)
     answer.section("What to watch", ["Whether the protected level holds or breaks on a closed bar.",
                                      "How the price behaves when it reaches one of the key areas above."] if res.ok else [])
 
@@ -1898,20 +1943,29 @@ async def answer(message: str, run: Runner, *, signal_v2: bool = False, flags: O
 
 # --- the one line for the page's top ------------------------------------------------------------------------------------
 
-async def market_line(run: Runner) -> Dict[str, Optional[str]]:
-    """"Today's market in one line" from the context panel, or the plain reason it is empty."""
+def fii_net(res: ToolResult) -> dict[str, Any]:
+    """CU2: the numbers strip's FII net (crore) and its date from the context panel; None when it is not known."""
+    flows = (res.data or {}).get("fii_dii") or {} if res.ok and isinstance(res.data, dict) else {}
+    value = flows.get("net_fii_crore") if flows.get("status") != "na" else None
+    known = isinstance(value, (int, float)) and not isinstance(value, bool)
+    return {"fii_net_crore": float(value) if known else None, "fii_as_of": (flows.get("as_of") or flows.get("date")) if known else None}
+
+
+async def market_line(run: Runner) -> Dict[str, Any]:
+    """"Today's market in one line" from the context panel, or the plain reason it is empty; with the FII net (CU2)."""
     res = await run("get_market_context", {})
+    flows = fii_net(res)
     if not res.ok:
-        return {"line": None, "reason": f"Today's market line is not ready: {plain_reason(res.error, res.source)}.", "as_of": None}
+        return {"line": None, "reason": f"Today's market line is not ready: {plain_reason(res.error, res.source)}.", "as_of": None, **flows}
     tmp = Answer("brief", "")
     one = _context_lines(tmp, res)
     if not one:
         reason = (res.data.get("structure") or {}).get("reason") if isinstance(res.data, dict) else None
-        return {"line": None, "reason": f"Today's market line is not ready: {plain_reason(reason)}.", "as_of": res.as_of}
+        return {"line": None, "reason": f"Today's market line is not ready: {plain_reason(reason)}.", "as_of": res.as_of, **flows}
     allowed = grounding.allowed_from_text(json.dumps(res.data, default=str))
     if not grounding.check_numbers(one, allowed)[0]:
-        return {"line": None, "reason": "Today's market line is not ready: the data could not be checked.", "as_of": res.as_of}
-    return {"line": one, "reason": None, "as_of": res.as_of}
+        return {"line": None, "reason": "Today's market line is not ready: the data could not be checked.", "as_of": res.as_of, **flows}
+    return {"line": one, "reason": None, "as_of": res.as_of, **flows}
 
 
 # --- optional AI wording, checked like every Copilot narration ----------------------------------------------------------

@@ -35,7 +35,7 @@ import {
 } from "./PanelsV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { chartLiveOf, useTerminalSpot } from "./spot";
-import { SpreadBuilderV2 } from "./SpreadBuilderV2";
+import BasketPanelV2 from "../fno/BasketPanelV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
 import { ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { StatusBarV2 } from "./StatusBarV2";
@@ -209,7 +209,10 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       case "positions": return <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}
         fnoOn={features.on("paper_account")} combined={combined} onChanged={afterOrder} />;
       case "orders": return <OrdersPanelV2 read={asRead(ordersL)} terminal={terminal} />;
-      case "basket": return <SpreadBuilderV2 underlying={underlying} legs={legs} spot={spot?.ltp ?? null} product={savedProduct} onOpen={trading.openBasket} />;
+      // TERM-2 step 2: the one basket (legs, payoff, max profit / loss, breakevens, PoP, margin with the hedge, his own
+      // exits, one Place) - the server's one calculation, rendered once; the spread builder's own figures are gone.
+      case "basket": return <BasketPanelV2 embedded open onClose={() => undefined} onPlaced={afterOrder}
+        chain={{ symbol: underlying, live, expiries: expiryList, loadChain: (e) => api.optionChainLive(underlying, e) }} />;
       case "bots": return <PlaceholderPanelV2 kind="bots" />;
       case "payoff": return <PlaceholderPanelV2 kind="payoff" />;
       default: return null;
@@ -312,7 +315,13 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
             {tab === "chain" && (
               <div className="space-y-space-3">
                 {panel("chain")}
-                {trading.enabled && <SpreadBuilderV2 underlying={underlying} legs={legs} spot={spot?.ltp ?? null} product={savedProduct} onOpen={trading.openBasket} />}
+                {/* TERM-2 step 2: on a phone the one basket opens as a bottom sheet (the same panel). */}
+                {trading.enabled && trading.openBasket && (
+                  <button type="button" onClick={trading.openBasket} data-terminal="open-basket"
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-control border border-border bg-surface-1 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+                    Basket · {legs.length} leg{legs.length === 1 ? "" : "s"}
+                  </button>
+                )}
               </div>
             )}
             {tab === "order" && panel("order")}

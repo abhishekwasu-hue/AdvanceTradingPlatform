@@ -299,7 +299,7 @@ test.describe("v2 terminal 1440", () => {
     await shot(page, "terminal-1440-light-fixes");
   });
 
-  test("owner fix T1-4: the spread builder - hedge first, net credit, max loss, breakeven, margin with the hedge; a broken leg alert", async ({ page }) => {
+  test("TERM-2 step 2 (owner fix T1-4): the one basket in its panel - net, max loss, breakevens, margin; a broken leg alert", async ({ page }) => {
     await open(page, "light", { incomplete: true });
     for (const [cell, leg] of [["call-24600", "basket-buy"], ["call-24500", "basket-sell"]] as const) {
       await page.locator(`[data-cell='${cell}']`).click();
@@ -308,11 +308,12 @@ test.describe("v2 terminal 1440", () => {
       await page.keyboard.press("Escape");                                  // the sheet stays open after "Add"; close it
       await expect(page.locator("[data-chain-actions]")).toHaveCount(0);
     }
-    const builder = page.locator("[data-panel='basket']");
-    await expect(builder.locator("[data-leg-role]")).toHaveCount(2);
-    await expect(builder.locator("[data-leg-role]").first()).toHaveAttribute("data-leg-role", "hedge");
-    for (const f of ["net", "max-loss", "breakeven", "margin"]) await expect(builder.locator(`[data-figure='${f}']`)).toBeVisible();
-    await expect(builder.locator("[data-spread='hedge-benefit']")).toBeVisible();
+    // TERM-2 step 2: the one basket placed in the panel - the server's figures rendered once (no spread-builder copy).
+    const builder = page.locator("[data-panel='basket'] [data-basket-panel][data-embedded]");
+    await expect(builder.locator("[data-basket-body]")).toBeVisible();
+    await expect(builder.locator("[data-basket='legs'] > li")).toHaveCount(2);
+    for (const f of ["net", "max-loss", "breakevens", "margin"]) await expect(builder.locator(`[data-figure='${f}']`)).toBeVisible();
+    await expect(page.locator("[data-panel='basket'] [data-practice-frame]")).toHaveCount(0);     // one PAPER badge per screen
     const alert = page.locator("[data-terminal='incomplete'] [data-incomplete-action]");
     await expect(alert.first()).toHaveText("Complete the leg");
     await expect(alert.nth(1)).toHaveText("Exit the filled leg");

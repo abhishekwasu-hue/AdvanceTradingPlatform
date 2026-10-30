@@ -435,7 +435,7 @@ describe("owner fixes T1-2 .. T1-7", () => {
     expect(t).toContain('"Complete the leg" or "Exit the filled leg"');
     const naked = text(renderToStaticMarkup(<SpreadBuilderV2 underlying="NIFTY" legs={[legs[0]]} spot={24510} api={{ evaluate: async () => ({ ok: false, errors: [] }) }} />));
     expect(naked).toContain("has no hedge: its loss has no limit");
-    expect(PANELS.basket.label).toBe("Spread builder");
+    expect(PANELS.basket.label).toBe("Basket");                      // TERM-2 step 2: the one basket panel
   });
 
   it("T1-4: a broken leg is an alert on the page itself with the owner's two choices", () => {

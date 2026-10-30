@@ -54,12 +54,13 @@ export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuf
           </div>
           {toggle?.("above")}
           {/* UI-28 polish (owner 30 Oct): one row on a phone - "All / ± 5 / ± 10 / ± 15" after a quiet Strikes label;
-              the full names stay in each chip's aria-label. */}
-          <div role="group" aria-label="Strikes shown" data-strike-range className="mb-space-2 flex items-center gap-space-2">
+              the full names stay in each chip's aria-label. CT-1: a chip never breaks inside; in a narrower place (the
+              F&O desk's card on a 360 phone) the chips go to a second row instead. */}
+          <div role="group" aria-label="Strikes shown" data-strike-range className="mb-space-2 flex flex-wrap items-center gap-space-2">
             <span aria-hidden className="text-t12 text-fg-muted">Strikes</span>
             {STRIKE_RANGES.map((n) => (
               <button key={n} type="button" aria-pressed={range === n} onClick={() => setRange(n)} aria-label={n === 0 ? "All strikes" : `ATM ± ${n} strikes`}
-                className={cx("inline-flex min-h-11 items-center rounded-pill border px-space-3 text-t13 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8",
+                className={cx("inline-flex min-h-11 items-center whitespace-nowrap rounded-pill border px-space-3 text-t13 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8",
                   range === n ? "border-brand bg-brand-tint font-semibold text-fg" : "border-border text-fg-muted hover:text-fg")}>
                 {n === 0 ? "All" : `± ${n}`}
               </button>

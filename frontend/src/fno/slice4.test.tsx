@@ -163,12 +163,12 @@ const UNITS: CockpitUnit[] = [
   { key: "trade:4", title: "NIFTY far", pnl: 5, legs: [pos(4, { strike: 24300, right: "PE", expiry: "2026-10-28" })] },
 ];
 
-describe("8b-i the desk: chart + chain + basket beside the cockpit, read only", () => {
+describe("8b-i the desk: chart + chain + basket beside the cockpit (CT-1: the one chain and the one basket)", () => {
   it("follows the underlying with the most legs, on its nearest expiry held", () => {
     expect(deskUnderlyings(UNITS).map((u) => [u.underlying, u.legs, u.expiry])).toEqual([["NIFTY", 3, "2026-10-28"], ["BANKNIFTY", 1, "2026-11-03"]]);
     expect(heldOn(UNITS, "NIFTY", "2026-11-03").map((h) => h.label)).toEqual(["24,600 CE short", "24,700 CE long"]);
   });
-  it("shows the chain from two strikes below his lowest to two above his highest (none held: around ATM)", () => {
+  it("the superseded ChainRows (no longer rendered, kept until the owner's ✅): two strikes either side of his own", () => {
     const rows = liveChain().rows;                                                           // 24,200 .. 24,800
     expect(chainAround(rows, [24600, 24700], 24500).map((r) => r.strike)).toEqual([24400, 24500, 24600, 24700, 24800]);
     expect(chainAround(rows, [], 24500).map((r) => r.strike)).toEqual([24300, 24400, 24500, 24600, 24700]);
@@ -182,7 +182,7 @@ describe("8b-i the desk: chart + chain + basket beside the cockpit, read only", 
       { id: "b", underlying: "BANKNIFTY", expiry: "2026-11-03", strike: 1, right: "CE" as const, side: "BUY" as const, lots: 1, price: null, label: null, iv: null }];
     expect(basketOn(b, "NIFTY").map((l) => l.id)).toEqual(["a"]);
   });
-  it("renders the four panels with a phone quick switch; links open the pages, nothing places an order", () => {
+  it("renders the four panels with a phone quick switch; places THE chain and THE basket, no table or basket figures of its own", () => {
     const html = renderToStaticMarkup(<MemoryRouter><CockpitDeskV2 units={UNITS} alertsOn={false}
       deskApi={{ candles: () => new Promise(() => undefined), chain: () => new Promise(() => undefined) }}
       cockpitApi={{ greeks: () => new Promise(() => undefined), alertRules: () => new Promise(() => undefined) }} /></MemoryRouter>);
@@ -191,7 +191,18 @@ describe("8b-i the desk: chart + chain + basket beside the cockpit, read only", 
     expect(html).toContain("lg:hidden");
     expect(html).toContain("href=\"/option-chain?underlying=NIFTY&amp;basket=open\"");
     expect(text(html)).toContain("Panels follow");
-    expect(deskSource).not.toMatch(/\.place\(|\/order|execute|exitNow/);
+    expect(deskSource).not.toMatch(/\.place\(|\/order|execute|exitNow/);                       // orders only through the shared layers
+    // CT-1 C3: the chain is ChainLadderV2 with the columns menu, the dense summary strip and the chain trading layer.
+    expect(deskSource).toContain("<ChainLadderV2 ");
+    expect(deskSource).toContain("<ColumnsMenuV2 ");
+    expect(deskSource).toMatch(/<SummaryStripV2 [^>]*dense/);
+    expect(deskSource).toContain("useChainTrading(");
+    expect(deskSource).toContain("{trading.layer}");
+    expect(deskSource).not.toContain("<ChainRows ");
+    // CT-1 C5: the basket is BasketPanelV2 embedded - no leg list, credit or max loss of the desk's own.
+    expect(deskSource).toContain("<BasketPanelV2 embedded open");
+    expect(deskSource).not.toMatch(/basket-legs|credit|maxLoss|max_loss/i);
+    expect(html).toContain("data-basket-panel");
     expect(positionsSource).toContain("<CockpitDeskV2 units={cockpit}");
   });
 });

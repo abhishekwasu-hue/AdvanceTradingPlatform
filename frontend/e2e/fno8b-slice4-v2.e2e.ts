@@ -10,7 +10,9 @@ import { T, mockTrading } from "./tradingMocks";
  * - The risk line's other parts (8b-d): the events calendar up to the expiry, the strike's liquidity from the chain on
  *   screen and the margin beside the PAPER balance, as text on the ticket's / basket's confirm step - nothing reads them.
  * - The F&O desk (8b-i): on a desktop the cockpit with a chart of the underlying, the chain near his strikes and his
- *   basket on one screen; on a phone a quick switch. Read only; every Exit stays on the position rows.
+ *   basket on one screen; on a phone a quick switch. CT-1 C3 / C5: the chain is THE chain (ChainLadderV2 with the
+ *   strike range chips, the columns menu and the chain trading layer's action sheet) and the basket THE basket
+ *   (BasketPanelV2 embedded); every Exit stays on the position rows too.
  * - The journal's chart snapshot (8b-k): drawn on his tap from the underlying's candles (one read); nothing is stored.
  * FNO-8B-28: with his own liquidity limits on (Settings -> My trading defaults, OFF by default) the liquidity line also
  *   says whether the strike is inside them - words only. FNO-8B-31: the journal chart's "Download image" saves a PNG on
@@ -284,7 +286,7 @@ for (const size of SIZES) {
         await openPositions(page, theme);
         const desk = page.locator("[data-block='fno-desk']");
         if (size.phone) await desk.locator("[data-desk-tab='chain']").tap();
-        await expect(desk.locator("[data-desk='chain-rows']")).toBeVisible();
+        await expect(desk.locator("[data-desk='chain'] [data-chain-scroll]")).toBeVisible();
         if (!size.phone) await expect(desk.locator("[data-snapshot='desk'] svg")).toBeVisible();
         await page.mouse.move(0, 0);
         await expect(desk).toHaveScreenshot(`fno8b4-desk-v2-${size.width}-${theme}.png`, SHOT);
@@ -373,16 +375,28 @@ test.describe("8b slice 4 flows", () => {
     expect(orderCalls(seen)).toEqual([]);
   });
 
-  test("the desk reads and never trades; the phone switch shows one panel; his journal chart is one read on his tap", async ({ page }) => {
+  test("the desk places the one chain and the one basket; the phone switch shows one panel; his journal chart is one read on his tap", async ({ page }) => {
     const seen = await openPositions(page, "light");
     const desk = page.locator("[data-block='fno-desk']");
     await expect(desk.locator("[data-desk-panel='chain']")).toBeHidden();
     await desk.locator("[data-desk-tab='chain']").tap();
     await expect(desk.locator("[data-desk-panel='chain']")).toBeVisible();
     await expect(desk.locator("[data-desk-panel='glance']")).toBeHidden();
-    await expect(desk.locator("[data-desk-strike='24900'] td").first()).toHaveClass(/text-brand/);
+    // CT-1 C3: THE chain - the strike range chips, the columns menu, his strike's "P"; a price opens the same action sheet.
+    const chain = desk.locator("[data-desk='chain']");
+    await expect(chain.locator("[data-strike-range]")).toBeVisible();
+    await expect(chain.getByRole("button", { name: /columns/i })).toBeVisible();
+    await expect(chain.locator("tr[data-strike='24900'] [data-held='call']")).toBeVisible();
+    await chain.locator("tr[data-strike='24900'] td:visible").first().tap();
+    const sheet = page.locator("[data-chain-actions]");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("heading")).toContainText("24,900 CE");
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    // CT-1 C5: THE basket, embedded (its own empty line; no leg list or figures of the desk's own).
     await desk.locator("[data-desk-tab='basket']").tap();
-    await expect(desk.locator("[data-desk-panel='basket']")).toContainText("No legs on NIFTY in your basket");
+    await expect(desk.locator("[data-desk-panel='basket'] [data-basket-panel][data-embedded] [data-basket='empty']")).toBeVisible();
+    await expect(desk.locator("[data-desk='basket-legs']")).toHaveCount(0);
     const reads: string[] = [];
     page.on("request", (r) => { if (/\/market-data\/candles$/.test(r.url())) reads.push(r.method()); });
     const journal = page.locator("[data-block='fno-journal']");

@@ -55,6 +55,9 @@ frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:305
 frontend/src/aiKeys/__fixtures__/key_formats.json:generic-api-key:310
 scripts/check_public_repo.py:generic-api-key:148
 scripts/check_public_repo.py:generic-api-key:149
+# M55 Q1 (#770): one pin added above them moved the same two key_formats.json pins to lines 151-152
+scripts/check_public_repo.py:generic-api-key:151
+scripts/check_public_repo.py:generic-api-key:152
 # A2 (#428): a fake JWT in backend/tests/test_a2_error_tracker.py at its first commit on its branch; the test now builds it at runtime.
 37732addf70c4f4d52ee7f1c974f9a073f1d5057:backend/tests/test_a2_error_tracker.py:jwt:16
 # C12 (#439): a fake API key in backend/tests/test_c12_support.py (the scrubber test) at its first commit; the test builds it at runtime.

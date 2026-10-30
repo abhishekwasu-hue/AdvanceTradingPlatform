@@ -100,7 +100,17 @@ def _headers(email: str) -> dict:
     return {"Authorization": f"Bearer {_register(email)}"}
 
 
-def test_master_api_search_expiries_strikes_status():
+class _FixtureToday(date):
+    """The fixture's expiries run to 29 Oct 2026; the expiries route keeps dates on or after today - read as of the
+    fixture's own date (28 Sep 2026, as test_contract_rules.TODAY), not the real clock (the test broke on 30 Oct)."""
+    @classmethod
+    def today(cls):
+        return cls(2026, 9, 28)
+
+
+def test_master_api_search_expiries_strikes_status(monkeypatch):
+    import app.instruments.routes as master_routes
+    monkeypatch.setattr(master_routes, "date", _FixtureToday)
     _load_fixture()
     headers = _headers("master-user@example.com")
     status = client.get("/api/instrument-master/status", headers=headers).json()

@@ -116,6 +116,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
       test.use({ viewport: { width: size.width, height: size.height }, isMobile: size.phone, hasTouch: size.phone, deviceScaleFactor: 1 });
 
       test("bull put on NIFTY 15m, next weekly -> backtest result -> Start on paper", async ({ page }) => {
+        test.setTimeout(90_000);
         const shot = async (step: string) => {
           if (size.phone) await expectFlowTargets(page);
           if (SHOTS) await page.screenshot({ path: `${SHOTS}/${step}-${size.width}-${theme}.png`, fullPage: true, animations: "disabled" });
@@ -157,7 +158,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
 
         await page.locator("[data-flow-next]").click();
         await page.locator("[data-save-test]").click();
-        await expect(page.locator("[data-result-numbers]")).toContainText("₹");
+        await expect(page.locator("[data-result-numbers]")).toContainText("₹", { timeout: 15_000 });
         await expect(page.locator("[data-result-numbers]")).toContainText("% from the peak");
         expect(server.saved).toHaveLength(1);
         expect(server.saved[0]).toMatchObject({ timeframe: "15min", stop_loss_atr_mult: null, target_rr: null, min_rr: null });

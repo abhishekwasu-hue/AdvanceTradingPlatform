@@ -113,6 +113,18 @@ export const COPILOT_EN = {
     openChart: "Open chart",
     rules: "Your rules",
     settings: "Your settings",
+    // M59 CR-2: a chart in the Ask box (the same analysis as the Analyze a chart page; image only, educational).
+    attach: "Add a chart",
+    attachUpload: "Upload a chart",
+    attachLink: "Paste a TradingView snapshot link",
+    attachLinkLabel: "TradingView snapshot link",
+    attachGo: "Analyze",
+    attachHelp: "On TradingView press Alt+S (Option+S on a Mac) to copy the snapshot link. A screenshot pasted in the box works too.",
+    chartAdding: "Storing your chart…",
+    chartAnalysing: "Reading your chart…",
+    chartFailed: "The analysis did not finish.",
+    chartOpenPage: "Open in Analyze a chart",
+    chartReading: "ATP's own structure reading",
   },
   firstUse: {
     title: "Before you start",

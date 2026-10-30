@@ -9,6 +9,7 @@ import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
 import AlertDialogV2, { type AlertTarget } from "./AlertDialogV2";
 import { chartAnalyzeApi, errorCode, isFeatureOff } from "./api";
+import { ENGINE_ADMIN_TITLE, ENGINE_USER_LINE, ENGINE_USER_TITLE, engineAudience } from "./engineWords";
 import { renderResultPng, shareOrDownload } from "./exportImage";
 import { printResult, printTitle } from "./printResult";
 import ResultViewV2 from "./ResultViewV2";
@@ -32,11 +33,8 @@ export const DROP_TEXT_DESKTOP = "Drop it here, paste a screenshot, or choose a 
 export const DROP_TEXT_PHONE = "Paste a screenshot, or choose a file.";
 /** M59 CR-5: the one (?) line beside the link input - how to take a TradingView snapshot; a pasted screenshot works too. */
 export const SNAPSHOT_HELP = "On TradingView press Alt+S (Option+S on a Mac): it copies the chart's snapshot link - paste it here. A screenshot image pasted on this page works too.";
-/** M59 CR-3: what the page says when the chart analysis engine is not installed on this server - the user's plain line
- * (no internal names) and the admin's headline (the server sends the owner's steps to SUPER_ADMIN only). */
-export const ENGINE_USER_TITLE = "Chart upload analysis is being switched on";
-export const ENGINE_USER_LINE = "Your saved analyses are kept. Please check again later.";
-export const ENGINE_ADMIN_TITLE = "Chart analysis engine not installed — owner action";
+/** M59 CR-3: the engine-missing words live in ./engineWords (shared with the Copilot's chart attach). */
+export { ENGINE_ADMIN_TITLE, ENGINE_USER_LINE, ENGINE_USER_TITLE } from "./engineWords";
 /** The "Option strikes · from your settings" block has its own flag on top (owner's tenant first). */
 export const STRIKES_FLAG = "chart_analyze_strikes";
 /** "Share with my organisation" (PR-A4): its own flag on top; a link opens `?shared=<link>` on this page. */
@@ -87,7 +85,7 @@ export function firstImage(files: FileList | File[] | null | undefined): File | 
 /** A1: the analysis engine is not installed on this server. Users see one plain line and no upload or link inputs; the
  * admin (the server sends `reason` / `owner_steps` to SUPER_ADMIN only) also sees why and what the owner does. */
 export function EngineUnavailable({ engine }: { engine: AnalyzeStatus["engine"] }) {
-  const admin = Boolean(engine.reason || engine.owner_steps);
+  const admin = engineAudience(engine) === "admin";
   return (
     <div className="mx-auto max-w-[1240px] space-y-space-4" data-testid="chart-analyze-unavailable" data-audience={admin ? "admin" : "user"}>
       <h1 className="text-t20 font-semibold text-fg md:text-t24">Analyze a chart</h1>

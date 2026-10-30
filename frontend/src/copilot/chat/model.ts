@@ -2,6 +2,7 @@ import { request } from "../../api/client";
 import type { AnalysisChart, AnalysisTable } from "../../optionChain/analyses";
 import type { StrategyDraft } from "../strategyDraft";
 import type { MarketStrip, StripIndex } from "../../dashboard/types";
+import type { AnalysisItem, AnalyzeStatus } from "../../chartAnalyze/types";
 
 /**
  * Item 5 (owner's handover, the AI Copilot as a trader's brain), first slice: the chat-first Copilot page's data and its
@@ -89,7 +90,45 @@ export interface ChatAnswer {
 export type RefusalKind = "order" | "advice" | "tip" | "settings" | "promise" | "copy";
 
 /** One turn of the conversation on the page (CU6: kept by the server across reloads, the newest `keep`). */
-export interface Turn { id: number; question: string; answer: ChatAnswer | null; error: string | null }
+export interface Turn {
+  id: number; question: string; answer: ChatAnswer | null; error: string | null;
+  /** M59 CR-2: a chart the user attached (upload or TradingView snapshot link) and its analysis, shown in this turn. */
+  chart?: ChartTurnState | null;
+}
+
+/** M59 CR-2: what the user attached in the Ask box - a chart image (picked or pasted) or a snapshot link. */
+export type ChartSource = { kind: "file"; file: Blob; name: string } | { kind: "link"; link: string };
+/** M59 CR-2: the attached chart's state in its thread turn (the same chart_analyze pipeline as the Analyze a chart page). */
+export type ChartTurnState =
+  | { status: "working"; step: "adding" | "analysing" }
+  | { status: "done"; item: AnalysisItem; imageSrc: string | null }
+  | { status: "failed"; message: string }
+  | { status: "unavailable"; engine: AnalyzeStatus["engine"] };
+
+/** M59 CR-2: the turn's question line for an attached chart. */
+export function chartQuestion(source: ChartSource): string {
+  if (source.kind === "file") return "Analyze my chart";
+  return /tradingview\.com\//i.test(source.link) ? "Analyze my TradingView snapshot" : "Analyze the chart at this link";
+}
+
+/** M59 CR-2: the Copilot question for ATP's own structure reading (the CR-1 card) of the symbol the picture shows -
+ * "Read the NIFTY chart" - or null when the picture's symbol was not read (or is not a plain ticker). The exchange
+ * prefix ("NSE:") is dropped; the Copilot reads its own stored data, never prices from the picture. */
+export function readingQuestion(item: Pick<AnalysisItem, "result">): string | null {
+  const raw = (item.result?.recognised.symbol ?? "").trim().toUpperCase().replace(/^[A-Z]+:/, "");
+  if (!raw || raw.length > 30 || !/^[A-Z0-9][A-Z0-9 &.-]*$/.test(raw)) return null;
+  return `Read the ${raw} chart`;
+}
+
+/** M59 CR-2: a pasted text that is a TradingView snapshot link (the Ask box offers it as a chart, not a question). */
+export function isSnapshotLink(text: string): boolean {
+  return /^https:\/\/(www\.)?tradingview\.com\/x\/[A-Za-z0-9]+\/?$/i.test(text.trim());
+}
+
+/** M59 CR-2: puts the attached chart's new state on its turn. */
+export function withChart(turns: readonly Turn[], id: number, chart: ChartTurnState): Turn[] {
+  return turns.map((t) => (t.id === id ? { ...t, chart } : t));
+}
 
 /** Where an answer's action goes: the draft rides along in the navigation state for the Trading bot page's review card. */
 export function actionState(answer: Pick<ChatAnswer, "draft">): { copilotDraft: StrategyDraft } | undefined {

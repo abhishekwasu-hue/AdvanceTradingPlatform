@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEven
 import { useSearchParams } from "react-router";
 import { friendlyError } from "../api/errors";
 import { Button, Dialog, Skeleton } from "../components/primitives";
+import { HelpPopover } from "../ui/HelpPopover";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
 import AlertDialogV2, { type AlertTarget } from "./AlertDialogV2";
@@ -29,6 +30,13 @@ export const FLAG = "chart_analyze";
 /** Item 8: the drop zone's words, each a sentence of its own (capitalised). */
 export const DROP_TEXT_DESKTOP = "Drop it here, paste a screenshot, or choose a file.";
 export const DROP_TEXT_PHONE = "Paste a screenshot, or choose a file.";
+/** M59 CR-5: the one (?) line beside the link input - how to take a TradingView snapshot; a pasted screenshot works too. */
+export const SNAPSHOT_HELP = "On TradingView press Alt+S (Option+S on a Mac): it copies the chart's snapshot link - paste it here. A screenshot image pasted on this page works too.";
+/** M59 CR-3: what the page says when the chart analysis engine is not installed on this server - the user's plain line
+ * (no internal names) and the admin's headline (the server sends the owner's steps to SUPER_ADMIN only). */
+export const ENGINE_USER_TITLE = "Chart upload analysis is being switched on";
+export const ENGINE_USER_LINE = "Your saved analyses are kept. Please check again later.";
+export const ENGINE_ADMIN_TITLE = "Chart analysis engine not installed — owner action";
 /** The "Option strikes · from your settings" block has its own flag on top (owner's tenant first). */
 export const STRIKES_FLAG = "chart_analyze_strikes";
 /** "Share with my organisation" (PR-A4): its own flag on top; a link opens `?shared=<link>` on this page. */
@@ -79,22 +87,24 @@ export function firstImage(files: FileList | File[] | null | undefined): File | 
 /** A1: the analysis engine is not installed on this server. Users see one plain line and no upload or link inputs; the
  * admin (the server sends `reason` / `owner_steps` to SUPER_ADMIN only) also sees why and what the owner does. */
 export function EngineUnavailable({ engine }: { engine: AnalyzeStatus["engine"] }) {
+  const admin = Boolean(engine.reason || engine.owner_steps);
   return (
-    <div className="mx-auto max-w-[1240px] space-y-space-4" data-testid="chart-analyze-unavailable">
+    <div className="mx-auto max-w-[1240px] space-y-space-4" data-testid="chart-analyze-unavailable" data-audience={admin ? "admin" : "user"}>
       <h1 className="text-t20 font-semibold text-fg md:text-t24">Analyze a chart</h1>
       <section className={card} role="status">
         <div className="flex items-start gap-space-3">
           <TriangleAlert size={20} aria-hidden className="mt-0.5 shrink-0 text-warn" />
           <div>
-            <p className="text-t15 font-semibold text-fg">Chart analysis is not available right now</p>
-            <p className="mt-space-1 text-t14 text-fg-muted">Your saved analyses are kept. Please check again later.</p>
+            <p className="text-t15 font-semibold text-fg">{admin ? ENGINE_ADMIN_TITLE : ENGINE_USER_TITLE}</p>
+            <p className="mt-space-1 text-t14 text-fg-muted">{ENGINE_USER_LINE}</p>
           </div>
         </div>
-        {engine.reason ? (
+        {admin ? (
           <div className="mt-space-4 rounded-control border border-subtle bg-surface-2 p-space-3" data-testid="engine-admin-detail">
-            <p className="text-t14 font-semibold text-fg">For admins: the analysis service is missing</p>
-            <p className="mt-space-1 text-t14 text-fg-muted">Why: {engine.reason}.</p>
+            <p className="text-t14 font-semibold text-fg">Owner steps</p>
+            {engine.reason ? <p className="mt-space-1 text-t14 text-fg-muted">Why: {engine.reason}.</p> : null}
             {engine.owner_steps ? <p className="mt-space-1 break-words text-t14 text-fg-muted">{engine.owner_steps}</p> : null}
+            <p className="mt-space-1 text-t13 text-fg-muted">Users see only: “{ENGINE_USER_TITLE}”.</p>
           </div>
         ) : null}
       </section>
@@ -376,7 +386,10 @@ export default function ChartAnalyzePageV2() {
           </Button>
         </div>
         <div className="mt-space-3">
-          <label htmlFor={linkId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Or paste a chart link</label>
+          <div className="mb-space-1 flex items-center gap-space-1">
+            <label htmlFor={linkId} className="block text-t12 font-medium text-fg-muted">Or paste a chart link</label>
+            <HelpPopover title="How to take a TradingView snapshot"><p data-testid="snapshot-help">{SNAPSHOT_HELP}</p></HelpPopover>
+          </div>
           <div className="flex items-center gap-space-2">
             <Link2 size={16} aria-hidden className="shrink-0 text-fg-muted" />
             <input id={linkId} type="url" inputMode="url" value={link} placeholder="https://www.tradingview.com/x/..." autoComplete="off" spellCheck={false}

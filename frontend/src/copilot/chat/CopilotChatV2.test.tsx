@@ -11,7 +11,7 @@ import chatSource from "./CopilotChatV2.tsx?raw";
 import { ChatView, type ChatViewProps } from "./CopilotChatV2";
 import pageSource from "./CopilotPageV2.tsx?raw";
 import {
-  answerParts, areaText, cleanQuestion, composerPlacement, distanceText, headlineLevels, jobCards, marketLineText, needsKey, notSetUpLine,
+  answerParts, areaText, cardAreaText, cardTrendText, cleanQuestion, hasRawMarkdown, notReadyText, swingText, composerPlacement, distanceText, headlineLevels, jobCards, marketLineText, needsKey, notSetUpLine,
   numbersCells, quickChips, settled, stampText, toolsUsedLine, withTurn, workedLine,
   type ChatAnswer, type ChatHome, type Turn,
 } from "./model";
@@ -60,6 +60,24 @@ const HEADLINED: ChatAnswer = {
   headline: { symbol: "SENSEX", price: 81261.1, price_label: "Last close", as_of: "2026-10-21T03:30:00+00:00", trend: "up", timeframe: "Daily",
     area: { side: "supply", from: 82011.6, to: 82273.2, where: "above", distance: 750.5, distance_pct: 0.92 },
     chart: { symbol: "SENSEX", exchange: "BSE", timeframe: "day" } },
+};
+// M59 CR-1: the owner's 30 Oct screenshot - the AI wording with raw Markdown and a missing 1-hour history.
+const AI_PROSE = "**Weekly:** sideways.\n**Daily:** up, protected level 24,310.\n- **1-hour:** I don't know. Only 0 of the 30 bars needed are stored.";
+const CARDED: ChatAnswer = {
+  ...HEADLINED, source: "ai", summary: [AI_PROSE], answer: AI_PROSE,
+  structure_card: {
+    symbol: "NIFTY", price: 24850.5, timeframe: "Daily",
+    timeframes: [
+      { tf: "1w", label: "Weekly", ready: true, trend: "sideways", weak: false, protected: null, last_break: null },
+      { tf: "1d", label: "Daily", ready: true, trend: "up", weak: false, protected: 2431000, last_break: { label: "Swing break", price: 24790 } },
+      { tf: "1h", label: "1-hour", ready: false, trend: null, weak: false, protected: null, last_break: null },
+      { tf: "15m", label: "15-minute", ready: true, trend: "down", weak: true, protected: 24730.5, last_break: null },
+    ],
+    areas_above: [{ side: "supply", from: 25080, to: 25160, where: "above", distance: 229.5 }],
+    areas_below: [{ side: "demand", from: 24520, to: 24610, where: "below", distance: 240.5 }],
+    swing_levels: [{ side: "high", price: 25010.5 }, { side: "low", price: 24600.5 }],
+    watch: "Whether the daily protected level holds or breaks on a closed bar, and how the price behaves when it reaches the nearest area.",
+  },
 };
 const RULE_TEXTS = ["The 20 EMA crosses above the 50 EMA.", "RSI (14) is above 50."];
 const STRATEGY: ChatAnswer = {
@@ -224,6 +242,72 @@ describe("the chat-first Copilot page", () => {
     expect(areaText({ side: null, from: 1, to: 2, where: "below", distance: 3, distance_pct: null }, String)).toBe("1 – 2");
     expect(headlineLevels(HEADLINED.headline).map((l) => l.tone)).toEqual(["down", "down"]);
     expect(headlineLevels(null)).toEqual([]);
+  });
+
+  it("M59 CR-1: the chart reading is a card - table, areas nearby, swing levels, one line; never raw Markdown or a bar count", () => {
+    const html = render(<AnswerV2 answer={CARDED} onAsk={noop} />);
+    const at = (needle: string) => { const i = html.indexOf(needle); expect(i, needle).toBeGreaterThan(-1); return i; };
+    const details = at('data-details="copilot.answer"');
+    const card = html.slice(0, details);
+    // the order: headline row, the table, the areas, the swing levels, the one line; the prose is behind Details
+    expect(at('data-headline="SENSEX"')).toBeLessThan(at('data-card-block="table"'));
+    expect(at('data-card-block="table"')).toBeLessThan(at('data-card-block="areas"'));
+    expect(at('data-card-block="areas"')).toBeLessThan(at('data-card-block="swings"'));
+    expect(at('data-card-block="swings"')).toBeLessThan(at('data-card-block="watch"'));
+    expect(card).not.toContain("data-summary");
+    expect(html.slice(details)).toContain('data-summary="folded"');
+    const t = text(card);
+    for (const head of ["Timeframe", "Trend", "Protected level", "Last break"]) expect(t).toContain(head);
+    expect(t).toContain("24,31,000.00");                       // 2 decimals, Indian grouping
+    expect(t).toContain("Swing break 24,790.00");
+    expect(t).toContain("▼ Down · weak");
+    expect(card).toContain('data-not-ready="1h"');
+    expect(t).toContain("1-hour: data not ready");
+    expect(t).toContain("Supply 25,080.00 – 25,160.00 · 229.50 pts");
+    expect(t).toContain("Demand 24,520.00 – 24,610.00 · 240.50 pts");
+    expect(t).toContain("Swing high 25,010.50");
+    expect(t).toContain("What to watch:");
+    expect(t).not.toMatch(/of the 30|bars needed|\b\d+ of \d+ bars/);
+    expect(t).not.toMatch(/\b(buy|sell|target|stop[- ]?loss)\b/i);
+    // the AI wording behind Details is rendered, never printed raw
+    expect(html).not.toContain("**");
+    expect(html).toContain('<strong class="font-semibold text-fg">Weekly:</strong>');
+    // phone: at most 4 blocks on the first screen (headline + table + areas + line; the swing chips sit behind a (?))
+    expect(card).toMatch(/<div class="hidden md:block" data-card-block="swings">/);
+    expect(card).toContain('aria-label="Help: Swing levels"');
+    for (const b of ["data-headline=", 'data-card-block="table"', 'data-card-block="areas"', 'data-card-block="watch"']) expect(card).toContain(b);
+    expect(card).not.toContain('data-card-block="swings-phone"');
+  });
+
+  it("M59 CR-1: every timeframe missing - one 'data not ready' chip each, no table numbers, no counts", () => {
+    const base = CARDED.structure_card!;
+    const empty = { ...base, timeframes: base.timeframes.map((r) => ({ ...r, ready: false, trend: null, protected: null, last_break: null })),
+      areas_above: [], areas_below: [], swing_levels: [], watch: null };
+    const html = render(<AnswerV2 answer={{ ...CARDED, headline: null, structure_card: empty,
+      summary: ["For the NIFTY chart, only 0 of the 30 daily bars needed are stored; history is loading."] }} />);
+    const card = html.slice(0, html.indexOf('data-details="copilot.answer"'));
+    expect(card.match(/data-not-ready="/g)).toHaveLength(4);
+    for (const label of ["Weekly", "Daily", "1-hour", "15-minute"]) expect(text(card)).toContain(`${label}: data not ready`);
+    expect(text(card)).not.toMatch(/of the 30|bars/);
+    expect(card).not.toContain('data-card-block="areas"');
+    expect(card).not.toContain('data-card-block="watch"');
+    expect(card).not.toContain("data-section=");
+  });
+
+  it("M59 CR-1: a free-text answer without a card renders its Markdown safely (bold, lists), never the raw marks", () => {
+    const html = render(<AnswerV2 answer={{ ...ANSWER, source: "ai", summary: ["**Daily:** up.\n* one\n* two\nA *soft* word and a stray ** mark. <b>x</b>"] }} />);
+    expect(html).not.toContain("**");
+    expect(html).toContain('<strong class="font-semibold text-fg">Daily:</strong>');
+    expect(html.match(/<li>/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(html).not.toContain("<b>x</b>");                     // text, never markup
+    expect(text(html)).toContain("A soft word and a stray mark.");
+    expect(hasRawMarkdown("**Weekly:** up")).toBe(true);
+    expect(hasRawMarkdown("Weekly: up")).toBe(false);
+    expect(notReadyText({ label: "1-hour" })).toBe("1-hour: data not ready");
+    expect(cardTrendText({ trend: null, weak: true })).toBe("No clear trend");
+    expect(cardTrendText({ trend: "up", weak: true })).toBe("▲ Up · weak");
+    expect(cardAreaText({ side: null, from: 1, to: 2, where: "inside", distance: 0 }, String)).toBe("1 – 2 · price inside");
+    expect(swingText({ side: null, price: 5 }, String)).toBe("Swing level 5");
   });
 
   it("CU3: the strategy answer is a result card - rules and settings as chips, the theory behind Details", () => {

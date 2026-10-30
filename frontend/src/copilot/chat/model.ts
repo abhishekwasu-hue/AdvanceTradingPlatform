@@ -33,6 +33,18 @@ export interface AnswerHeadline {
   area: { side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number; distance_pct: number | null } | null;
   chart: { symbol: string; exchange: string; timeframe: string } | null;
 }
+/** M59 CR-1: one stored area beside the price on the structure card (distance in points to its near edge, 0 inside). */
+export interface CardArea { side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number }
+/** M59 CR-1: one timeframe row of the structure card; `ready` false = that timeframe's history is not stored yet. */
+export interface CardTimeframe {
+  tf: string; label: string; ready: boolean; trend: "up" | "down" | "sideways" | null; weak: boolean; protected: number | null;
+  last_break: { label: string; price: number } | null;
+}
+/** M59 CR-1: the chart reader's structure answer as data (backend copilot_chat.structure_card) - the card draws it. */
+export interface StructureCard {
+  symbol: string; price: number | null; timeframe: string; timeframes: CardTimeframe[];
+  areas_above: CardArea[]; areas_below: CardArea[]; swing_levels: { side: "high" | "low" | null; price: number }[]; watch: string | null;
+}
 export interface ChatHome {
   top_line: string; ai: AiState; market_line: MarketLine; disclaimer: string; jobs: ChatJob[]; starters: string[];
   /** CU6: how many turns the server keeps (config COPILOT_CHAT_KEEP); the page keeps the same number. */
@@ -70,6 +82,8 @@ export interface ChatAnswer {
   usage?: { calls: number; tokens_input: number; tokens_output: number; cost_inr: number } | null;
   /** CU3: the headline number row (the chart reader today; null or absent elsewhere). */
   headline?: AnswerHeadline | null;
+  /** M59 CR-1: the chart reader's structure card (absent on older stored turns and on other jobs). */
+  structure_card?: StructureCard | null;
 }
 /** Job 6 added: the trader's own settings, a promise of returns, someone else's strategy. */
 export type RefusalKind = "order" | "advice" | "tip" | "settings" | "promise" | "copy";
@@ -222,6 +236,34 @@ export function headlineLevels(h: AnswerHeadline | null | undefined): { price: n
   return [{ price: h.area.to, title: "Area top", tone }, { price: h.area.from, title: "Area bottom", tone }];
 }
 
+/** M59 CR-1: a timeframe whose history is not stored yet - "1-hour: data not ready", never a bar count. */
+export function notReadyText(row: Pick<CardTimeframe, "label">): string {
+  return `${row.label}: data not ready`;
+}
+
+/** M59 CR-1: the trend chip's word - "▲ Up", "▼ Down · weak", "Sideways", "No clear trend". */
+export function cardTrendText(row: Pick<CardTimeframe, "trend" | "weak">): string {
+  const word = row.trend === "up" ? "▲ Up" : row.trend === "down" ? "▼ Down" : row.trend === "sideways" ? "Sideways" : "No clear trend";
+  return row.weak && row.trend ? `${word} · weak` : word;
+}
+
+/** M59 CR-1: one area line - "Supply 25,080.00 – 25,160.00 · 229.50 pts" ("price inside" at 0). */
+export function cardAreaText(area: CardArea, num: (v: number) => string): string {
+  const side = area.side ? `${area.side[0].toUpperCase()}${area.side.slice(1)} ` : "";
+  const gap = area.where === "inside" ? "price inside" : `${num(area.distance)} pts`;
+  return `${side}${num(area.from)} – ${num(area.to)} · ${gap}`;
+}
+
+/** M59 CR-1: a swing level chip - "Swing high 25,010.50" / "Swing low 24,600.50". */
+export function swingText(level: StructureCard["swing_levels"][number], num: (v: number) => string): string {
+  return `${level.side === "high" ? "Swing high" : level.side === "low" ? "Swing low" : "Swing level"} ${num(level.price)}`;
+}
+
+/** M59 CR-1: true when a text still carries Markdown marks the page would otherwise print raw (`**`, `__`, "# ", "- "). */
+export function hasRawMarkdown(text: string): boolean {
+  return /\*\*|__|^#{1,3}\s|^\s*[-*]\s/m.test(text);
+}
+
 /** CU3 (strategy result card): the sections that stay on the card; every other one is theory and folds into Details. */
 export const STRATEGY_SHOWN: ReadonlySet<string> = new Set(["Values you decide", "Your draft on past data", "Is it enough to judge?"]);
 
@@ -244,9 +286,9 @@ export interface AnswerParts {
  *   stay; the theory (how I read your words, not supported yet, how I build it...) folds.
  * - Any other answer: its sections and tables are the answer and stay.
  */
-export function answerParts(answer: Pick<ChatAnswer, "job" | "sections" | "blocks" | "draft" | "headline">): AnswerParts {
+export function answerParts(answer: Pick<ChatAnswer, "job" | "sections" | "blocks" | "draft" | "headline" | "structure_card">): AnswerParts {
   const all = answer.sections;
-  if (answer.headline) return { rules: [], settings: [], shown: [], folded: [...all], blocksShown: [], blocksFolded: [...answer.blocks] };
+  if (answer.headline || answer.structure_card) return { rules: [], settings: [], shown: [], folded: [...all], blocksShown: [], blocksFolded: [...answer.blocks] };
   if (answer.job === "strategy" && answer.draft) {
     const ruleTexts = new Set((answer.draft.rules ?? []).map((r) => r.text));
     const ruleSections = all.filter((s) => s.lines.length > 0 && s.lines.every((l) => ruleTexts.has(l)));

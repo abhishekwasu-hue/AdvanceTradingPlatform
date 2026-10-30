@@ -356,6 +356,8 @@ class Answer:
     symbol_default: bool = False
     # CU3: the answer card's headline numbers (the chart reader: price, trend, nearest area, distance; None elsewhere)
     headline: dict[str, Any] | None = None
+    # M59 CR-1: the chart reader's structure as data for the answer card (None elsewhere; the sentences stay for others)
+    structure_card: dict[str, Any] | None = None
 
     def flag_on(self, name: str) -> bool:
         return self.flags is None or bool(self.flags.get(name))
@@ -375,6 +377,7 @@ class Answer:
                 "worked": [s.as_dict() for s in self.worked], "action": self.action, "refused": self.refused, "starters": self.starters,
                 "concepts": self.concepts, "notes": self.notes, "disclaimer": DISCLAIMER, "source": "rules", "draft": self.draft,
                 "followup": self.followup, "symbols": self.symbols, "symbol_default": self.symbol_default, "headline": self.headline,
+                "structure_card": self.structure_card,
                 "tool_calls": [s.tool for s in self.worked if not s.tool.startswith("calc:") and s.tool not in NOT_TOOLS],
                 "tools_used": tools_used(self.worked)}
 
@@ -763,6 +766,86 @@ def chart_headline(symbol: str, tf: str, res: ToolResult, zones: ToolResult) -> 
             "chart": {"symbol": INDEX_NAMES.get(symbol, symbol), "exchange": exchange_of(symbol), "timeframe": CHART_TF.get(tf, "day")}}
 
 
+# M59 CR-1: the chart answer as a card - short break words for the table's chips (the long EVENT_WORDS stay for the
+# sentences), and the one "what to watch" line (no buy / sell / target / stop wording, no price).
+BREAK_WORDS = {"BOS": "Swing break", "CHOCH": "Break against the trend", "MSS": "Break against the trend"}
+WATCH_LINE = ("Whether the {tf} protected level holds or breaks on a closed bar, and how the price behaves when it reaches "
+              "the nearest area.")
+WATCH_NO_LEVEL = "How the price behaves when it reaches the nearest area, and which side of it the next bar closes on."
+SWING_SIDE = {"resistance": "high", "high": "high", "swing_high": "high", "support": "low", "low": "low", "swing_low": "low"}
+CARD_MAX_AREAS = 3          # per side ("Areas nearby": two short lists)
+
+
+def _card_trend(raw: Any) -> tuple[str | None, bool]:
+    """"up (weak)" -> ("up", True); "range" -> ("sideways", False); "none" / unknown -> (None, False). Words only."""
+    text = str(raw or "").strip().lower()
+    weak = "weak" in text
+    word = trend_words(text.replace("(weak)", "").strip()) if text and text != "none" else ""
+    return (word if word in ("up", "down", "sideways") else None), weak
+
+
+def _card_side(role: Any) -> str | None:
+    return {"bullish": "demand", "bearish": "supply"}.get(_role_side(role) or "")
+
+
+def structure_card(symbol: str, tf: str, res: ToolResult, zones: ToolResult) -> dict[str, Any] | None:
+    """M59 CR-1: the chart reader's structure answer as data for a card - per timeframe (Weekly, Daily, 1-hour,
+    15-minute; always all four, in that order) the trend word, weak or not, the protected level and the last break, or
+    `ready: false` when that timeframe's history is not stored yet (the card says "data not ready", never a bar count);
+    the stored areas above and below the last close with their distance in points; the nearest swing levels; and ONE
+    plain "what to watch" line. Only numbers the tools gave; the reading itself is unchanged (presentation only). Pure."""
+    short_history = not res.ok and str(res.error or "").startswith("only ")
+    if not res.ok and not zones.ok and not short_history:
+        return None
+    rows = {r.get("tf"): r for r in _structure_rows(res)}
+    d = (res.data or {}) if res.ok else {}
+    oc = d.get("official_close") or {}
+    price = oc.get("close") if oc.get("close") is not None else d.get("last_close")
+    if not isinstance(price, (int, float)) and zones.ok:
+        price = (zones.data or {}).get("price")
+    timeframes: list[dict[str, Any]] = []
+    for key, label in TF_LABELS.items():
+        r = rows.get(key)
+        if r is None or r.get("short"):
+            timeframes.append({"tf": key, "label": label, "ready": False, "trend": None, "weak": False, "protected": None, "last_break": None})
+            continue
+        trend, weak = _card_trend(r.get("direction"))
+        name, at = r.get("last_event"), r.get("last_event_price")
+        last = ({"label": BREAK_WORDS.get(str(name).upper(), str(name)), "price": at}
+                if name and isinstance(at, (int, float)) else None)
+        timeframes.append({"tf": key, "label": label, "ready": True, "trend": trend, "weak": weak,
+                           "protected": r.get("protected") if isinstance(r.get("protected"), (int, float)) else None, "last_break": last})
+    above: list[dict[str, Any]] = []
+    below: list[dict[str, Any]] = []
+    if zones.ok and isinstance(price, (int, float)) and price > 0:
+        for b in (zones.data or {}).get("bands") or []:
+            low, high = b.get("low"), b.get("high")
+            if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
+                continue
+            low, high = min(low, high), max(low, high)
+            side = _card_side(b.get("role"))
+            if low <= price <= high:
+                where, gap = "inside", 0.0
+            elif high < price:
+                where, gap = "below", price - high
+            else:
+                where, gap = "above", low - price
+            item = {"side": side, "from": float(low), "to": float(high), "where": where, "distance": round(gap, 2)}
+            # an area the price is inside sits with its own side: a buyer area under the price, a seller area over it
+            goes_above = where == "above" or (where == "inside" and side == "supply")
+            (above if goes_above else below).append(item)
+    above.sort(key=lambda a: a["distance"])
+    below.sort(key=lambda a: a["distance"])
+    levels = [{"side": SWING_SIDE.get(str(lv.get("kind") or "").lower()), "price": lv["price"]} for lv in d.get("levels") or []
+              if isinstance(lv.get("price"), (int, float))]
+    asked = next((t for t in timeframes if t["tf"] == tf), None)
+    watch = (None if not any(t["ready"] for t in timeframes) and not above and not below
+             else WATCH_LINE.format(tf=TF_LABELS.get(tf, tf).lower()) if asked and asked["protected"] is not None else WATCH_NO_LEVEL)
+    return {"symbol": symbol, "price": price if isinstance(price, (int, float)) else None, "timeframe": TF_LABELS.get(tf, tf),
+            "timeframes": timeframes, "areas_above": above[:CARD_MAX_AREAS], "areas_below": below[:CARD_MAX_AREAS],
+            "swing_levels": levels, "watch": watch}
+
+
 async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
     symbol, tf = symbol_in(message), timeframe_in(message)
     res = await _call(answer, run, "get_chart_structure", f"{symbol} structure per timeframe", {"symbol": symbol, "timeframe": tf},
@@ -801,6 +884,7 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
     else:
         answer.unknowns.append(_zones_unknown(symbol, zones, res) + ".")
     answer.headline = chart_headline(symbol, tf, res, zones)
+    answer.structure_card = structure_card(symbol, tf, res, zones)
     answer.section("What to watch", ["Whether the protected level holds or breaks on a closed bar.",
                                      "How the price behaves when it reaches one of the key areas above."] if res.ok else [])
 

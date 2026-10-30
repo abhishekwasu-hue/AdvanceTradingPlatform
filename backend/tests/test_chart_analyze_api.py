@@ -527,3 +527,26 @@ def test_admin_settings_are_super_admin_only():
     who = _owner("adm")
     assert client.get("/api/admin/chart-analyze/settings", headers=who["headers"]).status_code == 403
     assert client.put("/api/admin/chart-analyze/settings", headers=who["headers"], json={"values": {"retention_days": 7}}).status_code == 403
+
+
+# --- M59 CR-3 / CR-6 ----------------------------------------------------------------------------------------------------
+
+def test_m59_a_tradingview_snapshot_link_is_analysed_end_to_end_with_the_fake_engine(monkeypatch):
+    """M59 CR-6: the TradingView link happy path - the snapshot image is stored like an upload and analysed the same way."""
+    who = _owner("m59tv")
+    _mock_network(monkeypatch, lambda request: _streamed(PNG, "image/png"), {"s3.tradingview.com": ["8.8.8.8"]})
+    calls = _fake_answer(monkeypatch, "forming")
+    item = client.post(f"{BASE}/items", headers=who["headers"], data={"mode": "image_only", "link": "https://www.tradingview.com/x/Zx9Abc12/"})
+    assert item.status_code == 201, item.text
+    body = client.post(f"{BASE}/items/{item.json()['id']}/analyze", headers=who["headers"]).json()
+    assert body["status"] == "done" and body["result"]["setup"]["status"] == "forming" and len(calls) == 1
+    assert calls[0]["png"].startswith(b"\x89PNG")
+
+
+def test_m59_engine_missing_a_user_status_carries_no_internal_name():
+    """M59 CR-3: the user's status answer names nothing internal (the page shows "Chart upload analysis is being switched on")."""
+    provider.set_for_tests(None)
+    user = _owner("m59user")
+    text = json.dumps(client.get(f"{BASE}/status", headers=user["headers"]).json()["engine"])
+    for word in ("private", "ATP_PRIVATE", ".ssh", "/opt", ".env", "deploy key", "atp_private"):
+        assert word not in text, word

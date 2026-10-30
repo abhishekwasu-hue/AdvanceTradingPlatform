@@ -49,7 +49,7 @@ def test_risk_settings_do_not_depend_on_experience():
 
 def test_experience_tip_is_general_teaching():
     q = next(q for q in iv.QUESTIONS if q.id == "experience")
-    assert q.why_en == "Smaller risk per trade and PAPER first is a common way to start; you set your own risk."
+    assert q.why_en == "Only for the wording of your plan; it never sets or changes your risk."     # SB-UX SU4: no advice
     assert "beginner" not in q.why_en.lower() and q.why_mr
 
 

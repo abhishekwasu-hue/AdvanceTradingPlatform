@@ -67,7 +67,7 @@ class BaseStrategy(ABC):
         stop_loss: float,
         score: int,
         reasons: List[str],
-        target_rr: Tuple[float, float] = (1.5, 2.5),
+        target_rr: Tuple[float, float] | None = (1.5, 2.5),
     ) -> Signal:
         if direction == SignalDirection.LONG:
             risk = entry - stop_loss
@@ -76,6 +76,13 @@ class BaseStrategy(ABC):
 
         if risk <= 0:
             return self.no_trade(symbol, timestamp, reasons + ["Invalid stop loss produced non-positive risk"])
+
+        if target_rr is None:
+            # DEF-0 / SB-UX SU4: the trader set no target - the signal carries its stop only (a missing target is never
+            # hit, app/trading/exit_logic.py) and no reward:risk, so no minimum R:R can apply to it.
+            return Signal(symbol=symbol, strategy_id=self.id, strategy_name=self.name, direction=direction, timestamp=timestamp,
+                          entry=round(entry, 2), stop_loss=round(stop_loss, 2), target1=None, target2=None, risk_reward=None,
+                          score=score, grade=grade_from_score(score), reasons=reasons, timeframe_combo="/".join(self.timeframes))
 
         rr1, rr2 = target_rr
         if direction == SignalDirection.LONG:

@@ -73,9 +73,10 @@ class ParsedStrategyPreview(BaseModel):
     timeframe: str = "5min"
     long_conditions: List[Condition] = Field(default_factory=list)
     short_conditions: List[Condition] = Field(default_factory=list)
-    stop_loss_atr_mult: float = 1.0
+    # SB-UX SU4 (DEF-0): only what the text states - no stop / target stated = off (None), never a built-in 1.0 / 1.5 / 2.0.
+    stop_loss_atr_mult: float | None = None
     atr_period: int = 14
-    target_rr: Tuple[float, float] = (1.5, 2.0)
+    target_rr: tuple[float, float] | None = None
     min_rr: Optional[float] = None                  # P1-2b: not set unless the text states one (no hidden filter)
 
 
@@ -186,7 +187,7 @@ def parse_strategy_description(text: str, name: str = "Parsed Strategy") -> Pars
         m = _TARGET_RR.search(sentence)
         if m:
             t1 = float(m.group(1))
-            t2 = float(m.group(2)) if m.group(2) else round(t1 + 0.5, 2)
+            t2 = float(m.group(2)) if m.group(2) else t1        # one target stated = one target (none invented)
             config.target_rr = (t1, t2)
             interpreted.append(f"Target R:R: {t1:g} / {t2:g}")
             matched_anything = True
@@ -207,4 +208,10 @@ def parse_strategy_description(text: str, name: str = "Parsed Strategy") -> Pars
         if not matched_anything:
             warnings.append(f'Could not understand: "{sentence}"')
 
+    # SB-UX SU4: say what was not stated - it stays off, nothing is filled in.
+    if config.long_conditions or config.short_conditions:
+        if config.stop_loss_atr_mult is None:
+            interpreted.append("Stop loss: not stated - off")
+        if config.target_rr is None:
+            interpreted.append("Target: not stated - off")
     return ParseResult(config=config, interpreted=interpreted, warnings=warnings)

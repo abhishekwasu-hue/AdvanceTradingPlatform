@@ -16,9 +16,9 @@ import re
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.core.enums import SignalDirection, StrategyCategory
+from app.core.enums import SignalDirection, StrategyCategory, grade_from_score
 from app.core.models import Signal
 from app.indicators.directional import adx as adx_indicator
 from app.indicators.momentum import rsi as rsi_indicator
@@ -283,9 +283,11 @@ class CustomStrategyConfig(BaseModel):
     timeframe: str = "5min"
     long_conditions: List[Condition] = Field(default_factory=list)
     short_conditions: List[Condition] = Field(default_factory=list)
-    stop_loss_atr_mult: float = Field(default=1.0, gt=0)
+    # DEF-0 / SB-UX SU4 (owner): the stop, the targets and the minimum R:R are the trader's own values; blank (None) =
+    # off - no stop-loss exit, no target exit, no reward:risk filter. Nothing is pre-filled here or in the builder.
+    stop_loss_atr_mult: float | None = Field(default=None, gt=0)
     atr_period: int = Field(default=14, gt=0, le=500)
-    target_rr: Tuple[float, float] = (1.5, 2.0)
+    target_rr: tuple[float, float] | None = None
     min_rr: Optional[float] = Field(default=None, gt=0)
 
     @field_validator("min_rr", mode="before")
@@ -296,6 +298,22 @@ class CustomStrategyConfig(BaseModel):
             return None if value is not None and not isinstance(value, bool) and float(value) == LEGACY_MIN_RR else value
         except (TypeError, ValueError):
             return value
+
+    @field_validator("target_rr")
+    @classmethod
+    def _targets_positive(cls, value: tuple[float, float] | None) -> tuple[float, float] | None:
+        if value is not None and not all(float(v) > 0 for v in value):
+            raise ValueError("Each target must be above 0 R (leave the target blank for none)")
+        return value
+
+    @model_validator(mode="after")
+    def _r_needs_a_stop(self) -> "CustomStrategyConfig":
+        # A target and a minimum reward:risk are multiples of the risk, which only a stop defines: said, never guessed.
+        if self.target_rr is not None and self.stop_loss_atr_mult is None:
+            raise ValueError("A target in R needs your stop-loss: set a stop, or leave the target blank")
+        if self.min_rr is not None and self.target_rr is None:
+            raise ValueError("A minimum reward:risk needs your target: set a target, or leave the minimum blank")
+        return self
 
     def model_post_init(self, __context: Any) -> None:
         if not self.long_conditions and not self.short_conditions:
@@ -354,27 +372,29 @@ class DeclarativeStrategy(BaseStrategy):
         df = data[self.config.timeframe]
         timestamp = df.index[-1]
         close = df["close"].iloc[-1]
-        atr_last = atr_indicator(df, self.config.atr_period).iloc[-1]
+        mult = self.config.stop_loss_atr_mult
+        atr_last = float(atr_indicator(df, self.config.atr_period).iloc[-1]) if mult is not None else 0.0
 
-        if pd.isna(atr_last):
+        if mult is not None and pd.isna(atr_last):
             return self.no_trade(symbol, timestamp, ["ATR not yet warmed up"])
 
-        long_holds, long_labels = self._side_holds(self.config.long_conditions, df)
-        if long_holds:
-            stop_loss = close - atr_last * self.config.stop_loss_atr_mult
-            return self.build_signal(
-                symbol, timestamp, SignalDirection.LONG, close, stop_loss, score=70,
-                reasons=[f"Long rule matched: {label}" for label in long_labels],
-                target_rr=self.config.target_rr,
-            )
-
-        short_holds, short_labels = self._side_holds(self.config.short_conditions, df)
-        if short_holds:
-            stop_loss = close + atr_last * self.config.stop_loss_atr_mult
-            return self.build_signal(
-                symbol, timestamp, SignalDirection.SHORT, close, stop_loss, score=70,
-                reasons=[f"Short rule matched: {label}" for label in short_labels],
-                target_rr=self.config.target_rr,
-            )
+        for direction, conditions, side in ((SignalDirection.LONG, self.config.long_conditions, "Long"),
+                                            (SignalDirection.SHORT, self.config.short_conditions, "Short")):
+            holds, labels = self._side_holds(conditions, df)
+            if not holds:
+                continue
+            reasons = [f"{side} rule matched: {label}" for label in labels]
+            if mult is None:
+                return self._signal_without_stop(symbol, timestamp, direction, close, reasons)
+            sign = -1 if direction == SignalDirection.LONG else 1
+            return self.build_signal(symbol, timestamp, direction, close, close + sign * atr_last * mult, score=70,
+                                     reasons=reasons, target_rr=self.config.target_rr)
 
         return self.no_trade(symbol, timestamp, ["No custom rule set fully matched on the latest bar"])
+
+    def _signal_without_stop(self, symbol: str, timestamp, direction: SignalDirection, close: float, reasons: List[str]) -> Signal:
+        """DEF-0 / SB-UX SU4: the trader set no stop - the signal carries none (stop 0 = "no stop set", DEF-0 D7 in
+        app/trading/exit_logic.py), so no target in R and no reward:risk either (the config refuses those without a stop)."""
+        return Signal(symbol=symbol, strategy_id=self.id, strategy_name=self.name, direction=direction, timestamp=timestamp,
+                      entry=round(float(close), 2), stop_loss=0.0, target1=None, target2=None, risk_reward=None,
+                      score=70, grade=grade_from_score(70), reasons=reasons, timeframe_combo="/".join(self.timeframes))

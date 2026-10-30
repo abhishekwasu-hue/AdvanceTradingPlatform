@@ -310,7 +310,7 @@ def test_the_text_parser_sets_a_minimum_only_when_the_words_state_one():
 
 def test_the_builder_api_keeps_an_own_1_2_and_a_blank_is_not_set():
     me = _org()
-    body = {"name": "p12b builder", "timeframe": "5min", "target_rr": [1.5, 2.0],
+    body = {"name": "p12b builder", "timeframe": "5min", "stop_loss_atr_mult": 1.0, "target_rr": [1.5, 2.0],     # his own (SB-UX SU4)
             "long_conditions": [{"left": {"type": "indicator", "indicator": "RSI", "period": 14}, "operator": "LT", "right": {"type": "value", "value": 30}}]}
     blank = client.post("/api/custom-strategies", headers=me["headers"], json=body)
     assert blank.status_code == 201, blank.text

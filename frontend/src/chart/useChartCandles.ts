@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
+import { reasonSentence } from "../api/errors";
 import type { CandleVolumeSource, CandlesResponse, OHLCVBar } from "../types";
 import { mergeBars, istDate } from "../components/chartHistory";
 import { liveTicks } from "../live/liveTicks";
@@ -69,14 +70,28 @@ export function refreshBars<T extends OHLCVBar>(bars: T[], tf: TimeframeId): T[]
   return tf === "week" || tf === "month" ? bars.slice(1) : bars;
 }
 
+/** A symbol the server answered with its own reason instead of bars (`reason` is its raw `error`, maybe unreadable). */
+export class SymbolReadError extends Error {
+  constructor(readonly reason: string | null) { super("no bars"); this.name = "SymbolReadError"; }
+}
+
 /** Plain words for a failed read: what happened, then what to do. */
 export function candleErrorText(error: unknown, symbol: string): string {
-  if (error instanceof ApiError && (error.status === 401 || error.status === 409 || error.status === 412)) {
+  // REV-1 M2: a 409 carries the server's reason (with byob on, a plan limit is a 409 too) - shown when readable.
+  if (error instanceof ApiError && error.status === 409) {
+    return reasonSentence(error.detail, "Your broker session has ended. Log in to your broker again, then reload this page.");
+  }
+  if (error instanceof ApiError && (error.status === 401 || error.status === 412)) {
     return "Your broker session has ended. Log in to your broker again, then reload this page.";
   }
   if (error instanceof ApiError && error.status === 429) return "Too many chart requests in a short time. Wait a minute, then try again.";
   if (error instanceof Error && error.message === "budget used") {
     return "Your broker's request limit is used up for the moment. The chart tries again within a minute.";
+  }
+  // REV-1 M2: the server's own reason for this symbol (a broker failure, an end-of-day-only plan, a lapsed session) -
+  // never "check the symbol" for a valid symbol the broker failed on.
+  if (error instanceof SymbolReadError) {
+    return reasonSentence(error.reason, `No prices for ${symbol} from your broker. Check the symbol, or pick another one.`);
   }
   if (error instanceof Error && error.message === "no bars") return `No prices for ${symbol} from your broker. Check the symbol, or pick another one.`;
   return "Prices could not be loaded from your broker. Check your connection, then try again.";
@@ -147,7 +162,7 @@ export class CandleFeed {
       const r = await this.fetchDays(first ? historyDaysFor(this.timeframe) : refreshDaysFor(this.timeframe));
       if (this.stopped) return;
       const entry: CandleEntry | undefined = r.symbols[this.symbol];
-      if (!entry || entry.error) throw new Error(entry?.error === "budget used" ? "budget used" : "no bars");
+      if (!entry || entry.error) throw entry?.error === "budget used" ? new Error("budget used") : new SymbolReadError(entry?.error ?? null);
       if (first && entry.bars.length === 0) {
         // C1: an empty answer is a state with its reason, never a silent empty chart; the next tick reads the whole
         // history again (a new contract's first bars then load).

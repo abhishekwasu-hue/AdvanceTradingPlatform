@@ -308,6 +308,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/alerts/unsubscribe"): P_UNSUBSCRIBE,
     ("GET", "/api/analytics/degradation"): "member",
     ("GET", "/api/analytics/summary"): "member",
+    # REV-1 M2: the Performance page - the caller's own trades only
+    ("GET", "/api/performance/summary"): "member",
+    ("GET", "/api/performance/vs-backtest"): "member",
     ("GET", "/api/api-keys"): "member",
     ("POST", "/api/api-keys"): "owner",
     ("GET", "/api/api-keys/scopes"): P_API_SCOPES,

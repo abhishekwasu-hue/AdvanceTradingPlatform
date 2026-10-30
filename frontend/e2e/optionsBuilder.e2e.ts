@@ -48,6 +48,7 @@ async function fillAndPickCondor(page: Page) {
   await set("Spot", "22000");
   await set("Strike step", "50");
   await set("Lot size", "75");
+  await set("Lots", "1");                                                     // REV-1 M2: the trader's own lots
   await set("Template width", "100");
   await set("Base IV %", "14");
   await set("Near expiry", "2026-10-15");
@@ -107,7 +108,7 @@ test("a strike follows the pointer when dragged", async ({ page, isMobile }) => 
   await expect.poll(() => evaluations.at(-1)?.legs.some((l) => l.strike === after)).toBe(true);
 });
 
-test("Place as basket shows the hedge-first basket; placing waits for the PAPER ticket", async ({ page }) => {
+test("Review basket shows the hedge-first basket; review only, nothing to place", async ({ page }) => {
   const { calls, baskets } = await builder(page);
   await fillAndPickCondor(page);
   await page.getByTestId("place-basket").click();
@@ -117,7 +118,8 @@ test("Place as basket shows the hedge-first basket; placing waits for the PAPER 
   await expect(orders.nth(1)).toContainText("BUY");
   await expect(orders.nth(2)).toContainText("SELL");
   await expect(orders.nth(0)).toContainText("75 qty");
-  await expect(page.getByTestId("basket-place")).toBeDisabled();
+  await expect(page.getByTestId("basket-place")).toHaveCount(0);                 // REV-1 M2: no button that can never be pressed
+  await expect(page.getByTestId("basket-close")).toBeVisible();
   await expect(page.getByTestId("basket-why-not")).toContainText("PAPER");
   expect(calls.posts.some((p) => /order|trading|execution/.test(p.url))).toBe(false);          // nothing placed anywhere
   expect(baskets.at(-1)?.underlying).toBe("NIFTY");

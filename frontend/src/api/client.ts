@@ -940,6 +940,9 @@ export const api = {
   rhythmSettings: () => request<RhythmSettings>("/rhythm/settings"),
   saveRhythmSettings: (prefs: RhythmPrefs) => request<RhythmSettings>("/rhythm/settings", { method: "PUT", body: JSON.stringify(prefs) }),
   analyticsDegradation: () => request<DegradationReport>("/analytics/degradation"),
+  // REV-1 M2: the Performance page - the signed-in user's own trades only (/analytics/* count the whole organisation).
+  performanceSummary: () => request<AnalyticsSummary>("/performance/summary"),
+  performanceVsBacktest: () => request<DegradationReport>("/performance/vs-backtest"),
   updateTradeJournal: (tradeId: number, body: { notes?: string | null; tags?: string[] | null }) =>
     request<TradeRecord>(`/trades/${tradeId}/journal`, { method: "PATCH", body: JSON.stringify(body) }),
   // Z10-e: the staged beta rollout (SUPER_ADMIN, MFA). Moving up is one stage at a time with a reason; audited.

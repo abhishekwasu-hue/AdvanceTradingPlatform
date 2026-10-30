@@ -233,7 +233,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
 
       {view === "chain" && <section aria-label="Chain" data-block="chain" data-tour="oc-chain" className="relative">
         {/* The toggle sits in the gap above the chain, centred over the strike column, so the chain does not move. */}
-        <ChainLadderV2 symbol={symbol} live={live} loading={chain.loading} problem={chain.problem} prefs={prefs} centreSuffix={trading.centreSuffix}
+        <ChainLadderV2 symbol={symbol} live={live} loading={chain.loading} problem={chain.problem} problemReason={chain.problemReason} prefs={prefs} centreSuffix={trading.centreSuffix}
           onPick={(row) => setPicked(row.strike)} onPickLeg={trading.onPickLeg} held={trading.held} setup={marks.size ? marks : undefined}
           toggle={(placed) => placed === "empty"
             ? <div className="mb-space-3 flex justify-center"><ViewToggle view={view} onView={setView} /></div>

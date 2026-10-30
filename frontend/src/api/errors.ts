@@ -136,5 +136,32 @@ export function errorSentence(e: unknown): string {
   const text = friendlyError(e).trim();
   if (!text || BARE_NOT_FOUND.test(text) || /^not found\. it may have been removed\.?$/i.test(text)) return NOT_AVAILABLE_MESSAGE;
   if (FEATURE_OFF.test(text)) return COMING_SOON_MESSAGE;
+  // REV-1 M2: a raw exception line anywhere in the text ("No candles: NIFTY: TypeError: ...") is developer text.
+  if (RAW_EXCEPTION.test(text) || RAW_EXCEPTION_INSIDE.test(text)) return SOMETHING_FAILED_MESSAGE;
   return text;
+}
+
+/** REV-1 M2: what a page shows when the only text it holds is a raw exception. */
+export const SOMETHING_FAILED_MESSAGE = "Something went wrong. Try again in a moment.";
+/** A raw exception line ("TypeError: x is undefined", "BrokerAPIError: 401 ...") or a stack trace - never shown. */
+const RAW_EXCEPTION = /^\s*[A-Za-z_][\w.]*(Error|Exception|Exit|Interrupt|Timeout)\b\s*(:|$)|Traceback \(most recent call last\)/;
+/** The same class-name line after other words ("...: KeyError: 'x'"). */
+const RAW_EXCEPTION_INSIDE = /[:;]\s+[A-Z]\w*(Error|Exception)\s*:/;
+/** Machine codes a batch answer uses as a per-item `error` ("budget used"): callers branch on them, never show them. */
+const MACHINE_CODE = /^[a-z_]+( [a-z_]+)?$/;
+
+/** REV-1 M2: the server's own per-item reason (a symbol's `error` in a batch answer) when it is a sentence a trader can
+ * read, else "" - a raw exception, a stack trace, a machine code or an empty value never reaches the screen. Callers
+ * show the reason, or their own plain fallback when this is "" (see `reasonSentence`). */
+export function serverReason(reason: unknown): string {
+  if (typeof reason !== "string") return "";
+  const text = reason.trim();
+  if (!text || RAW_EXCEPTION.test(text) || RAW_EXCEPTION_INSIDE.test(text) || MACHINE_CODE.test(text) || BARE_NOT_FOUND.test(text)) return "";
+  if (FEATURE_OFF.test(text)) return COMING_SOON_MESSAGE;
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
+/** The server's reason as the one sentence to show, or `fallback` when it sent none a trader can read. */
+export function reasonSentence(reason: unknown, fallback: string): string {
+  return serverReason(reason) || fallback;
 }

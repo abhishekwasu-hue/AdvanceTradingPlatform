@@ -4,7 +4,7 @@ import { cx } from "../components/primitives/cx";
 import { Info, TriangleAlert } from "lucide-react";
 import { useColourV2 } from "../ui/colourV2";
 import ChainTableV2 from "./ChainTableV2";
-import { TEXT, type ColumnPrefs } from "./model";
+import { TEXT, problemText, staleText, type ColumnPrefs } from "./model";
 import { STRIKE_RANGES, rowsAround } from "./spotChange";
 import type { ChainProblem } from "./useOptionChain";
 import type { ChainRow, LiveChain } from "./types";
@@ -15,11 +15,13 @@ import type { ChainRow, LiveChain } from "./types";
  * Greeks and quotes from the columns menu, the "ATM ± N" strike range and the tick flash (ChainTableV2). The Option chain
  * page and the Terminal place this one component; neither keeps a table of its own.
  */
-export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuffix = "", onPick, onPickLeg, held, setup, toggle, areaMarks }: {
+export function ChainLadderV2({ symbol, live, loading, problem, problemReason = "", prefs, centreSuffix = "", onPick, onPickLeg, held, setup, toggle, areaMarks }: {
   symbol: string;
   live: LiveChain | null;
   loading: boolean;
   problem: ChainProblem | null;
+  /** REV-1 M2: the server's own reason for `problem` (useOptionChain `problemReason`); "" shows the plain text. */
+  problemReason?: string;
   prefs: ColumnPrefs;
   /** The chain trading layer's recentre suffix (a tap on "ATM" recentres). */
   centreSuffix?: string;
@@ -39,7 +41,7 @@ export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuf
   return (
     <>
       {!(live && live.rows.length > 0) && toggle?.("empty")}
-      {problem && !live && <Note tone="warn">{problem === "no-session" ? TEXT.noSession : problem === "plan" ? TEXT.plan : TEXT.loadFailed}</Note>}
+      {problem && !live && <Note tone="warn">{problemText(problem, problemReason)}</Note>}
       {loading && !live && !problem && (
         <div aria-busy="true" className="space-y-space-2 rounded-panel border border-subtle bg-surface-1 p-space-4">
           <span className="sr-only">Loading the option chain</span>
@@ -68,7 +70,7 @@ export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuf
           </div>
           <ChainTableV2 live={shownLive ?? live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${centreSuffix}`} onPick={onPick}
             onPickLeg={onPickLeg} held={held} setup={setup} areaMarks={areaMarks} />
-          {problem && <p className="mt-space-2 text-t12 text-fg-muted">{TEXT.loadFailed}</p>}
+          {problem && <p data-chain-stale className="mt-space-2 text-t12 text-warn">{staleText(live, problem, problemReason)}</p>}
         </>
       )}
     </>

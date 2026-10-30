@@ -1,4 +1,4 @@
-import { errorSentence } from "../api/errors";
+import { errorSentence, serverReason } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card, Disclaimer } from "../components/ui";
@@ -53,6 +53,34 @@ function sampleChainFor(symbol: string, candles: OHLCVBar[]): OptionChain {
   return generateSampleOptionChain(symbol, lastClose, OPTION_TILTS[seed % OPTION_TILTS.length]);
 }
 
+/** REV-1 M2: a data warning as the trader reads it - "SYMBOL: the server's reason" when the reason is readable; a raw
+ * exception or a machine code becomes one plain line instead (never `TypeError: ...`). Duplicates are shown once. */
+export function readableWarnings(warnings: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const w of warnings) {
+    const at = w.indexOf(": ");
+    const symbol = at > 0 ? w.slice(0, at) : "";
+    const reason = serverReason(at > 0 ? w.slice(at + 2) : w);
+    const line = reason ? (symbol ? `${symbol}: ${reason}` : reason)
+      : symbol ? `${symbol}: your broker could not send its data just now.` : "Some data could not be read from your broker just now.";
+    if (!out.includes(line)) out.push(line);
+  }
+  return out;
+}
+
+/** REV-1 M2 (CLAUDE.md §5: numbers only in settings): the swing window the structure filters read with is the trader's
+ * own number, shown and changed on this page and remembered in this browser; nothing is pre-filled. */
+const SWING_KEY = "atp.scanner.swingWindow";
+
+export function swingWindowOf(text: string): number | null {
+  const n = Number(text.trim());
+  return text.trim() && Number.isInteger(n) && n >= 1 && n <= 20 ? n : null;
+}
+
+function readSwingText(): string {
+  try { return window.localStorage.getItem(SWING_KEY) ?? ""; } catch { return ""; }
+}
+
 function buildSymbolInput(symbol: string, timeframe: string, candles: OHLCVBar[], chain: OptionChain | null): ScannerSymbolInput {
   return { symbol, timeframe, candles, option_chain: chain };
 }
@@ -77,6 +105,11 @@ export default function ScannerPage() {
   const [lastRequest, setLastRequest] = useState<ScannerRequest | null>(null);
   // AMW-2 (flag `watchlists`): "Load watchlist" fills the symbols from one of the caller's own lists.
   const watchlistsOn = useFeatures().on("watchlists");      // UI2-0: the app's single /system/features read
+  const [swingText, setSwingTextState] = useState(readSwingText);
+  const setSwingText = (next: string) => {
+    setSwingTextState(next);
+    try { window.localStorage.setItem(SWING_KEY, next); } catch { /* not remembered in this browser */ }
+  };
 
   async function planWithAi() {
     if (aiText.trim().length < 5) return;
@@ -119,6 +152,11 @@ export default function ScannerPage() {
       setError("Enter at least one symbol.");
       return;
     }
+    const swingWindow = swingWindowOf(swingText);
+    if (structureFilters.length > 0 && swingWindow === null) {
+      setError("Set the swing window (1 to 20 bars) for the structure filters.");
+      return;
+    }
     setRunning(true);
     setError(null);
     setResult(null);
@@ -132,7 +170,8 @@ export default function ScannerPage() {
         indicator_conditions: indicatorConditions,
         structure_filters: structureFilters,
         option_filters: optionFilters,
-        swing_window: 3,
+        // Sent only when the trader set one; without structure filters the server does not read it.
+        ...(swingWindow !== null ? { swing_window: swingWindow } : {}),
       };
       const res = await api.runScanner(request);
       setLastRequest(request);
@@ -150,7 +189,7 @@ export default function ScannerPage() {
       <PageHeader title="Market Scanner" description="Filter a watchlist by indicator conditions (same building blocks as the Strategy Builder), price-action structure, and option-chain signals - only symbols clearing every configured filter are returned." />
 
       <DataSourceBar source={source} note="Option-chain filters read the broker's live chain in Broker mode and a sample chain otherwise." />
-      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-warn">{w}</div>)}
+      {readableWarnings(dataWarnings).map((w, i) => <div key={i} className="text-xs text-warn">{w}</div>)}
       <Disclaimer kind="signals" />
 
       <Card title="Describe the scan (AI)">
@@ -164,7 +203,7 @@ export default function ScannerPage() {
         <p className="text-xs text-fg-muted mt-2">The AI only translates your words into the filters below (same building blocks as the Strategy Builder); you review them and press Run. Without an AI key (Settings → AI) the built-in parser is used.</p>
         {aiPlan && (
           <div className="mt-2 text-xs space-y-1">
-            <div className="text-fg">{aiPlan.explanation} <span className="text-fg-muted">· {aiPlan.provider}{aiPlan.model ? `/${aiPlan.model}` : ""} · {aiPlan.prompt_version}</span></div>
+            <div className="text-fg">{aiPlan.explanation}</div>
             {aiPlan.warnings.map((w, i) => <div key={i} className="text-warn">{w}</div>)}
           </div>
         )}
@@ -207,6 +246,16 @@ export default function ScannerPage() {
       </Card>
 
       <Card title="Price-action / structure filters">
+        <label className="mb-2 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
+          Swing window (bars on each side of a swing high or low)
+          <input
+            type="number" min={1} max={20} step={1} inputMode="numeric" aria-label="Swing window"
+            className="w-16 rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
+            value={swingText}
+            onChange={(e) => setSwingText(e.target.value)}
+          />
+          <span>Your own number, 1 to 20; needed when a structure filter is added.</span>
+        </label>
         <div className="space-y-1.5">
           {structureFilters.map((f, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2 rounded border border-border bg-surface-2/40 px-2 py-2">
@@ -333,10 +382,11 @@ export default function ScannerPage() {
           )}
           {aiRead && (
             <div className="mb-3 rounded-lg border border-border bg-surface-2/40 p-3 text-xs space-y-2">
-              <div className="text-fg">{aiRead.summary} <span className="text-fg-muted">· {aiRead.provider}{aiRead.model ? `/${aiRead.model}` : ""}</span></div>
+              <div className="text-fg">{aiRead.summary}</div>
               {aiRead.ranked.map((r) => (
                 <div key={r.symbol} className="rounded border border-border/60 p-2">
-                  <div className="flex items-center justify-between"><span className="font-bold text-fg">{r.symbol} <span className="text-fg-muted font-normal">· regime {r.regime ?? "?"}</span></span>{r.score != null && <span className={`font-bold ${r.score >= 70 ? "text-up" : r.score >= 50 ? "text-fg" : "text-down"}`}>{r.score}</span>}</div>
+                  {/* REV-1 M2 (CLAUDE.md §3): no 0-100 score and no colour rating - a description, never a ranking. */}
+                  <div className="font-bold text-fg">{r.symbol}{r.regime && <span className="text-fg-muted font-normal"> · {r.regime}</span>}</div>
                   <div className="text-fg-muted mt-0.5">{r.thesis}</div>
                   {r.risks && <div className="text-warn mt-0.5">Risks: {r.risks}</div>}
                   <div className="text-fg-muted mt-0.5">Next: {r.next_step}</div>

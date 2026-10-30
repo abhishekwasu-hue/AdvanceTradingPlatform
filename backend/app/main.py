@@ -751,7 +751,13 @@ async def backtest(
     body = BacktestBody(**request.model_dump())
     strategy = with_template_exits(strategy, body)                     # section 5: a template's exit choice (422 if it does not fit)
     runner = await BacktestRunner.build(body, risk_config, session, tenant_id=user.tenant_id if user is not None else None)
-    result = await run_in_threadpool(runner.run, strategy, base_df)        # CPU-bound pandas work off the event loop (P0.1 / S3)
+    # REV-S3 (R6): a template gets the history its recipe reads before the window (warm-up only, never traded), or the
+    # result says plainly what the test lacked (app/backtest/warmup.py).
+    from app.backtest import warmup
+    history = await warmup.fetch_history(session, user, request.data_source, request.symbol, request.base_timeframe, base_df, strategy)
+    prepared = await run_in_threadpool(warmup.prepare, strategy, base_df, history)
+    result = await run_in_threadpool(runner.run, prepared.strategy, prepared.frame)   # CPU-bound pandas work off the event loop (P0.1 / S3)
+    result.history = prepared.history()
     # Phase J2: the run is recorded (strategy, params, data span, metrics) and metered against the plan.
     result.run_id = await record_run(session, user, body, result)
     await meter(session, user.tenant_id, "backtest", 1, source="api", metadata={"strategy_id": request.strategy_id, "bars": len(request.candles)})

@@ -216,7 +216,7 @@ export function ActivationPanel() {
   const when = (iso: string | null) => (iso ? shortDate(iso) : "-");
   return (
     <Panel title="Activation" id="activation"
-      note={"The first steps after signing up: a broker connected, a first paper bot and a first journal entry. Activated = all three. Platform operators are not counted."}>
+      note={"The first steps after signing up: a broker connected, a first trading bot and a first journal entry. Activated = all three. Platform operators are not counted."}>
       <div className="mb-space-3 flex flex-wrap items-center gap-space-2" role="group" aria-label="Signed up in the last">
         {[30, 90, 365].map((d) => (
           <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)}
@@ -238,7 +238,7 @@ export function ActivationPanel() {
           {data.people.length === 0 ? <p className="text-t12 text-fg-muted">Nobody signed up in this period.</p> : (
             <Scroll>
               <table className="w-full text-t12">
-                <thead><tr><th className={TH}>Person</th><th className={TH}>Plan</th><th className={TH}>Signed up</th><th className={TH}>Broker</th><th className={TH}>Paper bot</th><th className={TH}>Journal</th><th className={TH}>Week 1</th><th className={TH}>Activated</th></tr></thead>
+                <thead><tr><th className={TH}>Person</th><th className={TH}>Plan</th><th className={TH}>Signed up</th><th className={TH}>Broker</th><th className={TH}>Trading bot</th><th className={TH}>Journal</th><th className={TH}>Week 1</th><th className={TH}>Activated</th></tr></thead>
                 <tbody>
                   {data.people.map((p) => (
                     <tr key={p.id} data-activation-user={p.id} className="border-t border-subtle">

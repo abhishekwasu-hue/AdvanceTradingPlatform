@@ -79,6 +79,7 @@ def result_hash(result: Any) -> str:
     skip = {"run_id", "reproducibility"} | ({"execution"} if getattr(result, "execution", None) is None else set())
     if getattr(result, "loss_streak", None) is None:
         skip.add("loss_streak")     # CP6-15: a run whose pause never engaged hashes as before
+    skip.add("history")             # REV-S3: words about the history the run had (the data hash already covers its bars)
     payload = result.model_dump(mode="json", exclude=skip)
     return _sha256(canonical_json(payload).encode())
 

@@ -24,7 +24,7 @@ shells (the four-step wizard stays at Settings -> Setup, but nothing on the fron
 - telegram:  the organisation's TELEGRAM alert channel is on and its last send went through (the alerts rule above,
              Telegram only).
 An Upstox Analytics Token counts as a broker for PAPER trading: it is unexpired and its last probe found the candle
-endpoints it serves (`upstox_analytics.analytics_usable`, the market-data gate's own rule), so a paper bot can read
+endpoints it serves (`upstox_analytics.analytics_usable`, the market-data gate's own rule), so a trading bot can read
 prices without the daily login. Orders always need the daily login, and nothing here makes a LIVE order possible.
 The card's own marks (`get_started_hidden_at`, `get_started_shown_at`, app/me/prefs.py SetupPrefs) decide whether it
 shows: see get_started_view.

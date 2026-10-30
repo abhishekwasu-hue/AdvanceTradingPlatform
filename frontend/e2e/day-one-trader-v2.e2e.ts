@@ -15,7 +15,7 @@ import { screenerTool } from "./screenerTools";
  *   1 Today (the dashboard)            2 Charts: the watchlist panel with the system groups
  *   3 Find setups: NIFTY 50, a ready gallery scan in one tap, its matches
  *   4 Copilot: a "Find setups" question, the answer lists the tools it used
- *   5 Ideas: an idea with "Try as a scan" and "Adopt as a paper strategy"; the adopt link opens the Paper bot form
+ *   5 Ideas: an idea with "Try as a scan" and "Adopt as a paper strategy"; the adopt link opens the Trading bot form
  *   6 The next morning before his broker login: Find setups shows the login gate; Test a strategy runs on ATP's stored
  *     Daily history (the "Prices from ..." line)
  *   7 Adopt the idea's template as a PAPER bot whose every entry waits for his Approve (his trading default)
@@ -258,7 +258,7 @@ async function mockWorld(page: Page): Promise<World> {
     return idea ? route.fulfill({ json: idea }) : route.fulfill({ status: 404, json: { detail: "no such idea" } });
   });
 
-  // Strategies, the Test page and the Paper bot
+  // Strategies, the Test page and the Trading bot
   await page.route(api("/strategies$"), (r) => r.fulfill({ json: S.strategies }));
   await page.route(api("/custom-strategies$"), (r) => r.fulfill({ json: [] }));
   await page.route(api("/strategy-templates$"), (r) => r.fulfill({ json: { templates: TEMPLATES } }));
@@ -424,7 +424,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await answer.scrollIntoViewIfNeeded();
         await shot("04b-copilot-answer");
 
-        // 5 Ideas: an idea with its scans and the adopt link; the adopt link opens the Paper bot form with the idea's settings
+        // 5 Ideas: an idea with its scans and the adopt link; the adopt link opens the Trading bot form with the idea's settings
         await go("/ideas");
         const idea = page.locator("[data-idea='T5']");
         await idea.locator("summary").click();
@@ -476,7 +476,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         // 8 Logged in again: Signals' day-one card, then his watch with each symbol's structure state
         world.broker = true;
         await go("/signals");
-        // Day-one fix 7: with his paper bot on, Signals shows it first; watching a whole list is one tap away.
+        // Day-one fix 7: with his trading bot on, Signals shows it first; watching a whole list is one tap away.
         await page.locator("[data-day-one-also-list]").click();
         const card = page.locator("[data-day-one='setup']");
         await expect(card.getByRole("heading", { name: "Pick a ready strategy and a list to watch" })).toBeVisible();

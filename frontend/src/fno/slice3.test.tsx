@@ -206,7 +206,7 @@ describe("8b-k the auto journal: a draft from facts and his signal's structure w
     expect(legLine(DRAFT.legs[0])).toBe("Short NIFTYX24400PE · 150 units (2 lots) · in 150.00 · out 120.00 · +₹4,500.00");
     expect(closedHow(DRAFT)).toBe("Manual exit");
     expect(placedByLine(DRAFT)).toBe("Placed by you");
-    expect(placedByLine({ placed_by: "paper_bot", strategy: "Made-up bot" })).toBe("Placed by your paper bot (Made-up bot)");
+    expect(placedByLine({ placed_by: "paper_bot", strategy: "Made-up bot" })).toBe("Placed by your trading bot (Made-up bot)");
   });
 
   it("the card shows the draft, his signal's words and a notes field; saving is its only button", () => {

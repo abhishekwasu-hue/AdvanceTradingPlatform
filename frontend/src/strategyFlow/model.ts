@@ -12,7 +12,7 @@ import type {
  * Rules this file keeps:
  * - DEF-0: every number is the trader's own. A blank box is off (stop, target, minimum R:R); a value the engine needs
  *   (an indicator length, a level, the strikes, the expiry) stays empty until he gives it, and the step cannot go on.
- * - Nothing here places or starts anything: the last step hands the saved strategy to the Paper bot form, where he
+ * - Nothing here places or starts anything: the last step hands the saved strategy to the Trading bot form, where he
  *   presses Start on paper himself (PAPER only, ADR-0006).
  * - Only blocks the engine can evaluate are selectable; the price-action blocks it cannot evaluate yet are listed as
  *   "coming soon" and never sent.
@@ -63,7 +63,7 @@ export const TIMEFRAME_WORDS: Record<string, string> = {
   "1m": "1-minute", "5m": "5-minute", "15m": "15-minute", "30m": "30-minute", "1h": "1-hour", "1d": "Daily",
 };
 
-/** The Paper bot form's name for a symbol (its index list uses the exchange names). */
+/** The Trading bot form's name for a symbol (its index list uses the exchange names). */
 export function paperSymbol(symbol: string): string {
   const s = symbol.trim().toUpperCase();
   return ({ NIFTY: "NIFTY 50", BANKNIFTY: "NIFTY BANK" } as Record<string, string>)[s] ?? s;
@@ -380,7 +380,7 @@ export function optionBacktest(options: FlowOptions, timeframe: string | null): 
   return cfg;
 }
 
-/** The same choices as the Paper bot's contract rules (the bot trades exactly what was tested). */
+/** The same choices as the Trading bot's contract rules (the bot trades exactly what was tested). */
 export function paperContract(options: FlowOptions): ContractRules | null {
   const s = options.structure;
   if (s === null) return null;
@@ -445,9 +445,9 @@ export function resultSummary(r: BacktestResult): ResultSummary {
   };
 }
 
-// --- Step 6: the hand-over to the Paper bot ------------------------------------------------------------------------
+// --- Step 6: the hand-over to the Trading bot ------------------------------------------------------------------------
 
-/** What the Paper bot form receives in the navigation state (never in the address): the saved strategy, the symbol and
+/** What the Trading bot form receives in the navigation state (never in the address): the saved strategy, the symbol and
  * the contract he tested. The form only picks them; he presses Start on paper himself. */
 export interface FlowHandoff { flowStrategy: { strategyId: string; symbol: string; contract: ContractRules | null; name: string } }
 
@@ -459,7 +459,7 @@ export function handoffFromState(state: unknown): FlowHandoff["flowStrategy"] | 
   return { strategyId: f.strategyId, symbol: f.symbol, contract, name: typeof f.name === "string" ? f.name : "" };
 }
 
-/** The Paper bot request with the contract he tested in place of the form's own (PAPER stays; underlying drops option fields). */
+/** The Trading bot request with the contract he tested in place of the form's own (PAPER stays; underlying drops option fields). */
 const OPTION_FIELDS = ["option_position", "expiry_rule", "strike_rule", "strike_offset", "spread_width", "option_strategy", "max_lots"] as const;
 
 export function withTestedContract<T extends ContractRules>(req: T, contract: ContractRules | null | undefined): T {

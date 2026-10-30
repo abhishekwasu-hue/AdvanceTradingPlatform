@@ -51,8 +51,8 @@ describe("UX3 fix 10: signal text in structure words", () => {
 
   it("an internal bot number is never the caption", () => {
     const item = (name: string) => ({ source: { kind: "autopilot", name } } as Pick<SignalFeedItem, "source">);
-    expect(sourceCaption(item("Deployment #4"))).toBe("Paper bot");
-    expect(sourceCaption(item("Morning ORB"))).toBe("Paper bot · Morning ORB");
+    expect(sourceCaption(item("Deployment #4"))).toBe("Trading bot");
+    expect(sourceCaption(item("Morning ORB"))).toBe("Trading bot · Morning ORB");
   });
 });
 

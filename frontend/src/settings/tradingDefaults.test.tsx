@@ -198,7 +198,7 @@ describe("wiring: behind ui_v2, PAPER only, a page Part B can link", () => {
     expect(navItemFor("trading-defaults")?.title).toBe("My trading defaults");
   });
 
-  it("each form reads the defaults only with ui_v2 on (the full form only as the Paper bot's paper-only form)", () => {
+  it("each form reads the defaults only with ui_v2 on (the full form only as the Trading bot's paper-only form)", () => {
     expect(code(paperBotSource)).toContain('useTradingDefaults(!!user && features.on("ui_v2"))');
     expect(code(oldPageSource)).toContain('useTradingDefaults(paperOnly && !!user && features.on("ui_v2"))');
     expect(code(ticketSource)).toContain('useTradingDefaults(features.on("ui_v2"))');

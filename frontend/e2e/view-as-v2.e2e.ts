@@ -14,7 +14,7 @@ import { openAdmin, type Theme } from "./adminMocks";
 const SHOT = { animations: "disabled" as const, maxDiffPixelRatio: 0.02, timeout: 15_000 };
 const PERSON_ME = { id: 12, email: "tr****@example.com", tenant_id: 7, role: "USER", mfa_enabled: true, email_verified: true, scopes: [] };
 const VIEW = {
-  id: 41, user_id: 12, tenant_id: 7, name: "tr****@example.com", reason: "The person asked why a paper bot stopped",
+  id: 41, user_id: 12, tenant_id: 7, name: "tr****@example.com", reason: "The person asked why a trading bot stopped",
   started_at: "2026-10-22T05:30:00Z", expires_at: "2026-10-22T06:00:00Z", ended_at: null, end_reason: null, active: true,
   seconds_left: 1800, requests: 0, refused: 0, last_seen_at: null,
 };
@@ -40,7 +40,7 @@ async function viewRoutes(page: Page, seen: Seen) {
     return r.fulfill({ json: { ended: true } });
   });
   await page.route(A("/me/support-access$"), (r: Route) => r.fulfill({ json: { views: [
-    { id: 41, by: "ATP support", reason: "The person asked why a paper bot stopped", started_at: "2026-10-21T10:00:00Z", ended_at: "2026-10-21T10:20:00Z", active: false, read_only: true, requests: 18 },
+    { id: 41, by: "ATP support", reason: "The person asked why a trading bot stopped", started_at: "2026-10-21T10:00:00Z", ended_at: "2026-10-21T10:20:00Z", active: false, read_only: true, requests: 18 },
   ] } }));
 }
 
@@ -49,7 +49,7 @@ async function startView(page: Page) {
   await person.getByRole("button", { name: "View as this person" }).click();
   const start = page.getByRole("button", { name: "Start read-only view" });
   await expect(start).toBeDisabled();
-  await page.getByLabel("Why are you opening this account? (required)").fill("The person asked why a paper bot stopped");
+  await page.getByLabel("Why are you opening this account? (required)").fill("The person asked why a trading bot stopped");
   await expect(start).toBeEnabled();
   return start;
 }
@@ -89,7 +89,7 @@ test.describe("View as user behaviour", () => {
     const banner = page.locator("[data-view-as-banner='12']");
     await expect(banner).toContainText("Viewing as tr****@example.com - read only");
     await expect(banner).toContainText("min left");
-    expect(seen.starts).toEqual([{ user_id: 12, reason: "The person asked why a paper bot stopped" }]);
+    expect(seen.starts).toEqual([{ user_id: 12, reason: "The person asked why a trading bot stopped" }]);
     await expect.poll(() => seen.meAs.includes("Bearer view-token")).toBe(true);
     // The person's own Settings lists the support views (the view reads as the person).
     await page.goto("/settings/account");
@@ -147,6 +147,6 @@ test.describe("View as user behaviour", () => {
     await openAdmin(page, "/settings/account", { routes: (p) => viewRoutes(p, seen) });
     const card = page.locator("[data-support-access]");
     await expect(card).toContainText("ATP support viewed your account (read only)");
-    await expect(card).toContainText("Reason: The person asked why a paper bot stopped");
+    await expect(card).toContainText("Reason: The person asked why a trading bot stopped");
   });
 });

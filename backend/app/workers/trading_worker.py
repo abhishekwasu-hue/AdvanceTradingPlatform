@@ -640,7 +640,7 @@ class TradingWorker:
                             await settlement_watch.send_due(own, now)
                     except Exception as exc:  # noqa: BLE001 - a warning never blocks the cycle
                         logger.warning("Settlement warnings failed: %s", type(exc).__name__)
-                # Readiness C13 (app/growth/onboarding.py): the first-week e-mails (connect your broker, first paper bot, first
+                # Readiness C13 (app/growth/onboarding.py): the first-week e-mails (connect your broker, first trading bot, first
                 # signal review), each once, per organisation behind `onboarding_emails`; nothing without the platform mailer
                 # and PUBLIC_BASE_URL. Its own session; read-only towards trading.
                 if self._last_onboarding_check is None or now - self._last_onboarding_check >= timedelta(minutes=ONBOARDING_EVERY_MINUTES):

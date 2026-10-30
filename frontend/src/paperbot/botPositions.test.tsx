@@ -6,7 +6,7 @@ import { BotPositionsV2, botOpenPnl, botPositions, exitBotConsequence } from "./
 import { lastSignal, whyNoTrade } from "./model";
 import { exposure, trade } from "../trading/trading.fixture";
 
-/** UI-28 U2.4 (owner, 28 Oct): each Paper bot shows its own open P&L, its legs and one exit for its positions. */
+/** UI-28 U2.4 (owner, 28 Oct): each Trading bot shows its own open P&L, its legs and one exit for its positions. */
 describe("UI-28 U2.4 a bot's own positions", () => {
   const mine = trade({ id: 201, deployment_id: 9 });
   const other = trade({ id: 202, deployment_id: 3 });

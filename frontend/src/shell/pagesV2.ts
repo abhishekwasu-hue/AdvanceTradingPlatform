@@ -31,7 +31,7 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   setup: lazy(() => import("../setup/SetupPageV2")),
   // Settings redesign part C: Settings → My trading defaults (src/settings) at /settings/trading-defaults - v2 only.
   "trading-defaults": lazy(() => import("../settings/TradingDefaultsV2")),
-  // UX2 fix 4: the Paper bot page (src/paperbot) at /deployments - start a bot in three taps, your bots as cards.
+  // UX2 fix 4: the Trading bot page (src/paperbot) at /deployments - start a bot in three taps, your bots as cards.
   deployments: lazy(() => import("../paperbot/PaperBotV2")),
   // SB-UX SU1-SU6: Strategies › Build as one stepped flow (src/strategyFlow); the full builder of before under Advanced.
   "strategy-builder": lazy(() => import("../strategyFlow/StrategyFlowV2")),

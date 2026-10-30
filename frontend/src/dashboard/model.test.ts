@@ -145,6 +145,20 @@ describe("UI2-2 open positions", () => {
     expect(symbolPrices(positions, { ...exp, fx_missing: ["USD->INR"] })).toEqual({});
   });
 
+  it("REV-H4: the price is the server's own for the symbol, whatever scope the listed positions have", () => {
+    // Another member also holds RELIANCE: the organisation's notional is his 50 + the member's 150 at 2,948.20, while the
+    // page lists only his own 50. Notional / quantity would read 4x the price; the server's price is the price.
+    const orgWide = exposure({ price_source: "ltp", priced_symbols: ["RELIANCE"], prices: { RELIANCE: 2948.2 }, by_symbol: [
+      { symbol: "RELIANCE", positions: 2, quantity: 200, notional: 589640, pct_of_capital: 0, unrealised_pnl: -2800, risk_at_stop: 0, strategies: [] },
+    ] });
+    const mine = [trade(3, "RELIANCE", "LONG", 50, 2962.2, "PAPER")];
+    expect(symbolPrices(mine, orgWide)).toEqual({ RELIANCE: 2948.2 });
+    expect(positionRows(mine, orgWide)[0].pnl).toBeCloseTo(-700, 6);
+    // an unpriced symbol in `prices` is not taken; a conversion still blocks every derived price
+    expect(symbolPrices(mine, { ...orgWide, priced_symbols: [] })).toEqual({});
+    expect(symbolPrices(mine, { ...orgWide, fx_rates_used: { "USD->INR": 84 } })).toEqual({});
+  });
+
   it("shows at most five", () => {
     expect(positionRows(Array.from({ length: 8 }, (_, i) => trade(i, `S${i}`, "LONG", 1, 1)), null)).toHaveLength(5);
   });
@@ -167,7 +181,7 @@ describe("UI2-2 active signals (today's entry proposals)", () => {
     expect(s.taken).toBe(1);
     expect(s.rows.map((r) => r.id)).toEqual([2, 3, 5]);
     expect(s.rows[0]).toMatchObject({ time: "10:42", symbol: "NIFTY 50", side: "Long", setup: "Opening-range breakout, retest held",
-      source: "Paper bot · Opening Range Breakout", status: "Waiting for you", waiting: true });
+      source: "Trading bot · Opening Range Breakout", status: "Waiting for you", waiting: true });
     expect(s.rows[0]).not.toHaveProperty("levels");                                 // UX3 fix 10: no prices in signal text
     expect(s.rows[1]).toMatchObject({ side: "Short", setup: "Opening Range Breakout", source: "Scan · Opening Range Breakout" });
     expect(s.rows[2].status).toBe("Skipped");
@@ -199,9 +213,9 @@ describe("UI2-2 needs attention", () => {
     expect(rows.map((r) => r.id)).toEqual(["login", "approvals", "paused", "lockout", "exposure"]);
     expect(rows[0]).toMatchObject({ title: "Log in to Upstox", tone: "warn", action: { label: "Log in", login: true } });
     expect(rows[1].title).toBe("3 trades are waiting for your approval");              // the snoozed one waits
-    expect(rows[1].detail).toBe("NIFTY 50 long from Paper bot · NIFTY BANK short from Scan · 1 more · first one expires in 8 min");
+    expect(rows[1].detail).toBe("NIFTY 50 long from Trading bot · NIFTY BANK short from Scan · 1 more · first one expires in 8 min");
     expect(rows[1].action).toEqual({ label: "Review 3 trades", to: "/copilot/watchtower" });
-    expect(rows[2]).toMatchObject({ title: "Paper bot paused “Mean reversion · BANKNIFTY”", action: { to: "/deployments" } });
+    expect(rows[2]).toMatchObject({ title: "Trading bot paused “Mean reversion · BANKNIFTY”", action: { to: "/deployments" } });
     expect(rows[3]).toMatchObject({ title: "New trades are paused for today", detail: "Today's loss reached your limit." });
   });
 

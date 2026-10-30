@@ -248,10 +248,13 @@ def test_an_organisation_minimum_applies_the_same_after_the_strategy(org, expect
     assert got["scanner"] == [True] * len(ATTEMPTS)          # the signal itself is not filtered; the risk engine decides
 
 
-def test_the_built_in_strategies_keep_their_own_stated_minimum():
+def test_the_built_in_strategies_name_no_minimum():
+    # REV-B2 (owner order 30 Oct): a built-in's min_rr compared two of its own fixed constants and never acted, so it is
+    # removed (tests/test_rev1_m2_builtin_reasons.py proves the trades are unchanged). A strategy's own min_rr (above)
+    # and the organisation's minimum still apply.
     from app.strategy_engine.registry import registry
     for s in registry.list_all():
-        assert s.params.get("min_rr") is not None and float(s.params["min_rr"]) <= float(s.params["target_rr"][0]), s.id
+        assert "min_rr" not in s.params, s.id
 
 
 # --- custom (no-code) strategies: no built-in minimum, a stored 1.2 = not set (TT12-1 rule), his own value kept -------------------

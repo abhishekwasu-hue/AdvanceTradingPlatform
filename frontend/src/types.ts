@@ -52,7 +52,7 @@ export interface TradeRecord {
   tags?: string[];
   /** M45 MB-7 (flags `ui_v2` + `multi_account`): the caller's own simulated PAPER account of this position, else null. */
   account_label?: string | null;
-  /** UI-28 U2.4: the Paper bot that opened this trade (null: entered by hand or by a webhook). */
+  /** UI-28 U2.4: the Trading bot that opened this trade (null: entered by hand or by a webhook). */
   deployment_id?: number | null;
   mode: string;
   symbol: string;
@@ -246,6 +246,8 @@ export interface BacktestResult {
   options?: OptionBacktestSummary | null;
   // CP6-15: what the losses-in-a-row pause did in this run; absent when the limit was never reached.
   loss_streak?: { mode: LossStreakPause; limit: number; pauses: number; first_paused_at: string | null; held_to_end: boolean; note: string } | null;
+  /** REV-S3: a template run's history before the test window; `note` is one plain sentence when the test lacked it. */
+  history?: { note: string | null; needed_days: number; warmup_days: number } | null;
 }
 
 // Phase W: historical option backtests.
@@ -2146,6 +2148,8 @@ export interface PortfolioExposure {
   short_notional: number; gross_pct_of_capital: number; unrealised_pnl: number; realised_today: number; risk_at_stops: number;
   risk_pct_of_capital: number; largest_symbol_pct: number; by_symbol: SymbolExposure[]; by_strategy: Record<string, number>;
   by_mode: Record<string, number>; warnings: string[]; price_source: "ltp" | "mark" | "entry"; priced_symbols: string[];
+  /** REV-H4: the price each priced symbol was valued at (absent from an older server). */
+  prices?: Record<string, number>;
   /** AUD-V2: symbols valued at the last stored mark (no live price, e.g. after hours) -> when that mark was taken. */
   marks?: Record<string, string>;
   /** Phase P3: the base currency and the conversions applied (a non-INR symbol is converted before aggregating). */

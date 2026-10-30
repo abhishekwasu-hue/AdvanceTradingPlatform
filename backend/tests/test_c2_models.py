@@ -39,7 +39,9 @@ GOLDEN_RISK = RISK.model_copy(update={"loss_streak_pause": "until_resume"})
 def _run(strategy, models=None, risk=None):
     daily = strategy.timeframes[0] == "day"
     df = crafted_bars(208 if daily else 4, daily=daily)
-    return engine.run_backtest(strategy, df, "NIFTY 50", "day" if daily else "1min", risk or RISK, models=models)
+    # REV-S1: the golden was recorded before the backtest took the live INTRADAY cut-off / square-off (crafted bars run
+    # around the clock); it is re-run on that engine. The session rules are tested in tests/test_rev1_s1_s2_backtest_intraday.py.
+    return engine.run_backtest(strategy, df, "NIFTY 50", "day" if daily else "1min", risk or RISK, models=models, session_rules=False)
 
 
 def _golden_hash(result):

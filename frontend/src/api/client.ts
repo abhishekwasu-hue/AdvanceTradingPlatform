@@ -927,7 +927,9 @@ export const api = {
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-disable`, { method: "POST", body: JSON.stringify({ reason }) }),
   enableMemberTrading: (memberId: number) =>
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-enable`, { method: "POST" }),
-  portfolioExposure: (livePrices = true) => request<PortfolioExposure>(`/portfolio/exposure?live_prices=${livePrices}`),
+  /** REV-H4: `mine` reads only the caller's own open trades (the scope of `/positions?mine=true`). */
+  portfolioExposure: (livePrices = true, mine = false) =>
+    request<PortfolioExposure>(`/portfolio/exposure?live_prices=${livePrices}${mine ? "&mine=true" : ""}`),
   // UI2-2: the v2 dashboard's market strip - three indices and the market state in one read-only call.
   // CP-UX CU2: the Copilot's numbers strip adds SENSEX (BSE) with `sensex`.
   marketStrip: (opts: { sensex?: boolean } = {}) => request<MarketStrip>(opts.sensex ? "/market/strip?sensex=true" : "/market/strip"),

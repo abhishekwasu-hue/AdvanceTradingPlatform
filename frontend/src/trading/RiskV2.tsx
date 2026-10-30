@@ -12,39 +12,73 @@ import { Details, PageFootnote } from "../ui/numbersFirst";
 import { useLiveHidden } from "../settings/useLiveHidden";
 import { TermHint } from "../ui/TermHint";
 import {
-  LOSS_STREAK_CHOICES, drawdownOrderProblem, entriesWord, failedText, fieldProblem, guardianLine, lastResumeText, lossStreakNote, todayRisk,
+  LOSS_STREAK_CHOICES, drawdownOrderProblem, drawdownSentence, entriesWord, failedText, fieldProblem, guardianLine, lastResumeText, limitDraft,
+  limitValue, lossStreakNote, todayRisk,
 } from "./model";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, ShareBarV2, StateChipV2, TileV2, TilesV2 } from "./PartsV2";
 import { LIMIT_FIELDS as SETUP_LIMIT_FIELDS, RISK_LABELS, SETUP_PATH, limitText, type LimitField } from "../setup/model";
 import { MarketEventsV2, OrgLimitsV2, RiskChecksV2 } from "./RiskPartsV2";
 
-interface FieldSpec { key: keyof RiskConfig; label: string; unit?: string; hint?: GlossaryKey; ceiling?: string; minimum?: string; help: string; step?: string }
+interface FieldSpec {
+  key: keyof RiskConfig; label: string; unit?: string; hint?: GlossaryKey; ceiling?: string; minimum?: string; help: string; step?: string;
+  /** REV-H5 (DEF-0): the limit may be "Not set" (null): a blank field saves as not set. */
+  optional?: boolean;
+  /** REV-H5: the risk engine reads 0 as a real limit here, so 0 blocks every new entry (said in the help). */
+  zeroBlocks?: boolean;
+  /** REV-H5: what a blank field means, when it is not simply "no limit". */
+  blank?: string;
+}
 
 /** The account's own limits (today's "Risk Management" fields, in plain words; same keys, same save). */
 const LIMIT_FIELDS: FieldSpec[] = [
-  { key: "capital", label: "Capital", unit: "₹", help: "The money your sizes and limits are worked out from." },
-  { key: "risk_per_trade_pct", label: "Risk per trade", unit: "% of capital", step: "0.1", ceiling: "risk_per_trade_pct", help: "The most one trade can lose at its stop." },
-  { key: "max_daily_loss_pct", label: "Daily loss limit", unit: "% of capital", hint: "daily-loss-limit", step: "0.1", ceiling: "max_daily_loss_pct", help: "New entries stop for the day once your losses reach it." },
-  { key: "max_trades_per_day", label: "Trades per day", help: "New entries allowed in one day." },
-  { key: "max_open_positions", label: "Open positions", help: "Positions open at the same time." },
-  { key: "max_consecutive_losses", label: "Losses in a row", help: "New entries pause after this many losing trades in a row. The choice below says when they start again." },
+  { key: "capital", label: "Capital", unit: "₹", optional: true, blank: " Leave it blank to use your paper account balance.", help: "The money your sizes and limits are worked out from." },
+  { key: "risk_per_trade_pct", label: "Risk per trade", unit: "% of capital", step: "0.1", ceiling: "risk_per_trade_pct", optional: true, help: "The most one trade can lose at its stop." },
+  { key: "max_daily_loss_pct", label: "Daily loss limit", unit: "% of capital", hint: "daily-loss-limit", step: "0.1", ceiling: "max_daily_loss_pct", optional: true, zeroBlocks: true, help: "New entries stop for the day once your losses reach it." },
+  { key: "max_trades_per_day", label: "Trades per day", optional: true, zeroBlocks: true, help: "New entries allowed in one day." },
+  { key: "max_open_positions", label: "Open positions", optional: true, zeroBlocks: true, help: "Positions open at the same time." },
+  { key: "max_consecutive_losses", label: "Losses in a row", optional: true, zeroBlocks: true, help: "New entries pause after this many losing trades in a row. The choice below says when they start again." },
   { key: "min_risk_reward", label: "Lowest reward to risk", hint: "reward-risk", step: "0.1", help: "0 = not set: no minimum. Set your own and a trade whose target pays less than this for each rupee at risk is refused." },
   { key: "lot_size", label: "Lot size", hint: "lot", help: "Units in one lot, used to size an order." },
 ];
 
 /** Phase V1: the risk guardian's rules, checked on every entry, paper or live, whatever built the strategy. */
 const GUARDIAN_FIELDS: FieldSpec[] = [
-  { key: "max_portfolio_risk_pct", label: "Risk across open positions", unit: "% of capital", hint: "risk-at-stops", step: "0.5", ceiling: "max_portfolio_risk_pct", help: "What every open stop and the new trade could lose together. Index positions count as one group." },
-  { key: "stop_cooldown_minutes", label: "Cool-down after a stop-out", unit: "minutes", hint: "cool-down", minimum: "min_stop_cooldown_minutes", help: "After a stop, new entries in the same index or stock wait this long." },
-  { key: "dd_level_1_pct", label: "Halve the size at a drawdown of", unit: "%", hint: "drawdown", step: "0.5", help: "This far below your equity peak, the risk per trade is halved." },
-  { key: "dd_level_2_pct", label: "Pause new entries at a drawdown of", unit: "%", step: "0.5", ceiling: "dd_level_2_pct", help: "This far below the peak, new entries pause until your equity recovers." },
-  { key: "event_size_cut_pct", label: "Size cut on event days", unit: "%", step: "5", help: "Used by a market event that cuts the size and names no cut of its own." },
+  { key: "max_portfolio_risk_pct", label: "Risk across open positions", unit: "% of capital", hint: "risk-at-stops", step: "0.5", ceiling: "max_portfolio_risk_pct", optional: true, help: "What every open stop and the new trade could lose together. Index positions count as one group." },
+  { key: "stop_cooldown_minutes", label: "Cool-down after a stop-out", unit: "minutes", hint: "cool-down", minimum: "min_stop_cooldown_minutes", optional: true, blank: " Leave it blank for no wait.", help: "After a stop, new entries in the same index or stock wait this long." },
+  { key: "dd_level_1_pct", label: "Halve the size at a drawdown of", unit: "%", hint: "drawdown", step: "0.5", optional: true, blank: " Leave it blank to keep it off.", help: "This far below your equity peak, the risk per trade is halved." },
+  { key: "dd_level_2_pct", label: "Pause new entries at a drawdown of", unit: "%", step: "0.5", ceiling: "dd_level_2_pct", optional: true, blank: " Leave it blank to keep it off.", help: "This far below the peak, new entries pause until your equity recovers." },
+  { key: "event_size_cut_pct", label: "Size cut on event days", unit: "%", step: "5", optional: true, blank: " Leave it blank for no cut.", help: "Used by a market event that cuts the size and names no cut of its own." },
 ];
 
 const ALL_FIELDS = [...LIMIT_FIELDS, ...GUARDIAN_FIELDS];
 type Drafts = Partial<Record<keyof RiskConfig, string>>;
 
-const draftsOf = (c: RiskConfig): Drafts => Object.fromEntries(ALL_FIELDS.map((f) => [f.key, String(c[f.key])])) as Drafts;
+// REV-H5: a limit that is not set (null) shows as a blank field, never the text "null".
+export const draftsOf = (c: RiskConfig): Drafts => Object.fromEntries(ALL_FIELDS.map((f) => [f.key, limitDraft(c[f.key] as number | null)])) as Drafts;
+
+/** REV-H5: the limits as saved - each blank optional field "Not set" (null), every other the number typed. */
+export function configFromDrafts(config: RiskConfig, drafts: Drafts, pause: LossStreakPause): RiskConfig {
+  const next: RiskConfig = { ...config, loss_streak_pause: pause };
+  for (const f of ALL_FIELDS) (next as unknown as Record<string, number | null>)[f.key] = limitValue(drafts[f.key] ?? "", !!f.optional);
+  return next;
+}
+
+/** REV-H5: the fields' problems with these drafts (only typed text is checked; a blank optional limit is "Not set"). */
+export function draftProblems(drafts: Drafts, ceilings: RiskCeilings | null): Partial<Record<keyof RiskConfig, string>> {
+  const out: Partial<Record<keyof RiskConfig, string>> = {};
+  for (const f of ALL_FIELDS) {
+    const p = fieldProblemOf(f, drafts, ceilings);
+    if (p) out[f.key] = p;
+  }
+  return out;
+}
+
+function fieldProblemOf(f: FieldSpec, drafts: Drafts, ceilings: RiskCeilings | null): string | null {
+  const ceiling = f.ceiling && ceilings ? ceilings[f.ceiling] : undefined;
+  const minimum = f.minimum && ceilings ? ceilings[f.minimum] : undefined;
+  return fieldProblem(drafts[f.key] ?? "", ceiling, minimum, !!f.optional)
+    ?? (f.key === "dd_level_1_pct" ? drawdownOrderProblem(drafts.dd_level_1_pct ?? "", drafts.dd_level_2_pct ?? "") : null);
+}
 
 /** Plan before trade answers 404 while its flag is off: no paper limit to show, not a failure. */
 const paperRiskOrNone = () => api.paperRisk().catch((e: unknown) => {
@@ -113,8 +147,7 @@ export default function RiskV2(_props: PageProps = {}) {
 
   const ceilingOf = (f: FieldSpec) => (f.ceiling && ceilings ? ceilings[f.ceiling] : undefined);
   const minimumOf = (f: FieldSpec) => (f.minimum && ceilings ? ceilings[f.minimum] : undefined);
-  const problemOf = (f: FieldSpec) => fieldProblem(drafts[f.key] ?? "", ceilingOf(f), minimumOf(f))
-    ?? (f.key === "dd_level_1_pct" ? drawdownOrderProblem(drafts.dd_level_1_pct ?? "", drafts.dd_level_2_pct ?? "") : null);
+  const problemOf = (f: FieldSpec) => fieldProblemOf(f, drafts, ceilings);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -124,8 +157,7 @@ export default function RiskV2(_props: PageProps = {}) {
       setNotice({ kind: "warn", text: "Fix the values marked below, then save again." });
       return;
     }
-    const next: RiskConfig = { ...config, loss_streak_pause: pauseDraft };
-    for (const f of ALL_FIELDS) (next as unknown as Record<string, number>)[f.key] = Number(drafts[f.key]);
+    const next = configFromDrafts(config, drafts, pauseDraft);
     setSaving(true);
     setNotice(null);
     try {
@@ -209,11 +241,12 @@ export default function RiskV2(_props: PageProps = {}) {
               </ul>
             )}
             {/* UX-11 U1: the guardian's sentence on demand, word for word. */}
-            {guardian
+            {/* REV-H5: only the drawdown levels that are set are stated; neither set, no sentence. */}
+            {guardian && drawdownSentence(guardian.settings.dd_level_1_pct, guardian.settings.dd_level_2_pct)
               ? (
                 <Details id="risk.today">
-                  <p className="text-t13 text-fg-muted">
-                    {`The size is halved at ${formatNumber(guardian.settings.dd_level_1_pct, 1)}% below your equity peak and new entries pause at ${formatNumber(guardian.settings.dd_level_2_pct, 1)}%. A winning streak never raises the size above normal.`}
+                  <p className="text-t13 text-fg-muted" data-guardian-sentence>
+                    {drawdownSentence(guardian.settings.dd_level_1_pct, guardian.settings.dd_level_2_pct)}
                   </p>
                 </Details>
               )
@@ -355,13 +388,14 @@ function LimitField({ spec, value, ceiling, minimum, problem, onChange, onBlur }
         <label htmlFor={id}>{spec.label}{spec.unit ? ` (${spec.unit})` : ""}</label>
         {spec.hint && <TermHint term={spec.hint} />}
       </div>
-      <input id={id} type="number" inputMode="decimal" step={spec.step ?? "1"} min={0} value={value}
+      <input id={id} type="number" inputMode="decimal" step={spec.step ?? "1"} min={0} value={value} placeholder={spec.optional ? "Not set" : undefined}
         onChange={(e) => onChange(e.target.value)} onBlur={onBlur}
         aria-invalid={problem ? true : undefined} aria-describedby={problem ? `${errId} ${helpId}` : helpId}
         className={`${FIELD} font-tabular ${problem ? "border-warn" : ""}`} />
       {problem && <p id={errId} role="alert" className="mt-space-1 text-t12 font-medium text-warn">{problem}</p>}
       <p id={helpId} className="mt-space-1 text-t12 text-fg-muted">
-        {spec.help}{typeof minimum === "number" && minimum > 0 ? ` At least ${formatNumber(minimum, Number.isInteger(minimum) ? 0 : 2)}.` : ""}
+        {spec.help}{spec.optional ? spec.blank ?? " Leave it blank for no limit." : ""}{spec.zeroBlocks ? " 0 blocks every new entry." : ""}
+        {typeof minimum === "number" && minimum > 0 ? ` At least ${formatNumber(minimum, Number.isInteger(minimum) ? 0 : 2)}.` : ""}
         {typeof ceiling === "number" ? ` Up to ${formatNumber(ceiling, Number.isInteger(ceiling) ? 0 : 2)}.` : ""}
       </p>
     </div>

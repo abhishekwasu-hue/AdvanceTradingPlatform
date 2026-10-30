@@ -164,7 +164,7 @@ test.describe("first-time guidance", () => {
   test("the welcome on the first sign-in: four cards, Next, and it ends on the Broker page", async ({ page }) => {
     const server = await open(page, "dashboard", NEW_USER);
     await expect(card(page)).toHaveAttribute("data-tour-card", "welcome-what", { timeout: 15_000 });
-    for (const title of ["Welcome to AiAlgoDesk", "Connect your broker", "Your paper bot", "Get alerts on your phone"]) {
+    for (const title of ["Welcome to AiAlgoDesk", "Connect your broker", "Your trading bot", "Get alerts on your phone"]) {
       await expect(card(page)).toContainText(title);
       if (title !== "Get alerts on your phone") await next(page).click();
     }

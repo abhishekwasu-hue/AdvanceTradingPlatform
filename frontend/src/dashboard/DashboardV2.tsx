@@ -32,7 +32,7 @@ import { PAGE_FLAGS } from "../shell/pageFlags";
  * Shown only while `ui_v2` is on (the v2 shell picks it for `/`, src/shell/pagesV2.ts); with the flag off today's
  * DashboardPage renders exactly as before.
  *
- * P3 (the owner's "simple front page"): the Get started card (three steps: broker, paper bot, Telegram; src/setup) replaces
+ * P3 (the owner's "simple front page"): the Get started card (three steps: broker, trading bot, Telegram; src/setup) replaces
  * UI2-7's Setup chip, the same card as today's dashboard. Nothing here opens the four-step setup wizard any more (it stays
  * at Settings → Setup). With no broker stored and the card showing, the card takes the gate's place (its first step is
  * "Connect your broker"), so the trader sees one card, not two.

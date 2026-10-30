@@ -483,7 +483,7 @@ PLATFORM_SMTP_PASSWORD = os.environ.get("PLATFORM_SMTP_PASSWORD", "")
 PLATFORM_SMTP_FROM = os.environ.get("PLATFORM_SMTP_FROM", "")
 PLATFORM_SMTP_STARTTLS = os.environ.get("PLATFORM_SMTP_STARTTLS", "true").strip().lower() not in {"0", "false", "no"}
 # Readiness C13: the first-week onboarding e-mails (flag `onboarding_emails`, OFF; nothing is sent without PLATFORM_SMTP_*
-# and PUBLIC_BASE_URL). Hours after sign-up for "connect your broker", "start your first paper bot" and "review your first
+# and PUBLIC_BASE_URL). Hours after sign-up for "connect your broker", "start your first trading bot" and "review your first
 # signal", in that order; each goes once, only inside the first week.
 ONBOARDING_EMAIL_AFTER_HOURS = os.environ.get("ONBOARDING_EMAIL_AFTER_HOURS", "2,48,120").strip()
 ONBOARDING_EMAIL_WINDOW_HOURS = int(os.environ.get("ONBOARDING_EMAIL_WINDOW_HOURS", "168"))

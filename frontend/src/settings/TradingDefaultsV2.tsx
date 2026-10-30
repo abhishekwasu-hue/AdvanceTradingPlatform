@@ -22,7 +22,7 @@ import { LIMITS_OFF, limitsFormOf, limitsOf, loadLimits, saveLimits, type Limits
 
 /**
  * Settings redesign part C: Settings → My trading defaults at `/settings/trading-defaults`, shown only while `ui_v2` is on
- * (the v2 shell routes it, src/shell/pagesV2.ts). The user's own starting values for a new paper bot, the full form
+ * (the v2 shell routes it, src/shell/pagesV2.ts). The user's own starting values for a new trading bot, the full form
  * ("More ways to trade") and the chain order ticket. A pre-fill, never a hidden rule: each form shows "from your
  * defaults" next to a value it took, and the value can be changed there. Nothing trades from this page and the server
  * never reads these values to trade. Only existing fields (review R7); no mode, broker routing or LIVE field. Risk limits
@@ -89,7 +89,7 @@ export default function TradingDefaultsV2(_props: PageProps = {}) {
   return (
     <div className="mx-auto w-full max-w-[760px] space-y-space-4" data-page="trading-defaults-v2">
       <PageTitleV2 title="My trading defaults"
-        subtitle="Your own starting values for a new paper bot and a chain order. They only fill in the form: you see each one marked there and can change it." />
+        subtitle="Your own starting values for a new trading bot and a chain order. They only fill in the form: you see each one marked there and can change it." />
       {/* DEF-0 D9: his own limits - every one not set until he sets it */}
       <MyLimitsCardV2 />
       {failed && !form ? <CardV2 title="My trading defaults"><LoadFailedV2 what="your defaults" /></CardV2>

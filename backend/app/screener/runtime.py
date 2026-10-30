@@ -317,6 +317,10 @@ class _Eval:
             node_ = node.kwargs.get(name)
             return None if node_ is None else _last(self.ev(node_, tf))
 
+        def gate_settings() -> dict[str, Any]:
+            """M55 T5: the level gate's named settings given (the rest: the ported defaults)."""
+            return {key: _last(self.ev(value, tf)) for key, value in node.kwargs.items()}
+
         def retest_forward(of: str, k_at: Optional[int]) -> Dict[str, Any]:
             """Strategy templates R7: the base breakout's own settings given to RetestEntry / RetestEntryRef as named
             arguments (k= also positional at `k_at`); each one left out keeps the breakout parameter's default, exactly as
@@ -517,6 +521,9 @@ class _Eval:
                 "gap_level": _text(2, _bkd("gap_level")), "gap_hold_min": num(3, _bkd("gap_hold_min"))}, num(4, _bkd("stop_atr_mult")),
                 tf=tf, bars=self._gap_bars(tf)),
             "RetestEntry": lambda: retest_entry(),
+            # M55 T5: the ported level gate as a series (app/price_action/level_gate/series.py), strategy template A1
+            "AreaGate": lambda: _area_gate(f, tf, "entry", str(self.ev(args[0], tf)), gate_settings()),
+            "AreaGateRef": lambda: _area_gate(f, tf, _text(0, "invalidation"), str(self.ev(args[1], tf)), gate_settings()),
             # Strategy templates R7 / R2: the retest's prices (the same B9 retests as RetestEntry with the same settings)
             "RetestEntryRef": lambda: _retest_ref(f, _text(0, "level"), str(self.ev(args[1], tf)), {
                 "retest_of": _text(2, _bkd("retest_of")), "retest_max_bars": num(3, _bkd("retest_max_bars")),
@@ -1184,6 +1191,19 @@ def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:
         return pd.Series(Bars(f, _breakout_params({})).dow(degree), index=f.index, dtype=object)
     except ValueError as exc:
         raise ScreenRuntimeError(str(exc)) from exc
+def _area_gate(f: pd.DataFrame, tf: str, what: str, side: str, settings: dict[str, Any]) -> pd.Series:
+    """M55 T5: AreaGate (the entry candles of one side) / AreaGateRef (their invalidation, NaN elsewhere)."""
+    from app.strategy_templates.area_gate import gate_series
+    try:
+        s = gate_series(f, tf, settings)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    up = side == "up"
+    if what == "entry":
+        return pd.Series(s.long if up else s.short, index=f.index, dtype=bool)
+    return pd.Series(s.long_stop if up else s.short_stop, index=f.index, dtype=float)
+
+
 def _zone(data: SymbolData, f: pd.DataFrame, tf: str, what: str, role: str, tolerance_pct: float, family: str) -> pd.Series:
     from app.screener.zones import zone_series
     return zone_series(data, f, tf, what, role, tolerance_pct, family)

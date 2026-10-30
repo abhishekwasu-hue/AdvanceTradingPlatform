@@ -112,6 +112,10 @@ describe("UX2 fix 4 model", () => {
     expect(botStatusText(bot())).toBe("Running");
     expect(botStatusText(bot({ status: "PAUSED", pause_reason: "paused from Autopilot tab" }))).toBe("Paused by you");
     expect(botStatusText(bot({ status: "PAUSED", pause_reason: "paused from the Trading bot page" }))).toBe("Paused by you");
+    // REV-1 M2: what the server really stores (deployments/routes.py: "Paused by user: <note>") - never "Paused: paused by user: ..."
+    expect(botStatusText(bot({ status: "PAUSED", pause_reason: "Paused by user: paused from the Trading bot page" }))).toBe("Paused by you");
+    expect(botStatusText(bot({ status: "PAUSED", pause_reason: "Paused by user" }))).toBe("Paused by you");
+    expect(botStatusText(bot({ status: "PAUSED", pause_reason: "Paused on AI proposal #12 (loss_streak), approved by user 3" }))).toBe("Paused by you (you approved a suggestion to pause it)");
     expect(botStatusText(bot({ status: "PAUSED", pause_reason: "3 losses in a row." }))).toBe("Paused: 3 losses in a row");
     expect(botStatusText(bot({ status: "PAUSED", pause_reason: "auto_paused: consecutive_failures>=5" }))).toBe("Paused");
     expect(botStatusText(bot({ status: "STOPPED" }))).toBe("Stopped");

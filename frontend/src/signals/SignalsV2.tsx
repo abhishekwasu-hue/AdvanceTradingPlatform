@@ -214,7 +214,7 @@ function Filters({ source, symbol, open, onToggle, onSource, onSymbol, updated }
         <SlidersHorizontal size={16} aria-hidden />Filter
       </button>
       <div id={panelId} className={cx("flex-wrap items-center gap-space-3 md:flex", open ? "flex" : "hidden")}>
-        <div role="radiogroup" aria-label="Source" className="grid w-full grid-cols-2 gap-space-1 rounded-panel bg-surface-2 p-space-1 sm:w-auto sm:grid-cols-4">
+        <div role="radiogroup" aria-label="Source" className="grid w-full grid-cols-2 gap-space-1 rounded-panel bg-surface-2 p-space-1 sm:flex sm:w-auto sm:flex-wrap">
           {SOURCES.map((s) => (
             <button key={s.id} type="button" role="radio" aria-checked={source === s.id} onClick={() => onSource(s.id)}
               className={cx("min-h-11 whitespace-nowrap rounded-control px-space-3 text-t14 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9",

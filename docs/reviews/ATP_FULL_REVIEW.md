@@ -278,7 +278,7 @@ Result unit: R = the strategy's own stop distance; "gross" = before entry slippa
 
 | Group | Result |
 |---|---|
-| 11 intraday built-ins | All 11 lose after slippage on both indices except MTF 5m/60m on NIFTY (+0.01R, 6 trades). Before slippage they sit between -0.16R and +0.18R per trade: no edge that survives costs. EMA + RSI 1m: 887 / 1056 trades in about 3 months, -0.34R / -0.38R per trade (gross -0.01R / +0.04R) - the cost decides it. |
+| 11 intraday built-ins | All 11 lose after slippage on both indices except MTF 5m/60m on NIFTY (+0.01R, 6 trades). Before slippage they sit between -0.16R and +0.18R per trade (leaving out the two 1-trade MTF 5m runs on BANKNIFTY): no edge that survives costs. EMA + RSI 1m: 887 / 1056 trades in about 3 months, -0.34R / -0.38R per trade (gross -0.01R / +0.04R) - the cost decides it. |
 | Ready-made on the Paper bot form | Opening range 5m: -0.22R (65 tr) / -0.18R (86 tr). VWAP + Supertrend 5m: -0.11R (82) / -0.06R (97). Swing EMA pullback (daily BANKNIFTY 10 y): +0.12R, 83 trades, PF 1.18, worst run -11.4R. |
 | 2 daily built-ins | Swing EMA pullback +0.12R (83 tr, PF 1.18); Swing breakout +0.15R (103 tr, PF 1.23) - the only positive results with a sample above 80 trades. |
 | 43 templates, 15 min | No template is positive on both indices with 30+ trades each. Positive on both but small samples: B3 Channel breakout (+0.06R / 11 tr, +0.03R / 13 tr). F1 Directional seller pack = D1 Supertrend flip (by design): -0.01R / -0.05R. |

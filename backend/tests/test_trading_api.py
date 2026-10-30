@@ -142,7 +142,8 @@ def test_paper_execute_applies_users_saved_risk_settings(monkeypatch):
     assert any("Max trades per day" in r for r in body["reasons"])
 
 
-def test_anonymous_paper_execute_still_works_without_persisting(monkeypatch):
+def test_anonymous_paper_execute_is_refused(monkeypatch):
+    """M55 O2: paper-execute is signed in only (it was an anonymous demo before)."""
     strategy = registry.get("ema_rsi_scalper_1m")
     monkeypatch.setattr(strategy, "analyze", lambda data, symbol: _fake_long_signal())
 
@@ -150,8 +151,7 @@ def test_anonymous_paper_execute_still_works_without_persisting(monkeypatch):
         "/api/strategies/ema_rsi_scalper_1m/paper-execute",
         json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}},
     )
-    assert response.status_code == 200
-    assert response.json()["executed"] is True
+    assert response.status_code == 401
 
 
 def test_paper_execute_risk_state_is_per_user_not_shared_globally(monkeypatch):
@@ -192,24 +192,25 @@ def test_paper_execute_risk_state_is_per_user_not_shared_globally(monkeypatch):
     )
     assert response_b.json()["executed"] is True
 
-    # Anonymous calls must also be unaffected.
+    # M55 O2: an anonymous call is refused outright (no anonymous demo path any more).
     anon = client.post(
         "/api/strategies/ema_rsi_scalper_1m/paper-execute",
         json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}},
     )
-    assert anon.json()["executed"] is True
+    assert anon.status_code == 401
 
 
 def test_signal_history_requires_authentication():
     assert client.get("/api/signal-history").status_code in (401, 403)
 
 
-def test_anonymous_enrich_does_not_persist_signal_history():
+def test_anonymous_enrich_is_refused():
+    """M55 O2: signal/enrich is signed in only - nothing anonymous to persist or not."""
     response = client.post(
         "/api/strategies/ema_rsi_scalper_1m/signal/enrich",
         json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}},
     )
-    assert response.status_code == 200
+    assert response.status_code == 401
 
 
 def test_authenticated_enrich_persists_signal_history(monkeypatch):

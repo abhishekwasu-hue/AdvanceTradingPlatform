@@ -316,7 +316,7 @@ def test_the_route_offers_adopt_only_with_strategy_templates_on(monkeypatch):
     by_id = {i["id"]: i for i in r.json()["ideas"]}
     assert by_id["T5"]["adopt"] == {"available": True, "template": "D1", "timeframe": "15m", "params": {"period": 12}, "note": None}
     assert not any(by_id[i]["adopt"]["available"] for i in by_id if i != "T5")
-    # the same settings are what the template's own adopt route turns into the paper bot pre-fill (nothing is created)
+    # the same settings are what the template's own adopt route turns into the trading bot pre-fill (nothing is created)
     pre = client.post("/api/strategy-templates/D1/adopt", headers=org["headers"],
                       json={"timeframe": "15m", "params": {"period": 12}})
     assert pre.status_code == 200, pre.text

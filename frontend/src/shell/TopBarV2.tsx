@@ -157,9 +157,11 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
         </button>
         <div className={`ml-auto flex shrink-0 items-center ${onAskAi ? "gap-0 md:gap-space-1" : "gap-space-1"}`}>
           {onAskAi && (
+            // NAV-1 (owner 30 Oct, "the AI button is far too small"): a filled, bold "AI" pill on a phone ("Ask AI" from md
+            // up) with a gentle pulse that stops under prefers-reduced-motion (no flashing).
             <button type="button" onClick={onAskAi} title="Ask AI" aria-label="Ask AI" aria-haspopup="dialog" aria-expanded={askAiOpen} data-ask-ai-open
-              className={`${iconButton} text-brand hover:text-brand md:mr-space-1 md:w-auto md:gap-space-2 md:border md:border-border md:px-space-3 md:text-t14 md:font-semibold`}>
-              <Sparkles size={18} aria-hidden /><span className="hidden md:inline">Ask AI</span>
+              className="inline-flex h-10 shrink-0 items-center gap-0.5 rounded-pill bg-brand px-1.5 text-t14 font-bold text-on-brand md:mr-space-1 md:px-space-3 shadow-sm transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 motion-safe:animate-pulse md:h-9 md:gap-space-2 md:text-t14">
+              <Sparkles size={16} aria-hidden /><span className="md:hidden">AI</span><span className="hidden md:inline">Ask AI</span>
             </button>
           )}
           <button type="button" onClick={onSearch} aria-label={COMMAND_LABEL} aria-haspopup="dialog" className={`${iconButton} md:hidden`}>

@@ -1,4 +1,4 @@
-"""P3 (a simple front page): the Dashboard's "Get started" card in `GET /api/me/setup` - three steps (broker, paper bot,
+"""P3 (a simple front page): the Dashboard's "Get started" card in `GET /api/me/setup` - three steps (broker, trading bot,
 Telegram) worked out from the caller's own and their organisation's rows, an Upstox Analytics Token counting as a broker
 for PAPER, the card hidden for good (`get_started_hidden_at`) and brought back from Help, bounded marks, and tenancy."""
 import asyncio
@@ -169,7 +169,7 @@ def test_an_analytics_token_that_serves_candles_counts_as_a_broker():
 @pytest.mark.parametrize("coverage, expires", [
     ({}, FAR),                                                              # saved, never probed: nothing proven
     ({ua.HISTORICAL: ua.REFUSED, ua.INTRADAY: ua.REFUSED}, FAR),            # the broker refused it
-    ({ua.WEBSOCKET: ua.WORKS, ua.QUOTES: ua.WORKS}, FAR),                   # no candles: a paper bot could not run
+    ({ua.WEBSOCKET: ua.WORKS, ua.QUOTES: ua.WORKS}, FAR),                   # no candles: a trading bot could not run
     ({ua.HISTORICAL: ua.WORKS}, datetime.now(timezone.utc) - timedelta(days=1)),   # expired
 ])
 def test_an_analytics_token_that_cannot_serve_candles_does_not_count(coverage, expires):

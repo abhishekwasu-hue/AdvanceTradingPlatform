@@ -184,7 +184,7 @@ test.describe("v2 shell 1440 desktop", () => {
     const nav = page.getByRole("navigation", { name: "Pages" });
     await expect(nav.locator("button[aria-expanded]")).toHaveCount(0);                  // nothing folds away
     await expect(nav.getByRole("link")).toHaveText([
-      "Today", "Charts", "Option chain", "Find setups", "Signals", "Paper bot", "My trades", "Performance",
+      "Today", "Charts", "Option chain", "Find setups", "Signals", "Trading bot", "My trades", "Performance",
       "Strategies", "AI Copilot", "News & events", "Broker", "Settings",
     ]);
     await expect(nav.getByRole("link", { name: "Today" })).toHaveAttribute("aria-current", "page");

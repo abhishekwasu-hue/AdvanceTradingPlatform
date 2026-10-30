@@ -471,7 +471,7 @@ export const LIMIT_SCOPES: { value: RiskScope; label: string; needsId: string | 
   { value: "ACCOUNT", label: "One broker account", needsId: "Account number" },
   { value: "PORTFOLIO", label: "All open positions", needsId: null },
   { value: "STRATEGY", label: "One strategy", needsId: "Strategy name" },
-  { value: "DEPLOYMENT", label: "One paper bot", needsId: "Paper bot number" },
+  { value: "DEPLOYMENT", label: "One trading bot", needsId: "Trading bot number" },
   { value: "INSTRUMENT", label: "One symbol", needsId: "Symbol" },
 ];
 
@@ -511,17 +511,46 @@ export function checkStatus(status: "PASS" | "WARN" | "BLOCK"): { label: string;
   return status === "BLOCK" ? { label: "Blocked", tone: "warn" } : status === "WARN" ? { label: "Warning", tone: "warn" } : { label: "Passed", tone: "neutral" };
 }
 
-/** A limit field's problem in words, or null: blank or not a number, below zero, below the platform's minimum, or above
- * its ceiling. The server checks the same again; this only says it next to the field before anything is sent. */
-export function fieldProblem(raw: string, ceiling?: number | null, minimum?: number | null): string | null {
+/** A limit field's problem in words, or null: not a number, below zero, below the platform's minimum, or above its
+ * ceiling. The server checks the same again; this only says it next to the field before anything is sent.
+ * REV-H5 (DEF-0): a blank field of a limit that may be "Not set" (`optional`) is no problem - it saves as not set - unless
+ * the platform asks for a minimum; only typed text is checked. A field that always holds a number still needs one. */
+export function fieldProblem(raw: string, ceiling?: number | null, minimum?: number | null, optional = false): string | null {
   const text = raw.trim();
+  const shown = (n: number) => formatNumber(n, Number.isInteger(n) ? 0 : 2);
+  const hasMinimum = typeof minimum === "number" && Number.isFinite(minimum) && minimum > 0;
+  if (text === "" && optional) return hasMinimum ? `The least allowed is ${shown(minimum as number)}.` : null;
   if (text === "") return "Enter a number.";
   const v = Number(text);
   if (!Number.isFinite(v)) return "Enter a number.";
   if (v < 0) return "Enter 0 or more.";
-  const shown = (n: number) => formatNumber(n, Number.isInteger(n) ? 0 : 2);
   if (typeof minimum === "number" && Number.isFinite(minimum) && minimum > 0 && v < minimum) return `The least allowed is ${shown(minimum)}.`;
   if (typeof ceiling === "number" && Number.isFinite(ceiling) && v > ceiling) return `The most allowed is ${shown(ceiling)}.`;
+  return null;
+}
+
+/** REV-H5: what a limit field shows for a saved value - blank for a limit that is not set (null), never the text "null". */
+export function limitDraft(value: number | null | undefined): string {
+  return value === null || value === undefined || !Number.isFinite(value) ? "" : String(value);
+}
+
+/** REV-H5: what a limit field saves - blank is "Not set" (null) for a limit that may be not set (`optional`), else the
+ * number typed. Only called once `fieldProblem` found nothing to fix. */
+export function limitValue(raw: string, optional: boolean): number | null {
+  const text = raw.trim();
+  if (text === "") return optional ? null : Number.NaN;
+  return Number(text);
+}
+
+/** REV-H5 (Risk Medium): the guardian's drawdown sentence, for the levels the trader set only (null or 0 = off, as the
+ * guardian reads them); null when neither is set - no rule is stated that is not set. */
+export function drawdownSentence(level1: number | null | undefined, level2: number | null | undefined): string | null {
+  const on = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
+  const pct = (v: number) => `${formatNumber(v, 1)}%`;
+  const tail = " A winning streak never raises the size above normal.";
+  if (on(level1) && on(level2)) return `The size is halved at ${pct(level1)} below your equity peak and new entries pause at ${pct(level2)}.${tail}`;
+  if (on(level1)) return `The size is halved at ${pct(level1)} below your equity peak.${tail}`;
+  if (on(level2)) return `New entries pause at ${pct(level2)} below your equity peak.${tail}`;
   return null;
 }
 

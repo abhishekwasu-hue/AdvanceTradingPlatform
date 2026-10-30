@@ -28,7 +28,7 @@ P_PAYMENT_WEBHOOK = "public: payment provider webhook, verified by its signature
 P_PLANS = "public: the plan catalogue"
 P_OAUTH_CALLBACK = "public: the broker's OAuth redirect; the signed state parameter names the organisation"
 P_BROKER_CATALOGUE = "public: the broker catalogue"
-P_PARSE_ONLY = "public: parses the strategy text in the request; stores nothing"
+S_PARSE_ONLY = "self: parses the strategy text in the request; stores nothing (signed in since M55 O2)"
 P_FUNDAMENTALS = ("public: shared market reference data and computations over it; a logged-in caller also reads its own organisation's "
                   "contributed rows, never another organisation's (app/fundamentals/visibility.py)")
 P_INSTRUMENTS = "public: the instrument catalogue"
@@ -37,9 +37,25 @@ P_NEWS_EVENTS = ("public: the shared news feed; a logged-in caller also reads it
 P_API_DOCS = "public: public API documentation"
 P_API_SCOPES = "public: public API scope catalogue"
 P_PWA = "public: PWA install/update counters only (rate limited)"
-P_QUANT = "public: computes over the request body; stores nothing"
-P_STRATEGY_CATALOGUE = ("public: built-in strategy catalogue and anonymous demo runs; a logged-in caller is checked in the handler "
-                        "(paper-execute needs a trading role)")
+S_QUANT = "self: computes over the request body (and the organisation's own financials); stores nothing (signed in since M55 O2)"
+P_STRATEGY_CATALOGUE = "public: the built-in strategy catalogue (a logged-in caller also sees its own custom strategies)"
+S_STRATEGY_RUN = ("self: runs a strategy over the candles in the request for the caller (enrich also adds it to the caller's own "
+                  "signal history); stores nothing shared (signed in since M55 O2)")
+S_FUNDAMENTALS_MODEL = ("self: runs a valuation / score / screen model over the shared reference data and the caller's own "
+                        "organisation's rows; stores nothing (signed in since M55 O2)")
+# M55 O2: compute-only routes under a prefix the 'self' class otherwise never takes (test_z10c_tenancy_sweep.py): they
+# write nothing shared and nothing on the order path, so a VIEWER may run them like any member.
+SELF_COMPUTE_UNDER_GUARDED_PREFIX = frozenset({
+    ("POST", "/api/strategies/{strategy_id}/chart-run"),
+    ("POST", "/api/strategies/{strategy_id}/signal"),
+    ("POST", "/api/strategies/{strategy_id}/signal/enrich"),
+    ("POST", "/api/fundamentals/companies/{symbol}/analysis/dcf"),
+    ("POST", "/api/fundamentals/companies/{symbol}/analysis/score"),
+    ("POST", "/api/fundamentals/companies/{symbol}/analysis/sector-specific"),
+    ("POST", "/api/fundamentals/companies/{symbol}/analysis/valuation"),
+    ("POST", "/api/fundamentals/fusion"),
+    ("POST", "/api/fundamentals/screener"),
+})
 P_HEALTH = "public: health and status probes for uptime monitors and the status page (aggregates only)"
 P_TELEGRAM_WEBHOOK = "public: Telegram inbound webhook, authenticated by the secret token in the path"
 P_TV_WEBHOOK = "public: TradingView webhook, authenticated by the secret token in the path"
@@ -436,7 +452,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/terminal/status"): ("member: the Terminal status bar - the caller's own PAPER trades, own price connection and the "
                                       "organisation's kill switch state (tenant and user, TT-15)"),
     # MO4 slice 3: the caller's own plan page + usage meter and his own discipline share card (flags ui_v2 + growth_v2)
-    ("GET", "/api/growth/plan"): "member: the caller's own plan and usage (his own watchlists, scans, AI requests and analyses; the organisation's paper bots and backtests)",
+    ("GET", "/api/growth/plan"): "member: the caller's own plan and usage (his own watchlists, scans, AI requests and analyses; the organisation's trading bots and backtests)",
     ("GET", "/api/growth/share/discipline-week"): "member: the caller's own discipline facts from his own PAPER trades; no names, no prices",
     # MO4 slice 4: the page dishes - the caller's own signals, PAPER positions, journal, lists and scans (+ shared daily history)
     ("GET", "/api/growth/dish/{page}"): "member: the caller's own signals, PAPER positions, journal, watchlists and scan matches; the chart story from the shared daily history",
@@ -455,7 +471,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/admin/learn/settings"): "admin",
     ("GET", "/api/custom-strategies"): "member",
     ("POST", "/api/custom-strategies"): "trader",
-    ("POST", "/api/custom-strategies/parse"): P_PARSE_ONLY,
+    ("POST", "/api/custom-strategies/parse"): S_PARSE_ONLY,
     ("POST", "/api/custom-strategies/draft"): "self: builds a draft from the words in the request; stores nothing",
     ("DELETE", "/api/custom-strategies/{strategy_id}"): "trader",
     ("GET", "/api/custom-strategies/{strategy_id}"): "member",
@@ -493,7 +509,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/fundamentals/companies/{symbol}/analysis/balance-sheet"): P_FUNDAMENTALS,
     ("GET", "/api/fundamentals/companies/{symbol}/analysis/business-quality"): P_FUNDAMENTALS,
     ("GET", "/api/fundamentals/companies/{symbol}/analysis/cash-flow"): P_FUNDAMENTALS,
-    ("POST", "/api/fundamentals/companies/{symbol}/analysis/dcf"): P_FUNDAMENTALS,
+    ("POST", "/api/fundamentals/companies/{symbol}/analysis/dcf"): S_FUNDAMENTALS_MODEL,
     ("GET", "/api/fundamentals/companies/{symbol}/analysis/earnings-quality"): P_FUNDAMENTALS,
     ("GET", "/api/fundamentals/companies/{symbol}/analysis/event-impact"): P_FUNDAMENTALS,
     ("GET", "/api/fundamentals/companies/{symbol}/analysis/growth"): P_FUNDAMENTALS,
@@ -503,10 +519,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/fundamentals/companies/{symbol}/analysis/quarterly"): P_FUNDAMENTALS,
     ("GET", "/api/fundamentals/companies/{symbol}/analysis/red-flags"): P_FUNDAMENTALS,
     ("GET", "/api/fundamentals/companies/{symbol}/analysis/scenario"): P_FUNDAMENTALS,
-    ("POST", "/api/fundamentals/companies/{symbol}/analysis/score"): P_FUNDAMENTALS,
-    ("POST", "/api/fundamentals/companies/{symbol}/analysis/sector-specific"): P_FUNDAMENTALS,
+    ("POST", "/api/fundamentals/companies/{symbol}/analysis/score"): S_FUNDAMENTALS_MODEL,
+    ("POST", "/api/fundamentals/companies/{symbol}/analysis/sector-specific"): S_FUNDAMENTALS_MODEL,
     ("GET", "/api/fundamentals/companies/{symbol}/analysis/swot"): P_FUNDAMENTALS,
-    ("POST", "/api/fundamentals/companies/{symbol}/analysis/valuation"): P_FUNDAMENTALS,
+    ("POST", "/api/fundamentals/companies/{symbol}/analysis/valuation"): S_FUNDAMENTALS_MODEL,
     ("GET", "/api/fundamentals/companies/{symbol}/calendar"): P_FUNDAMENTALS,
     ("POST", "/api/fundamentals/companies/{symbol}/calendar"): "trader",
     ("GET", "/api/fundamentals/companies/{symbol}/card"): P_FUNDAMENTALS,
@@ -523,10 +539,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/fundamentals/companies/{symbol}/sector-metrics"): "trader",
     ("GET", "/api/fundamentals/companies/{symbol}/shareholding"): P_FUNDAMENTALS,
     ("POST", "/api/fundamentals/companies/{symbol}/shareholding"): "trader",
-    ("POST", "/api/fundamentals/fusion"): P_FUNDAMENTALS,
+    ("POST", "/api/fundamentals/fusion"): S_FUNDAMENTALS_MODEL,
     ("GET", "/api/fundamentals/providers"): P_FUNDAMENTALS,
     ("POST", "/api/fundamentals/refresh"): "trader",
-    ("POST", "/api/fundamentals/screener"): P_FUNDAMENTALS,
+    ("POST", "/api/fundamentals/screener"): S_FUNDAMENTALS_MODEL,
     ("GET", "/api/fundamentals/sector-metrics/specs"): P_FUNDAMENTALS,
     ("GET", "/api/fundamentals/sectors"): P_FUNDAMENTALS,
     ("GET", "/api/fundamentals/sectors/{sector}/peers"): P_FUNDAMENTALS,
@@ -738,8 +754,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/pwa/events"): P_PWA,
     ("POST", "/api/pwa/vitals"): "public: AUD-G1.5 Core Web Vitals of one page view - closed labels only, no identity (rate limited)",
     ("POST", "/api/quant/exposure"): S_COMPUTE,
-    ("POST", "/api/quant/factors"): P_QUANT,
-    ("POST", "/api/quant/risk"): P_QUANT,
+    ("POST", "/api/quant/factors"): S_QUANT,
+    ("POST", "/api/quant/risk"): S_QUANT,
     ("GET", "/api/readiness"): "member",
     ("GET", "/api/reconciliation/status"): "member",
     ("POST", "/api/reconciliation/{broker_name}"): "trader",
@@ -805,7 +821,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/lab/pine/templates"): "member",
     ("POST", "/api/lab/pine/translate"): S_COMPUTE,
     ("POST", "/api/lab/pine/run"): "trader",
-    # strategy templates step 2 (flag strategy_templates): the built-in template cards, and the paper bot form's pre-fill
+    # strategy templates step 2 (flag strategy_templates): the built-in template cards, and the trading bot form's pre-fill
     ("GET", "/api/strategy-templates"): "member",
     ("POST", "/api/strategy-templates/{template_id}/adopt"): S_COMPUTE,
     # idea library slice 1 (flag idea_library): read-only method cards, the same content for every organisation
@@ -824,10 +840,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
                                       "the degradation notice - platform-wide only, no user, organisation or price (rate limited)"),
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
     ("GET", "/api/strategies/{strategy_id}"): P_STRATEGY_CATALOGUE,
-    ("POST", "/api/strategies/{strategy_id}/chart-run"): P_STRATEGY_CATALOGUE,
-    ("POST", "/api/strategies/{strategy_id}/paper-execute"): P_STRATEGY_CATALOGUE,
-    ("POST", "/api/strategies/{strategy_id}/signal"): P_STRATEGY_CATALOGUE,
-    ("POST", "/api/strategies/{strategy_id}/signal/enrich"): P_STRATEGY_CATALOGUE,
+    ("POST", "/api/strategies/{strategy_id}/chart-run"): S_STRATEGY_RUN,
+    ("POST", "/api/strategies/{strategy_id}/paper-execute"): "trader",
+    ("POST", "/api/strategies/{strategy_id}/signal"): S_STRATEGY_RUN,
+    ("POST", "/api/strategies/{strategy_id}/signal/enrich"): S_STRATEGY_RUN,
     ("POST", "/api/support-resistance/zones"): S_COMPUTE,
     ("GET", "/api/system/encryption"): "admin",
     ("GET", "/api/system/features"): "member",

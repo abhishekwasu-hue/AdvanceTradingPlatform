@@ -5,7 +5,7 @@ import { GET_STARTED_STEPS, type GetStartedKey, type SetupStored, type SetupView
  * P3 (the owner's "simple front page"): the Dashboard's "Get started" card, in both shells - three steps, each with one
  * button and a tick when done, worked out by the server (`GET /api/me/setup` -> `get_started`, backend app/me/setup.py):
  * 1. Connect your broker - a verified broker, or an Upstox Analytics Token (enough for paper trading);
- * 2. Start your paper bot - a PAPER deployment of the trader's own;
+ * 2. Start your trading bot - a PAPER deployment of the trader's own;
  * 3. Get alerts on your phone (Telegram) - the organisation's Telegram channel is on and its last send went through.
  * When all three are done the card disappears for good (the app stores `get_started_hidden_at`); Help -> "Show Get
  * started" brings it back. Pure functions only, so every rule here is unit-tested.
@@ -41,7 +41,7 @@ export interface GetStartedCard {
 
 const TEXT: Record<GetStartedKey, { title: string; todo: string; done: string }> = {
   broker: { title: "Connect your broker", todo: "Connect your broker", done: "Your broker" },
-  paper_bot: { title: "Start your paper bot", todo: "Start paper bot", done: "See your bot" },
+  paper_bot: { title: "Start your trading bot", todo: "Start trading bot", done: "See your bot" },
   telegram: { title: "Get alerts on your phone (Telegram)", todo: "Set up Telegram", done: "Alert settings" },
 };
 

@@ -13,7 +13,7 @@ order.
 
 Slice 2 (IDEA-1): "Adopt as a paper strategy". An idea carries `adopt` only when it maps HONESTLY onto a built-in strategy
 template (`app.strategy_templates`): the same structure (context, area, trigger, invalidation), never a stand-in that
-reads differently. The card then links to the paper bot form with the template picked and the mapped settings as the
+reads differently. The card then links to the trading bot form with the template picked and the mapped settings as the
 pre-fill; the user reviews and saves it himself, PAPER only. `ADOPT_REVIEW` records, for every idea without a mapping,
 why no template matches today (the tests keep both in step). The first review (D1, D2, B1, B3) found none; the second
 (slice 3, the templates of families A-G) maps T2 onto A2 and T5 onto A5, whose signals are exactly those ideas' own scans

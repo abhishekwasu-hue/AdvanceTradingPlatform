@@ -113,3 +113,9 @@ def reset(name: Optional[str] = None) -> None:
         return
     for key in [k for k in _WINDOWS if k[0] == name]:
         del _WINDOWS[key]
+
+
+# P0.2 / S1: one account cannot monopolise the analysis threadpool (per-user, shared across replicas via Redis). One
+# bucket for every CPU-heavy compute route wherever it lives (backtest, scanner, signal, chart-run, quant, fundamentals
+# models, strategy parse - M55 O2).
+analysis_rate_limit = user_rate_limit("analysis", limit=60, window_seconds=60)

@@ -37,7 +37,6 @@ class MTFTrendPullbackScalper(BaseStrategy):
         "atr_mult_sl": 1.2,
         "pullback_atr_mult": 0.5,
         "target_rr": (1.5, 2.5),
-        "min_rr": 1.2,
     }
 
     def __init__(self, ltf: str, htf: str, id_: str, name: str, description: str, **params: Any) -> None:
@@ -111,12 +110,13 @@ class MTFTrendPullbackScalper(BaseStrategy):
         short_ready = htf_bearish and structure_bearish and pullback_ok and rsi_cross_down and adx_strong
 
         if long_ready:
+            # REV-B1: structure words only (no periods, no values, no timeframe digits), so "Why this signal" keeps every line.
             reasons: List[str] = [
-                f"{self.htf} trend bullish (close above rising EMA{p['htf_ema_period']})",
-                f"{self.ltf} structure bullish (EMA{p['ema_fast']} > EMA{p['ema_slow']})",
-                "Price pulled back into fast EMA zone",
-                f"RSI({p['rsi_period']}) crossed up through {p['rsi_long_trigger']}",
-                f"ADX({p['adx_period']})={adx_last:.1f} confirms trending strength",
+                "Higher-timeframe trend up: the close holds above a rising EMA",
+                "Lower-timeframe structure up: the fast EMA is above the slow EMA",
+                "Price pulled back into the fast EMA zone",
+                "RSI turned back up through its trigger level",
+                "ADX confirms a trending market",
             ]
             score = int(round(30 + 15 + pullback_score() + 20 + adx_score()))
             score = min(score, 100)
@@ -127,11 +127,11 @@ class MTFTrendPullbackScalper(BaseStrategy):
 
         if short_ready:
             reasons = [
-                f"{self.htf} trend bearish (close below falling EMA{p['htf_ema_period']})",
-                f"{self.ltf} structure bearish (EMA{p['ema_fast']} < EMA{p['ema_slow']})",
-                "Price pulled back into fast EMA zone",
-                f"RSI({p['rsi_period']}) crossed down through {p['rsi_short_trigger']}",
-                f"ADX({p['adx_period']})={adx_last:.1f} confirms trending strength",
+                "Higher-timeframe trend down: the close holds below a falling EMA",
+                "Lower-timeframe structure down: the fast EMA is below the slow EMA",
+                "Price pulled back into the fast EMA zone",
+                "RSI turned back down through its trigger level",
+                "ADX confirms a trending market",
             ]
             score = int(round(30 + 15 + pullback_score() + 20 + adx_score()))
             score = min(score, 100)
@@ -142,9 +142,9 @@ class MTFTrendPullbackScalper(BaseStrategy):
 
         reasons = ["No aligned setup"]
         if not (htf_bullish or htf_bearish):
-            reasons.append(f"{self.htf} trend not clearly directional")
+            reasons.append("Higher-timeframe trend not clearly directional")
         if not adx_strong:
-            reasons.append(f"ADX({p['adx_period']})={adx_last:.1f} below strength threshold {p['adx_min']}")
+            reasons.append("ADX below its strength threshold: no clear trend")
         if not pullback_ok:
             reasons.append("Price not in pullback entry zone")
         return self.no_trade(symbol, timestamp, reasons)

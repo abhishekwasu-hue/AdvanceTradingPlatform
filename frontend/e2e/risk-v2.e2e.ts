@@ -107,6 +107,20 @@ test.describe("v2 risk 1440 desktop", () => {
     expect(writes.calls.filter((c) => c.url === "/risk-settings")).toHaveLength(0);
   });
 
+  test("REV-H5: 'Not set' limits stay blank and save as not set next to the one typed", async ({ page }) => {
+    const notSet = { max_trades_per_day: null, max_open_positions: null, max_consecutive_losses: null, dd_level_1_pct: null, dd_level_2_pct: null };
+    const writes = await open(page, "light", { riskSettings: notSet });
+    await expect(page.getByLabel("Trades per day")).toHaveValue("");
+    await expect(page.getByLabel("Trades per day")).toHaveAttribute("placeholder", "Not set");
+    await expect(page.locator("[data-field='max_trades_per_day']")).toContainText("Leave it blank for no limit. 0 blocks every new entry.");
+    await page.getByLabel("Daily loss limit (% of capital)").fill("2");
+    await page.getByRole("button", { name: "Save limits" }).click();
+    await expect(page.locator("[data-note='save']")).toHaveText("Saved. Every paper and live entry now uses these limits and guardian rules.");
+    await expect(page.locator("main [role='alert']")).toHaveCount(0);
+    const put = writes.calls.find((c) => c.method === "PUT" && c.url === "/risk-settings");
+    expect(put?.body).toEqual({ ...(T.risk_settings as object), ...notSet, max_daily_loss_pct: 2, loss_streak_pause: "next_session" });
+  });
+
   test("halving the size at a larger drawdown than the pause is marked and nothing is sent", async ({ page }) => {
     const writes = await open(page, "light");
     await page.getByLabel("Halve the size at a drawdown of (%)").fill("12");

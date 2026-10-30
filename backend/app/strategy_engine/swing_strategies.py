@@ -42,10 +42,11 @@ class SwingEmaPullback(_Daily):
     id = "swing_ema_pullback_d"
     name = "Swing EMA Pullback (daily)"
     description = ("Daily uptrend (EMA20 above EMA50): buy the pullback that touches EMA20 and closes back above it on a "
-                   "bullish day, RSI healthy. Stop below the pullback low (at least 1 ATR); held overnight.")
+                   "bullish day, RSI healthy. Stop below the pullback low (at least 1 ATR); held overnight. It also reads the mirror in a "
+                   "downtrend: taken on an option or a future, skipped on shares.")
     default_params: Dict[str, Any] = {
         "ema_fast": 20, "ema_slow": 50, "rsi_period": 14, "rsi_long_min": 40, "rsi_short_max": 60,
-        "touch_pct": 0.5, "atr_period": 14, "atr_buffer": 0.25, "min_stop_atr": 1.0, "target_rr": (2.0, 3.0), "min_rr": 1.5,
+        "touch_pct": 0.5, "atr_period": 14, "atr_buffer": 0.25, "min_stop_atr": 1.0, "target_rr": (2.0, 3.0),
     }
 
     def min_history(self) -> Dict[str, int]:
@@ -71,15 +72,15 @@ class SwingEmaPullback(_Daily):
         uptrend, downtrend = f > s and close > s, f < s and close < s
         if uptrend and low2 <= fast2 * (1 + touch) and close > f and close > open_ and r >= p["rsi_long_min"]:
             stop = min(low2 - a * p["atr_buffer"], close - a * p["min_stop_atr"])
-            reasons = [f"Daily uptrend: EMA{p['ema_fast']} {f:.2f} above EMA{p['ema_slow']} {s:.2f}",
-                       f"Pulled back to EMA{p['ema_fast']} and closed back above it on a bullish day", f"RSI({p['rsi_period']}) {r:.0f}"]
+            reasons = ["Daily uptrend: the fast EMA is above the slow EMA",
+                       "Pulled back to the fast EMA and closed back above it on a bullish day", "RSI holds above its floor"]
             score = int(round(min(100, 55 + min(25.0, (f - s) / max(a, 1e-9) * 10) + min(20.0, max(r - 40, 0) / 2))))
             return self.build_signal(symbol, ts, SignalDirection.LONG, close, stop, score, reasons, p["target_rr"])
         fast2_min = float(fast.iloc[-2:].min())
         if downtrend and high2 >= fast2_min * (1 - touch) and close < f and close < open_ and r <= p["rsi_short_max"]:
             stop = max(high2 + a * p["atr_buffer"], close + a * p["min_stop_atr"])
-            reasons = [f"Daily downtrend: EMA{p['ema_fast']} {f:.2f} below EMA{p['ema_slow']} {s:.2f}",
-                       f"Rallied to EMA{p['ema_fast']} and closed back below it on a bearish day", f"RSI({p['rsi_period']}) {r:.0f}"]
+            reasons = ["Daily downtrend: the fast EMA is below the slow EMA",
+                       "Rallied to the fast EMA and closed back below it on a bearish day", "RSI holds below its ceiling"]
             score = int(round(min(100, 55 + min(25.0, (s - f) / max(a, 1e-9) * 10) + min(20.0, max(60 - r, 0) / 2))))
             return self.build_signal(symbol, ts, SignalDirection.SHORT, close, stop, score, reasons, p["target_rr"])
         return self.no_trade(symbol, ts, ["No pullback-and-resume in a daily trend"])
@@ -92,7 +93,7 @@ class SwingBreakout(_Daily):
                    "above-average volume. Stop back inside the old range (at least 1 ATR); held overnight.")
     default_params: Dict[str, Any] = {
         "lookback": 20, "adx_period": 14, "adx_min": 20, "volume_mult": 1.5, "atr_period": 14,
-        "stop_atr_inside": 1.0, "max_stop_atr": 3.0, "min_stop_atr": 1.0, "target_rr": (2.0, 3.5), "min_rr": 1.5,
+        "stop_atr_inside": 1.0, "max_stop_atr": 3.0, "min_stop_atr": 1.0, "target_rr": (2.0, 3.5),
     }
 
     def min_history(self) -> Dict[str, int]:
@@ -117,24 +118,24 @@ class SwingBreakout(_Daily):
             avg = float(prior["volume"].mean())
             today = float(df["volume"].iloc[-1])
             volume_ok = today >= avg * p["volume_mult"]
-            volume_note = f"volume {today:,.0f} vs 20-day average {avg:,.0f}"
+            volume_note = "volume above its recent average" if volume_ok else "volume below its recent average"
         if adx_val < p["adx_min"]:
-            return self.no_trade(symbol, ts, [f"ADX {adx_val:.1f} below {p['adx_min']}: no trend to break out with"])
+            return self.no_trade(symbol, ts, ["ADX below its minimum: no trend to break out with"])
         if not volume_ok:
             return self.no_trade(symbol, ts, [f"Breakout without volume ({volume_note})"])
         if close > prior_high:
             stop = max(prior_high - a * p["stop_atr_inside"], close - a * p["max_stop_atr"])
             stop = min(stop, close - a * p["min_stop_atr"])
-            reasons = [f"Closed {close:.2f} above the {p['lookback']}-day high {prior_high:.2f}", f"ADX {adx_val:.1f}: trending", volume_note]
+            reasons = ["Daily close above the high of the recent range", "ADX: trending", volume_note]
             score = int(round(min(100, 55 + min(25.0, (adx_val - p["adx_min"]) * 1.5) + min(20.0, (close - prior_high) / max(a, 1e-9) * 20))))
             return self.build_signal(symbol, ts, SignalDirection.LONG, close, stop, score, reasons, p["target_rr"])
         if close < prior_low:
             stop = min(prior_low + a * p["stop_atr_inside"], close + a * p["max_stop_atr"])
             stop = max(stop, close + a * p["min_stop_atr"])
-            reasons = [f"Closed {close:.2f} below the {p['lookback']}-day low {prior_low:.2f}", f"ADX {adx_val:.1f}: trending", volume_note]
+            reasons = ["Daily close below the low of the recent range", "ADX: trending", volume_note]
             score = int(round(min(100, 55 + min(25.0, (adx_val - p["adx_min"]) * 1.5) + min(20.0, (prior_low - close) / max(a, 1e-9) * 20))))
             return self.build_signal(symbol, ts, SignalDirection.SHORT, close, stop, score, reasons, p["target_rr"])
-        return self.no_trade(symbol, ts, [f"Inside the {p['lookback']}-day range {prior_low:.2f}-{prior_high:.2f}"])
+        return self.no_trade(symbol, ts, ["Inside the recent range"])
 
 
 def build_swing_strategies():

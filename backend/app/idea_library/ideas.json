@@ -88,7 +88,7 @@
         "Which instruments you look at.",
         "The higher timeframe and the chart timeframe.",
         "Whether you act on a setup at all, and on which side.",
-        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+        "Lots, risk per trade and your exit rules, in your own trading bot settings."
       ],
       "provenance": "A widely taught price-action idea (trend, pullback, demand and supply), written for ATP as a generic method. It is not any one person's private method, and no results are claimed for it.",
       "scans": [
@@ -134,7 +134,7 @@
       "your_decisions": [
         "Which instruments you look at, and the chart timeframe.",
         "Whether you act at an edge at all, and how.",
-        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+        "Lots, risk per trade and your exit rules, in your own trading bot settings."
       ],
       "provenance": "A widely taught idea of trading the edges of a sideways market, written for ATP as a generic method. No results are claimed for it.",
       "scans": [
@@ -184,7 +184,7 @@
       "your_decisions": [
         "Which instruments you look at, and the chart timeframe.",
         "Whether you act on a divergence at all.",
-        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+        "Lots, risk per trade and your exit rules, in your own trading bot settings."
       ],
       "provenance": "RSI divergence is a widely taught momentum idea; reading it only at demand and supply areas is a common price-action refinement. Written for ATP as a generic method. No results are claimed for it.",
       "scans": [
@@ -231,7 +231,7 @@
       "your_decisions": [
         "Which instruments you look at, and the chart timeframe.",
         "Whether the follow-up push really failed, and whether you act at all.",
-        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+        "Lots, risk per trade and your exit rules, in your own trading bot settings."
       ],
       "provenance": "The sweep (also called an upthrust or a spring) is a widely taught price-action idea, written for ATP as a generic method. No results are claimed for it.",
       "scans": [
@@ -278,7 +278,7 @@
       "your_decisions": [
         "Which instruments you look at, and the chart timeframe.",
         "Whether you act on a retest at all.",
-        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+        "Lots, risk per trade and your exit rules, in your own trading bot settings."
       ],
       "provenance": "The retest of a broken level (a structure flip) is a widely taught idea, written for ATP as a generic method. It is a retest idea, never a breakout-chasing one. No results are claimed for it.",
       "scans": [
@@ -327,7 +327,7 @@
       "your_decisions": [
         "Which instruments you look at, and the chart timeframe.",
         "Whether you act at the line at all.",
-        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+        "Lots, risk per trade and your exit rules, in your own trading bot settings."
       ],
       "provenance": "Channel trading is a widely taught idea, written for ATP as a generic method. No results are claimed for it.",
       "scans": [
@@ -377,7 +377,7 @@
       "your_decisions": [
         "Which instruments you look at, and the chart timeframe.",
         "Which trigger you prefer: the neckline retest or the lower-timeframe change of character.",
-        "Lots, risk per trade and your exit rules, in your own paper bot settings."
+        "Lots, risk per trade and your exit rules, in your own trading bot settings."
       ],
       "provenance": "Double tops and bottoms and head and shoulders are classic chart patterns from public technical-analysis books, written for ATP as a generic method. No results are claimed for them.",
       "scans": [
@@ -407,7 +407,7 @@
       "plain": [
         "Option writers often care about one thing: is the structure a bullish continuation, a bearish continuation, or a range with price at an edge?",
         "This pack bundles the trend pullback (T1) and range edges (T2) ideas and reports only that direction, with the area and the invalidation area.",
-        "What each signal type leads to, if anything, is your own decision in your paper bot settings: the construction, strikes, width, lots, expiry rule and exits. The pack never names a strike, a premium or a lot."
+        "What each signal type leads to, if anything, is your own decision in your trading bot settings: the construction, strikes, width, lots, expiry rule and exits. The pack never names a strike, a premium or a lot."
       ],
       "logic": {
         "context": "The trend pullback idea (T1) and the range edges idea (T2); the channel idea (T6) can join later.",
@@ -432,7 +432,7 @@
       ],
       "your_decisions": [
         "Which underlyings you look at, and the chart timeframe.",
-        "What each signal type leads to, if anything: your construction, strikes, width, lots, expiry rule and exits, all in your own paper bot settings.",
+        "What each signal type leads to, if anything: your construction, strikes, width, lots, expiry rule and exits, all in your own trading bot settings.",
         "Whether you act on a signal at all."
       ],
       "provenance": "A bundle of the trend pullback and range edges ideas in this library, reduced to the structure's direction. Written for ATP as a generic method. No results are claimed for it.",

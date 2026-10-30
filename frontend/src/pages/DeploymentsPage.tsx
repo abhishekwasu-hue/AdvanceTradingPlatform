@@ -75,7 +75,7 @@ function ago(iso: string | null): string {
   return formatDateTimeIST(iso);
 }
 
-/** UX2 fix 4: `paperOnly` is the v2 Paper bot page's "More ways to trade" - this form only, PAPER only (no mode switch, no
+/** UX2 fix 4: `paperOnly` is the v2 Trading bot page's "More ways to trade" - this form only, PAPER only (no mode switch, no
  * worker tiles, no list: the page shows the trader's bots itself); `onCreated` tells it a bot was started. */
 export default function DeploymentsPage({ paperOnly = false, onCreated }: PageProps & { paperOnly?: boolean; onCreated?: () => void } = {}) {
   const { user, loading: authLoading } = useAuth();
@@ -134,7 +134,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   const [exitBreakEven, setExitBreakEven] = useState("");
   const [exitMinutes, setExitMinutes] = useState("");
   const [exitAt, setExitAt] = useState("");
-  // Settings part C: on the v2 Paper bot page only (paperOnly, so PAPER), the user's own defaults pre-fill this form once;
+  // Settings part C: on the v2 Trading bot page only (paperOnly, so PAPER), the user's own defaults pre-fill this form once;
   // each field that still shows its default is marked, and every field stays editable. No defaults: nothing changes.
   const features = useFeatures();
   const approvalAllowed = features.on("approval_only_entries");

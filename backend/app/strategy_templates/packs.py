@@ -42,6 +42,31 @@ def is_pack(template: Template) -> bool:
     return template.id in MEMBERS
 
 
+def is_pack_id(strategy_id: str) -> bool:
+    """A template strategy id (`template:<id>:...`) that names a pack."""
+    parts = (strategy_id or "").split(":")
+    return len(parts) > 1 and parts[0] == "template" and parts[1] in MEMBERS
+
+
+def _word(value: object) -> str:
+    return str(getattr(value, "value", value))
+
+
+PICK_STRUCTURE = ("Choose how this bot trades the option: an option structure, or buy or write a single option. "
+                  "An option seller pack only gives the side.")
+
+
+def contract_problem(strategy_id: str, instrument_kind: str, option_strategy: str, option_position: str | None) -> str | None:
+    """REV-H3: a pack on an option trades only the construction the user chose. A single option with no side chosen
+    would otherwise be bought at the money by the server's fallback - a platform pick nobody stated - so it is refused
+    in plain words (a structure, a future, the symbol itself or an explicit buy / write are the user's own)."""
+    if not is_pack_id(strategy_id) or _word(instrument_kind) != "OPTION":
+        return None
+    if _word(option_strategy) == "SINGLE" and not option_position:
+        return PICK_STRUCTURE
+    return None
+
+
 def member(pack: Template, settings: Settings) -> Tuple[Template, Settings]:
     """The member template the pack's `source` names, with the pack's settings that are the member's own (checked again
     as the member's own settings; version 2: the other members' settings are left out)."""
@@ -52,4 +77,4 @@ def member(pack: Template, settings: Settings) -> Tuple[Template, Settings]:
     return template, resolve_settings(template, settings.timeframe, settings.sides, params)
 
 
-__all__ = ["SOURCE", "MEMBERS", "STRUCTURE_NOTE", "is_pack", "member"]
+__all__ = ["SOURCE", "MEMBERS", "STRUCTURE_NOTE", "PICK_STRUCTURE", "is_pack", "is_pack_id", "contract_problem", "member"]

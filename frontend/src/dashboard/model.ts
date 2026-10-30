@@ -224,12 +224,20 @@ export interface PositionRow {
   pnlPct: number | null;
 }
 
-/** The live price of each priced symbol, from the exposure's per-symbol notional: notional = Σ|qty| × price. */
+/** The live price of each priced symbol. REV-H4: the price the server valued it at (`prices`) whenever it is given, so
+ * the price never depends on whose positions the page lists; an older server's answer falls back to the per-symbol
+ * notional over the listed quantity (notional = Σ|qty| × price, right only when both have the same scope). */
 export function symbolPrices(positions: TradeRecord[], exposure: PortfolioExposure | null | undefined): Record<string, number> {
   const out: Record<string, number> = {};
   // A symbol converted from another currency is valued in rupees against an entry in its own currency: no P&L from it.
   if (!exposure || !pricedInRupees(exposure)) return out;
   const priced = new Set(exposure.priced_symbols ?? []);
+  if (exposure.prices) {
+    for (const [symbol, price] of Object.entries(exposure.prices)) {
+      if (priced.has(symbol) && Number.isFinite(price) && price > 0) out[symbol] = price;
+    }
+    return out;
+  }
   for (const row of exposure.by_symbol ?? []) {
     if (!priced.has(row.symbol)) continue;
     const qty = positions.filter((p) => p.symbol === row.symbol).reduce((a, p) => a + Math.abs(p.quantity), 0);
@@ -271,7 +279,7 @@ export interface SignalRow {
 }
 
 const SOURCES: Record<string, string> = {
-  deployment: "Paper bot", scan: "Scan", tradingview: "TradingView alert", public_api: "Your API", manual: "Your setup",
+  deployment: "Trading bot", scan: "Scan", tradingview: "TradingView alert", public_api: "Your API", manual: "Your setup",
   ticket: "Paper ticket", requote: "Re-quoted", console: "Copilot",
 };
 const STATUS: Record<string, SignalStatus> = {
@@ -459,7 +467,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
   if (others.length) {
     rows.push({
       id: "suggestions", icon: "approval", tone: "neutral",
-      title: others.length === 1 ? "1 paper bot suggestion needs your answer" : `${others.length} paper bot suggestions need your answer`,
+      title: others.length === 1 ? "1 trading bot suggestion needs your answer" : `${others.length} trading bot suggestions need your answer`,
       detail: others[0].reason, action: { label: "Review", to: input.approvalsPath },
     });
   }
@@ -469,7 +477,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
     const d = paused[0];
     rows.push({
       id: "paused", icon: "paused", tone: "warn",
-      title: paused.length === 1 ? `Paper bot paused “${botDisplayName(d.strategy_id, d.symbol)}”` : `${paused.length} paper bots are paused`,
+      title: paused.length === 1 ? `Trading bot paused “${botDisplayName(d.strategy_id, d.symbol)}”` : `${paused.length} trading bots are paused`,
       detail: paused.length === 1 ? (d.pause_reason ? `${d.pause_reason} Nothing else is affected.` : "It stays paused until you resume it.")
         : "They stay paused until you resume them.",
       action: { label: "Review", to: "/deployments" }, dismissible: true,
@@ -477,8 +485,8 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
   } else if (failing.length) {
     rows.push({
       id: "failing", icon: "paused", tone: "warn",
-      title: failing.length === 1 ? `Paper bot “${botDisplayName(failing[0].strategy_id, failing[0].symbol)}” hit a problem` : `${failing.length} paper bots hit a problem`,
-      detail: "Open Paper bot to see what happened and what to do.", action: { label: "Review", to: "/deployments" }, dismissible: true,
+      title: failing.length === 1 ? `Trading bot “${botDisplayName(failing[0].strategy_id, failing[0].symbol)}” hit a problem` : `${failing.length} trading bots hit a problem`,
+      detail: "Open Trading bot to see what happened and what to do.", action: { label: "Review", to: "/deployments" }, dismissible: true,
     });
   }
   const lockout = input.risk?.lockout;

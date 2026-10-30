@@ -43,7 +43,7 @@ export interface ActivationPerson {
   active_week1?: boolean | null;
 }
 
-/** Readiness C13: signed up -> broker -> paper bot -> active in week 1, each step counting only the people who also took
+/** Readiness C13: signed up -> broker -> trading bot -> active in week 1, each step counting only the people who also took
  * every step before it, over the people whose first week is over (`week1_open` are still inside it). */
 export interface GrowthFunnel {
   steps: { key: "signed_up" | "broker" | "paper_bot" | "active_week1"; label: string; count: number }[];

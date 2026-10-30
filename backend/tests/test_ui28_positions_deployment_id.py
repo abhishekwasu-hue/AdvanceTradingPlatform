@@ -1,5 +1,5 @@
-"""UI-28 U2.4 (owner, 28 Oct): a position says which Paper bot opened it (read-only, the column already exists), so
-the Paper bot page can show the bot's own open positions; a trade entered by hand says null."""
+"""UI-28 U2.4 (owner, 28 Oct): a position says which Trading bot opened it (read-only, the column already exists), so
+the Trading bot page can show the bot's own open positions; a trade entered by hand says null."""
 from datetime import datetime, timezone
 
 from app.db.models import TradeRecord

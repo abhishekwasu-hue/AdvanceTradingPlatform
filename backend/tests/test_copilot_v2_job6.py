@@ -1,6 +1,6 @@
 """Item 5 (owner's handover), job 6: the strategy builder. The trader's own idea, in his words, as a DRAFT paper strategy
 made only of ATP's building blocks: what his words state is used as written, what they do not state is asked (never
-filled in), parts ATP cannot build are named, and nothing is saved, deployed or started - the draft goes to the Paper bot
+filled in), parts ATP cannot build are named, and nothing is saved, deployed or started - the draft goes to the Trading bot
 page, where the trader reviews, saves and starts it himself."""
 import asyncio
 import json
@@ -36,7 +36,7 @@ def _answer(question, fixture="default"):
 
 
 def _config(draft, values=None):
-    """The config the Paper bot page's review card saves (frontend copilot/strategyDraft.ts): the draft with the trader's
+    """The config the Trading bot page's review card saves (frontend copilot/strategyDraft.ts): the draft with the trader's
     values; any empty value fails, like the card's disabled Save."""
     values = values or {}
     rules = json.loads(json.dumps(draft["rules"]))
@@ -90,7 +90,7 @@ def test_a_complete_idea_uses_every_value_as_written_and_saves_as_a_valid_strate
     assert [r["condition"]["operator"] for r in d["rules"]] == ["CROSSES_ABOVE", "GT"]
     cfg = _config(d)
     DeclarativeStrategy("custom:job6", cfg)                          # the engine accepts it as it stands
-    assert out.action == {"label": "Review it on the Paper bot page", "to": "/deployments"}
+    assert out.action == {"label": "Review it on the Trading bot page", "to": "/deployments"}
     assert any(u.startswith("I don't know how this idea did in the past") for u in out.unknowns)
 
 
@@ -223,7 +223,7 @@ def test_the_ai_wording_only_describes():
 
 def test_the_new_refusals_are_plain_and_call_no_tool():
     for kind, q in (("settings", "Pick a stop-loss for me for this strategy"), ("promise", "Will this strategy make money?"),
-                    ("copy", "Copy the strategy of that Telegram channel"), ("order", "Build the strategy and start the paper bot for me")):
+                    ("copy", "Copy the strategy of that Telegram channel"), ("order", "Build the strategy and start the trading bot for me")):
         out, called = _answer(q)
         assert out.refused == kind and called == [] and out.summary == [chat.REFUSALS[kind]] and not findings(chat.REFUSALS[kind])
     assert "your own settings" in chat.REFUSALS["settings"] and "can't promise" in chat.REFUSALS["promise"]

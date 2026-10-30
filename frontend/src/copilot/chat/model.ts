@@ -62,7 +62,7 @@ export interface ChatAnswer {
   tools_used?: string[];
   /** SUPER_ADMIN only (the server sends it to nobody else): the parts that are not set up, with their flags. */
   diagnostics?: { not_set_up?: NotSetUp[] } & Record<string, unknown>;
-  /** Job 6: the draft paper strategy the Paper bot page's review card shows (never saved by the Copilot). */
+  /** Job 6: the draft paper strategy the Trading bot page's review card shows (never saved by the Copilot). */
   draft?: StrategyDraft | null;
   /** Job 6 follow-up (CP6-2): a next question the page offers as one button, e.g. "Test it on past data" for a complete draft. */
   followup?: { label: string; question: string } | null;
@@ -77,7 +77,7 @@ export type RefusalKind = "order" | "advice" | "tip" | "settings" | "promise" | 
 /** One turn of the conversation on the page (CU6: kept by the server across reloads, the newest `keep`). */
 export interface Turn { id: number; question: string; answer: ChatAnswer | null; error: string | null }
 
-/** Where an answer's action goes: the draft rides along in the navigation state for the Paper bot page's review card. */
+/** Where an answer's action goes: the draft rides along in the navigation state for the Trading bot page's review card. */
 export function actionState(answer: Pick<ChatAnswer, "draft">): { copilotDraft: StrategyDraft } | undefined {
   return answer.draft ? { copilotDraft: answer.draft } : undefined;
 }

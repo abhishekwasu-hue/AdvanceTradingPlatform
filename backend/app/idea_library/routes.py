@@ -6,7 +6,7 @@
 Each scan carries `available`: every flag it needs (the Screener and its builder, and the flags of the functions it
 uses) is on for the caller's organisation. Flag names are never sent. Slice 2: `adopt.available` is true only for an idea
 mapped onto a strategy template (IDEA-1) while `strategy_templates` and every function that template reads are on; the
-card then links to the paper bot form's pre-fill (the user saves it himself, PAPER only). Nothing is stored and nothing runs here; a scan
+card then links to the trading bot form's pre-fill (the user saves it himself, PAPER only). Nothing is stored and nothing runs here; a scan
 runs only on the Screener page, through the Screener's own validation, gates and limits. Places no orders.
 """
 from __future__ import annotations

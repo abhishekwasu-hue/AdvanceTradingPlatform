@@ -69,7 +69,7 @@ def _member(email: str, tenant_id: int, role: str) -> Dict[str, str]:
     return _login(email)
 
 
-def _start(admin: Dict[str, str], user_id: int, reason: str = "The person asked why a paper bot stopped") -> dict:
+def _start(admin: Dict[str, str], user_id: int, reason: str = "The person asked why a trading bot stopped") -> dict:
     response = client.post(START, headers=admin, json={"user_id": user_id, "reason": reason})
     assert response.status_code == 200, response.text
     return response.json()

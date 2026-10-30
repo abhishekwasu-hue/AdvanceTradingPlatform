@@ -368,10 +368,15 @@ def test_daily_budget_counts_by_type_keeps_exits_and_resets_each_day():
         budget.take("exit_position")
         budget.take("cancel_order")
     assert budget.used["orders"] == 140
-    for _ in range(45):
+    for _ in range(40):
         budget.take("get_ltp")
     with pytest.raises(rb.DailyCapReached):
-        budget.take("get_option_chain")                                 # live data shares one allowance
+        budget.take("get_option_chain")                                 # live data shares one allowance; M55 S2: a read
+    with rb.exit_reads():                                               # not for an exit stops before the exit reserve
+        for _ in range(5):
+            budget.take("get_ltp")
+        with pytest.raises(rb.DailyCapReached):
+            budget.take("get_ltp")
     for _ in range(18):
         budget.take("get_positions")
     with pytest.raises(rb.DailyCapReached):
@@ -415,7 +420,7 @@ class _Counting:
 
 def test_the_rate_limited_wrapper_refuses_before_sending_and_never_refuses_an_exit():
     inner = _Counting()
-    daily = rb.DailyBudget("Groww", {"orders": 2, "live_data": 1}, share=1.0, exit_reserve=0.5)
+    daily = rb.DailyBudget("Groww", {"orders": 2, "live_data": 1}, share=1.0, exit_reserve=0.5, read_reserve=0.0)
     wrapped = rb.RateLimitedBroker(inner, rb.RateBudget(rb.limits_for("groww"), daily=daily))
     run(wrapped.get_ltp(["NSE:RELIANCE"]))
     with pytest.raises(rb.DailyCapReached):

@@ -154,10 +154,10 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/tests/fixtures/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
     "frontend/src/signals/__fixtures__/signal_language.json": "0350d6d8154d57ec5ef9489e3d56f4239759e547a75dd238479ca7c99b50a5d9",
     # Idea library slice 1: the server's own payload of the hand-written idea cards (no market data; synced by a backend test)
-    "frontend/e2e/fixtures/ideas_v2.json": "8f4c4ab07f26c22ba1d2de5cbf056fe22d292aa310f01f659719fd206a13ad92",
+    "frontend/e2e/fixtures/ideas_v2.json": "e0c3b0beb07514a1063758737cb17d3ebc8fd021f67f1c89efb9dd054bbca013",
     # Readiness C13: the Learn page and the marketing pages, the server's own hand-written payloads (backend/tests/test_c13_learning.py).
-    "frontend/e2e/fixtures/learn_v2.json": "45ce93482f856a6cf9bc83c4a3d2cf750582c041b10bac3594c9782edaf99e3d",
-    "frontend/e2e/fixtures/site_v2.json": "c1539facb9bbb4df51d2aad62d3118da77a8ab654c756a972fa7e3a6c2c096e1",
+    "frontend/e2e/fixtures/learn_v2.json": "9564cccb9a93d0a6fbfea3f607e1b4cb2225bcbbf9e60ed7a6fb99415a454cf3",
+    "frontend/e2e/fixtures/site_v2.json": "3b03dcd1d4b2995aa43919e4c6244943d389a7cef949c8a4b81d32f9d8c82bed",
     # made-up rows in NSE's file layouts (the universe importer's tests)
     "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
     "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",
@@ -223,7 +223,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/thesis_report.json": "e85180cb3f957bf048f9bffe63e3237bb760333376e255f1ae76f6d9df2e287d",
     "frontend/e2e/fixtures/trading_v2.json": "c9fc66383c29a2a5dc38d9de57bff8d27b9ba75b74578fa839b2eb420a73afef",
     "frontend/e2e/fixtures/mytrades_cards_v2.json": "4d0ba8e0bd9fcf0e3117746ad9169e832f209600858c79df807b8ff92a8fa82d",
-    "frontend/e2e/fixtures/copilot_chat_v2.json": "53f95a5fa6cc0da0ff77783963b36f67d72e91788c91aa4b4a799a6121f959d1",
+    "frontend/e2e/fixtures/copilot_chat_v2.json": "d844e9cfe7294dd7a5faf64e21b751ce48b8085739ac8dfd5c7f6bf67d3dc22f",
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

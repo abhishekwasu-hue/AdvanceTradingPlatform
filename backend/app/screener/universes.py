@@ -131,7 +131,10 @@ async def list_universes(user: User = Depends(get_current_user), session: AsyncS
     """The lists a scan can run on (shared reference data), the default key and this organisation's batch plan."""
     await require_flag(session, FLAG, user.tenant_id)
     groups = await catalogue(session)
-    return {"default_key": DEFAULT_KEY, "groups": groups, "batch": batch_plan(await _broker_name(session, user.tenant_id, user))}
+    from app.core import config
+    # M55 T3: with the daily universe sync off the lists are the stored fallback copy; the page says so in one line.
+    return {"default_key": DEFAULT_KEY, "groups": groups, "batch": batch_plan(await _broker_name(session, user.tenant_id, user)),
+            "fallback": not config.UNIVERSE_SYNC_ENABLED}
 
 
 @router.get("/{key}")

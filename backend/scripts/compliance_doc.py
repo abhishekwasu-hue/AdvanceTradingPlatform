@@ -11,6 +11,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.compliance.rules import load  # noqa: E402
 
 DOC = Path(__file__).resolve().parents[2] / "docs/COMPLIANCE_IN.md"
+# Hand-written sections (e.g. data licences, M55 T4) live below this line in the page and are kept as they are.
+MANUAL = "<!-- Hand-written sections below: kept as they are by backend/scripts/compliance_doc.py -->"
+
+
+def manual_tail() -> str:
+    """The page's hand-written part, from the MANUAL line to the end ("" when the page has none)."""
+    try:
+        text = DOC.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    at = text.find(MANUAL)
+    return "\n" + text[at:] if at >= 0 else ""
 
 
 def render() -> str:
@@ -31,7 +43,7 @@ def render() -> str:
     for x in r.rules.values():
         if x.params:
             lines.append(f"- `{x.id}`: " + ", ".join(f"`{k}` = `{v}`" for k, v in x.params.items()))
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n" + manual_tail()
 
 
 if __name__ == "__main__":

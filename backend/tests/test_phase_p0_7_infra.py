@@ -109,3 +109,32 @@ def test_feed_parser_uses_defusedxml():
     source = (ROOT / "backend" / "app" / "news_feed" / "sources.py").read_text()
     assert "import defusedxml.ElementTree as ET" in source and "import xml.etree" not in source
     assert "defusedxml==" in (ROOT / "backend" / "requirements.txt").read_text()
+
+
+def _req_name(line: str) -> str:
+    return re.split(r"[\[<>=!~;\s]", line.strip(), maxsplit=1)[0].lower().replace("_", "-")
+
+
+def test_backend_installs_from_the_hashed_lock():
+    """M55 O3: the image and every CI job install backend/requirements.lock with `--require-hashes`; every package is
+    pinned with hashes, every direct dependency of requirements.txt is in it, and the regenerate script is wired."""
+    backend = ROOT / "backend"
+    dockerfile = (backend / "Dockerfile").read_text()
+    assert "COPY requirements.lock ." in dockerfile
+    assert "pip install --no-cache-dir --require-hashes -r requirements.lock" in dockerfile
+    ci = (ROOT / ".github/workflows/ci.yml").read_text()
+    assert "pip install -r requirements.txt" not in ci and "cache-dependency-path: backend/requirements.txt" not in ci
+    assert ci.count("pip install --require-hashes -r requirements.lock") == 4
+    assert "sh scripts/lock_requirements.sh --quiet" in ci and "git diff --exit-code -- requirements.lock" in ci
+    script = (backend / "scripts" / "lock_requirements.sh").read_text()
+    assert "--generate-hashes" in script and "--output-file requirements.lock" in script
+    assert "--python-version 3.11" in script and "--universal" in script
+    lock = (backend / "requirements.lock").read_text()
+    entry = re.compile(r"^([A-Za-z0-9][\w.-]*)==(\S+)(?: ;[^\\\n]*)? \\\n((?:\s+--hash=sha256:[0-9a-f]{64}(?: \\)?\n)+)",
+                       flags=re.M)
+    pinned = {m.group(1).lower().replace("_", "-") for m in entry.finditer(lock)}
+    package_lines = [ln for ln in lock.splitlines() if ln and not ln.startswith((" ", "#"))]
+    assert len(list(entry.finditer(lock))) == len(package_lines), "every lock entry is pinned with == and has hashes"
+    direct = {_req_name(ln) for ln in (backend / "requirements.txt").read_text().splitlines()
+              if ln.strip() and not ln.lstrip().startswith("#")}
+    assert direct <= pinned, sorted(direct - pinned)

@@ -28,6 +28,8 @@ from app.backtest.options_engine import ENGINE_VERSION as OPTIONS_ENGINE_VERSION
 from app.backtest.options_engine import OptionBacktestConfig, OptionBacktestError, run_option_backtest
 from app.backtest.repro import config_hash, fingerprint
 from app.backtest.robustness import monte_carlo, walk_forward
+from app.backtest.server_candles import DataChoice
+from app.backtest.server_candles import fill as fill_candles
 from app.core.enums import ExpiryRule, OptionPosition, OptionStrategy, StrikeRule
 from app.core.models import BacktestResult, OHLCVBar, RiskConfig, bars_to_dataframe
 from app.custom_strategies.resolver import resolve_strategy
@@ -104,15 +106,16 @@ class OptionBacktestBody(BaseModel):
         )
 
 
-class BacktestBody(BaseModel):
+class BacktestBody(DataChoice):
     strategy_id: str
     symbol: str
     base_timeframe: str
-    candles: List[OHLCVBar]
+    # M55 T3: no candles = the server loads them for symbol / timeframe (server_candles); posted = "paste your own data".
+    candles: list[OHLCVBar] = Field(default_factory=list)
     risk_config: Optional[RiskConfig] = None
     strategy_params: Optional[Dict] = None
     exit_rules: Optional[ExitRulesBody] = None
-    data_source: str = Field(default="uploaded", max_length=30)
+    data_source: str = Field(default="uploaded", max_length=30, description="set by the server (M55 T3); a client label is ignored")
     # Phase W: present = an option backtest on the same signals.
     options: Optional[OptionBacktestBody] = None
     # Realism C2: execution models (fill, slippage, ...); omitted = the defaults, i.e. the engine before C2.
@@ -321,7 +324,8 @@ class BacktestBarsBody(BaseModel):
     symbol: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9 &._:-]+$")
     exchange: str = Field(default="NSE", pattern=r"^(NSE|BSE|NFO|BFO|MCX|CDS)$")
     timeframe: str = Field(min_length=1, max_length=10)
-    lookback_days: int = Field(default=30, ge=1, le=730, description="calendar days; intraday at most 30 (the candles route's caps)")
+    lookback_days: int = Field(default=30, ge=1, le=730, description="calendar days; intraday at most 30 (the candles route's caps), "
+                               "a backfilled index's 15M / 30M / 1H up to the stored history's depth")
     broker: Optional[str] = Field(default=None, max_length=20)
 
 
@@ -329,12 +333,20 @@ class BacktestBarsBody(BaseModel):
 async def backtest_bars(body: BacktestBarsBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     """Your broker's bars when its session is usable, else ATP's stored Daily history (flag `backtest_stored_history`),
     else 409 with what is missing - plus where the prices came from and the date range, in plain words. Reads only: the
-    caller's own organisation's broker session, or the shared Daily lake (never another organisation's private store)."""
+    caller's own organisation's broker session, or the shared Daily lake (never another organisation's private store);
+    M55 T4: for a backfilled index's 15M / 30M / 1H also the stored index history while the data tier is off
+    (bar_source.stored_intraday_frame)."""
     from app.backtest import bar_source
+    from app.core import config as app_config
     from app.market_data.candles_routes import DAILY_MAX_LOOKBACK_DAYS, INTRADAY_MAX_LOOKBACK_DAYS
-    cap = DAILY_MAX_LOOKBACK_DAYS if bar_source.timeframe_kind(body.timeframe) else INTRADAY_MAX_LOOKBACK_DAYS
+    if bar_source.timeframe_kind(body.timeframe):
+        cap = DAILY_MAX_LOOKBACK_DAYS
+    elif bar_source.stored_intraday_tf(body.timeframe) and bar_source.stored_intraday_key(body.symbol, body.exchange):
+        cap = max(INTRADAY_MAX_LOOKBACK_DAYS, app_config.LAKE_BACKFILL_INTRADAY_DAYS)    # M55 T4: stored index history
+    else:
+        cap = INTRADAY_MAX_LOOKBACK_DAYS
     bars = await bar_source.resolve(session, user.tenant_id, body.symbol, body.exchange, body.timeframe,
-                                    lookback_days=min(body.lookback_days, cap), user=user, broker=body.broker)
+                                    lookback_days=min(body.lookback_days, cap), user=user, broker=body.broker, stored_beyond_broker=True)
     return {"symbol": body.symbol.strip().upper(), "timeframe": body.timeframe, **bars.info(), "candles": bar_source.frame_bars(bars.frame)}
 
 
@@ -343,10 +355,12 @@ async def backtest_monte_carlo(
     body: BacktestBody, runs: int = 1000, seed: Optional[int] = 42,
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> dict:
+    await fill_candles(session, user, body)                                     # M55 T3: server-side candles
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
     runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
     result = await run_in_threadpool(runner.run, strategy, bars_to_dataframe(body.candles))        # P0.1 / S3
+    result.data_source = body.data_source
     from app.core import config as app_config
     capital = float(risk.with_capital(app_config.PAPER_STARTING_CAPITAL).capital or 0.0)     # DEF-0
     mc = await run_in_threadpool(monte_carlo, result.trades, capital, runs=max(100, min(runs, 5000)), seed=seed)
@@ -358,6 +372,7 @@ async def backtest_walk_forward(
     body: BacktestBody, folds: int = 4,
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> dict:
+    await fill_candles(session, user, body)                                     # M55 T3: server-side candles
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
     runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
@@ -407,11 +422,12 @@ async def upload_option_chain_snapshots(body: SnapshotUploadBody, user: User = D
     return {"underlying": underlying, "received": len(body.rows), "written": written}
 
 
-class OptimizeBody(BaseModel):
+class OptimizeBody(DataChoice):
     strategy_id: str
     symbol: str
     base_timeframe: str
-    candles: List[OHLCVBar]
+    candles: list[OHLCVBar] = Field(default_factory=list)            # M55 T3: as BacktestBody
+    data_source: str = Field(default="uploaded", max_length=30, description="set by the server (M55 T3)")
     param_grid: Dict[str, List] = Field(description=f"parameter -> candidate values; at most {MAX_COMBOS} combinations")
     metric: str = Field(default="net_pnl", pattern=r"^(net_pnl|expectancy|profit_factor|win_rate)$")
     split: float = Field(default=0.7, ge=0.5, le=0.9)
@@ -427,6 +443,7 @@ async def backtest_optimize(body: OptimizeBody, user: User = Depends(get_current
     """Phase M / V4.6: grid search on the in-sample part; P0.6 / B3: ranked in-sample, `validation` is the out-of-sample figure."""
     from app.platform.controls import require_flag
     await require_flag(session, "backtest_optimizer", user.tenant_id)  # Phase N4
+    await fill_candles(session, user, body)                                     # M55 T3: server-side candles
     strategy = await _strategy(BacktestBody(strategy_id=body.strategy_id, symbol=body.symbol, base_timeframe=body.base_timeframe,
                                             candles=body.candles, risk_config=body.risk_config), user, session)
     try:

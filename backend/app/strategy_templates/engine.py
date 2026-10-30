@@ -56,7 +56,10 @@ BREAKOUT_SPARSE_SERIES: Tuple[str, ...] = ("RangeBreakoutRef", "LineBreakoutRef"
 DIVERGENCE_SPARSE_SERIES: Tuple[str, ...] = ("RsiDivergenceRef",)
 # The wave templates' zone-edge companion: the far side of the smaller swing zone's area, missing before the first swing
 ZONE_EDGE_SPARSE_SERIES: Tuple[str, ...] = ("SwingZoneEdge",)
-SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES + BREAKOUT_SPARSE_SERIES + DIVERGENCE_SPARSE_SERIES + ZONE_EDGE_SPARSE_SERIES)
+# M55 T5 (A1): the level gate's invalidation is a price on its entry candles only
+AREA_GATE_SPARSE_SERIES: Tuple[str, ...] = ("AreaGateRef",)
+SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES + BREAKOUT_SPARSE_SERIES + DIVERGENCE_SPARSE_SERIES + ZONE_EDGE_SPARSE_SERIES
+                                     + AREA_GATE_SPARSE_SERIES)
 
 REASON_WARMUP = "warmup"
 REASON_CONFLICT = "conflict"

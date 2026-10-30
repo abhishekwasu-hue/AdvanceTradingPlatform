@@ -4,6 +4,7 @@ import { friendlyError } from "../api/errors";
 import { Button, Dialog } from "../components/primitives";
 import { chartAnalyzeApi } from "./api";
 import type { AnalysisItem } from "./types";
+import { EMPTY, formatDateTimeIST } from "../ui/format";
 
 /**
  * Analyze a chart (PR-A4, flag chart_analyze_share): "Share with my organisation". A link to the user's own analysis
@@ -17,8 +18,8 @@ export function shareUrl(token: string, origin: string = typeof window !== "unde
 }
 
 function day(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const text = formatDateTimeIST(iso);                      // REV-1 M3: IST, never the device's zone
+  return text === EMPTY ? "" : text;
 }
 
 export const SHARE_EXPLAINER = "Members of your organisation who are logged in can open the link. It shows the structure only: the chart's name, "

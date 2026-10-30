@@ -67,19 +67,85 @@ async def ensure_may_open_live(session: AsyncSession, user: User, name: str, *, 
     if not opens_live(name, on=on, tenants=tenants):
         return
     what = f"{name}: on={on} tenants={sorted(int(t) for t in tenants or []) or '-'}"
+    await _ensure_owner(session, user, what, session_id=session_id, confirm=confirm, why="Switching LIVE on",
+                        not_owner=NOT_OWNER, no_confirm=NO_CONFIRM)
+
+
+async def _ensure_owner(session: AsyncSession, user: User, what: str, *, session_id: int | None, confirm: str | None,
+                        why: str, not_owner: str, no_confirm: str) -> None:
+    """The owner identity, a recent two-factor check and the typed confirmation - or an audited refusal."""
     if not is_owner(user):
         await _audit(session, user, REFUSED_EVENT, f"{what} refused - not the owner")
-        raise LiveOwnerRefused(NOT_OWNER)
+        raise LiveOwnerRefused(not_owner)
     from fastapi import HTTPException
 
     from app.auth.dependencies import ensure_mfa_session
     from app.core.config import MFA_STEP_UP_MINUTES
     try:
-        await ensure_mfa_session(session, user, session_id, "Switching LIVE on", within_minutes=MFA_STEP_UP_MINUTES)
+        await ensure_mfa_session(session, user, session_id, why, within_minutes=MFA_STEP_UP_MINUTES)
     except HTTPException:
         await _audit(session, user, REFUSED_EVENT, f"{what} refused - no recent two-factor check")
         raise
     if (confirm or "").strip() != CONFIRM_TEXT:
         await _audit(session, user, REFUSED_EVENT, f"{what} refused - typed confirmation missing")
-        raise LiveOwnerRefused(NO_CONFIRM, status_code=400)
+        raise LiveOwnerRefused(no_confirm, status_code=400)
     await _audit(session, user, ALLOWED_EVENT, f"{what} allowed - owner, two-factor checked, confirmed")
+
+
+# --- M55 S1b (owner decision with #744): the per-organisation LIVE grant ------------------------------------------------
+# After S1 no plan grants LIVE. The grant IS the `live_trading` flag's organisation allow-list (existing storage, no
+# migration): only the owner (the same three checks as above) adds or removes an organisation, every grant / revoke is
+# audited, and the flag's `on` stays the global switch (switching it on or off keeps the list). The plan check
+# (app/plans/limits.py `live_allowed_for`) passes for an organisation only when ALL hold: the global switch is on, the
+# PAPER-only lock is off for it and it is on the list. Nothing is granted by default (no stored entry: an empty list).
+GRANTED_EVENT = "live_org_granted"
+REVOKED_EVENT = "live_org_revoked"
+NOT_OWNER_GRANT = "Only the owner can grant or revoke LIVE for an organisation."
+NO_CONFIRM_GRANT = f'Type "{CONFIRM_TEXT}" to confirm the LIVE change for this organisation.'
+GRANT_VIA_LIST = 'Grant LIVE to an organisation under "LIVE for organisations", not with the switch.'
+
+
+async def granted_orgs(session: AsyncSession) -> list[int]:
+    """The organisations the owner granted LIVE (sorted ids; empty by default)."""
+    from app.platform.controls import feature_flags
+    return list((await feature_flags(session)).get(LIVE_TRADING, {}).get("tenants") or [])
+
+
+async def org_live_open(session: AsyncSession, tenant_id: int | None) -> bool:
+    """True only when the global `live_trading` switch is on, the PAPER-only lock is off for this organisation and the
+    owner granted it LIVE. Read fresh each time (it also refreshes the lock state the broker chokepoint reads)."""
+    if tenant_id is None:
+        return False
+    from app.platform import phase0_lock
+    from app.platform.controls import feature_flags
+    entry = (await feature_flags(session)).get(LIVE_TRADING) or {}
+    if not entry.get("on") or int(tenant_id) not in (entry.get("tenants") or []):
+        return False
+    return not await phase0_lock.is_on(session, int(tenant_id))
+
+
+async def set_org_grant(session: AsyncSession, user: User, tenant_id: int, *, granted: bool, session_id: int | None,
+                        confirm: str | None) -> list[int]:
+    """Grant (or revoke) LIVE for one organisation - the owner only, two-factor checked, typed confirmation; audited
+    either way. Raises LiveOwnerRefused (or the step-up refusal), or ValueError for an unknown organisation. Returns the
+    granted list. Only the list changes: the global switch keeps its stored (or default) value."""
+    from app.db.models import Tenant
+    from app.platform import controls
+    tid = int(tenant_id)
+    what = f"{LIVE_TRADING}: {'grant' if granted else 'revoke'} organisation {tid}"
+    await _ensure_owner(session, user, what, session_id=session_id, confirm=confirm,
+                        why="Changing LIVE for an organisation", not_owner=NOT_OWNER_GRANT, no_confirm=NO_CONFIRM_GRANT)
+    if granted and await session.get(Tenant, tid) is None:
+        await _audit(session, user, REFUSED_EVENT, f"{what} refused - unknown organisation")
+        raise ValueError(f"Unknown organisation {tid}")
+    resolved = (await controls.feature_flags(session)).get(LIVE_TRADING) or {}
+    current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
+    flags = dict(current.get("flags") or {})
+    tenants = {int(t) for t in resolved.get("tenants") or []}
+    tenants = tenants | {tid} if granted else tenants - {tid}
+    flags[LIVE_TRADING] = {"on": bool(resolved.get("on", False)), "tenants": sorted(tenants)}
+    await controls._set(session, controls.KEY_FEATURE_FLAGS, {**current, "flags": flags}, user)
+    await write_audit_log(session, None, user.id, GRANTED_EVENT if granted else REVOKED_EVENT,
+                          f"organisation {tid}; granted now: {sorted(tenants) or '-'}")
+    await session.commit()
+    return sorted(tenants)

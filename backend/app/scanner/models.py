@@ -3,6 +3,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from app.backtest.server_candles import DataChoice
 from app.brokers.models import OptionChain
 from app.core.models import OHLCVBar
 from app.strategy_engine.declarative import Condition
@@ -56,11 +57,12 @@ class OptionFilter(BaseModel):
 class ScannerSymbolInput(BaseModel):
     symbol: str
     timeframe: str = "5min"
-    candles: List[OHLCVBar]
+    # M55 T3: no candles = the server loads them (app/backtest/server_candles.py); posted = "paste your own data".
+    candles: list[OHLCVBar] = Field(default_factory=list)
     option_chain: Optional[OptionChain] = None
 
 
-class ScannerRequest(BaseModel):
+class ScannerRequest(DataChoice):
     symbols: List[ScannerSymbolInput]
     # AND-combined across every supplied filter, across all three categories - a symbol has to
     # clear every filter the caller configured to appear in the results at all.
@@ -82,3 +84,6 @@ class ScannerResult(BaseModel):
     scanned_count: int
     matched_count: int
     matches: List[ScannerMatch]
+    # M55 T3: where the candles came from (set by the route): the server's label, or "uploaded" for pasted candles.
+    data_source: str | None = None
+    warnings: list[str] = Field(default_factory=list)

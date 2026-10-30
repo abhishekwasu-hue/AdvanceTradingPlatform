@@ -10,6 +10,7 @@ import CostChip from "../../components/CostChip";
 import { useCopilotT } from "../../i18n";
 import { Panel } from "../shared";
 import { cleanSymbol, factRows, headlines, sections, totalUsage } from "./multiview";
+import { formatDateTimeIST } from "../../../ui/format";
 
 /**
  * H-C4: "analyze <symbol>" - the technical, options, news and macro views from the platform's read tools, then the
@@ -51,7 +52,7 @@ function ViewCard({ view }: { view: MultiView }) {
         </details>
       )}
       <p className="mt-2 text-xs text-fg-muted">
-        {view.as_of ? t("analyze.asOf", { when: new Date(view.as_of).toLocaleString("en-IN") }) : t("analyze.noTime")}
+        {view.as_of ? t("analyze.asOf", { when: formatDateTimeIST(view.as_of) }) : t("analyze.noTime")}
         {view.sources.length > 0 ? ` · ${view.sources.join(", ")}` : ""}
       </p>
     </div>

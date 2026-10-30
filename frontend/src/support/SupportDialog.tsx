@@ -95,7 +95,7 @@ export default function SupportDialog({ open, onOpenChange, onFeedback }: {
             <Send size={13} aria-hidden="true" />
           </Button>
         </form>
-        <p className="text-xs text-fg-muted">For how-to questions only - never advice on what to buy or sell.</p>
+        <Details id="support.disclaimer" label="Disclaimer" className="mt-0"><p>For how-to questions only - never advice on what to buy or sell.</p></Details>
       </div>
     </Dialog>
   );

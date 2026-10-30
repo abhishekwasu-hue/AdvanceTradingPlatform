@@ -216,11 +216,13 @@ function Confirm({ offer, list, busy, onBack, onAdopt }: { offer: DayOneOffer; l
         </dl>
         {offer.rules.length > 0 && <ul className="mt-space-2 list-disc pl-space-5 text-t12 text-fg-muted">{offer.rules.map((r) => <li key={r}>{r}</li>)}</ul>}
       </div>
-      <ul className="space-y-space-1 text-t14 text-fg">
-        <li>Paper money only. Nothing is placed: each setup waits for you.</li>
-        <li>Signals only. What to trade, how much and when to get out stay your own choices.</li>
-        <li>You can change the settings later in a paper bot.</li>
-      </ul>
+      <Details id="day-one.terms" className="mt-0">
+        <ul className="space-y-space-1">
+          <li>Paper money only. Nothing is placed: each setup waits for you.</li>
+          <li>Signals only. What to trade, how much and when to get out stay your own choices.</li>
+          <li>You can change the settings later in a paper bot.</li>
+        </ul>
+      </Details>
       <div className="flex flex-wrap items-center gap-space-2">
         <button type="button" className={LINK_PRIMARY} onClick={onAdopt} disabled={busy} data-day-one-adopt>
           {busy ? "Reading your list…" : "Adopt on paper and read my list"}

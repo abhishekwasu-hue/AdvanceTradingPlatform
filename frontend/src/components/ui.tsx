@@ -136,13 +136,13 @@ export function Disclaimer({ kind }: { kind: "backtest" | "signals" | "ai" | "sc
       "Scores and ratings summarise the inputs entered; they are analytical aids, not recommendations to buy, sell or hold any security.",
   }[kind];
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2 text-xs text-fg-muted">
-      <Info size={13} className="shrink-0 mt-0.5" />
-      <span>
+    // PROSE-1 (owner 30 Oct): the statement sits behind its own closed "Disclaimer" Details, like the SEBI footnote's ⓘ.
+    <Details id={`disclaimer.${kind}`} label="Disclaimer" className="mt-0">
+      <p>
         {lead} Trading in equities and derivatives involves substantial risk of loss and is not suitable for
         every investor. You remain responsible for every order placed from your account.
-      </span>
-    </div>
+      </p>
+    </Details>
   );
 }
 

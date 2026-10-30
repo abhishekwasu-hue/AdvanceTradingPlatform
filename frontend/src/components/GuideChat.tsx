@@ -100,7 +100,7 @@ export default function GuideChat({ plain = false }: { plain?: boolean }) {
                className="flex-1 rounded border border-border bg-surface-2 px-3 py-1.5 text-sm" />
         <button disabled={busy || question.trim().length < 2} className="rounded bg-brand px-3 py-1.5 text-xs font-bold text-on-brand hover:bg-brand-strong disabled:opacity-40"><Send size={12} className="mr-1 inline" />Ask</button>
       </form>
-      <div className="mt-1 text-xs text-fg-muted">Information for learning - never advice on what to buy or sell.</div>
+      <Details id="guide-chat.disclaimer" label="Disclaimer" className="mt-1"><p>Information for learning - never advice on what to buy or sell.</p></Details>
     </>
   );
   return (

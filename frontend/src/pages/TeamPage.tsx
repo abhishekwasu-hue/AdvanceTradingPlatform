@@ -7,6 +7,8 @@ import { Card, StatTile } from "../components/ui";
 import { ROLE_LABELS, ROUTING_POLICIES, type MemberScopes, type ScopeCatalogueEntry, type TeamInvite, type TeamMember, type TenantInfo, type TenantRole } from "../types";
 import { PageHeader } from "../components/primitives";
 import { formatDateIST, formatDateTimeIST } from "../ui/format";
+import { permissionWords, routingHelp, shownPermission } from "../ui/permissionWords";
+import { useLiveHidden } from "../settings/useLiveHidden";
 
 const INVITABLE: TenantRole[] = ["USER", "STRATEGY_CREATOR", "VIEWER"];
 const ASSIGNABLE: TenantRole[] = ["OWNER", "USER", "STRATEGY_CREATOR", "VIEWER"];
@@ -38,6 +40,7 @@ export default function TeamPage() {
   const [busy, setBusy] = useState(false);
   const [catalogue, setCatalogue] = useState<ScopeCatalogueEntry[]>([]);
   const [scopeEdit, setScopeEdit] = useState<MemberScopes | null>(null);
+  const liveHidden = useLiveHidden();
 
   const isOwner = user?.role === "OWNER" || user?.role === "SUPER_ADMIN";
 
@@ -226,17 +229,21 @@ export default function TeamPage() {
         {scopeEdit && (
           <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3 text-xs">
             <div className="flex items-center justify-between mb-2">
-              <div className="font-bold text-sm">Permissions for {members.find((m) => m.id === scopeEdit.id)?.email ?? `#${scopeEdit.id}`} <span className="text-fg-muted font-normal">({ROLE_LABELS[scopeEdit.role as TenantRole] ?? scopeEdit.role})</span></div>
+              <div className="font-bold text-sm">Permissions for {members.find((m) => m.id === scopeEdit.id)?.email ?? "this member"} <span className="text-fg-muted font-normal">({ROLE_LABELS[scopeEdit.role as TenantRole] ?? scopeEdit.role})</span></div>
               <button onClick={() => setScopeEdit(null)} className="text-fg-muted hover:text-fg">close</button>
             </div>
             <p className="text-fg-muted mb-2">Unticking a permission the role normally has denies it for this member; ticking one the role lacks grants it (within what you hold yourself). Exits are never gated.</p>
             <div className="grid sm:grid-cols-2 gap-1.5">
-              {catalogue.filter((c) => c.scope !== "admin:platform").map((c) => (
-                <label key={c.scope} className="flex items-start gap-2 cursor-pointer">
-                  <input type="checkbox" className="mt-0.5" checked={scopeEdit.scopes.includes(c.scope)} onChange={() => toggleScope(c.scope)} />
-                  <span><span className="font-mono text-fg">{c.scope}</span> <span className="text-fg-muted">- {c.description}</span></span>
-                </label>
-              ))}
+              {/* REV-1 M2: plain words, never the permission code; nothing about LIVE in Phase 0. */}
+              {catalogue.filter((c) => shownPermission(c.scope, liveHidden)).map((c) => {
+                const words = permissionWords(c.scope, c.description);
+                return (
+                  <label key={c.scope} className="flex items-start gap-2 cursor-pointer" data-permission>
+                    <input type="checkbox" className="mt-0.5" checked={scopeEdit.scopes.includes(c.scope)} onChange={() => toggleScope(c.scope)} />
+                    <span><span className="font-semibold text-fg">{words.label}</span>{words.line && <span className="text-fg-muted"> - {words.line}</span>}</span>
+                  </label>
+                );
+              })}
             </div>
             <div className="mt-3 flex gap-2">
               <button disabled={busy} onClick={() => act("Permissions saved.", () => api.setMemberScopes(scopeEdit.id, scopeEdit.overrides.deny, scopeEdit.overrides.grant).then(setScopeEdit))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1">Save</button>
@@ -258,8 +265,8 @@ export default function TeamPage() {
           </div>
           <label className="mt-3 flex items-start gap-2 text-xs text-fg-muted cursor-pointer">
             <input type="checkbox" className="mt-0.5" checked={Boolean(tenant.require_mfa_for_live)} disabled={busy}
-              onChange={(e) => act(e.target.checked ? "Two-factor authentication is now required for live trading and broker credentials." : "Two-factor requirement removed.", () => api.setTenantMfaPolicy(e.target.checked))} />
-            <span><b>Require two-factor authentication</b> for LIVE deployments, broker credentials and broker login. Members without it will be asked to enable it on the Account tab first. (Enable it on your own account before turning this on.)</span>
+              onChange={(e) => act(e.target.checked ? (liveHidden ? "Two-factor authentication is now required for broker credentials and broker login." : "Two-factor authentication is now required for live trading and broker credentials.") : "Two-factor requirement removed.", () => api.setTenantMfaPolicy(e.target.checked))} />
+            <span><b>Require two-factor authentication</b> for {liveHidden ? "" : "LIVE deployments, "}broker credentials and broker login. Members without it will be asked to enable it on the Account tab first. (Enable it on your own account before turning this on.)</span>
           </label>
           <div className="mt-3 flex items-center gap-2 text-xs">
             <span className="text-fg font-semibold">Reporting currency</span>
@@ -275,7 +282,7 @@ export default function TeamPage() {
               onChange={(e) => act("Default account routing updated.", () => api.setTenantRoutingPolicy(e.target.value))}>
               {ROUTING_POLICIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
-            <span className="text-fg-muted">{ROUTING_POLICIES.find((p) => p.value === (tenant.default_routing_policy ?? "EXPLICIT"))?.help} LIVE deployments without their own policy use this.</span>
+            <span className="text-fg-muted">{routingHelp(ROUTING_POLICIES.find((p) => p.value === (tenant.default_routing_policy ?? "EXPLICIT"))?.help, liveHidden)}{liveHidden ? "" : " LIVE deployments without their own policy use this."}</span>
           </div>
           <div className="mt-4 border-t border-border pt-3">
             <div className="text-xs font-semibold text-fg">Exchange algo id (SEBI algo tagging)</div>
@@ -320,9 +327,14 @@ export default function TeamPage() {
               </div>
             ))}
           </div>
-          <div className={`mt-3 text-xs font-semibold ${tenant.limits.live_trading ? "text-up" : "text-warn"}`}>
-            {tenant.limits.live_trading ? "Live trading included." : "Paper trading only on this plan - LIVE deployments need Pro or Business. Contact support to upgrade."}
-          </div>
+          {/* REV-1 M2: nothing about LIVE while Phase 0 is PAPER only (B3 / useLiveHidden, as Settings). */}
+          {liveHidden ? (
+            <div className="mt-3 text-xs font-semibold text-fg-muted" data-plan-paper>Paper trading: practice money at real prices.</div>
+          ) : (
+            <div className={`mt-3 text-xs font-semibold ${tenant.limits.live_trading ? "text-up" : "text-warn"}`}>
+              {tenant.limits.live_trading ? "Live trading included." : "Paper trading only on this plan - LIVE deployments need Pro or Business. Contact support to upgrade."}
+            </div>
+          )}
         </Card>
       )}
     </div>

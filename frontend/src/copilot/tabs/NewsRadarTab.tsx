@@ -9,6 +9,7 @@ import { friendlyError } from "../aiTask";
 import { useCopilotData } from "../data";
 import { useCopilotT } from "../i18n";
 import { Panel, Stagger, StaggerItem } from "./shared";
+import { formatDateTimeIST } from "../../ui/format";
 
 /**
  * News Radar: the live feed from the publishers' own public feeds (RBI, SEBI, exchanges...) - headline, source link,
@@ -106,7 +107,7 @@ export default function NewsRadarTab() {
                     <Badge tone="neutral">{t(`news.cat.${i.category}`, { defaultValue: i.category })}</Badge>
                     <Badge tone="warn">{t("news.unverified")}</Badge>
                     {c.method === "ai" && <Badge tone="brand">{t("news.aiClassified")}</Badge>}
-                    <span className="ml-auto text-fg-muted">{new Date(i.published_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                    <span className="ml-auto text-fg-muted">{formatDateTimeIST(i.published_at)}</span>
                   </div>
                   <h3 className="mt-1.5 text-sm font-semibold text-fg">{i.headline}</h3>
                   {c.one_line_en && <p className="mt-0.5 text-xs text-fg-muted">{c.one_line_en}</p>}

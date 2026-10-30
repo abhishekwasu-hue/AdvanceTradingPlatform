@@ -2,7 +2,7 @@ import { errorSentence } from "../api/errors";
 import { useId, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
-import { NEEDS_BROKER_FOR_DATA, useCandleSource } from "../components/DataSource";
+import { NEEDS_BROKER_FOR_DATA, SampleChip, useCandleSource } from "../components/DataSource";
 import { Sheet } from "../components/primitives";
 import { useOptionalAuth } from "../auth/AuthContext";
 import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
@@ -138,6 +138,7 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
             <h3 className="text-t18 font-semibold text-fg">{signal.symbol}</h3>
             {item.direction ? <Direction value={item.direction} /> : <span className="font-semibold text-fg-muted">Wait</span>}
             <span className="text-t12 text-fg-muted">Score {result?.composite_score ?? signal.score} · grade {result?.grade ?? signal.grade}{made?.sample ? " · sample data" : ""}</span>
+            {made?.sample && <SampleChip />}
           </div>
           <LevelTiles item={item} />
           {item.reasons.length > 0 && (

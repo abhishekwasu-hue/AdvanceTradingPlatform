@@ -101,4 +101,23 @@ describe("UX1 admin Feature flags list", () => {
       <FeatureFlagsCard flags={FLAGS} tenants={{}} onTenants={() => {}} busy={false} onSet={() => {}} onSaveList={() => {}} />);
     expect(html.match(/>Turn on</g)?.length).toBe((before.match(/>Turn on</g)?.length ?? 0) - 1);
   });
+
+  it("M55 S1: the LIVE switches are read-only for anyone but the owner; the owner gets a typed confirmation", () => {
+    const live = (canSwitch: boolean): FeatureFlags => ({
+      live_trading: { ...FLAGS.live_trading, owner_only: true, can_switch_live: canSwitch, confirm_text: "ENABLE LIVE", opens_live_when_on: true },
+      phase0_paper_only: { ...FLAGS.live_trading, on: true, plain: "PAPER-only lock", owner_only: true, can_switch_live: canSwitch,
+        confirm_text: "ENABLE LIVE", opens_live_when_on: false },
+    });
+    const render = (flags: FeatureFlags) => renderToStaticMarkup(
+      <FeatureFlagsCard flags={flags} tenants={{}} onTenants={() => {}} busy={false} onSet={() => {}} onSaveList={() => {}} />);
+    const other = render(live(false));
+    expect(other.match(/Only the owner can switch LIVE on/g)?.length).toBe(2);
+    expect(other).not.toMatch(/>Turn on<|>Turn off<|data-flag-confirm/);
+    expect(other).not.toContain("Keep it on for these organisations only");
+    const owner = render(live(true));
+    expect(owner).not.toContain("Only the owner can switch LIVE on");
+    expect(owner.match(/data-flag-confirm/g)?.length).toBe(2);
+    expect(owner).toContain('placeholder="Type ENABLE LIVE"');
+    expect(owner.match(/<button[^>]*disabled=""[^>]*>Turn (on|off)<\/button>/g)?.length).toBe(2);   // until typed
+  });
 });

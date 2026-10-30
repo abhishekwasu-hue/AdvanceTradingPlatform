@@ -21,7 +21,10 @@ export interface SystemListSummary {
 export interface SystemItem extends WatchItem { name?: string }
 export interface SystemList extends SystemListSummary { items: SystemItem[] }
 export interface SystemGroup { group: string; label: string; lists: SystemListSummary[] }
-export interface SystemListsReply { groups: SystemGroup[]; refreshed_at?: string | null }
+/** M55 T3: `fallback` = the daily universe sync is off, so the lists are the stored fallback copy (LISTS_FALLBACK_NOTE). */
+export interface SystemListsReply { groups: SystemGroup[]; refreshed_at?: string | null; fallback?: boolean }
+/** M55 T3: the one line a page shows above index / sector lists while the daily universe sync is off. */
+export const LISTS_FALLBACK_NOTE = "These index and sector lists are a fallback copy: the daily refresh from the exchange is off, so they may be out of date.";
 export interface CopyReply extends WatchlistV2 { copied_from: string; truncated: boolean; source_count: number }
 
 export const systemListsApi = {

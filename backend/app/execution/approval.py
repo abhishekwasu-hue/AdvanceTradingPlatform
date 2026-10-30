@@ -464,17 +464,26 @@ def is_protective(reason: str) -> bool:
     return not (reason or "").startswith(("Target 1", "Target 2"))
 
 
+# M55 S2 (A8): target exits never wait for an answer. Kept as a constant (not a setting): turning it back on is the
+# owner's decision, through a code change.
+EXIT_APPROVAL_ASKS = False
+
+
 def _target_rule(reason: str) -> str:
     return "TARGET_2_REACHED" if reason.startswith("Target 2") else "TARGET_1_REACHED"
 
 
 async def exit_approval_predicate(session: AsyncSession, tenant_id: int,
                                   deployments: Iterable[StrategyDeploymentRecord]) -> Optional[Callable[[TradeRecord], bool]]:
-    """Which of this organisation's positions ask "Exit now?" on a target: the open PAPER positions that were entered by
-    an approved entry proposal (review L2) - any other position keeps its automatic target exit. None when there is none
-    (the monitor behaves exactly as before), and None when they cannot be read: the exits sweep then runs as before rather
-    than not at all (ADR-0004)."""
-    del deployments                      # kept for the caller's signature; the trades themselves say how they entered
+    """Which of this organisation's positions ask "Exit now?" on a target instead of closing.
+
+    M55 S2 (A8, owner order): none. Approval-only mode gates entries only; every exit, a target included, is automatic
+    (ADR-0004). Always None, so the monitor closes on a target at once; "Exit now" stays available on every position.
+    The former selection (open PAPER positions entered by an approved proposal, review L2) is kept below for the record
+    and is not reached."""
+    del deployments                      # kept for the caller's signature
+    if not EXIT_APPROVAL_ASKS:
+        return None
     try:
         if not await flag_on(session, tenant_id):          # review V6: flag off - every target exit is automatic again
             return None

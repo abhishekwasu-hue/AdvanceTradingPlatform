@@ -28,7 +28,7 @@ from app.workers.trading_worker import TradingWorker
 from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 
-pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests", "owner_switched_live_on")   # counts are per cycle (ADR-0004 sweep)
 
 IST = ZoneInfo("Asia/Kolkata")
 OPEN_NOW = datetime(2026, 9, 25, 10, 30, tzinfo=IST)          # Friday, mid-session

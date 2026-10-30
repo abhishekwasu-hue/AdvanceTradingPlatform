@@ -6,12 +6,16 @@ import asyncio
 import re
 from pathlib import Path
 
+import pytest
+
 from app.cache import client as cache_client
 from app.core import config
 from app.main import app
 from app.workers import trading_worker as tw
 from tests.test_auth_api import _register, client
 from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _signal, _tenant, _worker
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 ROOT = Path(__file__).resolve().parents[2]
 CLOSED = ("/api/backtest", "/api/price-action/structure", "/api/price-action/patterns", "/api/support-resistance/zones",

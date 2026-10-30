@@ -17,9 +17,10 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user_optional
+from app.auth.dependencies import get_current_user
 from app.backtest.engine import run_backtest
 from app.core.models import OHLCVBar, RiskConfig, Signal, Trade, bars_to_dataframe
+from app.core.rate_limit import analysis_rate_limit
 from app.core.resampling import resample_ohlc
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import User
@@ -60,10 +61,10 @@ class ChartRunResponse(BaseModel):
     last_signal: Optional[Signal] = None
 
 
-@router.post("/{strategy_id}/chart-run", response_model=ChartRunResponse)
+@router.post("/{strategy_id}/chart-run", response_model=ChartRunResponse, dependencies=[Depends(analysis_rate_limit)])
 async def chart_run(
     strategy_id: str, body: ChartRunRequest,
-    user: Optional[User] = Depends(get_current_user_optional), session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),     # M55 O2
 ) -> ChartRunResponse:
     try:
         strategy = copy.copy(await resolve_strategy(strategy_id, user, session))

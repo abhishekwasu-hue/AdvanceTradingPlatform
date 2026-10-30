@@ -2,6 +2,7 @@
 algo id, shortened to the broker's tag limit, and the tag is stored on the order trail."""
 import asyncio
 
+import pytest
 from sqlalchemy import select
 
 from app.core import config
@@ -12,6 +13,8 @@ from app.risk_engine.risk_manager import TradingDayState
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_live_execution import _execute, _LiveBroker, _router, _signal, _upgrade_plan
 from tests.test_orders_api import _fake_long_signal, _sample_candles_payload
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 
 def test_tag_without_algo_id_is_strategy_and_leg_within_limit():

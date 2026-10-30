@@ -30,7 +30,7 @@ import socket
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from datetime import time as dtime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -47,7 +47,7 @@ from app.backtest import chain_recorder
 from app.billing.service import sweep as billing_sweep
 from app.brokers import login_reminder
 from app.brokers.base import BrokerInterface
-from app.brokers.rate_budget import RateBudget, RateLimitedBroker, daily_budget_for, limits_for
+from app.brokers.rate_budget import RateBudget, RateLimitedBroker, daily_budget_for, exit_reads, limits_for
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
 from app.cache.client import cache_lock_holder, cache_release_lock, cache_renew_lock, cache_try_lock
 from app.compliance.static_ip import live_entry_problem
@@ -68,6 +68,7 @@ from app.instruments.contracts import ContractResolutionError, ContractRules, re
 from app.instruments.master import sync_upstox
 from app.instruments.spreads import parse_custom_legs, resolve_structure
 from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
+from app.market_data.exit_prices import StoredTickPrices
 from app.market_data.fanin import UserSessionFanIn
 from app.market_data.freshness import candle_staleness, closed_frames
 from app.market_data.hub import DataHub
@@ -137,6 +138,8 @@ class CycleReport:
     # cycle; `lock_aborted` when another holder has it and this worker stopped the cycle there.
     lock_lost: bool = False
     lock_aborted: bool = False
+    # M55 S2 (A9): organisations the cycle reached only for their exits after the lock was lost to another holder.
+    exits_only_tenants: int = 0
     redis_memory_ratio: Optional[float] = None
     retention: Optional[RetentionReport] = None
     chain_rows_recorded: int = 0   # Phase W
@@ -238,6 +241,8 @@ class TradingWorker:
         self.holder_id = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
         self._stop = asyncio.Event()
         self._last_token_check: Dict[int, float] = {}
+        # M55 S2: when each exit alert was last raised ((tenant, what) -> monotonic seconds or IST date), one per cooldown.
+        self._exit_alerts: dict[tuple, Any] = {}
         # IST calendar date of the last retention run (Phase D3) - once a day is plenty.
         self._last_retention_day = None
         # Phase W: last option-chain capture per underlying (UTC), so a chain is fetched once per interval.
@@ -428,6 +433,7 @@ class TradingWorker:
         acquired, reachable = await cache_try_lock(LOCK_KEY, self.holder_id, lock_ttl)
         if not acquired:
             logger.info("Another worker replica holds the lock - skipping this cycle")
+            await self._note_stale_lock(lock_ttl)
             return CycleReport(started_at=now, market_open=False, session_reason="lock held elsewhere", skipped_lock=True)
         if self._lock_degraded != (not reachable):
             logger.warning("Redis %s - the replica lock is %s", "unreachable" if not reachable else "back", "off (LIVE entries paused where required)" if not reachable else "on again")
@@ -1122,6 +1128,86 @@ class TradingWorker:
             return False
         return True
 
+    async def _note_stale_lock(self, lock_ttl: int) -> None:
+        """M55 S2 (A9): the replica lock is held elsewhere. When its holder has not finished a cycle for longer than the
+        lock's lifetime (the shared heartbeat row), the lock may be left by a replica that stopped: said as a WARNING (the
+        lock expires on its own within `lock_ttl`). Never raises."""
+        try:
+            holder, _ = await cache_lock_holder(LOCK_KEY)
+            async with self.session_factory() as session:
+                seen = await session.scalar(select(WorkerHeartbeatRecord.last_seen_at).where(
+                    WorkerHeartbeatRecord.worker_name == self.worker_name))
+            if seen is not None and seen.tzinfo is None:
+                seen = seen.replace(tzinfo=UTC)
+            age = None if seen is None else (datetime.now(UTC) - seen).total_seconds()
+            if age is None or age > lock_ttl:
+                logger.warning("Replica lock held by %s, but no cycle has finished for %s - the lock may be stale (it expires "
+                               "within %ss); exits wait for it", holder or "an unknown holder",
+                               "ever" if age is None else f"{age:.0f}s", lock_ttl)
+        except Exception:  # noqa: BLE001 - a diagnostic only
+            logger.warning("Stale lock check failed", exc_info=True)
+
+    def _alert_due(self, key: tuple, cooldown: float) -> bool:
+        last = self._exit_alerts.get(key)
+        if last is not None and time.monotonic() - last <= cooldown:
+            return False
+        self._exit_alerts[key] = time.monotonic()
+        return True
+
+    async def _alert_live_without_session(self, session: AsyncSession, tenant_id: int, user_id: int | None, reason: str) -> None:
+        """M55 S2 (A3): LIVE positions open while no broker session is usable - their exits were attempted, but an exit
+        order needs a session: one CRITICAL notification with the reason (then at most once per cooldown). Never raises."""
+        from app.trading.position_monitor import ALERT_COOLDOWN_SECONDS
+        try:
+            live_open = int(await session.scalar(select(func.count()).select_from(TradeRecord).where(
+                TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.mode == ExecutionMode.LIVE.value)) or 0)
+            if not live_open:
+                self._exit_alerts.pop((tenant_id, "live_no_session"), None)
+                return
+            logger.error("Tenant %s: %d LIVE position(s) open with no usable broker session - exit orders cannot be sent", tenant_id, live_open)
+            if not self._alert_due((tenant_id, "live_no_session"), ALERT_COOLDOWN_SECONDS):
+                return
+            await notify(session, tenant_id, NotificationType.SYSTEM_FAILURE, title="LIVE positions cannot be exited",
+                         message=(f"{live_open} LIVE position(s) are open, but no broker session is usable ({reason}). "
+                                  "An exit order cannot be sent until you log in again; any stop order already placed at the "
+                                  "broker stays there. Log in again on the Broker page, or close the position in your broker app."),
+                         severity=NotificationSeverity.CRITICAL, user_id=user_id)
+        except Exception:  # noqa: BLE001 - an alert never breaks the cycle
+            logger.exception("Tenant %s: the no-session LIVE alert failed", tenant_id)
+            await session.rollback()
+
+    async def _alert_daily_caps(self, session: AsyncSession, tenant_id: int) -> None:
+        """M55 S2 (A13): a per-day broker allowance (rate_budget.DailyBudget) refused a call this cycle - never a silent skip.
+        A refused exit read is CRITICAL; any other refusal a WARNING. Once per organisation, account, kind and day."""
+        for (tid, budget_key), budget in list(self._budgets.items()):
+            daily = getattr(budget, "daily", None)
+            if tid != tenant_id or daily is None:
+                continue
+            hits = daily.pop_cap_hits()
+            for kind, exit_refused in sorted(hits.items()):
+                day = datetime.now(IST).date()
+                key = (tenant_id, budget_key, kind, exit_refused)
+                if self._exit_alerts.get(key) == day:
+                    continue
+                self._exit_alerts[key] = day
+                words = {"orders": "new orders", "live_data": "price reads", "non_trading": "account reads", "auth": "logins"}.get(kind, kind)
+                broker = budget_key.split("@")[0]
+                if exit_refused:
+                    logger.error("Tenant %s: %s daily %s allowance used up - an exit's price read was refused", tenant_id, budget_key, kind)
+                    title, severity = "Exit price reads stopped for today", NotificationSeverity.CRITICAL
+                    text = (f"Today's {words} allowance at {broker} is used up, including the part kept for exits. An exit "
+                            "decision may wait for a price until it starts again tomorrow - check your open positions.")
+                else:
+                    logger.warning("Tenant %s: %s daily %s allowance reached (the exit reserve stays for exits)", tenant_id, budget_key, kind)
+                    title, severity = "Daily broker allowance reached", NotificationSeverity.WARNING
+                    text = (f"Today's {words} allowance at {broker} is used up for new work; the part kept for exits stays "
+                            "for exits. It starts again tomorrow.")
+                try:
+                    await notify(session, tenant_id, NotificationType.SYSTEM_FAILURE, title=title, message=text, severity=severity)
+                except Exception:  # noqa: BLE001 - an alert never breaks the cycle
+                    logger.exception("Tenant %s: the daily allowance alert failed", tenant_id)
+                    await session.rollback()
+
     async def _process_tenants(self, session: AsyncSession, now: datetime, report: CycleReport, open_tenants: Optional[set] = None) -> None:
         deployments = list(await session.scalars(
             select(StrategyDeploymentRecord)
@@ -1144,23 +1230,34 @@ class TradingWorker:
             by_tenant.setdefault(tenant_id, [])
         by_tenant = dict(sorted(by_tenant.items()))
 
+        exits_only = False
         for tenant_id, tenant_deployments in by_tenant.items():
             # P0.1 / S2: the evaluation phase is the long one; keep the replica lock alive per tenant.
-            if not await self._keep_lock(session, report, f"before tenant {tenant_id}"):
-                break   # H-1: another replica holds the lock now - it trades (and exits) the remaining tenants
+            if not exits_only and not await self._keep_lock(session, report, f"before tenant {tenant_id}"):
+                # H-1: another replica holds the lock now - it trades the remaining tenants. M55 S2 (A9, ADR-0004): their
+                # exits still run here, without the lock (each exit claims its position, so two replicas never book or send
+                # one twice); entries need the lock and are not evaluated.
+                exits_only = True
+                remaining = [t for t in by_tenant if t >= tenant_id]
+                logger.warning("Replica lock lost before tenant %s - exits only (no entries) for the %d organisation(s) not reached",
+                               tenant_id, len(remaining))
             with bind_log_context(tenant_id=tenant_id):
                 try:
                     async with guarded(session):
                         await ensure_tenant_key(session, tenant_id)  # Phase N1: credentials decrypt under the tenant key
-                        await self._process_tenant(session, tenant_id, tenant_deployments, now, report)
-                        report.tenants_processed += 1
+                        await self._process_tenant(session, tenant_id, tenant_deployments, now, report, exits_only=exits_only)
+                        if exits_only:
+                            report.exits_only_tenants += 1
+                        else:
+                            report.tenants_processed += 1
                 except Exception as exc:  # noqa: BLE001 - one tenant must never block the others
                     logger.exception("Tenant %s cycle failed", tenant_id)
                     report.errors.append(f"tenant {tenant_id}: {exc}")
+            await self._alert_daily_caps(session, tenant_id)
 
     async def _process_tenant(
         self, session: AsyncSession, tenant_id: int, deployments: List[StrategyDeploymentRecord],
-        now: datetime, report: CycleReport,
+        now: datetime, report: CycleReport, *, exits_only: bool = False,
     ) -> None:
         user = await self._acting_user(session, tenant_id, deployments)
         # #221 LOW-4: an organisation with no active user still gets its exits (ADR-0004); they are recorded with no acting
@@ -1206,37 +1303,45 @@ class TradingWorker:
             # A linked broker whose login ended: the stream stops and the app shows ONE renew notice (never for "no broker
             # linked"); the token check above already sent the one "session expired" notification.
             await self.hub.org_without_session(tenant_id, linked)
-        if data_broker is None:
+        no_session = data_broker is None
+        # Entries are evaluated only with a broker session and the replica lock; the exits below run either way.
+        prepare = not no_session and not exits_only
+        if no_session:
             message = "No usable broker session (token expired or missing) - log in again on the Broker page"
-            for dep in deployments:
-                dep.last_error = message
-            await session.commit()
-            # #221 LOW-4: an exit needs a price, and a price comes only through the organisation's own broker session
-            # (BT1b: never another organisation's feed) - so its open positions are not watched until a session is back.
-            # Said loudly; docs/OPEN_QUESTIONS.md LD-8.
+            if not exits_only:
+                for dep in deployments:
+                    dep.last_error = message
+                await session.commit()
+            # M55 S2 (A3, ADR-0004): the exits still run - a PAPER exit needs only a price, here the newest one ATP already
+            # holds without a broker call (its own hub, else the shared stream keys - never another organisation's own
+            # data with byob on; app/market_data/exit_prices.py). A LIVE exit is still attempted through whatever session
+            # its trade resolves; when none can send it, the CRITICAL notification below says so. No entry is evaluated.
             unwatched = await session.scalar(select(func.count()).select_from(TradeRecord).where(
                 TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None)))
             if unwatched:
-                logger.error("Tenant %s: %s - %d open position(s) get no exits until a broker session is usable", tenant_id, message, unwatched)
+                logger.warning("Tenant %s: %s - exits of %d open position(s) run on the newest stored price; no entries",
+                               tenant_id, message, unwatched)
             else:
                 logger.warning("Tenant %s: %s", tenant_id, message)
-            return
-        market_data = self.market_data_factory(data_broker)
-        if byob and hasattr(market_data, "cache_namespace"):
-            # BT1b: this organisation's own cache keys - never the platform-wide md:candles / md:tick keys another
-            # organisation reads (get_ltp then polls REST unless a tick arrives under these keys).
-            market_data.cache_namespace = f"org.t{tenant_id}"
-        if hub_org and hasattr(market_data, "tick_namespace"):
-            # TM Part 1: prices for this organisation's decisions come from its own hub stream (fresh ticks), else REST.
-            from app.market_data.hub import org_namespace
-            market_data.tick_namespace = org_namespace(tenant_id)
+            market_data = StoredTickPrices(tenant_id, [a.broker_name for a in accounts], shared=not byob)
+        else:
+            market_data = self.market_data_factory(data_broker)
+            if byob and hasattr(market_data, "cache_namespace"):
+                # BT1b: this organisation's own cache keys - never the platform-wide md:candles / md:tick keys another
+                # organisation reads (get_ltp then polls REST unless a tick arrives under these keys).
+                market_data.cache_namespace = f"org.t{tenant_id}"
+            if hub_org and hasattr(market_data, "tick_namespace"):
+                # TM Part 1: prices for this organisation's decisions come from its own hub stream (fresh ticks), else REST.
+                from app.market_data.hub import org_namespace
+                market_data.tick_namespace = org_namespace(tenant_id)
         self._cycle_chains = {}
         # Phase T: balances first, so a capital policy decides on this cycle's numbers.
-        await self._refresh_accounts(session, accounts, adapters, now)
+        if prepare:
+            await self._refresh_accounts(session, accounts, adapters, now)
 
         routes: Dict[int, tuple] = {}   # deployment id -> (account, label)
         tenant_for_routing = await session.get(Tenant, tenant_id)
-        for dep in deployments:
+        for dep in deployments if prepare else ():
             if not dep.broker_name:
                 continue
             policy = policy_for(dep.routing_policy, getattr(tenant_for_routing, "default_routing_policy", None))
@@ -1250,7 +1355,9 @@ class TradingWorker:
                                       if account is not None else "primary credential by EXPLICIT")
             routes[dep.id] = (account, label)
         self._routes = routes
-        if hub_org:
+        if not prepare:
+            pass          # M55 S2: no stream is started for an exits-only pass (no session, or another replica's turn)
+        elif hub_org:
             # TM Part 1: the hub owns this organisation's one stream (no second websocket on the same token).
             await self.streams.drop_prefix(f"{tenant_id}:")
             await self._hub_quotes(session, tenant_id, data_broker, deployments, now)
@@ -1275,7 +1382,7 @@ class TradingWorker:
         # Phase AL: every account against its own session, settled together - a position in one
         # account is never "missing" because another account was asked.
         tenant_row = await session.get(Tenant, tenant_id)
-        if tenant_row is not None and tenant_row.broker_uncertain_since is not None:
+        if prepare and tenant_row is not None and tenant_row.broker_uncertain_since is not None:
             pairs = [(a, adapters[_adapter_key(a.broker_name, a.account_label)]) for a in accounts
                      if a.status == "ACTIVE" and _adapter_key(a.broker_name, a.account_label) in adapters]
             if pairs:
@@ -1293,46 +1400,54 @@ class TradingWorker:
                         report.reconciled += 1
                 except Exception as exc:  # noqa: BLE001 - flagged and audited by the service
                     logger.warning("Tenant %s: reconciliation while uncertain failed: %s", tenant_id, exc)
-        open_families = getattr(self, "_open_families", None) or {"NSE"}
-        # Phase O2: each venue squares off on its own clock (NSE 15:15, MCX 23:15, crypto never);
-        # positions on venues still inside their session are monitored as before.
-        due_square_off = {f for f in open_families if (cut := intraday_cutoffs(f)[1]) is not None and now_ist.time() >= cut}
-        if due_square_off:
-            report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user_id, families=due_square_off)
-        monitored = open_families - due_square_off
-        if monitored:
-            # Z3 / BT2: on approval-only positions a target asks "Exit now?"; the stop and time exits stay automatic.
-            exit_approval = await approval.exit_approval_predicate(session, tenant_id, deployments)
-            outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user_id, families=monitored,
-                                                    exit_approval=exit_approval, now=now)
-            report.positions_closed += sum(1 for o in outcomes if o.closed)
-        # SE-7 (flag smart_execution): incomplete multi-leg orders - his "if I do not answer" rule at the deadline, and the
-        # filled legs he (or his rule) chose to close. An exit: before every entry gate below, never blocked (ADR-0004).
-        try:
-            from app.execution import incomplete_structures
-            report.positions_closed += await incomplete_structures.run_exits(session, tenant_id, market_data.get_ltp, broker=exit_broker,
-                                                                             user_id=user_id, now=now)
-        except Exception as exc:  # noqa: BLE001 - one bad group never ends the exits; retried next cycle
-            logger.error("Tenant %s: incomplete multi-leg orders failed: %s", tenant_id, exc)
-            await session.rollback()
-        # TM-2 / TT-6: the one trigger engine - armed exits (stops first) on this cycle's prices and his candles, before
-        # every entry gate below and never blocked (ADR-0004); a LIVE position's exit goes out through its own session.
-        try:
-            from app.execution import trigger_engine
-            engine_exits = await trigger_engine.run_exits(session, tenant_id, market_data.get_ltp, broker=exit_broker,
-                                                          candles=lambda s, e: market_data.get_today_minutes(s, e, now), now=now)
-            report.positions_closed += engine_exits.filled
-        except Exception as exc:  # noqa: BLE001 - retried next cycle (and on the next tick)
-            logger.error("Tenant %s: trigger engine exits failed: %s", tenant_id, exc)
-            await session.rollback()
-        # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
-        # Phase T: checked per account, against that account's own order book.
-        if tenant_row is not None:
+        # M55 S2 (A13): every price read of the exits below may use the exit reserve of a per-day read allowance.
+        with exit_reads():
+            open_families = getattr(self, "_open_families", None) or {"NSE"}
+            # Phase O2: each venue squares off on its own clock (NSE 15:15, MCX 23:15, crypto never);
+            # positions on venues still inside their session are monitored as before.
+            due_square_off = {f for f in open_families if (cut := intraday_cutoffs(f)[1]) is not None and now_ist.time() >= cut}
+            if due_square_off:
+                report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user_id, families=due_square_off)
+            monitored = open_families - due_square_off
+            if monitored:
+                # Z3 / BT2: on approval-only positions a target asked "Exit now?"; M55 S2 (A8): every exit is automatic now
+                # (the predicate is always None - the approval gate is for entries only).
+                exit_approval = await approval.exit_approval_predicate(session, tenant_id, deployments)
+                outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user_id, families=monitored,
+                                                        exit_approval=exit_approval, now=now)
+                report.positions_closed += sum(1 for o in outcomes if o.closed)
+            # SE-7 (flag smart_execution): incomplete multi-leg orders - his "if I do not answer" rule at the deadline, and the
+            # filled legs he (or his rule) chose to close. An exit: before every entry gate below, never blocked (ADR-0004).
             try:
-                async with guarded(session, keep=(tenant_row,)):
-                    report.stops_rearmed += await self._guard_stops(session, tenant_row, accounts, adapters, user_id, families=open_families)
-            except Exception as exc:  # noqa: BLE001 - advisory safety net; never stops the cycle
-                logger.warning("Tenant %s: stop guard failed: %s", tenant_id, exc)
+                from app.execution import incomplete_structures
+                report.positions_closed += await incomplete_structures.run_exits(session, tenant_id, market_data.get_ltp, broker=exit_broker,
+                                                                                 user_id=user_id, now=now)
+            except Exception as exc:  # noqa: BLE001 - one bad group never ends the exits; retried next cycle
+                logger.error("Tenant %s: incomplete multi-leg orders failed: %s", tenant_id, exc)
+                await session.rollback()
+            # TM-2 / TT-6: the one trigger engine - armed exits (stops first) on this cycle's prices and his candles, before
+            # every entry gate below and never blocked (ADR-0004); a LIVE position's exit goes out through its own session.
+            try:
+                from app.execution import trigger_engine
+                engine_exits = await trigger_engine.run_exits(session, tenant_id, market_data.get_ltp, broker=exit_broker,
+                                                              candles=lambda s, e: market_data.get_today_minutes(s, e, now), now=now)
+                report.positions_closed += engine_exits.filled
+            except Exception as exc:  # noqa: BLE001 - retried next cycle (and on the next tick)
+                logger.error("Tenant %s: trigger engine exits failed: %s", tenant_id, exc)
+                await session.rollback()
+            # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
+            # Phase T: checked per account, against that account's own order book. M55 S2: not in an exits-only pass after
+            # the lock went to another replica - its guard runs for this organisation, and two guards could place a stop twice.
+            if tenant_row is not None and not exits_only:
+                try:
+                    async with guarded(session, keep=(tenant_row,)):
+                        report.stops_rearmed += await self._guard_stops(session, tenant_row, accounts, adapters, user_id, families=open_families)
+                except Exception as exc:  # noqa: BLE001 - advisory safety net; never stops the cycle
+                    logger.warning("Tenant %s: stop guard failed: %s", tenant_id, exc)
+        if no_session:
+            await self._alert_live_without_session(session, tenant_id, user_id, message)
+        if no_session or exits_only:
+            return       # M55 S2: entries stay skipped without a broker session or the replica lock, exactly as before
         if user is None:
             for dep in deployments:
                 dep.last_error = "No active user in the organisation: exits only, no new entries"
@@ -1357,7 +1472,8 @@ class TradingWorker:
         # SE-7: "Complete the rest" he tapped on an incomplete multi-leg order - an entry, so after the entry gates above
         # and through every entry refusal again; only the worker sends an entry order (Phase 0 freeze).
         try:
-            await self._complete_rests(session, tenant_id, market_data, adapters, now)
+            if not self._lock_lost:      # M55 S2 (A9): an entry needs the replica lock held all cycle
+                await self._complete_rests(session, tenant_id, market_data, adapters, now)
         except Exception as exc:  # noqa: BLE001 - never stops the cycle
             logger.error("Tenant %s: completing incomplete multi-leg orders failed: %s", tenant_id, exc)
             await session.rollback()
@@ -1365,8 +1481,9 @@ class TradingWorker:
         # check (kill switch, the PAPER chokepoint, risk) again now. PAPER only; nothing reaches a broker here.
         try:
             from app.execution import trigger_engine
-            await trigger_engine.run_entries(session, tenant_id, market_data.get_ltp,
-                                             candles=lambda s, e: market_data.get_today_minutes(s, e, now), now=now)
+            if not self._lock_lost:      # M55 S2 (A9): as above
+                await trigger_engine.run_entries(session, tenant_id, market_data.get_ltp,
+                                                 candles=lambda s, e: market_data.get_today_minutes(s, e, now), now=now)
         except Exception as exc:  # noqa: BLE001 - never stops the cycle
             logger.error("Tenant %s: trigger engine entries failed: %s", tenant_id, exc)
             await session.rollback()

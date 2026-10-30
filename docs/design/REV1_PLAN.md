@@ -1,4 +1,4 @@
-# REV-1 — plan for docs/reviews/ATP_FULL_REVIEW.md (waits for the owner's approval)
+# REV-1 — plan for docs/reviews/ATP_FULL_REVIEW.md (approved 30 Oct: "Open multiple agent, finish within 4 hours")
 
 Owner 30 Oct: work through the full review as one roadmap group: High first, then every Medium page by page, then Low;
 "plan and take approval first then start". Nothing below is built before the owner approves this plan.
@@ -19,6 +19,26 @@ Owner 30 Oct: work through the full review as one roadmap group: High first, the
 | REV-H3 | Seller packs (F1/F2) on an index start as SINGLE BUY ATM without defaults; a swing bot never gets a structure | The quick form presets no side / structure: with no user default, the pack's structure fields are empty and must be chosen before Start (no BUY ATM fallback); the swing path takes the structure the same way as intraday (tradingDefaults.ts:252). |
 | REV-H4 | Terminal P&L wrong when another member holds the same symbol | Exposure is read with the same scope as the positions (the caller's own trades when `mine=true`), fixed in the backend exposure read and the shared `heldRows` price; test with two members holding one symbol. |
 | REV-H5 | Risk limits cannot be saved while any limit is "Not set" | Draft of a null limit = blank; blank saves as "Not set" (null); only typed text is validated; plus the two Risk Mediums (0 means "blocks every entry" said in the help; the guardian sentence only for levels that are set). |
+
+## Strategy-test additions (owner 30 Oct, review section 5)
+| ID | Item | Fix |
+|---|---|---|
+| REV-S1 | Backtest != live for INTRADAY (Medium) | run_backtest applies the live INTRADAY rules (no new entry from the cut-off, square-off at the square-off time) from the same venue clock the worker uses (trading_worker.py), for every INTRADAY strategy. Tests: a 15:05 signal is not entered; an open trade closes at 15:15. |
+| REV-S2 | Time exit taken before the stop on the same bar (Low) | On that bar the stop is checked first (exit at the stop), then the time exit at the close. Tests for both orders. |
+| REV-S3 | G1-G11 give 0 trades on 3 months of 15-min data | Exact reason found; the recipe's needed history fetched (R6) or the card says so plainly. Proof: one chart where a G template signals. |
+| REV-S4 | "Pullback to a demand / supply area" is "Coming soon" | Owner decision only: REVQ-2 (default: no change now). |
+| REV-S5 | Phone title wraps ("Paper / bot", "Find / setups"); badge "MULTI-TIMEFRAME" wraps | Fixed in the shared header and badge components; before / after at 375 px. |
+| REV-S6 | Tested result after costs on the strategy cards | Owner decision only: REVQ-3 (default: no change). |
+
+## Built-in strategy additions (owner 30 Oct, review section 4; part of M2)
+| ID | Item | Fix |
+|---|---|---|
+| REV-B1 | "Why this signal" empty for built-in signals (signal_language_v2 drops reason lines with digits) | Each built-in writes its reasons in structure words (no periods, no prices; an area only as a range). Test with the real reason lines of all 13 strategies. |
+| REV-B2 | min_rr on the built-ins can never act (two fixed constants) | Removed from the built-ins and from the Strategies page. |
+| REV-B3 | VWAP + Supertrend on an index: the line is a running mean of the typical price | Named truthfully in the reasons and the description (default, REVQ-4); the near-month future's volume only on the owner's yes. |
+| REV-B4 | Ready-made Swing EMA pullback line | Also says it reads the downtrend mirror (taken on an option / future, skipped on shares). |
+| REV-B5 | RSI = 100 with no gains and no losses | A neutral 50 (indicators/momentum.py); test. |
+| REV-B6 | The built-ins' own stop / target / indicator numbers | Same item as D2: follows the owner's D2 answer, nothing extra. |
 
 ## M2 — Medium, page by page (order as in the review)
 Paper bot / Signals (pause-reason text + its test; phone chip + button text) · Charts (server reason shown instead of

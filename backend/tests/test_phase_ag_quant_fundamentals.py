@@ -78,7 +78,7 @@ def test_factors_endpoint_fills_value_and_quality_from_stored_financials():
     assert not any("value" in w for w in body["warnings"])                                      # value/quality exist for 2 of 3 symbols
 
     # Opt out: the stored financials are ignored and value/quality only exist where supplied.
-    off = client.post("/api/quant/factors", json={"symbols": symbols, "use_fundamentals": False}).json()
+    off = client.post("/api/quant/factors", headers=headers, json={"symbols": symbols, "use_fundamentals": False}).json()
     assert off["fundamentals"]["enabled"] is False and {r["symbol"]: r for r in off["rows"]}["QFUND"]["raw"]["value"] is None
 
     # Exposure carries the same fill and the given-weights tilt now includes value.

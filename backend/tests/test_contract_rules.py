@@ -146,7 +146,7 @@ def test_deployment_rules_validation_and_storage():
 
     # An underlying with no contracts in the master is refused with the fix spelled out.
     missing = _create(headers, symbol="TCS", instrument_kind="OPTION")
-    assert missing.status_code == 409 and "instrument master" in missing.json()["detail"]
+    assert missing.status_code == 409 and missing.json()["detail"]["code"] == "no_instrument_master" and "TCS options" in missing.json()["detail"]["message"]
 
     listed = client.get("/api/deployments", headers=headers).json()
     assert {d["instrument_kind"] for d in listed} == {"OPTION", "FUTURE"}

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { api, mockCharts } from "./chartsMocks";
+import { api, madeUpBars, mockCharts } from "./chartsMocks";
 import { choose } from "./combobox";
 import { mockApi } from "./mockApi";
 
@@ -53,7 +53,11 @@ async function open(page: Page, theme: "light" | "dark", path: string, extra?: (
   await page.route(api("/backtests$"), (r) => r.fulfill({ json: [{ id: 7, created_at: "2026-10-18T10:00:00Z", strategy_id: "demo_trend", symbol: "NIFTY",
     base_timeframe: "5min", data_source: "broker", bars: 600, engine_version: 3, exit_rules: { trailing_stop_pct: 1.5 }, total_trades: 2, net_pnl: 0,
     win_rate: 50, max_drawdown: 40 }] }));
-  await page.route(api("/backtest$"), (r) => r.fulfill({ json: madeUpResult((r.request().postDataJSON() as { candles: Bar[] }).candles) }));
+  // M55 T3: the page names symbol + timeframe and the server loads the bars itself (the same made-up bars here).
+  await page.route(api("/backtest$"), (r) => {
+    const b = r.request().postDataJSON() as { candles?: Bar[]; base_timeframe: string };
+    return r.fulfill({ json: madeUpResult(b.candles ?? madeUpBars(b.base_timeframe)) });
+  });
   await page.route(api("/backtest/optimize$"), (r) => { sent.optimise.push(r.request().postDataJSON()); return r.fulfill({ json: OPTIMISED }); });
   await page.route(api("/backtest/walk-forward"), (r) => r.fulfill({ json: WALK }));
   await page.route(api("/backtest/monte-carlo"), (r) => r.fulfill({ json: MONTE }));

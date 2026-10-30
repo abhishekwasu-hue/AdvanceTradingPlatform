@@ -130,7 +130,7 @@ def test_fundamental_score_and_fusion_endpoints():
     assert len(body["breakdown"]) == 10
 
     fusion = client.post(
-        "/api/fundamentals/fusion",
+        "/api/fundamentals/fusion", headers=headers,          # M55 O2: signed in
         json={
             "fundamental_score": body["score"], "technical_score": 88,
             "technical_direction": "LONG", "horizon": "Swing",

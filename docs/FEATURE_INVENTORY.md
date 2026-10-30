@@ -94,6 +94,7 @@ Facts from the code that the tables rely on:
 | paper | PAPER account, ticket, F&O orders / baskets / exits, report card | `/api/paper`, `/api/paper/fno`, `/api/paper/fno/journal` | `paper_account`, `risk_by_default`, `ui_v2`, `experience_levels`, `paper_report_card` | PARTIAL (F&O desk 404 until flags on) | unknown until the owner's check |
 | plans | Plan registry and limits | - | `plan_limits_v2` | INTERNAL | - |
 | platform | Feature flags, controls, trader pack, readiness, system status | `/api/admin/controls`, `/api/readiness`, `/api/system`, `/api/team/members` | `phase0_paper_only` (ON), `live_trading` | WORKS | unknown until the owner's check |
+| performance | The Performance page's summary and results against backtest, over the user's OWN trades (REV-1 M2) | `/api/performance` | - | WORKS (read-only) | unknown until the owner's check |
 | portfolio | PAPER book risk view | `/api/portfolio` | `portfolio_risk`, `portfolio_risk_caps` | EMPTY-BY-DEFAULT (503 while off) | unknown until the owner's check |
 | price_action | Structure library (swings, legs, zones) | - | `market_zones` (zones job) | INTERNAL; gap context raises NotImplemented (not ported) | STUB (gap context) |
 | public_api | API keys and `/api/public/v1` | `/api/api-keys`, `/api/public/v1` | `public_api` (ON) | PARTIAL (no docs UI) | unknown until the owner's check |

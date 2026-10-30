@@ -125,7 +125,9 @@ def test_the_readers_own_broker_bars_win_in_the_candles_route(lake):
     from app.market_data.service import merge_bars
     _owner, other = lake
     start = datetime.combine(FRI, time(9, 15), tzinfo=IST)
-    broker = [OHLCVBar(timestamp=start + timedelta(minutes=i), open=1.0, high=2.0, low=0.5, close=1.5, volume=7) for i in range(375)]
+    # as a broker sends them: ISO strings with a fixed +05:30 offset (not the IST zone object)
+    broker = [OHLCVBar.model_validate({"timestamp": (start + timedelta(minutes=i)).isoformat(), "open": 1.0, "high": 2.0, "low": 0.5,
+                                       "close": 1.5, "volume": 7}) for i in range(375)]
 
     async def go(bars):
         async with _session_factory() as session:

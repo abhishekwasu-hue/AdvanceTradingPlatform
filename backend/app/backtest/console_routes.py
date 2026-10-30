@@ -9,11 +9,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, with_template_exits
+from app.backtest.server_candles import DataChoice
 from app.billing.service import meter
 from app.core.models import BacktestResult, OHLCVBar, RiskConfig, bars_to_dataframe
 from app.core.rate_limit import analysis_rate_limit
@@ -27,14 +28,16 @@ router = APIRouter()
 _default_risk_config = RiskConfig()
 
 
-class BacktestRequest(BaseModel):
+class BacktestRequest(DataChoice):
     strategy_id: str
     symbol: str
     base_timeframe: str
-    candles: list[OHLCVBar]
+    # M55 T3: no candles = the server loads them for symbol / timeframe; posted candles = "paste your own data".
+    candles: list[OHLCVBar] = Field(default_factory=list)
     risk_config: RiskConfig | None = None
     strategy_params: dict | None = None
-    # Phase J: dynamic exits and a label for where the candles came from (recorded on the run).
+    # Phase J: dynamic exits and a label for where the candles came from (recorded on the run). M55 T3: the server sets
+    # the label from what it loaded ("uploaded" for pasted candles); what the client sends here is ignored.
     exit_rules: ExitRulesBody | None = None
     data_source: str = "uploaded"
     # Phase W: present = run the signals as option structures (app/backtest/options_engine.py).
@@ -62,6 +65,8 @@ async def backtest(
     if request.strategy_params:
         strategy.params = {**strategy.params, **request.strategy_params}
 
+    from app.backtest import server_candles
+    await server_candles.fill(session, user, request)                  # M55 T3: server-side candles; sets data_source
     base_df = bars_to_dataframe(request.candles)
     risk_config = request.risk_config or _default_risk_config
 
@@ -75,6 +80,7 @@ async def backtest(
     prepared = await run_in_threadpool(warmup.prepare, strategy, base_df, history)
     result = await run_in_threadpool(runner.run, prepared.strategy, prepared.frame)   # CPU-bound pandas work off the event loop (P0.1 / S3)
     result.history = prepared.history()
+    result.data_source = request.data_source
     # Phase J2: the run is recorded (strategy, params, data span, metrics) and metered against the plan.
     result.run_id = await record_run(session, user, body, result)
     await meter(session, user.tenant_id, "backtest", 1, source="api", metadata={"strategy_id": request.strategy_id, "bars": len(request.candles)})

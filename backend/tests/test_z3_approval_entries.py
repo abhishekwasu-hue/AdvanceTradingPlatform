@@ -281,7 +281,11 @@ def test_structures_are_refused_under_approval_only():
             return await approval.gate_refusal(session, t["tenant_id"], deployment_id=None, origin=approval.ORIGIN_AUTOMATIC, approval_action_id=None)
     assert "Approval-only mode" in _run(go())
     source = (BACKEND / "app" / "execution" / "multileg.py").read_text()
-    assert "approval_gate.gate_refusal(" in source and "approval_action_id=None" in source
+    assert "approval_gate.gate_refusal(" in source
+    # M55 T2: the structure path's default origin is the refusing one; only "approval" (with the APPROVED proposal's id,
+    # app/execution/approval.py::_execute_legs) passes - tests/test_m55_t2_approval_structures.py runs it.
+    assert "origin: str = approval_gate.ORIGIN_AUTOMATIC" in source
+    assert "approval_action_id=approval_action_id if origin == approval_gate.ORIGIN_APPROVAL else None" in source
 
 
 def _pipeline_callers() -> dict:
@@ -300,7 +304,7 @@ def test_every_order_entry_point_is_reviewed_for_approval():
     """A static census: every caller of the two order pipelines in app/ is listed here with how it meets approval-only
     mode. A new caller fails this test until it is reviewed (and the pipelines' own default refuses it meanwhile)."""
     assert _pipeline_callers() == {"app/strategy_engine/console_routes.py": {"execute_signal_for_user"}, "app/webhooks/routes.py": {"execute_signal_for_user"},
-                                   "app/public_api/routes.py": {"execute_signal_for_user"}, "app/execution/approval.py": {"execute_signal_for_user"},
+                                   "app/public_api/routes.py": {"execute_signal_for_user"}, "app/execution/approval.py": {"execute_signal_for_user", "execute_structure"},
                                    "app/workers/trading_worker.py": {"execute_signal_for_user", "execute_structure"},
                                    "app/paper/ticket.py": {"execute_signal_for_user"},
                                    "app/paper/fno_ticket.py": {"execute_signal_for_user"},

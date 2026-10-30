@@ -616,12 +616,18 @@ async def create(session: AsyncSession, user: User, ask: GroupExitAsk, *, now_va
     return row
 
 
-async def all_open_ids(session: AsyncSession, user: User) -> List[int]:
-    """CX1 "all open positions": the user's own open PAPER positions now (frozen into the exit when it is set; a position
-    opened later is not covered until the exit is set again - CXQ-4)."""
-    rows = await session.scalars(select(TradeRecord.id).where(
-        TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.exit_time.is_(None),
-        TradeRecord.mode == "PAPER"))
+async def all_open_ids(session: AsyncSession, user: User, mode: str | None = None) -> List[int]:
+    """CX1 "all open positions": the user's own open positions now, PAPER and LIVE alike (M55 S3, A17) - `mode` narrows it
+    to one mode; the browser never sends one, the positions decide. One combined exit never mixes the two: a mix is
+    refused in plain words (`ask_errors`). Frozen into the exit when it is set; a position opened later is not covered
+    until the exit is set again (CXQ-4)."""
+    if mode is not None and mode.upper() not in ("PAPER", "LIVE"):
+        raise GroupExitError("Choose practice (PAPER) or live (LIVE) positions")
+    query = select(TradeRecord.id).where(
+        TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.exit_time.is_(None))
+    if mode is not None:
+        query = query.where(TradeRecord.mode == mode.upper())
+    rows = await session.scalars(query)
     return sorted(int(i) for i in rows)
 
 

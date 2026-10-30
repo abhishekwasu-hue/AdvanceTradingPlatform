@@ -784,7 +784,8 @@ Never publish a listing without an attached backtest run; the API refuses the su
 
 ### 1.6ab-1 Login protection, outbound URLs, authenticator codes (P0.2)
 
-- Behind Caddy the API sees the real client IP (`FORWARDED_ALLOW_IPS=*` in the prod overlay; `127.0.0.1` otherwise).
+- Behind Caddy the API sees the real client IP: the prod overlay trusts `X-Forwarded-For` only from 127.0.0.1 and the
+  `edge` network Caddy is on (`EDGE_SUBNET`, M55 O1); `127.0.0.1` otherwise.
   Request limits count in Redis across replicas in production/staging.
 - A user who fails the password 3 times must wait 1 s, then 2, 4 ... up to 60 s between attempts (429 with
   `Retry-After`); nobody is ever locked out of their own account by someone else's attempts. One IP spraying 50

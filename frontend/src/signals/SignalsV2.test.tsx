@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { AuthProvider } from "../auth/AuthContext";
 import strategiesSource from "../pages/StrategiesPage.tsx?raw";
+import libraryV2Source from "../pages/StrategyLibraryV2.tsx?raw";
 import appShellSource from "../shell/AppShellV2.tsx?raw";
 import { PAGE_COMPONENTS_V2 } from "../shell/pagesV2";
 import watchtowerSource from "../copilot/tabs/WatchtowerTab.tsx?raw";
@@ -175,8 +176,10 @@ describe("UI2-3 M6: the generator in the Library drawer", () => {
 
   it("the Library offers it only while ui_v2 is on", () => {
     expect(strategiesSource).toContain("const v2 = useUiV2();");
-    expect(strategiesSource).toMatch(/\{v2 && \(\s*<button[^]*Try it on a symbol/);
-    expect(strategiesSource).toMatch(/\{v2 && trying && <Suspense/);
+    expect(strategiesSource).toContain("return v2 ? <StrategyLibraryV2 /> : <StrategiesPageV1 />;");   // M49 U3: the v2 page has it
+    expect(strategiesSource).not.toContain("TryOnSymbolV2");                // the flag-off page has no drawer
+    expect(libraryV2Source).toMatch(/<button[^>]*onClick=\{\(\) => onTry\(s\)\}[^>]*>Try it on a symbol</);
+    expect(libraryV2Source).toMatch(/\{trying && <Suspense/);
   });
 });
 

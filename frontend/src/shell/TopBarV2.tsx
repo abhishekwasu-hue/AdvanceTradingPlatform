@@ -88,7 +88,7 @@ export function topBarNotices(status: SystemStatus | null, _user: UserResponse |
  * tips button, the price dot); #759's last step cut the title with "..." - here the last step wraps between words, so the
  * whole title always shows (M57 / #759 review).
  */
-export type TitleFit = 0 | 1 | 2;
+export type TitleFit = 0 | 1 | 2 | 3;
 export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean, extras = ""): TitleFit {
   const [fit, setFit] = useState<TitleFit>(0);
   useLayoutEffect(() => {
@@ -100,7 +100,10 @@ export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, 
       if (!phone) { setFit(0); return; }
       // Measure at the normal size first, then one size down, both on one line.
       const overflowsAt = (mode: string) => { el.dataset.titleFit = mode; return el.scrollWidth > el.clientWidth; };
-      const next: TitleFit = !overflowsAt("measure") ? 0 : !overflowsAt("measure-small") ? 1 : 2;
+      // M57 / #759 review: 3 = even wrapped between words the row would run past the edge (a 320 px phone with the menu
+      // button, Ask AI, the price dot, search, bell and avatar): the title then takes a line of its own under the buttons -
+      // never cut, and every button stays on screen.
+      const next: TitleFit = !overflowsAt("measure") ? 0 : !overflowsAt("measure-small") ? 1 : !overflowsAt("measure-wrap") ? 2 : 3;
       delete el.dataset.titleFit;
       setFit(next);
     };
@@ -126,10 +129,18 @@ const TITLE_FIT_CLASS: Record<TitleFit, string> = {
   0: "text-t18 whitespace-nowrap",
   1: "text-t15 whitespace-nowrap",
   2: "text-t15",
+  3: "text-t15",
 };
-const TITLE_MEASURE = "group-data-[title-fit=measure]/bar:text-t18 group-data-[title-fit=measure]/bar:whitespace-nowrap "
+const TITLE_MEASURE = "group-data-[title-fit=measure-wrap]/bar:text-t15 group-data-[title-fit=measure-wrap]/bar:whitespace-normal "
+  + "group-data-[title-fit=measure]/bar:text-t18 group-data-[title-fit=measure]/bar:whitespace-nowrap "
   + "group-data-[title-fit=measure-small]/bar:text-t15 group-data-[title-fit=measure-small]/bar:whitespace-nowrap";
-const GROUP_MEASURE = "group-data-[title-fit=measure]/bar:flex-nowrap group-data-[title-fit=measure-small]/bar:flex-nowrap";
+const GROUP_MEASURE = "group-data-[title-fit=measure]/bar:flex-nowrap group-data-[title-fit=measure-small]/bar:flex-nowrap "
+  + "group-data-[title-fit=measure-wrap]/bar:flex-wrap group-data-[title-fit=measure]/bar:order-none "
+  + "group-data-[title-fit=measure-small]/bar:order-none group-data-[title-fit=measure-wrap]/bar:order-none "
+  + "group-data-[title-fit=measure]/bar:basis-auto group-data-[title-fit=measure-small]/bar:basis-auto group-data-[title-fit=measure-wrap]/bar:basis-auto";
+/** Step 3: the row wraps so the title group sits on its own line under the buttons; never while the row is measured. */
+const ROW_MEASURE = "data-[title-fit=measure]:flex-nowrap data-[title-fit=measure-small]:flex-nowrap data-[title-fit=measure-wrap]:flex-nowrap "
+  + "data-[title-fit=measure]:py-0 data-[title-fit=measure-small]:py-0 data-[title-fit=measure-wrap]:py-0";
 
 export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour, section = null, onAskAi, askAiOpen = false, menu }: TopBarV2Props) {
   const colour = useColourV2();
@@ -149,7 +160,7 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
 
   return (
     <header className="shrink-0 border-b border-subtle bg-surface-1 pt-[env(safe-area-inset-top)]">
-      <div ref={row} className={`group/bar flex ${colour ? "min-h-14" : "h-14"} items-center gap-space-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] md:px-space-8`}>
+      <div ref={row} data-title-step={colour ? fit : undefined} className={`group/bar flex ${colour ? `min-h-14 ${fit === 3 ? "flex-wrap gap-y-0 pb-space-2" : ""} ${ROW_MEASURE} md:flex-nowrap md:pb-0` : "h-14"} items-center gap-space-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] md:px-space-8`}>
         {/* CT-1 C10: on a phone the Ask AI button takes the mark's room (Today is in the bottom bar), so a title such as
             "Option chain" is not cut. */}
         {menu && (
@@ -184,7 +195,7 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
         {/* PROSE-1 / H9 / REV-S5: with colour v2 the title and its (?) share one group, on one line; only at the last step
             (still too wide one size down) the (?) moves under the title instead of pushing the bar past the edge. With
             colour v2 off the group is invisible to the layout (`contents`) and the bar is as before. */}
-        <span data-topbar-title-group className={colour ? `flex shrink ${fit === 2 ? "flex-wrap" : "flex-nowrap"} items-center gap-x-space-2 ${GROUP_MEASURE} md:shrink-0 md:flex-nowrap` : "contents"}>
+        <span data-topbar-title-group className={colour ? `flex shrink ${fit >= 2 ? "flex-wrap" : "flex-nowrap"} ${fit === 3 ? "order-last basis-full" : ""} items-center gap-x-space-2 ${GROUP_MEASURE} md:order-none md:basis-auto md:shrink-0 md:flex-nowrap` : "contents"}>
           {/* With colour v2 (CA7) the title is never cut on a phone (H9): one line, one size down when needed, and only as
               the last resort a wrap between words (no min-w-0 there, so the longest word sets its width). */}
           <span data-topbar-title data-title-size={fit ? "small" : undefined}

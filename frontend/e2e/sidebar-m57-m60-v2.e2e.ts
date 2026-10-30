@@ -174,3 +174,36 @@ test.describe("M60 + M57 phone 390", () => {
     });
   }
 });
+
+/**
+ * #759 review (M57): a page title is never cut - no "…", no `truncate` - at 320 and 375 px (and on a tablet with the rail).
+ * #741's rule: one line at the normal size, then one size down, then a wrap between words; the bar never runs past the edge.
+ */
+const LONG_TITLES: [string, string][] = [
+  ["/positions/results", "How am I doing?"], ["/markets", "Sectors & indices"], ["/settings/trading-defaults", "My trading defaults"],
+  ["/system-logs", "Your account activity"], ["/deployments", "Trading bot"], ["/screener", "Find setups"],
+];
+for (const size of [{ width: 320, height: 640, phone: true }, { width: 375, height: 812, phone: true }, { width: 768, height: 1024, phone: false }]) {
+  test.describe(`#759 review: the whole title shows at ${size.width}`, () => {
+    test.use({ viewport: { width: size.width, height: size.height }, isMobile: size.phone, hasTouch: size.phone, deviceScaleFactor: 1 });
+    for (const [path, title] of LONG_TITLES) {
+      test(`"${title}" is never cut`, async ({ page }) => {
+        await open(page, path, "light", FULL, (p) => prefsServer(p));
+        const el = page.locator("[data-topbar-title]");
+        await expect(el).toHaveText(title);
+        const m = await el.evaluate((node) => {
+          const style = getComputedStyle(node);
+          const box = node.getBoundingClientRect();
+          const row = node.closest("header")!.firstElementChild as HTMLElement;
+          return { cls: node.className, ellipsis: style.textOverflow, clipped: node.scrollWidth > node.clientWidth + 1,
+            right: box.right, rowOverflow: row.scrollWidth - row.clientWidth, viewport: window.innerWidth };
+        });
+        expect(m.cls.split(/\s+/).filter((c) => /(^|:)truncate$/.test(c)), "no truncate class").toEqual([]);
+        expect(m.ellipsis, "no text-overflow ellipsis").not.toBe("ellipsis");
+        expect(m.clipped, "the text fits its box").toBe(false);
+        expect(m.right).toBeLessThanOrEqual(m.viewport);
+        expect(m.rowOverflow, "nothing in the bar runs past the edge").toBeLessThanOrEqual(0);
+      });
+    }
+  });
+}

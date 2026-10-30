@@ -18,7 +18,7 @@ import { expectNoDeveloperText, expectPlainErrorSentences, renderPage, routesErr
 
 describe("Fundamentals page", () => {
   it("shows its heading on the first screen", () => {
-    expect(renderPage(<FundamentalsPage />)).toContain("Fundamental Analysis");
+    expect(renderPage(<FundamentalsPage />)).toContain("Company research");   // the page title since REV-1 M2 (#760)
   });
 
   it("shows no developer text", () => {

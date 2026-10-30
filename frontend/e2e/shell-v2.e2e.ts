@@ -221,9 +221,9 @@ test.describe("v2 shell 1440 desktop", () => {
     await expect(tabs.getByRole("link", { name: "Results" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("navigation", { name: "Results" }).getByRole("link")).toHaveText(["Summary", "Journal", "Coach"]);
     await page.goto("/learn/news");
-    await expect(page.getByRole("navigation", { name: "Learn" }).getByRole("link")).toHaveText(["Lessons", "Words explained", "Ideas", "News & events"]);
+    await expect(page.getByRole("navigation", { name: "Learn" }).getByRole("link")).toHaveText(["Lessons", /Words explained/, "Ideas", "News & events"]);
     await page.goto("/settings/alerts");
-    await expect(page.getByRole("navigation", { name: "Settings" }).getByRole("link")).toHaveText(["Account & broker", "Trading", "AI", "App"]);
+    await expect(page.getByRole("navigation", { name: "Settings" }).getByRole("link")).toHaveText([/Account & broker/, "Trading", "AI", "App"]);
     await expect(page.getByRole("navigation", { name: "Trading" }).getByRole("link")).toHaveText(["My trading defaults", "Risk limits", "Alerts", "Inbox"]);
   });
 

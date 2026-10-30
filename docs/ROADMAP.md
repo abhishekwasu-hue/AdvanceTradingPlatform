@@ -259,10 +259,10 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | CT-1 | not started | Terminal parts in TERM-2; Charts-page parts after CP-UX / SB-UX | - |
 | REV-1 | in progress (approved 30 Oct) | M1 H1-H5 + S1-S3, S5 + B1-B5 in parallel; then M2, M3 | claude/rev1-* |
 | M55 | in progress (approved 30 Oct) | Phase A table, then S1-S8 in parallel, T1-T3, rest | claude/m55-* |
-| M57 | not started (owner order 30 Oct) | U7 sidebar show / hide | claude/m57-* |
+| M57 | in review (built with M60, one PR; flag ui_v2) | U7 sidebar show / hide | claude/m57-m60-sidebar |
 | M58 | not started (owner order 30 Oct) | T4 Terminal gutters + Panels steppers | claude/m58-* |
 | M59 | not started (owner order 30 Oct) | Copilot reading card + Analyze a chart reachable / hybrid (CR-1..CR-6) | claude/m59-* |
-| M60 | approved (owner "Default", 30 Oct) - build with M57 after #741 | Sidebar / tabs rationalisation: before/after table + mockups | claude/m60-* |
+| M60 | in review (built with M57, one PR; /watchlist, /charts, /screener/custom kept until their new homes exist) | Sidebar / tabs rationalisation: before/after table + mockups | claude/m57-m60-sidebar |
 | M61 | not started (owner order 30 Oct + PCR addendum) | Option chain OI / PCR tab fixes (OI-1..OI-6, PCR-1..PCR-4) | claude/m61-* |
 | M62 | not started (owner order 30 Oct) | Trading journal: entry editor, attachments, manual trade, stats, weekly review, export (JN-1..JN-5) | claude/m62-* |
 | M63 | Phase 0 started (owner order 30 Oct) | Feature inventory: production truth table, public inventory + CI guard, trader pack for the owner, hide / build stubs, duplicates, quality floor (I-1..I-7, L1-L11) | claude/m63-* |

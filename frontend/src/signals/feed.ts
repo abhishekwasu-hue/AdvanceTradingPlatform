@@ -92,17 +92,17 @@ export const TABS: readonly { id: FeedTab; label: string; short: string }[] = [
 
 export const SOURCES: readonly { id: FeedSource; label: string }[] = [
   { id: "all", label: "All sources" },
-  { id: "autopilot", label: "Paper bots" },
+  { id: "autopilot", label: "Trading bots" },
   { id: "scan", label: "Scans" },
   { id: "copilot", label: "Copilot" },
 ];
 
-const KIND_LABEL: Record<SignalKind, string> = { autopilot: "Paper bot", scan: "Scan", copilot: "Copilot", library: "Signal generator" };
+const KIND_LABEL: Record<SignalKind, string> = { autopilot: "Trading bot", scan: "Scan", copilot: "Copilot", library: "Signal generator" };
 
 /** An internal bot number ("Deployment #4"): never shown (UX audit P09); the setup line already names the strategy. */
 const INTERNAL_NAME = /^deployment\s*#?\s*\d+$/i;
 
-/** "Paper bot", "Scan · Gap scan", "Signal generator" - the caption under the setup. */
+/** "Trading bot", "Scan · Gap scan", "Signal generator" - the caption under the setup. */
 export function sourceCaption(item: Pick<SignalFeedItem, "source">): string {
   const kind = KIND_LABEL[item.source.kind] ?? item.source.kind;
   const raw = item.source.name?.trim();

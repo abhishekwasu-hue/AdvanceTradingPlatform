@@ -63,11 +63,11 @@ function templateFromUrl(): TemplateLink | null {
 }
 
 /**
- * UX2 fix 4 ("Paper bot in three taps", docs/design/UX_AUDIT_FULL.md P18): the v2 page at /deployments, shown only while
+ * UX2 fix 4 ("Trading bot in three taps", docs/design/UX_AUDIT_FULL.md P18): the v2 page at /deployments, shown only while
  * `ui_v2` is on (the v2 shell picks it; with the flag off today's Autopilot page renders as before).
  *
- * Top to bottom: the page's one primary action "Start a paper bot" (jumps to the form), "Your bots" as cards (name,
- * symbol, Running / Paused / Stopped, Pause / Resume / Stop), then "Start a paper bot": 1 a strategy with one sentence,
+ * Top to bottom: the page's one primary action "Start a trading bot" (jumps to the form), "Your bots" as cards (name,
+ * symbol, Running / Paused / Stopped, Pause / Resume / Stop), then "Start a trading bot": 1 a strategy with one sentence,
  * 2 a symbol, 3 Start on paper. One lot, PAPER only, the trader's own risk limits apply on the server. No LIVE switch on
  * this page (LIVE stays behind the go-live checklist). Options structures, exits and filters are under "More ways to
  * trade", the same form as before, paper only. Nothing here is advice: the trader picks the strategy and the symbol.
@@ -153,9 +153,9 @@ export default function PaperBotV2(_props: PageProps) {
     setBusyBot(bot.id); setBotNote(null);
     const name = botName(bot, names);
     const run = async () => {
-      if (kind === "pause") await api.pauseDeployment(bot.id, "paused from the Paper bot page");
+      if (kind === "pause") await api.pauseDeployment(bot.id, "paused from the Trading bot page");
       else if (kind === "resume") await api.resumeDeployment(bot.id);
-      else await api.stopDeployment(bot.id, "stopped from the Paper bot page");
+      else await api.stopDeployment(bot.id, "stopped from the Trading bot page");
     };
     try {
       await run();
@@ -189,8 +189,8 @@ export default function PaperBotV2(_props: PageProps) {
   if (!user) {
     return (
       <div className="space-y-space-4">
-        <PageTitleV2 title="Paper bot" subtitle="Your strategy trades with paper money here, so you can watch how it does." />
-        <NoteV2>Sign in to start a paper bot.</NoteV2>
+        <PageTitleV2 title="Trading bot" subtitle="Your strategy trades with paper money here, so you can watch how it does." />
+        <NoteV2>Sign in to start a trading bot.</NoteV2>
       </div>
     );
   }
@@ -201,8 +201,8 @@ export default function PaperBotV2(_props: PageProps) {
 
   return (
     <div className="space-y-space-4">
-      <PageTitleV2 title="Paper bot" subtitle="Your strategy trades with paper money here, so you can watch how it does. No real money is used."
-        action={canChange ? <button type="button" className={BUTTON_PRIMARY} onClick={goToForm}>Start a paper bot</button> : undefined} />
+      <PageTitleV2 title="Trading bot" subtitle="Your strategy trades with paper money here, so you can watch how it does. No real money is used."
+        action={canChange ? <button type="button" className={BUTTON_PRIMARY} onClick={goToForm}>Start a trading bot</button> : undefined} />
       <PageIntro id="paper-bot" lines={["Pick a strategy and a symbol, then start it. The bot keeps checking the market even while the app is closed; pause or stop it any time."]} />
 
       {stepUp && (
@@ -214,7 +214,7 @@ export default function PaperBotV2(_props: PageProps) {
         {botsFailed && !bots ? <LoadFailedV2 what="your bots" />
           : !bots ? <LoadingRowsV2 rows={2} />
           : shown.length === 0 ? (
-            <p className="text-t14 text-fg-muted">Start a paper bot below: it trades with paper money.</p>
+            <p className="text-t14 text-fg-muted">Start a trading bot below: it trades with paper money.</p>
           ) : (
             <ul className="divide-y divide-border-subtle">
               {shown.map((bot) => (
@@ -456,9 +456,9 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     if (r) setSymbolChoice(r.symbol);
   }, [library, ready, strategyId]);
 
-  if (library === null) return <CardV2 title="Start a paper bot"><LoadingRowsV2 rows={3} /></CardV2>;
+  if (library === null) return <CardV2 title="Start a trading bot"><LoadingRowsV2 rows={3} /></CardV2>;
   if (library.length === 0 && custom.length === 0) {
-    return <CardV2 title="Start a paper bot"><LoadFailedV2 what="the strategy library" /></CardV2>;
+    return <CardV2 title="Start a trading bot"><LoadFailedV2 what="the strategy library" /></CardV2>;
   }
 
   const templateInfo = adoption && picked ? { timeframes: [adoption.deployment.timeframe], description: picked.idea } : null;
@@ -519,11 +519,11 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   }
 
   return (
-    <CardV2 title="Start a paper bot" testId="start">
+    <CardV2 title="Start a trading bot" testId="start">
       <div className="space-y-space-4">
         {hasBroker === false && (
           <NoteV2 kind="warn">
-            A paper bot reads live prices from your broker. <Link to={BROKER_PATH} className="font-medium text-brand hover:underline">Connect your broker</Link> first.
+            A trading bot reads live prices from your broker. <Link to={BROKER_PATH} className="font-medium text-brand hover:underline">Connect your broker</Link> first.
           </NoteV2>
         )}
         <div>

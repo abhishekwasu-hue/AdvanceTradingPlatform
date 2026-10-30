@@ -7,7 +7,7 @@ import { expectPhoneLayout } from "./phoneLayout";
 
 /**
  * Settings redesign part C: "My trading defaults" at /settings/trading-defaults (ui_v2 on) and the pre-fill it gives the
- * Paper bot's "Start on paper" and its "More ways to trade" form. A pre-fill, never a hidden rule: every value taken is
+ * Trading bot's "Start on paper" and its "More ways to trade" form. A pre-fill, never a hidden rule: every value taken is
  * shown, can be switched off or changed, and empty defaults leave the request byte-identical.
  * - Baselines (NEW): `trading-defaults-v2-{1440,390,360}-{light,dark}.png` (the page with some defaults) and
  *   `paper-bot-defaults-v2-{1440,390}-{light,dark}.png` (the Start card with defaults). Other baselines are untouched.

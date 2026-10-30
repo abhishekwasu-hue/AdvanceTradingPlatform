@@ -187,7 +187,7 @@ describe("colour v2 on the pages (off = as before)", () => {
   });
 
   it("Today and Signals: Long / Short chips and an amber Waiting; off keeps the coloured words and the brand chip", () => {
-    const data = { status: "ok" as const, total: 1, rows: [{ id: 1, time: "10:42", symbol: "NIFTY 50", side: "Long" as const, status: "Waiting for you" as const, waiting: true, setup: "", source: "Paper bot" }] };
+    const data = { status: "ok" as const, total: 1, rows: [{ id: 1, time: "10:42", symbol: "NIFTY 50", side: "Long" as const, status: "Waiting for you" as const, waiting: true, setup: "", source: "Trading bot" }] };
     const on = render(<ActiveSignalsV2 data={data} />, true);
     expect(on).toContain('data-direction="long"');
     expect(on).toContain("bg-warn-tint text-warn");

@@ -3,7 +3,7 @@ import type { Condition, ConditionOperator, CustomStrategyConfig, IndicatorName,
 /**
  * Item 5 (owner's handover), job 6: the Copilot's DRAFT paper strategy and its rules on the page. The server
  * (backend app/ai/strategy_builder.py) builds the draft from the trader's own words with ATP's building blocks; a value
- * his words do not state comes as null and is listed in `asks`. The Paper bot page shows the draft in a review card: the
+ * his words do not state comes as null and is listed in `asks`. The Trading bot page shows the draft in a review card: the
  * trader fills in every value himself, saves it as his own strategy (POST /custom-strategies, his click) and starts it
  * on paper with the page's existing "Start on paper". Nothing here fills in a number he did not give; nothing saves or
  * starts anything by itself (ADR-0006). Pure functions only, so every rule is unit-tested.
@@ -45,7 +45,7 @@ export interface StrategyDraft {
   mode: "PAPER";
 }
 
-/** Where the Copilot hands the draft over: the Paper bot page, with the draft in the navigation state (never a URL). */
+/** Where the Copilot hands the draft over: the Trading bot page, with the draft in the navigation state (never a URL). */
 export const PAPER_BOT_PATH = "/deployments";
 export interface DraftHandoff { copilotDraft: StrategyDraft }
 
@@ -67,7 +67,7 @@ export function draftFromState(state: unknown): StrategyDraft | null {
   return d;
 }
 
-/** The form's symbol for the draft's: the index names the Paper bot list uses; null when the idea named none. */
+/** The form's symbol for the draft's: the index names the Trading bot list uses; null when the idea named none. */
 export function formSymbol(symbol: string | null): string | null {
   if (!symbol) return null;
   const s = symbol.trim().toUpperCase();

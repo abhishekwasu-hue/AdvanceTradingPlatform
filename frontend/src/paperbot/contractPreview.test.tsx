@@ -7,7 +7,7 @@ import { paperBotRequest } from "./model";
 const ce = { kind: "OPTION", underlying: "NIFTY", tradingsymbol: "NIFTY26N0324500CE", strike: 24500, right: "CE", expiry: "2026-11-03", lot_size: 75 } as ResolvedContract;
 const pe = { ...ce, tradingsymbol: "NIFTY26N0324500PE", right: "PE" } as ResolvedContract;
 
-describe("UI-28 U7.4: the contract a paper bot would trade", () => {
+describe("UI-28 U7.4: the contract a trading bot would trade", () => {
   it("reads the server's resolved contract as one line", () => {
     expect(contractText(ce, 1)).toBe("NIFTY 24500 CE · 3 Nov · 1 lot (75)");
     expect(contractText(pe, 2)).toBe("NIFTY 24500 PE · 3 Nov · 2 lots (150)");

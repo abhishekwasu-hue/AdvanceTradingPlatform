@@ -201,9 +201,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # `marketing_site`: the public Features / How it works / About pages for the front page (read globally - a visitor
     # has no organisation). OFF: GET /api/site/pages answers 404 and the sign-in screen links none of them.
     "marketing_site": "Public marketing pages: Features, How it works and About on the front page (no claims, no prices)",
-    # `onboarding_emails`: the first-week e-mails (connect your broker, start a paper bot, review your first signal),
+    # `onboarding_emails`: the first-week e-mails (connect your broker, start a trading bot, review your first signal),
     # once each, with an unsubscribe link; nothing is sent without PLATFORM_SMTP_* and PUBLIC_BASE_URL. Places nothing.
-    "onboarding_emails": "First-week e-mails: connect your broker, start your first paper bot, review your first signal (each once, with unsubscribe)",
+    "onboarding_emails": "First-week e-mails: connect your broker, start your first trading bot, review your first signal (each once, with unsubscribe)",
     # `referrals`: each person's own invite link and the new account's one claim; the reward is only described (C11 owns
     # granting it). Nothing touches the marketplace. OFF: /api/growth/referral* answer 404 and no invite card shows.
     "referrals": "Invite a friend: your own invite link, and how many people joined through it (no reward is granted automatically)",
@@ -436,7 +436,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     "screener_waves": "Wave count in screens: the running wave, its type, the alternate count and the clarity, the wave levels, ratios and "
                       "anchored wave lines and their retest, from confirmed swings (information only)",
     # Strategy templates steps 2-3 (docs/design/STRATEGY_TEMPLATES_IMPL.md): the built-in signal recipes (D1, D2, B1, B3, C1, C3, A2, A5) as
-    # PAPER strategies - the template list, "Adopt as a paper strategy" (a pre-fill of the paper bot form; the user reviews
+    # PAPER strategies - the template list, "Adopt as a paper strategy" (a pre-fill of the trading bot form; the user reviews
     # and saves, nothing starts by itself) and template ids in the deployment / backtest routes and the worker. OFF: the
     # routes answer 404 and a template id resolves to nothing. Signals only; LIVE is refused for a template.
     "strategy_templates": "Strategy templates: ready signal recipes (Supertrend flip, moving-average cross, range and channel breakouts and their retests, range edges, structure flip retest) adopted as paper strategies with the user's own settings",
@@ -522,7 +522,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
     # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
     "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
-    # AUD-T4 (owner audit 28 Oct; app/paper/report_card.py; needs `ui_v2`): the paper report card on the Paper bot page -
+    # AUD-T4 (owner audit 28 Oct; app/paper/report_card.py; needs `ui_v2`): the paper report card on the Trading bot page -
     # the user's own closed PAPER trades per bot and per strategy (closed trades, win %, average R, credit kept, max
     # drawdown, plan followed from journal tags) and a share image made on his device. A forward test, not a backtest;
     # read-only. OFF: GET /api/paper/report-card answers 404 and the card is hidden.

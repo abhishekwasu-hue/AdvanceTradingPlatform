@@ -16,7 +16,7 @@ describe("day-one fix 7: Signals knows the bot he just started", () => {
   it("a just-started bot is named, with its symbol and 'just started', and no new adopt is asked", () => {
     const html = renderToStaticMarkup(<MemoryRouter><BotsView bots={[bot({})]} offers={[A5]} onAlsoList={() => undefined} /></MemoryRouter>);
     expect(html).toContain('data-day-one="bots"');
-    expect(text(html)).toContain("Your paper bot is on");
+    expect(text(html)).toContain("Your trading bot is on");
     expect(text(html)).toContain("Breakout and retest · RELIANCE");
     expect(text(html)).toContain("Running · Just started: it reads its chart on its next round");
     expect(text(html)).not.toContain("Pick a ready strategy");
@@ -29,7 +29,7 @@ describe("day-one fix 7: Signals knows the bot he just started", () => {
     expect(botCheckWords({ status: "ACTIVE", last_evaluated_at: "2026-10-23T04:58:00Z" }, now)).toBe("Checked 2 min ago");
     expect(botCheckWords({ status: "PAUSED", last_evaluated_at: null }, now)).toBe("Not checked yet");
     const html = renderToStaticMarkup(<MemoryRouter><BotsView bots={[bot({}), bot({ id: 71, symbol: "TCS" })]} offers={[A5]} /></MemoryRouter>);
-    expect(text(html)).toContain("Your 2 paper bots are on");
+    expect(text(html)).toContain("Your 2 trading bots are on");
     expect(text(html)).not.toContain("Also watch a whole list");
   });
 

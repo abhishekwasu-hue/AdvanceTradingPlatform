@@ -160,7 +160,7 @@ test.describe("Get started card 390", () => {
       await expect(card(p).locator("li")).toHaveCount(3);
       for (const li of await card(p).locator("li").all()) await expect(li.locator("a")).toHaveCount(1);
       await expect(card(p).locator("li").nth(0)).toContainText("Connect your broker");
-      await expect(card(p).locator("li").nth(1)).toContainText("Start your paper bot");
+      await expect(card(p).locator("li").nth(1)).toContainText("Start your trading bot");
       await expect(card(p).locator("li").nth(2)).toContainText("Get alerts on your phone (Telegram)");
       // nothing on the front page opens the four-step wizard
       await expect(p).toHaveURL(/\/$/);
@@ -171,7 +171,7 @@ test.describe("Get started card 390", () => {
   test("the buttons: Connect your broker leads to /broker (the broker settings until that page exists); Telegram to Settings → Alerts", async ({ page }) => {
     await open(page);
     await expect(card(page).getByRole("link", { name: "Connect your broker" })).toHaveAttribute("href", BROKER_HREF);
-    await expect(card(page).getByRole("link", { name: "Start paper bot" })).toHaveAttribute("href", "/deployments");
+    await expect(card(page).getByRole("link", { name: "Start trading bot" })).toHaveAttribute("href", "/deployments");
     // Settings redesign B: the link is the v2 address; with ui_v2 off it goes back to today's /settings#alerts.
     await expect(card(page).getByRole("link", { name: "Set up Telegram" })).toHaveAttribute("href", "/settings/alerts");
     await card(page).getByRole("link", { name: "Set up Telegram" }).click();

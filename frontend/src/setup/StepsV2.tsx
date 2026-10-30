@@ -302,14 +302,14 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
     setBusy("start"); setStart(null);
     try {
       await api.createDeployment(paperDeployment(s));
-      setStart({ tone: "ok", text: "Started as a paper bot. It trades with paper money only; see it on the Paper bot page." });
+      setStart({ tone: "ok", text: "Started as a trading bot. It trades with paper money only; see it on the Trading bot page." });
       onChanged();
     } catch (e) {
       setStart({ tone: "problem", text: e instanceof ApiError && e.status === 409
         // 409: this strategy already runs on paper for this symbol in the organisation (perhaps a teammate's), so nothing
         // new was started and this step is not done by it. Say so, and point to "Test it".
         ? `Nothing new was started: this strategy already runs on paper for ${s.symbol} in your organisation. Use Test it to try it yourself, or pick another one.`
-        : problemText(e, "It could not be started just now. Try again, or set it up on the Paper bot page.") });
+        : problemText(e, "It could not be started just now. Try again, or set it up on the Trading bot page.") });
     } finally {
       setBusy(null);
     }
@@ -324,11 +324,11 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
       <p className={P}>{s.line}</p>
       <div className="flex flex-col gap-space-2 sm:flex-row">
         <ActionV2 busy={busy === "test"} disabled={!source || busy !== null} onClick={() => void runTest()}>Test it</ActionV2>
-        <ActionV2 busy={busy === "start"} disabled={busy !== null} onClick={() => void startPaper()}>Start a paper bot</ActionV2>
+        <ActionV2 busy={busy === "start"} disabled={busy !== null} onClick={() => void startPaper()}>Start a trading bot</ActionV2>
       </div>
       {test && <Note tone={test.tone}>{test.text}</Note>}
       {start && <Note tone={start.tone}>{start.text}</Note>}
-      {start?.tone === "ok" && <Link to="/deployments" className="inline-flex min-h-11 items-center text-t14 font-medium text-brand hover:underline md:min-h-0">Open Paper bot</Link>}
+      {start?.tone === "ok" && <Link to="/deployments" className="inline-flex min-h-11 items-center text-t14 font-medium text-brand hover:underline md:min-h-0">Open Trading bot</Link>}
     </li>
   );
 }
@@ -360,7 +360,7 @@ export function StrategyStepV2({ onChanged }: StepProps) {
   });
   return (
     <div className="space-y-space-3">
-      <p className="flex flex-wrap items-center gap-space-2 text-t14 text-fg"><PaperBadge />Pick one to try. A paper bot then trades it with paper money, so you can watch how it does.</p>
+      <p className="flex flex-wrap items-center gap-space-2 text-t14 text-fg"><PaperBadge />Pick one to try. A trading bot then trades it with paper money, so you can watch how it does.</p>
       {!source && <p className={P}>Testing uses your broker&apos;s prices. Connect your broker to test a strategy first.</p>}
       {source?.stored && <p className={P}>{STORED_HISTORY_NOTE}</p>}
       <ul className="space-y-space-3">

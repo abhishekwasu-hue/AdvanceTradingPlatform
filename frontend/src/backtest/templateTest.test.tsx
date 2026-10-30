@@ -11,7 +11,7 @@ const INTRADAY_ONLY = { timeframes: [{ value: "5m", label: "5-minute" }], defaul
 const BANNED = /\b(buy|sell|target|stop-loss|backend|lake|bhavcopy|1d|15m)\b/i;
 
 describe("day-one fix 1: a strategy template is tested on Strategies › Test", () => {
-  it("the idea's link to the test page carries the same template, timeframe and settings as the Paper bot link", () => {
+  it("the idea's link to the test page carries the same template, timeframe and settings as the Trading bot link", () => {
     const link = { template: "A5", timeframe: "15m", params: { retest_max_bars: 8 } };
     expect(testPathFor(link)).toBe("/strategies/test?template=A5&timeframe=15m&set.retest_max_bars=8");
     expect(testPathFor(link).split("?")[1]).toBe(paperBotPathFor(link).split("?")[1]);
@@ -48,7 +48,7 @@ describe("day-one fix 1: a strategy template is tested on Strategies › Test", 
     expect(templateTimeframeFor({ timeframes: [], default_timeframe: null }, { storedOnly: true }).value).toBe("");
   });
 
-  it("the page, the idea card and the Paper bot form are wired (v2 + strategy_templates only)", () => {
+  it("the page, the idea card and the Trading bot form are wired (v2 + strategy_templates only)", () => {
     const page = readFileSync("src/pages/BacktestPage.tsx", "utf8");
     expect(page).toContain('uiV2 && features.on("strategy_templates")');
     expect(page).toContain("templatesApi.adopt(");

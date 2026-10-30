@@ -67,7 +67,7 @@ AHEAD_DAYS = 7                # events and expiries "coming up"
 HISTORY_DAYS = 400            # daily bars read for the chart's story (a year and a bit: enough weekly swings)
 MIN_DAILY_BARS = 30
 MIN_WEEKLY_BARS = 10
-SOURCE_WORDS: Dict[str, str] = {"autopilot": "your paper bots", "scan": "your scans", "copilot": "the Copilot",
+SOURCE_WORDS: Dict[str, str] = {"autopilot": "your trading bots", "scan": "your scans", "copilot": "the Copilot",
                                 "library": "the signal generator"}
 # The journal's behaviour tags in words the dish may show (the journal's own labels use "stop" / "target", which the
 # signal-language guard keeps off a dish).
@@ -136,7 +136,7 @@ def strategy_record_lines(units: Sequence[Any], days: int = RECORD_DAYS) -> List
 async def signals_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
     from app.signals_feed import service as feed
     waiting = Section("waiting", "Waiting for your decision",
-                      "Nothing waits for your decision right now. New signals from your paper bots and scans arrive here.",
+                      "Nothing waits for your decision right now. New signals from your trading bots and scans arrive here.",
                       kind="waiting")
     page = await _safely(ctx, "waiting signals", feed.feed(ctx.session, ctx.user, tab="waiting", limit=20, now=ctx.now), {})
     n_wait = int(((page.get("counts") or {}).get("waiting")) or 0)
@@ -154,7 +154,7 @@ async def signals_dish(ctx: Ctx) -> Tuple[Optional[str], List[Section]]:
         if len(waiting.lines) > MAX_LINES:
             break
 
-    today = Section("today", "Today so far", "No new signals today yet. They appear here when your paper bots or scans find a "
+    today = Section("today", "Today so far", "No new signals today yet. They appear here when your trading bots or scans find a "
                     "setup from your own rules.", kind="sources")
     day = await _safely(ctx, "today's signals", feed.feed(ctx.session, ctx.user, tab="today", limit=100, now=ctx.now), {})
     by_kind: Dict[str, int] = defaultdict(int)

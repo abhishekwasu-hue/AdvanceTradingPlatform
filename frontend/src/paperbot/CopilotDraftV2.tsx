@@ -11,13 +11,13 @@ import {
 import { Combobox } from "../ui/Combobox";
 
 /**
- * Item 5 (owner's handover), job 6: the Copilot's draft on the Paper bot page (v2 only, with the `ai_copilot` switch on).
+ * Item 5 (owner's handover), job 6: the Copilot's draft on the Trading bot page (v2 only, with the `ai_copilot` switch on).
  *
  * Top to bottom: what this is ("Built from your words... nothing is saved yet"), the strategy's name, its rules in plain
  * words per side, "Values you decide" - one field per value the trader's words did not state, EMPTY until he fills it in
  * (the Copilot never suggests a number) - his stated values, "Not supported yet" / "Parts I could not read", then
  * "Save as my strategy" (off until every value is set) and "Discard the draft". Saving is the trader's own click on the
- * existing custom-strategy route; the page then picks the saved strategy in "Start a paper bot", where he presses
+ * existing custom-strategy route; the page then picks the saved strategy in "Start a trading bot", where he presses
  * "Start on paper" himself. Nothing here starts a bot or touches an order (ADR-0006); PAPER only.
  */
 export default function CopilotDraftV2({ draft, onSaved, onDiscard, save = api.createCustomStrategy }: {

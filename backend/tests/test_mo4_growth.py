@@ -2,7 +2,7 @@
 "my discipline this week" share card and the admin activation events, behind `ui_v2` + `growth_v2` (OFF).
 
 Covered: both flags off = 404 naming the flag (and the admin read too); the usage numbers from fixtures (own watchlists,
-own scans this month, own AI requests including those on his own key, the team's backtests and paper bots), the
+own scans this month, own AI requests including those on his own key, the team's backtests and trading bots), the
 plan_limits_v2 limits only while that flag enforces them, a running trial's days left, no price anywhere; the share
 card's content guard (no security names, no prices, no money words, no call words) over fixtures that hold symbols and
 prices, its facts (days inside his own limits - a day without a trade counts - journal streak, days traded) and that it
@@ -310,7 +310,7 @@ def test_activation_funnel_from_fixtures():
             session.add(JournalEntryRecord(tenant_id=full["tenant_id"], user_id=full["id"], trade_id=trade.id,
                                            captured_at=signed + timedelta(hours=6)))
             session.add(StrategyDeploymentRecord(tenant_id=half["tenant_id"], strategy_id="orb_15m_5m", symbol="NIFTY 50", mode="LIVE",
-                                                 created_by=half["id"]))                      # LIVE is not a paper bot
+                                                 created_by=half["id"]))                      # LIVE is not a trading bot
             await session.commit()
     run(seed())
     body = client.get("/api/admin/console/activation?days=30", headers=admin).json()

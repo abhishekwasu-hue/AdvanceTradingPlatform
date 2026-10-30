@@ -19,7 +19,7 @@
   `tours` (MO2 part C) holds the first-time guidance marks: the welcome tour finished, the pages whose tips were seen and
   "Skip all tips". Only marks: what a tour says lives in the frontend (src/tours/content/).
   `trading_defaults` (Settings redesign part C, docs/design/TRADING_DEFAULTS.md) holds "My trading defaults": values that
-  PRE-FILL a new paper bot, the full deployment form and the chain order ticket in the frontend, each marked "from your
+  PRE-FILL a new trading bot, the full deployment form and the chain order ticket in the frontend, each marked "from your
   defaults" and changeable there. Only existing deployment / ExitRules / ticket fields, with the same limits; every field
   is empty (None) by default. The server never reads it to trade: no order path, worker or risk check imports it. Never
   here: the mode (PAPER / LIVE), broker routing, the LIVE order style, or any LIVE field.

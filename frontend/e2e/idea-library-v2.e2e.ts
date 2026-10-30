@@ -150,7 +150,7 @@ test.describe("Idea library behaviour", () => {
     await expect(page.locator("[data-adopt]")).toHaveCount(0);
   });
 
-  test("slice 3: T2 and T5 link to the Paper bot form with their template and settings", async ({ page }) => {
+  test("slice 3: T2 and T5 link to the Trading bot form with their template and settings", async ({ page }) => {
     await open(page, "/ideas", { library: MAPPED, features: { ...ON, strategy_templates: true } });
     await expect(page.locator("[data-adopt]")).toHaveCount(2);
     await expect(page.locator("[data-idea='T2'] [data-adopt='A2']")).toHaveAttribute("href", "/deployments?template=A2&timeframe=15m&set.swing_degree=1");

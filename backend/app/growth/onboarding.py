@@ -1,4 +1,4 @@
-"""Readiness C13: the first-week onboarding e-mails - connect your broker, start your first paper bot, review your first
+"""Readiness C13: the first-week onboarding e-mails - connect your broker, start your first trading bot, review your first
 signal - through the platform mailer (`app/notifications/mailer.py`).
 
 * OFF unless everything is in place: the flag `onboarding_emails` for the person's organisation, the platform mailer
@@ -7,7 +7,7 @@ signal - through the platform mailer (`app/notifications/mailer.py`).
 * Who: an active, non-operator account with a verified address, inside its first week (ONBOARDING_EMAIL_WINDOW_HOURS
   after sign-up). Turning the flag on later never mails people who signed up long ago.
 * When: each step once, ONBOARDING_EMAIL_AFTER_HOURS after sign-up (settings, default 2 / 48 / 120 hours). A step whose
-  action the person already took (a broker connected, a paper bot created) is marked skipped and never sent.
+  action the person already took (a broker connected, a trading bot created) is marked skipped and never sent.
 * Once: the marks live in the internal `user_prefs` row `onboarding_mail` (not a prefs namespace, so no route reads or
   writes it). A failed send is not marked, so the next run tries again while the step is still in its week.
 * Unsubscribe: a signed link in every e-mail (and the List-Unsubscribe header) records an `email_opt_outs` row with the
@@ -57,26 +57,26 @@ TEMPLATES: Dict[str, Template] = {
         subject="Connect your broker to see live prices",
         lines=(
             "Welcome to AiAlgoDesk.",
-            "Your first step is to connect your broker, so ATP can read prices for your charts, scans and paper bots.",
+            "Your first step is to connect your broker, so ATP can read prices for your charts, scans and trading bots.",
             "Your broker login stays with your broker. It takes a couple of minutes.",
         ),
         link_label="Connect a broker",
         path="/broker",
     ),
     "paper_bot": Template(
-        subject="Start your first paper bot",
+        subject="Start your first trading bot",
         lines=(
-            "A paper bot practises an idea for you at real prices with pretend money. No order reaches your broker.",
+            "A trading bot practises an idea for you at real prices with pretend money. No order reaches your broker.",
             "Pick an idea from the library, choose your own settings and start it.",
             "You can pause or change it at any time.",
         ),
-        link_label="Start a paper bot",
+        link_label="Start a trading bot",
         path="/deployments",
     ),
     "signal_review": Template(
         subject="Review your first signal",
         lines=(
-            "When your paper bot finds the structure you chose, a signal appears on the Signals page, described in plain words.",
+            "When your trading bot finds the structure you chose, a signal appears on the Signals page, described in plain words.",
             "Open it, read what the structure shows and decide for yourself.",
             "Every paper trade lands in your journal, so you can review what you planned and what happened.",
         ),

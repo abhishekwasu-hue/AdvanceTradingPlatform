@@ -3,7 +3,7 @@ import type { ContractRules, Deployment, DeploymentCreateRequest, StrategyInfo }
 import { strategyDisplayName } from "../ui/strategyName";
 
 /**
- * UX2 fix 4 ("Paper bot in three taps", docs/design/UX_AUDIT_FULL.md problem 3 and P18): the rules of the v2 Paper bot
+ * UX2 fix 4 ("Trading bot in three taps", docs/design/UX_AUDIT_FULL.md problem 3 and P18): the rules of the v2 Trading bot
  * page. Pick a strategy, pick a symbol, Start on paper. Always PAPER, one lot; the trader's own risk limits apply on the
  * server. Pure functions only, so every rule here is unit-tested.
  */
@@ -26,7 +26,7 @@ export const READY: readonly ReadyStrategy[] = [
     line: "Waits for a pullback inside an uptrend and holds for days. It also reads the mirror in a downtrend: taken on an option or a future, skipped on shares." },
 ];
 
-/** Index symbols have no cash leg: a paper bot on one trades its option (nearest expiry, at the money, one lot). */
+/** Index symbols have no cash leg: a trading bot on one trades its option (nearest expiry, at the money, one lot). */
 export const INDEX_SYMBOLS: ReadonlySet<string> = new Set([
   "NIFTY 50", "NIFTY", "NIFTY BANK", "BANKNIFTY", "NIFTY FIN SERVICE", "FINNIFTY", "NIFTY MID SELECT", "MIDCPNIFTY", "NIFTY NEXT 50",
   "SENSEX", "BANKEX",
@@ -153,7 +153,7 @@ const STATE_TEXT: Record<BotState, string> = { running: "Running", paused: "Paus
 export function botStatusText(d: Pick<Deployment, "status" | "pause_reason">): string {
   const state = botState(d);
   const reason = (d.pause_reason ?? "").trim();
-  if (state === "paused" && reason && /^paused from (the )?(autopilot|paper bot)/i.test(reason)) return "Paused by you";
+  if (state === "paused" && reason && /^paused from (the )?(autopilot|trading bot)/i.test(reason)) return "Paused by you";
   if (state === "paused" && reason && reason.length <= 80 && !/[_{}[\]<>=]|#\d/.test(reason)) {
     return `Paused: ${reason.charAt(0).toLowerCase()}${reason.slice(1).replace(/\.$/, "")}`;
   }

@@ -471,7 +471,7 @@ export const LIMIT_SCOPES: { value: RiskScope; label: string; needsId: string | 
   { value: "ACCOUNT", label: "One broker account", needsId: "Account number" },
   { value: "PORTFOLIO", label: "All open positions", needsId: null },
   { value: "STRATEGY", label: "One strategy", needsId: "Strategy name" },
-  { value: "DEPLOYMENT", label: "One paper bot", needsId: "Paper bot number" },
+  { value: "DEPLOYMENT", label: "One trading bot", needsId: "Trading bot number" },
   { value: "INSTRUMENT", label: "One symbol", needsId: "Symbol" },
 ];
 

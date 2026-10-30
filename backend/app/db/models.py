@@ -539,9 +539,11 @@ class StrategyDeploymentRecord(Base):
     """
 
     __tablename__ = "strategy_deployments"
+    # REV-H2 (owner decision D1): one bot that is not STOPPED per strategy + symbol + mode + instrument kind. A stopped
+    # bot stays as history and no longer blocks a new one (partial unique index, migration f4b6d8a0c2e3).
     __table_args__ = (
-        UniqueConstraint("tenant_id", "strategy_id", "symbol", "mode", "instrument_kind",
-                         name="uq_deployment_tenant_strategy_symbol_mode_kind"),
+        Index("uq_deployment_open_tenant_strategy_symbol_mode_kind", "tenant_id", "strategy_id", "symbol", "mode", "instrument_kind",
+              unique=True, postgresql_where=text("status != 'STOPPED'"), sqlite_where=text("status != 'STOPPED'")),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

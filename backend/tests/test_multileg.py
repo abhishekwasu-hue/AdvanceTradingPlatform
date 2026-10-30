@@ -22,7 +22,7 @@ from tests.test_contract_rules import TODAY, _load_master
 from tests.test_deployments_api import _auth, _create, _store_broker
 from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker
 
-pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests", "owner_switched_live_on")   # counts are per cycle (ADR-0004 sweep)
 
 SPOT = 24512.0
 # Premiums by strike for the fake broker: PE below spot cheaper further out, CE above likewise.

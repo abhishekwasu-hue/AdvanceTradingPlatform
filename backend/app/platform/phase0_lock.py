@@ -1,6 +1,7 @@
 """Z10-c (Phase 0 exit criterion "no API order path reachable"): the PAPER-only lock, feature flag `phase0_paper_only`.
 
-OFF by default, like every flag. The one exception is the explicit Phase 0 deployment mode (`ATP_DEPLOYMENT_PHASE=phase0`,
+M55 S1 (owner order): ON by default in every deployment mode (controls.DEFAULT_ON_FLAGS), and only the owner may turn
+it off (app/platform/live_owner.py). Before M55 S1 it was OFF by default except in the explicit Phase 0 deployment mode (`ATP_DEPLOYMENT_PHASE=phase0`,
 set by the Z11 bundle for the Hostinger host): it seeds this flag ON (and `live_trading` OFF) where no entry is stored yet,
 by the owner's decision of 2026-10-12 - the restrictive direction only (app/platform/deployment_phase.py,
 docs/OPERATIONS.md 1.6aj, OPEN_QUESTIONS Z10-3). No other code, migration or script turns it on.

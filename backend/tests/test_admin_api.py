@@ -2,11 +2,15 @@
 changes (audited + notified), platform audit trail, and that nobody else can reach any of it."""
 import asyncio
 
+import pytest
+
 from app.admin import bootstrap
 from app.db.models import User
 from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 from tests.utils import enable_mfa
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 
 def _run(coro):

@@ -37,7 +37,7 @@ from tests.test_multileg import SPOT, _OptionBroker, _premium, _rules
 from tests.test_trading_worker import _get, _signal, _tenant, _trades
 from tests.test_z5_p1d_risk_by_default import _flag
 
-pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests", "owner_switched_live_on")
 
 RISK = RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0)
 

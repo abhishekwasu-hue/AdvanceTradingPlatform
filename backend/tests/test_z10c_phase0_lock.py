@@ -90,12 +90,12 @@ def _wrapped(tenant_id: Optional[int] = 7):
     return RateLimitedBroker(inner, RateBudget(RateLimits(100.0, 100, 1000)), tenant_id=tenant_id), inner  # type: ignore[arg-type]
 
 
-def test_flag_is_registered_off_by_default_and_live_trading_keeps_its_default():
+def test_flag_is_registered_on_by_default_and_live_trading_is_off_by_default():
     flags = _flags()
-    assert flags[phase0_lock.FLAG]["on"] is False            # flags default off (standing rule)
-    assert phase0_lock.FLAG in controls.DEFAULT_OFF_FLAGS
-    assert flags["live_trading"]["on"] is True                 # the kill flag's default is the owner's decision (Z10-3)
-    assert "live_trading" not in controls.DEFAULT_OFF_FLAGS
+    assert flags[phase0_lock.FLAG]["on"] is True             # M55 S1 (owner order): the lock ON by default, every mode
+    assert phase0_lock.FLAG in controls.DEFAULT_ON_FLAGS and phase0_lock.FLAG not in controls.DEFAULT_OFF_FLAGS
+    assert flags["live_trading"]["on"] is False                # M55 S1: LIVE OFF by default; only the owner switches it on
+    assert "live_trading" in controls.DEFAULT_OFF_FLAGS
 
 
 def test_only_a_stated_entry_intent_counts_as_an_entry():
@@ -218,6 +218,7 @@ class _StopStandingBroker(_FakeBroker):
         return book
 
 
+@pytest.mark.usefixtures("owner_switched_live_on")   # M55 S1: the LIVE posture the owner switches on
 def test_worker_exits_an_existing_live_position_while_locked(monkeypatch):
     """ADR-0004: the LIVE position opened before the lock went on is squared off at the broker, through the chokepoint."""
     monkeypatch.setattr("app.execution.router.OrderRouter.fill_poll_delay_seconds", 0)

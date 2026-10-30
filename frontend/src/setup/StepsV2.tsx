@@ -5,12 +5,12 @@ import { BellRing, Mail, Send, Smartphone } from "lucide-react";
 import { useEffect, useId, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
-import { ApiError } from "../api/errors";
+import { ApiError, errorSentence } from "../api/errors";
 import { currentPushEnv, pushReadiness, vapidKeyBytes } from "../alerts/push";
 import { ChipV2, LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import type { TelegramLinkCode } from "../alerts/rules";
 import TelegramConnectV2 from "../alerts/TelegramConnectV2";
-import type { AlertChannel, AlertChannelType, OHLCVBar, PaperRiskStatus, StrategyInfo } from "../types";
+import type { AlertChannel, AlertChannelType, DataRequest, OHLCVBar, PaperRiskStatus, StrategyInfo } from "../types";
 import { STORED_HISTORY_NOTE } from "../backtest/pricesLine";
 import { CONNECT_BROKER_PATH } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
@@ -276,16 +276,20 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
       let bars: OHLCVBar[];
       let label: string;
       let line = "";
+      let data: DataRequest;
       if (source.stored) {
         const res = await api.backtestBars(s.symbol, timeframe, days);
         bars = res.candles; label = res.source; line = ` ${res.line}`;
+        data = { data_mode: "server", lookback_days: days };
       } else {
         const res = await api.marketDataCandles([s.symbol], timeframe, days, "NSE", source.broker);
         bars = res.symbols[s.symbol.toUpperCase()]?.bars ?? Object.values(res.symbols)[0]?.bars ?? [];
         label = `broker:${res.source.broker}`;
+        data = { data_mode: "server", lookback_days: days, broker: res.source.broker };
       }
       if (!bars.length) throw new Error("no candles");
-      const result = await api.backtest(info.id, s.symbol, timeframe, bars, null, label);
+      // M55 T3: the server loads the same bars itself and records where they came from (no candles posted).
+      const result = await api.backtest(info.id, s.symbol, timeframe, bars, null, label, null, data);
       setTest({ tone: "ok", text: testSummary(result, days, s.symbol) + line + (s.option ? " Tested on the index itself, not the option." : "") });
       onChanged();
     } catch (e) {
@@ -306,9 +310,9 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
       onChanged();
     } catch (e) {
       setStart({ tone: "problem", text: e instanceof ApiError && e.status === 409
-        // 409: this strategy already runs on paper for this symbol in the organisation (perhaps a teammate's), so nothing
-        // new was started and this step is not done by it. Say so, and point to "Test it".
-        ? `Nothing new was started: this strategy already runs on paper for ${s.symbol} in your organisation. Use Test it to try it yourself, or pick another one.`
+        // REV-H1: a 409 names its own reason (no broker, contracts not loaded, a bot already running, ...): the shared
+        // sentence for that reason, so nothing new was started and this step is not done by it.
+        ? errorSentence(e)
         : problemText(e, "It could not be started just now. Try again, or set it up on the Trading bot page.") });
     } finally {
       setBusy(null);

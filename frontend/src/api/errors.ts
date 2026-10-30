@@ -14,8 +14,11 @@ export class ApiError extends Error {
   readonly requestId: string | null;
   /** BT1: the `X-Data-Tier` header of a refused market-data read ("C": end-of-day data only on this plan), else null. */
   readonly dataTier: string | null;
+  /** REV-H1: the server's machine reason (`detail.code`, e.g. "duplicate_active_bot"), else null. */
+  readonly code: string | null;
 
-  constructor(status: number, message: string, detail = "", body = "", requestId: string | null = null, dataTier: string | null = null) {
+  constructor(status: number, message: string, detail = "", body = "", requestId: string | null = null, dataTier: string | null = null,
+    code: string | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
@@ -23,6 +26,7 @@ export class ApiError extends Error {
     this.body = body;
     this.requestId = requestId;
     this.dataTier = dataTier;
+    this.code = code;
   }
 
   override toString(): string {
@@ -97,6 +101,35 @@ export function readableDetail(body: string): string {
   return "";
 }
 
+/** REV-H1: one plain sentence, with the next step, per machine reason the server names in `detail.code`. A reason not
+ * listed here shows the server's own sentence (`detail.message`). */
+export const REASON_SENTENCES: Readonly<Record<string, string>> = {
+  // Starting a bot (POST /deployments): each refusal has its own sentence, never "already runs" for all of them.
+  no_instrument_master: "The contracts for this symbol are not loaded yet, so the bot cannot pick one. Ask your admin to sync the instrument list, or check the symbol.",
+  no_broker: "Connect your broker on the Broker page first: even a trading bot on paper reads live prices through your broker.",
+  broker_login_needed: "Your broker login is not active. Log in again on the Broker page, then try again.",
+  broker_account_off: "This broker account is switched off. Switch it on on the Broker page, then try again.",
+  duplicate_active_bot: "Nothing new was started: this strategy already runs for this symbol in your organisation. Stop that bot first, or pick another strategy or symbol.",
+};
+
+/** The machine reason of a FastAPI error body (`{"detail": {"code": "..."}}`), else null. */
+export function readableCode(body: string): string | null {
+  const text = body.trim();
+  if (!text.startsWith("{")) return null;
+  try {
+    const d = (JSON.parse(text) as { detail?: unknown }).detail;
+    const c = d && typeof d === "object" && !Array.isArray(d) ? (d as { code?: unknown }).code : undefined;
+    return typeof c === "string" && c.trim() ? c.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The sentence for a machine reason, or null when it has none of its own. */
+export function reasonSentence(code: string | null | undefined): string | null {
+  return code && Object.prototype.hasOwnProperty.call(REASON_SENTENCES, code) ? REASON_SENTENCES[code] : null;
+}
+
 /** Builds the error for a non-OK response. Server errors without a readable detail (an unhandled exception, a proxy
  * 502/504 page) get a generic sentence plus the request id, which is what support needs to find the log line. */
 export async function apiErrorFrom(response: Response): Promise<ApiError> {
@@ -107,8 +140,10 @@ export async function apiErrorFrom(response: Response): Promise<ApiError> {
   const detail = readableDetail(body);
   const featureOff = isFeatureOff(status, detail, response.headers.get("x-feature-disabled"));
   // UX1: a bare "Not found" and a switched-off feature never show the server's text (the detail and body stay on the
-  // error for code that branches on them).
-  let message = featureOff ? COMING_SOON_MESSAGE : status === 404 && BARE_NOT_FOUND.test(detail) ? NOT_AVAILABLE_MESSAGE : detail;
+  // error for code that branches on them). REV-H1: a named machine reason shows its own sentence.
+  const code = readableCode(body);
+  let message = featureOff ? COMING_SOON_MESSAGE : status === 404 && BARE_NOT_FOUND.test(detail) ? NOT_AVAILABLE_MESSAGE
+    : reasonSentence(code) ?? detail;
   if (!message) {
     message = status >= 500 ? SERVER_ERROR_MESSAGE : GENERIC[status] ?? `The request failed (error ${status}).`;
   }
@@ -118,7 +153,7 @@ export async function apiErrorFrom(response: Response): Promise<ApiError> {
     message += `${/[.!?]$/.test(message) ? "" : "."} Reference: ${requestId}.`;
     rememberServerError(requestId);        // C12: "Report a problem" can attach it
   }
-  return new ApiError(status, message, detail, body.slice(0, 2000), requestId, response.headers.get("x-data-tier"));
+  return new ApiError(status, message, detail, body.slice(0, 2000), requestId, response.headers.get("x-data-tier"), code);
 }
 
 /** The message to show for any thrown value: an ApiError's sentence, a network failure as plain words, otherwise the
@@ -133,6 +168,8 @@ export function friendlyError(e: unknown): string {
 /** UX1: the one sentence an error state shows for anything a page caught - friendlyError, plus the raw texts an older
  * caller may still hold as a string (a bare "Not found", require_flag's sentence with the flag name). */
 export function errorSentence(e: unknown): string {
+  const reason = e instanceof ApiError ? reasonSentence(e.code ?? readableCode(e.body)) : null;
+  if (reason) return reason;
   const text = friendlyError(e).trim();
   if (!text || BARE_NOT_FOUND.test(text) || /^not found\. it may have been removed\.?$/i.test(text)) return NOT_AVAILABLE_MESSAGE;
   if (FEATURE_OFF.test(text)) return COMING_SOON_MESSAGE;

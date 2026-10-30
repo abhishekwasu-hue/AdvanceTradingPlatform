@@ -179,7 +179,7 @@ def _pre_open(now: datetime) -> bool:
     return ist.weekday() < 5 and dtime(8, 0) <= ist.time() < dtime(9, 15)
 
 
-def _held_spread_expires(trade: TradeRecord, today: Optional[date]) -> bool:
+def _held_spread_expires(trade: TradeRecord, today: date | None) -> bool:
     """M55 T1: a deployment's structure held for days (SWING legs in a group) settles at the square-off time of its expiry
     day, as the option backtest settles it (SETTLEMENT_FROM). Single swing positions are unchanged."""
     expiry = getattr(trade, "expiry", None)
@@ -2204,7 +2204,7 @@ class TradingWorker:
     async def _square_off_all(
         self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,
         live_broker: Optional[BrokerInterface], user_id: Optional[int], families: Optional[set] = None,
-        today: Optional[date] = None,
+        today: date | None = None,
     ) -> int:
         open_trades = list(await session.scalars(
             select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
@@ -2212,7 +2212,7 @@ class TradingWorker:
         venues = await trade_venues(session, open_trades)       # BK2-8: a row without an exchange follows its deployment
         closed = 0
         groups: Dict[str, List[TradeRecord]] = {}
-        expiring: Dict[str, List[TradeRecord]] = {}
+        expiring: dict[str, list[TradeRecord]] = {}
         for trade in open_trades:
             if families is not None and session_family(venues[trade.id]) not in families:
                 continue

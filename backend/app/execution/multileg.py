@@ -517,7 +517,7 @@ async def _held_margin_blocked(session: AsyncSession, user: User) -> float:
     rows = await session.execute(select(TradeRecord.leg_group_id, TradeRecord.group_meta).where(
         TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.exit_time.is_(None),
         TradeRecord.mode == ExecutionMode.PAPER.value, TradeRecord.holding == "SWING", TradeRecord.leg_group_id.is_not(None)))
-    blocked: Dict[str, float] = {}
+    blocked: dict[str, float] = {}
     for group_id, raw in rows:
         if group_id in blocked:
             continue
@@ -529,11 +529,12 @@ async def _held_margin_blocked(session: AsyncSession, user: User) -> float:
     return round(sum(blocked.values()), 2)
 
 
-async def _hold_margin_refusal(session: AsyncSession, user: User, structure: ResolvedStructure, premiums: Dict[str, float],
-                               lots: int) -> Tuple[Optional[str], str]:
-    """M55 T1: a PAPER spread held for days blocks its margin overnight, so it is checked at entry: the broker's basket
-    margin through his own session where it answers (NRML), else ATP's labelled estimate (`fno_basket.hedge_margin`),
-    against his practice balance less what his other held spreads block. (refusal or None, note)."""
+async def _hold_margin_refusal(session: AsyncSession, user: User, structure: ResolvedStructure, premiums: dict[str, float],
+                               lots: int) -> tuple[str | None, str]:
+    """M55 T1: a PAPER spread held for days blocks its margin overnight, so it is checked at entry: ATP's labelled
+    estimate (`fno_basket.hedge_margin`, the defined max loss) against his practice balance less what his other held
+    spreads block. No broker is built here (Rule 0: execute_structure never obtains a broker itself; LIVE is checked by
+    the broker's own margin in `_live_lot_cap`). (refusal or None, note)."""
     from app.execution import smart_execution
     from app.paper import fno_basket
     builder = [{"direction": "SELL" if leg.role == "SHORT" else "BUY", "option_type": leg.contract.right,
@@ -541,21 +542,15 @@ async def _hold_margin_refusal(session: AsyncSession, user: User, structure: Res
                 "lots": int(lots * leg.ratio), "lot_size": int(structure.lot_size), "expiry": leg.contract.expiry.isoformat(), "iv": None}
                for leg in structure.legs]
     estimate = fno_basket.hedge_margin(builder)
-    broker_margin, broker_name = None, None
-    broker = await fno_basket.own_broker(session, user)
-    if broker is not None:
-        broker_name = getattr(broker, "name", None)
-        orders = [BrokerOrderRequest(symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange, transaction_type=leg.side,
-                                     quantity=float(lots * structure.lot_size * leg.ratio), product="NRML") for leg in structure.legs]
-        broker_margin = await smart_execution.broker_basket_margin(broker, orders)
     free = await fno_basket.practice_balance(session, user) - await _held_margin_blocked(session, user)
-    view = smart_execution.margin_view(broker_margin, estimate, free, free_source="practice", broker_name=broker_name)
+    view = smart_execution.margin_view(None, estimate, free, free_source="practice")
     if view.required is None:
         return "Not entered: the margin to hold this spread for days could not be worked out, so it is not held", ""
     if view.free_after is None or view.free_after < 0:
         return (f"Not entered: not enough margin to hold this spread for days - it needs {view.required:,.0f}, "
                 f"{max(free, 0.0):,.0f} is free in your practice account"), ""
     return None, f"Margin to hold for days: {view.required:,.0f} ({view.label}); {view.free_after:,.0f} free after"
+
 
 async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *, debit_per_unit: Optional[float] = None,
                         product: str = "MIS") -> Tuple[int, str]:

@@ -6,11 +6,10 @@ or settles on its expiry day. A naked single option written overnight, an undefi
 overnight, and every intraday bot keep the rules they had.
 """
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
 import pandas as pd
-import pytest
 from sqlalchemy import select
 
 from app.backtest.options_engine import OptionBacktestConfig, run_option_backtest
@@ -35,15 +34,6 @@ E1 = date(2026, 10, 1)        # the nearest expiry for TODAY in the master fixtu
 
 def _run(coro):
     return asyncio.run(coro)
-
-
-@pytest.fixture(autouse=True)
-def _no_broker_margin_call(monkeypatch):
-    """The PAPER margin check asks the user's own broker for its basket margin when he has a session; the tests use
-    ATP's estimate (no network)."""
-    async def none(session, user):
-        return None
-    monkeypatch.setattr(fno_basket, "own_broker", none)
 
 
 # --- the deployment API -----------------------------------------------------------------------------------------
@@ -210,7 +200,7 @@ def test_a_held_single_swing_position_is_unchanged_on_any_day():
     async def seed():
         async with _session_factory() as session:
             session.add(TradeRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode="PAPER", symbol="NIFTY26OCT24500CE", exchange="NFO",
-                                    strategy_id="x", direction="LONG", entry_time=datetime.now(timezone.utc), entry_price=100, quantity=75,
+                                    strategy_id="x", direction="LONG", entry_time=datetime.now(UTC), entry_price=100, quantity=75,
                                     stop_loss=0, holding="SWING", instrument_kind="OPTION", expiry=E1))
             await session.commit()
     _run(seed())
@@ -235,7 +225,7 @@ def test_a_held_spread_exits_by_its_own_structure_stop_on_a_later_session():
 
     async def go():
         async with _session_factory() as session:
-            return await monitor_open_positions(session, t["tenant_id"], prices, now=datetime.now(timezone.utc))
+            return await monitor_open_positions(session, t["tenant_id"], prices, now=datetime.now(UTC))
     outcomes = _run(go())
     assert sum(1 for o in outcomes if o.closed) == 2
     assert all("Spread stop" in (leg.exit_reason or "") for leg in _all(t["tenant_id"]))

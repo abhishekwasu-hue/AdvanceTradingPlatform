@@ -21,12 +21,11 @@ Everything is causal: a value at bar j uses bars 0..j only (the time-of-day aver
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from typing import List, Mapping, Optional, Tuple
 from zoneinfo import ZoneInfo
-
-import logging
 
 import numpy as np
 import pandas as pd

@@ -13,9 +13,9 @@ the parity tests with the reason. The series are built in code from the golden's
 (fixtures/daily_trend/synthetic_inputs.py; test_the_series_built_in_code_are_the_golden_s ties the two), so the
 no-look-ahead tests always run."""
 import ast
+import math
 import subprocess
 import sys
-import math
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict

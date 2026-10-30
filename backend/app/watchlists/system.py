@@ -37,8 +37,15 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config
-from app.db.models import (ClassificationRecord, FoMembershipRecord, IndexMembershipRecord, InstrumentRecord, SecurityRecord,
-                           SystemWatchlistRecord, SystemWatchlistRefreshRecord)
+from app.db.models import (
+    ClassificationRecord,
+    FoMembershipRecord,
+    IndexMembershipRecord,
+    InstrumentRecord,
+    SecurityRecord,
+    SystemWatchlistRecord,
+    SystemWatchlistRefreshRecord,
+)
 from app.universe.indices import catalogue
 from app.watchlists.service import ITEM_SYMBOL_RE
 

@@ -80,7 +80,7 @@ def market_data_open(broker: Optional[str]) -> bool:
     if gates_for(broker).market_data != OPEN:
         return False
     if (broker or "").lower() in GATES:
-        from app.market_data.data_terms import terms_for   # local: data_terms is a leaf, keep this module light
+        from app.market_data.data_terms import terms_for  # local: data_terms is a leaf, keep this module light
         return terms_for(broker or "").tier_a_allowed
     return True
 

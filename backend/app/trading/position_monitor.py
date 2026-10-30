@@ -23,33 +23,33 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Awaitable, Callable, List, Optional, Tuple
+from typing import Awaitable, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
-from app.execution import approval as approval_policy
-from app.execution.products import product_for_trade
 from app.brokers.base import BrokerInterface, round_stop_trigger
 from app.brokers.exceptions import is_clear_rejection
 from app.brokers.models import BrokerOrderRequest, BrokerOrderStatus
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
+from app.compliance.algo_id import audit_order, order_algo_id
 from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord
 from app.db.savepoint import guarded
-from app.compliance.algo_id import audit_order, order_algo_id
-from app.execution.tagging import LEG_EXIT, build_order_tag
+from app.execution import approval as approval_policy
 from app.execution.paper_broker import PaperBroker
-from app.instruments.registry import get_contract_spec
-from app.notifications.service import notify
-from app.journal import capture as journal_capture
-from app.trading import stop_state
-from app.trading.exit_rules import ExitRules, apply_exit_rules
-from app.trading.exit_logic import check_contract_exit
+from app.execution.products import product_for_trade
+from app.execution.tagging import LEG_EXIT, build_order_tag
 from app.instruments.master import INDEX_EXCHANGE, underlying_of
+from app.instruments.registry import get_contract_spec
+from app.journal import capture as journal_capture
+from app.notifications.service import notify
+from app.trading import stop_state
+from app.trading.exit_logic import check_contract_exit
+from app.trading.exit_rules import ExitRules, apply_exit_rules
 
 logger = logging.getLogger(__name__)
 
@@ -565,7 +565,7 @@ async def _still_open_now(trade: TradeRecord, broker: BrokerInterface, ledger: O
         reason = f"the broker's positions could not be read ({exc})"
     else:
         if ledger is not None:
-            from app.reconciliation.service import exit_peers   # local: reconciliation imports this module
+            from app.reconciliation.service import exit_peers  # local: reconciliation imports this module
             peers = await exit_peers(ledger.session, trade, broker.name)
         else:
             peers = [trade]
@@ -939,7 +939,7 @@ async def close_position(
             trade.exit_order_id = outcome.broker_exit_order_id
             await session.commit()
         if outcome.broker_uncertain and tenant is not None:
-            from app.reconciliation.service import mark_broker_uncertain   # local: reconciliation imports this module
+            from app.reconciliation.service import mark_broker_uncertain  # local: reconciliation imports this module
             await mark_broker_uncertain(session, tenant, outcome.broker_uncertain)
             await session.commit()
         await _note_exit_wait(session, trade, outcome, user_id)

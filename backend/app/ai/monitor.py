@@ -26,14 +26,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
+from app.core import config as app_config
 from app.core.enums import NotificationSeverity, NotificationType
 from app.core.json_finite import dumps as finite_dumps
 from app.db.models import AiActionRecord, BacktestRunRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.market_data.calendar import IST
 from app.notifications.service import notify
-from app.risk_engine.routes import get_tenant_risk_config
 from app.observability.metrics import AI_DECISIONS, AI_PROPOSALS
-from app.core import config as app_config
+from app.risk_engine.routes import get_tenant_risk_config
 
 TTL_HOURS = 24
 LOSING_STREAK = 3
@@ -393,9 +393,9 @@ async def _create_alert(session: AsyncSession, action: AiActionRecord, user: Use
     validation). An alert rule notifies; it never places an order."""
     from fastapi import HTTPException
 
-    from app.alerts.rules_routes import RuleBody, build_rule
     from app.ai.tools.screener import FLAG as COPILOT_FLAG
     from app.ai.tools.screener import final_name
+    from app.alerts.rules_routes import RuleBody, build_rule
     from app.auth.dependencies import ensure_trader
     from app.platform.controls import flag_enabled
     owner = await session.get(User, action.owner_user_id) if action.owner_user_id else user

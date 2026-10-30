@@ -10,7 +10,7 @@ import httpx
 import pyotp
 import pytest
 
-from app.brokers.angel_one import AngelOneBroker, SCRIP_MASTER_URL, _parse_expiry, _totp_code
+from app.brokers.angel_one import SCRIP_MASTER_URL, AngelOneBroker, _parse_expiry, _totp_code
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import BrokerCredentials, BrokerOrderRequest
 from app.brokers.registry import get_broker_adapter

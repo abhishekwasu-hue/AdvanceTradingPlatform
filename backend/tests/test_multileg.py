@@ -20,7 +20,7 @@ from tests.test_auth_api import _session_factory, client
 from tests.test_contract_execution import BIG
 from tests.test_contract_rules import TODAY, _load_master
 from tests.test_deployments_api import _auth, _create, _store_broker
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker
 
 pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
 
@@ -262,6 +262,7 @@ def test_worker_opens_and_closes_a_spread_as_one_position(monkeypatch):
     assert report.signals_executed == 0 and "not entered on a SHORT" in _get(StrategyDeploymentRecord, dep_id).last_error
 
     from datetime import timedelta
+
     from tests.test_trading_worker import BAR_TS
     _force_signal(monkeypatch, lambda: _signal(ts=BAR_TS + timedelta(minutes=1)))
     report = _run(worker.run_cycle(now=OPEN_NOW + timedelta(minutes=1)))

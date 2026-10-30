@@ -18,7 +18,8 @@ import pandas as pd
 from app.core.enums import SignalDirection, StrategyCategory
 from app.core.models import Signal
 from app.indicators.momentum import rsi as rsi_indicator
-from app.indicators.trend import ema, macd as macd_indicator
+from app.indicators.trend import ema
+from app.indicators.trend import macd as macd_indicator
 from app.indicators.volatility import atr as atr_indicator
 from app.indicators.volatility import bollinger as bollinger_indicator
 from app.indicators.volatility import supertrend as supertrend_indicator

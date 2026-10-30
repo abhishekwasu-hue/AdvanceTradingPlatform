@@ -94,7 +94,7 @@ async def weekly_review(http_request: Request, week: Optional[str] = Query(defau
     await _flag(session, user)
     review = await service.weekly_review(session, user, _week_or_422(week), history_weeks=history)
     if review["totals"]["trades"]:
-        from app.growth import activation    # AUD-G2.4: the week's rows are committed by the review itself
+        from app.growth import activation  # AUD-G2.4: the week's rows are committed by the review itself
         await activation.record_step(session, user, "first_journal_review")
     explanation: Dict[str, Any] = {"source": "rules", "text": "\n".join(review["lines"])}
     if narrate and review["totals"]["trades"]:
@@ -150,7 +150,7 @@ async def journal_trade(trade_id: int, user: User = Depends(get_current_user), s
         raise HTTPException(status_code=404, detail="No such trade")
     entries = await capture.ensure_entries(session, [trade])
     await session.commit()
-    from app.growth import activation        # AUD-G2.4
+    from app.growth import activation  # AUD-G2.4
     await activation.record_step(session, user, "first_journal_review")
     tags = list(await session.scalars(select(JournalTagRecord).where(JournalTagRecord.trade_id == trade.id, JournalTagRecord.user_id == user.id)
                                       .order_by(JournalTagRecord.tag)))

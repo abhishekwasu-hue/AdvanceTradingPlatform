@@ -23,7 +23,8 @@ import asyncio
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 import pandas as pd

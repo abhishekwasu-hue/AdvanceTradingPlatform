@@ -251,6 +251,7 @@ def test_trendline_pattern_gap_and_retest_series_u6_bk4():
 def test_market_zone_functions_z7a3():
     # deeper checks (as-of per bar, no look-ahead, text vs engine, tenant scope) are in tests/test_zones_chart_screenql.py
     from datetime import datetime, timezone
+
     from app.price_action.zones.read import Snapshot, ZoneTimeline
     d = _sym([100.0, 100.2, 100.4, 100.6])                                   # 5m bars from 03:45 UTC; the third closes at 04:00
     zone = {"zone_key": "z", "zone_type": "DEMAND_ZONE", "timeframe": "1h", "zone_low": 99.6, "zone_high": 99.9, "state": "tested",
@@ -267,6 +268,7 @@ def test_market_zone_functions_z7a3():
 def test_fundamentals_functions_u7_lg3():
     # deeper checks (the store's known_from rules, restatements, no look-ahead, the cards) are in tests/test_n3_lg3_fundamentals.py
     from datetime import date, datetime, timezone
+
     from app.fundamentals.pit import Version
     d = _sym([100.0, 100.2, 100.4, 100.6])                                   # the third bar closes at 04:00
     seen = datetime(2026, 3, 2, 4, 0, tzinfo=timezone.utc)
@@ -352,6 +354,7 @@ def test_rankscore_n3_s7a():
 def test_ownership_functions_n3_s8a():
     # deeper checks (point in time, corrections, staleness, cut bars, the store, the routes) are in tests/test_n3_s8a_ownership.py
     from datetime import date, datetime, timezone
+
     from app.screener.ownership import Event, Ownership, Pattern
     d = _sym([100.0, 100.2, 100.4, 100.6])                                   # 5m bars from 03:45 UTC; the second closes at 03:55
     seen = datetime(2026, 3, 2, 3, 55, tzinfo=timezone.utc)

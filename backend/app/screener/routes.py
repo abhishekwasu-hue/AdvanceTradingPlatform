@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import logging
 import json
+import logging
 import math
 import time
 from datetime import datetime, timezone
@@ -24,30 +24,29 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.compliance_terms import ai_acknowledged as _ai_acknowledged
+from app.ai.rate_limit import ai_rate_limit as _ai_rate_limit
 from app.auth.dependencies import get_current_user, require_trader
 from app.core.models import bars_to_dataframe
+from app.core.rate_limit import user_rate_limit
 from app.db.models import ScreenRecord, ScreenRunRecord, User
 from app.db.session import get_session, release_connection
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import amw_functions as amw_gate
-from app.screener import compile_screen, nodes
-from app.screener import legends as lg
-from app.screener import reasons
-from app.screener import ranking as ranking_gate   # registers the `legends` template source (U7 LG1)
-from app.screener import taxonomy as tx
-from app.screener import zones as zone_gate
-from app.screener import ownership as ownership_gate
-from app.screener import waves as waves_gate
-from app.screener import venues as venue_gate
+from app.screener import compile_screen, nodes, reasons
 from app.screener import fundamentals as fundamentals_gate
+from app.screener import legends as lg
+from app.screener import ownership as ownership_gate
+from app.screener import ranking as ranking_gate  # registers the `legends` template source (U7 LG1)
+from app.screener import taxonomy as tx
+from app.screener import venues as venue_gate
+from app.screener import waves as waves_gate
+from app.screener import zones as zone_gate
 from app.screener.breakouts import gate as breakout_gate
-from app.core.rate_limit import user_rate_limit
-from app.ai.compliance_terms import ai_acknowledged as _ai_acknowledged
-from app.ai.rate_limit import ai_rate_limit as _ai_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.registry import FUNCTIONS, describe
-from app.screener.validator import Problem, Validated
 from app.screener.runtime import Match, ScreenMemo, SymbolData, closed_only, resample, run_screen, stage_survivors
+from app.screener.validator import Problem, Validated
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/screener", tags=["screener"])

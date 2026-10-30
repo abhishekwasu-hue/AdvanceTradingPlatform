@@ -33,7 +33,7 @@ from app.me import prefs
 from app.paper import fno_basket, fno_ticket, settlement_watch
 from app.risk_engine.risk_manager import TradingDayState
 from tests.test_auth_api import _session_factory, client
-from tests.test_fno2_basket import _condor_legs, _leg, _org_tenant, _orders, _post, condor  # noqa: F401 - the fixture
+from tests.test_fno2_basket import _condor_legs, _leg, _orders, _org_tenant, _post, condor  # noqa: F401 - the fixture
 from tests.test_z3b_paper_account import _member
 from tests.test_z5_p1d_risk_by_default import _flag
 

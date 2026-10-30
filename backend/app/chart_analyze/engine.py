@@ -119,9 +119,9 @@ async def _call_byok(session: AsyncSession, user: User, provider: str, model: st
 async def ask(session: AsyncSession, user: User, tenant: Tenant, instr: Instructions, png: bytes, settings: Dict[str, Any], *,
               now: datetime, client: Optional[Any] = None) -> Answer:
     """One call with the image; raises EngineUnavailable (no AI may answer) or LimitReached (the cost cap)."""
+    from app.ai import resolve as ai_resolve
     from app.ai.metering import MeteredProvider
     from app.ai.settings import provider_for
-    from app.ai import resolve as ai_resolve
     from app.chart_analyze import limits
     if await ai_resolve.one_key_on(session, tenant.id):
         return await _ask_one_key(session, user, tenant, instr, png, settings, now=now, client=client)

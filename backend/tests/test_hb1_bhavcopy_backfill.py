@@ -18,10 +18,19 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
-from app.db.models import (DataQualityEventRecord, HistoryBackfillFileRecord, IndexEodRecord, MarketHolidayRecord,
-                           MdCandleRecord, MdCorporateActionRecord, MdIsinSymbolRecord, User)
+from app.db.models import (
+    DataQualityEventRecord,
+    HistoryBackfillFileRecord,
+    IndexEodRecord,
+    MarketHolidayRecord,
+    MdCandleRecord,
+    MdCorporateActionRecord,
+    MdIsinSymbolRecord,
+    User,
+)
 from app.market_data.calendar import IST
-from app.market_lake import adjust, bhavcopy, bhavcopy_backfill as hb1, by_isin, corporate_actions
+from app.market_lake import adjust, bhavcopy, by_isin, corporate_actions
+from app.market_lake import bhavcopy_backfill as hb1
 from app.market_lake.bhavcopy import BhavcopyRefused
 from app.market_lake.nse_fetch import FetchResult, PoliteFetcher
 from app.platform import controls

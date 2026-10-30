@@ -22,7 +22,7 @@ from app.brokers import rate_budget as rb
 from app.brokers.catalog import entry as catalog_entry
 from app.brokers.contract_symbols import wrap_contract_symbols
 from app.brokers.exceptions import BrokerAuthenticationError, BrokerOrderRejected
-from app.brokers.models import BrokerCredentials, BrokerOrderRequest, ORDER_INTENT_ENTRY
+from app.brokers.models import ORDER_INTENT_ENTRY, BrokerCredentials, BrokerOrderRequest
 from app.brokers.registry import get_broker_adapter
 from app.brokers.token_lifecycle import TOKEN_DAILY_EXPIRY_IST, default_token_expiry
 from app.compliance.order_policy import policy_for

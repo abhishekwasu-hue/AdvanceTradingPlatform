@@ -233,6 +233,7 @@ def test_webhook_token_is_stored_hashed_rotation_is_owner_only_and_legacy_plaint
     assert client.get("/api/webhooks/tradingview/token", headers=headers).json()["webhook_token"] == "legacy-plain-token-0123456789"
     # A trader (not the owner) may not rotate.
     from urllib.parse import parse_qs, urlparse
+
     from tests.test_team_api import _upgrade_plan
     _upgrade_plan(me["tenant_id"])                                                  # Free plan allows one member
     invite = client.post("/api/team/invites", headers=headers, json={"email": "p03-member@example.com", "role": "USER"})

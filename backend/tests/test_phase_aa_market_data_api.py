@@ -12,10 +12,10 @@ from app.core.enums import BrokerTokenStatus
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord
 from app.market_data import candles_routes
-from app.market_data.service import MarketDataService, DEFAULT_LOOKBACK_DAYS
+from app.market_data.service import DEFAULT_LOOKBACK_DAYS, MarketDataService
 from app.secrets_store.encryption import encrypt_text
 from tests.test_auth_api import _session_factory, client
-from tests.test_market_data_service import _MemoryCache, _install_cache
+from tests.test_market_data_service import _install_cache, _MemoryCache
 from tests.test_phase_k_commercial import _owner
 
 run = asyncio.run

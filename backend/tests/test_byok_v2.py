@@ -17,8 +17,18 @@ from sqlalchemy import select, text
 from app.ai import byok, chart_png, monitor, vision_audit
 from app.ai import providers as prov
 from app.alerts.channels import TelegramConfig, encrypt_config
-from app.db.models import (AiActionRecord, AlertChannelRecord, AuditLogRecord, LlmCallRecord, MdCandleRecord, NotificationLinkRecord,
-                           StrategyDeploymentRecord, TradeRecord, User, VisionReportRecord)
+from app.db.models import (
+    AiActionRecord,
+    AlertChannelRecord,
+    AuditLogRecord,
+    LlmCallRecord,
+    MdCandleRecord,
+    NotificationLinkRecord,
+    StrategyDeploymentRecord,
+    TradeRecord,
+    User,
+    VisionReportRecord,
+)
 from app.secrets_store.envelope import ensure_tenant_key
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_byok_v1 import _flag

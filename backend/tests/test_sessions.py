@@ -63,7 +63,9 @@ def test_refresh_rotates_and_reuse_revokes_the_session():
     # After the grace window a replay is what it always was: two holders of one credential -> session dies.
     import asyncio
     from datetime import datetime, timedelta, timezone
+
     from sqlalchemy import update
+
     from app.db.models import UserSessionRecord
     from tests.test_auth_api import _session_factory
 

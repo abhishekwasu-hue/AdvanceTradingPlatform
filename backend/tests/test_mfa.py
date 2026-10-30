@@ -96,7 +96,9 @@ def test_live_step_up_only_when_tenant_policy_requires_it():
 
     async def valid_token():
         from datetime import datetime, timedelta, timezone
+
         from sqlalchemy import select
+
         from app.db.models import BrokerCredentialRecord
         async with _session_factory() as s:
             rec = await s.scalar(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == me["tenant_id"]))
@@ -117,6 +119,7 @@ def test_live_step_up_only_when_tenant_policy_requires_it():
     # but a session that predates MFA would be - simulate with a session that has no verification.
     async def unverify():
         from sqlalchemy import update
+
         from app.db.models import UserSessionRecord
         async with _session_factory() as s:
             await s.execute(update(UserSessionRecord).where(UserSessionRecord.user_id == me["id"]).values(mfa_verified_at=None))

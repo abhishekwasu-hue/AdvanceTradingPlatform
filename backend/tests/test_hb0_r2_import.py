@@ -19,8 +19,7 @@ import pyarrow.parquet as pq
 import pytest
 from sqlalchemy import func, select
 
-from app.db.models import (DataQualityEventRecord, HistoryImportFileRecord, MarketHolidayRecord, MdCandleRecord,
-                           MdTenantCandleRecord, Tenant, User)
+from app.db.models import DataQualityEventRecord, HistoryImportFileRecord, MarketHolidayRecord, MdCandleRecord, MdTenantCandleRecord, Tenant, User
 from app.market_data.calendar import IST
 from app.market_lake import r2_import, tenant_store
 from app.market_lake.ingest import LakeBar

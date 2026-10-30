@@ -276,7 +276,7 @@ class _Outcome:
 
 
 def _read_parquet(data: bytes):
-    import pyarrow.parquet as pq     # the API process never imports it
+    import pyarrow.parquet as pq  # the API process never imports it
 
     try:
         return pq.read_table(io.BytesIO(data))

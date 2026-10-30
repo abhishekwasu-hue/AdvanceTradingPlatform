@@ -20,9 +20,8 @@ Z10-b, per organisation and off by default:
 import asyncio
 import hashlib
 import hmac
-import json
-from urllib.parse import parse_qsl, quote
 import html
+import json
 import logging
 import os
 import re
@@ -34,22 +33,34 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Any, Dict, List, MutableMapping, Optional, Set, Tuple, Union
+from urllib.parse import parse_qsl, quote
 
 import httpx
-
-from app.core.egress import check_url_resolved
 from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.observability.metrics import ALERT_DELIVERIES
-from app.alerts.channels import (DLT_FIELDS, EmailConfig, FcmConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, WhatsAppConfig, decrypt_config,
-                                 decrypt_raw, encrypt_config, severity_reaches)
 from app.alerts import fcm, push_kinds, s10_gate, staleness, webpush
+from app.alerts.channels import (
+    DLT_FIELDS,
+    EmailConfig,
+    FcmConfig,
+    PushConfig,
+    SmsConfig,
+    TelegramConfig,
+    WebhookConfig,
+    WhatsAppConfig,
+    decrypt_config,
+    decrypt_raw,
+    encrypt_config,
+    severity_reaches,
+)
 from app.alerts.deeplink import app_path, open_in_app_row, push_wanted
-from app.core.enums import NotificationType, AlertChannelType, AlertDeliveryStatus
+from app.core.egress import check_url_resolved
+from app.core.enums import AlertChannelType, AlertDeliveryStatus, NotificationType
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
 from app.market_data.calendar import IST
+from app.observability.metrics import ALERT_DELIVERIES
 from app.secrets_store.envelope import ensure_tenant_key
 
 logger = logging.getLogger(__name__)

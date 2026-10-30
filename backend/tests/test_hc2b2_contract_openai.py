@@ -8,7 +8,7 @@ import pytest
 
 from app.ai import agent
 from app.ai.providers import OpenAIProvider, ProviderError
-from tests.test_hc2a_agent import _Scripted, _agent, _trade
+from tests.test_hc2a_agent import _agent, _Scripted, _trade
 from tests.test_phase_l_ai import _owner
 
 

@@ -23,8 +23,8 @@ from app.platform import controls, phase0_lock
 from tests.order_path_graph import CallGraph
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import CLOSED_NOW, _FakeBroker, _tenant, _worker
-from tests.test_z10c_order_paths import GATED
 from tests.test_z3_approval_entries import _price
+from tests.test_z10c_order_paths import GATED
 
 UTC = timezone.utc
 BACKEND = Path(__file__).resolve().parents[1]
@@ -518,6 +518,7 @@ def test_a_sql_error_in_one_intent_is_undone_in_its_savepoint_and_the_next_inten
     """ADR-0004 / savepoints: an intent whose dispatch hits a SQL error (a failed flush) fails alone - its savepoint is
     rolled back, never the whole shared session - and the next intent in the same batch is dispatched."""
     from datetime import date
+
     from app.db.models import MarketHolidayRecord
     t = _org("sqlfail")
     real = approval.propose_entry

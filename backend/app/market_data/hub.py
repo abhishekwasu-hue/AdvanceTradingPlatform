@@ -538,7 +538,8 @@ async def user_connection(session: Any, user: Any, now: Optional[datetime] = Non
     from app.db.models import BrokerCredentialRecord
     from app.market_data import entitlement
     from app.market_data.data_terms import terms_for
-    from app.market_data.fanin import FLAG as BYOB_FLAG, SessionRef
+    from app.market_data.fanin import FLAG as BYOB_FLAG
+    from app.market_data.fanin import SessionRef
     from app.platform.controls import flag_enabled
 
     if user is None or not await hub_on(session, user.tenant_id):

@@ -11,7 +11,8 @@ import pytest
 
 from app.backtest.options import ExpiryCalendar
 from app.core.enums import ExpiryRule
-from app.instruments import expiry_calendar, expiry_data, nse_expiries as ne
+from app.instruments import expiry_calendar, expiry_data
+from app.instruments import nse_expiries as ne
 
 D = dt.date.fromisoformat
 

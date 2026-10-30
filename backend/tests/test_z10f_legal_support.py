@@ -18,7 +18,8 @@ from app.retention.policy import NEVER_DELETED, load_policy
 from app.support import FLAG, bot, guard, knowledge
 from app.support.routes import support_rate_limit
 from tests.test_auth_api import _register, _session_factory, client
-from tests.test_team_api import _invite, _owner as _team_owner, _token_from
+from tests.test_team_api import _invite, _token_from
+from tests.test_team_api import _owner as _team_owner
 
 PASSWORD = "S3cur3Pass!"
 ASK = "/api/ai/support/ask"

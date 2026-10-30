@@ -10,11 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.brokers.gates import data_sources
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
+from app.core import config as app_config
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.portfolio import engine
 from app.risk_engine.routes import get_tenant_risk_config
-from app.core import config as app_config
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -27,7 +27,7 @@ async def risk(user: User = Depends(get_current_user), session: AsyncSession = D
     from app.portfolio import risk_data
     await require_flag(session, risk_data.FLAG, user.tenant_id)
     out = await risk_data.risk_view(session, user)
-    from app.portfolio import caps                             # N1 F3: the user's own limits on new entries (F2), when on
+    from app.portfolio import caps  # N1 F3: the user's own limits on new entries (F2), when on
     limits = await caps.limits_of(session, user) if await caps.enabled(session, user.tenant_id) else None
     out["limits"] = ({"max_sector_pct": limits.max_sector_pct, "max_correlated_risk_pct": limits.max_correlated_risk_pct,
                       "max_open_positions": limits.max_open_positions} if limits is not None else None)

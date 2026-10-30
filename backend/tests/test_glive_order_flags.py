@@ -25,9 +25,9 @@ from app.brokers.zerodha import ZerodhaBroker
 from app.core import config
 from app.core.enums import OrderSide
 from app.db.models import Tenant, TradeRecord
-from app.trading.position_monitor import close_position
 from app.market_data.calendar import SessionStatus
 from app.trading import stop_guard, stop_state
+from app.trading.position_monitor import close_position
 from app.trading.stop_guard import verify_protective_stops
 from tests.test_auth_api import _session_factory, client
 from tests.test_phase_p_closure import _BookBroker, _seed

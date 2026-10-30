@@ -19,7 +19,8 @@ from app.scanner.models import (
     StructureFilter,
     StructureFilterType,
 )
-from app.screener import nodes as n, parse
+from app.screener import nodes as n
+from app.screener import parse
 from app.strategy_engine.declarative import Condition, Operand
 from tests import test_scanner as legacy_tests
 
@@ -133,8 +134,8 @@ def test_a_day_operand_inside_an_intraday_scan_stays_on_the_legacy_engine():
 
 def test_the_api_switch(monkeypatch):
     from app.core import config
-    from tests.test_scanner_api import _h as _auth_headers
     from tests.test_auth_api import client
+    from tests.test_scanner_api import _h as _auth_headers
     bars = [b.model_dump(mode="json") for b in _walk(np.random.default_rng(9))]
     body = {"symbols": [{"symbol": "A", "candles": bars}], "indicator_conditions": [
         {"left": {"type": "indicator", "indicator": "CLOSE"}, "operator": "GT", "right": {"type": "indicator", "indicator": "SMA", "period": 20}}]}

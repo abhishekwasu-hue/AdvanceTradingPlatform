@@ -23,8 +23,7 @@ from app.audit.log import GENESIS_HASH, _compute_hash
 from app.db.models import AuditLogRecord, TradeRecord, UserSessionRecord
 from app.market_data.fanin import Priority, SessionRef, SessionSymbols, UserSessionFanIn
 from app.platform import controls
-from app.screener import compile_screen
-from app.screener import runtime
+from app.screener import compile_screen, runtime
 from app.screener.routes import screen_and_funnel
 from app.screener.runtime import SymbolData, run_screen, stage_survivors
 from tests.test_auth_api import _session_factory, client

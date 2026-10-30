@@ -24,7 +24,13 @@ from sqlalchemy.pool import StaticPool
 from app.alerts import platform_bot
 from app.core import config
 from app.db.models import (
-    AlertDeliveryRecord, Base, BrokerCredentialRecord, LoginEventRecord, NotificationLinkRecord, Tenant, User,
+    AlertDeliveryRecord,
+    Base,
+    BrokerCredentialRecord,
+    LoginEventRecord,
+    NotificationLinkRecord,
+    Tenant,
+    User,
     WorkerHeartbeatRecord,
 )
 from app.notifications import mailer

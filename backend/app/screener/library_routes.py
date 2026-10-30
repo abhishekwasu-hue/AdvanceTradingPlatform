@@ -27,10 +27,9 @@ from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
-from app.screener import compile_screen, nodes
+from app.screener import compile_screen, nodes, reasons
 from app.screener import fundamentals as fundamentals_gate
 from app.screener import library as lib
-from app.screener import reasons
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
 from app.screener.panel import FLAG as VECTOR_FLAG

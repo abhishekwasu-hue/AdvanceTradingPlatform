@@ -24,8 +24,7 @@ from app.screener import zones as zone_gate
 from app.screener.runtime import SymbolData, bar_close, evaluate
 from tests.test_auth_api import _engine, _session_factory
 from tests.test_phase_l_ai import _owner
-from tests.test_zones_chart_screenql import (D0, D1, D2, D3, KEY, _bars, _clean, _read, _set, _tenant_settings, _write_run,  # noqa: F401
-                                             _zrow, ist)
+from tests.test_zones_chart_screenql import D0, D1, D2, D3, KEY, _bars, _clean, _read, _set, _tenant_settings, _write_run, _zrow, ist  # noqa: F401
 
 
 def _run(coro):
@@ -132,7 +131,9 @@ def test_the_window_comes_from_the_zone_calls_own_history():
 
 def test_bar_close_reads_zones_once_for_rules_sharing_a_cached_result(monkeypatch):
     from app.alerts import barclose
-    from tests.test_s4a_barclose import TUE, FakeFetch, _bars as s4_bars, _rule, ist as s4_ist
+    from tests.test_s4a_barclose import TUE, FakeFetch, _rule
+    from tests.test_s4a_barclose import _bars as s4_bars
+    from tests.test_s4a_barclose import ist as s4_ist
     _set(screener_v2=True, market_zones=True)
     _, me = _owner("z7a3perf-alerts@example.com")
     for name in ("r1", "r2"):
@@ -164,7 +165,9 @@ def test_bar_close_evidence_keeps_the_zone_band_for_a_rule_reusing_a_cached_resu
 
     from app.alerts import barclose
     from app.db.models import ScreenEvidenceRecord
-    from tests.test_s4a_barclose import TUE, FakeFetch, _bars as s4_bars, _rule, ist as s4_ist
+    from tests.test_s4a_barclose import TUE, FakeFetch, _rule
+    from tests.test_s4a_barclose import _bars as s4_bars
+    from tests.test_s4a_barclose import ist as s4_ist
     _set(screener_v2=True, market_zones=True, evidence_charts=True)
     _, me = _owner("z7a3perf-evidence@example.com")
     for name in ("e1", "e2"):

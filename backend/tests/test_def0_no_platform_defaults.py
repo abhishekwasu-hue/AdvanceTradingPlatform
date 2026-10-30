@@ -13,8 +13,8 @@ from app.core import config as app_config
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
-from tests.test_trading_worker import _tenant
 from tests.test_fno1_chain_ticket import LOT, _body, _contract, _expiry, _preview
+from tests.test_trading_worker import _tenant
 from tests.test_z3_approval_entries import _price
 from tests.test_z3b_paper_account import _paper_flag
 from tests.test_z5_p1d_risk_by_default import _flag, _org

@@ -38,9 +38,21 @@ from app.brokers.zerodha import ZerodhaBroker
 from app.core import config as app_config
 from app.db.models import AuditLogRecord, BrokerCredentialRecord
 from app.main import app
+from tests.broker_fakes import (
+    ANGEL_CLIENT,
+    ANGEL_KEY,
+    ANGEL_PIN,
+    COINDCX_KEY,
+    DHAN_TOKEN,
+    FYERS_APP_ID,
+    FYERS_SECRET,
+    KITE_KEY,
+    KITE_SECRET,
+    TOTP_SECRET,
+    UPSTOX_KEY,
+    fake_credentials,
+)
 from tests.route_inventory import iter_api_routes
-from tests.broker_fakes import (ANGEL_CLIENT, ANGEL_KEY, ANGEL_PIN, COINDCX_KEY, DHAN_TOKEN, FYERS_APP_ID, FYERS_SECRET, KITE_KEY,
-                                KITE_SECRET, TOTP_SECRET, UPSTOX_KEY, fake_credentials)
 from tests.test_auth_api import _session_factory, client
 from tests.test_bt1b_guard_all_reads import _byob, _flags, _member
 from tests.test_phase_k_commercial import _owner
@@ -633,6 +645,7 @@ def _upstox_callback(state: str, code: str):
 
 def _set_user(user_id: int, **values) -> None:
     from sqlalchemy import update as sa_update
+
     from app.db.models import User
 
     async def go():

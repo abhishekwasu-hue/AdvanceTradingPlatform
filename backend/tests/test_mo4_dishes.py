@@ -14,8 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from app.chart_analyze.signal_language import call_words
-from app.db.models import (AiActionRecord, AlertEventRecord, AlertRuleRecord, MdCandleRecord, SignalHistoryRecord, TradeRecord, User,
-                           WatchlistRecord)
+from app.db.models import AiActionRecord, AlertEventRecord, AlertRuleRecord, MdCandleRecord, SignalHistoryRecord, TradeRecord, User, WatchlistRecord
 from app.growth import dishes
 from app.market_data.calendar import IST
 from app.market_lake.bhavcopy_backfill import bar_end

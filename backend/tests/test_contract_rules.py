@@ -7,7 +7,12 @@ import pytest
 
 from app.core.enums import ExpiryRule, InstrumentKind, OptionPosition, OrderSide, SignalDirection, StrikeRule
 from app.instruments.contracts import (
-    ContractResolutionError, ContractRules, option_right, resolve_contract, select_expiry, select_strike,
+    ContractResolutionError,
+    ContractRules,
+    option_right,
+    resolve_contract,
+    select_expiry,
+    select_strike,
 )
 from app.instruments.master import parse_upstox_master, replace_master
 from tests.master_fixture import NIFTY_EXPIRIES, NIFTY_LOT, RELIANCE_LOT, build_master

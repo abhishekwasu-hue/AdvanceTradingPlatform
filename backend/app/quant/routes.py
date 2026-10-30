@@ -14,8 +14,6 @@ debt_to_equity, earnings_growth_pct` from the Fundamentals module's stored compa
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-
-from app.fundamentals.visibility import viewer_tenant
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,8 +21,11 @@ from app.auth.dependencies import get_current_user
 from app.core.models import OHLCVBar, bars_to_dataframe
 from app.db.models import User
 from app.db.session import get_session
+from app.fundamentals.visibility import viewer_tenant
 from app.portfolio.engine import open_trades
-from app.quant import factors as factor_model, fundamentals_bridge, risk as risk_model
+from app.quant import factors as factor_model
+from app.quant import fundamentals_bridge
+from app.quant import risk as risk_model
 
 router = APIRouter(prefix="/api/quant", tags=["quant"])
 

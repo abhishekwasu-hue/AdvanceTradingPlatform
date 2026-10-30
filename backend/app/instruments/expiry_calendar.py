@@ -99,7 +99,7 @@ def lot_size(expiry, underlying: str = "NIFTY", listed_lots: Optional[Dict[dt.da
     dated = dated_lot_size(underlying, day)
     if dated is not None:
         return dated
-    from app.backtest.options import lot_size_on      # lazy: options imports this module
+    from app.backtest.options import lot_size_on  # lazy: options imports this module
     return int(lot_size_on(ALIASES[" ".join(str(underlying).upper().split())], day))
 
 

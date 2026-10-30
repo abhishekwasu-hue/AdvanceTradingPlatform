@@ -5,7 +5,6 @@ import asyncio
 import json
 
 import pandas as pd
-
 import pytest
 
 from app.ai import research_loop
@@ -79,8 +78,8 @@ def test_flag_off_by_default_and_the_rules_cannot_draft(monkeypatch, no_ack_gate
     assert client.post("/api/ai/research", headers=headers, json=body).status_code == 503        # ai_research is off by default
     _flags(ai_research=True)
     try:
-        from app.ai.providers import RuleBasedProvider
         from app.ai import settings as ai_settings
+        from app.ai.providers import RuleBasedProvider
 
         async def rules(*args, **kwargs):
             return RuleBasedProvider()

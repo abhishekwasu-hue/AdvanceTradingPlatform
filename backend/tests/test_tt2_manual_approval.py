@@ -18,7 +18,7 @@ from app.platform import phase0_lock
 from tests import test_fno1_chain_ticket as fno1
 from tests import test_fno2_basket as fno2
 from tests.test_auth_api import _session_factory, client
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _signal, _tenant, _trades, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _signal, _tenant, _trades, _worker
 from tests.test_z3_approval_entries import _actions, _email, _flag_for, _orders, _run, _sig, _user
 
 BACKEND = Path(__file__).resolve().parents[1]

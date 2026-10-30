@@ -480,6 +480,19 @@ def test_tpl8_gap_companion():
     assert seen, "the fixture must carry gaps"
 
 
+def test_m55_t5_area_gate_and_its_invalidation():
+    """M55 T5: AreaGate is the ported level gate's entry candle; AreaGateRef its invalidation there (NaN elsewhere)."""
+    from app.quality.lookahead import synthetic_bars
+    f = synthetic_bars(1500, tf="15m", seed=2)
+    data = SymbolData("S", {"15m": f})
+    COVERED.update({"AreaGate", "AreaGateRef"})
+    fired = evaluate(parse('AreaGate("up")'), data, base_tf="15m")
+    stop = evaluate(parse('AreaGateRef("invalidation", "up")'), data, base_tf="15m")
+    assert list(np.flatnonzero(fired.to_numpy())) == [908]
+    assert stop.notna().sum() == 1 and stop.iloc[908] < f["close"].iloc[908]
+    assert not evaluate(parse('AreaGate("up", min_rr=10)'), data, base_tf="15m").any()
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

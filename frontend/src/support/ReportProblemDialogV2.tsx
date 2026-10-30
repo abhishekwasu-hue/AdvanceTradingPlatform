@@ -6,8 +6,9 @@ import { FEEDBACK_MAX_CHARS, feedbackScreen, feedbackVersion } from "../feedback
 import { appVersion } from "../pwa/events";
 import { deskApi, reportBody } from "./desk";
 import { lastServerError, type LastServerError } from "./lastError";
+import { formatDateTimeIST } from "../ui/format";
 
-const time = (iso: string) => new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const time = (iso: string) => formatDateTimeIST(iso);      // REV-1 M3: IST
 
 /**
  * C12: "Report a problem". The user says what went wrong; the app attaches the page, the time, the app version and -

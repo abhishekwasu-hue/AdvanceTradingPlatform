@@ -64,7 +64,7 @@ from app.instruments.contracts import (
 )
 from app.instruments.expiry_data import ExpiryDataMissing, ExpiryDataStale
 from app.instruments.models import ContractSpec
-from app.instruments.spreads import CustomLeg, PlannedLeg, ResolvedLeg, ResolvedStructure, plan_structure, structure_metrics
+from app.instruments.spreads import CustomLeg, PlannedLeg, ResolvedLeg, ResolvedStructure, can_hold_for_days, plan_structure, structure_metrics
 from app.market_data.calendar import IST
 from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState, nonfinite_levels
@@ -110,6 +110,9 @@ class OptionBacktestConfig:
     risk_free_rate: float = 0.07
     # Intraday behaviour, as the worker enforces it for deployments; False holds to exit/expiry.
     intraday: bool = True
+    # M55 T1: the deployment's "Hold for days" (holding SWING) on a defined-risk credit structure - no square-off at the
+    # close (it exits by its own rules or settles at expiry); the entry cut-off stays, as in the worker. Ignored otherwise.
+    hold_for_days: bool = False
     # Strategy templates section 5: a single option's stop source - None / TEMPLATE_INVALIDATION (the strategy's stop on
     # the underlying, as before) or PREMIUM_PCT (only the premium floor / ceiling; no underlying-level stop).
     stop_source: Optional[str] = None
@@ -242,6 +245,7 @@ def run_option_backtest(
         pricer.fallback.vol = vol
     calendar = ExpiryCalendar.for_underlying(underlying, config.holidays, weekday=config.expiry_weekday, weekly=config.weekly_expiry)
     rules = config.rules()
+    held_for_days = config.hold_for_days and can_hold_for_days(config.option_strategy)   # M55 T1: credit structures only
     if config.option_strategy == OptionStrategy.CUSTOM and not config.custom_legs:
         raise OptionBacktestError("CUSTOM structure has no legs")
 
@@ -417,7 +421,7 @@ def run_option_backtest(
                     reason = f"Time exit ({time_rules.time_exit_minutes}m in trade)"
                 if reason is None and exit_at is not None and at_ist.time() >= exit_at:
                     reason = f"Time exit (flat at {time_rules.time_exit_at} IST)"
-                if reason is None and config.intraday and not is_daily and at_ist.time() >= SQUARE_OFF_AT:
+                if reason is None and config.intraday and not is_daily and not held_for_days and at_ist.time() >= SQUARE_OFF_AT:
                     reason = f"Square-off ({SQUARE_OFF_AT.strftime('%H:%M')} IST)"
                 # 4. The structure's own value at the close.
                 prices = leg_prices(pos, exit_spot, at, settle=settle)
@@ -525,7 +529,7 @@ def run_option_backtest(
                            + "/".join(sorted({["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][e.weekday()] for e in expiries_used},
                                              key=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].index)
                                       or [["Mon", "Tue", "Wed", "Thu", "Fri"][calendar.weekday]]),
-        "intraday": config.intraday, "structures_opened": len(structures), "expiry_settlements": settlements,
+        "intraday": config.intraday, **({"held_for_days": True} if held_for_days else {}), "structures_opened": len(structures), "expiry_settlements": settlements,
         "signals_skipped": dict(skipped), "structures": structures,
         "disclaimer": ("Synthetic premiums (Black-Scholes) approximate what the market would have quoted; they carry no smile, "
                        "no bid/ask and no liquidity. Use this to study structure mechanics, not to claim an edge.")

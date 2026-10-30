@@ -2,9 +2,9 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import verify_audit_chain
@@ -102,15 +102,29 @@ class TradeRecordResponse(BaseModel):
         )
 
 
+#: REV-1 M3: one /trades page is at most this many rows; without `limit` the answer is the first page of this size.
+TRADES_PAGE_DEFAULT = 200
+TRADES_PAGE_MAX = 500
+
+
 @router.get("/trades", response_model=List[TradeRecordResponse])
 async def list_trades(
+    response: Response,
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    limit: int = Query(TRADES_PAGE_DEFAULT, ge=1, le=TRADES_PAGE_MAX),
+    offset: int = Query(0, ge=0),
 ) -> List[TradeRecordResponse]:
-    """Every persisted paper (and eventually live) trade for the logged-in user's tenant, most
-    recent first."""
+    """The persisted paper (and eventually live) trades for the logged-in user's tenant, most recent first.
+
+    REV-1 M3: paged (`limit`, `offset`); the `X-Total-Count` header carries the tenant's full row count so a list can
+    page through. The order is stable (entry time, then id, both newest first) so pages never overlap."""
+    scope = TradeRecord.tenant_id == user.tenant_id
+    total = await session.scalar(select(func.count()).select_from(TradeRecord).where(scope))
     rows = await session.scalars(
-        select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id).order_by(TradeRecord.entry_time.desc())
+        select(TradeRecord).where(scope).order_by(TradeRecord.entry_time.desc(), TradeRecord.id.desc())
+        .offset(offset).limit(limit)
     )
+    response.headers["X-Total-Count"] = str(total or 0)
     return [TradeRecordResponse.from_record(r) for r in rows]
 
 

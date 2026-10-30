@@ -116,6 +116,34 @@ BREAK_EXTRA_BARS = 21                             # RealBreak: the median range 
 _DEGREE = Arg("degree", NUM, 0, False, choices=SWING_DEGREES)
 _DEGREE1 = Arg("degree", NUM, 1, False, choices=SWING_DEGREES)
 _SIDE = Arg("side", STR, choices=("up", "down"))
+
+
+# M55 T5: every number of the ported level gate as a named setting, by type. No default here (left out: the ported default,
+# app/price_action/level_gate/settings.py), so the registry never loads the gate; tests/test_m55_t5_pullback_area.py checks
+# these names and types against app/strategy_templates/area_gate.SETTING_KEYS.
+GATE_BOOL_ARGS: tuple[str, ...] = ("wait_next_candle", "allow_parent_correction", "break_displacement_confirm")
+GATE_TEXT_ARGS: dict[str, tuple[str, ...]] = {"power_a_rule": ("relative", "strict3"), "commit_beyond": ("close", "extreme")}
+GATE_NUM_ARGS: tuple[str, ...] = (
+    "min_rr", "max_armed_bars", "mr_n", "approach_bars", "approach_wide_mr", "approach_close_frac", "approach_min_wide", "sl_buffer_mr",
+    "power_shift_min", "commit_dom_mult", "study_min_bars", "pattern_eq_mr", "power_overlap", "commit_body", "pin_wick_min",
+    "star_body_max", "tweezer_tol", "commit_close_frac", "candle_avg_n", "doji_body_max", "power_fallback_bars",
+    "median_range_n", "break_buffer_mr", "break_close_loc", "strength_min", "break_no_reclaim_bars", "break_accept_closes")
+
+
+def _gate_kwargs() -> tuple[Arg, ...]:
+    return (tuple(Arg(k, NUM, None, False, literal_only=True) for k in GATE_NUM_ARGS)
+            + tuple(Arg(k, BOOL, None, False) for k in GATE_BOOL_ARGS)
+            + tuple(Arg(k, STR, None, False, choices=c) for k, c in GATE_TEXT_ARGS.items()))
+
+
+_GATE_KWARGS = _gate_kwargs()
+_GATE_TFS = ("5m", "15m")              # the scan Then runner's confirmation timeframes (app/screener/then/templates.py)
+_GATE_SESSIONS = 31                    # the Daily trend reads 30 Daily candles before the day (daily_trend.context.MIN_DAILY_BARS)
+_GATE_DOC = ("the ported level gate (scan Then): true on the commitment candle after a pullback into a live market zone"
+             " (demand area for up, supply area for down) on the side the Daily trend allows; the visit, the commitment, the"
+             " handover study, the approach check, the real break of the far edge and the room to the next area are the gate's"
+             " own rules with its settings (named; left out: the ported defaults). Closed bars; areas and trend known before"
+             " the day began")
 _CONFIRM = Arg("confirm", STR, "any", False, choices=CONFIRM_STATES)
 _CONFIRM_BARS = tuple(("confirm", state, 1) for state in CONFIRM_STATES[1:])
 _HHMM = r"([01][0-9]|2[0-3]):[0-5][0-9]"
@@ -701,6 +729,14 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          needs=("ownership",), flag=OWNERSHIP_FLAG,
          doc="calendar days from the bar's date to the next known event of that kind (0 = that day); ex_date from the lake's"
              " corporate actions" + _ODOC),
+    # M55 T5: the ported level gate (scan Then, app/price_action/level_gate) as a causal series - strategy template A1
+    Spec("AreaGate", "filter", BOOL, None, (_SIDE,), kwargs=_GATE_KWARGS, cost=6.0, min_bars=1, min_sessions=_GATE_SESSIONS,
+         timeframes=_GATE_TFS, doc=_GATE_DOC),
+    Spec("AreaGateRef", "factor", NUM, "price", (Arg("what", STR, choices=("invalidation",)), _SIDE), kwargs=_GATE_KWARGS, cost=6.0,
+         min_bars=1, min_sessions=_GATE_SESSIONS, timeframes=_GATE_TFS,
+         doc="the level gate's invalidation on its entry candles (missing elsewhere): beyond the area's far edge (and the lowest"
+             " low / highest high since the visit) by sl_buffer_mr median ranges - the same entries as AreaGate with the same"
+             " settings"),
 )}
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)

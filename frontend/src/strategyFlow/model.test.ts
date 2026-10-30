@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { StrategyDraft } from "../copilot/strategyDraft";
 import type { BacktestResult, Trade } from "../types";
 import {
-  BLOCK_PRESETS, FLOW_TIMEFRAMES, START_CARDS, SOON_BLOCKS, blockOpen, blockWords, drawdownPct, emptyFlow, entryProblems, exitProblems, flowConfig,
+  BLOCK_PRESETS, FLOW_TIMEFRAMES, START_CARDS, cardLocked, SOON_BLOCKS, blockOpen, blockWords, drawdownPct, emptyFlow, entryProblems, exitProblems, flowConfig,
   handoffFromState, marketProblems, optionBacktest, paperContract, paperSymbol, resultSummary, thin, tradeR, withCard, withDraft, withTestedContract,
   EMPTY_EXITS, INDICATOR_LABEL, atrLengthMissing, higherTimeframes, type FlowState,
 } from "./model";
@@ -24,10 +24,22 @@ function bullPutFlow(): FlowState {
 }
 
 describe("SU1 start cards", () => {
-  it("offers the order's templates; the area pullback is coming soon, breakout-retest is the template engine's", () => {
+  it("offers the order's templates; the area pullback (A1) and breakout-retest (A5) are the template engine's", () => {
     expect(START_CARDS.map((c) => c.key)).toEqual(["bull-put", "bear-call", "iron-condor", "pullback-area", "breakout-retest", "own"]);
-    expect(card("pullback-area").engine).toBe("soon");
+    expect(card("pullback-area")).toMatchObject({ engine: "template", templateId: "A1" });
     expect(card("breakout-retest")).toMatchObject({ engine: "template", templateId: "A5" });
+    expect(START_CARDS.some((c) => c.engine === "soon")).toBe(false);
+  });
+
+  it("M55 T5: the area pullback card is adoptable (not Coming soon) when its template is offered", () => {
+    const pullback = card("pullback-area");
+    expect(cardLocked(pullback, true, ["A1", "A5"])).toBe(false);
+    const f = withCard(emptyFlow(), pullback);
+    expect(f).toMatchObject({ card: "pullback-area", engine: "template", templateId: "A1", name: "Pullback to a demand / supply area" });
+    expect(cardLocked(pullback, false, ["A1"])).toBe(true);           // templates off for the organisation
+    expect(cardLocked(pullback, true, ["A5"])).toBe(true);            // the template not offered
+    expect(cardLocked({ key: "x", title: "X", line: "x", engine: "soon" }, true, ["A1"])).toBe(true);
+    expect(pageSource).toContain("cardLocked(c, templatesOn, templates.map((t) => t.id))");
   });
 
   it("a card sets only what it names: the structure and the side", () => {
@@ -35,7 +47,7 @@ describe("SU1 start cards", () => {
     expect(f.options).toMatchObject({ structure: "BULL_PUT_SPREAD", strikeRule: null, expiry: null, width: "", lots: "" });
     expect(f.side).toBe("long");
     expect(f.exits).toEqual({ stop: "", atrPeriod: "", target1: "", target2: "", minRr: "" });
-    expect(withCard(f, card("pullback-area"))).toBe(f);
+    expect(withCard(f, { key: "later", title: "Later", line: "not built yet", engine: "soon" })).toBe(f);
   });
 
   it("the words draft loads what the words state and nothing more", () => {

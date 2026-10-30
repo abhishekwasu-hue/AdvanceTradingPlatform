@@ -32,3 +32,18 @@ Parameters (current values in the JSON):
 - `IN-SEBI.login.daily`: `reminder_minutes_before_open` = `30`
 - `IN-SEBI.golive.checklist`: `dpdp_breach_notify_hours` = `72`, `log_retention_days` = `365`, `items` = `[{'id': 'vendor.iso27001', 'group': 'vendor', 'title': "ISO 27001 / SOC 2 certificate (or the broker's vendor-empanelment acceptance)", 'evidence': True, 'validity_days': 365}, {'id': 'vendor.cert_in_vapt', 'group': 'vendor', 'title': 'VAPT by a CERT-In empanelled auditor', 'evidence': True, 'validity_days': 365}, {'id': 'vendor.incident_register', 'group': 'vendor', 'title': 'Incident register kept and reviewed (Admin > Incidents)', 'evidence': True, 'validity_days': 90}, {'id': 'strategy.classification', 'group': 'strategy', 'title': 'Each LIVE strategy classified white-box / black-box and filed with the broker', 'evidence': True, 'validity_days': None}, {'id': 'ai.ra_gate', 'group': 'ai', 'title': 'AI trade ideas unpublished unless SEBI Research Analyst registration is on record', 'auto': 'ra_gate', 'validity_days': None}, {'id': 'ai.disclosure', 'group': 'ai', 'title': 'AI-usage disclosure and fee-cap note reviewed (consent text, provider card)', 'evidence': True, 'validity_days': 365}, {'id': 'dpdp.dpo', 'group': 'dpdp', 'title': 'Data protection officer / grievance contact published', 'evidence': True, 'validity_days': None}, {'id': 'dpdp.breach_runbook', 'group': 'dpdp', 'title': 'Breach notification runbook (notify within dpdp_breach_notify_hours)', 'evidence': True, 'validity_days': 365}, {'id': 'dpdp.log_retention', 'group': 'dpdp', 'title': 'Logs kept at least log_retention_days', 'auto': 'log_retention'}]`
 - `IN-SEBI.risk.futeq_mwpl`: `expiry_day_margin_multiplier` = `1.0`, `ban_threshold_pct` = `95`
+
+<!-- Hand-written sections below: kept as they are by backend/scripts/compliance_doc.py -->
+
+## Data licences: shared intraday index history (M55 T4)
+
+- **The licence question.** The 15M / 1H index history (NIFTY, BANKNIFTY, FINNIFTY, SENSEX and the other indices the
+  backfill covers) is read through ONE broker account's API session, the history owner's (DATA-H,
+  `backend/app/market_lake/index_history.py`). Showing those candles to other users may breach that broker's API terms
+  (redistribution of market data to third parties).
+- **The stance.** The stored rows are served to other organisations only while the `byob_data_tier` flag
+  (bring your own broker) is off, and only for the backfilled index keys and 1-minute rows (15M / 30M / 1H are built
+  from them; never the owner's Daily rows, never another symbol): `backend/app/market_lake/own_bars.py`
+  (`shared_scope`). With the flag on for the reader's organisation or the owner's, nothing is shared and the answer says
+  so in one plain line. Each user's own broker data is always read first.
+- **Lawyer question before paid launch.** Open item: `docs/OPEN_QUESTIONS.md` (M55Q-1).

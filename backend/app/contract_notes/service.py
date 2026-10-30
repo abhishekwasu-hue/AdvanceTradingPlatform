@@ -149,7 +149,8 @@ async def ingest_contract_note(
     dates = [l.trade_date for l in parsed.legs if l.trade_date]
     if dates:
         lo, hi = min(dates) - timedelta(days=2), max(dates) + timedelta(days=2)
-        from datetime import datetime as _dt, time as _time
+        from datetime import datetime as _dt
+        from datetime import time as _time
         query = query.where(TradeRecord.entry_time >= _dt.combine(lo, _time.min, tzinfo=timezone.utc),
                             TradeRecord.entry_time <= _dt.combine(hi, _time.max, tzinfo=timezone.utc))
     trades = list(await session.scalars(query.order_by(TradeRecord.id)))

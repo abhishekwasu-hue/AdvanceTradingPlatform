@@ -27,17 +27,23 @@ from typing import Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.wording import banned_terms
 from app.ai.prompt_versions import stamp
 from app.ai.providers import LLMProvider, ProviderError, RuleBasedProvider
 from app.ai.regime import REGIMES, classify_regime
+from app.ai.wording import banned_terms
 from app.audit.log import write_audit_log
 from app.billing.service import meter
 from app.core.models import bars_to_dataframe
 from app.db.models import Tenant, User
 from app.observability.metrics import AI_PROVIDER_CALLS
 from app.scanner.models import (
-    OptionFilter, OptionFilterType, ScannerMatch, ScannerRequest, ScannerResult, StructureFilter, StructureFilterType,
+    OptionFilter,
+    OptionFilterType,
+    ScannerMatch,
+    ScannerRequest,
+    ScannerResult,
+    StructureFilter,
+    StructureFilterType,
 )
 from app.strategy_engine.declarative import Condition
 from app.strategy_engine.nlu_parser import parse_strategy_description

@@ -10,31 +10,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.bootstrap import is_configured_super_admin
 from app.audit.log import write_audit_log
+from app.auth import captcha, mfa, verification
 from app.auth.dependencies import current_session_id, get_current_user
-from app.auth import mfa
-from app.auth import captcha
 from app.auth.lockout import HISTORY_LIMIT, is_new_device, recent_failures, record_login_event, refusal
-from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, REFRESH_COOKIE_NAME, REFRESH_TOKEN_DAYS, REFRESH_TOKEN_IN_BODY
 from app.auth.passwords import MAX_LENGTH, MIN_LENGTH, password_problem
-from app.webhooks.routes import hash_webhook_token
-from app.auth.sessions import IssuedTokens, revoke_all_sessions, revoke_session, rotate_refresh_token, session_is_live, start_session
 from app.auth.security import hash_password, hash_password_async, verify_password_async
-from app.core.enums import UserRole
-from app.core.rate_limit import allow as rate_allow, rate_limit, user_rate_limit
+from app.auth.sessions import IssuedTokens, revoke_all_sessions, revoke_session, rotate_refresh_token, session_is_live, start_session
+from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, REFRESH_COOKIE_NAME, REFRESH_TOKEN_DAYS, REFRESH_TOKEN_IN_BODY
+from app.core.enums import NotificationSeverity, NotificationType, UserRole
+from app.core.rate_limit import allow as rate_allow
+from app.core.rate_limit import rate_limit, user_rate_limit
 from app.db.models import (
-    AlertChannelRecord, LoginEventRecord, PasswordResetRecord, Tenant, TenantInviteRecord, User, UserSessionRecord,
+    AlertChannelRecord,
+    LoginEventRecord,
+    PasswordResetRecord,
+    Tenant,
+    TenantInviteRecord,
+    User,
+    UserSessionRecord,
 )
-from app.notifications.service import notify
-from app.core.enums import NotificationSeverity, NotificationType
 from app.db.session import get_session, release_connection
-from app.secrets_store.envelope import ensure_tenant_key
-from app.auth import verification
 from app.growth import activation
-from app.platform.controls import flag_enabled
 from app.legal import acceptance as legal_acceptance
-from app.legal.acceptance import LegalAcceptance
 from app.legal import enabled as legal_enabled
+from app.legal.acceptance import LegalAcceptance
 from app.legal.routes import version_conflict as legal_version_conflict
+from app.notifications.service import notify
+from app.platform.controls import flag_enabled
+from app.secrets_store.envelope import ensure_tenant_key
+from app.webhooks.routes import hash_webhook_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -564,6 +568,7 @@ def _mask_email(email: str) -> str:
 
 def app_link(request: Request, **params: str) -> str:
     from urllib.parse import urlencode
+
     from app.core.config import FRONTEND_URL
     base = FRONTEND_URL if FRONTEND_URL.startswith("http") else str(request.base_url).rstrip("/") + "/"
     return f"{base}?{urlencode(params)}"

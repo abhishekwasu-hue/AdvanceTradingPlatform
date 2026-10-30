@@ -6,15 +6,17 @@ build_signal, no targets)."""
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import HealthCheck, given, settings as hsettings, strategies as st
+from hypothesis import HealthCheck, given
+from hypothesis import settings as hsettings
+from hypothesis import strategies as st
 
 from app.backtest.windows import WindowCursor, decision_time
 from app.core.enums import SignalDirection
 from app.indicators.prefix_cache import prefix_cache
 from app.indicators.volatility import supertrend, supertrend_dir
 from app.quality.lookahead import synthetic_bars
-from app.screener.runtime import SymbolData, evaluate, resample
 from app.screener.parser import parse
+from app.screener.runtime import SymbolData, evaluate, resample
 from app.strategy_templates import compile as C
 from app.strategy_templates import engine, language, library
 from app.strategy_templates.adapter import TemplateStrategy

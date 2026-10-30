@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 
 from app import options_builder as ob
-from app.options_builder import model as m
 from app.option_chain.greeks import BSInputs, black_scholes
 from app.option_chain.models import OptionType
+from app.options_builder import model as m
 from app.options_builder.greeks import leg_with_model_greeks
 
 AS_OF = date(2026, 3, 2)
@@ -235,6 +235,7 @@ def test_a_calendars_pop_and_expected_pnl_come_from_the_far_legs_value_not_its_i
 # --- expiry day (0DTE) ------------------------------------------------------------------------------------------------
 def test_on_expiry_day_an_option_still_has_its_hours_until_1530_ist():
     from datetime import datetime, time, timezone
+
     from app.option_chain.greeks import IST
     call = {**_priced("Buy Call")[0], "expiry": EXP.isoformat()}
     ten = datetime.combine(EXP, time(10, 0), tzinfo=IST)

@@ -16,13 +16,13 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-import defusedxml.ElementTree as ET  # P0.7: refuses entity expansion and external references outright
-from xml.etree.ElementTree import Element  # the parsed nodes are stdlib Elements; defusedxml exports no Element
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Dict, Iterable, List, Optional, Tuple
+from xml.etree.ElementTree import Element  # the parsed nodes are stdlib Elements; defusedxml exports no Element
 
+import defusedxml.ElementTree as ET  # P0.7: refuses entity expansion and external references outright
 import httpx
 
 from app.news_events.models import NewsEventCategory

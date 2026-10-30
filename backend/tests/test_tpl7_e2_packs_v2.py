@@ -11,7 +11,9 @@ from typing import Any, List, Optional
 
 import numpy as np
 import pytest
-from hypothesis import HealthCheck, given, settings as hsettings, strategies as st
+from hypothesis import HealthCheck, given
+from hypothesis import settings as hsettings
+from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from app.backtest.options_engine import OptionBacktestConfig
@@ -505,8 +507,8 @@ def test_a_version_one_id_keeps_resolving_to_exactly_its_behaviour(sid, member, 
 
 
 def test_a_version_one_id_resolves_through_the_strategy_resolver(monkeypatch):
-    from app.custom_strategies import resolver
     import app.platform.controls as controls
+    from app.custom_strategies import resolver
 
     class _User:
         tenant_id = 987655

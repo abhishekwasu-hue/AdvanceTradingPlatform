@@ -18,7 +18,8 @@ from sqlalchemy import delete, func, select
 from app.core import rate_limit
 from app.db.models import PlatformStatusSampleRecord
 from app.market_data.calendar import IST
-from app.observability import slo, status_history as sh
+from app.observability import slo
+from app.observability import status_history as sh
 from app.platform import controls
 from app.platform.flag_catalog import FLAG_INFO
 from tests.test_auth_api import _register, _session_factory, client

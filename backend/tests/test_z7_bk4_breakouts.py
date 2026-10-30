@@ -17,8 +17,7 @@ from app.screener.breakouts.quality import run_breakout
 from app.screener.breakouts.screens import BK4_SCREENS, SCREEN_TIMEFRAMES, Bars, evaluate_screen
 from app.screener.registry import BREAKOUT_BK4_FLAG, BREAKOUT_BK4_FUNCTIONS, FUNCTIONS
 from app.screener.runtime import SymbolData, evaluate, resample, run_screen
-from tests.breakout_bk4_fixtures import (closes_frame, daily_gap, falling_line, flag, lifted, retest_rows, rising_channel, rows_frame,
-                                         trend_lead, triangle)
+from tests.breakout_bk4_fixtures import closes_frame, daily_gap, falling_line, flag, lifted, retest_rows, rising_channel, rows_frame, trend_lead, triangle
 from tests.breakout_fixtures import quiet_day, sessions_frame
 from tests.sample_market import generate
 from tests.test_z7_bk1_breakouts import _engine_series

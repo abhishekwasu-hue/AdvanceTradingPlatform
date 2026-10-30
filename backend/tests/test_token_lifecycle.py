@@ -6,9 +6,9 @@ from zoneinfo import ZoneInfo
 import pytest
 from sqlalchemy import select
 
+from app.brokers import token_lifecycle as tl
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import BrokerProfile
-from app.brokers import token_lifecycle as tl
 from app.db.models import BrokerCredentialRecord, NotificationRecord
 from app.secrets_store.encryption import encrypt_text
 from tests.broker_fakes import KITE_KEY, UPSTOX_KEY, UPSTOX_KEY_2, UPSTOX_SECRET

@@ -210,6 +210,7 @@ def test_since_last_session_gap_and_events_today():
 def test_an_option_is_measured_from_the_master_strike_not_the_text_guess():
     """A compact symbol runs the date into the strike (the parser reads 124500); the master's own strike wins."""
     from types import SimpleNamespace
+
     from app.today.my_day import reference_of
     t = SimpleNamespace(instrument_kind="OPTION", symbol="NIFTY26O0124500CE", underlying_stop_loss=None, stop_loss=None)
     assert reference_of(t, 24500.0) == (24500.0, "strike")

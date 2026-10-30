@@ -651,12 +651,12 @@ async def _main(argv: Optional[Sequence[str]] = None) -> int:
         async with factory() as session:
             if args.command == "holidays":
                 from app.market_data.holiday_import import import_holidays, remove_holidays
-                content = Path(args.file).read_bytes()
+                content = await asyncio.to_thread(Path(args.file).read_bytes)
                 result = (await remove_holidays(session, content, exchange=args.exchange) if args.remove else
                           await import_holidays(session, content, exchange=args.exchange, allow_future=args.allow_future)).as_dict()
             elif args.command == "corporate-actions":
                 from app.market_lake.corporate_actions import load_csv
-                result = (await load_csv(session, Path(args.file).read_bytes(), source="ca_csv:cli")).as_dict()
+                result = (await load_csv(session, await asyncio.to_thread(Path(args.file).read_bytes), source="ca_csv:cli")).as_dict()
             else:
                 result = await gap_report(session, args.start, args.end,
                                           symbols=[s for s in args.symbols.split(",") if s.strip()] or None)

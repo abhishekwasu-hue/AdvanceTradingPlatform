@@ -24,8 +24,7 @@ from app.alerts import barclose, dispatcher, engine, staleness
 from app.alerts.barclose import with_today
 from app.alerts.staleness import alert_badge, closed_bars_after
 from app.core.enums import NotificationSeverity, NotificationType
-from app.db.models import (AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, AuditLogRecord, NotificationPolicyRecord, NotificationRecord,
-                           User)
+from app.db.models import AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, AuditLogRecord, NotificationPolicyRecord, NotificationRecord, User
 from app.market_data import service as md_service
 from app.market_data.calendar import IST
 from app.notifications.service import notify
@@ -585,9 +584,9 @@ def test_the_send_budget_is_what_is_left_of_the_lease(monkeypatch, clock):
     budgets: List[float] = []
     real_wait_for = asyncio.wait_for
 
-    async def wait_for(aw, timeout):
-        budgets.append(timeout)
-        return await real_wait_for(aw, timeout)
+    async def wait_for(aw, *args, **kwargs):                                     # stands in for asyncio.wait_for(aw, timeout)
+        budgets.append(kwargs["timeout"] if "timeout" in kwargs else args[0])
+        return await real_wait_for(aw, *args, **kwargs)
     monkeypatch.setattr(dispatcher.asyncio, "wait_for", wait_for)
     real_get = dispatcher.ensure_tenant_key
 

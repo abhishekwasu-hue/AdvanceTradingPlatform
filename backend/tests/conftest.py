@@ -60,7 +60,6 @@ def _no_broker_margin_call(monkeypatch):
 def _platform_state_reset_per_module():
     yield
     import asyncio
-
     from datetime import datetime, timezone
 
     from sqlalchemy import delete, update

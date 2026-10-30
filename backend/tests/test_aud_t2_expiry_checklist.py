@@ -13,7 +13,8 @@ import pytest
 from sqlalchemy import update
 
 from app.db.models import BrokerCredentialRecord, InstrumentRecord, TradeRecord
-from app.expiry_checklist import brokers, build, routes as checklist_routes
+from app.expiry_checklist import brokers, build
+from app.expiry_checklist import routes as checklist_routes
 from app.market_data.calendar import IST
 from tests.test_auth_api import _session_factory, client
 from tests.test_settings_a_connect_ai import _flags

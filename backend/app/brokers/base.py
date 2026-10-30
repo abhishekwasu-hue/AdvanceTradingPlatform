@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Awaitable, Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple
 
-from app.core.enums import OrderSide
-from app.core.models import OHLCVBar
 from app.brokers.models import (
     BasketMargin,
     BrokerHolding,
@@ -21,6 +19,8 @@ from app.brokers.models import (
     OptionChain,
     Quote,
 )
+from app.core.enums import OrderSide
+from app.core.models import OHLCVBar
 
 
 @dataclass(frozen=True)
@@ -68,7 +68,7 @@ def round_stop_trigger(trigger_price: float, transaction_type: OrderSide, *, tic
     the registry does not hold) the trigger is returned unchanged - guessing a tick could put a stop on the wrong
     side of a low-priced instrument."""
     if tick is None and symbol:
-        from app.instruments.registry import get_contract_spec   # local: the registry is a leaf, keep base light
+        from app.instruments.registry import get_contract_spec  # local: the registry is a leaf, keep base light
         spec = get_contract_spec(symbol)
         if spec is not None and spec.tick_size:
             tick = float(spec.tick_size)

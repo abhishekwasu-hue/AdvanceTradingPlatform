@@ -13,7 +13,7 @@ from app.db.models import NotificationRecord, OIAlertLogRecord, OIBannerSettingR
 from app.option_chain import oi_alerts
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_o2_oi_snapshots import T0, UND
-from tests.test_phase_be_telegram_inbound import _Telegram, _no_shared_rate_limit, _post, _setup  # noqa: F401 - fixture
+from tests.test_phase_be_telegram_inbound import _no_shared_rate_limit, _post, _setup, _Telegram  # noqa: F401 - fixture
 
 
 def _run(coro):

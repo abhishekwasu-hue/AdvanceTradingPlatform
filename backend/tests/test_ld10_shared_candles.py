@@ -18,10 +18,10 @@ from app.market_data import api_budget, candles_routes, shared_candles
 from app.market_data.calendar import IST
 from app.market_data.service import MarketDataService
 from app.market_data.stream import Tick, TickCache, tick_cache
-from tests.test_bt1_byob_data_tier import _PriceBroker, _email, _flag, _ns
+from tests.test_auth_api import client
+from tests.test_bt1_byob_data_tier import _email, _flag, _ns, _PriceBroker
 from tests.test_ch5a_ltp_budget import FakeRedis, _use_redis
 from tests.test_market_data_service import _FakeBroker, _install_cache, _MemoryCache
-from tests.test_auth_api import client
 from tests.test_phase_aa_market_data_api import _store_credentials
 from tests.test_phase_k_commercial import _owner
 
@@ -373,8 +373,8 @@ def test_dhan_history_is_keyed_by_date_through_the_production_wrappers(monkeypat
 
     async def store_dhan():
         from app.core.enums import BrokerTokenStatus
-        from app.secrets_store.encryption import encrypt_text
         from app.db.models import BrokerCredentialRecord
+        from app.secrets_store.encryption import encrypt_text
         from tests.test_auth_api import _session_factory
         async with _session_factory() as session:
             session.add(BrokerCredentialRecord(tenant_id=me["tenant_id"], user_id=me["id"], broker_name="dhan", account_label="primary",
@@ -558,8 +558,9 @@ def test_a_worker_never_takes_the_fill_lock_nor_waits_on_an_api_processs_fill(mo
         return bars, time.monotonic() - started, name
     bars, took, name = run(go())
     assert bars == HISTORY[:2] and calls == [1] and took < 0.2 and fake.store["lock:" + name] == "an-api-process"
-    from app.workers import research_worker, trading_worker
     import inspect
+
+    from app.workers import research_worker, trading_worker
     for module in (trading_worker, research_worker):
         assert "shared_candles.never_wait_on_other_processes()" in inspect.getsource(module.main)
 

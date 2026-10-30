@@ -1,5 +1,5 @@
-from app.core.enums import SignalDirection
 from app.backtest.engine import resample_ohlc
+from app.core.enums import SignalDirection
 from app.strategy_engine.indicator_strategies import (
     EmaRsiScalper,
     RsiAdxMomentumScalper,

@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, time as dtime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
+from datetime import time as dtime
 from typing import Dict, Optional, Tuple
 
 from sqlalchemy import String, and_, cast, func, literal, select

@@ -56,8 +56,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.rate_budget import RateBudget, limits_for
 from app.core import config
-from app.db.models import (BrokerCredentialRecord, DataQualityEventRecord, HistoryIntradayDayRecord, MdTenantCandleRecord,
-                           StrategyDeploymentRecord, Tenant, User)
+from app.db.models import BrokerCredentialRecord, DataQualityEventRecord, HistoryIntradayDayRecord, MdTenantCandleRecord, StrategyDeploymentRecord, Tenant, User
 from app.market_data.calendar import EXCHANGE_SESSIONS, IST, is_trading_day, load_holidays
 from app.market_lake import quality
 from app.market_lake.ingest import LakeBar, trade_date, write_candles_bulk

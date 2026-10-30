@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.price_action.zones.chart import FAMILIES
 from app.screener import nodes
 from app.screener.registry import ZONES_FLAG as FLAG
+
 ROLE_CHOICES = ("any", "demand", "supply")
 WHAT = ("near", "role", "state", "strength")
 MAX_TOLERANCE_PCT = 20.0

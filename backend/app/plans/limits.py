@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import DeploymentStatus
 from app.db.models import (
-    AlertChannelRecord, CustomStrategyRecord, StrategyDeploymentRecord, Tenant, TenantInviteRecord, User,
+    AlertChannelRecord,
+    CustomStrategyRecord,
+    StrategyDeploymentRecord,
+    Tenant,
+    TenantInviteRecord,
+    User,
 )
 from app.plans.registry import Plan, get_plan
 

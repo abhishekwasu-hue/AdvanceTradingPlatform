@@ -121,7 +121,8 @@ def _worker(check: Dict[str, Any]) -> Dict[str, Any]:
 async def _data_feed(session: AsyncSession, now: datetime, market_open: Optional[bool]) -> Dict[str, Any]:
     from app.market_data.calendar import load_holidays, market_session_status
     from app.market_data.entitlement import eod_as_of, eod_staleness
-    from app.market_data.fanin import FLAG as BYOB_FLAG, eligible_sessions
+    from app.market_data.fanin import FLAG as BYOB_FLAG
+    from app.market_data.fanin import eligible_sessions
     from app.platform.controls import feature_flags
 
     if market_open is None:

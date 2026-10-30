@@ -145,7 +145,7 @@ class BreakCache:
         self.mr = median_range(frame, s["median_range_n"])
         self.retest: Optional[RetestFn] = None
         if s.get("break_retest_confirm") and s["count_inv_basis"] != "wick":
-            from app.price_action.reversal import retest_fn                          # imported here to avoid a cycle
+            from app.price_action.reversal import retest_fn  # imported here to avoid a cycle
             self.retest = retest_fn(frame, s, self.mr)
         self._found: Dict[tuple, int] = {}
         self._clear: Dict[tuple, int] = {}

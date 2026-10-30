@@ -48,7 +48,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import numpy as np

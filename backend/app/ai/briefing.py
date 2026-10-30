@@ -29,8 +29,7 @@ from app.ai import global_cues, market_memory
 from app.ai.interview import FAMILY_TEXT, PROFILES, regime_fit
 from app.brokers.token_lifecycle import token_is_usable
 from app.core.models import RiskConfig
-from app.db.models import (BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User,
-                           WorkerHeartbeatRecord)
+from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User, WorkerHeartbeatRecord
 from app.market_data.calendar import IST, load_holidays, session_status
 from app.risk_engine import guardian
 
@@ -257,7 +256,7 @@ async def build(session: AsyncSession, user: User, lang: str = "en", now: Option
     plan = game_plan(lang, dt, memory, experience, events, cfg=cfg, cfg_saved=cfg_saved is not None, freshness=freshness,
                      signal_v2=await flag_enabled(session, SIGNAL_LANGUAGE_FLAG, user.tenant_id))
     mood = global_cues.mood(memory.get("globals", []), now) if memory.get("globals") else None
-    from app.ai import sentiment as sentiment_mod                          # Phase BC
+    from app.ai import sentiment as sentiment_mod  # Phase BC
     sentiment_read = memory.get("sentiment")
     sentiment_lines = sentiment_mod.view(lang, sentiment_read) if sentiment_read else []
     day = await your_day(session, user, cfg, now)

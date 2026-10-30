@@ -13,16 +13,16 @@ from sqlalchemy import select
 
 from app.db.models import OrderRecord, TradeRecord, User
 from app.execution import approval
+from app.platform.controls import DEFAULT_OFF_FLAGS
 from app.portfolio import caps as C
 from app.portfolio import risk as R
-from app.platform.controls import DEFAULT_OFF_FLAGS
 from app.risk_engine import by_default
 from tests.order_path_graph import CallGraph
 from tests.test_auth_api import _session_factory, client
 from tests.test_n1_e1_execution_core import _flag
 from tests.test_trading_worker import _tenant
-from tests.test_z10c_order_paths import GATED
 from tests.test_z3_approval_entries import _flag_for, _price, _sig
+from tests.test_z10c_order_paths import GATED
 
 UTC = timezone.utc
 
@@ -184,6 +184,7 @@ def test_no_exit_path_reaches_the_caps_and_the_caps_reach_no_order():
     # `if action.action == "ENTRY"`, and without that branch nothing reaches the caps.
     import ast
     import inspect
+
     from app.ai import monitor
     tree = ast.parse(inspect.getsource(monitor.execute))
     branch = next(n for n in ast.walk(tree) if isinstance(n, ast.If) and "'ENTRY'" in ast.unparse(n.test))
@@ -229,6 +230,7 @@ def test_a_position_over_every_cap_still_closes():
 def test_a_failed_read_rolls_back_its_savepoint_only_and_the_session_stays_usable(monkeypatch):
     """M1: the caps run on the worker's shared session; a failed read must not leave it aborted (Postgres)."""
     from sqlalchemy import text
+
     from app.portfolio import risk_data
     t = _tenant(_email("m1"), with_credentials=False)
     for name in (C.FLAG, C.BASE_FLAG):

@@ -98,7 +98,7 @@ def test_ci_runs_the_static_gates_and_pins_every_action_to_a_sha():
 
 def test_lint_configs_exist_and_say_what_they_gate():
     ruff = (ROOT / "backend" / "ruff.toml").read_text()
-    assert 'select = ["E4", "E7", "E9", "F", "B006", "S102", "S307", "T10", "PLE"]' in ruff
+    assert 'select = ["E4", "E7", "E9", "F", "B006", "S102", "S307", "T10", "PLE", "ASYNC", "I"]' in ruff
     mypy = (ROOT / "backend" / "mypy.ini").read_text()
     assert "follow_imports = silent" in mypy and "app/kill_switch" in mypy and "app/db" in mypy
     gitleaks = (ROOT / ".gitleaks.toml").read_text()

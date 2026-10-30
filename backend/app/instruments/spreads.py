@@ -68,8 +68,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import InstrumentKind, OptionPosition, OptionStrategy, OrderSide, SignalDirection, StrikeRule
 from app.instruments import master
 from app.instruments.contracts import (
-    ChainProvider, ContractResolutionError, ContractRules, ResolvedContract, _apply_strike_filters, _resolved,
-    select_expiry, select_strike,
+    ChainProvider,
+    ContractResolutionError,
+    ContractRules,
+    ResolvedContract,
+    _apply_strike_filters,
+    _resolved,
+    select_expiry,
+    select_strike,
 )
 from app.instruments.payoff import PayoffLeg, analyse
 

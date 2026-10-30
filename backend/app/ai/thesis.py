@@ -27,8 +27,7 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import global_cues, market_memory
-from app.ai import grounding, output_filter, prompt_versions, wording
+from app.ai import global_cues, grounding, market_memory, output_filter, prompt_versions, wording
 from app.db.models import MarketEventRecord, MarketSnapshotRecord, ThesisRecord
 from app.instruments.master import underlying_of
 from app.market_data.calendar import IST

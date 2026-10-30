@@ -70,7 +70,7 @@ def test_run_smoke_isolates_failures_and_skips_the_contract_probe():
         async def get_balance(self):
             await asyncio.sleep(0.2)
             return await super().get_balance()
-    slow = asyncio.run(run_smoke(_Slow(), today=TODAY, timeout=0.05))
+    slow = asyncio.run(run_smoke(_Slow(), today=TODAY, step_timeout=0.05))
     assert {s.name: s for s in slow.steps}["funds"].detail.startswith("no answer within")
 
 

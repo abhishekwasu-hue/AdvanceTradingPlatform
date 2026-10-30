@@ -92,8 +92,7 @@ async def run_next(session: AsyncSession, *, now: Optional[Clock] = None) -> Opt
     """Runs the next queued study to its end. Returns its study_id (None when the queue is empty)."""
     from app.ai import metering, research_loop
     from app.ai import settings as ai_settings
-    from app.ai.tools import ToolContext
-    from app.ai.tools import market
+    from app.ai.tools import ToolContext, market
     from app.backtest.data_policy import filter_allowed, holdout_start
     from app.core.models import RiskConfig
     from app.risk_engine.routes import get_tenant_risk_config

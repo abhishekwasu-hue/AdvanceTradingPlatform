@@ -25,7 +25,7 @@ from app.telegram_inbound import service as tg
 from app.trading.position_monitor import CloseOutcome
 from tests.server_evidence import serve_candles
 from tests.test_auth_api import _register, _session_factory, client
-from tests.test_phase_be_telegram_inbound import _Telegram, _dispatch, _post, _propose
+from tests.test_phase_be_telegram_inbound import _dispatch, _post, _propose, _Telegram
 from tests.test_trading_worker import _deploy, _tenant
 
 UTC = timezone.utc
@@ -399,6 +399,7 @@ def test_interview_deploy_goes_through_the_candidate_gate(monkeypatch):
 
     async def drop_credentials():
         from sqlalchemy import delete
+
         from app.db.models import BrokerCredentialRecord
         async with _session_factory() as session:
             await session.execute(delete(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == t["tenant_id"]))

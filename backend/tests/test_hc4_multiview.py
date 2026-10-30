@@ -192,8 +192,8 @@ def test_route_is_flagged_off_and_answers_with_the_rules_without_a_model(fake_to
         assert client.post("/api/ai/analyze", headers=headers, json={"symbol": "bad;symbol"}).status_code == 422
     finally:
         _run(_flag(False))
-    from app.platform import controls
     from app.core import config
+    from app.platform import controls
     assert mv.FLAG in controls.DEFAULT_OFF_FLAGS and config.AI_RATE_WEIGHTS.get("POST analyze") == 8
 
     async def llm_calls():

@@ -36,7 +36,7 @@ def test_metrics_token_protects_scrapes(monkeypatch):
 
 def test_orders_counter_increments_by_mode_and_status():
     from app.observability.metrics import ORDERS
-    from tests.test_live_execution import _LiveBroker, _execute, _user
+    from tests.test_live_execution import _execute, _LiveBroker, _user
 
     before = ORDERS.labels(mode="LIVE", status="FILLED")._value.get()
     user = _user("metrics-live@example.com")

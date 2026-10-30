@@ -7,8 +7,8 @@ import json
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import Numeric, select
 from cryptography.fernet import Fernet
+from sqlalchemy import Numeric, select
 
 from app.core import config
 from app.db.models import BrokerCredentialRecord, Money, Price, TradeRecord
@@ -54,6 +54,7 @@ def test_money_and_price_columns_are_numeric_and_still_read_as_floats():
 def test_numeric_migration_is_the_head_and_covers_every_numeric_column():
     import importlib.util
     from pathlib import Path
+
     from app.db.models import Base
     path = next(Path("alembic/versions").glob("c4d6e8f0a2b4_*.py"))
     source = path.read_text()

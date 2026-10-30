@@ -19,8 +19,8 @@ from app.execution.contract_execution import build_order_plan
 from app.instruments.contracts import ContractRules
 from app.paper import fno_ticket
 from app.trading.exit_logic import check_contract_exit, determine_exit_price
-from tests.test_contract_rules import TODAY  # the master fixture's own date (its expiries run to 29 Oct 2026)
 from tests.test_contract_execution import BUY, WRITE, _load_master, _resolve, _signal
+from tests.test_contract_rules import TODAY  # the master fixture's own date (its expiries run to 29 Oct 2026)
 from tests.test_fno1_chain_ticket import _body, _contract, _expiry, _preview
 from tests.test_trading_worker import _tenant
 from tests.test_z3_approval_entries import _price
@@ -147,9 +147,11 @@ def test_experience_gates_apply_only_to_a_user_who_turned_them_on(fresh):
 def test_underlying_level_exits_only_when_the_trader_turns_them_on(monkeypatch):
     from app.core.enums import OptionStrategy, StrikeRule
     from app.trading.position_monitor import structure_exit_reason
-    from tests.test_multileg import SPOT, _auth, _create, _OptionBroker, _store_broker
-    from tests.test_phase_r_structures import _load_master as _master, _metrics, _resolve as _resolve_structure
     from tests.test_auth_api import client
+    from tests.test_multileg import SPOT, _auth, _create, _OptionBroker, _store_broker
+    from tests.test_phase_r_structures import _load_master as _master
+    from tests.test_phase_r_structures import _metrics
+    from tests.test_phase_r_structures import _resolve as _resolve_structure
     _master()
     strangle = _resolve_structure(OptionStrategy.SHORT_STRANGLE, strike_rule=StrikeRule.OTM, strike_offset=2)
     off = _metrics(strangle)
@@ -196,7 +198,8 @@ def test_the_option_backtest_has_no_underlying_exit_unless_set():
 def test_the_paper_ticket_with_no_cap_set_anywhere_previews_and_places_one_lot(monkeypatch):
     """No risk per trade of his own and none of the organisation's: one lot is the start (was a 500 - floor(inf))."""
     from app.risk_engine import by_default
-    from tests.test_z5_p1d_risk_by_default import _flag as _org_flag, _place, _preview, _tenant_t
+    from tests.test_z5_p1d_risk_by_default import _flag as _org_flag
+    from tests.test_z5_p1d_risk_by_default import _place, _preview, _tenant_t
     t = _tenant_t("def0-nocap")
     _org_flag(by_default.FLAG, t["tenant_id"])
     view = _preview(t)

@@ -5,9 +5,8 @@ Tenant (OWNER): `GET /api/billing` (plan, subscription, usage), `GET /api/billin
 `GET /api/billing/usage`. Operator (SUPER_ADMIN): `POST /api/admin/billing/{tenant_id}/payment`
 records a payment against the open invoice (the manual provider's "gateway webhook").
 """
-from typing import List, Optional
-
 import json
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -16,15 +15,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_mfa_session, require_owner, require_role
 from app.auth.scopes import require_scope
-from app.billing.service import (
-    cancel, get_subscription, plans_catalogue, record_payment, subscribe, subscription_dict, usage_summary,
-)
 from app.billing.razorpay import GatewayError, RazorpayProvider
-from app.billing.webhooks import WebhookRejected, handle_razorpay
+from app.billing.service import (
+    cancel,
+    get_subscription,
+    plans_catalogue,
+    record_payment,
+    subscribe,
+    subscription_dict,
+    usage_summary,
+)
 from app.billing.service import provider as billing_provider
+from app.billing.webhooks import WebhookRejected, handle_razorpay
 from app.db.models import BillingTransactionRecord, Tenant, User
 from app.db.session import get_session
-from app.plans.limits import limits, limits_v2, load_tenant, usage as plan_usage, usage_v2, v2_enforced
+from app.plans.limits import limits, limits_v2, load_tenant, usage_v2, v2_enforced
+from app.plans.limits import usage as plan_usage
 from app.plans.registry import PLANS, get_plan
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])

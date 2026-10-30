@@ -11,13 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_role
-from app.core.enums import UserRole, OrderStatus, SignalDirection, SignalGrade
+from app.billing.service import meter
+from app.core.enums import OrderStatus, SignalDirection, SignalGrade, UserRole
 from app.core.models import MAX_SIGNAL_PRICE, Signal, unset_if_not_finite
 from app.db.models import Tenant, User
 from app.db.session import get_session
-from app.execution.order_persistence import get_order_by_idempotency_key
-from app.billing.service import meter
 from app.execution import approval
+from app.execution.order_persistence import get_order_by_idempotency_key
 from app.execution.signal_execution import execute_signal_for_user
 from app.secrets_store.envelope import ensure_tenant_key
 

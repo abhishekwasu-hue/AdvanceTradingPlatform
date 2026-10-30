@@ -418,7 +418,7 @@ def parse_config(channel_type: str, raw: Dict[str, Any]) -> ChannelConfig:
     if channel_type == AlertChannelType.FCM.value:
         return FcmConfig.model_validate(raw)
     if channel_type == AlertChannelType.SIGNED_WEBHOOK.value:
-        from app.alerts.signed_webhooks import SignedWebhookConfig      # AUD-G2.5
+        from app.alerts.signed_webhooks import SignedWebhookConfig  # AUD-G2.5
         return SignedWebhookConfig.model_validate(raw)
     raise ValueError(f"Unknown alert channel type '{channel_type}'")
 

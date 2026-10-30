@@ -152,7 +152,7 @@ async def save(session: AsyncSession, user: User, values: Dict[str, Any]) -> Dis
     merged = validate(values, current)
     defaults = DisciplineSettings().to_dict()
     diff = {k: v for k, v in merged.to_dict().items() if v != defaults[k]}
-    from app.journal.capture import dialect_insert   # local: capture does not import the settings
+    from app.journal.capture import dialect_insert  # local: capture does not import the settings
     stored = json.dumps(diff, sort_keys=True)
     now = datetime.now(timezone.utc)
     stmt = dialect_insert(session, JournalSettingsRecord.__table__).values(tenant_id=user.tenant_id, user_id=user.id, settings_json=stored,

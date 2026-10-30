@@ -530,14 +530,13 @@ def test_admin_session_row_must_be_two_factor_verified(world):
 def test_the_second_line_refuses_a_view_write_even_without_the_middleware(world):
     """`get_current_user` refuses a view token's change by itself: a bare app with the routes and no middleware still
     answers 403 (the chokepoint is not only the middleware)."""
-    from fastapi import FastAPI
+    from fastapi import FastAPI, HTTPException
+    from starlette.requests import Request
 
     from app.auth.dependencies import _refuse_view_writes
     from app.auth.routes import router as auth_router
     from app.db.session import get_session
     from app.watchlists.routes import router as watchlists_router
-    from fastapi import HTTPException
-    from starlette.requests import Request
 
     started = _start(world["admin"], world["target_me"]["id"])
     bare = FastAPI()

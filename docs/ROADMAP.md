@@ -258,6 +258,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | SB-UX | not started | after CP-UX CU1; SU4 second | - |
 | CT-1 | not started | Terminal parts in TERM-2; Charts-page parts after CP-UX / SB-UX | - |
 | REV-1 | in progress (approved 30 Oct) | M1 H1-H5 + S1-S3, S5 + B1-B5 in parallel; then M2, M3 | claude/rev1-* |
+| M55 | plan shown; waits for the owner's approval | Phase A confirm / refute table first; then S1-S7, T1-T3, rest | - |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |

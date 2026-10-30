@@ -60,3 +60,4 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.
+| - | M55 full audit response (30 Oct; text kept private - security) | owner upload / private repo | M55 | plan shown, waits for approval |

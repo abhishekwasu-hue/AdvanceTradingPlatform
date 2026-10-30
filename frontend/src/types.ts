@@ -1054,7 +1054,8 @@ export interface Deployment {
 
 export type InstrumentKind = "UNDERLYING" | "OPTION" | "FUTURE";
 export type OptionPosition = "BUY" | "WRITE";
-export type ExpiryRule = "NEAREST" | "NEXT" | "MONTHLY";
+/** SB-UX SU4: ROLL = the nearest expiry, except on its own expiry day - then the next one ("next weekly on expiry day"). */
+export type ExpiryRule = "NEAREST" | "NEXT" | "MONTHLY" | "ROLL";
 export type StrikeRule = "ATM" | "ITM" | "OTM";
 
 export type OptionStrategy =

@@ -44,7 +44,8 @@ STRUCTURE_NAMES = {
     OptionStrategy.BULL_PUT_SPREAD: "Bull put spread", OptionStrategy.BEAR_CALL_SPREAD: "Bear call spread",
     OptionStrategy.CALL_RATIO_SPREAD: "Call ratio spread", OptionStrategy.PUT_RATIO_SPREAD: "Put ratio spread",
 }
-EXPIRY_TEXT = {ExpiryRule.NEAREST: "nearest expiry", ExpiryRule.NEXT: "next expiry", ExpiryRule.MONTHLY: "monthly expiry"}
+EXPIRY_TEXT = {ExpiryRule.NEAREST: "nearest expiry", ExpiryRule.NEXT: "next expiry", ExpiryRule.MONTHLY: "monthly expiry",
+               ExpiryRule.ROLL: "nearest expiry (the next on expiry day)"}
 RIGHT_TEXT = {"CE": "call", "PE": "put"}
 
 NO_SIDE = "No setup is formed or forming, so there are no strikes to work out."

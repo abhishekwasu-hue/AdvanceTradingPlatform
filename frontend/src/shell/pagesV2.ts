@@ -33,6 +33,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   "trading-defaults": lazy(() => import("../settings/TradingDefaultsV2")),
   // UX2 fix 4: the Paper bot page (src/paperbot) at /deployments - start a bot in three taps, your bots as cards.
   deployments: lazy(() => import("../paperbot/PaperBotV2")),
+  // SB-UX SU1-SU6: Strategies › Build as one stepped flow (src/strategyFlow); the full builder of before under Advanced.
+  "strategy-builder": lazy(() => import("../strategyFlow/StrategyFlowV2")),
   // Item 5 (owner's handover): the chat-first Copilot (src/copilot/chat) at /copilot; /copilot/<tab> keeps today's tabs.
   copilot: lazy(() => import("../copilot/chat/CopilotPageV2")),
   // Settings redesign B: Settings is a short index with status (src/settings); each row opens its own small page.

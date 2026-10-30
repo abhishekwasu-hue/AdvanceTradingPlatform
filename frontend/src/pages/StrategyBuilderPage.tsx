@@ -177,6 +177,12 @@ export function ConditionListEditor({
 }
 
 export default function StrategyBuilderPage() {
+  return <StrategyBuilderFull />;
+}
+
+/** The full builder. SB-UX SU1: inside the v2 step-by-step flow (Advanced) `onOpenFlow` is given, and the separate
+ * plain-words parser card gives way to one link into the flow, whose words box uses the one parser (sb.build). */
+export function StrategyBuilderFull({ onOpenFlow }: { onOpenFlow?: () => void } = {}) {
   const { user, loading: authLoading } = useAuth();
   const [saved, setSaved] = useState<CustomStrategyResponse[]>([]);
   const [config, setConfig] = useState<CustomStrategyConfig>(defaultCustomStrategyConfig());
@@ -269,6 +275,15 @@ export default function StrategyBuilderPage() {
 
       <Disclaimer kind="ai" />
 
+      {onOpenFlow ? (
+        <Card title="Describe your strategy in plain words">
+          <p className="text-xs text-fg-muted mb-2">The step-by-step builder reads your words and shows what it understood.</p>
+          <button onClick={onOpenFlow} data-open-flow
+            className="rounded border border-brand/40 text-brand hover:bg-brand/10 px-3 py-2 text-sm min-h-11">
+            Describe it in the step-by-step builder
+          </button>
+        </Card>
+      ) : (
       <Card title="Describe your strategy in plain English">
         <p className="text-xs text-fg-muted mb-2">
           A deterministic, rule-based parser - not a call to an external AI (no AI-provider
@@ -326,6 +341,7 @@ export default function StrategyBuilderPage() {
           </div>
         )}
       </Card>
+      )}
 
       <Card title={`Your saved strategies (${saved.length})`}>
         {saved.length === 0 ? (

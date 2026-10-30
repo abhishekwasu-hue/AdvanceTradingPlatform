@@ -151,7 +151,8 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
       test(`the sheet with contract rows looks the same (${theme})`, async ({ page }) => {
         await openCharts(page, theme);
         await page.evaluate(() => window.scrollTo(0, 0));
-        await page.getByRole("button", { name: "Watchlist", exact: true }).click();
+        await page.getByRole("button", { name: "More chart controls" }).click();   // CT-1 L1: the watchlist is under More on a phone
+        await page.getByRole("dialog", { name: "More chart controls" }).getByRole("button", { name: "Watchlist", exact: true }).click();
         const sheet = page.getByRole("dialog", { name: "Watchlist" });
         await expect(sheet.getByText("NIFTY 27 OCT 24800 CE")).toBeVisible();
         await expect(sheet.getByRole("button", { name: "Roll to next expiry" })).toBeVisible();

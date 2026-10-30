@@ -44,11 +44,13 @@ export interface IndicatorState { panes: PaneChoice; overlays: readonly OverlayI
 
 const isPane = (id: string): id is PaneId => id === "volume" || id === "rsi";
 
-/** The groups to show for a search, in order, each with its items; an empty group is left out. */
-export function menuGroups(query: string, on: (flag: string) => boolean): { group: MenuGroup; title: string; items: MenuItem[] }[] {
+/** The groups to show for a search, in order, each with its items; an empty group is left out. `only` limits the groups
+ * (CT-1 C1: an embedded chart offers the price-pane lines alone - it shows no lower panes). */
+export function menuGroups(query: string, on: (flag: string) => boolean, only?: readonly MenuGroup[]): { group: MenuGroup; title: string; items: MenuItem[] }[] {
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const match = (i: MenuItem) => words.every((w) => `${i.label} ${i.keywords}`.toLowerCase().includes(w));
   return (Object.keys(GROUP_TITLES) as MenuGroup[])
+    .filter((group) => !only || only.includes(group))
     .map((group) => ({ group, title: GROUP_TITLES[group], items: MENU_ITEMS.filter((i) => i.group === group && (!i.flag || on(i.flag)) && match(i)) }))
     .filter((g) => g.items.length > 0);
 }
@@ -72,7 +74,7 @@ export function toggle(id: string, s: IndicatorState):
   return { layers: next ? [...s.layers, id] : s.layers.filter((l) => l !== id) };
 }
 
-/** How many are on, for the button ("Indicators · 3"). Layers whose flag is off do not count. */
-export function onCount(s: IndicatorState, on: (flag: string) => boolean): number {
-  return MENU_ITEMS.filter((i) => (!i.flag || on(i.flag)) && isOn(i.id, s)).length;
+/** How many are on, for the button ("Indicators · 3"). Layers whose flag is off do not count, nor groups not offered. */
+export function onCount(s: IndicatorState, on: (flag: string) => boolean, only?: readonly MenuGroup[]): number {
+  return MENU_ITEMS.filter((i) => (!only || only.includes(i.group)) && (!i.flag || on(i.flag)) && isOn(i.id, s)).length;
 }

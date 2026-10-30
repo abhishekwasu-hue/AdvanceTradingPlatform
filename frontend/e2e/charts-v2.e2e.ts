@@ -131,6 +131,12 @@ const symbols = (body: Record<string, unknown> | null) => (body?.items as { symb
 const rows = (page: Page) => page.getByRole("list", { name: /^Symbols in / }).locator("[data-row]");
 const SHOT = { animations: "disabled" as const, maxDiffPixelRatio: 0.02, timeout: 15_000 };
 
+/** CT-1 L1: on a phone the watchlist is a row under the toolbar's More. */
+async function openWatchlistSheet(page: Page) {
+  await page.getByRole("button", { name: "More chart controls" }).click();
+  await page.getByRole("dialog", { name: "More chart controls" }).getByRole("button", { name: "Watchlist", exact: true }).click();
+}
+
 test.describe("v2 Charts 1440 desktop", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -1095,7 +1101,7 @@ test.describe("v2 Charts 390 phone", () => {
     await open(page, "light", { watch: true, watchlists: LISTS, systemLists: SYSTEM });
     await chartReady(page);
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.getByRole("button", { name: "Watchlist", exact: true }).click();
+    await openWatchlistSheet(page);
     const sheet = page.getByRole("dialog", { name: "Watchlist" });
     await expect(sheet).toBeVisible();
     await sheet.getByRole("button", { name: /^Choose a list\. Shown: / }).click();
@@ -1121,7 +1127,7 @@ test.describe("v2 Charts 390 phone", () => {
     await expect(page.locator("[data-drawing-rail]")).toBeHidden();             // the phone has the Draw menu instead
     await expectPhoneLayout(page);
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.getByRole("button", { name: "Watchlist" }).click();
+    await openWatchlistSheet(page);
     const sheet = page.getByRole("dialog", { name: "Watchlist" });
     await expect(sheet).toBeVisible();
     await expect(rows(page)).toHaveCount(4);
@@ -1157,6 +1163,34 @@ test.describe("v2 Charts 390 phone", () => {
     expect(calls.drawingPosts[0]).toMatchObject({ timeframe: "5min" });
   });
 
+  test("CT-1 L1: one tab row, one toolbar line (Symbol · Timeframe · Indicators · Draw · More); Multi-chart under More and back", async ({ page }) => {
+    await open(page, "light", WATCH);
+    await chartReady(page);
+    await expect(page.getByRole("tab", { name: "Multi-chart" })).toHaveCount(0);                // no second tab row on a phone
+    const bar = page.getByRole("toolbar", { name: "Chart controls" });
+    await expect(bar).toHaveAttribute("data-chart-toolbar", "phone");
+    const tops = await bar.evaluate((el) => [...el.children].map((c) => c.getBoundingClientRect().top));
+    expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(20);                            // one line
+    await expect(bar.getByRole("combobox", { name: "Symbol" })).toBeVisible();
+    await expect(bar.getByRole("button", { name: /^Timeframe: / })).toBeVisible();
+    await expect(bar.getByRole("button", { name: /^Indicators/ })).toBeVisible();
+    await expect(bar.getByRole("button", { name: "Drawing tools" })).toBeVisible();
+    for (const gone of ["Chart settings", "Full screen", "Watchlist", "Undo drawing"]) await expect(bar.getByRole("button", { name: gone, exact: true })).toHaveCount(0);
+    await bar.getByRole("button", { name: "More chart controls" }).click();
+    const more = page.getByRole("dialog", { name: "More chart controls" });
+    await expect(more.getByRole("radiogroup", { name: "Chart type" })).toBeVisible();
+    for (const h of await more.getByRole("button").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(h).toBeGreaterThanOrEqual(44);
+    expect(await more.evaluate((e) => e.getBoundingClientRect().right)).toBeLessThanOrEqual(390);
+    await more.getByRole("radio", { name: "Bars" }).click();
+    await expect(more.getByRole("radio", { name: "Bars" })).toHaveAttribute("aria-checked", "true");
+    await more.getByRole("button", { name: "Multi-chart", exact: true }).click();
+    await expect(page).toHaveURL(/tab=multi/);
+    await cellsReady(page, 2);
+    await page.getByRole("button", { name: "Back to one chart" }).click();
+    await expect(page).not.toHaveURL(/tab=multi/);
+    await expect(bar).toBeVisible();
+  });
+
   for (const theme of THEMES) test(`UI2-4d: the Multi-chart tab - one or two charts, stacked, no sideways scroll, 44 px targets (${theme})`, async ({ page }) => {
     await open(page, theme, { path: "/charts?tab=multi" });
     await cellsReady(page, 2);
@@ -1179,8 +1213,10 @@ test.describe("v2 Charts 390 phone", () => {
   });
 });
 
-test.describe("v2 Charts 390x560 phone: off-screen cells (UI2-4d)", () => {
-  test.use({ viewport: { width: 390, height: 560 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+// CT-1 L1: the phone has no Multi-chart sub-tab row any more, so the cells start higher: a shorter screen keeps the second
+// chart off screen past the margin.
+test.describe("v2 Charts 390x480 phone: off-screen cells (UI2-4d)", () => {
+  test.use({ viewport: { width: 390, height: 480 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
   test("the second chart reads its candles only once it is scrolled into view", async ({ page }) => {
     const calls = await open(page, "light", { path: "/charts?tab=multi",

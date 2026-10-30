@@ -414,7 +414,6 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
   const [moreOpen, setMoreOpen] = useState(false);
   const [timeframe, setTimeframe] = useState<TimeframeId>("5min");         // the charts' default (chart/timeframes.ts)
   const menuId = useId();
-  const modeLabel = item.mode === "LIVE" ? "Live" : item.mode === "PAPER" ? "Paper" : null;
   // AUD-T6 (BR-M3): his own similar past closed trades for an entry approval (flags ui_v2 + setup_recall).
   const features = useFeatures();
   const recall = item.action_id !== null && features.on("ui_v2") && features.on("setup_recall")
@@ -448,7 +447,8 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
             <StatusChip item={item} now={now} />
           </div>
           <p className="mt-space-1 text-t14 text-fg-muted">
-            {setupWords(item.setup)} · from {sourceCaption(item)}{modeLabel ? ` · ${modeLabel}` : ""}
+            {/* CT-1 C8: the mode is the one chip under the buttons (PAPER, or LIVE), not a second word here. */}
+            {setupWords(item.setup)} · from {sourceCaption(item)}
           </p>
         </div>
         {waiting && canTrade && <MoreButton item={item} open={moreOpen} controls={menuId} onToggle={() => setMoreOpen((o) => !o)} />}

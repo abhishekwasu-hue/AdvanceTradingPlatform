@@ -12,7 +12,8 @@ import { chartTabPath, chartsPath } from "../shell/shellRoutes";
 import { EMPTY, formatDateIST, formatPrice, formatSignedINR } from "../ui/format";
 import { fnoApi, type FnoApi, type FnoContract, type HeldLeg, type Right, type Side } from "./api";
 import { MAX_LEGS, basket as defaultBasket, type BasketStore } from "./basket";
-import { PRACTICE_TITLE, heldPnl, heldText } from "./ticketModel";
+import { heldPnl, heldText } from "./ticketModel";
+import { PaperBadge } from "../ui/PaperBadge";
 
 /**
  * FNO-1 (owner order section 3): tap a strike's call or put on the chain -> this sheet.
@@ -199,7 +200,7 @@ export function ActionSheetBody({ target, contract, contractProblem, held, panel
   return (
     <div data-action-body>
       <p className="text-t13 text-fg-muted font-tabular">LTP {formatPrice(leg.ltp)} · Bid {formatPrice(leg.bid)} · Ask {formatPrice(leg.ask)}</p>
-      <p className="mt-space-1 inline-flex rounded-pill bg-warn-tint px-space-2 text-t12 font-semibold text-warn" data-practice-frame>{PRACTICE_TITLE}</p>
+      <p className="mt-space-1"><PaperBadge /></p>
 
       {mine.length > 0 && (
         <section aria-label="You hold" className="mt-space-3 rounded-control border border-subtle p-space-3" data-held>

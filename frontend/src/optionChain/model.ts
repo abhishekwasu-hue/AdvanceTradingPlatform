@@ -5,12 +5,13 @@
  */
 import { EMPTY, MINUS, formatDateIST, formatDateTimeIST, formatNumber } from "../ui/format";
 import type { ComboOption } from "../ui/Combobox";
-import { FNO_STOCKS } from "../utils/fnoSymbols";
+import { OPTION_INDICES, OPTION_STOCKS } from "../ui/symbolUniverse";
 import type { ChainExpiries, ChainLeg, ChainRow, LiveChain } from "./types";
 
 /** The indices first (NIFTY is the default), then the F&O stocks (src/utils/fnoSymbols.ts). */
-export const INDEX_SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"] as const;
-export const STOCK_SYMBOLS: readonly string[] = FNO_STOCKS;
+// CT-1 C6: the one symbol universe (ui/symbolUniverse.ts) - the chain page and the Terminal offer these.
+export const INDEX_SYMBOLS = OPTION_INDICES;
+export const STOCK_SYMBOLS: readonly string[] = OPTION_STOCKS;
 export const DEFAULT_SYMBOL = "NIFTY";
 
 /** A symbol as the page accepts it: letters, digits, "&", "-", "_" and spaces, at most 30 characters (as the server). */

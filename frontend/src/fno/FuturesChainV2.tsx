@@ -16,7 +16,8 @@ import {
   basketHref, expiryText, futureContract, futureLeg, futureTarget, futuresNotes, hubApi, monthWord, type FutureRow, type FuturesChain, type HubApi,
 } from "./hubModel";
 import OrderTicketV2 from "./OrderTicketV2";
-import { PRACTICE_TITLE, type TicketTarget } from "./ticketModel";
+import type { TicketTarget } from "./ticketModel";
+import { PaperBadge } from "../ui/PaperBadge";
 import { Skeleton } from "../components/primitives";
 
 /**
@@ -269,7 +270,7 @@ export function FuturesChainView({ data, problem, loading, trading, watchlistsOn
           )}
         </div>
         <div className="flex items-center gap-space-2">
-          {trading && <span className="inline-flex rounded-pill bg-warn-tint px-space-2 text-t12 font-semibold text-warn" data-practice-frame>{PRACTICE_TITLE}</span>}
+          {trading && <PaperBadge />}
           {trading && data && (
             <Link to={basketHref(data.underlying, timeframe)} data-futures-basket
               className="inline-flex min-h-11 items-center gap-space-1 rounded-control px-space-2 text-t13 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9"

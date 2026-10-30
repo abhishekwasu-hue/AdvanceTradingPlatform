@@ -1,12 +1,15 @@
 import { ChevronRight, Pause, Play, Square } from "lucide-react";
+import { LiveBadge, PaperBadge } from "../ui/PaperBadge";
+import { showsPaper } from "../ui/paperWords";
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth, useOptionalAuth } from "../auth/AuthContext";
+import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import { BROKER_PATH } from "../broker/paths";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
-import { CardV2, ChipV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
+import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import type { PageProps } from "../routes";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, StateChipV2 } from "../trading/PartsV2";
 import type { CustomStrategyResponse, Deployment, PortfolioExposure, StrategyInfo, TradeRecord } from "../types";
@@ -38,6 +41,8 @@ import {
 const MoreWaysToTrade = lazy(() => import("../pages/DeploymentsPage"));
 
 const OTHER = "__other__";
+/** CT-1 C6: the usual symbols, suggested while the picker is empty. */
+const SYMBOL_ROWS: readonly PickedSymbol[] = SYMBOLS.map((s) => ({ symbol: s, exchange: "NSE" }));
 /** A strategy template in the strategy list (its strategy id comes from the server once the template is picked). */
 const PICK = "template-pick:";
 /** The chart timeframe a template starts on when it offers it (a template's settings stay its own defaults here). */
@@ -200,7 +205,8 @@ export default function PaperBotV2(_props: PageProps) {
         <StepUpDialog reason={stepUp.reason} onCancel={() => setStepUp(null)} onVerified={() => { const r = stepUp.retry; setStepUp(null); void r(); }} />
       )}
 
-      <CardV2 title="Your bots" count={bots ? sortBots(bots).length : undefined} testId="bots">
+      <CardV2 title="Your bots" count={bots ? sortBots(bots).length : undefined} testId="bots"
+        badge={bots && showsPaper(bots.map((b) => b.mode)) ? <PaperBadge /> : undefined}>
         {botsFailed && !bots ? <LoadFailedV2 what="your bots" />
           : !bots ? <LoadingRowsV2 rows={2} />
           : shown.length === 0 ? (
@@ -286,7 +292,7 @@ export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel,
         <div className="min-w-0">
           <p className="flex flex-wrap items-center gap-space-2 text-t15 font-semibold text-fg">
             <span className="min-w-0 break-words">{name}</span>
-            {bot.mode === "LIVE" ? <ChipV2 kind="warn">Live</ChipV2> : <ChipV2>Paper</ChipV2>}
+            {bot.mode === "LIVE" && <LiveBadge />}
           </p>
           {/* UX-11b C5: what it trades and how long it holds, as two facts (chips), not a sentence. */}
           <p className="flex flex-wrap gap-space-1" data-bot-what>
@@ -369,6 +375,9 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const [strategyId, setStrategyId] = useState("");
   const [symbolChoice, setSymbolChoice] = useState("NIFTY 50");
   const [otherSymbol, setOtherSymbol] = useState("");
+  const auth = useOptionalAuth();
+  // CT-1 C6: a picked symbol of the usual list keeps its choice (a strategy then sets its own); any other is "another".
+  const chooseSymbol = (s: string) => { if (SYMBOLS.includes(s)) setSymbolChoice(s); else { setSymbolChoice(OTHER); setOtherSymbol(s); } };
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [touched, setTouched] = useState(false);
@@ -547,16 +556,12 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
         )}
         <div>
           <label htmlFor={ids.symbol} className={LABEL}><StepNo n={2} />Pick a symbol</label>
-          <Combobox id={ids.symbol} label="Pick a symbol" value={symbolChoice} className="w-full" onChange={(v) => { setSymbolChoice(v); setResult(null); }}
-            options={[...SYMBOLS.map((s) => ({ value: s, label: s })), { value: OTHER, label: "Another symbol…" }]} />
-          {symbolChoice === OTHER && (
-            <div className="mt-space-2">
-              <label htmlFor={ids.other} className="sr-only">Type the symbol</label>
-              <input id={ids.other} className={FIELD} value={otherSymbol} autoCapitalize="characters" autoComplete="off" placeholder="For example RELIANCE"
-                aria-invalid={touched && !!problem} onChange={(e) => setOtherSymbol(e.target.value)} onBlur={() => setTouched(true)} />
-            </div>
-          )}
-          {touched && problem && <p role="alert" className="mt-space-1 text-t13 text-warn">{problem}</p>}
+          {/* CT-1 C6: the one symbol picker - the usual symbols first, any other by typing (kept when the field is left). */}
+          <SymbolPicker id={ids.symbol} label="Pick a symbol" value={symbol} exchange="NSE" placeholder="For example RELIANCE" storageKey={recentKeyFor(auth?.user?.id)}
+            suggestions={SYMBOL_ROWS} onPick={(p) => { chooseSymbol(cleanSymbol(p.symbol)); setResult(null); }} commitTyped
+            onClear={() => { setSymbolChoice(OTHER); setOtherSymbol(""); setResult(null); }} onLeave={() => setTouched(true)}
+            invalid={touched && !!problem} describedBy={touched && problem ? ids.other : undefined} className="w-full" />
+          {touched && problem && <p id={ids.other} role="alert" className="mt-space-1 text-t13 text-warn">{problem}</p>}
         </div>
         {exitChoices && exitsNow && (
           <fieldset className="space-y-space-3 rounded-control border border-subtle p-space-3" data-template-exits aria-describedby={ids.exitNotes}>

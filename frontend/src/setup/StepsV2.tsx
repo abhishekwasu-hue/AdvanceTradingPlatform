@@ -1,4 +1,5 @@
 import { ALERTS_PATH } from "./getStarted";
+import { PaperBadge } from "../ui/PaperBadge";
 import { Details } from "../ui/numbersFirst";
 import { BellRing, Mail, Send, Smartphone } from "lucide-react";
 import { useEffect, useId, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
@@ -318,7 +319,6 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
     <li className="space-y-space-2 rounded-control border border-subtle p-space-3" data-suggestion={s.strategyId}>
       <div className="flex flex-wrap items-center gap-space-2">
         <ChipV2 kind="brand">{s.style}</ChipV2>
-        <ChipV2>Paper</ChipV2>
       </div>
       <p className="text-t15 font-semibold text-fg">{info.name}</p>
       <p className={P}>{s.line}</p>
@@ -360,7 +360,7 @@ export function StrategyStepV2({ onChanged }: StepProps) {
   });
   return (
     <div className="space-y-space-3">
-      <p className="text-t14 text-fg">Pick one to try. A paper bot then trades it with paper money, so you can watch how it does.</p>
+      <p className="flex flex-wrap items-center gap-space-2 text-t14 text-fg"><PaperBadge />Pick one to try. A paper bot then trades it with paper money, so you can watch how it does.</p>
       {!source && <p className={P}>Testing uses your broker&apos;s prices. Connect your broker to test a strategy first.</p>}
       {source?.stored && <p className={P}>{STORED_HISTORY_NOTE}</p>}
       <ul className="space-y-space-3">

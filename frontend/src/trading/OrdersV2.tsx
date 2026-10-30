@@ -8,6 +8,8 @@ import { useColourV2 } from "../ui/colourV2";
 import { DirectionChip } from "../ui/DirectionChip";
 import { EMPTY } from "../ui/format";
 import { PageFootnote } from "../ui/numbersFirst";
+import { LiveBadge, PaperBadge } from "../ui/PaperBadge";
+import { showsPaper } from "../ui/paperWords";
 import { orderFillRows, orderTiles, type OrderFillRow } from "./model";
 import { BUTTON_SECONDARY, PageTitleV2, TileV2, TilesV2 } from "./PartsV2";
 
@@ -42,7 +44,8 @@ export default function OrdersV2(_props: PageProps = {}) {
 
   return (
     <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="orders-v2">
-      <PageTitleV2 title="Orders" subtitle="Every entry and exit of your trades, newest first." />
+      <PageTitleV2 title="Orders" subtitle="Every entry and exit of your trades, newest first."
+        action={showsPaper((dataOf(trades) ?? []).map((t) => t.mode)) ? <PaperBadge className="self-start md:self-auto" /> : undefined} />
 
       <section aria-label="Summary" data-block="summary">
         {trades.status === "loading" ? <LoadingRowsV2 rows={2} /> : (
@@ -95,7 +98,7 @@ export function OrderRowV2({ row }: { row: OrderFillRow }) {
         <ChipV2 kind={row.kind === "Entry" ? "brand" : "outline"}>{row.kind}</ChipV2>
         {colour ? <DirectionChip side={row.side === "Long" ? "long" : "short"} />
           : <span className={`text-t13 font-medium ${row.side === "Long" ? "text-up" : "text-down"}`}>{row.side}</span>}
-        <ChipV2 kind={row.mode === "Live" ? "solid" : "outline"}>{row.mode}</ChipV2>
+        {row.mode === "Live" && <LiveBadge />}
       </div>
       <p className="mt-px font-tabular text-t13 text-fg-muted">{row.size} · at {row.price} · {row.when}</p>
       {(row.reason || row.strategy) && (

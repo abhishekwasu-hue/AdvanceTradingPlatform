@@ -93,10 +93,11 @@ describe("UI2-9a exits (ADR-0004, UI-11)", () => {
     expect(html).toContain('aria-hidden="true"');
   });
 
-  it("a row (UX-15, the broker standard): instrument, Long, Paper, Qty, Avg., LTP, levels as chips, Signed P&L, a chart link", () => {
+  it("a row (UX-15, the broker standard): instrument, Long, Qty, Avg., LTP, levels as chips, Signed P&L, a chart link", () => {
     const html = row();
     const words = text(html);
-    for (const s of ["DEMO A", "Long", "Paper", "Qty +150 (2 lots)", "Avg. 100.00", "LTP 110.00", "Stop 95.00", "Target 110.00", "+₹1,500", "+10.00%"]) {
+    expect(words).not.toContain("Paper");                       // CT-1 C8: the page title's one PAPER badge covers the row
+    for (const s of ["DEMO A", "Long", "Qty +150 (2 lots)", "Avg. 100.00", "LTP 110.00", "Stop 95.00", "Target 110.00", "+₹1,500", "+10.00%"]) {
       expect(words, s).toContain(s);
     }
     expect(words).not.toContain("Buy ·");                      // the Long chip says the side

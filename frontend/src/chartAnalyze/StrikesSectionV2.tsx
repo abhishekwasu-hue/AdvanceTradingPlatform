@@ -1,5 +1,7 @@
-import { useState, type FormEvent } from "react";
-import { Button, Input } from "../components/primitives";
+import { useId, useState, type FormEvent } from "react";
+import { useOptionalAuth } from "../auth/AuthContext";
+import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
+import { Button } from "../components/primitives";
 import { guardStrikes } from "./signalLanguage";
 import type { StrikesAnswer } from "./types";
 
@@ -32,6 +34,8 @@ export const NOT_PICKED = "The analysis does not pick strikes. These come from y
 
 export default function StrikesSectionV2({ state, onSymbol }: { state: StrikesState; onSymbol?: (symbol: string) => void }) {
   const [symbol, setSymbol] = useState("");
+  const symbolId = useId();
+  const auth = useOptionalAuth();
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (symbol.trim()) onSymbol?.(symbol.trim());
@@ -66,8 +70,13 @@ export default function StrikesSectionV2({ state, onSymbol }: { state: StrikesSt
           {data.message && <p className="text-t14 text-fg-muted" data-testid="strikes-message">{data.message}</p>}
           {askSymbol && (
             <form onSubmit={submit} className="flex flex-col gap-space-2 sm:flex-row sm:items-end">
-              <Input label="Symbol" value={symbol} onChange={(e) => setSymbol(e.target.value)} autoCapitalize="characters" className="h-11 md:h-9" />
-              <Button type="submit" className="h-11 md:h-9" disabled={!symbol.trim()}>Show strikes</Button>
+              <div className="min-w-0 flex-1 space-y-1 sm:max-w-xs">
+                <label htmlFor={symbolId} className="block text-xs font-medium text-fg-muted">Symbol</label>
+                {/* CT-1 C6: the one symbol picker, over the symbols that have options. */}
+                <SymbolPicker id={symbolId} label="Symbol" value={symbol} exchange="NSE" universe="optionable" storageKey={recentKeyFor(auth?.user?.id)}
+                  onPick={(p) => setSymbol(p.symbol)} commitTyped onClear={() => setSymbol("")} className="w-full" />
+              </div>
+              <Button type="submit" className="h-11 md:h-9">Show strikes</Button>
             </form>
           )}
           {data.items.length > 0 && (

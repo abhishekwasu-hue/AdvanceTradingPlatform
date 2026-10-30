@@ -18,7 +18,7 @@ import ChainCharts from "./ChartsViewV2";
 import OiViewV2 from "./OiViewV2";
 import ColumnsMenuV2 from "./ColumnsMenuV2";
 import {
-  INDEX_SYMBOLS, STOCK_SYMBOLS, chainNotes, initialSymbol, readColumns, writeColumns, type ColumnPrefs,
+  chainNotes, initialSymbol, readColumns, writeColumns, type ColumnPrefs,
 } from "./model";
 import RowDetailsV2 from "./RowDetailsV2";
 import { ChainLadderV2, Note } from "./ChainLadderV2";
@@ -27,6 +27,8 @@ import { usePrevClose } from "./spotChange";
 import type { ChainRow } from "./types";
 import { useOptionChain, type OptionChainData } from "./useOptionChain";
 import { Combobox } from "../ui/Combobox";
+import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
+import { useOptionalAuth } from "../auth/AuthContext";
 import { Sheet } from "../components/primitives/Dialog";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { AskAi } from "./AskAiV2";
@@ -149,7 +151,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   const spot = useTerminalSpot({ symbol, hub: useFeatures().on("data_hub"), enabled: true, chain: live ?? null });
   const notes = chainNotes(live, marketOpen, (iso) => formatTimeIST(iso));
   const prevClose = usePrevClose(symbol);
-  const extraSymbol = useMemo(() => (new Set<string>([...INDEX_SYMBOLS, ...STOCK_SYMBOLS]).has(symbol) ? null : symbol), [symbol]);
+  const auth = useOptionalAuth();
   const expiryOptions = chain.expiries?.expiries.length
     ? chain.expiries.expiries
     : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
@@ -182,8 +184,9 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         <div data-tour="oc-pickers" className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2 md:flex md:gap-space-3">
           <div className="min-w-0 md:w-48">
             <label htmlFor={symbolId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
-            <Combobox id={symbolId} label="Symbol" value={symbol} onChange={(v) => { setPicked(null); onSymbol(v); }} searchable className="w-full"
-              options={symbolOptions(extraSymbol)} />
+            {/* CT-1 C6: the one symbol picker, over the symbols that have options. */}
+            <SymbolPicker id={symbolId} label="Symbol" value={symbol} exchange={symbol === "SENSEX" ? "BSE" : "NSE"} universe="optionable"
+              storageKey={recentKeyFor(auth?.user?.id)} onPick={(p) => { if (p.symbol !== symbol) { setPicked(null); onSymbol(p.symbol); } }} className="w-full min-w-0" />
           </div>
           <div className="min-w-0 md:w-56">
             <label htmlFor={expiryId} className="mb-space-1 flex items-center gap-space-1 text-t12 font-medium text-fg-muted">

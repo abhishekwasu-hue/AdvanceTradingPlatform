@@ -5,6 +5,7 @@
  * minutes). Nothing here places or closes anything by itself: the countdown only shows when his rule will apply.
  * Backend: app/execution/incomplete_structures.py, routes app/execution/incomplete_routes.py.
  */
+import { LiveBadge } from "../ui/PaperBadge";
 import { Clock, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { completeLabel, exitFilledLabel, incompleteApi, type IncompleteAction, type IncompleteApi, type IncompleteItem } from "./incompleteApi";
@@ -35,7 +36,7 @@ export function IncompleteCardV2({ item, secondsLeft, busy, onAnswer, note }: {
       data-state={item.state} aria-label="Incomplete order">
       <p className="flex items-start gap-space-2 text-t15 font-semibold text-fg" role="alert">
         <TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0 text-warn" />
-        <span>Incomplete order: {item.underlying}{item.mode === "PAPER" ? " (practice)" : ""}</span>
+        <span>Incomplete order: {item.underlying}</span>{item.mode === "LIVE" && <LiveBadge />}
       </p>
       <p className="text-t14 text-fg">A leg did not fill, so nothing more was sent and nothing was undone.</p>
       <div className="grid gap-space-3 md:grid-cols-2">

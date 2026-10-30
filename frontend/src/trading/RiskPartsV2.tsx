@@ -5,6 +5,7 @@ import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2 } from "../da
 import type { MarketEvent, RiskEvent, RiskLimit, RiskLimitType, RiskScope, UserResponse } from "../types";
 import { Combobox } from "../ui/Combobox";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import { Details } from "../ui/numbersFirst";
 import { formatDateIST, formatDateTimeIST } from "../ui/format";
 import { strategyDisplayName } from "../ui/strategyName";
@@ -35,6 +36,9 @@ function Field({ label, children, className = "" }: { label: string; children: (
 }
 
 // --- Market events ----------------------------------------------------------------------------------------------------
+
+/** The event form's suggested symbol: INDEX, the indices together. */
+const EVENT_SUGGESTIONS: readonly PickedSymbol[] = [{ symbol: "INDEX", exchange: "", name: "NIFTY, BANK NIFTY and SENSEX together" }];
 
 export function MarketEventsV2({ user, defaultCut, nonce, onChanged }: {
   user: UserResponse; defaultCut: number | null; nonce: number; onChanged: () => void;
@@ -104,7 +108,9 @@ export function MarketEventsV2({ user, defaultCut, nonce, onChanged }: {
       </Details>
       <form onSubmit={add} noValidate className="mt-space-4 grid grid-cols-1 gap-space-3 sm:grid-cols-2 lg:grid-cols-4" data-event-form>
         <Field label="Day">{(id) => <input id={id} type="date" value={date} onChange={(e) => setDate(e.target.value)} className={FIELD} />}</Field>
-        <Field label="Symbol">{(id) => <input id={id} value={underlying} placeholder="All symbols" autoCapitalize="characters" onChange={(e) => setUnderlying(e.target.value)} className={FIELD} />}</Field>
+        {/* CT-1 C6: the one symbol picker; empty = every symbol, INDEX = the indices together (a typed symbol is kept). */}
+        <Field label="Symbol">{(id) => <SymbolPicker id={id} label="Symbol" value={underlying} exchange="NSE" placeholder="All symbols" storageKey={recentKeyFor(user.id)}
+          suggestions={EVENT_SUGGESTIONS} onPick={(p) => setUnderlying(p.symbol)} commitTyped onClear={() => setUnderlying("")} className="w-full" />}</Field>
         <Field label="Kind">{(id) => (
           <Combobox id={id} label="Kind" value={kind} onChange={setKind} options={EVENT_KINDS} />
         )}</Field>

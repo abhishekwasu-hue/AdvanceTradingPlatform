@@ -58,6 +58,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | SB-UX | Strategy builder as one stepped flow: SU1 start, SU2 market, SU3 entry blocks, SU4 exit & risk (DEF-0), SU5 result card, SU6 start on paper, SU7 advanced, SU8 copy | ATP_ORDER_CP_SB_UX.md, docs/design/CP_SB_AUDIT.md | as CP-UX |
 | CT-1 | Charts + Terminal consolidation: one component per kind linked by symbol (Terminal parts built in TERM-2; Charts-page parts C1, C2, C4, C6, C8-C10, L1, L3 here) | ATP_ORDER_CT_1.md, docs/design/CT_AUDIT.md | first report; one PR per group; phone 390 + tablet 820 + desktop comparison page per PR; owner ✅ |
 | REV-1 | Full ATP review (owner 30 Oct): High H1-H5, then every Medium page by page, then Low; live-check items fixed only when proved | docs/reviews/ATP_FULL_REVIEW.md, docs/design/REV1_PLAN.md | every finding fixed or closed with proof; owner ✅ on the M1-M3 comparison pages |
+| PROSE-1 | Hide theory / explanation text on every ui_v2 page: subtitles + intros behind the title ⓘ, card / field explanations in Details, CI AST guard | docs/reviews/PROSE_INVENTORY.md | guard green; owner ✅ on the before / after page; deployed |
 | P1-6c | CX Combined stop-loss / target on positions (Terminal + My trades) | ATP_ORDER_CX_SX.md | CX1-CX7 tests pass; phone + desktop screenshots; owner ✅ |
 | P1-6d | SX Strategy-level SL / target / trailing at entry (spread + basket tickets), same engine as CX | ATP_ORDER_CX_SX.md | SX1-SX8 tests pass; ticket + chip screenshots; owner ✅ |
 | P1-7 | Smart execution ON | row 20 Part 7 (#474 merged) | flag ON; basket confirm step checked on production |
@@ -257,6 +258,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | SB-UX | not started | after CP-UX CU1; SU4 second | - |
 | CT-1 | not started | Terminal parts in TERM-2; Charts-page parts after CP-UX / SB-UX | - |
 | REV-1 | plan sent; waits for the owner's approval | M1 (H1-H5) after approval | - |
+| PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |
 | P4-3 | in review | Kotak Neo / Groww merged with LIVE gated; connect guides to check | #473, #481 (merged) |

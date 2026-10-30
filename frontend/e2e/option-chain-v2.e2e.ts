@@ -233,7 +233,11 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
         await expect(block.locator("[data-oc-analyses='ok']")).toBeVisible();
         await expect(block.getByRole("tab", { name: /Support/ })).toBeVisible();
         await expect(block.getByRole("region", { name: "Ask AI about this option chain" })).toHaveCount(0);   // OC-2: in the header's panel
-        await page.locator("[data-oc-ask-open]").click();
+        // CT-1 C10: the one Ask AI in the top bar, then "Ask about this chain" (the page has no button of its own).
+        await expect(page.locator("[data-oc-ask-open]")).toHaveCount(0);
+        await page.locator("[data-ask-ai-open]").click();
+        await expect(page.getByRole("dialog").locator("[data-ask-context]")).toContainText("Expiry 3 Nov");
+        await page.getByRole("dialog").locator("[data-ask-option='chain']").click();
         await expect(page.getByRole("dialog").getByRole("region", { name: "Ask AI about this option chain" })).toBeVisible();
         await expect(page.getByRole("dialog").getByRole("button", { name: /highest call OI/ })).toBeVisible();   // 3 suggested questions
         await page.keyboard.press("Escape");

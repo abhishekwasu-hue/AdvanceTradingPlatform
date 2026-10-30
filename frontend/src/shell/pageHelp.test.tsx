@@ -34,6 +34,6 @@ describe("UX-6: page help in the header (?)", () => {
     expect(intro).toMatch(/useRegisterPageHelp\(inShell \?/);
     expect(intro).toMatch(/if \(inShell \|\| userId === null/);
     const shell = readFileSync("src/shell/AppShellV2.tsx", "utf8");
-    expect(shell).toMatch(/<PageHelpProvider>[\s\S]*<TopBarV2[\s\S]*<\/PageHelpProvider>/);
+    expect(shell).toMatch(/<PageHelpProvider>[\s\S]*<TopBar(?:V2|WithAskAi)[\s\S]*<\/PageHelpProvider>/);   // CT-1 C10: the top bar with Ask AI
   });
 });

@@ -3,6 +3,7 @@ import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode 
 import { Link } from "react-router";
 import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
+import type { LevelLine } from "../chart/chartCore";
 import EmbeddedChartV2 from "../chart/EmbeddedChartV2";
 import { cx } from "../components/primitives/cx";
 import { LoadingRowsV2 } from "../dashboard/CardV2";
@@ -58,8 +59,10 @@ export function EmptyText({ children, testId }: { children: ReactNode; testId?: 
 
 // --- Chart ---------------------------------------------------------------------------------------------------------------
 
-export function ChartPanelV2({ symbol, onSymbol, live }: {
+export function ChartPanelV2({ symbol, onSymbol, live, levels }: {
   symbol: string; onSymbol?: (symbol: string | null) => void;
+  /** TERM-2 step 2: his legs, breakevens and own spot stops drawn on the chart (terminal/chartLevels.ts). */
+  levels?: readonly LevelLine[];
   /** T1-3: the page's one spot when this chart shows the underlying (undefined: the chart reads its own price). */
   live?: ChartLive | null;
 }) {
@@ -80,7 +83,7 @@ export function ChartPanelV2({ symbol, onSymbol, live }: {
         </form>
       )}
       <div className="min-h-0 flex-1 [&>section]:flex [&>section]:h-full [&>section]:flex-col">
-        <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" live={live} />
+        <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" live={live} levels={levels} />
       </div>
     </div>
   );

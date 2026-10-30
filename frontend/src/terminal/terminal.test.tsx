@@ -20,6 +20,7 @@ import type { PositionGroup } from "../fno/contracts";
 import type { ChainLeg, LiveChain } from "../optionChain/types";
 import { NO_STOP, stopText, type HeldRow } from "../trading/model";
 import { ContextBarV2, contextFigures } from "./ContextBarV2";
+import { terminalLevels } from "./chartLevels";
 import type { OptionChainData } from "../optionChain/useOptionChain";
 import { strategyDisplayName } from "../ui/strategyName";
 import { formatPrice, formatTimeIST } from "../ui/format";
@@ -536,5 +537,25 @@ describe("TERM-2 step 1: the context bar", () => {
     expect(html).toContain('data-symbol="NIFTY"');
     expect(html.match(/>PAPER</g)?.length).toBe(1);
     expect(html).not.toMatch(/\bPractice\b(?![^<]*")/);
+  });
+});
+
+describe("TERM-2 step 2: the chart's lines", () => {
+  const leg = (o: Partial<BasketLeg>): BasketLeg => ({ id: "a", underlying: "NIFTY", expiry: "2026-11-03", strike: 24500, right: "CE", side: "SELL", lots: 1,
+    price: 150, label: null, ...o } as BasketLeg);
+  it("his legs, the strikes he holds, the breakevens and his own spot stop - nothing else", () => {
+    const lines = terminalLevels({ underlying: "NIFTY", expiry: "2026-11-03",
+      basket: [leg({}), leg({ id: "b", strike: 24600, side: "BUY" }), leg({ id: "c", underlying: "BANKNIFTY" }), leg({ id: "d", expiry: "2026-11-10" })],
+      held: new Set(["25000|CE"]), breakevens: [24651.5],
+      combined: [{ measure: "SPOT", status: "ARMED", spot_symbol: "NIFTY 50", sl_value: 24800, target_value: null } as never,
+        { measure: "MTM_INR", status: "ARMED", spot_symbol: null, sl_value: -2000, target_value: null } as never],
+      spotSymbol: "NIFTY 50" });
+    expect(lines).toEqual([
+      { price: 24500, title: "Sell 24500 CE", tone: "down" },
+      { price: 24600, title: "Buy 24600 CE", tone: "up" },
+      { price: 25000, title: "Held 25000 CE", tone: "neutral" },
+      { price: 24651.5, title: "Breakeven", tone: "neutral" },
+      { price: 24800, title: "Your stop", tone: "down" },
+    ]);
   });
 });

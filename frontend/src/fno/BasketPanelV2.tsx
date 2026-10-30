@@ -84,8 +84,10 @@ const num = (text: string): number | null => {
 };
 const strip = (l: BasketLeg): NewLeg => { const { id: _id, ...rest } = l; return rest; };
 
-export default function BasketPanelV2({ open, onClose, chain, store = defaultBasket, api = basketApi, fetcher = request, onPlaced, embedded = false }: {
+export default function BasketPanelV2({ open, onClose, chain, store = defaultBasket, api = basketApi, fetcher = request, onPlaced, embedded = false, onNumbers }: {
   open: boolean;
+  /** TERM-2 step 2: the server's figures as they change (the Terminal draws the breakevens on its chart). */
+  onNumbers?: (numbers: BasketNumbers | null) => void;
   /** TERM-2 step 2: the same basket placed inside a page (the Terminal's basket panel) instead of a side sheet - the
    * same legs, payoff, figures, exits, confirm and result; no close button and no second PAPER mark (the page has one). */
   embedded?: boolean;
@@ -155,6 +157,10 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     api.settings(chain.symbol).then((s) => { if (alive) setSettings(s); }).catch(() => { if (alive) setSettings(null); });
     return () => { alive = false; };
   }, [open, chain.symbol, api]);
+
+  const numbersOut = useRef(onNumbers);
+  numbersOut.current = onNumbers;
+  useEffect(() => { numbersOut.current?.(numbers); }, [numbers]);
 
   // The numbers follow every edit (debounced); an older reply never overwrites a newer one.
   useEffect(() => {

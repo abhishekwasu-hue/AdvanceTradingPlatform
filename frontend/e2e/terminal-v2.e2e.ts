@@ -243,9 +243,10 @@ test.describe("v2 terminal 1440", () => {
     await expect(page.locator("[data-panel='chain']")).toHaveCount(0);
     expect(seen.puts.at(-1)?.body).toMatchObject({ active: "quick_trade" });
     await shot(page, "terminal-1440-light-quick-trade");
-    await pickOption(page, page.locator("[data-terminal=\'layout\']"), "multi_chart");
-    await expect(page.locator("[data-terminal-grid] [data-panel^='chart-']")).toHaveCount(4);
-    await shot(page, "terminal-1440-light-multi-chart");
+    // TERM-2 step 2: no Multi-chart layout in the Terminal (the Charts page owns multi-chart, CT-1 C2).
+    await page.locator("[data-terminal='layout']").click();
+    await expect(page.getByRole("option", { name: "Multi-chart" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
     // His own: back to Option seller, close the basket, save it under his name.
     await pickOption(page, page.locator("[data-terminal=\'layout\']"), "option_seller");
     await page.locator("[data-panel-close='basket']").click();

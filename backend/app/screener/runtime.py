@@ -1193,7 +1193,7 @@ def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:
         raise ScreenRuntimeError(str(exc)) from exc
 def _area_gate(f: pd.DataFrame, tf: str, what: str, side: str, settings: dict[str, Any]) -> pd.Series:
     """M55 T5: AreaGate (the entry candles of one side) / AreaGateRef (their invalidation, NaN elsewhere)."""
-    from app.price_action.level_gate.series import gate_series
+    from app.strategy_templates.area_gate import gate_series
     try:
         s = gate_series(f, tf, settings)
     except ValueError as exc:

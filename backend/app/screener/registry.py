@@ -118,20 +118,22 @@ _DEGREE1 = Arg("degree", NUM, 1, False, choices=SWING_DEGREES)
 _SIDE = Arg("side", STR, choices=("up", "down"))
 
 
+# M55 T5: every number of the ported level gate as a named setting, by type. No default here (left out: the ported default,
+# app/price_action/level_gate/settings.py), so the registry never loads the gate; tests/test_m55_t5_pullback_area.py checks
+# these names and types against app/strategy_templates/area_gate.SETTING_KEYS.
+GATE_BOOL_ARGS: tuple[str, ...] = ("wait_next_candle", "allow_parent_correction", "break_displacement_confirm")
+GATE_TEXT_ARGS: dict[str, tuple[str, ...]] = {"power_a_rule": ("relative", "strict3"), "commit_beyond": ("close", "extreme")}
+GATE_NUM_ARGS: tuple[str, ...] = (
+    "min_rr", "max_armed_bars", "mr_n", "approach_bars", "approach_wide_mr", "approach_close_frac", "approach_min_wide", "sl_buffer_mr",
+    "power_shift_min", "commit_dom_mult", "study_min_bars", "pattern_eq_mr", "power_overlap", "commit_body", "pin_wick_min",
+    "star_body_max", "tweezer_tol", "commit_close_frac", "candle_avg_n", "doji_body_max", "power_fallback_bars",
+    "median_range_n", "break_buffer_mr", "break_close_loc", "strength_min", "break_no_reclaim_bars", "break_accept_closes")
+
+
 def _gate_kwargs() -> tuple[Arg, ...]:
-    """M55 T5: every number of the ported level gate as a named setting (left out: the ported default)."""
-    from app.price_action.level_gate.series import SETTING_KEYS, split_settings
-    out = []
-    for name in SETTING_KEYS:
-        default = next(d[name] for d in split_settings(None) if name in d)
-        if isinstance(default, bool):
-            out.append(Arg(name, BOOL, default, False))
-        elif isinstance(default, str):
-            out.append(Arg(name, STR, default, False,
-                           choices={"power_a_rule": ("relative", "strict3"), "commit_beyond": ("close", "extreme")}[name]))
-        else:
-            out.append(Arg(name, NUM, default, False, literal_only=True))
-    return tuple(out)
+    return (tuple(Arg(k, NUM, None, False, literal_only=True) for k in GATE_NUM_ARGS)
+            + tuple(Arg(k, BOOL, None, False) for k in GATE_BOOL_ARGS)
+            + tuple(Arg(k, STR, None, False, choices=c) for k, c in GATE_TEXT_ARGS.items()))
 
 
 _GATE_KWARGS = _gate_kwargs()

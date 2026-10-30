@@ -133,6 +133,8 @@ def template_pins():
         if t.version == library.get(t.id).version and t.id != "C4":
             out[f"{t.id}.id"] = ids.adopt(t, tf)[0]
     out.pop("C4.v1", None)                                                   # the new template is not part of the pin
+    out.pop("A1.v1", None)                                                   # M55 T5: neither is A1 (added after the pin)
+    out.pop("A1.id", None)
     return out
 
 

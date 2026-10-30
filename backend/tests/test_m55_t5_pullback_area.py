@@ -18,12 +18,12 @@ import pytest
 
 from app.core.models import RiskConfig
 from app.price_action.level_gate import gate as G
-from app.price_action.level_gate import series as S
 from app.price_action.level_gate.settings import BREAK_DEFAULTS, GATE_DEFAULTS, METHOD_DEFAULTS
 from app.quality import lookahead as LA
 from app.screener.parser import parse
 from app.screener.runtime import SymbolData, evaluate
 from app.screener.then import templates as then_templates
+from app.strategy_templates import area_gate as S
 from app.strategy_templates import compile as C
 from app.strategy_templates import engine, language, library, parity, wave_parity
 from app.strategy_templates.adapter import TemplateStrategy
@@ -216,3 +216,18 @@ def test_the_template_is_listed_and_compiles_on_its_timeframes():
         assert r.required_flags == set()
     with pytest.raises(C.TemplateError):
         recipe("1h")
+
+
+def test_the_registry_names_every_setting_with_its_type():
+    """The registry declares the gate's named settings without defaults (it never loads the gate): same names, same types."""
+    from app.screener import registry as R
+    spec = R.FUNCTIONS["AreaGate"]
+    assert spec.kwargs == R.FUNCTIONS["AreaGateRef"].kwargs
+    defaults = {k: v for d in S.split_settings(None) for k, v in d.items()}
+    assert {a.name for a in spec.kwargs} == set(S.SETTING_KEYS)
+    for arg in spec.kwargs:
+        d = defaults[arg.name]
+        want = R.BOOL if isinstance(d, bool) else (R.STR if isinstance(d, str) else R.NUM)
+        assert arg.type == want and arg.default is None, arg.name
+        if arg.type == R.STR:
+            assert d in arg.choices

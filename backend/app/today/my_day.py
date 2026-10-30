@@ -193,8 +193,8 @@ def gap_text(name: str, gap: Dict[str, Any], today: date) -> str:
 
 
 def event_text(e: MarketEventRecord) -> str:
-    from app.rhythm.build import EVENT_LABELS
     from app.rhythm import words
+    from app.rhythm.build import EVENT_LABELS
     label = EVENT_LABELS.get(e.kind, "Market event")
     desc = words.clean(e.description)
     scope = f" ({e.underlying})" if e.underlying and e.underlying != "*" else ""

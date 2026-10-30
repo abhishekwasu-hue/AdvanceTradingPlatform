@@ -133,9 +133,10 @@ def test_screen_alert_rules_are_gated_and_bar_close_only(screener_on):
 def test_breakout_rules_pause_while_the_flag_is_off_and_resume_after(screener_on):
     from datetime import timedelta
 
+    from sqlalchemy import select
+
     from app.alerts import barclose
     from app.db.models import AlertEventRecord, AlertRuleRecord
-    from sqlalchemy import select
     from tests.test_s4a_barclose import TUE, FakeFetch, _bars, _rule, ist
     _, me = _owner("bk1-pause@example.com")
     rid = _rule(me["tenant_id"], condition='RangeBreakout("up", 10, 0, 0)', tf="5m")
@@ -160,8 +161,8 @@ def test_breakout_rules_pause_while_the_flag_is_off_and_resume_after(screener_on
 # ----------------------------------------------------------------------------------------------- review fixes (M7, M8, L)
 def test_run_hides_signals_that_fail_the_htf_filter_unless_asked():
     from app.screener.breakouts import routes as bk_routes
-    from tests.test_z7_bk1_breakouts import _with_context
     from tests.breakout_fixtures import HTF_DOWN, HTF_UP
+    from tests.test_z7_bk1_breakouts import _with_context
     spec = {"screen": "B1", "signal_tf": "1d", "params": {"context_ladder": {"1d": ["1w", "1M"]}}, "context": ("1w", "1M")}
     rows, _, hidden = bk_routes._grade_all(spec, {"X": _with_context(HTF_DOWN)}, 500, False)
     assert rows == [] and hidden == 1

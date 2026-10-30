@@ -7,7 +7,9 @@ B3 injection, sign flip, headline digit, Copilot hallucination, cross-tenant app
 """
 import asyncio
 
-from app.ai import copilot, grounding as g, knowledge as k, monitor
+from app.ai import copilot, monitor
+from app.ai import grounding as g
+from app.ai import knowledge as k
 from app.ai import thesis as th
 from tests.test_auth_api import _register, client
 from tests.test_phase_bd_thesis import NOW, _snapshot
@@ -113,8 +115,9 @@ def test_copilot_answer_is_grounded_on_facts_or_falls_back():
     # Through the API: the rule text answers and the note says why the AI text was not used.
     t = _tenant("p08b-copilot@example.com")
     _deploy(t, symbol="NIFTY 50")
-    from app.ai import routes as ai_routes
     import pytest
+
+    from app.ai import routes as ai_routes
     bad = _Provider(["Go long at 26000 now."] * 2)
 
     async def provider_for(session, tenant, **_kw):
@@ -143,6 +146,7 @@ def test_knowledge_guide_rejects_numbers_and_symbols_outside_memory_and_notes():
 def test_proposals_cannot_be_decided_across_organisations():
     import uuid
     from datetime import datetime, timezone
+
     from tests.test_auth_api import _session_factory
     t = _tenant("p08b-owner@example.com")
     dep_id = _deploy(t)

@@ -21,9 +21,9 @@ from app.market_data.calendar import IST
 from app.platform import controls
 from app.risk_engine import by_default, vix_gate
 from tests.test_auth_api import _session_factory, client
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _get, _tenant, _worker
-from tests.test_z3_approval_entries import _price, _sig
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _get, _tenant, _worker
 from tests.test_z3_approval_entries import _flag_for as _approval_flag
+from tests.test_z3_approval_entries import _price, _sig
 from tests.test_z3b_paper_account import _member, _paper_flag
 
 UTC = timezone.utc

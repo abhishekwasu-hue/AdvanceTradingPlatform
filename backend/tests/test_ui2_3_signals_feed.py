@@ -16,8 +16,17 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import func, select, true
 
-from app.db.models import (AiActionRecord, AlertEventRecord, AlertRuleRecord, AuditLogRecord, ExecutionIntentRecord, NotificationRecord,
-                           SignalHistoryRecord, StrategyDeploymentRecord, TradeRecord)
+from app.db.models import (
+    AiActionRecord,
+    AlertEventRecord,
+    AlertRuleRecord,
+    AuditLogRecord,
+    ExecutionIntentRecord,
+    NotificationRecord,
+    SignalHistoryRecord,
+    StrategyDeploymentRecord,
+    TradeRecord,
+)
 from app.signals_feed import service
 from tests.test_amw2_watchlists import _set_flag
 from tests.test_auth_api import _register, _session_factory, client

@@ -10,7 +10,8 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from app.chart_analyze import FLAG, engine, linkfetch, provider, service, settings as settings_mod
+from app.chart_analyze import FLAG, engine, linkfetch, provider, service
+from app.chart_analyze import settings as settings_mod
 from app.chart_analyze.engine import Answer
 from app.core import rate_limit
 from app.db.models import ChartAnalysisRecord, SubscriptionRecord, Tenant

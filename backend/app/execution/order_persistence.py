@@ -6,9 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.billing.service import meter
 from app.core.enums import OrderStatus
 from app.core.models import Signal
-from app.billing.service import meter
 from app.db.models import OrderEventRecord, OrderRecord, User
 from app.execution.order_state_machine import assert_valid_transition
 from app.execution.router import ExecutionResult

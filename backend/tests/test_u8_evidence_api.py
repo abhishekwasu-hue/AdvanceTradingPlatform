@@ -25,8 +25,7 @@ from sqlalchemy import select
 from app.alerts import barclose, dispatcher, engine
 from app.alerts.channels import TelegramConfig, encrypt_config
 from app.core.models import OHLCVBar
-from app.db.models import (AlertChannelRecord, AlertEventRecord, AlertRuleRecord, NotificationLinkRecord, NotificationPolicyRecord,
-                           ScreenEvidenceRecord)
+from app.db.models import AlertChannelRecord, AlertEventRecord, AlertRuleRecord, NotificationLinkRecord, NotificationPolicyRecord, ScreenEvidenceRecord
 from app.platform import controls
 from app.retention import service as retention
 from app.retention.policy import load_policy

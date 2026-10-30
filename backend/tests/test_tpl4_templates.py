@@ -11,7 +11,9 @@ import re
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import HealthCheck, given, settings as hsettings, strategies as st
+from hypothesis import HealthCheck, given
+from hypothesis import settings as hsettings
+from hypothesis import strategies as st
 
 from app.backtest.options_engine import OptionBacktestConfig
 from app.core.enums import OptionStrategy

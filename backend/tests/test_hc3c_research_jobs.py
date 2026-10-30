@@ -3,10 +3,9 @@ time, progress is the trial ledger, a stopped worker leaves the study `interrupt
 organisation, and the list / detail endpoints are scoped to the organisation."""
 import asyncio
 import json
-
-import pytest
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import select
 
 from app.ai import research_jobs

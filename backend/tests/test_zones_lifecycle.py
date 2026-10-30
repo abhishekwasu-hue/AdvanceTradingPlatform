@@ -10,8 +10,19 @@ import pytest
 
 from app.price_action.zones import compute as C
 from app.price_action.zones import detect as D
-from app.price_action.zones.lifecycle import (RESISTANCE_SIDE, SUPPORT_SIDE, ZoneEvent, ZoneState, ZoneTracker, frame_swings, new_tracker,
-                                              origin_side, replay, track_zone, transition)
+from app.price_action.zones.lifecycle import (
+    RESISTANCE_SIDE,
+    SUPPORT_SIDE,
+    ZoneEvent,
+    ZoneState,
+    ZoneTracker,
+    frame_swings,
+    new_tracker,
+    origin_side,
+    replay,
+    track_zone,
+    transition,
+)
 from app.price_action.zones.settings import resolve_settings
 from app.price_action.zones.snapshot import build_snapshot, is_line, live_rows, summary, zone_key
 from tests import zones_golden as G

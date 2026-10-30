@@ -18,7 +18,7 @@ from app.trading.exit_rules import ExitRules, apply_exit_rules
 from app.trading.position_monitor import monitor_open_positions
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _create, _store_broker
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _signal, _tenant, _trades, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _signal, _tenant, _trades, _worker
 from tests.utils import make_series, noisy_uptrend
 
 IST = ZoneInfo("Asia/Kolkata")

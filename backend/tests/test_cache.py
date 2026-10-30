@@ -1,9 +1,7 @@
 import asyncio
 
 from app.cache import client as cache_client
-from tests.test_auth_api import client
-
-from tests.test_auth_api import _register
+from tests.test_auth_api import _register, client
 
 _HEADERS = None
 

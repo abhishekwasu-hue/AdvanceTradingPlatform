@@ -18,7 +18,8 @@ from app.db.models import User
 from app.db.session import get_session
 from app.platform.controls import require_flag
 from app.screener import versions
-from app.screener.routes import FLAG as SCREENER_FLAG, _compiled, _owned
+from app.screener.routes import FLAG as SCREENER_FLAG
+from app.screener.routes import _compiled, _owned
 
 router = APIRouter(prefix="/api/screener", tags=["screener"])
 

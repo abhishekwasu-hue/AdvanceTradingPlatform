@@ -18,8 +18,8 @@ from app.option_chain import own_snapshots
 from app.option_chain.snapshots import IST
 from tests.test_amw2_watchlists import _set_flag
 from tests.test_auth_api import _session_factory, client
-from tests.test_oc2_option_chain_analyses import CURRENT, EXPIRY, REFERENCE, URL, _ChainBroker, _install, _name, _v2_owner
 from tests.test_oc1_option_chain_view import memory_cache  # noqa: F401 - the fixture
+from tests.test_oc2_option_chain_analyses import CURRENT, EXPIRY, REFERENCE, URL, _ChainBroker, _install, _name, _v2_owner
 from tests.test_phase_aa_market_data_api import _store_credentials
 
 UTC = timezone.utc

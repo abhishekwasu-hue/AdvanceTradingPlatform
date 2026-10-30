@@ -20,7 +20,7 @@ from app.tax import report as tax
 from app.trading.stop_guard import verify_protective_stops
 from tests.test_admin_api import _admin
 from tests.test_auth_api import _register, _session_factory, client
-from tests.test_trading_worker import _FakeBroker, _deploy, _get, _tenant
+from tests.test_trading_worker import _deploy, _FakeBroker, _get, _tenant
 
 pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
 
@@ -221,9 +221,9 @@ def test_admin_sets_rates_owner_sets_base_currency_and_exposure_converts(monkeyp
     assert client.patch("/api/team/tenant", headers=headers, json={"base_currency": "usd"}).json()["base_currency"] == "USD"
 
     # A USD-quoted instrument spec: 10 units at 100 USD = 1,000 USD notional; INR position converts at 1/85.
+    from app.core.enums import AssetClass
     from app.instruments import registry
     from app.instruments.models import ContractSpec
-    from app.core.enums import AssetClass
     monkeypatch.setitem(registry.CONTRACT_SPECS, "BTCUSDT", ContractSpec(symbol="BTCUSDT", exchange="CRYPTO", asset_class=AssetClass.CRYPTO,
                                                                           description="BTC/USDT", lot_size=0.0001, tick_size=0.01, fractional=True,
                                                                           quote_currency="USDT"))

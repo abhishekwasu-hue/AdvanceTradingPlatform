@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, time as dtime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
+from datetime import time as dtime
 from typing import Dict, List, Optional
 
 import httpx
@@ -30,8 +31,17 @@ from app.ai.providers import RuleBasedProvider
 from app.audit.log import write_audit_log
 from app.billing.service import meter
 from app.core.enums import Bias, DeploymentStatus, NotificationSeverity, NotificationType
-from app.db.models import (AiActionRecord, AiProviderConfigRecord, MarketEventRecord, NewsClassificationRecord, NewsEventRecord,
-                           StrategyDeploymentRecord, Tenant, TraderProfileRecord, User)
+from app.db.models import (
+    AiActionRecord,
+    AiProviderConfigRecord,
+    MarketEventRecord,
+    NewsClassificationRecord,
+    NewsEventRecord,
+    StrategyDeploymentRecord,
+    Tenant,
+    TraderProfileRecord,
+    User,
+)
 from app.fundamentals.models import SourceCitation
 from app.market_data.calendar import IST
 from app.news_feed import classify as cl

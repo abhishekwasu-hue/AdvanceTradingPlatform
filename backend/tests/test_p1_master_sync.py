@@ -14,7 +14,7 @@ from sqlalchemy import delete
 
 from app.db.models import InstrumentRecord, PlatformControlRecord
 from app.instruments import master_sync
-from app.instruments.master_sync import refresh_on_demand as REAL_REFRESH      # imported before the conftest stub
+from app.instruments.master_sync import refresh_on_demand as REAL_REFRESH  # imported before the conftest stub
 from app.market_data.calendar import IST
 from app.option_chain import chain_view
 from app.paper import fno_ticket

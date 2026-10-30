@@ -10,8 +10,17 @@ import pytest
 
 from app.backtest import chain_recorder
 from app.backtest.options import (
-    ExpiryCalendar, OptionChainSnapshotRow, PricingUnavailable, SnapshotPricer, SyntheticPricer, VolatilityModel, bars_per_year,
-    default_lot_size, default_strike_step, strike_ladder, to_utc,
+    ExpiryCalendar,
+    OptionChainSnapshotRow,
+    PricingUnavailable,
+    SnapshotPricer,
+    SyntheticPricer,
+    VolatilityModel,
+    bars_per_year,
+    default_lot_size,
+    default_strike_step,
+    strike_ladder,
+    to_utc,
 )
 from app.backtest.options_engine import ENGINE_VERSION, OptionBacktestConfig, run_option_backtest
 from app.brokers.models import OptionChain, OptionChainRow

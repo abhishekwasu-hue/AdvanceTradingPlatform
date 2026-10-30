@@ -26,8 +26,7 @@ from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user
 from app.auth.security import verify_password_async
 from app.core import config
-from app.db.models import (FeedbackRecord, JournalEntryRecord, JournalTagRecord, LlmCallRecord, OrderRecord, TradeRecord, User,
-                           UserPrefsRecord)
+from app.db.models import FeedbackRecord, JournalEntryRecord, JournalTagRecord, LlmCallRecord, OrderRecord, TradeRecord, User, UserPrefsRecord
 from app.db.session import get_session
 from app.platform import controls
 

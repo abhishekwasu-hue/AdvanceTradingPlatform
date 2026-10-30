@@ -515,11 +515,12 @@ async def sector_ranges(session: Any, symbols: Sequence[str], start: Any, end: A
     traded under on each date (every symbol_history range in the window: A -> B -> A or A -> B -> C included - re-check
     of S7a); a label that is itself an ISIN, or "SYM (ISIN)" (a reused symbol, S6a), is used as is. Read once;
     `sector_on` answers each date - the sector AS OF that date, never a later reclassification."""
+    import re
+
     from sqlalchemy import and_, or_, select
 
     from app.db.models import ClassificationRecord, SymbolHistoryRecord
     from app.universe.asof import isin_for
-    import re
     periods: Dict[str, List[Tuple[str, Any, Any]]] = {}       # symbol -> (isin, from, to exclusive): the ISIN it had then
     for sym in symbols:
         tagged = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)$", sym)

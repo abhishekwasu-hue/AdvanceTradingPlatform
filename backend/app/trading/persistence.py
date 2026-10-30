@@ -96,9 +96,9 @@ async def persist_trade(
     await session.commit()
     await session.refresh(record)
     if mode == "PAPER":
-        from app.growth import activation   # AUD-G2.4: after the commit; never raises, never in the trade's way
+        from app.growth import activation  # AUD-G2.4: after the commit; never raises, never in the trade's way
         await activation.record_step(session, user, "first_paper_trade")
-    from app.journal import capture as journal_capture   # local: the journal imports the trade models only
+    from app.journal import capture as journal_capture  # local: the journal imports the trade models only
     await journal_capture.on_entry(session, record, source=journal_source,
                                    underlying_price=(contract_meta or {}).get("underlying_entry"))
     return record

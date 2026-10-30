@@ -240,6 +240,7 @@ def test_every_call_is_metered_and_the_plan_budget_switches_the_tenant_to_rules(
 
 def test_truncated_answers_are_metered_and_fall_back_to_the_rules(monkeypatch):
     import httpx2
+
     from app.ai import copilot
     headers = {"Authorization": f"Bearer {_register('p08c-trunc@example.com')}"}
     me = client.get("/api/auth/me", headers=headers).json()

@@ -66,12 +66,12 @@ class SmokeReport:
                 "started_at": self.started_at.isoformat(), "steps": [s.as_dict() for s in self.steps], "read_only": True}
 
 
-async def _step(report: SmokeReport, name: str, fn: Callable[[], Awaitable[str]], *, timeout: float, optional: bool = False) -> Optional[str]:
+async def _step(report: SmokeReport, name: str, fn: Callable[[], Awaitable[str]], *, step_timeout: float, optional: bool = False) -> Optional[str]:
     """Run one probe; record ok/fail with timing. Returns the detail on success, None on failure.
     `optional`: a broker (or test double) without this endpoint says so with NotImplementedError -> skip, not fail."""
     started = time.monotonic()
     try:
-        detail = await asyncio.wait_for(fn(), timeout=timeout)
+        detail = await asyncio.wait_for(fn(), timeout=step_timeout)
     except NotImplementedError as exc:
         if optional:
             report.steps.append(Step(name, "skip", f"not offered by this broker ({str(exc).strip() or 'NotImplementedError'})"[:300], int((time.monotonic() - started) * 1000)))
@@ -80,8 +80,8 @@ async def _step(report: SmokeReport, name: str, fn: Callable[[], Awaitable[str]]
         return None
     except asyncio.TimeoutError as exc:
         elapsed = time.monotonic() - started
-        if elapsed >= timeout * 0.9:                     # our own deadline, not a TimeoutError the adapter raised
-            report.steps.append(Step(name, "fail", f"no answer within {timeout:.0f}s", int(elapsed * 1000)))
+        if elapsed >= step_timeout * 0.9:                     # our own deadline, not a TimeoutError the adapter raised
+            report.steps.append(Step(name, "fail", f"no answer within {step_timeout:.0f}s", int(elapsed * 1000)))
             return None
         message = str(exc).strip() or exc.__class__.__name__
         report.steps.append(Step(name, "fail", f"{exc.__class__.__name__}: {message[:300]}", int(elapsed * 1000)))
@@ -103,7 +103,7 @@ def _age_seconds(ts: Optional[datetime], now: datetime) -> Optional[float]:
 
 
 async def run_smoke(adapter: BrokerInterface, *, account_label: str = "primary", underlying_symbol: str = "NIFTY 50",
-                    today: Optional[date] = None, timeout: float = STEP_TIMEOUT_SECONDS) -> SmokeReport:
+                    today: Optional[date] = None, step_timeout: float = STEP_TIMEOUT_SECONDS) -> SmokeReport:
     """Read-only probes against a live broker session. Never places, modifies or cancels an order."""
     report = SmokeReport(broker=getattr(adapter, "name", "broker"), account_label=account_label)
     today = today or datetime.now(timezone.utc).date()
@@ -192,19 +192,19 @@ async def run_smoke(adapter: BrokerInterface, *, account_label: str = "primary",
         return f"{len(rows)} order(s) in today's book"
 
     for name, fn in (("profile", profile), ("funds", funds), ("instruments", instruments), ("quote", quote)):
-        await _step(report, name, fn, timeout=timeout)
+        await _step(report, name, fn, step_timeout=step_timeout)
     if has_derivatives:
-        await _step(report, "derivatives", derivatives, timeout=timeout)
+        await _step(report, "derivatives", derivatives, step_timeout=step_timeout)
     else:
         report.steps.append(Step("derivatives", "skip", f"{report.broker} is a spot venue - no derivatives list"))
     if state.get("contract"):
-        await _step(report, "contract_quote", contract_quote, timeout=timeout)
+        await _step(report, "contract_quote", contract_quote, step_timeout=step_timeout)
     else:
         report.steps.append(Step("contract_quote", "skip", "no contract to quote (derivatives list empty or failed)"))
     if has_derivatives:
-        await _step(report, "option_chain", option_chain, timeout=timeout, optional=True)
+        await _step(report, "option_chain", option_chain, step_timeout=step_timeout, optional=True)
     else:
         report.steps.append(Step("option_chain", "skip", f"{report.broker} is a spot venue - no option chain"))
     for name, fn in (("positions", positions), ("orders", orders)):
-        await _step(report, name, fn, timeout=timeout)
+        await _step(report, name, fn, step_timeout=step_timeout)
     return report

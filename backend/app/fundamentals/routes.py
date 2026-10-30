@@ -20,12 +20,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import current_session_id, ensure_admin_write_step_up, get_current_user, require_contributor
-from app.core.enums import UserRole
-from app.core.enums import FundamentalGrade, InvestmentHorizon, PeriodType, QualityLabel, SignalDirection, ValuationLabel
+from app.core.enums import FundamentalGrade, InvestmentHorizon, PeriodType, QualityLabel, SignalDirection, UserRole, ValuationLabel
 from app.db.models import CompanyRecord, User
 from app.db.session import get_session
-from app.fundamentals import ingest, persistence as db
-from app.fundamentals.visibility import check_dates, viewer_tenant
+from app.fundamentals import ingest
+from app.fundamentals import persistence as db
 from app.fundamentals.engines.alerts import AlertEngine
 from app.fundamentals.engines.business_quality import BusinessQualityEngine
 from app.fundamentals.engines.event_impact import EventImpactEngine
@@ -67,6 +66,7 @@ from app.fundamentals.models import (
     SourceCitation,
     SWOTResult,
 )
+from app.fundamentals.visibility import check_dates, viewer_tenant
 
 router = APIRouter(prefix="/api/fundamentals", tags=["fundamentals"])
 

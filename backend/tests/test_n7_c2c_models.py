@@ -31,7 +31,7 @@ from tests.test_auth_api import client
 from tests.test_deployments_api import _auth
 from tests.test_exit_rules_and_backtest_depth import _candles
 from tests.test_n7_c2b_models import _bars
-from tests.test_phase_w_option_backtest import _OneShot, _frame
+from tests.test_phase_w_option_backtest import _frame, _OneShot
 
 RISK = RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0)
 OPTION_GOLDEN = {   # the option engine before C2c (claude/n7-c2b), default models
@@ -223,8 +223,8 @@ def test_black76_reads_only_iv_known_by_then():
 # --- the API -------------------------------------------------------------------------------------------------------------------
 
 def test_the_api_gates_and_routes_the_models():
-    from tests.test_n1_e1_execution_core import _flag
     from app.backtest.models import FLAG
+    from tests.test_n1_e1_execution_core import _flag
     headers = _auth("n7c2c-api@example.com")
     me = client.get("/api/auth/me", headers=headers).json()
     body = {"strategy_id": "ema_rsi_scalper_1m", "symbol": "nifty", "base_timeframe": "1min", "candles": _candles(), "data_source": "sample"}

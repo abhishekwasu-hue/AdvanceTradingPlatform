@@ -9,8 +9,7 @@ from sqlalchemy import delete, select
 
 from app.alerts import engine
 from app.alerts.engine import Policy, in_quiet_hours
-from app.db.models import (AlertChannelRecord, AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, NotificationPolicyRecord,
-                           NotificationRecord)
+from app.db.models import AlertChannelRecord, AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, NotificationPolicyRecord, NotificationRecord
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_phase_l_ai import _owner
 

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.security import create_access_token
 from app.core import config
-from app.core.config import JWT_EXPIRE_MINUTES, REFRESH_TOKEN_DAYS, REFRESH_REUSE_GRACE_SECONDS
+from app.core.config import JWT_EXPIRE_MINUTES, REFRESH_REUSE_GRACE_SECONDS, REFRESH_TOKEN_DAYS
 from app.db.models import User, UserSessionRecord
 
 

@@ -13,8 +13,8 @@ too. All data here is made up for the test."""
 import asyncio
 import json
 import re
-from html import escape
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -71,8 +71,8 @@ def test_the_inbox_keeps_only_why_lines_in_the_signal_language():
 
 def test_the_inbox_is_byte_identical_with_the_flag_off_and_filtered_with_it_on():
     from tests.test_amw2_watchlists import _set_flag
-    from tests.test_ui2_3_signals_feed import URL, _owner, _proposal
     from tests.test_auth_api import client
+    from tests.test_ui2_3_signals_feed import URL, _owner, _proposal
     t = _owner("siglang")
     _proposal(t)
     off = client.get(URL, headers=t["headers"], params={"tab": "today"}).json()

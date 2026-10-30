@@ -18,7 +18,7 @@ from app.execution.signal_execution import execute_signal_for_user
 from app.paper import manual, service
 from app.platform import controls
 from tests.test_auth_api import _session_factory, client
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _worker
 from tests.test_z3_approval_entries import _flag_for, _price, _propose, _sig, quiet_alerts
 
 UTC = timezone.utc
@@ -297,8 +297,8 @@ def test_manual_parse_and_parity_with_the_trade_bot_levels_and_reward_risk():
 # --- Telegram ------------------------------------------------------------------------------------------------------------
 
 def test_telegram_status_pause_resume_and_paper_commands(monkeypatch):
-    from tests.test_phase_be_telegram_inbound import _setup, _Telegram
     from app.telegram_inbound import service as tg
+    from tests.test_phase_be_telegram_inbound import _setup, _Telegram
 
     async def never(*_a, **_k):
         return False

@@ -8,11 +8,11 @@ from sqlalchemy import select
 from app.ai import agent, monitor, tools
 from app.ai.tools import ToolContext, proposals, run_tool
 from app.db.models import AgentStepRecord, AiActionRecord, AuditLogRecord, RiskSettingsRecord, StrategyDeploymentRecord, User
+from tests.def0_legacy import legacy
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_hc2a_agent import _Scripted
 from tests.test_phase_l_ai import _owner
 from tests.test_trading_worker import _deploy
-from tests.def0_legacy import legacy
 
 NOW = datetime(2026, 3, 10, 5, 0, tzinfo=timezone.utc)
 

@@ -23,7 +23,7 @@ from app.observability import metrics
 from app.workers import redis_guard as rg
 from app.workers import trading_worker as tw
 from tests.test_auth_api import _session_factory
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _signal, _tenant, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _signal, _tenant, _worker
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCK_TITLE = "Worker lock lost - failed closed"
@@ -230,7 +230,8 @@ def test_cache_entries_always_expire_within_the_cap(monkeypatch):
     for ttl in (5, 0, -3, 10 ** 6):
         _run(cache_client.cache_set("k", "v", ttl))
     assert fake.ex == [5, 1, 1, config.CACHE_MAX_TTL_SECONDS]
-    from app.market_data import service as md, stream
+    from app.market_data import service as md
+    from app.market_data import stream
     for ttl in (md.DEFAULT_CANDLE_CACHE_TTL_SECONDS, md.HISTORY_CACHE_TTL_SECONDS, stream.TICK_REDIS_TTL_SECONDS):
         assert 0 < ttl <= config.CACHE_MAX_TTL_SECONDS
 

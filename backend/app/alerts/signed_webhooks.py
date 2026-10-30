@@ -76,7 +76,7 @@ def _ip_or_none(host: str) -> Optional[str]:
 
 
 def address_public(address: str) -> bool:
-    from app.chart_analyze.linkfetch import address_allowed   # public unicast only (+ CGNAT, NAT64, 6to4 refused)
+    from app.chart_analyze.linkfetch import address_allowed  # public unicast only (+ CGNAT, NAT64, 6to4 refused)
     return address_allowed(address)
 
 

@@ -9,7 +9,15 @@ import pytest
 from sqlalchemy import delete, select
 
 from app.core.enums import NotificationSeverity
-from app.db.models import NotificationRecord, OIAlertLogRecord, OIBannerSettingRecord, OIBannerStateRecord, OIDayBaselineRecord, OISnapshotRecord, StrikeOISnapshotRecord
+from app.db.models import (
+    NotificationRecord,
+    OIAlertLogRecord,
+    OIBannerSettingRecord,
+    OIBannerStateRecord,
+    OIDayBaselineRecord,
+    OISnapshotRecord,
+    StrikeOISnapshotRecord,
+)
 from app.option_chain import oi_alerts, oi_regime
 from app.option_chain.oi_alerts import StateView
 from app.option_chain.oi_regime import OIAlertSettings

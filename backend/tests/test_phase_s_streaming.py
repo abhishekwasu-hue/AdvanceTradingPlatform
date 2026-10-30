@@ -12,11 +12,20 @@ from app.core import config
 from app.market_data import stream as st
 from app.market_data.service import MarketDataService
 from app.market_data.stream import (
-    KiteTickStream, StreamManager, Tick, TickCache, TickStream, UpstoxTickStream, decode_kite, decode_upstox_v3, encode_kite,
-    encode_upstox_v3, stream_for,
+    KiteTickStream,
+    StreamManager,
+    Tick,
+    TickCache,
+    TickStream,
+    UpstoxTickStream,
+    decode_kite,
+    decode_upstox_v3,
+    encode_kite,
+    encode_upstox_v3,
+    stream_for,
 )
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _tenant, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _tenant, _worker
 
 NOW = datetime(2026, 9, 25, 5, 0, tzinfo=timezone.utc)   # 10:30 IST
 

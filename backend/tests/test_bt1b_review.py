@@ -16,15 +16,14 @@ from sqlalchemy import select
 from app.alerts import engine
 from app.brokers import routes as broker_routes
 from app.brokers import token_lifecycle
-from app.db.models import (AlertRuleRecord, BrokerCredentialRecord, NotificationRecord, ScreenRunRecord, StrategyDeploymentRecord, TradeRecord,
-                           User)
-from app.notifications.service import notify
 from app.core.enums import NotificationType
+from app.db.models import AlertRuleRecord, BrokerCredentialRecord, NotificationRecord, ScreenRunRecord, StrategyDeploymentRecord, TradeRecord, User
+from app.notifications.service import notify
 from app.secrets_store.encryption import encrypt_text
 from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
 from tests.broker_fakes import KITE_KEY, KITE_SECRET, UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _session_factory, client
-from tests.test_bt1b_guard_all_reads import _Feed, _byob, _flags, _member, _route
+from tests.test_bt1b_guard_all_reads import _byob, _Feed, _flags, _member, _route
 from tests.test_phase_aa_market_data_api import _store_credentials
 from tests.test_phase_k_commercial import _owner
 

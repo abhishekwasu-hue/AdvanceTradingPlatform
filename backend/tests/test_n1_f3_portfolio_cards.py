@@ -20,9 +20,9 @@ from tests.order_path_graph import CallGraph
 from tests.test_auth_api import _session_factory, client
 from tests.test_n1_e1_execution_core import _flag
 from tests.test_trading_worker import _tenant
+from tests.test_z3_approval_entries import _sig
 from tests.test_z10c_order_paths import GATED
 from tests.test_z10c_tenancy_fixes import _member
-from tests.test_z3_approval_entries import _sig
 
 UTC = timezone.utc
 BACKEND = Path(__file__).resolve().parents[1]

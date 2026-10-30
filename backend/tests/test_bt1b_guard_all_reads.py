@@ -24,7 +24,7 @@ from app.market_data.fanin import SessionRef, SessionSymbols, UserSessionFanIn
 from app.platform import controls
 from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _session_factory, client
-from tests.test_market_data_service import _MemoryCache, _install_cache
+from tests.test_market_data_service import _install_cache, _MemoryCache
 from tests.test_passwords import _headers, _tenant_pro
 from tests.test_phase_aa_market_data_api import _Broker, _store_credentials
 from tests.test_phase_k_commercial import _owner
@@ -400,8 +400,8 @@ def test_worker_fan_in_failure_uses_its_own_session(monkeypatch):
 
 
 def test_oi_banner_collector_skips_a_flag_on_organisation(monkeypatch):
-    from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _tenant, _worker
     from app.option_chain import snapshots
+    from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _tenant, _worker
     t = _tenant(_email("oi"))
     worker = _worker(monkeypatch, _FakeBroker())
     asked: List[int] = []

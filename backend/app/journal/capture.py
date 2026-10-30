@@ -368,13 +368,13 @@ def _submit(bind: AsyncEngine, tenant_id: int, what: str, work: Job) -> None:
         log.warning("Journal capture (%s) dropped for tenant %s: %d jobs already queued", what, tenant_id, QUEUE_LIMIT)
 
 
-async def drain(timeout: float = 10.0) -> None:
+async def drain(max_wait: float = 10.0) -> None:
     """Waits until every queued journal job of this event loop has run (tests; a graceful shutdown). Never raises."""
     runner = _runner
     if runner is None or runner.loop is not asyncio.get_running_loop() or runner.task.done():
         return
     try:
-        await asyncio.wait_for(runner.queue.join(), timeout=timeout)
+        await asyncio.wait_for(runner.queue.join(), timeout=max_wait)
     except Exception as exc:  # noqa: BLE001
         log.warning("Journal capture queue not drained: %s", exc or type(exc).__name__)
 

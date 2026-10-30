@@ -6,7 +6,8 @@ from typing import Dict, List
 import httpx
 import pytest
 
-from app.chart_analyze import linkfetch, settings as settings_mod
+from app.chart_analyze import linkfetch
+from app.chart_analyze import settings as settings_mod
 from tests.chart_analyze_fakes import synthetic_chart
 
 SETTINGS = settings_mod.merge({})

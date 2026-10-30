@@ -56,7 +56,7 @@ def build_order_tag(
 
     D1: with `broker`, that broker's tag format from the rule-set applies (IN-SEBI.algo_id.tag `brokers`): a stricter
     length and/or charset (`alnum` drops the separators). Without an entry nothing changes."""
-    from app.compliance.algo_id import CHARSETS, tag_format   # local: compliance loads rule-set data lazily
+    from app.compliance.algo_id import CHARSETS, tag_format  # local: compliance loads rule-set data lazily
     fmt = tag_format(broker) if broker else {"max_length": None, "charset": "alnum_dash"}
     if fmt["max_length"]:
         max_length = min(max_length, int(fmt["max_length"]))

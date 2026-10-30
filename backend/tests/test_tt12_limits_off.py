@@ -19,7 +19,7 @@ from app.platform.controls import clamp_config, risk_ceilings
 from app.risk_engine import by_default
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 from tests.test_auth_api import _session_factory, client
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _get, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _get, _worker
 from tests.test_z3_approval_entries import _price, _sig
 from tests.test_z3b_paper_account import _paper_flag
 from tests.test_z5_p1d_risk_by_default import _closed, _enter, _flag, _mine, _open, _org, _preview, _run, _tenant_t

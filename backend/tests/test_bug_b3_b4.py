@@ -5,9 +5,8 @@ move text (the analyses and "What the chain shows"). Saturday -> Tuesday = 2.
 B4: the PCR zone edges of "What the chain shows" are the user's own settings (prefs namespace `option_chain`), with
 defaults equal to the values used before (oi_regime.PcrBands: 0.70 / 0.90 / 1.00 / 1.30).
 """
-from datetime import date, datetime
-
 import uuid
+from datetime import date, datetime
 
 import pytest
 

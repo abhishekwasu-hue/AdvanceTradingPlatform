@@ -42,7 +42,7 @@ function FeedSourcesCard({ isAdmin }: { isAdmin: boolean }) {
     try { await api.refreshNewsFeed(); await load(); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
   };
   return (
-    <CollapsibleCard title="Live feed sources" subtitle={status.enabled ? `on · fetch every ${Math.round(status.cadence_seconds / 60)} min` : "off (feature flag news_feed)"} storageKey="news-feed-sources">
+    <CollapsibleCard title="Live feed sources" subtitle={status.enabled ? `on · fetch every ${Math.round(status.cadence_seconds / 60)} min` : "off"} storageKey="news-feed-sources">
       <p className="text-xs text-fg-muted mb-2">{status.note}</p>
       {error && <div className="text-xs text-down mb-2">{error}</div>}
       <div className="space-y-1.5">
@@ -86,6 +86,7 @@ export default function NewsEventsPage() {
   const [originFilter, setOriginFilter] = useState<"" | "MANUAL" | "FEED">("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [form, setForm] = useState<NewsEvent>(defaultNewsEvent());
   const [submitting, setSubmitting] = useState(false);
   // Phase BD-2: this member's verdicts on feed items (useful / noise / wrong direction) and the organisation's news trust.
@@ -142,9 +143,15 @@ export default function NewsEventsPage() {
     }
   }
 
+  // REV-1 M2: a failed delete says so next to the list (never an unhandled rejection with no message).
   async function handleDelete(id: number) {
-    await api.deleteNewsEvent(id);
-    refresh();
+    setDeleteError(null);
+    try {
+      await api.deleteNewsEvent(id);
+      refresh();
+    } catch (e) {
+      setDeleteError(`The event could not be deleted: ${errorSentence(e)}`);
+    }
   }
 
   return (
@@ -178,6 +185,7 @@ export default function NewsEventsPage() {
       </Card>
 
       <Card title={`Events (${events.length})`}>
+        {deleteError && <div role="alert" className="mb-2 text-sm text-down" data-news-delete-error>{deleteError}</div>}
         {loading ? (
           <SkeletonRows rows={2} label="Loading" />
         ) : events.length === 0 ? (

@@ -136,11 +136,11 @@ def test_global_kill_switch_blocks_every_tenant_including_anonymous(monkeypatch)
     blocked = _paper_execute(other_headers, monkeypatch)
     assert blocked.json()["executed"] is False
 
-    anon_blocked = client.post(
+    anon = client.post(
         "/api/strategies/ema_rsi_scalper_1m/paper-execute",
         json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}},
     )
-    assert anon_blocked.json()["executed"] is False
+    assert anon.status_code == 401                     # M55 O2: no anonymous paper-execute any more
 
     disengaged = client.post("/api/kill-switch/global/disengage", headers=admin_headers)
     assert disengaged.json()["engaged"] is False

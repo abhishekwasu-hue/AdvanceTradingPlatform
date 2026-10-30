@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import current_session_id, ensure_admin_write_step_up, get_current_user, require_contributor
 from app.core.enums import FundamentalGrade, InvestmentHorizon, PeriodType, QualityLabel, SignalDirection, UserRole, ValuationLabel
+from app.core.rate_limit import analysis_rate_limit
 from app.db.models import CompanyRecord, User
 from app.db.session import get_session
 from app.fundamentals import ingest
@@ -69,6 +70,10 @@ from app.fundamentals.models import (
 from app.fundamentals.visibility import check_dates, viewer_tenant
 
 router = APIRouter(prefix="/api/fundamentals", tags=["fundamentals"])
+
+# M55 O2: the model runs (sector-specific, valuation, DCF, score, fusion, screener) are signed in and within the shared
+# analysis limit (the limiter resolves the user); the stored-data reads stay as they are.
+_COMPUTE = [Depends(analysis_rate_limit)]
 
 
 async def _get_company_or_404(session: AsyncSession, symbol: str, viewer: Optional[int]) -> CompanyRecord:
@@ -587,7 +592,7 @@ async def analysis_post_earnings(symbol: str, session: AsyncSession = Depends(ge
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.post("/companies/{symbol}/analysis/sector-specific", response_model=SectorSpecificResult)
+@router.post("/companies/{symbol}/analysis/sector-specific", response_model=SectorSpecificResult, dependencies=_COMPUTE)
 async def analysis_sector_specific(
     symbol: str, sector_key: str, period_label: Optional[str] = None, session: AsyncSession = Depends(get_session), viewer: Optional[int] = Depends(viewer_tenant),
 ) -> SectorSpecificResult:
@@ -669,7 +674,7 @@ class ValuationRequest(BaseModel):
     peer_pe_avg: Optional[float] = None
 
 
-@router.post("/companies/{symbol}/analysis/valuation")
+@router.post("/companies/{symbol}/analysis/valuation", dependencies=_COMPUTE)
 async def analysis_valuation(symbol: str, request: ValuationRequest, session: AsyncSession = Depends(get_session), viewer: Optional[int] = Depends(viewer_tenant)):
     company = await _get_company_or_404(session, symbol, viewer)
     periods = await _load_periods(session, company.id, viewer)
@@ -685,7 +690,7 @@ async def analysis_valuation(symbol: str, request: ValuationRequest, session: As
     )
 
 
-@router.post("/companies/{symbol}/analysis/dcf")
+@router.post("/companies/{symbol}/analysis/dcf", dependencies=_COMPUTE)
 async def analysis_dcf(symbol: str, assumptions: DCFAssumptions, current_market_price: Optional[float] = None, session: AsyncSession = Depends(get_session), viewer: Optional[int] = Depends(viewer_tenant)):
     await _get_company_or_404(session, symbol, viewer)
     return DCFEngine().run(assumptions, current_market_price=current_market_price)
@@ -702,7 +707,7 @@ class FundamentalScoreRequest(BaseModel):
     management_score_0_100: Optional[float] = None
 
 
-@router.post("/companies/{symbol}/analysis/score")
+@router.post("/companies/{symbol}/analysis/score", dependencies=_COMPUTE)
 async def analysis_fundamental_score(symbol: str, request: FundamentalScoreRequest, session: AsyncSession = Depends(get_session), viewer: Optional[int] = Depends(viewer_tenant)):
     company = await _get_company_or_404(session, symbol, viewer)
     periods = await _load_periods(session, company.id, viewer)
@@ -766,7 +771,7 @@ class FusionRequest(BaseModel):
     horizon: InvestmentHorizon = InvestmentHorizon.POSITIONAL
 
 
-@router.post("/fusion")
+@router.post("/fusion", dependencies=_COMPUTE)
 async def fusion_score(request: FusionRequest):
     return FusionEngine().compute(
         fundamental_score=request.fundamental_score, technical_score=request.technical_score,
@@ -784,7 +789,7 @@ class ScreenerFilter(BaseModel):
     sector: Optional[str] = None
 
 
-@router.post("/screener")
+@router.post("/screener", dependencies=_COMPUTE)
 async def screener(filters: ScreenerFilter, session: AsyncSession = Depends(get_session), viewer: Optional[int] = Depends(viewer_tenant)) -> List[Dict[str, object]]:
     """Filters over every company that's been entered so far (spec section 45). This can only
     ever screen companies already in this platform's database - it has no access to the full

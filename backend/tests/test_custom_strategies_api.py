@@ -113,11 +113,12 @@ def test_custom_strategy_requires_auth_even_if_id_guessed():
     strategy_id = created["strategy_id"]
 
     df = make_series(decline_then_rally()).iloc[:43]
-    resp = client.post(
-        f"/api/strategies/{strategy_id}/signal",
-        json={"symbol": "NIFTY", "candles": {"1min": _candles_payload(df)}},
-    )
-    assert resp.status_code == 403
+    payload = {"symbol": "NIFTY", "candles": {"1min": _candles_payload(df)}}
+    resp = client.post(f"/api/strategies/{strategy_id}/signal", json=payload)
+    assert resp.status_code == 401                                   # M55 O2: the signal route is signed in only
+    other = {"Authorization": f"Bearer {_register('sam-other@example.com')}"}
+    resp = client.post(f"/api/strategies/{strategy_id}/signal", json=payload, headers=other)
+    assert resp.status_code in (403, 404)                            # someone else's custom strategy, even signed in
 
 
 def test_custom_strategy_runs_through_signal_enrich_and_backtest():

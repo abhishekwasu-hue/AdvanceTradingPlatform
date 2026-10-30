@@ -372,6 +372,18 @@ LAKE_BACKFILL_HOUR_IST = max(16, min(23, int(os.environ.get("LAKE_BACKFILL_HOUR_
 LAKE_BACKFILL_BUDGET_SECONDS = max(10, int(os.environ.get("LAKE_BACKFILL_BUDGET_SECONDS", "900") or 900))
 LAKE_BACKFILL_PAUSE_SECONDS = max(0.0, float(os.environ.get("LAKE_BACKFILL_PAUSE_SECONDS", "0.3") or 0.3))
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
+# M55 S2 (ADR-0004): an organisation with no usable broker session still gets its exits. Its price is then the newest
+# stored tick of the symbol (its own data hub, else the shared stream keys) when younger than this many seconds;
+# an older or missing one makes no exit decision this cycle, as with a stale broker quote.
+EXIT_FALLBACK_TICK_MAX_AGE_SECONDS = int(os.environ.get("EXIT_FALLBACK_TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
+# M55 S2: of a per-day price-read allowance (rate_budget.DAILY_CAPS, Groww), this share is kept for exits: a price read
+# for an exit may use it, any other read stops before it.
+DAILY_EXIT_READ_RESERVE_SHARE = min(0.5, max(0.0, float(os.environ.get("DAILY_EXIT_READ_RESERVE_SHARE") or "0.1")))
+# M55 S2: an exit order the broker answers REJECTED / CANCELLED is sent again up to this many more times in the same
+# check, EXIT_REJECT_RETRY_SPACING_SECONDS apart. 0 (the default) keeps one send per check; the next check (the next
+# cycle) always tries again while the exit rule still holds.
+EXIT_REJECT_RETRIES = max(0, min(5, int(os.environ.get("EXIT_REJECT_RETRIES") or "0")))
+EXIT_REJECT_RETRY_SPACING_SECONDS = max(0.0, min(5.0, float(os.environ.get("EXIT_REJECT_RETRY_SPACING_SECONDS") or "1.0")))
 # BT1 (beta spec §2/§4): bring-your-own-broker data tier, read only with the `byob_data_tier` flag on (off by default).
 # The ATP budget of symbols one user's broker session carries (positions > open charts > watchlist > screener universe);
 # the broker's own per-connection cap (app/market_data/broker_data_terms.json) applies on top when it is recorded.

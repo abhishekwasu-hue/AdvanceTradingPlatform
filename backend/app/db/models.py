@@ -984,6 +984,9 @@ class RiskSettingsRecord(Base):
     # the last "Resume after losses in a row" (only losses closed after it count under "until_resume").
     loss_streak_pause: Mapped[str] = mapped_column(String(16), nullable=False, default="next_session", server_default="next_session")
     loss_streak_resumed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # M55 S6 (A11, owner order M55): "allow" / "deny" opposite positions of two bots on one symbol; default deny
+    # (app/workers/trading_worker.py::_opposite_position - new automated entries only, never an exit).
+    opposite_positions: Mapped[str] = mapped_column(String(8), nullable=False, default="deny", server_default="deny")
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 

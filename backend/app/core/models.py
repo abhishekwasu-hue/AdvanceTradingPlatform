@@ -103,6 +103,10 @@ class StrategyInfo(BaseModel):
     default_params: Dict[str, Any]
 
 
+# M55 S6 (A11): the values of RiskConfig.opposite_positions / risk_settings.opposite_positions.
+OPPOSITE_ALLOW, OPPOSITE_DENY = "allow", "deny"
+
+
 class RiskConfig(BaseModel):
     # DEF-0 (owner, 28 Oct): every limit below is the trader's own setting; None = not set = off (no limit, no gate).
     # Nothing is pre-filled from code or config. `capital` None = not set: a % shown or checked then reads the PAPER
@@ -126,6 +130,9 @@ class RiskConfig(BaseModel):
     # CP6-15: when the losses-in-a-row pause ends - at the next Indian trading session, or when the trader resumes
     # (app/risk_engine/loss_streak.py). Only used once `max_consecutive_losses` is set.
     loss_streak_pause: Literal["next_session", "until_resume"] = "next_session"
+    # M55 S6 (A11, owner order M55): may two of the organisation's bots hold opposite positions on one symbol? "deny"
+    # (the default) skips a NEW automated entry against an open position of another bot; exits are never affected.
+    opposite_positions: Literal["allow", "deny"] = "deny"
 
     def with_capital(self, balance: Optional[float]) -> "RiskConfig":
         """DEF-0 D1: the trader's own capital when set, else `balance` (the PAPER account balance) - never a built-in

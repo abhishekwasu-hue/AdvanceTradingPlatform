@@ -154,10 +154,11 @@ def test_redis_down_mid_cycle_is_the_degraded_mode_not_a_lost_lock(monkeypatch):
     _deploy(t, mode="PAPER")
     worker = _worker(monkeypatch, _FakeBroker(ltp=101.0))
     _force_signal(monkeypatch, _signal)
-    _LockRedis(monkeypatch, ["down"])                                    # Redis stops answering mid-cycle
+    redis = _LockRedis(monkeypatch, ["down"])                            # Redis stops answering mid-cycle
     report = _run(worker.run_cycle(now=OPEN_NOW))
     assert report.lock_degraded and not report.lock_lost
-    assert report.signals_executed == 1                                 # PAPER trades (S2: only LIVE pauses)
+    assert report.signals_executed == 0                                 # M55 A18: PAPER entries pause too (fail closed)
+    assert redis.monitor_calls >= 1                                     # and the exits still run
 
 
 def test_redis_memory_is_read_on_its_interval_and_warns_once_an_hour_at_seventy_percent(monkeypatch):

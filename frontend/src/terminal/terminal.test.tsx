@@ -20,6 +20,12 @@ import type { PositionGroup } from "../fno/contracts";
 import type { ChainLeg, LiveChain } from "../optionChain/types";
 import { NO_STOP, stopText, type HeldRow } from "../trading/model";
 import { ContextBarV2, contextFigures } from "./ContextBarV2";
+import { terminalLevels } from "./chartLevels";
+import exitAllSource from "../trading/ExitAllV2.tsx?raw";
+import { ExitAllV2, exitableRows } from "../trading/ExitAllV2";
+import listSource from "../trading/PositionsV2.tsx?raw";
+import basketSource from "../fno/BasketPanelV2.tsx?raw";
+import type { TradeRecord } from "../types";
 import type { OptionChainData } from "../optionChain/useOptionChain";
 import { strategyDisplayName } from "../ui/strategyName";
 import { formatPrice, formatTimeIST } from "../ui/format";
@@ -435,7 +441,7 @@ describe("owner fixes T1-2 .. T1-7", () => {
     expect(t).toContain('"Complete the leg" or "Exit the filled leg"');
     const naked = text(renderToStaticMarkup(<SpreadBuilderV2 underlying="NIFTY" legs={[legs[0]]} spot={24510} api={{ evaluate: async () => ({ ok: false, errors: [] }) }} />));
     expect(naked).toContain("has no hedge: its loss has no limit");
-    expect(PANELS.basket.label).toBe("Spread builder");
+    expect(PANELS.basket.label).toBe("Basket");                      // TERM-2 step 2: the one basket panel
   });
 
   it("T1-4: a broken leg is an alert on the page itself with the owner's two choices", () => {
@@ -451,7 +457,9 @@ describe("owner fixes T1-2 .. T1-7", () => {
     expect(draftProblems(newDraft("BUY"))[0]).toBe(PRODUCT_MISSING);
     expect(draftProblems(newDraft("BUY", { product: "MIS" }))).not.toContain(PRODUCT_MISSING);
     expect(PRODUCT_UNSET_TEXT).toMatch(/^Pick MIS or NRML/);
-    expect(pageSource).toMatch(/ticketPrefill\(useTradingDefaults/);
+    // TERM-2 step 2: the Terminal's basket panel is the one basket, which starts from his trading defaults itself.
+    expect(basketSource).toMatch(/ticketPrefill\(useTradingDefaults/);
+    expect(pageSource).toContain("<BasketPanelV2 embedded");
   });
 
   it("T1-6: plain words - \"Manual trade\", \"no stop\" (never the one-tick placeholder)", () => {
@@ -477,8 +485,9 @@ describe("owner fixes T1-2 .. T1-7", () => {
   it("UI-28 U3.4: Exit all asks in the app with the rupee impact, never the browser's confirm", () => {
     expect(exitAllConsequence(3, -1250)).toBe("Exit all 3 open positions at the current price. Sold legs close first, then the legs that protect them. Open P&L now: −₹1,250.");
     expect(exitAllConsequence(2, null)).toBe("Exit all 2 open positions at the current price. Sold legs close first, then the legs that protect them.");
-    expect(panelsSource).not.toContain("window.confirm(exitAllConfirmText");
-    expect(panelsSource).toMatch(/<ConfirmDialog open=\{askExitAll\}[\s\S]*consequence=\{exitAllConsequence\(rows\.length, known\.length === rows\.length \? total : null\)\}/);
+    // CT-1 T4: Exit all lives in the one position list (trading/ExitAllV2.tsx), for My trades and the Terminal alike.
+    expect(exitAllSource).not.toContain("window.confirm(exitAllConfirmText");
+    expect(exitAllSource).toMatch(/<ConfirmDialog open=\{askExitAll\}[\s\S]*consequence=\{exitAllConsequence\(rows\.length, known\.length === rows\.length \? total : null\)\}/);
   });
 
   it("T1-7 / TF-1: the terminal chart's timeframe control is the shared TimeframePicker", () => {
@@ -536,5 +545,38 @@ describe("TERM-2 step 1: the context bar", () => {
     expect(html).toContain('data-symbol="NIFTY"');
     expect(html.match(/>PAPER</g)?.length).toBe(1);
     expect(html).not.toMatch(/\bPractice\b(?![^<]*")/);
+  });
+});
+
+describe("TERM-2 step 2: the chart's lines", () => {
+  const leg = (o: Partial<BasketLeg>): BasketLeg => ({ id: "a", underlying: "NIFTY", expiry: "2026-11-03", strike: 24500, right: "CE", side: "SELL", lots: 1,
+    price: 150, label: null, ...o } as BasketLeg);
+  it("his legs, the strikes he holds, the breakevens and his own spot stop - nothing else", () => {
+    const lines = terminalLevels({ underlying: "NIFTY", expiry: "2026-11-03",
+      basket: [leg({}), leg({ id: "b", strike: 24600, side: "BUY" }), leg({ id: "c", underlying: "BANKNIFTY" }), leg({ id: "d", expiry: "2026-11-10" })],
+      held: new Set(["25000|CE"]), breakevens: [24651.5],
+      combined: [{ measure: "SPOT", status: "ARMED", spot_symbol: "NIFTY 50", sl_value: 24800, target_value: null } as never,
+        { measure: "MTM_INR", status: "ARMED", spot_symbol: null, sl_value: -2000, target_value: null } as never],
+      spotSymbol: "NIFTY 50" });
+    expect(lines).toEqual([
+      { price: 24500, title: "Sell 24500 CE", tone: "down" },
+      { price: 24600, title: "Buy 24600 CE", tone: "up" },
+      { price: 25000, title: "Held 25000 CE", tone: "neutral" },
+      { price: 24651.5, title: "Breakeven", tone: "neutral" },
+      { price: 24800, title: "Your stop", tone: "down" },
+    ]);
+  });
+});
+
+describe("CT-1 T4: Exit all in the one position list", () => {
+  it("counts only the PAPER positions (a LIVE one closes in the broker's app)", () => {
+    const rec = (id: number, mode: string) => ({ id, mode }) as unknown as TradeRecord;
+    const rows = [1, 2, 3].map((id) => ({ id, side: "Buy", pnl: 10 }) as unknown as HeldRow);
+    const byId = new Map([[1, rec(1, "PAPER")], [2, rec(2, "PAPER")], [3, rec(3, "LIVE")]]);
+    const paper = exitableRows(rows, byId);
+    expect(paper.map((r) => r.id)).toEqual([1, 2]);
+    const html = renderToStaticMarkup(<ExitAllV2 rows={paper} byId={byId} groups={[]} hooks={{ onChanged: () => undefined, onNote: () => undefined }} />);
+    expect(html).toContain("Exit all (2)");
+    expect(listSource).toContain("exitableRows(rows, byId)");
   });
 });

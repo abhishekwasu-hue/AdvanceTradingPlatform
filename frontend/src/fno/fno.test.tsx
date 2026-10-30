@@ -8,6 +8,7 @@ import ChainTableV2 from "../optionChain/ChainTableV2";
 import tableSource from "../optionChain/ChainTableV2.tsx?raw";
 import { DEFAULT_COLUMNS, formatOiChangePct } from "../optionChain/model";
 import pageSource from "../optionChain/OptionChainPageV2.tsx?raw";
+import ladderSource from "../optionChain/ChainLadderV2.tsx?raw";
 import type { FnoContract, HeldLeg, OrderPreview, OrderResult } from "./api";
 import apiSource from "./api.ts?raw";
 import { BasketStore, MAX_LEGS } from "./basket";
@@ -343,7 +344,9 @@ describe("FNO-1 on the chain", () => {
     expect(html).toContain('aria-label="Basket: 2 legs"');
     expect(words).not.toMatch(/percentile/i);                // not available yet: left out, never made up
     expect(tradingSource).toContain("onRecentre={() => setRecentre((n) => n + 1)}");
-    expect(pageSource).toContain("centreKey={`${symbol}|${live.expiry ?? \"\"}${trading.centreSuffix}`}");
+    // TERM-2: the chain lives in ChainLadderV2 (the chain page and the Terminal place it); the page passes the recentre.
+    expect(pageSource).toContain("centreSuffix={trading.centreSuffix}");
+    expect(ladderSource).toContain("centreKey={`${symbol}|${live.expiry ?? \"\"}${centreSuffix}`}");
     expect(tradingSource).toContain('features.on("paper_account")');      // chain trading only with the PAPER account
     expect(text(html)).not.toMatch(ADVICE);
   });

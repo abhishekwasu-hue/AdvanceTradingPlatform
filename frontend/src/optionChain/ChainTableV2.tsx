@@ -99,6 +99,7 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
         const top = highest[side] === row.strike;
         return (
           <td key={c.key} className={cx(base, top && "font-semibold shadow-[inset_0_0_0_1px_rgb(var(--brand))]")} data-itm={itm || undefined} data-setup={marked ? side : undefined}
+            data-col={`${side}-${c.key}`}
             data-max-oi={top ? side : undefined} title={top ? `Highest ${side} OI` : undefined} onClick={pick}>
             <span aria-hidden data-oi-bar={side} className={cx("absolute inset-y-1", side === "call" ? "right-0" : "left-0",
               colour ? (top ? OI_BAR[side].top : OI_BAR[side].bar) : top ? "bg-brand/30" : "bg-brand/15")}
@@ -113,7 +114,8 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
         );
       }
       return (
-        <td key={c.key} className={cx(base, "text-fg")} data-itm={itm || undefined} data-setup={marked ? side : undefined} onClick={pick}>
+        <td key={c.key} className={cx(base, "text-fg")} data-itm={itm || undefined} data-setup={marked ? side : undefined} onClick={pick}
+          data-col={`${side}-${c.key}`} data-cell={c.key === "ltp" ? `${side}-${row.strike}` : undefined}>
           {cellText(c.key, leg, prefs.pct === true)}
         </td>
       );

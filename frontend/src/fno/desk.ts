@@ -56,4 +56,5 @@ export function chainAround(rows: readonly ChainRow[], held: readonly number[], 
 /** His basket's legs on this underlying (the basket the chain builds; kept for this browser tab). */
 export const basketOn = (legs: readonly BasketLeg[], underlying: string) => legs.filter((l) => l.underlying === underlying);
 
-export const DESK_NOTE = "Read only. The chart, the chain and the basket open on their own pages to work on; nothing here places an order.";
+/** CT-1 C3 / C5: the chain and the basket are the Option chain page's own (PAPER); nothing is placed without his tap. */
+export const DESK_NOTE = "A price on the chain opens the same choices as the Option chain page (PAPER). Every Exit stays on your positions below.";

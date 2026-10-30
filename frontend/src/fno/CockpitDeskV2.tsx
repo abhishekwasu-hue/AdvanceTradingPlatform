@@ -3,16 +3,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import { cx } from "../components/primitives/cx";
 import { CardV2 } from "../dashboard/CardV2";
-import { formatCount } from "../optionChain/model";
-import type { LiveChain } from "../optionChain/types";
+import { ChainLadderV2 } from "../optionChain/ChainLadderV2";
+import ColumnsMenuV2 from "../optionChain/ColumnsMenuV2";
+import { formatCount, readColumns, writeColumns, type ColumnPrefs } from "../optionChain/model";
+import RowDetailsV2 from "../optionChain/RowDetailsV2";
+import SummaryStripV2 from "../optionChain/SummaryStripV2";
+import type { ChainExpiry, LiveChain } from "../optionChain/types";
+import { problemOf } from "../optionChain/useOptionChain";
 import { chartsPath } from "../shell/shellRoutes";
 import type { OHLCVBar } from "../types";
 import { EMPTY, formatDateIST, formatNumber, formatPrice } from "../ui/format";
 import { useBasket } from "./basket";
+import BasketPanelV2 from "./BasketPanelV2";
+import { useChainTrading } from "./ChainTradingV2";
 import { CandleSnapshotV2 } from "./CandleSnapshotV2";
 import CockpitV2, { type CockpitApi } from "./CockpitV2";
 import type { CockpitUnit } from "./cockpit";
-import { DESK_NOTE, PANELS, basketOn, chainAround, deskUnderlyings, heldOn, type DeskPanel } from "./desk";
+import { DESK_NOTE, PANELS, chainAround, deskUnderlyings, heldOn, type DeskPanel } from "./desk";
+import { heldKey } from "./ticketModel";
 import { SubTabs } from "../ui/SubTabs";
 
 /**
@@ -20,8 +28,13 @@ import { SubTabs } from "../ui/SubTabs";
  * cockpit card ("F&O at a glance": his lines, P&L, Greeks, the most they can lose, expiries, alerts) sits beside a chart
  * of the underlying with his own strikes as lines, the part of the chain around his strikes and his basket - one screen.
  * On a phone a quick switch shows one panel at a time. Everything is read once when it opens (the underlying's candles,
- * one chain) and nothing here trades: the chart, the chain and the basket open on their own pages to work on, and every
- * Exit stays on the position rows below (ADR-0004).
+ * one chain); every Exit stays on the position rows below (ADR-0004).
+ * CT-1 C3 / C5 (owner order 30 Oct, "one component per kind"): the desk PLACES the one chain and the one basket, it does
+ * not re-implement them - the chain is ChainLadderV2 (ChainTableV2 with the strike range chips, the columns menu with the
+ * chain page's saved column choice and the dense summary strip, as on the Option chain page and the Terminal); a price
+ * opens the same action sheet through the chain trading layer (useChainTrading, PAPER), his strikes carry "P". The
+ * basket is BasketPanelV2 `embedded`: the server's one calculation, rendered once. `ChainRows` below is no longer
+ * rendered (kept until the owner's ✅ on the comparison page).
  */
 export interface DeskApi {
   candles: (symbol: string, exchange: string) => Promise<OHLCVBar[]>;
@@ -37,7 +50,7 @@ const defaultApi: DeskApi = {
   chain: (underlying, expiry) => api.optionChainLive(underlying, expiry),
 };
 
-type Read<T> = { status: "loading" } | { status: "error" } | { status: "ok"; value: T };
+type Read<T> = { status: "loading" } | { status: "error"; error: unknown } | { status: "ok"; value: T };
 
 function useRead<T>(key: string, read: () => Promise<T>): Read<T> {
   const [state, setState] = useState<{ key: string; read: Read<T> }>({ key: "", read: { status: "loading" } });
@@ -47,7 +60,7 @@ function useRead<T>(key: string, read: () => Promise<T>): Read<T> {
     if (!key) return undefined;
     let alive = true;
     latest.current().then((value) => { if (alive) setState({ key, read: { status: "ok", value } }); })
-      .catch(() => { if (alive) setState({ key, read: { status: "error" } }); });
+      .catch((error: unknown) => { if (alive) setState({ key, read: { status: "error", error } }); });
     return () => { alive = false; };
   }, [key]);
   return state.key === key ? state.read : { status: "loading" };
@@ -65,8 +78,20 @@ export default function CockpitDeskV2({ units, alertsOn, deskApi = defaultApi, c
   const chain = useRead(focus ? `${focus.underlying}|${focus.expiry}` : "",
     () => (focus ? deskApi.chain(focus.underlying, focus.expiry) : Promise.reject(new Error("nothing held"))));
   const basket = useBasket();
+  const live = chain.status === "ok" ? chain.value : null;
+  const underlying = focus?.underlying ?? "";
+  // The chain page's own column choice (one setting for the chain page, the Terminal and the desk).
+  const [columns, setColumns] = useState<ColumnPrefs>(() => readColumns());
+  const onColumns = (next: ColumnPrefs) => { setColumns(next); writeColumns(next); };
+  const expiries = useMemo<ChainExpiry[]>(() => (live?.expiry ? [{ date: live.expiry, kind: "weekly" }] : []), [live?.expiry]);
+  const trading = useChainTrading({ symbol: underlying, live, prefs: columns, onPrefs: onColumns, expiries });
+  const [rowStrike, setRowStrike] = useState<number | null>(null);
+  const held = focus ? heldOn(units, focus.underlying, focus.expiry) : [];
+  // "P" on his strikes: the chain layer's own read of his PAPER positions, and the cockpit's legs on this expiry.
+  const ownKeys = held.map((h) => heldKey(h.strike, h.right)).join(",");
+  const heldKeys = useMemo(() => new Set([...trading.held, ...(ownKeys ? ownKeys.split(",") : [])]), [trading.held, ownKeys]);
   if (!focus) return null;
-  const held = heldOn(units, focus.underlying, focus.expiry);
+  const row = live?.rows.find((r) => r.strike === rowStrike) ?? null;
   const show = (p: DeskPanel) => cx(panel === p ? "block" : "hidden", "lg:block");
   return (
     <section aria-label="Your F&O desk" data-block="fno-desk" className="space-y-space-3">
@@ -108,37 +133,36 @@ export default function CockpitDeskV2({ units, alertsOn, deskApi = defaultApi, c
           <div className={show("chain")} data-desk-panel="chain">
             <CardV2 testId="fno-desk-chain" more={{ label: "Open the chain", to: `/option-chain?underlying=${encodeURIComponent(focus.underlying)}` }}
               title={<span className="inline-flex items-center gap-space-2"><Table2 size={18} aria-hidden className="text-brand" />Chain near your strikes</span>}>
-              <p className="mb-space-2 text-t12 text-fg-muted">{focus.underlying} · {formatDateIST(focus.expiry)} expiry</p>
-              {chain.status === "loading" ? <p className="text-t13 text-fg-muted">Loading the chain…</p>
-                : chain.status === "error" ? <p className="text-t13 text-fg-muted">The chain could not be read just now.</p>
-                  : <ChainRows chain={chain.value} held={held} />}
+              <div className="space-y-space-3" data-desk="chain" data-expiry={live?.expiry ?? focus.expiry}>
+                <p className="text-t12 text-fg-muted">{focus.underlying} · {formatDateIST(focus.expiry)} expiry</p>
+                <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? focus.expiry} loading={chain.status === "loading"} dense />
+                <div className="flex justify-end"><ColumnsMenuV2 prefs={columns} onChange={onColumns} /></div>
+                <ChainLadderV2 symbol={focus.underlying} live={live} loading={chain.status === "loading"}
+                  problem={chain.status === "error" ? problemOf(chain.error) : null} prefs={columns} centreSuffix={trading.centreSuffix}
+                  onPick={(r) => setRowStrike(r.strike)} onPickLeg={trading.onPickLeg} held={heldKeys} />
+              </div>
+              <RowDetailsV2 row={row} atm={live?.summary.atm_strike ?? null} underlying={focus.underlying} onClose={() => setRowStrike(null)} />
             </CardV2>
           </div>
           <div className={show("basket")} data-desk-panel="basket">
-            <CardV2 testId="fno-desk-basket" count={basketOn(basket, focus.underlying).length}
+            <CardV2 testId="fno-desk-basket" count={basket.length}
               more={{ label: "Open the basket", to: `/option-chain?underlying=${encodeURIComponent(focus.underlying)}&basket=open` }}
               title={<span className="inline-flex items-center gap-space-2"><ShoppingBasket size={18} aria-hidden className="text-brand" />Your basket</span>}>
-              {basketOn(basket, focus.underlying).length === 0 ? (
-                <p className="text-t13 text-fg-muted">No legs on {focus.underlying} in your basket. Build one on the chain to see its payoff and margin.</p>
-              ) : (
-                <ul className="divide-y divide-subtle text-t13" data-desk="basket-legs">
-                  {basketOn(basket, focus.underlying).map((l) => (
-                    <li key={l.id} className="flex items-baseline justify-between gap-space-2 py-space-1">
-                      <span className="min-w-0 truncate text-fg">{l.side === "SELL" ? "Sell" : "Buy"} {l.label ?? `${formatNumber(l.strike, 0)} ${l.right}`}</span>
-                      <span className="shrink-0 font-tabular text-fg-muted">{l.lots} lot{l.lots === 1 ? "" : "s"}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {/* CT-1 C5: the one basket (legs, payoff, max profit / loss, breakevens, margin, his own exits, one Place) -
+                  the server's figures, rendered once; the desk computes and shows no basket figure of its own. */}
+              <BasketPanelV2 embedded open onClose={() => undefined}
+                chain={{ symbol: focus.underlying, live, expiries, loadChain: (e) => api.optionChainLive(focus.underlying, e) }} />
             </CardV2>
           </div>
           <p className="text-t12 text-fg-muted">{DESK_NOTE}</p>
         </div>
       </div>
+      {trading.layer}
     </section>
   );
 }
 
+/** Superseded by ChainLadderV2 (CT-1 C3): no longer rendered; kept until the owner's ✅ on the comparison page. */
 export function ChainRows({ chain, held }: { chain: LiveChain; held: readonly { strike: number; right: "CE" | "PE"; label: string }[] }) {
   const rows = chainAround(chain.rows, held.map((h) => h.strike), chain.summary.atm_strike);
   if (!rows.length) return <p className="text-t13 text-fg-muted">The chain on this expiry has no strikes to show.</p>;

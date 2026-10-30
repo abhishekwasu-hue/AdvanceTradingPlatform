@@ -219,7 +219,7 @@ test.describe("v2 terminal 1440", () => {
       const panels = page.locator("[data-terminal-grid] [data-panel]");
       await expect(panels).toHaveCount(6);
       for (const id of ["chart-1", "chain", "order", "positions", "basket", "orders"]) await expect(page.locator(`[data-panel='${id}']`)).toBeVisible();
-      await expect(page.locator("[data-chain-ladder] [data-atm]")).toContainText("24,500");
+      await expect(page.locator("[data-terminal-chain] tr[data-atm]")).toContainText("24,500");
       await expect(page.locator("[data-status='today']")).toContainText("+₹2,650");
       await expect(page.locator("[data-status='margin']")).toContainText("(estimate)");
       // TERM-2 step 1: one PAPER badge, in the context bar (the status bar no longer repeats it).
@@ -283,9 +283,11 @@ test.describe("v2 terminal 1440", () => {
   test("owner fixes T1-3 / T1-6: chain columns and one spot; positions with P&L, plain words, a group exit and Exit all", async ({ page }) => {
     await open(page, "light");
     const chain = page.locator("[data-panel='chain']");
-    for (const col of ["call-oi", "call-oiChange", "call-iv", "call-delta", "put-oi", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();
-    await expect(chain.locator("[data-chain-spot]")).toContainText(/spot [\d,.]+/);
-    expect((await chain.locator("[data-chain-spot]").innerText()).match(/as of/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    // TERM-2 step 2: the chain page's own chain and summary strip (one spot card; Greeks from the columns menu).
+    for (const col of ["call-oi", "call-oi_change", "call-iv", "call-ltp", "put-oi", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();
+    await expect(chain.locator("[data-summary='spot']")).toContainText(/[\d,.]+/);
+    await expect(chain.locator("[data-summary]")).not.toHaveCount(0);
+    await expect(chain.locator("[data-strike-range]")).toBeVisible();
     const positions = page.locator("[data-panel='positions']");
     await expect(positions.locator("[data-col='pnl']").first()).toBeVisible();
     await expect(positions.locator("[data-col='pnl']")).toHaveCount(2);
@@ -403,7 +405,7 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
         await expect(page.locator("[data-status='margin']")).toHaveCount(0);
         await shot(page, `terminal-${size.width}-${theme}`);
         await page.locator("[data-tab='chain']").tap();
-        await expect(page.locator("[data-phone-panel='chain'] [data-chain-ladder]")).toBeVisible();
+        await expect(page.locator("[data-phone-panel='chain'] [data-terminal-chain] [data-chain-scroll]")).toBeVisible();
         await shot(page, `terminal-${size.width}-${theme}-chain`);
         await page.locator("[data-tab='positions']").tap();
         await expect(page.locator("[data-phone-panel='positions'] [data-position]")).toHaveCount(2);
@@ -434,9 +436,9 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
       await shot(page, `terminal-${size.width}-light-order`);
       // T1-3: LTP + OI per side on a phone; a strike opens the rest.
       await page.locator("[data-tab='chain']").tap();
-      await expect(page.locator("[data-phone-panel='chain'] [data-col='call-iv']")).toHaveCount(0);
-      await page.locator("[data-phone-panel='chain'] [data-expand]").first().tap();
-      await expect(page.locator("[data-phone-panel='chain'] [data-more]")).toBeVisible();
+      await expect(page.locator("[data-phone-panel='chain'] [data-col='call-iv']").first()).toBeHidden();
+      await page.locator("[data-phone-panel='chain'] tr[data-atm] th").tap();
+      await expect(page.locator("[data-row-details]")).toBeVisible();
       await noSidewaysScroll(page);
       await shot(page, `terminal-${size.width}-light-chain-expanded`);
     });

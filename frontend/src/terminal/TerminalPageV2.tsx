@@ -10,7 +10,8 @@ import { spotSymbolOf, useChainTrading } from "../fno/ChainTradingV2";
 import { useBasket } from "../fno/basket";
 import type { Side } from "../fno/api";
 import type { TicketTarget } from "../fno/ticketModel";
-import type { ColumnPrefs } from "../optionChain/model";
+import { readColumns, writeColumns, type ColumnPrefs } from "../optionChain/model";
+import { TerminalChainV2 } from "./TerminalChainV2";
 import type { LiveChain } from "../optionChain/types";
 import type { PageProps } from "../routes";
 import { NoteV2 } from "../trading/PartsV2";
@@ -30,7 +31,7 @@ import {
   type Layout, type PanelId, type PanelPlace, type PhoneTab, type TerminalPrefs,
 } from "./layoutModel";
 import {
-  ChainPanelV2, ChartPanelV2, OrderPanelV2, OrdersPanelV2, PlaceholderPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
+  ChartPanelV2, OrderPanelV2, OrdersPanelV2, PlaceholderPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
 } from "./PanelsV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { chartLiveOf, useTerminalSpot } from "./spot";
@@ -168,7 +169,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   // T1-5: the product of the spread builder's numbers from his own trading defaults.
   const savedProduct = ticketPrefill(useTradingDefaults(features.on("ui_v2"))).product;
   const spot = useTerminalSpot({ symbol: spotSymbol, hub: features.on("data_hub"), enabled: signedIn, chain: live });
-  const [columns, setColumns] = useState<ColumnPrefs>(COLUMNS_OFF);
+  // The chain page's own column choice (one setting for both).
+  const [columns, setColumns] = useState<ColumnPrefs>(() => readColumns());
   const orderPanelShown = narrow || openIds.has("order");
   const expiryList = chain.expiries?.expiries.length ? chain.expiries.expiries : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const trading = useChainTrading({
@@ -200,7 +202,9 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
         return <ChartPanelV2 symbol={sym} onSymbol={narrow ? undefined : (s) => setChartSymbol(id, s)}
           live={sym.toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot) : undefined} />;
       }
-      case "chain": return <ChainPanelV2 underlying={underlying} read={asRead(chainL)} trading={trading} rows={narrow ? 5 : 6} spot={spot} compact={narrow} />;
+      // TERM-2 step 2: the Option chain page's own chain (summary strip, columns menu, ChainTableV2), not a copy.
+      case "chain": return <TerminalChainV2 symbol={underlying} chain={chain} spot={spot} prevClose={strip.prevClose} prefs={columns}
+        onPrefs={(next) => { setColumns(next); writeColumns(next); }} trading={trading} />;
       case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} />;
       case "positions": return <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}
         fnoOn={features.on("paper_account")} combined={combined} onChanged={afterOrder} />;

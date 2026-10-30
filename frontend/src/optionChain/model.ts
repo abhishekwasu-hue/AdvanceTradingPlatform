@@ -3,7 +3,8 @@
  * which expiry to show, the plain-word states, the columns, where the ATM row scrolls to and the number formats.
  * Nothing here reads the network or makes up a number: a missing value is shown as "–" (src/ui/format.ts).
  */
-import { EMPTY, MINUS, formatDateTimeIST, formatNumber } from "../ui/format";
+import { EMPTY, MINUS, formatDateIST, formatDateTimeIST, formatNumber } from "../ui/format";
+import type { ComboOption } from "../ui/Combobox";
 import { FNO_STOCKS } from "../utils/fnoSymbols";
 import type { ChainExpiries, ChainLeg, ChainRow, LiveChain } from "./types";
 
@@ -213,4 +214,15 @@ export function formatGreek(key: "delta" | "gamma" | "theta" | "vega", v: number
 export function daysText(days: number | null | undefined): string {
   if (typeof days !== "number" || !Number.isFinite(days) || days < 0) return EMPTY;
   return days === 0 ? "Today" : days === 1 ? "1 day" : `${days} days`;
+}
+
+/** UX-5: the Symbol picker's rows - a deep-linked symbol outside the list first, then the indices, then the F&O stocks. */
+export function symbolOptions(extra: string | null): ComboOption[] {
+  return [...(extra ? [{ value: extra, label: extra }] : []),
+    ...INDEX_SYMBOLS.map((s) => ({ value: s, label: s, group: "Indices" })), ...STOCK_SYMBOLS.map((s) => ({ value: s, label: s, group: "Stocks" }))];
+}
+
+/** UX-5: the Expiry picker's rows ("3 Nov 2026", the monthly one marked). */
+export function expiryComboOptions(list: readonly { date: string; kind?: string }[]): ComboOption[] {
+  return list.map((e) => ({ value: e.date, label: formatDateIST(e.date), hint: e.kind === "monthly" ? "Monthly" : undefined }));
 }

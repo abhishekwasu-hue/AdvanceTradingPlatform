@@ -6,7 +6,7 @@ import { cx } from "../components/primitives/cx";
 import { formatNumber } from "../ui/format";
 import { useFeatures } from "../ui/useFeatures";
 import { closedText, failedText } from "../trading/model";
-import { daysText, formatIv, formatStrike, type ColumnPrefs } from "../optionChain/model";
+import { formatStrike, type ColumnPrefs } from "../optionChain/model";
 import type { ChainExpiry, ChainRow, ChainSummary, LiveChain } from "../optionChain/types";
 import { fnoApi, type FnoApi, type FnoContract, type HeldLeg, type Side } from "./api";
 import { basket as basketStore, useBasket } from "./basket";
@@ -193,12 +193,6 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
 export function ChainBottomStripV2({ summary, pct, onPct, onRecentre, basketCount, onBasket }: {
   summary: ChainSummary; pct: boolean; onPct: (pct: boolean) => void; onRecentre: () => void; basketCount: number; onBasket?: () => void;
 }) {
-  const figures: [string, string, string][] = [
-    ["pcr", "PCR", formatNumber(summary.pcr_oi, 2)],
-    ["max-pain", "Max pain", formatStrike(summary.max_pain)],
-    ["atm-iv", "ATM IV", formatIv(summary.atm_iv)],
-    ["dte", "Expiry in", daysText(summary.days_to_expiry)],
-  ];
   const seg = "min-h-9 rounded-control px-space-2 text-t12 font-semibold";
   return (
     <section aria-label="Chain figures" data-block="chain-bottom-strip"
@@ -207,14 +201,8 @@ export function ChainBottomStripV2({ summary, pct, onPct, onRecentre, basketCoun
         className="inline-flex min-h-11 shrink-0 items-center gap-space-1 rounded-pill border border-border px-space-3 text-t13 font-semibold text-fg hover:bg-surface-2">
         <Crosshair size={14} aria-hidden />ATM {formatStrike(summary.atm_strike)}
       </button>
-      <dl className="flex shrink-0 items-center gap-space-4">
-        {figures.map(([key, label, value]) => (
-          <div key={key} data-strip={key} className="flex flex-col">
-            <dt className="text-t12 text-fg-muted">{label}</dt>
-            <dd className="font-tabular text-t14 font-semibold text-fg">{value}</dd>
-          </div>
-        ))}
-      </dl>
+      {/* CT-1 C4 (owner 30 Oct): PCR, max pain, ATM IV and days to expiry stay in the summary strip at the top - not
+          repeated here. The strip keeps the ATM button, the OI-change choice and the basket badge. */}
       <div role="radiogroup" aria-label="OI change as" className="ml-auto flex shrink-0 gap-space-1 rounded-control bg-surface-2 p-space-1" data-strip="change">
         <button type="button" role="radio" aria-checked={!pct} onClick={() => onPct(false)} className={cx(seg, !pct ? "bg-surface-1 text-fg" : "text-fg-muted")}>Count</button>
         <button type="button" role="radio" aria-checked={pct} onClick={() => onPct(true)} className={cx(seg, pct ? "bg-surface-1 text-fg" : "text-fg-muted")}>%</button>

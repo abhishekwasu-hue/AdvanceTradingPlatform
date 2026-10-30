@@ -10,27 +10,33 @@ import { spotSymbolOf, useChainTrading } from "../fno/ChainTradingV2";
 import { useBasket } from "../fno/basket";
 import type { Side } from "../fno/api";
 import type { TicketTarget } from "../fno/ticketModel";
-import type { ColumnPrefs } from "../optionChain/model";
-import type { LiveChain } from "../optionChain/types";
+import { readColumns, writeColumns, type ColumnPrefs } from "../optionChain/model";
+import { TerminalChainV2 } from "./TerminalChainV2";
+import { terminalLevels } from "./chartLevels";
 import type { PageProps } from "../routes";
 import { NoteV2 } from "../trading/PartsV2";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
-import { useMediaQuery } from "../utils/useMediaQuery";
+import { NARROW_QUERY, useMediaQuery } from "../utils/useMediaQuery";
+import { useSearchParams } from "react-router";
+import { useMarketStatus } from "../chart/useMarketStatus";
+import { useOptionChain } from "../optionChain/useOptionChain";
+import TerminalClassicV2 from "./TerminalClassicV2";
+import { ContextBarV2, useStripFigures } from "./ContextBarV2";
+import { modeChip } from "./statusModel";
 import { defaultTerminalApi, type TerminalApi } from "./api";
 import {
-  CHOOSER_PANEL_IDS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, UNDERLYINGS, activeKey, changed, closePanel,
+  CHOOSER_PANEL_IDS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, activeKey, changed, closePanel,
   isPreset, layoutFor, nameProblem, openPanel, remove, rename, resetToPreset, saveAs, saveOver, switchTo,
   type Layout, type PanelId, type PanelPlace, type PhoneTab, type TerminalPrefs,
 } from "./layoutModel";
 import {
-  ChainPanelV2, ChartPanelV2, OrderPanelV2, OrdersPanelV2, PlaceholderPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
+  ChartPanelV2, OrderPanelV2, OrdersPanelV2, PlaceholderPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
 } from "./PanelsV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { chartLiveOf, useTerminalSpot } from "./spot";
-import { SpreadBuilderV2 } from "./SpreadBuilderV2";
+import BasketPanelV2 from "../fno/BasketPanelV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
-import { ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { StatusBarV2 } from "./StatusBarV2";
 import { useCombinedExits } from "../fno/CombinedExitV2";
 import { TerminalGridV2 } from "./TerminalGridV2";
@@ -53,9 +59,7 @@ import { Combobox } from "../ui/Combobox";
  */
 const STATUS_MS = 15_000;
 const LIST_MS = 30_000;
-const CHAIN_MS = 15_000;
-const NARROW = "(max-width: 1023px)";
-const COLUMNS_OFF: ColumnPrefs = { greeks: false, quotes: false, more: false };
+const NARROW = NARROW_QUERY;
 const BUTTON = "inline-flex min-h-11 shrink-0 items-center justify-center gap-space-1 rounded-control border border-border bg-surface-1 px-space-3 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50 md:min-h-9";
 
 const asRead = <T,>(l: Loadable<T>): Read<T> => (l.status === "ok" ? { status: "ok", value: l.data } : l.status === "error" ? { status: "error" } : { status: "loading" });
@@ -115,7 +119,13 @@ function useLayouts(terminal: TerminalApi) {
   return { prefs, setPrefs, version, working, setWorking, note, setNote, busy, persist, key: activeKey(prefs) };
 }
 
-export default function TerminalPageV2({ terminal = defaultTerminalApi }: PageProps & { terminal?: TerminalApi } = {}) {
+export default function TerminalPageV2(props: PageProps & { terminal?: TerminalApi } = {}) {
+  // TERM-2: the Terminal as it was, kept at ?view=classic (Settings › Advanced) until the owner approves the rebuild.
+  const [params] = useSearchParams();
+  return params.get("view") === "classic" ? <TerminalClassicV2 {...props} /> : <TerminalNowV2 {...props} />;
+}
+
+function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal?: TerminalApi } = {}) {
   const { user } = useAuth();
   const features = useFeatures();
   const narrow = useMediaQuery(NARROW);
@@ -133,7 +143,6 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
 
   const openIds = useMemo(() => new Set(working.panels.filter((x) => x.open).map((x) => x.id)), [working.panels]);
   const wants = (id: PanelId, phoneTab: PhoneTab) => (narrow ? tab === phoneTab : openIds.has(id));
-  const chainWanted = wants("chain", "chain") || wants("order", "order") || openIds.has("chain");
 
   // His own figures (TT-15): the status bar, his positions and his orders. The chain of the underlying the panels follow.
   const [statusL] = usePolled(terminal.status, () => STATUS_MS, signedIn);
@@ -145,21 +154,27 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
   const positionsShown = wants("positions", "positions");
   const loadExposure = useCallback(() => api.portfolioExposure(true), []);
   const [exposureL, reloadExposure] = usePolled(loadExposure, () => LIST_MS, signedIn && positionsShown);
-  const loadChain = useCallback(() => api.optionChainLive(underlying), [underlying]);
-  const [chainL] = usePolled<LiveChain>(loadChain, () => CHAIN_MS, signedIn && chainWanted);
-  const live = dataOf(chainL) ?? null;
+  // TERM-2 step 1: the chain of the ONE active symbol + expiry (the chain page's own read: on an expiry day the next
+  // expiry, per the user's chain setting). The context bar's PCR / DTE come from it, so it is read whenever signed in.
+  const market = useMarketStatus();
+  const chain = useOptionChain(underlying, market.status?.sessions?.NSE?.is_open ?? null);
+  const live = chain.live;
+  const strip = useStripFigures(underlying, signedIn);
   // T1-3: one spot for the chain and the chart (the same read, the same time).
   const spotSymbol = spotSymbolOf(underlying);
-  // T1-5: the product of the spread builder's numbers from his own trading defaults.
-  const savedProduct = ticketPrefill(useTradingDefaults(features.on("ui_v2"))).product;
   const spot = useTerminalSpot({ symbol: spotSymbol, hub: features.on("data_hub"), enabled: signedIn, chain: live });
-  const [columns, setColumns] = useState<ColumnPrefs>(COLUMNS_OFF);
+  // The chain page's own column choice (one setting for both).
+  const [columns, setColumns] = useState<ColumnPrefs>(() => readColumns());
   const orderPanelShown = narrow || openIds.has("order");
+  const expiryList = chain.expiries?.expiries.length ? chain.expiries.expiries : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const trading = useChainTrading({
-    symbol: underlying, live, prefs: columns, onPrefs: setColumns,
+    symbol: underlying, live, prefs: columns, onPrefs: setColumns, expiries: expiryList,
     onTicket: orderPanelShown ? (t) => { setTicket(t); if (narrow) setTab("order"); } : undefined,
   });
   const legs = useBasket();
+  const [breakevens, setBreakevens] = useState<number[] | null>(null);
+  const levels = useMemo(() => terminalLevels({ underlying, expiry: live?.expiry ?? chain.expiry, basket: legs, held: trading.held,
+    breakevens, combined: combined.list, spotSymbol }), [underlying, live?.expiry, chain.expiry, legs, trading.held, breakevens, combined.list, spotSymbol]);
   const afterOrder = () => { reloadPositions(); reloadOrders(); reloadExposure(); };
   const ticketState = useTerminalTicket(ticket, live && ticket && ticket.target.expiry === live.expiry ? live.rows : null, afterOrder);
 
@@ -181,15 +196,24 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
       case "chart-1": case "chart-2": case "chart-3": case "chart-4": {
         const p = place ?? working.panels.find((x) => x.id === id) ?? { id, x: 0, y: 0, w: 6, h: 10, open: true };
         const sym = chartSymbol(p);
-        return <ChartPanelV2 symbol={sym} onSymbol={narrow ? undefined : (s) => setChartSymbol(id, s)}
-          live={sym.toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot) : undefined} />;
+        // TERM-2 step 2: the main chart follows the ONE active symbol (no free-text symbol of its own) and draws his legs,
+        // breakevens and own spot stops; the extra charts of a saved multi-chart layout keep their own symbol.
+        const main = id === "chart-1";
+        return <ChartPanelV2 symbol={main ? spotSymbol : sym} onSymbol={main || narrow ? undefined : (s) => setChartSymbol(id, s)}
+          live={(main ? spotSymbol : sym).toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot) : undefined}
+          levels={main ? levels : undefined} />;
       }
-      case "chain": return <ChainPanelV2 underlying={underlying} read={asRead(chainL)} trading={trading} rows={narrow ? 5 : 6} spot={spot} compact={narrow} />;
+      // TERM-2 step 2: the Option chain page's own chain (summary strip, columns menu, ChainTableV2), not a copy.
+      case "chain": return <TerminalChainV2 symbol={underlying} chain={chain} spot={spot} prevClose={strip.prevClose} prefs={columns}
+        onPrefs={(next) => { setColumns(next); writeColumns(next); }} trading={trading} />;
       case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} />;
       case "positions": return <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}
         fnoOn={features.on("paper_account")} combined={combined} onChanged={afterOrder} />;
       case "orders": return <OrdersPanelV2 read={asRead(ordersL)} terminal={terminal} />;
-      case "basket": return <SpreadBuilderV2 underlying={underlying} legs={legs} spot={spot?.ltp ?? null} product={savedProduct} onOpen={trading.openBasket} />;
+      // TERM-2 step 2: the one basket (legs, payoff, max profit / loss, breakevens, PoP, margin with the hedge, his own
+      // exits, one Place) - the server's one calculation, rendered once; the spread builder's own figures are gone.
+      case "basket": return <BasketPanelV2 embedded open onClose={() => undefined} onPlaced={afterOrder} onNumbers={(n) => setBreakevens(n?.breakevens ?? null)}
+        chain={{ symbol: underlying, live, expiries: expiryList, loadChain: (e) => api.optionChainLive(underlying, e) }} />;
       case "bots": return <PlaceholderPanelV2 kind="bots" />;
       case "payoff": return <PlaceholderPanelV2 kind="payoff" />;
       default: return null;
@@ -238,17 +262,16 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
     <div className="mx-auto w-full space-y-space-3" data-page="terminal-v2" data-layout={key}>
       {confirmBox.dialog}
       <PageIntro id="terminal" lines={["The chart, the option chain and your order on one screen. Every order is checked and shown to you before it is placed."]} />
-      <div className="flex flex-wrap items-center gap-space-2" role="toolbar" aria-label="Terminal" data-block="terminal-toolbar">
-        <div className="flex items-center gap-space-2 text-t13 text-fg-muted">
-          <span aria-hidden>Underlying</span>
-          <Combobox label="Underlying" value={underlying} onChange={(v) => setWorking((w) => ({ ...w, underlying: v === DEFAULT_UNDERLYING ? null : v }))}
-            options={UNDERLYINGS.map((u) => ({ value: u, label: u }))} searchable={UNDERLYINGS.length > 8} dataAttrs={{ "data-terminal": "underlying" }} />
-        </div>
-        <div className="hidden flex-wrap items-center gap-space-2 md:flex" data-tour="terminal-layouts">
+      <ContextBarV2 symbol={underlying} onSymbol={(v) => setWorking((w) => ({ ...w, underlying: v === DEFAULT_UNDERLYING ? null : v }))}
+        chain={chain} spot={spot} prevClose={strip.prevClose} vix={strip.vix} mode={modeChip(dataOf(statusL) ?? null)} compact={narrow} />
+      {/* CT-1 T3: the layout controls only where the grid renders (from 1024 px); phone and tablet show the tabs. */}
+      {!narrow && <div className="flex flex-wrap items-center gap-space-2" role="toolbar" aria-label="Terminal" data-block="terminal-toolbar">
+        <div className="flex flex-wrap items-center gap-space-2" data-tour="terminal-layouts">
           <div className="flex items-center gap-space-2 text-t13 text-fg-muted">
             <span aria-hidden>Layout</span>
             <Combobox label="Layout" value={key} onChange={pickLayout} disabled={L.busy} dataAttrs={{ "data-terminal": "layout" }}
-              options={[...PRESET_IDS.map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
+              options={[...PRESET_IDS.filter((id) => id !== "multi_chart" || key === "multi_chart")   // TERM-2: Charts owns multi-chart
+                .map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
                 ...(count > 0 ? Object.entries(prefs.layouts).map(([id, l]) => ({ value: id, label: l.name, group: "Your layouts" })) : [])]} />
           </div>
           {!narrow && <PanelsMenu panels={working.panels} onToggle={(id, on) => setPanels(on ? openPanel(working.panels, id) : closePanel(working.panels, id))} />}
@@ -264,7 +287,7 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
           </button>
           <span className="text-t13 text-fg-muted" data-terminal="count">{count} of {MAX_LAYOUTS} saved</span>
         </div>
-      </div>
+      </div>}
 
       {ask && (
         <form className="flex flex-wrap items-end gap-space-2" data-terminal="ask" onSubmit={(e) => { e.preventDefault(); void submitAsk(); }}>
@@ -294,7 +317,13 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
             {tab === "chain" && (
               <div className="space-y-space-3">
                 {panel("chain")}
-                {trading.enabled && <SpreadBuilderV2 underlying={underlying} legs={legs} spot={spot?.ltp ?? null} product={savedProduct} onOpen={trading.openBasket} />}
+                {/* TERM-2 step 2: on a phone the one basket opens as a bottom sheet (the same panel). */}
+                {trading.enabled && trading.openBasket && (
+                  <button type="button" onClick={trading.openBasket} data-terminal="open-basket"
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-control border border-border bg-surface-1 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+                    Basket · {legs.length} leg{legs.length === 1 ? "" : "s"}
+                  </button>
+                )}
               </div>
             )}
             {tab === "order" && panel("order")}
@@ -311,7 +340,7 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
       )}
 
       <div data-tour="terminal-status">
-        <StatusBarV2 status={status} failed={statusL.status === "error"} masked={masked} onMask={toggleMask} compact={narrow} combined={combined.list} />
+        <StatusBarV2 status={status} failed={statusL.status === "error"} masked={masked} onMask={toggleMask} compact={narrow} combined={combined.list} showMode={false} showFeed={false} />
       </div>
       {trading.layer}
     </div>

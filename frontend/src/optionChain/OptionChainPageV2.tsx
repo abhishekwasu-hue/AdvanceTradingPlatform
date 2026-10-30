@@ -1,7 +1,6 @@
-import { Activity, CalendarDays, ChartColumn, Info, Sparkles, Table2, TriangleAlert } from "lucide-react";
+import { Activity, CalendarDays, ChartColumn, Sparkles, Table2 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { useColourV2 } from "../ui/colourV2";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { useChainTrading } from "../fno/ChainTradingV2";
 import { readCarry } from "../fno/hubModel";
@@ -10,28 +9,27 @@ import { SIGNAL_PARAM, TRADE_PARAM, setupMarks, setupTrade, type SetupItem } fro
 import SymbolHubTabsV2 from "../fno/SymbolHubTabsV2";
 import type { PageProps } from "../routes";
 import { cx } from "../components/primitives/cx";
-import { formatDateIST, formatTimeIST } from "../ui/format";
+import { formatTimeIST } from "../ui/format";
 import { useTerminalSpot } from "../terminal/spot";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
 import AnalysisSlotV2 from "./AnalysisSlotV2";
-import ChainTableV2 from "./ChainTableV2";
 import ChainCharts from "./ChartsViewV2";
 import OiViewV2 from "./OiViewV2";
 import ColumnsMenuV2 from "./ColumnsMenuV2";
 import {
-  INDEX_SYMBOLS, STOCK_SYMBOLS, TEXT, chainNotes, initialSymbol, readColumns, writeColumns, type ColumnPrefs,
+  INDEX_SYMBOLS, STOCK_SYMBOLS, chainNotes, initialSymbol, readColumns, writeColumns, type ColumnPrefs,
 } from "./model";
 import RowDetailsV2 from "./RowDetailsV2";
+import { ChainLadderV2, Note } from "./ChainLadderV2";
 import SummaryStripV2 from "./SummaryStripV2";
-import { STRIKE_RANGES, rowsAround, usePrevClose } from "./spotChange";
+import { usePrevClose } from "./spotChange";
 import type { ChainRow } from "./types";
 import { useOptionChain, type OptionChainData } from "./useOptionChain";
-import { Combobox, type ComboOption } from "../ui/Combobox";
+import { Combobox } from "../ui/Combobox";
 import { Sheet } from "../components/primitives/Dialog";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { AskAi } from "./AskAiV2";
-import { Skeleton } from "../components/primitives";
 
 /**
  * OC1 (owner: "After login everything should happen automatically"): the Option chain page in the v2 shell.
@@ -82,15 +80,6 @@ export function ViewToggle({ view, onView, className }: { view: ChainView; onVie
   );
 }
 
-function Note({ tone, children }: { tone: "neutral" | "warn"; children: string }) {
-  const Icon = tone === "warn" ? TriangleAlert : Info;
-  return (
-    <p role="status" className={`flex items-start gap-space-2 rounded-control px-space-3 py-space-2 text-t13 ${tone === "warn" ? "bg-warn-tint text-warn" : "bg-surface-2 text-fg"}`}>
-      <Icon size={16} aria-hidden className="mt-0.5 shrink-0" />
-      <span>{children}</span>
-    </p>
-  );
-}
 
 export default function OptionChainPageV2(_props: PageProps) {
   const [params, setParams] = useSearchParams();
@@ -129,16 +118,9 @@ export default function OptionChainPageV2(_props: PageProps) {
 }
 
 /** The page's look for given data (no reads of its own), so tests render every state directly. */
-/** UX-5: the Symbol picker's rows - a deep-linked symbol outside the list first, then the indices, then the F&O stocks. */
-export function symbolOptions(extra: string | null): ComboOption[] {
-  return [...(extra ? [{ value: extra, label: extra }] : []),
-    ...INDEX_SYMBOLS.map((s) => ({ value: s, label: s, group: "Indices" })), ...STOCK_SYMBOLS.map((s) => ({ value: s, label: s, group: "Stocks" }))];
-}
-
-/** UX-5: the Expiry picker's rows ("3 Nov 2026", the monthly one marked). */
-export function expiryComboOptions(list: readonly { date: string; kind?: string }[]): ComboOption[] {
-  return list.map((e) => ({ value: e.date, label: formatDateIST(e.date), hint: e.kind === "monthly" ? "Monthly" : undefined }));
-}
+// UX-5: the Symbol / Expiry pickers' rows live in ./model (TERM-2: the Terminal's context bar uses the same ones).
+import { expiryComboOptions, symbolOptions } from "./model";
+export { expiryComboOptions, symbolOptions };
 
 export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal, autoTrade = false }: {
   symbol: string;
@@ -158,7 +140,6 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   const [askOpen, setAskOpen] = useState(false);
   const phone = useMediaQuery(PHONE_QUERY);
   const [view, setView] = useState<ChainView>("chain");
-  const colour = useColourV2();          // colour v2: the Calls / Puts headings in their side's colour
   const symbolId = useId();
   const expiryId = useId();
 
@@ -167,9 +148,6 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   const spot = useTerminalSpot({ symbol, hub: useFeatures().on("data_hub"), enabled: true, chain: live ?? null });
   const notes = chainNotes(live, marketOpen, (iso) => formatTimeIST(iso));
   const prevClose = usePrevClose(symbol);
-  // UI-28 U7.1: the chain shows every strike, or ATM ± N (the choice is kept for the visit).
-  const [range, setRange] = useState<number>(0);
-  const shownLive = useMemo(() => (live && range ? { ...live, rows: rowsAround(live.rows, live.summary?.atm_strike, range) } : live), [live, range]);
   const extraSymbol = useMemo(() => (new Set<string>([...INDEX_SYMBOLS, ...STOCK_SYMBOLS]).has(symbol) ? null : symbol), [symbol]);
   const expiryOptions = chain.expiries?.expiries.length
     ? chain.expiries.expiries
@@ -246,36 +224,11 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
 
       {view === "chain" && <section aria-label="Chain" data-block="chain" data-tour="oc-chain" className="relative">
         {/* The toggle sits in the gap above the chain, centred over the strike column, so the chain does not move. */}
-        {!(live && live.rows.length > 0) && <div className="mb-space-3 flex justify-center"><ViewToggle view={view} onView={setView} /></div>}
-        {chain.problem && !live && <Note tone="warn">{chain.problem === "no-session" ? TEXT.noSession : chain.problem === "plan" ? TEXT.plan : TEXT.loadFailed}</Note>}
-        {chain.loading && !live && !chain.problem && (
-          <div aria-busy="true" className="space-y-space-2 rounded-panel border border-subtle bg-surface-1 p-space-4">
-            <span className="sr-only">Loading the option chain</span>
-            {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-6" />)}
-          </div>
-        )}
-        {live && live.rows.length === 0 && <Note tone="neutral">{TEXT.empty}</Note>}
-        {live && live.rows.length > 0 && (
-          <>
-            <div aria-hidden className="mb-space-2 flex justify-between text-t12 font-semibold uppercase text-fg-muted">
-              <span className={colour ? "text-down" : undefined}>Calls</span><span className={colour ? "text-up" : undefined}>Puts</span>
-            </div>
-            <ViewToggle view={view} onView={setView} className="absolute -top-space-5 left-1/2 z-10 -translate-x-1/2 md:-top-space-4" />
-            <div role="group" aria-label="Strikes shown" data-strike-range className="mb-space-2 flex items-center gap-space-2">
-              <span aria-hidden className="text-t12 text-fg-muted">Strikes</span>
-              {STRIKE_RANGES.map((n) => (
-                <button key={n} type="button" aria-pressed={range === n} onClick={() => setRange(n)} aria-label={n === 0 ? "All strikes" : `ATM ± ${n} strikes`}
-                  className={cx("inline-flex min-h-11 items-center rounded-pill border px-space-3 text-t13 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8",
-                    range === n ? "border-brand bg-brand-tint font-semibold text-fg" : "border-border text-fg-muted hover:text-fg")}>
-                  {n === 0 ? "All" : `± ${n}`}
-                </button>
-              ))}
-            </div>
-            <ChainTableV2 live={shownLive ?? live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${trading.centreSuffix}`} onPick={(row) => setPicked(row.strike)}
-              onPickLeg={trading.onPickLeg} held={trading.held} setup={marks.size ? marks : undefined} />
-            {chain.problem && <p className="mt-space-2 text-t12 text-fg-muted">{TEXT.loadFailed}</p>}
-          </>
-        )}
+        <ChainLadderV2 symbol={symbol} live={live} loading={chain.loading} problem={chain.problem} prefs={prefs} centreSuffix={trading.centreSuffix}
+          onPick={(row) => setPicked(row.strike)} onPickLeg={trading.onPickLeg} held={trading.held} setup={marks.size ? marks : undefined}
+          toggle={(placed) => placed === "empty"
+            ? <div className="mb-space-3 flex justify-center"><ViewToggle view={view} onView={setView} /></div>
+            : <ViewToggle view={view} onView={setView} className="absolute -top-space-5 left-1/2 z-10 -translate-x-1/2 md:-top-space-4" />} />
         {trading.strip}
       </section>}
       {trading.layer}

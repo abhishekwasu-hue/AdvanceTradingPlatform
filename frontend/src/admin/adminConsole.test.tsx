@@ -53,13 +53,23 @@ describe("the sections", () => {
   });
 
   it("each section holds its own existing cards and no other section's", () => {
+    // ADM-1: Controls shows one group at a time (Safety first); every card is still in one of the groups.
     const controls = at("/admin?section=controls");
     expect(controls).toContain("Global kill switch");
     expect(controls).toContain("Platform controls");
-    expect(controls).toContain("Risk ceilings");
-    expect(controls).toContain("Feature flags");
     expect(controls).toContain('data-admin-cards="controls"');
     expect(controls).not.toContain("Tenants (");
+    expect(controls).toContain('data-controls-groups="safety"');
+    expect(controls).not.toContain("Risk ceilings");
+    expect(controls).not.toContain(">Feature flags</div>");
+    const limits = at("/admin?section=controls&group=limits");
+    expect(limits).toContain("Risk ceilings");
+    expect(limits).not.toContain("Global kill switch");
+    const flagsGroup = at("/admin?section=controls&group=flags");
+    expect(flagsGroup).toContain(">Feature flags</div>");
+    expect(flagsGroup).not.toContain("Risk ceilings");
+    expect(flagsGroup).not.toContain("Global kill switch");
+    expect(at("/admin?section=controls&group=nope")).toContain('data-controls-groups="safety"');
     const system = at("/admin");
     expect(system).toContain('data-admin-cards="system"');
     expect(system).toContain("Incidents (");

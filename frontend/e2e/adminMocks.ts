@@ -223,7 +223,7 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
     }
     return r.fulfill({ json: pack(packOn ? TRADER_PACK_AFTER : TRADER_PACK_BEFORE, packOn) });
   });
-  await page.route(A("/admin/controls/risk-ceilings$"), ok({ max_risk_per_trade_pct: 2, max_daily_loss_pct: 5, min_cooldown_minutes: 15 }));
+  await page.route(A("/admin/controls/risk-ceilings$"), ok({ risk_per_trade_pct: 2, max_daily_loss_pct: 5, max_portfolio_risk_pct: 10, dd_level_2_pct: 25, min_stop_cooldown_minutes: 0 }));
   await page.route(A("/admin/incidents(\\?.*)?$"), ok([]));
   await page.route(A("/admin/beta/cohort$"), ok({ gate_on: false, cap: 50, used: 3, remaining: 47, stage: 50, stages: [10, 50, 200], next_stage: 200, env_cap: 500, capped_by_env: false, headroom: 47 }));
   await page.route(A("/admin/plans$"), ok([{ id: "free", name: "Free", description: "", limits: {} }, { id: "pro", name: "Pro", description: "", limits: {} }]));

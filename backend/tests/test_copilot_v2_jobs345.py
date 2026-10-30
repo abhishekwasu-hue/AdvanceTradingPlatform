@@ -69,7 +69,8 @@ def test_job3_checks_the_idea_and_lists_what_is_missing_without_adding_rules():
     assert calcs == ["calc:risk_budget", "calc:idea_risk", "calc:reward_to_risk"]
     bare, _ = _answer("Check my trade idea")
     missing = next(s for s in bare.sections if s["title"] == "What your plan does not say yet")["lines"]
-    assert len(missing) == 5 and len(bare.summary) == 2
+    assert len(missing) == 5 and len(bare.summary) == 3                     # CU1: the third line says NIFTY was read by default
+    assert bare.summary[-1] == f"You did not name a symbol, so I read {chat.DEFAULT_SYMBOL}."
     assert not any(w in text.lower() for w in ("take the trade", "good trade", "you should"))
 
 

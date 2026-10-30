@@ -177,7 +177,7 @@ def test_interview_builds_a_swing_plan():
     dep = plan["deployment"]
     assert dep["holding"] == "SWING" and dep["timeframe"] == "day" and dep["exit_rules"]["time_exit_at"] is None
     assert plan["recommended"]["strategy_id"] in ("swing_ema_pullback_d", "swing_breakout_d")
-    assert plan["risk_config"]["risk_per_trade_pct"] == 0.75          # 1% x the 0.75 gap buffer
+    assert plan["risk_config"]["risk_per_trade_pct"] == 1.0           # SB-UX SU4: his own 1%, no swing buffer added
     DeploymentCreateRequest(**dep).normalised()
     sell = iv.contract_plan(iv.InterviewAnswers(style="swing", experience="experienced", vehicle="option_sell"), "BULLISH")[0]
     assert sell["option_position"] == "BUY" and sell["expiry_rule"] == "MONTHLY"

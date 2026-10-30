@@ -177,6 +177,12 @@ function AdvancedSection() {
           <VisionReviewSwitchesV2 />
         </Fold>
       )}
+      {/* TERM-2 (owner 30 Oct): the Terminal as it was, until the owner approves the rebuild. */}
+      {features.on("terminal") && (
+        <Fold id="terminal-classic" title="Previous Terminal" line="The Terminal before the rebuild">
+          <Link to="/terminal?view=classic" data-terminal-classic className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-9">Open the previous Terminal</Link>
+        </Fold>
+      )}
       {/* B3: nothing about LIVE while Phase 0 is PAPER only (the admin keeps the platform checklist on /admin). */}
       {!liveHidden && (
         <Fold id="go-live" title="Go-live checklist" line="What is left before real-money trading" onOpen={setGoLiveOpen}>

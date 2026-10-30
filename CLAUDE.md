@@ -1,3 +1,6 @@
+# Abhi's standing preferences — binding in EVERY session, read FIRST: OWNER_RULES.md
+@OWNER_RULES.md
+
 # CLAUDE.md - standing rules for every Claude Code session on ATP
 
 Owner: Abhi. Read at the START of every task and AFTER every compaction (≤ 15 KB): this file and docs/ROADMAP.md

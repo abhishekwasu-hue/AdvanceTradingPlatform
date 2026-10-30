@@ -188,7 +188,7 @@
         "paper"
       ],
       "next": {
-        "label": "Start a paper bot",
+        "label": "Start a trading bot",
         "path": "/deployments"
       }
     },
@@ -217,7 +217,7 @@
       "points": [
         "Connect your broker so ATP can read prices. Your broker login stays with your broker.",
         "Pick an idea from the library, or build your own, and choose its settings.",
-        "Start a paper bot. It watches the market for the structure you chose.",
+        "Start a trading bot. It watches the market for the structure you chose.",
         "When the structure appears, you get a signal in plain words. You decide what to do."
       ],
       "glossary": [

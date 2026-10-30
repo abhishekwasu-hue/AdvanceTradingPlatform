@@ -159,10 +159,10 @@ def test_missing_data_says_i_dont_know_in_plain_words():
 
 def test_jobs_not_built_say_so_and_point_at_todays_page():
     # Every job is built since slice 3 (job 6); the not-built answer stays for a job that is switched off later.
-    job = chat.Job("x", 9, "Later job", "", "", False, ("Open the Paper bot page", "/deployments"))
+    job = chat.Job("x", 9, "Later job", "", "", False, ("Open the Trading bot page", "/deployments"))
     out = chat.Answer("x", job.title)
     chat.not_built(out, job)
-    assert "later step" in out.summary[0] and out.action == {"label": "Open the Paper bot page", "to": "/deployments"}
+    assert "later step" in out.summary[0] and out.action == {"label": "Open the Trading bot page", "to": "/deployments"}
     starter, called, _ = _answer("Turn my idea into a strategy and test it")       # job 6 now asks for the idea
     assert called == ["get_risk_limits"] and starter.summary[0].startswith("Tell me your idea") and starter.draft is None
 

@@ -35,7 +35,7 @@ export default function DayOneV2({ api = dayOneApi, onAdopted, loadBots = () => 
   api?: Api; onAdopted?: (adopted: boolean) => void; loadBots?: () => Promise<Deployment[]>;
 }) {
   const [state, setState] = useState<State>({ status: "loading" });
-  // Day-one fix 7: the paper bots he already runs (a bot he just started from an idea, for example). With one running
+  // Day-one fix 7: the trading bots he already runs (a bot he just started from an idea, for example). With one running
   // and no watch adopted yet, the card shows his bot instead of asking him to adopt a strategy again.
   const [bots, setBots] = useState<Deployment[] | null>(null);
   const [alsoList, setAlsoList] = useState(false);
@@ -90,7 +90,7 @@ export function botCheckWords(b: Pick<Deployment, "status" | "last_evaluated_at"
   return lastChecked(b.last_evaluated_at, now);
 }
 
-/** Day-one fix 7: his own running paper bots, in place of "Pick a ready strategy" (he already picked one). */
+/** Day-one fix 7: his own running trading bots, in place of "Pick a ready strategy" (he already picked one). */
 export function BotsView({ bots, offers, onAlsoList, now }: {
   bots: Deployment[]; offers: DayOneOffer[]; onAlsoList?: () => void; now?: number;
 }) {
@@ -100,7 +100,7 @@ export function BotsView({ bots, offers, onAlsoList, now }: {
   return (
     <section aria-labelledby={titleId} className={cx(CARD, "space-y-space-3 p-space-4 md:p-space-5")} data-day-one="bots" data-tour="signals-day-one">
       <div>
-        <h2 id={titleId} className="text-t15 font-semibold text-fg">{one ? "Your paper bot is on" : `Your ${bots.length} paper bots are on`}</h2>
+        <h2 id={titleId} className="text-t15 font-semibold text-fg">{one ? "Your trading bot is on" : `Your ${bots.length} trading bots are on`}</h2>
         <p className="mt-space-1 text-t14 text-fg-muted">
           {one ? "It reads its chart by itself. When it finds a setup, the signal shows below" : "They read their charts by themselves. When one finds a setup, the signal shows below"}
           {" "}under Waiting for you or Today. Paper money only.
@@ -117,7 +117,7 @@ export function BotsView({ bots, offers, onAlsoList, now }: {
         ))}
       </ul>
       <div className="flex flex-wrap items-center gap-space-2">
-        <Link to="/deployments" className={LINK_SECONDARY}>Open Paper bot</Link>
+        <Link to="/deployments" className={LINK_SECONDARY}>Open Trading bot</Link>
         {onAlsoList && <button type="button" className={BUTTON} onClick={onAlsoList} data-day-one-also-list>Also watch a whole list</button>}
       </div>
     </section>
@@ -220,7 +220,7 @@ function Confirm({ offer, list, busy, onBack, onAdopt }: { offer: DayOneOffer; l
         <ul className="space-y-space-1">
           <li>Paper money only. Nothing is placed: each setup waits for you.</li>
           <li>Signals only. What to trade, how much and when to get out stay your own choices.</li>
-          <li>You can change the settings later in a paper bot.</li>
+          <li>You can change the settings later in a trading bot.</li>
         </ul>
       </Details>
       <div className="flex flex-wrap items-center gap-space-2">
@@ -288,7 +288,7 @@ export function WatchView({ watch, canAct = true, busy = false, problem = null, 
       {problem && <p role="alert" className="rounded-panel border border-warn/40 bg-warn-tint px-space-4 py-space-3 text-t14 text-fg">{problem}</p>}
       {canAct && (
         <div className="flex flex-wrap items-center gap-space-2 border-t border-subtle pt-space-3">
-          <Link to={paperBotPathFor({ template: watch.template.id, timeframe: "1d", params: {} })} className={LINK_SECONDARY}>Start a paper bot with it</Link>
+          <Link to={paperBotPathFor({ template: watch.template.id, timeframe: "1d", params: {} })} className={LINK_SECONDARY}>Start a trading bot with it</Link>
           <button type="button" className={BUTTON} onClick={onChange} disabled={busy}>Change strategy or list</button>
           <button type="button" className={cx(BUTTON, "text-fg-muted")} onClick={onStop} disabled={busy}>Stop watching</button>
         </div>

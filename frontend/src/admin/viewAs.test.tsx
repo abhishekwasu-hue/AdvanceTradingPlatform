@@ -33,7 +33,7 @@ function serve(handler: (url: string, method: string) => { status: number; body:
 }
 
 const VIEW = {
-  id: 11, user_id: 7, tenant_id: 2, name: "pe****@example.com", reason: "The person asked about a paper bot", started_at: "2026-10-23T10:00:00Z",
+  id: 11, user_id: 7, tenant_id: 2, name: "pe****@example.com", reason: "The person asked about a trading bot", started_at: "2026-10-23T10:00:00Z",
   expires_at: "2026-10-23T10:30:00Z", ended_at: null, end_reason: null, active: true, seconds_left: 1800, requests: 0, refused: 0, last_seen_at: null,
 };
 
@@ -78,7 +78,7 @@ describe("starting and ending", () => {
     serve((url) => (url.endsWith("/admin/view-sessions") ? { status: 200, body: { token: "view-token", view: VIEW } } : { status: 404, body: {} }));
     const seen: (number | null)[] = [];
     const off = subscribeView(() => seen.push(currentView()?.id ?? null));
-    const info = await startView(7, "The person asked about a paper bot");
+    const info = await startView(7, "The person asked about a trading bot");
     off();
     expect(calls[0]).toMatchObject({ method: "POST", auth: "Bearer admin-token" });
     expect(info).toEqual({ id: 11, userId: 7, name: "pe****@example.com", expiresAt: "2026-10-23T10:30:00Z" });

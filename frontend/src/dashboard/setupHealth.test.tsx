@@ -62,7 +62,7 @@ describe("Setup health: one row per state, each with the one button that opens t
     expect(TELEGRAM_FIX_PATH).toBe("/settings#alerts");
   });
 
-  it("the paper bot paused -> the existing Review row (reused), hideable for the day", () => {
+  it("the trading bot paused -> the existing Review row (reused), hideable for the day", () => {
     const [row] = attentionRows({ ...base, deployments: [{ strategy_id: "orb_nifty", symbol: "NIFTY", status: "PAUSED", pause_reason: null, mode: "PAPER" }] as never });
     expect(row).toMatchObject({ id: "paused", action: { label: "Review", to: "/deployments" }, dismissible: true });
   });

@@ -211,3 +211,6 @@ class BacktestResult(BaseModel):
     # CP6-15: what the losses-in-a-row pause did in this run (app/risk_engine/loss_streak.BacktestLossStreak.report); None
     # when the limit was never reached (and then left out of the result hash).
     loss_streak: Optional[Dict[str, Any]] = None
+    # REV-S3: a template run's history before the test window (app/backtest/warmup.py): {"note": one plain sentence or None,
+    # "needed_days", "warmup_days"}; None for every other strategy. Never in the result hash (the data hash covers the bars).
+    history: dict[str, Any] | None = None

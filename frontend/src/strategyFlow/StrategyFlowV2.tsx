@@ -40,7 +40,7 @@ const PAPER_PATH = "/deployments";
  * SB-UX SU1-SU6 (owner order 30 Oct, behind `ui_v2`): Strategies › Build as ONE stepped flow - Start (a template card or
  * your own words, read by the Copilot's one parser), Market, Entry (readable blocks), Exit & risk (your own values, blank
  * = off; the option structure, strikes and expiry), Result (the numbers first, trades / chart / analytics behind tabs),
- * then Start on paper: the Paper bot form with this strategy picked. Nothing starts until he presses Start on paper there.
+ * then Start on paper: the Trading bot form with this strategy picked. Nothing starts until he presses Start on paper there.
  * The builder of before stays under Advanced (`?advanced=1`).
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the shell passes PageProps to every page
@@ -474,7 +474,7 @@ function ExitStep({ flow, setFlow }: { flow: FlowState; setFlow: SetFlow }) {
                 {isSpread(op.structure) && (
                   <NumberBox label="Spread width (strikes)" value={op.width} placeholder="1 to 20" onChange={(width) => setOp({ width })} />
                 )}
-                <NumberBox label="Lots" value={op.lots} placeholder="Paper bot's own" onChange={(lots) => setOp({ lots })} />
+                <NumberBox label="Lots" value={op.lots} placeholder="Trading bot's own" onChange={(lots) => setOp({ lots })} />
               </div>
               <OptionCards name="flow-expiry" legend="Expiry" value={op.expiry ?? ("" as never)} options={EXPIRIES} dataAttr="data-expiry"
                 onChange={(expiry) => setOp({ expiry })} />
@@ -592,7 +592,7 @@ function ResultStep({ flow, template }: { flow: FlowState; template: StrategyTem
             </div>
             {pricesFrom && <p className="mt-space-2 text-t12 text-fg-muted" data-testid="prices-from">{pricesFrom}</p>}
             <button type="button" className={`${BUTTON_PRIMARY} mt-space-3`} onClick={startOnPaper} data-start-paper>Start on paper</button>
-            <p className="mt-space-1 text-t12 text-fg-muted">Opens the Paper bot with this strategy picked. Nothing starts until you press Start on paper there.</p>
+            <p className="mt-space-1 text-t12 text-fg-muted">Opens the Trading bot with this strategy picked. Nothing starts until you press Start on paper there.</p>
             <button type="button" className="mt-space-2 inline-flex min-h-11 items-center text-t13 font-medium text-brand hover:underline md:min-h-0" disabled={busy} onClick={() => void saveAndTest()}>
               {busy ? "Testing…" : "Test again"}
             </button>

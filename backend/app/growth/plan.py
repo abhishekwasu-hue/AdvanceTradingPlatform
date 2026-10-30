@@ -7,7 +7,7 @@ Every number comes from existing limits and counters - nothing new is stored and
 * his own rows: watchlists (`watchlists.user_id`), scans this month (`screen_runs.user_id`), chart analyses today and
   this month (Analyze a chart's own counter and limits, only while `chart_analyze` is on);
 * his AI requests this month from the AI call log (`llm_calls.user_id`; calls on his own AI key included);
-* the organisation's rows (a team shares them; the meter says so when the team has more than one member): paper bots
+* the organisation's rows (a team shares them; the meter says so when the team has more than one member): trading bots
   running (`strategy_deployments`, the B2 limit that is always enforced) and backtests this month (`usage_records`,
   metered at the call site).
 
@@ -44,7 +44,7 @@ def _n(value: float) -> str:
 def includes(plan: Plan, *, v2_enforced: bool) -> List[Dict[str, str]]:
     """What the plan gives, one plain line each (no price, no LIVE: Phase 0 is paper only)."""
     rows = [
-        {"key": "paper_bots", "text": f"Up to {_n(plan.max_active_deployments)} paper bots running at once"},
+        {"key": "paper_bots", "text": f"Up to {_n(plan.max_active_deployments)} trading bots running at once"},
         {"key": "custom_strategies", "text": f"{_n(plan.max_custom_strategies)} strategies of your own"},
         {"key": "backtests", "text": f"{_n(plan.max_backtests_per_month)} backtests a month"},
         {"key": "watchlists", "text": f"{_n(plan.max_watchlists)} watchlists" if v2_enforced else "Watchlists"},
@@ -133,7 +133,7 @@ async def plan_page(session: AsyncSession, user: User, now: Optional[datetime] =
     meters += [
         _meter("backtests", "Backtests (Strategy Lab)", await _tenant_metric(session, tenant.id, "backtest", since),
                plan.max_backtests_per_month, "this month", shared),
-        _meter("paper_bots", "Paper bots running", await plan_limits.count_active_deployments(session, tenant.id),
+        _meter("paper_bots", "Trading bots running", await plan_limits.count_active_deployments(session, tenant.id),
                plan.max_active_deployments, "", shared),
     ]
     return {

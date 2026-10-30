@@ -1,5 +1,5 @@
 /** Strategy templates step 2 (flag `strategy_templates`; the server answers 404 while it is off): the template cards and
- * "Adopt as a paper strategy" - a PRE-FILL of the paper bot form. Adopting creates nothing; the user reviews and saves. */
+ * "Adopt as a paper strategy" - a PRE-FILL of the trading bot form. Adopting creates nothing; the user reviews and saves. */
 import { request } from "../api/client";
 import type { TemplateExitChoices } from "./exits";
 
@@ -16,7 +16,7 @@ export interface StrategyTemplate {
 }
 export interface TemplateAdoption {
   template_id: string; name: string; strategy_id: string;
-  /** What the paper bot form takes over: the strategy, the candle timeframe and the holding. Always PAPER. */
+  /** What the trading bot form takes over: the strategy, the candle timeframe and the holding. Always PAPER. */
   deployment: { strategy_id: string; timeframe: string; holding: "INTRADAY" | "SWING"; mode: "PAPER" };
   settings: { timeframe: string; sides: string; params: Record<string, number | string | boolean> };
   notes: string[];

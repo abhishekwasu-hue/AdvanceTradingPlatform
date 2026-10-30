@@ -14,7 +14,7 @@ import {
 
 /**
  * Item 5, job 6: the Copilot's draft paper strategy - its rules on the page (nothing saves with a number the trader did not
- * give), the hand-over from the chat to the Paper bot page and the review card. Made-up data.
+ * give), the hand-over from the chat to the Trading bot page and the review card. Made-up data.
  */
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, "\"").replace(/&amp;/g, "&").replace(/\s+/g, " ");
 const noop = () => undefined;
@@ -128,15 +128,15 @@ describe("job 6: the chat answer and the review card", () => {
     job: "strategy", job_number: 6, title: "Strategy builder", summary: ["Your idea as a draft paper strategy, built only from ATP's own building blocks."],
     answer: "", sections: [{ title: "Long side: all of these hold on the 15-minute chart", lines: ["The 20 EMA crosses above the 50 EMA."] }],
     blocks: [], unknowns: ["I don't know how this idea did in the past: a test on past data is not part of this draft yet."], worked: [],
-    action: { label: "Review it on the Paper bot page", to: "/deployments" }, refused: null, starters: [], concepts: [], notes: [],
+    action: { label: "Review it on the Trading bot page", to: "/deployments" }, refused: null, starters: [], concepts: [], notes: [],
     disclaimer: "Information and education only, not advice. Every trading decision is yours.", source: "rules", tool_calls: ["get_risk_limits"], draft: COMPLETE,
   };
 
-  it("the answer's one primary action carries the draft to the Paper bot page (state, not the address)", () => {
+  it("the answer's one primary action carries the draft to the Trading bot page (state, not the address)", () => {
     const html = renderToStaticMarkup(<MemoryRouter><AnswerV2 answer={answer} /></MemoryRouter>);
     expect(html).toContain('data-action="draft"');
     expect(html).toContain('href="/deployments"');
-    expect(text(html)).toContain("Review it on the Paper bot page");
+    expect(text(html)).toContain("Review it on the Trading bot page");
     expect(actionState(answer)).toEqual({ copilotDraft: COMPLETE });
     expect(actionState({ draft: null })).toBeUndefined();
     expect(answerSource).toContain("state={actionState(answer)}");

@@ -27,6 +27,10 @@ from app.strategy_templates import engine, ids, language, library, packs, parity
 from app.strategy_templates.adapter import ENGINE_LABEL, TemplateStrategy
 from app.strategy_templates.schema import Template, leaves
 
+# REV-S1: these fixtures run around the clock or hold a trade overnight to reach the exit under test; on the 24x7 venue the
+# backtest has no INTRADAY cut-off / square-off (the NSE session rules are tested in tests/test_rev1_s1_s2_backtest_intraday.py).
+VENUE_24X7 = "BTCINR"
+
 F1, F2, D1, A2 = (library.get(t) for t in ("F1", "F2", "D1", "A2"))
 # TPL-7: version 2 of each pack added members (F1: D3, F2: E3); these tests read the newest version, whose first `source`
 # (the default) is version 1's only member, so every version 1 case below runs unchanged. The version 1 files themselves
@@ -327,7 +331,7 @@ def test_scan_equals_backtest_equals_options_equals_worker(tid, params, seed):
     window = _window(seed)
     scan = parity.scan_answers(strat.recipe, window)
     assert sum(1 for a in scan.values() if a.direction) >= 2, "the fixture must carry signals to compare"
-    answers, trades = parity.backtest_answers(strat, window, "S", RISK)
+    answers, trades = parity.backtest_answers(strat, window, VENUE_24X7, RISK)
     assert parity.compare(scan, answers, "backtest") == []
     assert trades and parity.compare_trades(scan, trades, lambda ts: ts) == []
     for config in STRUCTURES:

@@ -6,7 +6,7 @@ import { mockApi } from "./mockApi";
 /**
  * SB-UX SU1-SU6 (owner order ATP_ORDER_CP_SB_UX, `ui_v2`): Strategies › Build as one stepped flow. The owner's proof run:
  * template "Bull put spread" -> NIFTY 15m, long -> an entry block with his own value -> strikes, width and "Next weekly
- * on expiry day" -> Save and test -> the result card -> Start on paper -> the Paper bot form with the strategy picked.
+ * on expiry day" -> Save and test -> the result card -> Start on paper -> the Trading bot form with the strategy picked.
  * Nothing starts: no deployment is created anywhere in the flow. Every reply is made up (the bars are a generated walk).
  * With SBF_SHOTS=<folder> each step is saved as `<step>-<width>-<theme>.png`; no baseline is stored.
  */

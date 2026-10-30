@@ -8,7 +8,7 @@ import { expectPhoneLayout } from "./phoneLayout";
 
 /**
  * Strategy templates step 2 (docs/design/STRATEGY_TEMPLATES_IMPL.md): with `ui_v2` and `strategy_templates` on, the v2
- * Paper bot form lists the templates; picking one asks the server for the pre-fill ("Adopt as a paper strategy") and
+ * Trading bot form lists the templates; picking one asks the server for the pre-fill ("Adopt as a paper strategy") and
  * "Start on paper" sends the same PAPER request with the template's strategy id and candles. Nothing starts before that.
  * - Baselines `strategy-templates-v2-{1440,390,360}-{light,dark}.png` (the form with a template picked) and, section 5,
  *   `strategy-templates-exits-v2-{1440,390,360}-{light,dark}.png` (its exits, a multiple of the risk chosen).
@@ -51,7 +51,12 @@ const EXITS = {
 
 interface Server { sent: { method: string; url: string; body: unknown }[] }
 
-async function open(page: Page, o: { theme?: "light" | "dark"; path?: string; templatesOff?: boolean; exits?: boolean } = {}): Promise<Server> {
+// REV-H3: an option seller pack (made-up card): it only gives the side, so the bot asks how to trade the option.
+const PACK = { id: "F1", version: 2, name: "Trend side pack", family: "F", family_name: "Option seller packs",
+  idea: "Reads the side of a trend turn for the option structure you set up.", difficulty: "Intermediate", style: "Both", timeframes: TF,
+  default_timeframe: "15m", sides_default: "both", params: [], rules: [], available: true };
+
+async function open(page: Page, o: { theme?: "light" | "dark"; path?: string; templatesOff?: boolean; exits?: boolean; packs?: boolean } = {}): Promise<Server> {
   const server: Server = { sent: [] };
   await page.clock.install({ time: new Date(NOW) });
   await page.addInitScript((theme) => {
@@ -76,13 +81,13 @@ async function open(page: Page, o: { theme?: "light" | "dark"; path?: string; te
   await page.route(api("/broker/credentials$"), (route) => route.fulfill({ json: [{ broker_name: "upstox", account_label: "primary" }] }));
   await page.route(api("/broker/accounts$"), (route) => route.fulfill({ json: [] }));
   await page.route(api("/strategy-templates$"), (route) => o.templatesOff
-    ? route.fulfill({ status: 404, json: { detail: "Not found" } }) : route.fulfill({ json: { templates: TEMPLATES } }));
+    ? route.fulfill({ status: 404, json: { detail: "Not found" } }) : route.fulfill({ json: { templates: o.packs ? [...TEMPLATES, PACK] : TEMPLATES } }));
   await page.route(api("/strategy-templates/\\w+/adopt$"), (route) => {
     const body = record(route) as { timeframe?: string };
     const id = /strategy-templates\/(\w+)\/adopt/.exec(route.request().url())![1];
     const tf = body.timeframe ?? "5m";
     const sid = `template:${id}:1:${tf}:both:,,,,,,`;
-    return route.fulfill({ json: { template_id: id, name: TEMPLATES.find((t) => t.id === id)!.name, strategy_id: sid,
+    return route.fulfill({ json: { template_id: id, name: [...TEMPLATES, PACK].find((t) => t.id === id)!.name, strategy_id: sid,
       deployment: { strategy_id: sid, timeframe: LABEL[tf], holding: tf === "1d" ? "SWING" : "INTRADAY", mode: "PAPER" },
       settings: { timeframe: tf, sides: "both", params: {} },
       notes: ["Signals only: what to trade, how much and when to get out stay your own choices.", "Paper money only. Nothing starts until you confirm it."],
@@ -164,6 +169,27 @@ test.describe("Strategy templates behaviour", () => {
     const post = server.sent.find((c) => c.url === "/deployments");
     expect(post?.body).toEqual({ strategy_id: "template:B1:1:1d:both:,,,,,,", symbol: "RELIANCE", exchange: "NSE", timeframe: "day",
       mode: "PAPER", holding: "SWING", instrument_kind: "UNDERLYING" });
+  });
+
+  test("REV-H3: a seller pack on an index starts with nothing chosen; Start waits, with the reason, until the user chooses", async ({ page }) => {
+    const server = await open(page, { packs: true });
+    await choose(page, form(page).getByLabel("Pick a strategy"), { label: "Trend side pack" });
+    await choose(page, form(page).getByLabel("Pick a symbol"), "NIFTY 50");
+    await expect(form(page).locator("[data-construction]")).toContainText("The strategy only gives the side. Nothing is chosen for you.");
+    const start = form(page).getByRole("button", { name: "Start on paper" });
+    await expect(start).toBeDisabled();
+    await expect(form(page).locator("[data-start-why]")).toHaveText("Choose how this bot trades the option to start.");
+    await choose(page, form(page).getByLabel("How this bot trades the option"), { label: "Bull put spread" });
+    await expect(form(page).locator("[data-start-why]")).toHaveText("Choose the width of the structure to start.");
+    await expect(start).toBeDisabled();
+    await form(page).getByLabel("Wing width (strike steps)").fill("3");
+    await expect(form(page).locator("[data-start-why]")).toHaveCount(0);
+    await start.click();
+    await expect(form(page)).toContainText("Started on paper: NIFTY 50.");
+    const post = server.sent.find((c) => c.url === "/deployments");
+    expect(post?.body).toMatchObject({ strategy_id: "template:F1:1:15m:both:,,,,,,", mode: "PAPER", instrument_kind: "OPTION",
+      option_strategy: "BULL_PUT_SPREAD", spread_width: 3 });
+    expect(post?.body).not.toHaveProperty("option_position");
   });
 
   test("opened from an idea's Adopt link: its timeframe and settings are the pre-fill the server checks; nothing starts", async ({ page }) => {

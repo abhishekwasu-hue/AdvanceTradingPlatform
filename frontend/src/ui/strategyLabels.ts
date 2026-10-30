@@ -61,6 +61,14 @@ export function paramChips(params: Record<string, unknown> | null | undefined): 
   return Object.entries(params).map(([k, v]) => `${paramLabel(k)} ${paramValue(k, v)}`);
 }
 
+/** REV-B2 (owner order 30 Oct): the Strategy Library's chips for a built-in. A built-in has no reward:risk filter of its
+ * own (its old `min_rr` compared two of its fixed numbers and never acted), so one is never shown there, even from an
+ * older server; the trader's own minimum lives in his risk limits. */
+export function libraryChips(params: Record<string, unknown> | null | undefined): string[] {
+  if (!params) return [];
+  return paramChips(Object.fromEntries(Object.entries(params).filter(([k]) => k !== "min_rr")));
+}
+
 /** The optimiser's scores (backend/app/backtest/optimizer.py METRICS). */
 export const METRIC_LABEL: Readonly<Record<string, string>> = {
   net_pnl: "Net P&L", expectancy: "Average per trade", profit_factor: "Profit factor", win_rate: "Win %",

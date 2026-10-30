@@ -7,7 +7,7 @@ the template for him, with its own default settings shown before he confirms, as
 
 * PAPER only and approval-only entries - by construction: the stored adoption has no mode or entry field a request can
   set (`MODE` / `ENTRIES` are constants written by the server), and nothing here creates a deployment, a proposal or an
-  order. The watch only DESCRIBES where each symbol stands. To trade a symbol he starts a paper bot from the existing
+  order. The watch only DESCRIBES where each symbol stands. To trade a symbol he starts a trading bot from the existing
   form (the template pre-filled; every entry there waits for his Approve when `approval_only_entries` is on).
 * Right after adopting, the adopted logic runs once over the recent CLOSED Daily bars of every symbol on the list - the
   same `engine.compute` the scan, the backtest and the worker read (scan = backtest = live, section 8 of the templates

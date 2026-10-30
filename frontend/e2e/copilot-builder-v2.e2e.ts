@@ -8,8 +8,8 @@ import { expectPhoneLayout } from "./phoneLayout";
 /**
  * Item 5 (owner's handover), job 6: the Copilot's strategy builder with `ui_v2` and the Copilot switch on. The trader's
  * own idea in the chat -> a draft paper strategy in plain words ("Values you decide" for every number his words do not
- * give) -> "Review it on the Paper bot page" -> the review card (EMPTY fields, Save off until every value is his) -> his
- * own "Save as my strategy" -> the strategy picked in "Start a paper bot". The Copilot saves and starts nothing: no
+ * give) -> "Review it on the Trading bot page" -> the review card (EMPTY fields, Save off until every value is his) -> his
+ * own "Save as my strategy" -> the strategy picked in "Start a trading bot". The Copilot saves and starts nothing: no
  * deployment is created in this whole flow.
  * - Baselines `copilot-builder-v2-answer-<width>-<theme>.png` (the chat answer) and `copilot-builder-v2-draft-<width>-
  *   <theme>.png` (the review card), 360 / 390 / 1440, light / dark.
@@ -178,7 +178,7 @@ test.describe("Copilot strategy builder behaviour", () => {
       "The fast EMA (length to decide) crosses above the slow EMA (length to decide)");
     await expect(answer.locator("[data-setting-chip]").first()).toHaveText("Where the idea is wrong: 1.5 x ATR (14) from the entry");
     const decide = answer.locator("[data-section='Values you decide']");
-    for (const ask of ["The fast EMA length.", "The slow EMA length.", "Your profit objective, in R", "The size: the Paper bot page"]) {
+    for (const ask of ["The fast EMA length.", "The slow EMA length.", "Your profit objective, in R", "The size: the Trading bot page"]) {
       await expect(decide).toContainText(ask);
     }
     await expect(answer).not.toContainText("Profit objective:");
@@ -236,7 +236,7 @@ test.describe("Copilot strategy builder behaviour", () => {
     await expect(tested.locator("[data-section='Did it hold over time?']")).toContainText("Nothing was tuned on this data");
     await expect(tested.locator("[data-unknowns]")).toContainText("Past results do not say what happens next");
     await expect(tested.locator("[data-followup]")).toHaveCount(0);
-    await expect(tested.locator("a[data-action='draft']")).toHaveText("Review it on the Paper bot page");   // he still reviews and starts it
+    await expect(tested.locator("a[data-action='draft']")).toHaveText("Review it on the Trading bot page");   // he still reviews and starts it
     expect(server.saved).toEqual([]);
     expect(server.deployments).toEqual([]);
   });

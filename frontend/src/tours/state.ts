@@ -57,7 +57,7 @@ export function cleanMarks(raw: unknown): TourMarks | null {
 // --- the rules, pure ------------------------------------------------------------------------------------------------
 
 /** The welcome tour opens by itself on the first sign-in: never finished, tips not skipped. Not for a VIEWER, who cannot
- * connect a broker or start a paper bot. */
+ * connect a broker or start a trading bot. */
 export function welcomeDue(state: Pick<ToursState, "marks" | "fresh">, role: string | null | undefined): boolean {
   return state.fresh && role !== "VIEWER" && !state.marks.skip_all_at && !state.marks.welcome_done_at;
 }

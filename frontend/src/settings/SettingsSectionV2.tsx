@@ -135,7 +135,7 @@ export function HelpSection() {
         <div className="space-y-4">
           {user?.role !== "VIEWER" && (
             <div id="get-started" className="flex scroll-mt-20 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-fg-muted">Bring back the Get started steps on your Dashboard: broker, paper bot and Telegram alerts.</p>
+              <p className="text-sm text-fg-muted">Bring back the Get started steps on your Dashboard: broker, trading bot and Telegram alerts.</p>
               <ShowGetStartedV2 className="self-start sm:self-auto" />
             </div>
           )}

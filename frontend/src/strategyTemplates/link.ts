@@ -1,4 +1,4 @@
-/** The link into the v2 Paper bot form with a strategy template picked (idea library slice 2, IDEA-1):
+/** The link into the v2 Trading bot form with a strategy template picked (idea library slice 2, IDEA-1):
  * `/deployments?template=D1&timeframe=15m&set.period=12`. The settings are a PRE-FILL the server checks again when the
  * form asks for the adoption; nothing is created until the user presses "Start on paper" (PAPER only). */
 import type { StrategyTemplate } from "./api";
@@ -26,7 +26,7 @@ export function testPathFor(link: TemplateLink): string {
   return paperBotPathFor(link).replace(/^\/deployments\?/, "/strategies/test?");
 }
 
-/** The template an address asks the Paper bot form to pick, or null. Unknown shapes are dropped, never guessed. */
+/** The template an address asks the Trading bot form to pick, or null. Unknown shapes are dropped, never guessed. */
 export function templateLinkFromSearch(search: string): TemplateLink | null {
   const q = new URLSearchParams(search);
   const template = q.get("template") ?? "";

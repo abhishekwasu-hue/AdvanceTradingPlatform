@@ -76,9 +76,9 @@ export function whenLine(d: Pick<JournalDraft, "opened_at" | "closed_at">): stri
   return parts.join(" · ");
 }
 
-/** Who placed it: him (the ticket, the basket, an approval) or his paper bot. */
+/** Who placed it: him (the ticket, the basket, an approval) or his trading bot. */
 export function placedByLine(d: Pick<JournalDraft, "placed_by" | "strategy">): string {
-  if (d.placed_by === "paper_bot") return d.strategy ? `Placed by your paper bot (${d.strategy})` : "Placed by your paper bot";
+  if (d.placed_by === "paper_bot") return d.strategy ? `Placed by your trading bot (${d.strategy})` : "Placed by your trading bot";
   return "Placed by you";
 }
 

@@ -48,7 +48,7 @@ describe("UI2-3 detail panel", () => {
     const words = text(html);
     expect(words).toContain("DEMO 50");
     expect(words).toContain("Long");
-    expect(words).toContain("Demo breakout · from Paper bot");                   // UX3: no internal bot number
+    expect(words).toContain("Demo breakout · from Trading bot");                   // UX3: no internal bot number
     expect(words.match(/\bPAPER\b|· Paper\b/g)).toEqual(["PAPER"]);            // CT-1 C8: the mode once, as the one chip
     for (const label of ["Size", "Max loss", "Reward : risk", "Your levels", "Entry", "Exit if wrong", "Exit at profit"]) expect(words).toContain(label);
     expect(words).not.toMatch(/\b(?:Stop|Target)\b/);                         // UX3 fix 10: no order words
@@ -133,7 +133,7 @@ describe("UI2-3 the page", () => {
     expect(html.match(/role="tab"/g)).toHaveLength(3);
     expect(html).toMatch(/aria-selected="true"[^>]*>.*?Waiting/);
     expect(text(html)).toContain("You approve every order.");
-    for (const s of ["All sources", "Paper bots", "Scans", "Copilot"]) expect(text(html)).toContain(s);
+    for (const s of ["All sources", "Trading bots", "Scans", "Copilot"]) expect(text(html)).toContain(s);
     expect(html).toContain('aria-label="Loading signals"');
     expect(text(html)).not.toMatch(/sample|seed/i);                  // the generator is not on this page any more (M6)
   });

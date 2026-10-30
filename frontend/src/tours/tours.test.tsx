@@ -77,7 +77,7 @@ describe("MO2 tours: when a tour opens", () => {
     for (const id of TOUR_IDS) expect(autoTour(fresh({ skip_all_at: T }), "OWNER", id)).toBeNull();
   });
 
-  it("a VIEWER gets no welcome (no broker or paper bot to set up) but the page tips", () => {
+  it("a VIEWER gets no welcome (no broker or trading bot to set up) but the page tips", () => {
     expect(welcomeDue(fresh(), "VIEWER")).toBe(false);
     expect(autoTour(fresh(), "VIEWER", "signals")).toEqual({ kind: "page", id: "signals" });
   });
@@ -216,7 +216,7 @@ describe("MO2 tours: one content file per page", () => {
   });
 
   it("the welcome has four cards in the ordered order and ends on the Broker page", () => {
-    expect(WELCOME.map((c) => c.title)).toEqual(["Welcome to AiAlgoDesk", "Connect your broker", "Your paper bot", "Get alerts on your phone"]);
+    expect(WELCOME.map((c) => c.title)).toEqual(["Welcome to AiAlgoDesk", "Connect your broker", "Your trading bot", "Get alerts on your phone"]);
   });
 
   it("targets are stable data-tour ids; the phone gets its own step where the layout differs", () => {

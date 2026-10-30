@@ -3,7 +3,7 @@ import type { ContractRules, Deployment, DeploymentCreateRequest, StrategyInfo }
 import { strategyDisplayName } from "../ui/strategyName";
 
 /**
- * UX2 fix 4 ("Paper bot in three taps", docs/design/UX_AUDIT_FULL.md problem 3 and P18): the rules of the v2 Paper bot
+ * UX2 fix 4 ("Trading bot in three taps", docs/design/UX_AUDIT_FULL.md problem 3 and P18): the rules of the v2 Trading bot
  * page. Pick a strategy, pick a symbol, Start on paper. Always PAPER, one lot; the trader's own risk limits apply on the
  * server. Pure functions only, so every rule here is unit-tested.
  */
@@ -21,10 +21,12 @@ export interface ReadyStrategy {
 export const READY: readonly ReadyStrategy[] = [
   { id: "orb_15m_5m", symbol: "NIFTY 50", line: "Waits for the first 15 minutes' range to break, then follows the move. Closes before the market does." },
   { id: "vwap_supertrend_5m", symbol: "NIFTY 50", line: "Follows the day's trend while it holds, and closes before the market does." },
-  { id: "swing_ema_pullback_d", symbol: "RELIANCE", line: "Waits for a pullback inside an uptrend and holds for days." },
+  // REV-B4: the strategy also reads the downtrend mirror; shares cannot be held short, so that side runs on an option or a future.
+  { id: "swing_ema_pullback_d", symbol: "RELIANCE",
+    line: "Waits for a pullback inside an uptrend and holds for days. It also reads the mirror in a downtrend: taken on an option or a future, skipped on shares." },
 ];
 
-/** Index symbols have no cash leg: a paper bot on one trades its option (nearest expiry, at the money, one lot). */
+/** Index symbols have no cash leg: a trading bot on one trades its option (nearest expiry, at the money, one lot). */
 export const INDEX_SYMBOLS: ReadonlySet<string> = new Set([
   "NIFTY 50", "NIFTY", "NIFTY BANK", "BANKNIFTY", "NIFTY FIN SERVICE", "FINNIFTY", "NIFTY MID SELECT", "MIDCPNIFTY", "NIFTY NEXT 50",
   "SENSEX", "BANKEX",
@@ -66,13 +68,25 @@ export function strategyLine(id: string, info: Pick<StrategyInfo, "description">
   return first.length > 160 ? `${first.slice(0, 157).trimEnd()}…` : first;
 }
 
-/** The one deployment "Start on paper" creates. Never LIVE: this page offers no other mode. */
+/** REV-H3: the option seller packs (backend strategy_templates/packs.py MEMBERS). A pack only gives the side: on an
+ * option the user chooses the structure or the single option's side himself; nothing is picked for him. */
+export const SELLER_PACKS: ReadonlySet<string> = new Set(["F1", "F2"]);
+
+export function isSellerPack(strategyId: string): boolean {
+  const t = templateOf(strategyId);
+  return t !== null && SELLER_PACKS.has(t);
+}
+
+/** The one deployment "Start on paper" creates. Never LIVE: this page offers no other mode. A seller pack on an index
+ * names no side and no structure (REV-H3): the form asks for them before Start. */
 export function paperBotRequest(strategyId: string, symbol: string, info: Pick<StrategyInfo, "timeframes"> | null | undefined):
   DeploymentCreateRequest & { mode: "PAPER" } {
   const s = cleanSymbol(symbol);
   const swing = isSwing(info);
   const contract: ContractRules = isIndex(s)
-    ? { instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1 }
+    ? isSellerPack(strategyId)
+      ? { instrument_kind: "OPTION", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1 }
+      : { instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1 }
     : { instrument_kind: "UNDERLYING" };
   return {
     strategy_id: strategyId, symbol: s, exchange: "NSE", timeframe: swing ? "day" : "1min", mode: "PAPER",
@@ -139,7 +153,7 @@ const STATE_TEXT: Record<BotState, string> = { running: "Running", paused: "Paus
 export function botStatusText(d: Pick<Deployment, "status" | "pause_reason">): string {
   const state = botState(d);
   const reason = (d.pause_reason ?? "").trim();
-  if (state === "paused" && reason && /^paused from (the )?(autopilot|paper bot)/i.test(reason)) return "Paused by you";
+  if (state === "paused" && reason && /^paused from (the )?(autopilot|trading bot)/i.test(reason)) return "Paused by you";
   if (state === "paused" && reason && reason.length <= 80 && !/[_{}[\]<>=]|#\d/.test(reason)) {
     return `Paused: ${reason.charAt(0).toLowerCase()}${reason.slice(1).replace(/\.$/, "")}`;
   }

@@ -45,6 +45,10 @@ from app.strategy_templates import library
 from app.strategy_templates.adapter import TemplateStrategy
 from tests.def0_legacy import legacy
 
+# REV-S1: these fixtures run around the clock or hold a trade overnight to reach the exit under test; on the 24x7 venue the
+# backtest has no INTRADAY cut-off / square-off (the NSE session rules are tested in tests/test_rev1_s1_s2_backtest_intraday.py).
+VENUE_24X7 = "BTCINR"
+
 RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5, min_risk_reward=0.5)
 D1 = library.get("D1")
 
@@ -63,6 +67,8 @@ def _bars(seed, total=900, scale=1.0):
 
 def _hash(result) -> str:
     data = result.model_dump(mode="json", exclude={"reproducibility", "run_id"})
+    if data.get("history") is None:
+        data.pop("history", None)                             # REV-S3 added the field (None on these engine-level runs)
     if isinstance(data.get("options"), dict) and data["options"].get("engine_version") == "9-options":
         data["options"]["engine_version"] = "8-options"      # P1-2b bumped the label; the pins were recorded under 8
     return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:16]
@@ -107,7 +113,8 @@ def _run_pins(choice=None):
         def strat():
             s = TemplateStrategy(t, C.resolve_settings(t, "15m"))
             return s.use_exits(choice) if choice is not None else s
-        out[f"{key}:underlying"] = _hash(run_backtest(strat(), df, "S", "15min", PIN_RISK))
+        # REV-S1: the pins were recorded before the backtest took the live INTRADAY cut-off / square-off - re-run that way
+        out[f"{key}:underlying"] = _hash(run_backtest(strat(), df, "S", "15min", PIN_RISK, session_rules=False))
         big = df.copy()
         big[["open", "high", "low", "close"]] *= 240.0
         out[f"{key}:single"] = _hash(run_option_backtest(strat(), big, "NIFTY 50", "15min", PIN_RISK, SINGLE))
@@ -272,7 +279,7 @@ def test_r_multiple_scan_equals_backtest_equals_worker():
     series = chosen._compute(df)
     scan = {df.index[i]: chosen.target_at(series, i, int(series.direction[i]), float(df["close"].iloc[i]), float(series.invalidation[i]))[0]
             for i in series.signal_bars()}
-    result = run_backtest(_strategy(choice=R2), df, "S", "15min", RISK)
+    result = run_backtest(_strategy(choice=R2), df, VENUE_24X7, "15min", RISK)
     assert result.trades
     for trade in result.trades:
         assert trade.target1 == pytest.approx(scan[pd.Timestamp(trade.entry_time)])
@@ -288,9 +295,9 @@ def test_r_multiple_scan_equals_backtest_equals_worker():
 def test_the_accounts_minimum_risk_reward_still_applies():
     df = _bars(3)
     strict = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5, min_risk_reward=2.5)
-    assert run_backtest(_strategy(choice=R2), df, "S", "15min", strict).total_trades == 0          # 2R below the minimum
-    assert run_backtest(_strategy(), df, "S", "15min", strict).total_trades > 0                    # no target: no R:R check
-    assert run_backtest(_strategy(choice=X.TemplateExits(target_rule="R_MULTIPLE", target_r=3.0)), df, "S", "15min", strict).total_trades > 0
+    assert run_backtest(_strategy(choice=R2), df, VENUE_24X7, "15min", strict).total_trades == 0          # 2R below the minimum
+    assert run_backtest(_strategy(), df, VENUE_24X7, "15min", strict).total_trades > 0                    # no target: no R:R check
+    assert run_backtest(_strategy(choice=X.TemplateExits(target_rule="R_MULTIPLE", target_r=3.0)), df, VENUE_24X7, "15min", strict).total_trades > 0
 
 
 # ========================================================================================= the template's exit signal (R5)
@@ -325,14 +332,14 @@ def test_the_backtest_closes_on_the_exit_signal_at_the_next_open():
     df = _bars(5)
     series = _strategy()._compute(df)
     pos = {ts: i for i, ts in enumerate(df.index)}
-    result = run_backtest(_strategy(choice=EXIT), df, "S", "15min", RISK)
+    result = run_backtest(_strategy(choice=EXIT), df, VENUE_24X7, "15min", RISK)
     rows = [(pos[pd.Timestamp(t.entry_time)], pos[pd.Timestamp(t.exit_time)], t.exit_reason) for t in result.trades]
     assert _template_exit_bars(df, series, rows) >= 3
     for t in result.trades:
         if t.exit_reason == "Template exit":                     # filled at that bar's open (the paper broker's slippage aside)
             assert t.exit_price == pytest.approx(float(df["open"].loc[t.exit_time]), rel=2e-3)
     # must not: without the choice the same exit bars close nothing
-    plain = run_backtest(_strategy(), df, "S", "15min", RISK)
+    plain = run_backtest(_strategy(), df, VENUE_24X7, "15min", RISK)
     assert not any(t.exit_reason == "Template exit" for t in plain.trades)
 
 
@@ -361,7 +368,7 @@ def test_scan_equals_both_engines_on_the_exit_bars():
     df = _bars(5)
     series = _strategy()._compute(df)
     pos = {ts: i for i, ts in enumerate(df.index)}
-    result = run_backtest(_strategy(choice=EXIT), df, "S", "15min", RISK)
+    result = run_backtest(_strategy(choice=EXIT), df, VENUE_24X7, "15min", RISK)
     for t in (t for t in result.trades if t.exit_reason == "Template exit"):
         j = pos[pd.Timestamp(t.exit_time)] - 1
         side = "LONG" if t.direction == SignalDirection.LONG else "SHORT"
@@ -631,7 +638,7 @@ def test_the_deployment_route_stores_checks_and_answers_the_choice(org):
 def test_the_backtest_route_takes_the_choice(org):
     from tests.test_tpl2_routes import client
     sid = client.post("/api/strategy-templates/D1/adopt", headers=org["headers"], json={"timeframe": "15m"}).json()["strategy_id"]
-    body = {"strategy_id": sid, "symbol": "nifty", "base_timeframe": "15min", "candles": _candles(_bars(5, total=600)), "data_source": "sample",
+    body = {"strategy_id": sid, "symbol": VENUE_24X7, "base_timeframe": "15min", "candles": _candles(_bars(5, total=600)), "data_source": "sample",
             "risk_config": {"capital": 10_000_000, "risk_per_trade_pct": 0.5, "min_risk_reward": 0.5}}
     plain = client.post("/api/backtest", headers=org["headers"], json=body)
     chosen = client.post("/api/backtest", headers=org["headers"], json={**body, "template_exits": {"target_rule": "TEMPLATE_EXIT"}})

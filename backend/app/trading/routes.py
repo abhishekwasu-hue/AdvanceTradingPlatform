@@ -73,8 +73,8 @@ class TradeRecordResponse(BaseModel):
     # M45 MB-7 (flags `ui_v2` + `multi_account`): the caller's own simulated PAPER account this position belongs to;
     # null with either flag off, for a trade with no simulated account, or one that is not the caller's.
     account_label: Optional[str] = None
-    # UI-28 U2.4 (owner, 28 Oct): the Paper bot that opened this trade (null: entered by hand or by a webhook), so the
-    # Paper bot page can show each bot's own open positions and P&L. Read-only; the column already exists.
+    # UI-28 U2.4 (owner, 28 Oct): the Trading bot that opened this trade (null: entered by hand or by a webhook), so the
+    # Trading bot page can show each bot's own open positions and P&L. Read-only; the column already exists.
     deployment_id: Optional[int] = None
 
     @classmethod

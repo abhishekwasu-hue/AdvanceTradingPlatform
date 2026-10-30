@@ -100,7 +100,7 @@ async def execute_structure(
     idempotency_key: str, broker: Optional[BrokerInterface] = None, quote_broker: Optional[BrokerInterface] = None,
     deployment_id: Optional[int] = None, risk_config: Optional[RiskConfig] = None, account_id: Optional[int] = None,
     underlying_exit: bool = False,
-    origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: Optional[int] = None,
+    origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: int | None = None,
 ) -> StructureResult:
     """M55 T2: `origin` / `approval_action_id` as on `execute_signal_for_user` - "approval" with the id of an APPROVED
     entry proposal (app/execution/approval.py::execute_entry) is the only way a structure passes approval-only mode;

@@ -212,8 +212,8 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                         idempotency_key: str, deployment: Optional[StrategyDeploymentRecord] = None, requested_mode: str = "PAPER",
                         exit_rules: Optional[str] = None, holding: str = "INTRADAY", user_id: Optional[int] = None,
                         now: Optional[datetime] = None, requotes: int = 0, requoted_from: Optional[int] = None,
-                        exchange: str = "NSE", strike_breach: Optional[Dict] = None, ticket: Optional[Dict] = None,
-                        structure: Optional[Dict] = None) -> Optional[AiActionRecord]:
+                        exchange: str = "NSE", strike_breach: dict | None = None, ticket: dict | None = None,
+                        structure: dict | None = None) -> AiActionRecord | None:
     """Raises one ENTRY proposal (PROPOSED, expiring after APPROVAL_ENTRY_TTL_MINUTES) and announces it through the
     ordinary notification service (in-app, push, Telegram with Approve / Reject / Snooze). None when the same signal (or,
     for a deployment, another open entry proposal) is already there. `user_id` is the proposal's owner; raises
@@ -306,7 +306,7 @@ STRUCTURE_KIND = "STRUCTURE"      # a multi-leg option structure (execute_struct
 CONTRACT_KIND = "CONTRACT"        # one derived contract: a single option or a future (execute_signal_for_user)
 
 
-def structure_payload(*, structure: Any = None, contract: Any = None, max_lots: Optional[int] = None) -> Dict:
+def structure_payload(*, structure: Any = None, contract: Any = None, max_lots: int | None = None) -> dict:
     """What an option / future deployment's proposal stores: the legs exactly as the automatic entry would place them
     (the same resolver's ResolvedStructure or ResolvedContract), so Approve places these legs and no others. Each leg:
     instrument, strike, right, expiry, side and lots per lot of the trade (`ratio`). The number of lots is sized when
@@ -319,14 +319,14 @@ def structure_payload(*, structure: Any = None, contract: Any = None, max_lots: 
             "legs": [{"role": "LONG" if data["entry_side"] == "BUY" else "SHORT", "side": data["entry_side"], "ratio": 1, **data}]}
 
 
-def _legs_of(structure: Optional[Dict]) -> List[Dict]:
+def _legs_of(structure: dict | None) -> list[dict]:
     if not isinstance(structure, dict):
         return []
     legs = structure.get("legs") if structure.get("kind") == CONTRACT_KIND else (structure.get("data") or {}).get("legs")
     return [leg for leg in (legs or []) if isinstance(leg, dict)]
 
 
-def structure_title(structure: Optional[Dict]) -> str:
+def structure_title(structure: dict | None) -> str:
     """"Bull put spread", "Single option", "Future" - the trade's name in words."""
     if not isinstance(structure, dict):
         return "Entry"
@@ -342,14 +342,14 @@ def _expiry_words(raw: Any) -> str:
         return str(raw or "-")
 
 
-def leg_lines(structure: Optional[Dict]) -> List[str]:
+def leg_lines(structure: dict | None) -> list[str]:
     """M55 T2: the legs in plain words for the user's own approval card and Telegram ("Sell 1 lot NIFTY 24500 PE,
     expiry 30 Sep 2026"), the bought (protective) legs first as the order path places them, then one sizing sentence.
     Order words only here: it is his own order. [] for an underlying proposal."""
     legs = _legs_of(structure)
     if not legs:
         return []
-    out: List[str] = []
+    out: list[str] = []
     for leg in sorted(legs, key=lambda leg: 0 if leg.get("side") == "BUY" else 1):
         ratio = int(leg.get("ratio") or 1)
         side = "Buy" if leg.get("side") == "BUY" else "Sell"
@@ -363,7 +363,7 @@ def leg_lines(structure: Optional[Dict]) -> List[str]:
     return out
 
 
-def _contract_from(data: Dict, today: Any) -> Any:
+def _contract_from(data: dict, today: Any) -> Any:
     from app.core.enums import InstrumentKind, OptionPosition, OrderSide, SignalDirection
     from app.instruments.contracts import ResolvedContract
     return ResolvedContract(
@@ -378,7 +378,7 @@ def _contract_from(data: Dict, today: Any) -> Any:
         resolved_for=today)                    # the expiry pre-check judges the contract against the day it is placed
 
 
-def _structure_from(data: Dict, today: Any) -> Any:
+def _structure_from(data: dict, today: Any) -> Any:
     from app.core.enums import OptionStrategy
     from app.instruments.spreads import ResolvedLeg, ResolvedStructure
     legs = [ResolvedLeg(role=str(leg["role"]), contract=_contract_from(leg, today), ratio=int(leg.get("ratio") or 1)) for leg in data["legs"]]
@@ -399,9 +399,9 @@ class _LookupQuotes:
         return float(await self._lookup(symbol, exchange))
 
 
-async def _execute_legs(session: AsyncSession, action: AiActionRecord, owner: User, evidence: Dict,
-                        deployment: Optional[StrategyDeploymentRecord], signal: Signal, price: float,
-                        price_lookup: PriceLookup, now: datetime) -> Dict:
+async def _execute_legs(session: AsyncSession, action: AiActionRecord, owner: User, evidence: dict,
+                        deployment: StrategyDeploymentRecord | None, signal: Signal, price: float,
+                        price_lookup: PriceLookup, now: datetime) -> dict:
     """M55 T2: an APPROVED option / future / structure proposal placed through the SAME order path as the automatic
     entry - `execute_structure` (wings before shorts, its sizing and risk checks) or `execute_signal_for_user` with the
     contract - with the legs the person approved, PAPER only. Raises ValueError (nothing placed) when it cannot."""

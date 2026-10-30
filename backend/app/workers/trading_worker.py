@@ -1884,7 +1884,7 @@ class TradingWorker:
             logger.warning("Deployment %s: why-no-trade row not stored: %s", dep.id, exc)
 
     async def _propose_entry(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime,
-                             user_id: int, *, market_data: Optional[MarketDataService] = None, frames=None) -> bool:
+                             user_id: int, *, market_data: MarketDataService | None = None, frames=None) -> bool:
         """Z3 / BT2: an approval-only deployment's signal -> one ENTRY proposal (PAPER). Returns False: nothing executed.
         A LIVE deployment places nothing through ATP in Phase 0 (it says so on the deployment instead).
         M55 T2: an option / future / structure deployment is proposed with its legs resolved here by the same resolver
@@ -1923,7 +1923,7 @@ class TradingWorker:
         return False
 
     async def _proposal_legs(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime,
-                             rules: ContractRules, market_data: Optional[MarketDataService], frames) -> Optional[Dict]:
+                             rules: ContractRules, market_data: MarketDataService | None, frames) -> dict | None:
         """M55 T2: the legs an automatic entry of this option / future deployment would place for this signal - the same
         branch (`_evaluate_deployment`), resolver and inputs (spot = the newest close of the deployment's timeframe, the
         cycle's chains) - as the proposal's payload. None when they cannot be resolved; the reason is on the deployment

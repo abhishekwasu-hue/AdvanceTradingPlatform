@@ -5,7 +5,7 @@ import { BellRing, Mail, Send, Smartphone } from "lucide-react";
 import { useEffect, useId, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
-import { ApiError, errorSentence } from "../api/errors";
+import { ApiError } from "../api/errors";
 import { currentPushEnv, pushReadiness, vapidKeyBytes } from "../alerts/push";
 import { ChipV2, LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import type { TelegramLinkCode } from "../alerts/rules";
@@ -16,7 +16,7 @@ import { CONNECT_BROKER_PATH } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
 import { formatNumber, formatTimeIST } from "../ui/format";
 import {
-  LIMIT_FIELDS, LIMIT_KEYS, RISK_DEFAULTS, RISK_HELP, RISK_LABELS, SUGGESTIONS, limitsBody, paperDeployment, perTradeText, riskErrors, riskNumbers,
+  START_BOT_PATH, LIMIT_FIELDS, LIMIT_KEYS, RISK_DEFAULTS, RISK_HELP, RISK_LABELS, SUGGESTIONS, limitsBody, perTradeText, riskErrors, riskNumbers,
   riskSentence, testSummary,
   type RiskField, type RiskForm, type StrategySuggestion,
 } from "./model";
@@ -262,9 +262,8 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
 interface Source { broker: string; intradayDays: number; dailyDays: number; stored?: boolean }
 
 function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion; info: StrategyInfo; source: Source | null; onChanged: () => void }) {
-  const [busy, setBusy] = useState<"test" | "start" | null>(null);
+  const [busy, setBusy] = useState<"test" | null>(null);
   const [test, setTest] = useState<{ tone: "ok" | "problem"; text: string } | null>(null);
-  const [start, setStart] = useState<{ tone: "ok" | "problem"; text: string } | null>(null);
 
   async function runTest() {
     if (!source) return;
@@ -298,23 +297,6 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
     }
   }
 
-  async function startPaper() {
-    setBusy("start"); setStart(null);
-    try {
-      await api.createDeployment(paperDeployment(s));
-      setStart({ tone: "ok", text: "Started as a trading bot. It trades with paper money only; see it on the Trading bot page." });
-      onChanged();
-    } catch (e) {
-      setStart({ tone: "problem", text: e instanceof ApiError && e.status === 409
-        // REV-H1: a 409 names its own reason (no broker, contracts not loaded, a bot already running, ...): the shared
-        // sentence for that reason, so nothing new was started and this step is not done by it.
-        ? errorSentence(e)
-        : problemText(e, "It could not be started just now. Try again, or set it up on the Trading bot page.") });
-    } finally {
-      setBusy(null);
-    }
-  }
-
   return (
     <li className="space-y-space-2 rounded-control border border-subtle p-space-3" data-suggestion={s.strategyId}>
       <div className="flex flex-wrap items-center gap-space-2">
@@ -324,11 +306,11 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
       <p className={P}>{s.line}</p>
       <div className="flex flex-col gap-space-2 sm:flex-row">
         <ActionV2 busy={busy === "test"} disabled={!source || busy !== null} onClick={() => void runTest()}>Test it</ActionV2>
-        <ActionV2 busy={busy === "start"} disabled={busy !== null} onClick={() => void startPaper()}>Start a trading bot</ActionV2>
+        {/* REV-1 M2, decision D3: no one-tap bot - the Trading bot form opens with nothing pre-chosen; he picks the
+            strategy, the symbol and how it is traded there himself. */}
+        <Link to={START_BOT_PATH} className={LINK_SECONDARY} data-start-bot>Start a trading bot</Link>
       </div>
       {test && <Note tone={test.tone}>{test.text}</Note>}
-      {start && <Note tone={start.tone}>{start.text}</Note>}
-      {start?.tone === "ok" && <Link to="/deployments" className="inline-flex min-h-11 items-center text-t14 font-medium text-brand hover:underline md:min-h-0">Open Trading bot</Link>}
     </li>
   );
 }
@@ -360,7 +342,7 @@ export function StrategyStepV2({ onChanged }: StepProps) {
   });
   return (
     <div className="space-y-space-3">
-      <p className="flex flex-wrap items-center gap-space-2 text-t14 text-fg"><PaperBadge />Pick one to try. A trading bot then trades it with paper money, so you can watch how it does.</p>
+      <p className="flex flex-wrap items-center gap-space-2 text-t14 text-fg"><PaperBadge />Pick one to try. Start a trading bot opens the form where you set it up yourself; it trades with paper money only.</p>
       {!source && <p className={P}>Testing uses your broker&apos;s prices. Connect your broker to test a strategy first.</p>}
       {source?.stored && <p className={P}>{STORED_HISTORY_NOTE}</p>}
       <ul className="space-y-space-3">

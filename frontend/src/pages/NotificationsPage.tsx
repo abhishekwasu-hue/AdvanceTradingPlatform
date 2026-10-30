@@ -12,6 +12,7 @@ import { AlertRulesPanel } from "../components/AlertRulesPanel";
 import { useDeepLinkTarget } from "../utils/useDeepLinkTarget";
 import { useLiveEvents } from "../live/useLiveEvents";
 import { formatDateTimeIST } from "../ui/format";
+import { notificationEventWords } from "../ui/notificationWords";
 
 function severityClasses(severity: NotificationSeverity): string {
   switch (severity) {
@@ -97,7 +98,7 @@ export default function NotificationsPage() {
                     <span className={`rounded border px-1.5 py-0.5 text-xs font-semibold uppercase ${severityClasses(n.severity)}`}>
                       {n.severity}
                     </span>
-                    <span className="text-xs text-fg-muted uppercase tracking-wide">{n.event_type}</span>
+                    <span className="text-xs text-fg-muted" data-event-kind>{notificationEventWords(n.event_type)}</span>
                   </div>
                   <span className="text-xs text-fg-muted whitespace-nowrap">{formatDateTimeIST(n.created_at)}</span>
                 </div>

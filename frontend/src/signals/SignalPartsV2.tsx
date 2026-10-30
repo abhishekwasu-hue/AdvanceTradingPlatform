@@ -380,7 +380,8 @@ export function SignalActions({ item, now, compact = false, canTrade, chartTimef
   const live = item.mode === "LIVE";
   // Phase 0: an approved entry is always placed as a PAPER order, also for a LIVE deployment (whose approval still asks
   // for the authenticator code) - the label never promises a live trade.
-  const approveLabel = compact ? "Approve" : live ? "Approve (paper order)" : "Approve paper trade";
+  // REV-1 M2: the phone button says the same words as the desktop one (never a bare "Approve").
+  const approveLabel = live ? "Approve (paper order)" : "Approve paper trade";
   return (
     <div className="space-y-space-2">
       <div className={compact ? "grid grid-cols-[1fr_auto_auto_auto] gap-space-2" : "flex flex-wrap items-center gap-space-2"} role="group" aria-label={`Decide on ${item.symbol}`}>
@@ -393,13 +394,12 @@ export function SignalActions({ item, now, compact = false, canTrade, chartTimef
         {compact && <MoreButton item={item} open={moreOpen} controls={menuId} onToggle={() => setMoreOpen((o) => !o)} disabled={busy !== null} />}
       </div>
       {compact && moreOpen && <SnoozeMenu id={menuId} item={item} now={now} onDone={onDone} onError={onError} />}
-      {/* UI-28 U1.3: the mode is one chip; the sentence is its tooltip (never a paragraph under the buttons). */}
-      {!compact && (
-        <span data-signal-mode={live ? "live" : "paper"}
-          title={live ? "This proposal is on a LIVE deployment: approving asks for your authenticator code first, then places a paper order." : "Paper trade: practice money at the real price. Nothing reaches your broker."}>
-          <Chip tone="warn" variant="meaning" name="mode">{live ? "LIVE · code on approve" : "PAPER"}</Chip>
-        </span>
-      )}
+      {/* UI-28 U1.3: the mode is one chip; the sentence is its tooltip (never a paragraph under the buttons).
+          REV-1 M2: shown on a phone too, so a phone decision always says PAPER / LIVE. */}
+      <span data-signal-mode={live ? "live" : "paper"} className={compact ? "block" : undefined}
+        title={live ? "This proposal is on a LIVE deployment: approving asks for your authenticator code first, then places a paper order." : "Paper trade: practice money at the real price. Nothing reaches your broker."}>
+        <Chip tone="warn" variant="meaning" name="mode">{live ? "LIVE · code on approve" : "PAPER"}</Chip>
+      </span>
       {stepUp && <StepUpDialog reason={stepUp} onCancel={() => setStepUp(null)} onVerified={() => { setStepUp(null); void approve(); }} />}
     </div>
   );

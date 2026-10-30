@@ -30,6 +30,33 @@ const OPERATORS: { value: ConditionOperator; label: string }[] = [
 ];
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min"];
 
+/** SB-UX SU4 (DEF-0): an empty box is "off" (null) - never 0 and never a built-in default. */
+export function ownNumber(raw: string): number | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** The two target boxes as typed: both empty = no target (off); one filled = that one target, nothing invented. */
+export function ownTargets(first: string, second: string): [number, number] | null {
+  const a = ownNumber(first);
+  const b = ownNumber(second);
+  if (a === null && b === null) return null;
+  return [a ?? (b as number), b ?? (a as number)];
+}
+
+function targetBoxes(config: CustomStrategyConfig): [string, string] {
+  return config.target_rr ? [String(config.target_rr[0]), String(config.target_rr[1])] : ["", ""];
+}
+
+/** What the server would refuse, said before Save: R is a multiple of the risk, which only the user's stop defines. */
+export function exitProblem(config: CustomStrategyConfig): string | null {
+  if (config.target_rr !== null && config.stop_loss_atr_mult === null) return "A target in R needs your stop-loss: set a stop, or leave the target blank.";
+  if (config.min_rr !== null && config.target_rr === null) return "A minimum R:R needs your target: set a target, or leave the minimum blank.";
+  return null;
+}
+
 export function OperandEditor({ operand, onChange }: { operand: Operand; onChange: (o: Operand) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -153,6 +180,7 @@ export default function StrategyBuilderPage() {
   const { user, loading: authLoading } = useAuth();
   const [saved, setSaved] = useState<CustomStrategyResponse[]>([]);
   const [config, setConfig] = useState<CustomStrategyConfig>(defaultCustomStrategyConfig());
+  const [targets, setTargets] = useState<[string, string]>(["", ""]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -177,6 +205,7 @@ export default function StrategyBuilderPage() {
       await api.createCustomStrategy(config);
       setMessage(`Saved "${config.name}". It now appears everywhere strategies are listed (Signals, Backtesting).`);
       setConfig(defaultCustomStrategyConfig());
+      setTargets(["", ""]);
       refresh();
     } catch (e) {
       setError(errorSentence(e));
@@ -206,8 +235,17 @@ export default function StrategyBuilderPage() {
   function handleLoadParsedIntoBuilder() {
     if (!parseResult) return;
     setConfig(parseResult.config);
+    setTargets(targetBoxes(parseResult.config));
     setMessage("Loaded into the builder below - review every condition before saving.");
   }
+
+  function changeTarget(index: 0 | 1, raw: string) {
+    const next: [string, string] = index === 0 ? [raw, targets[1]] : [targets[0], raw];
+    setTargets(next);
+    setConfig({ ...config, target_rr: ownTargets(next[0], next[1]) });
+  }
+
+  const problem = exitProblem(config);
 
   if (authLoading) return null;
 
@@ -347,12 +385,13 @@ export default function StrategyBuilderPage() {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs text-fg-muted mb-1">Stop loss (x ATR)</label>
+              <label className="block text-xs text-fg-muted mb-1" htmlFor="sb-stop">Stop loss (x ATR)</label>
+              {/* SB-UX SU4 (DEF-0): empty = off (no stop-loss exit); nothing is filled in for the user. */}
               <input
-                type="number" step="0.1"
+                id="sb-stop" type="number" step="0.1" placeholder="Off"
                 className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-                value={config.stop_loss_atr_mult}
-                onChange={(e) => setConfig({ ...config, stop_loss_atr_mult: Number(e.target.value) })}
+                value={config.stop_loss_atr_mult ?? ""}
+                onChange={(e) => setConfig({ ...config, stop_loss_atr_mult: ownNumber(e.target.value) })}
               />
             </div>
             <div>
@@ -366,18 +405,19 @@ export default function StrategyBuilderPage() {
             </div>
             <div>
               <label className="block text-xs text-fg-muted mb-1">Target R:R (1 / 2)</label>
+              {/* SB-UX SU4 (DEF-0): both empty = off (no target exit); one filled = that one target. */}
               <div className="flex gap-1">
                 <input
-                  type="number" step="0.1"
+                  type="number" step="0.1" placeholder="Off" aria-label="Target 1 (R)"
                   className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-                  value={config.target_rr[0]}
-                  onChange={(e) => setConfig({ ...config, target_rr: [Number(e.target.value), config.target_rr[1]] })}
+                  value={targets[0]}
+                  onChange={(e) => changeTarget(0, e.target.value)}
                 />
                 <input
-                  type="number" step="0.1"
+                  type="number" step="0.1" placeholder="Off" aria-label="Target 2 (R)"
                   className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-                  value={config.target_rr[1]}
-                  onChange={(e) => setConfig({ ...config, target_rr: [config.target_rr[0], Number(e.target.value)] })}
+                  value={targets[1]}
+                  onChange={(e) => changeTarget(1, e.target.value)}
                 />
               </div>
             </div>
@@ -388,17 +428,21 @@ export default function StrategyBuilderPage() {
                 type="number" step="0.1" placeholder="Off"
                 className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 value={config.min_rr == null ? "" : Math.round(config.min_rr * 1000) / 1000}
-                onChange={(e) => setConfig({ ...config, min_rr: e.target.value.trim() === "" ? null : Number(e.target.value) })}
+                onChange={(e) => setConfig({ ...config, min_rr: ownNumber(e.target.value) })}
               />
             </div>
           </div>
+          <p className="text-xs text-fg-muted" data-testid="sb-exits-own">
+            Your own values only. A blank box is off: no stop-loss, no target, no minimum R:R.
+          </p>
+          {problem && <div className="text-sm text-warn" role="status">{problem}</div>}
 
           {error && <div className="text-sm text-down">{error}</div>}
           {message && <div className="text-sm text-up">{message}</div>}
 
           <button
             onClick={handleSave}
-            disabled={saving || (config.long_conditions.length === 0 && config.short_conditions.length === 0)}
+            disabled={saving || problem !== null || (config.long_conditions.length === 0 && config.short_conditions.length === 0)}
             className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save strategy"}

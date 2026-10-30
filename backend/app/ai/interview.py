@@ -31,10 +31,10 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from threading import Lock
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.ai.regime import Regime, classify_regime
 from app.core.models import RiskConfig
@@ -81,34 +81,51 @@ class Question:
         return asdict(self)
 
 
+NOT_SET = "off"     # DEF-0: the answer "Not set" - no limit (also what an unanswered limit question means)
+_NOT_SET_WORDS = {"", NOT_SET, "none", "null", "not_set"}
+
+
+def _unset(value):
+    """DEF-0: a limit answer the trader did not give ("Not set", blank, an unparsable number) is None - no limit."""
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip().lower() in _NOT_SET_WORDS:
+        return None
+    if isinstance(value, float) and value != value:
+        return None
+    return value
+
+
 QUESTIONS: List[Question] = [
     Question("language", "choice", "Which language should I talk in?", "मी कोणत्या भाषेत बोलू?",
              "Everything after this - questions and your plan - comes in this language.",
              "यापुढचे सगळे प्रश्न आणि तुमचा plan याच भाषेत येईल.",
              [Option("mr", "मराठी", "मराठी"), Option("en", "English", "English")], "mr"),
     Question("experience", "choice", "How long have you been trading?", "तुम्ही किती दिवसांपासून trading करत आहात?",
-             "Smaller risk per trade and PAPER first is a common way to start; you set your own risk.",
-             "प्रत्येक trade मध्ये कमी risk आणि आधी PAPER ही सुरुवातीची एक सामान्य पद्धत आहे; तुमचा risk तुम्हीच ठरवता.",
+             "Only for the wording of your plan; it never sets or changes your risk.",
+             "फक्त तुमच्या plan च्या शब्दांसाठी; यावरून तुमचा risk ठरत किंवा बदलत नाही.",
              [Option("new", "New - under 6 months", "नवीन - 6 महिन्यांपेक्षा कमी"),
               Option("learning", "Learning - 6 months to 2 years", "शिकत आहे - 6 महिने ते 2 वर्षे"),
               Option("experienced", "Experienced - over 2 years", "अनुभवी - 2 वर्षांपेक्षा जास्त")], "new"),
     Question("capital", "number", "How much capital do you have for trading (₹)?", "Trading साठी तुमच्याकडे किती भांडवल आहे (₹)?",
-             "Position size is calculated from capital and risk, never guessed. Only money you can afford to lose belongs here.",
-             "Quantity भांडवल आणि risk वरून मोजली जाते, अंदाजाने नाही. जे पैसे गमावले तरी चालतील तेवढेच इथे लिहा.",
+             "Used only to show the limits you set in rupees. Leave it blank if you prefer.",
+             "फक्त तुम्ही ठेवलेल्या मर्यादा रुपयांत दाखवण्यासाठी. नको असल्यास रिकामे ठेवा.",
              [], None),          # DEF-0 D2: no pre-filled capital - the trader types his own (or leaves it blank)
     Question("risk", "choice", "If a trade goes wrong, how much of your capital can you lose on it?", "एखादा trade चुकला तर त्यात भांडवलाच्या किती टक्के तोटा सहन करू शकता?",
-             "Professionals risk 0.5-1% per trade, so ten losses in a row still leave 90%+ of the account.",
-             "Professional trader एका trade मध्ये 0.5-1% risk घेतात - सलग 10 trades चुकले तरी 90% पेक्षा जास्त भांडवल शिल्लक राहते.",
-             [Option("conservative", "0.5% - careful", "0.5% - सावध"),
-              Option("moderate", "1% - balanced", "1% - मध्यम"),
-              Option("aggressive", "1.5% - aggressive", "1.5% - आक्रमक")], "conservative"),
+             "Your own limit - the platform adds none. Not set = no risk per trade limit.",
+             "ही तुमची स्वतःची मर्यादा - platform स्वतःहून काही ठेवत नाही. ठेवली नाही = एका trade च्या risk ला मर्यादा नाही.",
+             [Option("conservative", "0.5%", "0.5%"),
+              Option("moderate", "1%", "1%"),
+              Option("aggressive", "1.5%", "1.5%"),
+              Option(NOT_SET, "Not set - no limit", "ठेवली नाही - मर्यादा नाही")], None),     # DEF-0 / SB-UX SU4: no default, no advice
     Question("daily_loss", "choice", "What is the most you can lose in one day before stopping?", "एका दिवसात जास्तीत जास्त किती तोटा झाला की थांबायचे?",
-             "When the day's loss reaches this, the platform stops new trades for the day - no revenge trading.",
-             "दिवसाचा तोटा इथपर्यंत आला की platform त्या दिवशी नवीन trades बंद करतो - revenge trading होत नाही.",
-             [Option("1", "1% of capital", "भांडवलाच्या 1%"), Option("2", "2% of capital", "भांडवलाच्या 2%"), Option("3", "3% of capital", "भांडवलाच्या 3%")], "2"),
+             "Your own limit: when the day's loss reaches it, no new trades that day. Not set = no daily loss limit.",
+             "तुमची स्वतःची मर्यादा: दिवसाचा तोटा इथपर्यंत आला की त्या दिवशी नवीन trade नाही. ठेवली नाही = दिवसाच्या तोट्याला मर्यादा नाही.",
+             [Option("1", "1% of capital", "भांडवलाच्या 1%"), Option("2", "2% of capital", "भांडवलाच्या 2%"), Option("3", "3% of capital", "भांडवलाच्या 3%"),
+              Option(NOT_SET, "Not set - no limit", "ठेवली नाही - मर्यादा नाही")], None),
     Question("style", "choice", "How do you want to trade?", "तुम्हाला कसे trading करायचे आहे?",
-             "This decides the candle timeframe and how many trades a day are reasonable.",
-             "यावरून candle चा timeframe आणि दिवसाला किती trades योग्य ते ठरते.",
+             "This decides the candle timeframe; a trades-a-day limit is yours to set in My limits.",
+             "यावरून candle चा timeframe ठरतो; दिवसाच्या trades ची मर्यादा तुम्ही My limits मध्ये ठेवू शकता.",
              [Option("scalping", "Scalping - minutes, many small trades", "Scalping - काही मिनिटे, अनेक छोटे trades"),
               Option("intraday", "Intraday - hours, closed the same day", "Intraday - काही तास, त्याच दिवशी बंद"),
               Option("positional", "Calmer intraday - follow the bigger trend, few trades", "शांत intraday - मोठ्या trend सोबत, कमी trades"),
@@ -142,8 +159,8 @@ QUESTIONS: List[Question] = [
               Option("steady", "Steady small gains", "रोज थोडा पण स्थिर नफा"),
               Option("big_trends", "Catch big trend moves", "मोठे trend moves पकडायचे")], "learn"),
     Question("view", "choice", "What do you think the market will do?", "Market कुठे जाईल असे तुम्हाला वाटते?",
-             "Your view is compared with what the market is actually doing; a professional does not fight the trend.",
-             "तुमचे मत market प्रत्यक्षात काय करतो आहे त्याच्याशी तुलना केली जाते; professional trend च्या विरुद्ध जात नाही.",
+             "Your view is compared with what the data shows; it never changes a template's rules.",
+             "तुमचे मत data काय दाखवतो त्याच्याशी तुलना केली जाते; त्यामुळे template चे नियम बदलत नाहीत.",
              [Option("bullish", "Up", "वर"), Option("bearish", "Down", "खाली"), Option("neutral", "Sideways", "एका पट्ट्यात"),
               Option("unsure", "Don't know - you read it", "माहीत नाही - तुम्हीच ठरवा")], "unsure"),
 ]
@@ -154,8 +171,9 @@ class InterviewAnswers(BaseModel):
     language: Lang = "en"
     experience: Literal["new", "learning", "experienced"] = "new"
     capital: Optional[float] = Field(default=None, ge=5_000, le=10_000_000_000)    # DEF-0 D2: None = not given
-    risk: Literal["conservative", "moderate", "aggressive"] = "conservative"
-    daily_loss: float = Field(default=2.0, ge=0.5, le=10.0)
+    # DEF-0 / SB-UX SU4: the trader's own limits; not answered or "Not set" = None (no limit) - no built-in default.
+    risk: Literal["conservative", "moderate", "aggressive"] | None = None
+    daily_loss: float | None = Field(default=None, ge=0.5, le=10.0)
     style: Literal["scalping", "intraday", "positional", "swing"] = "intraday"
     instrument: Literal["index", "fno_stock", "stock"] = "index"
     symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)
@@ -163,6 +181,11 @@ class InterviewAnswers(BaseModel):
     time: Literal["active", "few_checks", "auto"] = "auto"
     goal: Literal["learn", "steady", "big_trends"] = "learn"
     view: Literal["bullish", "bearish", "neutral", "unsure"] = "unsure"
+
+    @field_validator("risk", "daily_loss", mode="before")
+    @classmethod
+    def _not_set_is_none(cls, value: Any) -> Any:
+        return _unset(value)
 
 
 # --- reading the free-text request -------------------------------------------------------------------
@@ -421,35 +444,30 @@ def regime_fit(family: str, regime: str, confidence: float = 1.0) -> float:
 
 # --- risk, capital, contract ---------------------------------------------------------------------------
 
-RISK_PCT = {"conservative": 0.5, "moderate": 1.0, "aggressive": 1.5}
-TRADES_PER_DAY = {"scalping": 6, "intraday": 3, "positional": 2, "swing": 1}
-SWING_GAP_FACTOR = 0.75   # Phase AS: an overnight gap can jump the stop - swing risk is sized a quarter smaller
-# DEF-0 (owner, 28 Oct): the plan holds only what the trader answered (capital, risk, daily loss) within the operator's
-# ceilings; every other limit stays not set (off) until the trader sets it himself.
+RISK_PCT = {"conservative": 0.5, "moderate": 1.0, "aggressive": 1.5}    # the percentages the risk answers stand for
+# DEF-0 (owner, 28 Oct) / SB-UX SU4 (owner, 30 Oct): the plan holds only what the trader answered (capital, risk, daily
+# loss), within the operator's ceilings; nothing is added or tightened (no swing buffer, no "three losses a day" cap, no
+# "two losses must fit" rule) and every other limit stays not set (off) until the trader sets it himself.
 
 
 def risk_plan(a: InterviewAnswers, ceilings: Optional[Dict[str, float]] = None) -> Tuple[RiskConfig, List[str]]:
-    """The tenant risk settings the plan proposes, plus notes on what was capped and why."""
+    """The tenant risk settings the plan proposes - the trader's own answers - plus a note when the operator's ceiling
+    capped one."""
     ceilings = ceilings or {}
     lang = a.language
     notes: List[str] = []
-    wanted = RISK_PCT[a.risk]
-    risk_pct = min(wanted, float(ceilings.get("risk_per_trade_pct", 2.0)))
-    if risk_pct < wanted:
+    risk_pct = RISK_PCT[a.risk] if a.risk is not None else None
+    cap = ceilings.get("risk_per_trade_pct")
+    if risk_pct is not None and cap is not None and float(cap) < risk_pct:
+        wanted, risk_pct = risk_pct, float(cap)
         notes.append(tr(lang, f"Risk per trade capped at {risk_pct:g}% (you chose {wanted:g}%) - the platform operator's maximum.",
                         f"एका trade चा risk {risk_pct:g}% वर मर्यादित केला (तुम्ही {wanted:g}% निवडले होते) - platform operator ची कमाल मर्यादा."))
-    if a.style == "swing":
-        risk_pct = round(risk_pct * SWING_GAP_FACTOR, 2)
-        notes.append(tr(lang, f"Swing risk per trade {risk_pct:g}% - a quarter smaller, because an overnight gap can open beyond the stop.",
-                        f"Swing मध्ये एका trade चा risk {risk_pct:g}% - रात्रभरच्या gap मुळे भाव stop च्या पलीकडे उघडू शकतो, म्हणून एक चतुर्थांश कमी."))
-    daily = min(a.daily_loss, round(risk_pct * 3, 2), float(ceilings.get("max_daily_loss_pct", 5.0)))
-    if daily < risk_pct * 2:
-        risk_pct = round(daily / 2, 2)
-        notes.append(tr(lang, f"Risk per trade lowered to {risk_pct:g}% so the daily limit allows at least two losing trades.",
-                        f"दिवसाच्या मर्यादेत किमान दोन चुकलेले trades बसावेत म्हणून एका trade चा risk {risk_pct:g}% केला."))
-    elif daily < a.daily_loss:
-        notes.append(tr(lang, f"Daily loss limit set to {daily:g}% (3 losing trades) rather than {a.daily_loss:g}% - three losses in a day is the professional's stop signal.",
-                        f"दिवसाची तोटा मर्यादा {a.daily_loss:g}% ऐवजी {daily:g}% (3 चुकलेले trades) ठेवली - दिवसात 3 तोटे म्हणजे professional साठी थांबण्याचा संकेत."))
+    daily = a.daily_loss
+    day_cap = ceilings.get("max_daily_loss_pct")
+    if daily is not None and day_cap is not None and float(day_cap) < daily:
+        wanted, daily = daily, float(day_cap)
+        notes.append(tr(lang, f"Daily loss limit capped at {daily:g}% (you chose {wanted:g}%) - the platform operator's maximum.",
+                        f"दिवसाची तोटा मर्यादा {daily:g}% वर मर्यादित केली (तुम्ही {wanted:g}% निवडले होते) - platform operator ची कमाल मर्यादा."))
     # P0.8-D: the figure the trader entered; the platform does not allocate for them. DEF-0: none entered = not set.
     trading_capital = round(a.capital, 0) if a.capital is not None else None
     cfg = RiskConfig(capital=trading_capital, risk_per_trade_pct=risk_pct, max_daily_loss_pct=daily)
@@ -568,8 +586,8 @@ def _evidence(lang: str, strategy, df: pd.DataFrame, base_tf: str, symbol: str, 
     if run.total_trades >= 5:
         pf = run.profit_factor if run.profit_factor is not None else (3.0 if run.net_pnl > 0 else 0.0)
         score = min(float(pf), 3.0) + (1.0 if run.net_pnl > 0 else -1.0)
-        text = tr(lang, f"{run.total_trades} trades on recent candles, win rate {run.win_rate:.0f}%, net {_money(run.net_pnl)} (on ₹1 lakh at 1% risk)",
-                  f"अलीकडच्या candles वर {run.total_trades} trades, win rate {run.win_rate:.0f}%, निव्वळ {_money(run.net_pnl)} (₹1 लाख, 1% risk वर)")
+        text = tr(lang, f"{run.total_trades} trades on recent candles, win rate {run.win_rate:.0f}%, net {_money(run.net_pnl)} (one lot per trade)",
+                  f"अलीकडच्या candles वर {run.total_trades} trades, win rate {run.win_rate:.0f}%, निव्वळ {_money(run.net_pnl)} (प्रत्येक trade एक lot)")
     elif run.reason and not run.total_trades:
         text = tr(lang, "not enough candles to test it here", "इथे तपासायला पुरेसे candles नाहीत")
     else:
@@ -674,7 +692,7 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
     if a.view in ("bullish", "bearish") and market["bias"] not in ("NEUTRAL", view_map[a.view]):
         warnings.append(tr(lang, f"Your view ({a.view}) and the data's trend read differ. Each template's rules take only the signals its own filters confirm, whatever the view.",
                            f"तुमचे मत ({'तेजीचे' if a.view == 'bullish' else 'मंदीचे'}) आणि data चे trend वाचन वेगळे आहे. प्रत्येक template फक्त त्याच्या filters ने पक्के केलेले signals घेतो."))
-    if market["volatile"]:
+    if market["volatile"] and cfg.risk_per_trade_pct is not None:     # sizing by the stop distance needs his risk per trade
         warnings.append(tr(lang, "The market is volatile right now: stops are wider in rupees, so the engine sizes fewer lots.",
                            "सध्या market अस्थिर आहे: stop रुपयांत मोठा असतो त्यामुळे engine कमी lots घेईल."))
     if data_source == "sample":
@@ -744,13 +762,14 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
         rr_lines.append(tr(lang, "Held overnight: the stop sits with the broker (re-armed every morning) and the trade runs for days until the stop or a target.",
                            "रात्रभर धरले जाते: stop broker कडे असतो (रोज सकाळी पुन्हा लावला जातो) आणि trade stop किंवा target पर्यंत काही दिवस चालतो."))
     k_lines = [contract_text] + contract_notes
+    # SB-UX SU4: only what the template and the trader's own settings check - no rule the trader did not state.
     checklist = [
-        tr(lang, "Trend and regime agree with the strategy (regime filter)", "Trend आणि market ची स्थिती strategy ला अनुकूल आहे (regime filter)"),
-        tr(lang, "Stop-loss defined before entry, at least 1 ATR away", "Entry आधीच stop-loss ठरलेला, किमान 1 ATR अंतरावर"),
-        *([tr(lang, f"Reward at least {rr:g}x the risk", f"नफा risk च्या किमान {rr:g} पट")] if rr > 0 else []),
-        tr(lang, "Size from risk %, never from feel; never averaging a loser", "Size risk % वरून, मनाने नाही; तोट्यातल्या trade मध्ये भर नाही"),
-        tr(lang, "Daily loss limit and losing-streak pause respected", "दिवसाची तोटा मर्यादा आणि सलग तोट्यानंतरचा थांबा पाळला"),
-        tr(lang, "No entries on blocked event days (results, policy)", "मोठ्या घटनांच्या दिवशी (results, policy) entry नाही"),
+        tr(lang, "The template's own entry rules hold on a closed candle", "Template चे स्वतःचे entry नियम बंद candle वर पूर्ण होतात"),
+        *([tr(lang, f"Reward at least {rr:g}x the risk (your minimum)", f"नफा risk च्या किमान {rr:g} पट (तुमची मर्यादा)")] if rr > 0 else []),
+        *([tr(lang, f"Size from your risk per trade ({cfg.risk_per_trade_pct:g}%)", f"Size तुमच्या एका trade च्या risk वरून ({cfg.risk_per_trade_pct:g}%)")]
+          if cfg.risk_per_trade_pct is not None else []),
+        *([tr(lang, f"Your daily loss limit ({cfg.max_daily_loss_pct:g}%)", f"तुमची दिवसाची तोटा मर्यादा ({cfg.max_daily_loss_pct:g}%)")]
+          if cfg.max_daily_loss_pct is not None else []),
     ]
     # P0.8-D: what the platform's process is if the trader chooses a template - not an instruction to trade.
     steps = [
@@ -801,7 +820,9 @@ def ai_prompt(a: InterviewAnswers, market: dict, cfg: RiskConfig, pick: Optional
         f"{market['work_timeframe']} regime {market['regime']['kind']}, {market['higher_timeframe']} regime {market['higher_regime']['kind']}; "
         f"structure {market['structure']['trend']}; overall bias {market['bias']}"
         + (f"; support {sup['low']}-{sup['high']}" if sup else "") + (f"; resistance {res['low']}-{res['high']}" if res else "") + ".",
-        f"Build one rule-based strategy that fits this regime, with a stop at least 1 ATR away and reward:risk of at least 1:{cfg.min_risk_reward:g}.",
+        # SB-UX SU4: the request carries no stop, target or reward:risk the trader did not state.
+        "Build one rule-based strategy that fits this regime. Use only the limits stated here; add no stop, target or minimum reward:risk of your own."
+        + (f" My minimum reward:risk is 1:{cfg.min_risk_reward:g}." if cfg.min_risk_reward > 0 else ""),
     ]
     if pick:
         parts.append(f"For reference, the template ranked first on these candles was {pick['name']} (ranking by regime fit and backtest evidence, not a recommendation).")

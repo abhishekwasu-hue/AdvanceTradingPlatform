@@ -65,7 +65,8 @@ def test_interview_describes_templates_the_trader_chooses_without_recommending()
         capital = next(s for s in plan["sections"] if s["id"] == "capital")
         assert any("your decision" in line or "\u0928\u093f\u0930\u094d\u0923\u092f \u0924\u0941\u092e\u091a\u093e" in line for line in capital["lines"])
         rr = next(s for s in plan["sections"] if s["id"] == "rr")
-        assert any("before costs" in line or "\u0916\u0930\u094d\u091a\u093e\u0906\u0927\u0940\u091a\u093e" in line for line in rr["lines"])
+        # SB-UX SU4: no minimum reward:risk was answered, so none is stated (and none applies)
+        assert not any("before costs" in line or "\u0916\u0930\u094d\u091a\u093e\u0906\u0927\u0940\u091a\u093e" in line for line in rr["lines"])
         assert "improve" not in plan["ai_prompt"] and "not a recommendation" in plan["ai_prompt"]
     # The profile remembers the choice without a score.
     assert client.post("/api/ai/interview/choose", headers=headers, json={"answers": {"language": "en"}, "option_id": "safe", "strategy_id": None}).status_code == 200

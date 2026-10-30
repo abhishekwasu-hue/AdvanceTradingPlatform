@@ -225,7 +225,7 @@ def test_the_route_answers_jobs_3_to_5_on_the_real_tools_and_writes_no_order():
             assert body["job"] == job and body["job_number"] in (3, 4, 5) and all(s["ok"] or s["note"] for s in body["worked"])
             assert "diagnostics" not in body and "flag" not in json.dumps(body["unknowns"])
         home = client.get("/api/ai/chat/home", headers=headers).json()
-        assert [j["built"] for j in home["jobs"]] == [True] * 10           # jobs 9-10: the 23 Oct order
+        assert [j["built"] for j in home["jobs"]] == [True] * 8            # jobs 9-10 (23 Oct order) are behind OFF switches here: hidden (CU7)
     finally:
         _run(_flag("ui_v2", False))
     assert _run(snapshot()) == before                     # the Copilot read; it changed no trade and created no order or proposal

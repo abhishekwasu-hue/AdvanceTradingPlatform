@@ -219,6 +219,9 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
                                                               UserVisionPrefsRecord.tenant_id == user.tenant_id))
     # BYOK-V2: their Vision reports (text and chart hash; no image is ever stored).
     await session.execute(delete(VisionReportRecord).where(VisionReportRecord.user_id == user.id, VisionReportRecord.tenant_id == user.tenant_id))
+    # CP-UX CU6: their Copilot conversation (questions and answer cards kept across reloads).
+    from app.ai.chat_history import forget as forget_copilot_conversation
+    await forget_copilot_conversation(session, user.tenant_id, user.id)
     # Analyze a chart: their chart images (files) and analyses go with the account.
     from app.chart_analyze.service import erase_user as erase_chart_analyses
     await erase_chart_analyses(session, user)

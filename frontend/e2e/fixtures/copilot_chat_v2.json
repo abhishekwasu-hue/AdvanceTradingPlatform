@@ -4,8 +4,8 @@
   "top_line": "Ask me anything about the market or your trades.",
   "ai": {
    "ready": false,
-   "title": "Add a free AI key to start",
-   "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+   "title": "AI is off — answers are from rules",
+   "line": "Connect your own AI key to have the answers worded by AI.",
    "settings": "/settings/ai",
    "reason": null
   },
@@ -753,8 +753,8 @@
    ],
    "ai": {
     "ready": false,
-    "title": "Add a free AI key to start",
-    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "title": "AI is off — answers are from rules",
+    "line": "Connect your own AI key to have the answers worded by AI.",
     "settings": "/settings/ai",
     "reason": null
    }
@@ -1053,8 +1053,8 @@
    ],
    "ai": {
     "ready": false,
-    "title": "Add a free AI key to start",
-    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "title": "AI is off — answers are from rules",
+    "line": "Connect your own AI key to have the answers worded by AI.",
     "settings": "/settings/ai",
     "reason": null
    }
@@ -1085,8 +1085,8 @@
    "tool_calls": [],
    "ai": {
     "ready": false,
-    "title": "Add a free AI key to start",
-    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "title": "AI is off — answers are from rules",
+    "line": "Connect your own AI key to have the answers worded by AI.",
     "settings": "/settings/ai",
     "reason": null
    }
@@ -1367,8 +1367,8 @@
    ],
    "ai": {
     "ready": false,
-    "title": "Add a free AI key to start",
-    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "title": "AI is off — answers are from rules",
+    "line": "Connect your own AI key to have the answers worded by AI.",
     "settings": "/settings/ai",
     "reason": null
    }
@@ -1552,8 +1552,8 @@
    ],
    "ai": {
     "ready": false,
-    "title": "Add a free AI key to start",
-    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "title": "AI is off — answers are from rules",
+    "line": "Connect your own AI key to have the answers worded by AI.",
     "settings": "/settings/ai",
     "reason": null
    }
@@ -1735,8 +1735,8 @@
    ],
    "ai": {
     "ready": false,
-    "title": "Add a free AI key to start",
-    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "title": "AI is off — answers are from rules",
+    "line": "Connect your own AI key to have the answers worded by AI.",
     "settings": "/settings/ai",
     "reason": null
    }
@@ -1818,8 +1818,8 @@
    ],
    "ai": {
     "ready": false,
-    "title": "Add a free AI key to start",
-    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "title": "AI is off — answers are from rules",
+    "line": "Connect your own AI key to have the answers worded by AI.",
     "settings": "/settings/ai",
     "reason": null
    }
@@ -1993,8 +1993,8 @@
    ],
    "ai": {
     "ready": false,
-    "title": "Add a free AI key to start",
-    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "title": "AI is off — answers are from rules",
+    "line": "Connect your own AI key to have the answers worded by AI.",
     "settings": "/settings/ai",
     "reason": null
    }
@@ -2157,8 +2157,8 @@
    ],
    "ai": {
     "ready": false,
-    "title": "Add a free AI key to start",
-    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "title": "AI is off — answers are from rules",
+    "line": "Connect your own AI key to have the answers worded by AI.",
     "settings": "/settings/ai",
     "reason": null
    }
@@ -2438,8 +2438,8 @@
    ],
    "ai": {
     "ready": false,
-    "title": "Add a free AI key to start",
-    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "title": "AI is off — answers are from rules",
+    "line": "Connect your own AI key to have the answers worded by AI.",
     "settings": "/settings/ai",
     "reason": null
    }

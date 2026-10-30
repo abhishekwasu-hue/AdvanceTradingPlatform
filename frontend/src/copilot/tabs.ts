@@ -37,3 +37,27 @@ export function tabForAction(action: string): CopilotTab {
   };
   return map[action] ?? (isCopilotTab(action) ? action : DEFAULT_TAB);
 }
+
+/**
+ * CP-UX CU4 (owner order 30 Oct, `ui_v2`): ONE Copilot - the chat (Ask) and the four places the older tabs fold into.
+ * Brief = Market Pulse + News Radar, Build = a link to Strategies › Build (no second builder), Review = Coach,
+ * Signals = Watchtower. The seven older tabs keep their addresses and stay under "Advanced" until the owner's ✅.
+ */
+export const FOLDED_TABS = ["brief", "review", "signals"] as const;
+export type FoldedTab = (typeof FOLDED_TABS)[number];
+export type CopilotV2Tab = "ask" | FoldedTab | "build";
+
+/** Where Build goes: the existing strategy builder (Strategies › Build). */
+export const BUILD_PATH = "/strategies/build";
+
+export const COPILOT_V2_TABS: readonly { key: CopilotV2Tab; to: string }[] = [
+  { key: "ask", to: "/copilot" },
+  { key: "brief", to: "/copilot/brief" },
+  { key: "build", to: BUILD_PATH },
+  { key: "review", to: "/copilot/review" },
+  { key: "signals", to: "/copilot/signals" },
+];
+
+export function isFoldedTab(v: string | undefined): v is FoldedTab {
+  return !!v && (FOLDED_TABS as readonly string[]).includes(v);
+}

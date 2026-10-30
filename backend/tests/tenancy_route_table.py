@@ -64,6 +64,7 @@ S_OWN_ACCOUNT = "self: the caller's own account, sessions and two-factor setting
 S_OWN_AI_KEY = "self: the caller's own AI key, prefs and Vision reports (per user)"
 S_OWN_AI_LANGUAGE = "self: the caller's own AI language preference"
 S_OWN_PROFILE = "self: the caller's own trader profile"
+S_OWN_COPILOT_CHAT = "self: deletes the caller's own Copilot conversation (tenant and user); no route names another user"
 S_OWN_ACK = "self: the caller's own Copilot terms acknowledgement"
 S_OWN_INTERVIEW = "self: the caller's own strategy interview; nothing deploys"
 S_COPILOT = "self: a Copilot read or research run for the caller: read-only tools, no order, no other member's data changes"
@@ -207,6 +208,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/ai/brief"): "member",
     ("POST", "/api/ai/chat"): S_COPILOT,
     ("GET", "/api/ai/chat/home"): "member",
+    ("GET", "/api/ai/chat/history"): "member: the caller's own Copilot conversation (tenant and user)",
+    ("DELETE", "/api/ai/chat/history"): S_OWN_COPILOT_CHAT,
     ("PUT", "/api/ai/byok/key"): S_OWN_AI_KEY,
     ("DELETE", "/api/ai/byok/key/{provider}"): S_OWN_AI_KEY,
     ("PUT", "/api/ai/byok/prefs"): S_OWN_AI_KEY,

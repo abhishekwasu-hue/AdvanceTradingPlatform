@@ -195,7 +195,7 @@ export default function AccountPage() {
         {sessionsMessage && <div className="mt-2 text-xs text-fg-muted">{sessionsMessage}</div>}
         <Details id="account.sessions" className="mt-2"><p>For your safety you are asked to sign in again after a while, even on a device you use every day.</p></Details>
       </Card>
-      <MyDataCardV2 />
+      <MyDataCardV2 copilot={v2} />
       {v2 && <SupportAccessCard />}
     </div>
   );

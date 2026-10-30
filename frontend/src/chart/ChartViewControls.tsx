@@ -1,5 +1,6 @@
 import { ChevronsRight, MoveVertical, RotateCcw } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
+import { formatCount } from "../ui/format";
 import type { Readout, ViewState } from "./gestures";
 
 /**
@@ -54,14 +55,9 @@ export function ChartViewControls({ view, insets, onAuto, onReset, onLatest }: {
   );
 }
 
-const oneDecimal = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
-/** Volume in the Indian way: K (thousand), L (lakh), Cr (crore). The browser's own en-IN compact form writes a thousand
- * as "T", which reads as a trillion. */
+/** Volume in the Indian way - M61 OI-1: the app's one count formatter ("61,100", "2.5 L", "3.45 Cr"). */
 export function formatVolume(v: number): string {
-  if (v >= 1e7) return `${oneDecimal.format(v / 1e7)}Cr`;
-  if (v >= 1e5) return `${oneDecimal.format(v / 1e5)}L`;
-  if (v >= 1e3) return `${oneDecimal.format(v / 1e3)}K`;
-  return oneDecimal.format(v);
+  return formatCount(v);
 }
 
 /** The crosshair readout: the bar under the crosshair (a long press on a phone; lifting the finger ends it). */

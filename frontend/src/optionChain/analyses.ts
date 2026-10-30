@@ -1,5 +1,5 @@
 import { request } from "../api/client";
-import { EMPTY, MINUS, formatChange, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
+import { EMPTY, formatChange, formatCount, formatCountChange, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { lastCloseText } from "./model";
 
@@ -157,8 +157,8 @@ export function formatCell(v: Cell | undefined, kind: ColumnKind): string {
   if (!isNum(v)) return EMPTY;
   switch (kind) {
     case "strike": return formatStrike(v);
-    case "oi": return formatNumber(v, 0);
-    case "oi_change": return signed(v, 0);
+    case "oi": return formatCount(v);                 // M61 OI-1: "12.35 L", "1.24 Cr"
+    case "oi_change": return formatCountChange(v);
     case "change": return formatChange(v);
     case "price": return formatPrice(v);
     case "pct": return `${formatNumber(v, 2)}%`;
@@ -231,18 +231,12 @@ export function xLabel(x: number | string, kind: AnalysisChart["x_kind"]): strin
   return kind === "time" ? formatTimeIST(String(x), { suffix: false }) : formatStrike(typeof x === "number" ? x : Number(x));
 }
 
-/** A y-axis tick: compact for large OI figures ("1.2L", "35K"), two decimals for small ones. */
+/** A y-axis tick: M61 OI-1 - from 1,000 up the app's one count formatter ("35,000", "1.25 L", "1.24 Cr"), two decimals
+ * for small figures (a PCR, an IV). */
 export function yTick(v: number): string {
   const a = Math.abs(v);
-  const sign = v < 0 ? MINUS : "";
-  if (a >= 1e7) return `${sign}${trim(a / 1e7)}Cr`;
-  if (a >= 1e5) return `${sign}${trim(a / 1e5)}L`;
-  if (a >= 1e3) return `${sign}${trim(a / 1e3)}K`;
+  if (a >= 1e3) return formatCount(v);
   return formatNumber(v, a >= 100 ? 0 : 2);
-}
-
-function trim(v: number): string {
-  return String(Number(v.toFixed(1)));
 }
 
 /** The class pair (stroke, fill) of a series tone - v2 tokens only. */

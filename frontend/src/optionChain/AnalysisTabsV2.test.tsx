@@ -152,7 +152,7 @@ describe("OC2 cells and chart geometry", () => {
   it("formats each column kind and shows a dash for a missing value", () => {
     expect(formatCell(22000, "strike")).toBe("22000");
     expect(formatCell(122.5, "strike")).toBe("122.5");
-    expect(formatCell(1250000, "oi")).toBe("12,50,000");
+    expect(formatCell(1250000, "oi")).toBe("12.5 L");          // M61 OI-1
     expect(formatCell(-1500, "oi_change")).toBe("−1,500");
     expect(formatCell(30, "oi_change")).toBe("+30");
     expect(formatCell(0, "oi_change")).toBe("0");
@@ -175,8 +175,8 @@ describe("OC2 cells and chart geometry", () => {
     expect(xs).toEqual([100, 110]);
     expect(markerPixel(105, xs)).toBeCloseTo((xPixel(0, 2) + xPixel(1, 2)) / 2);
     expect(markerPixel(99, xs)).toBeNull();
-    expect(yTick(125000)).toBe("1.3L");
-    expect(yTick(-35000)).toBe("−35K");
+    expect(yTick(125000)).toBe("1.25 L");       // M61 OI-1: the app's one count formatter
+    expect(yTick(-35000)).toBe("−35,000");
   });
 
   it("a missing point breaks the line instead of drawing it as zero", () => {

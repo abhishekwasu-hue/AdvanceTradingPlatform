@@ -45,10 +45,11 @@ describe("OI banner lines", () => {
     expect(tone(null).label).toBe("Neutral");
   });
   it("formats numbers from data only", () => {
-    expect(formatOi(1234567)).toBe("12,34,567");
-    expect(formatOi(null)).toBe("—");
-    expect(formatSigned(-2500)).toBe("-2,500");
-    expect(formatSigned(2500)).toBe("+2,500");
+    // M61 OI-1: the app's one count formatter ("12.35 L"), not full digits.
+    expect(formatOi(1234567)).toBe("12.35 L");
+    expect(formatOi(null)).toBe("–");
+    expect(formatSigned(-2500)).toBe("−2,500");
+    expect(formatSigned(2160470)).toBe("+21.6 L");
     expect(slotTime("bad")).toBe("—");
   });
   it("derives per-strike bars and the change since the day's first reading", () => {

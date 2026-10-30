@@ -127,7 +127,7 @@ describe("OC5 charts view", () => {
   it("OI by strike draws calls and puts as bars with today's change in each bar's note and spot as a dashed line", () => {
     const html = renderToStaticMarkup(<ChartSvg chart={chart("oi_by_strike")} />);
     expect(html.match(/<rect/g)?.length).toBe(42);                                       // 21 strikes x calls and puts
-    expect(html).toMatch(/<title>Call OI at 24500: 4L \(today \+[\d.]+K\)<\/title>/);
+    expect(html).toMatch(/<title>Call OI at 24500: 4 L \(today \+[\d,.]+( L)?\)<\/title>/);     // M61 OI-1
     expect(html).toContain("Dashed line: spot");
     expect(html).toContain("fill-down/70");
     expect(html).toContain("fill-up/70");
@@ -157,14 +157,14 @@ describe("OC5 chart geometry", () => {
     expect(markerAt(1, [24400, 24500], l)).toBeNull();
     expect(xValuesOf(chart("pcr_session").series)).toHaveLength(9);                       // 8 stored readings + the read now
     expect(pointNote({ key: "a", label: "Put OI", tone: "up", axis: "left", dashed: false, points: [] }, { x: 24500, y: 390000, d: -5000 }, "strike"))
-      .toBe("Put OI at 24500: 3.9L (today −5K)");
+      .toBe("Put OI at 24500: 3.9 L (today −5,000)");
   });
 
   it("a narrow price or OI range keeps its ticks apart; a wide one stays compact", () => {
     const price = { min: 24420, max: 24520 };
     expect([price.max, (price.max + price.min) / 2, price.min].map((v) => axisTick(v, price))).toEqual(["24,520", "24,470", "24,420"]);
-    expect(axisTick(11_800_000, { min: 11_500_000, max: 11_800_000 })).toBe("1.18Cr");
-    expect(axisTick(600_000, { min: 0, max: 600_000 })).toBe("6L");
+    expect(axisTick(11_800_000, { min: 11_500_000, max: 11_800_000 })).toBe("1.18 Cr");
+    expect(axisTick(600_000, { min: 0, max: 600_000 })).toBe("6 L");
     expect(axisTick(0.91, { min: 0.89, max: 0.91 })).toBe("0.91");
   });
 

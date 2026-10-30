@@ -1,5 +1,6 @@
 /** OI Banner (O3): pure presentation helpers (tested in format.test.ts). No number here is invented: every value
  *  comes from the API row, and a missing value is shown as a dash. */
+import { formatNumber } from "../ui/format";
 import type { OiBannerResponse, OiDirection, OiStrikeSeries } from "./types";
 
 /** Theme-token classes per direction: the banner's left border and the headline colour. */
@@ -14,17 +15,9 @@ export function tone(direction: string | null | undefined) {
   return DIRECTION_TONE[(direction ?? "NEUTRAL") as OiDirection] ?? DIRECTION_TONE.NEUTRAL;
 }
 
-/** Contract counts in the Indian grouping (12,34,567); a missing value is a dash. */
-export function formatOi(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  return Math.round(value).toLocaleString("en-IN");
-}
-
-export function formatSigned(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  const text = formatOi(Math.abs(value));
-  return value > 0 ? `+${text}` : value < 0 ? `-${text}` : text;
-}
+/** M61 OI-1: OI figures go through the app's ONE count formatter (ui/format.ts formatCount / formatCountChange:
+ * "85,000", "12.35 L", "1.24 Cr", "+21.6 L"); these names stay as thin aliases for the older OI components. */
+export { formatCount as formatOi, formatCountChange as formatSigned } from "../ui/format";
 
 /** HH:MM of an ISO timestamp as written by the API (IST offset kept, no local-time conversion). */
 export function slotTime(iso: string | null | undefined): string {
@@ -65,7 +58,7 @@ export function bannerLines(data: OiBannerResponse): BannerLines {
     return { headline: plainOiText(data.message), classes: null, pcr: null, chips, tone: tone("NEUTRAL") };
   }
   if (b.dte !== null) chips.unshift(b.dte === 0 ? "Expiry today" : b.dte === 1 ? "Expiry tomorrow" : `DTE ${b.dte}`);
-  if (b.max_pain !== null) chips.push(`Max pain ${formatOi(b.max_pain)}`);
+  if (b.max_pain !== null) chips.push(`Max pain ${formatNumber(b.max_pain, Number.isInteger(b.max_pain) ? 0 : 2)}`);   // a strike, not a count
   chips.push(`Data as of ${slotTime(b.slot)}`);
   return {
     headline: plainOiText(b.message),

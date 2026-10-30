@@ -16,7 +16,7 @@ import type { WatchItem, WatchlistV2, ListEdit } from "../chart/watchlistsV2";
 import { itemKey } from "../chart/watchlistsV2";
 import type { TradeRecord } from "../types";
 import { chartsPath } from "../shell/shellRoutes";
-import { formatNumber } from "../ui/format";
+import { formatCount } from "../ui/format";
 import type { ContractRight, Side } from "./api";
 import type { TicketTarget } from "./ticketModel";
 
@@ -109,12 +109,11 @@ export function holdsTarget(list: Pick<WatchlistV2, "items">, facts: ContractFac
   return list.items.some((i) => itemKey(i) === key);
 }
 
-/** Open interest the way Indian traders read it: 1.25 Cr, 12.5 L, 85,000. */
+/** Open interest the way Indian traders read it: 1.25 Cr, 12.5 L, 85,000 (M61 OI-1: the app's one count formatter);
+ * null when there is none. */
 export function formatOi(oi: number | null | undefined): string | null {
   if (typeof oi !== "number" || !Number.isFinite(oi) || oi <= 0) return null;
-  if (oi >= 1e7) return `${formatNumber(oi / 1e7, 2)} Cr`;
-  if (oi >= 1e5) return `${formatNumber(oi / 1e5, 1)} L`;
-  return formatNumber(oi, 0);
+  return formatCount(oi);
 }
 
 /** "Expires today", "Expires tomorrow", "6 days left"; null when not known. */

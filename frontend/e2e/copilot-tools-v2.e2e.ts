@@ -69,7 +69,7 @@ for (const size of SIZES) {
         await page.getByRole("button", { name: "Ask", exact: true }).click();
         const answer = page.locator("[data-answer='views']");
         await expect(answer).toContainText("NIFTY: 4 of 4 views read.");
-        await answer.locator("[data-worked] summary").click();
+        await answer.locator("[data-details='copilot.answer'] summary").click();        // CU3: behind the one Details tap
         await expect(answer.locator("[data-tools-used]")).toHaveText("Tools used: Chart structure, Option chain analyses, News feed, Market memory");
         await expect(answer).not.toContainText("flag");
         await expect(answer.locator("[data-admin-not-set-up]")).toHaveCount(0);

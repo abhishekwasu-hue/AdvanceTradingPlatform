@@ -23,7 +23,7 @@ import logging
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +44,8 @@ INDICES: Tuple[Tuple[str, str, str], ...] = (
     ("BANK NIFTY", "NIFTY BANK", "NSE"),
     ("INDIA VIX", "INDIA VIX", "NSE"),
 )
+# CP-UX CU2: the Copilot's numbers strip asks for SENSEX too (`?sensex=true`); the dashboard's three stay as they are.
+SENSEX: tuple[str, str, str] = ("SENSEX", "SENSEX", "BSE")
 # Market-memory rows that carry an index's level: the Copilot's daily cue and intraday read, the VIX gate's reading.
 MEMORY_KINDS = ("CUE", "SYMBOL", "VIX")
 MEMORY_MAX_AGE = timedelta(days=5)          # a long weekend plus a holiday; older is not "the last close"
@@ -149,9 +151,10 @@ async def _memory(session: AsyncSession, tenant_id: int, symbols: List[str], now
     return newest
 
 
-async def _live(session: AsyncSession, user: User) -> Tuple[Dict[str, Dict[str, Any]], Optional[Dict[str, Any]]]:
+async def _live(session: AsyncSession, user: User,
+                indices: tuple[tuple[str, str, str], ...] = INDICES) -> Tuple[Dict[str, Dict[str, Any]], Optional[Dict[str, Any]]]:
     """Live rows by symbol and the broker session they came from - or nothing when no session may be used."""
-    body = quotes_routes.QuotesBody(items=[quotes_routes.QuoteItem(symbol=symbol, exchange=exchange) for _, symbol, exchange in INDICES])
+    body = quotes_routes.QuotesBody(items=[quotes_routes.QuoteItem(symbol=symbol, exchange=exchange) for _, symbol, exchange in indices])
     try:
         out = await quotes_routes.quotes(body, user=user, session=session)
     except HTTPException as exc:
@@ -165,12 +168,14 @@ async def _live(session: AsyncSession, user: User) -> Tuple[Dict[str, Dict[str, 
 
 
 @router.get("/strip", dependencies=[Depends(strip_rate_limit)])
-async def strip(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def strip(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+                sensex: bool = Query(False, description="CU2: add SENSEX (BSE) after BANK NIFTY, for the Copilot's numbers strip")) -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
     market = market_state(now, await _holidays(session, now))
-    live_rows, source_broker = await _live(session, user)
+    wanted = (*INDICES[:2], SENSEX, *INDICES[2:]) if sensex else INDICES
+    live_rows, source_broker = await _live(session, user, wanted)
     indices: List[Dict[str, Any]] = []
-    for label, symbol, exchange in INDICES:
+    for label, symbol, exchange in wanted:
         base = _empty(label, symbol, exchange)
         row = live_rows.get(symbol)
         indices.append((row is not None and _from_live(base, row)) or base)

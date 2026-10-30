@@ -54,6 +54,9 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | P1-5 | Data hub ON (live prices everywhere) | row 20 Part 1 | flag `data_hub` ON in production; API-call numbers before / after |
 | P1-6 | Terminal T1 → T2 → T3 (J4) | row 21 | `terminal` ON after the owner's ✅ on screenshots |
 | TERM-2 | Terminal rebuild (owner 30 Oct "not up to the mark"): context bar, panels = the app's own components linked by one symbol + expiry, layouts (Option seller / Quick trade, phone tabs), R1 roll / R2 what-if / R3 strike-to-area / R4 margin pair, text; supersedes the Terminal parts of CT-1 and P1-6 / P4-1 / P4-2 | ATP_ORDER_TERM2.md, docs/design/TERM2.md | one PR per step; phone 390 + tablet 820 + desktop, dark + light, one comparison page per step; full-flow proof; owner ✅ |
+| CP-UX | Copilot redesign (owner 30 Oct "confusing, too much theory"): CU1 data fixes + CP1 reader, CU2 screen 1, CU3 answer card, CU4 one Copilot, CU5 no-key state, CU6 kept conversation, CU7 hide OFF jobs | ATP_ORDER_CP_SB_UX.md, docs/design/CP_SB_AUDIT.md | first report; one PR per group; phone 390 dark + light + desktop comparison page per PR; owner ✅ |
+| SB-UX | Strategy builder as one stepped flow: SU1 start, SU2 market, SU3 entry blocks, SU4 exit & risk (DEF-0), SU5 result card, SU6 start on paper, SU7 advanced, SU8 copy | ATP_ORDER_CP_SB_UX.md, docs/design/CP_SB_AUDIT.md | as CP-UX |
+| CT-1 | Charts + Terminal consolidation: one component per kind linked by symbol (Terminal parts built in TERM-2; Charts-page parts C1, C2, C4, C6, C8-C10, L1, L3 here) | ATP_ORDER_CT_1.md, docs/design/CT_AUDIT.md | first report; one PR per group; phone 390 + tablet 820 + desktop comparison page per PR; owner ✅ |
 | P1-6c | CX Combined stop-loss / target on positions (Terminal + My trades) | ATP_ORDER_CX_SX.md | CX1-CX7 tests pass; phone + desktop screenshots; owner ✅ |
 | P1-6d | SX Strategy-level SL / target / trailing at entry (spread + basket tickets), same engine as CX | ATP_ORDER_CX_SX.md | SX1-SX8 tests pass; ticket + chip screenshots; owner ✅ |
 | P1-7 | Smart execution ON | row 20 Part 7 (#474 merged) | flag ON; basket confirm step checked on production |
@@ -247,6 +250,9 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | TP-7 | not started | after TP-6 (in order) | - |
 | TP-8 | not started | after TP-7 (in order) | - |
 | TERM-2 | in progress | step 1 (context bar) next; TERM2.md first | owner ✅ per step |
+| CP-UX | not started | after TERM-2; CU1 first | - |
+| SB-UX | not started | after CP-UX CU1; SU4 second | - |
+| CT-1 | not started | Terminal parts in TERM-2; Charts-page parts after CP-UX / SB-UX | - |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |
 | P4-3 | in review | Kotak Neo / Groww merged with LIVE gated; connect guides to check | #473, #481 (merged) |

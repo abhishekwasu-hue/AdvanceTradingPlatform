@@ -54,5 +54,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | OI banner v2 (28 Oct) | ATP_ORDER_OI_V2.md | OI-V2 | stub - full text awaited from the owner |
 | - | Prices everywhere / after hours (28 Oct) | ATP_ORDER_PX_1.md | PX-1 | stub - full text awaited from the owner |
 | - | Terminal rebuild (30 Oct) | ATP_ORDER_TERM2.md | TERM-2 | filed; step 1 next |
+| - | Copilot + Strategy builder redesign (30 Oct) | ATP_ORDER_CP_SB_UX.md | CP-UX, SB-UX | filed; after TERM-2 |
+| - | Charts + Terminal consolidation (30 Oct, + addendum) | ATP_ORDER_CT_1.md | CT-1 (Terminal parts in TERM-2) | filed |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

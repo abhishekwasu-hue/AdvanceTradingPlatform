@@ -156,7 +156,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const combined = useCombinedExits(canTrade && features.on("paper_account"));
   // T1-6: P&L on every position card - the same live-price read as My trades (portfolio exposure).
   const positionsShown = wants("positions", "positions");
-  const loadExposure = useCallback(() => api.portfolioExposure(true), []);
+  // REV-H4: the same scope as his positions (his own trades), so the price and the P&L are his own.
+  const loadExposure = useCallback(() => api.portfolioExposure(true, true), []);
   const [exposureL, reloadExposure] = usePolled(loadExposure, () => LIST_MS, signedIn && positionsShown);
   // TERM-2 step 1: the chain of the ONE active symbol + expiry (the chain page's own read: on an expiry day the next
   // expiry, per the user's chain setting). The context bar's PCR / DTE come from it, so it is read whenever signed in.

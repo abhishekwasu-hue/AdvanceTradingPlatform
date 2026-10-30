@@ -146,7 +146,8 @@ export default function TerminalClassicV2({ terminal = defaultTerminalApi }: Pag
   const combined = useCombinedExits(canTrade && features.on("paper_account"));
   // T1-6: P&L on every position card - the same live-price read as My trades (portfolio exposure).
   const positionsShown = wants("positions", "positions");
-  const loadExposure = useCallback(() => api.portfolioExposure(true), []);
+  // REV-H4: the same scope as his positions (his own trades), so the price and the P&L are his own.
+  const loadExposure = useCallback(() => api.portfolioExposure(true, true), []);
   const [exposureL, reloadExposure] = usePolled(loadExposure, () => LIST_MS, signedIn && positionsShown);
   const loadChain = useCallback(() => api.optionChainLive(underlying), [underlying]);
   const [chainL] = usePolled<LiveChain>(loadChain, () => CHAIN_MS, signedIn && chainWanted);

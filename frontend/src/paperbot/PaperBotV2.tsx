@@ -17,7 +17,11 @@ import { BotWhyV2 } from "./BotWhyV2";
 import ReportCardV2 from "./ReportCardV2";
 import { BotPositionsV2, botPositions } from "./BotPositionsV2";
 import ContractPreviewV2 from "./ContractPreviewV2";
-import { DEFAULTS_PATH, appliedLine, useTradingDefaults, type TradingDefaults } from "../settings/tradingDefaults";
+import {
+  DEFAULTS_PATH, SWING_CONSTRUCTION_NOTE, appliedLine, constructionChoices, constructionProblem, needsConstruction, needsWidth, swingNotTaken,
+  useTradingDefaults, widthOf, withConstruction, type BotConstruction, type TradingDefaults,
+} from "../settings/tradingDefaults";
+import { WINGED_STRUCTURES, type OptionStrategy } from "../types";
 import { Chip } from "../ui/Chip";
 import { Combobox, type ComboOption } from "../ui/Combobox";
 import { Details } from "../ui/numbersFirst";
@@ -27,7 +31,7 @@ import { draftFromState, formSymbol } from "../copilot/strategyDraft";
 import CopilotDraftV2 from "./CopilotDraftV2";
 import {
   IDEA_SYMBOL, READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, lastSignal, paperBotRequestWithDefaults, whyNoTrade, sortBots,
-  startSummaryParts, strategyLine, symbolProblem, withIdeaLots, type Preselect,
+  isIndex, isSwing, startSummaryParts, strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
 import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
 import { handoffFromState, withTestedContract } from "../strategyFlow/model";
@@ -367,7 +371,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   preselect?: Preselect | null;
 }) {
   const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), timeframe: useId(), stop: useId(),
-    target: useId(), times: useId(), wave: useId(), share: useId(), exitNotes: useId() };
+    target: useId(), times: useId(), wave: useId(), share: useId(), exitNotes: useId(), construction: useId(), width: useId(), startWhy: useId() };
   const [useDefaults, setUseDefaults] = useState(true);
   const ready = useMemo(() => (library ?? []).filter((s) => READY.some((r) => r.id === s.id))
     .sort((a, b) => READY.findIndex((r) => r.id === a.id) - READY.findIndex((r) => r.id === b.id)), [library]);
@@ -379,6 +383,9 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   // CT-1 C6: a picked symbol of the usual list keeps its choice (a strategy then sets its own); any other is "another".
   const chooseSymbol = (s: string) => { if (SYMBOLS.includes(s)) setSymbolChoice(s); else { setSymbolChoice(OTHER); setOtherSymbol(s); } };
   const [busy, setBusy] = useState(false);
+  // REV-H3: how the bot trades the option when nothing says it yet (a seller pack with no default): empty until chosen.
+  const [construction, setConstruction] = useState<BotConstruction | "">("");
+  const [widthText, setWidthText] = useState("");
   const [result, setResult] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [touched, setTouched] = useState(false);
   // Strategy templates step 2: the picked template, its chart timeframe and the server's pre-fill for them (nothing is
@@ -464,11 +471,20 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     : strategyLine(strategyId, info) || (custom.some((c) => c.strategy_id === strategyId) ? "Your own strategy from Build a strategy." : "");
   const offered = paperBotRequestWithDefaults(effectiveId, symbol, info, defaults, approvalAllowed).applied;
   const built = paperBotRequestWithDefaults(effectiveId, symbol, info, defaults, approvalAllowed, useDefaults).request;
-  // Job 6: the size the trader's own idea named (his saved strategy only).
-  const ideaLots = preselect && preselect.strategyId === strategyId ? preselect.lots : null;
-  const ideaSized = withIdeaLots(built, ideaLots);
   // SB-UX SU6: the contract the strategy builder tested replaces the form's own while that strategy stays picked.
   const testedContract = preselect && preselect.strategyId === strategyId ? preselect.contract ?? null : null;
+  // REV-H3: a request that names no side and no structure asks for them here (nothing is pre-chosen); a structure with
+  // no width of the user's own asks for the width.
+  const swing = isSwing(info);
+  const choices = constructionChoices(swing);
+  const pickedConstruction = choices.some((c) => c.value === construction) ? construction : "";
+  const askConstruction = !testedContract && needsConstruction(built);
+  const askWidth = !testedContract && needsWidth(withConstruction(built, pickedConstruction, null));
+  const constructed = testedContract ? built : withConstruction(built, pickedConstruction, widthOf(widthText));
+  const notTaken = useDefaults ? swingNotTaken(defaults, { index: isIndex(symbol), swing, approvalAllowed }, built.instrument_kind) : null;
+  // Job 6: the size the trader's own idea named (his saved strategy only).
+  const ideaLots = preselect && preselect.strategyId === strategyId ? preselect.lots : null;
+  const ideaSized = withIdeaLots(constructed, ideaLots);
   const withLots = withTestedContract(ideaSized, testedContract);
   // A template reads its own candles (the adopted timeframe) and holds as the server said (Daily: for days).
   const adopted = picked && adoption ? { ...withLots, timeframe: adoption.deployment.timeframe, holding: adoption.deployment.holding } : withLots;
@@ -480,11 +496,13 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const exitsBody = exitChoices && exitsNow ? templateExitsBody(exitsNow, exitChoices, cls) : null;
   const request = exitsBody ? { ...adopted, template_exits: exitsBody } : adopted;
   const summary = startSummaryParts(symbol, info, request);
+  const startWhy = effectiveId ? constructionProblem(request) : null;
+  const widthLabel = (s: OptionStrategy | undefined) => (s && (WINGED_STRUCTURES.includes(s) || s === "LONG_BUTTERFLY") ? "Wing width" : "Short strike distance");
   const setExit = (patch: Partial<ExitPick>) => { setExitPick((p) => ({ ...(exitsNow ?? p), ...patch })); setResult(null); };
 
   async function start() {
     setTouched(true);
-    if (problem || !effectiveId || exitIssue) return;
+    if (problem || !effectiveId || exitIssue || startWhy) return;
     setBusy(true); setResult(null);
     try {
       await api.createDeployment(request);
@@ -610,6 +628,29 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             {touched && exitIssue && <p role="alert" className="text-t13 text-warn">{exitIssue}</p>}
           </fieldset>
         )}
+        {(askConstruction || askWidth) && (
+          <div className="space-y-space-3 rounded-control border border-subtle p-space-3" data-construction>
+            {askConstruction && (
+              <div>
+                <label htmlFor={ids.construction} className={LABEL}>How this bot trades the option</label>
+                <Combobox id={ids.construction} label="How this bot trades the option" value={pickedConstruction} className="w-full"
+                  placeholder="Choose one" options={choices}
+                  onChange={(v) => { setConstruction(v as BotConstruction); setResult(null); }} />
+                <p className="mt-space-1 text-t13 text-fg-muted">
+                  {swing ? SWING_CONSTRUCTION_NOTE : "The strategy only gives the side. Nothing is chosen for you."}
+                </p>
+              </div>
+            )}
+            {askWidth && (
+              <div>
+                <label htmlFor={ids.width} className={LABEL}>{widthLabel(withConstruction(built, pickedConstruction, null).option_strategy)} (strike steps)</label>
+                <input id={ids.width} className={FIELD} inputMode="numeric" autoComplete="off" value={widthText} placeholder="1 to 20"
+                  aria-invalid={widthText.trim() !== "" && widthOf(widthText) === null ? true : undefined}
+                  onChange={(e) => { setWidthText(e.target.value); setResult(null); }} />
+              </div>
+            )}
+          </div>
+        )}
         <div className="space-y-space-2">
           <p className="text-t14 text-fg-muted" data-start-summary>{summary.line}</p>
           {/* UX-11 U1: the one visible line above; the strategy's own sentence and the rest of the summary on demand. */}
@@ -617,7 +658,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             {line && <p id={ids.line}>{line}</p>}
             <p>{summary.more}</p>
           </Details>
-          {ideaSized !== built && <p className="text-t13 text-fg-muted" data-idea-lots>The size comes from your idea.</p>}
+          {ideaSized !== constructed && <p className="text-t13 text-fg-muted" data-idea-lots>The size comes from your idea.</p>}
           {testedContract && <p className="text-t13 text-fg-muted" data-tested-contract>The option structure, strikes and expiry are the ones you tested.</p>}
           {offered.length > 0 && (
             <div className="space-y-space-1 rounded-control border border-subtle p-space-3" data-defaults>
@@ -633,11 +674,15 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             </div>
           )}
           {/* UI-28 U7.4: the exact contract each signal side would trade now, before anything starts. */}
-          {effectiveId && <ContractPreviewV2 request={request} />}
-          <button type="button" className={`${BUTTON_PRIMARY} w-full sm:w-auto`} disabled={busy || !effectiveId} aria-busy={busy || undefined} onClick={() => void start()}>
+          {notTaken && <p className="text-t13 text-fg-muted" data-defaults-not-taken>{notTaken}</p>}
+          {/* REV-H3: no preview of a contract nobody chose yet (the preview would fill in a side). */}
+          {effectiveId && !startWhy && <ContractPreviewV2 request={request} />}
+          <button type="button" className={`${BUTTON_PRIMARY} w-full sm:w-auto`} disabled={busy || !effectiveId || !!startWhy} aria-busy={busy || undefined}
+            aria-describedby={startWhy ? ids.startWhy : undefined} onClick={() => void start()}>
             {busy && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}
             Start on paper
           </button>
+          {startWhy && <p id={ids.startWhy} className="text-t13 text-fg-muted" data-start-why>{startWhy}</p>}
         </div>
         {result && <NoteV2 kind={result.kind}>{result.text}</NoteV2>}
       </div>

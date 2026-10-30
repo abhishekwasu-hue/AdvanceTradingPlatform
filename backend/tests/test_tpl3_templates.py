@@ -27,6 +27,10 @@ from app.strategy_templates import engine, ids, language, library, parity
 from app.strategy_templates.adapter import ENGINE_LABEL, TemplateStrategy
 from tests.breakout_bk4_fixtures import retest_rows, rows_frame, trend_lead
 
+# REV-S1: these fixtures run around the clock or hold a trade overnight to reach the exit under test; on the 24x7 venue the
+# backtest has no INTRADAY cut-off / square-off (the NSE session rules are tested in tests/test_rev1_s1_s2_backtest_intraday.py).
+VENUE_24X7 = "BTCINR"
+
 C1, C3, A2, A5 = library.get("C1"), library.get("C3"), library.get("A2"), library.get("A5")
 B1, B3 = library.get("B1"), library.get("B3")
 RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5)
@@ -394,7 +398,7 @@ def test_scan_equals_backtest_equals_options_equals_worker(template, params, see
     window[["open", "high", "low", "close"]] *= 240.0                                # index-like prices for the option ladder
     scan = parity.scan_answers(strat.recipe, window)
     assert sum(1 for a in scan.values() if a.direction) >= 2, "the fixture must carry signals to compare"
-    answers, trades = parity.backtest_answers(strat, window, "S", RISK)
+    answers, trades = parity.backtest_answers(strat, window, VENUE_24X7, RISK)
     assert parity.compare(scan, answers, "backtest") == []
     assert trades and parity.compare_trades(scan, trades, lambda ts: ts) == []
     config = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2)

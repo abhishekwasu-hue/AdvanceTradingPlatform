@@ -13,6 +13,7 @@ from app.core.resampling import resample_ohlc
 from app.execution.paper_broker import PaperBroker
 from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.instruments.registry import get_contract_spec
+from app.market_data.calendar import intraday_cutoffs
 from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 from app.strategy_engine.base import BaseStrategy
@@ -21,7 +22,7 @@ from app.trading.exit_rules import ExitRules, apply_exit_rules
 __all__ = ["resample_ohlc", "run_backtest"]
 
 
-ENGINE_VERSION = "5"   # CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (4: realism 1 closed HTF bars; 3: P0.6 daily counters, gap fills)
+ENGINE_VERSION = "6"   # REV-S1 / S2: the live INTRADAY entry cut-off and square-off; the stop before a time exit on one bar (5: CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (4: realism 1 closed HTF bars; 3: P0.6 daily counters, gap fills)
 
 
 @with_prefix_cache
@@ -33,12 +34,16 @@ def run_backtest(
     risk_config: RiskConfig,
     exit_rules: Optional[ExitRules] = None,
     models: Optional[ModelSet] = None,
+    session_rules: bool = True,
 ) -> BacktestResult:
     """Event-driven backtest over historical OHLCV bars.
 
     Higher timeframes are resampled from base_tf data. This is a simplification: a higher-timeframe
     bar is treated as available as soon as its window closes at-or-before the current base-timeframe
     timestamp, which is safe for completed HTF bars but does not model partial-bar intrabar ticks.
+
+    `session_rules=False` only re-runs the engine as it was before REV-S1 (no INTRADAY cut-off / square-off) for the
+    recorded golden results; every product path keeps the default, the live worker's rules.
     """
     frames: Dict[str, pd.DataFrame] = {}
     for tf in strategy.timeframes:
@@ -86,6 +91,11 @@ def run_backtest(
     # an open trade closes it at the next price (the next bar's open), reason "Template exit". Off for every other strategy.
     template_exit = bool(getattr(strategy, "acts_on_exit_signal", False))
     exit_due = False
+    # REV-S1: backtest = live. A strategy on intraday candles trades INTRADAY (a daily-only one is SWING - the deployment
+    # rule in deployments/routes.py), and the worker gives INTRADAY no new entries from the venue's cut-off and squares it
+    # off at the venue's square-off time (trading_worker.py, market_data.calendar.intraday_cutoffs). 24x7 venues: neither.
+    intraday = list(getattr(strategy, "timeframes", [])) != ["day"] and bar_len < pd.Timedelta(days=1) and session_rules
+    no_new_after, square_off_at = intraday_cutoffs(contract_spec.exchange if contract_spec else "NSE") if intraday else (None, None)
 
     for i in range(min_hist, len(primary_df)):
         bar = primary_df.iloc[i]
@@ -116,10 +126,16 @@ def run_backtest(
                 state.trades_today += 1
                 state.open_positions += 1
 
+        bar_close_at = decision_time(current_time, primary_tf)                  # when the worker would act on this bar
+        close_ist = to_utc(bar_close_at).astimezone(IST)
         if open_trade is not None:
             direction = "LONG" if open_trade.direction == SignalDirection.LONG else "SHORT"
             outcome = None
-            if exit_due:
+            exit_at = current_time
+            if square_off_at is not None and to_utc(open_trade.entry_time).astimezone(IST).date() < bar_day:
+                # REV-S1: the data skipped that day's square-off bar - out at this bar's open, never held overnight
+                outcome, exit_due = (f"Square-off ({square_off_at.strftime('%H:%M')} IST)", float(bar["open"])), False
+            if outcome is None and exit_due:
                 # R5: the exit signal came on the previous bar's close - out at this bar's open, before anything else
                 outcome, exit_due = ("Template exit", float(bar["open"])), False
             if outcome is None and rules is not None:
@@ -132,10 +148,15 @@ def run_backtest(
                     current_stop=open_trade.stop_loss, best_price=best_price, high=float(bar["high"]), low=float(bar["low"]),
                     entry_time=open_trade.entry_time, now=bar_time,
                 )
-                if update.time_exit_reason:
-                    outcome = (update.time_exit_reason, float(bar["close"]))
             if outcome is None:
                 outcome = fill.exit(direction, open_trade.stop_loss, open_trade.target1, open_trade.target2, bar)
+            # REV-S2: a time exit is taken at the bar's close, so the stop / target inside the bar comes first (above).
+            if outcome is None and rules is not None and update.time_exit_reason:
+                outcome = (update.time_exit_reason, float(bar["close"]))
+            if outcome is None and square_off_at is not None and close_ist.time() >= square_off_at:
+                # REV-S1: the live INTRADAY square-off, at the price of the moment it runs (this bar's close)
+                outcome = (f"Square-off ({square_off_at.strftime('%H:%M')} IST)", float(bar["close"]))
+                exit_at = bar_close_at
             if outcome is None and rules is not None:
                 best_price = update.best_price
                 if update.stop_changed:
@@ -155,7 +176,7 @@ def run_backtest(
 
             if outcome is not None:
                 reason, exit_price = outcome
-                closed = broker.close_trade(open_trade, exit_price, current_time, reason)
+                closed = broker.close_trade(open_trade, exit_price, exit_at, reason)
                 trades.append(closed)
                 equity += closed.pnl
                 equity_curve.append(equity)
@@ -165,9 +186,11 @@ def run_backtest(
                 open_trade = None
 
         if open_trade is None and pending is None:
-            window = cursor.at(decision_time(current_time, primary_tf))   # only bars that had closed (no forming HTF bar)
+            window = cursor.at(bar_close_at)   # only bars that had closed (no forming HTF bar)
             signal = strategy.analyze(window, symbol)
-            if signal.is_tradeable:
+            # REV-S1: as the worker, the signal is still read after the venue's cut-off, but an INTRADAY one is not entered
+            entries_allowed = no_new_after is None or close_ist.time() < no_new_after
+            if signal.is_tradeable and entries_allowed:
                 decision = risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)
                 if decision.approved and deferred:
                     # the order reaches the market `delay` after this bar closed: the bar trading then (or the next one

@@ -34,6 +34,10 @@ from tests import test_wave5_templates as w5
 from tests.test_wave2_counter import _mirror_bars
 from tests.test_wave4_templates import LEAD, PIVOT, RISK, ev, run, signals
 
+# REV-S1: these fixtures run around the clock or hold a trade overnight to reach the exit under test; on the 24x7 venue the
+# backtest has no INTRADAY cut-off / square-off (the NSE session rules are tested in tests/test_rev1_s1_s2_backtest_intraday.py).
+VENUE_24X7 = "BTCINR"
+
 G_IDS = ("G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11")
 # version 1 of each G template as merged before the companions (main, #396)
 V1_SHA256 = {"G1": "22ac657cd82b83a11d592471c9f14f103021abc0161cdca1756085b2082a6826",
@@ -486,7 +490,7 @@ def test_every_confirmed_signal_is_a_plain_trigger_with_the_confirmation_true(ti
 def test_parity_with_the_companions_on(mod, key, style, extra):
     template, bars, params, bar, side = fixture(mod, key, style)
     strat = TemplateStrategy(template, C.resolve_settings(template, "15m", params={**params, **extra}))
-    report = wave_parity.run(strat, bars, "S", RISK, worker_bars=sorted({bar - 1, bar, bar + 1, LEAD, len(bars) - 1}))
+    report = wave_parity.run(strat, bars, VENUE_24X7, RISK, worker_bars=sorted({bar - 1, bar, bar + 1, LEAD, len(bars) - 1}))
     assert report.problems == [] and report.signals == [bars.index[bar]] and report.trades == 1
 
 

@@ -1,4 +1,5 @@
 import type { PaperReportCard } from "../paperbot/reportCard";
+import { readAllPages, readNewest, tradesPageQuery } from "./tradesPaging";
 import type { OiAlertLogResponse, OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
   DataRequest,
@@ -597,7 +598,12 @@ export const api = {
 
   logoutMemberEverywhere: (id: number) => request<void>(`/team/members/${id}/logout-all`, { method: "POST" }),
 
-  listTrades: () => request<TradeRecord[]>("/trades"),
+  /** REV-1 M3: one page of /trades, newest first (the server answers at most 500 rows a page). */
+  listTradesPage: (limit: number, offset = 0) => request<TradeRecord[]>(tradesPageQuery(limit, offset)),
+  /** The whole trade history, read page by page (for figures over every trade: booked P&L, the curve). */
+  listTrades: () => readAllPages((limit, offset) => request<TradeRecord[]>(tradesPageQuery(limit, offset))),
+  /** REV-1 M3: the newest `count` trades and whether older ones exist (a list that pages through). */
+  listNewestTrades: (count: number) => readNewest((limit, offset) => request<TradeRecord[]>(tradesPageQuery(limit, offset)), count),
 
   listPositions: () => request<TradeRecord[]>("/positions"),
 

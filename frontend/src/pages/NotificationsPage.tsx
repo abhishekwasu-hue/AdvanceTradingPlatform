@@ -1,5 +1,5 @@
 import { errorSentence } from "../api/errors";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui";
@@ -10,7 +10,7 @@ import { byNotification, single } from "../components/visionReport";
 import { PageHeader, Tabs } from "../components/primitives";
 import { AlertRulesPanel } from "../components/AlertRulesPanel";
 import { useDeepLinkTarget } from "../utils/useDeepLinkTarget";
-import { useLiveEvents } from "../live/useLiveEvents";
+import { useNotificationReads } from "../live/useNotificationReads";
 import { formatDateTimeIST } from "../ui/format";
 import { notificationEventWords } from "../ui/notificationWords";
 
@@ -37,20 +37,15 @@ export default function NotificationsPage() {
   const [scanVision, setScanVision] = useState<VisionReportsResponse | null>(null);
   const [dailyVision, setDailyVision] = useState<VisionReportsResponse | null>(null);
 
-  function refresh() {
-    if (!user) return;
-    api.listNotifications().then(setNotifications).catch((e) => setError(errorSentence(e)));
-    api.byokReportsBy({ kind: "scan_alert" }).then(setScanVision).catch(() => setScanVision(null));
-    api.byokReportsBy({ kind: "daily_review" }).then(setDailyVision).catch(() => setDailyVision(null));
-  }
-
-  useEffect(refresh, [user]);
-  useLiveEvents(["notifications"], refresh);                 // PW4: a new alert appears without a reload
+  // REV-1 M3: a new alert or Mark read re-reads only the feed (src/live/useNotificationReads.ts).
+  const { refresh, refreshFeed } = useNotificationReads(!!user, {
+    setNotifications, setError: (e) => setError(errorSentence(e)), setScanVision, setDailyVision,
+  });
 
   async function markRead(id: number) {
     try {
       await api.markNotificationRead(id);
-      refresh();
+      refreshFeed();
     } catch (e) {
       setError(errorSentence(e));
     }
@@ -59,7 +54,7 @@ export default function NotificationsPage() {
   async function markAllRead() {
     try {
       await api.markAllNotificationsRead();
-      refresh();
+      refreshFeed();
     } catch (e) {
       setError(errorSentence(e));
     }

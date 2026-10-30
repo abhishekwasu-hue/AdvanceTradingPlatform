@@ -2,6 +2,7 @@ import math
 
 import numpy as np
 import pandas as pd
+
 from app.indicators.prefix_cache import prefix_cached
 
 

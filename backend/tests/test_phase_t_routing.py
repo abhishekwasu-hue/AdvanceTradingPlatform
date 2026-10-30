@@ -14,7 +14,7 @@ from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_accounts import _mark_valid
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _create, _store_broker
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker
 
 pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
 

@@ -254,12 +254,13 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
               <span className={colour ? "text-down" : undefined}>Calls</span><span className={colour ? "text-up" : undefined}>Puts</span>
             </div>
             <ViewToggle view={view} onView={setView} className="absolute -top-space-5 left-1/2 z-10 -translate-x-1/2 md:-top-space-4" />
-            <div role="group" aria-label="Strikes shown" data-strike-range className="mb-space-2 flex flex-wrap items-center gap-space-2">
+            <div role="group" aria-label="Strikes shown" data-strike-range className="mb-space-2 flex items-center gap-space-2">
+              <span aria-hidden className="text-t12 text-fg-muted">Strikes</span>
               {STRIKE_RANGES.map((n) => (
-                <button key={n} type="button" aria-pressed={range === n} onClick={() => setRange(n)}
+                <button key={n} type="button" aria-pressed={range === n} onClick={() => setRange(n)} aria-label={n === 0 ? "All strikes" : `ATM ± ${n} strikes`}
                   className={cx("inline-flex min-h-11 items-center rounded-pill border px-space-3 text-t13 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8",
                     range === n ? "border-brand bg-brand-tint font-semibold text-fg" : "border-border text-fg-muted hover:text-fg")}>
-                  {n === 0 ? "All strikes" : `ATM ± ${n}`}
+                  {n === 0 ? "All" : `± ${n}`}
                 </button>
               ))}
             </div>

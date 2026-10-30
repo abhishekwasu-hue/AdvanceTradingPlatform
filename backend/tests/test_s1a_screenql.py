@@ -4,7 +4,8 @@ import random
 
 import pytest
 
-from app.screener import compile_screen, nodes as n, parse, validate
+from app.screener import compile_screen, parse, validate
+from app.screener import nodes as n
 from app.screener.parser import MAX_TEXT, ScreenQLSyntaxError
 from app.screener.registry import FIELDS, FUNCTIONS, describe
 

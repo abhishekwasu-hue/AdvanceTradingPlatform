@@ -28,8 +28,8 @@ from app.billing.razorpay import GatewaySubscription, PaymentLink, build_from_co
 from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import BillingTransactionRecord, SubscriptionRecord, Tenant, UsageRecord
 from app.notifications.service import notify
-from app.plans.registry import DEFAULT_PLAN_ID, PLANS, Plan, get_plan
 from app.observability.metrics import BILLING_PAYMENTS, BILLING_TRANSITIONS
+from app.plans.registry import DEFAULT_PLAN_ID, PLANS, Plan, get_plan
 
 logger = logging.getLogger(__name__)
 

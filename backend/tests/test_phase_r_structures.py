@@ -12,13 +12,13 @@ from app.execution.multileg import execute_structure
 from app.instruments.contracts import ContractResolutionError
 from app.instruments.spreads import describe_structure, is_debit, resolve_structure, structure_metrics
 from app.trading.position_monitor import group_exit
+from tests.def0_legacy import legacy
 from tests.master_fixture import NIFTY_LOT
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_contract_rules import TODAY, _load_master
 from tests.test_deployments_api import _auth, _create, _store_broker
 from tests.test_multileg import SPOT, _OptionBroker, _rules
 from tests.test_trading_worker import _signal, _tenant, _trades
-from tests.def0_legacy import legacy
 
 FAR_BUMP = 40.0   # a later expiry's option is worth more: the calendar's long leg
 

@@ -10,8 +10,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.screener import stored_history
-from tests.test_backtest_bar_source import SYM, _clear, _days, _rows, _store, _today, _run
 from tests.test_auth_api import client
+from tests.test_backtest_bar_source import SYM, _clear, _days, _rows, _run, _store, _today
 from tests.test_copilot_v2_chat import _flag
 from tests.test_deployments_api import _auth
 

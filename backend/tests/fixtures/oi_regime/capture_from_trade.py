@@ -14,9 +14,8 @@ import json
 import random
 import sys
 
-import pandas as pd
-
 import oi_analysis as oa
+import pandas as pd
 
 rng = random.Random(20261011)
 cases = {"classify": [], "rotation": [], "rotation2": [], "hysteresis": [], "pcr": [], "matrix": [], "psych": [], "gate": [],

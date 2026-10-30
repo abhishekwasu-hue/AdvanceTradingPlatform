@@ -30,21 +30,38 @@ from typing import Dict, List, Optional, Sequence, Set
 import pandas as pd
 
 from app.backtest.analytics import build_analytics
+from app.backtest.models import ModelError, ModelSet
 from app.backtest.options import (
-    Black76Pricer, ExpiryCalendar, OptionPricer, PricingUnavailable, SnapshotPricer, SyntheticPricer, VolatilityModel, bars_per_year,
-    default_lot_size, default_strike_step, lot_size_for, strike_ladder, to_utc, underlying_name,
+    Black76Pricer,
+    ExpiryCalendar,
+    OptionPricer,
+    PricingUnavailable,
+    SnapshotPricer,
+    SyntheticPricer,
+    VolatilityModel,
+    bars_per_year,
+    default_lot_size,
+    default_strike_step,
+    lot_size_for,
+    strike_ladder,
+    to_utc,
+    underlying_name,
 )
+from app.backtest.windows import WindowCursor, decision_time
+from app.core import config as app_config
 from app.core.enums import AssetClass, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, OrderSide, SignalDirection, StrikeRule
 from app.core.models import BacktestResult, RiskConfig, Signal, Trade
 from app.core.resampling import resample_ohlc
-from app.backtest.models import ModelError, ModelSet
-from app.backtest.windows import WindowCursor, decision_time
-from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.execution.paper_broker import PaperBroker
-from app.instruments.contracts import (
-    ContractResolutionError, ContractRules, ResolvedContract, option_right, select_strike,
-)
+from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.instruments import expiry_data
+from app.instruments.contracts import (
+    ContractResolutionError,
+    ContractRules,
+    ResolvedContract,
+    option_right,
+    select_strike,
+)
 from app.instruments.expiry_data import ExpiryDataMissing, ExpiryDataStale
 from app.instruments.models import ContractSpec
 from app.instruments.spreads import CustomLeg, PlannedLeg, ResolvedLeg, ResolvedStructure, plan_structure, structure_metrics
@@ -53,10 +70,9 @@ from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState, nonfinite_levels
 from app.strategy_engine.base import BaseStrategy
 from app.trading.exit_logic import underlying_exit
-from app.trading.trigger_rules import ABOVE, BELOW, closed_beyond
 from app.trading.exit_rules import ExitRules
 from app.trading.position_monitor import structure_exit_reason, underlying_exit_reason
-from app.core import config as app_config
+from app.trading.trigger_rules import ABOVE, BELOW, closed_beyond
 
 logger = logging.getLogger(__name__)
 

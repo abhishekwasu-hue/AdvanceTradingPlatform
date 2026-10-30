@@ -36,10 +36,23 @@ import httpx
 from app.brokers import master_cache
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.models import (
+    BrokerCredentials,
+    BrokerHolding,
+    BrokerOrderRequest,
+    BrokerOrderResponse,
+    BrokerOrderStatus,
+    BrokerPosition,
+    BrokerProfile,
+    BrokerTradeEntry,
+    Instrument,
+    MarginInfo,
+    OptionChain,
+    OptionChainRow,
+    Quote,
+)
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.totp import totp_code
-from app.brokers.models import (BrokerCredentials, BrokerHolding, BrokerOrderRequest, BrokerOrderResponse, BrokerOrderStatus,
-                                BrokerPosition, BrokerProfile, BrokerTradeEntry, Instrument, MarginInfo, OptionChain, OptionChainRow, Quote)
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
 

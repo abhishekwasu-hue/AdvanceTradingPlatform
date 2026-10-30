@@ -1,7 +1,7 @@
 """Analyze a chart: the safe image path, the output contract, the settings, the private store, the provider boundary and
 the AI plumbing - unit tests on made-up inputs (synthetic images drawn in code, a fake engine)."""
-import asyncio
 import ast
+import asyncio
 import io
 import json
 import struct
@@ -13,7 +13,8 @@ from PIL import Image
 
 from app.ai.metering import MeteredProvider
 from app.ai.providers import Completion
-from app.chart_analyze import contract, imaging, provider, settings as settings_mod, storage
+from app.chart_analyze import contract, imaging, provider, storage
+from app.chart_analyze import settings as settings_mod
 from tests.chart_analyze_fakes import HEIGHT, WIDTH, FakeProvider, answer, synthetic_chart
 
 SETTINGS = settings_mod.merge({})

@@ -1,6 +1,6 @@
 import json
-import math
 import logging
+import math
 from typing import Optional, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,33 +8,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.brokers.base import BrokerInterface
 from app.compliance import algo_id as algo_ids
 from app.compliance import fo_limits
-from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderStatus
+from app.core import config
+from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OptionPosition, OrderSide, OrderStatus, SignalDirection
 from app.core.logging_config import bind_log_context, update_log_context
 from app.core.models import RiskConfig, Signal
-from app.risk_engine.routes import get_tenant_risk_config
 from app.db.models import OrderRecord, Tenant, User
 from app.execution import approval as approval_gate
+from app.execution.contract_execution import ContractExecutionError, build_order_plan, contract_ltp, written_lot_cap
 from app.execution.order_persistence import create_order, execution_result_from_order, transition_order
+from app.execution.prechecks import PreCheckRefusal, live_margin_cap, margin_probe_for, validate_instrument
+from app.execution.products import product_for
 from app.execution.router import ExecutionResult, OrderRouter
+from app.instruments.contracts import ContractRules, ResolvedContract
+from app.instruments.models import ContractSpec
 from app.instruments.registry import get_contract_spec
 from app.kill_switch.checks import active_kill_switch_reasons
 from app.notifications.service import notify
-from app.core import config
 from app.observability.metrics import ORDER_ENTRY_LATENCY, ORDERS
-from app.core.enums import OptionPosition
-from app.execution.contract_execution import ContractExecutionError, build_order_plan, contract_ltp, written_lot_cap
-from app.execution.prechecks import PreCheckRefusal, live_margin_cap, margin_probe_for, validate_instrument
-from app.core.enums import OrderSide, SignalDirection
-from app.instruments.contracts import ContractRules, ResolvedContract
-from app.instruments.models import ContractSpec
-from app.reconciliation.service import broker_uncertain_reason, mark_broker_uncertain
 from app.plans.limits import live_allowed, tenant_is_active
-from app.platform.controls import entry_blocks as platform_entry_blocks
-from app.risk_engine.by_default import releases_unused_entry_slot as by_default_releases_slot
-from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarchy
-from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
 from app.platform.controls import clamp_config, risk_ceilings
-from app.execution.products import product_for
+from app.platform.controls import entry_blocks as platform_entry_blocks
+from app.reconciliation.service import broker_uncertain_reason, mark_broker_uncertain
+from app.risk_engine.by_default import releases_unused_entry_slot as by_default_releases_slot
+from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
+from app.risk_engine.hierarchy import RiskContext
+from app.risk_engine.hierarchy import evaluate as evaluate_hierarchy
+from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
 
 logger = logging.getLogger(__name__)
@@ -284,7 +283,7 @@ async def execute_signal_for_user(
         pre_notes.extend(guard.notes)
         if contract_spec is None:
             contract_spec = get_contract_spec(signal.symbol)
-        from app.trading.position_monitor import venue_beyond_nse   # local: the monitor imports the execution layer
+        from app.trading.position_monitor import venue_beyond_nse  # local: the monitor imports the execution layer
         order_exchange = contract.exchange if contract is not None else (
             contract_spec.exchange if contract_spec else (venue_beyond_nse(exchange) or "NSE"))
         refusals, notes = await validate_instrument(
@@ -483,7 +482,7 @@ async def execute_signal_for_user(
                 # this platform can be in - CRITICAL, immediately, to the whole tenant.
                 closed_note = ""
                 if config.LIVE_EXIT_IF_NO_STOP and broker is not None:
-                    from app.trading.stop_guard import exit_unprotected   # local: stop_guard imports the monitor
+                    from app.trading.stop_guard import exit_unprotected  # local: stop_guard imports the monitor
                     try:
                         done = await exit_unprotected(session, trade_record, broker, "the protective stop failed at entry",
                                                       rejected=result.sl_rejected, broker_uncertain=result.broker_uncertain,

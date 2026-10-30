@@ -15,7 +15,8 @@ import json
 import logging
 import time as time_module
 from dataclasses import dataclass, field
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import pandas as pd

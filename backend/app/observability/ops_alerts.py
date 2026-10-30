@@ -46,7 +46,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config
 from app.db.models import (
-    AlertDeliveryRecord, BrokerCredentialRecord, LoginEventRecord, NotificationLinkRecord, PlatformControlRecord, WorkerHeartbeatRecord,
+    AlertDeliveryRecord,
+    BrokerCredentialRecord,
+    LoginEventRecord,
+    NotificationLinkRecord,
+    PlatformControlRecord,
+    WorkerHeartbeatRecord,
 )
 
 logger = logging.getLogger(__name__)

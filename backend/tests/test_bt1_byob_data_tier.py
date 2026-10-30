@@ -34,7 +34,7 @@ from app.market_data.service import MarketDataService
 from app.market_data.stream import Tick, TickCache, TickStream, tick_cache
 from app.platform import controls
 from tests.test_auth_api import _session_factory, client
-from tests.test_market_data_service import _MemoryCache, _install_cache
+from tests.test_market_data_service import _install_cache, _MemoryCache
 from tests.test_passwords import _headers, _tenant_pro
 from tests.test_phase_aa_market_data_api import _Broker, _store_credentials
 from tests.test_phase_k_commercial import _owner
@@ -464,16 +464,20 @@ def test_resolve_prefers_a_confirmed_session_over_an_execution_only_one():
 class _FakeConn:
     def __init__(self, frames: List[Any], hold: asyncio.Event):
         self.frames, self.hold, self.sent = list(frames), hold, []
+        self.subscribed = asyncio.Event()
 
     async def send(self, data):
         self.sent.append(data)
+        self.subscribed.set()
 
     def __aiter__(self):
         return self._gen()
 
     async def _gen(self):
-        while not self.sent and not self.hold.is_set():    # a feed sends prices only after a subscription
-            await asyncio.sleep(0.005)
+        waits = [asyncio.ensure_future(self.subscribed.wait()), asyncio.ensure_future(self.hold.wait())]
+        await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)   # a feed sends prices only after a subscription
+        for w in waits:
+            w.cancel()
         for f in self.frames:
             yield f
         await self.hold.wait()

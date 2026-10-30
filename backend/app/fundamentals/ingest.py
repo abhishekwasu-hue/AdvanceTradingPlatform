@@ -36,8 +36,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import PeriodType
 from app.db.models import CompanyRecord, FinancialPeriodRecord
-from app.fundamentals import pit
 from app.fundamentals import persistence as db
+from app.fundamentals import pit
 from app.fundamentals.models import CompanyProfile, FinancialPeriod
 from app.fundamentals.providers.base import FundamentalDataProvider
 from app.fundamentals.providers.exceptions import FundamentalDataProviderError

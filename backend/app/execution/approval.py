@@ -268,8 +268,8 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
             await session.flush()
     except IntegrityError:
         return None
-    from app.observability.metrics import AI_PROPOSALS
     from app.notifications.service import notify
+    from app.observability.metrics import AI_PROPOSALS
     AI_PROPOSALS.labels(action=ACTION_ENTRY).inc()
     impact_line = ""
     if book is not None:                                                      # N1 F3: the owner's own book after this entry

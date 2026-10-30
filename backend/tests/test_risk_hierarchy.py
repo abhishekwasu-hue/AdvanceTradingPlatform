@@ -4,7 +4,6 @@ and the limits/events API."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-
 from app.core.enums import KillSwitchScope
 from app.core.models import RiskConfig
 from app.db.models import RiskLimitRecord, TradeRecord, User
@@ -164,11 +163,11 @@ def test_dry_run_evaluate_endpoint_and_multileg_uses_max_loss():
     assert ok["allowed"] and ok["checks"][0]["status"] == "PASS"
 
     # Multi-leg: the structure's max loss per unit (60) x quantity (75 x 2 lots) = 9,000 > 3,000 -> blocked.
-    from tests.test_contract_rules import TODAY, _load_master
-    from tests.test_multileg import SPOT, _OptionBroker, _rules
     from app.core.enums import OptionStrategy, SignalDirection
     from app.execution.multileg import execute_structure
     from app.instruments.spreads import resolve_structure
+    from tests.test_contract_rules import TODAY, _load_master
+    from tests.test_multileg import SPOT, _OptionBroker, _rules
     _load_master()
     me = _me(headers)
 

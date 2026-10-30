@@ -39,7 +39,7 @@ import asyncio
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.core.enums import SignalDirection, SignalGrade, OrderStatus
+from app.core.enums import OrderStatus, SignalDirection, SignalGrade
 from app.core.models import Signal
 from app.db.models import Tenant, User
 from app.execution.order_persistence import create_order

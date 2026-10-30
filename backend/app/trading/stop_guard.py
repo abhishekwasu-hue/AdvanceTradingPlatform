@@ -17,23 +17,32 @@ from typing import Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.execution.products import product_for_trade
 from app.audit.log import write_audit_log
 from app.brokers.base import BrokerInterface, round_stop_trigger
 from app.brokers.exceptions import is_clear_rejection
+from app.compliance.algo_id import order_algo_id
+from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
 from app.db.models import Tenant, TradeRecord
 from app.db.savepoint import guarded
-from app.compliance.algo_id import order_algo_id
+from app.execution.products import product_for_trade
 from app.execution.tagging import LEG_STOP, build_order_tag
 from app.market_data.calendar import market_session_status
 from app.notifications.service import notify
 from app.reconciliation.service import broker_uncertain_reason
-from app.core import config
 from app.trading import stop_state
-from app.trading.position_monitor import (_find_order, absent_exit_dead_reason, adoptable_exit, claim_in_flight, close_position,
-                                          exit_ids_elsewhere, expected_exit_tag, is_pending_exit, unverified_working_exits,
-                                          venue_for)
+from app.trading.position_monitor import (
+    _find_order,
+    absent_exit_dead_reason,
+    adoptable_exit,
+    claim_in_flight,
+    close_position,
+    exit_ids_elsewhere,
+    expected_exit_tag,
+    is_pending_exit,
+    unverified_working_exits,
+    venue_for,
+)
 
 logger = logging.getLogger(__name__)
 

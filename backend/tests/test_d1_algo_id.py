@@ -20,7 +20,7 @@ from app.db.models import AuditLogRecord, TradeRecord
 from app.execution.tagging import LEG_ENTRY, LEG_STOP, build_order_tag
 from tests.test_algo_tagging import _set_algo_id, _user
 from tests.test_auth_api import _session_factory
-from tests.test_live_execution import _LiveBroker, _execute
+from tests.test_live_execution import _execute, _LiveBroker
 
 
 @pytest.fixture
@@ -103,7 +103,9 @@ def test_live_entry_writes_an_audit_row_with_the_tag(monkeypatch):
 
 def test_live_exit_writes_an_audit_row_with_the_tag():
     from app.trading.position_monitor import close_position
-    from tests.test_position_monitor import _Broker as _ExitBroker, _trade, _user as _pm_user
+    from tests.test_position_monitor import _Broker as _ExitBroker
+    from tests.test_position_monitor import _trade
+    from tests.test_position_monitor import _user as _pm_user
     user = _pm_user("d1-exit@example.com")
     _set_algo_id(user.tenant_id, "NSE56")
     trade_id = _trade(user, mode="LIVE")

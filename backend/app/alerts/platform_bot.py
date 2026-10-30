@@ -88,7 +88,7 @@ def _cfg(chat_id: str = "0") -> TelegramConfig:
 
 
 async def _call(method: str, payload: dict, client: Optional[httpx.AsyncClient] = None) -> dict:
-    from app.telegram_inbound import service             # the one Telegram API helper (never raises, never logs the token)
+    from app.telegram_inbound import service  # the one Telegram API helper (never raises, never logs the token)
     return await service._call(_cfg(), method, payload, client)
 
 

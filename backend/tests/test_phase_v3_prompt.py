@@ -10,6 +10,7 @@ from app.db.models import Tenant, TradeRecord, User
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_phase_l_ai import VALID_ANSWER, _owner
 
+
 def _ist_today() -> str:
     """Read at call time, not import time: a run that crosses IST midnight must not use yesterday's date."""
     return datetime.now(timezone(timedelta(hours=5, minutes=30))).date().isoformat()

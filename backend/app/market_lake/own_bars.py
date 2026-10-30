@@ -161,10 +161,11 @@ async def official_close(session: AsyncSession, key: str, scope: Optional[Scope]
     """DH6: the newest stored Daily close of `key` - the session's official close - with its date and source: the shared
     lake's NSE index close file (`nse_bhav:index`) or the member's own broker Daily history, whichever is newer (a tie
     keeps NSE's file). None when no Daily bar is stored."""
+    from sqlalchemy import or_
+
     from app.charts.price_action_layer import SHARED_SOURCES
     from app.db.models import MdCandleRecord
     from app.market_data.calendar import IST
-    from sqlalchemy import or_
     shared = (await session.execute(select(MdCandleRecord.ts, MdCandleRecord.close, MdCandleRecord.source).where(
         MdCandleRecord.instrument_key == key, MdCandleRecord.timeframe.in_(("1d", "day")),
         or_(*[MdCandleRecord.source.like(f"{p}%") for p in SHARED_SOURCES])).order_by(

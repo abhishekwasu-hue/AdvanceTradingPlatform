@@ -13,8 +13,8 @@ from typing import Dict, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import FxRateRecord, User
 from app.audit.log import write_audit_log
+from app.db.models import FxRateRecord, User
 
 SUPPORTED_CURRENCIES = ("INR", "USD", "USDT", "EUR", "GBP", "AED", "SGD")
 PIVOT = "INR"

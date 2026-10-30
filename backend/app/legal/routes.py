@@ -16,11 +16,11 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import legal
 from app.auth.dependencies import get_current_user
 from app.core.rate_limit import rate_limit
 from app.db.models import User
 from app.db.session import get_session
-from app import legal
 from app.legal import acceptance, documents
 
 router = APIRouter(prefix="/api/legal", tags=["legal"])

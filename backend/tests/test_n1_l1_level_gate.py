@@ -9,10 +9,10 @@ real-break rule (`break_from`, time acceptance) and the settings defaults.
 The golden file is Trade output, read from the private fixtures store (tests/private_fixtures.py): the public CI skips
 the parity tests with the reason; the tests that need no Trade output always run."""
 import ast
-import subprocess
-import sys
 import json
 import math
+import subprocess
+import sys
 from functools import lru_cache
 from pathlib import Path
 from types import SimpleNamespace

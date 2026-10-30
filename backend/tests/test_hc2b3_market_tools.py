@@ -11,7 +11,7 @@ from app.ai.tools import ToolContext, market, run_tool
 from app.brokers.models import OptionChain, OptionChainRow, Quote
 from app.db.models import User
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
-from tests.test_hc2a_agent import _Scripted, _agent
+from tests.test_hc2a_agent import _agent, _Scripted
 from tests.test_phase_l_ai import _owner
 
 NOW = datetime(2026, 3, 10, 5, 0, tzinfo=timezone.utc)

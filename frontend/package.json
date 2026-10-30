@@ -13,6 +13,7 @@
     "check:v2-colours": "node scripts/check-v2-colours.mjs",
     "check:mobile": "node scripts/check-mobile-config.mjs",
     "check:devanagari": "python3 ../scripts/check_english_only.py",
+    "lint": "node scripts/check-eslint-ratchet.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "storybook": "storybook dev -p 6006",
@@ -42,6 +43,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.2",
+    "@eslint/js": "10.0.1",
     "@playwright/test": "1.63.0",
     "@storybook/addon-a11y": "^8.6.14",
     "@storybook/addon-essentials": "^8.6.14",
@@ -53,10 +55,14 @@
     "@types/three": "0.185.4",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
+    "eslint": "10.12.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
     "postcss": "^8.4.41",
     "storybook": "^8.6.14",
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",
+    "typescript-eslint": "8.71.2",
     "vite": "^5.4.1",
     "vitest": "^3.2.4"
   }

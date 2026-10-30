@@ -11,15 +11,16 @@ import numpy as np
 from sqlalchemy import select
 
 from app.ai import generator, monitor
-from app.ai.generator import parse_answer
 from app.ai import providers as prov
+from app.ai.generator import parse_answer
 from app.ai.providers import DEFAULT_MODELS, AnthropicProvider, OpenAIProvider, ProviderError, RuleBasedProvider, build_provider
 from app.ai.regime import classify_regime, regime_blocks, regime_note, validate_filter
 from app.db.models import AiActionRecord, AiProviderConfigRecord, CustomStrategyRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
 from app.secrets_store.encryption import decrypt_text
 from tests.server_evidence import serve_candles
 from tests.test_auth_api import _register, _session_factory, client
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant as _worker_tenant, _trades, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _trades, _worker
+from tests.test_trading_worker import _tenant as _worker_tenant
 from tests.utils import make_series, noisy_uptrend
 
 
@@ -328,6 +329,7 @@ def _seed_trades(tenant_id: int, dep_id: int, user_id: int, pnls, *, open_positi
 # so these tests anchor "now" to midday of the current IST date: the seeded exits stay on today
 # and the proposals' expiry stays ahead of the API's wall clock.
 from zoneinfo import ZoneInfo as _ZoneInfo
+
 MONITOR_NOW = datetime.now(_ZoneInfo("Asia/Kolkata")).replace(hour=12, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
 
 

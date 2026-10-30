@@ -45,6 +45,7 @@ def enable_mfa(headers: dict) -> str:
     """Enrols and confirms TOTP for the logged-in user behind `headers` (the current session ends
     up MFA-verified). Returns the base32 secret so tests can mint further codes."""
     import pyotp
+
     from tests.test_auth_api import client
 
     enrolled = client.post("/api/auth/mfa/enrol", headers=headers)

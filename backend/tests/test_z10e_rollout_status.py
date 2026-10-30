@@ -14,8 +14,15 @@ from app.beta import invites
 from app.core import config as app_config
 from app.core import rate_limit
 from app.db.base import Base
-from app.db.models import (AlertDeliveryRecord, AuditLogRecord, BrokerCredentialRecord, IncidentRecord, IndexEodRecord, PlatformControlRecord,
-                           WorkerHeartbeatRecord)
+from app.db.models import (
+    AlertDeliveryRecord,
+    AuditLogRecord,
+    BrokerCredentialRecord,
+    IncidentRecord,
+    IndexEodRecord,
+    PlatformControlRecord,
+    WorkerHeartbeatRecord,
+)
 from app.market_data import entitlement
 from app.observability import status_page
 from app.platform import controls

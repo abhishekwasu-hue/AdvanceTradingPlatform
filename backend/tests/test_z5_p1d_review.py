@@ -25,12 +25,27 @@ from app.execution import approval
 from app.market_data.calendar import IST
 from app.risk_engine import by_default, guardian, vix_gate
 from tests.test_auth_api import _session_factory, client
-from tests.test_trading_worker import _FakeBroker, _deploy, _get, _worker
+from tests.test_trading_worker import _deploy, _FakeBroker, _get, _worker
 from tests.test_z3_approval_entries import _flag_for as _approval_flag
 from tests.test_z3_approval_entries import _price, _sig
 from tests.test_z3b_paper_account import _member, _paper_flag
-from tests.test_z5_p1d_risk_by_default import (OWN, VIX_NOW, _closed, _mine, _enter, _flag, _open, _org, _place, _plan, _preview, _run, _tenant_t, _vix,
-                                               _vix_clock)
+from tests.test_z5_p1d_risk_by_default import (
+    OWN,
+    VIX_NOW,
+    _closed,
+    _enter,
+    _flag,
+    _mine,
+    _open,
+    _org,
+    _place,
+    _plan,
+    _preview,
+    _run,
+    _tenant_t,
+    _vix,
+    _vix_clock,
+)
 
 UTC = timezone.utc
 
@@ -234,6 +249,7 @@ def test_time_exit_of_a_locked_user_still_runs(monkeypatch):
 
 def test_console_paper_execute_for_a_locked_user_answers_with_the_reason(monkeypatch):
     from fastapi.testclient import TestClient
+
     from app.main import app
     from app.strategy_engine.registry import registry
     from tests.test_trading_api import _fake_long_signal, _sample_candles_payload
@@ -419,6 +435,7 @@ def test_entries_per_day_slot_is_atomic(slot_db_url):
     PAPER account row is the serialisation point; the second waits and then sees the slot gone)."""
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy.pool import AsyncAdaptedQueuePool
+
     from app.db.base import Base
     from app.db.models import Tenant
 

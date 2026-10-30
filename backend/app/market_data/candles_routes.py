@@ -46,21 +46,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.core.rate_limit import user_rate_limit
 from app.billing.service import meter
 from app.brokers.base import BrokerInterface
 from app.brokers.catalog import display_name
 from app.brokers.gates import data_sources, market_data_open
 from app.brokers.token_lifecycle import build_adapter, data_is_usable, token_is_usable
 from app.core.models import OHLCVBar
+from app.core.rate_limit import user_rate_limit
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session, release_connection
 from app.market_data import api_budget, entitlement, index_volume, lake_fill, periods
-from app.market_data.calendar import (EXCHANGE_SESSIONS, IST, family_holidays, last_session_close, load_holidays, session_family,
-                                      session_status)
+from app.market_data.calendar import EXCHANGE_SESSIONS, IST, family_holidays, last_session_close, load_holidays, session_family, session_status
 from app.market_data.data_terms import terms_for
 from app.market_data.entitlement import DataTier, Entitlement
-from app.market_data.fanin import FLAG as BYOB_FLAG, Priority
+from app.market_data.fanin import FLAG as BYOB_FLAG
+from app.market_data.fanin import Priority
 from app.market_data.freshness import quote_is_stale
 from app.market_data.service import CHUNK_LIMIT, MarketDataService, build_frames, merge_bars
 from app.market_data.stream import TickCache, tick_cache
@@ -550,7 +550,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         result["note"] = ("Candles come through your own broker session; a copy another user of the same broker fetched in the last "
                           "minutes is used instead of a second broker call.")
     if len(wanted) == 1 and any(v.get("count") for v in out.values()):
-        from app.growth import activation    # AUD-G2.4: one symbol with bars = a chart (several = a screener)
+        from app.growth import activation  # AUD-G2.4: one symbol with bars = a chart (several = a screener)
         await activation.record_step(session, user, "first_chart")
     return result
 

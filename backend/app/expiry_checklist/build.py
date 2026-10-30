@@ -62,7 +62,7 @@ def right_of(symbol: str) -> Optional[str]:
 
 
 def strike_of(symbol: str) -> Optional[float]:
-    from app.trading.routes import _strike_of     # the one parser Positions uses
+    from app.trading.routes import _strike_of  # the one parser Positions uses
     return _strike_of(symbol or "")
 
 

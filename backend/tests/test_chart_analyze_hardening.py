@@ -13,12 +13,12 @@ from PIL import Image
 
 from app.ai import metering
 from app.ai.providers import Completion
-from app.chart_analyze import contract, engine, imaging, limits, linkfetch, service, settings as settings_mod, storage
+from app.chart_analyze import contract, engine, imaging, limits, linkfetch, service, storage
+from app.chart_analyze import settings as settings_mod
 from app.db.models import ChartAnalysisRecord, Tenant, User
 from tests.chart_analyze_fakes import FakeProvider, answer
 from tests.test_auth_api import _session_factory, client
-from tests.test_chart_analyze_api import (BASE, PNG, _fake_answer, _isolated, _mock_network, _owner, _row, _run, _set_settings, _streamed,  # noqa: F401
-                                          _upload)
+from tests.test_chart_analyze_api import BASE, PNG, _fake_answer, _isolated, _mock_network, _owner, _row, _run, _set_settings, _streamed, _upload  # noqa: F401
 
 SETTINGS = settings_mod.merge({})
 
@@ -343,6 +343,7 @@ def test_the_setting_never_goes_below_the_ai_calls_worst_case():
 
 def test_a_cancelled_run_is_cleaned_up_even_under_cancellation(monkeypatch):
     import anyio
+
     from app.chart_analyze import provider
     who = _owner("shield")
     item = _upload(who).json()
@@ -385,6 +386,7 @@ def test_a_stale_running_row_reserves_no_cost():
 def test_at_most_two_decodes_run_at_once_and_waiting_ones_hold_no_thread(monkeypatch):
     import threading
     import time
+
     from app.chart_analyze import routes
     lock = threading.Lock()
     state = {"now": 0, "max": 0, "threads": set()}

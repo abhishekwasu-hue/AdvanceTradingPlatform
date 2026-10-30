@@ -8,15 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_checked_mfa_session, require_mfa_session, require_role, require_trader
+from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.core.enums import KillSwitchScope, NotificationSeverity, NotificationType, OrderStatus
-from app.db.models import KillSwitchRecord, OrderRecord, TradeRecord, User
+from app.db.models import BrokerCredentialRecord, KillSwitchRecord, OrderRecord, TradeRecord, User
 from app.db.session import get_session
 from app.execution.order_persistence import transition_order
 from app.execution.order_state_machine import TERMINAL_STATUSES
 from app.kill_switch import checks
 from app.notifications.service import notify
-from app.brokers.token_lifecycle import build_adapter, token_is_usable
-from app.db.models import BrokerCredentialRecord
 from app.trading.position_monitor import broker_for_trade, close_group, close_position
 
 logger = logging.getLogger(__name__)

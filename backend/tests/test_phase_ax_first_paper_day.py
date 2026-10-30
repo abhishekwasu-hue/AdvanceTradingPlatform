@@ -4,8 +4,8 @@ import importlib.util
 import os
 import stat
 import subprocess
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -21,7 +21,7 @@ from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _create, _store_broker
 from tests.test_phase_ai_contract_symbols import _KiteLike
 from tests.test_phase_k_commercial import _owner
-from tests.test_trading_worker import _FakeBroker, _deploy, _tenant, _worker
+from tests.test_trading_worker import _deploy, _FakeBroker, _tenant, _worker
 
 UTC = timezone.utc
 IST = ZoneInfo("Asia/Kolkata")

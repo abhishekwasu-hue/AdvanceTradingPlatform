@@ -8,13 +8,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import (current_session_id, ensure_admin_write_step_up, get_current_user, require_mfa_session,
-                                   require_owner, require_role)
+from app.auth import scopes
+from app.auth.dependencies import current_session_id, ensure_admin_write_step_up, get_current_user, require_mfa_session, require_owner, require_role
 from app.core.enums import UserRole
 from app.db.models import User
 from app.db.session import get_session
 from app.platform import controls
-from app.auth import scopes
 
 status_router = APIRouter(prefix="/api/system", tags=["system"])
 admin_router = APIRouter(prefix="/api/admin/controls", tags=["admin"], dependencies=[Depends(require_role()), Depends(require_mfa_session)])

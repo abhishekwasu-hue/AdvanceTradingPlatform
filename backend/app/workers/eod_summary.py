@@ -13,7 +13,8 @@ something needs a look).
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, time as dtime, timedelta
+from datetime import date, datetime, timedelta
+from datetime import time as dtime
 from typing import Dict, List, Optional
 
 from sqlalchemy import func, select

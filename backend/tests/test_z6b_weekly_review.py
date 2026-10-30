@@ -9,8 +9,8 @@ import pytest
 
 from app.ai import output_filter, wording
 from app.db.models import TradeRecord, User
-from app.journal import review as rv
 from app.journal import capture, service
+from app.journal import review as rv
 from app.journal.settings import DisciplineSettings
 from app.market_data.calendar import IST
 from app.platform import controls

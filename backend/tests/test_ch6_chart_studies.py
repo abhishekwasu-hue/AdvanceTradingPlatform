@@ -603,8 +603,7 @@ def test_a_cancelled_request_keeps_its_slot_until_its_build_has_finished():
     async def go():
         sem = PAL._slots()
         req = asyncio.create_task(PAL._in_slot(None, "carol", slow))
-        while not started.is_set():
-            await asyncio.sleep(0.01)
+        assert await asyncio.to_thread(started.wait, 5)                  # the slow build is running in its thread
         req.cancel()
         await asyncio.sleep(0.1)
         assert not req.done()                                            # still waiting for its thread ...

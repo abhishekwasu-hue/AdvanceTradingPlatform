@@ -14,8 +14,8 @@ from app.db.models import NotificationRecord, TradeRecord, User
 from app.execution.router import OrderRouter
 from app.execution.signal_execution import execute_signal_for_user
 from app.risk_engine.risk_manager import TradingDayState
-from tests.test_auth_api import _register, _session_factory, client
 from tests.def0_legacy import legacy
+from tests.test_auth_api import _register, _session_factory, client
 
 
 def _signal(direction=SignalDirection.LONG) -> Signal:

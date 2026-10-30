@@ -21,10 +21,10 @@ from app.brokers.exceptions import BrokerAPIError
 from app.brokers.rate_budget import RateBudget, RateLimits
 from app.core import config
 from app.core.models import OHLCVBar
-from app.db.models import (BrokerCredentialRecord, DataQualityEventRecord, HistoryIntradayDayRecord, MdCandleRecord,
-                           MdTenantCandleRecord, Tenant, User)
+from app.db.models import BrokerCredentialRecord, DataQualityEventRecord, HistoryIntradayDayRecord, MdCandleRecord, MdTenantCandleRecord, Tenant, User
 from app.market_data.calendar import IST
-from app.market_lake import intraday_history as hb2, tenant_store
+from app.market_lake import intraday_history as hb2
+from app.market_lake import tenant_store
 from app.platform import controls
 from tests.test_auth_api import _register, _session_factory, client
 from tests.utils import enable_mfa

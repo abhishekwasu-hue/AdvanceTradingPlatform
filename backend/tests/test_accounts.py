@@ -10,7 +10,7 @@ from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord
 from tests.broker_fakes import UPSTOX_KEY, UPSTOX_KEY_2, UPSTOX_SECRET, UPSTOX_SECRET_2
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _create, _me, _store_broker
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker
 
 
 def _run(coro):
@@ -147,6 +147,7 @@ def test_worker_uses_the_routed_accounts_adapter_and_skips_a_disabled_account(mo
 
     client.post(f"/api/accounts/{second['id']}/disable", headers=t["headers"])
     from datetime import timedelta
+
     from tests.test_trading_worker import BAR_TS
     _force_signal(monkeypatch, lambda: _signal(ts=BAR_TS + timedelta(minutes=1)))
     # Close the open position first so the second entry is not blocked by "one position per deployment".

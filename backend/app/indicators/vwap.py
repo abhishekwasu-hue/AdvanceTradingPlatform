@@ -1,4 +1,5 @@
 import pandas as pd
+
 from app.indicators.prefix_cache import prefix_cached
 
 

@@ -12,15 +12,16 @@ from sqlalchemy import select
 
 from app.alerts.dispatcher import sign_webhook
 from app.billing import service as billing
+from app.core.enums import NotificationSeverity
 from app.db.models import CustomStrategyRecord, SubscriptionRecord, Tenant, UsageRecord
 from app.plans.limits import feature_allowed
 from app.plans.registry import get_plan
 from app.public_api.keys import limiter
 from tests.test_admin_api import _admin
-from tests.test_alerts import _auth as _alert_auth, _deliveries, _dispatch, _notify, _put
+from tests.test_alerts import _auth as _alert_auth
+from tests.test_alerts import _deliveries, _dispatch, _notify, _put
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_custom_strategies_api import _rsi_config
-from app.core.enums import NotificationSeverity
 from tests.utils import decline_then_rally, make_series
 
 

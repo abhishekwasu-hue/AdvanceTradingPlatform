@@ -49,6 +49,8 @@ function Hero() {
   const { brief } = useCopilotData();
   const kind = brief?.day_type.kind ?? "UNKNOWN";
   const tone = toneFor(kind);
+  // CP-UX CU2: under `ui_v2` the older Copilot pages drop the 3D core (flag off: unchanged).
+  const v2 = useUiV2();
   return (
     <section className="copilot-hero relative overflow-hidden rounded-2xl border border-border p-4 md:p-6" aria-labelledby="copilot-title">
       <div className="flex items-center gap-4">
@@ -65,7 +67,7 @@ function Hero() {
             <span className="rounded-full border border-border bg-surface-2/70 px-2.5 py-1 text-fg-muted">{t("shell.decisionsYours")}</span>
           </div>
         </div>
-        <AICore tone={tone} variant={storedCore()} className="h-28 w-28 shrink-0 md:h-44 md:w-44" />
+        {!v2 && <AICore tone={tone} variant={storedCore()} className="h-28 w-28 shrink-0 md:h-44 md:w-44" />}
       </div>
     </section>
   );
@@ -102,6 +104,7 @@ function Tabs() {
 function Shell() {
   const t = useCopilotT();
   const { user } = useAuth();
+  const v2 = useUiV2();
   if (!user) return <Card><p className="text-sm text-fg-muted">{t("shell.signIn")}</p></Card>;
   return (
     <CopilotMotion>
@@ -113,7 +116,8 @@ function Shell() {
             <Tabs />
           </CopilotDataProvider>
         </FirstUseModal>
-        <p className="text-xs leading-relaxed text-fg-muted">{t("compliance.footer")}</p>
+        {/* CP-UX CU2: under `ui_v2` one short disclaimer line replaces the long footer (flag off: unchanged). */}
+        <p className="text-xs leading-relaxed text-fg-muted" data-disclaimer>{v2 ? t("chat.disclaimer") : t("compliance.footer")}</p>
       </div>
     </CopilotMotion>
   );
@@ -122,6 +126,7 @@ function Shell() {
 /** The hero before the acknowledgement: no market data, the neutral core. */
 function StaticHero() {
   const t = useCopilotT();
+  const v2 = useUiV2();
   return (
     <section className="copilot-hero relative overflow-hidden rounded-2xl border border-border p-4 md:p-6">
       <div className="flex items-center gap-4">
@@ -129,7 +134,7 @@ function StaticHero() {
           <h1 className="text-2xl font-bold tracking-tight text-fg md:text-3xl">{t("shell.title")}</h1>
           <p className="mt-1 max-w-xl text-sm text-fg-muted">{t("shell.tagline")}</p>
         </div>
-        <AICore tone="neutral" className="h-28 w-28 shrink-0 md:h-44 md:w-44" />
+        {!v2 && <AICore tone="neutral" className="h-28 w-28 shrink-0 md:h-44 md:w-44" />}
       </div>
     </section>
   );

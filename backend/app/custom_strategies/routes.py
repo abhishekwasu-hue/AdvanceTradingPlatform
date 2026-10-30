@@ -1,7 +1,7 @@
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +33,21 @@ async def parse_strategy_text(request: ParseStrategyRequest) -> ParseResult:
     it, exactly like manually building one in the condition editor.
     """
     return parse_strategy_description(request.text, name=request.name)
+
+
+class DraftRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/draft")
+async def draft_from_words(request: DraftRequest, user: User = Depends(get_current_user)) -> dict[str, Any]:
+    """SB-UX SU1: the stepped builder's plain-words box. ONE parser - the Copilot's strategy builder (`sb.build`, fixed
+    rules, no model) - turns the trader's words into a DRAFT made of ATP's building blocks. Every value the words do not
+    state stays empty (listed in `asks`); no stop, target or minimum R:R is filled in (DEF-0: the builder's own boxes,
+    blank = off). Nothing is saved: the trader reviews the draft in the flow and saves it himself."""
+    from app.ai import strategy_builder as sb
+    from app.ai.copilot_chat import builder_symbol
+    return sb.build(request.text, builder_symbol(request.text), None).as_dict()
 
 
 def _validate_or_400(config: CustomStrategyConfig) -> None:

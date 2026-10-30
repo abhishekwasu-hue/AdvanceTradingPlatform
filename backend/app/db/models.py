@@ -3809,3 +3809,21 @@ class ActivationEventRecord(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)   # the unique pair indexes it
     step: Mapped[str] = mapped_column(String(32), nullable=False)
     reached_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
+class CopilotChatTurnRecord(Base):
+    """CP-UX CU6 (owner order 30 Oct): one turn of a person's Copilot conversation - the question he asked and the answer
+    card the page showed (JSON, the route's own answer without the admin-only diagnostics) - so the conversation is still
+    there after a reload. Per user and tenant; only the newest `config.COPILOT_CHAT_KEEP` turns are kept (older ones are
+    deleted when a new turn is written). He deletes it himself in Settings → My data, and it goes with the account
+    (retention.erase_user); it is part of "Download my data". Never read by a trading decision or an order path."""
+
+    __tablename__ = "copilot_chat_turns"
+    __table_args__ = (Index("ix_copilot_chat_turns_user_id", "user_id", "id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)    # the pair index above
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)

@@ -80,7 +80,7 @@ export function paperBotRequest(strategyId: string, symbol: string, info: Pick<S
   };
 }
 
-const EXPIRY_WORDS: Record<string, string> = { NEAREST: "nearest", NEXT: "next", MONTHLY: "monthly" };
+const EXPIRY_WORDS: Record<string, string> = { NEAREST: "nearest", NEXT: "next", MONTHLY: "monthly", ROLL: "nearest (the next on expiry day)" };
 
 /** Settings part C: the same request with the user's own defaults (a pre-fill: only the values that apply, each named in
  * `applied` so the page can say "From your defaults: ..."). No defaults, or `use` false: today's request itself. Never
@@ -211,4 +211,6 @@ export function withIdeaLots<T extends DeploymentCreateRequest>(req: T, lots: nu
 }
 
 /** The strategy and symbol the page picks after the trader saved the Copilot's draft (his own click). */
-export interface Preselect { strategyId: string; symbol: string | null; lots: number | null }
+/** `contract` (SB-UX SU6): the option structure, strikes, expiry and lots the strategy builder tested - used in place of
+ * the form's own while that strategy stays picked. */
+export interface Preselect { strategyId: string; symbol: string | null; lots: number | null; contract?: ContractRules | null }

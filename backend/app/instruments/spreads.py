@@ -74,6 +74,7 @@ from app.instruments.contracts import (
     ResolvedContract,
     _apply_strike_filters,
     _resolved,
+    expiry_words,
     select_expiry,
     select_strike,
 )
@@ -692,7 +693,7 @@ def describe_structure(strategy: OptionStrategy, spread_width: int, rules: Contr
                        custom_legs: Optional[Sequence[CustomLeg]] = None) -> str:
     if strategy == OptionStrategy.SINGLE:
         return ""
-    expiry = rules.expiry_rule.value.lower()
+    expiry = expiry_words(rules.expiry_rule)
     otm = max(1, rules.strike_offset or 1)
     strike = rules.strike_rule.value if rules.strike_rule == StrikeRule.ATM else f"{rules.strike_rule.value}{rules.strike_offset}"
     if strategy == OptionStrategy.CALL_RATIO_SPREAD:

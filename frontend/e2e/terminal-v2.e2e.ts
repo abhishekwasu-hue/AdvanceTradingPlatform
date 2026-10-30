@@ -217,8 +217,11 @@ test.describe("v2 terminal 1440", () => {
       await open(page, theme);
       await expect(page.locator("[data-page='terminal-v2']")).toHaveAttribute("data-layout", "option_seller");
       const panels = page.locator("[data-terminal-grid] [data-panel]");
-      await expect(panels).toHaveCount(6);
-      for (const id of ["chart-1", "chain", "order", "positions", "basket", "orders"]) await expect(page.locator(`[data-panel='${id}']`)).toBeVisible();
+      // TERM-2 step 3: chart | chain | basket above the one bottom panel (Positions · Orders · Alerts).
+      await expect(panels).toHaveCount(4);
+      for (const id of ["chart-1", "chain", "basket", "positions"]) await expect(page.locator(`[data-panel='${id}']`)).toBeVisible();
+      const account = page.locator("[data-panel='positions'] [data-panel-body='account']");
+      await expect(account.getByRole("tab")).toHaveText([/^Positions\s*2$/, "Orders", "Alerts"]);
       await expect(page.locator("[data-terminal-chain] tr[data-atm]")).toContainText("24,500");
       await expect(page.locator("[data-status='today']")).toContainText("+₹2,650");
       await expect(page.locator("[data-status='margin']")).toContainText("(estimate)");
@@ -239,8 +242,8 @@ test.describe("v2 terminal 1440", () => {
     const seen = await open(page, "light");
     await pickOption(page, page.locator("[data-terminal=\'layout\']"), "quick_trade");
     await expect(page.locator("[data-page='terminal-v2']")).toHaveAttribute("data-layout", "quick_trade");
-    await expect(page.locator("[data-terminal-grid] [data-panel]")).toHaveCount(4);
-    await expect(page.locator("[data-panel='chain']")).toHaveCount(0);
+    await expect(page.locator("[data-terminal-grid] [data-panel]")).toHaveCount(3);       // chain | order, the bottom panel
+    await expect(page.locator("[data-panel='chart-1']")).toHaveCount(0);
     expect(seen.puts.at(-1)?.body).toMatchObject({ active: "quick_trade" });
     await shot(page, "terminal-1440-light-quick-trade");
     // TERM-2 step 2: no Multi-chart layout in the Terminal (the Charts page owns multi-chart, CT-1 C2).
@@ -267,17 +270,18 @@ test.describe("v2 terminal 1440", () => {
 
   test("a panel moves with the keyboard and never onto another one", async ({ page }) => {
     await open(page, "light");
-    const keys = page.locator("[data-panel-keys='orders']");
-    const before = await page.locator("[data-panel='orders']").boundingBox();
+    const keys = page.locator("[data-panel-keys='positions']");
+    const before = await page.locator("[data-panel='positions']").boundingBox();
     await keys.focus();
     await page.keyboard.press("ArrowDown");
-    const after = await page.locator("[data-panel='orders']").boundingBox();
+    const after = await page.locator("[data-panel='positions']").boundingBox();
     expect(after!.y).toBeGreaterThan(before!.y);
-    await page.keyboard.press("ArrowLeft");                                    // onto the basket: refused
-    const still = await page.locator("[data-panel='orders']").boundingBox();
-    expect(still!.x).toBe(after!.x);
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowUp");                                      // onto the chart / chain: refused
+    const still = await page.locator("[data-panel='positions']").boundingBox();
+    expect(still!.y).toBe(before!.y);
     await page.keyboard.press("Shift+ArrowDown");                              // taller
-    const taller = await page.locator("[data-panel='orders']").boundingBox();
+    const taller = await page.locator("[data-panel='positions']").boundingBox();
     expect(taller!.height).toBeGreaterThan(after!.height);
   });
 
@@ -323,11 +327,14 @@ test.describe("v2 terminal 1440", () => {
 
   test("a price on the chain fills the order panel; the order goes through the one ticket (PAPER)", async ({ page }) => {
     const seen = await open(page, "dark");
+    // TERM-2 step 3: Quick trade is chain | order panel; a price fills the order panel there.
+    await pickOption(page, page.locator("[data-terminal='layout']"), "quick_trade");
     await page.locator("[data-cell='call-24500']").click();
     await page.locator("[data-chain-actions] [data-action='buy']").click();
     const order = page.locator("[data-panel='order']");
     await expect(order).toContainText("NIFTY 03 NOV 24500 CE");
-    await expect(order.locator("[data-practice-frame]")).toBeVisible();
+    await expect(order.locator("[data-practice-frame]")).toHaveCount(0);            // TERM-2 step 5: the one PAPER badge is in the bar
+    await expect(page.locator("[data-terminal='mode']")).toHaveText("PAPER");
     await order.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
     await order.locator("[data-ticket='review']").click();
     await expect(order.locator("[data-ticket='confirm']")).toBeVisible();
@@ -402,7 +409,7 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
       test(`tabs one at a time, the short status bar (${theme})`, async ({ page }) => {
         await open(page, theme);
         await expect(page.locator("[data-terminal-grid]")).toHaveCount(0);
-        await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Chart$/, /^Chain$/, /^Order$/, /^Positions\s*2$/, /^Orders$/]);
+        await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Chart$/, /^Chain$/, /^Basket$/, /^Positions\s*2$/, /^Orders$/]);
         await expect(page.locator("[data-block='terminal-status'][data-compact]")).toBeVisible();
         await expect(page.locator("[data-status='margin']")).toHaveCount(0);
         await shot(page, `terminal-${size.width}-${theme}`);
@@ -415,9 +422,9 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
       });
     }
 
-    test("no sideways scroll and 44 px targets on every tab; a chain price opens the Order tab", async ({ page }) => {
+    test("no sideways scroll and 44 px targets on every tab; a chain price opens the one ticket as a sheet", async ({ page }) => {
       await open(page, "light");
-      for (const tab of ["chart", "chain", "order", "positions", "orders"]) {      // "bots" hidden until T2/T3 (R6)
+      for (const tab of ["chart", "chain", "basket", "positions", "orders"]) {     // TERM-2 step 3 tabs
         await page.locator(`[data-tab='${tab}']`).tap();
         await expect(page.locator(`[data-phone-panel='${tab}']`)).toBeVisible();
         await settle(page);
@@ -426,16 +433,15 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
       await page.locator("[data-tab='chain']").tap();
       await page.locator("[data-cell='put-24500']").tap();
       await page.locator("[data-chain-actions] [data-action='sell']").tap();
-      await expect(page.locator("[data-tab='order']")).toHaveAttribute("aria-selected", "true");
-      await expect(page.locator("[data-phone-panel='order'] [data-ticket='review']")).toHaveText("Review Sell order");
-      await expect(page.locator("[data-phone-panel='order']")).not.toContainText("Keys: B for Buy");
-      // T1-2: the main action stays in view above the bottom navigation, whatever the scroll.
-      await expect(page.locator("[data-phone-panel='order'] [data-ticket-actions='sticky']")).toBeVisible();
-      const review = await page.locator("[data-phone-panel='order'] [data-ticket='review']").boundingBox();
-      const nav = await page.locator("[data-bottom-nav-v2]").boundingBox();
-      expect(review && nav && review.y + review.height <= nav.y + 1).toBe(true);
+      // TERM-2 step 3: the one order ticket opens as a bottom sheet (no Order tab of the Terminal's own).
+      const ticket = page.locator("[data-order-ticket]");
+      await expect(ticket.locator("[data-ticket='review']")).toHaveText("Review Sell order");
+      await expect(ticket.getByText("Keys: B for Buy")).toBeHidden();             // a desktop keyboard hint only
+      const review = await ticket.locator("[data-ticket='review']").boundingBox();
       expect(review && review.height >= 44).toBe(true);
       await shot(page, `terminal-${size.width}-light-order`);
+      await page.keyboard.press("Escape");
+      await expect(page.locator("[data-order-ticket]")).toHaveCount(0);
       // T1-3: LTP + OI per side on a phone; a strike opens the rest.
       await page.locator("[data-tab='chain']").tap();
       await expect(page.locator("[data-phone-panel='chain'] [data-col='call-iv']").first()).toBeHidden();
@@ -444,6 +450,7 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
       await noSidewaysScroll(page);
       await shot(page, `terminal-${size.width}-light-chain-expanded`);
     });
+
   });
 }
 

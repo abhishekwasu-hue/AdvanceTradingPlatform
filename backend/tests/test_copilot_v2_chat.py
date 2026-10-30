@@ -98,6 +98,35 @@ def test_job2_chart_reader_says_it_reads_atps_zone_layers():
     assert out.summary[0].startswith("NIFTY last closed at 24,850.5") and "protected level 24,310" in out.summary[0]
 
 
+def test_cu3_the_chart_answer_carries_its_headline_numbers_from_the_tools_only():
+    out, _, _ = _answer("Read the NIFTY chart")
+    h = out.as_dict()["headline"]
+    assert h["symbol"] == "NIFTY" and h["price"] == 24850.5 and h["trend"] == "up" and h["timeframe"] == "Daily"
+    assert h["chart"] == {"symbol": "NIFTY 50", "exchange": "NSE", "timeframe": "day"}
+    area = h["area"]
+    assert area["where"] in ("above", "below", "inside") and area["side"] in ("demand", "supply")
+    assert area["distance"] >= 0 and area["from"] <= area["to"]
+    out, _, _ = _answer("read the bank nifty 15 min chart")
+    assert out.headline["chart"] == {"symbol": "NIFTY BANK", "exchange": "NSE", "timeframe": "15min"}
+    assert _answer("Today's market brief")[0].headline is None
+
+
+def test_cu3_nearest_area_picks_the_closest_edge_and_says_inside():
+    bands = [{"role": "demand", "low": 24500, "high": 24600}, {"role": "supply", "low": 25000, "high": 25100}]
+    near = chat.nearest_area(24700.0, bands)
+    assert near["side"] == "demand" and near["where"] == "below" and near["distance"] == 100.0 and near["distance_pct"] == pytest.approx(0.4, abs=0.01)
+    inside = chat.nearest_area(25050.0, bands)
+    assert inside["side"] == "supply" and inside["where"] == "inside" and inside["distance"] == 0.0
+    assert chat.nearest_area(24700.0, [{"role": "demand", "low": None, "high": 1}]) is None
+
+
+def test_cu2_the_market_line_carries_the_fii_net():
+    ok = ToolResult(True, {"fii_dii": {"status": "ok", "net_fii_crore": -1234.5, "net_dii_crore": 900.0, "as_of": "2026-10-29"}}, None, "x")
+    assert chat.fii_net(ok) == {"fii_net_crore": -1234.5, "fii_as_of": "2026-10-29"}
+    assert chat.fii_net(ToolResult(False, None, None, "x", error="off")) == {"fii_net_crore": None, "fii_as_of": None}
+    assert chat.fii_net(ToolResult(True, {"fii_dii": {"status": "na"}}, None, "x"))["fii_net_crore"] is None
+
+
 def test_job7_option_chain_explains_and_checks_size_against_the_users_own_risk():
     out, called, _ = _answer("Can I take 2 lots of NIFTY options?")
     assert called == ["get_option_chain_analyses", "get_risk_limits"]
@@ -241,9 +270,10 @@ def test_home_shows_the_no_key_state_the_jobs_and_the_market_line(v2_on, recorde
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["top_line"] == "Ask me anything about the market or your trades."
-    assert body["ai"]["ready"] is False and body["ai"]["title"] == "Add a free AI key to start" and body["ai"]["settings"] == "/settings/ai"
+    assert body["ai"]["ready"] is False and body["ai"]["title"] == "AI is off — answers are from rules" and body["ai"]["settings"] == "/settings/ai"
     assert body["ai"]["line"] == chat.NO_KEY_LINE
-    assert len(body["jobs"]) == 10 and len(body["starters"]) == 10 and body["disclaimer"] == chat.DISCLAIMER    # jobs 9-10: 23 Oct order
+    # jobs 9-10 (23 Oct order) sit behind screener_copilot / ai_multiview, off here: hidden (CP-UX CU7)
+    assert len(body["jobs"]) == 8 and len(body["starters"]) == 8 and body["disclaimer"] == chat.DISCLAIMER
     assert body["market_line"]["line"].startswith("NIFTY 50 last closed at 24,850.5") and body["market_line"]["reason"] is None
 
 

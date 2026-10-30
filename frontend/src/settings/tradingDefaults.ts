@@ -190,7 +190,7 @@ export function cleanForSave(d: TradingDefaults): TradingDefaults {
 
 // ---------------------------------------------------------------- the words of a pre-filled value
 
-const EXPIRY_WORD: Record<ExpiryRule, string> = { NEAREST: "nearest", NEXT: "next", MONTHLY: "monthly" };
+const EXPIRY_WORD: Record<ExpiryRule, string> = { NEAREST: "nearest", NEXT: "next", MONTHLY: "monthly", ROLL: "nearest (the next on expiry day)" };
 const lotsWord = (n: number) => `${n} lot${n === 1 ? "" : "s"}`;
 export const structureLabel = (s: OptionStrategy) => STRUCTURES.find((x) => x.value === s)?.label ?? "Custom legs";
 const strikeWord = (rule: StrikeRule, offset: number) => rule === "ATM" ? "at the money strike"

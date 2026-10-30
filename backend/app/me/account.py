@@ -26,7 +26,17 @@ from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user
 from app.auth.security import verify_password_async
 from app.core import config
-from app.db.models import FeedbackRecord, JournalEntryRecord, JournalTagRecord, LlmCallRecord, OrderRecord, TradeRecord, User, UserPrefsRecord
+from app.db.models import (
+    CopilotChatTurnRecord,
+    FeedbackRecord,
+    JournalEntryRecord,
+    JournalTagRecord,
+    LlmCallRecord,
+    OrderRecord,
+    TradeRecord,
+    User,
+    UserPrefsRecord,
+)
 from app.db.session import get_session
 from app.platform import controls
 
@@ -36,7 +46,8 @@ KEY_ERASE_REQUESTS = "account_erase_requests"          # platform_controls: {"re
 _SECRET_WORDS = ("password", "secret", "encrypted", "token", "hash")
 # Each dataset: (file name, model). Only the caller's own rows (user_id) inside their organisation.
 _DATASETS = (("preferences", UserPrefsRecord), ("orders", OrderRecord), ("trades", TradeRecord), ("journal_entries", JournalEntryRecord),
-             ("journal_tags", JournalTagRecord), ("ai_conversations", LlmCallRecord), ("feedback", FeedbackRecord))
+             ("journal_tags", JournalTagRecord), ("ai_conversations", LlmCallRecord), ("feedback", FeedbackRecord),
+             ("copilot_conversation", CopilotChatTurnRecord))      # CP-UX CU6
 
 
 def _plain(value: Any) -> Any:

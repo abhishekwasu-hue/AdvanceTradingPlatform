@@ -177,6 +177,7 @@ import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut,
 import type { TelegramConnectState } from "../alerts/telegramConnect";
 import type { ThenBody, ThenIntent, ThenTemplate } from "../screener/then/model";
 import type { BetaCohort } from "../beta/rollout";
+import type { StrategyDraft } from "../copilot/strategyDraft";
 
 import { API_V1 } from "./base";
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
@@ -689,6 +690,14 @@ export const api = {
 
   listCustomStrategies: () => request<CustomStrategyResponse[]>("/custom-strategies"),
 
+  /** SB-UX SU1: the stepped builder's plain-words box - the Copilot's one parser (sb.build); nothing is saved. */
+  draftStrategy: (text: string) =>
+    request<StrategyDraft>("/custom-strategies/draft", { method: "POST", body: JSON.stringify({ text }) }),
+
+  /** A saved strategy edited by its owner (a new version; the server keeps the old ones). */
+  updateCustomStrategy: (id: number, config: CustomStrategyConfig) =>
+    request<CustomStrategyResponse>(`/custom-strategies/${id}`, { method: "PUT", body: JSON.stringify(config) }),
+
   deleteCustomStrategy: (id: number) =>
     request<void>(`/custom-strategies/${id}`, { method: "DELETE" }),
 
@@ -920,7 +929,8 @@ export const api = {
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-enable`, { method: "POST" }),
   portfolioExposure: (livePrices = true) => request<PortfolioExposure>(`/portfolio/exposure?live_prices=${livePrices}`),
   // UI2-2: the v2 dashboard's market strip - three indices and the market state in one read-only call.
-  marketStrip: () => request<MarketStrip>("/market/strip"),
+  // CP-UX CU2: the Copilot's numbers strip adds SENSEX (BSE) with `sensex`.
+  marketStrip: (opts: { sensex?: boolean } = {}) => request<MarketStrip>(opts.sensex ? "/market/strip?sensex=true" : "/market/strip"),
   // AUD-T1: My day in one card (app/today/routes.py; flags ui_v2 + my_day_card, 404 while off). Read-only.
   myDay: () => request<MyDay>("/today/my-day"),
   // MO4: the daily rhythm (app/rhythm/routes.py; flags ui_v2 + daily_rhythm, 404 while off).

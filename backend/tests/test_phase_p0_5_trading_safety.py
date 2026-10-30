@@ -5,6 +5,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
+import pytest
 from sqlalchemy import select
 
 from app.brokers.base import BrokerCapabilities, BrokerInterface, looks_like_option, stop_order_params
@@ -20,6 +21,8 @@ from app.trading.position_monitor import monitor_open_positions
 from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_live_execution import _LiveBroker, _router, _signal
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 
 def _run(coro):

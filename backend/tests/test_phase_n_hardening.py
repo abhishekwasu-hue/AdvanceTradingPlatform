@@ -25,6 +25,8 @@ from tests.test_deployments_api import _store_broker
 from tests.test_mfa import _set_tenant
 from tests.test_team_api import _accept, _invite
 
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
+
 app.dependency_overrides[verify_rate_limit] = lambda: None
 
 STRATEGY = "ema_rsi_scalper_1m"

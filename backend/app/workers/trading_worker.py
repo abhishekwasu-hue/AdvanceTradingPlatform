@@ -1937,7 +1937,7 @@ class TradingWorker:
 
         # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; nothing is placed until a person approves.
         if await approval.required(session, dep.tenant_id, dep):
-            proposed = await self._propose_entry(session, dep, signal, signal_ts, now, user.id)
+            proposed = await self._propose_entry(session, dep, signal, signal_ts, now, user.id, market_data=market_data, frames=frames)
             waiting = (dep.last_error or "").startswith("Waiting for approval")
             self._why(dep, "proposed" if waiting else "risk_setting", closed_bar, None if waiting else dep.last_error)
             return proposed
@@ -2016,15 +2016,22 @@ class TradingWorker:
             logger.warning("Deployment %s: why-no-trade row not stored: %s", dep.id, exc)
 
     async def _propose_entry(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime,
-                             user_id: int) -> bool:
+                             user_id: int, *, market_data: MarketDataService | None = None, frames=None) -> bool:
         """Z3 / BT2: an approval-only deployment's signal -> one ENTRY proposal (PAPER). Returns False: nothing executed.
-        Phase 0 proposes the underlying (cash) only: a LIVE deployment places nothing through ATP, and option / future /
-        structure deployments are not proposed yet - each says so on the deployment instead."""
+        A LIVE deployment places nothing through ATP in Phase 0 (it says so on the deployment instead).
+        M55 T2: an option / future / structure deployment is proposed with its legs resolved here by the same resolver
+        and the same inputs as the automatic entry (`resolve_structure` / `resolve_contract`); Approve places exactly
+        those legs through the automatic entry's own order path (app/execution/approval.py::execute_entry)."""
         skip = None
+        structure = None
         if dep.mode == ExecutionMode.LIVE.value:
             skip = "Approval-only (Phase 0): ATP places no LIVE entry - deploy in PAPER to get entry proposals"
-        elif ContractRules.from_deployment(dep).derived or (dep.option_strategy or "SINGLE") != "SINGLE":
-            skip = "Approval-only (Phase 0): option / future deployments are not proposed yet - only the underlying is"
+        else:
+            rules = ContractRules.from_deployment(dep)
+            if rules.derived:
+                structure = await self._proposal_legs(session, dep, signal, signal_ts, now, rules, market_data, frames)
+                if structure is None:                       # not resolved: said on the deployment, as the automatic entry does
+                    return False
         dep.last_signal_at = signal_ts                      # this signal bar is handled either way
         dep.consecutive_failures = 0
         if skip is not None:
@@ -2035,7 +2042,8 @@ class TradingWorker:
             row = await approval.propose_entry(session, dep.tenant_id, signal=signal, strategy_id=dep.strategy_id, source="deployment",
                                                idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", deployment=dep,
                                                requested_mode=dep.mode, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
-                                               user_id=user_id, now=now, exchange=dep.exchange or "NSE")   # the resolved deployment user
+                                               user_id=user_id, now=now, exchange=dep.exchange or "NSE",   # the resolved deployment user
+                                               structure=structure)
         except approval.EntriesPaused as exc:          # Z3-b: the deployment creator paused their PAPER entries
             dep.last_error = f"Signal at {signal_ts.isoformat()} not proposed: {exc}"
             await session.commit()
@@ -2045,6 +2053,41 @@ class TradingWorker:
         await session.commit()
         logger.info("Deployment %s signal %s -> entry proposal %s", dep.id, signal.direction.value, row.id if row is not None else "-")
         return False
+
+    async def _proposal_legs(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime,
+                             rules: ContractRules, market_data: MarketDataService | None, frames) -> dict | None:
+        """M55 T2: the legs an automatic entry of this option / future deployment would place for this signal - the same
+        branch (`_evaluate_deployment`), resolver and inputs (spot = the newest close of the deployment's timeframe, the
+        cycle's chains) - as the proposal's payload. None when they cannot be resolved; the reason is on the deployment
+        with the automatic entry's own words (a structure the direction does not open marks the signal handled)."""
+        base = (frames or {}).get(dep.timeframe)
+        if base is None and frames:
+            base = next(iter(frames.values()))
+        spot = float(base["close"].iloc[-1]) if base is not None and len(base) else None
+        chains = _chain_provider(market_data.broker, self._cycle_chains) if market_data is not None else None
+        today = now.astimezone(IST).date()
+        structure_kind = OptionStrategy(dep.option_strategy or "SINGLE")
+        if rules.kind == InstrumentKind.OPTION and structure_kind != OptionStrategy.SINGLE:
+            try:
+                structure = await resolve_structure(
+                    session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
+                    spot=spot, today=today, chain_provider=chains, custom_legs=parse_custom_legs(getattr(dep, "custom_legs", None)),
+                )
+            except (ContractResolutionError, ValueError) as exc:
+                dep.last_error = f"Structure not built: {exc}"
+                dep.last_signal_at = signal_ts if "not entered on" in str(exc) else dep.last_signal_at
+                await session.commit()
+                logger.warning("Deployment %s: %s", dep.id, exc)
+                return None
+            return approval.structure_payload(structure=structure, max_lots=rules.max_lots)
+        try:
+            contract = await resolve_contract(session, dep.symbol, rules, signal.direction, spot=spot, today=today, chain_provider=chains)
+        except ContractResolutionError as exc:
+            dep.last_error = f"Contract not resolved: {exc}"
+            await session.commit()
+            logger.warning("Deployment %s: %s", dep.id, exc)
+            return None
+        return approval.structure_payload(contract=contract, max_lots=rules.max_lots)
 
     async def _evaluate_structure(
         self, session: AsyncSession, dep: StrategyDeploymentRecord, user: User, market_data: MarketDataService,

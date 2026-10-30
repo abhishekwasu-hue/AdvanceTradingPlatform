@@ -22,7 +22,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from datetime import time as dtime
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -63,6 +63,20 @@ def merge_bars(*series: List[OHLCVBar]) -> List[OHLCVBar]:
         for bar in bars:
             by_ts[bar.timestamp] = bar
     return [by_ts[ts] for ts in sorted(by_ts)]
+
+
+def _in_zone_of(bars: list[OHLCVBar], extra: list[OHLCVBar]) -> list[OHLCVBar]:
+    """`extra` (the lake fill's UTC bars) in the timezone of `bars` (the broker's own, e.g. Upstox's +05:30), so the
+    merged list has ONE timezone: pandas refuses to index mixed zones (`bars_to_dataframe` raised on every 5-minute and
+    longer chart after a fill). The same instants - only the zone changes. No broker bars: the exchange's IST. Naive
+    broker bars (UTC by the codebase's convention, periods.ist_date): naive UTC."""
+    tz = bars[-1].timestamp.tzinfo if bars else IST
+    out: list[OHLCVBar] = []
+    for bar in extra:
+        ts = bar.timestamp if bar.timestamp.tzinfo else bar.timestamp.replace(tzinfo=UTC)
+        ts = ts.astimezone(UTC).replace(tzinfo=None) if tz is None else ts.astimezone(tz)
+        out.append(bar.model_copy(update={"timestamp": ts}))
+    return out
 
 
 def build_frames(bars: List[OHLCVBar], base_timeframe: str, timeframes: List[str]) -> Dict[str, pd.DataFrame]:
@@ -212,7 +226,7 @@ class MarketDataService:
         before = [b.timestamp for b in bars if b.timestamp <= history_to]
         start = max(before) if before else history_from
         extra = await self.lake_fill(symbol, exchange, start.astimezone(timezone.utc), history_to.astimezone(timezone.utc))
-        return merge_bars(bars, extra) if extra else bars
+        return merge_bars(bars, _in_zone_of(bars, extra)) if extra else bars
 
     async def get_history(self, symbol: str, exchange: str, interval: str, before: date) -> List[OHLCVBar]:
         """Completed bars for the `lookback_days` calendar days ending the day before `before` (IST) -

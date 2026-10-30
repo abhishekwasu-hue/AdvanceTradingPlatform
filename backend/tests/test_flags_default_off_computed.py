@@ -77,12 +77,15 @@ OLD_DEFAULT_ON = frozenset({
 
 # Flags the owner himself ordered ON by default (DECISIONS): the only additions to the closed list.
 # 24 Oct: colour v2; 25 Oct: the Terminal (T-D1); 28 Oct: colour v3 (UX-14, "Keep Default on always") - ON by default
-OWNER_DEFAULT_ON = frozenset({"colour_v2", "colour_v3", "terminal"})
+# 30 Oct (owner order M55 S1): the PAPER-only lock ON by default in every deployment mode.
+OWNER_DEFAULT_ON = frozenset({"colour_v2", "colour_v3", "phase0_paper_only", "terminal"})
+# Flags the owner himself ordered OFF by default: 30 Oct (M55 S1) live_trading - LIVE is the owner's to switch on.
+OWNER_DEFAULT_OFF = frozenset({"live_trading"})
 
 
 def test_default_on_is_exactly_the_old_set():
     # Closed list: a new flag never lands here (never turn a flag on) unless the owner orders it (OWNER_DEFAULT_ON).
-    assert controls.DEFAULT_ON_FLAGS == OLD_DEFAULT_ON | OWNER_DEFAULT_ON
+    assert controls.DEFAULT_ON_FLAGS == (OLD_DEFAULT_ON - OWNER_DEFAULT_OFF) | OWNER_DEFAULT_ON
     assert isinstance(controls.DEFAULT_ON_FLAGS, frozenset)
 
 
@@ -93,10 +96,10 @@ def test_default_on_is_a_subset_of_feature_flags():
 
 def test_computed_default_off_matches_the_old_literal():
     old_era = OLD_DEFAULT_OFF | OLD_DEFAULT_ON
-    # Every flag registered on main at the snapshot keeps exactly its old default.
-    assert controls.DEFAULT_OFF_FLAGS & old_era == OLD_DEFAULT_OFF
+    # Every flag registered on main at the snapshot keeps exactly its old default, except the owner's own orders.
+    assert controls.DEFAULT_OFF_FLAGS & old_era == (OLD_DEFAULT_OFF - OWNER_DEFAULT_ON) | OWNER_DEFAULT_OFF
     # Nothing that was OFF disappeared from the registry (DEFAULT_OFF had no entry outside FEATURE_FLAGS).
-    assert OLD_DEFAULT_OFF <= controls.DEFAULT_OFF_FLAGS
+    assert OLD_DEFAULT_OFF - OWNER_DEFAULT_ON <= controls.DEFAULT_OFF_FLAGS
     assert OLD_DEFAULT_OFF <= set(controls.FEATURE_FLAGS)
     # Any flag registered after the snapshot is OFF by default, except the ones the owner ordered ON (OWNER_DEFAULT_ON).
     newer = set(controls.FEATURE_FLAGS) - old_era - OWNER_DEFAULT_ON
@@ -105,13 +108,12 @@ def test_computed_default_off_matches_the_old_literal():
     assert isinstance(controls.DEFAULT_OFF_FLAGS, frozenset)
 
 
-def test_live_trading_keeps_kill_flag_semantics():
-    # ON by default exactly as on main: the flag only switches off new LIVE deployments. The LIVE gate itself is the
-    # trading:live scope, the plan and step-up (deployments/routes.py) and the phase0_paper_only lock (OFF by default);
-    # Phase 0 deployment mode seeds live_trading OFF where nothing is stored (deployment_phase.py).
+def test_live_trading_off_and_paper_lock_on_by_default():
+    # M55 S1 (owner order): live_trading OFF and the phase0_paper_only lock ON by default in every deployment mode; only
+    # the owner may switch either one towards LIVE (app/platform/live_owner.py).
     assert "live_trading" in controls.FEATURE_FLAGS
-    assert "live_trading" in controls.DEFAULT_ON_FLAGS and "live_trading" not in controls.DEFAULT_OFF_FLAGS
-    assert "phase0_paper_only" in controls.DEFAULT_OFF_FLAGS
+    assert "live_trading" in controls.DEFAULT_OFF_FLAGS and "live_trading" not in controls.DEFAULT_ON_FLAGS
+    assert "phase0_paper_only" in controls.DEFAULT_ON_FLAGS and "phase0_paper_only" not in controls.DEFAULT_OFF_FLAGS
     assert deployment_phase.LIVE_TRADING == "live_trading"
 
 

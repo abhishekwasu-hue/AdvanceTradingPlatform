@@ -148,25 +148,32 @@ def test_the_backtest_route_fetches_the_history_from_the_windows_source(monkeypa
     _set_flag("screener_waves", org["tenant_id"])
     history, window = _split()
     asked = {}
+    calls = []
 
     async def resolve(session, tenant_id, symbol, exchange, timeframe, *, lookback_days=30, user=None, broker=None, **_):
+        # M55 T3: the first read is the window itself (the server loads it), the second the warm-up history
+        calls.append(lookback_days)
         asked.update(symbol=symbol, timeframe=timeframe, lookback_days=lookback_days, broker=broker, tenant=tenant_id)
-        return bar_source.BacktestBars(pd.concat([history, window]), "broker:upstox", "broker", "your broker")
+        frame = window if len(calls) == 1 else pd.concat([history, window])
+        return bar_source.BacktestBars(frame, "broker:upstox", "broker", "your broker")
 
     monkeypatch.setattr(bar_source, "resolve", resolve)
     sid = client.post("/api/strategy-templates/G4/adopt", headers=org["headers"], json={"timeframe": "15m"}).json()["strategy_id"]
-    body = {"strategy_id": sid, "symbol": "BANKNIFTY", "base_timeframe": "15min", "candles": _candles(window),
+    body = {"strategy_id": sid, "symbol": "BANKNIFTY", "base_timeframe": "15min",
             "risk_config": {"capital": 10_000_000, "risk_per_trade_pct": 0.5}}
-    fetched = client.post("/api/backtest", headers=org["headers"], json={**body, "data_source": "broker:upstox"})
+    fetched = client.post("/api/backtest", headers=org["headers"], json={**body, "data_mode": "server", "broker": "upstox",
+                                                                          "data_source": "sample"})
     assert fetched.status_code == 200, fetched.text
     out = fetched.json()
+    assert len(calls) == 2 and out["data_source"] == "broker:upstox"           # the server's label, not the client's
     assert asked["broker"] == "upstox" and asked["tenant"] == org["tenant_id"] and asked["lookback_days"] >= 175
     assert out["total_trades"] >= 1 and out["history"]["note"] is None and out["history"]["warmup_days"] > 36
     start = pd.Timestamp(window.index[0])
     assert all(pd.Timestamp(t["entry_time"]) >= start for t in out["trades"])
-    # uploaded / sample candles: nothing is fetched, and the result says what the test lacked
+    # pasted (uploaded / sample) candles: nothing is fetched, even with a server label, and the result says what it lacked
     asked.clear()
-    sample = client.post("/api/backtest", headers=org["headers"], json={**body, "data_source": "sample"})
-    assert sample.status_code == 200 and not asked
+    calls.clear()
+    sample = client.post("/api/backtest", headers=org["headers"], json={**body, "candles": _candles(window), "data_source": "broker:upstox"})
+    assert sample.status_code == 200 and not asked and sample.json()["data_source"] == "uploaded"
     assert sample.json()["total_trades"] == 0
     assert sample.json()["history"]["note"].startswith("This template needs about 36 trading days of candles before your test window")

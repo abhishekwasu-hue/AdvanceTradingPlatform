@@ -46,7 +46,8 @@ _TENANT_ALL = frozenset(s for s in SCOPES if s != "admin:platform")
 ROLE_SCOPES: Dict[str, FrozenSet[str]] = {
     UserRole.SUPER_ADMIN.value: _ALL,
     UserRole.OWNER.value: _TENANT_ALL,
-    UserRole.USER.value: frozenset({"trading:write", "trading:live", "strategies:write", "brokers:write", "alerts:write",
+    # M55 S1 (owner order): a USER has no trading:live by default (LIVE is the owner's to switch on).
+    UserRole.USER.value: frozenset({"trading:write", "strategies:write", "brokers:write", "alerts:write",
                                     "risk:write", "api_keys:manage", "marketplace:publish", "ai:manage", "analytics:read"}),
     UserRole.STRATEGY_CREATOR.value: frozenset({"trading:write", "trading:live", "strategies:write", "alerts:write",
                                                 "marketplace:publish", "ai:manage", "analytics:read"}),

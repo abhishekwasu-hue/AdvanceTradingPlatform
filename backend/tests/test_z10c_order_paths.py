@@ -30,9 +30,10 @@ ENTRY, EXIT, PROTECTIVE = "ENTRY", "EXIT", "PROTECTIVE"
 
 # (function, broker method) -> (kind, why it is there)
 ORDER_CALL_SITES: Dict[Tuple[str, str], Tuple[str, str]] = {
-    ("app.execution.router.OrderRouter.execute", "place_order"):
-        (ENTRY, "the single-leg LIVE entry; reached only with a broker handed in by the trading worker"),
-    ("app.execution.router.OrderRouter.execute", "place_stop_loss_order"):
+    # M55 S3: the one entry path for PAPER and LIVE (the paper venue or the broker handed in by the trading worker).
+    ("app.execution.router.OrderRouter._place_one", "place_order"):
+        (ENTRY, "the single-leg entry (one path for PAPER and LIVE); a broker only when the trading worker hands one in"),
+    ("app.execution.router.OrderRouter._route", "place_stop_loss_order"):
         (PROTECTIVE, "the broker-side stop placed right after a LIVE fill"),
     ("app.execution.multileg._place_live_legs", "place_order"):
         (ENTRY, "the legs of a LIVE option structure; reached only from the trading worker"),
@@ -82,6 +83,9 @@ ROUTES_REACHING_BROKER_ORDERS: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/positions/{trade_id}/exit-leg"):
         "TT-8 \"Exit this leg\": closes one leg of the caller's own basket (holder or owner only); a LIVE leg is squared off "
         "through its own broker session exactly as every LIVE exit (broker_for_trade) - an exit only (ADR-0004)",
+    ("POST", "/api/paper/fno/positions/{trade_id}/exit-part"):
+        "M55 S3 \"Exit part\": N lots of the caller's own position through close_position; a LIVE one is squared off at "
+        "the session of the broker account that holds it (broker_for_trade) - an exit only (ADR-0004)",
     ("POST", "/api/paper/fno/positions/{trade_id}/exit-group"):
         "TT-8 \"Exit the whole group\": every open leg of the caller's own basket through close_group (sold legs first; a "
         "LIVE short that does not close keeps its hedges) - an exit only (ADR-0004)",
@@ -138,7 +142,7 @@ def test_the_graph_sees_the_known_order_paths(graph):
     """Guards the guard: a broken parser would find nothing and pass every rule below."""
     assert len(graph.functions) > 1000
     worker = graph.sinks_reachable_from("app.workers.trading_worker.<module>")
-    assert ("app.execution.router.OrderRouter.execute", "place_order") in worker
+    assert ("app.execution.router.OrderRouter._place_one", "place_order") in worker
     assert ("app.trading.position_monitor._square_off_live", "place_order") in worker
     assert endpoint_node(iter_api_routes(app)[0].endpoint) in graph.functions
 

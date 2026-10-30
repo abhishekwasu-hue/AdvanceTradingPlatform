@@ -119,7 +119,9 @@ def test_point1_a_resting_live_entry_is_stored_but_never_reaches_a_broker(setup,
         _entries(t["tenant_id"], {symbol: 94.0})                         # ... and the cycle pass, price reached
         row = _row(row_id)
         assert sent == [] and _orders(t["tenant_id"]) == before
-        assert row.status == "REJECTED" and row.order_id is None and "not switched on" in row.status_note
+        # M55 S3 (A17): refused at the ticket's own chokepoint, with the PAPER-only lock's plain reason
+        assert row.status == "REJECTED" and row.order_id is None
+        assert row.status_note == trigger_engine.LIVE_ENTRY_SWITCHED_OFF
         assert [s["status"] for s in resting_book.trail(row)] == ["RESTING", "REJECTED"]
     finally:
         _restore_flags(previous)

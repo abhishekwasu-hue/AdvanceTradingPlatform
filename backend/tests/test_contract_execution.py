@@ -23,6 +23,8 @@ from tests.master_fixture import NIFTY_LOT, build_master
 from tests.test_auth_api import _register, _session_factory
 from tests.test_live_execution import _upgrade_plan
 
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
+
 TODAY = date(2026, 9, 28)
 BIG = RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0, max_open_positions=10, max_trades_per_day=50)
 

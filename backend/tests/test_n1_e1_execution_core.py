@@ -26,6 +26,8 @@ from tests.test_trading_worker import CLOSED_NOW, _FakeBroker, _tenant, _worker
 from tests.test_z3_approval_entries import _price
 from tests.test_z10c_order_paths import GATED
 
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
+
 UTC = timezone.utc
 BACKEND = Path(__file__).resolve().parents[1]
 CORE = BACKEND / "app" / "execution" / "core"

@@ -11,7 +11,6 @@
 """
 import copy
 import re
-from typing import Dict, List
 
 import pandas as pd
 import pytest
@@ -48,7 +47,7 @@ def _bars(strategy, seed: int) -> pd.DataFrame:
     return synthetic_bars(SIZE[tf], tf=BARS[tf], seed=seed)
 
 
-def _frames(strategy, bars: pd.DataFrame, t: int) -> Dict[str, pd.DataFrame]:
+def _frames(strategy, bars: pd.DataFrame, t: int) -> dict[str, pd.DataFrame]:
     """What the worker hands the strategy at bar t: the base bars up to t, each higher timeframe resampled from them,
     closed bars only."""
     cut = bars.iloc[: t + 1]
@@ -62,7 +61,7 @@ def _signal_at(strategy, seed: int, t: int):
     return strategy.analyze(_frames(strategy, _bars(strategy, seed), t), SYMBOL)
 
 
-def _kept(lines: List[str]) -> List[str]:
+def _kept(lines: list[str]) -> list[str]:
     return signal_language.shown_lines(lines, "signal_own", own_symbols=[SYMBOL])
 
 
@@ -136,7 +135,7 @@ def _with_old_min_rr(strategy):
     return old
 
 
-def _trades(result) -> List[dict]:
+def _trades(result) -> list[dict]:
     """Every field of every trade except the signal's reason lines (the only thing REV-B1 changed on purpose)."""
     rows = [t.model_dump() if hasattr(t, "model_dump") else dict(vars(t)) for t in result.trades]
     return [{k: v for k, v in row.items() if k != "reasons"} for row in rows]

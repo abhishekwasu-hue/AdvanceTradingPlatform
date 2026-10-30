@@ -7,7 +7,9 @@ A tenant whose resolved settings equal the platform's shares the platform snapsh
 Inputs are the lake's shared candles only (md_candles - no tenant column; HB0's tenant-private md_tenant_candles is never
 read), point-in-time (`ingested_at <= run time`), so a replayed run sees what was known then. The one exception is
 DATA-H's holder scope (`own:<tenant>:u<user>`): the history owner's own index history, built from his private bars and
-read back only by him (app/charts/zones_layer.py).
+read back only by him (app/charts/zones_layer.py). M55 T4: an organisation's own scope (`tenant:<id>`) reads the history
+owner's INDEX 1-minute rows too while the data tier is off (`own_bars.shared_scope`), so its opt-in intraday settings
+work; the platform scope stays on the shared lake only (Daily).
 
 Bars: the lake labels a bar by its END; the zone functions take START-labelled frames (Trade's convention) plus a
 `close_at` column. A timeframe the lake does not hold is rebuilt in memory from the instrument's 1-minute bars (read
@@ -347,6 +349,11 @@ async def run_instrument(session: AsyncSession, key: str, *, settings: Optional[
     if now.tzinfo is None:
         raise ValueError("run_instrument: `now` must be timezone-aware")
     private = holder_of(scope)
+    if private is None and tenant_id is not None and scope == tenant_scope(int(tenant_id)):
+        # M55 T4: an organisation's own scope (its opt-in settings, e.g. INTRADAY_PRESET) reads the history owner's index
+        # intraday rows while the data tier is off (own_bars.shared_scope: index keys and 1-minute rows only).
+        from app.market_lake import own_bars
+        private = await own_bars.shared_scope(session, int(tenant_id), key)
     probe = await source_probe(session, key, s, now, private)
     if probe[0] is None:
         return InstrumentResult("no_data")

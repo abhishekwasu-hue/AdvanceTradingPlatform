@@ -17,8 +17,30 @@ export interface FlagGroup {
   rows: FlagRow[];
 }
 
-/** The order the areas show in (an area the server adds later goes at the end). */
-const AREA_ORDER = ["trading", "charts", "screens", "ai", "data", "platform"];
+/**
+ * The order the groups show in (a group the server adds later goes at the end). ADM-1: the finer categories first (the
+ * server's `group`), then the broad areas a flag without a group falls back to.
+ */
+const AREA_ORDER = ["safety", "orders", "paper", "backtest", "charts", "screens", "screen_library", "scan_actions", "ai", "alerts",
+  "market_data", "look", "accounts", "help", "developers", "trading", "data", "platform"];
+
+/** ADM-1: the status filter above the list. */
+export type FlagFilter = "all" | "on" | "off" | "setup" | "decision";
+export const FLAG_FILTERS: { id: FlagFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "on", label: "On" },
+  { id: "off", label: "Off" },
+  { id: "setup", label: "Needs setup" },
+  { id: "decision", label: "Owner decision" },
+];
+
+function passes(flag: FeatureFlag, filter: FlagFilter): boolean {
+  if (filter === "on") return flag.on;
+  if (filter === "off") return !flag.on;
+  if (filter === "setup") return flag.status === "unfinished";
+  if (filter === "decision") return flag.status === "decision";
+  return true;
+}
 
 export function plainName(name: string, flags: FeatureFlags): string {
   return flags[name]?.plain || name;
@@ -32,16 +54,16 @@ export function blockedBy(name: string, flags: FeatureFlags): string[] {
 function matches(name: string, flag: FeatureFlag, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return [name, flag.plain, flag.description, flag.turns_on, flag.needs, flag.status_label, flag.area_label]
+  return [name, flag.plain, flag.description, flag.turns_on, flag.needs, flag.status_label, flag.area_label, flag.group_label]
     .some((text) => (text ?? "").toLowerCase().includes(q));
 }
 
-export function groupFlags(flags: FeatureFlags, query = ""): FlagGroup[] {
+export function groupFlags(flags: FeatureFlags, query = "", filter: FlagFilter = "all"): FlagGroup[] {
   const groups = new Map<string, FlagGroup>();
   for (const [name, flag] of Object.entries(flags)) {
-    if (!matches(name, flag, query)) continue;
-    const area = flag.area ?? "platform";
-    const group = groups.get(area) ?? { area, label: flag.area_label ?? "Other", rows: [] };
+    if (!matches(name, flag, query) || !passes(flag, filter)) continue;
+    const area = flag.group ?? flag.area ?? "platform";
+    const group = groups.get(area) ?? { area, label: flag.group_label ?? flag.area_label ?? "Other", rows: [] };
     group.rows.push({ name, flag, blockedBy: blockedBy(name, flags) });
     groups.set(area, group);
   }

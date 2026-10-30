@@ -17,6 +17,22 @@ export const ADMIN_SECTIONS: { id: AdminSection; label: string; hint: string }[]
   { id: "compliance", label: "Compliance", hint: "Algo trading readiness per broker, the go-live checklist and the audit-trail exports" },
 ];
 
+/**
+ * ADM-1 (owner 30 Oct: "too many controls, very confusing"): the Controls section in four groups, one on screen at a time
+ * (`/admin?section=controls&group=flags`). Safety first: the PAPER lock, the kill switch, maintenance and brokers.
+ */
+export type ControlsGroup = "safety" | "limits" | "features" | "flags";
+export const CONTROLS_GROUPS: { id: ControlsGroup; label: string; hint: string }[] = [
+  { id: "safety", label: "Safety", hint: "The PAPER lock, the emergency stop, maintenance and broker switches" },
+  { id: "limits", label: "Limits", hint: "The ceilings every organisation's risk settings stay under" },
+  { id: "features", label: "Features", hint: "Everything a trader uses, in one switch" },
+  { id: "flags", label: "All flags", hint: "Every switch one by one, in categories" },
+];
+
+export function isControlsGroup(value: string | null): value is ControlsGroup {
+  return CONTROLS_GROUPS.some((g) => g.id === value);
+}
+
 export function isAdminSection(value: string | null): value is AdminSection {
   return ADMIN_SECTIONS.some((s) => s.id === value);
 }

@@ -16,10 +16,16 @@ import type { PageProps } from "../routes";
 import { NoteV2 } from "../trading/PartsV2";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
-import { useMediaQuery } from "../utils/useMediaQuery";
+import { NARROW_QUERY, useMediaQuery } from "../utils/useMediaQuery";
+import { useSearchParams } from "react-router";
+import { useMarketStatus } from "../chart/useMarketStatus";
+import { useOptionChain } from "../optionChain/useOptionChain";
+import TerminalClassicV2 from "./TerminalClassicV2";
+import { ContextBarV2, useStripFigures } from "./ContextBarV2";
+import { modeChip } from "./statusModel";
 import { defaultTerminalApi, type TerminalApi } from "./api";
 import {
-  CHOOSER_PANEL_IDS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, UNDERLYINGS, activeKey, changed, closePanel,
+  CHOOSER_PANEL_IDS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, activeKey, changed, closePanel,
   isPreset, layoutFor, nameProblem, openPanel, remove, rename, resetToPreset, saveAs, saveOver, switchTo,
   type Layout, type PanelId, type PanelPlace, type PhoneTab, type TerminalPrefs,
 } from "./layoutModel";
@@ -53,8 +59,7 @@ import { Combobox } from "../ui/Combobox";
  */
 const STATUS_MS = 15_000;
 const LIST_MS = 30_000;
-const CHAIN_MS = 15_000;
-const NARROW = "(max-width: 1023px)";
+const NARROW = NARROW_QUERY;
 const COLUMNS_OFF: ColumnPrefs = { greeks: false, quotes: false, more: false };
 const BUTTON = "inline-flex min-h-11 shrink-0 items-center justify-center gap-space-1 rounded-control border border-border bg-surface-1 px-space-3 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50 md:min-h-9";
 
@@ -115,7 +120,13 @@ function useLayouts(terminal: TerminalApi) {
   return { prefs, setPrefs, version, working, setWorking, note, setNote, busy, persist, key: activeKey(prefs) };
 }
 
-export default function TerminalPageV2({ terminal = defaultTerminalApi }: PageProps & { terminal?: TerminalApi } = {}) {
+export default function TerminalPageV2(props: PageProps & { terminal?: TerminalApi } = {}) {
+  // TERM-2: the Terminal as it was, kept at ?view=classic (Settings › Advanced) until the owner approves the rebuild.
+  const [params] = useSearchParams();
+  return params.get("view") === "classic" ? <TerminalClassicV2 {...props} /> : <TerminalNowV2 {...props} />;
+}
+
+function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal?: TerminalApi } = {}) {
   const { user } = useAuth();
   const features = useFeatures();
   const narrow = useMediaQuery(NARROW);
@@ -133,7 +144,6 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
 
   const openIds = useMemo(() => new Set(working.panels.filter((x) => x.open).map((x) => x.id)), [working.panels]);
   const wants = (id: PanelId, phoneTab: PhoneTab) => (narrow ? tab === phoneTab : openIds.has(id));
-  const chainWanted = wants("chain", "chain") || wants("order", "order") || openIds.has("chain");
 
   // His own figures (TT-15): the status bar, his positions and his orders. The chain of the underlying the panels follow.
   const [statusL] = usePolled(terminal.status, () => STATUS_MS, signedIn);
@@ -145,9 +155,13 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
   const positionsShown = wants("positions", "positions");
   const loadExposure = useCallback(() => api.portfolioExposure(true), []);
   const [exposureL, reloadExposure] = usePolled(loadExposure, () => LIST_MS, signedIn && positionsShown);
-  const loadChain = useCallback(() => api.optionChainLive(underlying), [underlying]);
-  const [chainL] = usePolled<LiveChain>(loadChain, () => CHAIN_MS, signedIn && chainWanted);
-  const live = dataOf(chainL) ?? null;
+  // TERM-2 step 1: the chain of the ONE active symbol + expiry (the chain page's own read: on an expiry day the next
+  // expiry, per the user's chain setting). The context bar's PCR / DTE come from it, so it is read whenever signed in.
+  const market = useMarketStatus();
+  const chain = useOptionChain(underlying, market.status?.sessions?.NSE?.is_open ?? null);
+  const live = chain.live;
+  const chainL: Loadable<LiveChain> = live ? { status: "ok", data: live } : chain.problem ? { status: "error" } : { status: "loading" };
+  const strip = useStripFigures(underlying, signedIn);
   // T1-3: one spot for the chain and the chart (the same read, the same time).
   const spotSymbol = spotSymbolOf(underlying);
   // T1-5: the product of the spread builder's numbers from his own trading defaults.
@@ -155,8 +169,9 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
   const spot = useTerminalSpot({ symbol: spotSymbol, hub: features.on("data_hub"), enabled: signedIn, chain: live });
   const [columns, setColumns] = useState<ColumnPrefs>(COLUMNS_OFF);
   const orderPanelShown = narrow || openIds.has("order");
+  const expiryList = chain.expiries?.expiries.length ? chain.expiries.expiries : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const trading = useChainTrading({
-    symbol: underlying, live, prefs: columns, onPrefs: setColumns,
+    symbol: underlying, live, prefs: columns, onPrefs: setColumns, expiries: expiryList,
     onTicket: orderPanelShown ? (t) => { setTicket(t); if (narrow) setTab("order"); } : undefined,
   });
   const legs = useBasket();
@@ -238,13 +253,11 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
     <div className="mx-auto w-full space-y-space-3" data-page="terminal-v2" data-layout={key}>
       {confirmBox.dialog}
       <PageIntro id="terminal" lines={["The chart, the option chain and your order on one screen. Every order is checked and shown to you before it is placed."]} />
-      <div className="flex flex-wrap items-center gap-space-2" role="toolbar" aria-label="Terminal" data-block="terminal-toolbar">
-        <div className="flex items-center gap-space-2 text-t13 text-fg-muted">
-          <span aria-hidden>Underlying</span>
-          <Combobox label="Underlying" value={underlying} onChange={(v) => setWorking((w) => ({ ...w, underlying: v === DEFAULT_UNDERLYING ? null : v }))}
-            options={UNDERLYINGS.map((u) => ({ value: u, label: u }))} searchable={UNDERLYINGS.length > 8} dataAttrs={{ "data-terminal": "underlying" }} />
-        </div>
-        <div className="hidden flex-wrap items-center gap-space-2 md:flex" data-tour="terminal-layouts">
+      <ContextBarV2 symbol={underlying} onSymbol={(v) => setWorking((w) => ({ ...w, underlying: v === DEFAULT_UNDERLYING ? null : v }))}
+        chain={chain} spot={spot} prevClose={strip.prevClose} vix={strip.vix} mode={modeChip(dataOf(statusL) ?? null)} compact={narrow} />
+      {/* CT-1 T3: the layout controls only where the grid renders (from 1024 px); phone and tablet show the tabs. */}
+      {!narrow && <div className="flex flex-wrap items-center gap-space-2" role="toolbar" aria-label="Terminal" data-block="terminal-toolbar">
+        <div className="flex flex-wrap items-center gap-space-2" data-tour="terminal-layouts">
           <div className="flex items-center gap-space-2 text-t13 text-fg-muted">
             <span aria-hidden>Layout</span>
             <Combobox label="Layout" value={key} onChange={pickLayout} disabled={L.busy} dataAttrs={{ "data-terminal": "layout" }}
@@ -264,7 +277,7 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
           </button>
           <span className="text-t13 text-fg-muted" data-terminal="count">{count} of {MAX_LAYOUTS} saved</span>
         </div>
-      </div>
+      </div>}
 
       {ask && (
         <form className="flex flex-wrap items-end gap-space-2" data-terminal="ask" onSubmit={(e) => { e.preventDefault(); void submitAsk(); }}>
@@ -311,7 +324,7 @@ export default function TerminalPageV2({ terminal = defaultTerminalApi }: PagePr
       )}
 
       <div data-tour="terminal-status">
-        <StatusBarV2 status={status} failed={statusL.status === "error"} masked={masked} onMask={toggleMask} compact={narrow} combined={combined.list} />
+        <StatusBarV2 status={status} failed={statusL.status === "error"} masked={masked} onMask={toggleMask} compact={narrow} combined={combined.list} showMode={false} />
       </div>
       {trading.layer}
     </div>

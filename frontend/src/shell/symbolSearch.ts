@@ -1,6 +1,6 @@
 import { contractChartUrl, contractsApi, legName, type ContractRow } from "../charting/contracts";
 import { searchSymbols, type PickedSymbol } from "../ui/SymbolPicker";
-import { chartsPath } from "./shellRoutes";
+import { chartTabPath, chartsPath } from "./shellRoutes";
 
 /**
  * UX-2 (owner order UX-2, 25 Oct): the header search finds symbols first - indices, shares and F&O contracts - then
@@ -11,7 +11,8 @@ import { chartsPath } from "./shellRoutes";
 
 export type SymbolHit =
   | { type: "symbol"; id: string; label: string; detail: string; path: string; pick: PickedSymbol; recent: boolean }
-  | { type: "contract"; id: string; label: string; detail: string; href: string };
+  /** `path`: the contract on the Charts page (ChartV2, CT-1 C1); `href`: the old contract window (kept until the owner retires it). */
+  | { type: "contract"; id: string; label: string; detail: string; path: string; href: string };
 
 /** Spoken index names -> the instrument master's underlying. */
 const UNDERLYING_ALIASES: Record<string, string> = {
@@ -54,7 +55,7 @@ const symbolHit = (pick: PickedSymbol, recent: boolean): SymbolHit => ({
 
 export function contractHit(row: ContractRow): SymbolHit {
   return { type: "contract", id: `c:${row.key}`, label: legName({ ...row, qty: 1 }), detail: `${row.kind === "FUT" ? "Future" : "Option"} · lot ${row.lot_size}`,
-    href: contractChartUrl([row.key]) };
+    path: chartTabPath(row.tradingsymbol, row.key.split(":")[0] || "NFO"), href: contractChartUrl([row.key]) };
 }
 
 /** The recent symbols that match the text (all of them for an empty text), as rows. Pure. */

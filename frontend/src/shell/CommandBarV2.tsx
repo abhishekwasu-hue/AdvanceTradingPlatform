@@ -163,7 +163,7 @@ export default function CommandBarV2({ open, onOpenChange, ctx, onGo, userId = n
   const pick = (path: string) => { onOpenChange(false); onGo(path); };
   const pickSymbol = (hit: SymbolHit) => {
     onOpenChange(false);
-    if (hit.type === "contract") { window.location.assign(hit.href); return; }   // the contract chart is its own window
+    if (hit.type === "contract") { onGo(hit.path); return; }   // CT-1 C1: the contract on the Charts page (ChartV2)
     rememberSymbol(recentKeyFor(userId), hit.pick);
     onGo(hit.path);
   };

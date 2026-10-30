@@ -328,6 +328,10 @@ export default function App() {
   if (ref) rememberCode(ref);
   // `?chart=SYMBOL` is a chart opened in its own browser tab (a chart's "New tab" button): just the chart, no shell.
   // `?workspace=1` (CH5) is the multi-chart workspace, also on its own.
+  // CT-1 C1 (retired, kept reachable until the owner's ✅, then listed for removal): the ProChart windows. Under ui_v2
+  // their entry points open ChartV2 - `?chart=` redirects to the Chart tab (ChartWindow), `?workspace=1` to the
+  // Multi-chart view (ChartWorkspace), and the command bar's contract rows open the contract on the Charts page.
+  // `?contract=` (ContractChartWindow) stays for a spread of several legs and for old links.
   const params = new URLSearchParams(window.location.search);
   const standalone = params.has("basis") ? (
       <ErrorBoundary title="The futures basis chart">

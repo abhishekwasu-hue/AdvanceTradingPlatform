@@ -209,12 +209,12 @@ export function OiHistory({ views, date, interval, onInterval, closed }: {
           <p className="text-t12 text-fg-muted">
             {showAll ? `All ${views.length} readings` : `${rows.length} of ${views.length} readings: only those where call OI or put OI changed`}
           </p>
-          <div className="overflow-x-auto">
+          <div className="max-h-[28rem] overflow-auto" data-oi-history-scroll>
             <table className="w-full border-collapse text-t13">
               <thead>
                 <tr className="border-b border-subtle text-left">
                   {HISTORY_COLUMNS.map((c) => (
-                    <th key={c.key} scope="col" className={cx("whitespace-nowrap px-space-1 py-space-1 font-normal text-fg-muted",
+                    <th key={c.key} scope="col" className={cx("sticky top-0 whitespace-nowrap bg-surface-1 px-space-1 py-space-1 font-normal text-fg-muted",
                       c.key !== "time" && c.key !== "read" && "text-right", colClass(c.key))}>{c.label}</th>
                   ))}
                 </tr>
@@ -248,7 +248,7 @@ export function OiByStrike({ series, atm }: { series: readonly OiStrikeSeries[];
   const [active, setActive] = useState<number | null>(null);
   if (!bars.length) return <p className="text-t13 text-fg-muted">No per-strike OI yet.</p>;
   const max = Math.max(1, ...bars.flatMap((b) => [b.call ?? 0, b.put ?? 0]));
-  const slot = 30, padLeft = 52, padTop = 14, plot = 150, labels = 46;
+  const slot = 30, padLeft = 66, padTop = 16, plot = 150, labels = 50;
   const width = padLeft + bars.length * slot + 6;
   const height = padTop + plot + labels;
   const y = (v: number) => padTop + plot - (v / max) * plot;

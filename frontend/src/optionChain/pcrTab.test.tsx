@@ -69,10 +69,10 @@ describe("M61 PCR-1 / PCR-2: the session path", () => {
   });
   it("puts a time tick every N minutes, on the clock, never overlapping", () => {
     const ticks = timeTicks(Date.parse(t("09:15")), Date.parse(t("15:30")));
-    expect(ticks.length).toBeLessThanOrEqual(6);
+    expect(ticks.length).toBeLessThanOrEqual(4);
     const gaps = ticks.slice(1).map((v, i) => v - ticks[i]);
     expect(new Set(gaps).size).toBe(1);
-    expect(gaps[0] % (60 * 60_000)).toBe(0);                                   // 09:15 - 15:30: every 2 hours
+    expect(gaps[0]).toBe(2 * 60 * 60_000);                                       // 09:15 - 15:30: every 2 hours
     expect(timeTicks(Date.parse(t("09:20")), Date.parse(t("09:35")))).toHaveLength(4);   // 09:20, 09:25, 09:30, 09:35
     const html = renderToStaticMarkup(<MiniChart chart={visibleChart(CHART, false)} title="PCR" />);
     const labels = [...html.matchAll(/<text[^>]*>(\d\d:\d\d)<\/text>/g)].map((m) => m[1]);

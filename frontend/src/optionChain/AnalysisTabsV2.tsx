@@ -230,7 +230,7 @@ export function MiniChart({ chart, title }: { chart: AnalysisChart; title: strin
         ))}
         {chart.marker && marker !== null && <span>Dashed line: {chart.marker.label.toLowerCase()}</span>}
         {marks.length > 0 && <span>Dotted line: the ATM strike changed</span>}
-        {chart.series.some((s) => s.points.some((p) => p.hollow)) && <span>Hollow dot: partial reading (some strikes missing)</span>}
+        {chart.series.some((s) => s.points.some((p) => p.hollow && p.y !== null)) && <span>Hollow dot: partial reading (some strikes missing)</span>}
       </figcaption>
     </figure>
   );

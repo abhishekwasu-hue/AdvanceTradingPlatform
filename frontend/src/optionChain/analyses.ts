@@ -291,7 +291,7 @@ const STEPS_MIN = [1, 2, 5, 10, 15, 30, 60, 120, 240];
 
 /** M61 PCR-2: x-axis ticks for a time line - every N minutes (N the smallest of 1, 2, 5, 10, 15, 30, 60, 120, 240
  * that keeps at most `maxTicks`), on IST clock multiples of N, so labels never overlap. */
-export function timeTicks(startMs: number, endMs: number, maxTicks = 6): number[] {
+export function timeTicks(startMs: number, endMs: number, maxTicks = 4): number[] {
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return [];
   if (endMs === startMs) return [startMs];
   const IST_MS = 330 * 60_000;

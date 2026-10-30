@@ -31,6 +31,9 @@ FNO-2, the basket (app/paper/fno_basket.py), same flags, same PAPER-only path - 
 - `POST /api/paper/fno/basket/preview`      the confirm step: every leg checked, hedge legs first, total margin and max loss.
 - `POST /api/paper/fno/basket/execute`      every leg as a PAPER order, hedge legs first; per-leg results, never retried.
 - `POST /api/paper/fno/basket/broker-link`  the legs pre-filled for the user's own broker app (ATP places nothing there).
+TERM-2 step 4 (app/paper/fno_term.py, read only): `basket/evaluate` may carry `with_open` (R2 what-if, `term_whatif`)
+and `margin_pair` (R4, `term_margin_pair`); `POST /api/paper/fno/roll/preview` (R1, `term_roll`) is the roll's preview -
+the exit is Exit now / the group exit, the new legs the basket's own Place (two confirmed steps).
 
 FNO-4, the watchlist's contract rows and the positions page (app/paper/fno_contracts.py), read only:
 - `POST /api/paper/fno/contracts`         what saved contracts are: name, expiry, days left, "Expired" and the roll target
@@ -467,12 +470,51 @@ class ExecuteBody(BasketBody):
     exits: Optional[StrategyExitsBody] = None
 
 
+class EvaluateBody(BasketBody):
+    """TERM-2 step 4: `with_open` (R2 what-if, flag `term_whatif`) adds the combined payoff of his own open PAPER legs on
+    the same underlying and expiries; `margin_pair` (R4, flag `term_margin_pair`) adds margin required / available. Each
+    is ignored while its flag (or `terminal`) is off, so the answer is exactly as before."""
+    with_open: bool = False
+    margin_pair: bool = False
+
+
 @router.post("/basket/evaluate", dependencies=[Depends(evaluate_rate_limit)])
-async def basket_evaluate(body: BasketBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def basket_evaluate(body: EvaluateBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _enabled(session, user)
     if body.spot is None:
         raise HTTPException(status_code=422, detail="The underlying's price (spot) is needed for the payoff.")
-    return await fno_basket.evaluate(session, body.asks(), body.spot)
+    legs = body.asks()
+    out = await fno_basket.evaluate(session, legs, body.spot)
+    if not out.get("ok") or not (body.with_open or body.margin_pair):
+        return out
+    from app.paper import fno_term
+    if body.with_open and await fno_term.enabled(session, user.tenant_id, fno_term.WHATIF_FLAG):
+        out["whatif"] = await fno_term.whatif(session, user, legs, body.spot)
+    if body.margin_pair and await fno_term.enabled(session, user.tenant_id, fno_term.MARGIN_PAIR_FLAG):
+        out["margin_pair"] = await fno_term.margin_pair(session, user, legs, out, body.product)
+    return out
+
+
+# --- TERM-2 R1: Roll to the next weekly (a preview; the exit and the new legs are two confirmed steps) --------------------
+
+class RollBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    trade_ids: list[int] = Field(min_length=1, max_length=fno_basket.MAX_LEGS)
+    spot: float | None = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+
+
+@router.post("/roll/preview", dependencies=[Depends(preview_rate_limit)])
+async def roll_preview(body: RollBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """The roll of his own open PAPER legs: the exit of each leg and the same strikes on the next listed expiry, with the
+    new legs' numbers from the basket's engine. Reads only; places and closes nothing (the exit is Exit now, the new
+    legs are the basket's own Place). Flags ui_v2 + paper_account + terminal + term_roll (404 otherwise)."""
+    await _enabled(session, user)
+    from app.paper import fno_term
+    if not await fno_term.enabled(session, user.tenant_id, fno_term.ROLL_FLAG):
+        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": fno_term.ROLL_FLAG})
+    from app.ai.worker_bridge import price_lookup_for_user
+    lookup = await price_lookup_for_user(session, user)
+    return await fno_term.roll_preview(session, user, body.trade_ids, price_lookup=lookup, spot=body.spot)
 
 
 @router.get("/basket/settings")

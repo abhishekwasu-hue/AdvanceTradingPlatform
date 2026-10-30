@@ -86,7 +86,11 @@ const EVALUATION = {
   lot_sizes: [75, 75], labels: [], order: [1, 0],
 };
 
-async function open(page: Page, theme: "light" | "dark", opts: { features?: Record<string, boolean>; bars?: number; vary?: boolean; incomplete?: boolean } = {}): Promise<Seen> {
+async function open(page: Page, theme: "light" | "dark", opts: {
+  features?: Record<string, boolean>; bars?: number; vary?: boolean; incomplete?: boolean;
+  /** TERM-2 step 4: legs already in the basket, and extra routes registered last (they win over the ones above). */
+  basket?: unknown[]; routes?: (page: Page) => Promise<void>;
+} = {}): Promise<Seen> {
   await page.clock.install({ time: new Date("2026-10-27T10:30:00+05:30") });
   await page.addInitScript((t) => {
     try {
@@ -94,6 +98,7 @@ async function open(page: Page, theme: "light" | "dark", opts: { features?: Reco
       localStorage.setItem("atp_install_dismissed", "1");
       localStorage.setItem("atp_page_intro_dismissed:2", JSON.stringify(["terminal"]));
       sessionStorage.removeItem("atp_fno_basket");
+      sessionStorage.removeItem("atp_roll_pending");
     } catch { /* storage unavailable */ }
     Object.defineProperty(Document.prototype, "visibilityState", { configurable: true, get: () => "visible" });
     Object.defineProperty(Document.prototype, "hidden", { configurable: true, get: () => false });
@@ -185,6 +190,10 @@ async function open(page: Page, theme: "light" | "dark", opts: { features?: Reco
     seen.orderPosts.push({ at: Date.now(), url: url.pathname });
     return route.fulfill({ json: { ...preview(body), status: "PLACED", reasons: [], order_id: 9, trade_id: 44, filled: { price: 150.5, quantity: 75, lots: 1 } } });
   });
+  if (opts.basket) {
+    await page.addInitScript((legs) => { try { sessionStorage.setItem("atp_fno_basket", JSON.stringify(legs)); } catch { /* storage unavailable */ } }, opts.basket);
+  }
+  if (opts.routes) await opts.routes(page);
   await page.goto("/terminal");
   await settle(page);
   return seen;
@@ -519,3 +528,197 @@ for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) 
     });
   });
 }
+
+// --- TERM-2 step 4: R1 Roll, R2 What-if, R3 short strike to area, R4 margin pair (each behind its own flag) -------------
+
+const R_FLAGS = { term_roll: true, term_whatif: true, term_strike_area: true, term_margin_pair: true };
+const R_ON = { ...ON, ...R_FLAGS };
+const PRICES = Array.from({ length: 121 }, (_, i) => 23500 + i * 20);
+type AskLeg = { strike: number; right: string; side: string; lots: number; price: number | null };
+const OPEN_LEGS: AskLeg[] = [{ strike: 25000, right: "CE", side: "SELL", lots: 1, price: 120 }, { strike: 25100, right: "CE", side: "BUY", lots: 1, price: 80 }];
+/** A made-up payoff at expiry of these legs (75 a lot) - the shape only, for the screenshots. */
+function payoffOf(legs: AskLeg[]) {
+  const at = PRICES.map((s) => legs.reduce((sum, l) => {
+    const intrinsic = l.right === "CE" ? Math.max(s - l.strike, 0) : Math.max(l.strike - s, 0);
+    const unit = (l.price ?? 0) - intrinsic;
+    return sum + (l.side === "SELL" ? unit : -unit) * l.lots * 75;
+  }, 0));
+  const net = legs.reduce((sum, l) => sum + (l.side === "SELL" ? 1 : -1) * (l.price ?? 0) * l.lots * 75, 0);
+  const crossings = PRICES.filter((_, i) => i > 0 && Math.sign(at[i]) !== Math.sign(at[i - 1]));
+  return { ...EVALUATION, prices: PRICES, at_expiry: at, today: at, on_date: at, net_premium: net, breakevens: crossings,
+    extremes: { max_profit: Math.max(...at), max_loss: Math.min(...at), unbounded_profit: false, unbounded_loss: false } };
+}
+const ROLL = {
+  mode: "PAPER", ok: true, errors: [], expiry: "2026-11-10", underlying: "NIFTY", spot: 24480,
+  exit: [{ trade_id: 41, label: "NIFTY 03 NOV 25000 CE", side: "SELL", lots: 1, units: 75, price: 110, price_source: "live" },
+    { trade_id: 42, label: "NIFTY 03 NOV 25100 CE", side: "BUY", lots: 1, units: 75, price: 70, price_source: "live" }],
+  legs: [{ underlying: "NIFTY", expiry: "2026-11-10", strike: 25000, right: "CE", side: "SELL", lots: 1, price: 165, stop_loss: null, label: "NIFTY 10 NOV 25000 CE" },
+    { underlying: "NIFTY", expiry: "2026-11-10", strike: 25100, right: "CE", side: "BUY", lots: 1, price: 120, stop_loss: null, label: "NIFTY 10 NOV 25100 CE" }],
+  numbers: { net_premium: 3375, extremes: { max_profit: 3375, max_loss: -4125, unbounded_profit: false, unbounded_loss: false }, breakevens: [25045], lot_sizes: [75, 75] },
+  numbers_errors: [], exit_value: -3000, net: 375, atomic: false,
+  steps: "Step 1 closes these legs through Exit now. Step 2 puts the new legs in your basket: you review and place them. Between the two steps these strikes are not held.",
+  as_of: NOW,
+};
+const MY_DAY = {
+  as_of: NOW, today: "2026-10-27", previous_session: "2026-10-24", note: "", thresholds: { watch_room_left_pct: 50, near_room_left_pct: 20 },
+  positions: [{ id: 41, symbol: POSITIONS[0].symbol, mode: "PAPER", side: "SHORT", kind: "OPTION", underlying: "NIFTY", deployment_id: null,
+    chip: null, chip_label: null, room_left_pct: null, chip_text: null, expiry: "2026-11-03", expiry_sessions: 5, expiry_text: "5 sessions",
+    area: { low: 25080, high: 25140, state: "fresh", where: "above", distance_pct: 0.32, range_text: "25,080.00-25,140.00", from: "strike", change: null },
+    area_text: "Nearest area is 0.32% above your strike.", strike: 25000, right: "CE" }],
+  since_last_session: { gaps: [], events: [], areas: [], empty: "Nothing new on the record since the last session." },
+};
+const BASKET = [
+  { id: "b1", underlying: "NIFTY", expiry: "2026-11-03", strike: 24500, right: "CE", side: "SELL", lots: 1, price: 150, label: "NIFTY 03 NOV 24500 CE", stopLoss: null, iv: 13 },
+  { id: "b2", underlying: "NIFTY", expiry: "2026-11-03", strike: 24600, right: "CE", side: "BUY", lots: 1, price: 100, label: "NIFTY 03 NOV 24600 CE", stopLoss: null, iv: 13 },
+];
+
+interface RSeen { evaluates: Record<string, unknown>[]; exits: string[]; places: string[] }
+/** The four features' own answers (registered last, so they win), and what the page sent. */
+function termRoutes(seen: RSeen) {
+  return async (page: Page) => {
+    await page.route(/\/api(?:\/v1)?\/today\/my-day$/, (r) => r.fulfill({ json: MY_DAY }));
+    await page.route(/\/api(?:\/v1)?\/paper\/fno\/roll\/preview$/, (r) => r.fulfill({ json: ROLL }));
+    await page.route(/\/api(?:\/v1)?\/paper\/fno\/positions\/\d+\/exit-group$/, (r) => {
+      seen.exits.push(new URL(r.request().url()).pathname);
+      return r.fulfill({ json: { status: "CLOSED", legs: [
+        { trade_id: 41, symbol: POSITIONS[0].symbol, closed: true, exit_price: 110, pnl: 750, warnings: [] },
+        { trade_id: 42, symbol: POSITIONS[1].symbol, closed: true, exit_price: 70, pnl: -750, warnings: [] }] } });
+    });
+    await page.route(/\/api(?:\/v1)?\/paper\/fno\/basket\/(execute|preview)$/, (r) => { seen.places.push(r.request().url()); return r.fallback(); });
+    await page.route(/\/api(?:\/v1)?\/paper\/fno\/basket\/evaluate$/, (r) => {
+      const body = r.request().postDataJSON() as { legs: AskLeg[]; with_open?: boolean; margin_pair?: boolean };
+      seen.evaluates.push(body as unknown as Record<string, unknown>);
+      const out: Record<string, unknown> = { ...payoffOf(body.legs), lot_sizes: body.legs.map(() => 75), labels: [], order: body.legs.map((_, i) => i) };
+      if (body.with_open) {
+        out.whatif = { ...payoffOf([...OPEN_LEGS, ...body.legs]), open: [
+          { trade_id: 41, label: "NIFTY 03 NOV 25000 CE", side: "SELL", lots: 1, price: 120 }, { trade_id: 42, label: "NIFTY 03 NOV 25100 CE", side: "BUY", lots: 1, price: 80 }],
+        open_legs: OPEN_LEGS.map((l, i) => ({ id: `open-${41 + i}`, direction: l.side, option_type: l.right, strike: l.strike, premium: l.price, lots: 1, lot_size: 75, expiry: "2026-11-03", iv: null })) };
+      }
+      if (body.margin_pair) {
+        const lots = body.legs.reduce((a, l) => a + l.lots, 0);
+        const required = 16_000 * lots;
+        out.margin_pair = { source: "estimate", estimate: true, label: "ATP's estimate, not your broker's number", required, without_hedge: null, benefit: null,
+          available: STATUS.funds.available, available_note: STATUS.funds.note, free_after: STATUS.funds.available - required, free_before: STATUS.funds.available,
+          free_source: "practice", notes: [] };
+      }
+      return r.fulfill({ json: out });
+    });
+  };
+}
+
+test.describe("v2 terminal TERM-2 step 4 (R1-R4) 1440", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  for (const theme of THEMES) {
+    test(`before: no Roll, no what-if, no margin pair, no area mark (${theme})`, async ({ page }) => {
+      const seen: RSeen = { evaluates: [], exits: [], places: [] };
+      await open(page, theme, { basket: BASKET, routes: termRoutes(seen) });
+      await expect(page.locator("[data-testid='roll-group'], [data-testid='roll']")).toHaveCount(0);
+      await expect(page.locator("[data-basket='whatif-toggle']")).toHaveCount(0);
+      await expect(page.locator("[data-figure='margin-required']")).toHaveCount(0);
+      await expect(page.locator("[data-area-mark]")).toHaveCount(0);
+      expect(seen.evaluates.every((b) => !b.with_open && !b.margin_pair)).toBe(true);
+      await shot(page, `term2r-before-1440-${theme}`);
+    });
+
+    test(`after: Roll -> the preview -> the existing group exit -> the new legs in the basket (${theme})`, async ({ page }) => {
+      const seen: RSeen = { evaluates: [], exits: [], places: [] };
+      await open(page, theme, { features: R_ON, routes: termRoutes(seen) });
+      const positions = page.locator("[data-panel='positions']");
+      // R3: the short strike's distance to the nearest area, on its row and on the chain.
+      await expect(positions.locator("[data-chip='strike-area']")).toHaveText("Area 0.32% above · 25,080.00-25,140.00");
+      await expect(page.locator("[data-terminal-chain] [data-area-side='call']")).toHaveText(/Area 0\.32% above/);
+      // Exits are never hidden or disabled beside Roll (ADR-0004).
+      await expect(positions.locator("[data-testid='exit-group']")).toBeEnabled();
+      await positions.locator("[data-testid='roll-group']").click();
+      const sheet = page.getByRole("dialog");
+      await expect(sheet.locator("[data-roll-preview='ok']")).toBeVisible();
+      await expect(sheet.locator("[data-roll='not-atomic']")).toHaveText("Two steps, not one: you hold neither set of legs between them.");
+      await expect(sheet.locator("[data-roll='exit'] li")).toHaveCount(2);
+      await expect(sheet.locator("[data-roll='legs'] li")).toHaveCount(2);
+      await expect(sheet.locator("[data-figure='net']")).toContainText("Net credit ₹375");
+      await expect(sheet.locator("[data-testid='roll-confirm']")).toBeEnabled();
+      await shot(page, `term2r-after-1440-${theme}-roll-preview`);
+      await sheet.locator("[data-testid='roll-confirm']").click();
+      await expect(page.locator("[data-roll-pending]")).toBeVisible();
+      expect(seen.exits).toEqual(["/api/paper/fno/positions/41/exit-group"]);       // the existing group exit
+      expect(seen.places).toEqual([]);                                               // nothing placed: the user reviews the basket
+      const basket = page.locator("[data-panel='basket'] [data-basket-panel]");
+      await expect(basket.locator("[data-basket='legs'] > li")).toHaveCount(2);
+      await expect(basket.locator("[data-basket='legs']")).toContainText("10 NOV");
+      await shot(page, `term2r-after-1440-${theme}-roll-pending`);
+    });
+
+    test(`after: the basket with what-if and the margin pair, which follows every lot change (${theme})`, async ({ page }) => {
+      const seen: RSeen = { evaluates: [], exits: [], places: [] };
+      await open(page, theme, { features: R_ON, basket: BASKET, routes: termRoutes(seen) });
+      const basket = page.locator("[data-panel='basket'] [data-basket-panel]");
+      await expect(basket.locator("[data-basket='whatif-toggle']")).toBeVisible();
+      await expect(basket.locator("[data-basket='payoff']")).toHaveAttribute("data-payoff", "combined");
+      await expect(basket.locator("[data-figure='whatif-max-loss']")).toBeVisible();
+      const required = basket.locator("[data-figure='margin-required']");
+      await expect(required).toContainText("Margin required (estimate)");
+      await expect(required).toContainText("32,000");
+      await expect(basket.locator("[data-figure='margin-available']")).toContainText("9,93,300");
+      await shot(page, `term2r-after-1440-${theme}-basket`);
+      await basket.locator("[data-leg-more]").first().click();
+      await expect(required).toContainText("48,000");
+      expect(seen.evaluates.at(-1)).toMatchObject({ with_open: true, margin_pair: true });
+      await basket.locator("[data-whatif-view='basket']").click();
+      await expect(basket.locator("[data-basket='payoff']")).toHaveAttribute("data-payoff", "basket");
+      await noSidewaysScroll(page);
+    });
+  }
+});
+
+test.describe("v2 terminal TERM-2 step 4 (R1-R4) tablet 820", () => {
+  test.use({ viewport: { width: 820, height: 1180 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  for (const [when, features] of [["before", ON], ["after", R_ON]] as const) {
+    test(`${when}: positions and the basket (light)`, async ({ page }) => {
+      const seen: RSeen = { evaluates: [], exits: [], places: [] };
+      await open(page, "light", { features, basket: BASKET, routes: termRoutes(seen) });
+      await page.locator("[data-tab='positions']").tap();
+      await expect(page.locator("[data-phone-panel='positions'] [data-position]")).toHaveCount(2);
+      await shot(page, `term2r-${when}-820-light-positions`);
+      await page.locator("[data-tab='basket']").tap();
+      await settle(page);
+      await shot(page, `term2r-${when}-820-light-basket`);
+      await noSidewaysScroll(page);
+    });
+  }
+});
+
+test.describe("v2 terminal TERM-2 step 4 (R1-R4) 390", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  for (const theme of THEMES) {
+    for (const [when, features] of [["before", ON], ["after", R_ON]] as const) {
+      test(`${when}: positions, the roll preview, the chain and the basket (${theme})`, async ({ page }) => {
+        const seen: RSeen = { evaluates: [], exits: [], places: [] };
+        await open(page, theme, { features, basket: BASKET, routes: termRoutes(seen) });
+        await page.locator("[data-tab='positions']").tap();
+        const positions = page.locator("[data-phone-panel='positions']");
+        await expect(positions.locator("[data-position]")).toHaveCount(2);
+        await shot(page, `term2r-${when}-390-${theme}-positions`);
+        if (when === "after") {
+          await expect(positions.locator("[data-chip='strike-area']")).toHaveText("Area 0.32% above · 25,080.00-25,140.00");
+          await positions.locator("[data-testid='roll-group']").tap();
+          await expect(page.getByRole("dialog").locator("[data-roll-preview='ok']")).toBeVisible();
+          await shot(page, `term2r-after-390-${theme}-roll-preview`);
+          await page.keyboard.press("Escape");
+        } else {
+          await expect(positions.locator("[data-testid='roll-group']")).toHaveCount(0);
+        }
+        await page.locator("[data-tab='chain']").tap();
+        await expect(page.locator("[data-phone-panel='chain'] [data-terminal-chain] [data-chain-scroll]")).toBeVisible();
+        await page.locator("[data-phone-panel='chain'] tr[data-strike='25000']").scrollIntoViewIfNeeded();
+        await shot(page, `term2r-${when}-390-${theme}-chain`);
+        await page.locator("[data-tab='basket']").tap();
+        await settle(page);
+        await shot(page, `term2r-${when}-390-${theme}-basket`);
+        await expectPhoneLayout(page);
+      });
+    }
+  }
+});

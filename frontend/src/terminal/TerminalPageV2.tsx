@@ -38,6 +38,9 @@ import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { chartLiveOf, useTerminalSpot } from "./spot";
 import BasketPanelV2 from "../fno/BasketPanelV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
+import { RollPendingV2 } from "../fno/RollV2";
+import { writePending } from "../fno/roll";
+import { areasByTrade, chainAreaMarks, useStrikeAreas } from "../fno/strikeArea";
 import { StatusBarV2 } from "./StatusBarV2";
 import { useCombinedExits } from "../fno/CombinedExitV2";
 import { TerminalGridV2 } from "./TerminalGridV2";
@@ -179,6 +182,14 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const levels = useMemo(() => terminalLevels({ underlying, expiry: live?.expiry ?? chain.expiry, basket: legs, held: trading.held,
     breakevens, combined: combined.list, spotSymbol }), [underlying, live?.expiry, chain.expiry, legs, trading.held, breakevens, combined.list, spotSymbol]);
   const afterOrder = () => { reloadPositions(); reloadOrders(); reloadExposure(); };
+  // TERM-2 step 4 (each behind its own flag, with ui_v2 + terminal; PAPER first): R1 Roll, R3 the short strikes' areas.
+  const termOn = (flag: string) => features.on("ui_v2") && features.on("terminal") && features.on(flag);
+  const rollOn = termOn("term_roll") && features.on("paper_account") && canTrade;
+  const strikeAreas = useStrikeAreas(termOn("term_strike_area") && signedIn);
+  const areaById = useMemo(() => areasByTrade(strikeAreas), [strikeAreas]);
+  const areaMarks = useMemo(() => chainAreaMarks(strikeAreas, underlying, live?.expiry ?? chain.expiry ?? null), [strikeAreas, underlying, live?.expiry, chain.expiry]);
+  // R1 step 2: show the one basket (its phone tab, or its panel on the grid).
+  const openBasket = () => { if (narrow) setTab("basket"); else setWorking((w) => (w.panels.some((x) => x.id === "basket" && x.open) ? w : { ...w, panels: openPanel(w.panels, "basket") })); };
   const ticketState = useTerminalTicket(ticket, live && ticket && ticket.target.expiry === live.expiry ? live.rows : null, afterOrder);
 
   // A new underlying starts a new order: the panel never keeps a contract of another underlying.
@@ -208,18 +219,19 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       }
       // TERM-2 step 2: the Option chain page's own chain (summary strip, columns menu, ChainTableV2), not a copy.
       case "chain": return <TerminalChainV2 symbol={underlying} chain={chain} spot={spot} prevClose={strip.prevClose} prefs={columns}
-        onPrefs={(next) => { setColumns(next); writeColumns(next); }} trading={trading} />;
+        onPrefs={(next) => { setColumns(next); writeColumns(next); }} trading={trading} areaMarks={areaMarks.size ? areaMarks : undefined} />;
       case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} paperBadge={false} />;
       case "positions": {
         const list = <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}
-          fnoOn={features.on("paper_account")} combined={combined} onChanged={afterOrder} />;
+          fnoOn={features.on("paper_account")} combined={combined} onChanged={afterOrder}
+          roll={rollOn ? { spot: live?.summary.spot ?? null, onBasket: openBasket } : undefined} areas={areaById.size ? areaById : undefined} />;
         // TERM-2 step 3: on the desktop grid the one bottom panel - Positions · Orders · Alerts; a phone has its own tabs.
         return narrow ? list : <AccountPanelV2 positions={list} orders={panel("orders")} counts={{ positions: dataOf(positionsL)?.length ?? 0 }} />;
       }
       case "orders": return <OrdersPanelV2 read={asRead(ordersL)} terminal={terminal} />;
       // TERM-2 step 2: the one basket (legs, payoff, max profit / loss, breakevens, PoP, margin with the hedge, his own
       // exits, one Place) - the server's one calculation, rendered once; the spread builder's own figures are gone.
-      case "basket": return <BasketPanelV2 embedded open onClose={() => undefined} onPlaced={afterOrder} onNumbers={(n) => setBreakevens(n?.breakevens ?? null)}
+      case "basket": return <BasketPanelV2 embedded open onClose={() => undefined} onPlaced={() => { afterOrder(); writePending(null); }} onNumbers={(n) => setBreakevens(n?.breakevens ?? null)}
         chain={{ symbol: underlying, live, expiries: expiryList, loadChain: (e) => api.optionChainLive(underlying, e) }} />;
       case "bots": return <PlaceholderPanelV2 kind="bots" />;
       case "payoff": return <PlaceholderPanelV2 kind="payoff" />;
@@ -315,6 +327,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       {/* T1-4: a multi-leg order that stopped half way shows at once, above every panel and tab, with "Complete the
           leg" / "Exit the filled leg" - never a silent naked short. Nothing here places or closes by itself. */}
       {signedIn && features.on("smart_execution") && <div data-terminal="incomplete"><IncompleteOrdersV2 /></div>}
+      {/* TERM-2 R1: a roll that is half done (old legs closed, new legs in the basket, not placed) says so, beside it. */}
+      {rollOn && <div data-terminal="roll-pending"><RollPendingV2 onBasket={openBasket} /></div>}
 
       {narrow ? (
         <div className="space-y-space-3" data-tour="terminal-panels">

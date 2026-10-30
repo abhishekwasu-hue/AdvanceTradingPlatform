@@ -10,7 +10,10 @@ token bucket) before every call. Tenants never share a budget: their credentials
 API keys, so their limits are their own too.
 """
 import asyncio
+import contextlib
+import contextvars
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -67,6 +70,25 @@ AUTH_CALLS = frozenset({"authenticate"})
 ALWAYS_READ_CALLS = frozenset({"get_order_book", "get_positions"})
 
 
+# M55 S2 (ADR-0004): price reads made while this is set are for an exit (the worker sets it around its exits phase) and
+# may use the price-read reserve (config.DAILY_EXIT_READ_RESERVE_SHARE); every other read stops before it.
+_EXIT_READS: contextvars.ContextVar[bool] = contextvars.ContextVar("atp_exit_reads", default=False)
+
+
+@contextlib.contextmanager
+def exit_reads() -> Iterator[None]:
+    """Mark the price reads made inside this block as reads for an exit (they may use the exit reserve)."""
+    token = _EXIT_READS.set(True)
+    try:
+        yield
+    finally:
+        _EXIT_READS.reset(token)
+
+
+def reading_for_exit() -> bool:
+    return _EXIT_READS.get()
+
+
 def call_kind(method: str) -> str:
     if method in ORDER_CALLS:
         return "orders"
@@ -91,10 +113,17 @@ class DailyBudget:
     trading worker holds one per (tenant, broker account)."""
 
     def __init__(self, broker: str, caps: Dict[str, int], *, share: float = DAILY_SHARE, exit_reserve: float = EXIT_RESERVE_SHARE,
-                 today=None) -> None:
+                 today=None, read_reserve: float | None = None) -> None:
         self.broker = broker
         self.caps = {k: max(0, int(v * share)) for k, v in caps.items()}
         self.entry_cap = max(0, int(self.caps.get("orders", 0) - caps.get("orders", 0) * exit_reserve))
+        if read_reserve is None:
+            from app.core import config
+            read_reserve = config.DAILY_EXIT_READ_RESERVE_SHARE
+        # M55 S2: price reads not made for an exit stop here; an exit's price read may go on to the full cap.
+        self.read_cap = max(0, int(self.caps.get("live_data", 0) - caps.get("live_data", 0) * read_reserve))
+        # M55 S2: caps reached since the owner was last told ({kind: True when an exit's call was refused}).
+        self.cap_hits: dict[str, bool] = {}
         self._today = today or _ist_today
         self._day = self._today()
         self.used: Dict[str, int] = {k: 0 for k in caps}
@@ -122,10 +151,23 @@ class DailyBudget:
         used = self.used.get(kind, 0)
         if kind == "orders":
             if entry and used >= self.entry_cap:
+                self._hit(kind, exit_call=False)
                 raise DailyCapReached(self.broker, kind)
-        elif method not in ALWAYS_READ_CALLS and used >= self.caps[kind]:
-            raise DailyCapReached(self.broker, kind)
+        elif method not in ALWAYS_READ_CALLS:
+            for_exit = kind == "live_data" and reading_for_exit()
+            cap = self.read_cap if kind == "live_data" and not for_exit else self.caps[kind]
+            if used >= cap:
+                self._hit(kind, exit_call=for_exit)
+                raise DailyCapReached(self.broker, kind)
         self.used[kind] = used + 1
+
+    def _hit(self, kind: str, *, exit_call: bool) -> None:
+        self.cap_hits[kind] = self.cap_hits.get(kind, False) or exit_call
+
+    def pop_cap_hits(self) -> dict[str, bool]:
+        """The caps reached since the last call ({kind: an exit's call was refused}); the worker alerts on them."""
+        hits, self.cap_hits = self.cap_hits, {}
+        return hits
 
     def add(self, method: str, extra: int) -> None:
         """Count `extra` more broker requests one adapter call made (Groww's order book asks once per segment, a quote

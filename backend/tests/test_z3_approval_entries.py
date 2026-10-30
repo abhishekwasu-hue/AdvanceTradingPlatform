@@ -1,6 +1,6 @@
 """Z3 / BT2 (beta spec, Phase 0): approval-only entries. With the `approval_only_entries` flag on (off by default) every
 automatic entry becomes an ENTRY proposal; only an APPROVED one places an order, always PAPER, at a re-quoted price
-(refused and re-proposed past the drift limit, expired after its window). Target exits ask "Exit now?"; protective
+(refused and re-proposed past the drift limit, expired after its window). Exits are automatic (M55 S2: target exits no longer ask "Exit now?"); protective
 exits stay automatic and are never held by a pending or snoozed proposal (ADR-0004); "Exit now" is always available."""
 import ast
 import asyncio
@@ -438,33 +438,28 @@ def _open_trade(t, *, dep_id=None, entry=100.0, stop=98.0, target=104.0, mode="P
     return _run(go())
 
 
-def test_target_asks_exit_now_while_the_stop_closes_at_once_even_with_a_snoozed_question(monkeypatch):
+def test_target_exits_are_automatic_under_approval_only_and_the_stop_closes_at_once(monkeypatch):
+    """M55 S2 (A8, owner order): the approval gate is for entries only - a target closes an approved position at once,
+    no "Exit now?" question is raised; the stop stays automatic as before."""
     t = _tenant(_email("exits"))
     _flag_for(t["tenant_id"])
     dep_id = _deploy(t)
     trade_id = _open_trade(t, dep_id=dep_id, approved=True)
-    other_id = _open_trade(t, dep_id=None)                             # entered another way: its target stays automatic (L2)
+    other_id = _open_trade(t, dep_id=None)                             # entered another way: automatic as before
     broker = _FakeBroker(ltp=104.5)                                    # through target 1
     worker = _worker(monkeypatch, broker)
     _force_signal(monkeypatch, lambda: _signal(direction=SignalDirection.NO_TRADE))
 
     report = _run(worker.run_cycle(now=OPEN_NOW))
-    assert report.positions_closed == 1 and _get(TradeRecord, trade_id).exit_time is None
-    assert _get(TradeRecord, other_id).exit_reason == "Target 1"
-    asks = _actions(t["tenant_id"], "EXIT_POSITION")
-    assert len(asks) == 1 and asks[0].rule == "TARGET_1_REACHED" and asks[0].trade_id == trade_id and asks[0].reason.startswith("Exit now?")
-    assert asks[0].owner_user_id == t["user_id"]
-    _run(worker.run_cycle(now=OPEN_NOW + timedelta(minutes=1)))
-    assert len(_actions(t["tenant_id"], "EXIT_POSITION")) == 1                                  # asked once per level
+    assert report.positions_closed == 2
+    assert _get(TradeRecord, trade_id).exit_reason == "Target 1" and _get(TradeRecord, other_id).exit_reason == "Target 1"
+    assert _actions(t["tenant_id"], "EXIT_POSITION") == []                                      # nothing waits for an answer
 
-    # The person snoozes the question; the price falls through the stop: the stop closes the position at once.
-    assert client.post(f"/api/ai/actions/{asks[0].id}/snooze", headers=t["headers"], json={"minutes": 15}).status_code == 200
+    stopped_id = _open_trade(t, dep_id=dep_id, approved=True)
     broker.ltp = 97.0
     report = _run(worker.run_cycle(now=OPEN_NOW + timedelta(minutes=2)))
-    closed = _get(TradeRecord, trade_id)
+    closed = _get(TradeRecord, stopped_id)
     assert report.positions_closed == 1 and closed.exit_reason == "Stop Loss" and closed.exit_time is not None
-    retired = _actions(t["tenant_id"], "EXIT_POSITION")[0]
-    assert retired.status == "EXPIRED" and retired.result == "Position closed: Stop Loss"     # the stale question is void
 
 
 def test_flag_off_keeps_target_exits_automatic_and_hides_exit_now(monkeypatch):

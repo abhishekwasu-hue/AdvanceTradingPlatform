@@ -12,6 +12,7 @@ import type { Side } from "../fno/api";
 import type { TicketTarget } from "../fno/ticketModel";
 import { readColumns, writeColumns, type ColumnPrefs } from "../optionChain/model";
 import { TerminalChainV2 } from "./TerminalChainV2";
+import { AccountPanelV2 } from "./AccountPanelV2";
 import { terminalLevels } from "./chartLevels";
 import type { PageProps } from "../routes";
 import { NoteV2 } from "../trading/PartsV2";
@@ -165,11 +166,13 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const spot = useTerminalSpot({ symbol: spotSymbol, hub: features.on("data_hub"), enabled: signedIn, chain: live });
   // The chain page's own column choice (one setting for both).
   const [columns, setColumns] = useState<ColumnPrefs>(() => readColumns());
-  const orderPanelShown = narrow || openIds.has("order");
+  // TERM-2 step 3: Buy / Sell fill the order panel where the layout has one open; otherwise (and on a phone) the one
+  // order ticket opens as a sheet from the action sheet.
+  const orderPanelShown = !narrow && openIds.has("order");
   const expiryList = chain.expiries?.expiries.length ? chain.expiries.expiries : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const trading = useChainTrading({
     symbol: underlying, live, prefs: columns, onPrefs: setColumns, expiries: expiryList,
-    onTicket: orderPanelShown ? (t) => { setTicket(t); if (narrow) setTab("order"); } : undefined,
+    onTicket: orderPanelShown ? (t) => setTicket(t) : undefined,
   });
   const legs = useBasket();
   const [breakevens, setBreakevens] = useState<number[] | null>(null);
@@ -207,8 +210,12 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       case "chain": return <TerminalChainV2 symbol={underlying} chain={chain} spot={spot} prevClose={strip.prevClose} prefs={columns}
         onPrefs={(next) => { setColumns(next); writeColumns(next); }} trading={trading} />;
       case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} />;
-      case "positions": return <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}
-        fnoOn={features.on("paper_account")} combined={combined} onChanged={afterOrder} />;
+      case "positions": {
+        const list = <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}
+          fnoOn={features.on("paper_account")} combined={combined} onChanged={afterOrder} />;
+        // TERM-2 step 3: on the desktop grid the one bottom panel - Positions · Orders · Alerts; a phone has its own tabs.
+        return narrow ? list : <AccountPanelV2 positions={list} orders={panel("orders")} counts={{ positions: dataOf(positionsL)?.length ?? 0 }} />;
+      }
       case "orders": return <OrdersPanelV2 read={asRead(ordersL)} terminal={terminal} />;
       // TERM-2 step 2: the one basket (legs, payoff, max profit / loss, breakevens, PoP, margin with the hedge, his own
       // exits, one Place) - the server's one calculation, rendered once; the spread builder's own figures are gone.
@@ -310,22 +317,13 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
 
       {narrow ? (
         <div className="space-y-space-3" data-tour="terminal-panels">
-          <PhoneTabsV2 tab={tab} onTab={setTab} counts={{ positions: dataOf(positionsL)?.length ?? 0 }} />
+          <PhoneTabsV2 tab={tab} onTab={setTab} counts={{ basket: legs.length, positions: dataOf(positionsL)?.length ?? 0 }} />
           <section id={`terminal-panel-${tab}`} role="tabpanel" aria-labelledby={`terminal-tab-${tab}`} data-phone-panel={tab}
             className="rounded-panel border border-subtle bg-surface-1 p-space-3">
             {tab === "chart" && <div className="h-[22rem]">{panel("chart-1")}</div>}
-            {tab === "chain" && (
-              <div className="space-y-space-3">
-                {panel("chain")}
-                {/* TERM-2 step 2: on a phone the one basket opens as a bottom sheet (the same panel). */}
-                {trading.enabled && trading.openBasket && (
-                  <button type="button" onClick={trading.openBasket} data-terminal="open-basket"
-                    className="inline-flex min-h-11 w-full items-center justify-center rounded-control border border-border bg-surface-1 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-                    Basket · {legs.length} leg{legs.length === 1 ? "" : "s"}
-                  </button>
-                )}
-              </div>
-            )}
+            {tab === "chain" && panel("chain")}
+            {/* TERM-2 step 3: the one basket has its own tab on a phone. */}
+            {tab === "basket" && panel("basket")}
             {tab === "order" && panel("order")}
             {tab === "positions" && panel("positions")}
             {tab === "orders" && panel("orders")}

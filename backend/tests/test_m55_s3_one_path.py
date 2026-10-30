@@ -285,9 +285,10 @@ def test_a17_all_open_collects_the_selected_mode_and_the_combined_exit_closes_li
     async def collect():
         async with _session_factory() as session:
             user = await session.get(User, t["user_id"])
-            return await gx.all_open_ids(session, user), await gx.all_open_ids(session, user, "LIVE")
-    paper_ids, live_ids = _run(collect())
-    assert paper_ids == [] and live_ids == sorted(ids)
+            return (await gx.all_open_ids(session, user), await gx.all_open_ids(session, user, "PAPER"),
+                    await gx.all_open_ids(session, user, "LIVE"))
+    every, paper_ids, live_ids = _run(collect())
+    assert every == live_ids == sorted(ids) and paper_ids == []          # every mode the user holds, not PAPER only
     with pytest.raises(gx.GroupExitError):
         _run(gx.all_open_ids(None, None, "BOTH"))
 

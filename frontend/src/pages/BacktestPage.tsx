@@ -1,5 +1,5 @@
 import { errorSentence } from "../api/errors";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import ProChart, { directionMarker, type ChartMarker } from "../components/ProChart";
 import BacktestChartV2 from "../chart/BacktestChartV2";
@@ -19,9 +19,22 @@ import { templateLinkFromSearch, typedSettings, type TemplateLink } from "../str
 import { TEMPLATE_PICK, templateTimeframeFor } from "../backtest/templateTest";
 import { Database } from "lucide-react";
 import { formatDateTimeIST } from "../ui/format";
+import { OptimiserFields } from "../backtest/OptimiserFields";
+import { AdvancedFold } from "../ui/AdvancedFold";
+import { optimisableParams, type GridRow } from "../backtest/optimiserGrid";
+import { exitRuleWords, metricLabel, paramChips } from "../ui/strategyLabels";
+import { strategyDisplayName } from "../ui/strategyName";
 
 const INDEX_START_PRICES: Record<string, number> = { NIFTY: 24500, "NIFTY 50": 24500, BANKNIFTY: 52500, "NIFTY BANK": 52500, FINNIFTY: 23500, MIDCPNIFTY: 12500, SENSEX: 80500, BANKEX: 60500 };
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+// SB-UX SU7: with `ui_v2` on, the testing tools (sample bars, premium model / IV, the chain CSV, the optimiser and the
+// robustness checks) sit in closed "Advanced" folds (src/ui/AdvancedFold.tsx); with the flag off they render in place.
+
+/** A table that is wider than a phone scrolls inside its card, never the page. */
+function ScrollTable({ children }: { children: ReactNode }) {
+  return <div className="overflow-x-auto" data-scroll-table>{children}</div>;
+}
 
 /** Parses a chain-recorder CSV (timestamp,expiry,strike,right,ltp[,iv,oi,underlying_ltp]) into upload rows. */
 function parseSnapshotCsv(text: string): OptionChainSnapshotRow[] {
@@ -74,17 +87,17 @@ export default function BacktestPage() {
   const [timeExitAt, setTimeExitAt] = useState("");
   const [monteCarlo, setMonteCarlo] = useState<MonteCarloResult | null>(null);
   const [walkForward, setWalkForward] = useState<WalkForwardResult | null>(null);
-  const [optGrid, setOptGrid] = useState('{"ema_fast": [9, 12], "rsi_period": [7, 14]}');
+  // SB-UX SU7: the search as fields (per setting From / To / Step); DEF-0: no row and no number until the trader adds them.
+  const [optRows, setOptRows] = useState<GridRow[]>([]);
   const [optMetric, setOptMetric] = useState("net_pnl");
   const [optResult, setOptResult] = useState<OptimizeResult | null>(null);
   const [optBusy, setOptBusy] = useState(false);
   const [optError, setOptError] = useState<string | null>(null);
 
-  async function runOptimize() {
+  async function runOptimize(grid: Record<string, number[]>) {
     if (!selected || chartCandles.length === 0) return;
     setOptBusy(true); setOptError(null);
     try {
-      const grid = JSON.parse(optGrid) as Record<string, (number | string)[]>;
       setOptResult(await api.backtestOptimize(selected.id, symbol, selected.timeframes[0], chartCandles, grid, optMetric));
     } catch (e) { setOptError(errorSentence(e)); } finally { setOptBusy(false); }
   }
@@ -211,6 +224,9 @@ export default function BacktestPage() {
   }, [user, tradeAs]);
 
   const selected = useMemo(() => strategies.find((s) => s.id === strategyId), [strategies, strategyId]);
+  const optParams = useMemo(() => optimisableParams(selected?.default_params), [selected]);
+  const strategyNames = useMemo(() => new Map(strategies.map((s) => [s.id, s.name] as const)), [strategies]);
+  useEffect(() => { setOptRows([]); setOptResult(null); }, [strategyId]);
   const picked = strategyId.startsWith(TEMPLATE_PICK) ? templates.find((t) => t.id === strategyId.slice(TEMPLATE_PICK.length)) ?? null : null;
   const tpl = picked ? templateTimeframeFor(picked, { chosen: tplTimeframe, linked: link?.template === picked.id ? link.timeframe : null, storedOnly: !!source.stored }) : null;
 
@@ -275,6 +291,74 @@ export default function BacktestPage() {
     return markers;
   }, [result]);
 
+  // The premium model, IV, lot / strike step, expiry calendar and the chain CSV: in place with the flag off, under
+  // Advanced with it on (SB-UX SU7).
+  const pricingBlock = (
+    <div className="space-y-3" data-pricing>
+      <div className="grid sm:grid-cols-4 gap-3">
+        <div>
+          <label className="block text-xs text-fg-muted mb-1">Premiums from</label>
+          <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={pricing} onChange={(e) => setPricing(e.target.value as OptionPricingModel)}>
+            <option value="synthetic">Synthetic (Black-Scholes)</option>
+            <option value="snapshots">Recorded chain quotes</option>
+            <option value="uploaded">Uploaded chain CSV</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-fg-muted mb-1">Implied volatility % {pricing !== "synthetic" ? "(fallback)" : ""}</label>
+          <input type="number" min={1} max={300} step="0.5" placeholder="realised vol" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={ivPct} onChange={(e) => setIvPct(e.target.value)} title="blank = annualised realised volatility of the trailing closes" />
+        </div>
+        <div>
+          <label className="block text-xs text-fg-muted mb-1">Lot size / strike step</label>
+          <div className="flex gap-2">
+            <input type="number" min={1} placeholder="auto" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={lotSize} onChange={(e) => setLotSize(e.target.value)} />
+            <input type="number" min={0.05} step="0.05" placeholder="auto" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={strikeStep} onChange={(e) => setStrikeStep(e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-fg-muted mb-1">Expiry day / weekly</label>
+          <div className="flex gap-2">
+            <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={expiryWeekday} onChange={(e) => setExpiryWeekday(e.target.value)}>
+              <option value="">auto</option>{WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+            </select>
+            <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={weeklyExpiry} onChange={(e) => setWeeklyExpiry(e.target.value)}>
+              <option value="">auto</option><option value="yes">weekly</option><option value="no">monthly</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-4 text-xs text-fg-muted">
+        <label className="flex items-center gap-1"><input type="checkbox" checked={intraday} onChange={(e) => setIntraday(e.target.checked)} /> intraday (no entries after 15:00, square-off 15:15 IST)</label>
+        {pricing !== "synthetic" && <label className="flex items-center gap-1"><input type="checkbox" checked={allowFallback} onChange={(e) => setAllowFallback(e.target.checked)} /> price legs without a fresh quote synthetically</label>}
+      </div>
+      {pricing === "uploaded" && (
+        <div className="text-xs">
+          <input type="file" accept=".csv,text/csv" onChange={(e) => onSnapshotFile(e.target.files?.[0] ?? null)} />
+          <span className="ml-2 text-fg-muted">columns: timestamp, expiry, strike, right, ltp [, iv, oi, underlying_ltp]</span>
+          {uploadedRows.length > 0 && user && <button className="ml-2 text-brand" onClick={saveUploadedRows}>store as platform history</button>}
+          {uploadNote && <div className="text-fg-muted mt-1">{uploadNote}</div>}
+        </div>
+      )}
+      {pricing === "snapshots" && (
+        <div className="text-xs text-fg-muted">
+          {coverage.length === 0 ? "No recorded chain quotes yet - the worker records the chains of ACTIVE option deployments every few minutes while the market is open." :
+            <>Recorded: {coverage.map((c) => `${c.underlying} ${c.rows} quotes, ${c.expiries} expiries, ${c.from?.slice(0, 10)} to ${c.to?.slice(0, 10)}`).join(" · ")}</>}
+        </div>
+      )}
+      <div className="text-xs text-fg-muted">
+        Synthetic premiums approximate the market (no smile, no bid/ask, no liquidity): use them to study structure mechanics - strikes, expiries, exits, sizing - not to claim an edge. Recorded quotes are what the market actually showed.
+      </div>
+    </div>
+  );
+  const sampleBarsField = (
+    <div className="max-w-48">
+      <label htmlFor="bt-sample-bars" className="block text-xs text-fg-muted mb-1">Sample bars</label>
+      <input id="bt-sample-bars" type="number" className="w-full min-h-11 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm md:min-h-0"
+        value={bars} onChange={(e) => setBars(Number(e.target.value))} />
+    </div>
+  );
+  const advancedSettings = uiV2 && (!source.sampleHidden || tradeAs === "OPTION");
+
   return (
     <div className="space-y-4">
       <PageHeader title="Backtesting" description="Event-driven simulation with position sizing, stop / target management and dated Indian charges." />
@@ -320,7 +404,7 @@ export default function BacktestPage() {
             />
           </div>
           {/* UX3 fix 7: sample bars are a testing tool; a user without sample data never sees the field. */}
-          {!source.sampleHidden && (
+          {!source.sampleHidden && !uiV2 && (
           <div>
             <label className="block text-xs text-fg-muted mb-1">Sample bars</label>
             <input
@@ -473,62 +557,16 @@ export default function BacktestPage() {
                 </div>
               )}
 
-              <div className="grid sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-xs text-fg-muted mb-1">Premiums from</label>
-                  <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={pricing} onChange={(e) => setPricing(e.target.value as OptionPricingModel)}>
-                    <option value="synthetic">Synthetic (Black-Scholes)</option>
-                    <option value="snapshots">Recorded chain quotes</option>
-                    <option value="uploaded">Uploaded chain CSV</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-fg-muted mb-1">Implied volatility % {pricing !== "synthetic" ? "(fallback)" : ""}</label>
-                  <input type="number" min={1} max={300} step="0.5" placeholder="realised vol" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={ivPct} onChange={(e) => setIvPct(e.target.value)} title="blank = annualised realised volatility of the trailing closes" />
-                </div>
-                <div>
-                  <label className="block text-xs text-fg-muted mb-1">Lot size / strike step</label>
-                  <div className="flex gap-2">
-                    <input type="number" min={1} placeholder="auto" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={lotSize} onChange={(e) => setLotSize(e.target.value)} />
-                    <input type="number" min={0.05} step="0.05" placeholder="auto" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={strikeStep} onChange={(e) => setStrikeStep(e.target.value)} />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs text-fg-muted mb-1">Expiry day / weekly</label>
-                  <div className="flex gap-2">
-                    <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={expiryWeekday} onChange={(e) => setExpiryWeekday(e.target.value)}>
-                      <option value="">auto</option>{WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
-                    </select>
-                    <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={weeklyExpiry} onChange={(e) => setWeeklyExpiry(e.target.value)}>
-                      <option value="">auto</option><option value="yes">weekly</option><option value="no">monthly</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-4 text-xs text-fg-muted">
-                <label className="flex items-center gap-1"><input type="checkbox" checked={intraday} onChange={(e) => setIntraday(e.target.checked)} /> intraday (no entries after 15:00, square-off 15:15 IST)</label>
-                {pricing !== "synthetic" && <label className="flex items-center gap-1"><input type="checkbox" checked={allowFallback} onChange={(e) => setAllowFallback(e.target.checked)} /> price legs without a fresh quote synthetically</label>}
-              </div>
-              {pricing === "uploaded" && (
-                <div className="text-xs">
-                  <input type="file" accept=".csv,text/csv" onChange={(e) => onSnapshotFile(e.target.files?.[0] ?? null)} />
-                  <span className="ml-2 text-fg-muted">columns: timestamp, expiry, strike, right, ltp [, iv, oi, underlying_ltp]</span>
-                  {uploadedRows.length > 0 && user && <button className="ml-2 text-brand" onClick={saveUploadedRows}>store as platform history</button>}
-                  {uploadNote && <div className="text-fg-muted mt-1">{uploadNote}</div>}
-                </div>
-              )}
-              {pricing === "snapshots" && (
-                <div className="text-xs text-fg-muted">
-                  {coverage.length === 0 ? "No recorded chain quotes yet - the worker records the chains of ACTIVE option deployments every few minutes while the market is open." :
-                    <>Recorded: {coverage.map((c) => `${c.underlying} ${c.rows} quotes, ${c.expiries} expiries, ${c.from?.slice(0, 10)} to ${c.to?.slice(0, 10)}`).join(" · ")}</>}
-                </div>
-              )}
-              <div className="text-xs text-fg-muted">
-                Synthetic premiums approximate the market (no smile, no bid/ask, no liquidity): use them to study structure mechanics - strikes, expiries, exits, sizing - not to claim an edge. Recorded quotes are what the market actually showed.
-              </div>
+              {!uiV2 && pricingBlock}
             </div>
           )}
         </div>
+        {advancedSettings && (
+          <AdvancedFold id="settings" title="Advanced settings" className="mt-3">
+            {!source.sampleHidden && sampleBarsField}
+            {tradeAs === "OPTION" && pricingBlock}
+          </AdvancedFold>
+        )}
       </Card>
 
       {error && <div className="text-sm text-down">{error}</div>}
@@ -624,7 +662,7 @@ export default function BacktestPage() {
                   <div key={title}>
                     <div className="text-xs uppercase tracking-wide text-fg-muted mb-1">{title}</div>
                     {rows.length === 0 ? <div className="text-fg-muted">-</div> : (
-                      <table className="w-full">
+                      <ScrollTable><table className="w-full">
                         <tbody>
                           {rows.map((r) => (
                             <tr key={r.key} className="border-t border-border">
@@ -635,7 +673,7 @@ export default function BacktestPage() {
                             </tr>
                           ))}
                         </tbody>
-                      </table>
+                      </table></ScrollTable>
                     )}
                   </div>
                 ))}
@@ -648,31 +686,29 @@ export default function BacktestPage() {
             </Card>
           )}
 
-          <Card title="Parameter optimisation (ranked in-sample, validated out-of-sample)">
-            <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
-              <input className="flex-1 min-w-[260px] rounded bg-surface-2 border border-border px-2 py-1 font-mono" value={optGrid} onChange={(e) => setOptGrid(e.target.value)} />
-              <select className="rounded bg-surface-2 border border-border px-1 py-1" value={optMetric} onChange={(e) => setOptMetric(e.target.value)}>
-                {["net_pnl", "expectancy", "profit_factor", "win_rate"].map((m) => <option key={m}>{m}</option>)}
-              </select>
-              <button onClick={runOptimize} disabled={optBusy || !result} className="rounded border border-border hover:bg-surface-2 px-3 py-1 text-fg disabled:opacity-50">{optBusy ? "Searching…" : "Optimise"}</button>
-              <span className="text-fg-muted">Grid as JSON (max 60 combinations). First 70% of the bars fit, last 30% judge.</span>
-            </div>
-            {optError && <div className="text-xs text-down">{optError}</div>}
+          <AdvancedFold on={uiV2} id="checks" title="Advanced checks: optimiser and robustness">
+          <div data-optimiser>
+          <Card title="Optimise the settings">
+            {/* SB-UX SU7: per setting From / To / Step - no grid typed as code. */}
+            <OptimiserFields params={optParams} rows={optRows} onRows={setOptRows} metric={optMetric} onMetric={setOptMetric}
+              onRun={runOptimize} busy={optBusy} ready={!!result && !!selected} />
+            {optError && <div className="mt-2 text-xs text-down">{optError}</div>}
             {optResult && (
-              <div className="text-xs">
-                <div className="text-fg-muted mb-1">{optResult.combinations} combinations · {optResult.in_sample_bars} in-sample / {optResult.out_of_sample_bars} out-of-sample bars · {optResult.robust_count} robust
+              <div className="mt-3 text-xs">
+                <div className="text-fg-muted mb-1">{optResult.combinations} combinations · {optResult.in_sample_bars} bars to pick / {optResult.out_of_sample_bars} bars to check · {optResult.robust_count} held up
                   {optResult.best_confirmed_out_of_sample != null && (
                     <span className={`ml-2 rounded px-1.5 py-0.5 text-xs ${optResult.best_confirmed_out_of_sample ? "bg-up/10 text-up" : "bg-warn/10 text-warn"}`}>
-                      {optResult.best_confirmed_out_of_sample ? "winner confirmed out-of-sample" : "winner NOT confirmed out-of-sample (in-sample ranking only)"}
+                      {optResult.best_confirmed_out_of_sample ? "best settings held up on the last 30%" : "best settings did NOT hold up on the last 30%"}
                     </span>
                   )}</div>
-                <table className="w-full"><thead className="text-fg-muted uppercase text-xs"><tr className="text-left"><th className="py-1 pr-3">Params</th><th className="py-1 pr-3">In-sample {optResult.metric}</th><th className="py-1 pr-3">Out-of-sample {optResult.metric}</th><th className="py-1 pr-3">OOS trades</th><th className="py-1 pr-3">Overfit gap</th><th className="py-1 pr-3">Flags</th></tr></thead>
+                <ScrollTable>
+                <table className="w-full"><thead className="text-fg-muted uppercase text-xs"><tr className="text-left"><th className="py-1 pr-3">Settings</th><th className="py-1 pr-3 whitespace-nowrap">{metricLabel(optResult.metric)}, first 70%</th><th className="py-1 pr-3 whitespace-nowrap">{metricLabel(optResult.metric)}, last 30%</th><th className="py-1 pr-3 whitespace-nowrap">Trades, last 30%</th><th className="py-1 pr-3">Gap</th><th className="py-1 pr-3">Notes</th></tr></thead>
                   <tbody>{optResult.results.slice(0, 12).map((r: OptimizeResult["results"][number], i: number) => {
                     const key = optResult.metric as keyof OptimizeResult["results"][number]["in_sample"];
                     const ins = r.in_sample[key]; const oos = r.out_of_sample[key];
                     return (
                       <tr key={i} className={`border-t border-border/60 ${i === 0 ? "font-semibold" : ""}`}>
-                        <td className="py-1 pr-3 font-mono">{JSON.stringify(r.params)}</td>
+                        <td className="py-1 pr-3"><span className="flex flex-wrap gap-1">{paramChips(r.params).map((c) => <span key={c} className="whitespace-nowrap rounded-full border border-border px-2 py-0.5">{c}</span>)}</span></td>
                         <td className="py-1 pr-3">{typeof ins === "number" ? ins.toFixed(2) : "-"}</td>
                         <td className="py-1 pr-3">{typeof oos === "number" ? oos.toFixed(2) : "-"}</td>
                         <td className="py-1 pr-3">{r.out_of_sample.trades}</td>
@@ -681,11 +717,14 @@ export default function BacktestPage() {
                       </tr>
                     );
                   })}</tbody></table>
+                </ScrollTable>
                 <div className="text-xs text-fg-muted mt-1">{optResult.note}</div>
               </div>
             )}
           </Card>
+          </div>
 
+          <div data-robustness>
           <Card title="Robustness">
             <div className="flex flex-wrap items-center gap-3 text-xs mb-3">
               <button onClick={runRobustness} disabled={robustBusy || !result} className="rounded border border-border hover:bg-surface-2 px-3 py-1 text-fg disabled:opacity-50">
@@ -706,7 +745,7 @@ export default function BacktestPage() {
               walkForward.folds === 0 ? <div className="text-xs text-fg-muted">{walkForward.note}</div> : (
                 <div className="text-xs">
                   <div className="mb-1 text-fg-muted">Consistency {walkForward.consistency_pct}% ({walkForward.profitable_windows}/{walkForward.folds} windows profitable) · mean window P&L {walkForward.mean_window_pnl}</div>
-                  <table className="w-full">
+                  <ScrollTable><table className="w-full">
                     <thead className="text-fg-muted uppercase text-xs tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Window</th><th className="py-1 pr-3">Bars</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Net P&L</th><th className="py-1 pr-3">Win %</th><th className="py-1 pr-3">Max DD</th></tr></thead>
                     <tbody>
                       {walkForward.windows.map((w) => (
@@ -717,12 +756,14 @@ export default function BacktestPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </table></ScrollTable>
                   <div className="mt-1 text-fg-muted">{walkForward.note}</div>
                 </div>
               )
             )}
           </Card>
+          </div>
+          </AdvancedFold>
 
           <Card title={`Trades (${result.trades.length})`}>
             <div className="overflow-x-auto">
@@ -775,10 +816,10 @@ export default function BacktestPage() {
                 {runs.map((r) => (
                   <tr key={r.id} className="border-t border-border">
                     <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{r.created_at ? formatDateTimeIST(r.created_at) : "-"}</td>
-                    <td className="py-1 pr-3 text-fg">{r.strategy_id}</td>
+                    <td className="py-1 pr-3 text-fg">{strategyDisplayName(r.strategy_id, strategyNames)}</td>
                     <td className="py-1 pr-3">{r.symbol} · {r.base_timeframe}</td>
                     <td className="py-1 pr-3 text-fg-muted">{r.data_source} · {r.bars} bars · engine v{r.engine_version}</td>
-                    <td className="py-1 pr-3 text-fg-muted">{r.exit_rules ? Object.entries(r.exit_rules).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ") : "-"}</td>
+                    <td className="py-1 pr-3 text-fg-muted">{r.exit_rules ? exitRuleWords(r.exit_rules as Record<string, unknown>) : "-"}</td>
                     <td className="py-1 pr-3">{r.total_trades ?? "-"}</td>
                     <td className={`py-1 pr-3 ${signClass(r.net_pnl, 0)}`}>{r.net_pnl?.toFixed(0) ?? "-"}</td>
                     <td className="py-1 pr-3">{r.win_rate ?? "-"}%</td>

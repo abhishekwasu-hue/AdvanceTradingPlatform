@@ -40,7 +40,7 @@ const WALK = { folds: 4, profitable_windows: 3, consistency_pct: 75, mean_window
 const MONTE = { monte_carlo: { runs: 1000, final_pnl: { p5: -120, p50: 40, p95: 260 }, max_drawdown: { p50: 80, p95: 190 },
   probability_of_loss_pct: 22, probability_dd_exceeds_original_pct: 31 } };
 
-async function open(page: Page, theme: "light" | "dark", path: string) {
+async function open(page: Page, theme: "light" | "dark", path: string, extra?: (page: Page) => Promise<void>) {
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
   await page.addInitScript((t) => {
     try { localStorage.setItem("atp_appearance", JSON.stringify({ theme: t })); localStorage.setItem("atp_install_dismissed", "1"); } catch { /* storage unavailable */ }
@@ -58,6 +58,7 @@ async function open(page: Page, theme: "light" | "dark", path: string) {
   await page.route(api("/backtest/walk-forward"), (r) => r.fulfill({ json: WALK }));
   await page.route(api("/backtest/monte-carlo"), (r) => r.fulfill({ json: MONTE }));
   await page.route(api("/backtest/option-chain/coverage$"), (r) => r.fulfill({ json: [] }));
+  if (extra) await extra(page);   // registered last, so it answers first
   await page.goto(path);
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");
@@ -114,21 +115,22 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
 
         await page.getByRole("button", { name: "Run Monte Carlo + walk-forward" }).click();
         await expect(page.locator("[data-robustness] table")).toBeVisible();
-        for (const t of await page.locator("main table").all()) {
-          await expect(t.locator("xpath=..")).toHaveClass(/overflow-x-auto/);
-        }
+        // Every data table (the chart's own drawing table aside) scrolls inside its card.
+        const unwrapped = await page.evaluate(() => [...document.querySelectorAll("main table")]
+          .filter((t) => !t.closest(".tv-lightweight-charts") && !t.parentElement?.classList.contains("overflow-x-auto")).length);
+        expect(unwrapped).toBe(0);
         await noPageScroll(page);
 
         // SU8: the history names the strategy and the exits in words.
-        await expect(page.getByText("Made-up trend test").first()).toBeVisible();
+        await expect(page.locator("td", { hasText: "Made-up trend test" })).toBeVisible();
         await expect(page.getByText("Trailing stop 1.5%")).toBeVisible();
         await expect(page.getByText("demo_trend")).toHaveCount(0);
       });
 
       test("The full builder under Advanced: plain indicator names, no parser jargon, no ids", async ({ page }) => {
-        await page.route(api("/custom-strategies$"), (r) => r.fulfill({ json: [{ id: 9, strategy_id: "custom:9", config: { name: "My made-up idea", timeframe: "15min",
-          long_conditions: [], short_conditions: [], stop_loss_atr_mult: null, atr_period: 14, target_rr: null, min_rr: null } }] }));
-        await open(page, theme, "/strategies/build?advanced=1");
+        await open(page, theme, "/strategies/build?advanced=1", (p) => p.route(api("/custom-strategies$"), (r) => r.fulfill({ json: [{ id: 9,
+          strategy_id: "custom:9", config: { name: "My made-up idea", timeframe: "15min", long_conditions: [], short_conditions: [],
+          stop_loss_atr_mult: null, atr_period: 14, target_rr: null, min_rr: null } }] })));
         await expect(page.getByText("My made-up idea")).toBeVisible();
         await expect(page.getByText("(15-minute)")).toBeVisible();
         await expect(page.getByText(/custom:9|id custom/)).toHaveCount(0);

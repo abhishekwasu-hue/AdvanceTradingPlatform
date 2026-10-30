@@ -280,6 +280,7 @@ def lots_in(message: str) -> Optional[int]:
 # --- the answer --------------------------------------------------------------------------------------------------------
 
 TF_LABELS = {"1w": "Weekly", "1d": "Daily", "1h": "1-hour", "15m": "15-minute"}
+SHORT_WORDS = "data not ready"     # M59 CR-1: a timeframe whose history is not stored yet - never its bar counts
 
 # Day-one fix 5 (README row 19): the Copilot's answers in a beginner's words - no structure codes, no ISO dates.
 TREND_WORDS = {"UPTREND": "up", "UP": "up", "BULLISH": "up", "DOWNTREND": "down", "DOWN": "down", "BEARISH": "down",
@@ -569,12 +570,23 @@ def _structure_rows(res: ToolResult) -> List[Dict[str, Any]]:
     return [r for r in (res.data or {}).get("timeframes") or [] if r.get("tf") in TF_LABELS] if res.ok else []
 
 
+def _is_short(text: Any) -> bool:
+    from app.context_panel.service import is_short_history
+    return is_short_history(text)
+
+
+def _dont_know(what: str, reason: str) -> str:
+    """"I don't know <what>: <reason>." - or, for a history not stored yet, "I don't know <what> yet. Daily: data not
+    ready (history is loading)." (M59 CR-1: no counts, no double colon)."""
+    return f"I don't know {what} yet. {reason}." if _is_short(reason) else f"I don't know {what}: {reason}."
+
+
 def _structure_lines(symbol: str, res: ToolResult) -> List[str]:
     out = []
     for r in _structure_rows(res):
         if r.get("short"):
             # DH5: a short history is said as such - never "no clear trend" / "none" as if the market had no structure
-            out.append(f"{TF_LABELS[r['tf']]}: {r.get('note') or 'not enough history stored yet'}")
+            out.append(r.get("note") if _is_short(r.get("note")) else f"{TF_LABELS[r['tf']]}: {SHORT_WORDS}")
             continue
         line = f"{TF_LABELS[r['tf']]}: {trend_words(r.get('direction')) if r.get('direction') else 'no clear trend'}"
         if r.get("protected") is not None:
@@ -592,7 +604,7 @@ def _structure_table(symbol: str, res: ToolResult) -> Optional[Dict[str, Any]]:
 
     def direction(r: Dict[str, Any]) -> str:
         if r.get("short"):
-            return f"not enough history ({int(r.get('bars') or 0)} of {int(r.get('needed') or 0)} bars)"
+            return SHORT_WORDS                              # M59 CR-1: never the bar counts
         return trend_words(r.get("direction")) if r.get("direction") else "no clear trend"
 
     def last(r: Dict[str, Any]) -> str:
@@ -624,9 +636,9 @@ def _zones_unknown(symbol: str, zones: ToolResult, structure: Optional[ToolResul
         return f"I don't know {what} near the price: no stored area is within reach of the last close"
     daily = next((r for r in _structure_rows(structure) if r.get("tf") == "1d"), None) if structure is not None else None
     if daily is not None and daily.get("short"):
-        return f"I don't know {what} yet: they are built from the daily history, and {daily.get('note')}"
-    if structure is not None and not structure.ok and str(structure.error or "").startswith("only "):
-        return f"I don't know {what} yet: they are built from the daily history, and {plain_reason(structure.error)}"
+        return f"I don't know {what} yet: they are built from the daily history. {daily.get('note') or 'Daily: ' + SHORT_WORDS}"
+    if structure is not None and not structure.ok and _is_short(structure.error):
+        return f"I don't know {what} yet: they are built from the daily history. {plain_reason(structure.error)}"
     reason = plain_reason(zones.error, zones.source)
     if reason.startswith("no zones for this instrument"):
         reason = f"no key areas have been computed for {symbol} yet"
@@ -654,7 +666,7 @@ async def brief(answer: Answer, run: Runner, message: str) -> None:
             if table:
                 answer.blocks.append(table)
         else:
-            answer.unknowns.append(f"I don't know the {sym} structure: {plain_reason(res.error, res.source)}.")
+            answer.unknowns.append(_dont_know(f"the {sym} structure", plain_reason(res.error, res.source)))
     zones = await _call(answer, run, "get_market_zones", "NIFTY key areas (market zones)", {"symbol": "NIFTY"}, ("price",))
     areas = _zone_lines(zones)
     if areas:
@@ -794,7 +806,7 @@ def structure_card(symbol: str, tf: str, res: ToolResult, zones: ToolResult) -> 
     `ready: false` when that timeframe's history is not stored yet (the card says "data not ready", never a bar count);
     the stored areas above and below the last close with their distance in points; the nearest swing levels; and ONE
     plain "what to watch" line. Only numbers the tools gave; the reading itself is unchanged (presentation only). Pure."""
-    short_history = not res.ok and str(res.error or "").startswith("only ")
+    short_history = not res.ok and _is_short(res.error)
     if not res.ok and not zones.ok and not short_history:
         return None
     rows = {r.get("tf"): r for r in _structure_rows(res)}
@@ -859,7 +871,7 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
         head = _close_head(symbol, d, tf)
         row = next((r for r in _structure_rows(res) if r.get("tf") == tf), None)
         if row is not None and row.get("short"):
-            head += f" On the {TF_LABELS.get(tf, tf).lower()} chart {row.get('note')}."
+            head += f" {row.get('note') or TF_LABELS.get(tf, tf) + ': ' + SHORT_WORDS}."
         elif state.get("direction"):
             head += f" On the {TF_LABELS.get(tf, tf).lower()} chart the structure reads {state['direction']}"
             head += f", protected level {_f(state['protected'])}." if state.get("protected") is not None else "."
@@ -871,8 +883,8 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
         answer.section("Nearest swing levels", _level_lines(res))
     else:
         reason = plain_reason(res.error, res.source)
-        answer.summary = [f"For the {symbol} chart, {reason}." if reason.startswith("only ") else f"I can't read the {symbol} chart right now."]
-        answer.unknowns.append(f"I don't know the {symbol} structure: {reason}.")
+        answer.summary = [f"I can't read the {symbol} chart yet. {reason}." if _is_short(reason) else f"I can't read the {symbol} chart right now."]
+        answer.unknowns.append(_dont_know(f"the {symbol} structure", reason))
     areas = _zone_lines(zones)
     if areas:
         answer.section("Key areas", areas)
@@ -1196,7 +1208,7 @@ async def trade_check(answer: Answer, run: Runner, message: str) -> None:
         rows = _tf_rows(res, tf)
         answer.section("Trend side", [_trend_line(idea.side, r) for r in rows] or ["The structure has no reading on this timeframe yet."])
     else:
-        answer.unknowns.append(f"I don't know the {symbol} structure: {plain_reason(res.error, res.source)}.")
+        answer.unknowns.append(_dont_know(f"the {symbol} structure", plain_reason(res.error, res.source)))
     if idea.side is None:
         missing.append("The side: bullish or bearish.")
 
@@ -1879,7 +1891,7 @@ async def full_view(answer: Answer, run: Runner, message: str) -> None:
         if table:
             answer.blocks.append(table)
     else:
-        answer.unknowns.append(f"I don't know the {symbol} structure: {plain_reason(res.error, res.source)}.")
+        answer.unknowns.append(_dont_know(f"the {symbol} structure", plain_reason(res.error, res.source)))
     if oc.ok:
         read += 1
         found = {a["key"]: a for a in (oc.data or {}).get("analyses") or [] if a.get("state") == "ok"}

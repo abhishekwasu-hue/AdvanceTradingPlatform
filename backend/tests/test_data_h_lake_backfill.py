@@ -9,6 +9,8 @@ health lines (MISSING / SHORT); DH5 the honest wording of the Copilot and the ma
 with its date and source; the tenancy of every read (z10c); the migration.
 """
 import asyncio
+import json
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Dict, List, Optional
 
@@ -355,31 +357,36 @@ def _runner(results):
     return run
 
 
-def test_the_copilot_says_exactly_how_short_the_history_is(monkeypatch):
+def test_the_copilot_says_the_history_is_short_without_internal_counts(monkeypatch):
+    """DH5 + M59 CR-1: a short history is said as such - "Daily: data not ready (history is loading)" - never as
+    "no structure", and never with the bar counts ("only 7 of the 30 ...")."""
     monkeypatch.setattr(config, "LAKE_BACKFILL_INDICES", ["NIFTY", "BANKNIFTY"])
     res = _structure([("1w", 2), ("1d", 7), ("1h", 0), ("15m", 0)])
     zones = ToolResult(False, None, None, "market_zones", error="no zones for this instrument")
     out = _run(chat.answer("Read the NIFTY chart", _runner({"get_chart_structure": res, "get_market_zones": zones})))
     text = " ".join(out.summary + [x for s in out.sections for x in s["lines"]] + out.unknowns)
-    assert "only 7 of the 30 daily bars needed are stored; history is loading" in out.summary[0]
-    assert "Daily: only 7 of the 30 daily bars needed are stored; history is loading" in text
-    assert "15-minute: only 0 of the 30 15-minute bars needed are stored; history is loading" in text
-    assert "they are built from the daily history, and only 7 of the 30 daily bars needed are stored" in text
+    assert "Daily: data not ready (history is loading)" in out.summary[0]
+    assert "Daily: data not ready (history is loading)" in out.sections[0]["lines"]
+    assert "15-minute: data not ready (history is loading)" in text
+    assert "they are built from the daily history. Daily: data not ready (history is loading)" in text
+    assert not re.search(r"of the \d+|bars needed|\d+ of \d+ bars|only \d+", json.dumps(out.as_dict()))
     assert "structure reads none" not in text and "no clear trend" not in text and "no zones" not in text.lower().replace("no zones for", "")
     table = next(b for b in out.blocks if b["type"] == "table")["table"]
-    assert table["rows"][1]["direction"] == "not enough history (7 of 30 bars)"
+    assert table["rows"][1]["direction"] == "data not ready"
 
 
 def test_an_empty_chart_says_the_history_is_loading_not_that_it_cannot_read(monkeypatch):
     monkeypatch.setattr(config, "LAKE_BACKFILL_INDICES", ["NIFTY"])
     from app.context_panel.service import short_history
     err = short_history(0, 30, "daily bars", "NSE_INDEX:NIFTY50")
-    assert err == "only 0 of the 30 daily bars needed are stored; history is loading"
-    assert short_history(3, 30, "daily bars", "NSE:SOMESHARE").endswith("more history is needed")
+    assert err == "Daily: data not ready (history is loading)"
+    assert short_history(3, 30, "daily bars", "NSE:SOMESHARE") == "Daily: data not ready (more history is needed)"
+    assert short_history(0, 30, "1-hour bars", "NSE_INDEX:NIFTY50") == "1-hour: data not ready (history is loading)"
     res = ToolResult(False, None, None, "price_action_layer", error=err)
     zones = ToolResult(False, None, None, "market_zones", error="no zones for this instrument")
     out = _run(chat.answer("Read the NIFTY chart", _runner({"get_chart_structure": res, "get_market_zones": zones})))
-    assert out.summary == ["For the NIFTY chart, only 0 of the 30 daily bars needed are stored; history is loading."]
+    assert out.summary == ["I can't read the NIFTY chart yet. Daily: data not ready (history is loading)."]
+    assert "I don't know the NIFTY structure yet. Daily: data not ready (history is loading)." in out.unknowns
     assert any("key areas yet: they are built from the daily history" in u for u in out.unknowns)
 
 
@@ -396,11 +403,10 @@ def test_the_market_line_and_the_regime_tile_say_the_history_is_short(monkeypatc
     monkeypatch.setattr(service, "_bars", bars)
     monkeypatch.setattr(service, "_own_daily", none)
     tile = _run(service.regime_tile(None, service.Viewer(1, 1), FRI, []))
-    assert tile["status"] == "na" and tile["reason"] == "only 7 of the 30 daily bars needed are stored; history is loading"
+    assert tile["status"] == "na" and tile["reason"] == "Daily: data not ready (history is loading)"
     ctx = ToolResult(True, copilot_tools.summarise_context({"as_of": "x", "tiles": {"regime": tile}}), "x", "context_panel", {})
     line = _run(chat.market_line(_runner({"get_market_context": ctx})))
-    assert line["line"] is None and line["reason"] == ("Today's market line is not ready: only 7 of the 30 daily bars needed are stored; "
-                                                       "history is loading.")
+    assert line["line"] is None and line["reason"] == "Today's market line is not ready: Daily: data not ready (history is loading)."
 
 
 # --- DH6: the last close ----------------------------------------------------------------------------------------------------

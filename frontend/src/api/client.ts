@@ -934,6 +934,9 @@ export const api = {
   // M55 S1: `confirm` is the owner's typed confirmation for switching LIVE on (left out when not given).
   adminSetFlag: (name: string, on: boolean, tenants: number[] = [], confirm?: string) =>
     request<FeatureFlags>(`/admin/controls/flags/${name}`, { method: "PUT", body: JSON.stringify({ on, tenants, confirm }) }),
+  // M55 S1b: the owner grants (or revokes) LIVE for one organisation, with the typed confirmation.
+  adminSetLiveOrg: (tenantId: number, granted: boolean, confirm: string) =>
+    request<FeatureFlags>(`/admin/controls/live-orgs/${tenantId}`, { method: "PUT", body: JSON.stringify({ granted, confirm }) }),
   adminEncryptionStatus: () => request<EncryptionStatus>("/system/encryption"),
   disableMemberTrading: (memberId: number, reason: string) =>
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-disable`, { method: "POST", body: JSON.stringify({ reason }) }),

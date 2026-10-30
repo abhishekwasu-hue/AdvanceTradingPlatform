@@ -2,6 +2,7 @@
 returns as if the cache were simply empty - Redis is optional infrastructure here (caching
 short-lived, pure-computation results), never a hard dependency the API can go down over.
 """
+import asyncio
 from typing import Optional, Tuple
 
 import redis.asyncio as redis
@@ -9,14 +10,23 @@ import redis.asyncio as redis
 from app.core.config import CACHE_MAX_TTL_SECONDS, REDIS_URL
 
 _client: Optional["redis.Redis"] = None
+_client_loop: Optional[asyncio.AbstractEventLoop] = None
 
 
 def _get_client() -> "redis.Redis":
-    global _client
-    if _client is None:
+    """One client per event loop: a pooled connection opened on an earlier loop (a script or test that calls asyncio.run
+    more than once) fails on the next one, which would read as "Redis unreachable" - and since M55 A18 that pauses the
+    worker's entries. A long-running process keeps one loop, so it keeps one client."""
+    global _client, _client_loop
+    try:
+        loop: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if _client is None or (loop is not None and loop is not _client_loop):
         _client = redis.from_url(
             REDIS_URL, decode_responses=True, socket_connect_timeout=0.5, socket_timeout=0.5,
         )
+        _client_loop = loop
     return _client
 
 
@@ -95,8 +105,8 @@ _RENEW_LUA = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('e
 async def cache_try_lock(key: str, holder: str, ttl_seconds: int) -> Tuple[bool, bool]:
     """Distributed lock (SET NX EX) -> (acquired, redis_reachable). The lock exists to stop *two* worker
     replicas double-trading when someone scales the service. With Redis unreachable it reports
-    (True, False): the one running replica keeps evaluating PAPER, and the worker decides what LIVE may
-    do without the lock (P0.1 / S2: fail-closed for LIVE entries where a second replica is possible)."""
+    (True, False): the cycle still runs so exits continue (ADR-0004), and the worker fails closed for every
+    new automated entry, PAPER and LIVE alike (M55 A18; before that only LIVE entries paused - P0.1 / S2)."""
     try:
         return bool(await _get_client().set(key, holder, nx=True, ex=ttl_seconds)), True
     except Exception:

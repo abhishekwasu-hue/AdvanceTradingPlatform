@@ -25,6 +25,7 @@ CODES: dict[str, str] = {
     "no_signal": "No setup on this bar",
     "same_signal": "Same setup as before - already handled",
     "position_open": "A position from this bot is already open",
+    "opposite_position": "Another of your bots holds the other direction on this symbol",
     "exit_read": "The open trade closed on this bar's exit reading",
     "risk_setting": "Your risk settings held the entry back",
     "oi_gate": "Your OI checks held the entry back",

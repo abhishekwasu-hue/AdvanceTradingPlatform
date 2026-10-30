@@ -25,7 +25,7 @@ import { ContextBarV2, useStripFigures } from "./ContextBarV2";
 import { modeChip } from "./statusModel";
 import { defaultTerminalApi, type TerminalApi } from "./api";
 import {
-  CHOOSER_PANEL_IDS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, UNDERLYINGS, activeKey, changed, closePanel,
+  CHOOSER_PANEL_IDS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, activeKey, changed, closePanel,
   isPreset, layoutFor, nameProblem, openPanel, remove, rename, resetToPreset, saveAs, saveOver, switchTo,
   type Layout, type PanelId, type PanelPlace, type PhoneTab, type TerminalPrefs,
 } from "./layoutModel";
@@ -144,7 +144,6 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
 
   const openIds = useMemo(() => new Set(working.panels.filter((x) => x.open).map((x) => x.id)), [working.panels]);
   const wants = (id: PanelId, phoneTab: PhoneTab) => (narrow ? tab === phoneTab : openIds.has(id));
-  const chainWanted = wants("chain", "chain") || wants("order", "order") || openIds.has("chain");
 
   // His own figures (TT-15): the status bar, his positions and his orders. The chain of the underlying the panels follow.
   const [statusL] = usePolled(terminal.status, () => STATUS_MS, signedIn);

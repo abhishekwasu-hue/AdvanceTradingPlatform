@@ -10,7 +10,7 @@ import { SIGNAL_PARAM, TRADE_PARAM, setupMarks, setupTrade, type SetupItem } fro
 import SymbolHubTabsV2 from "../fno/SymbolHubTabsV2";
 import type { PageProps } from "../routes";
 import { cx } from "../components/primitives/cx";
-import { formatDateIST, formatTimeIST } from "../ui/format";
+import { formatTimeIST } from "../ui/format";
 import { useTerminalSpot } from "../terminal/spot";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
@@ -27,7 +27,7 @@ import SummaryStripV2 from "./SummaryStripV2";
 import { STRIKE_RANGES, rowsAround, usePrevClose } from "./spotChange";
 import type { ChainRow } from "./types";
 import { useOptionChain, type OptionChainData } from "./useOptionChain";
-import { Combobox, type ComboOption } from "../ui/Combobox";
+import { Combobox } from "../ui/Combobox";
 import { Sheet } from "../components/primitives/Dialog";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { AskAi } from "./AskAiV2";

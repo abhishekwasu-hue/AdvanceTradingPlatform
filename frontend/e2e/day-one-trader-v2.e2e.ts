@@ -380,7 +380,8 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         const panel = size.phone ? page.getByRole("dialog", { name: "Watchlist" }) : page.locator("main");
         if (size.phone) {
           await page.evaluate(() => window.scrollTo(0, 0));
-          await page.getByRole("button", { name: "Watchlist", exact: true }).click();
+          await page.getByRole("button", { name: "More chart controls" }).click();   // CT-1 L1: the watchlist is under More on a phone
+          await page.getByRole("dialog", { name: "More chart controls" }).getByRole("button", { name: "Watchlist", exact: true }).click();
           await expect(panel).toBeVisible();
         }
         await expect(panel.getByRole("button", { name: /^Choose a list\. Shown: / })).toContainText("NIFTY 50 stocks (50)");

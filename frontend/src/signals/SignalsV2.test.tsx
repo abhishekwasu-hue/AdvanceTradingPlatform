@@ -90,9 +90,21 @@ describe("UI2-3 detail panel", () => {
   it("phone card content: Approve, Skip, a chart button and More, each 44 px", () => {
     const html = inRouter(<SignalDetail item={feedItem()} proposal={proposal} now={NOW} compact canTrade onDone={noop} onError={noop} />);
     expect(text(html)).toContain("Fits your risk limits · most you can lose ₹5,250");
-    expect(text(html)).toContain("Approve");
+    expect(text(html)).toContain("Approve paper trade");             // REV-1 M2: never a bare "Approve" on a phone
+    expect(html).toContain('data-signal-mode="paper"');               // REV-1 M2: the PAPER chip on a phone too
     expect(html).toContain('aria-label="Open chart for DEMO 50"');
     expect(html.match(/min-h-11/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+  });
+
+  it("M55 T2: an option structure proposal lists its legs under Your order; an ordinary one shows no such block", () => {
+    const legs = ["Buy 1 lot DEMO 24400 PE, expiry 1 Oct 2026", "Sell 1 lot DEMO 24500 PE, expiry 1 Oct 2026",
+      "Per lot of the trade. The number of lots is sized from your own risk settings when you approve, at most 1"];
+    for (const compact of [false, true]) {
+      const words = text(inRouter(<SignalDetail item={feedItem({ legs })} now={NOW} compact={compact} canTrade onDone={noop} onError={noop} />));
+      expect(words).toContain("Your order");
+      for (const l of legs) expect(words).toContain(l);
+      expect(text(inRouter(<SignalDetail item={feedItem()} now={NOW} compact={compact} canTrade onDone={noop} onError={noop} />))).not.toContain("Your order");
+    }
   });
 
   it("a LIVE proposal says so and never promises that nothing reaches the broker", () => {

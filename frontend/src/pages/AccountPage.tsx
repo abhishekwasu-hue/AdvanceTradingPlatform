@@ -217,7 +217,7 @@ export function SupportAccessCard() {
     supportAccess().then((r) => { if (live) setViews(r.views); }).catch(() => { if (live) setViews([]); });
     return () => { live = false; };
   }, []);
-  const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "");
+  const when = (iso: string | null) => (iso ? formatDateTimeIST(iso) : "");   // REV-1 M3: IST
   return (
     <Card title="Support access">
       <div data-support-access className="space-y-2 text-xs">

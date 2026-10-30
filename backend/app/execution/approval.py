@@ -212,7 +212,8 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                         idempotency_key: str, deployment: Optional[StrategyDeploymentRecord] = None, requested_mode: str = "PAPER",
                         exit_rules: Optional[str] = None, holding: str = "INTRADAY", user_id: Optional[int] = None,
                         now: Optional[datetime] = None, requotes: int = 0, requoted_from: Optional[int] = None,
-                        exchange: str = "NSE", strike_breach: Optional[Dict] = None, ticket: Optional[Dict] = None) -> Optional[AiActionRecord]:
+                        exchange: str = "NSE", strike_breach: dict | None = None, ticket: dict | None = None,
+                        structure: dict | None = None) -> AiActionRecord | None:
     """Raises one ENTRY proposal (PROPOSED, expiring after APPROVAL_ENTRY_TTL_MINUTES) and announces it through the
     ordinary notification service (in-app, push, Telegram with Approve / Reject / Snooze). None when the same signal (or,
     for a deployment, another open entry proposal) is already there. `user_id` is the proposal's owner; raises
@@ -220,7 +221,8 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     paused their PAPER entries (Z3-b) or is locked out by risk by default (Z5 / P1-d).
     `strike_breach` (Z5): the short strikes' breach chances of an option proposal (app/options_builder/strike_breach.py
     ::report), shown on the card. `ticket` (Z5 / P1-d): a PAPER ticket's checked limits ({plan_id, max_quantity,
-    risk_cap_amount}) - the approved order keeps them. Places nothing."""
+    risk_cap_amount}) - the approved order keeps them. `structure` (M55 T2): an option / future deployment's resolved
+    legs (`structure_payload`) - the card words them, and Approve places exactly those legs. Places nothing."""
     now = _utc(now or datetime.now(timezone.utc)).astimezone(timezone.utc)      # stored as UTC (SQLite drops the zone)
     if signal.entry is None or not math.isfinite(signal.entry) or signal.entry <= 0:
         raise InvalidEntryPrice("The signal has no usable entry price (missing, zero or not a number) - nothing was proposed")
@@ -249,9 +251,16 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     direction = signal.direction.value if hasattr(signal.direction, "value") else str(signal.direction)
     expires = now + timedelta(minutes=app_config.APPROVAL_ENTRY_TTL_MINUTES)
     label = SOURCE_LABELS.get(source, source)
-    reason = (f"{label}: {direction} {signal.symbol} at {_money(signal.entry)} (stop {_money(signal.stop_loss)}, target {_money(signal.target1)})"
-              f" - {strategy_id}. Approve to place a PAPER order at the price then (re-quoted); it expires at "
-              f"{expires.astimezone(IST).strftime('%H:%M')} IST.")
+    lines = leg_lines(structure)
+    if lines:
+        # M55 T2: his own order, so its legs in order words (card and Telegram); the levels stay the underlying's.
+        reason = (f"{label}: {structure_title(structure)} on {signal.symbol} - {'; '.join(lines)}. Underlying at {_money(signal.entry)} "
+                  f"(stop {_money(signal.stop_loss)}, target {_money(signal.target1)}) - {strategy_id}. Approve to place these legs "
+                  f"as a PAPER order at the prices then (re-quoted); it expires at {expires.astimezone(IST).strftime('%H:%M')} IST.")
+    else:
+        reason = (f"{label}: {direction} {signal.symbol} at {_money(signal.entry)} (stop {_money(signal.stop_loss)}, target {_money(signal.target1)})"
+                  f" - {strategy_id}. Approve to place a PAPER order at the price then (re-quoted); it expires at "
+                  f"{expires.astimezone(IST).strftime('%H:%M')} IST.")
     # The card shows the first few numbers: the proposal price and its levels lead.
     evidence = {"proposal_price": float(signal.entry), "stop_loss": signal.stop_loss, "target1": signal.target1, "source": source,
                 "symbol": signal.symbol, "direction": direction, "target2": signal.target2, "risk_reward": signal.risk_reward,
@@ -259,6 +268,9 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                 "holding": holding, "requotes": requotes, "requoted_from": requoted_from, "data_as_of": _utc(signal.timestamp).isoformat(),
                 "exchange": (exchange or "NSE").upper(),
                 "signal": signal.model_dump(mode="json"), "strike_breach": strike_breach, "ticket": ticket}
+    if structure is not None:
+        evidence["structure"] = structure
+        evidence["leg_lines"] = lines
     row = AiActionRecord(tenant_id=tenant_id, deployment_id=deployment.id if deployment is not None else None, trade_id=None,
                          action=ACTION_ENTRY, rule=RULE_ENTRY, reason=reason, evidence_json=finite_dumps(evidence),
                          status="PROPOSED", expires_at=expires, idempotency_key=idempotency_key[:200], owner_user_id=user_id)
@@ -277,13 +289,157 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
         impact = await risk_text.proposal_impact(session, owner_row, signal.symbol, signal.entry, signal.stop_loss,
                                                  quantity=(ticket or {}).get("max_quantity"), now=now, book=book)
         impact_line = f" {impact['line']}" if impact else ""
-    await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"Entry proposal: {direction} {signal.symbol} (PAPER)",
+    title = (f"Entry proposal: {structure_title(structure)} on {signal.symbol} (PAPER)" if lines
+             else f"Entry proposal: {direction} {signal.symbol} (PAPER)")
+    await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=title,
                  message=f"{reason} Nothing is placed until you approve.{impact_line}", severity=NotificationSeverity.WARNING, user_id=user_id,
                  ai_action_id=row.id)
     from app.ai import vision_audit
     await vision_audit.enqueue_for_proposal(session, row, now=now)
     await session.commit()
     return row
+
+
+# --- M55 T2: option / future / structure proposals -----------------------------------------------------------------------
+
+STRUCTURE_KIND = "STRUCTURE"      # a multi-leg option structure (execute_structure)
+CONTRACT_KIND = "CONTRACT"        # one derived contract: a single option or a future (execute_signal_for_user)
+
+
+def structure_payload(*, structure: Any = None, contract: Any = None, max_lots: int | None = None) -> dict:
+    """What an option / future deployment's proposal stores: the legs exactly as the automatic entry would place them
+    (the same resolver's ResolvedStructure or ResolvedContract), so Approve places these legs and no others. Each leg:
+    instrument, strike, right, expiry, side and lots per lot of the trade (`ratio`). The number of lots is sized when
+    the order is placed, from the user's own risk settings and at most `max_lots` (his own setting) - as the automatic
+    entry does."""
+    if structure is not None:
+        return {"kind": STRUCTURE_KIND, "strategy": structure.strategy.value, "max_lots": max_lots, "data": structure.as_dict()}
+    data = contract.as_dict()
+    return {"kind": CONTRACT_KIND, "strategy": "SINGLE", "max_lots": max_lots, "data": data,
+            "legs": [{"role": "LONG" if data["entry_side"] == "BUY" else "SHORT", "side": data["entry_side"], "ratio": 1, **data}]}
+
+
+def _legs_of(structure: dict | None) -> list[dict]:
+    if not isinstance(structure, dict):
+        return []
+    legs = structure.get("legs") if structure.get("kind") == CONTRACT_KIND else (structure.get("data") or {}).get("legs")
+    return [leg for leg in (legs or []) if isinstance(leg, dict)]
+
+
+def structure_title(structure: dict | None) -> str:
+    """"Bull put spread", "Single option", "Future" - the trade's name in words."""
+    if not isinstance(structure, dict):
+        return "Entry"
+    if structure.get("kind") == CONTRACT_KIND:
+        return "Future" if (structure.get("data") or {}).get("kind") == "FUTURE" else "Single option"
+    return str(structure.get("strategy") or "Structure").replace("_", " ").capitalize()
+
+
+def _expiry_words(raw: Any) -> str:
+    try:
+        return datetime.strptime(str(raw)[:10], "%Y-%m-%d").strftime("%d %b %Y").lstrip("0")
+    except (TypeError, ValueError):
+        return str(raw or "-")
+
+
+def leg_lines(structure: dict | None) -> list[str]:
+    """M55 T2: the legs in plain words for the user's own approval card and Telegram ("Sell 1 lot NIFTY 24500 PE,
+    expiry 30 Sep 2026"), the bought (protective) legs first as the order path places them, then one sizing sentence.
+    Order words only here: it is his own order. [] for an underlying proposal."""
+    legs = _legs_of(structure)
+    if not legs:
+        return []
+    out: list[str] = []
+    for leg in sorted(legs, key=lambda leg: 0 if leg.get("side") == "BUY" else 1):
+        ratio = int(leg.get("ratio") or 1)
+        side = "Buy" if leg.get("side") == "BUY" else "Sell"
+        name = str(leg.get("underlying") or leg.get("tradingsymbol") or "")
+        what = f"{name} future" if leg.get("kind") == "FUTURE" or leg.get("strike") is None else \
+            f"{name} {float(leg['strike']):g} {leg.get('right') or ''}".rstrip()
+        out.append(f"{side} {ratio} lot{'s' if ratio != 1 else ''} {what}, expiry {_expiry_words(leg.get('expiry'))}")
+    cap = structure.get("max_lots") if isinstance(structure, dict) else None
+    out.append(("Per lot of the trade. The number of lots" if len(legs) > 1 else "The number of lots")
+               + " is sized from your own risk settings when you approve" + (f", at most {int(cap)}" if cap else ""))
+    return out
+
+
+def _contract_from(data: dict, today: Any) -> Any:
+    from app.core.enums import InstrumentKind, OptionPosition, OrderSide, SignalDirection
+    from app.instruments.contracts import ResolvedContract
+    return ResolvedContract(
+        kind=InstrumentKind(data["kind"]), underlying=str(data["underlying"]), underlying_symbol=str(data["underlying_symbol"]),
+        tradingsymbol=str(data["tradingsymbol"]), exchange=str(data["exchange"]), instrument_key=str(data.get("instrument_key") or ""),
+        lot_size=int(data["lot_size"]), tick_size=float(data.get("tick_size") or 0.05),
+        expiry=datetime.strptime(str(data["expiry"])[:10], "%Y-%m-%d").date(),
+        strike=float(data["strike"]) if data.get("strike") is not None else None, right=data.get("right"),
+        entry_side=OrderSide(data["entry_side"]), trade_direction=SignalDirection(data["trade_direction"]),
+        position=OptionPosition(data["position"]) if data.get("position") else None,
+        selection_notes=tuple(data.get("selection_notes") or ()), selection=data.get("selection"),
+        resolved_for=today)                    # the expiry pre-check judges the contract against the day it is placed
+
+
+def _structure_from(data: dict, today: Any) -> Any:
+    from app.core.enums import OptionStrategy
+    from app.instruments.spreads import ResolvedLeg, ResolvedStructure
+    legs = [ResolvedLeg(role=str(leg["role"]), contract=_contract_from(leg, today), ratio=int(leg.get("ratio") or 1)) for leg in data["legs"]]
+    return ResolvedStructure(strategy=OptionStrategy(data["strategy"]), legs=legs, underlying_symbol=str(data["underlying_symbol"]),
+                             lot_size=int(data["lot_size"]), expiry=datetime.strptime(str(data["expiry"])[:10], "%Y-%m-%d").date(),
+                             width_points=float(data.get("width_points") or 0.0), notes=list(data.get("notes") or []))
+
+
+class _LookupQuotes:
+    """The approver's own price lookup as the quote source the order path asks for a contract's premium
+    (`contract_ltp` calls `get_ltp_for_symbol`). Quotes only: it has no order method."""
+    name = "approval"
+
+    def __init__(self, lookup: PriceLookup):
+        self._lookup = lookup
+
+    async def get_ltp_for_symbol(self, symbol: str, exchange: str = "NSE") -> float:
+        return float(await self._lookup(symbol, exchange))
+
+
+async def _execute_legs(session: AsyncSession, action: AiActionRecord, owner: User, evidence: dict,
+                        deployment: StrategyDeploymentRecord | None, signal: Signal, price: float,
+                        price_lookup: PriceLookup, now: datetime) -> dict:
+    """M55 T2: an APPROVED option / future / structure proposal placed through the SAME order path as the automatic
+    entry - `execute_structure` (wings before shorts, its sizing and risk checks) or `execute_signal_for_user` with the
+    contract - with the legs the person approved, PAPER only. Raises ValueError (nothing placed) when it cannot."""
+    from app.execution.multileg import execute_structure
+    from app.execution.signal_execution import execute_signal_for_user
+    from app.instruments.contracts import ContractRules
+    payload = evidence["structure"]
+    if deployment is None:
+        raise ValueError("The trading bot of this proposal is gone - nothing was placed")
+    rules = ContractRules.from_deployment(deployment)
+    if (deployment.option_strategy or "SINGLE") != payload.get("strategy") or not rules.derived:
+        raise ValueError("The trading bot's instrument settings changed since this proposal - nothing was placed")
+    today = _utc(now).astimezone(IST).date()
+    quotes = _LookupQuotes(price_lookup)
+    strategy_id = str(evidence.get("strategy_id") or signal.strategy_id)
+    if payload.get("kind") == STRUCTURE_KIND:
+        result = await execute_structure(
+            session, owner, mode="PAPER", strategy_id=strategy_id, signal=signal, structure=_structure_from(payload["data"], today),
+            rules=rules, target_credit_pct=deployment.target_credit_pct, stop_credit_pct=deployment.stop_credit_pct,
+            underlying_exit=bool(getattr(deployment, "underlying_breach_exit", None)), idempotency_key=f"approval:{action.id}",
+            broker=None, quote_broker=quotes, deployment_id=deployment.id, origin=ORIGIN_APPROVAL, approval_action_id=action.id)
+        if not result.executed:
+            raise ValueError("PAPER order not placed: " + ("; ".join(result.reasons) or "the structure was refused"))
+        trade_id = result.trades[0].id if result.trades else None
+        return {"status": "EXECUTED", "executed_at": now, "trade_id": trade_id,
+                "result": f"PAPER {structure_title(payload).lower()} placed ({len(result.orders)} legs), underlying re-quoted at {price:g}"
+                          + (f"; position #{trade_id}" if trade_id else "")}
+    contract = _contract_from(payload["data"], today)
+    result, order = await execute_signal_for_user(
+        session, owner, mode="PAPER", strategy_id=strategy_id, signal=signal, idempotency_key=f"approval:{action.id}",
+        deployment_id=deployment.id, contract=contract, rules=rules, quote_broker=quotes, exit_rules=evidence.get("exit_rules"),
+        holding=str(evidence.get("holding") or "INTRADAY"), origin=ORIGIN_APPROVAL, approval_action_id=action.id,
+        journal_source="PROPOSAL", exchange=deployment.exchange)
+    if not result.executed:
+        raise ValueError("PAPER order not placed: " + ("; ".join(result.reasons) or order.status))
+    return {"status": "EXECUTED", "executed_at": now, "trade_id": order.trade_id,
+            "result": f"PAPER order #{order.id} placed on {contract.tradingsymbol}, underlying re-quoted at {price:g}"
+                      + (f"; position #{order.trade_id}" if order.trade_id else "")}
 
 
 async def _free_deployment_slot(session: AsyncSession, tenant_id: int, deployment_id: int, now: datetime) -> None:
@@ -378,6 +534,9 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
         rr = round(abs(signal.target1 - price) / risk, 2) if risk and signal.target1 is not None else signal.risk_reward
         signal = signal.model_copy(update={"entry": price, "risk_reward": rr, "timestamp": now,
                                            "reasons": list(signal.reasons) + [f"Approved proposal #{action.id}, re-quoted at {price:g}"]})
+        if evidence.get("structure"):          # M55 T2: the approved legs, through the automatic entry's own order path
+            await _settle(session, action, await _execute_legs(session, action, owner, evidence, deployment, signal, price, price_lookup, now))
+            return action
         result, order = await execute_signal_for_user(
             session, owner, mode="PAPER", strategy_id=str(evidence.get("strategy_id") or signal.strategy_id), signal=signal,
             idempotency_key=f"approval:{action.id}", deployment_id=action.deployment_id, exit_rules=evidence.get("exit_rules"),
@@ -435,7 +594,7 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
                                         requested_mode=str(evidence.get("requested_mode") or "PAPER"), exit_rules=evidence.get("exit_rules"),
                                         holding=str(evidence.get("holding") or "INTRADAY"), user_id=owner_id, now=now,
                                         requotes=requotes + 1, requoted_from=action.id, exchange=str(evidence.get("exchange") or "NSE"),
-                                        ticket=evidence.get("ticket"))
+                                        ticket=evidence.get("ticket"), structure=evidence.get("structure"))
         except InvalidEntryPrice:
             # UI2-3 review: a subclass of EntriesPaused, but the reason is the price, not a pause. Defensive only:
             # requote_check already answers a non-finite or non-positive price with "expire", so this is not reached today.

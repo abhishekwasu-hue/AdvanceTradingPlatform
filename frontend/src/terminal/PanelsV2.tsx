@@ -376,7 +376,8 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
 
 // --- Orders --------------------------------------------------------------------------------------------------------------
 
-const GROUPS: { key: OrderGroup; label: string }[] = [{ key: "open", label: "Open" }, { key: "executed", label: "Executed" }, { key: "rejected", label: "Rejected" }];
+const GROUPS: { key: OrderGroup; label: string }[] = [{ key: "open", label: "Open" }, { key: "executed", label: "Executed" }, { key: "rejected", label: "Rejected" },
+  { key: "cancelled", label: "Cancelled" }];
 
 export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; terminal: Pick<TerminalApi, "events"> }) {
   const [group, setGroup] = useState<OrderGroup>("executed");
@@ -391,7 +392,7 @@ export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; term
   }, [openId, terminal]);
   if (read.status === "loading") return <LoadingRowsV2 rows={3} />;
   if (read.status === "error") return <EmptyText testId="orders-error">We could not load your orders. We will try again in a moment.</EmptyText>;
-  const counts = { open: 0, executed: 0, rejected: 0 } as Record<OrderGroup, number>;
+  const counts = { open: 0, executed: 0, rejected: 0, cancelled: 0 } as Record<OrderGroup, number>;
   for (const o of read.value) counts[orderGroup(o.status)] += 1;
   const shown = read.value.filter((o) => orderGroup(o.status) === group);
   return (
@@ -401,7 +402,7 @@ export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; term
         items={GROUPS.map((g) => ({ key: g.key, label: <>{g.label}<span className="ml-space-1 font-tabular">{counts[g.key]}</span></>, ariaLabel: `${g.label} ${counts[g.key]}`, data: { "orders-tab": g.key } }))} />
       {shown.length === 0 ? (
         <EmptyText testId={`orders-${group}-empty`}>
-          {group === "open" ? "All orders are filled." : group === "executed" ? "Filled orders show here." : "Every order went through."}
+          {group === "open" ? "All orders are filled." : group === "executed" ? "Filled orders show here." : group === "cancelled" ? "No order was cancelled." : "Every order went through."}
         </EmptyText>
       ) : (
         <ul className="divide-y divide-subtle" data-orders-list={group}>

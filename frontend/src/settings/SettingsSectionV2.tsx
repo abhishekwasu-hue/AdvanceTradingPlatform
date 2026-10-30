@@ -172,6 +172,10 @@ function AdvancedSection() {
       <Fold id="own-bot" title="Your own Telegram bot" line="Only if your organisation has its own bot">
         <AlertChannelsCard part="own-bot" />
       </Fold>
+      {/* REV-1 M2: the mail-server, SMS-gateway (DLT) and webhook set-up - out of Settings → Alerts. */}
+      <Fold id="alert-delivery" title="Email, SMS and webhook alerts" line="Your own mail server, SMS provider or app">
+        <AlertChannelsCard part="delivery" />
+      </Fold>
       {features.on("ai_one_key") && (
         <Fold id="vision" title="Vision background reviews" line="Chart comments in the background with your AI key">
           <VisionReviewSwitchesV2 />

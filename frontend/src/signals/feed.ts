@@ -11,7 +11,7 @@ import { formatINR, formatNumber } from "../ui/format";
  */
 
 export type FeedTab = "waiting" | "today" | "history";
-export type FeedSource = "all" | "autopilot" | "scan" | "copilot";
+export type FeedSource = "all" | "autopilot" | "scan" | "copilot" | "library";
 export type SignalKind = "autopilot" | "scan" | "copilot" | "library";
 export type SignalStatus = "waiting" | "snoozed" | "taken" | "skipped" | "expired" | "not_placed" | "info";
 
@@ -38,6 +38,8 @@ export interface SignalFeedItem {
   action_id: number | null;
   /** Why it ended the way it did (the server's own words), when it did. */
   outcome: string | null;
+  /** M55 T2: an option / structure proposal's legs in order words (his own order), e.g. "Sell 1 lot NIFTY 24500 PE, ...". */
+  legs?: string[];
 }
 
 export interface SignalFeed {
@@ -95,6 +97,7 @@ export const SOURCES: readonly { id: FeedSource; label: string }[] = [
   { id: "autopilot", label: "Trading bots" },
   { id: "scan", label: "Scans" },
   { id: "copilot", label: "Copilot" },
+  { id: "library", label: "Signal generator" },      // REV-1 M3: its rows had no filter of their own (All sources only)
 ];
 
 const KIND_LABEL: Record<SignalKind, string> = { autopilot: "Trading bot", scan: "Scan", copilot: "Copilot", library: "Signal generator" };

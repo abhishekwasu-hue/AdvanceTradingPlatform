@@ -112,6 +112,19 @@ A_CONTROL_EXCEPTIONS: Dict[Tuple[str, str], str] = {
     ("GET", "/api/setup-recall/proposals/{action_id}"):
         "the planted ai_actions row is not an ENTRY proposal, and recall answers only for one (404 'No such proposal', by "
         "design); the other organisation still gets 404 (AUD-T6; tests/test_aud_t6_setup_recall.py serves a real one)",
+    **{key: why for why, keys in (
+        ("a checklist answer must name one of the trader's own rules, and the planted world has none (422 by design); the "
+         "other organisation still gets 404 (M62; tests/test_m62_journal_layer.py answers real rules)",
+         (("PATCH", "/api/journal/trades/{trade_id}/checklist"), ("PATCH", "/api/journal/manual/{manual_id}/checklist"))),
+        ("the sweep sends no image file (422 'choose an image', by design); the other organisation still gets 404 before the "
+         "body is read (M62; tests/test_m62_journal_layer.py uploads a real one)",
+         (("POST", "/api/journal/trades/{trade_id}/attachments"), ("POST", "/api/journal/manual/{manual_id}/attachments"))),
+        ("the planted attachment row has no file in the private store (404 'No such image'); the other organisation still gets "
+         "404 (M62; tests/test_m62_journal_layer.py reads a real one)", (("GET", "/api/journal/attachments/{attachment_id}"),)),
+        ("no candles are stored for the planted trade, so no snapshot can be drawn (404); the other organisation still gets "
+         "404 (M62; tests/test_m62_journal_layer.py draws one from stored candles)",
+         (("GET", "/api/journal/trades/{trade_id}/chart"), ("GET", "/api/journal/manual/{manual_id}/chart"))),
+    ) for key in keys},
 }
 
 # Id routes where the other organisation may get a status other than 403/404, and why nothing of tenant A's is exposed.

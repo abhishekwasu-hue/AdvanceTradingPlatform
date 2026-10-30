@@ -482,8 +482,65 @@ class JournalEntryRecord(Base):
     iv_exit: Mapped[float | None] = mapped_column(Float, nullable=True)
     high_price: Mapped[float | None] = mapped_column(Price, nullable=True)                 # highest / lowest price seen while open
     low_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    # M62 JN-2: the trader's own layer (written only by the trader; the capture hooks never touch these two).
+    checklist_json: Mapped[str | None] = mapped_column(Text, nullable=True)                # [{"rule", "followed"}]: his own rules, yes / no
+    user_tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)                # his own mistake / emotion labels (his own list)
     captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class JournalManualTradeRecord(Base):
+    """M62 JN-2: a trade the trader did OUTSIDE ATP, written into his journal by hand. Journal data only: it is not a
+    trade row, so no order, position, broker call, risk counter, P&L book or monitor ever reads it. Every number on it is
+    the trader's own (what he typed); nothing is filled in for him. Personal, like the journal entry."""
+
+    __tablename__ = "journal_manual_trades"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    exchange: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    instrument_kind: Mapped[str] = mapped_column(String(12), nullable=False, default="UNDERLYING")
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)                     # LONG / SHORT
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_time: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    entry_price: Mapped[float] = mapped_column(Price, nullable=False)
+    stop_loss: Mapped[float | None] = mapped_column(Price, nullable=True)                  # his own invalidation level, if he had one
+    target: Mapped[float | None] = mapped_column(Price, nullable=True)                     # his own, if he had one
+    exit_time: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    charges: Mapped[float] = mapped_column(Money, nullable=False, default=0.0)
+    setup: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    timeframe: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    area: Mapped[str | None] = mapped_column(String(200), nullable=True)                   # his own words for the area / level
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checklist_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class JournalAttachmentRecord(Base):
+    """M62 JN-2: one image the trader attached to a journal entry (an ATP trade or a manual one). The file lives in the
+    private store (`app/chart_analyze/storage.py`: `<root>/<tenant id>/<random>.png`, re-encoded, no metadata); the row
+    holds only its server-made path. Personal: only its owner reads or deletes it."""
+
+    __tablename__ = "journal_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="CASCADE"), nullable=True, index=True)
+    manual_trade_id: Mapped[int | None] = mapped_column(ForeignKey("journal_manual_trades.id", ondelete="CASCADE"), nullable=True,
+                                                        index=True)
+    image_path: Mapped[str] = mapped_column(String(80), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 class JournalTagRecord(Base):

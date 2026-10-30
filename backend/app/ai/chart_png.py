@@ -53,12 +53,14 @@ class Bar:
 
 @dataclass
 class ChartSpec:
-    """What to draw. `levels` maps a short label (ENTRY, SL, TGT, HIGH, LOW) to a price from the engine's data."""
+    """What to draw. `levels` maps a short label (ENTRY, SL, TGT, EXIT, HIGH, LOW) to a price from the engine's data
+    (EXIT: the journal's exit snapshot, M62; the Vision audit never passes it, so its images are unchanged)."""
     bars: List[Bar]
     levels: Dict[str, float] = field(default_factory=dict)
 
 
-_LEVEL_COLORS: Dict[str, Color] = {"ENTRY": ENTRY, "SL": STOP, "TGT": TARGET, "HIGH": ZONE, "LOW": ZONE}
+EXIT: Color = (217, 119, 6)
+_LEVEL_COLORS: Dict[str, Color] = {"ENTRY": ENTRY, "SL": STOP, "TGT": TARGET, "EXIT": EXIT, "HIGH": ZONE, "LOW": ZONE}
 
 
 class _Canvas:
@@ -164,13 +166,13 @@ def render(spec: ChartSpec, *, width: int = WIDTH, height: int = HEIGHT) -> byte
         canvas.rect(cx - body // 2, y0, cx - body // 2 + body - 1, max(y0, y1), color)
 
     used: List[int] = []
-    for name in ("TGT", "ENTRY", "SL", "HIGH", "LOW"):        # trade levels drawn last, on top of the candles
+    for name in ("TGT", "ENTRY", "EXIT", "SL", "HIGH", "LOW"):  # trade levels drawn last, on top of the candles
         if name not in levels:
             continue
         y = y_of(levels[name])
         color = _LEVEL_COLORS[name]
-        if name in ("ENTRY", "SL", "TGT"):
-            canvas.hline(left, right, y, color, dash=0 if name == "ENTRY" else 6)
+        if name in ("ENTRY", "SL", "TGT", "EXIT"):
+            canvas.hline(left, right, y, color, dash=0 if name in ("ENTRY", "EXIT") else 6)
         label = f"{name} {_fmt(levels[name])}"
         ly = y - 5
         while any(abs(ly - u) < 12 for u in used):          # keep labels from overlapping

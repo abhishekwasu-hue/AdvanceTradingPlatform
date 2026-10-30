@@ -174,7 +174,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
 # ADM-1 (owner 30 Oct: "too many controls, very confusing"): the admin Feature flags list groups by these finer
 # categories (what a trader would call that part of the app), each folded; `area` stays the broad area. Every flag has
 # exactly one group (tests/test_adm1_flag_groups.py). A flag without a group falls back to its area in the list.
-GROUPS: Dict[str, str] = {
+GROUPS: dict[str, str] = {
     "safety": "Safety and LIVE",
     "orders": "Orders and positions",
     "paper": "Paper trading and journal",
@@ -192,7 +192,7 @@ GROUPS: Dict[str, str] = {
     "developers": "Developers and marketplace",
 }
 
-FLAG_GROUP: Dict[str, str] = {
+FLAG_GROUP: dict[str, str] = {
     # Safety and LIVE
     "live_trading": "safety",
     "phase0_paper_only": "safety",

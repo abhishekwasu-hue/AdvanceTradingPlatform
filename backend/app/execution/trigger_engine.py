@@ -285,8 +285,9 @@ async def _evaluate_exit(session: AsyncSession, row: PaperRestingOrderRecord, pr
     reached = await _reached(row, prices, candles, now)
     if not reached:
         return                             # its last price is saved with the pass (one commit)
+    broker = await exit_broker_for(session, trade, broker)
     if trade.mode != "PAPER" and broker is None:
-        report.waiting += 1                # a LIVE exit goes out through the cycle, which holds the position's broker session
+        report.waiting += 1                # no usable session for the account that holds it: waits, the cycle says why
         return
     contract_price = await prices.get(row.symbol, row.exchange)
     if contract_price is None:
@@ -300,6 +301,19 @@ async def _evaluate_exit(session: AsyncSession, row: PaperRestingOrderRecord, pr
     if not await _claim(session, row, now):
         return
     await _send_exit(session, row, trade, contract_price, broker, now, report)
+
+
+async def exit_broker_for(session: AsyncSession, trade: TradeRecord,
+                          handed_in: BrokerInterface | None) -> BrokerInterface | None:
+    """M55 S5: the broker session that exits this LIVE position - resolved per position from the broker account that holds
+    it, exactly as the position monitor resolves it: the session the cycle hands in (the worker hands one in only when
+    the organisation has a single account - that account's), else `position_monitor.broker_for_trade` for this position
+    (several accounts: each position its own account's session). A LIVE exit never waits for a session nobody hands in.
+    PAPER: unchanged."""
+    if trade.mode == "PAPER" or handed_in is not None:
+        return handed_in
+    from app.trading.position_monitor import broker_for_trade
+    return await broker_for_trade(session, trade)
 
 
 def _exit_reason(row: PaperRestingOrderRecord) -> str:
@@ -518,6 +532,7 @@ async def _reconcile(session: AsyncSession, row: PaperRestingOrderRecord, prices
         if trade.mode != "PAPER":
             # LIVE: the one exit path looks the exit up in the broker's order book by its tag and adopts it, or sends it
             # once with the same tag (position_monitor's exit ledger and re-exit guard).
+            broker = await exit_broker_for(session, trade, broker)
             price = await prices.get(row.symbol, row.exchange) if prices is not None else None
             if broker is None or price is None:
                 await _send_later(session, row, "Checked at the broker on the next pass with its session", now)

@@ -26,7 +26,7 @@ from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType
 from app.db.models import Tenant, TradeRecord
 from app.db.savepoint import guarded
 from app.execution.products import product_for_trade
-from app.execution.tagging import LEG_STOP, build_order_tag
+from app.execution.tagging import LEG_STOP, build_order_tag, new_client_order_id
 from app.market_data.calendar import market_session_status
 from app.notifications.service import notify
 from app.reconciliation.service import broker_uncertain_reason
@@ -40,6 +40,7 @@ from app.trading.position_monitor import (
     exit_ids_elsewhere,
     expected_exit_tag,
     is_pending_exit,
+    legacy_exit_tag,
     unverified_working_exits,
     venue_for,
 )
@@ -200,6 +201,7 @@ async def verify_protective_stops(
             counts["failed"] += 1
             logger.error("Stop guard: trade %s failed: %s", trade_id, exc)
     await session.commit()
+    await stop_state.save(session)      # M55 S4: the counters and cool-downs survive a restart (never raises)
     return counts
 
 
@@ -207,7 +209,7 @@ _DEAD_EXIT = frozenset({"REJECTED", "CANCELLED", "CANCELED", "CANCELLED AMO", "E
 
 
 def _exit_died_unfilled(trade: TradeRecord, book: Dict, *, exclude: frozenset = frozenset(), exit_tag: Optional[str] = None,
-                        exchange: Optional[str] = None) -> bool:
+                        exchange: Optional[str] = None, legacy_tag: str | None = None) -> bool:
     """Re-exit guard: True when the exit this position sent is over with nothing filled - rejected / cancelled, or gone
     from the book / a claim that never recorded an order once a reconciliation since it was sent found the position still
     open (`absent_exit_dead_reason`) and no order in the book is it (`adoptable_exit`, with the same exclusions, tag and
@@ -221,9 +223,9 @@ def _exit_died_unfilled(trade: TradeRecord, book: Dict, *, exclude: frozenset = 
         if is_pending_exit(exit_id) and claim_in_flight(trade):
             return False
         orders = list(book.values())
-        if adoptable_exit(trade, orders, exclude, tag=exit_tag, exchange=exchange) is not None:
+        if adoptable_exit(trade, orders, exclude, tag=exit_tag, exchange=exchange, legacy_tag=legacy_tag) is not None:
             return False
-        if unverified_working_exits(trade, orders, exclude, tag=exit_tag, exchange=exchange):
+        if unverified_working_exits(trade, orders, exclude, tag=exit_tag, exchange=exchange, legacy_tag=legacy_tag):
             return False
         return absent_exit_dead_reason(trade) is not None
     return (exit_order.status or "").upper() in _DEAD_EXIT and float(exit_order.filled_quantity or 0) <= 0
@@ -245,9 +247,10 @@ async def _guard_one(session: AsyncSession, tenant: Tenant, broker: BrokerInterf
     if getattr(trade, "exit_order_id", None):
         # Re-exit guard: an exit already went out for this position (its booking is pending). A new stop on a position
         # that is closing - or already flat - could open one the other way. Re-arm only when that exit died unfilled.
+        algo_id = order_algo_id(tenant.algo_id, broker.name)
         died = _exit_died_unfilled(trade, book, exclude=await exit_ids_elsewhere(session, trade),
-                                   exit_tag=expected_exit_tag(trade, broker, order_algo_id(tenant.algo_id, broker.name)),
-                                   exchange=await venue_for(session, trade))
+                                   exit_tag=expected_exit_tag(trade, broker, algo_id), exchange=await venue_for(session, trade),
+                                   legacy_tag=legacy_exit_tag(trade, broker, algo_id))
         if not died:
             counts.setdefault("exit_pending", 0)
             counts["exit_pending"] += 1
@@ -270,7 +273,8 @@ async def _guard_one(session: AsyncSession, tenant: Tenant, broker: BrokerInterf
     # Re-arm.
     side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
     tag = build_order_tag(strategy_id=trade.strategy_id, leg=LEG_STOP, algo_id=order_algo_id(tenant.algo_id, broker.name),
-                          max_length=getattr(broker, "max_tag_length", None) or 20, broker=broker.name)
+                          max_length=getattr(broker, "max_tag_length", None) or 20, broker=broker.name,
+                          client_id=new_client_order_id())          # M55 S4: each re-armed stop its own id
     previous = trade.sl_order_id
     venue = await venue_for(session, trade)
     trigger = round_stop_trigger(float(trade.stop_loss), side, symbol=trade.symbol, exchange=venue)   # on the tick, away from the market

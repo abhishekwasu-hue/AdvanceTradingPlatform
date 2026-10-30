@@ -47,7 +47,7 @@ from app.execution.paper_adapter import PaperExecutionAdapter
 from app.execution.paper_broker import PaperBroker
 from app.execution.router import OrderRouter
 from app.execution.signal_execution import entry_refusals
-from app.execution.tagging import LEG_ENTRY, LEG_EXIT, build_order_tag
+from app.execution.tagging import LEG_ENTRY, LEG_EXIT, build_order_tag, client_order_id, new_client_order_id
 from app.instruments.contracts import ContractResolutionError, ContractRules
 from app.instruments.models import ContractSpec
 from app.instruments.spreads import ResolvedStructure, StructureMetrics, structure_metrics
@@ -322,7 +322,15 @@ async def execute_structure(
             reasons = notes + [breaker.refusal_reason()]
             await _reject_all(session, orders, reasons)
             return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
-        placed_ok, failure = await _place_live_legs(broker, structure, quantity, strategy_id, tenant, fills, notes)
+        # M55 S4: each leg's entry carries the client order id of its own `orders` row, on the row before anything is sent
+        # (the start-up order sweeper finds it in the broker's book by that tag).
+        leg_tags: dict[str, str] = {}
+        for order, leg in zip(orders, structure.legs):
+            tag = leg_entry_tag(broker, tenant, strategy_id, order.id)
+            if leg_tags.setdefault(leg.contract.tradingsymbol, tag) == tag:
+                order.algo_tag = tag
+        await session.commit()
+        placed_ok, failure = await _place_live_legs(broker, structure, quantity, strategy_id, tenant, fills, notes, leg_tags=leg_tags)
         if not placed_ok:
             reasons = notes + [failure]
             await _reject_all(session, orders, reasons, failed=True)
@@ -528,9 +536,17 @@ async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *
     return lots, f"Margin {per_lot:,.0f}/lot for the short legs, {available:,.0f} available -> at most {lots} lot(s)"
 
 
+def leg_entry_tag(broker: BrokerInterface, tenant: Tenant | None, strategy_id: str, order_id: int | None) -> str:
+    """M55 S4: a structure leg's entry tag, with the client order id of the leg's own `orders` row."""
+    algo_id = order_algo_id(tenant.algo_id if tenant is not None else None, broker.name)
+    return build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id,
+                           max_length=getattr(broker, "max_tag_length", None) or 20, broker=broker.name,
+                           client_id=client_order_id("E", order_id) if order_id is not None else new_client_order_id())
+
+
 async def _place_live_legs(
     broker: BrokerInterface, structure: ResolvedStructure, quantity: float, strategy_id: str, tenant: Optional[Tenant],
-    fills: Dict[str, Tuple[float, Optional[str]]], notes: List[str],
+    fills: Dict[str, Tuple[float, Optional[str]]], notes: List[str], leg_tags: dict[str, str] | None = None,
 ) -> Tuple[bool, str]:
     """Wings first, then shorts - and a short is sent only once every wing's fill is *confirmed* in the broker's
     book (P0.5 / T3), so the account is never short without its protection. A leg that does not fill inside the
@@ -562,7 +578,9 @@ async def _place_live_legs(
             request = BrokerOrderRequest(
                 symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange, transaction_type=leg.side,
                 quantity=quantity * leg.ratio, order_type="MARKET", product="MIS",
-                tag=build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag, broker=broker.name),
+                tag=(leg_tags or {}).get(leg.contract.tradingsymbol)
+                or build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag, broker=broker.name,
+                                   client_id=new_client_order_id()),
                 intent=ORDER_INTENT_ENTRY,
             )
             try:
@@ -595,7 +613,8 @@ async def _unwind(broker: BrokerInterface, placed: List, quantity: float, strate
                 symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange,
                 transaction_type=OrderSide.SELL if leg.side == OrderSide.BUY else OrderSide.BUY,
                 quantity=filled if filled and filled > 0 else quantity * leg.ratio, order_type="MARKET", product="MIS",
-                tag=build_order_tag(strategy_id=strategy_id, leg=LEG_EXIT, algo_id=algo_id, max_length=max_tag, broker=broker.name),
+                tag=build_order_tag(strategy_id=strategy_id, leg=LEG_EXIT, algo_id=algo_id, max_length=max_tag, broker=broker.name,
+                                    client_id=new_client_order_id()),
             ))
             done += 1
         except Exception as exc:  # noqa: BLE001 - reported; reconciliation resolves the rest

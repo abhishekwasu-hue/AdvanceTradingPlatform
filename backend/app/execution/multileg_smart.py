@@ -30,7 +30,7 @@ from app.compliance.algo_id import order_algo_id
 from app.core.enums import ExecutionMode, OrderSide
 from app.core.models import RiskConfig
 from app.execution import smart_execution
-from app.execution.tagging import LEG_ENTRY, build_order_tag
+from app.execution.tagging import LEG_ENTRY, build_order_tag, new_client_order_id
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,8 @@ async def place_legs(broker: BrokerInterface, specs: Sequence[LegSpec], *, strat
         request = BrokerOrderRequest(
             symbol=spec.key, exchange=spec.exchange, transaction_type=OrderSide.BUY if spec.side == "BUY" else OrderSide.SELL,
             quantity=spec.quantity, order_type=order_type, price=limit, product="MIS",
-            tag=build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag, broker=broker.name) if live else None,
+            tag=build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag, broker=broker.name,
+                                client_id=new_client_order_id()) if live else None,
             intent=ORDER_INTENT_ENTRY,
         )
         try:

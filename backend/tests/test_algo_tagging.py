@@ -119,9 +119,11 @@ def test_live_execution_uses_tenant_algo_id_and_records_tag(monkeypatch):
     broker = _LiveBroker()
     result, order, trade, _ = _execute(user, broker)
     assert result.executed
-    assert order.algo_tag == "NSE9001-ema_rsi_-ENT"
+    from app.execution.tagging import client_order_id
+    # M55 S4: each order also carries its own client order id (derived from the order row) just before the leg.
+    assert order.algo_tag == f"NSE9001-e-{client_order_id('E', order.id)}-ENT"
     assert broker.placed[0].tag == order.algo_tag
-    assert broker.placed[1].tag == "NSE9001-ema_rsi_s-SL"
+    assert broker.placed[1].tag == f"NSE9001-em-{client_order_id('S', order.id)}-SL"
 
 
 def test_live_refused_without_algo_id_when_required(monkeypatch):
@@ -159,7 +161,8 @@ def test_exit_order_carries_algo_id():
     outcome = asyncio.run(go())
     assert outcome.closed
     exits = [o for o in broker.placed if o.order_type == "MARKET"]
-    assert exits and exits[-1].tag == "NSE55-ema_rsi_s-EXIT" and len(exits[-1].tag) <= 20
+    assert exits and exits[-1].tag.startswith("NSE55-em-") and exits[-1].tag.endswith("-EXIT") and len(exits[-1].tag) <= 20
+    assert len(exits[-1].tag.split("-")[2]) == 6                                # M55 S4: this exit attempt's client order id
     assert exits[-1].transaction_type == OrderSide.SELL
 
 

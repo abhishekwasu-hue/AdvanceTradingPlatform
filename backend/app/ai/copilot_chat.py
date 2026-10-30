@@ -228,24 +228,37 @@ def route(message: str) -> str:
     return "help"
 
 
+# CU1 (owner order CP-UX): SENSEX and BANKEX are indices too (BSE) - every job and the builder resolve them by name.
 _INDEX_WORDS = (("BANKNIFTY", r"\bbank ?nifty\b|\bnifty bank\b"), ("FINNIFTY", r"\bfin ?nifty\b"), ("MIDCPNIFTY", r"\bmidcp ?nifty\b"),
-                ("NIFTY", r"\bnifty\b"))
+                ("SENSEX", r"\b(?:bse )?sensex\b"), ("BANKEX", r"\b(?:bse )?bankex\b"), ("NIFTY", r"\bnifty\b"))
 _NOT_SYMBOLS = frozenset(grounding.ACRONYMS | {"I", "ME", "MY", "WHAT", "HOW", "WHY", "SHOW", "READ", "TEACH", "CHART", "ATP", "TODAY", "THE", "DOES",
-                                               "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "DEMAND", "SUPPLY", "ZONE", "GIVE",
+                                               "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "DEMAND", "SUPPLY", "ZONE", "GIVE",
                                                "CHECK", "IDEA", "TRADE", "LOT", "LOTS", "PLAN", "REVIEW", "WEEK", "LAST", "OPEN"})
 
 
-def symbol_in(message: str, default: str = DEFAULT_SYMBOL) -> str:
-    """The index the message names (NIFTY, BANKNIFTY, FINNIFTY), else an upper-case NSE symbol it writes, else `default`."""
+def named_symbol(message: str, exclude: frozenset[str] = frozenset()) -> str | None:
+    """The index the message names (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX, BANKEX), else an upper-case symbol
+    it writes (not a common word, nor one in `exclude`), else None."""
     q = _norm(message)
     for name, pattern in _INDEX_WORDS:
         if re.search(pattern, q):
             return name
-    for token in re.findall(r"\b(?:NSE:)?[A-Z][A-Z0-9&]{2,14}\b", message or ""):
+    for token in re.findall(r"\b(?:NSE:|BSE:)?[A-Z][A-Z0-9&]{2,14}\b", message or ""):
         bare = token.split(":")[-1]
-        if bare not in _NOT_SYMBOLS:
+        if bare not in _NOT_SYMBOLS and bare not in exclude:
             return bare
-    return default
+    return None
+
+
+def symbol_in(message: str, default: str = DEFAULT_SYMBOL) -> str:
+    """The symbol the message names (`named_symbol`), else `default`."""
+    return named_symbol(message) or default
+
+
+def exchange_of(symbol: str) -> str:
+    """Where the symbol's own price trades: BSE for SENSEX / BANKEX, else NSE."""
+    from app.instruments.master import INDEX_EXCHANGE
+    return INDEX_EXCHANGE.get((symbol or "").strip().upper(), "NSE")
 
 
 def timeframe_in(message: str) -> str:
@@ -336,6 +349,9 @@ class Answer:
     signal_v2: bool = False                                     # handover 11l: flag `signal_language_v2` (never served)
     # Owner order 23 Oct: the chat's own flags (CHAT_FLAGS) as the request read them; None = all on (the rule tests, the evals)
     flags: Optional[Dict[str, bool]] = None
+    # CU1: the symbols this answer read (from its tool calls and its draft), and whether the question named none (the default was read)
+    symbols: list[str] = field(default_factory=list)
+    symbol_default: bool = False
 
     def flag_on(self, name: str) -> bool:
         return self.flags is None or bool(self.flags.get(name))
@@ -354,7 +370,7 @@ class Answer:
                 "answer": "\n".join(self.summary), "sections": self.sections, "blocks": self.blocks, "unknowns": self.unknowns,
                 "worked": [s.as_dict() for s in self.worked], "action": self.action, "refused": self.refused, "starters": self.starters,
                 "concepts": self.concepts, "notes": self.notes, "disclaimer": DISCLAIMER, "source": "rules", "draft": self.draft,
-                "followup": self.followup,
+                "followup": self.followup, "symbols": self.symbols, "symbol_default": self.symbol_default,
                 "tool_calls": [s.tool for s in self.worked if not s.tool.startswith("calc:") and s.tool not in NOT_TOOLS],
                 "tools_used": tools_used(self.worked)}
 
@@ -1375,17 +1391,9 @@ BUILD_BLOCKS = ("Averages: EMA and SMA, on this chart or a higher one (crossing,
                 "The volume against its average.")
 
 
-def builder_symbol(message: str) -> Optional[str]:
-    """The symbol the idea names (an index, or an upper-case NSE symbol), else None: the trader picks it on the form."""
-    q = _norm(message)
-    for name, pattern in _INDEX_WORDS:
-        if re.search(pattern, q):
-            return name
-    for token in re.findall(r"\b(?:NSE:)?[A-Z][A-Z0-9&]{2,14}\b", message or ""):
-        bare = token.split(":")[-1]
-        if bare not in _NOT_SYMBOLS and bare not in _BUILDER_NOT_SYMBOLS:
-            return bare
-    return None
+def builder_symbol(message: str) -> str | None:
+    """The symbol the idea names (an index, or an upper-case symbol), else None: the trader picks it on the form."""
+    return named_symbol(message, _BUILDER_NOT_SYMBOLS)
 
 
 async def strategy_builder(answer: Answer, run: Runner, message: str) -> None:
@@ -1568,7 +1576,8 @@ async def _draft_test(answer: Answer, run: Runner, message: str, draft: Any) -> 
         answer.unknowns.append(sb.NO_BACKTEST)
         return
     res = await _call(answer, run, "backtest_draft", "Your draft on past data (ATP's backtest engine)",
-                      {"config": config.model_dump(mode="json"), "symbol": draft.symbol},
+                      {"config": config.model_dump(mode="json"), "symbol": draft.symbol,
+                       **({"exchange": exchange_of(draft.symbol)} if exchange_of(draft.symbol) != "NSE" else {})},
                       ("whole.trades", "whole.net_pnl", "whole.costs", "whole.max_drawdown", "min_trades_for_statistics"))
     if not res.ok or not isinstance(res.data, dict):
         answer.unknowns.append(f"I can't test it right now: {plain_reason(res.error, res.source)}. Save it and test it on the Backtesting page, or ask me "
@@ -1704,7 +1713,7 @@ async def _screen_alert(answer: Answer, run: Runner, message: str, alert: "re.Ma
         return
     prop = await _call(answer, run, "propose_alert", f"An alert on {symbol}, for you to approve",
                        {"reason": "The trader asked for an alert on this condition.", "quote": _quote(message, alert), "symbol": symbol,
-                        "condition": b.get("text"), "base_tf": "1d", "exchange": "NSE"})
+                        "condition": b.get("text"), "base_tf": "1d", "exchange": exchange_of(symbol)})
     if not prop.ok:
         answer.summary = [f"I could not propose the alert on {symbol}."]
         answer.unknowns.append(f"I don't know yet: {plain_reason(prop.error, prop.source)}.")
@@ -1790,6 +1799,43 @@ JOB_FNS = {"brief": brief, "chart": chart_reader, "option_chain": option_chain, 
            "positions": position_watch, "review": post_trade_coach, "strategy": strategy_builder, "screen": screen, "views": full_view}
 
 
+# CU1: the jobs that read `symbol_in(message)` - NIFTY when the question names no symbol (said, never silent).
+SYMBOL_JOBS = frozenset({"chart", "option_chain", "trade_check", "views", "teacher"})
+
+
+def symbols_read(answer: Answer) -> list[str]:
+    """The symbols the answer's tools were called with (and its draft's symbol), upper-case, in order, once each."""
+    found = [s.args.get("symbol") for s in answer.worked if isinstance(s.args, dict)]
+    found.append((answer.draft or {}).get("symbol"))
+    out: list[str] = []
+    for sym in found:
+        name = str(sym).strip().upper() if isinstance(sym, str) and sym.strip() else None
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def symbol_line(answer: Answer, text: str) -> str | None:
+    """CU1: the line that names the symbol(s) read, when `text` does not name them already (None when it does, or
+    nothing was read). With no symbol in the question, it says the default was read."""
+    if not answer.symbols:
+        return None
+    if answer.symbol_default:
+        return f"You did not name a symbol, so I read {', '.join(answer.symbols)}."
+    upper = (text or "").upper()
+    if all(re.search(rf"(?<![A-Z0-9&]){re.escape(s)}(?![A-Z0-9&])", upper) for s in answer.symbols):
+        return None
+    return f"{'Symbol' if len(answer.symbols) == 1 else 'Symbols'} read: {', '.join(answer.symbols)}."
+
+
+def _name_symbols(answer: Answer, message: str) -> None:
+    answer.symbols = symbols_read(answer)
+    answer.symbol_default = (answer.job in SYMBOL_JOBS and named_symbol(message) is None and answer.symbols == [DEFAULT_SYMBOL])
+    line = symbol_line(answer, "\n".join(answer.summary))
+    if line:
+        answer.summary.append(line)
+
+
 def _grounded_lines(answer: Answer, question: str) -> None:
     """Fail closed: drop any rule line with a number no tool, calculation, fixed label or the question gave."""
     allowed = grounding.allowed_from_text("\n".join([*answer.trusted_text, FIXED_TEXT, question or ""]))
@@ -1844,6 +1890,7 @@ async def answer(message: str, run: Runner, *, signal_v2: bool = False, flags: O
         not_set_up(out, job.title, gate)
         return out
     await JOB_FNS[job.id](out, run, message)
+    _name_symbols(out, message)
     _grounded_lines(out, message)
     _filtered(out)
     return out
@@ -1921,5 +1968,5 @@ async def narrate(provider: Any, out: Answer, question: str) -> Tuple[Optional[s
 
 
 __all__ = ["JOBS", "BY_ID", "BUILT", "DISCLAIMER", "PAPER_BOT_PATH", "builder_symbol", "strategy_builder", "CHART_NOTE", "TOP_LINE", "NO_KEY_TITLE", "NO_KEY_LINE", "KEY_SETTINGS", "REFUSALS",
-           "Answer", "Step", "route", "refusal_kind", "symbol_in", "timeframe_in", "lots_in", "answer", "market_line", "narrate",
+           "Answer", "Step", "route", "refusal_kind", "symbol_in", "named_symbol", "exchange_of", "symbols_read", "symbol_line", "timeframe_in", "lots_in", "answer", "market_line", "narrate",
            "plain_reason", "PROMPT_VERSION", "CHAT_PROMPT"]

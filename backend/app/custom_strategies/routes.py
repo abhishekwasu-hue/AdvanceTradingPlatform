@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_trader
 from app.auth.scopes import require_scope
+from app.core.rate_limit import analysis_rate_limit
 from app.custom_strategies import versioning
 from app.custom_strategies.resolver import CUSTOM_PREFIX
 from app.db.models import CustomStrategyRecord, StrategyVersionRecord, User
@@ -23,7 +24,7 @@ class ParseStrategyRequest(BaseModel):
     name: str = "Parsed Strategy"
 
 
-@router.post("/parse", response_model=ParseResult)
+@router.post("/parse", response_model=ParseResult, dependencies=[Depends(analysis_rate_limit)])    # M55 O2: signed in
 async def parse_strategy_text(request: ParseStrategyRequest) -> ParseResult:
     """Turns a plain-English strategy description into a pre-filled Strategy Builder config for
     the user to review and edit - a deterministic, rule-based parser (see

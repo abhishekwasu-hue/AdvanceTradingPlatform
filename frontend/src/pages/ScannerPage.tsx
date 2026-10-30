@@ -2,7 +2,7 @@ import { errorSentence, serverReason } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card, Disclaimer } from "../components/ui";
-import { DataSourceBar, useCandleSource } from "../components/DataSource";
+import { DataSourceBar, SampleChip, dataRequestFor, sourceWords, useCandleSource } from "../components/DataSource";
 import { ConditionListEditor } from "./StrategyBuilderPage";
 import {
   OPTION_FILTER_LABELS,
@@ -81,8 +81,8 @@ function readSwingText(): string {
   try { return window.localStorage.getItem(SWING_KEY) ?? ""; } catch { return ""; }
 }
 
-function buildSymbolInput(symbol: string, timeframe: string, candles: OHLCVBar[], chain: OptionChain | null): ScannerSymbolInput {
-  return { symbol, timeframe, candles, option_chain: chain };
+function buildSymbolInput(symbol: string, timeframe: string, candles: OHLCVBar[] | undefined, chain: OptionChain | null): ScannerSymbolInput {
+  return { symbol, timeframe, ...(candles ? { candles } : {}), option_chain: chain };
 }
 
 export default function ScannerPage() {
@@ -94,6 +94,7 @@ export default function ScannerPage() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ScannerResult | null>(null);
+  const [ranOnSample, setRanOnSample] = useState(false);          // M55 T3: the shown result was run on sample candles
   // Phase Y: describe the scan in plain language; read the matches with the AI.
   const [aiText, setAiText] = useState("");
   const [aiPlan, setAiPlan] = useState<ScanPlan | null>(null);
@@ -161,19 +162,27 @@ export default function ScannerPage() {
     setError(null);
     setResult(null);
     try {
-      const fetched = await source.fetch(symbols, timeframe, { count: 300, seedFor: hashSeed, startPriceFor: (s) => 100 + (hashSeed(s) % 900) });
-      const withCandles = symbols.filter((s) => fetched.candles[s]);
-      const chains = needsOptionChain ? await source.fetchChains(withCandles, (s) => sampleChainFor(s, fetched.candles[s])) : { chains: {} as Record<string, OptionChain>, warnings: [] as string[] };
-      setDataWarnings([...fetched.warnings, ...chains.warnings]);
-      const request = {
-        symbols: withCandles.map((s) => buildSymbolInput(s, timeframe, fetched.candles[s], needsOptionChain ? chains.chains[s] ?? null : null)),
-        indicator_conditions: indicatorConditions,
-        structure_filters: structureFilters,
-        option_filters: optionFilters,
+      const data = dataRequestFor(source);
+      let request: ScannerRequest;
+      let warnings: string[] = [];
+      const filters = { indicator_conditions: indicatorConditions, structure_filters: structureFilters, option_filters: optionFilters,
         // Sent only when the trader set one; without structure filters the server does not read it.
-        ...(swingWindow !== null ? { swing_window: swingWindow } : {}),
-      };
+        ...(swingWindow !== null ? { swing_window: swingWindow } : {}) };
+      if (data.data_mode === "server") {
+        // M55 T3: the server loads every symbol's candles itself and says where they came from.
+        const chains = needsOptionChain ? await source.fetchChains(symbols, () => { throw new Error("no sample chain"); }) : { chains: {} as Record<string, OptionChain>, warnings: [] as string[] };
+        warnings = chains.warnings;
+        request = { symbols: symbols.map((s) => buildSymbolInput(s, timeframe, undefined, needsOptionChain ? chains.chains[s] ?? null : null)), ...filters, ...data };
+      } else {
+        const fetched = await source.fetch(symbols, timeframe, { count: 300, seedFor: hashSeed, startPriceFor: (s) => 100 + (hashSeed(s) % 900) });
+        const withCandles = symbols.filter((s) => fetched.candles[s]);
+        const chains = needsOptionChain ? await source.fetchChains(withCandles, (s) => sampleChainFor(s, fetched.candles[s])) : { chains: {} as Record<string, OptionChain>, warnings: [] as string[] };
+        warnings = [...fetched.warnings, ...chains.warnings];
+        request = { symbols: withCandles.map((s) => buildSymbolInput(s, timeframe, fetched.candles[s], needsOptionChain ? chains.chains[s] ?? null : null)), ...filters, ...data };
+      }
       const res = await api.runScanner(request);
+      setDataWarnings([...warnings, ...(res.warnings ?? [])]);
+      setRanOnSample(data.data_mode === "paste");
       setLastRequest(request);
       setAiRead(null);
       setResult(res);
@@ -372,6 +381,7 @@ export default function ScannerPage() {
 
       {result && (
         <Card title={`Results - ${result.matched_count} of ${result.scanned_count} matched`}>
+          {ranOnSample ? <SampleChip className="mb-2" /> : result.data_source && <p className="mb-2 text-xs text-fg-muted" data-testid="scan-source">Prices: {sourceWords(result.data_source)}</p>}
           {result.matches.length > 0 && (
             <div className="mb-2 flex items-center gap-3">
               <button onClick={readWithAi} disabled={aiBusy || !lastRequest} className="rounded border border-border hover:bg-surface-2 px-3 py-1 text-xs text-fg disabled:opacity-50">

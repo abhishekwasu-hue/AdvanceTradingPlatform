@@ -38,6 +38,8 @@ export interface SignalFeedItem {
   action_id: number | null;
   /** Why it ended the way it did (the server's own words), when it did. */
   outcome: string | null;
+  /** M55 T2: an option / structure proposal's legs in order words (his own order), e.g. "Sell 1 lot NIFTY 24500 PE, ...". */
+  legs?: string[];
 }
 
 export interface SignalFeed {

@@ -76,7 +76,7 @@ def config_hash(**parts: Any) -> str:
 
 
 def result_hash(result: Any) -> str:
-    skip = {"run_id", "reproducibility"} | ({"execution"} if getattr(result, "execution", None) is None else set())
+    skip = {"run_id", "reproducibility", "data_source"} | ({"execution"} if getattr(result, "execution", None) is None else set())
     if getattr(result, "loss_streak", None) is None:
         skip.add("loss_streak")     # CP6-15: a run whose pause never engaged hashes as before
     skip.add("history")             # REV-S3: words about the history the run had (the data hash already covers its bars)

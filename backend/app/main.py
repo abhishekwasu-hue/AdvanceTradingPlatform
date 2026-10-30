@@ -6,7 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Union
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,12 +31,13 @@ from app.alerts.platform_bot_routes import router as telegram_connect_router
 from app.alerts.routes import router as alerts_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.alerts.webhook_routes import router as alert_webhooks_router
-from app.auth.dependencies import get_current_user, get_current_user_optional
+from app.auth.dependencies import get_current_user, get_current_user_optional, require_trader
 from app.auth.google_routes import router as google_auth_router
 from app.auth.routes import router as auth_router
 from app.auth.view_as_middleware import ViewSessionReadOnly
 from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, with_template_exits
 from app.backtest.routes import router as backtest_router
+from app.backtest.server_candles import DataChoice
 from app.beta.routes import admin_router as beta_admin_router
 from app.beta.routes import feedback_router, pwa_router
 from app.billing.routes import admin_router as billing_admin_router
@@ -81,7 +82,7 @@ from app.core.models import (
     StrategyInfo,
     bars_to_dataframe,
 )
-from app.core.rate_limit import user_rate_limit
+from app.core.rate_limit import analysis_rate_limit
 from app.core.route_cache import install as install_route_cache
 from app.core.validation_errors import request_validation_handler
 from app.custom_strategies.resolver import custom_strategy_info, resolve_strategy
@@ -260,9 +261,22 @@ app.add_exception_handler(RequestValidationError, request_validation_handler)
 # any origin for zero-config local dev; set ALLOWED_ORIGINS (comma-separated) to your real
 # frontend domain(s) in production - validate_production_config() refuses to boot with the "*"
 # default when ENVIRONMENT=production.
+_BODY_TOO_LARGE = f"Request body larger than {MAX_REQUEST_BODY_BYTES} bytes"
+
+
+class _BodyTooLarge(HTTPException):
+    """Raised from inside `receive` once a streamed body passes the limit. An HTTPException, so FastAPI's body parsing
+    passes it on as it is (any other error there becomes a 400) and the app's handler answers 413."""
+
+    def __init__(self) -> None:
+        super().__init__(status_code=413, detail=_BODY_TOO_LARGE)
+
+
 class _LimitRequestBody:
-    """P0.1 / S3: refuse oversized bodies from the declared length before anything parses them. A chunked
-    upload without a Content-Length is capped by the edge (deploy/Caddyfile `request_body max_size`).
+    """P0.1 / S3: refuse oversized bodies before anything parses them. A declared Content-Length over the limit is
+    refused at once (the fast path); M55 O1: a body without one (chunked) is counted as it is received, and the read
+    that passes the limit ends the request with 413 - the edge's own cap (deploy/Caddyfile `request_body max_size`)
+    is no longer the only one.
     Registered before CORS/observability so those wrap it: the 413 carries CORS headers and a request id.
     LD-7: a pure ASGI middleware - the `@app.middleware("http")` form ran every request through Starlette's
     BaseHTTPMiddleware (an extra task and a memory stream per request) for one header check."""
@@ -271,16 +285,43 @@ class _LimitRequestBody:
         self.app = app
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        if scope["type"] == "http":
-            for name, value in scope.get("headers") or ():
-                if name == b"content-length":
-                    declared = value.decode("latin-1")
-                    if declared.isdigit() and int(declared) > MAX_REQUEST_BODY_BYTES:
-                        response = JSONResponse(status_code=413, content={"detail": f"Request body larger than {MAX_REQUEST_BODY_BYTES} bytes"})
-                        await response(scope, receive, send)
-                        return
-                    break
-        await self.app(scope, receive, send)
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        for name, value in scope.get("headers") or ():
+            if name == b"content-length":
+                declared = value.decode("latin-1")
+                if declared.isdigit() and int(declared) > MAX_REQUEST_BODY_BYTES:
+                    await JSONResponse(status_code=413, content={"detail": _BODY_TOO_LARGE})(scope, receive, send)
+                    return
+                break
+
+        received = 0
+        started = False
+
+        async def counted_receive() -> Any:
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body") or b"")
+                if received > MAX_REQUEST_BODY_BYTES:
+                    raise _BodyTooLarge()
+            return message
+
+        async def tracked_send(message: Any) -> None:
+            nonlocal started
+            if message.get("type") == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, counted_receive, tracked_send)
+        except _BodyTooLarge:
+            # Read outside FastAPI's body parsing (a route reading the stream itself): answer here unless the
+            # response has already begun.
+            if started:
+                raise
+            await JSONResponse(status_code=413, content={"detail": _BODY_TOO_LARGE})(scope, receive, send)
 
 
 app.add_middleware(_LimitRequestBody)
@@ -518,14 +559,16 @@ class EnrichSignalRequest(SignalRequest):
     swing_window: int = 3
 
 
-class BacktestRequest(BaseModel):
+class BacktestRequest(DataChoice):
     strategy_id: str
     symbol: str
     base_timeframe: str
-    candles: List[OHLCVBar]
+    # M55 T3: no candles = the server loads them for symbol / timeframe; posted candles = "paste your own data".
+    candles: list[OHLCVBar] = Field(default_factory=list)
     risk_config: Optional[RiskConfig] = None
     strategy_params: Optional[Dict] = None
-    # Phase J: dynamic exits and a label for where the candles came from (recorded on the run).
+    # Phase J: dynamic exits and a label for where the candles came from (recorded on the run). M55 T3: the server sets
+    # the label from what it loaded ("uploaded" for pasted candles); what the client sends here is ignored.
     exit_rules: Optional[ExitRulesBody] = None
     data_source: str = "uploaded"
     # Phase W: present = run the signals as option structures (app/backtest/options_engine.py).
@@ -549,7 +592,8 @@ class CandlesRequest(BaseModel):
     swing_window: int = 3
 
 
-class SRZonesRequest(CandlesRequest):
+class SRZonesRequest(CandlesRequest, DataChoice):
+    candles: list[OHLCVBar] = Field(default_factory=list)      # M55 T3: no candles = the server loads them
     tolerance_pct: float = 0.15
     opening_range_minutes: int = 15
 
@@ -587,10 +631,21 @@ async def get_strategy(
     return strategy.info()
 
 
-@app.post("/api/strategies/{strategy_id}/signal", response_model=Signal)
+def _candle_frames(candles: dict[str, list[OHLCVBar]], need: str | None = None) -> dict[str, Any]:
+    """The request's candles as frames. M55 O2 (found by the tenancy sweep once these routes were signed in): an empty
+    list, or a missing timeframe the route reads directly, is a 422 the caller can act on - it used to be a 500."""
+    empty = sorted(tf for tf, bars in candles.items() if not bars)
+    if empty:
+        raise HTTPException(status_code=422, detail=f"No candles for {', '.join(empty)}")
+    if need is not None and need not in candles:
+        raise HTTPException(status_code=422, detail=f"Candles for {need} are needed")
+    return {tf: bars_to_dataframe(bars) for tf, bars in candles.items()}
+
+
+@app.post("/api/strategies/{strategy_id}/signal", response_model=Signal, dependencies=[Depends(analysis_rate_limit)])
 async def generate_signal(
     strategy_id: str, request: SignalRequest,
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User = Depends(get_current_user),          # M55 O2: signed in, within the analysis limit
     session: AsyncSession = Depends(get_session),
 ) -> Signal:
     try:
@@ -600,14 +655,14 @@ async def generate_signal(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    data = {tf: bars_to_dataframe(bars) for tf, bars in request.candles.items()}
+    data = _candle_frames(request.candles)
     return strategy.analyze(data, request.symbol)
 
 
-@app.post("/api/strategies/{strategy_id}/signal/enrich", response_model=EnrichedSignal)
+@app.post("/api/strategies/{strategy_id}/signal/enrich", response_model=EnrichedSignal, dependencies=[Depends(analysis_rate_limit)])
 async def generate_and_enrich_signal(
     strategy_id: str, request: EnrichSignalRequest,
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User = Depends(get_current_user),          # M55 O2: signed in, within the analysis limit
     session: AsyncSession = Depends(get_session),
 ) -> EnrichedSignal:
     """Generates a signal the same way /signal does, then cross-checks it against market
@@ -622,7 +677,7 @@ async def generate_and_enrich_signal(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    data = {tf: bars_to_dataframe(bars) for tf, bars in request.candles.items()}
+    data = _candle_frames(request.candles, need=strategy.timeframes[0])
     signal = strategy.analyze(data, request.symbol)
 
     primary_tf = strategy.timeframes[0]
@@ -635,14 +690,14 @@ async def generate_and_enrich_signal(
     return enriched
 
 
-@app.post("/api/strategies/{strategy_id}/paper-execute", response_model=PaperExecuteResponse)
+@app.post("/api/strategies/{strategy_id}/paper-execute", response_model=PaperExecuteResponse, dependencies=[Depends(analysis_rate_limit)])
 async def paper_execute(
     strategy_id: str, request: PaperExecuteRequest,
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User = Depends(require_trader),            # M55 O2: a signed-in trader (the console order path), within the analysis limit
     session: AsyncSession = Depends(get_session),
 ) -> PaperExecuteResponse:
-    """Works anonymously (no persistence, matching the console's try-it-without-an-account
-    flow) or, with a valid Authorization header, persists the fill to this user's trade history
+    """M55 O2: signed in only (the anonymous demo branch below stays, unreached). With a valid
+    Authorization header the call persists the fill to this user's trade history
     - see GET /api/trades and /api/positions. When the request doesn't explicitly pass a
     risk_config, a logged-in user's own saved risk settings apply (see GET/PUT
     /api/risk-settings) instead of the platform default.
@@ -660,7 +715,7 @@ async def paper_execute(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    data = {tf: bars_to_dataframe(bars) for tf, bars in request.candles.items()}
+    data = _candle_frames(request.candles)
     signal = strategy.analyze(data, request.symbol)
 
     if user is not None and request.idempotency_key:
@@ -727,8 +782,7 @@ async def paper_execute(
     return PaperExecuteResponse(signal=signal, executed=result.executed, reasons=result.reasons)
 
 
-# P0.2 / S1: one account cannot monopolise the analysis threadpool (per-user, shared across replicas via Redis).
-analysis_rate_limit = user_rate_limit("analysis", limit=60, window_seconds=60)
+# P0.2 / S1: `analysis_rate_limit` (app/core/rate_limit.py) - one account cannot monopolise the analysis threadpool.
 
 
 @app.post("/api/backtest", response_model=BacktestResult, dependencies=[Depends(analysis_rate_limit)])
@@ -747,6 +801,8 @@ async def backtest(
     if request.strategy_params:
         strategy.params = {**strategy.params, **request.strategy_params}
 
+    from app.backtest import server_candles
+    await server_candles.fill(session, user, request)                  # M55 T3: server-side candles; sets data_source
     base_df = bars_to_dataframe(request.candles)
     risk_config = request.risk_config or _default_risk_config
 
@@ -760,6 +816,7 @@ async def backtest(
     prepared = await run_in_threadpool(warmup.prepare, strategy, base_df, history)
     result = await run_in_threadpool(runner.run, prepared.strategy, prepared.frame)   # CPU-bound pandas work off the event loop (P0.1 / S3)
     result.history = prepared.history()
+    result.data_source = request.data_source
     # Phase J2: the run is recorded (strategy, params, data span, metrics) and metered against the plan.
     result.run_id = await record_run(session, user, body, result)
     await meter(session, user.tenant_id, "backtest", 1, source="api", metadata={"strategy_id": request.strategy_id, "bars": len(request.candles)})
@@ -829,12 +886,24 @@ def _cache_key(prefix: str, payload: str) -> str:
 
 
 @app.post("/api/support-resistance/zones", response_model=List[SRZone])
-async def support_resistance_zones(request: SRZonesRequest, _: User = Depends(get_current_user)) -> List[SRZone]:
+async def support_resistance_zones(request: SRZonesRequest, response: Response, user: User = Depends(get_current_user),
+                                   session: AsyncSession = Depends(get_session)) -> List[SRZone]:
     """Pure function of its input candles, so short-lived results are cached in Redis (when
     reachable - this fails open to a plain recompute otherwise) to avoid rebuilding the same
     swing-cluster/pivot/Fibonacci zones on every identical repeated call.
+    M55 T3: no candles = the server loads them for symbol / timeframe; the `X-Data-Source` header says where they came
+    from ("uploaded" for pasted candles).
     """
-    key = _cache_key("sr_zones", request.model_dump_json())
+    from app.backtest import server_candles
+    if server_candles.mode_of(request, request.candles) == server_candles.PASTE:
+        if not request.candles:
+            raise HTTPException(status_code=422, detail=server_candles.PASTE_NEEDS_CANDLES)
+        source = server_candles.UPLOADED
+    else:
+        request.candles, source, _line = await server_candles.load(session, user, request.symbol, request.timeframe, request)
+    response.headers["X-Data-Source"] = source
+    key = _cache_key("sr_zones", request.model_dump_json(include={"symbol", "candles", "timeframe", "swing_window", "tolerance_pct",
+                                                                   "opening_range_minutes"}))
     cached = await cache_get(key)
     if cached is not None:
         return [SRZone.model_validate(z) for z in json.loads(cached)]
@@ -892,18 +961,24 @@ async def option_chain_greeks(request: GreeksRequest, _: User = Depends(get_curr
 
 
 @app.post("/api/scanner/run", response_model=ScannerResult, dependencies=[Depends(analysis_rate_limit)])
-async def scanner_run(request: ScannerRequest, _: User = Depends(get_current_user)) -> ScannerResult:
+async def scanner_run(request: ScannerRequest, user: User = Depends(get_current_user),
+                      session: AsyncSession = Depends(get_session)) -> ScannerResult:
     """Runs configurable indicator/price-action-structure/option-chain filters across a supplied
     list of symbols (each with its own OHLCV candles and, optionally, option chain) and returns
     only the ones that clear every filter. Indicator filters reuse the exact same `Condition`
     building block the no-code Strategy Builder uses. Pure function of its input - no persistence,
     needs a logged-in caller (P0.1 / S3: CPU-bound work is not offered to anonymous callers).
     """
+    from app.backtest import server_candles
     from app.core import config as app_config
+    source, warnings = await server_candles.fill_scan(session, user, request)     # M55 T3: server-side candles
     if app_config.SCANNER_ENGINE == "screenql":
         from app.scanner.screenql import run_scanner_screenql
-        return await run_in_threadpool(run_scanner_screenql, request)
-    return await run_in_threadpool(run_scanner, request)
+        result = await run_in_threadpool(run_scanner_screenql, request)
+    else:
+        result = await run_in_threadpool(run_scanner, request)
+    result.data_source, result.warnings = source, warnings
+    return result
 
 
 @app.get("/api/broker/available")

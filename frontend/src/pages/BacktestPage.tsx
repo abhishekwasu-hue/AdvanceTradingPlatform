@@ -5,7 +5,7 @@ import ProChart, { directionMarker, type ChartMarker } from "../components/ProCh
 import BacktestChartV2 from "../chart/BacktestChartV2";
 import EquityCurveChart from "../components/EquityCurveChart";
 import { Card, StatTile, Disclaimer, signClass, signTone } from "../components/ui";
-import { DataSourceBar, useCandleSource } from "../components/DataSource";
+import { DataSourceBar, SampleChip, sourceWords, useCandleSource } from "../components/DataSource";
 import {
   type BacktestResult, type BacktestRunSummary, type ExitRules, type MonteCarloResult, type OHLCVBar, type OptimizeResult, type StrategyInfo, type WalkForwardResult,
   type CustomLeg, type ExpiryRule, type OptionBacktestConfig, type OptionChainCoverage, type OptionChainSnapshotRow, type OptionPosition, type OptionPricingModel,
@@ -66,6 +66,7 @@ export default function BacktestPage() {
   const source = useCandleSource(30, { storedHistory: true });   // Phase AA; owner order 23 Oct: stored Daily history without a broker
   const uiV2 = useUiV2();
   const [pricesFrom, setPricesFrom] = useState<string | null>(null);
+  const [ranOnSample, setRanOnSample] = useState(false);          // M55 T3: the shown result was run on sample candles
   // Day-one fix 1 (ui_v2 + strategy_templates): a strategy template - the idea's own strategy - is tested as it is, with
   // the idea's settings when the address carries them (`?template=A5&timeframe=15m&set.<key>=...`). Nothing starts.
   const features = useFeatures();
@@ -256,8 +257,10 @@ export default function BacktestPage() {
       setDataWarnings(fetched.warnings);
       const candles = fetched.candles[symbol.trim().toUpperCase()];
       if (!candles?.length) throw new Error(`No candles for ${symbol}`);
-      const res = await api.backtest(target.id, symbol, primaryTf, candles, exitRules(), fetched.label, optionConfig());
+      // M55 T3: server mode posts no candles (the server loads the same symbol / timeframe and records the source).
+      const res = await api.backtest(target.id, symbol, primaryTf, candles, exitRules(), fetched.label, optionConfig(), fetched.request);
       setResult(res);
+      setRanOnSample(fetched.label === "sample");
       setRanWith(target);
       setPricesFrom(fetched.line);
       setChartCandles(candles);
@@ -573,6 +576,12 @@ export default function BacktestPage() {
 
       {result && (
         <>
+          {ranOnSample && (
+            <p data-testid="result-sample" className="flex items-center gap-2 text-sm text-fg-muted"><SampleChip />Results on practice prices, not real market prices.</p>
+          )}
+          {!ranOnSample && result.data_source === "uploaded" && (
+            <p data-testid="result-own-data" className="flex items-center gap-2 text-sm text-fg-muted"><Database size={16} aria-hidden className="shrink-0" />Your own data</p>
+          )}
           {uiV2 && pricesFrom && (
             <p data-testid="prices-from" className="flex items-center gap-2 text-sm text-fg-muted">
               <Database size={16} aria-hidden className="shrink-0" />{pricesFrom}
@@ -600,6 +609,7 @@ export default function BacktestPage() {
           )}
 
           <Card title="Price Chart — strategy indicators, trade entries &amp; exits">
+            {ranOnSample && <SampleChip className="mb-2" />}
             {/* Chart review PR 3 (CC-5): under ui_v2 the trades show on the v2 chart; ProChart stays without it. */}
             {uiV2
               ? <BacktestChartV2 candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />
@@ -607,6 +617,7 @@ export default function BacktestPage() {
           </Card>
 
           <Card title="Equity Curve">
+            {ranOnSample && <SampleChip className="mb-2" />}
             <EquityCurveChart equity={result.equity_curve} />
           </Card>
 
@@ -823,7 +834,7 @@ export default function BacktestPage() {
                     <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{r.created_at ? formatDateTimeIST(r.created_at) : "-"}</td>
                     <td className="py-1 pr-3 text-fg">{strategyDisplayName(r.strategy_id, strategyNames)}</td>
                     <td className="py-1 pr-3">{r.symbol} · {r.base_timeframe}</td>
-                    <td className="py-1 pr-3 text-fg-muted">{r.data_source} · {r.bars} bars · engine v{r.engine_version}</td>
+                    <td className="py-1 pr-3 text-fg-muted">{sourceWords(r.data_source)} · {r.bars} bars · engine v{r.engine_version}</td>
                     <td className="py-1 pr-3 text-fg-muted">{r.exit_rules ? exitRuleWords(r.exit_rules as Record<string, unknown>) : "-"}</td>
                     <td className="py-1 pr-3">{r.total_trades ?? "-"}</td>
                     <td className={`py-1 pr-3 ${signClass(r.net_pnl, 0)}`}>{r.net_pnl?.toFixed(0) ?? "-"}</td>

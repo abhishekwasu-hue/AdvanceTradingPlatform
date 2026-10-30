@@ -13,7 +13,8 @@ class Plan:
     id: str
     name: str
     max_active_deployments: int      # ACTIVE + PAUSED (STOPPED ones don't count)
-    live_trading: bool               # may create/resume LIVE deployments and the worker will fire them
+    live_trading: bool               # may create/resume LIVE deployments and the worker will fire them; M55 S1 (owner
+                                     # order): no plan grants it - LIVE is switched on only by the owner
     max_custom_strategies: int
     max_members: int                 # active users + open invites
     max_alert_channels: int
@@ -68,9 +69,9 @@ PLANS: Dict[str, Plan] = {
         report_schedules=1, min_schedule_interval_min=60, lab_strategies=3, lab_cpu_seconds_per_day=300,
     ),
     "pro": Plan(
-        id="pro", name="Pro", max_active_deployments=10, live_trading=True, max_custom_strategies=25,
+        id="pro", name="Pro", max_active_deployments=10, live_trading=False, max_custom_strategies=25,
         max_members=5, max_alert_channels=5,
-        description="Live trading for a small desk: up to 10 concurrent deployments and 5 team members.",
+        description="For a small desk: up to 10 concurrent deployments and 5 team members.",
         price_monthly=2999.0, price_yearly=29990.0, max_live_strategies=5, max_backtests_per_month=500,
         max_api_calls_per_day=5000, max_accounts=3, max_brokers=2, option_features=True, ai_features=True,
         marketplace_access=True, support_level="email", trial_days=14, ai_monthly_budget_inr=_budget("AI_BUDGET_INR_PRO", 1500.0),
@@ -78,7 +79,7 @@ PLANS: Dict[str, Plan] = {
         report_schedules=10, min_schedule_interval_min=15, lab_strategies=50, lab_cpu_seconds_per_day=3600,
     ),
     "business": Plan(
-        id="business", name="Business", max_active_deployments=50, live_trading=True, max_custom_strategies=200,
+        id="business", name="Business", max_active_deployments=50, live_trading=False, max_custom_strategies=200,
         max_members=25, max_alert_channels=5,
         description="For prop desks and advisories: 50 concurrent deployments, 25 members, priority support.",
         price_monthly=14999.0, price_yearly=149990.0, max_live_strategies=50, max_backtests_per_month=5000,

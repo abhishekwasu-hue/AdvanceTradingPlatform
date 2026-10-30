@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
-import { reasonSentence } from "../api/errors";
+import { serverReasonOr } from "../api/errors";
 import type { CandleVolumeSource, CandlesResponse, OHLCVBar } from "../types";
 import { mergeBars, istDate } from "../components/chartHistory";
 import { liveTicks } from "../live/liveTicks";
@@ -79,7 +79,7 @@ export class SymbolReadError extends Error {
 export function candleErrorText(error: unknown, symbol: string): string {
   // REV-1 M2: a 409 carries the server's reason (with byob on, a plan limit is a 409 too) - shown when readable.
   if (error instanceof ApiError && error.status === 409) {
-    return reasonSentence(error.detail, "Your broker session has ended. Log in to your broker again, then reload this page.");
+    return serverReasonOr(error.detail, "Your broker session has ended. Log in to your broker again, then reload this page.");
   }
   if (error instanceof ApiError && (error.status === 401 || error.status === 412)) {
     return "Your broker session has ended. Log in to your broker again, then reload this page.";
@@ -91,7 +91,7 @@ export function candleErrorText(error: unknown, symbol: string): string {
   // REV-1 M2: the server's own reason for this symbol (a broker failure, an end-of-day-only plan, a lapsed session) -
   // never "check the symbol" for a valid symbol the broker failed on.
   if (error instanceof SymbolReadError) {
-    return reasonSentence(error.reason, `No prices for ${symbol} from your broker. Check the symbol, or pick another one.`);
+    return serverReasonOr(error.reason, `No prices for ${symbol} from your broker. Check the symbol, or pick another one.`);
   }
   if (error instanceof Error && error.message === "no bars") return `No prices for ${symbol} from your broker. Check the symbol, or pick another one.`;
   return "Prices could not be loaded from your broker. Check your connection, then try again.";

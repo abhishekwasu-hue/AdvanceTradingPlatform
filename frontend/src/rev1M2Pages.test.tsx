@@ -5,7 +5,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
-import { ApiError, COMING_SOON_MESSAGE, SOMETHING_FAILED_MESSAGE, errorSentence, reasonSentence, serverReason } from "./api/errors";
+import { ApiError, COMING_SOON_MESSAGE, SOMETHING_FAILED_MESSAGE, errorSentence, serverReason, serverReasonOr } from "./api/errors";
 import { CandleFeed, SymbolReadError, candleErrorText, type FeedEvents } from "./chart/useChartCandles";
 import type { CandlesResponse } from "./types";
 import { problemText, staleText } from "./optionChain/model";
@@ -38,7 +38,7 @@ describe("the shared reason helper (api/errors.ts)", () => {
       expect(serverReason(raw), String(raw)).toBe("");
     }
     expect(serverReason("The 'byob' feature is currently disabled by the platform operator")).toBe(COMING_SOON_MESSAGE);
-    expect(reasonSentence("RuntimeError: boom", "Plain fallback.")).toBe("Plain fallback.");
+    expect(serverReasonOr("RuntimeError: boom", "Plain fallback.")).toBe("Plain fallback.");
   });
 
   it("errorSentence never shows a raw exception line, even inside other words", () => {

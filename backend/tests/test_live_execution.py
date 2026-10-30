@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import List, Optional
 
+import pytest
 from sqlalchemy import select
 
 from app.brokers.base import BrokerInterface
@@ -16,6 +17,8 @@ from app.execution.signal_execution import execute_signal_for_user
 from app.risk_engine.risk_manager import TradingDayState
 from tests.def0_legacy import legacy
 from tests.test_auth_api import _register, _session_factory, client
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 
 def _signal(direction=SignalDirection.LONG) -> Signal:

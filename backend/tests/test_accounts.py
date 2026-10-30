@@ -3,6 +3,7 @@ default routing, deployment validation and the worker's per-account adapters."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import select
 
 from app.brokers.models import BrokerPosition, BrokerProfile, MarginInfo
@@ -11,6 +12,8 @@ from tests.broker_fakes import UPSTOX_KEY, UPSTOX_KEY_2, UPSTOX_SECRET, UPSTOX_S
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _create, _me, _store_broker
 from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 
 def _run(coro):
@@ -98,7 +101,7 @@ def test_live_deployment_routes_to_an_account_and_refuses_a_disabled_one():
 
     # The second account's token is UNKNOWN -> LIVE refused with the usual message.
     resp = _create(headers, mode="LIVE", broker_name="upstox", broker_account_id=second["id"])
-    assert resp.status_code == 409 and "log in" in resp.json()["detail"].lower()
+    assert resp.status_code == 409 and resp.json()["detail"]["code"] == "broker_login_needed" and "log in" in resp.json()["detail"]["message"].lower()
     _mark_valid(me["tenant_id"], "second")
     resp = _create(headers, mode="LIVE", broker_name="upstox", broker_account_id=second["id"])
     assert resp.status_code == 201, resp.text
@@ -106,7 +109,7 @@ def test_live_deployment_routes_to_an_account_and_refuses_a_disabled_one():
 
     client.post(f"/api/accounts/{second['id']}/disable", headers=headers)
     resp = _create(headers, mode="LIVE", broker_name="upstox", broker_account_id=second["id"], symbol="TCS")
-    assert resp.status_code == 409 and "DISABLED" in resp.json()["detail"]
+    assert resp.status_code == 409 and resp.json()["detail"]["code"] == "broker_account_off" and "disabled" in resp.json()["detail"]["message"]
     assert _create(headers, mode="LIVE", broker_name="upstox", broker_account_id=999999, symbol="TCS").status_code == 404
     assert _create(headers, mode="LIVE", broker_name="zerodha", broker_account_id=second["id"], symbol="TCS").status_code == 400
 

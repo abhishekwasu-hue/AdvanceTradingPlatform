@@ -1,6 +1,7 @@
 import type { PaperReportCard } from "../paperbot/reportCard";
 import type { OiAlertLogResponse, OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
+  DataRequest,
   MultiViewAnalysis,
   StrategistResult,
   StrategistRequestParsed,
@@ -403,6 +404,12 @@ export function evidenceBody(candles: OHLCVBar[], dataSource: string, lookbackDa
   return { candles, data_source: dataSource };
 }
 
+/** M55 T3: the candle part of a backtest / S&R body - none in server mode (the server loads them), else pasted candles. */
+export function candleFields(candles: OHLCVBar[], data?: DataRequest): Record<string, unknown> {
+  if (data?.data_mode === "server") return { data_mode: "server", lookback_days: data.lookback_days, ...(data.broker ? { broker: data.broker } : {}) };
+  return data?.data_mode === "paste" ? { data_mode: "paste", candles } : { candles };
+}
+
 export const api = {
   downloadExport,
 
@@ -436,11 +443,15 @@ export const api = {
       { method: "POST", body: JSON.stringify({ symbol, candles }) },
     ),
 
-  // Phase W: `options` present = the signals are traded as option structures.
-  backtest: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, dataSource = "sample", options?: OptionBacktestConfig | null) =>
+  // Phase W: `options` present = the signals are traded as option structures. M55 T3: `data` in server mode posts no
+  // candles - the server loads them for symbol / timeframe and records where they came from; posted candles are pasted
+  // data (recorded as "uploaded" whatever `dataSource` says).
+  backtest: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, dataSource = "sample", options?: OptionBacktestConfig | null,
+             data?: DataRequest) =>
     request<BacktestResult>("/backtest", {
       method: "POST",
-      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null, data_source: dataSource, options: options ?? null }),
+      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, ...candleFields(candles, data), exit_rules: exitRules ?? null,
+                             data_source: dataSource, options: options ?? null }),
     }),
   backtestMonteCarlo: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, runs = 1000, options?: OptionBacktestConfig | null) =>
     request<{ monte_carlo: MonteCarloResult }>(`/backtest/monte-carlo?runs=${runs}`, {
@@ -469,10 +480,10 @@ export const api = {
       body: JSON.stringify({ symbol, candles }),
     }),
 
-  supportResistanceZones: (symbol: string, candles: OHLCVBar[]) =>
+  supportResistanceZones: (symbol: string, candles: OHLCVBar[], data?: DataRequest, timeframe?: string) =>
     request<SRZone[]>("/support-resistance/zones", {
       method: "POST",
-      body: JSON.stringify({ symbol, candles }),
+      body: JSON.stringify({ symbol, ...candleFields(candles, data), ...(timeframe ? { timeframe } : {}) }),
     }),
 
   // OI Banner (O3): read-only banner, history, per-strike OI; settings are saved by the organisation owner.
@@ -920,8 +931,9 @@ export const api = {
   myFeatures: () => request<TenantFeatures>("/system/features",
     typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? { signal: AbortSignal.timeout(FEATURES_TIMEOUT_MS) } : undefined),
   adminFlags: () => request<FeatureFlags>("/admin/controls/flags"),
-  adminSetFlag: (name: string, on: boolean, tenants: number[] = []) =>
-    request<FeatureFlags>(`/admin/controls/flags/${name}`, { method: "PUT", body: JSON.stringify({ on, tenants }) }),
+  // M55 S1: `confirm` is the owner's typed confirmation for switching LIVE on (left out when not given).
+  adminSetFlag: (name: string, on: boolean, tenants: number[] = [], confirm?: string) =>
+    request<FeatureFlags>(`/admin/controls/flags/${name}`, { method: "PUT", body: JSON.stringify({ on, tenants, confirm }) }),
   adminEncryptionStatus: () => request<EncryptionStatus>("/system/encryption"),
   disableMemberTrading: (memberId: number, reason: string) =>
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-disable`, { method: "POST", body: JSON.stringify({ reason }) }),

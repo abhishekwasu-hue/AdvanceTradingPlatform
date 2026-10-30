@@ -117,6 +117,19 @@ def _owner_user() -> User:
     return User(id=None, tenant_id=1, email="owner@example.com", hashed_password="x", role="SUPER_ADMIN")
 
 
+@pytest.fixture
+def owner_checks_passed(monkeypatch):
+    """M55 S1: these tests act as the owner who passed the owner-only LIVE checks (owner identity, two-factor, typed
+    confirmation - tested in tests/test_m55_s1_owner_live.py); the checks are still called on every change."""
+    from app.platform import live_owner
+    calls: List[str] = []
+
+    async def passed(session, user, name, **kwargs):
+        calls.append(name)
+    monkeypatch.setattr(live_owner, "ensure_may_open_live", passed)
+    return calls
+
+
 # --- the mode -----------------------------------------------------------------------------------------------------
 
 def test_without_the_mode_nothing_is_seeded_and_the_defaults_are_unchanged(monkeypatch):
@@ -128,8 +141,9 @@ def test_without_the_mode_nothing_is_seeded_and_the_defaults_are_unchanged(monke
         state = _startup()
         assert state["seeded"] == [] and not any(name in _stored() for name in SEEDED)
         flags = _flags()
-        assert flags["live_trading"]["on"] is True and flags["phase0_paper_only"]["on"] is False   # kill flag / default off
-    assert "phase0_paper_only" in controls.DEFAULT_OFF_FLAGS and "live_trading" not in controls.DEFAULT_OFF_FLAGS
+        # M55 S1 (owner order): outside the mode too, LIVE is OFF and the lock ON by default (nothing is seeded).
+        assert flags["live_trading"]["on"] is False and flags["phase0_paper_only"]["on"] is True
+    assert "phase0_paper_only" in controls.DEFAULT_ON_FLAGS and "live_trading" in controls.DEFAULT_OFF_FLAGS
     monkeypatch.setenv(deployment_phase.ENV_VAR, " PHASE0 ")                                       # normalised
     assert deployment_phase.is_phase0()
 
@@ -165,7 +179,7 @@ def test_seed_keeps_every_other_stored_flag(monkeypatch):
     assert stored["news_feed"] == {"on": True, "tenants": [3]} and stored["phase0_paper_only"]["on"] is True
 
 
-def test_reboot_is_idempotent_and_never_overrides_a_later_owner_change(monkeypatch):
+def test_reboot_is_idempotent_and_never_overrides_a_later_owner_change(monkeypatch, owner_checks_passed):
     """The rule: seed ABSENT entries only. The owner's later choice survives every restart and redeploy."""
     _phase0(monkeypatch)
     assert sorted(_startup()["seeded"]) == sorted(SEEDED)
@@ -177,6 +191,7 @@ def test_reboot_is_idempotent_and_never_overrides_a_later_owner_change(monkeypat
         async with _session_factory() as session:
             await controls.set_flag(session, _owner_user(), "phase0_paper_only", on=False)
     _run(owner_turns_lock_off())
+    assert owner_checks_passed == ["phase0_paper_only"]                                          # M55 S1: owner checks ran
     assert _startup()["seeded"] == [] and _stored()["phase0_paper_only"]["on"] is False          # not turned back on
     assert len(_audit(deployment_phase.SEED_AUDIT_EVENT)) == before
 
@@ -250,7 +265,7 @@ def test_startup_never_raises_even_when_the_rollback_fails(monkeypatch):
 
 # --- Admin -> Controls ----------------------------------------------------------------------------------------------
 
-def test_admin_refuses_live_trading_on_while_the_lock_is_on_and_audits_it(monkeypatch):
+def test_admin_refuses_live_trading_on_while_the_lock_is_on_and_audits_it(monkeypatch, owner_checks_passed):
     _phase0(monkeypatch)
     _startup()
     before = len(_audit(deployment_phase.REFUSAL_AUDIT_EVENT))
@@ -269,16 +284,20 @@ def test_admin_refuses_live_trading_on_while_the_lock_is_on_and_audits_it(monkey
 
 
 def test_admin_route_answers_400_with_the_reason(monkeypatch):
+    from app.core import config
+    from app.platform import live_owner
     from tests.test_admin_api import _admin
-    headers, _ = _admin("phase0-defaults-admin@example.com")
+    headers, me = _admin("phase0-defaults-admin@example.com")
+    monkeypatch.setattr(config, "LIVE_OWNER_USER_ID", me["id"])                                   # M55 S1: the owner,
     _phase0(monkeypatch)
     _startup()
-    res = client.put("/api/admin/controls/flags/live_trading", headers=headers, json={"on": True})
+    res = client.put("/api/admin/controls/flags/live_trading", headers=headers,                   # two-factor, confirmed
+                     json={"on": True, "confirm": live_owner.CONFIRM_TEXT})
     assert res.status_code == 400 and "phase0_paper_only is on" in res.json()["detail"]
     assert _stored()["live_trading"]["on"] is False
 
 
-def test_live_trading_follows_the_owner_once_the_lock_is_off_or_outside_the_mode(monkeypatch):
+def test_live_trading_follows_the_owner_once_the_lock_is_off_or_outside_the_mode(monkeypatch, owner_checks_passed):
     async def set_flag(name, on):
         async with _session_factory() as session:
             await controls.set_flag(session, _owner_user(), name, on=on)
@@ -289,6 +308,7 @@ def test_live_trading_follows_the_owner_once_the_lock_is_off_or_outside_the_mode
     _run(set_flag("phase0_paper_only", False))                                                    # the owner's explicit decision
     _run(set_flag("live_trading", True))
     assert _stored()["live_trading"]["on"] is True
+    assert owner_checks_passed == ["live_trading", "phase0_paper_only", "live_trading"]          # M55 S1: owner checks ran
 
 
 # --- the worker: no LIVE entry path, exits still run -----------------------------------------------------------------
@@ -321,6 +341,7 @@ def test_worker_startup_seeds_and_does_not_evaluate_live_deployments(monkeypatch
     assert evaluated == [paper_id, paper_id] and _get(StrategyDeploymentRecord, live_id).last_error == phase0_lock.WORKER_NOT_EVALUATED
 
 
+@pytest.mark.usefixtures("owner_switched_live_on")   # M55 S1: the LIVE posture the owner switches on
 def test_worker_still_squares_off_an_existing_live_position(monkeypatch):
     """ADR-0004: a LIVE position opened before the Phase 0 mode was switched on is exited through the broker."""
     monkeypatch.setattr("app.execution.router.OrderRouter.fill_poll_delay_seconds", 0)

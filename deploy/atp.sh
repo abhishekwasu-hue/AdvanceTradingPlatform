@@ -108,8 +108,9 @@ APP_IMAGES=(atp-backend atp-worker atp-frontend atp-research-worker atp-backup)
 # WL1-4: the only keys `env-set` may write - plain switches, never a secret or a LIVE switch.
 # Owner 25 Oct: also the history owner's organisation (HB0) - the id and its name, e.g. the placeholder "My Organisation"
 # the owner gives his organisation until he picks a name (never hard-coded; the name may hold spaces, @ and +).
+# M55 S1: LIVE_OWNER_USER_ID, the one account that may switch LIVE on (an id; it switches nothing by itself).
 ENV_SET_KEYS=(UNIVERSE_SYNC_ENABLED UNIVERSE_SYNC_HOUR_IST INSTRUMENT_SYNC_EXCHANGES INSTRUMENT_SYNC_HOUR_IST
-              HISTORY_OWNER_TENANT_ID HISTORY_OWNER_TENANT_NAME)
+              HISTORY_OWNER_TENANT_ID HISTORY_OWNER_TENANT_NAME LIVE_OWNER_USER_ID)
 ENV_BACKUPS_KEEP=10
 
 RELEASE=""          # image tag compose uses (ATP_RELEASE)

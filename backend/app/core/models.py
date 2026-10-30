@@ -207,6 +207,8 @@ class BacktestResult(BaseModel):
     analytics: Optional[Dict[str, Any]] = None
     exit_rules: Optional[str] = None
     run_id: Optional[int] = None
+    # M55 T3: where the candles came from, as the server loaded them (broker:<name> / lake:daily) or "uploaded".
+    data_source: str | None = None
     # Phase W: set by the option backtest engine - pricing model, conventions, skipped signals,
     # per-structure legs (app/backtest/options_engine.py). None for an underlying backtest.
     options: Optional[Dict[str, Any]] = None

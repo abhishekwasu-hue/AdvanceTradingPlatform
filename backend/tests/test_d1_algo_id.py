@@ -22,6 +22,8 @@ from tests.test_algo_tagging import _set_algo_id, _user
 from tests.test_auth_api import _session_factory
 from tests.test_live_execution import _execute, _LiveBroker
 
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
+
 
 @pytest.fixture
 def ruleset(monkeypatch):

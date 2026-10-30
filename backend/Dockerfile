@@ -11,12 +11,14 @@ RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# requirements first so dependency installs are cached independently of app code changes
-COPY requirements.txt .
+# requirements first so dependency installs are cached independently of app code changes.
+# M55 O3: installed from the hashed lock (scripts/lock_requirements.sh) - every package pinned, and pip refuses any
+# file whose sha256 is not in the lock. requirements.txt (the direct dependencies) is not needed in the image.
+COPY requirements.lock .
 # pip is only needed to install; the running container must not install anything. Removing it
 # also removes the packages pip vendors for its own use (setuptools, msgpack, ...), which are
 # what image scanners flag as unfixable-from-requirements HIGH findings.
-RUN pip install --no-cache-dir -r requirements.txt \
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock \
     && python -m pip uninstall -y pip \
     && rm -rf /root/.cache/pip
 

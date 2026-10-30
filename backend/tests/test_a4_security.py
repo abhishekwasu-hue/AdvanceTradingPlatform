@@ -392,7 +392,8 @@ def test_aud_g23_one_csp_everywhere_with_no_third_party_font_origin():
 
 def test_ci_scans_dependencies_and_images_and_fails_on_high_findings():
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
-    assert "pip-audit -r requirements.txt" in ci and "npm audit --omit=dev\n" in ci
+    # M55 O3: the audit reads the hashed lock - exactly what the image installs.
+    assert "pip-audit --disable-pip -r requirements.lock" in ci and "npm audit --omit=dev\n" in ci
     scan = ci.split("  container-scan:", 1)[1]
     assert "needs:" not in scan.split("steps:", 1)[0]                      # runs even while a test job is red
     for image in ("atp-backend:ci", "atp-frontend:ci"):

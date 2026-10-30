@@ -39,7 +39,7 @@ from tests.test_trading_worker import (
     _worker,
 )
 
-pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests", "owner_switched_live_on")   # counts are per cycle (ADR-0004 sweep)
 
 FRIDAY_2000 = datetime(2026, 9, 25, 20, 0, tzinfo=IST)     # NSE closed, MCX open
 FRIDAY_2320 = datetime(2026, 9, 25, 23, 20, tzinfo=IST)    # MCX square-off window

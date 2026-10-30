@@ -34,6 +34,8 @@ class FlagBody(BaseModel):
     tenants: List[int] = Field(default_factory=list, max_length=500)
     # Z10-f: `legal_pages` is refused while a legal document has an open [PLACEHOLDER]; true switches it on anyway (audited).
     override_open_placeholders: bool = False
+    # M55 S1: switching LIVE on (`live_trading` on, the PAPER-only lock off) needs the owner to type "ENABLE LIVE".
+    confirm: str | None = Field(default=None, max_length=40)
 
 
 class ScopeOverridesBody(BaseModel):
@@ -127,18 +129,35 @@ async def put_marketplace_terms(body: RiskCeilingsBody, user: User = Depends(req
 
 # --- Phase N4: feature flags -----------------------------------------------------------------------
 
+async def _flag_listing_for(session: AsyncSession, user: User) -> dict:
+    """The flag listing; the two LIVE switches also say they are owner-only and whether this admin is the owner (M55 S1)."""
+    from app.platform import live_owner
+    flags = await controls.flag_listing(session)
+    owner = live_owner.is_owner(user)
+    for name in live_owner.OWNER_ONLY_FLAGS:
+        if name in flags:
+            flags[name].update(owner_only=True, can_switch_live=owner, confirm_text=live_owner.CONFIRM_TEXT,
+                               opens_live_when_on=name == live_owner.LIVE_TRADING)
+    return flags
+
+
 @admin_router.get("/flags")
-async def get_flags(session: AsyncSession = Depends(get_session)) -> dict:
+async def get_flags(user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
     """Every flag's state, plus (UX1, audit section 7) its plain description, area, what turns on, what it needs,
     its default and status - for the admin Feature flags list (SUPER_ADMIN + two-factor, the router's dependencies)."""
-    return await controls.flag_listing(session)
+    return await _flag_listing_for(session, user)
 
 
 @admin_router.put("/flags/{name}")
-async def put_flag(name: str, body: FlagBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+async def put_flag(name: str, body: FlagBody, user: User = Depends(require_role()),
+                   session_id: int | None = Depends(current_session_id), session: AsyncSession = Depends(get_session)) -> dict:
+    from app.platform.live_owner import LiveOwnerRefused
     try:
         await controls.set_flag(session, user, name, on=body.on, tenants=body.tenants,
-                                override_open_placeholders=body.override_open_placeholders)
+                                override_open_placeholders=body.override_open_placeholders,
+                                session_id=session_id, confirm=body.confirm)
+    except LiveOwnerRefused as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if name == "public_status_page":                                     # Z10-e: the public page follows at once
@@ -147,7 +166,7 @@ async def put_flag(name: str, body: FlagBody, user: User = Depends(require_role(
     if name in ("status_page", "public_status_page"):                    # AUD-T8: the sessions block follows at once
         from app.observability import status_history
         status_history.reset_cache()
-    return await controls.flag_listing(session)                         # UX1: the same fields as the list
+    return await _flag_listing_for(session, user)                       # UX1: the same fields as the list
 
 
 # --- Owner decision 23 Oct: "Enable trader features" (app/platform/trader_pack.py) -------------------------------------

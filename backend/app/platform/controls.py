@@ -160,6 +160,20 @@ FEATURE_FLAGS: Dict[str, str] = {
     # when the engine has not checked in or market data is late while a market is open. OFF: GET /api/status/sessions
     # answers 404, the page shows no sessions block and no notice is shown. The sampler writes either way. Read-only.
     "status_page": "Reliability: uptime per market session and the SLO targets on the status page, and an in-app notice when the platform is degraded",
+    # TERM-2 step 4 (docs/owner-orders/ATP_ORDER_TERM2.md; needs `ui_v2` + `terminal`), each PAPER first and OFF by default:
+    # R4 the margin pair in the basket (required from the broker's basket margin call through the user's own session where
+    # the adapter has one, else ATP's labelled estimate; available = the Terminal status funds), re-read on every lot change.
+    "term_margin_pair": "Terminal: margin required and available in the basket, re-read on every lot change (the broker's margin where available, else a labelled estimate)",
+    # R1 "Roll" on a position / group: a preview of the exit of the current legs plus the same strikes on the next weekly
+    # expiry (POST /api/paper/fno/roll/preview, read only). The exit goes through the existing Exit now / group exit (never
+    # blocked); the new legs go into the one basket for the user to review and place. OFF: the route answers 404.
+    "term_roll": "Terminal: Roll a position or strategy to the next weekly (a preview; the exit and the new legs are two confirmed steps)",
+    # R3 the distance from each short strike to the nearest stored area (the My day read, GET /api/today/my-day) on the
+    # position row and the chain. Words and numbers only. OFF: no mark; the My day route keeps its own flag otherwise.
+    "term_strike_area": "Terminal: distance from each short strike to the nearest area, on the position row and the chain (information only)",
+    # R2 what-if: the basket's payoff also shows the combined payoff of the open PAPER positions on the same underlying and
+    # expiry plus the new legs (one server calculation, POST /api/paper/fno/basket/evaluate with `with_open`). Read only.
+    "term_whatif": "Terminal: what-if payoff of your open positions plus the basket's new legs (information only)",
     # Trading Terminal T1 (docs/owner-orders/ATP_SESSION_TRADING_TERMINAL.md, review TT-16..TT-19, TT-25; needs `ui_v2`):
     # the Terminal page at /terminal - the chart, the option chain, the order panel, positions, orders and the basket on one
     # screen as panels the user moves, resizes, opens and closes (presets and up to 10 own layouts in the prefs namespace

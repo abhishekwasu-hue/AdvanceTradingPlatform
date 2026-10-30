@@ -161,8 +161,20 @@ async def _mode(session: AsyncSession, user: User) -> Dict[str, Any]:
             "message": "Practice mode: no real order is sent and no money moves."}
 
 
-async def terminal_status(session: AsyncSession, user: User, now: Optional[datetime] = None) -> Dict[str, Any]:
+async def funds_of(session: AsyncSession, user: User, trades: Sequence[TradeRecord] | None = None) -> dict[str, Any]:
+    """The status bar's `funds` and `margin` (TERM-2 R4: the basket's "available" reads the same figure). Read only."""
     from app.paper.fno_contracts import position_groups
+    trades = list(trades) if trades is not None else await _own_trades(session, user)
+    closed = [t for t in trades if t.exit_time is not None]
+    open_trades = [t for t in trades if t.exit_time is None]
+    balance = await _starting_capital(session, user) + sum(float(t.pnl or 0.0) for t in closed)
+    groups = await position_groups(session, user) if len(open_trades) > 1 else []
+    margin = margin_estimate(open_trades, groups)
+    return {"funds": {"balance": round(balance, 2), "available": round(balance - margin["used"], 2), "source": "practice",
+                      "note": "Your practice balance minus the margin estimate."}, "margin": margin}
+
+
+async def terminal_status(session: AsyncSession, user: User, now: Optional[datetime] = None) -> Dict[str, Any]:
     now = now or datetime.now(timezone.utc)
     today = now.astimezone(IST).date()
     trades = await _own_trades(session, user)
@@ -173,15 +185,13 @@ async def terminal_status(session: AsyncSession, user: User, now: Optional[datet
     priced = [p for p, _ in marks if p is not None]
     open_mtm: Optional[float] = round(sum(priced), 2) if priced else (0.0 if not open_trades else None)
     newest = max((_utc(m) for p, m in marks if p is not None and m is not None), default=None)
-    balance = await _starting_capital(session, user) + sum(float(t.pnl or 0.0) for t in closed)
-    groups = await position_groups(session, user) if len(open_trades) > 1 else []
-    margin = margin_estimate(open_trades, groups)
+    held = await funds_of(session, user, trades)
+    margin = held["margin"]
     today_mtm = round(booked_today + (open_mtm or 0.0), 2)
     return {
         "today": {"mtm": today_mtm, "booked": round(booked_today, 2), "note": TODAY_NOTE},
         "open": {"count": len(open_trades), "priced": len(priced), "mtm": open_mtm, "as_of": newest.isoformat() if newest else None},
-        "funds": {"balance": round(balance, 2), "available": round(balance - margin["used"], 2), "source": "practice",
-                  "note": "Your practice balance minus the margin estimate."},
+        "funds": held["funds"],
         "margin": margin,
         "mode": await _mode(session, user),
         "feed": await _feed(session, user),
@@ -190,4 +200,4 @@ async def terminal_status(session: AsyncSession, user: User, now: Optional[datet
     }
 
 
-__all__ = ["FLAG", "PAGE_FLAG", "terminal_status", "margin_estimate", "single_margin", "group_margin", "open_pnl"]
+__all__ = ["FLAG", "PAGE_FLAG", "terminal_status", "funds_of", "margin_estimate", "single_margin", "group_margin", "open_pnl"]

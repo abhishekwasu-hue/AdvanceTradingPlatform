@@ -51,7 +51,7 @@ function cellText(key: ColumnDef["key"], leg: ChainLeg, pct = false): string {
 
 const SHOWN_CLASS = { all: "", desktop: "hidden md:table-cell", none: "hidden" } as const;
 
-export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg, held, setup }: {
+export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg, held, setup, areaMarks }: {
   live: LiveChain;
   prefs: ColumnPrefs;
   /** The ATM row is centred once per key (symbol and expiry; FNO-1: and each "recentre" tap). */
@@ -63,6 +63,8 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
   held?: ReadonlySet<string>;
   /** 8b-a: where the user's own settings land, "strike|CE" / "strike|PE" -> "Main" / "Wing" / "2nd". */
   setup?: ReadonlyMap<string, string>;
+  /** TERM-2 R3 (optional): under a short strike, its distance to the nearest area, "strike|CE" / "strike|PE" -> words. */
+  areaMarks?: ReadonlyMap<string, string>;
 }) {
   const { rows, summary } = live;
   const spot = summary.spot;
@@ -177,6 +179,7 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
                   {held?.has(`${row.strike}|PE`) && <HeldMark side="put" />}
                   {isAtm && <span className={cx("block text-t12", colour ? "font-semibold text-fg" : "font-medium text-brand")}>ATM<span className="sr-only">, at the money</span></span>}
                   {setup && <SetupMark call={setup.get(`${row.strike}|CE`)} put={setup.get(`${row.strike}|PE`)} />}
+                  {areaMarks && <AreaMark call={areaMarks.get(`${row.strike}|CE`)} put={areaMarks.get(`${row.strike}|PE`)} />}
                 </th>
                 {legCells("put", puts, row, isAtm)}
               </tr>
@@ -185,6 +188,17 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** TERM-2 R3: under a short strike, the distance to the nearest stored area ("Area 0.42% above") - words and numbers only. */
+function AreaMark({ call, put }: { call?: string; put?: string }) {
+  if (!call && !put) return null;
+  return (
+    <span className="block text-t12 font-normal text-fg-muted" data-area-mark>
+      {call && <span className="block" data-area-side="call">{call}<span className="sr-only"> (your sold call)</span></span>}
+      {put && <span className="block" data-area-side="put">{put}<span className="sr-only"> (your sold put)</span></span>}
+    </span>
   );
 }
 

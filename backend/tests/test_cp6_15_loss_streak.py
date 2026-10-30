@@ -237,7 +237,7 @@ def test_a_run_whose_pause_never_engages_reports_nothing_and_hashes_without_the_
 
 
 def test_engine_versions_were_bumped_because_results_change():
-    assert underlying_engine.ENGINE_VERSION == "5" and options_engine.ENGINE_VERSION == "9-options"
+    assert underlying_engine.ENGINE_VERSION == "6" and options_engine.ENGINE_VERSION == "9-options"
 
 
 # --- live / PAPER -------------------------------------------------------------------------------------------------------

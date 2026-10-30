@@ -2126,6 +2126,12 @@ export interface FeatureFlag {
   default_on?: boolean;
   /** User-friendly pass item 7: why users do not see this feature on this server (e.g. its engine is not installed). */
   unavailable_reason?: string;
+  /** M55 S1: the two LIVE switches - only the owner may switch them towards LIVE, with a typed confirmation. */
+  owner_only?: boolean;
+  can_switch_live?: boolean;
+  confirm_text?: string;
+  /** M55 S1: true when turning the flag ON opens LIVE (live_trading); false when turning it OFF does (the PAPER-only lock). */
+  opens_live_when_on?: boolean;
 }
 
 export type FeatureFlags = Record<string, FeatureFlag>;

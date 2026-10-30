@@ -20,6 +20,8 @@ from tests.test_multileg import SPOT, _OptionBroker, _rules
 from tests.test_phase_r_structures import _execute, _metrics, _resolve
 from tests.test_trading_worker import _tenant, _trades
 
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
+
 
 def _run(coro):
     return asyncio.run(coro)

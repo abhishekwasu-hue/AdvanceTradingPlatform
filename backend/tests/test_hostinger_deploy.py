@@ -203,3 +203,31 @@ def test_the_history_owner_settings_reach_the_backend_and_the_worker():
         for key in keys:
             assert key in env, (name, key)
         assert env["HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS"] == "${HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS:-true}"   # config default
+
+
+def test_the_workers_wait_for_a_healthy_api_and_everything_restarts_on_its_own():
+    # M55 O1: the API migrates the schema at start, so the workers start only once its healthcheck passes. The workers'
+    # own healthcheck overrides (the metrics probe; none for the research worker) stay as they are.
+    services = yaml.safe_load((ROOT / "docker-compose.yml").read_text())["services"]
+    for name in ("worker", "research-worker"):
+        assert services[name]["depends_on"]["backend"] == {"condition": "service_healthy"}, name
+        assert services[name]["restart"] == "unless-stopped", name
+    assert services["backend"]["restart"] == "unless-stopped"
+    assert "/metrics" in " ".join(services["worker"]["healthcheck"]["test"])
+    assert services["research-worker"]["healthcheck"] == {"disable": True}
+
+
+def test_forwarded_headers_are_trusted_from_the_caddy_network_only():
+    # M55 O1: Caddy runs in compose (deploy/Caddyfile: reverse_proxy backend:8000), on the `edge` network alone; the API
+    # trusts X-Forwarded-For from that subnet and 127.0.0.1, never from any peer ("*").
+    cfg = _merged()
+    services = cfg["services"]
+    subnet = cfg["networks"]["edge"]["ipam"]["config"][0]["subnet"]
+    assert services["backend"]["environment"]["FORWARDED_ALLOW_IPS"] == f"127.0.0.1,{subnet}"
+    assert "*" not in services["backend"]["environment"]["FORWARDED_ALLOW_IPS"]
+    assert set(services["caddy"]["networks"]) == {"edge"}                       # Caddy reaches the API only over edge
+    assert set(services["backend"]["networks"]) == {"default", "edge"} and set(services["frontend"]["networks"]) == {"default", "edge"}
+    for name in ("worker", "postgres", "redis", "backup", "offsite"):            # nothing else sits on the trusted range
+        assert "edge" not in (services[name].get("networks") or {}), name
+    assert "${FORWARDED_ALLOW_IPS" in yaml.safe_load((ROOT / "docker-compose.yml").read_text())["services"]["backend"]["environment"]["FORWARDED_ALLOW_IPS"]
+    assert "FORWARDED_ALLOW_IPS:-127.0.0.1" in (ROOT / "backend/scripts/serve_api.sh").read_text()  # local default

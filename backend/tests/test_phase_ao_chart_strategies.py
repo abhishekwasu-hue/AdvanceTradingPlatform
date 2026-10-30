@@ -14,7 +14,17 @@ from app.strategy_engine.combo_strategies import (
     VwapSupertrend,
     session_vwap_or_mean,
 )
-from tests.test_auth_api import client
+from tests.test_auth_api import _register, client
+
+_H = {}
+
+
+def _h():
+    """M55 O2: chart-run is signed in only."""
+    if not _H:
+        _H["Authorization"] = f"Bearer {_register('chart-run@example.com')}"
+    return _H
+
 
 UTC = timezone.utc
 
@@ -92,7 +102,7 @@ def _bars(df):
 
 def test_chart_run_draws_trades_and_last_signal():
     df = _frame(_trend_with_waves())
-    r = client.post("/api/strategies/macd_ema_trend_5m/chart-run", json={"symbol": "nifty", "timeframe": "5min", "candles": _bars(df)})
+    r = client.post("/api/strategies/macd_ema_trend_5m/chart-run", headers=_h(), json={"symbol": "nifty", "timeframe": "5min", "candles": _bars(df)})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["compatible"] is True and body["bars_used"] == len(df)
@@ -103,7 +113,7 @@ def test_chart_run_draws_trades_and_last_signal():
 
 def test_chart_run_refuses_a_finer_strategy_on_coarser_candles():
     df = _frame(_trend_with_waves(n=50))
-    r = client.post("/api/strategies/ema_rsi_scalper_1m/chart-run", json={"symbol": "NIFTY", "timeframe": "5min", "candles": _bars(df)})
+    r = client.post("/api/strategies/ema_rsi_scalper_1m/chart-run", headers=_h(), json={"symbol": "NIFTY", "timeframe": "5min", "candles": _bars(df)})
     assert r.status_code == 200
     body = r.json()
     assert body["compatible"] is False and "1m" in body["reason"] and body["trades"] == []
@@ -111,17 +121,17 @@ def test_chart_run_refuses_a_finer_strategy_on_coarser_candles():
 
 def test_chart_run_resamples_a_coarser_strategy_from_finer_candles():
     df = _frame(_trend_with_waves(n=2100), minutes=1)
-    r = client.post("/api/strategies/macd_ema_trend_5m/chart-run", json={"symbol": "NIFTY", "timeframe": "1min", "candles": _bars(df)})
+    r = client.post("/api/strategies/macd_ema_trend_5m/chart-run", headers=_h(), json={"symbol": "NIFTY", "timeframe": "1min", "candles": _bars(df)})
     assert r.status_code == 200 and r.json()["compatible"] is True
 
 
 def test_chart_run_unknown_strategy_is_404():
     df = _frame([100.0] * 10)
-    assert client.post("/api/strategies/nope/chart-run", json={"symbol": "X", "timeframe": "5min", "candles": _bars(df)}).status_code == 404
+    assert client.post("/api/strategies/nope/chart-run", headers=_h(), json={"symbol": "X", "timeframe": "5min", "candles": _bars(df)}).status_code == 404
 
 
 def test_chart_run_says_how_many_candles_are_missing():
     df = _frame(_trend_with_waves(n=60))
-    body = client.post("/api/strategies/macd_ema_trend_5m/chart-run", json={"symbol": "NIFTY", "timeframe": "5min", "candles": _bars(df)}).json()
+    body = client.post("/api/strategies/macd_ema_trend_5m/chart-run", headers=_h(), json={"symbol": "NIFTY", "timeframe": "5min", "candles": _bars(df)}).json()
     assert body["compatible"] is True and body["last_signal"] is None and body["trades"] == []
     assert "205 x 5min (have 60)" in body["reason"]

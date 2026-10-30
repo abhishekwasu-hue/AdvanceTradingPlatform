@@ -22,7 +22,7 @@ from app.screener.breakouts.quality import context_trends, htf_pass, run_breakou
 from app.screener.breakouts.screens import INTRADAY_SCREENS, Bars, evaluate_screen
 from app.screener.registry import FUNCTIONS
 from app.screener.runtime import SymbolData, evaluate, resample, run_screen
-from tests.breakout_fixtures import (OR_BARS, ORB_BREAK, SESSION_5M, above, history, orb_day, profile, quiet_day, sessions_frame)
+from tests.breakout_fixtures import OR_BARS, ORB_BREAK, SESSION_5M, above, history, orb_day, profile, quiet_day, sessions_frame
 from tests.sample_market import generate
 
 ORB_BAR = 21 * SESSION_5M + 6                      # the 09:45 bar of the test day after 21 quiet sessions
@@ -372,9 +372,10 @@ def test_one_signal_per_side_per_session_and_a_new_leg_after_a_close_back_inside
 
 
 def test_one_alert_per_leg_through_the_bar_close_engine():
-    from app.db.models import AlertEventRecord, AlertRuleRecord
-    from app.alerts import barclose
     from sqlalchemy import select
+
+    from app.alerts import barclose
+    from app.db.models import AlertEventRecord, AlertRuleRecord
     from tests.test_auth_api import _session_factory
     from tests.test_phase_l_ai import _owner
     from tests.test_s4a_barclose import FakeFetch
@@ -646,9 +647,10 @@ def test_screenql_arguments_are_checked_against_the_parameter_ranges_when_valida
 
 # --------------------------------------------------------------------------- alert gating of the BK2 functions (M1-M3)
 def test_intraday_breakout_alerts_are_gated_bar_close_only_and_pause_while_off():
+    from sqlalchemy import select
+
     from app.alerts import barclose
     from app.db.models import AlertEventRecord, AlertRuleRecord
-    from sqlalchemy import select
     from tests.test_auth_api import _session_factory, client
     from tests.test_phase_l_ai import _owner
     from tests.test_s4a_barclose import FakeFetch, _rule

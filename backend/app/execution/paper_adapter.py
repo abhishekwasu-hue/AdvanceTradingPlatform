@@ -76,7 +76,7 @@ def _capabilities_of(venue: Optional[str]) -> Optional[BrokerCapabilities]:
     """The broker's own capabilities when practising for it; None for no venue or an unknown one."""
     if not venue:
         return None
-    from app.brokers.registry import BROKER_ADAPTERS     # local: the registry imports this module
+    from app.brokers.registry import BROKER_ADAPTERS  # local: the registry imports this module
     adapter_cls = BROKER_ADAPTERS.get(venue)
     return getattr(adapter_cls, "capabilities", None) if adapter_cls is not None else None
 
@@ -147,7 +147,7 @@ class PaperExecutionAdapter(BrokerInterface):
 
     def _fill_price(self, order: BrokerOrderRequest, ltp: float) -> Tuple[Optional[float], str]:
         """Where the order fills now (PaperBroker's slippage on the price), or (None, why it would rest)."""
-        from app.paper.fno_ticket import paper_fill        # local: the ticket module imports the database layer
+        from app.paper.fno_ticket import paper_fill  # local: the ticket module imports the database layer
         side = "BUY" if order.transaction_type == OrderSide.BUY else "SELL"
         order_type = (order.order_type or "MARKET").upper()
         if order_type in ("LIMIT", "SL") and order.price is None:

@@ -15,7 +15,7 @@ from app.db.models import MarketHolidayRecord, StrategyDeploymentRecord, TradeRe
 from app.market_data import calendar as mcal
 from app.trading.position_monitor import open_trade_families, trade_venue, venue_beyond_nse
 from tests.test_auth_api import _session_factory
-from tests.test_trading_worker import IST, OPEN_NOW, STRATEGY, _FakeBroker, _deploy, _force_signal, _trades, _worker
+from tests.test_trading_worker import IST, OPEN_NOW, STRATEGY, _deploy, _FakeBroker, _force_signal, _trades, _worker
 from tests.test_trading_worker import _tenant as _worker_tenant
 
 FRIDAY = date(2026, 9, 25)

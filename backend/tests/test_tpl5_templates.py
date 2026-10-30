@@ -12,7 +12,9 @@ import re
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import HealthCheck, given, settings as hsettings, strategies as st
+from hypothesis import HealthCheck, given
+from hypothesis import settings as hsettings
+from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from app.backtest.options_engine import OptionBacktestConfig
@@ -30,7 +32,8 @@ from app.strategy_templates import compile as C
 from app.strategy_templates import engine, ids, language, library, parity
 from app.strategy_templates.adapter import ENGINE_LABEL, TemplateStrategy
 from app.strategy_templates.schema import SetupExtreme, Template
-from tests.test_tpl1_recipe_core import BASE, bars as marks, tpl
+from tests.test_tpl1_recipe_core import BASE, tpl
+from tests.test_tpl1_recipe_core import bars as marks
 
 NEW = ("C2", "D3", "E1", "E3", "E5")
 T = {tid: library.get(tid) for tid in NEW}

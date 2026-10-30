@@ -390,7 +390,9 @@ def test_hidden_and_refused_while_off_listed_and_accepted_when_on(screener_on):
 def test_a_rule_pauses_while_off_and_resumes_on_the_same_closed_bar(screener_on):
     from app.alerts import barclose
     from app.db.models import AlertEventRecord, AlertRuleRecord
-    from tests.test_s4a_barclose import TUE, FakeFetch, _bars as s4_bars, _rule, ist as s4_ist
+    from tests.test_s4a_barclose import TUE, FakeFetch, _rule
+    from tests.test_s4a_barclose import _bars as s4_bars
+    from tests.test_s4a_barclose import ist as s4_ist
     _, me = _owner("amw3-pause@example.com")
     rid = _rule(me["tenant_id"], condition='TimeOfDay("09:15", "15:30")', tf="5m", symbol="AMWA")
     fetch = FakeFetch({"AMWA": s4_bars(s4_ist(TUE, 9, 15), [100.0] * 61)})
@@ -524,7 +526,9 @@ def test_a_screen_rule_and_an_edit_of_its_screen_pass_the_amw3_check_too(screene
 def test_the_engine_skips_an_intrabar_swing_rule_with_the_reason(screener_on):
     from app.alerts import barclose
     from app.db.models import AlertRuleRecord
-    from tests.test_s4a_barclose import TUE, FakeFetch, _bars as s4_bars, _rule, ist as s4_ist
+    from tests.test_s4a_barclose import TUE, FakeFetch, _rule
+    from tests.test_s4a_barclose import _bars as s4_bars
+    from tests.test_s4a_barclose import ist as s4_ist
     _, me = _owner("amw3-intrabar-engine@example.com")
     _set(screenql_amw_functions=True, screener_intrabar=True)
     rid = _rule(me["tenant_id"], condition='SwingLabel("low") == "HL"', tf="5m", symbol="AMWB", fire_on="intrabar")

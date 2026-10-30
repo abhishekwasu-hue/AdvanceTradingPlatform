@@ -19,10 +19,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
 from app.custom_strategies import versioning
-from app.strategy_engine.declarative import CustomStrategyConfig
 from app.db.models import (
-    BacktestRunRecord, CustomStrategyRecord, MarketplaceListingRecord, MarketplaceSubscriptionRecord, StrategyVersionRecord, User,
+    BacktestRunRecord,
+    CustomStrategyRecord,
+    MarketplaceListingRecord,
+    MarketplaceSubscriptionRecord,
+    StrategyVersionRecord,
+    User,
 )
+from app.strategy_engine.declarative import CustomStrategyConfig
 
 DISCLAIMER = ("Documented performance is a backtest over the stated period with modelled costs; it is not a promise of future "
               "results and not investment advice. Backtest and paper-trade the strategy on your own account before going live.")

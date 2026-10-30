@@ -8,7 +8,11 @@ from app.backtest.engine import run_backtest
 from app.core.enums import SignalDirection
 from app.core.models import RiskConfig
 from app.strategy_engine.combo_strategies import (
-    BollingerRsiReversion, MacdEmaTrend, OpeningRangeBreakout, VwapSupertrend, session_vwap_or_mean,
+    BollingerRsiReversion,
+    MacdEmaTrend,
+    OpeningRangeBreakout,
+    VwapSupertrend,
+    session_vwap_or_mean,
 )
 from tests.test_auth_api import client
 

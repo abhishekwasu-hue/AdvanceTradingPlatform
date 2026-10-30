@@ -17,17 +17,18 @@ import httpx
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.wording import banned_terms
+from app.ai.compliance import CheckResult, ComplianceReport, evaluate_config
+from app.ai.prompt import PROMPT_VERSION, DeploymentSuggestion, build_runtime_context, build_system_prompt, parse_suggestion
+from app.ai.prompt import user_message as prompt_user_message
 from app.ai.providers import LLMProvider, ProviderError
+from app.ai.wording import banned_terms
 from app.audit.log import write_audit_log
+from app.core.models import RiskConfig
 from app.custom_strategies import versioning
 from app.db.models import AiStrategyDraftRecord, BacktestRunRecord, CustomStrategyRecord, Tenant, User
+from app.observability.metrics import AI_PROVIDER_CALLS
 from app.plans.limits import check_can_add_custom_strategy
 from app.strategy_engine.declarative import CustomStrategyConfig
-from app.ai.compliance import CheckResult, ComplianceReport, evaluate_config
-from app.ai.prompt import PROMPT_VERSION, DeploymentSuggestion, build_runtime_context, build_system_prompt, parse_suggestion, user_message as prompt_user_message
-from app.core.models import RiskConfig
-from app.observability.metrics import AI_PROVIDER_CALLS
 
 LEGACY_SYSTEM_PROMPT = """You design rule-based intraday trading strategies for Indian equities and index derivatives.
 Answer with ONE JSON object and nothing else, shaped exactly like:

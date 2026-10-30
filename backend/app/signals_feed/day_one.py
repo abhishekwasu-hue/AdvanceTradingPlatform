@@ -285,7 +285,8 @@ async def list_choices(session: AsyncSession, user: User) -> List[Dict[str, Any]
     """The lists he can watch: the system lists of shares (index stocks first, NIFTY 50 at the top) and, with the
     `watchlists` flag on, his own lists. Names and counts only."""
     from app.platform.controls import flag_enabled
-    from app.watchlists import service as wl, system
+    from app.watchlists import service as wl
+    from app.watchlists import system
     out: List[Dict[str, Any]] = []
     rows = [r for r in await system.list_all(session) if r.group in SYSTEM_LIST_GROUPS and r.count > 0]
     rows.sort(key=lambda r: (r.key != DEFAULT_LIST, SYSTEM_LIST_GROUPS.index(r.group), r.position, r.name))
@@ -304,7 +305,8 @@ async def resolve_list(session: AsyncSession, user: User, kind: str, key: Option
                        ) -> Optional[Tuple[Dict[str, Any], List[Dict[str, str]]]]:
     """(the list's reference and name, its items) - a system list of shares, or one of HIS OWN lists; None otherwise."""
     from app.platform.controls import flag_enabled
-    from app.watchlists import service as wl, system
+    from app.watchlists import service as wl
+    from app.watchlists import system
     if kind == "system" and key:
         row = await system.get(session, key)
         if row is None or row.group not in SYSTEM_LIST_GROUPS:

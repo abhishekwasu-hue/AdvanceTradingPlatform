@@ -314,7 +314,9 @@ def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf
 async def load_profile(session, user) -> Tuple[Optional[dict], Preferences]:
     """(saved answers or None, preferences) for this user."""
     import json
+
     from sqlalchemy import select
+
     from app.db.models import TraderProfileRecord
     row = await session.scalar(select(TraderProfileRecord).where(TraderProfileRecord.user_id == user.id))
     if row is None:
@@ -329,6 +331,7 @@ async def load_profile(session, user) -> Tuple[Optional[dict], Preferences]:
 
 async def save_profile(session, user, answers: InterviewAnswers, prefs: Preferences) -> None:
     from sqlalchemy import select
+
     from app.db.models import TraderProfileRecord
     row = await session.scalar(select(TraderProfileRecord).where(TraderProfileRecord.user_id == user.id))
     if row is None:
@@ -342,8 +345,8 @@ async def save_profile(session, user, answers: InterviewAnswers, prefs: Preferen
 
 async def delete_profile(session, user) -> bool:
     from sqlalchemy import select
-    from app.db.models import TraderProfileRecord
-    from app.db.models import LlmCallRecord
+
+    from app.db.models import LlmCallRecord, TraderProfileRecord
     from app.retention.service import scrub_llm_text
     row = await session.scalar(select(TraderProfileRecord).where(TraderProfileRecord.user_id == user.id))
     # H-C1 e: "forget me" also clears the text of this trader's AI conversations (the audit rows and hashes stay).

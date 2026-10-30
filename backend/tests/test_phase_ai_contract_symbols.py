@@ -10,7 +10,15 @@ from app.brokers.base import BrokerInterface
 from app.brokers.contract_symbols import ContractKey, ContractSymbolBroker, contract_keys, parse_contract, wrap_contract_symbols
 from app.brokers.exceptions import BrokerAPIError
 from app.brokers.models import (
-    BrokerCredentials, BrokerOrderRequest, BrokerOrderResponse, BrokerOrderStatus, BrokerPosition, BrokerProfile, Instrument, MarginInfo, Quote,
+    BrokerCredentials,
+    BrokerOrderRequest,
+    BrokerOrderResponse,
+    BrokerOrderStatus,
+    BrokerPosition,
+    BrokerProfile,
+    Instrument,
+    MarginInfo,
+    Quote,
 )
 from app.core.enums import InstrumentKind, OptionPosition, OrderSide, SignalDirection
 from app.execution.contract_execution import contract_ltp

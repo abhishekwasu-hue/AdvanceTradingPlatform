@@ -10,7 +10,8 @@ import asyncio
 import json
 import math
 import uuid
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 
 import numpy as np
 import pandas as pd

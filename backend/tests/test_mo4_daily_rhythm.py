@@ -18,11 +18,11 @@ from sqlalchemy import select, update
 from app.alerts.channels import TelegramConfig, encrypt_config
 from app.chart_analyze.signal_language import call_words
 from app.core import config as app_config
-from app.db.models import (AlertChannelRecord, MarketEventRecord, MarketSnapshotRecord, NotificationLinkRecord, SignalHistoryRecord,
-                           TradeRecord, UserPrefsRecord)
+from app.db.models import AlertChannelRecord, MarketEventRecord, MarketSnapshotRecord, NotificationLinkRecord, SignalHistoryRecord, TradeRecord, UserPrefsRecord
 from app.market_data import calendar as market_calendar
 from app.market_data.calendar import IST
-from app.rhythm import build, deliver, routes as rhythm_routes, schedule, words
+from app.rhythm import build, deliver, schedule, words
+from app.rhythm import routes as rhythm_routes
 from app.secrets_store.envelope import ensure_tenant_key
 from tests.test_auth_api import _session_factory, client
 from tests.test_settings_a_connect_ai import _flags

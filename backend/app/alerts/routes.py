@@ -7,15 +7,14 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.alerts.channels import decrypt_raw, encrypt_config, masked_summary, merge_push, merge_secrets, parse_config
-from app.alerts.channels import TELEGRAM_INBOUND_FIELDS
 from app.alerts import webpush
-from app.core.validation_errors import safe_validation_message
+from app.alerts.channels import TELEGRAM_INBOUND_FIELDS, decrypt_raw, encrypt_config, masked_summary, merge_push, merge_secrets, parse_config
 from app.alerts.dispatcher import send_via_channel
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_trader
 from app.auth.scopes import require_scope
 from app.core.enums import AlertChannelType, NotificationSeverity, NotificationType
+from app.core.validation_errors import safe_validation_message
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord, User
 from app.db.session import get_session
 from app.plans.limits import check_can_add_alert_channel, load_tenant

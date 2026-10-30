@@ -35,8 +35,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql import Select
 
-from app.db.models import (AiActionRecord, AlertEventRecord, AlertRuleRecord, ExecutionIntentRecord, SignalHistoryRecord, StrategyDeploymentRecord,
-                           TradeRecord, User)
+from app.db.models import (
+    AiActionRecord,
+    AlertEventRecord,
+    AlertRuleRecord,
+    ExecutionIntentRecord,
+    SignalHistoryRecord,
+    StrategyDeploymentRecord,
+    TradeRecord,
+    User,
+)
 from app.market_data.calendar import IST
 from app.signals import language as signal_language
 

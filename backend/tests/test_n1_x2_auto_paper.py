@@ -13,8 +13,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import select, text, update
 
-from app.db.models import (AiActionRecord, AuditLogRecord, ExecutionIntentRecord, NotificationRecord, OrderRecord, ScanThenTemplateRecord,
-                           TradeRecord, User)
+from app.db.models import AiActionRecord, AuditLogRecord, ExecutionIntentRecord, NotificationRecord, OrderRecord, ScanThenTemplateRecord, TradeRecord, User
 from app.execution import approval
 from app.execution.core import dispatcher, intents, policy
 from app.platform.controls import DEFAULT_OFF_FLAGS

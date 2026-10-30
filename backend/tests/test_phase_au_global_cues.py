@@ -168,6 +168,7 @@ def test_worker_reads_the_world_before_the_open_without_a_broker(monkeypatch):
 
 async def _count(tenant_id):
     from sqlalchemy import func, select
+
     from app.db.models import MarketSnapshotRecord
     async with _session_factory() as session:
         return await session.scalar(select(func.count()).select_from(MarketSnapshotRecord).where(

@@ -20,7 +20,6 @@ sys.path.insert(0, trade)
 import strategy as st  # noqa: E402
 import strategy_payoff as sp  # noqa: E402
 
-
 cases = []
 
 

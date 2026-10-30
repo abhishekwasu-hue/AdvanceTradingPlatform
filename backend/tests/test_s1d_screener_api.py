@@ -10,7 +10,8 @@ from sqlalchemy import select
 
 from app.core.models import OHLCVBar
 from app.db.models import ScreenRunRecord
-from app.screener import nodes as n, parse
+from app.screener import nodes as n
+from app.screener import parse
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_phase_l_ai import _owner
 
@@ -93,8 +94,8 @@ def _daily_bars(start_price, step, days=60):
 def test_a_run_on_server_bars_is_stored_and_reproducible(flag_on, monkeypatch):
     headers, me = _owner("s1d-run@example.com")
     other, _ = _owner("s1d-run-other@example.com")
-    from app.market_data import candles_routes, service
     from app.brokers import token_lifecycle
+    from app.market_data import candles_routes, service
 
     async def pick(session, tenant_id, broker, label):
         return types.SimpleNamespace(broker_name="fake")

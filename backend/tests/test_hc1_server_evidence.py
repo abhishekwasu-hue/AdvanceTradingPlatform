@@ -11,7 +11,7 @@ from app.core import config
 from app.db.models import AiCandidateRecord, Tenant, User
 from tests.server_evidence import serve_candles
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
-from tests.test_phase_l_ai import VALID_ANSWER, _ScriptedProvider, _candles, _owner
+from tests.test_phase_l_ai import VALID_ANSWER, _candles, _owner, _ScriptedProvider
 from tests.utils import noisy_uptrend
 
 

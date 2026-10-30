@@ -18,7 +18,9 @@ import re
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import HealthCheck, given, settings as hsettings, strategies as st
+from hypothesis import HealthCheck, given
+from hypothesis import settings as hsettings
+from hypothesis import strategies as st
 
 from app.backtest.options_engine import OptionBacktestConfig
 from app.core.enums import OptionStrategy
@@ -503,8 +505,8 @@ def test_g_templates_are_listed_only_with_strategy_templates_and_screener_waves(
 def test_a_g_strategy_id_needs_the_wave_flag_to_run():
     import asyncio
 
-    from app.custom_strategies import resolver
     import app.platform.controls as controls
+    from app.custom_strategies import resolver
 
     class _User:
         tenant_id = 424242

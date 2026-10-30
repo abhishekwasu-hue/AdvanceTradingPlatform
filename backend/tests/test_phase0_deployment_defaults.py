@@ -12,12 +12,22 @@ from typing import Dict, List, Optional
 import pytest
 from sqlalchemy import select
 
-from app.execution.tagging import LEG_EXIT
 from app.db.models import AuditLogRecord, PlatformControlRecord, StrategyDeploymentRecord, User
+from app.execution.tagging import LEG_EXIT
 from app.platform import controls, deployment_phase, phase0_lock
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import (
-    BAR_TS, LATE_NOW, OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker,
+    BAR_TS,
+    LATE_NOW,
+    OPEN_NOW,
+    _deploy,
+    _FakeBroker,
+    _force_signal,
+    _get,
+    _signal,
+    _tenant,
+    _trades,
+    _worker,
 )
 from tests.test_z10c_phase0_lock import _StopStandingBroker
 

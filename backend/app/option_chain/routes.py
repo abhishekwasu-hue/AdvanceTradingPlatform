@@ -31,16 +31,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_role
+from app.brokers.models import OptionChain
 from app.core.enums import UserRole
 from app.db.models import OIAlertLogRecord, OIBannerSettingRecord, User
 from app.db.session import get_session
-from app.brokers.models import OptionChain
 from app.market_data.calendar import family_holidays, market_session_status
 from app.market_data.candles_routes import chains_rate_limit, ltp_rate_limit
-from app.platform.controls import flag_enabled
 from app.market_lake import chain_store
 from app.option_chain import as_of, chain_view, oi_regime, own_snapshots, snapshots
 from app.option_chain.snapshots import IST
+from app.platform.controls import flag_enabled
 
 router = APIRouter(prefix="/api/option-chain", tags=["option-chain"])
 

@@ -22,9 +22,11 @@ from app.core.enums import UserRole
 from app.db.models import Tenant, TenantInviteRecord, User
 from app.db.session import get_session
 from app.execution.tagging import ALGO_ID_MAX_SAVED, valid_algo_id
-from app.retention.service import erase_user
-from app.plans.limits import check_can_add_member, limits as plan_limits, usage as plan_usage
+from app.plans.limits import check_can_add_member
+from app.plans.limits import limits as plan_limits
+from app.plans.limits import usage as plan_usage
 from app.plans.registry import get_plan
+from app.retention.service import erase_user
 
 router = APIRouter(prefix="/api/team", tags=["team"])
 

@@ -28,8 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.db.models import (AiProviderConfigRecord, BrokerCredentialRecord, InstrumentRecord, MdCandleRecord,
-                           SystemWatchlistRecord, User, UserAiKeyRecord)
+from app.db.models import AiProviderConfigRecord, BrokerCredentialRecord, InstrumentRecord, MdCandleRecord, SystemWatchlistRecord, User, UserAiKeyRecord
 from app.platform import controls
 from app.platform.flag_catalog import FLAG_INFO
 

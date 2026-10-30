@@ -26,14 +26,13 @@ from typing import Dict, Optional
 from urllib.parse import urlparse
 
 import httpx
-
-from app.core.egress import check_url_resolved
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.core import config
+from app.core.egress import check_url_resolved
 
 logger = logging.getLogger(__name__)
 

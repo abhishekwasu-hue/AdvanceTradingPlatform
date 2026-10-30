@@ -9,9 +9,9 @@ from pathlib import Path
 from app.cache import client as cache_client
 from app.core import config
 from app.main import app
-from tests.test_auth_api import _register, client
 from app.workers import trading_worker as tw
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _signal, _tenant, _worker
+from tests.test_auth_api import _register, client
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _signal, _tenant, _worker
 
 ROOT = Path(__file__).resolve().parents[2]
 CLOSED = ("/api/backtest", "/api/price-action/structure", "/api/price-action/patterns", "/api/support-resistance/zones",
@@ -119,6 +119,7 @@ def test_worker_pauses_live_entries_without_the_replica_lock_but_paper_and_exits
     assert broker.placed == []                                   # the LIVE entry was not sent to the broker
     assert report.signals_executed == 1                          # the PAPER sibling traded
     from sqlalchemy import select
+
     from app.db.models import StrategyDeploymentRecord
     from tests.test_auth_api import _session_factory
 

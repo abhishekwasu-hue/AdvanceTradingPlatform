@@ -27,7 +27,9 @@ from app.screener import compile_screen, nodes, parse, validate
 from app.screener.runtime import ScreenRuntimeError, SymbolData, bar_close, evaluate, run_screen
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_phase_l_ai import _owner
-from tests.zones_chart_cases import FRONTEND_PATH as CASES_FRONTEND_PATH, PATH as CASES_PATH, build as build_cases
+from tests.zones_chart_cases import FRONTEND_PATH as CASES_FRONTEND_PATH
+from tests.zones_chart_cases import PATH as CASES_PATH
+from tests.zones_chart_cases import build as build_cases
 
 KEY, OTHER = "NSE:ZCHARTA", "NSE:ZCHARTB"
 IST = "Asia/Kolkata"
@@ -583,7 +585,9 @@ def test_alert_rules_with_zone_functions_are_refused_while_off_and_never_intraba
 def test_zone_rules_pause_while_off_resume_at_bar_close_and_skip_intrabar(screener_on):
     from app.alerts import barclose
     from app.db.models import AlertEventRecord, AlertRuleRecord
-    from tests.test_s4a_barclose import TUE, FakeFetch, _bars as s4_bars, _rule, ist as s4_ist
+    from tests.test_s4a_barclose import TUE, FakeFetch, _rule
+    from tests.test_s4a_barclose import _bars as s4_bars
+    from tests.test_s4a_barclose import ist as s4_ist
     _, me = _owner("z7a3-pause@example.com")
     rid = _rule(me["tenant_id"], condition='NearZone("demand", 0.5)', tf="5m", symbol="ZCHARTA")
     ib = _rule(me["tenant_id"], condition='NearZone("demand", 0.5)', tf="5m", symbol="ZCHARTA", fire_on="intrabar")

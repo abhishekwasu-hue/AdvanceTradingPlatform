@@ -16,7 +16,7 @@ from app.core.enums import OrderSide
 from app.execution.paper_adapter import PaperExecutionAdapter
 from app.paper.fno_ticket import paper_fill
 from app.trading import exit_logic, trigger_rules
-from app.trading.trigger_rules import ABOVE, BELOW, closed_beyond, closed_candles, close_trigger, order_trigger_side, touched
+from app.trading.trigger_rules import ABOVE, BELOW, close_trigger, closed_beyond, closed_candles, order_trigger_side, touched
 
 IST = timezone(timedelta(hours=5, minutes=30))
 

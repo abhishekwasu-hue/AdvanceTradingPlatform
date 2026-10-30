@@ -16,10 +16,9 @@ from fastapi import Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.observability.metrics import LOGIN_ATTEMPTS
-from app.db.models import LoginEventRecord, User
-
 from app.core.config import LOGIN_DELAY_AFTER_FAILURES, LOGIN_DELAY_MAX_SECONDS
+from app.db.models import LoginEventRecord, User
+from app.observability.metrics import LOGIN_ATTEMPTS
 
 LOCKOUT_WINDOW_MINUTES = 15
 MAX_FAILURES_PER_IP = 50

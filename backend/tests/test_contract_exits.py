@@ -2,10 +2,10 @@
 contract price books; premium floor/ceiling as the safety net; futures on their own levels;
 per-kind charge profiles; the monitor's two quotes; LIVE exit on the derivatives exchange."""
 import asyncio
-
-import pytest
 from datetime import date
 from typing import Dict
+
+import pytest
 
 from app.core.enums import OrderSide
 from app.db.models import TradeRecord

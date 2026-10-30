@@ -7,8 +7,15 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 
 from app.db.models import (
-    AuditLogRecord, LoginEventRecord, NotificationRecord, OrderRecord, PasswordResetRecord,
-    TenantInviteRecord, TradeRecord, User, UserSessionRecord,
+    AuditLogRecord,
+    LoginEventRecord,
+    NotificationRecord,
+    OrderRecord,
+    PasswordResetRecord,
+    TenantInviteRecord,
+    TradeRecord,
+    User,
+    UserSessionRecord,
 )
 from app.retention import service
 from app.retention.policy import MIN_DAYS, NEVER_DELETED, RetentionPolicy, load_policy

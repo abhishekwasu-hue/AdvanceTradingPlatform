@@ -363,7 +363,8 @@ def test_requests_are_rate_limited_per_user(owner, monkeypatch):
 def test_to_frame_guards_each_on_its_own():
     """The conversion keeps closed bars only: an over-read row (END after `end`) and a forming bucket (rebuilt from
     1-minute bars that do not reach its end) are each dropped."""
-    from datetime import datetime as dt, timezone as tz
+    from datetime import datetime as dt
+    from datetime import timezone as tz
     end = pd.Timestamp(F["bar_end"].iloc[30]).to_pydatetime()
     rows = [(pd.Timestamp(b).to_pydatetime(), 1, o, h, lo, c, 0) for b, o, h, lo, c in
             zip(F["bar_end"].iloc[:32], F["open"].iloc[:32], F["high"].iloc[:32], F["low"].iloc[:32], F["close"].iloc[:32])]

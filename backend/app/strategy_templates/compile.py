@@ -32,11 +32,10 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from app.screener import nodes as n
 from app.screener.parser import ScreenQLSyntaxError, parse
-from app.screener.registry import FUNCTIONS, LAST_BAR_ONLY, NUM, BOOL
+from app.screener.registry import BOOL, FUNCTIONS, LAST_BAR_ONLY, NUM
 from app.screener.validator import validate_study
 from app.strategy_templates import language
-from app.strategy_templates.schema import (SIGNAL_TIMEFRAME, ContextSwitch, Setup, SetupExtreme, SetupSwitch, Sided, Switch,
-                                           Template)
+from app.strategy_templates.schema import SIGNAL_TIMEFRAME, ContextSwitch, Setup, SetupExtreme, SetupSwitch, Sided, Switch, Template
 
 Side = Literal["long", "short"]
 SIDES: Tuple[Side, ...] = ("long", "short")

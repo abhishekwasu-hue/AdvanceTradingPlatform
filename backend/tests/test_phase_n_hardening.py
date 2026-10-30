@@ -10,8 +10,10 @@ from cryptography.fernet import Fernet
 from sqlalchemy import select
 
 from app.auth import scopes, verification
+from app.auth.routes import verify_rate_limit
 from app.core import config
 from app.db.models import AlertChannelRecord, BrokerCredentialRecord, EmailVerificationRecord, PlatformControlRecord, TenantKeyRecord, User
+from app.main import app
 from app.market_data.calendar import IST, session_status
 from app.notifications import mailer
 from app.platform import controls
@@ -22,8 +24,6 @@ from tests.test_auth_api import _register, _session_factory, client
 from tests.test_deployments_api import _store_broker
 from tests.test_mfa import _set_tenant
 from tests.test_team_api import _accept, _invite
-from app.auth.routes import verify_rate_limit
-from app.main import app
 
 app.dependency_overrides[verify_rate_limit] = lambda: None
 

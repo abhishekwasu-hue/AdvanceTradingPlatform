@@ -19,8 +19,16 @@ import pandas as pd
 import pytest
 from sqlalchemy import select
 
-from app.db.models import (AiActionRecord, AlertEventRecord, AlertRuleRecord, ExecutionIntentRecord, MdCandleRecord, NotificationRecord,
-                           OrderRecord, ScanThenTemplateRecord)
+from app.db.models import (
+    AiActionRecord,
+    AlertEventRecord,
+    AlertRuleRecord,
+    ExecutionIntentRecord,
+    MdCandleRecord,
+    NotificationRecord,
+    OrderRecord,
+    ScanThenTemplateRecord,
+)
 from app.execution.core import dispatcher, intents
 from app.market_data.calendar import IST
 from app.price_action.daily_trend import fold as daily_fold
@@ -28,15 +36,16 @@ from app.price_action.level_gate import gate as G
 from app.price_action.level_gate import status as ST
 from app.screener.runtime import SymbolData
 from app.screener.then import areas as A
-from app.screener.then import runner, templates as T, trend
+from app.screener.then import runner, trend
+from app.screener.then import templates as T
 from tests import private_fixtures as PF
 from tests.fixtures.level_gate import synthetic_inputs as LGI
 from tests.order_path_graph import CallGraph
 from tests.test_auth_api import _session_factory, client
+from tests.test_n1_e1_execution_core import _flag
 from tests.test_trading_worker import _tenant
 from tests.test_z10c_order_paths import GATED
 from tests.test_z10c_tenancy_fixes import _member
-from tests.test_n1_e1_execution_core import _flag
 
 UTC = timezone.utc
 BACKEND = Path(__file__).resolve().parents[1]

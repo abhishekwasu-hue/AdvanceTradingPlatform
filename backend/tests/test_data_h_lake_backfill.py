@@ -20,11 +20,11 @@ from app.ai.tools import ToolResult
 from app.ai.tools import copilot as copilot_tools
 from app.core import config
 from app.core.models import OHLCVBar
-from app.db.models import (BrokerCredentialRecord, LakeBackfillWindowRecord, MdBarFlagRecord, MdCandleRecord, MdTenantCandleRecord, Tenant,
-                           User)
+from app.db.models import BrokerCredentialRecord, LakeBackfillWindowRecord, MdBarFlagRecord, MdCandleRecord, MdTenantCandleRecord, Tenant, User
 from app.market_data.api_budget import BudgetUsed
 from app.market_data.calendar import IST
-from app.market_lake import index_history as dh, own_bars
+from app.market_lake import index_history as dh
+from app.market_lake import own_bars
 from tests.test_auth_api import _register, _session_factory
 
 FRI = date(2023, 3, 10)

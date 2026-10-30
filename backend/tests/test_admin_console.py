@@ -20,7 +20,12 @@ from sqlalchemy import select
 from app.admin.console import mask_email, mask_ip
 from app.auth.security import hash_password
 from app.db.models import (
-    BrokerCredentialRecord, LlmCallRecord, LoginEventRecord, StrategyDeploymentRecord, User, WorkerHeartbeatRecord,
+    BrokerCredentialRecord,
+    LlmCallRecord,
+    LoginEventRecord,
+    StrategyDeploymentRecord,
+    User,
+    WorkerHeartbeatRecord,
 )
 from app.main import app
 from app.observability import recent_errors

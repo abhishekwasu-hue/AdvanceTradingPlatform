@@ -27,7 +27,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts import fcm
 from app.alerts.channels import FcmConfig, FcmDevice, decrypt_raw, encrypt_config
-from app.alerts.push_kinds import PHONE_KINDS, device_id as make_device_id
+from app.alerts.push_kinds import PHONE_KINDS
+from app.alerts.push_kinds import device_id as make_device_id
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user
 from app.core.enums import AlertChannelType, NotificationSeverity, NotificationType

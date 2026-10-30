@@ -16,7 +16,17 @@ from app.execution.tagging import LEG_ENTRY, LEG_EXIT, LEG_STOP, build_order_tag
 from app.platform import controls, phase0_lock
 from tests.test_auth_api import _session_factory
 from tests.test_trading_worker import (
-    BAR_TS, LATE_NOW, OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker,
+    BAR_TS,
+    LATE_NOW,
+    OPEN_NOW,
+    _deploy,
+    _FakeBroker,
+    _force_signal,
+    _get,
+    _signal,
+    _tenant,
+    _trades,
+    _worker,
 )
 
 pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)

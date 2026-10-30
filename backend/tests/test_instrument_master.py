@@ -9,7 +9,11 @@ from sqlalchemy import func, select
 from app.db.models import InstrumentRecord
 from app.instruments import master
 from app.instruments.master import (
-    derivatives_exchange, normalise_expiry, parse_upstox_master, replace_master, underlying_of,
+    derivatives_exchange,
+    normalise_expiry,
+    parse_upstox_master,
+    replace_master,
+    underlying_of,
 )
 from tests.master_fixture import BANKNIFTY_LOT, NIFTY_EXPIRIES, NIFTY_LOT, build_master, master_gzip
 from tests.test_admin_api import _admin
@@ -100,7 +104,17 @@ def _headers(email: str) -> dict:
     return {"Authorization": f"Bearer {_register(email)}"}
 
 
-def test_master_api_search_expiries_strikes_status():
+class _FixtureToday(date):
+    """The fixture's expiries run to 29 Oct 2026; the expiries route keeps dates on or after today - read as of the
+    fixture's own date (28 Sep 2026, as test_contract_rules.TODAY), not the real clock (the test broke on 30 Oct)."""
+    @classmethod
+    def today(cls):
+        return cls(2026, 9, 28)
+
+
+def test_master_api_search_expiries_strikes_status(monkeypatch):
+    import app.instruments.routes as master_routes
+    monkeypatch.setattr(master_routes, "date", _FixtureToday)
     _load_fixture()
     headers = _headers("master-user@example.com")
     status = client.get("/api/instrument-master/status", headers=headers).json()

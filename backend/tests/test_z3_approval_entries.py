@@ -21,7 +21,7 @@ from app.execution import approval
 from app.execution.signal_execution import execute_signal_for_user
 from app.platform import controls
 from tests.test_auth_api import _session_factory, client
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker
 
 pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
 
@@ -105,6 +105,7 @@ def quiet_alerts(tenant_id: int) -> None:
     """Remove a test organisation's alert channels and undelivered alerts, so a later worker cycle in the same test
     process never tries to reach Telegram for it (no network in tests)."""
     from sqlalchemy import delete
+
     from app.db.models import AlertChannelRecord, AlertDeliveryRecord
 
     async def go():
@@ -745,8 +746,8 @@ def _trades_of(t):
 
 @pytest.fixture
 def _tg(monkeypatch):
-    from tests.test_phase_be_telegram_inbound import _Telegram, _no_shared_rate_limit  # noqa: F401
     from app.telegram_inbound import service as tg
+    from tests.test_phase_be_telegram_inbound import _no_shared_rate_limit, _Telegram  # noqa: F401
 
     async def never(*_a, **_k):
         return False

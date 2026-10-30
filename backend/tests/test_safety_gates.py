@@ -15,7 +15,16 @@ from app.market_data.service import MarketDataService
 from app.trading.position_monitor import monitor_open_positions
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import (
-    OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _run, _signal, _tenant, _trades, _worker,
+    OPEN_NOW,
+    _deploy,
+    _FakeBroker,
+    _force_signal,
+    _get,
+    _run,
+    _signal,
+    _tenant,
+    _trades,
+    _worker,
 )
 
 IST = ZoneInfo("Asia/Kolkata")

@@ -78,7 +78,7 @@ async def _auto_status(session: AsyncSession, item: dict, record: Optional[Compl
         keep = int(rules.load().param(RULE, "log_retention_days", 0) or 0)
         days = load_policy().login_events_days
         return ("ok" if days >= keep else "warn"), f"login history kept {days} days (rule: at least {keep})"
-    from app.platform.controls import flag_enabled   # ra_gate
+    from app.platform.controls import flag_enabled  # ra_gate
     if not await flag_enabled(session, "marketplace_ai_listings"):
         return "ok", "AI trade ideas are not published (marketplace_ai_listings off)"
     status, detail = _evidence_status(item, record, today)

@@ -37,8 +37,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import AlertRuleRecord, JournalTagRecord, MarketEventRecord, TradeRecord
 from app.market_data.calendar import IST, family_holidays
 from app.rhythm import words
-from app.rhythm.build import (Ctx, Me, Section, _day_label, _own_trades, _risk_cfg, _safely, _setup_line, _side,
-                              _utc, event_row, money, position_state, setup_row)
+from app.rhythm.build import (
+    Ctx,
+    Me,
+    Section,
+    _day_label,
+    _own_trades,
+    _risk_cfg,
+    _safely,
+    _setup_line,
+    _side,
+    _utc,
+    event_row,
+    money,
+    position_state,
+    setup_row,
+)
 
 PAGES: Tuple[str, ...] = ("signals", "positions", "journal", "charts", "screener")
 TITLES: Dict[str, str] = {"signals": "Your signals at a glance", "positions": "Your positions now",

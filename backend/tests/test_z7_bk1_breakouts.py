@@ -19,8 +19,7 @@ from app.screener.breakouts.quality import atr_percentile, atr_percentile_series
 from app.screener.breakouts.screens import INTRADAY_SCREENS, SCREENS, Bars, evaluate_screen
 from app.screener.registry import BREAKOUT_FUNCTIONS, FUNCTIONS
 from app.screener.runtime import SymbolData, evaluate, resample, run_screen
-from tests.breakout_fixtures import (HTF_DOWN, HTF_UP, LOW_VOLUME_BREAK, TRUE_BREAK, UPTREND, WICK_ONLY, base_then, box, context_frame,
-                                     frame, zigzag)
+from tests.breakout_fixtures import HTF_DOWN, HTF_UP, LOW_VOLUME_BREAK, TRUE_BREAK, UPTREND, WICK_ONLY, base_then, box, context_frame, frame, zigzag
 from tests.sample_market import generate
 
 RESEARCH = Path(__file__).resolve().parents[2] / "docs" / "research" / "breakouts.md"

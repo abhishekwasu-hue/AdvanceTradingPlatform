@@ -11,7 +11,8 @@ from app.option_chain import oi_gates
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_o2_oi_snapshots import T0, UND, _chain, _collect
 from tests.test_phase_l_ai import _owner
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant as _worker_tenant, _trades, _worker
+from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _trades, _worker
+from tests.test_trading_worker import _tenant as _worker_tenant
 
 
 def _run(coro):

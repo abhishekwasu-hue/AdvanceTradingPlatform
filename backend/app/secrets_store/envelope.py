@@ -20,13 +20,20 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-from app.db.models import (AiProviderConfigRecord, AlertChannelRecord, BrokerCredentialRecord, MarketplacePayoutRecord, Tenant,
-                           TenantKeyRecord, User, UserAiKeyRecord)
+from app.db.models import (
+    AiProviderConfigRecord,
+    AlertChannelRecord,
+    BrokerCredentialRecord,
+    MarketplacePayoutRecord,
+    Tenant,
+    TenantKeyRecord,
+    User,
+    UserAiKeyRecord,
+)
 from app.secrets_store import encryption
 
 logger = logging.getLogger(__name__)

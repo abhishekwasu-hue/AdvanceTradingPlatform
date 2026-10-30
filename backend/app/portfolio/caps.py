@@ -126,10 +126,10 @@ async def largest_risk_amount(session: AsyncSession, user: User, capital: float,
     """The largest loss at the stop the pipeline may size an entry to (review M2): the larger of the user's P1-d cap and
     the organisation's risk per trade within the platform ceilings (with `risk_by_default` off the organisation's alone
     sizes the entry; with it on the stricter of the two does, which is never above this)."""
+    from app.core.models import RiskConfig
     from app.platform.controls import clamp_config, risk_ceilings
     from app.risk_engine import by_default
     from app.risk_engine.routes import get_tenant_risk_config
-    from app.core.models import RiskConfig
     user_cap = float(by_default.risk_cap(capital, settings).get("amount") or 0.0)
     cfg, _ = clamp_config(await get_tenant_risk_config(user.tenant_id, session) or RiskConfig(), await risk_ceilings(session))
     org_cap = float(cfg.with_capital(capital).risk_amount() or 0.0)      # DEF-0: none set = 0 (no organisation cap)

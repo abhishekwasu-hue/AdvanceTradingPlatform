@@ -163,8 +163,14 @@ again AFTER every compaction, before acting. Begin each report to Abhi with: "Ru
 - Where things are:
   - Backend `backend/` (FastAPI `app/`, tests `backend/tests`, Alembic `alembic/`). CI: `ruff check app tests evals`,
     `mypy`, `bandit`, `pytest`, `alembic check`, `python backend/scripts/migration_rollback_safety.py lint`.
+    Lint (AUD-G1.6): ruff `select` in `backend/ruff.toml` (adds ASYNC and I - keep imports sorted, `ruff check --fix`);
+    pyupgrade (UP) is a ratchet, not a gate: `backend/tests/test_ruff_up_ratchet.py` (CI lint job) fails when any UP
+    rule's count rises - write new code with `list[...]`, `X | None`, `datetime.UTC`, and lower the baseline when a
+    count falls. mypy gates only the packages in `backend/mypy.ini` `files`; add a package once `mypy app/<pkg>` is clean.
   - Frontend `frontend/` (React + Vite + vitest + Playwright). CI: `npm test`, `npm run check:v2-colours`,
-    `npm run check:mobile`, `npm run build`, `npm run check:bundle`, `npm run test:e2e`. Text sizes only from the
+    `npm run check:mobile`, `npm run lint`, `npm run build`, `npm run check:bundle`, `npm run test:e2e`.
+    `npm run lint` (AUD-G1.6) = ESLint + typescript-eslint (`frontend/eslint.config.js`): errors fail; the warnings the
+    code had are a per-rule ratchet (`frontend/scripts/check-eslint-ratchet.mjs`) that may only fall. Text sizes only from the
     Tailwind tokens (rem; never `text-[Npx]` below 14 px); colours only from the tokens.
   - Guards: `scripts/check_english_only.py`, `scripts/check_public_repo.py`.
   - Deploy: `deploy/atp.sh`; runbook `docs/deploy/HOSTINGER_RUNBOOK.md`. Working rules: `docs/WORKING_RULES.md`.

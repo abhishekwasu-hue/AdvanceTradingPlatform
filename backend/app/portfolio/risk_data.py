@@ -14,7 +14,8 @@ from __future__ import annotations
 import re
 import time
 from collections import OrderedDict
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from sqlalchemy import select

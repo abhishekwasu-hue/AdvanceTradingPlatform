@@ -70,7 +70,7 @@ def live_problem(registered: Optional[str], broker_name: Optional[str]) -> Optio
 async def audit_order(session: AsyncSession, tenant_id: Optional[int], user_id: Optional[int], *, leg: str, broker_name: str,
                       symbol: str, tag: Optional[str], broker_order_id: Optional[str], ref: str = "") -> None:
     """One audit-log row per LIVE order placed: the tag the broker received, next to the broker's order id."""
-    from app.audit.log import write_audit_log   # local: the audit module imports models that import execution
+    from app.audit.log import write_audit_log  # local: the audit module imports models that import execution
     await write_audit_log(session, tenant_id, user_id, "algo_order",
                           f"{leg} {symbol} via {broker_name}: broker order {broker_order_id or '-'} tag={tag or '(none)'}"
                           + (f" ({ref})" if ref else ""))

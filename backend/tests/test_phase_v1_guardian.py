@@ -10,12 +10,14 @@ from app.db.models import TradeRecord, User
 from app.execution.signal_execution import execute_signal_for_user
 from app.platform import controls
 from app.risk_engine.guardian import bucket_for, is_stop_exit
+from tests.def0_legacy import legacy
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_contract_rules import _load_master
 from tests.test_live_execution import _signal
-from tests.test_phase_r_structures import _execute as _execute_structure, _resolve
+from tests.test_phase_r_structures import _execute as _execute_structure
+from tests.test_phase_r_structures import _resolve
 from tests.test_trading_worker import _tenant, _trades
-from tests.def0_legacy import legacy
+
 
 def _ist_today() -> str:
     """Read at call time, not import time: a run that crosses IST midnight must not use yesterday's date."""

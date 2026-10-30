@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  TABS, analysesQuery, analysisFor, fetchAnalyses, nextTab, formatCell, markerPixel, provenance, stateMessage, xPixel, xValues, yScale, yTick,
+  TABS, analysesQuery, analysisFor, fetchAnalyses, nextTab, formatCell, markerPixel, pcrHeadline, provenance, stateMessage, xPixel, xValues, yScale, yTick,
   type AnalysesResponse, type AnalysisKey,
 } from "./analyses";
 import analysesSource from "./analyses.ts?raw";
@@ -69,7 +69,9 @@ describe("OC2 analysis tabs", () => {
     expect(html).toContain(`data-analysis="${key}"`);
     expect(analysis.sentences.length).toBeGreaterThanOrEqual(2);
     expect(analysis.sentences.length).toBeLessThanOrEqual(3);
-    for (const s of analysis.sentences) expect(words).toContain(s.replace(/\s+/g, " "));
+    // M61 PCR-3: the PCR tab shows its headline in numbers with its own dot and dash; the server's ASCII line stays in the data.
+    const shown = key === "pcr" ? [pcrHeadline(analysis)!, ...analysis.sentences.slice(1)] : analysis.sentences;
+    for (const s of shown) expect(words).toContain(s.replace(/\s+/g, " "));
     expect(html).toMatch(/data-chart="(bar|line)"><svg[^>]*role="img"/);
     expect(html).toContain("<table");
     expect(words).toContain("How it is worked out:");

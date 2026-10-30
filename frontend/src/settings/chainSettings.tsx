@@ -104,6 +104,7 @@ export default function ChainSettingsV2({ fetcher = request }: { fetcher?: typeo
           <p className="text-t14 text-fg-muted">
             PCR zones: where the put-call ratio counts as very low, low, balanced, high or very high in &quot;What the chain shows&quot;.
           </p>
+          <p>Today&apos;s expiry stays one tap away.</p>
         </Details>
         <div className="grid gap-space-3 md:grid-cols-2">
           {PCR_KEYS.map((k) => (
@@ -119,7 +120,6 @@ export default function ChainSettingsV2({ fetcher = request }: { fetcher?: typeo
             onChange={(e) => { setNextOnExpiry(e.target.checked); setNote(null); }} />
           <span>On an expiry day, open the chain and the spread builder on the next expiry.</span>
         </label>
-        <Details id="settings.chain.expiry-day" className="mt-0"><p>Today&apos;s expiry stays one tap away.</p></Details>
         {note && <NoteV2 kind={note.kind} testId="chain-settings">{note.text}</NoteV2>}
         <div className="flex flex-wrap gap-space-2">
           <button type="button" className={BUTTON_PRIMARY} disabled={busy} onClick={() => void save(form)} data-chain-field="save">

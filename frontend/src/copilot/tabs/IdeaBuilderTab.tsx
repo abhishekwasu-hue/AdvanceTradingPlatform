@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { api } from "../../api/client";
 import { chartWindowUrl } from "../../components/chartHelpers";
-import { DataSourceBar, useCandleSource, type CandleSourceState } from "../../components/DataSource";
+import { DataSourceBar, SampleChip, useCandleSource, type CandleSourceState } from "../../components/DataSource";
 import { Badge, Button, fieldClass } from "../../components/primitives";
 import type { FeedbackOption, InterviewPlan, InterviewQuestion, InterviewStart, OHLCVBar } from "../../types";
 import { FNO_INDICES, FNO_STOCKS } from "../../utils/fnoSymbols";
@@ -315,6 +315,7 @@ function IdeaBuilderInterview() {
                 <span className="text-left leading-tight">{t("idea.readMarket")}</span>
               </Button>
               {estimate && <CostChip tokens={estimate.tokens} inr={estimate.inr} estimate />}
+              {source.mode === "sample" && <SampleChip />}
               <span className="text-xs text-fg-muted">{source.mode === "sample" ? t("idea.onSample") : t("idea.onBroker")}</span>
             </div>
           </div>

@@ -2,7 +2,7 @@ import { errorSentence } from "../api/errors";
 import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import { Card, Disclaimer, StatTile } from "../components/ui";
-import { DataSourceBar, useCandleSource } from "../components/DataSource";
+import { DataSourceBar, SampleChip, useCandleSource } from "../components/DataSource";
 import type { FactorTable, QuantRisk, QuantSymbolInput } from "../types";
 import { PageHeader } from "../components/primitives";
 import { Details } from "../ui/Details";
@@ -44,11 +44,13 @@ export default function QuantPage() {
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   const [useFundamentals, setUseFundamentals] = useState(true);   // Phase AG: value/quality from stored financials
 
+  const [ranOnSample, setRanOnSample] = useState(false);
   const symbols = useMemo(() => watchlist.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean), [watchlist]);
 
   async function inputs(): Promise<QuantSymbolInput[]> {
     const fetched = await source.fetch(symbols, timeframe, { count: 320 });
     setDataWarnings(fetched.warnings);
+    setRanOnSample(fetched.label === "sample");                    // M55 T3
     return Object.entries(fetched.candles).map(([symbol, candles]) => ({ symbol, candles }));
   }
 
@@ -130,6 +132,7 @@ export default function QuantPage() {
 
       {table && (
         <Card title={`Factor table (${table.universe} symbols)`}>
+          {ranOnSample && <SampleChip className="mb-2" />}
           {table.warnings.map((w, i) => <div key={i} className="text-xs text-warn mb-1">{w}</div>)}
           <div className="overflow-x-auto">
             <table className="w-full text-xs">

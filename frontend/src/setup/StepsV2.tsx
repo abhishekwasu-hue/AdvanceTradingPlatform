@@ -10,7 +10,7 @@ import { currentPushEnv, pushReadiness, vapidKeyBytes } from "../alerts/push";
 import { ChipV2, LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import type { TelegramLinkCode } from "../alerts/rules";
 import TelegramConnectV2 from "../alerts/TelegramConnectV2";
-import type { AlertChannel, AlertChannelType, OHLCVBar, PaperRiskStatus, StrategyInfo } from "../types";
+import type { AlertChannel, AlertChannelType, DataRequest, OHLCVBar, PaperRiskStatus, StrategyInfo } from "../types";
 import { STORED_HISTORY_NOTE } from "../backtest/pricesLine";
 import { CONNECT_BROKER_PATH } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
@@ -276,16 +276,20 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
       let bars: OHLCVBar[];
       let label: string;
       let line = "";
+      let data: DataRequest;
       if (source.stored) {
         const res = await api.backtestBars(s.symbol, timeframe, days);
         bars = res.candles; label = res.source; line = ` ${res.line}`;
+        data = { data_mode: "server", lookback_days: days };
       } else {
         const res = await api.marketDataCandles([s.symbol], timeframe, days, "NSE", source.broker);
         bars = res.symbols[s.symbol.toUpperCase()]?.bars ?? Object.values(res.symbols)[0]?.bars ?? [];
         label = `broker:${res.source.broker}`;
+        data = { data_mode: "server", lookback_days: days, broker: res.source.broker };
       }
       if (!bars.length) throw new Error("no candles");
-      const result = await api.backtest(info.id, s.symbol, timeframe, bars, null, label);
+      // M55 T3: the server loads the same bars itself and records where they came from (no candles posted).
+      const result = await api.backtest(info.id, s.symbol, timeframe, bars, null, label, null, data);
       setTest({ tone: "ok", text: testSummary(result, days, s.symbol) + line + (s.option ? " Tested on the index itself, not the option." : "") });
       onChanged();
     } catch (e) {

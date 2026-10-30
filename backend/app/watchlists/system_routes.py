@@ -59,7 +59,10 @@ async def list_system(user: User = Depends(get_current_user), session: AsyncSess
     groups = [{"group": g, "label": system.GROUP_LABELS[g], "lists": [system.summary(r) for r in rows if r.group == g]}
               for g in system.GROUPS]
     refreshed = max((r.refreshed_at for r in rows if r.refreshed_at), default=None)
-    return {"groups": [g for g in groups if g["lists"]], "refreshed_at": refreshed.isoformat() if refreshed else None}
+    from app.core import config
+    # M55 T3: with the daily universe sync off the lists are the stored fallback copy; the panel says so in one line.
+    return {"groups": [g for g in groups if g["lists"]], "refreshed_at": refreshed.isoformat() if refreshed else None,
+            "fallback": not config.UNIVERSE_SYNC_ENABLED}
 
 
 @router.get("/{key}")

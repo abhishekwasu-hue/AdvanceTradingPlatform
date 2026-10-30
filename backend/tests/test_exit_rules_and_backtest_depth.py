@@ -163,7 +163,8 @@ def test_backtest_endpoint_records_runs_for_logged_in_users_and_lists_them():
     run_id = mine.json()["run_id"]
     assert run_id and mine.json()["exit_rules"] == '{"trailing_stop_pct": 0.5}'
     runs = client.get("/api/backtests", headers=headers).json()
-    assert runs[0]["id"] == run_id and runs[0]["symbol"] == "NIFTY" and runs[0]["data_source"] == "sample" and runs[0]["bars"] == 300
+    assert runs[0]["id"] == run_id and runs[0]["symbol"] == "NIFTY" and runs[0]["data_source"] == "uploaded" and runs[0]["bars"] == 300   # M55 T3: posted candles are
+    # recorded as uploaded, whatever label the client sent
     one = client.get(f"/api/backtests/{run_id}", headers=headers).json()
     assert one["engine_version"] == ENGINE_VERSION and one["exit_rules"] == {"trailing_stop_pct": 0.5} and "analytics" in one["metrics"]
     assert client.get(f"/api/backtests/{run_id}", headers=_auth("bt-other@example.com")).status_code == 404

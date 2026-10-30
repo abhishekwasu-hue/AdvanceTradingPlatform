@@ -12,7 +12,9 @@
   "market_line": {
    "line": "NIFTY 50 last closed at 24,850.5 (20 Oct 2026); by its swing highs and lows the daily trend is up, the weekly sideways; India VIX 12.4 (-3.1%).",
    "reason": null,
-   "as_of": "2026-10-21T03:30:00+00:00"
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "fii_net_crore": -1234.56,
+   "fii_as_of": "2026-10-20"
   },
   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
   "jobs": [
@@ -125,9 +127,9 @@
     {
      "title": "Structure per timeframe",
      "lines": [
-      "Weekly: range",
+      "Weekly: sideways",
       "Daily: up, protected level 24,310, last break past the last swing (a break of structure) at 24,790",
-      "1-hour: down (weak), protected level 25,020, last CHoCH at 24,900.5",
+      "1-hour: down (weak), protected level 25,020, last first break against the trend (a change of character) at 24,900.5",
       "15-minute: up, protected level 24,730.5"
      ]
     },
@@ -183,27 +185,27 @@
       "rows": [
        {
         "tf": "Weekly",
-        "direction": "range",
+        "direction": "sideways",
         "protected": null,
-        "last": "none"
+        "last": "none yet"
        },
        {
         "tf": "Daily",
         "direction": "up",
         "protected": 24310.0,
-        "last": "BOS 24,790"
+        "last": "break past the last swing (a break of structure) 24,790"
        },
        {
         "tf": "1-hour",
         "direction": "down (weak)",
         "protected": 25020.0,
-        "last": "CHoCH 24,900.5"
+        "last": "first break against the trend (a change of character) 24,900.5"
        },
        {
         "tf": "15-minute",
         "direction": "up",
         "protected": 24730.5,
-        "last": "none"
+        "last": "none yet"
        }
       ]
      }
@@ -276,7 +278,8 @@
      "args": {
       "symbol": "NIFTY",
       "timeframe": "1d"
-     }
+     },
+     "ran": true
     },
     {
      "tool": "get_market_zones",
@@ -294,7 +297,8 @@
      "args": {
       "symbol": "NIFTY",
       "price": 24850.5
-     }
+     },
+     "ran": true
     }
    ],
    "action": null,
@@ -306,17 +310,41 @@
    ],
    "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
    "source": "rules",
+   "draft": null,
+   "followup": null,
+   "symbols": [
+    "NIFTY"
+   ],
+   "symbol_default": false,
+   "headline": {
+    "symbol": "NIFTY",
+    "price": 24850.5,
+    "price_label": "Last close",
+    "as_of": "2026-10-21T03:30:00+00:00",
+    "trend": "up",
+    "timeframe": "Daily",
+    "area": {
+     "side": "supply",
+     "from": 25080.0,
+     "to": 25160.0,
+     "where": "above",
+     "distance": 229.5,
+     "distance_pct": 0.92
+    },
+    "chart": {
+     "symbol": "NIFTY 50",
+     "exchange": "NSE",
+     "timeframe": "day"
+    }
+   },
    "tool_calls": [
     "get_chart_structure",
     "get_market_zones"
    ],
-   "ai": {
-    "ready": false,
-    "title": "Add a free AI key to start",
-    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
-    "settings": "/settings/ai",
-    "reason": null
-   }
+   "tools_used": [
+    "Chart structure",
+    "Market zones"
+   ]
   },
   "What does the option chain show?": {
    "job": "option_chain",
@@ -1369,13 +1397,13 @@
      "title": "Your week (2026-W43)",
      "lines": [
       "2026-W43: 4 trades, 4 closed and 0 still open.",
-      "Closed trades: 2 won, 2 lost, win rate 50%; net P&L \u20b92,055.00 after \u20b9158.00 in charges.",
-      "Average result 0.36R over 4 trades with a stop; expectancy \u20b9513.75 per closed trade.",
-      "Setup pullback-to-demand made \u20b91,575.00 over 2 closed trades.",
-      "Setup handover-continuation made \u20b9480.00 over 2 closed trades.",
-      "Tagged stop moved against the position: 1 trade, net -\u20b91,545.00 on the closed ones.",
-      "Tagged revenge trade: 1 trade, net -\u20b9980.00 on the closed ones.",
-      "The behaviour with the largest loss this week was stop moved against the position (\u20b91,545.00 lost over 1 closed trade).",
+      "Closed trades: 2 won, 2 lost, win rate 50%; net P&L ₹2,055.00 after ₹158.00 in charges.",
+      "Average result 0.36R over 4 trades with a stop; expectancy ₹513.75 per closed trade.",
+      "Setup pullback-to-demand made ₹1,575.00 over 2 closed trades.",
+      "Setup handover-continuation made ₹480.00 over 2 closed trades.",
+      "Tagged stop moved against the position: 1 trade, net -₹1,545.00 on the closed ones.",
+      "Tagged revenge trade: 1 trade, net -₹980.00 on the closed ones.",
+      "The behaviour with the largest loss this week was stop moved against the position (₹1,545.00 lost over 1 closed trade).",
       "Discipline score 88 out of 100; the lowest component was emotional control at 75% of decisions untagged.",
       "Compared with 2026-W42 (score 78), the score is up by 10."
      ]
@@ -2415,6 +2443,237 @@
     "settings": "/settings/ai",
     "reason": null
    }
+  },
+  "Read the SENSEX chart": {
+   "job": "chart",
+   "job_number": 2,
+   "title": "Chart reader",
+   "summary": [
+    "SENSEX last closed at 81,261.1. On the daily chart the structure reads up, protected level 79,493.7."
+   ],
+   "answer": "SENSEX last closed at 81,261.1. On the daily chart the structure reads up, protected level 79,493.7.",
+   "sections": [
+    {
+     "title": "Structure per timeframe",
+     "lines": [
+      "Weekly: sideways",
+      "Daily: up, protected level 79,493.7, last break past the last swing (a break of structure) at 81,063.3",
+      "1-hour: down (weak), protected level 81,815.4, last first break against the trend (a change of character) at 81,424.6",
+      "15-minute: up, protected level 80,868.7"
+     ]
+    },
+    {
+     "title": "Nearest swing levels",
+     "lines": [
+      "Resistance swing level 81,784.3",
+      "Support swing level 80,443.6"
+     ]
+    },
+    {
+     "title": "Key areas",
+     "lines": [
+      "Supply area 82,011.6 - 82,273.2 (supply zone, fresh)",
+      "Demand area 80,180.4 - 80,474.7 (demand zone, tested, 1 touch)"
+     ]
+    },
+    {
+     "title": "What to watch",
+     "lines": [
+      "Whether the protected level holds or breaks on a closed bar.",
+      "How the price behaves when it reaches one of the key areas above."
+     ]
+    }
+   ],
+   "blocks": [
+    {
+     "type": "table",
+     "table": {
+      "title": "SENSEX structure per timeframe",
+      "columns": [
+       {
+        "key": "tf",
+        "label": "Timeframe",
+        "kind": "text"
+       },
+       {
+        "key": "direction",
+        "label": "Structure",
+        "kind": "text"
+       },
+       {
+        "key": "protected",
+        "label": "Protected level",
+        "kind": "price"
+       },
+       {
+        "key": "last",
+        "label": "Last break",
+        "kind": "text"
+       }
+      ],
+      "rows": [
+       {
+        "tf": "Weekly",
+        "direction": "sideways",
+        "protected": null,
+        "last": "none yet"
+       },
+       {
+        "tf": "Daily",
+        "direction": "up",
+        "protected": 79493.7,
+        "last": "break past the last swing (a break of structure) 81,063.3"
+       },
+       {
+        "tf": "1-hour",
+        "direction": "down (weak)",
+        "protected": 81815.4,
+        "last": "first break against the trend (a change of character) 81,424.6"
+       },
+       {
+        "tf": "15-minute",
+        "direction": "up",
+        "protected": 80868.7,
+        "last": "none yet"
+       }
+      ]
+     }
+    },
+    {
+     "type": "table",
+     "table": {
+      "title": "SENSEX key areas",
+      "columns": [
+       {
+        "key": "role",
+        "label": "Side",
+        "kind": "text"
+       },
+       {
+        "key": "low",
+        "label": "From",
+        "kind": "price"
+       },
+       {
+        "key": "high",
+        "label": "To",
+        "kind": "price"
+       },
+       {
+        "key": "state",
+        "label": "State",
+        "kind": "text"
+       },
+       {
+        "key": "touches",
+        "label": "Touches",
+        "kind": "number"
+       }
+      ],
+      "rows": [
+       {
+        "role": "supply",
+        "low": 82011.6,
+        "high": 82273.2,
+        "state": "fresh",
+        "touches": 0
+       },
+       {
+        "role": "demand",
+        "low": 80180.4,
+        "high": 80474.7,
+        "state": "tested",
+        "touches": 1
+       }
+      ]
+     }
+    }
+   ],
+   "unknowns": [],
+   "worked": [
+    {
+     "tool": "get_chart_structure",
+     "label": "SENSEX structure per timeframe",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "price_action_layer:nse_bhav",
+     "numbers": [
+      {
+       "label": "last_close",
+       "value": 81261.1
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "SENSEX",
+      "timeframe": "1d"
+     },
+     "ran": true
+    },
+    {
+     "tool": "get_market_zones",
+     "label": "SENSEX market zones",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "market_zones",
+     "numbers": [
+      {
+       "label": "price",
+       "value": 81261.1
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "SENSEX",
+      "price": 81261.1
+     },
+     "ran": true
+    }
+   ],
+   "action": null,
+   "refused": null,
+   "starters": [],
+   "concepts": [],
+   "notes": [
+    "Structure reading from ATP's zone layers (the full Price Action reader is not in ATP yet)."
+   ],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "draft": null,
+   "followup": null,
+   "symbols": [
+    "SENSEX"
+   ],
+   "symbol_default": false,
+   "headline": {
+    "symbol": "SENSEX",
+    "price": 81261.1,
+    "price_label": "Last close",
+    "as_of": "2026-10-21T03:30:00+00:00",
+    "trend": "up",
+    "timeframe": "Daily",
+    "area": {
+     "side": "supply",
+     "from": 82011.6,
+     "to": 82273.2,
+     "where": "above",
+     "distance": 750.5,
+     "distance_pct": 0.92
+    },
+    "chart": {
+     "symbol": "SENSEX",
+     "exchange": "BSE",
+     "timeframe": "day"
+    }
+   },
+   "tool_calls": [
+    "get_chart_structure",
+    "get_market_zones"
+   ],
+   "tools_used": [
+    "Chart structure",
+    "Market zones"
+   ]
   }
  }
 }

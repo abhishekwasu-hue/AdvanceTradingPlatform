@@ -7,6 +7,10 @@ The rule-set holds a default policy and per-broker overrides (`params.default`, 
 It applies to **entries only**. Exits keep their market orders with the broker-side market protection (G-LIVE, rule
 IN-SEBI.order_type.market_protection): an exit turned into a limit could stay unfilled, and exits are never blocked
 (ADR-0004). The default policy changes nothing; the owner switches a broker by editing the rule-set.
+
+M55 S3 (A6): PAPER and LIVE entries take the router's one path, so this policy applies to both - the paper venue
+practising for a broker reads that broker's policy, the plain paper venue the default one. The LIVE entry default stays
+MARKET (`market_for_algo` "allow"); only PROTECTED_LIMIT or a broker's `map_to_limit` sends a marketable LIMIT.
 """
 from typing import Dict, Optional, Tuple
 

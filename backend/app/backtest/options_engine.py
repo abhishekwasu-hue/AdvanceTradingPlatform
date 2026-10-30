@@ -389,14 +389,7 @@ def run_option_backtest(
                 if reason is None and exit_due:
                     reason, exit_spot = "Template exit", float(bar["open"])
                 exit_due = False
-                # 2. Time rules and the intraday square-off.
-                if reason is None and time_rules is not None and time_rules.time_exit_minutes and at - pos.entry_time >= timedelta(minutes=time_rules.time_exit_minutes):
-                    reason = f"Time exit ({time_rules.time_exit_minutes}m in trade)"
-                if reason is None and exit_at is not None and at_ist.time() >= exit_at:
-                    reason = f"Time exit (flat at {time_rules.time_exit_at} IST)"
-                if reason is None and config.intraday and not is_daily and at_ist.time() >= SQUARE_OFF_AT:
-                    reason = f"Square-off ({SQUARE_OFF_AT.strftime('%H:%M')} IST)"
-                # 3. Underlying levels on the bar's range, filled at the level itself.
+                # 2. Underlying levels on the bar's range, filled at the level itself.
                 if reason is None:
                     if pos.single:
                         hit_low = underlying_exit(pos.underlying_direction, pos.underlying_stop, pos.underlying_t1, pos.underlying_t2, low)
@@ -418,6 +411,14 @@ def run_option_backtest(
                             if hit is not None:
                                 reason, exit_spot = hit, _breach_level(pos.meta, level)
                                 break
+                # 3. Time rules and the intraday square-off, at the close - after the levels (REV-S2: a stop inside this bar
+                #    exits at the stop, not at the close).
+                if reason is None and time_rules is not None and time_rules.time_exit_minutes and at - pos.entry_time >= timedelta(minutes=time_rules.time_exit_minutes):
+                    reason = f"Time exit ({time_rules.time_exit_minutes}m in trade)"
+                if reason is None and exit_at is not None and at_ist.time() >= exit_at:
+                    reason = f"Time exit (flat at {time_rules.time_exit_at} IST)"
+                if reason is None and config.intraday and not is_daily and at_ist.time() >= SQUARE_OFF_AT:
+                    reason = f"Square-off ({SQUARE_OFF_AT.strftime('%H:%M')} IST)"
                 # 4. The structure's own value at the close.
                 prices = leg_prices(pos, exit_spot, at, settle=settle)
                 if reason is None:

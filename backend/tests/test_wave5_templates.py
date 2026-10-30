@@ -31,6 +31,10 @@ from app.strategy_templates.adapter import TemplateStrategy
 from tests.test_wave2_counter import _mirror_bars
 from tests.test_wave4_templates import LEAD, PIVOT, RISK, _higher_frame, bars_of, ev, expressions, part_series, recipe, run, signals
 
+# REV-S1: these fixtures run around the clock or hold a trade overnight to reach the exit under test; on the 24x7 venue the
+# backtest has no INTRADAY cut-off / square-off (the NSE session rules are tested in tests/test_rev1_s1_s2_backtest_intraday.py).
+VENUE_24X7 = "BTCINR"
+
 NEW = ("G2", "G4", "G5", "G6", "G7", "G9", "G10", "G11")
 TEMPLATES = {tid: library.get(tid) for tid in NEW}
 
@@ -391,7 +395,7 @@ def test_property_random_valid_settings(tid, style_i, inval, clarity, k, seed):
 def test_parity_on_the_fixtures(key, style):
     template, bars, params, bar, side = fixture(key, style)
     strat = TemplateStrategy(template, C.resolve_settings(template, "15m", params=params))
-    report = wave_parity.run(strat, bars, "S", RISK, worker_bars=sorted({bar - 1, bar, bar + 1, LEAD, len(bars) - 1}))
+    report = wave_parity.run(strat, bars, VENUE_24X7, RISK, worker_bars=sorted({bar - 1, bar, bar + 1, LEAD, len(bars) - 1}))
     assert report.problems == [] and report.signals == [bars.index[bar]]
     assert report.asked["backtest"] > 50 and report.trades == 1
 

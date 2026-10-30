@@ -265,6 +265,8 @@ class GroupExitBody(BaseModel):
     """One combined stop-loss / target (CX1-CX3): the user's own numbers; the server reads the value now itself."""
     model_config = ConfigDict(extra="forbid")
     scope: Literal["SELECTED", "ALL_OPEN", "GROUP"] = "SELECTED"
+    # M55 S3 (A17): which positions "all open positions" collects - the mode the user selects (never both in one exit).
+    mode: Literal["PAPER", "LIVE"] = "PAPER"
     trade_ids: List[int] = Field(default_factory=list, max_length=50)
     measure: Literal["MTM_INR", "NET_PREMIUM", "SPOT"]
     sl_value: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
@@ -291,7 +293,7 @@ class GroupExitEditBody(BaseModel):
 
 async def _group_ask(session: AsyncSession, user: User, body: GroupExitBody) -> Any:
     from app.execution import group_exits
-    ids = await group_exits.all_open_ids(session, user) if body.scope == "ALL_OPEN" else list(body.trade_ids)
+    ids = await group_exits.all_open_ids(session, user, body.mode) if body.scope == "ALL_OPEN" else list(body.trade_ids)
     kind, spec = body.trailing.as_tuple() if body.trailing is not None else (group_exits.TRAIL_NONE, None)
     return group_exits.GroupExitAsk(client_ref=f"cx:{body.client_ref}", trade_ids=ids, measure=body.measure,
                                     sl_value=body.sl_value, target_value=body.target_value, spot_symbol=body.spot_symbol,

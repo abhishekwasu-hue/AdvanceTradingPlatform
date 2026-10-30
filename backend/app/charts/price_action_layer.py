@@ -345,13 +345,15 @@ async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, 
     (frame, source label). `max_bars` (CH6 studies): the row cap's bar count, MAX_BARS by default.
     DATA-H: `private` (tenant_id, user_id) - the reader's own private bars (app/market_lake/own_bars.py) are read
     instead of the shared lake's when they hold more bars of the window (one source per frame, never mixed; source
-    label `own:<label>`), with the closing-auction flags applied."""
-    from app.market_lake.own_bars import prefer_own
+    label `own:<label>`), with the closing-auction flags applied. M55 T4: a `SharedScope` (the owner's index intraday rows
+    for another reader, own_bars.shared_scope) reads the same way, source label `shared:<label>`."""
+    from app.market_lake.own_bars import is_shared, prefer_own
+    whose = "shared" if is_shared(private) else "own"         # M55 T4: the owner's index intraday rows read by another reader
     for label in LAKE_LABELS[tf]:
         rows = await _fetch(session, key, label, start, end, (max_bars or MAX_BARS) * ROWS_PER_BAR)
         own = await _own(session, private, key, label, start, end, (max_bars or MAX_BARS) * ROWS_PER_BAR)
         if prefer_own(rows, own):
-            return await asyncio.to_thread(_to_frame, own, tf, key, end, False), f"own:{label}"
+            return await asyncio.to_thread(_to_frame, own, tf, key, end, False), f"{whose}:{label}"
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, False), f"lake:{label}"
     if tf == "1w":
@@ -366,7 +368,7 @@ async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, 
         rows = await _fetch(session, key, "1m", start, end, limit)
         own = await _own(session, private, key, "1m", start, end, limit)
         if prefer_own(rows, own):
-            return await asyncio.to_thread(_to_frame, own, tf, key, end, True), "own:1m"
+            return await asyncio.to_thread(_to_frame, own, tf, key, end, True), f"{whose}:1m"
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, True), "lake:1m"
     return pd.DataFrame(columns=FRAME_COLS), None

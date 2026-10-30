@@ -113,7 +113,8 @@ def test_swing_deployment_rules():
     assert _create(headers, strategy_id="swing_breakout_d", timeframe="day", holding="SWING", symbol="NIFTY 50",
                    instrument_kind="OPTION", option_position="WRITE").status_code == 400                    # no overnight writes
     assert _create(headers, strategy_id="swing_breakout_d", timeframe="day", holding="SWING", symbol="NIFTY 50",
-                   instrument_kind="OPTION", option_strategy="IRON_CONDOR").status_code == 400              # no multi-leg swings
+                   instrument_kind="OPTION", option_strategy="SHORT_STRADDLE").status_code == 400           # no undefined-risk swings
+    # (M55 T1: a defined-risk credit structure may be held for days - tests/test_m55_t1_hold_for_days.py.)
     # Leave nothing ACTIVE behind: later worker tests run every tenant's deployments against fake
     # brokers that serve no daily candles, and their failures would trip the shared circuit breaker.
     from tests.test_auth_api import client

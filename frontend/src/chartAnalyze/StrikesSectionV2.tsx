@@ -4,6 +4,7 @@ import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
 import { Button } from "../components/primitives";
 import { guardStrikes } from "./signalLanguage";
 import type { StrikesAnswer } from "./types";
+import { EMPTY, formatDateIST } from "../ui/format";
 
 /**
  * Analyze a chart: "Option strikes · from your settings". The analysis never picks a strike: this block only shows what
@@ -25,8 +26,8 @@ function strikeText(value: number): string {
 
 function expiryText(iso: string | null): string {
   if (!iso) return "";
-  const d = new Date(`${iso}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  const text = formatDateIST(iso);                          // REV-1 M3: a bare date is that day in IST
+  return text === EMPTY ? iso : text;
 }
 
 export const FROM_SETTINGS = "From your settings";

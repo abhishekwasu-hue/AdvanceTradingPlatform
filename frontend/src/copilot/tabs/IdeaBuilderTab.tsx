@@ -18,6 +18,7 @@ import { useCostEstimate } from "../cost";
 import { useCopilotT, useSecondary } from "../i18n";
 import { copilotPath } from "../tabs";
 import { Panel, Stagger, StaggerItem } from "./shared";
+import { useUiV2 } from "../../ui/useFeatures";
 
 /**
  * Idea Builder: the strategy interview, step by step - the one trilingual screen (the owner's ruling). Every question is
@@ -47,7 +48,32 @@ function StrategyLines({ lines, sample, className }: { lines: string[]; sample: 
 }
 interface Msg { from: "ai" | "me"; text: string; second?: string }
 
+/**
+ * SB-UX SU1 (behind `ui_v2`): building a strategy has ONE place - Strategies › Build, the step-by-step builder. This tab
+ * opens it (a prompt handed over goes along as the idea); the interview stays one tap away under "Advanced".
+ */
 export default function IdeaBuilderTab() {
+  const uiV2 = useUiV2();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [interview, setInterview] = useState(false);
+  if (!uiV2 || interview) return <IdeaBuilderInterview />;
+  const idea = (location.state as { prompt?: string } | null)?.prompt ?? "";
+  return (
+    <Panel>
+      <div className="space-y-3" data-idea-builder-moved>
+        <h2 className="text-base font-semibold text-fg">Build a strategy step by step</h2>
+        <p className="text-sm text-fg-muted">Pick a template or describe your idea in words, choose the market, the entry and your exits, then test it and start it on paper.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" onClick={() => navigate("/strategies/build", { state: idea ? { idea } : null })}>Open the strategy builder</Button>
+          <Button variant="ghost" onClick={() => setInterview(true)}>Advanced: the strategy interview</Button>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function IdeaBuilderInterview() {
   const t = useCopilotT();
   // ATP review 12: the muted Marathi line sits only under the interview's questions (the question, its "why", and
   // the question echoed in the chat) - never under buttons, answers, status text or the template cards.

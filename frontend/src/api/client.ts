@@ -177,6 +177,7 @@ import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut,
 import type { TelegramConnectState } from "../alerts/telegramConnect";
 import type { ThenBody, ThenIntent, ThenTemplate } from "../screener/then/model";
 import type { BetaCohort } from "../beta/rollout";
+import type { StrategyDraft } from "../copilot/strategyDraft";
 
 import { API_V1 } from "./base";
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
@@ -688,6 +689,14 @@ export const api = {
     }),
 
   listCustomStrategies: () => request<CustomStrategyResponse[]>("/custom-strategies"),
+
+  /** SB-UX SU1: the stepped builder's plain-words box - the Copilot's one parser (sb.build); nothing is saved. */
+  draftStrategy: (text: string) =>
+    request<StrategyDraft>("/custom-strategies/draft", { method: "POST", body: JSON.stringify({ text }) }),
+
+  /** A saved strategy edited by its owner (a new version; the server keeps the old ones). */
+  updateCustomStrategy: (id: number, config: CustomStrategyConfig) =>
+    request<CustomStrategyResponse>(`/custom-strategies/${id}`, { method: "PUT", body: JSON.stringify(config) }),
 
   deleteCustomStrategy: (id: number) =>
     request<void>(`/custom-strategies/${id}`, { method: "DELETE" }),

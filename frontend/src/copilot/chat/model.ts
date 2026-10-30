@@ -35,7 +35,12 @@ export interface AnswerHeadline {
 }
 export interface ChatHome {
   top_line: string; ai: AiState; market_line: MarketLine; disclaimer: string; jobs: ChatJob[]; starters: string[];
+  /** CU6: how many turns the server keeps (config COPILOT_CHAT_KEEP); the page keeps the same number. */
+  keep?: number;
 }
+/** CU6: one stored turn of the conversation (oldest first). `answer` null: the stored card could not be read. */
+export interface StoredTurn { id: number; question: string; answer: ChatAnswer | null; at: string | null }
+export interface ChatHistory { turns: StoredTurn[]; keep: number }
 export interface WorkedStep {
   tool: string; label: string; ok: boolean; as_of: string | null; source: string | null;
   numbers: { label: string; value: number }[]; note: string | null; args: Record<string, unknown>;
@@ -69,7 +74,7 @@ export interface ChatAnswer {
 /** Job 6 added: the trader's own settings, a promise of returns, someone else's strategy. */
 export type RefusalKind = "order" | "advice" | "tip" | "settings" | "promise" | "copy";
 
-/** One turn of the conversation on the page (kept in memory only). */
+/** One turn of the conversation on the page (CU6: kept by the server across reloads, the newest `keep`). */
 export interface Turn { id: number; question: string; answer: ChatAnswer | null; error: string | null }
 
 /** Where an answer's action goes: the draft rides along in the navigation state for the Paper bot page's review card. */
@@ -80,7 +85,22 @@ export function actionState(answer: Pick<ChatAnswer, "draft">): { copilotDraft: 
 export const chatApi = {
   home: () => request<ChatHome>("/ai/chat/home"),
   ask: (message: string) => request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message }) }),
+  /** CU6: the person's own conversation, oldest turn first. */
+  history: () => request<ChatHistory>("/ai/chat/history"),
+  /** CU6: Settings → My data, "Delete my Copilot conversation". */
+  forget: () => request<{ deleted: number }>("/ai/chat/history", { method: "DELETE" }),
 };
+
+/** The default number of turns the page keeps before the server has said its own (config COPILOT_CHAT_KEEP). */
+export const DEFAULT_KEEP = 20;
+
+/** CU6: the stored turns as the page's turns (ids 1..n; a turn whose card could not be read says so plainly). */
+export function restoredTurns(history: ChatHistory | null, unreadable: string): Turn[] {
+  if (!history) return [];
+  return history.turns.slice(-Math.max(1, history.keep)).map((s, i) => ({
+    id: i + 1, question: s.question, answer: s.answer, error: s.answer ? null : unreadable,
+  }));
+}
 
 export const MAX_QUESTION = 1000;
 export const PHONE_MAX_WIDTH = 767;
@@ -118,7 +138,7 @@ export function jobCards(jobs: readonly ChatJob[]): { job: ChatJob; status: stri
 }
 
 /** Appends a turn (the newest last) and keeps the last `keep` turns. */
-export function withTurn(turns: readonly Turn[], turn: Turn, keep = 20): Turn[] {
+export function withTurn(turns: readonly Turn[], turn: Turn, keep = DEFAULT_KEEP): Turn[] {
   return [...turns, turn].slice(-keep);
 }
 

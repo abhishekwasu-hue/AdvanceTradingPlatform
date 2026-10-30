@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, Disclaimer } from "../components/ui";
 import { PageHeader } from "../components/primitives";
+import { INDICATOR_LABEL, timeframeWords } from "../ui/strategyLabels";
 import {
   defaultCondition,
   defaultCustomStrategyConfig,
@@ -16,8 +17,8 @@ import {
   type ParseStrategyResult,
 } from "../types";
 
-const INDICATORS: IndicatorName[] = ["EMA", "SMA", "RSI", "ADX", "PLUS_DI", "MINUS_DI", "ATR", "SUPERTREND", "CLOSE", "OPEN", "HIGH", "LOW",
-  "VWAP", "DAY_OPEN", "OR_HIGH", "OR_LOW", "PDH", "PDL", "PDC", "BB_UPPER", "BB_MID", "BB_LOWER", "VOLUME", "VOLUME_SMA"];
+// SB-UX SU8: every indicator is shown by its plain name from the one shared map ("Previous day high", never "PDH").
+const INDICATORS = Object.keys(INDICATOR_LABEL) as IndicatorName[];
 const PERIODLESS = new Set(["CLOSE", "OPEN", "HIGH", "LOW", "VWAP", "DAY_OPEN", "PDH", "PDL", "PDC", "VOLUME"]);
 const HTF_OPTIONS = ["", "5min", "15min", "30min", "60min"];
 const OPERATORS: { value: ConditionOperator; label: string }[] = [
@@ -83,13 +84,13 @@ export function OperandEditor({ operand, onChange }: { operand: Operand; onChang
             onChange={(e) => onChange({ ...operand, indicator: e.target.value as IndicatorName })}
           >
             {INDICATORS.map((ind) => (
-              <option key={ind} value={ind}>{ind}</option>
+              <option key={ind} value={ind}>{INDICATOR_LABEL[ind]}</option>
             ))}
           </select>
           {!PERIODLESS.has(operand.indicator) && (
             <input
               type="number"
-              title={operand.indicator === "OR_HIGH" || operand.indicator === "OR_LOW" ? "opening range, minutes" : "period"}
+              title={operand.indicator === "OR_HIGH" || operand.indicator === "OR_LOW" ? "Opening range, minutes" : "Length"}
               className="w-14 rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
               value={operand.period}
               onChange={(e) => onChange({ ...operand, period: Number(e.target.value) })}
@@ -111,7 +112,7 @@ export function OperandEditor({ operand, onChange }: { operand: Operand; onChang
             value={operand.timeframe ?? ""}
             onChange={(e) => onChange({ ...operand, timeframe: e.target.value || null })}
           >
-            {HTF_OPTIONS.map((tf) => <option key={tf} value={tf}>{tf ? `on ${tf}` : "same tf"}</option>)}
+            {HTF_OPTIONS.map((tf) => <option key={tf} value={tf}>{tf ? `On ${timeframeWords(tf)}` : "Same timeframe"}</option>)}
           </select>
         </>
       )}
@@ -177,6 +178,12 @@ export function ConditionListEditor({
 }
 
 export default function StrategyBuilderPage() {
+  return <StrategyBuilderFull />;
+}
+
+/** The full builder. SB-UX SU1: inside the v2 step-by-step flow (Advanced) `onOpenFlow` is given, and the separate
+ * plain-words parser card gives way to one link into the flow, whose words box uses the one parser (sb.build). */
+export function StrategyBuilderFull({ onOpenFlow }: { onOpenFlow?: () => void } = {}) {
   const { user, loading: authLoading } = useAuth();
   const [saved, setSaved] = useState<CustomStrategyResponse[]>([]);
   const [config, setConfig] = useState<CustomStrategyConfig>(defaultCustomStrategyConfig());
@@ -269,14 +276,21 @@ export default function StrategyBuilderPage() {
 
       <Disclaimer kind="ai" />
 
+      {onOpenFlow ? (
+        <Card title="Describe your strategy in plain words">
+          <p className="text-xs text-fg-muted mb-2">The step-by-step builder reads your words and shows what it understood.</p>
+          <button onClick={onOpenFlow} data-open-flow
+            className="rounded border border-brand/40 text-brand hover:bg-brand/10 px-3 py-2 text-sm min-h-11">
+            Describe it in the step-by-step builder
+          </button>
+        </Card>
+      ) : (
       <Card title="Describe your strategy in plain English">
         <p className="text-xs text-fg-muted mb-2">
-          A deterministic, rule-based parser - not a call to an external AI (no AI-provider
-          credentials are configured). It recognizes a fixed set of phrasings (e.g. "Buy when
-          RSI(14) crosses above 60 and price is above EMA 50. Sell when RSI crosses below 40. Use
-          1.5x ATR stop loss. Target risk reward of 2. Use the 15min timeframe.") and shows you
-          exactly what it understood - and what it didn't - before anything is loaded into the
-          builder. Nothing is saved until you review it below and click "Save strategy".
+          Write your idea in plain words (for example "Buy when RSI(14) crosses above 60 and price
+          is above EMA 50. Use the 15min timeframe."). You see what was understood - and what was
+          not - before anything is loaded into the builder. Nothing is saved until you review it
+          below and press "Save strategy".
         </p>
         <textarea
           className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
@@ -326,6 +340,7 @@ export default function StrategyBuilderPage() {
           </div>
         )}
       </Card>
+      )}
 
       <Card title={`Your saved strategies (${saved.length})`}>
         {saved.length === 0 ? (
@@ -336,7 +351,7 @@ export default function StrategyBuilderPage() {
               <div key={s.id} className="flex items-center justify-between rounded border border-border px-3 py-2 text-sm">
                 <div>
                   <span className="font-medium text-fg">{s.config.name}</span>{" "}
-                  <span className="text-fg-muted text-xs">({s.config.timeframe}, id {s.strategy_id})</span>
+                  <span className="text-fg-muted text-xs">({timeframeWords(s.config.timeframe)})</span>
                 </div>
                 <button onClick={() => handleDelete(s.id)} className="text-xs text-down hover:underline">
                   Delete
@@ -366,7 +381,7 @@ export default function StrategyBuilderPage() {
                 onChange={(e) => setConfig({ ...config, timeframe: e.target.value })}
               >
                 {TIMEFRAMES.map((tf) => (
-                  <option key={tf} value={tf}>{tf}</option>
+                  <option key={tf} value={tf}>{timeframeWords(tf)}</option>
                 ))}
               </select>
             </div>

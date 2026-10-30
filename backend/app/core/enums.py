@@ -368,6 +368,8 @@ class ExpiryRule(str, Enum):
     NEAREST = "NEAREST"   # first expiry on/after today (weekly where the underlying has weeklies)
     NEXT = "NEXT"         # the one after that
     MONTHLY = "MONTHLY"   # the last expiry of the nearest month that has one
+    # SB-UX SU4 (owner order: "next weekly on expiry day"): the nearest, except on its own expiry day - then the one after
+    ROLL = "ROLL"
 
 
 class OptionStrategy(str, Enum):

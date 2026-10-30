@@ -34,7 +34,7 @@ const JOBS = STARTERS.map((starter, i) => ({
 }));
 const HOME: ChatHome = {
   top_line: "Ask me anything about the market or your trades.",
-  ai: { ready: false, title: "Add a free AI key to start", line: "Until then I answer from ATP's own data in short, fixed sentences.", settings: "/settings/ai", reason: null },
+  ai: { ready: false, title: "AI is off — answers are from rules", line: "Connect your own AI key to have the answers worded by AI.", settings: "/settings/ai", reason: null },
   market_line: { line: "NIFTY 50 last closed at 24,850.5 (20 Oct 2026); by its swing highs and lows the daily trend is up, the weekly sideways.", reason: null, as_of: "2026-10-21T03:30:00+00:00",
     fii_net_crore: -1234.56, fii_as_of: "2026-10-20" },
   disclaimer: "Information and education only, not advice. Every trading decision is yours.", jobs: JOBS, starters: STARTERS,
@@ -132,12 +132,26 @@ describe("the chat-first Copilot page", () => {
     expect(advanced).toContain('href="/page-5"');                 // a job not built yet links today's page
     expect(text(html)).not.toContain("Ready");
     expect(html).not.toContain("data-starters");
-    expect(html).not.toContain("data-no-key");
+    expect(html.match(/data-no-key/g)).toHaveLength(1);                 // CU5: one line, said once
     expect(html.match(/data-disclaimer/g)).toHaveLength(1);
     expect(text(html)).toContain("Information and education only, not advice.");
   });
 
-  it("CU2: a small AI off chip opens the key setup; AI on once a key answers", () => {
+  it("CU5: no key - one line 'AI is off — answers are from rules' with a Connect button; never fixed sentences first", () => {
+    const html = view();
+    const t = text(html);
+    expect(t.match(/AI is off — answers are from rules/g)).toHaveLength(1);
+    expect(t).not.toContain("fixed sentences");
+    expect(t).not.toContain("Add a free AI key");
+    expect(html.match(/data-ai-state="off"/g)).toHaveLength(1);
+    expect(html).toMatch(/<a[^>]*data-connect[^>]*href="\/settings\/ai"[^>]*>Connect<\/a>/);
+    expect(html.indexOf("data-no-key")).toBeLessThan(html.indexOf("data-numbers-strip"));       // one line, then the numbers
+    expect(view({ home: { ...HOME, ai: { ...HOME.ai, title: null } } })).toContain(COPILOT_EN.chat.aiOffLine);
+    const connect = view({ connect: <div data-panel-stub /> });
+    expect(connect).toMatch(/<button[^>]*aria-expanded="false"[^>]*data-connect[^>]*>Connect<\/button>/);
+  });
+
+  it("CU2 / CU5: the Connect button opens the key setup; AI on once a key answers", () => {
     const html = view();
     expect(html).toContain('data-ai-state="off"');
     expect(html).toContain('href="/settings/ai"');

@@ -65,7 +65,7 @@ async function open(page: Page, path: string, { theme = "light", connected = fal
   const home = () => {
     const ai = state.connected
       ? { ready: true, title: null, line: null, settings: "/settings#ai", reason: null, code: null, own_key: true }
-      : { ready: false, title: "Add a free AI key to start", line: "Until then I answer from ATP's own data in short, fixed sentences.",
+      : { ready: false, title: "AI is off — answers are from rules", line: "Connect your own AI key to have the answers worded by AI.",
           settings: "/settings#ai", reason: null, code: "ai_not_connected", own_key: false };
     return { ...F.home, ai };
   };
@@ -86,9 +86,9 @@ async function open(page: Page, path: string, { theme = "light", connected = fal
 }
 
 const panel = (page: Page) => page.locator("[data-connect-ai]").first();
-/** CP-UX CU2: on the Copilot the key setup opens from the small "AI off" chip (closed on screen 1). */
+/** CP-UX CU2 / CU5: on the Copilot the key setup opens from the no-key line's Connect button (closed on screen 1). */
 async function openKeySetup(page: Page): Promise<void> {
-  await page.locator("[data-ai-state='off']").click();
+  await page.locator("[data-no-key] [data-connect]").click();
   await page.locator("[data-connect-slot]").waitFor();
 }
 const THEMES = ["light", "dark"] as const;

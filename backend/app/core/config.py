@@ -107,6 +107,9 @@ MFA_STEP_UP_MINUTES = _env_int_in("MFA_STEP_UP_MINUTES", 30, 1, 24 * 60)
 # ACTIVATION_FIRST_SESSION_HOURS hours after signing up. The admin activation funnel shows the share of people whose first
 # paper trade came inside that window (target: first paper trade within the first session). Measurement only.
 ACTIVATION_FIRST_SESSION_HOURS = _env_int_in("ACTIVATION_FIRST_SESSION_HOURS", 3, 1, 72)
+# CP-UX CU6 (owner order 30 Oct): how many turns of a person's Copilot conversation the server keeps so it is still there
+# after a reload (the newest ones; older turns are deleted as new ones are written). The page shows the same number.
+COPILOT_CHAT_KEEP = _env_int_in("COPILOT_CHAT_KEEP", 20, 1, 200)
 
 # Fernet key for encrypting broker credentials at rest. Must be set via env in any real
 # deployment - a process-local fallback is generated here only so the app still runs for local

@@ -105,6 +105,11 @@ def option_right(direction: SignalDirection, position: OptionPosition) -> str:
     return "PE" if direction == SignalDirection.LONG else "CE"
 
 
+def expiry_words(rule: ExpiryRule) -> str:
+    """The expiry rule in the descriptions' words ("nearest", ..., ROLL: "nearest (the next on expiry day)")."""
+    return "nearest (the next on expiry day)" if rule == ExpiryRule.ROLL else rule.value.lower()
+
+
 def select_expiry(expiries: Sequence[date], rule: ExpiryRule, today: date) -> Optional[date]:
     upcoming = sorted(e for e in expiries if e >= today)
     if not upcoming:
@@ -113,6 +118,9 @@ def select_expiry(expiries: Sequence[date], rule: ExpiryRule, today: date) -> Op
         return upcoming[0]
     if rule == ExpiryRule.NEXT:
         return upcoming[1] if len(upcoming) > 1 else upcoming[0]
+    if rule == ExpiryRule.ROLL:
+        # the nearest; on its own expiry day the next one (none listed after it: the nearest stays)
+        return upcoming[1] if upcoming[0] == today and len(upcoming) > 1 else upcoming[0]
     first = upcoming[0]
     same_month = [e for e in upcoming if (e.year, e.month) == (first.year, first.month)]
     return max(same_month)
@@ -228,8 +236,8 @@ def describe_rules(rules: ContractRules) -> str:
     if rules.kind == InstrumentKind.UNDERLYING:
         return "underlying"
     if rules.kind == InstrumentKind.FUTURE:
-        return f"future, {rules.expiry_rule.value.lower()} expiry"
+        return f"future, {expiry_words(rules.expiry_rule)} expiry"
     strike = rules.strike_rule.value if rules.strike_rule == StrikeRule.ATM else f"{rules.strike_rule.value}{rules.strike_offset}"
     stop = f", premium stop {rules.premium_stop_pct:g}%" if rules.premium_stop_pct else ""
     filters = f", filters: {rules.strike_filters.describe()}" if rules.strike_filters.active else ""
-    return f"{(rules.position or OptionPosition.BUY).value.lower()} option, {rules.expiry_rule.value.lower()} expiry, {strike}{stop}{filters}"
+    return f"{(rules.position or OptionPosition.BUY).value.lower()} option, {expiry_words(rules.expiry_rule)} expiry, {strike}{stop}{filters}"

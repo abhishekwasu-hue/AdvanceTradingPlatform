@@ -22,6 +22,8 @@ from tests.test_auth_api import _session_factory, client
 from tests.test_phase_k_commercial import _owner
 from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _signal, _tenant, _worker
 
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
+
 PUBLIC, OTHER_PUBLIC, BACKUP = "203.0.113.10", "198.51.100.20", "2001:db8::1"
 
 

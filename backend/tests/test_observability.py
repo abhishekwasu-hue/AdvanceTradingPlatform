@@ -2,11 +2,15 @@
 import asyncio
 from datetime import datetime, timezone
 
+import pytest
+
 from app.core import config
 from app.db.models import WorkerHeartbeatRecord
 from app.observability.middleware import sanitize_request_id
 from tests.test_admin_api import _owner
 from tests.test_auth_api import _session_factory, client
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 
 def test_metrics_endpoint_exposes_http_orders_and_platform_gauges():

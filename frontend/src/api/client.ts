@@ -920,8 +920,9 @@ export const api = {
   myFeatures: () => request<TenantFeatures>("/system/features",
     typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? { signal: AbortSignal.timeout(FEATURES_TIMEOUT_MS) } : undefined),
   adminFlags: () => request<FeatureFlags>("/admin/controls/flags"),
-  adminSetFlag: (name: string, on: boolean, tenants: number[] = []) =>
-    request<FeatureFlags>(`/admin/controls/flags/${name}`, { method: "PUT", body: JSON.stringify({ on, tenants }) }),
+  // M55 S1: `confirm` is the owner's typed confirmation for switching LIVE on (left out when not given).
+  adminSetFlag: (name: string, on: boolean, tenants: number[] = [], confirm?: string) =>
+    request<FeatureFlags>(`/admin/controls/flags/${name}`, { method: "PUT", body: JSON.stringify({ on, tenants, confirm }) }),
   adminEncryptionStatus: () => request<EncryptionStatus>("/system/encryption"),
   disableMemberTrading: (memberId: number, reason: string) =>
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-disable`, { method: "POST", body: JSON.stringify({ reason }) }),

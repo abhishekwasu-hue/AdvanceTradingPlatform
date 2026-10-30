@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pytest
 
 from app.backtest.analytics import drawdown_curve, streaks
 from app.backtest.engine import ENGINE_VERSION, run_backtest
@@ -20,6 +21,8 @@ from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _create, _store_broker
 from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _signal, _tenant, _trades, _worker
 from tests.utils import make_series, noisy_uptrend
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 IST = ZoneInfo("Asia/Kolkata")
 T0 = datetime(2026, 9, 25, 10, 0, tzinfo=IST)

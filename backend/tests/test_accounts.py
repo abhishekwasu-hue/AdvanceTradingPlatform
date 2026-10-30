@@ -3,6 +3,7 @@ default routing, deployment validation and the worker's per-account adapters."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import select
 
 from app.brokers.models import BrokerPosition, BrokerProfile, MarginInfo
@@ -11,6 +12,8 @@ from tests.broker_fakes import UPSTOX_KEY, UPSTOX_KEY_2, UPSTOX_SECRET, UPSTOX_S
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _create, _me, _store_broker
 from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 
 def _run(coro):

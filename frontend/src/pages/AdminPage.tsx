@@ -200,9 +200,9 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
 
       {inGroup("flags") && <FeatureFlagsCard flags={flags} tenants={flagTenants} busy={busy}
         onTenants={(name, value) => setFlagTenants({ ...flagTenants, [name]: value })}
-        onSet={(name, on) => act(`${flags?.[name]?.plain ?? name} turned ${on ? "on" : "off"}.`, () => (on
-          ? api.adminSetFlag(name, true).then(flagsChanged)
-          : api.adminSetFlag(name, false, allowList(name)).then(flagsChanged)))}
+        onSet={(name, on, confirm) => act(`${flags?.[name]?.plain ?? name} turned ${on ? "on" : "off"}.`, () => (on
+          ? api.adminSetFlag(name, true, [], confirm).then(flagsChanged)
+          : api.adminSetFlag(name, false, flags?.[name]?.owner_only ? [] : allowList(name), confirm).then(flagsChanged)))}
         onSaveList={(name) => act(`${flags?.[name]?.plain ?? name}: allow-list saved.`, () => api.adminSetFlag(name, false, allowList(name)).then(flagsChanged))} />}
       {oneKey && show("users") && <div data-admin-ai-provider><AiProviderCard /></div>}
       {show("system") && encryption && (

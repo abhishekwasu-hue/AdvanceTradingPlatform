@@ -27,6 +27,8 @@ from tests.test_trading_worker import (
     _worker,
 )
 
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
+
 IST = ZoneInfo("Asia/Kolkata")
 
 

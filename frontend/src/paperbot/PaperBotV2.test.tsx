@@ -95,6 +95,8 @@ describe("UX2 fix 4 model", () => {
     for (const r of READY) {
       expect(r.line).not.toMatch(/\d{3,}|₹|\b(buy|sell|target|stop[- ]?loss|you should|recommend)/i);
     }
+    // REV-B4: the swing pick also says it reads the downtrend mirror, and where that side runs.
+    expect(READY.find((r) => r.id === "swing_ema_pullback_d")?.line).toMatch(/mirror in a downtrend: taken on an option or a future, skipped on shares/);
   });
 
   it("the start summary says what is traded, how long it is held, and paper only", () => {

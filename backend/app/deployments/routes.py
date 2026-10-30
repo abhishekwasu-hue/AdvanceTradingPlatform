@@ -53,6 +53,7 @@ from app.instruments.strike_selection import StrikeFilters
 from app.market_data.calendar import IST
 from app.plans.limits import check_can_add_deployment, load_tenant
 from app.strategy_templates import exits as exit_settings
+from app.strategy_templates import packs
 from app.strategy_templates.exits import TemplateExits, TemplateExitsBody
 from app.trading.exit_rules import ExitRules
 
@@ -473,6 +474,10 @@ async def create_deployment(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     _check_holding(request, strategy)
+    # REV-H3: a seller pack on an option needs the user's own construction (no server-side buy-at-the-money pick)
+    pack_problem = packs.contract_problem(request.strategy_id, request.instrument_kind, request.option_strategy, request.option_position)
+    if pack_problem:
+        raise HTTPException(status_code=400, detail=pack_problem)
     if request.strategy_id.startswith(TEMPLATE_PREFIX) and request.mode != ExecutionMode.PAPER:
         # Strategy templates step 2: signals only, PAPER only (owner order section 10) - a template never runs LIVE here.
         raise HTTPException(status_code=400, detail="Strategy templates run on paper only for now")

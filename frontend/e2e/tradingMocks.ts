@@ -20,7 +20,7 @@ export interface TradingMocks {
   /** Answer /paper/account and /paper/ladder (the paper account card with "Pause new PAPER entries"); left out: 404. */
   paperAccount?: boolean;
   /** Replaces fields of the /risk-settings reply. */
-  riskSettings?: Record<string, number | string>;
+  riskSettings?: Record<string, number | string | null>;
   /** CP6-15: replaces fields of the /risk-settings/loss-streak reply (default: not paused, "Pause until the next session"). */
   lossStreak?: Record<string, unknown>;
 }

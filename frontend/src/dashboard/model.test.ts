@@ -145,6 +145,20 @@ describe("UI2-2 open positions", () => {
     expect(symbolPrices(positions, { ...exp, fx_missing: ["USD->INR"] })).toEqual({});
   });
 
+  it("REV-H4: the price is the server's own for the symbol, whatever scope the listed positions have", () => {
+    // Another member also holds RELIANCE: the organisation's notional is his 50 + the member's 150 at 2,948.20, while the
+    // page lists only his own 50. Notional / quantity would read 4x the price; the server's price is the price.
+    const orgWide = exposure({ price_source: "ltp", priced_symbols: ["RELIANCE"], prices: { RELIANCE: 2948.2 }, by_symbol: [
+      { symbol: "RELIANCE", positions: 2, quantity: 200, notional: 589640, pct_of_capital: 0, unrealised_pnl: -2800, risk_at_stop: 0, strategies: [] },
+    ] });
+    const mine = [trade(3, "RELIANCE", "LONG", 50, 2962.2, "PAPER")];
+    expect(symbolPrices(mine, orgWide)).toEqual({ RELIANCE: 2948.2 });
+    expect(positionRows(mine, orgWide)[0].pnl).toBeCloseTo(-700, 6);
+    // an unpriced symbol in `prices` is not taken; a conversion still blocks every derived price
+    expect(symbolPrices(mine, { ...orgWide, priced_symbols: [] })).toEqual({});
+    expect(symbolPrices(mine, { ...orgWide, fx_rates_used: { "USD->INR": 84 } })).toEqual({});
+  });
+
   it("shows at most five", () => {
     expect(positionRows(Array.from({ length: 8 }, (_, i) => trade(i, `S${i}`, "LONG", 1, 1)), null)).toHaveLength(5);
   });

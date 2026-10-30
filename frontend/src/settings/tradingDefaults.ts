@@ -249,7 +249,10 @@ export function botWithDefaults<T extends DeploymentCreateRequest>(base: T, d: T
       applied.push("futures");
       changed = true;
     } else {
-      const structure = !ctx.swing && isStructure(d.option_strategy) ? d.option_strategy : null;
+      // REV-H3: the structure is read the same way for every bot; what the API takes for a bot held for days (a single
+      // bought option) decides, and `swingNotTaken` says so in words - never a silent drop.
+      const wanted = isStructure(d.option_strategy) ? d.option_strategy : null;
+      const structure = wanted && !ctx.swing ? wanted : null;
       if (structure) {
         delete out.option_position;
         out.option_strategy = structure;
@@ -265,7 +268,11 @@ export function botWithDefaults<T extends DeploymentCreateRequest>(base: T, d: T
         }
         changed = true;
       } else {
-        if (d.option_position === "WRITE" && !ctx.swing) { out.option_position = "WRITE"; applied.push("option writing"); changed = true; }
+        // REV-H3: the user's own side; a request with no side yet (a seller pack) takes a "buy" default too.
+        const side = d.option_position === "WRITE" && !ctx.swing ? "WRITE" : d.option_position === "BUY" ? "BUY" : null;
+        if (side && side !== base.option_position) {
+          out.option_position = side; applied.push(side === "WRITE" ? "option writing" : "option buying"); changed = true;
+        }
         if (d.premium_stop_pct !== null) {
           out.premium_stop_pct = d.premium_stop_pct;
           applied.push(`premium ${out.option_position === "WRITE" ? "ceiling" : "stop"} ${d.premium_stop_pct}%`);
@@ -296,6 +303,72 @@ export function botWithDefaults<T extends DeploymentCreateRequest>(base: T, d: T
     out.entry_mode = "APPROVAL"; applied.push("each entry waits for your Approve"); changed = true;
   }
   return changed ? { request: out as T, applied } : { request: base, applied: [] };
+}
+
+/** REV-H3: why a default the user set is not used on a bot held for days (the API's swing rules: a single bought
+ * option), in one plain line; null when nothing is left out. */
+export function swingNotTaken(d: TradingDefaults | null | undefined, ctx: BotContext, kind: DeploymentCreateRequest["instrument_kind"]): string | null {
+  if (!d || !ctx.swing || !ctx.index || kind !== "OPTION" || d.instrument_kind === "FUTURE") return null;
+  const structure = isStructure(d.option_strategy) ? d.option_strategy : null;
+  if (structure) return `Your default ${structureLabel(structure).toLowerCase()} is not used here: a bot held for days trades a single bought option.`;
+  if (d.option_position === "WRITE") return "Your default option writing is not used here: a bot held for days trades a single bought option.";
+  return null;
+}
+
+// ---------------------------------------------------------------- REV-H3: how the quick bot trades the option
+
+/** How a quick bot trades an index option when nothing says it yet: buy or write one option, or a structure. */
+export type BotConstruction = OptionPosition | Exclude<DefaultStructure, "SINGLE">;
+
+/** The choices, in the full form's order. A bot held for days takes only a bought single option (the API's swing rules). */
+export function constructionChoices(swing: boolean): { value: BotConstruction; label: string }[] {
+  const singles: { value: BotConstruction; label: string }[] = [
+    { value: "BUY", label: "Buy a single option" }, { value: "WRITE", label: "Write a single option" },
+  ];
+  if (swing) return singles.slice(0, 1);
+  return [...singles, ...STRUCTURES.filter((x) => x.value !== "SINGLE") as { value: BotConstruction; label: string }[]];
+}
+
+export const SWING_CONSTRUCTION_NOTE = "A bot held for days trades a single bought option; writing and option structures stay intraday.";
+
+type ContractPart = Pick<DeploymentCreateRequest, "instrument_kind" | "option_strategy" | "option_position" | "spread_width">;
+
+/** An option request that names neither a structure nor a side (nothing is picked for the user). */
+export function needsConstruction(req: ContractPart): boolean {
+  return req.instrument_kind === "OPTION" && (req.option_strategy ?? "SINGLE") === "SINGLE" && !req.option_position;
+}
+
+/** A structure that is measured in strike steps, with no width set by the user. */
+export function needsWidth(req: ContractPart): boolean {
+  return req.instrument_kind === "OPTION" && !!req.option_strategy && WIDTH_STRUCTURES.includes(req.option_strategy) && req.spread_width == null;
+}
+
+/** The request with the user's own choice on the form (only where the request still needs it). */
+export function withConstruction<T extends DeploymentCreateRequest>(req: T, choice: BotConstruction | "" | null, width: number | null): T {
+  let out: T = req;
+  if (choice && needsConstruction(req)) {
+    out = { ...req };
+    if (choice === "BUY" || choice === "WRITE") out.option_position = choice;
+    // a structure is exited on its net credit / debit: a single option's premium stop does not apply (the API refuses it)
+    else { delete out.option_position; delete out.premium_stop_pct; out.option_strategy = choice; }
+  }
+  if (width !== null && needsWidth(out)) out = { ...out, spread_width: width };
+  return out;
+}
+
+/** The plain reason Start stays off while the option construction is not chosen; null once it is. */
+export function constructionProblem(req: ContractPart): string | null {
+  if (needsConstruction(req)) return "Choose how this bot trades the option to start.";
+  if (needsWidth(req)) return "Choose the width of the structure to start.";
+  return null;
+}
+
+/** The width as typed: whole strike steps from 1 to 20 (the API's bounds), else null. */
+export function widthOf(text: string): number | null {
+  const t = text.trim();
+  if (!/^\d{1,2}$/.test(t)) return null;
+  const n = Number(t);
+  return n >= 1 && n <= 20 ? n : null;
 }
 
 /** "From your defaults: next expiry, 2 lots." (empty when nothing was taken). */

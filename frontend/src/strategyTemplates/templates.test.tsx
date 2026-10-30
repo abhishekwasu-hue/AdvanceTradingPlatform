@@ -53,7 +53,7 @@ describe("strategy templates: the paper bot form", () => {
     expect(pageSource).toContain("templatesApi.adopt(pickedId, fromLink ? { timeframe: templateTimeframe, params } : { timeframe: templateTimeframe })");
     expect(pageSource).toContain("timeframe: adoption.deployment.timeframe, holding: adoption.deployment.holding");
     expect(pageSource).toContain('features.on("ui_v2") && features.on("strategy_templates")');
-    expect(pageSource).toMatch(/disabled=\{busy \|\| !effectiveId\}/);           // no Start until the pre-fill is in
+    expect(pageSource).toMatch(/disabled=\{busy \|\| !effectiveId \|\| !!startWhy\}/);   // no Start until the pre-fill is in (REV-H3: and chosen)
     expect(apiSource).toContain('mode: "PAPER"');
     expect(apiSource).not.toContain("/deployments");                              // the template API never creates a bot
   });

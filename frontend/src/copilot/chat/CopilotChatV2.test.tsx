@@ -11,9 +11,11 @@ import chatSource from "./CopilotChatV2.tsx?raw";
 import { ChatView, type ChatViewProps } from "./CopilotChatV2";
 import pageSource from "./CopilotPageV2.tsx?raw";
 import {
-  cleanQuestion, composerPlacement, jobCards, marketLineText, needsKey, notSetUpLine, settled, stampText, toolsUsedLine, withTurn, workedLine,
+  answerParts, areaText, cleanQuestion, composerPlacement, distanceText, headlineLevels, jobCards, marketLineText, needsKey, notSetUpLine,
+  numbersCells, quickChips, settled, stampText, toolsUsedLine, withTurn, workedLine,
   type ChatAnswer, type ChatHome, type Turn,
 } from "./model";
+import type { MarketStrip } from "../../dashboard/types";
 
 /**
  * Item 5 (owner's handover): the chat-first Copilot page - the starters, the no-key and empty states, the answer with
@@ -33,7 +35,8 @@ const JOBS = STARTERS.map((starter, i) => ({
 const HOME: ChatHome = {
   top_line: "Ask me anything about the market or your trades.",
   ai: { ready: false, title: "Add a free AI key to start", line: "Until then I answer from ATP's own data in short, fixed sentences.", settings: "/settings/ai", reason: null },
-  market_line: { line: "NIFTY 50 last closed at 24,850.5 (20 Oct 2026); by its swing highs and lows the daily trend is up, the weekly sideways.", reason: null, as_of: "2026-10-21T03:30:00+00:00" },
+  market_line: { line: "NIFTY 50 last closed at 24,850.5 (20 Oct 2026); by its swing highs and lows the daily trend is up, the weekly sideways.", reason: null, as_of: "2026-10-21T03:30:00+00:00",
+    fii_net_crore: -1234.56, fii_as_of: "2026-10-20" },
   disclaimer: "Information and education only, not advice. Every trading decision is yours.", jobs: JOBS, starters: STARTERS,
 };
 const ANSWER: ChatAnswer = {
@@ -52,6 +55,33 @@ const ANSWER: ChatAnswer = {
   action: null, refused: null, starters: [], concepts: [], notes: ["Structure reading from ATP's zone layers (the full Price Action reader is not in ATP yet)."],
   disclaimer: HOME.disclaimer, source: "rules", tool_calls: ["get_chart_structure", "get_market_zones"],
 };
+const HEADLINED: ChatAnswer = {
+  ...ANSWER, summary: ["SENSEX last closed at 81,261.1. On the daily chart the structure reads up, protected level 79,493.7."],
+  headline: { symbol: "SENSEX", price: 81261.1, price_label: "Last close", as_of: "2026-10-21T03:30:00+00:00", trend: "up", timeframe: "Daily",
+    area: { side: "supply", from: 82011.6, to: 82273.2, where: "above", distance: 750.5, distance_pct: 0.92 },
+    chart: { symbol: "SENSEX", exchange: "BSE", timeframe: "day" } },
+};
+const RULE_TEXTS = ["The 20 EMA crosses above the 50 EMA.", "RSI (14) is above 50."];
+const STRATEGY: ChatAnswer = {
+  ...ANSWER, job: "strategy", job_number: 6, title: "Strategy builder", blocks: [], unknowns: [], notes: [],
+  summary: ["Your idea as a draft paper strategy, built only from ATP's own building blocks."],
+  sections: [{ title: "Long side: all of these hold on the 15-minute chart", lines: RULE_TEXTS },
+    { title: "Your settings", lines: ["Where the idea is wrong: 1.5 x ATR (14) from the entry.", "Profit objective: 2R."] },
+    { title: "Values you decide", lines: ["The size: the Paper bot page starts with one lot or your own saved default; change it there."] },
+    { title: "How I build it", lines: ["I use only ATP's own building blocks."] }],
+  action: { label: "Review it on the Paper bot page", to: "/deployments" }, followup: { label: "Test it on past data", question: "x. Test it on past data." },
+  draft: { rules: RULE_TEXTS.map((text) => ({ side: "long", text })) } as unknown as ChatAnswer["draft"],
+};
+const STRIP: MarketStrip = {
+  indices: [
+    { key: "NIFTY 50", label: "NIFTY 50", symbol: "NIFTY 50", exchange: "NSE", ltp: 24812.35, prev_close: 24693.95, change: 118.4, change_pct: 0.48, as_of: null, stale: false, source: "live", missing: false },
+    { key: "NIFTY BANK", label: "BANK NIFTY", symbol: "NIFTY BANK", exchange: "NSE", ltp: 53946.1, prev_close: 54158.65, change: -212.55, change_pct: -0.39, as_of: null, stale: false, source: "live", missing: false },
+    { key: "SENSEX", label: "SENSEX", symbol: "SENSEX", exchange: "BSE", ltp: 81261.1, prev_close: 81020.4, change: 240.7, change_pct: 0.3, as_of: null, stale: false, source: "live", missing: false },
+    { key: "INDIA VIX", label: "INDIA VIX", symbol: "INDIA VIX", exchange: "NSE", ltp: 13.42, prev_close: 13.63, change: -0.21, change_pct: -1.54, as_of: null, stale: false, source: "live", missing: false },
+  ],
+  source: "live", broker: null, market: { exchange: "NSE", phase: "open", is_open: true, opens_at: "09:15", closes_at: "15:30", next_open: null, holiday: null, reason: null },
+  refresh_seconds: 15, fetched_at: "2026-10-21T03:30:00Z",
+} as MarketStrip;
 const REFUSAL: ChatAnswer = {
   ...ANSWER, job: "refuse", job_number: null, title: "I can't do that", summary: ["I can't tell you to buy or sell anything. That decision is always yours."],
   sections: [], blocks: [], unknowns: [], worked: [], notes: [], refused: "advice", starters: ["Read the NIFTY chart"], tool_calls: [],
@@ -71,40 +101,67 @@ describe("the chat-first Copilot page", () => {
     expect(pageSource).toContain('lazy(() => import("../../pages/AiCopilotPage"))');
   });
 
-  it("shows the top line, the question box, the eight starters and the eight job cards", () => {
-    const html = view();
+  it("CU2: screen 1 reads numbers strip, then the four chips, then the question box - in that order", () => {
+    const html = view({ strip: { status: "ok", data: STRIP } });
+    const at = (needle: string) => { const i = html.indexOf(needle); expect(i, needle).toBeGreaterThan(-1); return i; };
+    expect(at("data-numbers-strip")).toBeLessThan(at("data-quick-chips"));
+    expect(at("data-quick-chips")).toBeLessThan(at('data-composer="inline"'));
+    expect(at('data-composer="inline"')).toBeLessThan(at('data-details="copilot.chat.advanced"'));
     const t = text(html);
-    expect(t).toContain("Ask me anything about the market or your trades.");
-    expect(html).toContain('id="copilot-question"');
-    expect(html).toContain('data-composer="inline"');
-    for (const s of STARTERS) expect(t).toContain(s);
-    expect(html.match(/data-job="/g)).toHaveLength(8);
-    expect(html.match(/data-built="true"/g)).toHaveLength(4);
-    expect(t).toContain("Coming later");
-    expect(html).toContain('href="/page-5"');                 // a job not built yet links today's page
-    expect(t).toContain("Information and education only, not advice.");
+    for (const label of ["NIFTY 50", "BANK NIFTY", "SENSEX"]) expect(html).toContain(`data-index="${label === "BANK NIFTY" ? "NIFTY BANK" : label}"`);
+    expect(t).toContain("81,261.10");
+    expect(html).toContain('data-vix-level="');
+    expect(t).toContain("FII net");
+    expect(html).toContain('data-fii-net="ok"');
+    expect(t).toMatch(/−1,235\s*cr/);
+    expect([...html.matchAll(/data-quick="([a-z_]+)"/g)].map((m) => m[1])).toEqual(["brief", "chart", "trade_check", "positions"]);
+    expect(t).toContain("Brief Read chart Check my trade My positions");
   });
 
-  it("shows the no-key card linking the AI key settings, and hides it once a key is set", () => {
+  it("CU2: the question box is the ONLY primary action on screen 1; the jobs sit under Advanced, with no Ready pills", () => {
+    for (const placement of ["inline", "bottom"] as const) {
+      const html = view({ placement, connect: <div data-panel-stub /> });
+      expect(html.match(/bg-brand /g) ?? []).toHaveLength(1);
+      expect(html.match(/data-primary/g)).toHaveLength(1);
+    }
     const html = view();
-    expect(html).toContain("data-no-key");
-    expect(text(html)).toContain("Add a free AI key to start");
+    const advanced = html.slice(html.indexOf('data-details="copilot.chat.advanced"'));
+    expect(advanced.match(/data-job="/g)).toHaveLength(8);
+    expect(html.slice(0, html.indexOf('data-details="copilot.chat.advanced"'))).not.toContain("data-job=");
+    expect(html).not.toMatch(/<details[^>]*copilot\.chat\.advanced[^>]*open/);
+    expect(advanced).toContain('href="/page-5"');                 // a job not built yet links today's page
+    expect(text(html)).not.toContain("Ready");
+    expect(html).not.toContain("data-starters");
+    expect(html).not.toContain("data-no-key");
+    expect(html.match(/data-disclaimer/g)).toHaveLength(1);
+    expect(text(html)).toContain("Information and education only, not advice.");
+  });
+
+  it("CU2: a small AI off chip opens the key setup; AI on once a key answers", () => {
+    const html = view();
+    expect(html).toContain('data-ai-state="off"');
     expect(html).toContain('href="/settings/ai"');
-    expect(view({ home: { ...HOME, ai: { ...HOME.ai, ready: true, title: null, line: null } } })).not.toContain("data-no-key");
+    const withPanel = view({ connect: <div data-panel-stub /> });
+    expect(withPanel).toContain('aria-expanded="false"');
+    expect(withPanel).not.toContain("data-panel-stub");
+    const open = view({ connect: <div data-panel-stub />, keyOpen: true });
+    expect(open).toContain("data-connect-slot");
+    expect(open).toContain("data-panel-stub");
     expect(needsKey(HOME)).toBe(true);
     expect(needsKey(null)).toBe(false);
-  });
-
-  it("Settings redesign A: shows the Connect AI panel in place of the no-key card, and a small chip once connected", () => {
-    const html = view({ connect: <div data-panel-stub />, aiChip: <span data-chip-stub /> });
-    expect(html).toContain("data-connect-slot");
-    expect(html).toContain("data-panel-stub");
-    expect(html).not.toContain("data-no-key");
-    expect(html).not.toContain("data-chip-stub");
     const ready = view({ home: { ...HOME, ai: { ...HOME.ai, ready: true, title: null, line: null, own_key: true } }, connect: <div data-panel-stub />,
-      aiChip: <span data-chip-stub /> });
+      aiChip: <span data-chip-stub />, keyOpen: true });
     expect(ready).toContain("data-chip-stub");
     expect(ready).not.toContain("data-panel-stub");
+    expect(view({ home: { ...HOME, ai: { ...HOME.ai, ready: true, title: null, line: null } } })).toContain('data-ai-state="on"');
+  });
+
+  it("CU2: the numbers strip says a dash for what is not known, never 0", () => {
+    const html = view({ strip: { status: "error" }, home: { ...HOME, market_line: { ...HOME.market_line, fii_net_crore: null } } });
+    expect(html).toContain('data-fii-net="unknown"');
+    expect(html).toContain('data-vix-level="unknown"');
+    expect(numbersCells(null).map((c) => c.index)).toEqual([null, null, null]);
+    expect(quickChips(JOBS.slice(2)).map((c) => c.id)).toEqual(["trade_check", "positions"]);
   });
 
   it("shows today's market line, or the reason it is empty", () => {
@@ -115,7 +172,7 @@ describe("the chat-first Copilot page", () => {
     expect(marketLineText(null)).toEqual({ text: "", empty: true });
   });
 
-  it("renders an answer with its tables, chart, unknowns and how it was worked out", () => {
+  it("renders an answer with its tables, chart, unknowns and how it was worked out (behind Details)", () => {
     const html = render(<AnswerV2 answer={ANSWER} />);
     const t = text(html);
     expect(t).toContain("NIFTY last closed at 24,850.5.");
@@ -128,6 +185,54 @@ describe("the chat-first Copilot page", () => {
     expect(t).toContain("NIFTY market zones: no answer (no zones for this instrument)");
     expect(t).toContain("ATP's own sentences");
     expect(html).toContain('data-disclaimer');
+    const details = html.slice(html.indexOf('data-details="copilot.answer"'));
+    for (const part of ["data-unknowns", "data-worked", "data-note="]) expect(details).toContain(part);
+  });
+
+  it("CU3: the headline number row comes before any sentence, then the mini chart and ONE action; Details is folded", () => {
+    const html = render(<AnswerV2 answer={HEADLINED} onAsk={noop} />);
+    const at = (needle: string) => { const i = html.indexOf(needle); expect(i, needle).toBeGreaterThan(-1); return i; };
+    expect(at('data-headline="SENSEX"')).toBeLessThan(at("data-summary"));
+    expect(at("data-summary")).toBeLessThan(at('data-mini-chart="SENSEX"'));
+    expect(at('data-mini-chart="SENSEX"')).toBeLessThan(at("data-actions"));
+    expect(at("data-actions")).toBeLessThan(at('data-details="copilot.answer"'));
+    const head = text(html.slice(at('data-headline="SENSEX"'), at("data-summary")));
+    expect(head).toContain("81,261.10");
+    expect(head).toContain("▲ Up");
+    expect(head).toContain("Supply 82,011.60 – 82,273.20");
+    expect(head).toContain("750.50 (0.92%) above");
+    expect(html.match(/data-action="/g)).toHaveLength(1);
+    expect(html).toContain('href="/charts/SENSEX?tf=day&amp;exchange=BSE"');
+    expect(html).not.toMatch(/<details[^>]*copilot\.answer[^>]*open/);
+    const before = html.slice(0, at('data-details="copilot.answer"'));
+    for (const part of ["data-unknowns", "data-worked", "data-tools-used", "data-section=", "data-block="]) expect(before).not.toContain(part);
+    expect(distanceText({ side: null, from: 1, to: 2, where: "inside", distance: 0, distance_pct: 0 }, String)).toBe("Price is inside");
+    expect(areaText({ side: null, from: 1, to: 2, where: "below", distance: 3, distance_pct: null }, String)).toBe("1 – 2");
+    expect(headlineLevels(HEADLINED.headline).map((l) => l.tone)).toEqual(["down", "down"]);
+    expect(headlineLevels(null)).toEqual([]);
+  });
+
+  it("CU3: the strategy answer is a result card - rules and settings as chips, the theory behind Details", () => {
+    const html = render(<AnswerV2 answer={STRATEGY} onAsk={noop} />);
+    const details = html.indexOf('data-details="copilot.answer"');
+    const card = html.slice(0, details);
+    expect(card.match(/data-rule-chip/g)).toHaveLength(2);
+    expect(card.match(/data-setting-chip/g)).toHaveLength(2);
+    expect(card).toContain('data-section="Values you decide"');
+    expect(card).toContain('data-action="draft"');
+    expect(card).toContain("data-followup");
+    expect(card).not.toContain('data-section="How I build it"');
+    expect(card).not.toContain('data-section="Long side: all of these hold on the 15-minute chart"');
+    expect(html.slice(details)).toContain('data-section="How I build it"');
+    const parts = answerParts(STRATEGY);
+    expect(parts.rules).toEqual(["The 20 EMA crosses above the 50 EMA.", "RSI (14) is above 50."]);
+    expect(parts.folded.map((s) => s.title)).toEqual(["How I build it"]);
+    expect(answerParts(ANSWER).shown).toHaveLength(1);
+  });
+
+  it("CU3: in the conversation the answer carries no disclaimer of its own (the page footer has the one line)", () => {
+    const html = view({ turns: [{ id: 1, question: "Read the SENSEX chart", answer: HEADLINED, error: null }] });
+    expect(html.match(/data-disclaimer/g)).toHaveLength(1);
   });
 
   it("renders a refusal in plain words with what to ask instead, and no worked-out block", () => {

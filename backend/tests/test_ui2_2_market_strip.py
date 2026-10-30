@@ -197,6 +197,25 @@ def test_without_a_broker_session_the_strip_answers_from_market_memory_of_this_o
     assert body["source"] == "memory" and body["broker"] is None
 
 
+def test_cu2_the_copilot_asks_for_sensex_too_and_the_dashboards_three_stay(monkeypatch):
+    headers, me = _owner(_email("sensex"))
+    _store_credentials(me)
+    broker = _IndexBroker()
+    monkeypatch.setattr(quotes_routes, "build_adapter", lambda record: broker)
+    _grant_tokens(monkeypatch)
+    _remember(me["tenant_id"], {**_cue("SENSEX", 81200.50, 81000.00, timedelta(minutes=15)), "exchange": "BSE"})
+    plain = client.get(URL, headers=headers).json()
+    assert [i["symbol"] for i in plain["indices"]] == ["NIFTY 50", "NIFTY BANK", "INDIA VIX"]
+    rate_limit.reset("market_strip")
+    body = client.get(URL, params={"sensex": "true"}, headers=headers).json()
+    assert [i["symbol"] for i in body["indices"]] == ["NIFTY 50", "NIFTY BANK", "SENSEX", "INDIA VIX"]
+    sensex = _by_key(body)["SENSEX"]
+    assert sensex["exchange"] == "BSE" and sensex["label"] == "SENSEX"
+    # The test broker has no SENSEX price, so the organisation's own remembered level answers; never a made-up one.
+    assert sensex["source"] == "memory" and sensex["ltp"] == 81200.50 and sensex["change_pct"] == pytest.approx(0.25, abs=0.01)
+    assert any(("BSE", "SENSEX") == tuple(x) for x in broker.batch_calls[-1])
+
+
 def test_an_index_whose_captures_stopped_is_still_found_behind_many_newer_rows():
     headers, me = _owner(_email("stopped"))
     tenant = me["tenant_id"]

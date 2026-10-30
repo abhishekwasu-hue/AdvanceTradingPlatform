@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { mockApi } from "./mockApi";
+import { mockCopilotNumbers } from "./copilotMocks";
 import { expectPhoneLayout } from "./phoneLayout";
 
 /**
@@ -60,6 +61,7 @@ async function open(page: Page, path: string, { theme = "light", connected = fal
   }, theme);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: { ui_v2: true, ai_copilot: true, ai_one_key: true }, brokers: [] });
+  await mockCopilotNumbers(page);
   const home = () => {
     const ai = state.connected
       ? { ready: true, title: null, line: null, settings: "/settings#ai", reason: null, code: null, own_key: true }
@@ -84,6 +86,11 @@ async function open(page: Page, path: string, { theme = "light", connected = fal
 }
 
 const panel = (page: Page) => page.locator("[data-connect-ai]").first();
+/** CP-UX CU2: on the Copilot the key setup opens from the small "AI off" chip (closed on screen 1). */
+async function openKeySetup(page: Page): Promise<void> {
+  await page.locator("[data-ai-state='off']").click();
+  await page.locator("[data-connect-slot]").waitFor();
+}
 const THEMES = ["light", "dark"] as const;
 const SIZES = [
   { width: 360, height: 780, phone: true },
@@ -98,6 +105,7 @@ for (const size of SIZES) {
     for (const theme of THEMES) {
       test(`Copilot not connected looks the same (${theme})`, async ({ page }) => {
         await open(page, "/copilot", { theme });
+        await openKeySetup(page);
         await expect(panel(page)).toHaveAttribute("data-connect-ai", "not-connected");
         await expect(page).toHaveScreenshot(`connect-ai-v2-copilot-off-${size.width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
       });
@@ -157,6 +165,7 @@ for (const size of SIZES) {
 
       test("no sideways scroll and 44 px targets", async ({ page }) => {
         await open(page, "/copilot");
+        await openKeySetup(page);
         await expect(panel(page)).toBeVisible();
         await expectPhoneLayout(page);
       });
@@ -169,6 +178,7 @@ test.describe("connect AI flow", () => {
 
   test("paste, tick the consent line once, and it saves and tests by itself; then the chip; Disconnect", async ({ page }) => {
     const calls = await open(page, "/copilot");
+    await openKeySetup(page);
     await expect(panel(page).getByRole("button", { name: /save/i })).toHaveCount(0);
     await expect(panel(page).locator("select")).toHaveCount(0);
     const key = CLAUDE_SHAPED();

@@ -48,7 +48,10 @@ function Change({ index }: { index: StripIndex }) {
   );
 }
 
-function IndexCell({ index, oi, nowMs, spark }: { index: StripIndex; oi?: string; nowMs: number; spark?: number[] }) {
+/** One index: label, last price, signed change and % (CP-UX CU2: the Copilot's numbers strip shows these same cells). */
+export function IndexCell({ index, oi, nowMs, spark, compact = false }: { index: StripIndex; oi?: string; nowMs: number; spark?: number[];
+  /** CU2: three prices in one phone row - a smaller price on a phone (from md up as before). */
+  compact?: boolean }) {
   const caption = indexCaption(index, nowMs);
   const tone = signTone(index.change ?? index.change_pct);
   const vix = index.key === "INDIA VIX" ? vixBand(index.ltp) : null;
@@ -58,7 +61,7 @@ function IndexCell({ index, oi, nowMs, spark }: { index: StripIndex; oi?: string
       <div className="flex items-center gap-space-1 text-t12 font-medium uppercase text-fg-muted">
         <span className="truncate">{index.label}</span>
       </div>
-      <div className="mt-space-1 font-tabular text-t18 font-semibold text-fg md:text-t20">{formatPrice(index.ltp)}</div>
+      <div className={`mt-space-1 font-tabular font-semibold text-fg md:text-t20 ${compact ? "text-t15" : "text-t18"}`}>{formatPrice(index.ltp)}</div>
       <Change index={index} />
       {spark && spark.length > 1 && (
         <Sparkline values={spark} tone={tone === "up" ? "up" : tone === "down" ? "down" : "neutral"} className="mt-space-1 h-7 w-full max-w-[8rem]" />

@@ -15,6 +15,7 @@ import { expectPhoneLayout } from "./phoneLayout";
  *   <theme>.png` (the review card), 360 / 390 / 1440, light / dark.
  * - CP6-2: `copilot-builder-v2-offer-<width>-<theme>.png` (a complete draft offers "Test it on past data") and
  *   `copilot-builder-v2-test-<width>-<theme>.png` (the honest test's answer after his press).
+ * - CP-UX CU3: the answer is a result card (rules and settings as chips, the theory behind one "Details" tap).
  * Every reply is made-up data (e2e/fixtures/copilot_chat_v2.json: the backend's rule answer on its synthetic eval fixture;
  * e2e/fixtures/setup_v2.json strategies). After an intended change:
  * `npx playwright test --project=phone e2e/copilot-builder-v2.e2e.ts --update-snapshots`.
@@ -157,10 +158,11 @@ for (const size of SIZES) {
 test.describe("Copilot strategy builder behaviour", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("job 6 is ready in What I can do; its starter asks for the idea with an example", async ({ page }) => {
+  test("job 6 is in What I can do (under Advanced); its starter asks for the idea with an example", async ({ page }) => {
     const server = await open(page);
-    await expect(page.locator("[data-job='strategy']")).toContainText("Ready");
-    await page.locator("[data-starters] button", { hasText: "Turn my idea into a strategy and test it" }).click();
+    await page.locator("[data-details='copilot.chat.advanced'] summary").click();          // CU2: the jobs moved under Advanced
+    await expect(page.locator("[data-job='strategy']")).toHaveAttribute("data-built", "true");
+    await page.locator("[data-job='strategy'] button", { hasText: "Turn my idea into a strategy and test it" }).click();
     const answer = page.locator("[data-answer='strategy']");
     await expect(answer).toContainText("Tell me your idea in your own words");
     await expect(answer.locator("[data-section='What I can build today']")).toContainText("The volume against its average.");
@@ -171,16 +173,18 @@ test.describe("Copilot strategy builder behaviour", () => {
   test("the draft in plain words: his values as written, the ones he did not give asked, nothing invented", async ({ page }) => {
     await open(page);
     const answer = await askIdea(page);
-    await expect(answer.locator("[data-section='Long side: all of these hold on the 15-minute chart']")).toContainText(
-      "The fast EMA (length to decide) crosses above the slow EMA (length to decide).");
-    await expect(answer.locator("[data-section='Your settings']")).toContainText("Where the idea is wrong: 1.5 x ATR (14) from the entry.");
+    // CU3: the result card - his rules and settings as chips.
+    await expect(answer.locator("[data-rule-chip]").first()).toHaveText(
+      "The fast EMA (length to decide) crosses above the slow EMA (length to decide)");
+    await expect(answer.locator("[data-setting-chip]").first()).toHaveText("Where the idea is wrong: 1.5 x ATR (14) from the entry");
     const decide = answer.locator("[data-section='Values you decide']");
     for (const ask of ["The fast EMA length.", "The slow EMA length.", "Your profit objective, in R", "The size: the Paper bot page"]) {
       await expect(decide).toContainText(ask);
     }
     await expect(answer).not.toContainText("Profit objective:");
     await expect(answer.locator("[data-unknowns]")).toContainText("I don't know how this idea did in the past");
-    await expect(answer.locator("[data-disclaimer]")).toContainText("not advice");
+    await expect(answer.locator("[data-details='copilot.answer']")).not.toHaveAttribute("open", "");     // CU3: theory folded
+    await expect(page.locator("[data-page='copilot-v2'] > [data-disclaimer]")).toContainText("not advice");    // the page's one line
   });
 
   test("the hand-over: he fills in his own values, saves it himself, and the bot form picks it; nothing starts", async ({ page }) => {

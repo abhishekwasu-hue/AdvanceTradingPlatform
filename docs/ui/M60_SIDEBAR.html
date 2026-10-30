@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M60 Sidebar proposal</title>
+<!-- M60 step 1 (owner order M60): a proposal for the owner's approval. Nothing here is built.
+     Token values are copied from frontend/src/styles/tokens.css (colour v3 palette and the sec-* section tints,
+     light and dark), the same way as the M49 mockups. Mock data only. -->
+<style>
+/* ---------- tokens: the page follows the system theme; the frames carry their own theme (.t-light / .t-dark) ---------- */
+:root, .t-light {
+  color-scheme: light;
+  --surface: 247 248 250; --surface-1: 255 255 255; --surface-2: 241 243 246; --surface-3: 233 236 241;
+  --surface-inset: 236 239 243; --border: 138 140 143; --border-subtle: 227 230 235;
+  --fg: 15 23 42; --fg-muted: 91 100 117; --brand: 40 96 250; --brand-fill: 41 98 255;
+  --on-brand: 255 255 255; --brand-tint: 229 236 255; --up: 10 125 85; --down: 210 44 61; --warn: 180 83 9;
+  --warn-tint: 246 234 225; --ai: 124 58 237;
+  /* section accents (sec-trading, sec-markets, sec-insights, sec-copilot, sec-account, sec-admin; light) */
+  --s-trade: 17 94 89; --s-trade-soft: 204 251 241;
+  --s-find: 7 89 133; --s-find-soft: 224 242 254;
+  --s-build: 134 25 143; --s-build-soft: 250 232 255;
+  --s-learn: 91 33 182; --s-learn-soft: 237 233 254;
+  --s-account: 51 65 85; --s-account-soft: 226 232 240;
+  --s-admin: 55 48 163; --s-admin-soft: 224 231 255;
+  --radius-control: 6px; --radius-panel: 10px; --radius-pill: 999px;
+  --shadow-raised: 0 8px 24px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);
+}
+.t-dark, :root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: 11 14 20; --surface-1: 19 23 34; --surface-2: 28 33 48; --surface-3: 37 43 61; --surface-inset: 7 9 14;
+  --border: 104 107 117; --border-subtle: 42 47 61; --fg: 230 233 239; --fg-muted: 154 163 178;
+  --brand: 84 129 255; --brand-fill: 41 98 255; --on-brand: 255 255 255;
+  --brand-tint: 22 34 67; --up: 46 189 133; --down: 246 70 93; --warn: 240 169 59; --warn-tint: 46 41 37; --ai: 152 110 247;
+  --s-trade: 94 234 212; --s-trade-soft: 14 70 72;
+  --s-find: 125 211 252; --s-find-soft: 20 64 96;
+  --s-build: 240 171 252; --s-build-soft: 80 36 96;
+  --s-learn: 196 181 253; --s-learn-soft: 62 44 120;
+  --s-account: 203 213 225; --s-account-soft: 52 64 94;
+  --s-admin: 199 210 254; --s-admin-soft: 44 50 112;
+  --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface: 11 14 20; --surface-1: 19 23 34; --surface-2: 28 33 48; --surface-3: 37 43 61; --surface-inset: 7 9 14;
+    --border: 104 107 117; --border-subtle: 42 47 61; --fg: 230 233 239; --fg-muted: 154 163 178;
+    --brand: 84 129 255; --brand-tint: 22 34 67; --up: 46 189 133; --down: 246 70 93; --warn: 240 169 59; --warn-tint: 46 41 37;
+    --s-trade: 94 234 212; --s-trade-soft: 14 70 72; --s-find: 125 211 252; --s-find-soft: 20 64 96;
+    --s-build: 240 171 252; --s-build-soft: 80 36 96; --s-learn: 196 181 253; --s-learn-soft: 62 44 120;
+    --s-account: 203 213 225; --s-account-soft: 52 64 94; --s-admin: 199 210 254; --s-admin-soft: 44 50 112;
+  }
+}
+.trade { --sec: var(--s-trade); --sec-soft: var(--s-trade-soft); }
+.find { --sec: var(--s-find); --sec-soft: var(--s-find-soft); }
+.build { --sec: var(--s-build); --sec-soft: var(--s-build-soft); }
+.learn { --sec: var(--s-learn); --sec-soft: var(--s-learn-soft); }
+.account { --sec: var(--s-account); --sec-soft: var(--s-account-soft); }
+.admin { --sec: var(--s-admin); --sec-soft: var(--s-admin-soft); }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: rgb(var(--surface-inset)); color: rgb(var(--fg));
+  font-family: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 16px; line-height: 1.5; }
+.t-light, .t-dark { color: rgb(var(--fg)); }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; padding: 1px 5px; border-radius: 4px;
+  background: rgb(var(--surface-2)); white-space: nowrap; }
+svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, summary:focus-visible { outline: 2px solid rgb(var(--brand)); outline-offset: 2px; }
+
+/* ---------- review page ---------- */
+.review { max-width: 1520px; margin: 0 auto; padding: 24px 16px 48px; }
+.head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.head h1 { font-size: 22px; line-height: 30px; margin: 0; }
+.head p { margin: 4px 0 0; color: rgb(var(--fg-muted)); font-size: 14px; }
+.tag-mock { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill);
+  background: rgb(var(--warn-tint)); color: rgb(var(--warn)); border: 1px solid rgb(var(--warn) / .4); }
+.theme-btn { min-height: 44px; padding: 0 14px; border-radius: var(--radius-control); border: 1px solid rgb(var(--border)); background: rgb(var(--surface-1)); }
+h2.sec-title { font-size: 18px; margin: 32px 0 8px; }
+p.lead { margin: 0 0 12px; font-size: 14px; color: rgb(var(--fg-muted)); max-width: 900px; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 16px 0 0; }
+.stat { padding: 12px; border-radius: var(--radius-panel); background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); }
+.stat .v { font-size: 22px; line-height: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat .l { font-size: 13px; color: rgb(var(--fg-muted)); }
+.stat .v small { font-size: 14px; color: rgb(var(--fg-muted)); font-weight: 500; }
+@media (max-width: 700px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---------- before / after table ---------- */
+.tbl-wrap { background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); border-radius: var(--radius-panel); overflow: hidden; }
+table.map { width: 100%; border-collapse: collapse; font-size: 14px; }
+.map th { text-align: left; font-size: 12px; font-weight: 600; color: rgb(var(--fg-muted)); padding: 10px 12px; background: rgb(var(--surface-2)); }
+.map td { padding: 8px 12px; border-top: 1px solid rgb(var(--border-subtle)); vertical-align: top; }
+.map td:first-child { font-weight: 600; }
+.map tr.grp td { background: rgb(var(--surface-2)); font-size: 13px; font-weight: 700; color: rgb(var(--fg-muted)); padding: 6px 12px; }
+.map .muted { color: rgb(var(--fg-muted)); font-weight: 400; font-size: 13px; }
+.dest { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pill { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .03em; padding: 1px 7px; border-radius: var(--radius-pill);
+  background: rgb(var(--sec-soft)); color: rgb(var(--sec)); white-space: nowrap; }
+.keep { color: rgb(var(--up)); font-weight: 600; }
+.arrow { color: rgb(var(--fg-muted)); }
+@media (max-width: 760px) {
+  table.map, .map tbody, .map tr, .map td { display: block; width: 100%; }
+  .map thead { display: none; }
+  .map tr { border-top: 1px solid rgb(var(--border-subtle)); padding: 8px 0; }
+  .map tr.grp { padding: 0; }
+  .map td { border: 0; padding: 2px 12px; }
+  .map td[data-l]::before { content: attr(data-l); display: block; font-size: 11px; font-weight: 600; color: rgb(var(--fg-muted)); text-transform: uppercase; letter-spacing: .04em; }
+  code { white-space: normal; word-break: break-all; }
+}
+
+/* ---------- frames ---------- */
+.frames { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.frames > * { min-width: 0; max-width: 100%; }
+[data-phone] { width: 390px; }
+.frame-label { font-size: 13px; font-weight: 600; color: rgb(var(--fg-muted)); margin: 0 0 8px; }
+.desk-wrap { overflow-x: auto; max-width: 100%; }
+.desk { width: 100%; min-width: 1200px; height: 760px; display: flex; border: 1px solid rgb(var(--border-subtle)); border-radius: 12px;
+  background: rgb(var(--surface)); overflow: hidden; box-shadow: var(--shadow-raised); }
+.phone { width: 390px; max-width: 100%; height: 760px; overflow: hidden; display: flex; flex-direction: column; position: relative;
+  border: 1px solid rgb(var(--border-subtle)); border-radius: 28px; background: rgb(var(--surface)); box-shadow: var(--shadow-raised); }
+
+/* sidebar */
+.side { width: 248px; flex: none; border-right: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); padding: 14px 10px; font-size: 14px;
+  display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.side .brand { font-weight: 700; font-size: 16px; padding: 2px 8px 10px; }
+.side .search { display: flex; align-items: center; gap: 8px; margin: 0 2px 8px; padding: 7px 10px; border-radius: var(--radius-control);
+  border: 1px solid rgb(var(--border-subtle)); color: rgb(var(--fg-muted)); font-size: 13px; }
+.side .search kbd { margin-left: auto; font: inherit; font-size: 11px; padding: 0 5px; border: 1px solid rgb(var(--border-subtle)); border-radius: 4px; }
+.side h3 { font-size: 11px; font-weight: 700; letter-spacing: .06em; margin: 10px 10px 2px; color: rgb(var(--sec)); }
+.nav-a { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--radius-control); color: rgb(var(--fg)); text-decoration: none; white-space: nowrap; }
+.nav-a svg { color: rgb(var(--sec)); }
+.nav-a.on { background: rgb(var(--sec-soft)); color: rgb(var(--sec)); font-weight: 600; box-shadow: inset 3px 0 0 rgb(var(--sec)); }
+.nav-a .dot { width: 8px; height: 8px; border-radius: 50%; margin-left: auto; background: rgb(var(--warn)); box-shadow: 0 0 0 2px rgb(var(--surface-1)); }
+.nav-a .only { margin-left: auto; font-size: 10px; font-weight: 600; color: rgb(var(--fg-muted)); border: 1px solid rgb(var(--border-subtle)); border-radius: var(--radius-pill); padding: 0 6px; }
+
+/* desktop main: the Terminal */
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; border-bottom: 1px solid rgb(var(--border-subtle));
+  background: rgb(var(--surface-1)); font-size: 14px; color: rgb(var(--fg-muted)); }
+.topbar b { color: rgb(var(--fg)); font-size: 15px; }
+.chip-paper { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: var(--radius-pill); background: rgb(var(--warn-tint)); color: rgb(var(--warn)); }
+.body { flex: 1; min-height: 0; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.page-head { display: flex; align-items: center; gap: 12px; }
+.page-icon { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: rgb(var(--sec-soft)); color: rgb(var(--sec)); }
+.page-head h1 { margin: 0; font-size: 20px; line-height: 26px; }
+.page-head p { margin: 0; font-size: 13px; color: rgb(var(--fg-muted)); }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid rgb(var(--border-subtle)); overflow-x: auto; scrollbar-width: none; }
+.tabs span { flex: none; padding: 8px 12px; font-size: 14px; color: rgb(var(--fg-muted)); border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs span.on { color: rgb(var(--sec)); border-bottom-color: rgb(var(--sec)); font-weight: 600; }
+.grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px 1fr 300px 220px; grid-template-rows: 1fr 150px; gap: 10px; }
+.panel { background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); border-radius: var(--radius-panel); padding: 10px 12px; min-height: 0; overflow: hidden; font-size: 13px; }
+.panel h4 { margin: 0 0 8px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.panel h4 .exp { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-weight: 500; color: rgb(var(--brand)); font-size: 12px; }
+.panel h4 .exp svg { width: 14px; height: 14px; }
+.panel.wide { grid-column: 1 / -1; }
+.wl { list-style: none; margin: 0; padding: 0; }
+.wl li { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid rgb(var(--border-subtle)); }
+.wl li:first-child { border-top: 0; }
+.up { color: rgb(var(--up)); } .down { color: rgb(var(--down)); }
+.bar { height: 10px; border-radius: 3px; background: rgb(var(--surface-3)); margin: 8px 0; }
+.chart svg { width: 100%; height: calc(100% - 26px); }
+.tag-new { font-size: 10px; font-weight: 700; padding: 0 6px; border-radius: var(--radius-pill); background: rgb(var(--brand-tint)); color: rgb(var(--brand)); }
+
+/* phone */
+.ph-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); font-size: 14px; }
+.ph-body { flex: 1; overflow: hidden; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.card { background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); border-radius: var(--radius-panel); padding: 12px; font-size: 14px; }
+.card .v { font-size: 20px; font-weight: 600; }
+.card .l { font-size: 13px; color: rgb(var(--fg-muted)); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bottom { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); }
+.bottom span { position: relative; text-align: center; font-size: 12px; padding: 8px 0 14px; color: rgb(var(--fg-muted)); white-space: nowrap; }
+.bottom span svg { display: block; margin: 0 auto 3px; width: 22px; height: 22px; color: rgb(var(--sec)); }
+.bottom span.on { color: rgb(var(--sec)); font-weight: 700; }
+.bottom span.on svg { background: rgb(var(--sec-soft)); border-radius: 10px; padding: 2px; width: 44px; height: 26px; }
+.bottom .bdot { position: absolute; top: 6px; left: calc(50% + 8px); width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--warn)); }
+.scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .45); }
+.sheet { position: absolute; left: 0; right: 0; bottom: 63px; box-shadow: 0 -8px 24px rgb(0 0 0 / .2); max-height: 86%; overflow: hidden; background: rgb(var(--surface-1)); border-radius: 20px 20px 0 0; padding: 8px 16px 16px; }
+.grab { width: 36px; height: 4px; border-radius: 2px; background: rgb(var(--border)); margin: 0 auto 10px; }
+.sheet .search { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--radius-control); border: 1px solid rgb(var(--border-subtle)); color: rgb(var(--fg-muted)); font-size: 14px; margin-bottom: 8px; }
+.sheet h3 { font-size: 11px; font-weight: 700; letter-spacing: .06em; margin: 10px 0 6px; color: rgb(var(--sec)); }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tile { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 10px; border-radius: var(--radius-panel); background: rgb(var(--surface-2)); font-size: 14px; font-weight: 500; }
+.tile .ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: rgb(var(--sec-soft)); color: rgb(var(--sec)); flex: none; }
+.tile .ic svg { width: 16px; height: 16px; }
+.tile .dot { width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--warn)); margin-left: auto; }
+.tile .only { margin-left: auto; font-size: 10px; color: rgb(var(--fg-muted)); }
+
+/* tab rows */
+.tabrows { background: rgb(var(--surface)); border: 1px solid rgb(var(--border-subtle)); border-radius: 12px; padding: 12px 16px; flex: 1 1 560px; max-width: 740px; }
+.tabrow { display: grid; grid-template-columns: 150px 1fr 56px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid rgb(var(--border-subtle)); }
+.tabrow:first-of-type { border-top: 0; }
+.tabrow .nm { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.tabrow .nm svg { color: rgb(var(--sec)); }
+.tabrow .tabs { border-bottom: 0; }
+.tabrow .tabs span { border: 1px solid rgb(var(--border-subtle)); border-radius: var(--radius-pill); padding: 4px 12px; font-size: 13px; }
+.tabrow .tabs span.on { background: rgb(var(--sec-soft)); border-color: rgb(var(--sec)); }
+.tabrow .n { font-size: 12px; color: rgb(var(--up)); font-weight: 700; text-align: right; }
+.tabrow .sub { grid-column: 2 / 4; font-size: 12px; color: rgb(var(--fg-muted)); margin-top: -4px; }
+@media (max-width: 600px) { .tabrow { grid-template-columns: 1fr 44px; } .tabrow .tabs { grid-column: 1 / -1; grid-row: 2; } .tabrow .sub { grid-column: 1 / -1; } }
+
+/* questions and notes */
+.qs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-width: 980px; }
+.qs li { background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); border-radius: var(--radius-panel); padding: 12px 14px; font-size: 14px; }
+.qs b.q { display: block; font-size: 15px; }
+.qs .def { display: block; margin-top: 4px; color: rgb(var(--fg-muted)); }
+.qs .def b { color: rgb(var(--up)); }
+.notes { font-size: 14px; color: rgb(var(--fg-muted)); max-width: 980px; padding-left: 20px; }
+.notes li { margin-bottom: 6px; } .notes b { color: rgb(var(--fg)); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-today" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><circle cx="19" cy="6" r="3"/><path d="M22 12v3a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.5"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-trades" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/></symbol>
+  <symbol id="i-find" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></symbol>
+  <symbol id="i-signals" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+  <symbol id="i-sectors" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-strategies" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></symbol>
+  <symbol id="i-copilot" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M5 3v4M3 5h4M19 17v4M17 19h4"/></symbol>
+  <symbol id="i-learn" viewBox="0 0 24 24"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7.5"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-admin" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+</svg>
+
+<div class="review">
+  <div class="head">
+    <div>
+      <h1>M60 Sidebar and tabs: proposal <span class="tag-mock">Proposal: nothing built, waits for the owner's approval</span></h1>
+      <p>One feature, one home. Every page that exists today is listed below with its new place and how its old address keeps working.</p>
+    </div>
+    <button class="theme-btn" type="button" id="themeBtn">Switch light / dark</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="v">17 <small>to</small> 11</div><div class="l">User sidebar entries (today 16 + Broker pinned)</div></div>
+    <div class="stat"><div class="v">5</div><div class="l">Sections: Trade, Find, Build, Learn &amp; AI, Account</div></div>
+    <div class="stat"><div class="v">4 + More</div><div class="l">Phone bottom bar (first 4 entries)</div></div>
+    <div class="stat"><div class="v">&le; 4</div><div class="l">Tabs in every tab row</div></div>
+  </div>
+
+  <!-- ===================== (a) before / after ===================== -->
+  <h2 class="sec-title">1. Before and after: every page</h2>
+  <p class="lead">Read from the code on main: <code>shell/navModel.ts</code> (sidebar, pinned Broker, extras), <code>shell/pageGroups.ts</code> (tab groups), <code>shell/aliases.ts</code> and the routes of the shell. "None" in the last column means the address stays as it is. Addresses marked "proposed" are new and are fixed during the build.</p>
+  <div class="tbl-wrap">
+  <table class="map">
+    <thead><tr><th>Item</th><th>Today's place</th><th>Proposed place</th><th>Redirect (old address to new address, tab / panel)</th></tr></thead>
+    <tbody>
+      <tr class="grp"><td colspan="4">A. The sidebar today: 16 entries in 4 user sections, Broker pinned above them, Admin apart</td></tr>
+      <tr><td data-l="Item">Today <span class="muted">/</span></td><td data-l="Today">Markets; bottom bar 1</td><td data-l="Proposed"><span class="dest"><span class="pill trade">TRADE</span>Today; bottom bar 1</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Charts <span class="muted">/charts, /charts/:symbol</span></td><td data-l="Today">Markets; bottom bar 2</td><td data-l="Proposed"><span class="dest"><span class="pill trade">TRADE</span>Terminal, ready layout "Chart only" (new)</span></td><td data-l="Redirect"><code>/charts</code> <span class="arrow">&rarr;</span> <code>/terminal?layout=chart-only</code>; <code>/charts/:symbol</code> <span class="arrow">&rarr;</span> the same, with that symbol (proposed)</td></tr>
+      <tr><td data-l="Item">Watchlist <span class="muted">/watchlist (flag watchlists)</span></td><td data-l="Today">Markets; also the right column of Charts</td><td data-l="Proposed"><span class="dest"><span class="pill trade">TRADE</span>Terminal, Watchlist panel (docked left); never a page</span></td><td data-l="Redirect"><code>/watchlist</code> <span class="arrow">&rarr;</span> <code>/terminal?panel=watchlist</code>, panel open (proposed)</td></tr>
+      <tr><td data-l="Item">Option chain <span class="muted">/option-chain</span></td><td data-l="Today">Markets; also a Terminal panel</td><td data-l="Proposed"><span class="dest"><span class="pill trade">TRADE</span>Terminal, Option chain panel; its expand button opens the full page</span></td><td data-l="Redirect"><span class="keep">None</span>: <code>/option-chain</code> stays as the full page; Terminal lights up</td></tr>
+      <tr><td data-l="Item">Sectors &amp; indices <span class="muted">/markets (flag markets_view)</span></td><td data-l="Today">Markets</td><td data-l="Proposed"><span class="dest"><span class="pill find">FIND</span>Sectors &amp; indices</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Find setups <span class="muted">/screener (flag screener)</span></td><td data-l="Today">Markets</td><td data-l="Proposed"><span class="dest"><span class="pill find">FIND</span>Find setups, saved scans as tabs; bottom bar 4</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Terminal <span class="muted">/terminal (flag terminal)</span></td><td data-l="Today">Trading</td><td data-l="Proposed"><span class="dest"><span class="pill trade">TRADE</span>Terminal; bottom bar 2</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Signals <span class="muted">/signals</span></td><td data-l="Today">Trading; bottom bar 3</td><td data-l="Proposed"><span class="dest"><span class="pill find">FIND</span>Signals (in More on a phone)</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Trading bot <span class="muted">/deployments</span></td><td data-l="Today">Trading</td><td data-l="Proposed"><span class="dest"><span class="pill build">BUILD</span>AI Trading Bot (new label)</span></td><td data-l="Redirect"><span class="keep">None</span>; search still finds "Trading bot"</td></tr>
+      <tr><td data-l="Item">My trades <span class="muted">/positions</span></td><td data-l="Today">Trading; bottom bar 4</td><td data-l="Proposed"><span class="dest"><span class="pill trade">TRADE</span>My trades, tab Positions; bottom bar 3</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Performance <span class="muted">/analytics</span></td><td data-l="Today">Insights (tabs Results, Journal, Coach)</td><td data-l="Proposed"><span class="dest"><span class="pill trade">TRADE</span>My trades, tab Results</span></td><td data-l="Redirect"><code>/analytics</code> <span class="arrow">&rarr;</span> <code>/positions/results</code> (proposed)</td></tr>
+      <tr><td data-l="Item">Strategies <span class="muted">/strategies</span></td><td data-l="Today">Insights (tabs Library, Ideas, Build, Test)</td><td data-l="Proposed"><span class="dest"><span class="pill build">BUILD</span>Strategies, tab Library</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">AI Copilot <span class="muted">/copilot (flag ai_copilot)</span></td><td data-l="Today">Insights (tabs Ask, Brief, Build, Review, Signals)</td><td data-l="Proposed"><span class="dest"><span class="pill learn">LEARN &amp; AI</span>AI Copilot, tab Ask</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">News &amp; events <span class="muted">/news-events</span></td><td data-l="Today">Insights</td><td data-l="Proposed"><span class="dest"><span class="pill learn">LEARN &amp; AI</span>Learn, tab News &amp; events</span></td><td data-l="Redirect"><code>/news-events</code> <span class="arrow">&rarr;</span> <code>/learn/news</code> (proposed)</td></tr>
+      <tr><td data-l="Item">Learn <span class="muted">/learn (flag learn)</span></td><td data-l="Today">Insights (tabs Lessons, Words explained)</td><td data-l="Proposed"><span class="dest"><span class="pill learn">LEARN &amp; AI</span>Learn, tab Lessons</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Settings <span class="muted">/settings</span></td><td data-l="Today">Account (an index of section pages)</td><td data-l="Proposed"><span class="dest"><span class="pill account">ACCOUNT</span>Settings, with the Broker connection dot on its row</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Broker <span class="muted">/broker</span></td><td data-l="Today">Pinned above the sections, with its dot; first tile of More</td><td data-l="Proposed"><span class="dest"><span class="pill account">ACCOUNT</span>Settings, tab Account &amp; broker, "Broker accounts"</span></td><td data-l="Redirect"><code>/broker</code> <span class="arrow">&rarr;</span> <code>/settings/broker</code> (proposed)</td></tr>
+      <tr><td data-l="Item">Admin console <span class="muted">/admin (super-admin only)</span></td><td data-l="Today">Admin, set apart at the bottom</td><td data-l="Proposed"><span class="dest"><span class="pill admin">ACCOUNT</span>Admin, super-admin only (question 4)</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+
+      <tr class="grp"><td colspan="4">B. Tabs and sub-pages today (tab bars and search)</td></tr>
+      <tr><td data-l="Item">Orders <span class="muted">/positions/orders</span></td><td data-l="Today">My trades, tab Orders</td><td data-l="Proposed"><span class="dest"><span class="pill trade">TRADE</span>My trades, tab Orders</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Money <span class="muted">/positions/money</span></td><td data-l="Today">My trades, tab Money</td><td data-l="Proposed"><span class="dest"><span class="pill trade">TRADE</span>My trades, tab Money</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Journal <span class="muted">/analytics/journal (flag discipline_engine)</span></td><td data-l="Today">Performance, tab Journal</td><td data-l="Proposed"><span class="dest"><span class="pill trade">TRADE</span>My trades, tab Results, part "Journal" (question 2)</span></td><td data-l="Redirect"><code>/analytics/journal</code> <span class="arrow">&rarr;</span> <code>/positions/results/journal</code> (proposed)</td></tr>
+      <tr><td data-l="Item">Coach <span class="muted">/analytics/coach</span></td><td data-l="Today">Performance, tab Coach (also Copilot tab Review)</td><td data-l="Proposed"><span class="dest"><span class="pill learn">LEARN &amp; AI</span>AI Copilot, tab Coach (question 3)</span></td><td data-l="Redirect"><code>/analytics/coach</code> <span class="arrow">&rarr;</span> <code>/copilot/coach</code></td></tr>
+      <tr><td data-l="Item">Ideas <span class="muted">/ideas (flag idea_library)</span></td><td data-l="Today">Strategies, tab Ideas</td><td data-l="Proposed"><span class="dest"><span class="pill learn">LEARN &amp; AI</span>Learn, tab Ideas</span></td><td data-l="Redirect"><code>/ideas</code> <span class="arrow">&rarr;</span> <code>/learn/ideas</code> (proposed)</td></tr>
+      <tr><td data-l="Item">Build a strategy <span class="muted">/strategies/build</span></td><td data-l="Today">Strategies, tab Build; Copilot tab Build links here</td><td data-l="Proposed"><span class="dest"><span class="pill build">BUILD</span>Strategies, tab Build (the one builder)</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Test a strategy <span class="muted">/strategies/test</span></td><td data-l="Today">Strategies, tab Test</td><td data-l="Proposed"><span class="dest"><span class="pill build">BUILD</span>Strategies, tab Test</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Custom scan <span class="muted">/screener/custom</span></td><td data-l="Today">Search only (under Find setups)</td><td data-l="Proposed"><span class="dest"><span class="pill find">FIND</span>Find setups, merged into the scan conditions (M49 U6)</span></td><td data-l="Redirect"><code>/screener/custom</code> <span class="arrow">&rarr;</span> <code>/screener?scan=own</code> (proposed)</td></tr>
+      <tr><td data-l="Item">Plan an options trade <span class="muted">/option-chain/plan (flag options_builder)</span></td><td data-l="Today">Search only (under Option chain)</td><td data-l="Proposed"><span class="dest"><span class="pill trade">TRADE</span>From the Option chain full page; Terminal lights up</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Analyze a chart <span class="muted">/chart-analyze (flag chart_analyze)</span></td><td data-l="Today">Search only (NAV_EXTRAS)</td><td data-l="Proposed"><span class="dest"><span class="pill learn">LEARN &amp; AI</span>AI Copilot, tab Analyze a chart; the standalone page is kept (M59 CR-2; question 1)</span></td><td data-l="Redirect"><span class="keep">None</span>: <code>/chart-analyze</code> kept; <code>/copilot/analyze</code> shows the same tool (proposed)</td></tr>
+      <tr><td data-l="Item">Copilot Brief <span class="muted">/copilot/brief</span></td><td data-l="Today">AI Copilot, tab Brief (Market Pulse + News Radar)</td><td data-l="Proposed"><span class="dest"><span class="pill learn">LEARN &amp; AI</span>AI Copilot, tab Read the chart; the news part in Learn, News &amp; events (question 3)</span></td><td data-l="Redirect"><code>/copilot/brief</code> <span class="arrow">&rarr;</span> <code>/copilot/read</code> (proposed)</td></tr>
+      <tr><td data-l="Item">Copilot Build <span class="muted">(a link)</span></td><td data-l="Today">AI Copilot, tab Build (opens Strategies, Build)</td><td data-l="Proposed"><span class="dest"><span class="pill build">BUILD</span>Strategies, tab Build only</span></td><td data-l="Redirect">Tab leaves the Copilot row; the page it opens, <code>/strategies/build</code> is unchanged</td></tr>
+      <tr><td data-l="Item">Copilot Signals <span class="muted">/copilot/signals (Watchtower)</span></td><td data-l="Today">AI Copilot, tab Signals</td><td data-l="Proposed"><span class="dest"><span class="pill find">FIND</span>Signals (question 3)</span></td><td data-l="Redirect"><code>/copilot/signals</code> <span class="arrow">&rarr;</span> <code>/signals</code> (proposed)</td></tr>
+      <tr><td data-l="Item">Copilot Review <span class="muted">/copilot/review</span></td><td data-l="Today">AI Copilot, tab Review (Coach)</td><td data-l="Proposed"><span class="dest"><span class="pill learn">LEARN &amp; AI</span>AI Copilot, tab Coach</span></td><td data-l="Redirect"><code>/copilot/review</code> <span class="arrow">&rarr;</span> <code>/copilot/coach</code></td></tr>
+      <tr><td data-l="Item">Copilot older tabs <span class="muted">/copilot/market-pulse, strategy-lab, idea-builder, ask, watchtower, news-radar, coach</span></td><td data-l="Today">AI Copilot, under "Advanced"</td><td data-l="Proposed"><span class="dest"><span class="pill learn">LEARN &amp; AI</span>Unchanged, under "Advanced"; <code>/copilot/coach</code> becomes the Coach tab</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Words explained <span class="muted">(Learn tab)</span></td><td data-l="Today">Learn, tab Words explained</td><td data-l="Proposed"><span class="dest"><span class="pill learn">LEARN &amp; AI</span>Learn, tab Words explained</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Account &amp; plan <span class="muted">/settings/account</span></td><td data-l="Today">Settings section page</td><td data-l="Proposed"><span class="dest"><span class="pill account">ACCOUNT</span>Settings, tab Account &amp; broker</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Setup <span class="muted">/settings/setup</span></td><td data-l="Today">Settings section page</td><td data-l="Proposed"><span class="dest"><span class="pill account">ACCOUNT</span>Settings, tab Account &amp; broker</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Team <span class="muted">/team</span></td><td data-l="Today">Search only; Settings index</td><td data-l="Proposed"><span class="dest"><span class="pill account">ACCOUNT</span>Settings, tab Account &amp; broker</span></td><td data-l="Redirect"><span class="keep">None</span>; Settings lights up</td></tr>
+      <tr><td data-l="Item">My trading defaults <span class="muted">/settings/trading-defaults</span></td><td data-l="Today">Settings section page</td><td data-l="Proposed"><span class="dest"><span class="pill account">ACCOUNT</span>Settings, tab Trading</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Risk limits <span class="muted">/risk-management</span></td><td data-l="Today">Search only; Settings index</td><td data-l="Proposed"><span class="dest"><span class="pill account">ACCOUNT</span>Settings, tab Trading</span></td><td data-l="Redirect"><span class="keep">None</span>; Settings lights up</td></tr>
+      <tr><td data-l="Item">Alerts <span class="muted">/settings/alerts</span></td><td data-l="Today">Settings section page</td><td data-l="Proposed"><span class="dest"><span class="pill account">ACCOUNT</span>Settings, tab Trading (question 5)</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Notifications <span class="muted">/notifications</span></td><td data-l="Today">Search only</td><td data-l="Proposed"><span class="dest"><span class="pill account">ACCOUNT</span>Settings, tab Trading, link "Inbox" (question 5)</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">AI <span class="muted">/settings/ai</span></td><td data-l="Today">Settings section page</td><td data-l="Proposed"><span class="dest"><span class="pill account">ACCOUNT</span>Settings, tab AI</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Appearance, Help &amp; tips, Advanced <span class="muted">/settings/appearance, /help, /advanced</span></td><td data-l="Today">Settings section pages</td><td data-l="Proposed"><span class="dest"><span class="pill account">ACCOUNT</span>Settings, tab App</span></td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+
+      <tr class="grp"><td colspan="4">C. Search-only pages today (kept, still found by search)</td></tr>
+      <tr><td data-l="Item">Company research <span class="muted">/fundamentals</span></td><td data-l="Today">Search only</td><td data-l="Proposed">Search only, unchanged</td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Factor Lab <span class="muted">/quant</span></td><td data-l="Today">Search only</td><td data-l="Proposed">Search only, unchanged</td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Contract specs <span class="muted">/instruments</span></td><td data-l="Today">Search only</td><td data-l="Proposed">Search only, unchanged</td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Activity log <span class="muted">/system-logs</span></td><td data-l="Today">Search only</td><td data-l="Proposed">Search only, unchanged</td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Marketplace <span class="muted">/marketplace (flag marketplace, off)</span></td><td data-l="Today">Hidden while off</td><td data-l="Proposed">Unchanged; the last phase</td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+
+      <tr class="grp"><td colspan="4">D. Old addresses that already forward today (each still lands on its page, in one step)</td></tr>
+      <tr><td data-l="Item">Orders, Money <span class="muted">/orders, /portfolio</span></td><td data-l="Today">Forward to /positions/orders, /positions/money</td><td data-l="Proposed">Unchanged</td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Builder, Backtest <span class="muted">/strategy-builder, /backtest</span></td><td data-l="Today">Forward to /strategies/build, /strategies/test</td><td data-l="Proposed">Unchanged</td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Journal <span class="muted">/journal</span></td><td data-l="Today">Forwards to /analytics/journal</td><td data-l="Proposed">Follows Journal</td><td data-l="Redirect"><code>/journal</code> <span class="arrow">&rarr;</span> <code>/positions/results/journal</code></td></tr>
+      <tr><td data-l="Item">Coach <span class="muted">/coach, /journal/coach</span></td><td data-l="Today">Forward to /analytics/coach</td><td data-l="Proposed">Follows Coach</td><td data-l="Redirect"><code>/coach</code>, <code>/journal/coach</code> <span class="arrow">&rarr;</span> <code>/copilot/coach</code></td></tr>
+      <tr><td data-l="Item">Scanner <span class="muted">/scanner</span></td><td data-l="Today">Forwards to /screener/custom</td><td data-l="Proposed">Follows Custom scan</td><td data-l="Redirect"><code>/scanner</code> <span class="arrow">&rarr;</span> <code>/screener?scan=own</code></td></tr>
+      <tr><td data-l="Item">Options builder <span class="muted">/options-builder</span></td><td data-l="Today">Forwards to /option-chain/plan</td><td data-l="Proposed">Unchanged</td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Account <span class="muted">/account</span></td><td data-l="Today">Signed in: forwards to /settings/account</td><td data-l="Proposed">Unchanged</td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Old Copilot <span class="muted">/ai-copilot/:tab</span></td><td data-l="Today">Forwards to /copilot/&lt;tab&gt;</td><td data-l="Proposed">Unchanged</td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+      <tr><td data-l="Item">Settings parts <span class="muted">/settings#ai, #alerts, #integrations ...</span></td><td data-l="Today">Forward to the section pages</td><td data-l="Proposed">Unchanged</td><td data-l="Redirect"><span class="keep">None</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ===================== (b) desktop ===================== -->
+  <h2 class="sec-title">2. Desktop sidebar (1440 px), light and dark</h2>
+  <p class="lead">Five short section titles, 11 user entries, one icon and one accent per section (the existing section colour tokens). The Broker connection dot sits on the Settings row (green connected, amber needs login, red not working; amber shown). Admin shows only for the super-admin. The page shown is the Terminal in its default ready layout.</p>
+  <div id="deskHost">
+  <p class="frame-label">Desktop (1440 px window), light</p>
+  <div class="desk-wrap"><div class="desk t-light" id="deskLight">
+    <nav class="side" aria-label="Main">
+      <div class="brand">AiAlgoDesk</div>
+      <div class="search"><svg class="i"><use href="#i-search"/></svg>Search pages<kbd>Ctrl K</kbd></div>
+      <div class="trade"><h3>TRADE</h3>
+        <a class="nav-a"><svg class="i"><use href="#i-today"/></svg>Today</a>
+        <a class="nav-a on"><svg class="i"><use href="#i-terminal"/></svg>Terminal</a>
+        <a class="nav-a"><svg class="i"><use href="#i-trades"/></svg>My trades</a></div>
+      <div class="find"><h3>FIND</h3>
+        <a class="nav-a"><svg class="i"><use href="#i-find"/></svg>Find setups</a>
+        <a class="nav-a"><svg class="i"><use href="#i-signals"/></svg>Signals</a>
+        <a class="nav-a"><svg class="i"><use href="#i-sectors"/></svg>Sectors &amp; indices</a></div>
+      <div class="build"><h3>BUILD</h3>
+        <a class="nav-a"><svg class="i"><use href="#i-strategies"/></svg>Strategies</a>
+        <a class="nav-a"><svg class="i"><use href="#i-bot"/></svg>AI Trading Bot</a></div>
+      <div class="learn"><h3>LEARN &amp; AI</h3>
+        <a class="nav-a"><svg class="i"><use href="#i-copilot"/></svg>AI Copilot</a>
+        <a class="nav-a"><svg class="i"><use href="#i-learn"/></svg>Learn</a></div>
+      <div class="account"><h3>ACCOUNT</h3>
+        <a class="nav-a" title="Broker needs login"><svg class="i"><use href="#i-settings"/></svg>Settings<span class="dot" aria-label="Broker needs login"></span></a></div>
+      <div class="admin"><a class="nav-a"><svg class="i"><use href="#i-admin"/></svg>Admin<span class="only">super-admin</span></a></div>
+    </nav>
+    <div class="main trade">
+      <div class="topbar"><b>Terminal</b><span class="chip-paper">Paper</span></div>
+      <div class="body">
+        <div class="page-head"><div class="page-icon"><svg class="i"><use href="#i-terminal"/></svg></div>
+          <div><h1>Terminal</h1><p>Chart, option chain, watchlist and order in one screen.</p></div></div>
+        <div class="tabs"><span class="on">Option seller</span><span>Quick trade</span><span>Multi-chart</span><span>Chart only <span class="tag-new">new</span></span></div>
+        <div class="grid">
+          <div class="panel"><h4>Watchlist</h4><ul class="wl">
+            <li><span>NIFTY 50</span><span class="up">&#9650; 0.42%</span></li><li><span>NIFTY BANK</span><span class="down">&#9660; 0.18%</span></li>
+            <li><span>FIN NIFTY</span><span class="up">&#9650; 0.25%</span></li><li><span>SENSEX</span><span class="up">&#9650; 0.39%</span></li>
+            <li><span>NIFTY IT</span><span class="down">&#9660; 0.61%</span></li></ul></div>
+          <div class="panel chart"><h4>Chart</h4>
+            <svg viewBox="0 0 400 200" preserveAspectRatio="none" aria-hidden="true">
+              <g stroke-width="2">
+                <line x1="20" y1="120" x2="20" y2="160" stroke="rgb(var(--down))"/><rect x="14" y="128" width="12" height="24" fill="rgb(var(--down))"/>
+                <line x1="50" y1="100" x2="50" y2="150" stroke="rgb(var(--up))"/><rect x="44" y="110" width="12" height="30" fill="rgb(var(--up))"/>
+                <line x1="80" y1="90" x2="80" y2="130" stroke="rgb(var(--up))"/><rect x="74" y="96" width="12" height="24" fill="rgb(var(--up))"/>
+                <line x1="110" y1="80" x2="110" y2="125" stroke="rgb(var(--down))"/><rect x="104" y="90" width="12" height="20" fill="rgb(var(--down))"/>
+                <line x1="140" y1="70" x2="140" y2="115" stroke="rgb(var(--up))"/><rect x="134" y="78" width="12" height="28" fill="rgb(var(--up))"/>
+                <line x1="170" y1="55" x2="170" y2="100" stroke="rgb(var(--up))"/><rect x="164" y="62" width="12" height="26" fill="rgb(var(--up))"/>
+                <line x1="200" y1="60" x2="200" y2="105" stroke="rgb(var(--down))"/><rect x="194" y="68" width="12" height="24" fill="rgb(var(--down))"/>
+                <line x1="230" y1="70" x2="230" y2="118" stroke="rgb(var(--down))"/><rect x="224" y="80" width="12" height="26" fill="rgb(var(--down))"/>
+                <line x1="260" y1="62" x2="260" y2="110" stroke="rgb(var(--up))"/><rect x="254" y="70" width="12" height="30" fill="rgb(var(--up))"/>
+                <line x1="290" y1="45" x2="290" y2="92" stroke="rgb(var(--up))"/><rect x="284" y="52" width="12" height="30" fill="rgb(var(--up))"/>
+                <line x1="320" y1="38" x2="320" y2="80" stroke="rgb(var(--up))"/><rect x="314" y="44" width="12" height="24" fill="rgb(var(--up))"/>
+                <line x1="350" y1="40" x2="350" y2="86" stroke="rgb(var(--down))"/><rect x="344" y="48" width="12" height="22" fill="rgb(var(--down))"/>
+              </g>
+            </svg></div>
+          <div class="panel"><h4>Option chain <span class="exp"><svg class="i"><use href="#i-expand"/></svg>Full page</span></h4>
+            <div class="bar" style="width:90%"></div><div class="bar" style="width:75%"></div><div class="bar" style="width:85%"></div>
+            <div class="bar" style="width:60%"></div><div class="bar" style="width:80%"></div><div class="bar" style="width:70%"></div>
+            <div class="bar" style="width:88%"></div><div class="bar" style="width:66%"></div></div>
+          <div class="panel"><h4>Basket</h4><p class="muted" style="margin:0;color:rgb(var(--fg-muted))">Empty. Pick a price on the chain to add a leg.</p></div>
+          <div class="panel wide"><h4>Positions &middot; Orders &middot; Alerts</h4><div class="bar" style="width:100%"></div><div class="bar" style="width:100%"></div><div class="bar" style="width:70%"></div></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  </div>
+
+  <!-- ===================== (c) phone ===================== -->
+  <h2 class="sec-title">3. Phone (390 px): bottom bar and the More sheet, light and dark</h2>
+  <p class="lead">Bottom bar = the first 4 entries (Today, Terminal, My trades, Find setups) + More. More carries the Broker dot while the broker needs attention (as today). The sheet lists the other 7 entries under the same section titles, with page search on top.</p>
+  <div class="frames" id="phoneHost">
+    <div class="t-light" data-phone>
+      <p class="frame-label">Phone, light: bottom bar</p>
+      <div class="phone">
+        <div class="ph-top"><b>Today</b><span class="chip-paper">Paper</span></div>
+        <div class="ph-body trade">
+          <div class="page-head"><div class="page-icon"><svg class="i"><use href="#i-today"/></svg></div><div><h1>Today</h1><p>Your day at a glance.</p></div></div>
+          <div class="row2"><div class="card"><div class="l">Open trades</div><div class="v">2</div></div><div class="card"><div class="l">New signals</div><div class="v">3</div></div></div>
+          <div class="card"><div class="l">Watchlist strip</div><div class="up">NIFTY 50 &#9650; 0.42% &nbsp; <span class="down">NIFTY BANK &#9660; 0.18%</span></div></div>
+          <div class="card"><div class="l">Broker</div><div style="color:rgb(var(--warn));font-weight:600">Needs login</div></div>
+        </div>
+        <div class="bottom">
+          <span class="trade on"><svg class="i"><use href="#i-today"/></svg>Today</span>
+          <span class="trade"><svg class="i"><use href="#i-terminal"/></svg>Terminal</span>
+          <span class="trade"><svg class="i"><use href="#i-trades"/></svg>My trades</span>
+          <span class="find"><svg class="i"><use href="#i-find"/></svg>Find setups</span>
+          <span class="account"><svg class="i"><use href="#i-more"/></svg>More<i class="bdot" aria-label="Broker needs login"></i></span>
+        </div>
+      </div>
+    </div>
+    <div class="t-light" data-phone>
+      <p class="frame-label">Phone, light: More sheet</p>
+      <div class="phone">
+        <div class="ph-top"><b>Today</b><span class="chip-paper">Paper</span></div>
+        <div class="ph-body"></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="search"><svg class="i"><use href="#i-search"/></svg>Search pages</div>
+          <div class="find"><h3>FIND</h3><div class="tiles">
+            <div class="tile"><span class="ic"><svg class="i"><use href="#i-signals"/></svg></span>Signals</div>
+            <div class="tile"><span class="ic"><svg class="i"><use href="#i-sectors"/></svg></span>Sectors &amp; indices</div></div></div>
+          <div class="build"><h3>BUILD</h3><div class="tiles">
+            <div class="tile"><span class="ic"><svg class="i"><use href="#i-strategies"/></svg></span>Strategies</div>
+            <div class="tile"><span class="ic"><svg class="i"><use href="#i-bot"/></svg></span>AI Trading Bot</div></div></div>
+          <div class="learn"><h3>LEARN &amp; AI</h3><div class="tiles">
+            <div class="tile"><span class="ic"><svg class="i"><use href="#i-copilot"/></svg></span>AI Copilot</div>
+            <div class="tile"><span class="ic"><svg class="i"><use href="#i-learn"/></svg></span>Learn</div></div></div>
+          <div class="account"><h3>ACCOUNT</h3><div class="tiles">
+            <div class="tile"><span class="ic"><svg class="i"><use href="#i-settings"/></svg></span>Settings<span class="dot" aria-label="Broker needs login"></span></div>
+            <div class="tile admin"><span class="ic"><svg class="i"><use href="#i-admin"/></svg></span>Admin<span class="only">super-admin</span></div></div></div>
+        </div>
+        <div class="bottom" style="position:relative">
+          <span class="trade"><svg class="i"><use href="#i-today"/></svg>Today</span>
+          <span class="trade"><svg class="i"><use href="#i-terminal"/></svg>Terminal</span>
+          <span class="trade"><svg class="i"><use href="#i-trades"/></svg>My trades</span>
+          <span class="find"><svg class="i"><use href="#i-find"/></svg>Find setups</span>
+          <span class="account on"><svg class="i"><use href="#i-more"/></svg>More</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== tab rows ===================== -->
+  <h2 class="sec-title">4. Tab rows (each at most 4 tabs), light and dark</h2>
+  <p class="lead">The first tab is where the sidebar entry opens. What each tab holds is under its row.</p>
+  <div class="frames" id="tabHost">
+    <div class="tabrows t-light" data-tabs>
+      <p class="frame-label">Light</p>
+      <div class="tabrow trade"><div class="nm"><svg class="i"><use href="#i-terminal"/></svg>Terminal</div><div class="tabs"><span class="on">Option seller</span><span>Quick trade</span><span>Multi-chart</span><span>Chart only</span></div><div class="n">4 / 4</div>
+        <div class="sub">Ready layouts. "Chart only" is new and replaces the Charts page. Own saved layouts stay in the layout menu.</div></div>
+      <div class="tabrow trade"><div class="nm"><svg class="i"><use href="#i-trades"/></svg>My trades</div><div class="tabs"><span class="on">Positions</span><span>Orders</span><span>Money</span><span>Results</span></div><div class="n">4 / 4</div>
+        <div class="sub">Results = today's Performance; Journal is a part inside Results (question 2).</div></div>
+      <div class="tabrow find"><div class="nm"><svg class="i"><use href="#i-find"/></svg>Find setups</div><div class="tabs"><span class="on">Ready scans</span><span>My scan A</span><span>My scan B</span><span>All saved</span></div><div class="n">4 / 4</div>
+        <div class="sub">Saved scans as tabs (the two most recent); the rest under "All saved". Custom scan is part of every scan's conditions.</div></div>
+      <div class="tabrow build"><div class="nm"><svg class="i"><use href="#i-strategies"/></svg>Strategies</div><div class="tabs"><span class="on">Library</span><span>Build</span><span>Test</span></div><div class="n">3 / 4</div>
+        <div class="sub">Ideas moves to Learn.</div></div>
+      <div class="tabrow learn"><div class="nm"><svg class="i"><use href="#i-copilot"/></svg>AI Copilot</div><div class="tabs"><span class="on">Ask</span><span>Read the chart</span><span>Analyze a chart</span><span>Coach</span></div><div class="n">4 / 4</div>
+        <div class="sub">Analyze a chart = upload or a TradingView snapshot link. The older seven tabs stay under "Advanced".</div></div>
+      <div class="tabrow learn"><div class="nm"><svg class="i"><use href="#i-learn"/></svg>Learn</div><div class="tabs"><span class="on">Lessons</span><span>Words explained</span><span>Ideas</span><span>News &amp; events</span></div><div class="n">4 / 4</div>
+        <div class="sub">Lessons and Words explained exist today; Ideas and News &amp; events move here.</div></div>
+      <div class="tabrow account"><div class="nm"><svg class="i"><use href="#i-settings"/></svg>Settings</div><div class="tabs"><span class="on">Account &amp; broker</span><span>Trading</span><span>AI</span><span>App</span></div><div class="n">4 / 4</div>
+        <div class="sub">Account &amp; broker: account and plan, Broker accounts, Team, Setup. Trading: My trading defaults, Risk limits, Alerts. App: Appearance, Help &amp; tips, Advanced.</div></div>
+    </div>
+  </div>
+
+  <!-- ===================== open questions ===================== -->
+  <h2 class="sec-title">5. Open questions for the owner (each with a default)</h2>
+  <ol class="qs">
+    <li><b class="q">1. "Analyze a chart": a Copilot tab only, or also a sidebar entry?</b>M60 puts it inside AI Copilot; M59 CR-2 asks to put it back in the user navigation (the Markets section) and keep the standalone page.
+      <span class="def"><b>Default:</b> a Copilot tab plus the attach button in the Ask box; <code>/chart-analyze</code> stays and is found by search; no separate sidebar entry (keeps one home).</span></li>
+    <li><b class="q">2. My trades would have 5 tabs (Positions, Orders, Money, Results, Journal); the rule is at most 4.</b>
+      <span class="def"><b>Default:</b> 4 tabs; Journal becomes a part inside Results (Results: Summary | Journal).</span></li>
+    <li><b class="q">3. Coach in AI Copilot or in My trades, Results? And where do Copilot Brief and Copilot Signals go?</b>
+      <span class="def"><b>Default:</b> Coach is a Copilot tab (as the order lists it), with a "Review with the coach" link on Results; Brief becomes "Read the chart" and its news part moves to Learn, News &amp; events; Copilot Signals (Watchtower) opens the Signals page.</span></li>
+    <li><b class="q">4. Admin: its own entry under ACCOUNT, or a row inside Settings?</b>
+      <span class="def"><b>Default:</b> its own entry at the bottom of ACCOUNT, super-admin only (the server stays the gate).</span></li>
+    <li><b class="q">5. Where do alerts live? Today: Settings, Alerts (channels); the Notifications page (inbox); the Terminal bottom panel (Alerts tab); Find setups ("Tell me when it matches").</b>
+      <span class="def"><b>Default:</b> channels in Settings, Trading, Alerts with an "Inbox" link to Notifications; the Terminal Alerts tab and the per-scan alert stay where they are.</span></li>
+  </ol>
+
+  <h2 class="sec-title">6. What the code shows (facts checked for this proposal)</h2>
+  <ul class="notes">
+    <li><b>Count.</b> The order's headline says "10 items, 4 sections"; its list names 11 user entries in 5 sections plus Admin. This mockup draws the list as written: 11 entries plus Admin.</li>
+    <li><b>Watchlist panel.</b> The Terminal has no Watchlist panel on main today (terminal/layoutModel.ts panel list: charts, chain, order, positions, orders, basket, bots, payoff). The owner's UX-3 (25 Oct) orders it; M60 needs it before <code>/watchlist</code> can forward to the Terminal.</li>
+    <li><b>Presets.</b> The Terminal has 3 ready layouts today (Option seller, Quick trade, Multi-chart); "Chart only" is the new fourth.</li>
+    <li><b>Copilot today.</b> 5 tabs (Ask, Brief, Build, Review, Signals) plus the older 7 under "Advanced" (copilot/tabs.ts).</li>
+    <li><b>With ui_v2 off.</b> Every new address also gets its flag-off fallback (shell/aliases.ts), so no bookmark ends on "This page does not exist".</li>
+    <li><b>Build after the owner's approval:</b> redirects for every row above, tests that every old route resolves and that search finds every page.</li>
+  </ul>
+</div>
+
+<script>
+// Theme switch for the page around the frames; then a dark copy of each light frame, so both themes show at once.
+document.getElementById("themeBtn").onclick = function () {
+  var r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  r.dataset.theme = dark ? "light" : "dark";
+};
+function darkCopy(el) {
+  var c = el.cloneNode(true);
+  c.classList.remove("t-light"); c.classList.add("t-dark"); c.removeAttribute("id");
+  c.querySelectorAll(".t-light").forEach(function (x) { x.classList.remove("t-light"); x.classList.add("t-dark"); x.removeAttribute("id"); });
+  c.querySelectorAll(".frame-label").forEach(function (l) { l.textContent = l.textContent.replace("light", "dark").replace("Light", "Dark"); });
+  return c;
+}
+(function () {
+  var deskHost = document.getElementById("deskHost");
+  var label = deskHost.querySelector(".frame-label").cloneNode(true);
+  label.textContent = "Desktop (1440 px window), dark"; label.style.marginTop = "24px";
+  var wrap = deskHost.querySelector(".desk-wrap").cloneNode(true);
+  var d = wrap.querySelector(".desk"); d.classList.remove("t-light"); d.classList.add("t-dark"); d.removeAttribute("id");
+  deskHost.appendChild(label); deskHost.appendChild(wrap);
+  var phoneHost = document.getElementById("phoneHost");
+  [].slice.call(phoneHost.querySelectorAll("[data-phone]")).forEach(function (p) { phoneHost.appendChild(darkCopy(p)); });
+  var tabHost = document.getElementById("tabHost");
+  tabHost.appendChild(darkCopy(tabHost.querySelector("[data-tabs]")));
+})();
+</script>
+</body>
+</html>

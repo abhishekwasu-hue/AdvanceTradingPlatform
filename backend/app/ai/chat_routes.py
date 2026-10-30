@@ -1,9 +1,11 @@
 """Item 5 (owner's handover), first slice: the chat-first Copilot page's two routes, behind `ui_v2` (404 while off, like
 the other v2 pages' routes) and the `ai_copilot` kill switch (503 while off).
 
-* `GET  /api/ai/chat/home` - the page's top: the plain top line, whether an AI key is set ("Add a free AI key to start"
+* `GET  /api/ai/chat/home` - the page's top: the plain top line, whether an AI key is set ("AI is off — answers are from rules"
   when not), "Today's market in one line" (or the plain reason it is empty), the eight jobs ("What I can do") and the
   starter questions. Rule text only; no model is called.
+* `GET / DELETE /api/ai/chat/history` - CP-UX CU6: the person's own conversation, kept across reloads (the newest
+  `COPILOT_CHAT_KEEP` turns); DELETE is Settings → My data's "Delete my Copilot conversation".
 * `POST /api/ai/chat` - one question, answered by the job it routes to (app/ai/copilot_chat.py): read tools only,
   "How I worked this out", "I don't know" for missing data, the one-line disclaimer. With an AI provider the model may
   re-word the facts (numbers / tickers / direction / advice checked, else the rules stay). AI-acknowledgement gated
@@ -20,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai import chat_history
 from app.ai import copilot_chat as chat
 from app.ai import resolve as ai_resolve
 from app.ai.compliance_terms import require_ai_acknowledged
@@ -131,10 +134,11 @@ async def chat_home(user: User = Depends(get_current_user), session: AsyncSessio
     provider = await _provider(session, tenant_id, user_id)
     one_key = await ai_resolve.one_key_on(session, tenant_id)
     line = await chat.market_line(_runner(session, tenant_id, user_id))
+    jobs = chat.visible_jobs(await chat_flags(session, tenant_id))      # CU7: a job behind an OFF switch is not listed
     return {"top_line": chat.TOP_LINE, "ai": _ai_state(provider, one_key), "market_line": line, "disclaimer": chat.DISCLAIMER,
             "jobs": [{"id": j.id, "number": j.number, "title": j.title, "line": j.line, "starter": j.starter, "built": j.built,
-                      "page": {"label": j.page[0], "to": j.page[1]} if j.page else None} for j in chat.JOBS],
-            "starters": [j.starter for j in chat.JOBS]}
+                      "page": {"label": j.page[0], "to": j.page[1]} if j.page else None} for j in jobs],
+            "starters": [j.starter for j in jobs], "keep": chat_history.keep()}
 
 
 @router.post("/chat")
@@ -163,9 +167,29 @@ async def chat_ask(body: ChatBody, user: User = Depends(require_ai_acknowledged)
             out.diagnostics["ai_not_used"] = why
         from app.ai import metering
         result["usage"] = metering.spent_by(provider)
+    # CU6: the turn is kept for the person (the newest COPILOT_CHAT_KEEP), so the conversation is there after a reload.
+    await chat_history.remember(session, tenant_id, user_id, body.message, result)
+    await session.commit()
     if admin:
         result["diagnostics"] = {**out.diagnostics, **(await _regime_diagnostic(run, out))}
     return result
+
+
+@router.get("/chat/history")
+async def chat_history_read(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """CU6: the person's own conversation, oldest turn first (at most `keep` turns)."""
+    await _flags(session, user)
+    tenant_id, user_id = int(user.tenant_id), int(user.id)
+    return {"turns": await chat_history.recent(session, tenant_id, user_id), "keep": chat_history.keep()}
+
+
+@router.delete("/chat/history")
+async def chat_history_delete(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """CU6: Settings → My data, "Delete my Copilot conversation". Only the caller's own turns; works whatever the flags
+    are (deleting one's own data is never switched off)."""
+    deleted = await chat_history.forget(session, int(user.tenant_id), int(user.id))
+    await session.commit()
+    return {"deleted": deleted}
 
 
 async def _regime_diagnostic(run: chat.Runner, out: chat.Answer) -> Dict[str, Any]:

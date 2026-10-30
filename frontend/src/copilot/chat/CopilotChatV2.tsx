@@ -23,7 +23,7 @@ import { useCopilotT } from "../i18n";
 import { COPILOT_TABS, copilotPath } from "../tabs";
 import { AnswerV2 } from "./AnswerV2";
 import {
-  chatApi, cleanQuestion, composerPlacement, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, settled, withTurn,
+  chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, restoredTurns, settled, withTurn,
   type ChatAnswer, type ChatHome, type Turn,
 } from "./model";
 import { Details } from "../../ui/Details";
@@ -33,8 +33,9 @@ import { Details } from "../../ui/Details";
  * bottom: the numbers strip (NIFTY / BANK NIFTY / SENSEX last and change, the India VIX level chip, FII net - the Today
  * strip's own cells and /api/market/strip), four chips (Brief · Read chart · Check my trade · My positions), then the
  * question box - pinned above the bottom bar on a phone - as the ONLY primary action. A small "AI on / off" chip opens the
- * key setup. The conversation follows; "What I can do" (every job) and the older Copilot pages sit under one closed
- * "Advanced"; one disclaimer line closes the page. The page intro is the (?) beside the title in the header. Shown while
+ * key setup (CU5: with no key, one line "AI is off — answers are from rules" and a Connect button instead). The
+ * conversation follows (CU6: kept by the server across reloads); "What I can do" (every job) and the older Copilot
+ * pages sit under one closed "Advanced"; one disclaimer line closes the page. The page intro is the (?) beside the title in the header. Shown while
  * `ui_v2` is on; with the flag off today's seven-tab Copilot renders exactly as before. Nothing here places, changes or
  * cancels an order (ADR-0006).
  */
@@ -145,17 +146,24 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
             <Link to={home.ai.settings ?? SETTINGS_PATH.ai} className={SMALL_CHIP} data-ai-state="on">
               <Sparkles size={14} aria-hidden className="text-up" />{t("chat.aiOn")}
             </Link>
-          ) : home && connect ? (
-            <button type="button" className={SMALL_CHIP} data-ai-state="off" aria-expanded={keyOpen} onClick={() => onKeyOpen?.(!keyOpen)}>
-              <KeyRound size={14} aria-hidden className="text-fg-muted" />{t("chat.aiOff")}
-            </button>
-          ) : home ? (
-            <Link to={home.ai.settings ?? SETTINGS_PATH.ai} className={SMALL_CHIP} data-ai-state="off" title={home.ai.line ?? undefined}>
-              <KeyRound size={14} aria-hidden className="text-fg-muted" />{t("chat.aiOff")}
-            </Link>
           ) : null}
         </div>
       </header>
+
+      {/* CU5: the no-key state, said once - one line and a Connect button, never a card of fixed sentences first. */}
+      {home && aiOff && (
+        <div data-no-key data-ai-state="off" className="flex min-w-0 items-center justify-between gap-space-3 rounded-panel border border-subtle bg-surface-1 px-space-3 py-space-1">
+          <p className="flex min-w-0 items-center gap-space-2 text-t13 text-fg">
+            <KeyRound size={14} aria-hidden className="shrink-0 text-fg-muted" />
+            <span className="min-w-0">{home.ai.title ?? t("chat.aiOffLine")}</span>
+          </p>
+          {connect ? (
+            <button type="button" className={SMALL_CHIP} aria-expanded={keyOpen} onClick={() => onKeyOpen?.(!keyOpen)} data-connect>{t("chat.connect")}</button>
+          ) : (
+            <Link to={home.ai.settings ?? SETTINGS_PATH.ai} className={SMALL_CHIP} data-connect>{t("chat.connect")}</Link>
+          )}
+        </div>
+      )}
 
       {aiOff && connect && keyOpen && <div data-connect-slot>{connect}</div>}
 
@@ -249,7 +257,7 @@ function usePlacement(): "bottom" | "inline" {
  * after the server's `refresh_seconds`, paused while the browser tab is hidden. Read-only. */
 const readNumbers = () => api.marketStrip({ sensex: true });
 
-/** The page's state: the home read once, then each question as one turn (in memory only). */
+/** The page's state: the home read once, the kept conversation (CU6), then each question as one turn. */
 export function CopilotChatV2() {
   const t = useCopilotT();
   const [home, setHome] = useState<ChatHome | null>(null);
@@ -257,6 +265,7 @@ export function CopilotChatV2() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [keep, setKeep] = useState(DEFAULT_KEEP);
   const next = useRef(1);
   const placement = usePlacement();
   const features = useFeatures();
@@ -264,6 +273,19 @@ export function CopilotChatV2() {
   const [aiLabel, setAiLabel] = useState<string | null>(null);
   const [keyOpen, setKeyOpen] = useState(false);
   const [strip] = usePolled(readNumbers, stripDelay, true);
+
+  // CU6: the conversation the server kept for this person comes back after a reload (read once, before any new turn).
+  useEffect(() => {
+    let live = true;
+    chatApi.history().then((h) => {
+      if (!live) return;
+      const restored = restoredTurns(h, t("chat.unreadable"));
+      setKeep(h.keep);
+      setTurns((now) => (now.length ? now : restored));
+      next.current = Math.max(next.current, restored.length + 1);
+    }).catch(() => { /* nothing kept or not reachable: the page starts empty */ });
+    return () => { live = false; };
+  }, [t]);
 
   const loadHome = useCallback(() => {
     chatApi.home().then((h) => { setHome(h); setHomeError(null); }).catch((e: unknown) => setHomeError(friendlyError(e, t)));
@@ -286,7 +308,7 @@ export function CopilotChatV2() {
 
   async function ask(question: string) {
     const id = next.current++;
-    setTurns((all) => withTurn(all, { id, question, answer: null, error: null }));
+    setTurns((all) => withTurn(all, { id, question, answer: null, error: null }, home?.keep ?? keep));
     setDraft("");
     setBusy(true);
     try {

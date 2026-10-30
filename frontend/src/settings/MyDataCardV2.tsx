@@ -10,7 +10,40 @@ import { formatDateIST } from "../ui/format";
  * regulations require. */
 export interface EraseStatus { requested: boolean; requested_at: string | null; erase_after: string | null; grace_days: number }
 
-export default function MyDataCardV2() {
+/** CP-UX CU6: the Copilot conversation the server keeps across reloads - deleted here, on its own (ui_v2 only). */
+export function CopilotConversationRow({ busy, setBusy }: { busy: boolean; setBusy: (b: boolean) => void }) {
+  const [sure, setSure] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  async function forget() {
+    setBusy(true); setDone(null);
+    try {
+      const r = await request<{ deleted: number }>("/ai/chat/history", { method: "DELETE" });
+      setDone(r.deleted ? "Your Copilot conversation is deleted." : "There was no Copilot conversation to delete.");
+      setSure(false);
+    } catch (e) { setDone(friendlyError(e)); } finally { setBusy(false); }
+  }
+  return (
+    <div data-copilot-conversation className="space-y-2">
+      <div className="flex flex-wrap items-center gap-3">
+        {sure ? (
+          <>
+            <button type="button" disabled={busy} onClick={() => void forget()} data-copilot-forget-confirm
+              className="min-h-11 rounded border border-down/40 px-3 py-1.5 text-sm text-down hover:bg-down/10">Yes, delete it</button>
+            <button type="button" disabled={busy} onClick={() => setSure(false)} data-copilot-forget-cancel
+              className="min-h-11 rounded border border-border px-3 py-1.5 text-sm hover:bg-surface-2">Keep it</button>
+          </>
+        ) : (
+          <button type="button" disabled={busy} onClick={() => { setSure(true); setDone(null); }} data-copilot-forget
+            className="min-h-11 rounded border border-border px-3 py-1.5 text-sm hover:bg-surface-2">Delete my Copilot conversation</button>
+        )}
+        <span className="text-xs text-fg-muted">{sure ? "Your questions and the Copilot's answers are removed for good." : "The questions you asked the Copilot and its answers, kept so they are there after a reload."}</span>
+      </div>
+      {done && <p className="text-xs text-fg-muted" role="status">{done}</p>}
+    </div>
+  );
+}
+
+export default function MyDataCardV2({ copilot = false }: { copilot?: boolean }) {
   const [status, setStatus] = useState<EraseStatus | null>(null);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -51,6 +84,7 @@ export default function MyDataCardV2() {
             className="min-h-11 rounded border border-border px-3 py-1.5 text-sm hover:bg-surface-2">Download my data</button>
           <span className="text-xs text-fg-muted">A ZIP of your profile, settings, trades and journal.</span>
         </div>
+        {copilot && <CopilotConversationRow busy={busy} setBusy={setBusy} />}
         {status?.requested ? (
           <div data-erase-pending className="rounded border border-down/40 p-3">
             <p className="text-fg">Your account will be deleted on {formatDateIST(status.erase_after)}.</p>

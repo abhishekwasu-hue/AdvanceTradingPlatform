@@ -13,6 +13,17 @@ export const COPILOT_EN = {
     signIn: "Sign in from the Account page to use the AI Copilot.",
     tabsLabel: "Copilot sections",
   },
+  // CP-UX CU4: the one Copilot's tab bar (ui_v2) - the older tabs fold into these four, Build opens Strategies › Build.
+  v2tabs: {
+    label: "Copilot",
+    ask: "Ask",
+    brief: "Brief",
+    build: "Build",
+    review: "Review",
+    signals: "Signals",
+    briefPulse: "Market pulse",
+    briefNews: "News",
+  },
   tabs: {
     "market-pulse": "Market Pulse",
     "strategy-lab": "Strategy Lab",
@@ -90,6 +101,11 @@ export const COPILOT_EN = {
     quick: "Quick questions",
     aiOn: "AI on",
     aiOff: "AI off",
+    // CP-UX CU5: the no-key state, said once (the server's own line comes first).
+    aiOffLine: "AI is off — answers are from rules",
+    connect: "Connect",
+    // CU6: a kept turn whose answer could not be read back.
+    unreadable: "This earlier answer could not be shown again. Ask the question again to see it.",
     details: "Details",
     trend: "Trend",
     trendUnknown: "Not known yet",

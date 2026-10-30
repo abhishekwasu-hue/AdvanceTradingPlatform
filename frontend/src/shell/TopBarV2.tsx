@@ -71,24 +71,27 @@ export function topBarNotices(status: SystemStatus | null, _user: UserResponse |
 }
 
 /**
- * H9: a title word is never cut, so on a narrow phone a long one-word title ("Strategies" at 360 px) can push the bar
- * past the screen edge. Then the title steps down one text size (t18 -> t15); it steps back up when there is room.
- * Measured, not guessed from the number of letters; only on a phone with colour v2 (the row's own overflow).
+ * H9 / REV-S5: the phone title stays whole on one line. Three steps, measured (not guessed from the number of letters),
+ * only on a phone with colour v2: 0 = the normal size on one line; 1 = one text size down (t18 -> t15), still on one line,
+ * when the bar would run past the screen edge; 2 = still too wide at the small size: the (?) moves under the title and,
+ * only as the last resort, the title wraps between words (never inside one, never cut). It steps back up when there is
+ * room (rotation). `extras`: what else sits in the row (PROSE-1: the (?) appears once the page has set its subtitle).
  */
-export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean, extras = ""): boolean {
-  const [small, setSmall] = useState(false);
+export type TitleFit = 0 | 1 | 2;
+export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean, extras = ""): TitleFit {
+  const [fit, setFit] = useState<TitleFit>(0);
   useLayoutEffect(() => {
-    if (!enabled) { setSmall(false); return; }
+    if (!enabled) { setFit(0); return; }
     const check = () => {
       const el = row.current;
       if (!el) return;
       const phone = window.matchMedia?.("(max-width: 767.98px)").matches ?? false;
-      if (!phone) { setSmall(false); return; }
-      // Measure at the normal size first, so a wider screen (rotation) gets the larger title back.
-      el.dataset.titleFit = "measure";
-      const overflows = el.scrollWidth > el.clientWidth;
+      if (!phone) { setFit(0); return; }
+      // Measure at the normal size first, then one size down, both on one line.
+      const overflowsAt = (mode: string) => { el.dataset.titleFit = mode; return el.scrollWidth > el.clientWidth; };
+      const next: TitleFit = !overflowsAt("measure") ? 0 : !overflowsAt("measure-small") ? 1 : 2;
       delete el.dataset.titleFit;
-      setSmall(overflows);
+      setFit(next);
     };
     check();
     // The web font arrives after the first paint and changes the title's width: measure again then.
@@ -96,11 +99,19 @@ export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, 
     void document.fonts?.ready.then(() => { if (live) check(); });
     window.addEventListener("resize", check);
     return () => { live = false; window.removeEventListener("resize", check); };
-    // `extras`: what else sits in the row (PROSE-1: the (?) appears once the page has set its subtitle), so the row is
-    // measured again when it changes.
   }, [row, title, enabled, extras]);
-  return small;
+  return fit;
 }
+
+/** The title's classes per step (colour v2); the `measure*` modes force a size, on one line, while the row is measured. */
+const TITLE_FIT_CLASS: Record<TitleFit, string> = {
+  0: "text-t18 whitespace-nowrap",
+  1: "text-t15 whitespace-nowrap",
+  2: "text-t15",
+};
+const TITLE_MEASURE = "group-data-[title-fit=measure]/bar:text-t18 group-data-[title-fit=measure]/bar:whitespace-nowrap "
+  + "group-data-[title-fit=measure-small]/bar:text-t15 group-data-[title-fit=measure-small]/bar:whitespace-nowrap";
+const GROUP_MEASURE = "group-data-[title-fit=measure]/bar:flex-nowrap group-data-[title-fit=measure-small]/bar:flex-nowrap";
 
 export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour, section = null, onAskAi, askAiOpen = false }: TopBarV2Props) {
   const colour = useColourV2();
@@ -114,7 +125,7 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
   const help = usePageHelp();
   // PROSE-1: the page's subtitle sits behind the same (?), first - never a line under the title.
   const subtitle = usePageSubtitle();
-  const small = useTitleFits(row, title, colour, `${help ? "h" : ""}${subtitle ? "s" : ""}${onTour ? "t" : ""}`);
+  const fit = useTitleFits(row, title, colour, `${help ? "h" : ""}${subtitle ? "s" : ""}${onTour ? "t" : ""}`);
   // UX-7: the price-feed dot, only with live prices on (flag `data_hub`) for a signed-in user.
   const liveOn = useFeatures().on("data_hub") && !!user;
 
@@ -130,14 +141,14 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
         {tint && SectionIcon && (
           <span aria-hidden data-section-chip={tint} data-topbar-chip className={`${sectionChipClass(tint, "sm")} md:hidden`}><SectionIcon size={16} /></span>
         )}
-        {/* PROSE-1 / H9: with colour v2 the title and its (?) share one group that may wrap, so on a narrow phone the (?)
-            moves under the title instead of pushing the bar past the edge; with colour v2 off the group is invisible to
-            the layout (`contents`) and the bar is as before. */}
-        <span data-topbar-title-group className={colour ? "flex shrink flex-wrap items-center gap-x-space-2 md:min-w-0 md:flex-nowrap" : "contents"}>
-          {/* With colour v2 (CA7) the title wraps on a phone instead of being cut (H9): only between words, never inside one
-              (no min-w-0 there, so the longest word sets its width); with it off the bar is as before. */}
-          <span data-topbar-title data-title-size={small ? "small" : undefined}
-            className={`shrink ${small ? "text-t15 group-data-[title-fit=measure]/bar:text-t18" : "text-t18"} font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:normal] [word-break:normal] md:min-w-0 md:truncate md:py-0" : "min-w-0 truncate"}`}>{title}</span>
+        {/* PROSE-1 / H9 / REV-S5: with colour v2 the title and its (?) share one group, on one line; only at the last step
+            (still too wide one size down) the (?) moves under the title instead of pushing the bar past the edge. With
+            colour v2 off the group is invisible to the layout (`contents`) and the bar is as before. */}
+        <span data-topbar-title-group className={colour ? `flex shrink ${fit === 2 ? "flex-wrap" : "flex-nowrap"} items-center gap-x-space-2 ${GROUP_MEASURE} md:min-w-0 md:flex-nowrap` : "contents"}>
+          {/* With colour v2 (CA7) the title is never cut on a phone (H9): one line, one size down when needed, and only as
+              the last resort a wrap between words (no min-w-0 there, so the longest word sets its width). */}
+          <span data-topbar-title data-title-size={fit ? "small" : undefined}
+            className={`shrink ${colour ? `${TITLE_FIT_CLASS[fit]} ${TITLE_MEASURE}` : "text-t18"} font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:normal] [word-break:normal] md:min-w-0 md:truncate md:py-0" : "min-w-0 truncate"}`}>{title}</span>
           {/* UX-6: the page's help line (and its tips) behind one (?) beside the title - never a paragraph above the data. */}
           {(help || subtitle) && (
             <HelpPopover title={title} className={colour ? "shrink-0" : "-ml-space-1 shrink-0"}>

@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { F, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
+const setup = JSON.parse(readFileSync(new URL("./fixtures/setup_v2.json", import.meta.url), "utf8")) as { strategies: unknown[] };
 
 /**
  * H9 (UI-H) on the phone top bar with colour v2 (rule CA7): the page title wraps only between words, never inside one
@@ -21,6 +23,7 @@ async function open(page: Page, path: string) {
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: FEATURES, brokers: F.token_status as unknown[] });
   await mockDashboard(page, { state: "connected", me: true });
+  await page.route(/\/api\/v1\/strategies$/, (r) => r.fulfill({ json: setup.strategies }));
   await page.goto(path);
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; }" });
   await expect(page.locator("html[data-colour='v2']")).toHaveCount(1);
@@ -62,3 +65,38 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
     }
   });
 }
+
+/** The number of lines a text node's words take (the tops of its line boxes). */
+async function lines(page: Page, selector: string) {
+  return page.locator(selector).evaluateAll((els) => els.map((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const tops = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top)));
+    return { text: el.textContent ?? "", lines: tops.size, overflow: el.scrollWidth - el.clientWidth };
+  }));
+}
+
+// REV-S5: on a 375 px phone the page title stays whole on one line ("Paper / bot", "Find / setups" wrapped), and the
+// Library's category chip does not wrap ("MULTI- / TIMEFRAME").
+test.describe("REV-S5 phone title and category chip 375", () => {
+  test.use({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+  for (const path of ["/deployments", "/screener", "/strategies"]) {
+    test(`REV-S5: the title on ${path} is on one line`, async ({ page }) => {
+      await open(page, path);
+      const [title] = await lines(page, "[data-topbar-title]");
+      expect(title.lines, `"${title.text}" on one line`).toBe(1);
+      const m = await measure(page);
+      expect(m.rowOverflow, "nothing in the bar runs past the edge").toBeLessThanOrEqual(0);
+    });
+  }
+  test("REV-S5: the Library's category chips do not wrap", async ({ page }) => {
+    await open(page, "/strategies");
+    await expect(page.locator("[data-chip='strategy-category']").first()).toBeVisible();
+    const chips = await lines(page, "[data-chip='strategy-category']");
+    expect(chips.map((c) => c.text)).toContain("Multi-timeframe");
+    for (const c of chips) {
+      expect(c.lines, `"${c.text}" on one line`).toBe(1);
+      expect(c.overflow, `"${c.text}" fits its chip`).toBeLessThanOrEqual(0);
+    }
+  });
+});

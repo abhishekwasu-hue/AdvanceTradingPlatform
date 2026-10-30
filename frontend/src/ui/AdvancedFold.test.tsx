@@ -5,6 +5,7 @@ import { OptimiserFields } from "../backtest/OptimiserFields";
 import { optimisableParams } from "../backtest/optimiserGrid";
 import backtestSource from "../pages/BacktestPage.tsx?raw";
 import librarySource from "../pages/StrategiesPage.tsx?raw";
+import libraryChipsSource from "./LibraryChips.tsx?raw";
 
 describe("SB-UX SU7: the Advanced fold", () => {
   it("is closed by default, with a 44 px summary on a phone", () => {
@@ -30,7 +31,8 @@ describe("SB-UX SU7: the Advanced fold", () => {
   it("no raw JSON, no fixed min width and every wide table scrolls (Backtest, Library)", () => {
     expect(backtestSource).not.toMatch(/JSON\.(parse|stringify)|min-w-\[260px\]|Grid as JSON/);
     expect(librarySource).not.toMatch(/JSON\.stringify/);
-    expect(librarySource).toContain("data-rule-chips");
+    expect(librarySource).toContain("<LibraryChips ");      // the chips (data-rule-chips) live in LibraryChips since STRAT-X
+    expect(libraryChipsSource).toContain("data-rule-chips");
     const tables = backtestSource.match(/<table /g)?.length ?? 0;
     const wrapped = (backtestSource.match(/(?:overflow-x-auto">|<ScrollTable>)\s*<table /g) ?? []).length;
     expect(wrapped).toBe(tables);

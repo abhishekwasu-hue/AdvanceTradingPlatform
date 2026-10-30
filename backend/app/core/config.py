@@ -963,3 +963,31 @@ SETUP_RECALL_MAX_SCAN = _bounded_int("SETUP_RECALL_MAX_SCAN", 2000, 50, 100_000)
 # - MY_DAY_NEAR_ROOM_LEFT_PCT: at or below this % it reads "Near invalidation" (the daily rhythm's own 75 %-used line).
 MY_DAY_WATCH_ROOM_LEFT_PCT = _bounded_float("MY_DAY_WATCH_ROOM_LEFT_PCT", 50.0, 0.0, 100.0)
 MY_DAY_NEAR_ROOM_LEFT_PCT = _bounded_float("MY_DAY_NEAR_ROOM_LEFT_PCT", 25.0, 0.0, 100.0)
+# M55 S8 (A16): operational numbers that were constants in code, now settings; every default equals the old constant
+# (tests/test_m55_s8_settings.py keeps them equal). None of them is a trading rule.
+# - TRIGGER_TICK_SECONDS: how often the trigger engine's tick pass checks waiting orders (0 turns the pass off; the
+#   worker cycle still runs the engine). TRIGGER_TICK_MAX_AGE_SECONDS: a stored tick older than this is not used by it.
+# - TRIGGER_STALL_SECONDS: no engine run for this long during market hours (with waiting orders) raises the stall alert.
+TRIGGER_TICK_SECONDS = float(os.environ.get("TRIGGER_TICK_SECONDS", "1"))
+TRIGGER_TICK_MAX_AGE_SECONDS = float(os.environ.get("TRIGGER_TICK_MAX_AGE_SECONDS", "5"))
+TRIGGER_STALL_SECONDS = int(os.environ.get("TRIGGER_STALL_SECONDS", str(WORKER_CYCLE_SECONDS * 3)))
+# - WORKER_MAX_CONSECUTIVE_FAILURES: a deployment that fails this many cycles in a row is paused (not retried forever).
+# - WORKER_LOCK_TTL_MIN_SECONDS: the worker's replica lock lives two cycles, never less than this.
+WORKER_MAX_CONSECUTIVE_FAILURES = _bounded_int("WORKER_MAX_CONSECUTIVE_FAILURES", 5, 1, 1000)
+WORKER_LOCK_TTL_MIN_SECONDS = _bounded_int("WORKER_LOCK_TTL_MIN_SECONDS", 30, 5, 3600)
+# - EXIT_CLAIM_INFLIGHT_SECONDS: an exit claim younger than this is an exit being placed right now (wait for it).
+# - EXIT_ADOPT_CLOCK_SKEW_SECONDS: an order placed this long before the exit's claim can still be its exit (clock skew).
+# - EXIT_WAIT_ALERT_CHECKS: checks in a row that find an earlier exit still working before the alert.
+# - EXIT_ALERT_COOLDOWN_SECONDS: the position monitor's alerts repeat at most once per this many seconds.
+EXIT_CLAIM_INFLIGHT_SECONDS = _bounded_int("EXIT_CLAIM_INFLIGHT_SECONDS", 120, 10, 3600)
+EXIT_ADOPT_CLOCK_SKEW_SECONDS = _bounded_int("EXIT_ADOPT_CLOCK_SKEW_SECONDS", 5, 0, 120)
+EXIT_WAIT_ALERT_CHECKS = _bounded_int("EXIT_WAIT_ALERT_CHECKS", 5, 1, 1000)
+EXIT_ALERT_COOLDOWN_SECONDS = _bounded_int("EXIT_ALERT_COOLDOWN_SECONDS", 1800, 60, 86400)
+# - STOP_GUARD_ALERT_COOLDOWN_SECONDS: the stop guard's failure alerts repeat at most once per this many seconds.
+# - STOP_GUARD_MAX_EXIT_ATTEMPTS: immediate exits the stop guard sends for one position before it stops and alerts.
+STOP_GUARD_ALERT_COOLDOWN_SECONDS = _bounded_int("STOP_GUARD_ALERT_COOLDOWN_SECONDS", 1800, 60, 86400)
+STOP_GUARD_MAX_EXIT_ATTEMPTS = _bounded_int("STOP_GUARD_MAX_EXIT_ATTEMPTS", 3, 1, 20)
+# - BROKER_DAILY_CAP_SHARE: of a broker's per-day call cap (rate_budget.DAILY_CAPS), ATP spends at most this share.
+# - BROKER_DAILY_ORDER_EXIT_RESERVE_SHARE: of the per-day order cap, this share is kept for exits (entries stop before it).
+BROKER_DAILY_CAP_SHARE = _bounded_float("BROKER_DAILY_CAP_SHARE", 0.9, 0.1, 1.0)
+BROKER_DAILY_ORDER_EXIT_RESERVE_SHARE = _bounded_float("BROKER_DAILY_ORDER_EXIT_RESERVE_SHARE", 0.1, 0.0, 0.5)

@@ -21,7 +21,9 @@ def test_parses_indicator_conditions_with_explicit_and_default_periods():
     assert price_condition.right.period == 50
 
     assert not result.warnings
-    assert len(result.interpreted) == 2
+    # SB-UX SU4: the two rules, then what was not stated - off, nothing filled in
+    assert result.interpreted[2:] == ["Stop loss: not stated - off", "Target: not stated - off"]
+    assert result.config.stop_loss_atr_mult is None and result.config.target_rr is None and result.config.min_rr is None
 
 
 def test_bare_indicator_defaults_to_period_14():
@@ -48,7 +50,7 @@ def test_risk_parameters_parsed_from_separate_sentences():
     result = parse_strategy_description(text)
     assert result.config.stop_loss_atr_mult == 1.5
     assert result.config.atr_period == 10
-    assert result.config.target_rr == (2.0, 2.5)
+    assert result.config.target_rr == (2.0, 2.0)               # SB-UX SU4: one target stated = one target (no 2.5 invented)
     assert result.config.min_rr == 1.2
     assert result.config.timeframe == "15min"
     assert not result.warnings

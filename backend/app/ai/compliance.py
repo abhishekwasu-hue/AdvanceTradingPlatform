@@ -83,6 +83,22 @@ def _money(value: float) -> str:
     return f"{value:,.0f}"
 
 
+def _targets_check(config: CustomStrategyConfig, check) -> None:
+    """M1: the draft's own targets are ordered (and at or above its own minimum R:R, when it states one)."""
+    assert config.target_rr is not None          # the caller checks "no target set" first
+    t1, t2 = float(config.target_rr[0]), float(config.target_rr[1])
+    lo, hi = sorted((t1, t2))
+    floor = config.min_rr or 0.0                      # P1-2b: None = no minimum R:R set (no filter)
+    first_ok = lo >= floor
+    ordered_ok = t1 <= t2
+    fixed_targets = (max(lo, floor), max(hi, floor))
+    against = f" and at or above the minimum R:R {floor:g}" if config.min_rr is not None else ""
+    check("M1", first_ok and ordered_ok,
+          f"targets {t1:g}R / {t2:g}R are ordered{against}"
+          if first_ok and ordered_ok else f"targets {t1:g}R / {t2:g}R must be ordered{against}",
+          fix=("target_rr", fixed_targets, f"target_rr ({t1:g}, {t2:g}) -> ({fixed_targets[0]:g}, {fixed_targets[1]:g}) (M1)"))
+
+
 def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Optional[Dict[str, float]] = None, *,
                     backtest: Optional[dict] = None, autofix: bool = False, currency: str = "INR",
                     suggestion=None) -> Tuple[CustomStrategyConfig, ComplianceReport]:
@@ -106,26 +122,24 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
         report.checks.append(CheckResult(rule, "WARN" if warn_only else "FAIL", detail))
 
     # --- the draft's own rules --------------------------------------------------------------
-    check("R1", config.stop_loss_atr_mult > 0,
-          f"stop defined before entry: {config.stop_loss_atr_mult:g} x ATR({config.atr_period}) from the entry price")
-    check("M2", config.stop_loss_atr_mult >= MIN_STOP_ATR_MULT,
-          f"stop distance {config.stop_loss_atr_mult:g} x ATR is inside normal noise (minimum {MIN_STOP_ATR_MULT:g} x ATR)"
-          if config.stop_loss_atr_mult < MIN_STOP_ATR_MULT else f"stop distance {config.stop_loss_atr_mult:g} x ATR is outside normal noise (>= {MIN_STOP_ATR_MULT:g} x ATR)",
-          fix=("stop_loss_atr_mult", MIN_STOP_ATR_MULT, f"stop_loss_atr_mult {config.stop_loss_atr_mult:g} -> {MIN_STOP_ATR_MULT:g} (M2)"))
-    t1, t2 = float(config.target_rr[0]), float(config.target_rr[1])
-    lo, hi = sorted((t1, t2))
-    floor = config.min_rr or 0.0                      # P1-2b: None = no minimum R:R set (no filter)
-    first_ok = lo >= floor
-    ordered_ok = t1 <= t2
-    fixed_targets = (max(lo, floor), max(hi, floor))
-    against = f" and at or above the minimum R:R {floor:g}" if config.min_rr is not None else ""
-    check("M1", first_ok and ordered_ok,
-          f"targets {t1:g}R / {t2:g}R are ordered{against}"
-          if first_ok and ordered_ok else f"targets {t1:g}R / {t2:g}R must be ordered{against}",
-          fix=("target_rr", fixed_targets, f"target_rr ({t1:g}, {t2:g}) -> ({fixed_targets[0]:g}, {fixed_targets[1]:g}) (M1)"))
+    # SB-UX SU4: a config may carry no stop / no target (blank = off); the check says so and invents none.
+    stop = config.stop_loss_atr_mult
+    if stop is None:
+        check("R1", False, "no stop is set in the draft")
+    else:
+        check("R1", stop > 0, f"stop defined before entry: {stop:g} x ATR({config.atr_period}) from the entry price")
+        check("M2", stop >= MIN_STOP_ATR_MULT,
+              f"stop distance {stop:g} x ATR is inside normal noise (minimum {MIN_STOP_ATR_MULT:g} x ATR)"
+              if stop < MIN_STOP_ATR_MULT else f"stop distance {stop:g} x ATR is outside normal noise (>= {MIN_STOP_ATR_MULT:g} x ATR)",
+              fix=("stop_loss_atr_mult", MIN_STOP_ATR_MULT, f"stop_loss_atr_mult {stop:g} -> {MIN_STOP_ATR_MULT:g} (M2)"))
+    if config.target_rr is None:
+        check("M1", True, "no target is set in the draft: none is applied")
+    else:
+        _targets_check(config, check)
     if config.min_rr is None:
         check("RR", True, "no minimum R:R set: none is applied", warn_only=True)
     else:
+        floor = float(config.min_rr)
         check("RR", floor >= 1.0, f"minimum R:R {floor:g}" + ("" if floor >= 1.0 else " is below 1:1 - the strategy accepts trades that risk more than they target"),
               warn_only=True)
     check("M3", True, "entries are all-or-nothing at the sized quantity; there is no add-to-position path, so nothing is ever added to a loser (also R6)")
@@ -193,7 +207,8 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
     # --- the statement the human must accept -------------------------------------------------
     # DEF-0: only the limits the trader set are stated; with none, the loss at the stop is the trader's own lots x the stop.
     capital = float(cfg.capital) if cfg.capital is not None else None
-    stop_text = f"{updates.get('stop_loss_atr_mult', config.stop_loss_atr_mult):g} x ATR({config.atr_period}) from the entry"
+    own_stop = updates.get("stop_loss_atr_mult", config.stop_loss_atr_mult)
+    stop_text = f"{own_stop:g} x ATR({config.atr_period}) from the entry" if own_stop is not None else "no stop set"
     risk_amount = cfg.risk_amount()
     daily_amount = cfg.daily_loss_amount()
     if risk_amount is not None and capital:

@@ -5,14 +5,14 @@ A good shopkeeper does not put one shirt on the counter. He asks who it is for a
 simpler" and brings the next ones closer to what the customer wants - and remembers him the next
 time he walks in. This module does that with trading plans:
 
-* `build_options()` - three options from one market read and one ranking: **safe** (less risk,
-  fewer trades, more reward per trade), **balanced** (the trader's own answers, adjusted by what
-  they told us) and **active** (more opportunities, still inside the beginner guard rails). Each
-  is a full plan (`interview.compose_plan`) with a **match %** - how close it is to what this
-  trader asked for, the market and the evidence - and the reasons behind the number.
+* `build_options()` - three options from one market read and one ranking: three templates (**safe** = the calmer
+  trend-following one, **balanced** = the best fit, **active** = the one with more signals), every one with the
+  trader's OWN risk answers and no exit he did not set (DEF-0 / SB-UX SU4: no option tightens, loosens or adds a limit,
+  a trades-a-day cap, a minimum reward:risk, a break-even move or a time exit). Each is a full plan
+  (`interview.compose_plan`).
 * `apply_feedback()` - the reasons a trader gives for turning an option down become
-  `Preferences` (risk / trades / reward / simplicity leanings, strategies not wanted, style
-  changes); the next round of options is built from them, so the match climbs.
+  `Preferences` (leanings that move the template ranking, strategies not wanted, style changes); the next round of
+  options is built from them. They never change a number of his risk settings.
 * `Preferences` and the answers live in `trader_profiles` (one row per user), so the next
   interview can start from them.
 
@@ -62,6 +62,10 @@ FEEDBACK_LABELS: Dict[str, Tuple[str, str]] = {
 }
 
 
+OWN_RISK_EN = "Your risk per trade and daily loss limit stay your own answers - change them in the risk questions or in My limits."
+OWN_RISK_MR = "एका trade चा risk आणि दिवसाची तोटा मर्यादा तुमचीच उत्तरे राहतात - ती risk च्या प्रश्नांत किंवा My limits मध्ये बदला."
+
+
 def feedback_options() -> List[dict]:
     return [{"code": c, "en": en, "mr": mr} for c, (en, mr) in FEEDBACK_LABELS.items()]
 
@@ -76,22 +80,24 @@ def apply_feedback(a: InterviewAnswers, prefs: Preferences, codes: List[str], st
     for code in dict.fromkeys(codes):   # de-duplicated, in order
         if code == "too_risky":
             p.risk_bias = max(p.risk_bias - 1, -3)
-            changes.append(tr(lang, "Smaller risk per trade and a tighter daily limit.", "एका trade चा risk आणि दिवसाची मर्यादा कमी केली."))
+            changes.append(tr(lang, OWN_RISK_EN, OWN_RISK_MR))
             if answers.vehicle == "option_sell":
                 answers.vehicle = "option_buy"
                 changes.append(tr(lang, "Option selling replaced by option buying (loss capped at the premium).", "Option selling ऐवजी option buying (तोटा premium इतकाच)."))
         elif code == "more_risk_ok":
             p.risk_bias = min(p.risk_bias + 1, 2)
-            changes.append(tr(lang, "A little more risk per trade - at most a quarter above your own risk answer, inside the platform's maximum.", "एका trade चा risk थोडा वाढवला - तुमच्या risk उत्तरापेक्षा जास्तीत जास्त एक चतुर्थांश जास्त, platform च्या कमाल मर्यादेत."))
+            changes.append(tr(lang, OWN_RISK_EN, OWN_RISK_MR))
         elif code == "too_many_trades":
             p.trades_bias = max(p.trades_bias - 1, -3)
-            changes.append(tr(lang, "Fewer trades a day; calmer strategies preferred.", "दिवसाला कमी trades; शांत strategies ला प्राधान्य."))
+            changes.append(tr(lang, "Calmer templates with fewer signals preferred. A trades-a-day limit is yours to set in My limits.",
+                              "कमी signals देणाऱ्या शांत templates ला प्राधान्य. दिवसाच्या trades ची मर्यादा तुम्ही My limits मध्ये ठेवू शकता."))
         elif code == "too_few_trades":
             p.trades_bias = min(p.trades_bias + 1, 3)
-            changes.append(tr(lang, "More trades a day allowed; strategies with more signals preferred.", "दिवसाला जास्त trades; जास्त signals देणाऱ्या strategies ला प्राधान्य."))
+            changes.append(tr(lang, "Templates with more signals preferred.", "जास्त signals देणाऱ्या templates ला प्राधान्य."))
         elif code == "low_reward":
             p.reward_bias = min(p.reward_bias + 1, 3)
-            changes.append(tr(lang, "Bigger targets: higher minimum reward:risk, trend-following preferred.", "मोठे target: किमान reward:risk वाढवला, trend सोबतच्या strategies ला प्राधान्य."))
+            changes.append(tr(lang, "Trend-following and breakout templates preferred. Your target and minimum reward:risk stay your own settings.",
+                              "Trend सोबतच्या आणि breakout templates ला प्राधान्य. तुमचे target आणि किमान reward:risk तुमच्याच settings राहतात."))
         elif code == "not_understood":
             p.simplicity = min(p.simplicity + 1, 3)
             changes.append(tr(lang, "Simpler strategies first (one clear trend rule), with plainer explanations.", "आधी सोप्या strategies (एक स्पष्ट trend नियम), सोप्या शब्दांत."))
@@ -104,7 +110,8 @@ def apply_feedback(a: InterviewAnswers, prefs: Preferences, codes: List[str], st
         elif code == "no_time":
             answers.time = "auto"
             p.trades_bias = max(p.trades_bias - 1, -3)
-            changes.append(tr(lang, "Fully automatic, fewer trades, everything closed by 15:10.", "पूर्ण automatic, कमी trades, 15:10 पर्यंत सगळे बंद."))
+            changes.append(tr(lang, "Fully automatic, calmer templates preferred. A time exit is yours to set; none is added.",
+                              "पूर्ण automatic, शांत templates ला प्राधान्य. वेळेवर exit तुम्ही ठेवू शकता; platform स्वतःहून ठेवत नाही."))
         elif code == "dislike_strategy" and strategy_id:
             if strategy_id not in p.rejected:
                 p.rejected = (p.rejected + [strategy_id])[-20:]
@@ -117,58 +124,26 @@ def apply_feedback(a: InterviewAnswers, prefs: Preferences, codes: List[str], st
 # --- what this trader wants --------------------------------------------------------------------------
 
 def desired(a: InterviewAnswers, p: Preferences) -> dict:
-    base_risk = iv.RISK_PCT[a.risk]
-    # P0.10: "more risk is ok" moves within the trader's own risk answer (plus at most one quarter), never past it by experience.
-    risk = min(max(base_risk * (1 + 0.25 * p.risk_bias), 0.25), base_risk * 1.25)
-    if a.style == "swing":
-        risk = round(risk * iv.SWING_GAP_FACTOR, 2)   # the same gap buffer risk_plan applies
-    trades = iv.TRADES_PER_DAY[a.style] - (1 if a.time == "few_checks" else 0) + p.trades_bias
-    rr = (2.0 if a.vehicle == "option_buy" else 1.5) + 0.5 * p.reward_bias
-    return {"risk_pct": round(risk, 2), "trades": max(int(trades), 1), "rr": round(rr, 2)}
+    """What the trader set himself (DEF-0 / SB-UX SU4): his risk answer; no trades-a-day or reward:risk he did not state.
+    Feedback leanings move the template ranking only, never these numbers."""
+    return {"risk_pct": iv.RISK_PCT[a.risk] if a.risk is not None else None, "trades": None, "rr": None}
 
 
-TILTS = {
-    # risk multiplier on the desired risk, trades/day delta, extra R:R, break-even R
-    "safe": {"risk": 0.6, "trades": -1, "rr": 0.5, "be": 1.0},
-    "balanced": {"risk": 1.0, "trades": 0, "rr": 0.0, "be": None},
-    "active": {"risk": 1.0, "trades": 2, "rr": -0.25, "be": 1.5},
-}
-OPTION_TEXT = {
-    "safe": (("Safe", "Less risk, fewer trades, bigger reward per trade"), ("सावध", "कमी risk, कमी trades, प्रत्येक trade मध्ये मोठे target")),
-    "balanced": (("Balanced", "Middle risk, middle number of trades"), ("संतुलित", "मध्यम risk, मध्यम trades")),     # P0.9: not "built from your answers"
-    "active": (("Active", "More opportunities, same safety rules"), ("सक्रिय", "जास्त संधी, सुरक्षेचे नियम तेच")),
+OPTION_TEXT = {      # SB-UX SU4: the options differ only in the template; the risk settings are the trader's own on every one
+    "safe": (("Trend template", "A trend-following template, with your own risk settings"),
+             ("Trend template", "Trend सोबत चालणारे template, तुमच्याच risk settings सोबत")),
+    "balanced": (("Regime template", "The template whose rules suit these candles' regime, with your own risk settings"),
+                 ("Market स्थितीचे template", "या candles च्या market स्थितीला जुळणाऱ्या नियमांचे template, तुमच्याच risk settings सोबत")),
+    "active": (("More-signals template", "A template whose rules give more signals, with your own risk settings"),
+               ("जास्त signals चे template", "जास्त signals देणाऱ्या नियमांचे template, तुमच्याच risk settings सोबत")),
 }
 
 
 def _tilted_config(a: InterviewAnswers, p: Preferences, tilt: str, ceilings: Optional[Dict[str, float]]) -> Tuple[RiskConfig, List[str], dict]:
-    cfg, base_notes = iv.risk_plan(a, ceilings)
-    base_risk = cfg.risk_per_trade_pct
-    want = desired(a, p)
-    t = TILTS[tilt]
-    cap = float((ceilings or {}).get("risk_per_trade_pct", 2.0))
-    risk = round(min(max(want["risk_pct"] * t["risk"], 0.2), cap), 2)
-    trades = max(1, want["trades"] + t["trades"])
-    rr = round(max(want["rr"] + t["rr"], 1.5), 2)
-    daily = round(min(max(cfg.max_daily_loss_pct, risk * 2), risk * 3, float((ceilings or {}).get("max_daily_loss_pct", 5.0))), 2)
-    cfg = cfg.model_copy(update={
-        "risk_per_trade_pct": risk, "max_trades_per_day": trades, "min_risk_reward": rr, "max_daily_loss_pct": daily,
-        "max_portfolio_risk_pct": min(round(risk * 3, 2), float((ceilings or {}).get("max_portfolio_risk_pct", 10.0))),
-    })
-    # risk_plan's notes describe its own numbers: kept only while they are still this option's.
-    lang = a.language
-    notes = list(base_notes) if risk == base_risk else []
-    if tilt == "safe":
-        notes.append(tr(lang, f"Safe option: {risk:g}% risk per trade, at most {trades} trade(s) a day, reward at least 1:{rr:g} - fewer, better trades.",
-                        f"सावध पर्याय: एका trade चा risk {risk:g}%, दिवसाला जास्तीत जास्त {trades} trade, नफा किमान 1:{rr:g} - कमी पण चांगले trades."))
-    elif tilt == "active":
-        notes.append(tr(lang, f"Active option: up to {trades} trades a day at {risk:g}% risk each, reward at least 1:{rr:g}; the daily loss limit still stops the day.",
-                        f"सक्रिय पर्याय: दिवसाला {trades} पर्यंत trades, प्रत्येकी {risk:g}% risk, नफा किमान 1:{rr:g}; दिवसाची तोटा मर्यादा तरीही दिवस थांबवते."))
-    exit_rules = iv.default_exit_rules(a)
-    if t["be"] is not None:
-        exit_rules["break_even_at_r"] = t["be"]
-    if a.time == "auto" and a.style in ("scalping", "intraday"):
-        exit_rules["time_exit_at"] = "15:10"
-    return cfg, notes, exit_rules
+    """The option's risk settings and exits: the trader's own for every option (DEF-0 / SB-UX SU4) - no tilt changes a
+    limit, adds a trades-a-day cap or a minimum reward:risk, a break-even move or a time exit."""
+    cfg, notes = iv.risk_plan(a, ceilings)
+    return cfg, list(notes), iv.default_exit_rules(a)
 
 
 def _assign(ranked: List[dict], p: Preferences) -> Dict[str, Optional[dict]]:
@@ -222,13 +197,15 @@ def match_score(a: InterviewAnswers, p: Preferences, market: dict, pick: Optiona
         return 0, 0, [tr(lang, "no strategy could be tested", "एकही strategy तपासता आली नाही")]
     want = desired(a, p)
 
-    def closeness(have: float, target: float) -> float:
+    def closeness(have: float | None, target: float | None) -> float:
+        if have is None or target is None:                 # DEF-0: not set on both sides is his own setting kept
+            return 1.0 if have is None and target is None else 0.0
         return max(0.0, 1.0 - abs(have - target) / max(target, 1e-9))
 
     parts = {
-        "risk": (0.25, closeness(cfg.risk_per_trade_pct, want["risk_pct"]) if cfg.risk_per_trade_pct is not None else 0.0),
-        "trades": (0.20, closeness(cfg.max_trades_per_day, want["trades"]) if cfg.max_trades_per_day is not None else 0.0),
-        "reward": (0.15, closeness(cfg.min_risk_reward, want["rr"])),
+        "risk": (0.25, closeness(cfg.risk_per_trade_pct, want["risk_pct"])),
+        "trades": (0.20, closeness(cfg.max_trades_per_day, want["trades"])),
+        "reward": (0.15, closeness(cfg.min_risk_reward or None, want["rr"])),
         "style": (0.25, _style_fit(a, p, pick["family"])),
         "contract": (0.15, 1.0 if contract_honoured else 0.6),
     }
@@ -294,14 +271,13 @@ def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf
             plan["warnings"].append(tr(lang, "India VIX is 20 or higher - fear is high and gaps are more frequent at such readings.",
                                        "India VIX 20 किंवा जास्त आहे - भीती जास्त; अशा वेळी gap जास्त वेळा येतात."))
         (en_label, en_sub), (mr_label, mr_sub) = OPTION_TEXT[oid]
-        # P0.8-D: three risk settings on templates the trader chooses between. No score of any kind - no "match %", no
-        # market-fit %, no "closest to you", no best option. The one data fact is whether the template's own regime
-        # filter is open on today's candles (the same yes/no the daily briefing shows).
+        # P0.8-D: three templates the trader chooses between. No score of any kind - no "match %", no market-fit %, no
+        # "closest to you", no best option. The one data fact is whether the template's own regime filter is open on
+        # today's candles (the same yes/no the daily briefing shows). SB-UX SU4: no risk headline - every option carries
+        # the trader's own settings (the plan's risk section states them), so no option shows a number of its own.
         filter_open = None if pick is None else bool(pick["regime_fit"] >= 2)
         plan["option"] = {"id": oid, "label": tr(lang, en_label, mr_label), "summary": tr(lang, en_sub, mr_sub), "label_mr": mr_label, "summary_mr": mr_sub,
-                          "regime_filter_open": filter_open,
-                          "headline": None if pick is None else {"strategy": pick["name"], "risk_pct": cfg.risk_per_trade_pct,
-                                                                 "trades_per_day": cfg.max_trades_per_day, "min_rr": cfg.min_risk_reward}}
+                          "regime_filter_open": filter_open, "headline": None}
         options.append(plan)
     # The top level stays the balanced option (the trader's own answers) for older clients; the UI shows all three.
     result = dict(next(o for o in options if o["option"]["id"] == "balanced"))

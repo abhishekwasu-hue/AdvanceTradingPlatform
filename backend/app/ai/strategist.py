@@ -542,6 +542,9 @@ def parse_ai(text: str) -> List[Tuple[str, CustomStrategyConfig]]:
             continue
         if sum(len(x) for x in (cfg.long_conditions, cfg.short_conditions)) > 8:
             continue
+        if cfg.stop_loss_atr_mult is None or cfg.target_rr is None:
+            # SB-UX SU4: the study measures in R, which needs the proposal's own stop and target - none is filled in
+            continue
         name = (item.get("name") or cfg.name or "AI strategy")[:60]
         if banned_terms(name):                 # ATP review 11: "Best breakout" is a claim, not a name
             name = f"AI strategy {len(out) + 1}"

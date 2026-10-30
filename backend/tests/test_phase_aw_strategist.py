@@ -118,11 +118,14 @@ def test_simulator_honours_stop_first_and_square_off():
 
 
 def test_ai_proposals_are_parsed_strictly():
-    good = {"name": "AI vwap", "config": {"name": "x", "timeframe": "5min", "long_conditions": [
+    exits = {"stop_loss_atr_mult": 1.0, "target_rr": [1.5, 2.0]}       # SB-UX SU4: stated by the proposal, never filled in
+    good = {"name": "AI vwap", "config": {"name": "x", "timeframe": "5min", **exits, "long_conditions": [
         {"left": {"type": "indicator", "indicator": "CLOSE"}, "operator": "CROSSES_ABOVE", "right": {"type": "indicator", "indicator": "VWAP"}}]}}
+    no_exits = {"name": "AI no exits", "config": {"name": "z", "timeframe": "5min", "long_conditions": good["config"]["long_conditions"]}}
     bad = {"name": "bad", "config": {"name": "y", "timeframe": "5min", "long_conditions": [{"left": {"type": "indicator", "indicator": "MAGIC"}}]}}
     parsed = st.parse_ai("here: " + json.dumps({"strategies": [good, bad]}))
     assert [n for n, _ in parsed] == ["AI vwap"]
+    assert st.parse_ai(json.dumps({"strategies": [no_exits]})) == []
     assert st.parse_ai("no json") == []
     df = _sessions(days=10, minutes=1)
     s = ms.study(df, "NIFTY 50", "en")

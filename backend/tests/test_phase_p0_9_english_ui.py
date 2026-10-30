@@ -50,7 +50,7 @@ def test_interview_states_no_market_direction_and_describes_templates_neutrally(
                        "options": [o["option"] for o in plan["options"]]})
     for phrase in ("Overall bias", "Built from your own answers", "Template shown first", "the plan follows the market", "Recommended", "recommended:"):
         assert phrase not in text, phrase
-    assert all(o["option"]["summary"] for o in plan["options"]) and "Middle risk" in text and "This template:" in text
+    assert all(o["option"]["summary"] for o in plan["options"]) and "Regime template" in text and "This template:" in text
 
 
 def test_a_single_stock_gets_no_price_scenarios_and_an_index_score_is_a_model_score():

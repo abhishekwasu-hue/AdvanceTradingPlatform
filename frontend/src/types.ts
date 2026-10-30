@@ -705,9 +705,11 @@ export interface CustomStrategyConfig {
   timeframe: string;
   long_conditions: Condition[];
   short_conditions: Condition[];
-  stop_loss_atr_mult: number;
+  /** SB-UX SU4 (DEF-0): null = off - no stop-loss exit. Only a value the user types sets one. */
+  stop_loss_atr_mult: number | null;
   atr_period: number;
-  target_rr: [number, number];
+  /** SB-UX SU4 (DEF-0): null = off - no target exit. A target in R needs the user's stop. */
+  target_rr: [number, number] | null;
   /** P1-2b: null = not set (no minimum reward:risk); only a value the user types filters. */
   min_rr: number | null;
 }
@@ -734,9 +736,10 @@ export function defaultCustomStrategyConfig(): CustomStrategyConfig {
     timeframe: "5min",
     long_conditions: [defaultCondition()],
     short_conditions: [],
-    stop_loss_atr_mult: 1.0,
+    // SB-UX SU4 (DEF-0): no prefilled stop, target or minimum R:R - blank = off until the user types his own.
+    stop_loss_atr_mult: null,
     atr_period: 14,
-    target_rr: [1.5, 2.0],
+    target_rr: null,
     min_rr: null,
   };
 }

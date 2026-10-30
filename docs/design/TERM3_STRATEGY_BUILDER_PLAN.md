@@ -30,3 +30,14 @@ exits never blocked) and the Options Builder page (templates, legs).
 - D1 template width with no user setting: the user picks it before Load (default) / Trade's hedge width.
 - D2 basket SL / target: ATP's own exit fields, blank = off (default).
 - D3 LIVE: PAPER only now (default).
+
+## Part 2 - "Option analysis" tab (owner 30 Oct: Trade's OI table - 5 / 10 / 15 min, Diff, Signal Strong / Weakening)
+Checked: ATP ALREADY has it, ported from Trade's `oi_analysis.py` (OI Banner O1-O5):
+`backend/app/option_chain/oi_regime.py` (signal math), the collector (one reading per 5-minute slot, followed
+underlyings only), `api.oiHistory` and `frontend/src/components/OiHistoryTable.tsx` (5 / 10 / 15 min views),
+shown on the Option chain page's OI view (`optionChain/OiViewV2.tsx`). English text already.
+Plan: a Terminal tab "Option analysis" = OiViewV2 for the active symbol (no new logic, no copy of Trade code).
+The port differs from Trade in 3 documented places (docs/design/OI_BANNER.md): the confirmation gate fails closed on
+missing data; strictness "B" = own direction Strong (Trade's could never pass); a stale PCR fails closed.
+- D4: keep these 3 safety differences (default) / exact Trade behaviour.
+- Note: the table fills only for underlyings switched on in the OI settings (per organisation, UI28Q-2).

@@ -35,9 +35,15 @@ function OwnBotFold({ fold, open, children }: { fold: boolean; open: boolean; ch
 
 /** `ownBotOnly` (UX2 fix 5, ui_v2): Telegram is connected in one tap above this card, so here the Telegram block is only
  * the organisation's own bot, folded away under "Use your organisation's own bot". */
-/** Settings redesign B: `part` - "all" (today), "channels" (Settings → Alerts: every channel but the own bot) or "own-bot"
- * (Settings → Advanced: only the organisation's own Telegram bot). */
-export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: { ownBotOnly?: boolean; part?: "all" | "channels" | "own-bot" } = {}) {
+/** Settings redesign B: `part` - "all" (today), "channels" (Settings → Alerts: plain words - Telegram, app notifications
+ * and which other channels are on, no mail-server / SMS-gateway / DLT internals), "delivery" (Settings → Advanced: the
+ * email, webhook, SMS and WhatsApp set-up and the delivery log - REV-1 M2) or "own-bot" (Settings → Advanced: only the
+ * organisation's own Telegram bot). */
+export type AlertChannelsPart = "all" | "channels" | "delivery" | "own-bot";
+export const ALERT_DELIVERY_PATH = "/settings/advanced#alert-delivery";
+const OTHER_CHANNELS: readonly (readonly [AlertChannelType, string])[] = [["EMAIL", "Email"], ["SMS", "SMS"], ["WHATSAPP", "WhatsApp"], ["WEBHOOK", "Your own app"]];
+
+export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: { ownBotOnly?: boolean; part?: AlertChannelsPart } = {}) {
   const [channels, setChannels] = useState<AlertChannel[]>([]);
   const [deliveries, setDeliveries] = useState<AlertDelivery[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -235,8 +241,53 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
     );
   }
 
+  // REV-1 M2: Settings → Alerts in plain words; the set-up of each other channel lives under Advanced.
+  if (part === "channels") {
+    return (
+      <Card title="More ways to get alerts">
+        <p className="text-xs text-fg-muted mb-3">
+          Important alerts (your broker login ran out, a trading bot was paused, your daily loss limit was reached) reach you
+          even when the app is closed, on every way you turn on here.
+        </p>
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
+            <div className="flex items-center gap-2 text-sm font-bold text-fg"><Send size={14} /> Telegram</div>
+            <p className="text-xs text-fg-muted" data-telegram-elsewhere>
+              {platformTelegram ? "Connected with the app's own Telegram bot. Manage it under Connect Telegram, above." : "Use Connect Telegram, above."}{" "}
+              Your organisation&apos;s own bot is under <Link to={OWN_BOT_PATH} className="text-brand hover:underline">Advanced</Link>.
+            </p>
+          </div>
+          <WebPushSection channel={stored("PUSH")} deliveries={deliveries} busy={busy} run={run} test={() => test("PUSH")} />
+          <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2 lg:col-span-2" data-other-channels>
+            <div className="flex items-center gap-2 text-sm font-bold text-fg"><Mail size={14} /> Email, SMS, WhatsApp and your own app</div>
+            <ul className="space-y-1 text-xs">
+              {OTHER_CHANNELS.filter(([type]) => type !== "WHATSAPP" || s10).map(([type, label]) => {
+                const c = stored(type);
+                return (
+                  <li key={type} className="flex items-center justify-between gap-2">
+                    <span className="text-fg">{label}</span>
+                    <span className={c?.last_error ? "text-down" : c?.enabled ? "text-up" : "text-fg-muted"}>
+                      {!c ? "Not set up" : c.last_error ? "Last alert could not be sent" : c.enabled ? "On" : "Off"}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="text-xs text-fg-muted">
+              These need your own mail server, SMS provider or app. Set them up under{" "}
+              <Link to={ALERT_DELIVERY_PATH} className="text-brand hover:underline" data-alert-delivery-link>Advanced</Link>.
+            </p>
+          </div>
+        </div>
+        {error && <div className="mt-3 text-sm text-down">{error}</div>}
+        {message && <div className="mt-3 text-sm text-up">{message}</div>}
+      </Card>
+    );
+  }
+
+  const delivery = part === "delivery";
   return (
-    <Card title="Alert delivery (Telegram / email / webhook / push / SMS)">
+    <Card title={delivery ? "Email, SMS and webhook alerts" : "Alert delivery (Telegram / email / webhook / push / SMS)"}>
       <Details id="alerts.channels" className="mt-0 mb-3">
         <p className="text-xs text-fg-muted">
           The trading worker raises CRITICAL alerts (broker session expired, stop-loss could not be
@@ -247,14 +298,10 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
       </Details>
 
       <div className="grid lg:grid-cols-2 gap-4">
+        {!delivery && (
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
           <div className="flex items-center gap-2 text-sm font-bold text-fg"><Send size={14} /> Telegram</div>
-          {part === "channels" ? (
-            <p className="text-xs text-fg-muted" data-telegram-elsewhere>
-              {platformTelegram ? "Connected with the app's own Telegram bot. Manage it under Connect Telegram, above." : "Use Connect Telegram, above."}{" "}
-              Your organisation&apos;s own bot is under <Link to={OWN_BOT_PATH} className="text-brand hover:underline">Advanced</Link>.
-            </p>
-          ) : ownBotOnly && platformTelegram ? (
+          {ownBotOnly && platformTelegram ? (
             <p className="text-xs text-fg-muted">Connected with the app&apos;s own Telegram bot. Manage it under Alerts on your phone, above.</p>
           ) : (
           <OwnBotFold fold={ownBotOnly} open={!!stored("TELEGRAM")}>
@@ -262,6 +309,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
           </OwnBotFold>
           )}
         </div>
+        )}
 
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
           <div className="flex items-center gap-2 text-sm font-bold text-fg"><Mail size={14} /> Email (SMTP)</div>
@@ -337,7 +385,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
           </div>
         </div>
 
-        <WebPushSection channel={stored("PUSH")} deliveries={deliveries} busy={busy} run={run} test={() => test("PUSH")} />
+        {!delivery && <WebPushSection channel={stored("PUSH")} deliveries={deliveries} busy={busy} run={run} test={() => test("PUSH")} />}
 
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
           <div className="flex items-center gap-2 text-sm font-bold text-fg"><MessageSquare size={14} /> SMS (any HTTP gateway)</div>

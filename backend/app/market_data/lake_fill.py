@@ -8,7 +8,8 @@ Oct had closed (its Daily bar was there) and the intraday endpoint answers nothi
 close; this fills that gap from them.
 
 Data terms (HB2 / TM-7, docs/DATA_SOURCES.md): only the reader's own private bars (`own_bars.scope_for` - his tenant and
-member id, the holder rule) - never another member's or organisation's. A filled result is never written to a cache
+member id, the holder rule) - never another member's or organisation's; M55 T4: for a backfilled index also the history
+owner's 1-minute rows while the data tier is off (`own_bars.shared_scope`). A filled result is never written to a cache
 another reader could be served from (MarketDataService.get_candles). Closing-auction flags (DH3) are applied by
 `own_bars.fetch_rows`.
 """

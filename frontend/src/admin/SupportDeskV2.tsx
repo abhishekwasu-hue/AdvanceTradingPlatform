@@ -5,6 +5,7 @@ import { ago, maskEmail } from "./consoleApi";
 import { supportDeskApi, type SupportDeskSettings, type SupportTicket, type SupportTickets, type TicketStatus } from "./supportDeskApi";
 import { SkeletonRows } from "../components/primitives";
 import { Combobox } from "../ui/Combobox";
+import { formatDateTimeIST } from "../ui/format";
 
 /**
  * C12: Admin › Support - the inbox as tickets (every "Send feedback" and "Report a problem" message) with a status, an
@@ -26,11 +27,11 @@ export function hours(h: number | null): string {
 export function dueLine(t: SupportTicket): { text: string; late: boolean } | null {
   if (t.status === "closed") return null;
   if (!t.first_response_at && t.first_response_due_at) {
-    return { text: t.first_response_late ? `First answer late (due ${ago(t.first_response_due_at)})` : `First answer due ${new Date(t.first_response_due_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+    return { text: t.first_response_late ? `First answer late (due ${ago(t.first_response_due_at)})` : `First answer due ${formatDateTimeIST(t.first_response_due_at)}`,
              late: !!t.first_response_late };
   }
   if (t.resolve_due_at) {
-    return { text: t.resolve_late ? "Past the time to resolve" : `Resolve by ${new Date(t.resolve_due_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+    return { text: t.resolve_late ? "Past the time to resolve" : `Resolve by ${formatDateTimeIST(t.resolve_due_at)}`,
              late: !!t.resolve_late };
   }
   return null;

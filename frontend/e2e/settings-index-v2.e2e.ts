@@ -228,6 +228,21 @@ test.describe("settings index behaviour", () => {
   });
 });
 
+// REV-1 M3 (review: the header avatar was cut at 375 px and the page scrolled sideways): with colour v2 and the price
+// dot on, the top bar's title steps down and, when even that does not fit, is cut - the avatar always stays on screen.
+for (const width of [375, 320]) {
+  test.describe(`settings header at ${width} px`, () => {
+    test.use({ viewport: { width, height: 780 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+    test("the avatar stays on screen, no sideways scroll", async ({ page }) => {
+      await openSettings(page, "/settings", { ...FULL, features: { ...FEATURES, data_hub: true, colour_v2: true } });
+      await expect(index(page)).toBeVisible();
+      const avatar = await page.locator('header a[aria-label="Account"]').boundingBox();
+      expect(avatar!.x + avatar!.width).toBeLessThanOrEqual(width);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    });
+  });
+}
+
 test.describe("ui_v2 off", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 

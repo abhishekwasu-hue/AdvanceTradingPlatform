@@ -309,7 +309,7 @@ export default function TerminalClassicV2({ terminal = defaultTerminalApi }: Pag
         </div>
       ) : (
         <div data-tour="terminal-panels">
-          <TerminalGridV2 panels={working.panels} onChange={setPanels} onClose={(id) => setPanels(closePanel(working.panels, id))}
+          <TerminalGridV2 panels={working.panels} preset={working.preset} onChange={setPanels} onClose={(id) => setPanels(closePanel(working.panels, id))}
             render={(place) => panel(place.id, place)} title={title} />
         </div>
       )}

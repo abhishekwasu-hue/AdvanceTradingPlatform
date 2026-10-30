@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChainLadderV2 } from "../optionChain/ChainLadderV2";
 import ColumnsMenuV2 from "../optionChain/ColumnsMenuV2";
-import type { ColumnPrefs } from "../optionChain/model";
+import type { ColumnKey, ColumnPrefs } from "../optionChain/model";
 import RowDetailsV2 from "../optionChain/RowDetailsV2";
 import SummaryStripV2 from "../optionChain/SummaryStripV2";
 import type { OptionChainData } from "../optionChain/useOptionChain";
@@ -15,7 +15,7 @@ import type { TerminalSpot } from "./spot";
  * opens the same action sheet (Buy / Sell / Add to basket / Alert / Chart) through the page's chain trading layer; a
  * strike opens the same row details.
  */
-export function TerminalChainV2({ symbol, chain, spot, prevClose, prefs, onPrefs, trading, areaMarks }: {
+export function TerminalChainV2({ symbol, chain, spot, prevClose, prefs, onPrefs, trading, areaMarks, hide }: {
   symbol: string;
   chain: Pick<OptionChainData, "live" | "loading" | "problem" | "expiry">;
   spot: TerminalSpot | null;
@@ -25,17 +25,19 @@ export function TerminalChainV2({ symbol, chain, spot, prevClose, prefs, onPrefs
   trading: { onPickLeg?: (row: ChainRow, side: "call" | "put") => void; held: ReadonlySet<string>; centreSuffix: string };
   /** TERM-2 R3 (flag term_strike_area): each short strike's distance to the nearest area. */
   areaMarks?: ReadonlyMap<string, string>;
+  /** M58 T4-5: the columns a narrow chain panel leaves out (layoutModel chainHiddenColumns: IV first, then OI change). */
+  hide?: readonly ColumnKey[];
 }) {
   const [picked, setPicked] = useState<number | null>(null);
   const live = chain.live;
   const row = live?.rows.find((r) => r.strike === picked) ?? null;
   return (
-    <div className="space-y-space-3" data-terminal-chain data-symbol={symbol} data-expiry={live?.expiry ?? chain.expiry ?? ""}>
+    <div className="space-y-space-3" data-terminal-chain data-hidden-columns={hide?.length ? hide.join(" ") : undefined} data-symbol={symbol} data-expiry={live?.expiry ?? chain.expiry ?? ""}>
       <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} spot={spot} prevClose={prevClose} dense />
       <div className="flex justify-end"><ColumnsMenuV2 prefs={prefs} onChange={onPrefs} /></div>
       <section aria-label="Chain" data-block="chain" className="relative">
         <ChainLadderV2 symbol={symbol} live={live} loading={chain.loading} problem={chain.problem} prefs={prefs}
-          centreSuffix={trading.centreSuffix} onPick={(r) => setPicked(r.strike)} onPickLeg={trading.onPickLeg} held={trading.held} areaMarks={areaMarks} />
+          centreSuffix={trading.centreSuffix} onPick={(r) => setPicked(r.strike)} onPickLeg={trading.onPickLeg} held={trading.held} areaMarks={areaMarks} hide={hide} />
       </section>
       <RowDetailsV2 row={row} atm={live?.summary.atm_strike ?? null} underlying={symbol} onClose={() => setPicked(null)} />
     </div>

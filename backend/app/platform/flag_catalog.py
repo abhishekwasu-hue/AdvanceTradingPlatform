@@ -171,6 +171,163 @@ FLAG_INFO: Dict[str, FlagInfo] = {
 }
 
 
+# ADM-1 (owner 30 Oct: "too many controls, very confusing"): the admin Feature flags list groups by these finer
+# categories (what a trader would call that part of the app), each folded; `area` stays the broad area. Every flag has
+# exactly one group (tests/test_adm1_flag_groups.py). A flag without a group falls back to its area in the list.
+GROUPS: Dict[str, str] = {
+    "safety": "Safety and LIVE",
+    "orders": "Orders and positions",
+    "paper": "Paper trading and journal",
+    "backtest": "Backtests",
+    "charts": "Charts and chart tools",
+    "screens": "Screens: the screener and its builder",
+    "screen_library": "Screens: ready-made screens and ideas",
+    "scan_actions": "Scan matches: charts and actions",
+    "ai": "AI",
+    "alerts": "Alerts and notifications",
+    "market_data": "Market data and history",
+    "look": "Look and layout",
+    "accounts": "Sign-up, plans and growth",
+    "help": "Help, legal and status",
+    "developers": "Developers and marketplace",
+}
+
+FLAG_GROUP: Dict[str, str] = {
+    # Safety and LIVE
+    "live_trading": "safety",
+    "phase0_paper_only": "safety",
+    "approval_only_entries": "safety",
+    "risk_by_default": "safety",
+    "vix_gate": "safety",
+    "portfolio_risk": "safety",
+    "portfolio_risk_caps": "safety",
+    "experience_levels": "safety",
+    # Orders and positions
+    "smart_execution": "orders",
+    "terminal": "orders",
+    "multi_account": "orders",
+    "broker_app_links": "orders",
+    "expiry_checklist": "orders",
+    "my_day_card": "orders",
+    "options_builder": "orders",
+    "options_builder_saved": "orders",
+    # Paper trading and journal
+    "paper_account": "paper",
+    "ladder_evidence": "paper",
+    "paper_report_card": "paper",
+    "discipline_engine": "paper",
+    "setup_recall": "paper",
+    "why_no_trade": "paper",
+    "cost_meter": "paper",
+    "strategy_templates": "paper",
+    # Backtests
+    "backtest_optimizer": "backtest",
+    "backtest_models": "backtest",
+    "backtest_stored_history": "backtest",
+    # Charts and chart tools
+    "market_zones": "charts",
+    "chart_workspace": "charts",
+    "chart_analyze": "charts",
+    "chart_analyze_strikes": "charts",
+    "chart_analyze_share": "charts",
+    "chart_price_action": "charts",
+    "chart_trades_layer": "charts",
+    "chart_contracts": "charts",
+    "chart_futures_basis": "charts",
+    "watchlists": "charts",
+    "decision_tools": "charts",
+    "read_chart": "charts",
+    "chart_studies": "charts",
+    # Screens: the screener and its builder
+    "screener_v2": "screens",
+    "screener_intrabar": "screens",
+    "screener_builder_u2": "screens",
+    "screener_vectorized": "screens",
+    "screenql_amw_functions": "screens",
+    "strategy_lab_pine": "screens",
+    "screener_board_views": "screens",
+    "screener_copilot": "screens",
+    "screener_venues": "screens",
+    "screener_rankings": "screens",
+    "screener_backtest": "screens",
+    "screener_history": "screens",
+    "screener_tx2": "screens",
+    "screener_fundamentals": "screens",
+    "screener_ownership": "screens",
+    "screener_waves": "screens",
+    # Screens: ready-made screens and ideas
+    "screener_gallery": "screen_library",
+    "idea_library": "screen_library",
+    "screener_breakouts": "screen_library",
+    "screener_breakouts_bk3": "screen_library",
+    "screener_breakouts_bk4": "screen_library",
+    "screener_breakouts_fitness": "screen_library",
+    "screener_legends": "screen_library",
+    "screener_legends_lg2": "screen_library",
+    "screener_legends_lg3": "screen_library",
+    "screener_etf": "screen_library",
+    # Scan matches: charts and actions
+    "evidence_charts": "scan_actions",
+    "evidence_context": "scan_actions",
+    "execution_core": "scan_actions",
+    "scan_then": "scan_actions",
+    "scan_auto_paper": "scan_actions",
+    # AI
+    "ai_copilot": "ai",
+    "market_thesis": "ai",
+    "thesis_stock_targets": "ai",
+    "ai_agent": "ai",
+    "ai_research": "ai",
+    "ai_one_key": "ai",
+    "vision_byok": "ai",
+    "vision_byok_v3": "ai",
+    "signal_language_v2": "ai",
+    "support_bot": "ai",
+    "ai_multiview": "ai",
+    # Alerts and notifications
+    "telegram_inbound": "alerts",
+    "daily_rhythm": "alerts",
+    "alerts_stale_guard": "alerts",
+    "alerts_reliable_outbox": "alerts",
+    "mobile_push": "alerts",
+    "alerts_whatsapp_dlt": "alerts",
+    "alert_webhooks": "alerts",
+    # Market data and history
+    "news_feed": "market_data",
+    "context_panel": "market_data",
+    "data_hub": "market_data",
+    "byob_data_tier": "market_data",
+    "history_import": "market_data",
+    "history_backfill": "market_data",
+    "history_intraday": "market_data",
+    "chain_history": "market_data",
+    "live_push": "market_data",
+    "markets_view": "market_data",
+    # Look and layout
+    "ui_v2": "look",
+    "colour_v2": "look",
+    "colour_v3": "look",
+    # Sign-up, plans and growth
+    "self_signup": "accounts",
+    "beta_cohort_gate": "accounts",
+    "growth_v2": "accounts",
+    "referrals": "accounts",
+    "plan_limits_v2": "accounts",
+    "onboarding_emails": "accounts",
+    "marketing_site": "accounts",
+    # Help, legal and status
+    "help_centre": "help",
+    "legal_pages": "help",
+    "learn": "help",
+    "public_status_page": "help",
+    "status_page": "help",
+    # Developers and marketplace
+    "public_api": "developers",
+    "marketplace": "developers",
+    "marketplace_ai_listings": "developers",
+}
+
+
 # P2-1 (docs/design/P2_1_FLAG_AUDIT.md, owner ✅ 26 Oct, R6): the fate of every "unfinished" flag, shown in the admin
 # list. FINISH: the roadmap item that finishes it. KEEP_OFF: stays off and hidden, with the reason. REMOVED_FROM_VIEW:
 # stays off, its code kept, and leaves the admin "Turn on" list (FA-2) - the server refuses to turn it on.
@@ -216,9 +373,11 @@ def fate_for(name: str) -> Dict[str, str]:
 def info_for(name: str) -> Dict[str, object]:
     """The admin list's fields for one flag (a flag missing here reads as unfinished, in Accounts and platform)."""
     info = FLAG_INFO.get(name) or FlagInfo(name, "platform", "", (), "", "unfinished")
-    return {"plain": info.plain, "area": info.area, "area_label": AREAS[info.area], "turns_on": info.turns_on,
+    return {"plain": info.plain, "area": info.area, "area_label": AREAS[info.area],
+            "group": FLAG_GROUP.get(name, info.area), "group_label": GROUPS.get(FLAG_GROUP.get(name, ""), AREAS[info.area]),
+            "turns_on": info.turns_on,
             "depends_on": list(info.depends_on), "needs": info.needs, "status": info.status,
             "status_label": STATUSES[info.status], **fate_for(name)}
 
 
-__all__ = ["AREAS", "FINISH", "FLAG_INFO", "KEEP_OFF", "REMOVED_FROM_VIEW", "STATUSES", "FlagInfo", "fate_for", "info_for"]
+__all__ = ["AREAS", "FINISH", "FLAG_GROUP", "FLAG_INFO", "GROUPS", "KEEP_OFF", "REMOVED_FROM_VIEW", "STATUSES", "FlagInfo", "fate_for", "info_for"]

@@ -53,5 +53,6 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Copilot fix pack (28 Oct) | ATP_ORDER_CP_FIX.md | CP-FIX | stub - full text awaited from the owner |
 | - | OI banner v2 (28 Oct) | ATP_ORDER_OI_V2.md | OI-V2 | stub - full text awaited from the owner |
 | - | Prices everywhere / after hours (28 Oct) | ATP_ORDER_PX_1.md | PX-1 | stub - full text awaited from the owner |
+| - | Terminal rebuild (30 Oct) | ATP_ORDER_TERM2.md | TERM-2 | filed; step 1 next |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

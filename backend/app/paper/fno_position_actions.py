@@ -4,13 +4,16 @@
   (ADR-0004): priced exactly as "Exit now" (`approval.exit_price`: the person's own live price, else the monitor's recent
   last price, never a typed price) and closed through the one exit path (`close_position`) after the row is split
   (`trading/trade_split.split_off`, TM-17's method; all M lots close the row itself). No kill switch, limit, approval-only
-  rule or feature flag stops it. LIVE is refused before anything happens, exactly as "Exit now" refuses it (Phase 0:
-  a live position is closed in the broker app); the owner's LIVE switches are never read or written here.
+  rule or feature flag stops it. M55 S3 (A17): a LIVE position exits part the same way, at the session of the broker
+  account that holds it; it is refused, before anything happens and in plain words, only where that cannot be done - no
+  usable broker session, or a broker-side stop for the whole position that ATP cannot resize (all lots still close). The
+  owner's LIVE switches are never read or written here.
 * Reverse - one action: the whole position closes (the same exit, never blocked), then the opposite side opens with the
   same lots through the ONE order ticket (`fno_ticket.place`: every entry check, the PAPER chokepoint, the kill switch).
   When the entry is refused the position stays closed and the answer says why in plain words. Only the holder reverses
   (the new position opens on his own account). Any stop the new side needs is the user's own (`stop_loss`); nothing is
-  pre-filled.
+  pre-filled. A LIVE position is not reversed (the new side would be a LIVE entry, and the ticket places PAPER only):
+  refused in plain words before anything closes.
 * Modify - the price / trigger / lots of the caller's own waiting entry, or the level of his own armed stop / target
   (TT-10: one modify path; PAPER at once). Only a waiting row changes (claimed atomically); one already sent is left.
 
@@ -32,6 +35,13 @@ from app.db.models import InstrumentRecord, OrderRecord, PaperRestingOrderRecord
 
 PART_REF = "exit_part_ref"
 LIVE_REFUSED = "LIVE positions are closed in the broker app - ATP places no broker order in Phase 0"
+# M55 S3 (A17): the plain reasons a LIVE "Exit part" / "Reverse" is refused (only what the broker or ATP cannot do).
+LIVE_NO_SESSION = ("Your broker is not signed in for this live position, so ATP cannot send the exit. Sign in to your broker "
+                   "again, or close it in the broker app. Nothing was closed.")
+LIVE_STOP_COVERS_ALL = ("Your broker holds a stop for the whole position, and ATP cannot resize it from here. Exit all lots, "
+                        "or close part of it in the broker app. Nothing was closed.")
+LIVE_NO_REVERSE = ("Reverse would open a new live position, and ATP places live entries only when live trading is switched "
+                   "on for your account. Nothing was closed - use Exit part to close it.")
 
 
 def ref_tag(client_ref: str) -> str:
@@ -61,13 +71,28 @@ async def _own(session: AsyncSession, user: User, trade_id: int, *, holder_only:
     return trade
 
 
-def _open_checks(trade: TradeRecord) -> None:
+def _open_checks(trade: TradeRecord, *, live_ok: bool = False) -> None:
     if trade.exit_time is not None:
         raise HTTPException(status_code=409, detail="Position is already closed")
-    if trade.mode != "PAPER":
-        raise HTTPException(status_code=409, detail=LIVE_REFUSED)
+    if trade.mode != "PAPER" and not live_ok:
+        raise HTTPException(status_code=409, detail=LIVE_NO_REVERSE)
     if trade.leg_group_id:
         raise HTTPException(status_code=409, detail="This leg belongs to a strategy structure: use Exit now, which closes the whole structure")
+
+
+async def _live_exit_broker(session: AsyncSession, trade: TradeRecord, *, whole: bool) -> Any:
+    """M55 S3 (A17): the broker session a LIVE "Exit part" goes out at (None for PAPER) - the account that holds the
+    position, as every LIVE exit resolves it. Refused (409, plain words, nothing closed) only when the broker cannot do
+    it: no usable session, or part of a position whose broker-side stop covers all of it (`whole` False)."""
+    if trade.mode == "PAPER":
+        return None
+    if not whole and trade.sl_order_id:
+        raise HTTPException(status_code=409, detail=LIVE_STOP_COVERS_ALL)
+    from app.trading.position_monitor import broker_for_trade
+    broker = await broker_for_trade(session, trade)
+    if broker is None:
+        raise HTTPException(status_code=409, detail=LIVE_NO_SESSION)
+    return broker
 
 
 async def _hedge_warning(session: AsyncSession, trade: TradeRecord) -> Optional[str]:
@@ -116,11 +141,12 @@ async def exit_part(session: AsyncSession, user: User, trade_id: int, *, lots: i
             raise HTTPException(status_code=409, detail="This exit is already on its way - refresh in a moment")
         return {"status": "CLOSED", "repeat": True, "warning": None, "closed": _closed_row(earlier, lots_of(earlier)[0]),
                 "remaining_lots": lots_of(trade)[0] if trade.exit_time is None else 0}
-    _open_checks(trade)
+    _open_checks(trade, live_ok=True)
     held, unit = lots_of(trade)
     if lots < 1 or lots > held:
         raise HTTPException(status_code=422, detail=(f"You hold {held} lot{'s' if held != 1 else ''} of {trade.symbol}. "
                                                      f"Choose between 1 and {held} lot{'s' if held != 1 else ''} to exit - nothing was closed."))
+    broker = await _live_exit_broker(session, trade, whole=lots == held)
     warning = await _hedge_warning(session, trade)
     if warning and not confirm:
         return {"status": "CONFIRM", "warning": warning, "closed": None, "remaining_lots": held}
@@ -140,7 +166,7 @@ async def exit_part(session: AsyncSession, user: User, trade_id: int, *, lots: i
     await write_audit_log(session, trade.tenant_id, user.id, "exit_part",
                           f"trade #{trade.id}: {lots} of {held} lot(s) at {source}{' after the hedge warning' if warning else ''}")
     await session.commit()
-    outcome = await close_position(session, target, price, f"Exit part ({source})", broker=None, user_id=user.id)
+    outcome = await close_position(session, target, price, f"Exit part ({source})", broker=broker, user_id=user.id)
     if not outcome.closed:
         raise HTTPException(status_code=409, detail="; ".join(outcome.warnings) or "Position could not be closed")
     return {"status": "CLOSED", "repeat": False, "warning": warning, "closed": _closed_row(target, lots),

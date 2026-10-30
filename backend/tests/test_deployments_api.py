@@ -2,12 +2,15 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import select
 
 from app.db.models import BrokerCredentialRecord, TradeRecord, User
 from tests.broker_fakes import fake_credentials
 from tests.test_auth_api import _register, _session_factory, client
 from tests.utils import enable_mfa
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 STRATEGY = "ema_rsi_scalper_1m"
 

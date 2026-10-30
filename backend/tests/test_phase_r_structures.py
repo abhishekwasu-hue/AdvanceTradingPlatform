@@ -20,6 +20,8 @@ from tests.test_deployments_api import _auth, _create, _store_broker
 from tests.test_multileg import SPOT, _OptionBroker, _rules
 from tests.test_trading_worker import _signal, _tenant, _trades
 
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
+
 FAR_BUMP = 40.0   # a later expiry's option is worth more: the calendar's long leg
 
 

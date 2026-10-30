@@ -16,8 +16,8 @@ export interface FeatureFlagsCardProps {
   tenants: Record<string, string>;
   onTenants: (name: string, value: string) => void;
   busy: boolean;
-  /** Turn a flag on or off (off with the allow-list typed for it). */
-  onSet: (name: string, on: boolean) => void;
+  /** Turn a flag on or off (off with the allow-list typed for it); `confirm` is the owner's typed LIVE confirmation. */
+  onSet: (name: string, on: boolean, confirm?: string) => void;
   /** Save the allow-list of an OFF flag. */
   onSaveList: (name: string) => void;
 }
@@ -32,6 +32,7 @@ const TONES = {
 export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSet, onSaveList }: FeatureFlagsCardProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FlagFilter>("all");
+  const [typed, setTyped] = useState<Record<string, string>>({});
   const searchId = useId();
   const groups = flags ? groupFlags(flags, query, filter) : [];
   const all = flags ? Object.values(flags) : [];
@@ -79,6 +80,10 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
               {group.rows.map(({ name, flag, blockedBy }) => {
                 const needs = [...(flag.depends_on ?? []).map((d) => flags?.[d]?.plain ?? d), ...(flag.needs ? [flag.needs] : [])];
                 const blocked = !flag.on && blockedBy.length > 0;
+                // M55 S1: the switch shown now would open LIVE (live_trading on, the PAPER-only lock off) - owner only.
+                const opensLive = !!flag.owner_only && (flag.opens_live_when_on ? !flag.on : flag.on);
+                const confirmText = flag.confirm_text ?? "ENABLE LIVE";
+                const confirmed = (typed[name] ?? "") === confirmText;
                 return (
                   <li key={name} data-flag={name} className="grid gap-2 py-2 pl-3 text-xs md:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="min-w-0 space-y-0.5">
@@ -101,7 +106,7 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
                           </div>
                           {flag.fate_note && <div data-flag-fate={flag.fate}>{flag.fate_note}</div>}
                           <div>{flag.description}</div>
-                          {!flag.on && flag.fate !== "removed_from_view" && (
+                          {!flag.on && flag.fate !== "removed_from_view" && !flag.owner_only && (
                             <div className="flex flex-wrap items-center gap-2 pt-1">
                               <span>Keep it on for these organisations only:</span>
                               <input aria-label={`Allow-listed organisation ids for ${flag.plain ?? name}`} placeholder="e.g. 3, 17"
@@ -118,7 +123,19 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
                       <span className={`font-bold ${flag.on ? "text-up" : "text-down"}`}>
                         {flag.on ? "ON" : `OFF${flag.tenants.length ? ` (${flag.tenants.length} allowed)` : ""}`}
                       </span>
-                      {flag.on ? (
+                      {opensLive && !flag.can_switch_live ? (
+                        <span data-flag-owner-only className="text-fg-muted">Only the owner can switch LIVE on</span>
+                      ) : opensLive ? (
+                        <>
+                          <input aria-label={`Type ${confirmText} to confirm`} placeholder={`Type ${confirmText}`} data-flag-confirm
+                            className="w-32 rounded border border-border bg-surface-2 px-2 py-1 text-fg" value={typed[name] ?? ""}
+                            onChange={(e) => setTyped({ ...typed, [name]: e.target.value })} />
+                          <button type="button" disabled={busy || !confirmed} onClick={() => onSet(name, !flag.on, typed[name])}
+                            className="rounded border border-down/40 px-2 py-0.5 text-down hover:bg-down/10 disabled:cursor-not-allowed disabled:opacity-50">
+                            {flag.on ? "Turn off" : "Turn on"}
+                          </button>
+                        </>
+                      ) : flag.on ? (
                         <button type="button" disabled={busy} onClick={() => onSet(name, false)}
                           className="rounded border border-down/40 px-2 py-0.5 text-down hover:bg-down/10">Turn off</button>
                       ) : flag.fate === "removed_from_view" ? null : (

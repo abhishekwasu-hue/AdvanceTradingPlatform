@@ -159,7 +159,7 @@ def strategy_name(strategy_id: str) -> str:
 def _item(*, source: str, num: int, at: datetime, symbol: Any, direction: Any, setup: str, entry: Any, stop: Any, target: Any,
           rr: Any, kind: str, name: str, mode: Optional[str], status: str, expires_at: Optional[datetime] = None,
           reasons: Any = None, action_id: Optional[int] = None, snoozed_until: Optional[datetime] = None,
-          outcome: Optional[str] = None, exchange: Optional[str] = None) -> Dict[str, Any]:
+          outcome: Optional[str] = None, exchange: Optional[str] = None, legs: Any = None) -> Dict[str, Any]:
     e, s, t = _num(entry), _num(stop), _num(target)
     return {
         "id": f"{source}:{num}", "at": _iso(at), "symbol": str(symbol or "").upper(), "exchange": (exchange or "NSE").upper(),
@@ -167,6 +167,8 @@ def _item(*, source: str, num: int, at: datetime, symbol: Any, direction: Any, s
         "source": {"kind": kind, "name": name}, "mode": mode, "status": status, "expires_at": _iso(expires_at),
         "snoozed_until": _iso(snoozed_until), "reasons": _reasons(reasons), "action_id": action_id,
         "outcome": (outcome or None) and str(outcome)[:300],
+        # M55 T2: an option / structure proposal's legs in order words - only on his own proposal (it is his own order).
+        "legs": [str(v)[:200] for v in legs if isinstance(v, str)][:8] if isinstance(legs, list) else [],
         "_key": (_utc(at), RANK[source], num),
     }
 
@@ -212,7 +214,8 @@ def _from_action(row: AiActionRecord, now: datetime, mode: str = "PAPER") -> Dic
                  entry=ev.get("proposal_price"), stop=ev.get("stop_loss"), target=ev.get("target1"), rr=ev.get("risk_reward"),
                  kind=kind, name=name, mode=mode,         # LIVE asks for the authenticator on approve (the endpoint's own rule)
                  status=action_status(row, now), expires_at=row.expires_at, reasons=signal.get("reasons"), action_id=row.id,
-                 snoozed_until=row.snoozed_until, outcome=row.result or row.decision_note, exchange=ev.get("exchange"))
+                 snoozed_until=row.snoozed_until, outcome=row.result or row.decision_note, exchange=ev.get("exchange"),
+                 legs=ev.get("leg_lines"))
 
 
 def _from_intent(row: ExecutionIntentRecord) -> Dict[str, Any]:

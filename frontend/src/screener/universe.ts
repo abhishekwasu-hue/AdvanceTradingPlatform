@@ -37,7 +37,7 @@ export const DEFAULT_CHOICE = `sys:${DEFAULT_KEY}`;
 export interface UniverseList { key: string; name: string; count: number }
 export interface UniverseGroup { group: string; label: string; lists: UniverseList[] }
 export interface BatchPlan { size: number; per_minute: number; per_second: number; max_symbols: number }
-export interface UniversesResponse { default_key: string; groups: UniverseGroup[]; batch: BatchPlan }
+export interface UniversesResponse { default_key: string; groups: UniverseGroup[]; batch: BatchPlan; fallback?: boolean }
 export interface UniverseSymbols { key: string; name: string; symbols: string[]; truncated: boolean; source_count: number }
 /** A batch's broker calls (and the ones refused for want of a token), so the page paces the next batch. */
 export interface BatchBudget { broker_calls: number; refused: number; per_minute: number }

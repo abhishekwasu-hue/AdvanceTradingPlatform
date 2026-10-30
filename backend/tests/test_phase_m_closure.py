@@ -22,6 +22,8 @@ from tests.test_trading_worker import BAR_TS, OPEN_NOW, _deploy, _FakeBroker, _f
 from tests.test_trading_worker import _tenant as _worker_tenant
 from tests.utils import make_series, noisy_uptrend
 
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
+
 
 def _run(coro):
     return asyncio.run(coro)

@@ -36,7 +36,7 @@ from tests.test_z3_members import member
 URL = "/api/signals/feed"
 UTC = timezone.utc
 ITEM_KEYS = {"id", "at", "symbol", "exchange", "direction", "setup", "entry", "stop", "target", "rr", "source", "mode", "status",
-             "expires_at", "snoozed_until", "reasons", "action_id", "outcome"}
+             "expires_at", "snoozed_until", "reasons", "action_id", "outcome", "legs"}
 
 
 def _run(coro):

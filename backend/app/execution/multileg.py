@@ -100,7 +100,11 @@ async def execute_structure(
     idempotency_key: str, broker: Optional[BrokerInterface] = None, quote_broker: Optional[BrokerInterface] = None,
     deployment_id: Optional[int] = None, risk_config: Optional[RiskConfig] = None, account_id: Optional[int] = None,
     underlying_exit: bool = False, holding: str = "INTRADAY",
+    origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: int | None = None,
 ) -> StructureResult:
+    """M55 T2: `origin` / `approval_action_id` as on `execute_signal_for_user` - "approval" with the id of an APPROVED
+    entry proposal (app/execution/approval.py::execute_entry) is the only way a structure passes approval-only mode;
+    the default is the refusing "automatic"."""
     started = time.perf_counter()
     # M55 T1: only a defined-risk credit structure is ever held for days (SWING); anything else stays INTRADAY.
     held = holding == "SWING" and can_hold_for_days(structure.strategy)
@@ -129,9 +133,11 @@ async def execute_structure(
 
     refusals = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
                                     broker_name=getattr(broker, "name", None) if broker is not None else None)
-    # Z3 / BT2: a structure is never proposed for approval (Phase 0), so under approval-only mode it is always refused.
-    gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id, origin=approval_gate.ORIGIN_AUTOMATIC,
-                                            approval_action_id=None)
+    # Z3 / BT2 + M55 T2: under approval-only mode a structure passes only as an APPROVED entry proposal's execution
+    # (origin "approval" with its id, checked against the database); every other caller is refused.
+    gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id,
+                                            origin=origin if origin == approval_gate.ORIGIN_APPROVAL else approval_gate.ORIGIN_AUTOMATIC,
+                                            approval_action_id=approval_action_id if origin == approval_gate.ORIGIN_APPROVAL else None)
     if gate:
         refusals.insert(0, gate)
     ban, _ = await fo_limits.entry_refusal(session, signal.symbol, signal.timestamp)   # D7: F&O ban on the underlying

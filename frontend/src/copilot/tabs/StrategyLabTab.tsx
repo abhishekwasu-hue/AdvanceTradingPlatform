@@ -1,7 +1,7 @@
 import { FlaskConical, Gauge, Layers, MessageSquareText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
-import { DataSourceBar, useCandleSource } from "../../components/DataSource";
+import { DataSourceBar, SampleChip, useCandleSource } from "../../components/DataSource";
 import { Badge, Button, Input, Select } from "../../components/primitives";
 import type { OHLCVBar, Regime, StrategistRequestParsed, StrategistResult } from "../../types";
 import { useAiTask } from "../aiTask";
@@ -148,7 +148,7 @@ export default function StrategyLabTab() {
           <Button variant="primary" icon={<Layers size={15} />} disabled={task.busy || !symbol.trim()} onClick={() => void run()} data-testid="lab-run">{t("lab.run")}</Button>
           {estimate && <CostChip tokens={estimate.tokens} inr={estimate.inr} estimate />}
         </div>
-        {source.mode === "sample" && <p className="text-xs text-warn">{t("lab.sampleNote")}</p>}
+        {source.mode === "sample" && <p className="flex items-center gap-2 text-xs text-warn"><SampleChip />{t("lab.sampleNote")}</p>}
         <AiProgress state={task.state} onCancel={task.cancel} onRetry={() => void run()} />
         <PrivacyNote compact />
       </TiltCard>

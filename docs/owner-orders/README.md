@@ -58,6 +58,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Charts + Terminal consolidation (30 Oct, + addendum) | ATP_ORDER_CT_1.md | CT-1 (Terminal parts in TERM-2) | filed |
 | - | Full ATP review (30 Oct) | ../reviews/ATP_FULL_REVIEW.md, ../design/REV1_PLAN.md | REV-1 | approved 30 Oct; strategy-test additions S1-S6 |
 | - | M55 full audit response (30 Oct; text kept private - security) | owner upload / private repo | M55 | approved 30 Oct, in progress |
+| - | Sidebar show/hide + Terminal panel resizing (30 Oct) | ATP_ORDER_M57_M58.md | M57, M58 | not started |
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

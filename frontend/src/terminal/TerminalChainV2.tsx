@@ -15,7 +15,7 @@ import type { TerminalSpot } from "./spot";
  * opens the same action sheet (Buy / Sell / Add to basket / Alert / Chart) through the page's chain trading layer; a
  * strike opens the same row details.
  */
-export function TerminalChainV2({ symbol, chain, spot, prevClose, prefs, onPrefs, trading }: {
+export function TerminalChainV2({ symbol, chain, spot, prevClose, prefs, onPrefs, trading, areaMarks }: {
   symbol: string;
   chain: Pick<OptionChainData, "live" | "loading" | "problem" | "expiry">;
   spot: TerminalSpot | null;
@@ -23,6 +23,8 @@ export function TerminalChainV2({ symbol, chain, spot, prevClose, prefs, onPrefs
   prefs: ColumnPrefs;
   onPrefs: (prefs: ColumnPrefs) => void;
   trading: { onPickLeg?: (row: ChainRow, side: "call" | "put") => void; held: ReadonlySet<string>; centreSuffix: string };
+  /** TERM-2 R3 (flag term_strike_area): each short strike's distance to the nearest area. */
+  areaMarks?: ReadonlyMap<string, string>;
 }) {
   const [picked, setPicked] = useState<number | null>(null);
   const live = chain.live;
@@ -33,7 +35,7 @@ export function TerminalChainV2({ symbol, chain, spot, prevClose, prefs, onPrefs
       <div className="flex justify-end"><ColumnsMenuV2 prefs={prefs} onChange={onPrefs} /></div>
       <section aria-label="Chain" data-block="chain" className="relative">
         <ChainLadderV2 symbol={symbol} live={live} loading={chain.loading} problem={chain.problem} prefs={prefs}
-          centreSuffix={trading.centreSuffix} onPick={(r) => setPicked(r.strike)} onPickLeg={trading.onPickLeg} held={trading.held} />
+          centreSuffix={trading.centreSuffix} onPick={(r) => setPicked(r.strike)} onPickLeg={trading.onPickLeg} held={trading.held} areaMarks={areaMarks} />
       </section>
       <RowDetailsV2 row={row} atm={live?.summary.atm_strike ?? null} underlying={symbol} onClose={() => setPicked(null)} />
     </div>

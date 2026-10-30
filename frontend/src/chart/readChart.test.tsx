@@ -67,6 +67,7 @@ describe("AUD-T5 Read this chart", () => {
 
   it("the toolbar button shows only with the read_chart flag", () => {
     expect(pageSource).toContain('features.on("read_chart")');
-    expect(pageSource).toContain('aria-label="Read this chart"');
+    // CT-1 C1: the button is an action of the one ChartToolbar (an icon from 768 px, a row under More on a phone).
+    expect(pageSource).toMatch(/readOn && readTf \? \[\{ id: "read", label: "Read this chart"/);
   });
 });

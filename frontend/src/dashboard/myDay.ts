@@ -21,6 +21,8 @@ export interface MyDayPosition {
   chip: MyDayChip | null; chip_label: string | null; room_left_pct: number | null; chip_text: string | null;
   expiry: string | null; expiry_sessions: number | null; expiry_text: string | null;
   area: MyDayArea | null; area_text: string;
+  /** TERM-2 R3: the held option's strike and right from the instrument master (null for anything else). */
+  strike?: number | null; right?: string | null;
 }
 
 export interface MyDay {

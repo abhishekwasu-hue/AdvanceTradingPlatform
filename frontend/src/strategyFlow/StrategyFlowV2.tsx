@@ -14,6 +14,7 @@ import { paperBotPathFor } from "../strategyTemplates/link";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2 } from "../trading/PartsV2";
 import type { BacktestResult, ConditionOperator, CustomStrategyResponse, IndicatorName, OHLCVBar } from "../types";
 import { Chip, FilterChip } from "../ui/Chip";
+import { AdvancedFold } from "../ui/AdvancedFold";
 import { Combobox } from "../ui/Combobox";
 import { Details } from "../ui/Details";
 import { PageFootnote, Signed } from "../ui/numbersFirst";
@@ -24,7 +25,7 @@ import { formatINR, formatNumber } from "../ui/format";
 import { useFeatures } from "../ui/useFeatures";
 import {
   BLOCK_PRESETS, EXPIRIES, FLOW_TIMEFRAMES, INDICATORS, INDICATOR_LABEL, NEEDS_MULTIPLIER, NEEDS_PERIOD, OPERATORS, OPERATOR_WORDS, SOON_BLOCKS,
-  START_CARDS, STEPS, STRIKES, STRUCTURES, SYMBOL_CHOICES, SYMBOL_LABEL, TIMEFRAME_WORDS, blockOpen, blockWords, emptyFlow, entryProblems,
+  START_CARDS, STEPS, STRIKES, STRUCTURES, SYMBOL_CHOICES, SYMBOL_LABEL, TIMEFRAME_WORDS, blockOpen, blockWords, emptyFlow, entryProblems, higherTimeframes, atrLengthMissing,
   exitProblems, flowConfig, isOption, isSpread, marketProblems, optionBacktest, paperContract, paperSymbol, resultSummary, sidesOf, withCard,
   withDraft, type FlowBlock, type FlowHandoff, type FlowOperand, type FlowSide, type FlowState, type StepKey,
 } from "./model";
@@ -306,7 +307,7 @@ function EntryStep({ flow, setFlow, template }: { flow: FlowState; setFlow: SetF
             {flow.blocks.map((b, i) => b.side !== side ? null : (
               <li key={i}>
                 {editing === i
-                  ? <BlockEditor block={b} onDone={(nb) => { update(i, nb); setEditing(null); }} onRemove={() => { update(i, null); setEditing(null); }} />
+                  ? <BlockEditor block={b} baseTimeframe={flow.timeframe} onDone={(nb) => { update(i, nb); setEditing(null); }} onRemove={() => { update(i, null); setEditing(null); }} />
                   : (
                     <button type="button" data-block-chip={blockOpen(b) ? "open" : "set"} onClick={() => setEditing(i)}
                       className={`flex min-h-11 w-full items-center justify-between gap-space-2 rounded-control border px-space-3 py-space-2 text-left text-t14 ${blockOpen(b) ? "border-warn" : "border-border"} hover:bg-surface-2`}>
@@ -342,9 +343,16 @@ function EntryStep({ flow, setFlow, template }: { flow: FlowState; setFlow: SetF
 const numText = (n: number | null) => (n === null ? "" : String(n));
 const numOf = (raw: string): number | null => { const t = raw.trim(); if (!t) return null; const n = Number(t); return Number.isFinite(n) ? n : null; };
 
-function OperandFields({ op, onChange, legend, allowValue }: { op: FlowOperand; onChange: (o: FlowOperand) => void; legend: string; allowValue: boolean }) {
-  const ids = { ind: useId(), period: useId(), mult: useId(), value: useId() };
+function OperandFields({ op, onChange, legend, allowValue, baseTimeframe }: {
+  op: FlowOperand; onChange: (o: FlowOperand) => void; legend: string; allowValue: boolean; baseTimeframe: string | null;
+}) {
+  const ids = { ind: useId(), period: useId(), mult: useId(), value: useId(), htf: useId() };
   const options = useMemo(() => INDICATORS.map((i) => ({ value: i, label: INDICATOR_LABEL[i] })), []);
+  // SB-UX SU7: reading this operand on a higher timeframe is an Advanced choice (closed); "Same as the strategy" by default.
+  const higher = higherTimeframes(baseTimeframe);
+  const htfOptions = [{ value: "", label: "Same as the strategy" },
+    ...higher.map((tf) => ({ value: tf, label: TIMEFRAME_WORDS[tf] ?? tf })),
+    ...(op.timeframe && !higher.includes(op.timeframe) ? [{ value: op.timeframe, label: `${TIMEFRAME_WORDS[op.timeframe] ?? op.timeframe} (not above the strategy's)`, disabled: true }] : [])];
   return (
     <fieldset className="space-y-space-2">
       <legend className={LABEL}>{legend}</legend>
@@ -377,25 +385,35 @@ function OperandFields({ op, onChange, legend, allowValue }: { op: FlowOperand; 
               <input id={ids.mult} inputMode="decimal" className={FIELD} value={numText(op.multiplier)} onChange={(e) => onChange({ ...op, multiplier: numOf(e.target.value) })} />
             </div>
           )}
+          {higher.length > 0 && (
+            <AdvancedFold id="operand-timeframe" title="Advanced: higher timeframe" className="w-full">
+              <div className="max-w-64">
+                <label htmlFor={ids.htf} className={LABEL}>Read it on</label>
+                <Combobox id={ids.htf} label="Read it on" value={op.timeframe ?? ""} options={htfOptions}
+                  onChange={(v) => onChange({ ...op, timeframe: v || null })} />
+                <p className="mt-space-1 text-t12 text-fg-muted">Completed bars of that timeframe only.</p>
+              </div>
+            </AdvancedFold>
+          )}
         </div>
       )}
     </fieldset>
   );
 }
 
-function BlockEditor({ block, onDone, onRemove }: { block: FlowBlock; onDone: (b: FlowBlock) => void; onRemove: () => void }) {
+function BlockEditor({ block, baseTimeframe, onDone, onRemove }: { block: FlowBlock; baseTimeframe: string | null; onDone: (b: FlowBlock) => void; onRemove: () => void }) {
   const [b, setB] = useState(block);
   return (
     <div className="space-y-space-3 rounded-control border border-brand px-space-3 py-space-3" data-block-editor>
       <p className="text-t14 font-medium text-fg">{blockWords(b)}</p>
-      <OperandFields legend="This" op={b.left} allowValue={false} onChange={(left) => setB({ ...b, left })} />
+      <OperandFields legend="This" op={b.left} allowValue={false} baseTimeframe={baseTimeframe} onChange={(left) => setB({ ...b, left })} />
       <div>
         <span className={LABEL}>Comparison</span>
         <div className="flex flex-wrap gap-space-2">
           {OPERATORS.map((o) => <FilterChip key={o} selected={b.operator === o} onClick={() => setB({ ...b, operator: o as ConditionOperator })}>{OPERATOR_WORDS[o]}</FilterChip>)}
         </div>
       </div>
-      <OperandFields legend="That" op={b.right} allowValue onChange={(right) => setB({ ...b, right })} />
+      <OperandFields legend="That" op={b.right} allowValue baseTimeframe={baseTimeframe} onChange={(right) => setB({ ...b, right })} />
       <div className="flex flex-wrap gap-space-2">
         <button type="button" className={BUTTON_SECONDARY} onClick={() => onDone(b)} data-block-done>Done</button>
         <button type="button" className="inline-flex min-h-11 items-center px-space-2 text-t14 font-medium text-down hover:underline md:min-h-0" onClick={onRemove}>Remove</button>
@@ -426,14 +444,19 @@ function ExitStep({ flow, setFlow }: { flow: FlowState; setFlow: SetFlow }) {
     <>
       {flow.engine === "custom" && (
         <CardV2 title="Exits: your own values" testId="flow-exits">
-          <div className="grid grid-cols-2 gap-space-3 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-space-3 md:grid-cols-4">
             <NumberBox label="Stop (x ATR)" value={ex.stop} onChange={(stop) => setEx({ stop })} />
-            <NumberBox label="ATR length" value={ex.atrPeriod} placeholder="With a stop" onChange={(atrPeriod) => setEx({ atrPeriod })} />
             <NumberBox label="Target 1 (R)" value={ex.target1} onChange={(target1) => setEx({ target1 })} />
             <NumberBox label="Target 2 (R)" value={ex.target2} onChange={(target2) => setEx({ target2 })} />
             <NumberBox label="Minimum R:R" value={ex.minRr} onChange={(minRr) => setEx({ minRr })} />
           </div>
           <p className="mt-space-2 text-t12 text-fg-muted" data-testid="sb-exits-own">A blank box is off: no stop-loss, no target, no minimum R:R.</p>
+          {/* SB-UX SU7: the ATR length behind the stop is an Advanced choice (closed). */}
+          <AdvancedFold id="exit-atr" className="mt-space-3" openWhen={atrLengthMissing(ex)}>
+            <div className="max-w-48">
+              <NumberBox label="ATR length" value={ex.atrPeriod} placeholder="With a stop" onChange={(atrPeriod) => setEx({ atrPeriod })} />
+            </div>
+          </AdvancedFold>
         </CardV2>
       )}
       <CardV2 title="What to trade" testId="flow-options">

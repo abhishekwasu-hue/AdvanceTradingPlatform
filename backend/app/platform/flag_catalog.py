@@ -129,6 +129,14 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "screener_venues": FlagInfo("Refuse fields a venue does not carry", "screens", "clearer errors", ("screener_v2",), "", "behind_the_scenes"),
     "screener_ownership": FlagInfo("Promoter / FII / DII stakes and events in screens", "screens", "fields", ("screener_v2",), "ownership data", "unfinished"),
     "screener_waves": FlagInfo("Wave count in screens (running wave, type, alternate, clarity, wave levels and lines)", "screens", "builder functions", ("screener_v2",), "", "unfinished"),
+    "term_margin_pair": FlagInfo("Margin required and available in the basket, re-read on every lot change", "trading",
+                                 "a margin pair in the Terminal basket", ("ui_v2", "terminal"), "your broker's margin where the broker offers it, else an estimate", "unfinished"),
+    "term_roll": FlagInfo("Roll a position or strategy to the next weekly expiry, as a preview you confirm", "trading",
+                          "a Roll button on Terminal positions", ("ui_v2", "terminal", "paper_account"), "", "unfinished"),
+    "term_strike_area": FlagInfo("Distance from each short strike to the nearest area", "trading",
+                                 "an area mark on short positions and the Terminal chain", ("ui_v2", "terminal", "market_zones"), "stored areas", "unfinished"),
+    "term_whatif": FlagInfo("What-if payoff: your open positions plus the basket's new legs", "trading",
+                            "a combined payoff in the Terminal basket", ("ui_v2", "terminal", "paper_account"), "", "unfinished"),
     "terminal": FlagInfo("The Terminal: chart, option chain, order panel, positions and orders on one screen, with saved layouts and a status bar",
                          "trading", "a Terminal entry under Trading", ("ui_v2",),
                          "the data hub for live prices; smart execution for multi-leg orders", "ready"),
@@ -205,6 +213,10 @@ FLAG_GROUP: dict[str, str] = {
     # Orders and positions
     "smart_execution": "orders",
     "terminal": "orders",
+    "term_margin_pair": "orders",
+    "term_roll": "orders",
+    "term_strike_area": "orders",
+    "term_whatif": "orders",
     "multi_account": "orders",
     "broker_app_links": "orders",
     "expiry_checklist": "orders",
@@ -336,6 +348,7 @@ FINISH: Dict[str, str] = {
     "strategy_lab_pine": "FN3", "daily_rhythm": "P2-4 / FN7", "chart_contracts": "DATA-H / FN7",
     "chart_futures_basis": "DATA-H / FN7", "help_centre": "P2-6 (early, once the support contact is set)",
     "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",
+    "term_roll": "TERM-2 R1", "term_whatif": "TERM-2 R2", "term_strike_area": "TERM-2 R3", "term_margin_pair": "TERM-2 R4",
 }
 KEEP_OFF: Dict[str, str] = {
     "chart_analyze_strikes": "strikes next to a setup read close to advice; after P2-5 is on",

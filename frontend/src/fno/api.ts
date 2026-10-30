@@ -4,7 +4,7 @@
  * order through the ordinary pipeline. Exits use the existing `api.exitNow` (never blocked, ADR-0004).
  */
 import { request } from "../api/client";
-import type { Evaluation } from "../optionsBuilder/model";
+import type { Evaluation, Leg as BuilderLeg } from "../optionsBuilder/model";
 
 export type Side = "BUY" | "SELL";
 export type Right = "CE" | "PE";
@@ -172,6 +172,9 @@ export interface BasketLegAsk {
 }
 
 export interface BasketAsk { legs: BasketLegAsk[]; spot?: number | null; product?: Product }
+/** TERM-2 step 4: the evaluate call only - `with_open` (R2 what-if, flag term_whatif) and `margin_pair` (R4, flag
+ *  term_margin_pair). The server ignores each while its flag is off; the preview and execute bodies never carry them. */
+export interface EvaluateAsk extends BasketAsk { with_open?: boolean; margin_pair?: boolean }
 
 export interface MarginLine { value: number | null; estimated: true; basis: string; note?: string }
 export interface HedgeMargin {
@@ -183,10 +186,25 @@ export interface HedgeMargin {
   note: string;
 }
 
+/** TERM-2 R2: the combined payoff of his own open PAPER legs (same underlying + expiry) and the basket's new legs - the
+ *  same engine, one server call. `open_legs` are the open legs as the payoff chart draws them (ids "open-<trade id>"). */
+export interface WhatIfOpen { trade_id: number; label: string; side: Side; lots: number; price: number | null }
+export type WhatIf =
+  | (Evaluation & { ok: true; errors: string[]; open: WhatIfOpen[]; open_legs: Omit<BuilderLeg, "premium_source" | "priced_for">[] })
+  | { ok: false; open: WhatIfOpen[]; errors: string[] };
+
+/** TERM-2 R4: margin required (the broker's basket margin through his own session, else ATP's labelled estimate) and
+ *  available (the Terminal status funds). */
+export interface MarginPair {
+  source: "broker" | "estimate"; estimate: boolean; label: string; required: number | null; without_hedge: number | null;
+  benefit: number | null; available: number | null; available_note: string; free_after: number | null; notes: string[];
+}
+
 /** The basket's numbers: the Options Builder's evaluation plus the lot sizes, labels and the hedge margin. */
 export type BasketNumbers = Evaluation & {
   ok: true; errors: string[]; margin: Evaluation["margin"] & { hedge: HedgeMargin };
   lot_sizes: (number | null)[]; labels: string[]; order: number[];
+  whatif?: WhatIf; margin_pair?: MarginPair;
 };
 export type BasketEvaluation = BasketNumbers | { ok: false; errors: string[] };
 
@@ -292,7 +310,7 @@ export type BasketBrokerLink =
 const post = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) });
 
 export const basketApi = {
-  evaluate: (ask: BasketAsk) => request<BasketEvaluation>("/paper/fno/basket/evaluate", post(ask)),
+  evaluate: (ask: EvaluateAsk) => request<BasketEvaluation>("/paper/fno/basket/evaluate", post(ask)),
   settings: (underlying: string) => request<BasketSettings>(`/paper/fno/basket/settings?${q({ underlying })}`),
   preview: (ask: BasketAsk) => request<BasketPreview>("/paper/fno/basket/preview", post(ask)),
   execute: (ask: BasketAsk & { basket_ref: string; exits?: StrategyExitsAsk | null }) => request<BasketResult>("/paper/fno/basket/execute", post(ask)),

@@ -122,12 +122,12 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/__screenshots__/fno8b3-journal-v2-390-light.png": "2b430ee531d3413f13a5859303c6989631aaf9bc1a6b4143b90d100f0301dc3e",
     # F&O 8b slice 4: the journal card with its chart snapshot drawn from a made-up price history (e2e/fno8b-slice4-v2.e2e.ts);
     # re-pin after regenerating them
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-1440-dark.png": "cbe507c78c808b148dbe627da1f538f6e959e0465c40a8e6c38d58281a95b34b",
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-1440-light.png": "fcc80a143b2d2d3cde0644334545c8692404fe1aec83b763baccc0d5e77eb280",
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-dark.png": "d566c5205c9346c547c3c227eec543fe69eb671c5c6f864edbe9d82a4c7424b0",
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-light.png": "9bc53ae88b09e63466d330889325a72ac84760304e1e68cea75d66e3c72b34af",
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-dark.png": "db77fcc3cec66d35b48d4315a7d5a8dbdcf6a23daf9a7303503f47177cd32216",
-    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-light.png": "9f5aba5aa60a59310b5d1c248dc4ebe350ec90c73a793e9c957425861e416dcc",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-1440-dark.png": "5d8f83642a75107ccafeafa40ac21d2eb70c222599c5edb534fc827f91b935e0",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-1440-light.png": "e1dff6ae447cf32c1371c6d02005e42bcda010facf38bd937b16eb59184b5576",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-dark.png": "f29332dbb977c86bd8eb624c62d7163631f39865ec8dd994997574f09136a702",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-light.png": "177ad3397c620544cce95188ae463e14e1a8b3437807a67d8d4a33566a3bd335",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-dark.png": "e64acfe2d5604b173a9939193ac2746ecaea09513c1ccdf155b8a857d1be76c9",
+    "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-light.png": "62f83981eed0910df2678d1f604a7dcb9c5b71cd63f9232470eec992294dca87",
     # ATP-generated goldens on synthetic, seeded inputs (each regeneration site names this list)
     "backend/tests/fixtures/charts/pa_layer_golden.json": "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
     "backend/tests/fixtures/charts/study_parity.json": "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",

@@ -1,4 +1,5 @@
 import type { StrategyDraft, DraftOperand } from "../copilot/strategyDraft";
+import { INDICATOR_LABEL } from "../ui/strategyLabels";
 import type {
   BacktestResult, Condition, ConditionOperator, ContractRules, CustomStrategyConfig, ExpiryRule, IndicatorName, OptionBacktestConfig,
   Operand, StrikeRule, Trade,
@@ -84,13 +85,8 @@ export const NEEDS_PERIOD: ReadonlySet<string> = new Set(["EMA", "SMA", "RSI", "
   "BB_UPPER", "BB_MID", "BB_LOWER", "VOLUME_SMA", "OR_HIGH", "OR_LOW"]);
 export const NEEDS_MULTIPLIER: ReadonlySet<string> = new Set(["SUPERTREND", "BB_UPPER", "BB_MID", "BB_LOWER"]);
 
-/** Plain names for the engine's indicators (no raw ids on the page). */
-export const INDICATOR_LABEL: Record<IndicatorName, string> = {
-  EMA: "EMA", SMA: "SMA", RSI: "RSI", ADX: "ADX", PLUS_DI: "+DI", MINUS_DI: "-DI", ATR: "ATR", SUPERTREND: "Supertrend",
-  CLOSE: "Close", OPEN: "Open", HIGH: "High", LOW: "Low", VWAP: "VWAP", DAY_OPEN: "Today's open", OR_HIGH: "Opening range high",
-  OR_LOW: "Opening range low", PDH: "Previous day high", PDL: "Previous day low", PDC: "Previous day close", BB_UPPER: "Bollinger upper",
-  BB_MID: "Bollinger middle", BB_LOWER: "Bollinger lower", VOLUME: "Volume", VOLUME_SMA: "Average volume",
-};
+/** Plain names for the engine's indicators (no raw ids on the page): the one shared map (src/ui/strategyLabels.ts). */
+export { INDICATOR_LABEL };
 export const INDICATORS = Object.keys(INDICATOR_LABEL) as IndicatorName[];
 
 export const OPERATOR_WORDS: Record<ConditionOperator, string> = {
@@ -225,7 +221,7 @@ export function exitProblems(exits: FlowExits, options: FlowOptions, engine: "cu
     for (const [v, what] of [[stop, "The stop"], [t1, "Target 1"], [t2, "Target 2"], [minRr, "The minimum R:R"]] as [number | null, string][]) {
       if (v !== null && !(v > 0)) out.push(`${what} must be a number above zero, or blank (off).`);
     }
-    if (stop !== null && whole(exits.atrPeriod, 500) === null) out.push("Your stop is in ATRs: write the ATR length (a whole number).");
+    if (stop !== null && whole(exits.atrPeriod, 500) === null) out.push("Your stop is in ATRs: write the ATR length (a whole number) under Advanced.");
     if (stop === null && atr !== null) out.push("The ATR length is only used with a stop: set a stop, or leave both blank.");
     if ((t1 !== null || t2 !== null) && stop === null) out.push("A target in R needs your stop-loss: set a stop, or leave the target blank.");
     if (t1 !== null && t2 !== null && t2 < t1) out.push("Target 2 cannot be below target 1.");
@@ -316,7 +312,27 @@ export function entryProblems(flow: FlowState): string[] {
     if (!flow.blocks.some((b) => b.side === s)) out.push(`Add at least one ${s} entry block.`);
   }
   if (flow.blocks.some((b) => sidesOf(flow.side).includes(b.side) && blockOpen(b))) out.push("A block still needs your value: tap it to fill it in.");
+  const allowed = higherTimeframes(flow.timeframe);
+  const wrongTf = (op: FlowOperand) => op.type === "indicator" && op.timeframe !== null && !allowed.includes(op.timeframe);
+  if (flow.blocks.some((b) => sidesOf(flow.side).includes(b.side) && (wrongTf(b.left) || wrongTf(b.right)))) {
+    out.push("A block reads a timeframe that is not above the strategy's own: change it under the block's Advanced.");
+  }
   return out;
+}
+
+/** SB-UX SU7: the higher timeframes an operand may be read on (completed bars only) - those above the strategy's own;
+ * none for a Daily strategy (the engine resamples intraday bars only). */
+const HTF_MINUTES: [string, number][] = [["5min", 5], ["15min", 15], ["30min", 30], ["60min", 60]];
+const BASE_MINUTES: Record<string, number> = { "1min": 1, "3min": 3, "5min": 5, "15min": 15, "30min": 30, "60min": 60 };
+/** The ATR length a stop needs is still missing: the exits' Advanced fold opens by itself. */
+export function atrLengthMissing(exits: FlowExits): boolean {
+  return ownValue(exits.stop) !== null && whole(exits.atrPeriod, 500) === null;
+}
+
+export function higherTimeframes(base: string | null): string[] {
+  const m = base ? BASE_MINUTES[base] : undefined;
+  if (m === undefined) return [];
+  return HTF_MINUTES.filter(([, n]) => n > m).map(([tf]) => tf);
 }
 
 /** The no-code strategy the trader saves, or null while any step is open. Blank exits stay off (null). */

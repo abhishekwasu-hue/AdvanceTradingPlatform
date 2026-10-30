@@ -1,6 +1,6 @@
-import { ListTree, Maximize2, Minimize2, Redo2, ScanSearch, ScanText, Undo2 } from "lucide-react";
+import { LayoutGrid, ListTree, Maximize2, Minimize2, ScanSearch, ScanText, Square } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { DrawingKind } from "../charting/drawings";
@@ -19,21 +19,18 @@ import { pathFor, type PageProps } from "../routes";
 import { chartsPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
 import { SubTabs } from "../ui/SubTabs";
-import { TimeframePicker } from "../ui/TimeframePicker";
-import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
+import { recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import { useFeatures } from "../ui/useFeatures";
 import PageDishV2 from "../growth/PageDishV2";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
-import { ChartSettingsPopover } from "./ChartSettingsPopover";
+import { ChartToolbar, toolbarIconBtn, type ToolbarAction } from "./ChartToolbar";
 import ChartV2 from "./ChartV2";
-import { CHART_TYPES_V2, CHART_TYPE_LABELS_V2, type ChartTypeV2 } from "./chartCore";
-import { DrawingMenu, DrawingRail } from "./DrawingRail";
+import { DrawingRail } from "./DrawingRail";
 import { placeHint } from "./drawingRail";
 import {
   addressTimeframe, chartsSymbol, drawingNote, marketChip, toolbarMarketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, volumeLabelFor,
   type ChartsView,
 } from "./chartsPage";
-import { IndicatorsMenu } from "./IndicatorsMenu";
 import { toggle as toggleIndicator } from "./indicatorsModel";
 import { CandlePool, START_PARAMS, startChartFrom } from "./multiChart";
 import MultiChartV2 from "./MultiChartV2";
@@ -47,13 +44,15 @@ import { ReadChartPanel, useReadChart } from "./ReadChartV2";
 import { readTimeframe } from "./readChart";
 import { WatchlistPanel } from "./WatchlistPanel";
 import type { WatchItem } from "./watchlistsV2";
-import { Combobox } from "../ui/Combobox";
 import { Skeleton } from "../components/primitives";
 
 /**
  * UI2-4b2 (UI v2 proposal §6, Charts page plan §3): the Charts page at `/charts` and `/charts/:symbol`, v2 only.
  * - Tab "Chart" (default): one large v2 chart (ChartV2) and one top bar - symbol, market state, timeframe, chart type,
  *   Indicators, undo / redo for drawings, chart settings, full screen (button, F, Escape).
+ * - CT-1 C1: the top bar is the one ChartToolbar (full mode; src/chart/ChartToolbar.tsx). CT-1 L1: on a phone it is one
+ *   line (Symbol · Timeframe · Indicators · Draw · More) and the page has one tab row (the hub tabs); Multi-chart is
+ *   then a More item, and the Multi-chart view has a "One chart" button back. From 768 px nothing changed.
  * - Tab "Multi-chart" (only while `chart_workspace` is on): UI2-4d, the CH5 workspace with a v2 chart per cell
  *   (MultiChartV2). Each tab reads nothing while the other shows; both keep their bars, and the cells' shared reads
  *   (one candle pool, one last-price hub) belong to the page, so switching tabs does not read everything again.
@@ -76,7 +75,6 @@ const FuturesChainV2 = lazy(() => import("../fno/FuturesChainV2"));
 const OverviewV2 = lazy(() => import("../fno/OverviewV2"));
 
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
-const iconBtn = cx("inline-flex min-h-11 min-w-11 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent md:min-h-9 md:min-w-9", focus);
 
 /** The market sessions (the app's one shared status read, every minute; UI2-4e) and the server's timeframes (read
  * once; a failed read offers the timeframes every server has, so the page never waits on it). */
@@ -200,6 +198,22 @@ export default function ChartsPageV2(_props: PageProps) {
   };
 
   const drawingText = drawingNote(tools?.view?.message) ?? placeHint(tools?.view?.tool, phone);
+  // CT-1 C1: the host's actions in the one ChartToolbar - icon buttons from 768 px, labelled rows under More on a phone.
+  const actions: ToolbarAction[] = [
+    // Analyze a chart (flag chart_analyze, off by default): a short way from the chart to the reading page.
+    ...(features.on("chart_analyze") && !fs.on ? [{ id: "analyze", label: "Analyze a chart", icon: <ScanSearch size={16} aria-hidden />, to: pathFor("chart-analyze") }] : []),
+    ...(readOn && readTf ? [{ id: "read", label: "Read this chart", title: reading ? "Hide the reading" : "Read this chart", moreLabel: reading ? "Hide the reading" : "Read this chart",
+      icon: <ScanText size={16} aria-hidden />, pressed: reading, testId: "read-chart-button", onClick: () => setReading((v) => !v) }] : []),
+  ];
+  const endActions: ToolbarAction[] = [
+    { id: "fullscreen", label: fs.on ? "Leave full screen" : "Full screen", title: fs.on ? "Leave full screen (Esc)" : "Full screen (F)", pressed: fs.on,
+      icon: fs.on ? <Minimize2 size={16} aria-hidden /> : <Maximize2 size={16} aria-hidden />, onClick: fs.toggle },
+    // The sheet is laid over the document, which full screen does not show: no sheet button in full screen.
+    ...(watchOn && (wide || !fs.on) ? [{ id: "watchlist", label: "Watchlist", title: wide ? (view.watchlist_open ? "Hide the watchlist" : "Show the watchlist") : "Open the watchlist",
+      pressed: wide ? view.watchlist_open : undefined, haspopup: wide ? undefined : "dialog" as const, icon: <ListTree size={16} aria-hidden />, onClick: toggleWatchlist }] : []),
+    // CT-1 L1: on a phone Multi-chart is a toolbar item (under More), not a second tab row; from 768 px the tab stays.
+    ...(multi && phone && !fs.on ? [{ id: "multi", label: "Multi-chart", icon: <LayoutGrid size={16} aria-hidden />, onClick: () => setTab("multi") }] : []),
+  ];
   const emptyText = data.loading || waiting ? "Loading prices…" : data.error ? "" : data.empty ?? `No prices for ${symbol} on this timeframe yet.`;
   // UI2-4d: a cell's "Open in Chart tab" - its symbol on the Chart tab, with its timeframe.
   const openChart = (sym: string, exch: string, tf: TimeframeId) => {
@@ -240,7 +254,8 @@ export default function ChartsPageV2(_props: PageProps) {
         </Suspense>
       )}
 
-      {multi && !fs.on && !hubView && (
+      {/* CT-1 L1: a phone has ONE tab row (the hub tabs); its Multi-chart is under the toolbar's More. */}
+      {multi && !fs.on && !hubView && !phone && (
         <SubTabs label="Charts" value={tab} onChange={setTab} className="sm:w-fit"
           items={[{ key: "chart", label: "Chart" }, { key: "multi", label: "Multi-chart" }] as const} />
       )}
@@ -254,55 +269,21 @@ export default function ChartsPageV2(_props: PageProps) {
       {tab === "chart" && !hubView && (
         <div className={cx("flex min-h-0 gap-space-3", fs.on && "flex-1")}>
           <section aria-label={`Chart of ${symbol}`} className="flex min-h-0 min-w-0 flex-1 flex-col rounded-panel border border-subtle bg-surface-1">
-            <div role="toolbar" aria-label="Chart controls" data-chart-toolbar data-tour="charts-toolbar"
-              className="relative flex flex-wrap items-center gap-x-space-2 gap-y-space-1 border-b border-subtle p-space-2">
-              {/* Phone: symbol and the icon buttons, then market state, type and Indicators, then the timeframes. */}
-              <SymbolPicker value={symbol} exchange={exchange} onPick={pick} storageKey={recentKeyFor(userId)} className="order-1 min-w-[8.5rem] flex-1 md:order-none md:w-44 md:flex-none" />
-              {shownChip && (
-                <span data-market={shownChip.open ? "open" : "closed"} className="order-3 inline-flex items-center gap-space-1 whitespace-nowrap rounded-pill border border-subtle px-space-2 py-space-1 text-t12 text-fg-muted md:order-none">
+            <ChartToolbar mode="full" label="Chart controls" tour="charts-toolbar" phone={phone}
+              symbol={{ value: symbol, exchange, onPick: pick, storageKey: recentKeyFor(userId) }}
+              status={shownChip && (
+                <span data-market={shownChip.open ? "open" : "closed"} className="inline-flex items-center gap-space-1 whitespace-nowrap rounded-pill border border-subtle px-space-2 py-space-1 text-t12 text-fg-muted">
                   <span aria-hidden className={cx("h-2 w-2 rounded-pill", shownChip.open ? "bg-up" : "bg-fg-muted")} />
                   {shownChip.text}
                 </span>
               )}
-              <div className="order-6 w-full md:order-none md:w-auto" data-tour="charts-timeframes">
-<TimeframePicker offered={offered} value={timeframe} onChange={(tf) => setView({ timeframe: tf })} typeToOpen
-                  favourites={prefs.prefs.timeframe_favourites} onFavourites={(next) => prefs.update({ timeframe_favourites: next })} />
-              </div>
-              <Combobox id="charts-type" label="Chart type" value={view.type} onChange={(v) => setView({ type: v as ChartTypeV2 })}
-                options={CHART_TYPES_V2.map((t) => ({ value: t, label: CHART_TYPE_LABELS_V2[t] }))} className="order-4 w-[7.5rem] md:order-none md:w-auto" />
-              <div className="order-5 md:order-none" data-tour="charts-indicators"><IndicatorsMenu state={indicatorState} on={features.on} onToggle={onIndicator} /></div>
-              <span className="order-2 ml-auto inline-flex items-center md:order-none">
-                <DrawingMenu tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
-                <button type="button" aria-label="Undo drawing" title="Undo (Ctrl+Z)" className={iconBtn}
-                  disabled={!tools?.view?.canUndo} onClick={() => void tools?.controller?.undo()}><Undo2 size={16} aria-hidden /></button>
-                <button type="button" aria-label="Redo drawing" title="Redo (Ctrl+Y)" className={iconBtn}
-                  disabled={!tools?.view?.canRedo} onClick={() => void tools?.controller?.redo()}><Redo2 size={16} aria-hidden /></button>
-                {/* Analyze a chart (flag chart_analyze, off by default): a short way from the chart to the reading page. */}
-                {features.on("chart_analyze") && !fs.on && (
-                  <Link to={pathFor("chart-analyze")} aria-label="Analyze a chart" title="Analyze a chart" className={iconBtn}>
-                    <ScanSearch size={16} aria-hidden />
-                  </Link>
-                )}
-                {readOn && readTf && (
-                  <button type="button" aria-label="Read this chart" title={reading ? "Hide the reading" : "Read this chart"} aria-pressed={reading}
-                    data-testid="read-chart-button" className={iconBtn} onClick={() => setReading((v) => !v)}>
-                    <ScanText size={16} aria-hidden />
-                  </button>
-                )}
-                <ChartSettingsPopover prefs={prefs.prefs} onChange={prefs.update} error={prefs.error} />
-                <button type="button" aria-label={fs.on ? "Leave full screen" : "Full screen"} title={fs.on ? "Leave full screen (Esc)" : "Full screen (F)"}
-                  aria-pressed={fs.on} className={iconBtn} onClick={fs.toggle}>
-                  {fs.on ? <Minimize2 size={16} aria-hidden /> : <Maximize2 size={16} aria-hidden />}
-                </button>
-                {/* The sheet is laid over the document, which full screen does not show: no sheet button in full screen. */}
-                {watchOn && (wide || !fs.on) && (
-                  <button type="button" aria-label="Watchlist" title={wide ? (view.watchlist_open ? "Hide the watchlist" : "Show the watchlist") : "Open the watchlist"}
-                    aria-pressed={wide ? view.watchlist_open : undefined} aria-haspopup={wide ? undefined : "dialog"} className={iconBtn} onClick={toggleWatchlist}>
-                    <ListTree size={16} aria-hidden />
-                  </button>
-                )}
-              </span>
-            </div>
+              timeframe={{ offered, value: timeframe, onChange: (tf) => setView({ timeframe: tf }), typeToOpen: true, tour: "charts-timeframes",
+                favourites: prefs.prefs.timeframe_favourites, onFavourites: (next) => prefs.update({ timeframe_favourites: next }) }}
+              chartType={{ id: "charts-type", value: view.type, onChange: (t) => setView({ type: t }) }}
+              indicators={{ state: indicatorState, on: features.on, onToggle: onIndicator }}
+              drawing={{ tools, symbol, hidden: view.drawings_hidden, onHidden: (h) => setView({ drawings_hidden: h }) }}
+              settings={{ prefs: prefs.prefs, onChange: prefs.update, error: prefs.error }}
+              actions={actions} endActions={endActions} />
             <div data-tour="charts-chart" className={cx("flex min-h-0", fs.on && "flex-1")}>
               <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
@@ -333,7 +314,13 @@ export default function ChartsPageV2(_props: PageProps) {
         <MultiChartV2 key={String(userId)} shown={tab === "multi"} pool={pool} ltpHub={ltpHub} livePush={pushOn}
           symbol={symbol} exchange={exchange} userId={userId} offered={offered} timeframesKnown={timeframes !== null}
           prefs={prefs.prefs} drawingsHidden={view.drawings_hidden} marketOpen={(ex) => marketChip(status, ex, now)?.open ?? null}
-          start={startChartFrom(params)} onStarted={clearStart} onOpenChart={openChart} />
+          start={startChartFrom(params)} onStarted={clearStart} onOpenChart={openChart}
+          leading={phone ? (
+            <button type="button" onClick={() => setTab("chart")} aria-label="Back to one chart" title="Back to one chart"
+              className={cx(toolbarIconBtn, "gap-space-1 border border-border px-space-2 text-t13 font-semibold text-fg")}>
+              <Square size={14} aria-hidden /> One chart
+            </button>
+          ) : undefined} />
       )}
       {watchOn && !wide && (
         <Sheet side="bottom" open={sheet} onOpenChange={setSheet} title="Watchlist">

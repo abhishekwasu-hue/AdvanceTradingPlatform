@@ -49,3 +49,16 @@ placement (DEF-0). Behind `terminal`; the current Terminal stays reachable under
   SymbolPicker lists symbols without options. CT-1 C6 (SymbolPicker everywhere, one universe) unifies both later.
 - Old Terminal: kept as `TerminalClassicV2` at /terminal/classic, linked from Settings › Advanced, until the owner's ✅.
 - Spot change %: from the Today strip's previous close (NIFTY / BANKNIFTY); other symbols show the spot without a change.
+
+## 5. Step 4 - R1-R4 (each behind its own flag, OFF by default; with `ui_v2` + `terminal`; PAPER first)
+
+| Item | Flag | Built as | Where |
+|---|---|---|---|
+| R1 Roll | `term_roll` (+ `paper_account`) | "Roll" on a PositionList row / group -> a preview (exit of the legs + the same strikes on the next listed expiry, new legs' credit and max loss from the ONE basket evaluate, roll net) -> one confirm: step 1 the EXISTING exit (Exit now; a basket's legs: the group exit), step 2 the new legs into the one basket for the user to review and place. Not atomic, said on screen; a "Roll half done" notice beside the incomplete-orders notice until the basket is placed or dismissed. A sold leg's stop stays blank (DEF-0). | backend app/paper/fno_term.py `roll_preview`, POST /api/paper/fno/roll/preview; frontend fno/roll.ts, fno/RollV2.tsx |
+| R2 What-if | `term_whatif` | `basket/evaluate` with `with_open`: the caller's own open PAPER legs on the same underlying + expiry (at their entry price) plus the new legs, one engine call; the basket draws the combined payoff by default with a "This basket" toggle | fno_term.whatif; BasketPanelV2 |
+| R3 Strike to area | `term_strike_area` | the My day read (GET /api/today/my-day, now also open with this flag; adds each option's master strike / right); a chip on the short row and an optional mark under the strike on the chain | fno/strikeArea.ts; ChainTableV2 `areaMarks` |
+| R4 Margin pair | `term_margin_pair` | `basket/evaluate` with `margin_pair`: required = the broker's basket margin through his own session where the adapter has it, else ATP's labelled estimate (smart_execution.margin_view); available = the status bar funds (terminal/status.py `funds_of`) | fno_term.margin_pair; BasketPanelV2 |
+
+Provisional choices (step 4): the roll's order is exit first, then the new legs (the basket places hedges first); a roll into a
+basket that already holds legs adds to them instead of replacing them; what-if values the open legs at their entry price (the
+book's own result at expiry); R3 is wired in the Terminal only (PositionList takes `areas` anywhere).

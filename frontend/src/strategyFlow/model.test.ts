@@ -4,8 +4,9 @@ import type { BacktestResult, Trade } from "../types";
 import {
   BLOCK_PRESETS, FLOW_TIMEFRAMES, START_CARDS, SOON_BLOCKS, blockOpen, blockWords, drawdownPct, emptyFlow, entryProblems, exitProblems, flowConfig,
   handoffFromState, marketProblems, optionBacktest, paperContract, paperSymbol, resultSummary, thin, tradeR, withCard, withDraft, withTestedContract,
-  type FlowState,
+  EMPTY_EXITS, INDICATOR_LABEL, atrLengthMissing, higherTimeframes, type FlowState,
 } from "./model";
+import { INDICATOR_LABEL as SHARED_LABELS } from "../ui/strategyLabels";
 import pageSource from "./StrategyFlowV2.tsx?raw";
 import paperSource from "../paperbot/PaperBotV2.tsx?raw";
 import pagesV2 from "../shell/pagesV2.ts?raw";
@@ -165,5 +166,35 @@ describe("wiring", () => {
     expect(ideaSource).toContain('navigate("/strategies/build"');
     expect(pageSource).toContain("api.draftStrategy");
     expect(pageSource).not.toMatch(/<select/);
+  });
+});
+
+describe("SU7 Advanced: higher timeframe per operand and the ATR length", () => {
+  it("offers only timeframes above the strategy's own; none for Daily", () => {
+    expect(higherTimeframes("1min")).toEqual(["5min", "15min", "30min", "60min"]);
+    expect(higherTimeframes("15min")).toEqual(["30min", "60min"]);
+    expect(higherTimeframes("60min")).toEqual([]);
+    expect(higherTimeframes("day")).toEqual([]);
+    expect(higherTimeframes(null)).toEqual([]);
+  });
+
+  it("holds the entry step while a block reads a timeframe not above the strategy's", () => {
+    const f = bullPutFlow();
+    const onHigher = (tf: string) => ({ ...f, blocks: f.blocks.map((b) => ({ ...b, right: { ...b.right, timeframe: tf } })) });
+    expect(entryProblems(onHigher("60min"))).toEqual([]);
+    expect(entryProblems(onHigher("5min"))).toEqual(["A block reads a timeframe that is not above the strategy's own: change it under the block's Advanced."]);
+    expect(flowConfig({ ...onHigher("60min"), exits: { ...EMPTY_EXITS } })?.long_conditions[0].right.timeframe).toBe("60min");
+  });
+
+  it("opens the exits' Advanced by itself only while a stop waits for its ATR length", () => {
+    expect(atrLengthMissing({ ...EMPTY_EXITS })).toBe(false);
+    expect(atrLengthMissing({ ...EMPTY_EXITS, stop: "1.5" })).toBe(true);
+    expect(atrLengthMissing({ ...EMPTY_EXITS, stop: "1.5", atrPeriod: "14" })).toBe(false);
+  });
+
+  it("uses the one shared label map (no second copy of the indicator names)", () => {
+    expect(INDICATOR_LABEL).toBe(SHARED_LABELS);
+    expect(builderSource).toContain("INDICATOR_LABEL[ind]");
+    expect(builderSource).not.toMatch(/deterministic|credentials|id \{s\.strategy_id\}/);
   });
 });

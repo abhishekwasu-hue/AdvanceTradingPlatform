@@ -1,5 +1,5 @@
 import { ExternalLink, Save, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { CrosshairLink } from "../charting/crosshairLink";
 import type { LightweightEngine } from "../charting/lightweight";
 import { ACTIVE_LTP_MS, INACTIVE_LTP_MS, type LtpHub, type LtpUpdate } from "../charting/ltpHub";
@@ -8,11 +8,13 @@ import {
   setTimeframe, syncOf, type CellV1, type Group, type GroupSync, type LayoutV1, type StoredLayout,
 } from "../charting/workspace";
 import { cx } from "../components/primitives/cx";
-import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
+import { recentKeyFor } from "../ui/SymbolPicker";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { usePageVisible } from "../utils/usePageVisible";
 import ChartV2 from "./ChartV2";
-import { CHART_TYPES_V2, CHART_TYPE_LABELS_V2 } from "./chartCore";
+import type { OverlayId } from "./chartCore";
+import { ChartToolbar } from "./ChartToolbar";
+import { toggle as toggleIndicator } from "./indicatorsModel";
 import { volumeLabelFor } from "./chartsPage";
 import { ConfirmBox } from "./ConfirmBox";
 import {
@@ -22,7 +24,6 @@ import {
 import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, type TimeframeId } from "./timeframes";
 import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs, type ChartPrefs } from "./useChartPrefs";
-import { TimeframePicker } from "../ui/TimeframePicker";
 import { Combobox } from "../ui/Combobox";
 
 /**
@@ -60,6 +61,8 @@ export interface MultiChartV2Props {
   livePush?: boolean;
   /** False while the Chart tab shows: the tab stays mounted, hidden, and reads nothing. */
   shown: boolean;
+  /** CT-1 L1: first in the controls row (a phone's "One chart" button back to the Chart view). */
+  leading?: ReactNode;
 }
 
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
@@ -67,6 +70,8 @@ const btn = cx("inline-flex min-h-11 items-center justify-center gap-space-1 rou
 const iconBtn = cx("inline-flex min-h-11 min-w-11 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg md:min-h-9 md:min-w-9", focus);
 const field = cx("h-11 rounded-control border border-border bg-surface-2 px-space-2 text-t13 text-fg md:h-9", focus);
 const SYNC_LABELS: Record<keyof GroupSync, string> = { symbol: "Link symbol", interval: "Link timeframe", crosshair: "Link crosshair" };
+/** CT-1 C1: a cell's Indicators offer the price-pane lines (its panes follow the trader's chart settings). */
+const CELL_GROUPS = ["popular"] as const;
 const groupColour = (g: Group) => `rgb(var(--chart-ov-${GROUPS.indexOf(g) + 1}))`;
 
 /** True while the element is on screen (or near it); false until the browser first says so. */
@@ -95,7 +100,7 @@ function useSharedLtp(hub: LtpHub, enabled: boolean, symbol: string, exchange: s
 
 export default function MultiChartV2({
   symbol, exchange, userId, offered, timeframesKnown, prefs, drawingsHidden, marketOpen, start, onStarted, onOpenChart, pool, ltpHub, shown,
-  livePush = false,
+  livePush = false, leading,
 }: MultiChartV2Props) {
   const phone = useMediaQuery(PHONE_QUERY);
   const pageVisible = usePageVisible();
@@ -204,6 +209,7 @@ export default function MultiChartV2({
     <div data-multi-chart hidden={!shown} className={cx("flex-col gap-space-2", shown ? "flex" : "hidden")}>
       <div role="group" aria-label="Multi-chart controls"
         className="flex flex-wrap items-center gap-space-2 rounded-panel border border-subtle bg-surface-1 p-space-2 text-t13 text-fg">
+        {leading}
         <div role="group" aria-label="Charts on screen" className="flex gap-space-1 rounded-control bg-surface-2 p-space-1">
           {grids.map((g) => (
             <button key={g} type="button" aria-pressed={g === pressed} aria-label={`${g} chart${g > 1 ? "s" : ""}`} onClick={() => apply((x) => setGrid(x, g))}
@@ -307,28 +313,34 @@ function Cell({
   const tfPrefs = useChartPrefs(userId);
   const waiting = tf === null || data.loading || (!running && data.candles.length === 0);
   const emptyText = waiting ? "Loading prices…" : data.error ? "" : data.empty ?? `No prices for ${c.symbol} on this timeframe yet.`;
+  // CT-1 C1: the cell's price-pane lines (EMA, SMA, VWAP), this cell's own for the page's life; the panes (volume, RSI)
+  // stay the trader's chart settings, as in every cell.
+  const [overlays, setOverlays] = useState<OverlayId[]>([]);
+  const indicatorState = { panes: prefs.indicators, overlays, layers: [] };
+  const onIndicator = (id: string) => {
+    const change = toggleIndicator(id, indicatorState);
+    if ("overlays" in change) setOverlays(change.overlays);
+  };
 
   return (
     <section ref={ref} aria-label={`Chart ${n}: ${c.symbol} ${timeframeLabel(shownTf)}`} data-cell={index} data-active={active ? "true" : "false"}
       onPointerDownCapture={onFocus} onFocusCapture={onFocus}
       className={cx("flex min-h-0 min-w-0 flex-col overflow-hidden rounded-panel border bg-surface-1", active ? "border-brand" : "border-subtle")}>
-      <div className="flex flex-wrap items-center gap-space-1 border-b border-subtle p-space-1">
-        <button type="button" onClick={onGroup} aria-label={`Link group of chart ${n}: ${c.group ?? "none"}`} title="Link group: none, A, B, C, D"
-          className={cx("min-h-11 min-w-11 rounded-control border text-t12 font-bold md:min-h-9 md:min-w-9", focus, c.group ? "" : "border-border text-fg-muted")}
-          style={c.group ? { color: groupColour(c.group), borderColor: groupColour(c.group) } : undefined}>
-          {c.group ?? "–"}
-        </button>
-        <SymbolPicker value={c.symbol} exchange={c.exchange} onPick={(p) => onSymbol(p.symbol, p.exchange)} storageKey={recentKeyFor(userId)}
-          label={`Symbol of chart ${n}`} className="min-w-[7.5rem] flex-1" />
-        <TimeframePicker offered={offered} value={shownTf} onChange={onTimeframe} compact maxFavourites={phone ? 0 : undefined} label={`Timeframe of chart ${n}`}
-          favourites={tfPrefs.prefs.timeframe_favourites} onFavourites={(next) => tfPrefs.update({ timeframe_favourites: next })} />
-        <Combobox id={`multi-type-${index}`} label={`Chart type of chart ${n}`} value={cellChartType(c.chart_type)} onChange={(v) => onType(v as CellV1["chart_type"])}
-          options={CHART_TYPES_V2.map((t) => ({ value: t, label: CHART_TYPE_LABELS_V2[t] }))} />
-        <button type="button" aria-label={`Open chart ${n} in the Chart tab`} title="Open in the Chart tab" onClick={() => onOpen(shownTf)} className={iconBtn}>
-          <ExternalLink size={16} aria-hidden />
-        </button>
-      </div>
-      <ChartV2 candles={data.candles} timeframe={shownTf} symbol={c.symbol} exchange={c.exchange} chartType={cellChartType(c.chart_type)} prefs={prefs}
+      <ChartToolbar mode="compact" label={`Controls of chart ${n}`}
+        leading={(
+          <button type="button" onClick={onGroup} aria-label={`Link group of chart ${n}: ${c.group ?? "none"}`} title="Link group: none, A, B, C, D"
+            className={cx("min-h-11 min-w-11 rounded-control border text-t12 font-bold md:min-h-9 md:min-w-9", focus, c.group ? "" : "border-border text-fg-muted")}
+            style={c.group ? { color: groupColour(c.group), borderColor: groupColour(c.group) } : undefined}>
+            {c.group ?? "–"}
+          </button>
+        )}
+        symbol={{ value: c.symbol, exchange: c.exchange, onPick: (p) => onSymbol(p.symbol, p.exchange), storageKey: recentKeyFor(userId), label: `Symbol of chart ${n}` }}
+        timeframe={{ offered, value: shownTf, onChange: onTimeframe, compact: true, maxFavourites: phone ? 0 : undefined, label: `Timeframe of chart ${n}`,
+          favourites: tfPrefs.prefs.timeframe_favourites, onFavourites: (next) => tfPrefs.update({ timeframe_favourites: next }) }}
+        chartType={{ id: `multi-type-${index}`, label: `Chart type of chart ${n}`, value: cellChartType(c.chart_type), onChange: (t) => onType(t as CellV1["chart_type"]) }}
+        indicators={{ state: indicatorState, on: () => false, onToggle: onIndicator, groups: CELL_GROUPS }}
+        endActions={[{ id: "open", label: `Open chart ${n} in the Chart tab`, title: "Open in the Chart tab", icon: <ExternalLink size={16} aria-hidden />, onClick: () => onOpen(shownTf) }]} />
+      <ChartV2 candles={data.candles} timeframe={shownTf} symbol={c.symbol} exchange={c.exchange} chartType={cellChartType(c.chart_type)} prefs={prefs} overlays={overlays}
         live={live.ltp} marketOpen={marketOpen(c.exchange)} livePush={livePush} onLoadOlder={data.loadOlder} drawingTools={active && !drawingsHidden} volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText}
         onEngine={onEngine} viewControls={active} className={phone ? "h-[46vh] min-h-[240px]" : "min-h-0 flex-1"} />
       {data.error && (

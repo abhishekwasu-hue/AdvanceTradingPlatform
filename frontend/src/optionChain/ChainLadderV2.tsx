@@ -4,7 +4,7 @@ import { cx } from "../components/primitives/cx";
 import { Info, TriangleAlert } from "lucide-react";
 import { useColourV2 } from "../ui/colourV2";
 import ChainTableV2 from "./ChainTableV2";
-import { TEXT, type ColumnPrefs } from "./model";
+import { TEXT, type ColumnKey, type ColumnPrefs } from "./model";
 import { STRIKE_RANGES, rowsAround } from "./spotChange";
 import type { ChainProblem } from "./useOptionChain";
 import type { ChainRow, LiveChain } from "./types";
@@ -15,7 +15,7 @@ import type { ChainRow, LiveChain } from "./types";
  * Greeks and quotes from the columns menu, the "ATM ± N" strike range and the tick flash (ChainTableV2). The Option chain
  * page and the Terminal place this one component; neither keeps a table of its own.
  */
-export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuffix = "", onPick, onPickLeg, held, setup, toggle, areaMarks }: {
+export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuffix = "", onPick, onPickLeg, held, setup, toggle, areaMarks, hide }: {
   symbol: string;
   live: LiveChain | null;
   loading: boolean;
@@ -31,6 +31,8 @@ export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuf
   areaMarks?: ReadonlyMap<string, string>;
   /** The page's own control above the strike column (the chain page's Chain / OI view toggle). */
   toggle?: (placed: "empty" | "above") => ReactNode;
+  /** M58 T4-5 (optional): columns left out for a narrow panel (the Terminal's chain: IV, then OI change). */
+  hide?: readonly ColumnKey[];
 }) {
   const colour = useColourV2();          // colour v2: the Calls / Puts headings in their side's colour
   // UI-28 U7.1: every strike, or ATM ± N (the choice is kept for the visit).
@@ -67,7 +69,7 @@ export function ChainLadderV2({ symbol, live, loading, problem, prefs, centreSuf
             ))}
           </div>
           <ChainTableV2 live={shownLive ?? live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${centreSuffix}`} onPick={onPick}
-            onPickLeg={onPickLeg} held={held} setup={setup} areaMarks={areaMarks} />
+            onPickLeg={onPickLeg} held={held} setup={setup} areaMarks={areaMarks} hide={hide} />
           {problem && <p className="mt-space-2 text-t12 text-fg-muted">{TEXT.loadFailed}</p>}
         </>
       )}

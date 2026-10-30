@@ -21,6 +21,7 @@ from app.brokers.base import BrokerInterface
 from app.brokers.circuit_breaker import observe_call
 from app.brokers.exceptions import BrokerAPIError
 from app.brokers.models import BrokerOrderRequest, BrokerOrderResponse
+from app.core import config
 from app.core.enums import OrderSide
 
 
@@ -60,8 +61,8 @@ DEFAULT_RATE_LIMITS = RateLimits(per_second=2.0, burst=3, per_minute=100)
 DAILY_CAPS: Dict[str, Dict[str, int]] = {
     "groww": {"orders": 3000, "live_data": 5000, "non_trading": 3000, "auth": 150},
 }
-DAILY_SHARE = 0.9
-EXIT_RESERVE_SHARE = 0.1
+DAILY_SHARE = config.BROKER_DAILY_CAP_SHARE
+EXIT_RESERVE_SHARE = config.BROKER_DAILY_ORDER_EXIT_RESERVE_SHARE
 ORDER_CALLS = frozenset({"place_order", "modify_order", "cancel_order", "place_stop_loss_order", "exit_position"})
 LIVE_DATA_CALLS = frozenset({"get_ltp", "get_quote", "get_quote_for_symbol", "get_ltp_for_symbol", "get_option_chain",
                              "get_historical_data", "get_intraday_candles", "get_quotes_batch"})

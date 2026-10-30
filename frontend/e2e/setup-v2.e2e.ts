@@ -244,20 +244,18 @@ test.describe("setup wizard 390 x 844", () => {
     await expect(stepTitle(page)).toHaveText("Pick your first strategy");
   });
 
-  test("the strategy step deploys in PAPER only and never offers LIVE", async ({ page }) => {
+  test("the strategy step: PAPER only, never LIVE; Start a trading bot opens the form and starts nothing (D3)", async ({ page }) => {
     const server = await open(page, { done: { broker: true, risk: true } });
     const cards = wizard(page).locator("[data-suggestion]");
     await expect(cards).toHaveCount(3);
     await expect(wizard(page)).not.toContainText(/\bLive\b|\bLIVE\b|real money/);
+    await expect(wizard(page)).not.toContainText(/\bBuys\b/);
     await cards.first().getByRole("button", { name: "Test it" }).click();
     await expect(cards.first()).toContainText("12 trades · 58% won · +₹4,250 on the last 30 days of NIFTY 50 prices.");
-    await cards.nth(2).getByRole("button", { name: "Start a trading bot" }).click();
-    await expect(cards.nth(2)).toContainText("Started as a trading bot.");
-    const post = server.sent.find((c) => c.method === "POST" && c.url === "/deployments");
-    expect(post?.body).toMatchObject({ strategy_id: "orb_15m_5m", mode: "PAPER", instrument_kind: "OPTION", option_position: "BUY" });
-    expect(post?.body).not.toHaveProperty("broker_name");
+    await cards.nth(2).getByRole("link", { name: "Start a trading bot" }).click();
+    await expect(page).toHaveURL(/\/deployments$/);
+    expect(server.sent.filter((c) => c.method === "POST" && c.url === "/deployments")).toEqual([]);
     expect(server.sent.filter((c) => JSON.stringify(c.body ?? "").includes("LIVE"))).toEqual([]);
-    await expect(wizard(page).locator("[data-step-state='done']")).toHaveCount(3);
   });
 
   test("the risk step without a paper account: no capital field, nothing sent for it", async ({ page }) => {
@@ -273,12 +271,12 @@ test.describe("setup wizard 390 x 844", () => {
     expect(server.sent.filter((c) => c.url === "/paper/account")).toEqual([]);
   });
 
-  test("the strategy step: already running in the organisation (409 duplicate_active_bot) says nothing new started and is not done", async ({ page }) => {
+  test("the strategy step: every Start a trading bot is a link to the form with nothing pre-chosen (D3)", async ({ page }) => {
     await open(page, { done: { broker: true, risk: true }, deployConflict: true });
-    const first = wizard(page).locator("[data-suggestion]").first();
-    await first.getByRole("button", { name: "Start a trading bot" }).click();
-    await expect(first).toContainText("Nothing new was started: this strategy already runs for this symbol in your organisation. Stop that bot first");
-    await expect(first).not.toContainText("Started as a trading bot");
+    const starts = wizard(page).locator("[data-suggestion] [data-start-bot]");
+    await expect(starts).toHaveCount(3);
+    for (let i = 0; i < 3; i += 1) await expect(starts.nth(i)).toHaveAttribute("href", "/deployments");
+    await expect(wizard(page).getByRole("button", { name: "Start a trading bot" })).toHaveCount(0);
     await expect(wizard(page).locator("[data-step-state='done']")).toHaveCount(2);
   });
 

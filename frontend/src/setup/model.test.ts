@@ -1,8 +1,9 @@
+import stepsSource from "./StepsV2.tsx?raw";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { flagOffFallback, shellKeyFromPath, shellTitle } from "../shell/shellRoutes";
 import {
-  RISK_DEFAULTS, SETUP_PATH, SUGGESTIONS, cleanStored, cleanView, dismissChip, isComplete, markOpened, nextStep, openingStep, paperDeployment,
+  RISK_DEFAULTS, SETUP_PATH, SUGGESTIONS, cleanStored, cleanView, dismissChip, isComplete, markOpened, nextStep, openingStep, paperDeployment, START_BOT_PATH,
   limitText, limitsBody, perTradeText, riskErrors, riskNumbers, riskSentence, setupChip, skipStep, stepAfter, testSummary, withStored,
   type SetupStepKey, type SetupView,
 } from "./model";
@@ -139,6 +140,13 @@ describe("UI2-7 strategy step: PAPER only", () => {
     }
     expect(paperDeployment(SUGGESTIONS[1])).toMatchObject({ timeframe: "day", holding: "SWING", instrument_kind: "UNDERLYING" });
     expect(paperDeployment(SUGGESTIONS[2])).toMatchObject({ instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM" });
+  });
+
+  it("REV-1 M2 (D3): Start a trading bot opens the form with nothing pre-chosen; no Buys wording", () => {
+    expect(START_BOT_PATH).toBe("/deployments");
+    for (const s of SUGGESTIONS) expect(s.line).not.toMatch(/\bbuys?\b|\bsells?\b/i);
+    expect(stepsSource).toContain("to={START_BOT_PATH}");
+    expect(stepsSource).not.toMatch(/createDeployment\(|paperDeployment\(/);
   });
 
   it("a quick test in one line", () => {

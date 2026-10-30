@@ -18,7 +18,7 @@ FLAG = "ui_v2"
 
 @router.get("/feed")
 async def signals_feed(tab: str = Query(default="today", pattern=r"^(waiting|today|history)$"),
-                       source: str = Query(default="all", pattern=r"^(all|autopilot|scan|copilot)$"),
+                       source: str = Query(default="all", pattern=r"^(all|autopilot|scan|copilot|library)$"),
                        symbol: Optional[str] = Query(default=None, max_length=40, pattern=r"^[A-Za-z0-9 &._:-]{1,40}$"),
                        cursor: Optional[str] = Query(default=None, max_length=400),
                        limit: int = Query(default=service.DEFAULT_LIMIT, ge=1, le=service.MAX_LIMIT),

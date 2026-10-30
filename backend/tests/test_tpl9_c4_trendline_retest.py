@@ -122,10 +122,13 @@ def _sha(out):
     return hashlib.sha256(json.dumps(out, sort_keys=True).encode()).hexdigest()
 
 
+STRATX_NEW = ("C6", "B12", "D9")
+
+
 def template_pins():
     out = {}
     for t in library.templates() + library.archived():
-        if t.family == "G":
+        if t.family == "G" or t.id in STRATX_NEW:                         # STRAT-X templates came later: not part of the pin
             continue
         tf = t.allowed_timeframes[0]
         s = C.resolve_settings(t, tf)
@@ -133,6 +136,8 @@ def template_pins():
         if t.version == library.get(t.id).version and t.id != "C4":
             out[f"{t.id}.id"] = ids.adopt(t, tf)[0]
     out.pop("C4.v1", None)                                                   # the new template is not part of the pin
+    out.pop("A1.v1", None)                                                   # M55 T5: neither is A1 (added after the pin)
+    out.pop("A1.id", None)
     return out
 
 

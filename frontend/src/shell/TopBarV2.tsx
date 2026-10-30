@@ -74,30 +74,55 @@ export function topBarNotices(status: SystemStatus | null, _user: UserResponse |
  * H9: a title word is never cut, so on a narrow phone a long one-word title ("Strategies" at 360 px) can push the bar
  * past the screen edge. Then the title steps down one text size (t18 -> t15); it steps back up when there is room.
  * Measured, not guessed from the number of letters; only on a phone with colour v2 (the row's own overflow).
+ *
+ * REV-1 M3 (Settings at 375 px: the avatar was cut and the page scrolled sideways): the row is measured again whenever
+ * one of its parts changes size (the Ask AI button, the tips button or the price dot arrive after the first paint),
+ * and when even the smaller title does not fit it is cut with "..." ("tight") - the buttons always stay on screen.
  */
-export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean): boolean {
-  const [small, setSmall] = useState(false);
+export type TitleFit = "normal" | "small" | "tight";
+
+export function useTitleFit(row: RefObject<HTMLElement | null>, title: string, enabled: boolean): TitleFit {
+  const [fit, setFit] = useState<TitleFit>("normal");
   useLayoutEffect(() => {
-    if (!enabled) { setSmall(false); return; }
+    if (!enabled) { setFit("normal"); return; }
     const check = () => {
       const el = row.current;
       if (!el) return;
       const phone = window.matchMedia?.("(max-width: 767.98px)").matches ?? false;
-      if (!phone) { setSmall(false); return; }
-      // Measure at the normal size first, so a wider screen (rotation) gets the larger title back.
+      if (!phone) { setFit("normal"); return; }
+      // Measured without the cut: at the normal size first (a wider screen - rotation - gets the larger title back),
+      // then at the smaller size. The attributes are put back before the browser paints.
+      const span = el.querySelector<HTMLElement>("[data-topbar-title]");
+      const size = span?.dataset.titleSize;
+      if (span) delete span.dataset.titleSize;
       el.dataset.titleFit = "measure";
-      const overflows = el.scrollWidth > el.clientWidth;
+      const big = el.scrollWidth > el.clientWidth;
+      el.dataset.titleFit = "small";
+      const smaller = el.scrollWidth > el.clientWidth;
       delete el.dataset.titleFit;
-      setSmall(overflows);
+      if (span && size !== undefined) span.dataset.titleSize = size;
+      setFit(!big ? "normal" : smaller ? "tight" : "small");
     };
     check();
     // The web font arrives after the first paint and changes the title's width: measure again then.
     let live = true;
     void document.fonts?.ready.then(() => { if (live) check(); });
     window.addEventListener("resize", check);
-    return () => { live = false; window.removeEventListener("resize", check); };
+    // A part of the row that arrives or changes size later (a button, the price dot) is measured too.
+    const el = row.current;
+    const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(() => check()) : null;
+    const watch = () => { if (el && sizes) { sizes.disconnect(); for (const child of Array.from(el.children)) sizes.observe(child); } };
+    watch();
+    const parts = el && typeof MutationObserver === "function" ? new MutationObserver(() => { watch(); check(); }) : null;
+    if (el) parts?.observe(el, { childList: true });
+    return () => { live = false; window.removeEventListener("resize", check); sizes?.disconnect(); parts?.disconnect(); };
   }, [row, title, enabled]);
-  return small;
+  return fit;
+}
+
+/** True when the title is shown one size smaller (or cut): see useTitleFit. */
+export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean): boolean {
+  return useTitleFit(row, title, enabled) !== "normal";
 }
 
 export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour, section = null, onAskAi, askAiOpen = false }: TopBarV2Props) {
@@ -109,7 +134,8 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
   const notices = topBarNotices(status, user, paperOnly);
   const shortcut = shortcutLabel(currentPlatform());
   const row = useRef<HTMLDivElement>(null);
-  const small = useTitleFits(row, title, colour);
+  const fit = useTitleFit(row, title, colour);
+  const small = fit !== "normal";
   const help = usePageHelp();
   // UX-7: the price-feed dot, only with live prices on (flag `data_hub`) for a signed-in user.
   const liveOn = useFeatures().on("data_hub") && !!user;
@@ -128,8 +154,8 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
         )}
         {/* With colour v2 (CA7) the title wraps on a phone instead of being cut (H9): only between words, never inside one
             (no min-w-0 there, so the longest word sets its width); with it off the bar is as before. */}
-        <span data-topbar-title data-title-size={small ? "small" : undefined}
-          className={`shrink ${small ? "text-t15 group-data-[title-fit=measure]/bar:text-t18" : "text-t18"} font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:normal] [word-break:normal] md:min-w-0 md:truncate md:py-0" : "min-w-0 truncate"}`}>{title}</span>
+        <span data-topbar-title data-title-size={fit === "normal" ? undefined : fit}
+          className={`shrink ${small ? "text-t15 group-data-[title-fit=measure]/bar:text-t18" : "text-t18 group-data-[title-fit=small]/bar:text-t15"} font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:normal] [word-break:normal] data-[title-size=tight]:min-w-0 data-[title-size=tight]:truncate md:min-w-0 md:truncate md:py-0" : "min-w-0 truncate"}`}>{title}</span>
         {/* UX-6: the page's help line (and its tips) behind one (?) beside the title - never a paragraph above the data. */}
         {help && (
           <HelpPopover title={title} className="-ml-space-1 shrink-0">

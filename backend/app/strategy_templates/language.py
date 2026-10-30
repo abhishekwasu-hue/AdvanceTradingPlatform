@@ -53,6 +53,11 @@ TOKENS: Dict[str, str] = {
     "pack_bearish_continuation": "read as a bearish continuation for the option structure in your own settings",
     "pack_range_lower_edge": "read as the lower edge of the range for the option structure in your own settings",
     "pack_range_upper_edge": "read as the upper edge of the range for the option structure in your own settings",
+    # A1 pullback to a demand / supply area (idea library T1, M55 T5: the ported level gate)
+    "demand_area_pullback_committed": ("the market pulled back into a demand area on the {timeframe} chart, on the side the Daily"
+                                       " structure allows, and a commitment candle closed back above the area"),
+    "supply_area_pullback_committed": ("the market pulled back into a supply area on the {timeframe} chart, on the side the Daily"
+                                       " structure allows, and a commitment candle closed back below the area"),
     # A5 structure flip retest (idea library T5)
     "resistance_flip_retested": "former resistance on the {timeframe} chart was broken and is being retested from above; rejection formed",
     "support_flip_retested": "former support on the {timeframe} chart was broken and is being retested from below; rejection formed",
@@ -123,6 +128,18 @@ TOKENS: Dict[str, str] = {
                           " {timeframe} chart"),
     "gap_down_kept_going": ("the session opened below the prior low, held below it through the opening window and kept going on the"
                             " {timeframe} chart"),
+    # STRAT-X (owner decision 30 Oct): C6 previous-day high / low break and retest (a generic intraday template), B12
+    # multi-week high breakout, D9 Weekly trend and Daily pullback - structure words only, no price, no number
+    "previous_day_high_retest_held": ("the close broke above the previous day's high on the {timeframe} chart and the retest of that"
+                                      " level from above held in the same session"),
+    "previous_day_low_retest_held": ("the close broke below the previous day's low on the {timeframe} chart and the retest of that"
+                                     " level from below held in the same session"),
+    "close_above_multi_week_high": "the close broke above the highest high of the weeks looked back on the {timeframe} chart",
+    "close_below_multi_week_low": "the close broke below the lowest low of the weeks looked back on the {timeframe} chart",
+    "daily_pullback_reversed_up": "the pullback reached the pullback average on the {timeframe} chart and a bullish reversal formed there",
+    "daily_rally_reversed_down": "the rally reached the pullback average on the {timeframe} chart and a bearish reversal formed there",
+    "ctx_trend_up": "the {context_timeframe} trend is up",
+    "ctx_trend_down": "the {context_timeframe} trend is down",
     # Family G (wave templates): structure words only - wave labels in words, no number, no price
     "wave_two_pullback_ended": "the wave two pullback ended at an area on the {wave_timeframe} chart",
     "wave_four_pullback_ended": "the wave four pullback ended at an area on the {wave_timeframe} chart",

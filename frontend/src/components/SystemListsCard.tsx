@@ -4,6 +4,7 @@ import { ListChecks, RefreshCw } from "lucide-react";
 import { request } from "../api/client";
 import { Card } from "./ui";
 import { SkeletonRows } from "./primitives";
+import { EMPTY, formatDateTimeIST } from "../ui/format";
 
 /**
  * WL1 (handover item 4), the admin side of the read-only system watchlists: when they were last rebuilt, what changed
@@ -33,8 +34,8 @@ const SHOWN = 12;   // symbols shown per change before "+N more"
 
 export function when(iso: string | null | undefined): string {
   if (!iso) return "never";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  const text = formatDateTimeIST(iso);                     // REV-1 M3: IST, never the device's zone
+  return text === EMPTY ? iso : text;
 }
 
 function symbols(list: string[]): string {

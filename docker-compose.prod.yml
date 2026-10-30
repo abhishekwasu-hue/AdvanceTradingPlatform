@@ -38,11 +38,15 @@ services:
       # Absolute links that leave the app (e-mail unsubscribe, Telegram buttons): always the public name, never an IP
       # or the address a request happened to arrive on.
       PUBLIC_BASE_URL: https://${DOMAIN}
-      # Only Caddy (a container on this compose network) reaches backend:8000, so its X-Forwarded-For is the
-      # client IP the rate limiter and login protection see (P0.2 / S1).
-      FORWARDED_ALLOW_IPS: "*"
+      # M55 O1: X-Forwarded-For is trusted only from Caddy - the `edge` network below, which holds Caddy, the API and the
+      # frontend and nothing else - so it is the client IP the rate limiter and login protection see (P0.2 / S1). Any
+      # other peer (a container on the default network, the host through the published port) is taken at its own address.
+      FORWARDED_ALLOW_IPS: "127.0.0.1,${EDGE_SUBNET:-10.250.250.0/24}"
     ports: !override
       - "127.0.0.1:8000:8000"
+    networks:
+      - default
+      - edge
 
   worker:
     environment:
@@ -55,6 +59,9 @@ services:
     ports: !override []
     expose:
       - "80"
+    networks:
+      - default
+      - edge
 
   caddy:
     logging: *default-logging
@@ -73,6 +80,9 @@ services:
     depends_on:
       - backend
       - frontend
+    # M55 O1: Caddy is on the `edge` network only, so it reaches backend:8000 from an address in EDGE_SUBNET.
+    networks:
+      - edge
     restart: unless-stopped
 
   # Off-site copy of what the backup service writes: `copy` (an off-site file is never deleted by a
@@ -101,3 +111,12 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+
+# M55 O1: the network between Caddy and what it proxies to (the API and the frontend). A fixed private subnet, so the
+# API can trust forwarded headers from it alone (FORWARDED_ALLOW_IPS above). EDGE_SUBNET in .env only if this range is
+# already taken on the host.
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${EDGE_SUBNET:-10.250.250.0/24}

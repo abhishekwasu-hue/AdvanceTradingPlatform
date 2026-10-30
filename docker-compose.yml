@@ -149,6 +149,7 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
+    restart: unless-stopped                 # M55 O1: the workers wait for it; it comes back on its own like them
 
   # The autonomous trading engine - same image as the API, different entrypoint. Runs (and
   # trades) independently of the API and of any browser; restart it, not the API, if it wedges.
@@ -226,13 +227,15 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
+    # M55 O1: the API applies the migrations at start (scripts/serve_api.sh), so the worker waits until it answers its
+    # healthcheck - never a trading cycle on a schema the API has not finished migrating.
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       backend:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   # H-C3c: runs queued AI research studies one at a time, apart from trading and the API. Off unless started:
@@ -263,7 +266,7 @@ services:
       redis:
         condition: service_healthy
       backend:
-        condition: service_started
+        condition: service_healthy          # M55 O1: as the trading worker
     restart: unless-stopped
 
   frontend:

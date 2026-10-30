@@ -68,7 +68,7 @@ def test_paper_deployment_needs_a_stored_broker_for_market_data():
     headers = _auth("dep-nobroker@example.com")
     response = _create(headers)
     assert response.status_code == 409
-    assert "broker credentials" in response.json()["detail"].lower()
+    assert response.json()["detail"]["code"] == "no_broker" and "Broker page" in response.json()["detail"]["message"]
 
 
 def test_create_paper_deployment_autofills_single_stored_broker_and_audits():
@@ -119,7 +119,7 @@ def test_live_deployment_requires_named_broker_with_valid_token():
     _store_broker(headers)  # token UNKNOWN
     assert _create(headers, mode="LIVE").status_code == 400  # broker_name missing
     blocked = _create(headers, mode="LIVE", broker_name="upstox")
-    assert blocked.status_code == 409 and "log in" in blocked.json()["detail"].lower()
+    assert blocked.status_code == 409 and blocked.json()["detail"]["code"] == "broker_login_needed" and "log in" in blocked.json()["detail"]["message"].lower()
 
     _store_broker(headers, token_status="VALID")
     ok = _create(headers, mode="LIVE", broker_name="upstox")
@@ -172,7 +172,7 @@ def test_resume_live_deployment_rechecks_token():
     client.post(f"/api/deployments/{dep_id}/pause", headers=headers, json={})
     _store_broker(headers, token_status="EXPIRED")
     blocked = client.post(f"/api/deployments/{dep_id}/resume", headers=headers)
-    assert blocked.status_code == 409 and "EXPIRED" in blocked.json()["detail"]
+    assert blocked.status_code == 409 and blocked.json()["detail"]["code"] == "broker_login_needed" and "expired" in blocked.json()["detail"]["message"]
 
 
 def test_deployments_are_tenant_isolated():

@@ -9,7 +9,7 @@ import { PAGE_COMPONENTS_V2 } from "../shell/pagesV2";
 import type { Deployment, StrategyInfo } from "../types";
 import modelSource from "./model.ts?raw";
 import pageSource from "./PaperBotV2.tsx?raw";
-import { BotRow, StartBotV2, strategyOptions } from "./PaperBotV2";
+import { BotRow, StartBotV2, removeConsequence, strategyOptions } from "./PaperBotV2";
 import {
   READY, botName, botState, botStatusText, botWhat, cleanSymbol, isSwing, lastChecked, paperBotRequest, sortBots, startSummary, startSummaryParts, strategyLine,
   symbolProblem,
@@ -157,6 +157,28 @@ describe("UX2 fix 4 view", () => {
     expect(asking).toContain("Stop Opening range breakout? It takes no new trades. An open paper trade is still watched until it closes.");
     expect(asking).toContain("Yes, stop it Keep it running");
     expect(asking).not.toMatch(/ Pause /);
+  });
+
+  it("REV-H2: Remove only on a stopped bot with no open trade; a running or paused bot is unchanged", () => {
+    const remove = { onRemove: noop };
+    const stopped = row(bot({ status: "STOPPED" }), remove);
+    expect(text(stopped)).toMatch(/Stopped.* Remove $/);
+    expect(stopped.match(/<button/g)).toHaveLength(1);
+    expect(row(bot({ status: "STOPPED", open_positions: 1 }), remove)).not.toContain("<button");   // its open trade stays first
+    expect(text(row(bot(), remove))).toMatch(/Pause Stop $/);                                       // running: no Remove
+    expect(text(row(bot({ status: "PAUSED" }), remove))).toMatch(/Resume Stop $/);                  // paused: no Remove
+    expect(text(row(bot({ status: "STOPPED" }), { ...remove, disabled: true }))).toContain("Remove");
+    expect(row(bot({ status: "STOPPED" }), { ...remove, disabled: true })).toContain("disabled");
+    // The page asks first (the shared confirm dialog) and shows the server's reason when it fails.
+    expect(removeConsequence).toMatch(/^It leaves your list of bots\. .*start the same strategy on this symbol again\.$/);
+    expect(pageSource).toContain('<ConfirmDialog open={confirmRemove !== null}');
+    expect(pageSource).toContain("await api.deleteDeployment(bot.id);");
+    expect(pageSource).toContain("was not removed. ${errorSentence(e)}");
+  });
+
+  it("REV-H1: a refused start shows the server's own reason, never one guess for every 409", () => {
+    expect(pageSource).not.toContain("already runs on paper for");
+    expect(pageSource).toContain('e.status === 409 ? errorSentence(e)');
   });
 
   it("the start form: 1 pick a strategy, 2 pick a symbol, Start on paper; the broker note when none is connected", () => {

@@ -42,7 +42,7 @@ def test_generate_signal_endpoint():
     ]
     response = client.post(
         "/api/strategies/ema_rsi_scalper_1m/signal",
-        json={"symbol": "TESTSYM", "candles": {"1min": candles}},
+        json={"symbol": "TESTSYM", "candles": {"1min": candles}}, headers=_h(),     # M55 O2: signed in
     )
     assert response.status_code == 200
     body = response.json()
@@ -71,7 +71,7 @@ def test_signal_enrich_endpoint():
     ]
     response = client.post(
         "/api/strategies/ema_rsi_scalper_1m/signal/enrich",
-        json={"symbol": "TESTSYM", "candles": {"1min": candles}},
+        json={"symbol": "TESTSYM", "candles": {"1min": candles}}, headers=_h(),     # M55 O2: signed in
     )
     assert response.status_code == 200
     body = response.json()
@@ -163,7 +163,7 @@ def test_paper_execute_endpoint():
     ]
     response = client.post(
         "/api/strategies/ema_rsi_scalper_1m/paper-execute",
-        json={"symbol": "TESTSYM", "candles": {"1min": candles}},
+        json={"symbol": "TESTSYM", "candles": {"1min": candles}}, headers=_h(),     # M55 O2: signed in
     )
     assert response.status_code == 200
     body = response.json()

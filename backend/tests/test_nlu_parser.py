@@ -1,5 +1,14 @@
 from app.strategy_engine.nlu_parser import parse_strategy_description
-from tests.test_auth_api import client
+from tests.test_auth_api import _register, client
+
+_H = {}
+
+
+def _h():
+    """M55 O2: the parse route is signed in only."""
+    if not _H:
+        _H["Authorization"] = f"Bearer {_register('nlu-parse@example.com')}"
+    return _H
 
 
 def test_parses_indicator_conditions_with_explicit_and_default_periods():
@@ -87,7 +96,7 @@ def test_empty_parse_never_raises():
 def test_parse_endpoint_returns_preview_without_persisting():
     response = client.post(
         "/api/custom-strategies/parse",
-        json={"text": "Buy when RSI crosses above 60.", "name": "My Parsed Strategy"},
+        json={"text": "Buy when RSI crosses above 60.", "name": "My Parsed Strategy"}, headers=_h(),
     )
     assert response.status_code == 200
     body = response.json()
@@ -95,13 +104,15 @@ def test_parse_endpoint_returns_preview_without_persisting():
     assert len(body["config"]["long_conditions"]) == 1
     assert body["warnings"] == []
 
-    # Confirm it's a preview only - nothing was saved (parse endpoint needs no auth, unlike save).
+    # Confirm it is a preview only - nothing was saved.
+    assert client.get("/api/custom-strategies", headers=_h()).json() == []
+    assert client.post("/api/custom-strategies/parse", json={"text": "x"}).status_code == 401      # M55 O2
     unauth_list = client.get("/api/custom-strategies")
     assert unauth_list.status_code in (401, 403)
 
 
 def test_parse_endpoint_handles_fully_unparseable_text_without_error():
-    response = client.post("/api/custom-strategies/parse", json={"text": "gibberish nonsense text"})
+    response = client.post("/api/custom-strategies/parse", json={"text": "gibberish nonsense text"}, headers=_h())
     assert response.status_code == 200
     body = response.json()
     assert body["config"]["long_conditions"] == []

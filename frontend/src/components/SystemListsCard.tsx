@@ -4,6 +4,7 @@ import { ListChecks, RefreshCw } from "lucide-react";
 import { request } from "../api/client";
 import { Card } from "./ui";
 import { SkeletonRows } from "./primitives";
+import { Details } from "../ui/Details";
 
 /**
  * WL1 (handover item 4), the admin side of the read-only system watchlists: when they were last rebuilt, what changed
@@ -59,10 +60,12 @@ export function SystemListsView({ status, onRefresh, busy = false }: { status: S
           </button>
         )}
       </div>
-      <p className="text-xs text-fg-muted">
-        Rebuilt daily after {status.refresh_hour_ist}:00 IST with the market closed, from the index and classification files
-        the universe sync holds (universe sync is {status.universe_sync_enabled ? "on" : "off"}).
-      </p>
+      <Details id="system-lists.about" className="mt-0">
+        <p>
+          Rebuilt daily after {status.refresh_hour_ist}:00 IST with the market closed, from the index and classification files
+          the universe sync holds (universe sync is {status.universe_sync_enabled ? "on" : "off"}).
+        </p>
+      </Details>
       {last?.note && <div className="text-xs text-warn">{last.note}</div>}
 
       <div>

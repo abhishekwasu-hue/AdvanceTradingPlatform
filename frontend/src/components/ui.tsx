@@ -1,5 +1,6 @@
 import { ChevronDown, Info, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { Details } from "../ui/Details";
 
 export function Card({ title, children, className = "" }: { title?: string; children: ReactNode; className?: string }) {
   return (
@@ -104,11 +105,16 @@ export function DemoDataBanner() {
   return (
     <div className="mb-4 flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/[0.07] px-3 py-2.5 text-xs text-warn">
       <Info size={14} className="shrink-0 mt-0.5" />
-      <span>
-        Using deterministic sample OHLCV data. Every strategy, score and chart below is computed for
-        real by the backend against this data; pages with a Data switch can use your broker's candles
-        instead once a broker is logged in on the Broker page.
-      </span>
+      <div className="min-w-0">
+        <span>Using deterministic sample OHLCV data.</span>
+        <Details id="demo-data.about" className="mt-space-1">
+          <p>
+            Every strategy, score and chart below is computed for
+            real by the backend against this data; pages with a Data switch can use your broker's candles
+            instead once a broker is logged in on the Broker page.
+          </p>
+        </Details>
+      </div>
     </div>
   );
 }

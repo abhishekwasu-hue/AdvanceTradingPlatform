@@ -2,6 +2,7 @@ import { TriangleAlert } from "lucide-react";
 import { useEffect, useId, useRef, useState, type Ref } from "react";
 import { api } from "../api/client";
 import type { UpstoxRedirectInfo } from "../types";
+import { Details } from "../ui/Details";
 
 /**
  * D2: the Upstox Redirect URL on the Connect broker screen (Settings, in both shells). The address comes from the
@@ -71,8 +72,10 @@ export function UpstoxRedirectUrlView({ info, copyState = "idle", onCopy, inputR
       <p aria-live="polite" className="text-xs text-fg-muted">
         {copyState === "copied" && "Copied to the clipboard. "}
         {copyState === "selected" && "The address is selected: copy it with your keyboard or the browser menu. "}
-        Paste this address into the Redirect URL field of your app in the Upstox developer portal.
       </p>
+      <Details id="upstox-redirect.about" className="mt-0">
+        <p>Paste this address into the Redirect URL field of your app in the Upstox developer portal.</p>
+      </Details>
       {info.redirect_uri_will_be_replaced && (
         <p data-redirect-replaced className="text-xs text-fg-muted">The next login uses this address.</p>
       )}

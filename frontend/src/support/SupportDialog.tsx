@@ -6,6 +6,7 @@ import { Button } from "../components/primitives/Button";
 import { Dialog } from "../components/primitives/Dialog";
 import ShowGetStartedV2 from "../setup/ShowGetStartedV2";
 import { QUESTION_MAX_CHARS, SUGGESTED_QUESTIONS, safeLinks, sourceLabel, supportQuestion, type SupportReply } from "./support";
+import { Details } from "../ui/Details";
 
 interface Turn { q: string; reply?: SupportReply; error?: string }
 
@@ -46,9 +47,9 @@ export default function SupportDialog({ open, onOpenChange, onFeedback }: {
       open={open}
       onOpenChange={onOpenChange}
       title={<span className="inline-flex items-center gap-2"><LifeBuoy size={16} aria-hidden="true" /> Help</span>}
-      description="How-to answers from the help pages and the legal pages. The help desk cannot see your account, give trading advice or touch orders."
     >
       <div className="space-y-3">
+        <Details id="support.about" className="mt-0"><p>How-to answers from the help pages and the legal pages. The help desk cannot see your account, give trading advice or touch orders.</p></Details>
         <ShowGetStartedV2 onDone={() => onOpenChange(false)} />
         {turns.length === 0 && (
           <ul className="flex flex-wrap gap-1.5" aria-label="Suggested questions">

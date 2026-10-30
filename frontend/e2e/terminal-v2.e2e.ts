@@ -333,7 +333,8 @@ test.describe("v2 terminal 1440", () => {
     await page.locator("[data-chain-actions] [data-action='buy']").click();
     const order = page.locator("[data-panel='order']");
     await expect(order).toContainText("NIFTY 03 NOV 24500 CE");
-    await expect(order.locator("[data-practice-frame]")).toBeVisible();
+    await expect(order.locator("[data-practice-frame]")).toHaveCount(0);            // TERM-2 step 5: the one PAPER badge is in the bar
+    await expect(page.locator("[data-terminal='mode']")).toHaveText("PAPER");
     await order.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
     await order.locator("[data-ticket='review']").click();
     await expect(order.locator("[data-ticket='confirm']")).toBeVisible();

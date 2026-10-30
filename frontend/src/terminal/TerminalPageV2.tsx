@@ -209,7 +209,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       // TERM-2 step 2: the Option chain page's own chain (summary strip, columns menu, ChainTableV2), not a copy.
       case "chain": return <TerminalChainV2 symbol={underlying} chain={chain} spot={spot} prevClose={strip.prevClose} prefs={columns}
         onPrefs={(next) => { setColumns(next); writeColumns(next); }} trading={trading} />;
-      case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} />;
+      case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} paperBadge={false} />;
       case "positions": {
         const list = <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}
           fnoOn={features.on("paper_account")} combined={combined} onChanged={afterOrder} />;
@@ -268,7 +268,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   return (
     <div className="mx-auto w-full space-y-space-3" data-page="terminal-v2" data-layout={key}>
       {confirmBox.dialog}
-      <PageIntro id="terminal" lines={["The chart, the option chain and your order on one screen. Every order is checked and shown to you before it is placed."]} />
+      {/* TERM-2 step 5: one line; every order is still shown to you before it is placed (the ticket's Review step). */}
+      <PageIntro id="terminal" lines={["One symbol and expiry for the chart, chain, basket and your positions."]} />
       <ContextBarV2 symbol={underlying} onSymbol={(v) => setWorking((w) => ({ ...w, underlying: v === DEFAULT_UNDERLYING ? null : v }))}
         chain={chain} spot={spot} prevClose={strip.prevClose} vix={strip.vix} mode={modeChip(dataOf(statusL) ?? null)} compact={narrow} />
       {/* CT-1 T3: the layout controls only where the grid renders (from 1024 px); phone and tablet show the tabs. */}

@@ -313,7 +313,8 @@ describe("panels: plain words", () => {
     expect(out).toContain("Executed 1");
     expect(out).toContain("Rejected 1");
     expect(out).toContain("Sell NIFTY 25000 CE");
-    expect(out).toContain("Filled, position open · Practice");
+    expect(out).toContain("Filled, position open");
+    expect(out).not.toContain("Practice");                                  // CT-1 C8: the one PAPER badge says it
     expect(out).not.toContain("POSITION_OPEN");
     expect(orderGroup("PARTIAL_FILL")).toBe("open");
     expect(orderGroup("CANCELLED")).toBe("rejected");

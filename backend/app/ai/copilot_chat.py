@@ -18,7 +18,7 @@ not advice - CLAUDE.md §3). Every answer is grounded in ATP's own tools:
   `grounding.check_numbers`); a line that fails is dropped. The output filter (H-C1 c) runs on the result.
 * With an AI provider, the model may re-word the facts into a short answer (`narrate`): the same number, ticker,
   direction and advice checks as the Copilot (`copilot.grounded`, `output_filter.check`); on any failure the rule text
-  stays. Without a provider the rules answer and the page shows "Add a free AI key to start".
+  stays. Without a provider the rules answer and the page says once "AI is off — answers are from rules" (CP-UX CU5).
 * The indicator regime (ADX / EMA / ATR, `app/ai/regime.py`) is never shown to a user here: it is an admin diagnostic
   only (handover 5 C). Structure comes from ATP's price-action and zone layers.
 """
@@ -42,8 +42,10 @@ Runner = Callable[[str, Dict[str, Any]], Awaitable[ToolResult]]
 DISCLAIMER = "Information and education only, not advice. Every trading decision is yours."
 CHART_NOTE = "Structure reading from ATP's zone layers (the full Price Action reader is not in ATP yet)."
 TOP_LINE = "Ask me anything about the market or your trades."
-NO_KEY_TITLE = "Add a free AI key to start"
-NO_KEY_LINE = "Until then I answer from ATP's own data in short, fixed sentences."
+# CP-UX CU5 (owner order 30 Oct): the no-key state is said once, as one line with a Connect button - never a card of fixed
+# sentences before the page.
+NO_KEY_TITLE = "AI is off — answers are from rules"
+NO_KEY_LINE = "Connect your own AI key to have the answers worded by AI."
 KEY_SETTINGS = "/settings/ai"                                # Settings redesign B: the AI section page
 DEFAULT_SYMBOL = "NIFTY"
 MAX_MESSAGE = 1000                                           # the chat route's question limit (chat_routes.ChatBody)
@@ -1834,10 +1836,19 @@ def refuse(answer: Answer, kind: str) -> None:
     answer.starters = list(REFUSAL_STARTERS)
 
 
+def visible_jobs(flags: dict[str, bool] | None) -> tuple[Job, ...]:
+    """CP-UX CU7 (owner order 30 Oct): the jobs the page lists. A job behind an OFF switch of its own (`JOB_FLAGS`:
+    screens - `screener_copilot`, the full view - `ai_multiview`) is hidden, not shown as ready. `ai_agent` gates two
+    tools (news, market memory) inside jobs that answer without them, so it hides no job. `flags` None: every job (the
+    rule runs without the route's flags)."""
+    return tuple(j for j in JOBS if flags is None or j.id not in JOB_FLAGS or bool(flags.get(JOB_FLAGS[j.id])))
+
+
 def help_answer(answer: Answer) -> None:
+    jobs = visible_jobs(answer.flags)
     answer.summary = ["I'm not sure what you're asking. Here is what I can do today:"]
-    answer.section("What I can do", [f"{j.title}: {j.line}" + ("" if j.built else " (coming later)") for j in JOBS])
-    answer.starters = [j.starter for j in JOBS if j.built]
+    answer.section("What I can do", [f"{j.title}: {j.line}" + ("" if j.built else " (coming later)") for j in jobs])
+    answer.starters = [j.starter for j in jobs if j.built]
 
 
 JOB_FNS = {"brief": brief, "chart": chart_reader, "option_chain": option_chain, "teacher": teacher, "trade_check": trade_check,
@@ -1919,7 +1930,7 @@ async def answer(message: str, run: Runner, *, signal_v2: bool = False, flags: O
         refuse(out, refusal_kind(message) or "advice")
         return out
     if job_id == "help":
-        out = Answer("help", "What I can do")
+        out = Answer("help", "What I can do", flags=flags)
         help_answer(out)
         return out
     job = BY_ID[job_id]
@@ -2021,6 +2032,6 @@ async def narrate(provider: Any, out: Answer, question: str) -> Tuple[Optional[s
     return None, why
 
 
-__all__ = ["JOBS", "BY_ID", "BUILT", "DISCLAIMER", "PAPER_BOT_PATH", "builder_symbol", "strategy_builder", "CHART_NOTE", "TOP_LINE", "NO_KEY_TITLE", "NO_KEY_LINE", "KEY_SETTINGS", "REFUSALS",
+__all__ = ["JOBS", "BY_ID", "BUILT", "DISCLAIMER", "PAPER_BOT_PATH", "builder_symbol", "strategy_builder", "CHART_NOTE", "TOP_LINE", "NO_KEY_TITLE", "NO_KEY_LINE", "visible_jobs", "KEY_SETTINGS", "REFUSALS",
            "Answer", "Step", "route", "refusal_kind", "symbol_in", "named_symbol", "exchange_of", "symbols_read", "symbol_line", "timeframe_in", "lots_in", "answer", "market_line", "narrate",
            "plain_reason", "PROMPT_VERSION", "CHAT_PROMPT"]

@@ -270,9 +270,10 @@ def test_home_shows_the_no_key_state_the_jobs_and_the_market_line(v2_on, recorde
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["top_line"] == "Ask me anything about the market or your trades."
-    assert body["ai"]["ready"] is False and body["ai"]["title"] == "Add a free AI key to start" and body["ai"]["settings"] == "/settings/ai"
+    assert body["ai"]["ready"] is False and body["ai"]["title"] == "AI is off — answers are from rules" and body["ai"]["settings"] == "/settings/ai"
     assert body["ai"]["line"] == chat.NO_KEY_LINE
-    assert len(body["jobs"]) == 10 and len(body["starters"]) == 10 and body["disclaimer"] == chat.DISCLAIMER    # jobs 9-10: 23 Oct order
+    # jobs 9-10 (23 Oct order) sit behind screener_copilot / ai_multiview, off here: hidden (CP-UX CU7)
+    assert len(body["jobs"]) == 8 and len(body["starters"]) == 8 and body["disclaimer"] == chat.DISCLAIMER
     assert body["market_line"]["line"].startswith("NIFTY 50 last closed at 24,850.5") and body["market_line"]["reason"] is None
 
 

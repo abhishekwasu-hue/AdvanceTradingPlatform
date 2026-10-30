@@ -1,4 +1,4 @@
-# TERM-3 - Trade's options Strategy Builder as a Terminal tab (plan, waits for the owner's approval)
+# TERM-3 - Trade's options Strategy Builder as a Terminal tab (plan APPROVED by the owner 30 Oct: D1-D3 defaults; D4 below)
 
 Owner 30 Oct: "Trade already has an options strategy builder (set up strategies, place orders from there); copy it into
 ATP, a tab in the Terminal; check first, then plan."
@@ -41,3 +41,9 @@ The port differs from Trade in 3 documented places (docs/design/OI_BANNER.md): t
 missing data; strictness "B" = own direction Strong (Trade's could never pass); a stale PCR fails closed.
 - D4: keep these 3 safety differences (default) / exact Trade behaviour.
 - Note: the table fills only for underlyings switched on in the OI settings (per organisation, UI28Q-2).
+
+## Owner answer 30 Oct: "Ho; that safety gate nako - this is only analysis, the user sets it as he wants"
+- D1-D3: defaults approved. D4: the Option analysis tab shows Trade's behaviour exactly (no fail-closed gate, Trade's
+  strictness); every threshold is the user's own OI setting. Scope: the analysis display only - the paper-bot entry
+  gate (O5) stays as built unless the owner says so (ask once when building).
+- Build order next session: after PROSE-1 #732 merges; one PR "TERM-3" behind `term_strategy_builder` (OFF).

@@ -261,6 +261,8 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | M55 | in progress (approved 30 Oct) | Phase A table, then S1-S8 in parallel, T1-T3, rest | claude/m55-* |
 | M57 | not started (owner order 30 Oct) | U7 sidebar show / hide | claude/m57-* |
 | M58 | not started (owner order 30 Oct) | T4 Terminal gutters + Panels steppers | claude/m58-* |
+| M59 | not started (owner order 30 Oct) | Copilot reading card + Analyze a chart reachable / hybrid (CR-1..CR-6) | claude/m59-* |
+| M60 | proposal (owner order 30 Oct; build waits for ✅) | Sidebar / tabs rationalisation: before/after table + mockups | claude/m60-* |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |

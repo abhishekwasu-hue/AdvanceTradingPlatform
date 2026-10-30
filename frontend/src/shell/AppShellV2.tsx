@@ -34,7 +34,10 @@ import { closedFlag } from "./pageFlags";
 import { ComingSoon } from "../ui/ComingSoon";
 import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
 import SidebarV2 from "./SidebarV2";
-import TopBarV2 from "./TopBarV2";
+import TopBarV2, { type TopBarV2Props } from "./TopBarV2";
+import AskAiSheetV2 from "./AskAiSheetV2";
+import { AskAiProvider, useAskAiOptions } from "./askAiEntry";
+import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { usePaperOnly } from "../setup/paperOnly";
 import { liveHiddenFrom } from "../settings/useLiveHidden";
 import { useStrategyNames } from "../ui/useStrategyNames";
@@ -210,6 +213,8 @@ export default function AppShellV2() {
     <ColourV2Provider on={colour}>
       {/* UX-6: the page on screen hands its help line to the header's (?) (src/shell/pageHelp.tsx). */}
       <PageHelpProvider>
+      {/* CT-1 C10: the page on screen hands its symbol / timeframe / expiry to the one Ask AI (src/shell/askAiEntry.tsx). */}
+      <AskAiProvider>
       <div className="flex min-h-screen bg-surface" data-shell="v2">
         <a href="#main"
           className="sr-only focus:not-sr-only focus:fixed focus:left-space-2 focus:top-space-2 focus:z-[70] focus:rounded-control focus:bg-surface-1 focus:px-space-3 focus:py-space-2 focus:text-t14 focus:text-fg focus:shadow-raised">
@@ -219,7 +224,7 @@ export default function AppShellV2() {
         <div className="relative flex min-w-0 flex-1 flex-col">
           {/* UX-12: the dotted backdrop behind the top of the page (decoration; tokens.css .dot-backdrop). */}
           <div aria-hidden className="dot-backdrop" data-dot-backdrop />
-          <TopBarV2 title={title} section={key} user={user} accountPath={accountPath}
+          <TopBarWithAskAi on={features.on} title={title} section={key} user={user} accountPath={accountPath}
             notificationsActive={key === "notifications"} accountActive={key === "account"}
             onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined}
             paperOnly={frontPaperOnly || liveHidden} onTour={replayTour} />
@@ -261,7 +266,25 @@ export default function AppShellV2() {
           </Suspense>
         )}
       </div>
+      </AskAiProvider>
       </PageHelpProvider>
     </ColourV2Provider>
+  );
+}
+
+/**
+ * CT-1 C10: the top bar with the one Ask AI button and its sheet. The button shows for a signed-in trader while the page
+ * on screen has at least one option (each behind the flag that gated it before).
+ */
+function TopBarWithAskAi({ on, ...bar }: TopBarV2Props & { on: (flag: string) => boolean }) {
+  const [open, setOpen] = useState(false);
+  const phone = useMediaQuery(PHONE_QUERY);
+  const { ctx, options } = useAskAiOptions(on, bar.section ?? null);
+  const shown = !!bar.user && options.length > 0;
+  return (
+    <>
+      <TopBarV2 {...bar} onAskAi={shown ? () => setOpen(true) : undefined} askAiOpen={shown && open} />
+      {shown && <AskAiSheetV2 open={open} onOpenChange={setOpen} ctx={ctx} options={options} phone={phone} />}
+    </>
   );
 }

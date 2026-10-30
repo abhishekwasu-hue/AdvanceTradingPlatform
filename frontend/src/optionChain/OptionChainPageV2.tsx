@@ -18,7 +18,7 @@ import ChainCharts from "./ChartsViewV2";
 import OiViewV2 from "./OiViewV2";
 import ColumnsMenuV2 from "./ColumnsMenuV2";
 import {
-  INDEX_SYMBOLS, STOCK_SYMBOLS, chainNotes, initialSymbol, readColumns, writeColumns, type ColumnPrefs,
+  chainNotes, initialSymbol, readColumns, writeColumns, type ColumnPrefs,
 } from "./model";
 import RowDetailsV2 from "./RowDetailsV2";
 import { ChainLadderV2, Note } from "./ChainLadderV2";
@@ -27,9 +27,12 @@ import { usePrevClose } from "./spotChange";
 import type { ChainRow } from "./types";
 import { useOptionChain, type OptionChainData } from "./useOptionChain";
 import { Combobox } from "../ui/Combobox";
+import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
+import { useOptionalAuth } from "../auth/AuthContext";
 import { Sheet } from "../components/primitives/Dialog";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { AskAi } from "./AskAiV2";
+import { useHasAskAiEntry, useRegisterAskAi } from "../shell/askAiEntry";
 
 /**
  * OC1 (owner: "After login everything should happen automatically"): the Option chain page in the v2 shell.
@@ -148,11 +151,16 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   const spot = useTerminalSpot({ symbol, hub: useFeatures().on("data_hub"), enabled: true, chain: live ?? null });
   const notes = chainNotes(live, marketOpen, (iso) => formatTimeIST(iso));
   const prevClose = usePrevClose(symbol);
-  const extraSymbol = useMemo(() => (new Set<string>([...INDEX_SYMBOLS, ...STOCK_SYMBOLS]).has(symbol) ? null : symbol), [symbol]);
+  const auth = useOptionalAuth();
   const expiryOptions = chain.expiries?.expiries.length
     ? chain.expiries.expiries
     : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const pickedRow: ChainRow | null = live?.rows.find((r) => r.strike === picked) ?? null;
+  // CT-1 C10: inside the shell the chain's Ask AI is in the top bar's one Ask AI (src/shell/askAiEntry.tsx); the page
+  // hands it the symbol and expiry. Outside the shell the header keeps its own button and panel.
+  const shellAsk = useHasAskAiEntry();
+  const askExpiry = live?.expiry ?? chain.expiry;
+  useRegisterAskAi(shellAsk ? { symbol, expiry: askExpiry, chain: { symbol, expiry: askExpiry, refreshKey: live?.fetched_at ?? undefined } } : null);
   const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions, signal });
   const setupState = useSetupStrikes(signal, live?.summary.spot ?? null);
   const setupData = setupState.status === "ready" && setupState.data.underlying === symbol ? setupState.data : null;
@@ -176,8 +184,9 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         <div data-tour="oc-pickers" className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2 md:flex md:gap-space-3">
           <div className="min-w-0 md:w-48">
             <label htmlFor={symbolId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
-            <Combobox id={symbolId} label="Symbol" value={symbol} onChange={(v) => { setPicked(null); onSymbol(v); }} searchable className="w-full"
-              options={symbolOptions(extraSymbol)} />
+            {/* CT-1 C6: the one symbol picker, over the symbols that have options. */}
+            <SymbolPicker id={symbolId} label="Symbol" value={symbol} exchange={symbol === "SENSEX" ? "BSE" : "NSE"} universe="optionable"
+              storageKey={recentKeyFor(auth?.user?.id)} onPick={(p) => { if (p.symbol !== symbol) { setPicked(null); onSymbol(p.symbol); } }} className="w-full min-w-0" />
           </div>
           <div className="min-w-0 md:w-56">
             <label htmlFor={expiryId} className="mb-space-1 flex items-center gap-space-1 text-t12 font-medium text-fg-muted">
@@ -189,10 +198,10 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
           </div>
           <ColumnsMenuV2 prefs={prefs} onChange={onPrefs} />
           {/* OC-2: "Ask AI about this chain" is the header's primary action - a side panel (phone: a bottom sheet). */}
-          <button type="button" onClick={() => setAskOpen(true)} data-oc-ask-open
+          {!shellAsk && <button type="button" onClick={() => setAskOpen(true)} data-oc-ask-open
             className="col-span-3 inline-flex min-h-11 items-center justify-center gap-space-2 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface md:col-span-1 md:min-h-9">
             <Sparkles size={16} aria-hidden />Ask AI
-          </button>
+          </button>}
         </div>
       </header>
 
@@ -238,9 +247,9 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       {/* OC4: the Analysis tabs, Ask AI and My analyses for the chain on screen. */}
       <AnalysisSlotV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />
 
-      <Sheet side={phone ? "bottom" : "right"} open={askOpen} onOpenChange={setAskOpen} title="Ask AI about this chain">
+      {!shellAsk && <Sheet side={phone ? "bottom" : "right"} open={askOpen} onOpenChange={setAskOpen} title="Ask AI about this chain">
         <AskAi symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? undefined} />
-      </Sheet>
+      </Sheet>}
 
       <RowDetailsV2 row={pickedRow} atm={live?.summary.atm_strike ?? null} underlying={symbol} onClose={() => setPicked(null)} />
     </div>

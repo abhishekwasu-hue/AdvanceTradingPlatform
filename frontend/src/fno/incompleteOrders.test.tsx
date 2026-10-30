@@ -41,7 +41,8 @@ describe("the countdown", () => {
 describe("the incomplete order card", () => {
   it("shows what filled, what did not, the time left and what his rule does", () => {
     const html = text(renderToStaticMarkup(<IncompleteCardV2 item={ITEM} secondsLeft={245} busy={false} onAnswer={() => undefined} />));
-    expect(html).toContain("Incomplete order: NIFTY 50 (practice)");
+    expect(html).toContain("Incomplete order: NIFTY 50");
+    expect(html).not.toContain("(practice)");                                // CT-1 C8: the screen's one PAPER badge says it
     expect(html).toContain("Filled (1)");
     expect(html).toContain("NIFTY 24400 PE");
     expect(html).toContain("Not placed (1)");

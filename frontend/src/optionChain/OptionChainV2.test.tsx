@@ -96,8 +96,9 @@ describe("OC1 automatic symbol and expiry", () => {
     expect(hookSource).toContain("}, [symbol, listRound]);");
     expect(pageSource).not.toMatch(/Analy[sz]e|Refresh|Load chain|Show chain/);
     const html = view();
-    // UX-5: the shared combobox shows the value on its button; its rows come from symbolOptions / expiryComboOptions.
-    expect(html).toMatch(/aria-label="Symbol"[^>]*data-combobox="NIFTY"/);
+    // CT-1 C6: the symbol is the one SymbolPicker over the symbols with options; the expiry stays the shared combobox.
+    expect(html).toMatch(/role="combobox"[^>]*value="NIFTY"/);
+    expect(pageSource).toContain('universe="optionable"');
     expect(html).toMatch(/aria-label="Expiry"[^>]*data-combobox="2026-11-03"[^>]*>.*?3 Nov 2026/s);
     expect(expiryComboOptions([{ date: "2026-10-27", kind: "monthly" }])).toEqual([{ value: "2026-10-27", label: "27 Oct 2026", hint: "Monthly" }]);
     // The order of the symbols: NIFTY, BANKNIFTY, FINNIFTY, SENSEX, then the F&O stocks.
@@ -107,7 +108,7 @@ describe("OC1 automatic symbol and expiry", () => {
   });
 
   it("a deep-linked symbol outside the list is still selected", () => {
-    expect(view({}, { symbol: "NEWLISTED" })).toMatch(/data-combobox="NEWLISTED"/);
+    expect(view({}, { symbol: "NEWLISTED" })).toMatch(/role="combobox"[^>]*value="NEWLISTED"/);
     expect(symbolOptions("NEWLISTED")[0]).toEqual({ value: "NEWLISTED", label: "NEWLISTED" });
   });
 

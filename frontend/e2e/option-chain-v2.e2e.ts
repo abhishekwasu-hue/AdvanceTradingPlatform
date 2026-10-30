@@ -120,7 +120,7 @@ test.describe("Option chain v2 at 1440", () => {
     await chainReady(page);
     expect(calls.expiries).toEqual(["NIFTY"]);
     expect(calls.live[0]).toBe("NIFTY@2026-11-03");
-    await expectComboValue(page.getByLabel("Symbol", { exact: true }), "NIFTY");
+    await expect(page.getByLabel("Symbol", { exact: true })).toHaveValue("NIFTY");          // CT-1 C6: the one SymbolPicker
     await expectComboValue(page.getByLabel("Expiry", { exact: true }), "2026-11-03");
     await expectAtmCentred(page);
     // Desktop columns: OI, OI change, Volume, IV, LTP on each side, the strike in the centre; Greeks and bid / ask off.
@@ -145,13 +145,19 @@ test.describe("Option chain v2 at 1440", () => {
     await expect(page.locator("[data-chain-scroll] thead")).toContainText("Delta");
     await expect(page.locator("[data-chain-scroll] thead")).toContainText("Bid");
     await page.keyboard.press("Escape");
-    // UX-5: the keyboard works like a select - Down opens it on the current row, Down moves, Enter picks.
+    // CT-1 C6: the one SymbolPicker over the symbols with options - focused, it suggests the indices; Down moves, Enter picks.
     await page.getByLabel("Symbol", { exact: true }).focus();
+    await expect(page.getByRole("listbox", { name: "Suggested symbols" }).getByRole("option")).toHaveCount(4);
     await page.keyboard.press("ArrowDown");
-    await expect(page.locator("[data-combobox-list] [aria-selected='true']")).toHaveAttribute("data-value", "NIFTY");
+    await expect(page.locator("[role='listbox'] [aria-selected='true'] span").first()).toHaveText("NIFTY");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
-    await expectComboValue(page.getByLabel("Symbol", { exact: true }), "BANKNIFTY");
+    await expect(page.getByLabel("Symbol", { exact: true })).toHaveValue("BANKNIFTY");
+    // Typing searches only the symbols that have options (no server call): a share with options, never one without.
+    await page.getByLabel("Symbol", { exact: true }).fill("relia");
+    await expect(page.getByRole("listbox", { name: "Matching symbols" }).getByRole("option").first()).toContainText("RELIANCE");
+    await page.keyboard.press("Escape");
+    await expect(page.getByLabel("Symbol", { exact: true })).toHaveValue("BANKNIFTY");
     await expect.poll(() => calls.live[calls.live.length - 1]).toBe("BANKNIFTY@2026-11-03");
     expect(calls.expiries).toEqual(["NIFTY", "BANKNIFTY"]);
     await chainReady(page);
@@ -233,7 +239,11 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
         await expect(block.locator("[data-oc-analyses='ok']")).toBeVisible();
         await expect(block.getByRole("tab", { name: /Support/ })).toBeVisible();
         await expect(block.getByRole("region", { name: "Ask AI about this option chain" })).toHaveCount(0);   // OC-2: in the header's panel
-        await page.locator("[data-oc-ask-open]").click();
+        // CT-1 C10: the one Ask AI in the top bar, then "Ask about this chain" (the page has no button of its own).
+        await expect(page.locator("[data-oc-ask-open]")).toHaveCount(0);
+        await page.locator("[data-ask-ai-open]").click();
+        await expect(page.getByRole("dialog").locator("[data-ask-context]")).toContainText("Expiry 3 Nov");
+        await page.getByRole("dialog").locator("[data-ask-option='chain']").click();
         await expect(page.getByRole("dialog").getByRole("region", { name: "Ask AI about this option chain" })).toBeVisible();
         await expect(page.getByRole("dialog").getByRole("button", { name: /highest call OI/ })).toBeVisible();   // 3 suggested questions
         await page.keyboard.press("Escape");

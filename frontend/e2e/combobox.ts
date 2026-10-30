@@ -25,7 +25,10 @@ export async function comboOptions(page: Page, combobox: Locator): Promise<Locat
  * row's value or `{ label }` - the drop-in for `selectOption` while the v2 pages move to the combobox.
  */
 export async function choose(page: Page, field: Locator, pick: string | { label: string }): Promise<void> {
-  if ((await field.evaluate((e) => e.tagName)) === "SELECT") { await field.selectOption(pick); return; }
+  const tag = await field.evaluate((e) => e.tagName);
+  if (tag === "SELECT") { await field.selectOption(pick); return; }
+  // CT-1 C6: the one SymbolPicker (a text field): type the symbol and press Enter, as a user does.
+  if (tag === "INPUT" && typeof pick === "string") { await field.fill(pick); await field.press("Enter"); await expect(field).toHaveValue(pick); return; }
   await field.click();
   const list = page.locator("[data-combobox-list]");
   const row = typeof pick === "string" ? list.locator(`[role='option'][data-value='${pick}']`)
@@ -36,7 +39,8 @@ export async function choose(page: Page, field: Locator, pick: string | { label:
 
 /** UI-28 U3.3: the field's picked value, for the shared combobox or a <select>. */
 export async function expectChoice(field: Locator, value: string): Promise<void> {
-  if ((await field.evaluate((e) => e.tagName)) === "SELECT") await expect(field).toHaveValue(value);
+  const tag = await field.evaluate((e) => e.tagName);
+  if (tag === "SELECT" || tag === "INPUT") await expect(field).toHaveValue(value);       // CT-1 C6: the SymbolPicker is a field
   else await expect(field).toHaveAttribute("data-combobox", value);
 }
 

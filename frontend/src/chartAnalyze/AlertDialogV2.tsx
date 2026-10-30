@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { useOptionalAuth } from "../auth/AuthContext";
+import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
 import { api } from "../api/client";
 import { friendlyError } from "../api/errors";
 import { Button, Dialog, Input } from "../components/primitives";
@@ -26,6 +28,8 @@ export interface AlertTarget {
 
 export default function AlertDialogV2({ target, onClose, onCreated }: { target: AlertTarget | null; onClose: () => void; onCreated: (text: string) => void }) {
   const [symbol, setSymbol] = useState("");
+  const symbolId = useId();
+  const auth = useOptionalAuth();
   const [low, setLow] = useState("");
   const [high, setHigh] = useState("");
   const [busy, setBusy] = useState(false);
@@ -67,7 +71,12 @@ export default function AlertDialogV2({ target, onClose, onCreated }: { target: 
       </>}>
       <div className="space-y-space-3">
         {target.approximate && <p className="rounded-control bg-warn-tint px-space-3 py-space-2 text-t12 text-fg" role="note">{APPROXIMATE_NOTE}</p>}
-        <Input label="Symbol" value={symbol} onChange={(e) => setSymbol(e.target.value)} autoCapitalize="characters" className="h-11 md:h-9" />
+        <div className="space-y-1">
+          <label htmlFor={symbolId} className="block text-xs font-medium text-fg-muted">Symbol</label>
+          {/* CT-1 C6: the one symbol picker; a typed symbol is kept when the field is left. */}
+          <SymbolPicker id={symbolId} label="Symbol" value={symbol} exchange="NSE" storageKey={recentKeyFor(auth?.user?.id)}
+            onPick={(p) => setSymbol(p.symbol)} commitTyped onClear={() => setSymbol("")} className="w-full" />
+        </div>
         {target.band ? (
           <div className="grid grid-cols-2 gap-space-3">
             <Input label="From price" type="number" inputMode="decimal" value={low} onChange={(e) => setLow(e.target.value)} className="h-11 md:h-9" />

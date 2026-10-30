@@ -240,8 +240,11 @@ describe("8b-l the PAPER frame on every F&O order surface", () => {
   it("the ticket, the basket panel and the positions page carry the frame", () => {
     expect(ticketSource).toContain("<PracticeFrame />");
     expect(panelSource).toContain("<PracticeFrame />");
-    // Positions: while every position shown is PAPER (a LIVE one, never in Phase 0, has its own "Live" chip per row).
-    expect(positionsSource).toMatch(/list\.every\(\(p\) => p\.mode === "PAPER"\) \? <PracticeFrame/);   // UI-28 U1.1: in the title row
+    // CT-1 C8: positions carry the one PAPER badge in the title row while a paper position or trade is shown; a LIVE row
+    // has its own LIVE badge, and no row repeats "Paper".
+    expect(positionsSource).toMatch(/action=\{showsPaper\([^\n]*\) \? <PaperBadge/);
+    expect(positionsSource).toContain('{row.mode === "Live" && <LiveBadge />}');
+    expect(positionsSource).not.toContain("{row.mode}</ChipV2>");
   });
 
   it("the chain's action sheet (Buy / Sell, You hold, Exit) and the futures chain with trading on are marked", () => {

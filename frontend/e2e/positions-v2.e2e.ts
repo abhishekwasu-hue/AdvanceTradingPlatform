@@ -132,7 +132,7 @@ test.describe("v2 positions 1440 desktop", () => {
     await expect(short).toContainText("Short");
     await expect(short).toContainText("+₹1,000");
     const live = page.locator("[data-position='203']");
-    await expect(live).toContainText("Live");
+    await expect(live).toContainText("LIVE");                                          // CT-1 C8: the LIVE badge
     await expect(live).toContainText("−₹400");
     await expect(live).toContainText("Close a live position in your broker's app.");
 

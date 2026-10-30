@@ -4,7 +4,9 @@
  * hours, hourly cap, grouping, end-of-day digest time), dead-lettered deliveries with retry, and the user's own
  * Telegram link and email opt-outs. A rule only notifies - it never places or changes an order.
  */
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useState } from "react";
+import { useOptionalAuth } from "../auth/AuthContext";
+import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import {
@@ -94,6 +96,8 @@ function NewRuleForm({ onCreated }: { onCreated: () => void }) {
   const [form, setForm] = useState<AlertRuleInput>(NEW_RULE);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const symbolId = useId();
+  const auth = useOptionalAuth();
   const set = <K extends keyof AlertRuleInput>(k: K, v: AlertRuleInput[K]) => setForm((f) => ({ ...f, [k]: v }));
   async function submit() {
     const local = ruleErrors(form);
@@ -110,7 +114,12 @@ function NewRuleForm({ onCreated }: { onCreated: () => void }) {
     <div className="space-y-2">
       <div className="grid gap-2 sm:grid-cols-3">
         <Input label="Name" value={form.name} onChange={(e) => set("name", e.target.value)} maxLength={120} />
-        <Input label="Symbol" value={form.symbol} onChange={(e) => set("symbol", e.target.value)} placeholder="TCS" />
+        <div className="space-y-1">
+          <label htmlFor={symbolId} className="block text-xs font-medium text-fg-muted">Symbol</label>
+          {/* CT-1 C6: the one symbol picker; a typed symbol is kept when the field is left. */}
+          <SymbolPicker id={symbolId} label="Symbol" value={form.symbol} exchange="NSE" placeholder="TCS" storageKey={recentKeyFor(auth?.user?.id)}
+            onPick={(p) => set("symbol", p.symbol)} commitTyped onClear={() => set("symbol", "")} className="w-full" />
+        </div>
         <Select label="Timeframe" value={form.base_tf} onChange={(v) => set("base_tf", v)} options={TIMEFRAMES.map((t) => ({ value: t, label: t }))} />
       </div>
       <Input label="Condition" value={form.condition} onChange={(e) => set("condition", e.target.value)}

@@ -61,13 +61,22 @@ export function ReadChartBody({ read }: { read: ReadChart }) {
   );
 }
 
-export function ReadChartPanel({ state }: { state: ReadState }) {
+/** CT-1 C10: `onHide` (inside the shell, where the switch is in Ask AI) puts a "Hide the reading" button beside it. */
+export function ReadChartPanel({ state, onHide }: { state: ReadState; onHide?: () => void }) {
   if (state.status === "idle" || state.status === "off") return null;
   return (
-    <div role="status" className="border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">
-      {state.status === "loading" && <span>Reading this chart…</span>}
-      {state.status === "failed" && <span>This chart could not be read. Turn Read this chart off and on again to retry.</span>}
-      {state.status === "ready" && <ReadChartBody read={state.read} />}
+    <div role="status" className="flex items-start gap-space-2 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">
+      <div className="min-w-0 flex-1">
+        {state.status === "loading" && <span>Reading this chart…</span>}
+        {state.status === "failed" && <span>{onHide ? "This chart could not be read. Hide the reading and read it again from Ask AI." : "This chart could not be read. Turn Read this chart off and on again to retry."}</span>}
+        {state.status === "ready" && <ReadChartBody read={state.read} />}
+      </div>
+      {onHide && (
+        <button type="button" onClick={onHide} data-testid="read-chart-hide"
+          className="inline-flex min-h-11 shrink-0 items-center rounded-control px-space-2 text-t13 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9">
+          Hide the reading
+        </button>
+      )}
     </div>
   );
 }

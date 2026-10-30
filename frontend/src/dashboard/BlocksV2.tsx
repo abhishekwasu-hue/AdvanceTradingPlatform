@@ -8,6 +8,8 @@ import { checkTone, toneProblem, toneSurfaceClass, type Toned } from "../ui/tone
 import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2, toneClass } from "./CardV2";
 import { WIN_RATE_DAYS, signTone, type PositionRow, type SignalRow, type TodayTiles } from "./model";
 import { Signed } from "../ui/numbersFirst";
+import { LiveBadge, PaperBadge } from "../ui/PaperBadge";
+import { showsPaper } from "../ui/paperWords";
 
 /**
  * UI2-2 (UI v2 proposal §5 blocks 5-7): Open positions (up to five rows, "View all" to My positions), Active signals (up
@@ -20,7 +22,8 @@ type Rows<T> = { status: "loading" } | { status: "error" } | { status: "ok"; row
 export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
   const total = data.status === "ok" ? data.total : undefined;
   return (
-    <CardV2 title="Open positions" count={total} more={{ label: "View all", to: "/positions" }} testId="positions" tour="dashboard-positions">
+    <CardV2 title="Open positions" count={total} more={{ label: "View all", to: "/positions" }} testId="positions" tour="dashboard-positions"
+      badge={data.status === "ok" && showsPaper(data.rows.map((p) => p.mode)) ? <PaperBadge /> : undefined}>
       {data.status === "loading" ? <LoadingRowsV2 /> : data.status === "error" ? <LoadFailedV2 what="your positions" /> : data.rows.length === 0 ? (
         <EmptyStateV2 text="All positions are closed." action={{ label: "Find setups", to: "/screener" }} />
       ) : (
@@ -32,7 +35,7 @@ export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-space-2">
                     <span className="truncate text-t15 font-semibold text-fg">{p.symbol}</span>
-                    <ChipV2 kind={p.mode === "Live" ? "solid" : "outline"}>{p.mode}</ChipV2>
+                    {p.mode === "Live" && <LiveBadge />}
                   </div>
                   <p className="mt-px text-t13 text-fg-muted">{p.detail}</p>
                 </div>

@@ -1,9 +1,10 @@
 import { errorSentence } from "../api/errors";
 import * as RD from "@radix-ui/react-dialog";
-import { ChevronRight, Minus, Plus, ShieldCheck, X } from "lucide-react";
+import { ChevronRight, Minus, Plus, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { PaperBadge } from "../ui/PaperBadge";
 import { Details } from "../ui/Details";
 import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
@@ -11,7 +12,7 @@ import { formatPrice } from "../ui/format";
 import { useFeatures } from "../ui/useFeatures";
 import { fnoApi, runOnOptions, type FnoApi, type MultiExitResult, type MultiResult, type OrderPreview, type OrderResult, type PracticeAccount, type Side } from "./api";
 import {
-  MAX_LOTS, ORDER_TYPES, PRACTICE_TEXT, PRACTICE_TITLE, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
+  MAX_LOTS, ORDER_TYPES, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
   blockedBy, draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
   PRODUCT_UNSET_TEXT,
 } from "./ticketModel";
@@ -261,15 +262,8 @@ export function needsStop(problem: string | null | undefined): boolean {
   return !!problem && /stop-loss/i.test(problem);
 }
 
-/** UI-28 U1.1: one "PAPER" chip beside the title (the mode labelled once); the sentence is its tooltip, not a band. */
-export function PracticeFrame({ className }: { className?: string } = {}) {
-  return (
-    <span title={PRACTICE_TEXT} aria-label={`${PRACTICE_TITLE}: ${PRACTICE_TEXT}`}
-      className={cx("inline-flex shrink-0 items-center gap-space-1 rounded-pill bg-warn-tint px-space-2 py-px text-t12 font-semibold text-warn", className)} data-practice-frame>
-      <ShieldCheck size={12} aria-hidden />{PRACTICE_TITLE}
-    </span>
-  );
-}
+/** UI-28 U1.1 / CT-1 C8: the one "PAPER" badge (ui/PaperBadge), kept under its old name for the pieces that import it. */
+export const PracticeFrame = PaperBadge;
 
 const sentence = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 

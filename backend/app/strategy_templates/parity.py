@@ -47,15 +47,36 @@ class Answer:
     instance: Optional[str] = None
 
 
+def needs(recipe: Recipe) -> Dict[str, int]:
+    """R6 (REV-S3): the bars every timeframe the recipe reads needs before it can answer - its refusal lookback and its
+    fetch lookback (a function that reads as missing on a shorter frame: DowTrend at degree 1 on its first 250 bars, so
+    `DowTrend(1)@1d` needs 250 daily bars although it refuses nothing)."""
+    out = {tf: int(b) for tf, b in recipe.lookback.items()}
+    for tf, bars in recipe.fetch_lookback.items():
+        out[tf] = max(out.get(tf, 0), int(bars))
+    out[recipe.settings.timeframe] = max(out.get(recipe.settings.timeframe, 0), recipe.min_bars)
+    return out
+
+
 def fetch_bars(recipe: Recipe, safety: int = SAFETY_FACTOR) -> int:
-    """R6: the signal-timeframe bars to fetch - the most any timeframe the recipe reads needs (a context timeframe's
-    bars converted to signal bars, a session-sized timeframe by the 375-minute session), times `safety`."""
+    """R6: the signal-timeframe bars to fetch - the most any timeframe the recipe reads needs (`needs`: a context
+    timeframe's bars converted to signal bars, a session-sized timeframe by the 375-minute session), times `safety`."""
     tf = recipe.settings.timeframe
     need = recipe.min_bars
-    for other, bars in recipe.lookback.items():
-        if other != tf:
-            need = max(need, math.ceil(bars * n.TF_MINUTES[other] / n.TF_MINUTES[tf]))
+    for other, bars in needs(recipe).items():
+        need = max(need, bars if other == tf else math.ceil(bars * n.TF_MINUTES[other] / n.TF_MINUTES[tf]))
     return int(need * safety)
+
+
+def need_sessions(recipe: Recipe) -> int:
+    """R6 (REV-S3): the trading sessions of history the recipe reads before its first answer, without the safety factor
+    (what a user is told a test window lacks): each timeframe's bars over its bars per 375-minute session."""
+    most = 1
+    for tf, bars in needs(recipe).items():
+        minutes = n.TF_MINUTES[tf]
+        sessions = bars * minutes // 375 if minutes >= 375 else math.ceil(bars / math.ceil(375 / minutes))
+        most = max(most, int(sessions))
+    return most
 
 
 def scan_answers(recipe: Recipe, window: pd.DataFrame) -> Dict[pd.Timestamp, Answer]:
@@ -156,5 +177,5 @@ def compare_trades(reference: Dict[pd.Timestamp, Answer], trades: List[Tuple[pd.
     return out
 
 
-__all__ = ["SAFETY_FACTOR", "PATHS", "Answer", "fetch_bars", "scan_answers", "backtest_answers", "options_answers", "worker_answers",
+__all__ = ["SAFETY_FACTOR", "PATHS", "Answer", "needs", "fetch_bars", "need_sessions", "scan_answers", "backtest_answers", "options_answers", "worker_answers",
            "compare", "compare_trades"]

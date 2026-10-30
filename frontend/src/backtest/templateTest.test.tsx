@@ -56,4 +56,13 @@ describe("day-one fix 1: a strategy template is tested on Strategies › Test", 
     expect(readFileSync("src/ideas/IdeaLibraryV2.tsx", "utf8")).toContain("Test it on past prices");
     expect(readFileSync("src/paperbot/PaperBotV2.tsx", "utf8")).toContain("Test it first on past prices");
   });
+
+  it("REV-S3: a template run's history note shows with the result, in the warning tokens", () => {
+    const page = readFileSync("src/pages/BacktestPage.tsx", "utf8");
+    const at = page.indexOf('data-testid="history-note"');
+    expect(at).toBeGreaterThan(page.indexOf('<StatTile label="Total Trades"'));
+    expect(page.slice(at - 200, at + 200)).toContain("result.history?.note");
+    expect(page.slice(at, at + 200)).toContain("border-warn/40 bg-warn/10");
+    expect(readFileSync("src/types.ts", "utf8")).toContain("history?: { note: string | null; needed_days: number; warmup_days: number } | null;");
+  });
 });

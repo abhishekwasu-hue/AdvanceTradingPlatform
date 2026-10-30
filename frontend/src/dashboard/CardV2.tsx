@@ -30,7 +30,7 @@ export function CardV2({ title, count, more, children, className = "", testId, t
   const titleId = useId();
   return (
     <section aria-labelledby={titleId} data-block={testId} data-tour={tour} className={`${CARD} p-space-4 md:p-space-5 ${className}`}>
-      <div className="flex min-h-11 items-center justify-between gap-space-3 md:min-h-0">
+      <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-space-3 md:min-h-0">
         <h2 id={titleId} className="flex items-center gap-space-2 text-t15 font-semibold text-fg">
           {title}
           {count !== undefined && count > 0 && (

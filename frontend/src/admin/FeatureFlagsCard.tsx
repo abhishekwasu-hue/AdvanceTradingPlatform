@@ -3,6 +3,7 @@ import { useId, useState } from "react";
 import { Card } from "../components/ui";
 import type { FeatureFlags } from "../types";
 import { FLAG_FILTERS, groupFlags, statusTone, type FlagFilter } from "./flagList";
+import LiveOrgsBlock from "./LiveOrgsBlock";
 
 /**
  * UX1 (audit section 7, handover 8b): the admin Feature flags list - grouped by area, with a search box. Each row: the
@@ -20,6 +21,8 @@ export interface FeatureFlagsCardProps {
   onSet: (name: string, on: boolean, confirm?: string) => void;
   /** Save the allow-list of an OFF flag. */
   onSaveList: (name: string) => void;
+  /** M55 S1b: the owner grants (or revokes) LIVE for one organisation, with the typed confirmation. */
+  onGrantLive?: (tenantId: number, granted: boolean, confirm: string) => void;
 }
 
 const TONES = {
@@ -29,7 +32,7 @@ const TONES = {
   muted: "border-border text-fg-muted",
 } as const;
 
-export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSet, onSaveList }: FeatureFlagsCardProps) {
+export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSet, onSaveList, onGrantLive }: FeatureFlagsCardProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FlagFilter>("all");
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -118,10 +121,14 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
                           )}
                         </div>
                       </details>
+                      {flag.live_orgs && (
+                        <LiveOrgsBlock orgs={flag.live_orgs} canChange={!!flag.can_switch_live} confirmText={confirmText}
+                          busy={busy} onGrant={onGrantLive} />
+                      )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 md:justify-end">
                       <span className={`font-bold ${flag.on ? "text-up" : "text-down"}`}>
-                        {flag.on ? "ON" : `OFF${flag.tenants.length ? ` (${flag.tenants.length} allowed)` : ""}`}
+                        {flag.on ? "ON" : `OFF${flag.tenants.length && !flag.owner_only ? ` (${flag.tenants.length} allowed)` : ""}`}
                       </span>
                       {opensLive && !flag.can_switch_live ? (
                         <span data-flag-owner-only className="text-fg-muted">Only the owner can switch LIVE on</span>

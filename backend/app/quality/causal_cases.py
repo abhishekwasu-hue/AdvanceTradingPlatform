@@ -233,6 +233,10 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
                        'RetestEntryRef("stop_level_atr", "up", "trendline", 20, FALSE, 1, k=0)',
                        'RetestEntryRef("retest_low", "down", "swing", 20, FALSE, k=0, swing=0)',
                        'RetestEntryRef("held_level", "down", "trendline_projected", 20, FALSE, k=0)'],
+    # M55 T5: the ported level gate as a series (strategy template A1); tests/test_m55_t5_pullback_area.py also runs the
+    # harness on 15-minute bars long enough for the Daily trend (31 sessions), where the gate fires
+    "AreaGate": ['AreaGate("up")', 'AreaGate("down", min_rr=1, max_armed_bars=12)'],
+    "AreaGateRef": ['AreaGateRef("invalidation", "up")', 'AreaGateRef("invalidation", "down", sl_buffer_mr=0.5)'],
     # Z7a-3: market zones from stored snapshots - the case builds a causal snapshot timeline from the bars (_zone_timeline)
     "NearZone": ['NearZone("demand", 0.5)', "NearZone()@1h", 'NearZone("supply", 1.0, "zones")'],
     "ZoneRole": ["ZoneRole(0.5)", "ZoneRole(1.0)@1h"],

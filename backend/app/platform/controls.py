@@ -466,6 +466,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # copy carries NO security name, NO price, NO date and NOT the chart picture (CLAUDE.md, SEBI): the structure only.
     # Acts only while chart_analyze is on too. OFF: the share routes answer 503 and the Share button is hidden.
     "chart_analyze_share": "Analyze a chart: share a structure-only copy of your analysis with your organisation (no names, no prices; places no orders)",
+    # M59 CR-4 (owner order ATP_ORDER_M59): "Advanced analysis (code + AI)" - the user picks the symbol and timeframe of
+    # his uploaded chart; ATP's own structure reading of the stored candles (areas of interest, protected levels, the
+    # last break, its candle) is drawn by code on a server-rendered chart beside his picture, and the private engine's
+    # AI part, when it has one, reads only those facts. No price is read from the picture. Acts only while
+    # chart_analyze (and the price-action layer) are on too; OFF until the owner's ✅. Places no orders.
+    "chart_analyze_hybrid": "Analyze a chart: advanced analysis - ATP's own structure reading of the stored candles for the symbol and timeframe you pick, drawn beside your chart (places no orders)",
     # N4 CH6 (docs/design/CHARTING.md): ScreenQL expressions drawn as chart studies, computed by the screener's own runtime
     # from the shared lake bars as of a time (lines for numbers, marks for conditions). OFF: GET /api/charts/studies
     # answers 503 and the chart shows no study panel. Reference only - places no orders.
@@ -608,7 +614,7 @@ async def flag_listing(session: AsyncSession) -> Dict[str, Dict]:
 # User-friendly pass item 7: a feature whose server-side engine is absent is unavailable to users, whatever its flag.
 # Analyze a chart needs the private analysis engine (app/chart_analyze/provider.py); without it the user nav hides the
 # page, a direct visit shows "Coming soon", and only the admin flag list says why.
-ENGINE_FLAGS = ("chart_analyze", "chart_analyze_strikes", "chart_analyze_share")
+ENGINE_FLAGS = ("chart_analyze", "chart_analyze_strikes", "chart_analyze_share", "chart_analyze_hybrid")
 ENGINE_MISSING_REASON = "The chart analysis engine (private package) is not installed on this server, so users do not see this feature."
 
 

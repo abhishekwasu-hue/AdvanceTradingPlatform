@@ -1,7 +1,7 @@
 import { ApiError, getToken, request, tryRefresh } from "../api/client";
 import { API_V1 } from "../api/base";
 import { apiErrorFrom, NETWORK_MESSAGE } from "../api/errors";
-import type { AnalysisItem, AnalyzeStatus, SharedAnalysis, StrikesAnswer } from "./types";
+import type { AnalysisItem, AnalyzeStatus, HybridPick, SharedAnalysis, StrikesAnswer } from "./types";
 
 /**
  * Analyze a chart: the calls the page makes (backend app/chart_analyze/routes.py). JSON routes go through the shared
@@ -58,10 +58,15 @@ export const chartAnalyzeApi = {
   unshare: (id: number) => request<AnalysisItem>(`${PATH}/items/${id}/share`, { method: "DELETE" }),
   /** The structure-only copy behind a link (no name, no price, no date, no picture). */
   shared: (token: string) => request<SharedAnalysis>(`${PATH}/shared/${encodeURIComponent(token)}`),
-  /** One chart: a file or a link (never both). */
-  add: async (source: { file?: Blob; fileName?: string; link?: string }, mode: "image_only" | "hybrid"): Promise<AnalysisItem> => {
+  /** One chart: a file or a link (never both). Hybrid also sends the symbol / timeframe the user picked (M59 CR-4) -
+   * the only source of them; no price is ever sent or read from the picture. */
+  add: async (source: { file?: Blob; fileName?: string; link?: string }, mode: "image_only" | "hybrid", pick?: HybridPick): Promise<AnalysisItem> => {
     const form = new FormData();
     form.append("mode", mode);
+    if (mode === "hybrid" && pick) {
+      form.append("symbol", pick.symbol);
+      form.append("timeframe", pick.timeframe);
+    }
     if (source.file) form.append("file", source.file, source.fileName ?? "chart.png");
     else form.append("link", source.link ?? "");
     const response = await authed(`${PATH}/items`, { method: "POST", body: form });
@@ -69,4 +74,6 @@ export const chartAnalyzeApi = {
   },
   /** The stored (cleaned) image of the caller's own item, as a Blob (an <img> cannot send the token). */
   image: async (id: number): Promise<Blob> => (await authed(`${PATH}/items/${id}/image`)).blob(),
+  /** A hybrid item's annotated chart of ATP's reading (the download), as a Blob. */
+  readingPng: async (id: number): Promise<Blob> => (await authed(`${PATH}/items/${id}/reading.png`)).blob(),
 };

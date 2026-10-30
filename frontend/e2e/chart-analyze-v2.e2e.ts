@@ -350,13 +350,13 @@ test.describe("Analyze a chart: the flow", () => {
     await expect(page.getByTestId("disclaimer")).toBeVisible();
   });
 
-  test("engine not installed: 'not available right now', never Coming soon or the install reason (item 7, A1)", async ({ page }) => {
+  test("engine not installed: M59 CR-3 plain line, never Coming soon or the install reason (item 7, A1)", async ({ page }) => {
     await open(page, "/chart-analyze", "light");
     await mockChartAnalyze(page, "formed");
     await page.route(/\/api(?:\/v1)?\/chart-analyze\/status$/, (route) =>
       route.fulfill({ json: fixtureStatus({ engine: { installed: false, message: "Analysis engine not installed" } }) }));
     await page.goto("/chart-analyze");
-    await expect(page.getByText("Chart analysis is not available right now")).toBeVisible();
+    await expect(page.getByText("Chart upload analysis is being switched on")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Coming soon" })).toHaveCount(0);
     await expect(page.locator("main")).not.toContainText(/not installed|administrator installs|ATP_PRIVATE_REF/i);
     await expect(page.getByRole("button", { name: "Analyze", exact: true })).toHaveCount(0);

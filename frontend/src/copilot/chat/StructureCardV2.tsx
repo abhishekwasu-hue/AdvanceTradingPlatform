@@ -1,8 +1,9 @@
 import { Eye } from "lucide-react";
+import { Fragment } from "react";
 import { cx } from "../../components/primitives/cx";
 import { HelpPopover } from "../../ui/HelpPopover";
 import { EMPTY, formatNumber } from "../../ui/format";
-import { cardAreaText, cardTrendText, notReadyText, swingText, type CardArea, type StructureCard } from "./model";
+import { areaNote, cardAreaText, cardTrendText, notReadyText, swingText, type CardArea, type StructureCard } from "./model";
 
 /**
  * M59 CR-1 (owner order ATP_ORDER_M59): the Copilot's chart reading as a card, not prose - the structure per timeframe
@@ -23,8 +24,9 @@ function AreaList({ title, areas, tone }: { title: string; areas: CardArea[]; to
       {areas.length === 0 ? <p className="mt-space-1 text-t13 text-fg-muted">{EMPTY}</p> : (
         <ul className="mt-space-1 space-y-space-1">
           {areas.map((a) => (
-            <li key={`${a.from}-${a.to}`} className={cx("font-tabular text-t13", tone === "up" ? "text-up" : "text-down")} data-area={a.where}>
-              {cardAreaText(a, num)}
+            <li key={`${a.from}-${a.to}`} className="font-tabular" data-area={a.where} aria-label={cardAreaText(a, num)}>
+              <span className={cx("block whitespace-nowrap text-t12 font-semibold md:text-t13", tone === "up" ? "text-up" : "text-down")}>{num(a.from)} – {num(a.to)}</span>
+              <span className="block text-t12 text-fg-muted">{areaNote(a, num)}</span>
             </li>
           ))}
         </ul>
@@ -53,39 +55,47 @@ export function StructureCardV2({ card }: { card: StructureCard }) {
   const swingHelp = swings && <span className="md:hidden"><HelpPopover title="Swing levels" align="end"><SwingChips levels={card.swing_levels} /></HelpPopover></span>;
   return (
     <section className="space-y-space-3 rounded-control border border-subtle p-space-3" data-structure-card={card.symbol} aria-label={`${card.symbol} structure`}>
-      <div className="-mx-space-1 overflow-x-auto" data-card-block="table">
+      <div className="-mx-space-1 overflow-x-auto md:max-w-3xl" data-card-block="table">
         <table className="w-full min-w-0 border-collapse text-left">
           <thead>
             <tr className="text-t12 font-medium uppercase text-fg-muted">
               <th scope="col" className="px-space-1 py-space-1 font-medium">Timeframe</th>
               <th scope="col" className="px-space-1 py-space-1 font-medium">Trend</th>
               <th scope="col" className="px-space-1 py-space-1 text-right font-medium">Protected level</th>
-              <th scope="col" className="px-space-1 py-space-1 font-medium">Last break</th>
+              <th scope="col" className="hidden px-space-1 py-space-1 font-medium md:table-cell">Last break</th>
             </tr>
           </thead>
           <tbody>
             {card.timeframes.map((row) => (
-              <tr key={row.tf} className="border-t border-subtle align-middle" data-tf={row.tf} data-ready={row.ready}>
-                {row.ready ? (
-                  <>
-                    <th scope="row" className="px-space-1 py-space-2 text-t13 font-semibold text-fg">{row.label}</th>
-                    <td className="px-space-1 py-space-2">
-                      <span className={cx(CHIP, row.trend ? TONE[row.trend] : "bg-surface-2 text-fg-muted")} data-trend={row.trend ?? "none"}
-                        data-weak={row.weak || undefined}>{cardTrendText(row)}</span>
+              <Fragment key={row.tf}>
+                <tr className="border-t border-subtle align-middle" data-tf={row.tf} data-ready={row.ready}>
+                  {row.ready ? (
+                    <>
+                      <th scope="row" className="px-space-1 py-space-2 text-t13 font-semibold text-fg">{row.label}</th>
+                      <td className="px-space-1 py-space-2">
+                        <span className={cx(CHIP, row.trend ? TONE[row.trend] : "bg-surface-2 text-fg-muted")} data-trend={row.trend ?? "none"}
+                          data-weak={row.weak || undefined}>{cardTrendText(row)}</span>
+                      </td>
+                      <td className="px-space-1 py-space-2 text-right font-tabular text-t13 text-fg">{row.protected === null ? EMPTY : num(row.protected)}</td>
+                      <td className="hidden px-space-1 py-space-2 text-t13 text-fg-muted md:table-cell" data-last-break>
+                        {row.last_break ? <>{row.last_break.label} <span className="font-tabular text-fg">{num(row.last_break.price)}</span></> : EMPTY}
+                      </td>
+                    </>
+                  ) : (
+                    <td colSpan={4} className="px-space-1 py-space-2">
+                      <span className={cx(CHIP, "bg-surface-2 text-fg-muted")} data-not-ready={row.tf}>{notReadyText(row)}</span>
                     </td>
-                    <td className="px-space-1 py-space-2 text-right font-tabular text-t13 text-fg">{row.protected === null ? EMPTY : num(row.protected)}</td>
-                    <td className="px-space-1 py-space-2 text-t12 text-fg-muted">
-                      {row.last_break ? (
-                        <><span className="block">{row.last_break.label}</span><span className="block font-tabular text-t13 text-fg">{num(row.last_break.price)}</span></>
-                      ) : EMPTY}
+                  )}
+                </tr>
+                {/* phone: the last break is a short line under its row (the table keeps three columns there) */}
+                {row.ready && row.last_break && (
+                  <tr className="md:hidden" data-last-break-phone={row.tf}>
+                    <td colSpan={3} className="px-space-1 pb-space-2 text-t12 text-fg-muted">
+                      Last break: {row.last_break.label} <span className="font-tabular text-fg">{num(row.last_break.price)}</span>
                     </td>
-                  </>
-                ) : (
-                  <td colSpan={4} className="px-space-1 py-space-2">
-                    <span className={cx(CHIP, "bg-surface-2 text-fg-muted")} data-not-ready={row.tf}>{notReadyText(row)}</span>
-                  </td>
+                  </tr>
                 )}
-              </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -96,7 +106,7 @@ export function StructureCardV2({ card }: { card: StructureCard }) {
             <h3 className="text-t13 font-semibold text-fg">Areas nearby</h3>
             {swingHelp && <span className="flex items-center gap-space-1 text-t12 text-fg-muted md:hidden">Swing levels {swingHelp}</span>}
           </div>
-          <div className="mt-space-1 grid grid-cols-2 gap-space-3">
+          <div className="mt-space-1 grid grid-cols-2 gap-space-3 md:max-w-3xl">
             <AreaList title="Above" areas={card.areas_above} tone="down" />
             <AreaList title="Below" areas={card.areas_below} tone="up" />
           </div>

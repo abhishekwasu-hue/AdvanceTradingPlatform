@@ -263,8 +263,10 @@ describe("the chat-first Copilot page", () => {
     expect(t).toContain("▼ Down · weak");
     expect(card).toContain('data-not-ready="1h"');
     expect(t).toContain("1-hour: data not ready");
-    expect(t).toContain("Supply 25,080.00 – 25,160.00 · 229.50 pts");
-    expect(t).toContain("Demand 24,520.00 – 24,610.00 · 240.50 pts");
+    expect(t).toContain("25,080.00 – 25,160.00 Supply · 229.50 pts");
+    expect(t).toContain("24,520.00 – 24,610.00 Demand · 240.50 pts");
+    expect(card).toContain('aria-label="Supply 25,080.00 – 25,160.00 · 229.50 pts"');
+    expect(t).toContain("Last break: Swing break 24,790.00");                 // the phone line under its row
     expect(t).toContain("Swing high 25,010.50");
     expect(t).toContain("What to watch:");
     expect(t).not.toMatch(/of the 30|bars needed|\b\d+ of \d+ bars/);

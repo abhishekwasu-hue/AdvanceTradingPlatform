@@ -254,6 +254,12 @@ export function cardAreaText(area: CardArea, num: (v: number) => string): string
   return `${side}${num(area.from)} – ${num(area.to)} · ${gap}`;
 }
 
+/** M59 CR-1: an area's second line on the card - "Supply · 229.50 pts" / "Demand · price inside". */
+export function areaNote(area: CardArea, num: (v: number) => string = String): string {
+  const side = area.side ? `${area.side[0].toUpperCase()}${area.side.slice(1)} · ` : "";
+  return `${side}${area.where === "inside" ? "price inside" : `${num(area.distance)} pts`}`;
+}
+
 /** M59 CR-1: a swing level chip - "Swing high 25,010.50" / "Swing low 24,600.50". */
 export function swingText(level: StructureCard["swing_levels"][number], num: (v: number) => string): string {
   return `${level.side === "high" ? "Swing high" : level.side === "low" ? "Swing low" : "Swing level"} ${num(level.price)}`;

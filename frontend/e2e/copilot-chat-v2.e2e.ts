@@ -274,9 +274,10 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
       await expect(card).toBeVisible();
       await expect(card.locator("[data-tf='1d']")).toContainText("24,310.00");
       await expect(card.locator("[data-not-ready='1h']")).toHaveText("1-hour: data not ready");
-      await expect(card.locator("[data-areas='above']")).toContainText("Supply 25,080.00 – 25,160.00 · 229.50 pts");
+      await expect(card.locator("[data-areas='above']")).toContainText("25,080.00 – 25,160.00Supply · 229.50 pts");
       await expect(card.locator("[data-card-block='watch']")).toContainText("What to watch:");
-      await expect(page.getByText(/\*\*|of the 30|bars needed/)).toHaveCount(0);
+      await expect(card).not.toContainText(/\*\*|of the 30|bars needed/);
+      await expect(page.getByText(/\*\*/)).toHaveCount(0);
       if (width === 390) {
         await expect(card.locator("[data-card-block='swings']")).toBeHidden();
         await expect(card.getByRole("button", { name: "Help: Swing levels" })).toBeVisible();

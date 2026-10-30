@@ -111,7 +111,7 @@ def _day_hashes(bars: pd.DataFrame, starts: list[int]) -> list[str]:
     """Chained hashes: h[k] covers every bar before day k's first bar (h[len(starts)] covers all bars)."""
     cols = np.ascontiguousarray(bars[["open", "high", "low", "close", "volume"]].to_numpy(float))
     stamps = np.ascontiguousarray(pd.DatetimeIndex(bars["timestamp"]).asi8)
-    out, h = [], hashlib.sha1(b"m55t5")
+    out, h = [], hashlib.sha1(b"m55t5", usedforsecurity=False)
     bounds = list(starts) + [len(bars)]
     prev = 0
     for b in bounds:

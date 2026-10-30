@@ -92,6 +92,7 @@ class OptionBacktestBody(BaseModel):
     allow_synthetic_fallback: bool = True
     option_chain: Optional[List[OptionChainSnapshotRow]] = Field(default=None, max_length=500_000)
     intraday: bool = True
+    hold_for_days: bool = False       # M55 T1: a credit structure held for days (no square-off at the close)
 
     def to_config(self, holidays=()) -> OptionBacktestConfig:
         return OptionBacktestConfig(
@@ -102,7 +103,7 @@ class OptionBacktestBody(BaseModel):
             custom_legs=[CustomLeg.from_dict(leg.model_dump()) for leg in (self.custom_legs or [])], max_lots=self.max_lots,
             lot_size=self.lot_size, strike_step=self.strike_step, expiry_weekday=self.expiry_weekday, weekly_expiry=self.weekly_expiry,
             holidays=set(holidays), implied_volatility=self.implied_volatility, realised_vol_window=self.realised_vol_window,
-            risk_free_rate=self.risk_free_rate, intraday=self.intraday,
+            risk_free_rate=self.risk_free_rate, intraday=self.intraday, hold_for_days=self.hold_for_days,
         )
 
 

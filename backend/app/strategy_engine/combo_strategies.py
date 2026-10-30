@@ -48,6 +48,19 @@ def session_vwap_or_mean(df: pd.DataFrame) -> pd.Series:
     return vwap.fillna(running_mean)
 
 
+AVERAGE_LINE = "the average price line (no volume on an index)"
+
+
+def session_has_volume(df: pd.DataFrame) -> bool:
+    """True when the last bar's IST session has traded volume so far, i.e. session_vwap_or_mean() is a real VWAP there
+    (an index has none: the line is then the running mean of the typical price)."""
+    if "volume" not in df or df.empty:
+        return False
+    days = pd.Series(_ist_index(df).date, index=df.index)
+    volume = df["volume"].fillna(0.0)
+    return bool(float(volume[days == days.iloc[-1]].sum()) > 0)
+
+
 class _SingleTf(BaseStrategy):
     category = StrategyCategory.INDICATOR_BASED
 
@@ -65,7 +78,7 @@ class MacdEmaTrend(_SingleTf):
     description = "MACD crossing its signal line, taken only in the direction of the EMA(200) trend. ATR stop."
     default_params: Dict[str, Any] = {
         "tf": "5min", "macd_fast": 12, "macd_slow": 26, "macd_signal": 9, "ema_trend": 200,
-        "atr_period": 14, "atr_mult_sl": 1.2, "target_rr": (1.5, 2.5), "min_rr": 1.2,
+        "atr_period": 14, "atr_mult_sl": 1.2, "target_rr": (1.5, 2.5),
     }
 
     def min_history(self) -> Dict[str, int]:
@@ -91,12 +104,10 @@ class MacdEmaTrend(_SingleTf):
         trend_gap = abs(close - trend_last) / max(atr_last, 1e-9)
         score = int(round(min(100, 45 + min(25.0, trend_gap * 8) + min(30.0, abs(line - sig) / max(atr_last, 1e-9) * 60))))
         if cross_up and close > trend_last:
-            reasons = [f"MACD({p['macd_fast']},{p['macd_slow']},{p['macd_signal']}) crossed above its signal line",
-                       f"Close {close:.2f} above EMA{p['ema_trend']} {trend_last:.2f}: uptrend"]
+            reasons = ["MACD crossed above its signal line", "The close holds above the trend EMA: uptrend"]
             return self.build_signal(symbol, ts, SignalDirection.LONG, close, close - atr_last * p["atr_mult_sl"], score, reasons, p["target_rr"])
         if cross_down and close < trend_last:
-            reasons = [f"MACD({p['macd_fast']},{p['macd_slow']},{p['macd_signal']}) crossed below its signal line",
-                       f"Close {close:.2f} below EMA{p['ema_trend']} {trend_last:.2f}: downtrend"]
+            reasons = ["MACD crossed below its signal line", "The close holds below the trend EMA: downtrend"]
             return self.build_signal(symbol, ts, SignalDirection.SHORT, close, close + atr_last * p["atr_mult_sl"], score, reasons, p["target_rr"])
         return self.no_trade(symbol, ts, ["No MACD cross in the direction of the EMA trend"])
 
@@ -107,7 +118,7 @@ class BollingerRsiReversion(_SingleTf):
     description = "Mean reversion: a close back inside the Bollinger band right after an RSI extreme outside it."
     default_params: Dict[str, Any] = {
         "tf": "5min", "bb_period": 20, "bb_k": 2.0, "rsi_period": 14, "rsi_low": 30, "rsi_high": 70,
-        "atr_period": 14, "atr_buffer": 0.2, "target_rr": (1.2, 2.0), "min_rr": 1.2,
+        "atr_period": 14, "atr_buffer": 0.2, "target_rr": (1.2, 2.0),
     }
 
     def min_history(self) -> Dict[str, int]:
@@ -131,13 +142,11 @@ class BollingerRsiReversion(_SingleTf):
         recent_low = float(df["low"].iloc[-3:].min())
         recent_high = float(df["high"].iloc[-3:].max())
         if prev_close < lower_prev and rsi_prev <= p["rsi_low"] and close > lower:
-            reasons = [f"Close back inside the lower Bollinger band ({p['bb_period']},{p['bb_k']})",
-                       f"RSI({p['rsi_period']}) was oversold at {rsi_prev:.1f}"]
+            reasons = ["The close came back inside the lower Bollinger band", "RSI was oversold on the bar before"]
             score = int(round(min(100, 55 + (p["rsi_low"] - rsi_prev) * 2)))
             return self.build_signal(symbol, ts, SignalDirection.LONG, close, recent_low - atr_last * p["atr_buffer"], score, reasons, p["target_rr"])
         if prev_close > upper_prev and rsi_prev >= p["rsi_high"] and close < upper:
-            reasons = [f"Close back inside the upper Bollinger band ({p['bb_period']},{p['bb_k']})",
-                       f"RSI({p['rsi_period']}) was overbought at {rsi_prev:.1f}"]
+            reasons = ["The close came back inside the upper Bollinger band", "RSI was overbought on the bar before"]
             score = int(round(min(100, 55 + (rsi_prev - p["rsi_high"]) * 2)))
             return self.build_signal(symbol, ts, SignalDirection.SHORT, close, recent_high + atr_last * p["atr_buffer"], score, reasons, p["target_rr"])
         return self.no_trade(symbol, ts, ["No re-entry into the Bollinger band after an RSI extreme"])
@@ -146,9 +155,10 @@ class BollingerRsiReversion(_SingleTf):
 class VwapSupertrend(_SingleTf):
     id = "vwap_supertrend_5m"
     name = "VWAP + Supertrend"
-    description = "Trend entries when Supertrend flips (or price reclaims VWAP) with Supertrend and VWAP agreeing."
+    description = ("Trend entries when Supertrend flips (or price reclaims VWAP) with Supertrend and VWAP agreeing. On an index "
+                   "(no volume) the line is the session's average price line instead of a VWAP.")
     default_params: Dict[str, Any] = {
-        "tf": "5min", "st_period": 10, "st_mult": 3.0, "atr_buffer": 0.2, "target_rr": (1.5, 2.5), "min_rr": 1.2,
+        "tf": "5min", "st_period": 10, "st_mult": 3.0, "atr_buffer": 0.2, "target_rr": (1.5, 2.5),
     }
 
     def min_history(self) -> Dict[str, int]:
@@ -168,18 +178,21 @@ class VwapSupertrend(_SingleTf):
         vw, vw_prev, atr_last = vwap.iloc[-1], vwap.iloc[-2], atr_s.iloc[-1]
         if any(pd.isna(v) for v in [line, vw, vw_prev, atr_last]) or trend == 0 or trend_prev == 0:
             return self.no_trade(symbol, ts, ["Indicators not yet warmed up"])
+        # REV-B3 (REVQ-4 default): an index has no volume, so the line is the session's average price, not a VWAP -
+        # named truthfully; a session with volume keeps the VWAP name.
+        line_name = "VWAP" if session_has_volume(df) else AVERAGE_LINE
         flip_up, flip_down = trend_prev == -1 and trend == 1, trend_prev == 1 and trend == -1
         reclaim_up = trend == 1 and prev_close <= vw_prev and close > vw
         reclaim_down = trend == -1 and prev_close >= vw_prev and close < vw
         if (flip_up and close > vw) or reclaim_up:
-            reasons = ["Supertrend flipped bullish" if flip_up else "Price reclaimed VWAP in a Supertrend uptrend",
-                       f"Close {close:.2f} above VWAP {vw:.2f}"]
+            reasons = ["Supertrend flipped bullish" if flip_up else f"Price reclaimed {line_name} in a Supertrend uptrend",
+                       f"The close holds above {line_name}"]
             return self.build_signal(symbol, ts, SignalDirection.LONG, close, float(line) - atr_last * p["atr_buffer"], 70 if flip_up else 60, reasons, p["target_rr"])
         if (flip_down and close < vw) or reclaim_down:
-            reasons = ["Supertrend flipped bearish" if flip_down else "Price lost VWAP in a Supertrend downtrend",
-                       f"Close {close:.2f} below VWAP {vw:.2f}"]
+            reasons = ["Supertrend flipped bearish" if flip_down else f"Price lost {line_name} in a Supertrend downtrend",
+                       f"The close holds below {line_name}"]
             return self.build_signal(symbol, ts, SignalDirection.SHORT, close, float(line) + atr_last * p["atr_buffer"], 70 if flip_down else 60, reasons, p["target_rr"])
-        return self.no_trade(symbol, ts, ["Supertrend and VWAP do not agree on a fresh entry"])
+        return self.no_trade(symbol, ts, [f"Supertrend and {line_name} do not agree on a fresh setup"])
 
 
 class OpeningRangeBreakout(_SingleTf):
@@ -188,7 +201,7 @@ class OpeningRangeBreakout(_SingleTf):
     description = "First close beyond the 09:15-09:30 IST opening range, volume-confirmed when volume exists; stop at the range middle."
     default_params: Dict[str, Any] = {
         "tf": "5min", "range_minutes": 15, "last_entry": "14:30", "volume_mult": 1.5, "volume_lookback": 20,
-        "target_rr": (1.5, 2.5), "min_rr": 1.2,
+        "target_rr": (1.5, 2.5),
     }
 
     def min_history(self) -> Dict[str, int]:
@@ -219,14 +232,14 @@ class OpeningRangeBreakout(_SingleTf):
         vol = df["volume"].fillna(0.0) if "volume" in df else pd.Series(0.0, index=df.index)
         avg_vol = float(vol.iloc[-p["volume_lookback"] - 1:-1].mean()) if len(vol) > 1 else 0.0
         vol_ok = avg_vol <= 0 or float(vol.iloc[-1]) >= p["volume_mult"] * avg_vol
-        vol_note = "no volume on this instrument (index): volume check skipped" if avg_vol <= 0 else f"volume {float(vol.iloc[-1]):.0f} vs avg {avg_vol:.0f}"
+        vol_note = "no volume on this instrument (index): volume check skipped" if avg_vol <= 0 else "volume above its recent average"
         if close > r_high and not (closes_before > r_high).any() and vol_ok:
-            reasons = [f"First close above the opening range high {r_high:.2f}", vol_note]
+            reasons = ["First close above the opening range", vol_note]
             return self.build_signal(symbol, ts, SignalDirection.LONG, close, mid, 65, reasons, p["target_rr"])
         if close < r_low and not (closes_before < r_low).any() and vol_ok:
-            reasons = [f"First close below the opening range low {r_low:.2f}", vol_note]
+            reasons = ["First close below the opening range", vol_note]
             return self.build_signal(symbol, ts, SignalDirection.SHORT, close, mid, 65, reasons, p["target_rr"])
-        return self.no_trade(symbol, ts, [f"No fresh breakout of the opening range {r_low:.2f}-{r_high:.2f}"])
+        return self.no_trade(symbol, ts, ["No fresh breakout of the opening range"])
 
 
 def build_combo_strategies() -> List[BaseStrategy]:

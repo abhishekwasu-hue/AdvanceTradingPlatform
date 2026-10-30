@@ -5,7 +5,7 @@ import { Card } from "../components/ui";
 import type { StrategyInfo } from "../types";
 import { PageHeader } from "../components/primitives";
 import { useUiV2 } from "../ui/useFeatures";
-import { paramChips, timeframeWords } from "../ui/strategyLabels";
+import { libraryChips, timeframeWords } from "../ui/strategyLabels";
 
 // UI2-3 (UI v2 §3 M6): with `ui_v2` on, the signal generator lives in each strategy's drawer ("Try it on a symbol"),
 // its own chunk; with the flag off this page renders exactly as before.
@@ -44,10 +44,10 @@ export default function StrategiesPage() {
                 Try it on a symbol
               </button>
             )}
-            {/* SB-UX SU7: the strategy's settings as readable chips ("Fast EMA 9"), never raw JSON. */}
-            {paramChips(s.default_params).length > 0 && (
+            {/* SB-UX SU7: the strategy's settings as readable chips ("Fast EMA 9"), never raw JSON; REV-B2: no no-op R:R chip. */}
+            {libraryChips(s.default_params).length > 0 && (
               <ul className="flex flex-wrap gap-1.5" aria-label="Settings" data-rule-chips>
-                {paramChips(s.default_params).map((c) => (
+                {libraryChips(s.default_params).map((c) => (
                   <li key={c} className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-xs text-fg">{c}</li>
                 ))}
               </ul>

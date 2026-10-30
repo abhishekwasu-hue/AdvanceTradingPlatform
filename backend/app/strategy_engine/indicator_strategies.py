@@ -29,7 +29,6 @@ class EmaRsiScalper(BaseStrategy):
         "atr_period": 14,
         "atr_mult_sl": 1.0,
         "target_rr": (1.5, 2.0),
-        "min_rr": 1.2,
     }
 
     def __init__(self, **params: Any) -> None:
@@ -71,8 +70,8 @@ class EmaRsiScalper(BaseStrategy):
 
         if bullish_cross and rsi_last > p["rsi_mid"]:
             reasons = [
-                f"EMA{p['ema_fast']} crossed above EMA{p['ema_slow']}",
-                f"RSI({p['rsi_period']})={rsi_last:.1f} confirms bullish momentum",
+                "The fast EMA crossed above the slow EMA",
+                "RSI above its middle level confirms bullish momentum",
             ]
             score = int(round(40 + rsi_score + separation_score))
             stop_loss = close - atr_last * p["atr_mult_sl"]
@@ -82,8 +81,8 @@ class EmaRsiScalper(BaseStrategy):
 
         if bearish_cross and rsi_last < p["rsi_mid"]:
             reasons = [
-                f"EMA{p['ema_fast']} crossed below EMA{p['ema_slow']}",
-                f"RSI({p['rsi_period']})={rsi_last:.1f} confirms bearish momentum",
+                "The fast EMA crossed below the slow EMA",
+                "RSI below its middle level confirms bearish momentum",
             ]
             score = int(round(40 + rsi_score + separation_score))
             stop_loss = close + atr_last * p["atr_mult_sl"]
@@ -110,7 +109,6 @@ class SupertrendAdxScalper(BaseStrategy):
         "adx_min": 20,
         "atr_mult_sl": 0.3,
         "target_rr": (1.5, 2.5),
-        "min_rr": 1.2,
     }
 
     def __init__(self, **params: Any) -> None:
@@ -149,8 +147,8 @@ class SupertrendAdxScalper(BaseStrategy):
 
         if flipped_bullish and adx_strong:
             reasons = [
-                f"Supertrend({p['st_period']},{p['st_mult']}) flipped bullish",
-                f"ADX({p['adx_period']})={adx_last:.1f} confirms trend strength",
+                "Supertrend flipped bullish",
+                "ADX confirms trend strength",
             ]
             score = int(round(40 + adx_score))
             stop_loss = st_line_last - atr_last * p["atr_mult_sl"]
@@ -160,8 +158,8 @@ class SupertrendAdxScalper(BaseStrategy):
 
         if flipped_bearish and adx_strong:
             reasons = [
-                f"Supertrend({p['st_period']},{p['st_mult']}) flipped bearish",
-                f"ADX({p['adx_period']})={adx_last:.1f} confirms trend strength",
+                "Supertrend flipped bearish",
+                "ADX confirms trend strength",
             ]
             score = int(round(40 + adx_score))
             stop_loss = st_line_last + atr_last * p["atr_mult_sl"]
@@ -171,7 +169,7 @@ class SupertrendAdxScalper(BaseStrategy):
 
         reasons = ["No fresh Supertrend flip with sufficient ADX strength"]
         if not adx_strong:
-            reasons.append(f"ADX({p['adx_period']})={adx_last:.1f} below threshold {p['adx_min']}")
+            reasons.append("ADX below its strength threshold: no clear trend")
         return self.no_trade(symbol, timestamp, reasons)
 
 
@@ -192,7 +190,6 @@ class RsiAdxMomentumScalper(BaseStrategy):
         "atr_period": 14,
         "atr_mult_sl": 1.0,
         "target_rr": (1.5, 2.0),
-        "min_rr": 1.2,
     }
 
     def __init__(self, **params: Any) -> None:
@@ -233,9 +230,9 @@ class RsiAdxMomentumScalper(BaseStrategy):
 
         if rsi_cross_up and plus_di > minus_di and adx_strong:
             reasons = [
-                f"RSI({p['rsi_period']}) crossed up through {p['rsi_mid']}",
-                f"+DI ({plus_di:.1f}) dominant over -DI ({minus_di:.1f})",
-                f"ADX({p['adx_period']})={adx_last:.1f} confirms trend strength",
+                "RSI crossed up through its middle level",
+                "+DI dominant over -DI: the upward directional movement leads",
+                "ADX confirms trend strength",
             ]
             score = int(round(30 + di_score + adx_score))
             stop_loss = close - atr_last * p["atr_mult_sl"]
@@ -245,9 +242,9 @@ class RsiAdxMomentumScalper(BaseStrategy):
 
         if rsi_cross_down and minus_di > plus_di and adx_strong:
             reasons = [
-                f"RSI({p['rsi_period']}) crossed down through {p['rsi_mid']}",
-                f"-DI ({minus_di:.1f}) dominant over +DI ({plus_di:.1f})",
-                f"ADX({p['adx_period']})={adx_last:.1f} confirms trend strength",
+                "RSI crossed down through its middle level",
+                "-DI dominant over +DI: the downward directional movement leads",
+                "ADX confirms trend strength",
             ]
             score = int(round(30 + di_score + adx_score))
             stop_loss = close + atr_last * p["atr_mult_sl"]

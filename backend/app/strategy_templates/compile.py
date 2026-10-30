@@ -73,6 +73,9 @@ class Part:
     kind: str                                   # num / bool
     params: Dict[str, Any]
     lookback: Dict[str, int]
+    # R6: the bars to FETCH per timeframe (the validator's fetch_lookback: at least `lookback`, more where a function reads
+    # as missing on a shorter frame - DowTrend's swing history by degree). Fetch sizing only; never a refusal.
+    fetch_lookback: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -90,6 +93,8 @@ class Recipe:
     has_trigger: bool = True                    # False: the setup event itself is the signal
     # step 5 (TPL-5): the invalidation is the extreme since the setup bar (the engine keeps it; no expression is compiled)
     invalidation_since_setup: bool = False
+    # R6 (REV-S3): the bars to fetch per timeframe - every part's fetch_lookback, at least `lookback` (fetch sizing only)
+    fetch_lookback: dict[str, int] = field(default_factory=dict)
 
     @property
     def chosen_setup(self) -> Setup:
@@ -248,7 +253,7 @@ def compile_part(text: str, *, what: str, want: str, template: Template, setting
         raise TemplateError([f"{what}: must be {'a condition (true / false)' if want == 'bool' else 'a number'}, got {kind}"])
     if want == "num" and check.unit not in ("price", None):
         raise TemplateError([f"{what}: must be a price, got a {check.unit} value"])
-    return Part(text, ast, str(kind), params, dict(check.validated.lookback))
+    return Part(text, ast, str(kind), params, dict(check.validated.lookback), dict(check.validated.fetch_lookback))
 
 
 def _pa_settings_fingerprint() -> str:
@@ -347,17 +352,20 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
     if problems:
         raise TemplateError(problems)
     lookback: Dict[str, int] = {}
+    fetch: dict[str, int] = {}
     flags: Set[str] = set()
     for (_, side), compiled_part in parts.items():
         if side not in settings.side_list():
             continue
         for tf, bars in compiled_part.lookback.items():
             lookback[tf] = max(lookback.get(tf, 0), bars)
+        for tf, bars in {**compiled_part.lookback, **compiled_part.fetch_lookback}.items():
+            fetch[tf] = max(fetch.get(tf, 0), bars, compiled_part.lookback.get(tf, 0))
         for call in _calls(compiled_part.ast):
             spec = FUNCTIONS[call.name]
             flags.update(f for f in (spec.flag, *spec.also_flags) if f)
     recipe = Recipe(template, settings, context_tf if context_on else None, context_on, parts, expiry, lookback, flags,
-                    setup=setup, has_trigger=trigger is not None, invalidation_since_setup=since_setup)
+                    setup=setup, has_trigger=trigger is not None, invalidation_since_setup=since_setup, fetch_lookback=fetch)
     recipe.params_hash = params_hash(template, settings)
     return recipe
 

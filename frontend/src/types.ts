@@ -246,6 +246,8 @@ export interface BacktestResult {
   options?: OptionBacktestSummary | null;
   // CP6-15: what the losses-in-a-row pause did in this run; absent when the limit was never reached.
   loss_streak?: { mode: LossStreakPause; limit: number; pauses: number; first_paused_at: string | null; held_to_end: boolean; note: string } | null;
+  /** REV-S3: a template run's history before the test window; `note` is one plain sentence when the test lacked it. */
+  history?: { note: string | null; needed_days: number; warmup_days: number } | null;
 }
 
 // Phase W: historical option backtests.

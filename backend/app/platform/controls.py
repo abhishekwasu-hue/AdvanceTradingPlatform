@@ -70,7 +70,7 @@ async def entry_blocks(session: AsyncSession, *, user: Optional[User], mode: str
     if current["maintenance_mode"]:
         reasons.append("Platform maintenance: no new entries" + (f" - {current['maintenance_message']}" if current["maintenance_message"] else ""))
     if mode == "LIVE":
-        # Z10-c: the Phase 0 PAPER-only lock (flag phase0_paper_only, off by default). Entries only - exits never come here.
+        # Z10-c: the Phase 0 PAPER-only lock (flag phase0_paper_only, ON by default - M55 S1). Entries only - exits never come here.
         from app.platform import phase0_lock
         if await phase0_lock.is_on(session, user.tenant_id if user is not None else None):
             reasons.append(phase0_lock.ENTRY_REASON)
@@ -557,10 +557,10 @@ DEFAULT_ON_FLAGS: frozenset[str] = frozenset({
     "backtest_optimizer",  # Phase N kill switch for optimisation grid runs; a simulation, places no orders
     "colour_v2",           # owner ✅ 24 Oct (DECISIONS): colour v2 ON by default; layout only, needs ui_v2, places no orders
     "colour_v3",           # owner 28 Oct (DECISIONS, UX-14): colour v3 ON by default, the flag kept to turn it off; layout only
-    "live_trading",        # Phase N kill switch for new LIVE deployments only; LIVE itself is gated by the trading:live
-                           # scope, the plan, step-up and the phase0_paper_only lock (Phase 0 mode seeds this OFF)
     "marketplace",         # Phase N kill switch for marketplace listings and subscriptions
     "options_builder",     # P1-c1 research-only payoff tool, places no orders; saving is options_builder_saved (OFF)
+    "phase0_paper_only",   # owner order M55 S1: the PAPER-only lock ON by default in every deployment mode; only the
+                           # owner may turn it off (app/platform/live_owner.py). `live_trading` is OFF by default (M55 S1).
     "public_api",          # Phase N kill switch for public API keys and /api/public/v1
     "self_signup",         # Phase N kill switch for public registration (OFF = invite-only); beta_cohort_gate is separate
     "terminal",            # owner ✅ 25 Oct (DECISIONS, T-D1): the Terminal ON for all users; needs ui_v2; orders go
@@ -641,13 +641,18 @@ def legal_open_placeholders() -> Dict[str, List[str]]:
 
 
 async def set_flag(session: AsyncSession, user: User, name: str, *, on: bool, tenants: Optional[List[int]] = None,
-                   override_open_placeholders: bool = False) -> Dict[str, Dict]:
+                   override_open_placeholders: bool = False, session_id: int | None = None,
+                   confirm: str | None = None) -> Dict[str, Dict]:
     if name not in FEATURE_FLAGS:
         raise ValueError(f"Unknown feature flag '{name}' - known: {sorted(FEATURE_FLAGS)}")
     from app.platform.flag_catalog import REMOVED_FROM_VIEW
     if name in REMOVED_FROM_VIEW and (on or tenants):
         # P2-1 FA-2 (owner ✅ 26 Oct): removed from view - it stays off; turning it off is always allowed.
         raise ValueError(f"'{name}' was removed from view (P2-1): {REMOVED_FROM_VIEW[name]}")
+    # M55 S1: `live_trading` on or the PAPER-only lock off - the owner only, two-factor checked, typed confirmation
+    # (app/platform/live_owner.py; audited either way, a refusal raises LiveOwnerRefused or the step-up refusal).
+    from app.platform import live_owner
+    await live_owner.ensure_may_open_live(session, user, name, on=on, tenants=tenants, session_id=session_id, confirm=confirm)
     if name == "live_trading":
         # Phase 0 deployment mode: no live_trading while phase0_paper_only is on (audited refusal, ValueError -> 400).
         await deployment_phase.refuse_live_trading_on(session, user.id, on=on, tenants=tenants)

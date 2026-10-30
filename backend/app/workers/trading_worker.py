@@ -20,8 +20,8 @@ UI process. Every `WORKER_CYCLE_SECONDS` (default 60, one base candle) one cycle
 5. Bookkeeping: per-deployment last_evaluated/last_signal/last_error, auto-PAUSE after repeated
    failures (with a SYSTEM_FAILURE alert), heartbeat row for the dashboard/ops.
 
-A Redis lock guards against two replicas trading the same deployments; Redis down means the lock
-fails open (single replica assumed) - see app/cache/client.py::cache_acquire_lock.
+A Redis lock guards against two replicas trading the same deployments; Redis down means no new automated
+entries (PAPER and LIVE alike, M55 A18) while exits continue - see app/cache/client.py::cache_try_lock.
 """
 import asyncio
 import copy
@@ -261,8 +261,8 @@ class TradingWorker:
     ) -> None:
         self.session_factory = session_factory
         self.cycle_seconds = cycle_seconds
-        # P0.1 / S2: in production/staging a LIVE entry needs the replica lock to be real (Redis reachable);
-        # a single dev/test replica may trade LIVE without Redis as before.
+        # P0.1 / S2: in production/staging a LIVE entry needed the replica lock to be real (Redis reachable). M55 A18: every
+        # new automated entry needs it now, in every environment; the attribute is kept for callers that still pass it.
         self.require_lock_for_live = ENVIRONMENT in HARDENED_ENVIRONMENTS if require_lock_for_live is None else require_lock_for_live
         self._lock_degraded = False
         self._lock_lost = False
@@ -483,7 +483,7 @@ class TradingWorker:
             await self._note_stale_lock(lock_ttl)
             return CycleReport(started_at=now, market_open=False, session_reason="lock held elsewhere", skipped_lock=True)
         if self._lock_degraded != (not reachable):
-            logger.warning("Redis %s - the replica lock is %s", "unreachable" if not reachable else "back", "off (LIVE entries paused where required)" if not reachable else "on again")
+            logger.warning("Redis %s - the replica lock is %s", "unreachable" if not reachable else "back", "off (new automated entries paused; exits continue)" if not reachable else "on again")
         self._lock_degraded = not reachable
         self._lock_lost = False
 
@@ -1152,7 +1152,7 @@ class TradingWorker:
     async def _keep_lock(self, session: AsyncSession, report: CycleReport, where: str) -> bool:
         """P0.1 / S2 renewal + H-1 fail-closed. False when the cycle must stop here (another replica holds the lock).
 
-        Renewed: carry on. Redis unreachable: the S2 degraded mode (LIVE entries paused where required). The key gone
+        Renewed: carry on. Redis unreachable: the degraded mode (M55 A18: no new automated entries; exits continue). The key gone
         (evicted at the memory cap): take it back, but no new entries for the rest of this cycle - a second replica
         could have run in the gap - and exits continue. Held by someone else: stop, the holder trades. Both raise the
         CRITICAL (app/workers/redis_guard.py)."""
@@ -1160,7 +1160,7 @@ class TradingWorker:
             return True
         holder, reachable = await cache_lock_holder(LOCK_KEY)
         if not reachable:
-            logger.warning("Redis unreachable %s - the replica lock is off (LIVE entries paused where required)", where)
+            logger.warning("Redis unreachable %s - the replica lock is off (new automated entries paused; exits continue)", where)
             self._lock_degraded = report.lock_degraded = True
             return True
         if holder == self.holder_id:
@@ -1584,8 +1584,10 @@ class TradingWorker:
                     _waiting(dep, now, WAIT_BROKER_CHECK)
                     await session.commit()
                     continue
-            if dep.mode == ExecutionMode.LIVE.value and self.require_lock_for_live and self._lock_degraded:
-                dep.last_error = "Redis replica lock unavailable - LIVE entries paused this cycle (a second worker could double-trade); exits continue"
+            if self._lock_degraded:
+                # M55 A18: fail closed - without the replica lock a second worker could double-trade, so no new automated
+                # entry (PAPER and LIVE alike, every environment). Exits, stops and square-off above already ran.
+                dep.last_error = "Redis replica lock unavailable - new automated entries paused this cycle (a second worker could double-trade); exits continue"
                 _waiting(dep, now, WAIT_NEXT_CHECK)
                 await session.commit()
                 continue
@@ -1973,6 +1975,14 @@ class TradingWorker:
             self._why(dep, "position_open", closed_bar, None)
             await session.commit()
             return False
+        opposite = await self._opposite_position(session, dep, signal.direction)
+        if opposite:
+            # M55 S6 (A11): the organisation's own setting (default deny) - one direction per symbol across its bots. Like
+            # "position_open", the signal is read again next cycle (the other bot's position may have closed by then).
+            dep.last_error = opposite
+            self._why(dep, "opposite_position", closed_bar, opposite)
+            await session.commit()
+            return False
         # OI Banner O5: opt-in OI gates before a NEW entry (this path never runs for exits - ADR-0004). Fail-closed.
         if getattr(dep, "oi_gates", None):
             from app.option_chain import oi_gates
@@ -1989,7 +1999,7 @@ class TradingWorker:
 
         # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; nothing is placed until a person approves.
         if await approval.required(session, dep.tenant_id, dep):
-            proposed = await self._propose_entry(session, dep, signal, signal_ts, now, user.id)
+            proposed = await self._propose_entry(session, dep, signal, signal_ts, now, user.id, market_data=market_data, frames=frames)
             waiting = (dep.last_error or "").startswith("Waiting for approval")
             self._why(dep, "proposed" if waiting else "risk_setting", closed_bar, None if waiting else dep.last_error)
             return proposed
@@ -2068,15 +2078,22 @@ class TradingWorker:
             logger.warning("Deployment %s: why-no-trade row not stored: %s", dep.id, exc)
 
     async def _propose_entry(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime,
-                             user_id: int) -> bool:
+                             user_id: int, *, market_data: MarketDataService | None = None, frames=None) -> bool:
         """Z3 / BT2: an approval-only deployment's signal -> one ENTRY proposal (PAPER). Returns False: nothing executed.
-        Phase 0 proposes the underlying (cash) only: a LIVE deployment places nothing through ATP, and option / future /
-        structure deployments are not proposed yet - each says so on the deployment instead."""
+        A LIVE deployment places nothing through ATP in Phase 0 (it says so on the deployment instead).
+        M55 T2: an option / future / structure deployment is proposed with its legs resolved here by the same resolver
+        and the same inputs as the automatic entry (`resolve_structure` / `resolve_contract`); Approve places exactly
+        those legs through the automatic entry's own order path (app/execution/approval.py::execute_entry)."""
         skip = None
+        structure = None
         if dep.mode == ExecutionMode.LIVE.value:
             skip = "Approval-only (Phase 0): ATP places no LIVE entry - deploy in PAPER to get entry proposals"
-        elif ContractRules.from_deployment(dep).derived or (dep.option_strategy or "SINGLE") != "SINGLE":
-            skip = "Approval-only (Phase 0): option / future deployments are not proposed yet - only the underlying is"
+        else:
+            rules = ContractRules.from_deployment(dep)
+            if rules.derived:
+                structure = await self._proposal_legs(session, dep, signal, signal_ts, now, rules, market_data, frames)
+                if structure is None:                       # not resolved: said on the deployment, as the automatic entry does
+                    return False
         dep.last_signal_at = signal_ts                      # this signal bar is handled either way
         dep.consecutive_failures = 0
         if skip is not None:
@@ -2087,7 +2104,8 @@ class TradingWorker:
             row = await approval.propose_entry(session, dep.tenant_id, signal=signal, strategy_id=dep.strategy_id, source="deployment",
                                                idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", deployment=dep,
                                                requested_mode=dep.mode, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
-                                               user_id=user_id, now=now, exchange=dep.exchange or "NSE")   # the resolved deployment user
+                                               user_id=user_id, now=now, exchange=dep.exchange or "NSE",   # the resolved deployment user
+                                               structure=structure)
         except approval.EntriesPaused as exc:          # Z3-b: the deployment creator paused their PAPER entries
             dep.last_error = f"Signal at {signal_ts.isoformat()} not proposed: {exc}"
             await session.commit()
@@ -2097,6 +2115,41 @@ class TradingWorker:
         await session.commit()
         logger.info("Deployment %s signal %s -> entry proposal %s", dep.id, signal.direction.value, row.id if row is not None else "-")
         return False
+
+    async def _proposal_legs(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime,
+                             rules: ContractRules, market_data: MarketDataService | None, frames) -> dict | None:
+        """M55 T2: the legs an automatic entry of this option / future deployment would place for this signal - the same
+        branch (`_evaluate_deployment`), resolver and inputs (spot = the newest close of the deployment's timeframe, the
+        cycle's chains) - as the proposal's payload. None when they cannot be resolved; the reason is on the deployment
+        with the automatic entry's own words (a structure the direction does not open marks the signal handled)."""
+        base = (frames or {}).get(dep.timeframe)
+        if base is None and frames:
+            base = next(iter(frames.values()))
+        spot = float(base["close"].iloc[-1]) if base is not None and len(base) else None
+        chains = _chain_provider(market_data.broker, self._cycle_chains) if market_data is not None else None
+        today = now.astimezone(IST).date()
+        structure_kind = OptionStrategy(dep.option_strategy or "SINGLE")
+        if rules.kind == InstrumentKind.OPTION and structure_kind != OptionStrategy.SINGLE:
+            try:
+                structure = await resolve_structure(
+                    session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
+                    spot=spot, today=today, chain_provider=chains, custom_legs=parse_custom_legs(getattr(dep, "custom_legs", None)),
+                )
+            except (ContractResolutionError, ValueError) as exc:
+                dep.last_error = f"Structure not built: {exc}"
+                dep.last_signal_at = signal_ts if "not entered on" in str(exc) else dep.last_signal_at
+                await session.commit()
+                logger.warning("Deployment %s: %s", dep.id, exc)
+                return None
+            return approval.structure_payload(structure=structure, max_lots=rules.max_lots)
+        try:
+            contract = await resolve_contract(session, dep.symbol, rules, signal.direction, spot=spot, today=today, chain_provider=chains)
+        except ContractResolutionError as exc:
+            dep.last_error = f"Contract not resolved: {exc}"
+            await session.commit()
+            logger.warning("Deployment %s: %s", dep.id, exc)
+            return None
+        return approval.structure_payload(contract=contract, max_lots=rules.max_lots)
 
     async def _evaluate_structure(
         self, session: AsyncSession, dep: StrategyDeploymentRecord, user: User, market_data: MarketDataService,
@@ -2375,6 +2428,32 @@ class TradingWorker:
             ).limit(1)
         )
         return open_trade is not None
+
+    async def _opposite_position(self, session: AsyncSession, dep: StrategyDeploymentRecord, direction: Any) -> Optional[str]:
+        """M55 S6 (A11): the plain reason a NEW automated entry is held back, or None. Under the organisation's
+        `opposite_positions` setting "deny" (the default, owner order M55; risk_settings) an entry is skipped while another
+        of its bots holds an open position in the same mode on the same underlying in the other direction. Same direction:
+        unchanged. A position with no known direction (a neutral structure) never counts. Reads only - exits never come here."""
+        from app.core.models import OPPOSITE_ALLOW
+        from app.db.models import RiskSettingsRecord
+        from app.portfolio.risk import BEARISH, BULLISH, direction_of, underlying_of_trade
+        wanted = {"LONG": BULLISH, "SHORT": BEARISH}.get(str(getattr(direction, "value", direction) or "").upper())
+        if wanted is None:
+            return None
+        setting = await session.scalar(select(RiskSettingsRecord.opposite_positions).where(RiskSettingsRecord.tenant_id == dep.tenant_id))
+        if setting == OPPOSITE_ALLOW:          # anything else - no row saved yet included - is the default "deny"
+            return None
+        underlying = master.underlying_of(dep.symbol)
+        others = await session.scalars(select(TradeRecord).where(
+            TradeRecord.tenant_id == dep.tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.mode == dep.mode,
+            TradeRecord.deployment_id.is_not(None), TradeRecord.deployment_id != dep.id))
+        for trade in others:
+            held = direction_of(trade)
+            if held in (BULLISH, BEARISH) and held != wanted and underlying_of_trade(trade) == underlying:
+                side = "long" if held == BULLISH else "short"
+                return (f"Skipped: another of your bots already holds a {side} position on {underlying}, and your risk "
+                        "settings allow one direction per symbol")
+        return None
 
     async def _square_off_all(
         self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,

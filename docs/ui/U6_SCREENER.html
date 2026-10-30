@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>U6 Find setups mockup</title>
+<!-- M49 design-first mockup (U6, the Screener page "Find setups"). Nothing here is built; it waits for the owner's approval.
+     Token values are copied from frontend/src/styles/tokens.css (colour v3 palette, light and dark). Mock data only. -->
+<style>
+:root {
+  color-scheme: light;
+  /* tokens.css, :root[data-palette="v3"][data-theme="light"] */
+  --surface: 247 248 250; --surface-1: 255 255 255; --surface-2: 241 243 246; --surface-3: 233 236 241;
+  --surface-inset: 236 239 243; --border: 138 140 143; --border-subtle: 227 230 235;
+  --fg: 15 23 42; --fg-muted: 91 100 117; --brand: 40 96 250; --brand-fill: 41 98 255; --brand-fill-strong: 30 80 230;
+  --on-brand: 255 255 255; --brand-tint: 229 236 255; --up: 10 125 85; --down: 210 44 61; --warn: 180 83 9;
+  --warn-tint: 246 234 225; --ai: 124 58 237;
+  /* the section accent of Markets (sec-markets, light) */
+  --sec: 7 89 133; --sec-soft: 224 242 254;
+  --radius-control: 6px; --radius-panel: 10px; --radius-pill: 999px;
+  --shadow-raised: 0 8px 24px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    /* tokens.css, :root[data-palette="v3"]:not([data-theme="light"]) */
+    --surface: 11 14 20; --surface-1: 19 23 34; --surface-2: 28 33 48; --surface-3: 37 43 61; --surface-inset: 7 9 14;
+    --border: 104 107 117; --border-subtle: 42 47 61; --fg: 230 233 239; --fg-muted: 154 163 178;
+    --brand: 84 129 255; --brand-fill: 41 98 255; --brand-fill-strong: 30 80 230; --on-brand: 255 255 255;
+    --brand-tint: 22 34 67; --up: 46 189 133; --down: 246 70 93; --warn: 240 169 59; --warn-tint: 46 41 37; --ai: 152 110 247;
+    --sec: 125 211 252; --sec-soft: 20 64 96;
+    --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: 11 14 20; --surface-1: 19 23 34; --surface-2: 28 33 48; --surface-3: 37 43 61; --surface-inset: 7 9 14;
+  --border: 104 107 117; --border-subtle: 42 47 61; --fg: 230 233 239; --fg-muted: 154 163 178;
+  --brand: 84 129 255; --brand-fill: 41 98 255; --brand-fill-strong: 30 80 230; --on-brand: 255 255 255;
+  --brand-tint: 22 34 67; --up: 46 189 133; --down: 246 70 93; --warn: 240 169 59; --warn-tint: 46 41 37; --ai: 152 110 247;
+  --sec: 125 211 252; --sec-soft: 20 64 96;
+  --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: rgb(var(--surface-inset)); color: rgb(var(--fg));
+  font-family: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px; line-height: 1.5;
+}
+.num { font-variant-numeric: tabular-nums; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid rgb(var(--brand)); outline-offset: 2px; }
+
+/* ---------- the review page around the frames ---------- */
+.review { max-width: 1520px; margin: 0 auto; padding: 24px 16px 48px; }
+.review-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.review-head h1 { font-size: 22px; line-height: 30px; margin: 0; }
+.review-head p { margin: 4px 0 0; color: rgb(var(--fg-muted)); font-size: 14px; }
+.mock-tag { display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: .02em; padding: 2px 8px; border-radius: var(--radius-pill);
+  background: rgb(var(--warn-tint)); color: rgb(var(--warn)); border: 1px solid rgb(var(--warn) / .4); }
+.theme-btn { min-height: 44px; padding: 0 14px; border-radius: var(--radius-control); border: 1px solid rgb(var(--border)); background: rgb(var(--surface-1)); }
+.row-frames { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.row-frames > div { min-width: 0; max-width: 100%; }
+@media (max-width: 430px) { .review { padding: 16px 0 48px; } .review-head, .notes, .frame-label { padding: 0 16px; } .phone { border-radius: 0; border-left: 0; border-right: 0; } }
+.frame-label { font-size: 13px; font-weight: 600; color: rgb(var(--fg-muted)); margin: 0 0 8px; }
+.notes { flex: 1 1 320px; max-width: 560px; font-size: 14px; color: rgb(var(--fg-muted)); }
+.notes h2 { font-size: 16px; color: rgb(var(--fg)); margin: 0 0 8px; }
+.notes li { margin-bottom: 6px; }
+.notes b { color: rgb(var(--fg)); }
+
+/* ---------- the two frames ---------- */
+.phone { width: 390px; max-width: 100%; height: 844px; overflow: hidden; display: flex; flex-direction: column;
+  border: 1px solid rgb(var(--border-subtle)); border-radius: 28px; background: rgb(var(--surface)); box-shadow: var(--shadow-raised); }
+.phone-scroll { flex: 1; overflow-y: auto; padding: 16px; }
+.desk-wrap { overflow-x: auto; margin-top: 32px; }
+.desk { width: 1440px; min-height: 900px; display: flex; border: 1px solid rgb(var(--border-subtle)); border-radius: 12px;
+  background: rgb(var(--surface)); overflow: hidden; box-shadow: var(--shadow-raised); }
+
+/* ---------- app shell bits ---------- */
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); font-size: 14px; color: rgb(var(--fg-muted)); }
+.topbar b { color: rgb(var(--fg)); font-size: 15px; }
+.bottomnav { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); }
+.bottomnav span { text-align: center; font-size: 12px; padding: 8px 0 12px; color: rgb(var(--fg-muted)); white-space: nowrap; }
+.bottomnav span.on { color: rgb(var(--brand)); font-weight: 600; }
+.bottomnav i { display: block; width: 22px; height: 22px; margin: 0 auto 2px; border-radius: 6px; background: currentColor; opacity: .25; }
+.bottomnav span.on i { opacity: 1; background: rgb(var(--brand-fill)); }
+.sidenav { width: 232px; flex: none; border-right: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); padding: 16px 12px; font-size: 14px; }
+.sidenav .brand { font-weight: 700; font-size: 16px; padding: 4px 8px 16px; }
+.sidenav a { display: block; padding: 8px 10px; border-radius: var(--radius-control); color: rgb(var(--fg-muted)); text-decoration: none; white-space: nowrap; }
+.sidenav a.on { background: rgb(var(--brand-tint)); color: rgb(var(--brand)); font-weight: 600; }
+.desk-main { flex: 1; min-width: 0; padding: 24px 32px; }
+
+/* ---------- page template: icon + title + one line ---------- */
+.page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.page-icon { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; background: rgb(var(--sec-soft)); color: rgb(var(--sec)); }
+.page-head h1 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-head p { margin: 0; font-size: 14px; line-height: 20px; color: rgb(var(--fg-muted)); }
+
+/* hero summary */
+.hero { display: flex; gap: 8px; margin-bottom: 16px; }
+.stat { flex: 1; min-width: 0; padding: 12px; border-radius: var(--radius-panel); background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); }
+.stat .v { font-size: 22px; line-height: 28px; font-weight: 600; }
+.stat .l { font-size: 13px; color: rgb(var(--fg-muted)); white-space: nowrap; }
+
+/* category chips: one row, never wraps, scrolls sideways inside its own strip */
+.chips { display: flex; gap: 8px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; margin-bottom: 12px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex: none; white-space: nowrap; min-height: 36px; padding: 0 14px; border-radius: var(--radius-pill);
+  border: 1px solid rgb(var(--border)); background: rgb(var(--surface-1)); font-size: 14px; }
+.chip[aria-pressed="true"] { background: rgb(var(--brand-fill)); border-color: rgb(var(--brand-fill)); color: rgb(var(--on-brand)); font-weight: 600; }
+.chip .num { opacity: .75; margin-left: 4px; }
+
+/* strategy card */
+.cards { display: grid; gap: 12px; }
+.card { background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); border-radius: var(--radius-panel); padding: 16px; }
+.card[aria-current="true"] { border-color: rgb(var(--brand)); box-shadow: 0 0 0 1px rgb(var(--brand)); }
+.card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card h3 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag { flex: none; font-size: 12px; padding: 2px 8px; border-radius: var(--radius-pill); background: rgb(var(--surface-2)); color: rgb(var(--fg-muted)); white-space: nowrap; }
+.tag.use { background: rgb(var(--up) / .12); color: rgb(var(--up)); }
+.card .line { margin: 4px 0 12px; font-size: 15px; color: rgb(var(--fg-muted)); }
+.params { display: flex; gap: 6px; flex-wrap: wrap; list-style: none; margin: 0 0 8px; padding: 0; }
+.params li { font-size: 13px; padding: 3px 10px; border-radius: var(--radius-pill); background: rgb(var(--surface-2)); white-space: nowrap; }
+.params li b { font-weight: 600; }
+.help { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgb(var(--border)); font-size: 11px; font-weight: 700; color: rgb(var(--fg-muted)); margin-left: 4px; vertical-align: 1px; background: none; padding: 0; cursor: help; }
+details.adv { border-top: 1px solid rgb(var(--border-subtle)); margin-top: 8px; padding-top: 8px; }
+details.adv summary { cursor: pointer; font-size: 14px; color: rgb(var(--brand)); min-height: 32px; display: flex; align-items: center; list-style: none; }
+details.adv summary::-webkit-details-marker { display: none; }
+details.adv summary::before { content: "+"; display: inline-block; width: 16px; font-weight: 700; }
+details.adv[open] summary::before { content: "\2212"; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 8px 0 0; font-size: 14px; }
+.kv dt { color: rgb(var(--fg-muted)); }
+.kv dd { margin: 0; text-align: right; font-weight: 500; }
+.actions { display: flex; gap: 8px; margin-top: 12px; }
+.btn { min-height: 44px; padding: 0 16px; border-radius: var(--radius-control); border: 1px solid rgb(var(--border)); background: rgb(var(--surface-1)); font-size: 15px; font-weight: 600; white-space: nowrap; }
+.btn.primary { background: rgb(var(--brand-fill)); border-color: rgb(var(--brand-fill)); color: rgb(var(--on-brand)); }
+.btn.ghost { border-color: transparent; background: none; color: rgb(var(--brand)); }
+
+/* empty state: one collapsed line, not a big box */
+.empty { display: none; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; border-radius: var(--radius-panel);
+  border: 1px dashed rgb(var(--border)); font-size: 15px; color: rgb(var(--fg-muted)); }
+.empty.show { display: flex; }
+.tip { position: relative; }
+.tip-pop { display: none; position: absolute; z-index: 5; left: 0; top: 24px; width: 240px; padding: 10px 12px; border-radius: var(--radius-control);
+  background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border)); box-shadow: var(--shadow-raised); font-size: 13px; font-weight: 400; color: rgb(var(--fg)); white-space: normal; }
+.tip.open .tip-pop { display: block; }
+
+/* ---------- U6: the one starter block ---------- */
+.block { background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); border-radius: var(--radius-panel); padding: 16px; margin-bottom: 12px; }
+.block h2 { margin: 0 0 12px; font-size: 17px; line-height: 24px; font-weight: 600; white-space: nowrap; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: var(--radius-control); background: rgb(var(--surface-2)); }
+.seg button { min-height: 40px; border: 0; border-radius: 5px; background: none; font-size: 14px; font-weight: 500; white-space: nowrap; color: rgb(var(--fg-muted)); padding: 0 6px; }
+.seg button[aria-selected="true"] { background: rgb(var(--surface-1)); color: rgb(var(--fg)); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+.pane { margin-top: 12px; }
+.pane[hidden] { display: none; }
+.opts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.opt { display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-height: 52px; border-radius: var(--radius-control); border: 1px solid rgb(var(--border-subtle)); cursor: pointer; }
+.opt:hover { background: rgb(var(--surface-2)); }
+.opt[aria-checked="true"] { border-color: rgb(var(--brand)); background: rgb(var(--brand-tint)); }
+.opt .dot { width: 18px; height: 18px; flex: none; border-radius: 50%; border: 2px solid rgb(var(--border)); }
+.opt[aria-checked="true"] .dot { border: 5px solid rgb(var(--brand-fill)); }
+.opt .t { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opt .s { font-size: 13px; color: rgb(var(--fg-muted)); }
+.opt > div { min-width: 0; }
+textarea { width: 100%; min-height: 96px; padding: 10px 12px; border-radius: var(--radius-control); border: 1px solid rgb(var(--border)); background: rgb(var(--surface-1)); color: rgb(var(--fg)); font: inherit; font-size: 15px; resize: vertical; }
+.hint { font-size: 13px; color: rgb(var(--fg-muted)); margin: 6px 0 0; }
+
+/* conditions (the old "Custom scan", folded in) */
+details.cond > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+details.cond > summary::-webkit-details-marker { display: none; }
+details.cond > summary h2 { margin: 0; }
+details.cond > summary .chev { color: rgb(var(--brand)); font-size: 14px; white-space: nowrap; }
+details.cond[open] > summary .chev .closed, details.cond:not([open]) > summary .chev .opened { display: none; }
+.all-label { margin: 12px 0 4px 20px; font-size: 13px; font-weight: 500; color: rgb(var(--fg-muted)); }
+.stages { position: relative; padding-left: 20px; }
+.stages::before { content: ""; position: absolute; left: 4px; top: 8px; bottom: 8px; width: 10px; border: 1px solid rgb(var(--fg-muted) / .5); border-right: 0; border-radius: 6px 0 0 6px; }
+.stage { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px; min-height: 44px; border: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface)); font-size: 14px; }
+.stage + .stage { border-top: 0; }
+.stage:first-child { border-radius: 6px 6px 0 0; }
+.stage:last-child { border-radius: 0 0 6px 6px; }
+.stage span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage .k { flex: none; font-size: 12px; color: rgb(var(--fg-muted)); }
+.cond-empty { font-size: 14px; color: rgb(var(--fg-muted)); margin: 8px 0 0; }
+.link { color: rgb(var(--brand)); background: none; border: 0; padding: 0; font-size: 14px; font-weight: 600; min-height: 32px; }
+
+/* results */
+.res-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.matched { font-size: 15px; color: rgb(var(--fg-muted)); white-space: nowrap; }
+.matched b { font-size: 22px; color: rgb(var(--brand)); font-weight: 600; }
+.ran { font-size: 13px; color: rgb(var(--fg-muted)); white-space: nowrap; }
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows li { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px; border-top: 1px solid rgb(var(--border-subtle)); }
+.rows .sym { font-weight: 600; font-size: 15px; white-space: nowrap; }
+.why { display: flex; gap: 4px; flex-wrap: nowrap; overflow: hidden; }
+.why span { font-size: 12px; padding: 2px 8px; border-radius: var(--radius-pill); background: rgb(var(--surface-2)); color: rgb(var(--fg-muted)); white-space: nowrap; }
+.results[hidden] { display: none; }
+
+/* phone action bar */
+.actbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 16px; border-top: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); }
+.actbar .why-off { font-size: 13px; color: rgb(var(--fg-muted)); min-width: 0; }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+.hero.sum .stat .v { font-size: 17px; line-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat .chg { font-size: 13px; color: rgb(var(--brand)); font-weight: 600; background: none; border: 0; padding: 0; }
+
+/* more tools */
+details.more { margin-top: 4px; }
+details.more summary { cursor: pointer; font-size: 14px; color: rgb(var(--brand)); font-weight: 600; min-height: 40px; display: flex; align-items: center; list-style: none; }
+details.more summary::-webkit-details-marker { display: none; }
+details.more ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+details.more li { font-size: 14px; padding: 10px 12px; border-radius: var(--radius-control); background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); }
+
+/* desktop layout: list / build / results */
+.dgrid { display: grid; grid-template-columns: 340px minmax(0, 1fr) 420px; gap: 20px; align-items: start; }
+.dhead { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.dhead .actions { margin: 0 0 16px; align-items: center; }
+.callout { font-size: 12px; font-weight: 600; color: rgb(var(--ai)); border: 1px dashed rgb(var(--ai) / .6); border-radius: var(--radius-control); padding: 4px 8px; margin: 8px 0 0; }
+.foot { margin-top: 24px; font-size: 13px; color: rgb(var(--fg-muted)); }
+</style>
+</head>
+<body>
+<div class="review">
+  <div class="review-head">
+    <div>
+      <h1>U6 Find setups (Screener) <span class="mock-tag">Mock data</span></h1>
+      <p>M49 design mockup. Nothing is built yet; this waits for the owner's approval. Pick a way to start, pick a scan, then Run.</p>
+    </div>
+    <button class="theme-btn" type="button" id="themeBtn">Switch light / dark</button>
+  </div>
+
+  <div class="row-frames">
+    <!-- ===================== PHONE 390 ===================== -->
+    <div>
+      <p class="frame-label">Phone, 390 px</p>
+      <div class="phone" id="phoneFrame" data-scope>
+        <div class="topbar"><b>ATP</b><span>Paper</span></div>
+        <div class="phone-scroll">
+          <div class="page-head">
+            <div class="page-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+            </div>
+            <div style="min-width:0"><h1>Find setups</h1><p>Scan your list for the setups you pick.</p></div>
+          </div>
+
+          <div class="hero sum">
+            <div class="stat"><div class="l">Your list</div><div class="v">Mock list A</div><div class="l num">50 stocks <button class="chg" type="button">Change</button></div></div>
+            <div class="stat"><div class="l">Chart</div><div class="v">15-minute</div><div class="l"><button class="chg" type="button">Change</button></div></div>
+          </div>
+
+          <!-- ONE starter block: three ways, one chooser -->
+          <section class="block" aria-labelledby="p-start">
+            <h2 id="p-start">Start a scan</h2>
+            <div class="seg" role="tablist" aria-label="How to start">
+              <button type="button" role="tab" aria-selected="true" data-pane="ready">Ready scan</button>
+              <button type="button" role="tab" aria-selected="false" data-pane="tpl">Template</button>
+              <button type="button" role="tab" aria-selected="false" data-pane="words">Own words</button>
+            </div>
+            <div class="pane" data-pane-body="ready">
+              <ul class="opts" role="radiogroup" aria-label="Ready scans">
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="3" data-name="Pullback into an area"><span class="dot"></span><div><div class="t">Pullback into an area</div><div class="s">Price back inside an area it left with force</div></div></li>
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="2" data-name="Quiet range, then a break"><span class="dot"></span><div><div class="t">Quiet range, then a break</div><div class="s">A narrow range left on higher volume</div></div></li>
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="2" data-name="RSI divergence at a swing"><span class="dot"></span><div><div class="t">RSI divergence at a swing</div><div class="s">Price and RSI move apart at a swing point</div></div></li>
+              </ul>
+              <details class="more"><summary>See all ready scans (24)</summary></details>
+            </div>
+            <div class="pane" data-pane-body="tpl" hidden>
+              <ul class="opts" role="radiogroup" aria-label="Templates">
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="2" data-name="Trend and pullback"><span class="dot"></span><div><div class="t">Trend and pullback</div><div class="s">Above a long average, close to a short one</div></div></li>
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="3" data-name="Higher chart sets the side"><span class="dot"></span><div><div class="t">Higher chart sets the side</div><div class="s">Big chart trend, small chart moment</div></div></li>
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="0" data-name="Blank scan"><span class="dot"></span><div><div class="t">Blank: I add conditions</div><div class="s">Build it yourself, one condition at a time</div></div></li>
+              </ul>
+            </div>
+            <div class="pane" data-pane-body="words" hidden>
+              <label class="hint" for="p-words" style="display:block;margin:0 0 6px">Write the setup in plain words.</label>
+              <textarea id="p-words" placeholder="Example: above the 50 average and back near the last swing low"></textarea>
+              <div class="actions"><button class="btn" type="button" data-words>Turn into conditions</button></div>
+              <p class="hint">Each part becomes a condition you can check. Anything ATP cannot read is listed, never guessed.</p>
+            </div>
+          </section>
+
+          <!-- the old "Custom scan" page lives here now -->
+          <section class="block">
+            <details class="cond">
+              <summary><h2>Conditions <span class="num" data-count>(0)</span></h2><span class="chev"><span class="closed">Show</span><span class="opened">Hide</span></span></summary>
+              <p class="cond-empty" data-cond-empty>Pick a scan above, or add your first condition.</p>
+              <div data-cond-list hidden>
+                <p class="all-label">All of these must pass</p>
+                <ol class="stages" style="list-style:none;margin:0">
+                  <li class="stage"><span>Close above the 50 average</span><span class="k">Trend</span></li>
+                  <li class="stage"><span>Inside an area left with force</span><span class="k">Area</span></li>
+                  <li class="stage"><span>Volume above its 20-bar average</span><span class="k">Filter</span></li>
+                </ol>
+              </div>
+              <button class="link" type="button">+ Add a condition</button>
+              <p class="callout">Old "Custom scan" page: now this block. Its address opens here with Conditions open.</p>
+            </details>
+          </section>
+
+          <!-- results: hidden until a run; no empty box before -->
+          <section class="block results" hidden data-results aria-live="polite">
+            <div class="res-head"><span class="matched">Matched <b class="num">4</b> of <span class="num">50</span></span><span class="ran">Ran just now</span></div>
+            <ul class="rows">
+              <li><span class="sym">STOCK A</span><span class="why"><span>Above 50 avg</span><span>In area</span></span></li>
+              <li><span class="sym">STOCK B</span><span class="why"><span>Above 50 avg</span><span>In area</span></span></li>
+              <li><span class="sym">STOCK C</span><span class="why"><span>In area</span><span>Volume up</span></span></li>
+              <li><span class="sym">STOCK D</span><span class="why"><span>Above 50 avg</span><span>Volume up</span></span></li>
+            </ul>
+            <div class="actions"><button class="btn" type="button">Tell me when it matches</button></div>
+          </section>
+
+          <details class="more"><summary>More tools</summary>
+            <ul><li>Browse all screens</li><li>Run several screens together</li><li>ETFs</li><li>Pine Script</li><li>Versions of this scan</li></ul>
+          </details>
+          <p class="foot">Matches are chart patterns, not advice. Mock data.</p>
+        </div>
+        <div class="actbar">
+          <span class="why-off" data-why>Pick a scan first</span>
+          <div style="display:flex;gap:8px;flex:none">
+            <button class="btn" type="button" disabled data-save>Save</button>
+            <button class="btn primary" type="button" disabled data-run>Run</button>
+          </div>
+        </div>
+        <nav class="bottomnav" aria-label="Main">
+          <span><i></i>Today</span><span><i></i>Charts</span><span><i></i>Signals</span><span><i></i>My trades</span><span class="on"><i></i>More</span>
+        </nav>
+      </div>
+    </div>
+
+    <div class="notes">
+      <h2>What changes (for approval)</h2>
+      <ul>
+        <li><b>One start:</b> "Start a scan" is one block with one chooser: Ready scan, Template or Own words. Today these are three separate starts.</li>
+        <li><b>"Matched N of M" once:</b> it appears only in the results header, only after a run. The phone bar keeps Save and Run, no second count.</li>
+        <li><b>Custom scan folded in:</b> the old "Custom scan" page is the "Conditions" block. "Blank: I add conditions" in Template starts from zero. The old address and the search word "custom scan" open this page with Conditions open.</li>
+        <li><b>No "Autopilot" wording.</b> The next step after a run is "Tell me when it matches".</li>
+        <li><b>Disabled buttons say why:</b> "Pick a scan first" beside Run.</li>
+        <li><b>Empty states collapse:</b> no results box before the first run; Conditions stays one line until opened.</li>
+        <li><b>Hero:</b> your list and chart in words, each with "Change". Rarely used tools go under "More tools".</li>
+        <li><b>Desktop:</b> three columns: start, conditions, results.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===================== DESKTOP 1440 ===================== -->
+  <div class="desk-wrap">
+    <p class="frame-label">Desktop, 1440 px</p>
+    <div class="desk" id="deskFrame" data-scope>
+      <nav class="sidenav" aria-label="Main">
+        <div class="brand">ATP</div>
+        <a>Today</a><a>Charts</a><a>Signals</a><a>My trades</a><a class="on">Find setups</a><a>Strategy library</a><a>AI Trading Bot</a><a>Settings</a>
+      </nav>
+      <div class="desk-main">
+        <div class="dhead">
+          <div class="page-head">
+            <div class="page-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+            </div>
+            <div><h1>Find setups</h1><p>Scan your list for the setups you pick.</p></div>
+          </div>
+          <div class="actions">
+            <span class="why-off" data-why style="font-size:13px;color:rgb(var(--fg-muted))">Pick a scan first</span>
+            <button class="btn ghost" type="button">More tools</button>
+            <button class="btn" type="button" disabled data-save>Save</button>
+            <button class="btn primary" type="button" disabled data-run>Run</button>
+          </div>
+        </div>
+        <div class="hero sum" style="max-width:760px">
+          <div class="stat"><div class="l">Your list</div><div class="v">Mock list A</div><div class="l num">50 stocks <button class="chg" type="button">Change</button></div></div>
+          <div class="stat"><div class="l">Chart</div><div class="v">15-minute</div><div class="l"><button class="chg" type="button">Change</button></div></div>
+          <div class="stat"><div class="l">Saved scans</div><div class="v num">3</div><div class="l"><button class="chg" type="button">Open</button></div></div>
+        </div>
+
+        <div class="dgrid">
+          <section class="block" aria-labelledby="d-start">
+            <h2 id="d-start">Start a scan</h2>
+            <div class="seg" role="tablist" aria-label="How to start">
+              <button type="button" role="tab" aria-selected="true" data-pane="ready">Ready scan</button>
+              <button type="button" role="tab" aria-selected="false" data-pane="tpl">Template</button>
+              <button type="button" role="tab" aria-selected="false" data-pane="words">Own words</button>
+            </div>
+            <div class="pane" data-pane-body="ready">
+              <ul class="opts" role="radiogroup" aria-label="Ready scans">
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="3"><span class="dot"></span><div><div class="t">Pullback into an area</div><div class="s">Back inside an area it left with force</div></div></li>
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="2"><span class="dot"></span><div><div class="t">Quiet range, then a break</div><div class="s">Narrow range left on higher volume</div></div></li>
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="2"><span class="dot"></span><div><div class="t">RSI divergence at a swing</div><div class="s">Price and RSI move apart</div></div></li>
+              </ul>
+              <details class="more"><summary>See all ready scans (24)</summary></details>
+            </div>
+            <div class="pane" data-pane-body="tpl" hidden>
+              <ul class="opts" role="radiogroup" aria-label="Templates">
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="2"><span class="dot"></span><div><div class="t">Trend and pullback</div><div class="s">Above a long average, near a short one</div></div></li>
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="3"><span class="dot"></span><div><div class="t">Higher chart sets the side</div><div class="s">Big chart trend, small chart moment</div></div></li>
+                <li class="opt" role="radio" aria-checked="false" tabindex="0" data-n="0"><span class="dot"></span><div><div class="t">Blank: I add conditions</div><div class="s">Build it one condition at a time</div></div></li>
+              </ul>
+            </div>
+            <div class="pane" data-pane-body="words" hidden>
+              <label class="hint" for="d-words" style="display:block;margin:0 0 6px">Write the setup in plain words.</label>
+              <textarea id="d-words" placeholder="Example: above the 50 average and back near the last swing low"></textarea>
+              <div class="actions"><button class="btn" type="button" data-words>Turn into conditions</button></div>
+              <p class="hint">Each part becomes a condition you can check. Anything ATP cannot read is listed, never guessed.</p>
+            </div>
+          </section>
+
+          <section class="block">
+            <details class="cond" open>
+              <summary><h2>Conditions <span class="num" data-count>(0)</span></h2><span class="chev"><span class="closed">Show</span><span class="opened">Hide</span></span></summary>
+              <p class="cond-empty" data-cond-empty>Pick a scan on the left, or add your first condition.</p>
+              <div data-cond-list hidden>
+                <p class="all-label">All of these must pass</p>
+                <ol class="stages" style="list-style:none;margin:0">
+                  <li class="stage"><span>Close above the 50 average</span><span class="k">Trend</span></li>
+                  <li class="stage"><span>Inside an area left with force</span><span class="k">Area</span></li>
+                  <li class="stage"><span>Volume above its 20-bar average</span><span class="k">Filter</span></li>
+                </ol>
+              </div>
+              <button class="link" type="button">+ Add a condition</button>
+              <p class="callout">Old "Custom scan" page: now this block. Its address opens here with Conditions open.</p>
+            </details>
+          </section>
+
+          <div>
+            <section class="block results" hidden data-results aria-live="polite">
+              <div class="res-head"><span class="matched">Matched <b class="num">4</b> of <span class="num">50</span></span><span class="ran">Ran just now</span></div>
+              <ul class="rows">
+                <li><span class="sym">STOCK A</span><span class="why"><span>Above 50 avg</span><span>In area</span><span>Volume up</span></span></li>
+                <li><span class="sym">STOCK B</span><span class="why"><span>Above 50 avg</span><span>In area</span></span></li>
+                <li><span class="sym">STOCK C</span><span class="why"><span>In area</span><span>Volume up</span></span></li>
+                <li><span class="sym">STOCK D</span><span class="why"><span>Above 50 avg</span><span>Volume up</span></span></li>
+              </ul>
+              <div class="actions"><button class="btn" type="button">Tell me when it matches</button><button class="btn ghost" type="button">Open on chart</button></div>
+            </section>
+            <p class="hint" data-before-run>Results show here after you run a scan.</p>
+          </div>
+        </div>
+        <p class="foot">Matches are chart patterns, not advice. Mock data.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Clickable states: theme, the one chooser, picking a scan (enables Run / Save), Run (shows "Matched N of M" once).
+document.getElementById("themeBtn").onclick = function () {
+  var r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  r.dataset.theme = dark ? "light" : "dark";
+};
+document.querySelectorAll("[data-scope]").forEach(function (scope) {
+  var q = function (s) { return scope.querySelectorAll(s); };
+  function ready(n) {
+    q("[data-run]").forEach(function (b) { b.disabled = false; });
+    q("[data-save]").forEach(function (b) { b.disabled = false; });
+    q("[data-why]").forEach(function (w) { w.textContent = ""; });
+    q("[data-count]").forEach(function (c) { c.textContent = "(" + n + ")"; });
+    q("[data-cond-list]").forEach(function (l) { l.hidden = n === 0; });
+    q("[data-cond-empty]").forEach(function (e) { e.hidden = n !== 0; });
+    q("[data-results]").forEach(function (r) { r.hidden = true; });
+    q("[data-before-run]").forEach(function (p) { p.hidden = false; });
+    if (n === 0) {
+      q("[data-run]").forEach(function (b) { b.disabled = true; });
+      q("[data-why]").forEach(function (w) { w.textContent = "Add a condition first"; });
+      q("details.cond").forEach(function (d) { d.open = true; });
+    }
+  }
+  q(".seg button").forEach(function (t) {
+    t.onclick = function () {
+      q(".seg button").forEach(function (x) { x.setAttribute("aria-selected", String(x === t)); });
+      q("[data-pane-body]").forEach(function (p) { p.hidden = p.dataset.paneBody !== t.dataset.pane; });
+    };
+  });
+  q(".opt").forEach(function (o) {
+    o.onclick = o.onkeydown = function (e) {
+      if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+      q(".opt").forEach(function (x) { x.setAttribute("aria-checked", String(x === o)); });
+      ready(Number(o.dataset.n));
+    };
+  });
+  q("[data-words]").forEach(function (b) { b.onclick = function () { ready(3); }; });
+  q("[data-run]").forEach(function (b) {
+    b.onclick = function () {
+      q("[data-results]").forEach(function (r) { r.hidden = false; });
+      q("[data-before-run]").forEach(function (p) { p.hidden = true; });
+      var r = scope.querySelector("[data-results]"); if (r.scrollIntoView) r.scrollIntoView({ block: "nearest" });
+    };
+  });
+});
+</script>
+</body>
+</html>

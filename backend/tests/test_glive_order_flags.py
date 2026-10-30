@@ -443,6 +443,7 @@ class _EntryStopRejected:
         return B()
 
 
+@pytest.mark.usefixtures("owner_switched_live_on")   # M55 S1: the LIVE posture the owner switches on (conftest)
 def test_the_entry_path_closes_at_once_with_one_critical(monkeypatch):
     from app.execution.router import OrderRouter
     from tests.test_live_execution import _execute, _user

@@ -109,3 +109,27 @@ def no_open_positions_from_earlier_tests():
     asyncio.run(close_leftovers())
     yield
 
+
+@pytest.fixture
+def owner_switched_live_on(monkeypatch):
+    """M55 S1: LIVE is OFF by default (live_trading OFF, the phase0_paper_only lock ON, no plan grants LIVE, a USER has
+    no trading:live) and only the owner may switch it on. The LIVE path itself is the same code as PAPER and stays
+    under test: a module that exercises it uses this fixture for the posture the owner switches on - the defaults from
+    before M55 S1 (live_trading ON, the lock OFF, Pro / Business grant LIVE, USER has trading:live). A stored flag
+    entry still decides, exactly as on a real host. The new defaults are pinned in tests/test_m55_s1_owner_live.py."""
+    from dataclasses import replace
+
+    from app.auth import scopes
+    from app.core.enums import UserRole
+    from app.plans import registry
+    from app.platform import controls
+
+    on = (controls.DEFAULT_ON_FLAGS - {"phase0_paper_only"}) | {"live_trading"}
+    monkeypatch.setattr(controls, "DEFAULT_ON_FLAGS", frozenset(on))
+    monkeypatch.setattr(controls, "DEFAULT_OFF_FLAGS", frozenset(controls.FEATURE_FLAGS) - frozenset(on))
+    for plan_id in ("pro", "business"):
+        monkeypatch.setitem(registry.PLANS, plan_id, replace(registry.PLANS[plan_id], live_trading=True))
+    user = UserRole.USER.value
+    monkeypatch.setitem(scopes.ROLE_SCOPES, user, scopes.ROLE_SCOPES[user] | {"trading:live"})
+    yield
+

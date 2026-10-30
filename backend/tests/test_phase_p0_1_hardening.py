@@ -6,12 +6,16 @@ import asyncio
 import re
 from pathlib import Path
 
+import pytest
+
 from app.cache import client as cache_client
 from app.core import config
 from app.main import app
 from app.workers import trading_worker as tw
 from tests.test_auth_api import _register, client
 from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _signal, _tenant, _worker
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 ROOT = Path(__file__).resolve().parents[2]
 CLOSED = ("/api/backtest", "/api/price-action/structure", "/api/price-action/patterns", "/api/support-resistance/zones",
@@ -101,7 +105,9 @@ def test_replica_lock_is_fail_closed_for_live_entries_and_atomic(monkeypatch):
     assert fake.store == {} and all("redis.call('get', KEYS[1]) == ARGV[1]" in s for s in fake.evals)
 
 
-def test_worker_pauses_live_entries_without_the_replica_lock_but_paper_and_exits_continue(monkeypatch):
+def test_worker_pauses_every_automated_entry_without_the_replica_lock(monkeypatch):
+    # M55 A18: fail closed - no new automated entry without the lock, PAPER and LIVE alike, in every environment
+    # (before M55 only LIVE paused). Exits keep running: tests/test_m55_s6_entry_guards.py.
     monkeypatch.setattr("app.execution.router.OrderRouter.fill_poll_delay_seconds", 0)
     t = _tenant("p0-lock-live@example.com")
     live_id, paper_id = _deploy(t, mode="LIVE"), _deploy(t, mode="PAPER", symbol="INFY")
@@ -117,7 +123,7 @@ def test_worker_pauses_live_entries_without_the_replica_lock_but_paper_and_exits
     report = asyncio.run(worker.run_cycle(now=OPEN_NOW))
     assert report.lock_degraded is True and not report.skipped_lock
     assert broker.placed == []                                   # the LIVE entry was not sent to the broker
-    assert report.signals_executed == 1                          # the PAPER sibling traded
+    assert report.signals_executed == 0                          # nor did the PAPER sibling trade
     from sqlalchemy import select
 
     from app.db.models import StrategyDeploymentRecord
@@ -127,9 +133,9 @@ def test_worker_pauses_live_entries_without_the_replica_lock_but_paper_and_exits
         async with _session_factory() as session:
             return {r.id: r.last_error for r in await session.scalars(select(StrategyDeploymentRecord).where(StrategyDeploymentRecord.id.in_([live_id, paper_id])))}
     rows = asyncio.run(errors())
-    assert "Redis replica lock unavailable" in (rows[live_id] or "") and "Redis replica lock" not in (rows[paper_id] or "")
+    assert all("Redis replica lock unavailable" in (rows[i] or "") for i in (live_id, paper_id))
 
-    # A dev/test single replica (the default outside production/staging) still trades LIVE without Redis.
+    # A dev/test single replica (the default outside production/staging) no longer trades without the lock either.
     worker.require_lock_for_live = False
-    asyncio.run(worker.run_cycle(now=OPEN_NOW))
-    assert [o.order_type for o in broker.placed] == ["MARKET", "SL-M"]
+    report = asyncio.run(worker.run_cycle(now=OPEN_NOW))
+    assert broker.placed == [] and report.signals_executed == 0

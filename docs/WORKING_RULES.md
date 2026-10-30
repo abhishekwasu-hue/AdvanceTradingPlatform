@@ -167,6 +167,10 @@ again AFTER every compaction, before acting. Begin each report to Abhi with: "Ru
     pyupgrade (UP) is a ratchet, not a gate: `backend/tests/test_ruff_up_ratchet.py` (CI lint job) fails when any UP
     rule's count rises - write new code with `list[...]`, `X | None`, `datetime.UTC`, and lower the baseline when a
     count falls. mypy gates only the packages in `backend/mypy.ini` `files`; add a package once `mypy app/<pkg>` is clean.
+    Dependencies (M55 O3): `backend/requirements.txt` lists the direct ones (ranges; Dependabot edits it);
+    `backend/requirements.lock` pins everything with hashes and is what the image and CI install (`--require-hashes`).
+    After any change to requirements.txt run `sh scripts/lock_requirements.sh` in `backend/` (needs `uv`; `--upgrade`
+    re-resolves all) and commit the lock in the same PR - the CI lint job fails while they disagree.
   - Frontend `frontend/` (React + Vite + vitest + Playwright). CI: `npm test`, `npm run check:v2-colours`,
     `npm run check:mobile`, `npm run lint`, `npm run build`, `npm run check:bundle`, `npm run test:e2e`.
     `npm run lint` (AUD-G1.6) = ESLint + typescript-eslint (`frontend/eslint.config.js`): errors fail; the warnings the

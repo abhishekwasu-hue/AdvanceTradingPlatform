@@ -103,6 +103,10 @@ SESSION_MAX_DAYS = _env_int_in("SESSION_MAX_DAYS", 90, 1, 3650)
 # stays usable; a write after the window asks for the authenticator code once more and then carries on. The LIVE step-up
 # (`ensure_live_step_up`) is unchanged: PAPER only in Phase 0, decided with LIVE.
 MFA_STEP_UP_MINUTES = _env_int_in("MFA_STEP_UP_MINUTES", 30, 1, 24 * 60)
+# M55 S1 (owner order): the one account that may switch LIVE on - turn `live_trading` on or the `phase0_paper_only` lock
+# off (app/platform/live_owner.py), with a recent two-factor check and a typed confirmation. Any other SUPER_ADMIN gets
+# a refusal. A user id; unset or not a positive number: 1.
+LIVE_OWNER_USER_ID = _env_int_in("LIVE_OWNER_USER_ID", 1, 1, 2**31 - 1)
 # AUD-G2.4 (activation / time to first value): the "first session" of a new person = the first
 # ACTIVATION_FIRST_SESSION_HOURS hours after signing up. The admin activation funnel shows the share of people whose first
 # paper trade came inside that window (target: first paper trade within the first session). Measurement only.

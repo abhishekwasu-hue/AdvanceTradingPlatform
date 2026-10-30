@@ -2,9 +2,10 @@
 (app/execution/resting_book.py) and fires the ones the price reaches.
 
 Where it runs (TT-6): inside the trading worker only - on live ticks from the data hub when the organisation streams
-(`tick_pass`, every TRIGGER_TICK_SECONDS, touch triggers of PAPER orders), and once per worker cycle on the cycle's own
-prices (`run_exits` before every entry gate, `run_entries` after them) for everything, including candle-close triggers
-and LIVE positions' exits. No API route calls it.
+(`tick_pass`, every TRIGGER_TICK_SECONDS, touch triggers), and once per worker cycle on the cycle's own prices
+(`run_exits` before every entry gate, `run_entries` after them) for everything, including candle-close triggers. M55 S3
+(A12): ONE exit cadence - PAPER and LIVE resting exits fire on the same tick pass and the same cycle; a LIVE exit goes out
+at the session of the broker account that holds the position (`_exit_session`). No API route calls it.
 
 What it decides (TT-7, the shared rules of app/trading/trigger_rules.py):
 * touch: a tick reaches the level; close: a CLOSED candle of the order's own timeframe closes at / beyond it (no
@@ -20,8 +21,9 @@ What it does at fire time (TM-23):
 * an ENTRY is placed through the order ticket's own `place` (app/paper/fno_ticket.py) - the ordinary pipeline, so the
   kill switches, the order chokepoint (`phase0_lock.assert_paper`), the risk checks and approval-only run AGAIN now,
   and a refused entry is REJECTED with its plain reasons (and a notification). Same fill and cost model as an order
-  placed now (the PaperExecutionAdapter). A LIVE entry is never fired from here: the LIVE manual path (TT-1) and the
-  owner's LIVE switches decide that later, on the same object;
+  placed now (the PaperExecutionAdapter). M55 S3 (A17): a reached LIVE entry meets the same entry chokepoint as the
+  ticket (`phase0_lock.assert_paper`): the owner's LIVE switches decide, and while they are off it is refused with
+  their plain reason; nothing LIVE is placed until the LIVE manual path (TT-1) exists;
 * an EXIT closes the user's own position through `position_monitor.close_position` - the one exit path (a PAPER fill
   through the PaperExecutionAdapter; a LIVE position squares off at its own broker session, handed in by the worker).
   An exit is NEVER blocked by a kill switch, a limit or the PAPER lock (ADR-0004);
@@ -65,6 +67,8 @@ TRIGGER_TICK_MAX_AGE_SECONDS = float(os.environ.get("TRIGGER_TICK_MAX_AGE_SECOND
 TRIGGER_STALL_SECONDS = int(os.environ.get("TRIGGER_STALL_SECONDS", str(WORKER_CYCLE_SECONDS * 3)))
 HEARTBEAT_EVERY_SECONDS = 5.0
 STALL_TITLE = "Your waiting orders are not being watched right now"
+# M55 S3 (A17): what a reached LIVE resting entry says while the owner's PAPER-only lock holds (plain words, no flag name).
+LIVE_ENTRY_SWITCHED_OFF = "Live trading is switched off for your account, so this live order was not sent: nothing was placed"
 
 _last_run: Optional[datetime] = None
 _last_beat = 0.0
@@ -282,10 +286,11 @@ async def _evaluate_exit(session: AsyncSession, row: PaperRestingOrderRecord, pr
         await _finish(session, row, book.CANCELLED, "The position was already closed", now)
         report.cancelled += 1
         return
+    broker = await _exit_session(session, trade, broker)
+
     reached = await _reached(row, prices, candles, now)
     if not reached:
         return                             # its last price is saved with the pass (one commit)
-    broker = await exit_broker_for(session, trade, broker)
     if trade.mode != "PAPER" and broker is None:
         report.waiting += 1                # no usable session for the account that holds it: waits, the cycle says why
         return
@@ -397,9 +402,12 @@ async def _send_entry(session: AsyncSession, row: PaperRestingOrderRecord, contr
     from app.execution.approval import ORIGIN_AUTOMATIC
     from app.paper import fno_ticket
     if row.mode != "PAPER":
-        # TM-23 / owner principle: the same object reaches the LIVE path once the LIVE manual path (TT-1) and the owner's
-        # LIVE switches allow it; until then nothing is sent.
-        await _finish(session, row, book.REJECTED, "Live manual orders are not switched on: nothing was placed", now)
+        # TM-23 / owner principle / M55 S3 (A17): the same entry chokepoint as the order ticket - the owner's LIVE switches
+        # (the Phase 0 lock) decide and say why. Until the LIVE manual path (TT-1) exists nothing LIVE is sent, whatever
+        # the switches say. Never an exit: exits never come here (ADR-0004).
+        reason = await _live_entry_refusal(session, row)
+        await _finish(session, row, book.REJECTED, reason, now)
+        await _notify(session, row, f"Waiting order not placed: {row.symbol}", f"Your price was reached, but: {reason}", warning=True)
         report.rejected += 1
         return
     fire_type = fire_order_type(row.order_type)
@@ -915,6 +923,36 @@ async def check_stall(session: AsyncSession, now: Optional[datetime] = None, *, 
     return told
 
 
+# --- M55 S3: the LIVE side of the one path (exit session, entry chokepoint) ------------------------------------------------
+
+async def _exit_session(session: AsyncSession, trade: TradeRecord,
+                        handed_in: BrokerInterface | None) -> BrokerInterface | None:
+    """M55 S3 (A12): the broker session a LIVE resting exit of `trade` goes out at, on the tick pass and on the cycle alike:
+    the session handed in, else the session of the broker account that holds the position
+    (`position_monitor.broker_for_trade`, the resolution the position monitor and the combined exits use). PAPER: the
+    handed-in value, unchanged. None: no usable session - the exit waits and is tried again on the next pass (never
+    blocked, ADR-0004). The rule is M55 S5's `exit_broker_for`; this adds only that a failed lookup waits for the next pass.
+    """
+    try:
+        return await exit_broker_for(session, trade, handed_in)
+    except Exception:  # noqa: BLE001 - no session this pass: the exit waits and is tried again (never dropped)
+        logger.exception("Trigger engine: no broker session for LIVE position %s this pass", trade.id)
+        return None
+
+
+async def _live_entry_refusal(session: AsyncSession, row: PaperRestingOrderRecord) -> str:
+    """M55 S3 (A17): why a reached LIVE resting entry is not placed - the order ticket's own chokepoint first (the owner's
+    Phase 0 lock, read fresh), else the plain fact that the LIVE manual path is not built yet. Reads, never changes, a
+    switch."""
+    from app.platform import phase0_lock
+    try:
+        await phase0_lock.is_on(session, row.tenant_id)
+        phase0_lock.assert_paper(row.mode, row.tenant_id)
+    except phase0_lock.LiveOrderRefused:
+        return LIVE_ENTRY_SWITCHED_OFF
+    return "Live manual orders are not switched on: nothing was placed"
+
+
 # --- the tick pass inside the worker (TT-6) ---------------------------------------------------------------------------
 
 def _tick_prices(ticks: Dict[str, list], now: datetime) -> PriceFn:
@@ -931,17 +969,19 @@ def _tick_prices(ticks: Dict[str, list], now: datetime) -> PriceFn:
 
 
 async def tick_pass(session: AsyncSession, now: Optional[datetime] = None) -> EngineReport:
-    """One pass on the organisations' live ticks in this process: touch triggers of PAPER orders. Candle-close triggers
-    and LIVE positions' exits wait for the worker cycle (it holds the candles and the broker sessions)."""
+    """One pass on the organisations' live ticks in this process: the touch triggers of every resting order, PAPER and
+    LIVE alike (M55 S3, A12: one exit cadence). A LIVE exit goes out at the session of the broker account holding the
+    position (`_exit_session`); with no usable session it waits, as on the cycle. Candle-close triggers wait for the
+    worker cycle (it holds the candles)."""
     from app.market_data import hub
     now = now or datetime.now(timezone.utc)
     total = EngineReport()
-    for tenant_id in sorted(await tenants_with_resting(session, paper_only=True)):
+    for tenant_id in sorted(await tenants_with_resting(session)):
         ticks = hub.live_ticks(hub.org_namespace(tenant_id))
         if not ticks:
             continue
         prices = _tick_prices(ticks, now)
-        for report in (await run_exits(session, tenant_id, prices, now=now, paper_only=True),
+        for report in (await run_exits(session, tenant_id, prices, now=now),
                        await run_entries(session, tenant_id, prices, now=now)):
             total.checked += report.checked
             total.filled += report.filled

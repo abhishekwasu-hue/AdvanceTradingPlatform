@@ -3,12 +3,15 @@ credentials under the tenant policy, admin console requiring MFA, disable rules.
 import asyncio
 
 import pyotp
+import pytest
 
 from app.auth import mfa
 from app.db.models import Tenant, User
 from tests.broker_fakes import KITE_KEY, KITE_SECRET, UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 from tests.utils import enable_mfa
+
+pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 
 def _run(coro):

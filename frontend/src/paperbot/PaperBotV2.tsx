@@ -1,10 +1,10 @@
-import { ChevronRight, Pause, Play, Square } from "lucide-react";
+import { ChevronRight, Pause, Play, Square, Trash2 } from "lucide-react";
 import { LiveBadge, PaperBadge } from "../ui/PaperBadge";
 import { showsPaper } from "../ui/paperWords";
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
-import { ApiError } from "../api/errors";
+import { ApiError, errorSentence } from "../api/errors";
 import { useAuth, useOptionalAuth } from "../auth/AuthContext";
 import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import { BROKER_PATH } from "../broker/paths";
@@ -24,6 +24,7 @@ import {
 import { WINGED_STRUCTURES, type OptionStrategy } from "../types";
 import { Chip } from "../ui/Chip";
 import { Combobox, type ComboOption } from "../ui/Combobox";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Details } from "../ui/numbersFirst";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
@@ -86,6 +87,8 @@ export default function PaperBotV2(_props: PageProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [busyBot, setBusyBot] = useState<number | null>(null);
   const [confirmStop, setConfirmStop] = useState<number | null>(null);
+  // REV-H2: the stopped bot whose "Remove" asks for a confirm.
+  const [confirmRemove, setConfirmRemove] = useState<Deployment | null>(null);
   const [botNote, setBotNote] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [stepUp, setStepUp] = useState<{ reason: string; retry: () => Promise<unknown> } | null>(null);
   // Strategy templates step 2 (ui_v2 + strategy_templates): the templates the organisation can adopt as paper strategies.
@@ -175,6 +178,22 @@ export default function PaperBotV2(_props: PageProps) {
     }
   }
 
+  /** REV-H2: remove a stopped bot from the list (the existing DELETE; the server refuses a bot that is not stopped). */
+  async function remove(bot: Deployment) {
+    setConfirmRemove(null); setBusyBot(bot.id); setBotNote(null);
+    const name = botName(bot, names);
+    try {
+      await api.deleteDeployment(bot.id);
+      setBotNote({ kind: "done", text: `${name} is removed from your bots. Its closed trades stay in your trade history.` });
+      await loadBots();
+    } catch (e) {
+      if (isStepUpError(e)) setStepUp({ reason: String(e), retry: () => remove(bot) });
+      else setBotNote({ kind: "warn", text: `${name} was not removed. ${errorSentence(e)}` });
+    } finally {
+      setBusyBot(null);
+    }
+  }
+
   useEffect(() => {
     if (!fromFlow) return;
     setPreselect({ strategyId: fromFlow.strategyId, symbol: fromFlow.symbol, lots: null, contract: fromFlow.contract });
@@ -225,7 +244,7 @@ export default function PaperBotV2(_props: PageProps) {
               {shown.map((bot) => (
                 <BotRow key={bot.id} bot={bot} name={botName(bot, names)} busy={busyBot === bot.id} disabled={busyBot !== null || !canChange}
                   confirming={confirmStop === bot.id} onAsk={() => setConfirmStop(bot.id)} onCancel={() => setConfirmStop(null)}
-                  onAct={(kind) => void act(bot, kind)}
+                  onAct={(kind) => void act(bot, kind)} onRemove={canChange ? () => setConfirmRemove(bot) : undefined}
                   held={botPositions(positions, bot.id).length ? (
                     <BotPositionsV2 positions={botPositions(positions, bot.id)} exposure={exposure} canTrade={canChange} onExit={exitBot} />
                   ) : undefined}
@@ -235,6 +254,10 @@ export default function PaperBotV2(_props: PageProps) {
             </>
           )}
         {botNote && <div className="mt-space-3"><NoteV2 kind={botNote.kind}>{botNote.text}</NoteV2></div>}
+        <ConfirmDialog open={confirmRemove !== null} onOpenChange={(o) => { if (!o) setConfirmRemove(null); }}
+          title={`Remove ${confirmRemove ? botName(confirmRemove, names) : "this bot"}?`}
+          consequence={removeConsequence} confirmLabel="Remove bot" busy={busyBot !== null}
+          onConfirm={() => { if (confirmRemove) void remove(confirmRemove); }} note={null} />
         {stoppedCount > 0 && (
           <button type="button" className="mt-space-3 inline-flex min-h-11 items-center text-t14 font-medium text-brand hover:underline md:min-h-0"
             onClick={() => setShowStopped((v) => !v)}>
@@ -286,9 +309,14 @@ export default function PaperBotV2(_props: PageProps) {
   );
 }
 
-export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel, onAct, held, why }: {
+/** REV-H2: what "Remove" on a stopped bot does, said before it happens. */
+export const removeConsequence = "It leaves your list of bots. Its closed trades stay in your trade history, and you can start the same strategy on this symbol again.";
+
+export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel, onAct, onRemove, held, why }: {
   bot: Deployment; name: string; busy: boolean; disabled: boolean; confirming: boolean;
   onAsk: () => void; onCancel: () => void; onAct: (kind: "pause" | "resume" | "stop") => void;
+  /** REV-H2: "Remove" on a stopped bot (the page asks first); absent: no Remove. */
+  onRemove?: () => void;
   /** UI-28 U2.4: the bot's own open positions (P&L, legs, exit), when it has any. */
   held?: ReactNode;
   /** AUD-T3: "Why no trade?" - the last closed bars with their reasons (flag `why_no_trade`). */
@@ -333,6 +361,15 @@ export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel,
             )}
             <button type="button" className={BUTTON_SECONDARY} disabled={disabled} onClick={onAsk}>
               <Square size={16} aria-hidden /> Stop
+            </button>
+          </div>
+        )}
+        {/* REV-H2: a stopped bot can be removed from the list (it asks first). Only once no trade of it is open, so its
+            open trade and its exit stay right here until it closes. */}
+        {state === "stopped" && onRemove && bot.open_positions === 0 && (
+          <div className="flex shrink-0 gap-space-2">
+            <button type="button" className={BUTTON_SECONDARY} disabled={disabled} aria-busy={busy || undefined} onClick={onRemove} data-remove>
+              <Trash2 size={16} aria-hidden /> Remove
             </button>
           </div>
         )}
@@ -516,8 +553,9 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
       setResult({ kind: "done", text: `Started on paper: ${cleanSymbol(symbol)}. It shows under Your bots and starts checking the market on its next round.` });
       onStarted();
     } catch (e) {
-      setResult({ kind: "warn", text: e instanceof ApiError && e.status === 409
-        ? `Nothing new was started: this strategy already runs on paper for ${cleanSymbol(symbol)} in your organisation. Pick another strategy or symbol.`
+      // REV-H1: a 409 names its own reason (no broker, contracts not loaded, a bot already running, ...): the shared
+      // sentence for that reason, never one guess for all of them.
+      setResult({ kind: "warn", text: e instanceof ApiError && e.status === 409 ? errorSentence(e)
         : e instanceof ApiError && e.status === 403 ? "Your role cannot start a bot. Ask your organisation's owner."
         : "The bot could not be started just now. Try again in a moment." });
     } finally {

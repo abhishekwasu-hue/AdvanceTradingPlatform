@@ -539,9 +539,11 @@ class StrategyDeploymentRecord(Base):
     """
 
     __tablename__ = "strategy_deployments"
+    # REV-H2 (owner decision D1): one bot that is not STOPPED per strategy + symbol + mode + instrument kind. A stopped
+    # bot stays as history and no longer blocks a new one (partial unique index, migration f4b6d8a0c2e3).
     __table_args__ = (
-        UniqueConstraint("tenant_id", "strategy_id", "symbol", "mode", "instrument_kind",
-                         name="uq_deployment_tenant_strategy_symbol_mode_kind"),
+        Index("uq_deployment_open_tenant_strategy_symbol_mode_kind", "tenant_id", "strategy_id", "symbol", "mode", "instrument_kind",
+              unique=True, postgresql_where=text("status != 'STOPPED'"), sqlite_where=text("status != 'STOPPED'")),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1009,6 +1011,9 @@ class RiskSettingsRecord(Base):
     # the last "Resume after losses in a row" (only losses closed after it count under "until_resume").
     loss_streak_pause: Mapped[str] = mapped_column(String(16), nullable=False, default="next_session", server_default="next_session")
     loss_streak_resumed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # M55 S6 (A11, owner order M55): "allow" / "deny" opposite positions of two bots on one symbol; default deny
+    # (app/workers/trading_worker.py::_opposite_position - new automated entries only, never an exit).
+    opposite_positions: Mapped[str] = mapped_column(String(8), nullable=False, default="deny", server_default="deny")
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 

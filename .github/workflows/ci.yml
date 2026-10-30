@@ -41,7 +41,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: backend/requirements.lock
 
       # The owner's ruling: ATP is English only - UI, AI replies, Telegram / email / push texts, reports, docs. Devanagari
       # only in the strategy interview's explicit allow-list (scripts/check_english_only.py; its test:
@@ -58,8 +58,17 @@ jobs:
       - name: Install linters (pinned) and the application's dependencies (mypy reads them)
         working-directory: backend
         run: |
-          pip install -r requirements.txt
-          pip install "ruff==0.16.10" "mypy==2.4.0" "bandit==1.9.4"
+          pip install --require-hashes -r requirements.lock
+          pip install "ruff==0.16.10" "mypy==2.4.0" "bandit==1.9.4" "uv==0.13.6"
+
+      # M55 O3: requirements.lock (hashed, what the image and CI install) must match requirements.txt (the direct
+      # dependencies, which Dependabot edits). Re-resolving keeps the current pins, so the lock only changes when
+      # requirements.txt does: regenerate it in that PR with `sh scripts/lock_requirements.sh` (from backend/).
+      - name: Dependency lock is in step with requirements.txt (backend/scripts/lock_requirements.sh)
+        working-directory: backend
+        run: |
+          sh scripts/lock_requirements.sh --quiet
+          git diff --exit-code -- requirements.lock || { echo "::error title=lock::backend/requirements.lock is out of date - run 'sh scripts/lock_requirements.sh' in backend/ and commit it"; exit 1; }
 
       - name: ruff (backend/ruff.toml)
         working-directory: backend
@@ -129,10 +138,10 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: backend/requirements.lock
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install --require-hashes -r requirements.lock
 
       - name: Run test suite (in-memory SQLite, no DB dependency)
         env:
@@ -181,7 +190,7 @@ jobs:
       - name: Audit Python dependencies for known vulnerabilities (pip-audit)
         run: |
           pip install pip-audit
-          pip-audit -r requirements.txt
+          pip-audit --disable-pip -r requirements.lock
 
   # Z10-a (U3 G2): the no-look-ahead harness over every shipped bar function, in parallel with the main backend run.
   backend-lookahead:
@@ -198,10 +207,10 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: backend/requirements.lock
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install --require-hashes -r requirements.lock
 
       - name: No-look-ahead harness (tests marked lookahead)
         run: |
@@ -229,10 +238,10 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: backend/requirements.lock
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install --require-hashes -r requirements.lock
 
       - name: G4 screener targets (EOD 2,500 x 50 < 3 s, cached < 0.2 s, bar-close 200 symbols < 1 s; x CI factor)
         env:

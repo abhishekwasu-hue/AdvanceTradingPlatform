@@ -16,7 +16,7 @@ import SystemListsCard from "../components/SystemListsCard";
 import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, EncryptionStatus, FeatureFlags, Incident, PlatformAuditLog, RiskCeilings, SystemStatus } from "../types";
 import { PageHeader } from "../components/primitives";
 import { useFeatures } from "../ui/useFeatures";
-import { maskEmail, orgName, type AdminSection } from "../admin/consoleApi";
+import { maskEmail, orgName, type AdminSection, type ControlsGroup } from "../admin/consoleApi";
 import type { PageProps } from "../routes";
 import { formatDateTimeIST } from "../ui/format";
 
@@ -27,8 +27,19 @@ const STATUSES = ["active", "suspended"];
  * console (src/admin/AdminConsoleV2.tsx) renders it once per section with `section` set - only that section's cards, no
  * page header, e-mail addresses partly masked - so every card, its state and its server calls stay exactly as they are.
  */
-export default function AdminPage({ section }: PageProps & { section?: AdminSection } = {}) {
+/** ADM-1: the risk ceilings in plain words in the v2 console (a ceiling the server adds later shows its key). */
+const CEILING_LABELS: Record<string, string> = {
+  risk_per_trade_pct: "Most risk per trade (% of capital)",
+  max_daily_loss_pct: "Most loss in a day (% of capital)",
+  max_portfolio_risk_pct: "Most open risk at once (% of capital)",
+  dd_level_2_pct: "Pause after a fall from the peak of (%)",
+  min_stop_cooldown_minutes: "Least wait after a stop-out (minutes)",
+};
+
+export default function AdminPage({ section, controlsGroup }: PageProps & { section?: AdminSection; controlsGroup?: ControlsGroup } = {}) {
   const show = (s: AdminSection) => !section || section === s;
+  // ADM-1: in the v2 console Controls shows one group at a time; the old page (no section) shows every card as before.
+  const inGroup = (g: ControlsGroup) => show("controls") && (!section || (controlsGroup ?? "safety") === g);
   const email = (e: string | null | undefined) => (section ? maskEmail(e) : e ?? "-");
   const org = (name: string) => (section ? orgName(name) : name);
   const { user, loading: authLoading } = useAuth();
@@ -131,7 +142,7 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
 
       {show("system") && <SystemListsCard />}
 
-      {show("controls") && <Card title="Global kill switch">
+      {inGroup("safety") && <Card title="Global kill switch">
         {overview?.global_kill_switch_engaged ? (
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="flex items-center gap-1.5 text-down font-bold"><OctagonX size={16} /> ENGAGED</span>
@@ -148,9 +159,9 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
       </Card>}
 
       {/* Owner decision 23 Oct: "Enable trader features" - the v2 console (ui_v2) only, Controls section. */}
-      {section === "controls" && <TraderPackCard onChanged={() => { api.adminFlags().then(setFlags).catch(() => {}); refreshFeatures(); }} />}
+      {section === "controls" && inGroup("features") && <TraderPackCard onChanged={() => { api.adminFlags().then(setFlags).catch(() => {}); refreshFeatures(); }} />}
 
-      {show("controls") && <Card title="Platform controls">
+      {inGroup("safety") && <Card title="Platform controls">
         <div className="grid lg:grid-cols-2 gap-4 text-xs">
           <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
             <div className="font-bold text-sm">Maintenance mode {controls?.maintenance_mode ? <span className="text-warn">ON</span> : <span className="text-fg-muted">off</span>}</div>
@@ -174,12 +185,12 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
       {show("users") && <BetaRolloutCard cohort={cohort} busy={busy}
         onSetStage={(stage, reason) => void act(`Beta cohort moved to stage ${stage}.`, () => api.adminSetBetaStage(stage, reason).then(setCohort))} />}
 
-      {show("controls") && <Card title="Risk ceilings (Risk Guardian)">
+      {inGroup("limits") && <Card title="Risk ceilings (Risk Guardian)">
         <p className="text-xs text-fg-muted mb-3">Hard limits every tenant's risk settings stay under: a tenant cannot save a value above a ceiling, and the engine clamps older settings at runtime. Risk per trade 2% is the spec's hard ceiling; the minimum cool-down forces every tenant to wait at least this long after a stop-out.</p>
         <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
           {ceilings && Object.keys(ceilings).map((key) => (
             <div key={key}>
-              <label className="block text-xs text-fg-muted mb-0.5 font-mono">{key}</label>
+              <label className={`block text-xs text-fg-muted mb-0.5 ${section && CEILING_LABELS[key] ? "" : "font-mono"}`}>{(section && CEILING_LABELS[key]) || key}</label>
               <input type="number" step="0.1" min={0} className="w-full rounded bg-surface-2 border border-border px-2 py-1" value={ceilingDraft[key] ?? ""} onChange={(e) => setCeilingDraft({ ...ceilingDraft, [key]: e.target.value })} />
             </div>
           ))}
@@ -187,7 +198,7 @@ export default function AdminPage({ section }: PageProps & { section?: AdminSect
         <button disabled={busy || !ceilings} onClick={() => act("Risk ceilings saved.", () => api.adminSetRiskCeilings(Object.fromEntries(Object.entries(ceilingDraft).map(([k, v]) => [k, Number(v)]))).then(setCeilings))} className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save ceilings</button>
       </Card>}
 
-      {show("controls") && <FeatureFlagsCard flags={flags} tenants={flagTenants} busy={busy}
+      {inGroup("flags") && <FeatureFlagsCard flags={flags} tenants={flagTenants} busy={busy}
         onTenants={(name, value) => setFlagTenants({ ...flagTenants, [name]: value })}
         onSet={(name, on) => act(`${flags?.[name]?.plain ?? name} turned ${on ? "on" : "off"}.`, () => (on
           ? api.adminSetFlag(name, true).then(flagsChanged)

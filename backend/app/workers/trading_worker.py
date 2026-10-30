@@ -104,7 +104,7 @@ NO_NEW_ENTRIES_AFTER = dtime(15, 0)
 SQUARE_OFF_AT = dtime(15, 15)
 
 # A deployment that fails this many cycles in a row is paused rather than retried forever.
-MAX_CONSECUTIVE_FAILURES = 5
+MAX_CONSECUTIVE_FAILURES = app_config.WORKER_MAX_CONSECUTIVE_FAILURES
 # How often a VALID token is re-proven against the broker.
 TOKEN_RECHECK_SECONDS = 300
 RHYTHM_EVERY_MINUTES = 5            # MO4: how often the worker looks for daily-rhythm digests due on Telegram
@@ -234,7 +234,7 @@ class TradingWorker:
         self.require_lock_for_live = ENVIRONMENT in HARDENED_ENVIRONMENTS if require_lock_for_live is None else require_lock_for_live
         self._lock_degraded = False
         self._lock_lost = False
-        self._lock_ttl = max(cycle_seconds * 2, 30)
+        self._lock_ttl = max(cycle_seconds * 2, app_config.WORKER_LOCK_TTL_MIN_SECONDS)
         self.redis_guard = RedisGuard()
         self.market_data_factory = market_data_factory
         self.worker_name = worker_name
@@ -429,7 +429,7 @@ class TradingWorker:
     async def run_cycle(self, now: Optional[datetime] = None) -> CycleReport:
         now = now or datetime.now(timezone.utc)
         cycle_started = time.monotonic()
-        lock_ttl = self._lock_ttl = max(self.cycle_seconds * 2, 30)
+        lock_ttl = self._lock_ttl = max(self.cycle_seconds * 2, app_config.WORKER_LOCK_TTL_MIN_SECONDS)
         acquired, reachable = await cache_try_lock(LOCK_KEY, self.holder_id, lock_ttl)
         if not acquired:
             logger.info("Another worker replica holds the lock - skipping this cycle")

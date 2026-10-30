@@ -38,8 +38,8 @@ import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { chartLiveOf, useTerminalSpot } from "./spot";
 import BasketPanelV2 from "../fno/BasketPanelV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
-import { RollPendingV2 } from "../fno/RollV2";
-import { writePending } from "../fno/roll";
+import { RollPendingV2, RollSheetV2 } from "../fno/RollV2";
+import { writePending, type RollAsk } from "../fno/roll";
 import { areasByTrade, chainAreaMarks, useStrikeAreas } from "../fno/strikeArea";
 import { StatusBarV2 } from "./StatusBarV2";
 import { useCombinedExits } from "../fno/CombinedExitV2";
@@ -189,6 +189,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const areaById = useMemo(() => areasByTrade(strikeAreas), [strikeAreas]);
   const areaMarks = useMemo(() => chainAreaMarks(strikeAreas, underlying, live?.expiry ?? chain.expiry ?? null), [strikeAreas, underlying, live?.expiry, chain.expiry]);
   // R1 step 2: show the one basket (its phone tab, or its panel on the grid).
+  const [rollAsk, setRollAsk] = useState<RollAsk | null>(null);
+  const [rollNote, setRollNote] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const openBasket = () => { if (narrow) setTab("basket"); else setWorking((w) => (w.panels.some((x) => x.id === "basket" && x.open) ? w : { ...w, panels: openPanel(w.panels, "basket") })); };
   const ticketState = useTerminalTicket(ticket, live && ticket && ticket.target.expiry === live.expiry ? live.rows : null, afterOrder);
 
@@ -224,7 +226,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       case "positions": {
         const list = <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}
           fnoOn={features.on("paper_account")} combined={combined} onChanged={afterOrder}
-          roll={rollOn ? { spot: live?.summary.spot ?? null, onBasket: openBasket } : undefined} areas={areaById.size ? areaById : undefined} />;
+          roll={rollOn ? { onRoll: setRollAsk } : undefined} areas={areaById.size ? areaById : undefined} />;
         // TERM-2 step 3: on the desktop grid the one bottom panel - Positions · Orders · Alerts; a phone has its own tabs.
         return narrow ? list : <AccountPanelV2 positions={list} orders={panel("orders")} counts={{ positions: dataOf(positionsL)?.length ?? 0 }} />;
       }
@@ -329,6 +331,11 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       {signedIn && features.on("smart_execution") && <div data-terminal="incomplete"><IncompleteOrdersV2 /></div>}
       {/* TERM-2 R1: a roll that is half done (old legs closed, new legs in the basket, not placed) says so, beside it. */}
       {rollOn && <div data-terminal="roll-pending"><RollPendingV2 onBasket={openBasket} /></div>}
+      {rollNote && <NoteV2 kind={rollNote.kind} testId="terminal-roll">{rollNote.text}</NoteV2>}
+      {rollOn && (
+        <RollSheetV2 ask={rollAsk} spot={live?.summary.spot ?? null} onClose={() => setRollAsk(null)}
+          onDone={(text, ok, toBasket) => { setRollAsk(null); setRollNote({ kind: ok ? "done" : "warn", text }); afterOrder(); if (toBasket) openBasket(); }} />
+      )}
 
       {narrow ? (
         <div className="space-y-space-3" data-tour="terminal-panels">

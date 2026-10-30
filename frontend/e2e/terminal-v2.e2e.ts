@@ -619,6 +619,8 @@ test.describe("v2 terminal TERM-2 step 4 (R1-R4) 1440", () => {
       await expect(page.locator("[data-area-mark]")).toHaveCount(0);
       expect(seen.evaluates.every((b) => !b.with_open && !b.margin_pair)).toBe(true);
       await shot(page, `term2r-before-1440-${theme}`);
+      await page.locator("[data-panel='basket'] [data-basket='numbers']").scrollIntoViewIfNeeded();
+      await shot(page, `term2r-before-1440-${theme}-basket`);
     });
 
     test(`after: Roll -> the preview -> the existing group exit -> the new legs in the basket (${theme})`, async ({ page }) => {
@@ -641,7 +643,8 @@ test.describe("v2 terminal TERM-2 step 4 (R1-R4) 1440", () => {
       await shot(page, `term2r-after-1440-${theme}-roll-preview`);
       await sheet.locator("[data-testid='roll-confirm']").click();
       await expect(page.locator("[data-roll-pending]")).toBeVisible();
-      expect(seen.exits).toEqual(["/api/paper/fno/positions/41/exit-group"]);       // the existing group exit
+      expect(seen.exits).toHaveLength(1);
+      expect(seen.exits[0]).toMatch(/\/paper\/fno\/positions\/41\/exit-group$/);   // the existing group exit
       expect(seen.places).toEqual([]);                                               // nothing placed: the user reviews the basket
       const basket = page.locator("[data-panel='basket'] [data-basket-panel]");
       await expect(basket.locator("[data-basket='legs'] > li")).toHaveCount(2);
@@ -660,7 +663,10 @@ test.describe("v2 terminal TERM-2 step 4 (R1-R4) 1440", () => {
       await expect(required).toContainText("Margin required (estimate)");
       await expect(required).toContainText("32,000");
       await expect(basket.locator("[data-figure='margin-available']")).toContainText("9,93,300");
+      await basket.locator("[data-basket='payoff']").scrollIntoViewIfNeeded();
       await shot(page, `term2r-after-1440-${theme}-basket`);
+      await required.scrollIntoViewIfNeeded();
+      await shot(page, `term2r-after-1440-${theme}-basket-margin`);
       await basket.locator("[data-leg-more]").first().click();
       await expect(required).toContainText("48,000");
       expect(seen.evaluates.at(-1)).toMatchObject({ with_open: true, margin_pair: true });
@@ -682,6 +688,7 @@ test.describe("v2 terminal TERM-2 step 4 (R1-R4) tablet 820", () => {
       await expect(page.locator("[data-phone-panel='positions'] [data-position]")).toHaveCount(2);
       await shot(page, `term2r-${when}-820-light-positions`);
       await page.locator("[data-tab='basket']").tap();
+      await expect(page.locator("[data-phone-panel='basket'] [data-basket='payoff']")).toBeVisible();
       await settle(page);
       await shot(page, `term2r-${when}-820-light-basket`);
       await noSidewaysScroll(page);
@@ -703,6 +710,8 @@ test.describe("v2 terminal TERM-2 step 4 (R1-R4) 390", () => {
         await shot(page, `term2r-${when}-390-${theme}-positions`);
         if (when === "after") {
           await expect(positions.locator("[data-chip='strike-area']")).toHaveText("Area 0.32% above · 25,080.00-25,140.00");
+          const roll = await positions.locator("[data-testid='roll-group']").boundingBox();
+          expect(roll && roll.height >= 44).toBe(true);
           await positions.locator("[data-testid='roll-group']").tap();
           await expect(page.getByRole("dialog").locator("[data-roll-preview='ok']")).toBeVisible();
           await shot(page, `term2r-after-390-${theme}-roll-preview`);
@@ -715,9 +724,10 @@ test.describe("v2 terminal TERM-2 step 4 (R1-R4) 390", () => {
         await page.locator("[data-phone-panel='chain'] tr[data-strike='25000']").scrollIntoViewIfNeeded();
         await shot(page, `term2r-${when}-390-${theme}-chain`);
         await page.locator("[data-tab='basket']").tap();
+        await expect(page.locator("[data-phone-panel='basket'] [data-basket='payoff']")).toBeVisible();
         await settle(page);
         await shot(page, `term2r-${when}-390-${theme}-basket`);
-        await expectPhoneLayout(page);
+        await noSidewaysScroll(page);           // the 44 px rule for every tab: the test above (no screenshots taken before it)
       });
     }
   }

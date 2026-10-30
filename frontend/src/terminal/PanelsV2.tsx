@@ -21,7 +21,6 @@ import { GroupExitSheetV2 } from "../fno/GroupExitsV2";
 import { PositionActionSheetV2, WaitingOrdersV2, type PositionActionAsk } from "../fno/PositionActionsV2";
 import type { GroupExitAsk } from "../fno/groupExits";
 import { PositionList, useFnoPositions, type RowActions } from "../trading/PositionsV2";
-import { RollSheetV2 } from "../fno/RollV2";
 import type { RollAsk } from "../fno/roll";
 import type { MyDayArea } from "../dashboard/myDay";
 import { closedText, exitConfirmText, failedText, heldRows } from "../trading/model";
@@ -283,12 +282,12 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
   /** CX6: his combined exits (the page reads them once for this panel and the status bar); absent: no button, no chip. */
   combined?: { list: readonly CombinedExit[]; reload: () => void };
   onChanged: () => void;
-  /** TERM-2 R1 (flag term_roll): "Roll" on F&O PAPER positions and groups; `onBasket` shows the basket for step 2. */
-  roll?: { spot: number | null; onBasket: () => void };
+  /** TERM-2 R1 (flag term_roll): "Roll" on F&O PAPER positions and groups (the page holds the roll's sheet, so a panel
+   *  that re-renders never drops it half way). */
+  roll?: { onRoll: (ask: RollAsk) => void };
   /** TERM-2 R3 (flag term_strike_area): each short strike's nearest area, by trade id. */
   areas?: ReadonlyMap<number, MyDayArea>;
 }) {
-  const [rollAsk, setRollAsk] = useState<RollAsk | null>(null);
   const [note, setNote] = useState<{ kind: "done" | "info" | "warn"; text: ReactNode } | null>(null);
   const [groupExit, setGroupExit] = useState<GroupExitAsk | null>(null);
   const [partAsk, setPartAsk] = useState<PositionActionAsk | null>(null);   // T2 (TT-9): Exit part / Reverse
@@ -340,7 +339,7 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
     part: fnoOn && canTrade ? {
       onPart: (p) => setPartAsk({ kind: "part", position: p }), onReverse: (p) => setPartAsk({ kind: "reverse", position: p }),
     } : undefined,
-    roll: roll && fnoOn && canTrade ? { onRoll: setRollAsk } : undefined,
+    roll: roll && fnoOn && canTrade ? roll : undefined,
     areas,
   };
   // UX-15 (owner, 28 Oct): total P&L first (the broker-standard header); Exit all only with two or more positions - each
@@ -371,10 +370,6 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
       <PositionActionSheetV2 ask={partAsk} onClose={() => setPartAsk(null)}
         onDone={(text, ok) => { setPartAsk(null); setNote({ kind: ok ? "done" : "warn", text }); setWaitingTick((n) => n + 1); onChanged(); }} />
       {fnoOn && canTrade && <WaitingOrdersV2 refresh={waitingTick} onChanged={onChanged} />}
-      {roll && (
-        <RollSheetV2 ask={rollAsk} spot={roll.spot} onClose={() => setRollAsk(null)}
-          onDone={(text, ok, toBasket) => { setRollAsk(null); setNote({ kind: ok ? "done" : "warn", text }); onChanged(); if (toBasket) roll.onBasket(); }} />
-      )}
     </div>
   );
 }

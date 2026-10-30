@@ -48,7 +48,8 @@ describe("UI2-3 detail panel", () => {
     const words = text(html);
     expect(words).toContain("DEMO 50");
     expect(words).toContain("Long");
-    expect(words).toContain("Demo breakout · from Paper bot · Paper");          // UX3: no internal bot number
+    expect(words).toContain("Demo breakout · from Paper bot");                   // UX3: no internal bot number
+    expect(words.match(/\bPAPER\b|· Paper\b/g)).toEqual(["PAPER"]);            // CT-1 C8: the mode once, as the one chip
     for (const label of ["Size", "Max loss", "Reward : risk", "Your levels", "Entry", "Exit if wrong", "Exit at profit"]) expect(words).toContain(label);
     expect(words).not.toMatch(/\b(?:Stop|Target)\b/);                         // UX3 fix 10: no order words
     expect(html).toMatch(/<details[^>]*data-your-levels/);                       // the user's own levels: one tap away
@@ -98,7 +99,7 @@ describe("UI2-3 detail panel", () => {
     const words = text(inRouter(<SignalDetail item={feedItem({ mode: "LIVE" })} proposal={proposal} now={NOW} canTrade onDone={noop} onError={noop} />));
     expect(words).toContain("Approve (paper order)");                // Phase 0: an approved entry is a PAPER order
     expect(words).not.toContain("Approve live trade");
-    expect(words).toContain("· Live");
+    expect(words).not.toContain("· Live");                                   // CT-1 C8: the LIVE chip says it, once
     expect(words).toContain("LIVE · code on approve");                     // UI-28 U1.3: one chip, the sentence its tooltip
     expect(words).not.toContain("Nothing reaches your broker");
     expect(words).not.toContain("Approve paper trade");

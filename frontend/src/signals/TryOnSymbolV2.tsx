@@ -4,6 +4,8 @@ import { Link } from "react-router";
 import { api } from "../api/client";
 import { NEEDS_BROKER_FOR_DATA, useCandleSource } from "../components/DataSource";
 import { Sheet } from "../components/primitives";
+import { useOptionalAuth } from "../auth/AuthContext";
+import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
 import { chartsPath } from "../shell/shellRoutes";
 import type { EnrichedSignal, OHLCVBar, StrategyInfo } from "../types";
 import { buildTimeframeData, generateSampleCandles } from "../utils/sampleData";
@@ -24,6 +26,7 @@ const BUTTON = "inline-flex min-h-11 items-center justify-center rounded-control
 export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
   const source = useCandleSource();
   const [symbol, setSymbol] = useState("NIFTY 50");
+  const auth = useOptionalAuth();
   const [sample, setSample] = useState(false);
   const [bars, setBars] = useState(356);
   const [seed, setSeed] = useState(7);
@@ -95,7 +98,9 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
       <form onSubmit={generate} className="space-y-space-3">
         <div>
           <label htmlFor={ids.symbol} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
-          <input id={ids.symbol} className={FIELD} value={symbol} onChange={(e) => setSymbol(e.target.value)} autoComplete="off" autoCapitalize="characters" spellCheck={false} />
+          {/* CT-1 C6: the one symbol picker (a typed symbol is kept when the field is left). */}
+          <SymbolPicker id={ids.symbol} label="Symbol" value={symbol} exchange="NSE" storageKey={recentKeyFor(auth?.user?.id)}
+            onPick={(p) => setSymbol(p.symbol)} commitTyped className="w-full" />
         </div>
         {!source.sampleHidden && (
         <details className="rounded-panel border border-subtle px-space-3" data-advanced>

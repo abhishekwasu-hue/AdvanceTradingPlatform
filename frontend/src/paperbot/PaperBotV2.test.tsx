@@ -142,7 +142,8 @@ describe("UX2 fix 4 view", () => {
 
   it("a running bot: name, Paper, what it trades, Running, Pause and Stop", () => {
     const t = text(row(bot({ open_positions: 1 })));
-    expect(t).toContain("Opening range breakout Paper NIFTY 50 options During the day");   // UX-11b C5: two chips
+    expect(t).toContain("Opening range breakout NIFTY 50 options During the day");   // UX-11b C5: two chips; CT-1 C8: no per-row "Paper"
+    expect(text(row(bot({ mode: "LIVE" })))).toContain("Opening range breakout LIVE");                  // a LIVE bot keeps its LIVE badge
     expect(t).toMatch(/Running Checked 2 min ago (No signal yet|Last signal [^ ]+ [a-z]+ ago) 1 open trade Pause Stop/);
     expect(t).not.toContain("Resume");
   });
@@ -165,7 +166,9 @@ describe("UX2 fix 4 view", () => {
     const rows = strategyOptions([intraday, daily], [], [other], []);
     expect(rows.filter((r) => r.group === "Ready-made").map((r) => r.label)).toContain("Opening range breakout");
     expect(rows.filter((r) => r.group === "More from the Library").map((r) => r.label)).toContain("RSI divergence");
-    expect(pageSource).toContain('{ value: OTHER, label: "Another symbol…" }');
+    // CT-1 C6: the one SymbolPicker - the usual symbols suggested, any other typed (kept when the field is left).
+    expect(pageSource).toContain('<SymbolPicker id={ids.symbol} label="Pick a symbol"');
+    expect(pageSource).toContain("suggestions={SYMBOL_ROWS}");
   });
 
   it("no developer words on the page", () => {

@@ -74,10 +74,18 @@ describe("UI2-2 blocks", () => {
     expect(html(<OpenPositionsV2 data={{ status: "error" }} />)).toContain("We could not load your positions. We will try again in a moment.");
   });
 
+  it("CT-1 C8: paper positions carry one PAPER badge beside the title, none per row", () => {
+    const row = { symbol: "TCS", mode: "Paper" as const, side: "Buy" as const, detail: "Buy · 5 shares", ltp: 10, pnl: 1, pnlPct: 0.1 };
+    const out = html(<OpenPositionsV2 data={{ status: "ok", total: 2, rows: [{ id: 1, ...row }, { id: 2, ...row }] }} />);
+    expect(out.match(/data-mode-badge="paper"/g)).toHaveLength(1);
+    expect(out).not.toContain(">Paper<");
+  });
+
   it("positions as a list (no table), with Paper and Live chips and signed P&L", () => {
     const out = html(<OpenPositionsV2 data={{ status: "ok", total: 1, rows: [{ id: 1, symbol: "RELIANCE", mode: "Live", side: "Buy", detail: "Buy · 50 shares · avg 2,962.20", ltp: 2948.2, pnl: -700, pnlPct: -0.47 }] }} />);
     expect(out).not.toContain("<table");
-    expect(out).toContain("Live");
+    expect(out).toContain(">LIVE<");                                          // CT-1 C8: a LIVE row keeps its LIVE badge
+    expect(out).not.toContain('data-mode-badge="paper"');                    // no paper row: no PAPER badge
     expect(out).toContain("−₹700");
     expect(out).not.toContain("−₹700.00");                                   // a card: whole rupees
     expect(out).toContain("text-down");

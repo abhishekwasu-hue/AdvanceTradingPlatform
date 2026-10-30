@@ -15,8 +15,10 @@ export const CARD = "rounded-panel border border-subtle bg-surface-1 shadow-card
 export const LINK_PRIMARY = "inline-flex h-11 shrink-0 items-center justify-center gap-space-2 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface md:h-9";
 export const LINK_SECONDARY = "inline-flex h-11 shrink-0 items-center justify-center gap-space-2 rounded-control border border-border bg-surface-1 px-space-4 text-t14 font-semibold text-fg transition-colors duration-fast hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface md:h-9";
 
-export function CardV2({ title, count, more, children, className = "", testId, tour }: {
+export function CardV2({ title, count, more, children, className = "", testId, tour, badge }: {
   title: ReactNode;
+  /** CT-1 C8: the screen's one mode badge (PAPER), beside the title and outside the heading's name. */
+  badge?: ReactNode;
   count?: number;
   more?: { label: string; to: string };
   children: ReactNode;
@@ -35,6 +37,7 @@ export function CardV2({ title, count, more, children, className = "", testId, t
             <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-pill bg-surface-2 px-space-2 text-t12 font-semibold text-fg-muted">{count}</span>
           )}
         </h2>
+        {badge && <span className="mr-auto flex items-center">{badge}</span>}
         {more && (
           <Link to={more.to} className="inline-flex h-11 items-center gap-space-1 rounded-control text-t14 font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-auto">
             {more.label} <ChevronRight size={16} aria-hidden />

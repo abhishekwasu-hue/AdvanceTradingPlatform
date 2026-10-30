@@ -160,7 +160,7 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await expect(positions.locator("li").nth(0)).toContainText("Buy · 2 lots (150) · avg 121.80");
     await expect(positions.locator("li").nth(0)).toContainText("+₹3,120");
     await expect(positions.locator("li").nth(1)).toContainText("Sell · 1 lot (35) · avg 54,000.00");
-    await expect(positions.locator("li").nth(2)).toContainText("Live");
+    await expect(positions.locator("li").nth(2)).toContainText("LIVE");                  // CT-1 C8: a LIVE row keeps its LIVE badge
     await expect(positions.locator("li").nth(2)).toContainText("−₹700");
 
     const signals = page.locator("[data-block='signals']");

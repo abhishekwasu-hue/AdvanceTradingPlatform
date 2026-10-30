@@ -3,6 +3,7 @@
  * type needs, the keyboard shortcuts, the request body, and the words of a result. The server checks and computes every
  * figure the confirm step shows (backend app/paper/fno_ticket.py); nothing here makes one up.
  */
+import { PAPER_TEXT, PAPER_WORD } from "../ui/paperWords";
 import { formatINR, formatNumber, formatPrice } from "../ui/format";
 import type { ContractRight, HeldLeg, OrderAsk, OrderResult, OrderType, Product, Right, Side } from "./api";
 
@@ -43,8 +44,9 @@ export const PRODUCTS: { value: Product; label: string; hint: string }[] = [
   { value: "MIS", label: "MIS", hint: "Intraday" }, { value: "NRML", label: "NRML", hint: "Carry forward" },
 ];
 // UI-28 U1.1 (owner, 28 Oct): the mode is labelled once, as a "PAPER" chip in the header; the sentence is its tooltip only.
-export const PRACTICE_TITLE = "PAPER";
-export const PRACTICE_TEXT = "Practice mode: no real order is sent and no money moves.";
+// CT-1 C8: the words live with the one badge (ui/PaperBadge); these names stay for the pieces that import them.
+export const PRACTICE_TITLE = PAPER_WORD;
+export const PRACTICE_TEXT = PAPER_TEXT;
 export const MAX_LOTS = 500;
 
 /** Settings part C: the lots / product / order type the user's own defaults start a ticket with (only the ones set). */

@@ -43,7 +43,8 @@ import {
   NO_STOP, closedRows, closedText, exitConfirmText, failedText, heldRows, holdingTiles, openCaption, type ClosedRow, type HeldRow,
 } from "./model";
 import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from "./PartsV2";
-import { PracticeFrame } from "../fno/OrderTicketV2";
+import { LiveBadge, PaperBadge } from "../ui/PaperBadge";
+import { showsPaper } from "../ui/paperWords";
 import { AccountFilterV2, accountLabels, inAccount } from "./accountViews";
 import { SettlementWarningsV2 } from "../fno/SmartExecutionV2";
 import ExpiryChecklistV2 from "../fno/ExpiryChecklistV2";
@@ -228,7 +229,7 @@ export default function PositionsV2(_props: PageProps = {}) {
     <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="positions-v2">
       <PageIntro id="positions" lines={["Open a position's chart, or exit a paper position at the current price."]} />
       <PageTitleV2 title="My positions" subtitle="What you hold now and how it is doing."
-        action={!!list?.length && list.every((p) => p.mode === "PAPER") ? <PracticeFrame className="self-start md:self-auto" /> : undefined} />
+        action={showsPaper([...(list ?? []).map((p) => p.mode), ...(dataOf(trades) ?? []).map((t) => t.mode)]) ? <PaperBadge className="self-start md:self-auto" /> : undefined} />
 
       <section aria-label="Summary" data-block="summary" data-tour="positions-summary">
         {positions.status === "loading" ? <LoadingRowsV2 rows={2} /> : (
@@ -498,10 +499,10 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
                 {row.side === "Buy" ? <ArrowUpRight size={14} aria-hidden /> : <ArrowDownRight size={14} aria-hidden />}{row.side === "Buy" ? "Long" : "Short"}
               </span>
             )}
-            <ChipV2 kind={row.mode === "Live" ? "solid" : "outline"}>{row.mode}</ChipV2>
+            {row.mode === "Live" && <LiveBadge />}
             {row.structure && <ChipV2>{row.structure}</ChipV2>}
             {actions.accounts && position.account_label && (
-              <span data-testid="account-badge" title="Practice account"><ChipV2 kind="brand">{position.account_label}</ChipV2></span>
+              <span data-testid="account-badge" title="Account"><ChipV2 kind="brand">{position.account_label}</ChipV2></span>
             )}
           </div>
           <div className="mt-px flex flex-wrap items-baseline gap-x-space-3 font-tabular text-t13" data-qty-avg>
@@ -681,7 +682,7 @@ function ClosedRowV2({ row, onSaved }: { row: ClosedRow; onSaved: () => void }) 
             <span className="text-t15 font-semibold text-fg">{row.symbol}</span>
             {colour ? <DirectionChip side={row.side === "Long" ? "long" : "short"} />
               : <span className={`text-t13 font-medium ${row.side === "Long" ? "text-up" : "text-down"}`}>{row.side}</span>}
-            <ChipV2 kind={row.mode === "Live" ? "solid" : "outline"}>{row.mode}</ChipV2>
+            {row.mode === "Live" && <LiveBadge />}
           </div>
           <p className="mt-px font-tabular text-t13 text-fg-muted">{row.size} · {row.prices} · {row.when}{row.reason ? ` · ${row.reason}` : ""}</p>
           <p className="mt-px text-t12 text-fg-muted">

@@ -78,7 +78,6 @@ function DraftV2({ draft, onSave, candles }: { draft: JournalDraft; onSave: (d: 
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-space-2">
             <span className="text-t15 font-semibold text-fg">{draft.title}</span>
-            <ChipV2 kind="outline">Paper</ChipV2>
             <ChipV2 kind={draft.status === "draft" ? "solid" : "outline"}>{draft.status === "draft" ? "Draft" : "Noted"}</ChipV2>
           </div>
           <p className="mt-px text-t12 text-fg-muted">{whenLine(draft)} · {placedByLine(draft)}</p>

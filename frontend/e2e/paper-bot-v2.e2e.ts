@@ -148,10 +148,13 @@ test.describe("Paper bot behaviour", () => {
 
     await choose(page, form(page).getByLabel("Pick a strategy"), "swing_ema_pullback_d");
     await expectChoice(form(page).getByLabel("Pick a symbol"), "RELIANCE");
-    await choose(page, form(page).getByLabel("Pick a symbol"), "__other__");
+    // CT-1 C6: the one SymbolPicker - an emptied field asks for a symbol; a typed one is kept when the field is left.
+    await form(page).getByLabel("Pick a symbol").fill("");
+    await form(page).getByLabel("Pick a symbol").press("Tab");                     // leaving the field keeps it empty
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Pick or type a symbol.");
-    await form(page).getByLabel("Type the symbol").fill("tcs");
+    await form(page).getByLabel("Pick a symbol").fill("tcs");
+    await form(page).getByLabel("Pick a symbol").press("Tab");
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Started on paper: TCS.");
     expect(server.sent.filter((c) => c.url === "/deployments").at(-1)?.body).toMatchObject({ symbol: "TCS", timeframe: "day", holding: "SWING", instrument_kind: "UNDERLYING", mode: "PAPER" });

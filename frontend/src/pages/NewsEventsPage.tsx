@@ -1,5 +1,6 @@
 import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
+import { useDebouncedValue } from "../utils/debounce";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, CollapsibleCard } from "../components/ui";
@@ -78,11 +79,15 @@ function sentimentClass(sentiment: NewsSentiment): string {
   return "bg-surface-2/30 text-fg-muted border-border";
 }
 
+/** REV-1 M3: the Symbol box reads the list this long after the last key (no read per keystroke). */
+const NEWS_SEARCH_DEBOUNCE_MS = 400;
+
 export default function NewsEventsPage() {
   const { user, loading: authLoading } = useAuth();
   const [events, setEvents] = useState<NewsEventResponse[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<NewsEventCategory | "">("");
   const [symbolFilter, setSymbolFilter] = useState("");
+  const symbolQuery = useDebouncedValue(symbolFilter.trim(), NEWS_SEARCH_DEBOUNCE_MS);   // REV-1 M3: one read when typing stops
   const [originFilter, setOriginFilter] = useState<"" | "MANUAL" | "FEED">("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,7 +122,7 @@ export default function NewsEventsPage() {
   function refresh() {
     setLoading(true);
     api
-      .listNewsEvents({ category: categoryFilter || undefined, symbol: symbolFilter || undefined, origin: originFilter || undefined })
+      .listNewsEvents({ category: categoryFilter || undefined, symbol: symbolQuery || undefined, origin: originFilter || undefined })
       .then(setEvents)
       .catch((e) => setError(errorSentence(e)))
       .finally(() => setLoading(false));
@@ -126,7 +131,7 @@ export default function NewsEventsPage() {
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryFilter, symbolFilter, originFilter]);
+  }, [categoryFilter, symbolQuery, originFilter]);
 
   async function handleSubmit() {
     setSubmitting(true);

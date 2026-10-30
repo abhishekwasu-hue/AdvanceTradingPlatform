@@ -49,7 +49,7 @@ from app.market_data.calendar import IST
 from app.signals import language as signal_language
 
 TABS = ("waiting", "today", "history")
-SOURCE_FILTERS = ("all", "autopilot", "scan", "copilot")
+SOURCE_FILTERS = ("all", "autopilot", "scan", "copilot", "library")   # REV-1 M3: "library" = the signal generator
 HISTORY_DAYS = 30
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 100
@@ -408,7 +408,9 @@ def _sources(q: FeedQuery) -> List[Source]:
         actions = actions.where(_kind_clause(q.dialect, q.source))
     if q.symbol:
         actions = actions.where(func.upper(_evidence(q.dialect, "symbol")) == q.symbol)
-    out = [Source("action", actions, AiActionRecord.created_at, AiActionRecord.id, lambda r: _from_action(r[0], now, action_mode(r[1], r[2])))]
+    # REV-1 M3: a proposal is never a signal-generator row, so the "library" filter reads only the signal history.
+    out = [] if q.source == "library" else [
+        Source("action", actions, AiActionRecord.created_at, AiActionRecord.id, lambda r: _from_action(r[0], now, action_mode(r[1], r[2])))]
     if q.tab == "waiting":
         return out
     if q.source in ("all", "scan") and q.flags.get("execution_core"):
@@ -432,7 +434,7 @@ def _sources(q: FeedQuery) -> List[Source]:
         if q.symbol:
             trades = trades.where(TradeRecord.symbol == q.symbol)
         out.append(Source("trade", trades, TradeRecord.entry_time, TradeRecord.id, lambda r: _from_trade(r[0])))
-    if q.source == "all":
+    if q.source in ("all", "library"):
         history = select(SignalHistoryRecord).where(
             SignalHistoryRecord.tenant_id == user.tenant_id, SignalHistoryRecord.user_id == user.id,
             SignalHistoryRecord.direction.in_(("LONG", "SHORT")))

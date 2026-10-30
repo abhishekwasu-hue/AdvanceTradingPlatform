@@ -47,3 +47,7 @@ missing data; strictness "B" = own direction Strong (Trade's could never pass); 
   strictness); every threshold is the user's own OI setting. Scope: the analysis display only - the paper-bot entry
   gate (O5) stays as built unless the owner says so (ask once when building).
 - Build order next session: after PROSE-1 #732 merges; one PR "TERM-3" behind `term_strategy_builder` (OFF).
+
+## Also for the next session (owner 30 Oct): PB-AUDIT
+A fresh audit of the Paper bot (/deployments: paperbot/PaperBotV2.tsx, backend deployments/routes.py, the worker's
+entry / exit paths), file:line proof, findings by severity, plan to the owner before any fix. Start from REV-1 §1.

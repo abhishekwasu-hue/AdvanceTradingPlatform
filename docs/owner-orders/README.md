@@ -64,6 +64,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Option chain OI / PCR tab fixes (30 Oct) | ATP_ORDER_M61.md | M61 | not started |
 | - | Trading journal made working (30 Oct) | ATP_ORDER_M62.md | M62 | not started |
 | - | Feature inventory: production truth + build / hide / merge (30 Oct) | ATP_ORDER_M63.md | M63 | Phase 0 |
+| - | Order-time risk checks (30 Oct) | ATP_ORDER_M64.md | M64 | not started |
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

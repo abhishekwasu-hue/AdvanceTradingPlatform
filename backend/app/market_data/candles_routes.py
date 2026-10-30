@@ -488,7 +488,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": "budget used", "budget_used": True, "volume_source": None}
             continue
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
-            logger.info("Candle fetch failed for %s:%s via %s: %s", exchange, symbol, record.broker_name, exc)
+            logger.info("Candle fetch failed for %s:%s via %s: %s: %s", exchange, symbol, record.broker_name, type(exc).__name__, exc)
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": read_failed_reason(exc, f"prices for {symbol}"), "volume_source": None}
             continue
         fut = futures.get(symbol)
@@ -536,7 +536,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
                 warnings.append(f"{symbol}: the broker returned no candles")
                 out[symbol]["empty_reason"] = empty_reason(symbol, exchange, service.holidays, now, body.before)
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
-            logger.info("Candle shaping failed for %s:%s: %s", exchange, symbol, exc)
+            logger.info("Candle shaping failed for %s:%s: %s: %s", exchange, symbol, type(exc).__name__, exc)
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": read_failed_reason(exc, f"prices for {symbol}"), "volume_source": None}
     if fetched:
         await meter(session, user.tenant_id, "market_data_candles", quantity=fetched, source="api",
@@ -722,7 +722,7 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
         except NotImplementedError:
             out[underlying] = {"chain": None, "rows": 0, "error": f"{display_name(record.broker_name)} does not offer option chains yet."}
         except Exception as exc:  # noqa: BLE001 - one underlying must not lose the others
-            logger.info("Option chain fetch failed for %s via %s: %s", underlying, record.broker_name, exc)
+            logger.info("Option chain fetch failed for %s via %s: %s: %s", underlying, record.broker_name, type(exc).__name__, exc)
             out[underlying] = {"chain": None, "rows": 0, "error": read_failed_reason(exc, f"the option chain for {underlying}")}
     if fetched:
         await meter(session, user.tenant_id, "market_data_chains", quantity=fetched, source="api",

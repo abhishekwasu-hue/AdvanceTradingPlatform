@@ -129,6 +129,14 @@ def owner_switched_live_on(monkeypatch):
     monkeypatch.setattr(controls, "DEFAULT_OFF_FLAGS", frozenset(controls.FEATURE_FLAGS) - frozenset(on))
     for plan_id in ("pro", "business"):
         monkeypatch.setitem(registry.PLANS, plan_id, replace(registry.PLANS[plan_id], live_trading=True))
+    # M55 S1b: the plan check needs the owner's per-organisation grant; in this posture a Pro / Business organisation
+    # counts as granted (the grant itself is pinned in tests/test_m55_s1b_org_live_grant.py).
+    from app.plans import limits
+
+    async def plan_grants(session, tenant):
+        return registry.get_plan(tenant.plan).live_trading
+
+    monkeypatch.setattr(limits, "_live_granted", plan_grants)
     user = UserRole.USER.value
     monkeypatch.setitem(scopes.ROLE_SCOPES, user, scopes.ROLE_SCOPES[user] | {"trading:live"})
     yield

@@ -77,7 +77,7 @@ from app.market_lake.recorder import LakeRecorder
 from app.news_feed import service as news_feed
 from app.notifications.service import notify
 from app.observability.metrics import MARKET_DATA_STALE, RETENTION_DELETED, observe_cycle
-from app.plans.limits import live_allowed, tenant_is_active
+from app.plans.limits import live_allowed_for, tenant_is_active
 from app.platform import controls as platform_controls
 from app.platform import phase0_lock
 from app.reconciliation.service import broker_uncertain_reason, reconcile_accounts, run_reconciliation
@@ -1396,7 +1396,7 @@ class TradingWorker:
                     dep.last_error = phase0_lock.WORKER_NOT_EVALUATED
                     await session.commit()
                 continue
-            if dep.mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
+            if dep.mode == ExecutionMode.LIVE.value and not await live_allowed_for(session, tenant):
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"
                 await session.commit()
                 continue

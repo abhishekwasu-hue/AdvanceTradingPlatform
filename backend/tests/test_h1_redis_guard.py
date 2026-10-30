@@ -131,7 +131,7 @@ def test_an_evicted_lock_is_taken_back_but_no_entry_is_placed_that_cycle_and_exi
     assert not report.lock_lost and report.signals_executed == 1
 
 
-def test_a_lock_another_worker_took_stops_the_cycle_entries_and_exits(monkeypatch):
+def test_a_lock_another_worker_took_stops_entries_and_leaves_an_exits_only_pass(monkeypatch):
     t = _tenant("h1-taken@example.com")
     _deploy(t, mode="PAPER")
     worker = _worker(monkeypatch, _FakeBroker(ltp=101.0))
@@ -141,8 +141,8 @@ def test_a_lock_another_worker_took_stops_the_cycle_entries_and_exits(monkeypatc
 
     report = _run(worker.run_cycle(now=OPEN_NOW))
     assert report.lock_lost and report.lock_aborted
-    assert report.tenants_processed == 0 and report.signals_executed == 0
-    assert redis.monitor_calls == 0                                     # the holder runs the exits, not this worker
+    assert report.tenants_processed == 0 and report.signals_executed == 0 and report.exits_only_tenants >= 1
+    assert redis.monitor_calls >= 1                                     # M55 S2 (A9): exits still run, without the lock
     assert redis.holder == _LockRedis.OTHER                             # and its lock is never released by this one
     assert _lost("held_elsewhere") == before + 1
     new = _lock_alerts()[1][alerts_before:]

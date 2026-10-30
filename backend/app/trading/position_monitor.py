@@ -96,6 +96,9 @@ class CloseOutcome:
     previous_exit_status: Optional[str] = None
     # Re-exit guard: an earlier exit is still working (or could not be checked) - nothing new was sent; waiting for it.
     exit_waiting: bool = False
+    # M55 S2 (A7): the broker answered the exit order REJECTED / CANCELLED (after any retries) - close_position logs it
+    # at ERROR and raises the CRITICAL notification.
+    exit_rejected: str | None = None
 
 
 def exchange_for_symbol(symbol: str) -> str:
@@ -793,25 +796,38 @@ async def _square_off_live(
 
         exit_tag = expected_exit_tag(trade, broker, algo_id)
         outcome.exit_tag = exit_tag
-        try:
-            response = await broker.place_order(BrokerOrderRequest(
-                symbol=trade.symbol, exchange=exchange, transaction_type=exit_side, quantity=exit_quantity,
-                order_type="MARKET", product=product_for_trade(trade),   # Phase AS: the entry's own product
-                tag=exit_tag,
-            ))
-        except Exception as exc:  # noqa: BLE001
-            outcome.warnings.append(f"Exit order failed at {broker.name}: {exc}")
-            logger.error("Exit order failed for trade %s: %s", trade.id, exc)
-            if not is_clear_rejection(exc):
-                # MED-2: the order may stand at the broker - whatever the stop switches, the tenant is flagged and the claim
-                # stays, so no second exit goes out until reconciliation shows the position still open.
-                outcome.broker_uncertain = f"exit order for trade {trade.id} errored without a clear answer: {exc}"
-                if ledger is not None:
-                    ledger.keep_claim = True
-            return None
-        if response.status.upper() in ("REJECTED", "CANCELLED"):
-            outcome.warnings.append(f"Exit order rejected by {broker.name}: {response.message or response.status}")
-            return None
+        # M55 S2 (A7): a refused exit is sent again up to EXIT_REJECT_RETRIES more times in this check (default 0: one
+        # send per check, as before; the next check always tries again while the rule holds).
+        sends = 1 + max(0, int(config.EXIT_REJECT_RETRIES))
+        for send in range(1, sends + 1):
+            try:
+                response = await broker.place_order(BrokerOrderRequest(
+                    symbol=trade.symbol, exchange=exchange, transaction_type=exit_side, quantity=exit_quantity,
+                    order_type="MARKET", product=product_for_trade(trade),   # Phase AS: the entry's own product
+                    tag=exit_tag,
+                ))
+            except Exception as exc:  # noqa: BLE001
+                outcome.warnings.append(f"Exit order failed at {broker.name}: {exc}")
+                logger.error("Exit order failed for trade %s: %s", trade.id, exc)
+                if not is_clear_rejection(exc):
+                    # MED-2: the order may stand at the broker - whatever the stop switches, the tenant is flagged and the
+                    # claim stays, so no second exit goes out until reconciliation shows the position still open.
+                    outcome.broker_uncertain = f"exit order for trade {trade.id} errored without a clear answer: {exc}"
+                    if ledger is not None:
+                        ledger.keep_claim = True
+                return None
+            status = response.status.upper()
+            if status not in ("REJECTED", "CANCELLED"):
+                outcome.exit_rejected = None
+                break
+            why = response.message or response.status
+            outcome.exit_rejected = f"{broker.name}: {why}"
+            logger.error("Exit order for trade %s %s by %s (send %d of %d): %s", trade.id, status.lower(), broker.name, send, sends, why)
+            if send >= sends or not await _nothing_filled(broker, response, status):
+                outcome.warnings.append(f"Exit order rejected by {broker.name}: {why}")
+                return None
+            if config.EXIT_REJECT_RETRY_SPACING_SECONDS > 0:
+                await asyncio.sleep(config.EXIT_REJECT_RETRY_SPACING_SECONDS)
         outcome.broker_exit_order_id = response.order_id
         if ledger is not None:
             ledger.keep_claim = True          # P3: the broker took it - nothing from here on may release the claim
@@ -874,6 +890,37 @@ async def _square_off_live(
                 await ledger.release()    # a no-op once the broker took the order, or when the send's answer was unclear
             except Exception:  # noqa: BLE001 - a claim left behind is handled like a stale one (reconciliation decides)
                 logger.exception("Could not release the exit claim of trade %s", trade.id)
+
+
+async def _nothing_filled(broker: BrokerInterface, response, status: str) -> bool:
+    """M55 S2 (A7): a refused exit may be sent again only when nothing of it can have filled - REJECTED is the broker's
+    clear refusal; CANCELLED only when the book reads and shows no fill on it (else a second exit could open a position
+    the other way)."""
+    if status == "REJECTED":
+        return True
+    if not response.order_id:
+        return True
+    readable, order = await _read_order(broker, response.order_id)
+    return readable and (order is None or float(order.filled_quantity or 0) <= 0)
+
+
+# M55 S2 (A7): when the owner was last told that a position's exit was refused (one CRITICAL per cooldown).
+_rejected_exit_alert: dict[int, float] = {}
+
+
+async def _note_exit_rejected(session: AsyncSession, trade: TradeRecord, outcome: CloseOutcome, user_id: int | None) -> None:
+    if not outcome.exit_rejected:
+        _rejected_exit_alert.pop(trade.id, None)
+        return
+    logger.error("Exit of trade %s (%s) refused by the broker - the position stays open: %s", trade.id, trade.symbol, outcome.exit_rejected)
+    last = _rejected_exit_alert.get(trade.id)
+    if last is not None and time.monotonic() - last <= ALERT_COOLDOWN_SECONDS:
+        return
+    _rejected_exit_alert[trade.id] = time.monotonic()
+    await notify(session, trade.tenant_id, NotificationType.SYSTEM_FAILURE, title=f"Exit refused by the broker: {trade.symbol}",
+                 message=(f"Position #{trade.id}: the broker refused its exit order ({outcome.exit_rejected[:200]}). The position is "
+                          "still open; the exit is tried again on the next check. Check the position at the broker."),
+                 severity=NotificationSeverity.CRITICAL, user_id=user_id, related_trade_id=trade.id)
 
 
 async def _note_exit_wait(session: AsyncSession, trade: TradeRecord, outcome: CloseOutcome, user_id: Optional[int]) -> None:
@@ -943,6 +990,7 @@ async def close_position(
             await mark_broker_uncertain(session, tenant, outcome.broker_uncertain)
             await session.commit()
         await _note_exit_wait(session, trade, outcome, user_id)
+        await _note_exit_rejected(session, trade, outcome, user_id)
         if realised is None:
             return outcome
         realised_price = realised

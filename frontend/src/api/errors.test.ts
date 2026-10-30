@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ApiError, COMING_SOON_MESSAGE, NETWORK_MESSAGE, NOT_AVAILABLE_MESSAGE, SERVER_ERROR_MESSAGE, apiErrorFrom, friendlyError,
-  readableDetail,
+  REASON_SENTENCES, errorSentence, readableCode, readableDetail, reasonSentence,
 } from "./errors";
 
 function response(status: number, body: string, headers: Record<string, string> = {}) {
@@ -81,5 +81,45 @@ describe("detail objects and server references", () => {
     expect(err.message).toBe("provider returned nothing usable: NSE: timeout; BSE: 404. Reference: req-9.");
     const plain = await apiErrorFrom(new Response(JSON.stringify({ detail: "Broker down." }), { status: 503, headers: { "x-request-id": "r1" } }));
     expect(plain.message).toBe("Broker down. Reference: r1.");
+  });
+});
+
+describe("REV-H1: a machine reason gets its own sentence", () => {
+  const refused = (code: string, message = "server words.") => response(409, JSON.stringify({ detail: { code, message } }));
+
+  it("each reason of a refused bot start has one plain sentence with the next step", async () => {
+    const seen = new Set<string>();
+    for (const code of ["no_instrument_master", "no_broker", "broker_login_needed", "broker_account_off", "duplicate_active_bot"]) {
+      const e = await apiErrorFrom(refused(code));
+      expect(e.code).toBe(code);
+      expect(e.message).toBe(REASON_SENTENCES[code]);
+      expect(errorSentence(e)).toBe(REASON_SENTENCES[code]);
+      expect(e.message).toMatch(/^[A-Z].*\.$/);
+      expect(e.message).not.toMatch(/\b(deployment|instrument master|409|credentials)\b/i);
+      seen.add(e.message);
+    }
+    expect(seen.size).toBe(5);
+    expect(REASON_SENTENCES.no_instrument_master).toContain("Ask your admin to sync the instrument list");
+    expect(REASON_SENTENCES.no_broker).toContain("Broker page");
+    expect(REASON_SENTENCES.duplicate_active_bot).toContain("Stop that bot first");
+    expect(Object.values(REASON_SENTENCES).filter((s) => /already runs/.test(s))).toHaveLength(1);   // only the duplicate says so
+  });
+
+  it("an unknown reason shows the server's own sentence; no code reads as before", async () => {
+    const e = await apiErrorFrom(refused("something_new", "The server's own sentence."));
+    expect(e.code).toBe("something_new");
+    expect(e.message).toBe("The server's own sentence.");
+    expect(errorSentence(e)).toBe("The server's own sentence.");
+    const plain = await apiErrorFrom(response(409, JSON.stringify({ detail: "Deployment is stopped" })));
+    expect(plain.code).toBeNull();
+    expect(errorSentence(plain)).toBe("Deployment is stopped");
+    expect(readableCode("not json")).toBeNull();
+    expect(readableCode(JSON.stringify({ detail: [{ msg: "x" }] }))).toBeNull();
+    expect(reasonSentence("toString")).toBeNull();          // only the listed reasons, never an inherited property
+  });
+
+  it("an ApiError built by hand with only the body still finds its reason", () => {
+    const e = new ApiError(409, "x", "", JSON.stringify({ detail: { code: "no_broker", message: "m" } }));
+    expect(errorSentence(e)).toBe(REASON_SENTENCES.no_broker);
   });
 });

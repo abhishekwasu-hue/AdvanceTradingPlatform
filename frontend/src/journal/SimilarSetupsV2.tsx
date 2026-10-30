@@ -55,11 +55,6 @@ export function RecallBody({ recall, reflection, onOpenTrade }: {
           {recall.matches.map((m) => <MatchRow key={m.trade_id} m={m} onOpenTrade={onOpenTrade} />)}
         </ul>
       )}
-      <p>
-        Similar means the same setup and the same {contextWords(recall.context)}, as recorded when each trade was taken; only
-        trades that closed before this entry count. The totals show from {recall.min_sample} similar trades. Your own history
-        only - not a forecast and not advice.
-      </p>
     </>
   );
 }
@@ -86,6 +81,11 @@ export default function SimilarSetupsV2({ kind, id, onOpenTrade }: {
       </p>
       <Details id={`setup-recall.${kind}`} label="Similar setups" className="mt-space-1">
         <RecallBody recall={state.recall} reflection={state.reflection} onOpenTrade={onOpenTrade} />
+        <p>
+          Similar means the same setup and the same {contextWords(state.recall.context)}, as recorded when each trade was taken; only
+          trades that closed before this entry count. The totals show from {state.recall.min_sample} similar trades. Your own history
+          only - not a forecast and not advice.
+        </p>
       </Details>
     </section>
   );

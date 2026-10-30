@@ -71,6 +71,8 @@ function FeedSourcesCard({ isAdmin }: { isAdmin: boolean }) {
 
 const CATEGORIES = Object.keys(NEWS_EVENT_CATEGORY_LABELS) as NewsEventCategory[];
 const SENTIMENTS: NewsSentiment[] = ["Bullish", "Neutral", "Bearish"];
+/** The native select class of the page's dropdowns. */
+const FIELD_CLASS = "w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm";
 
 function sentimentClass(sentiment: NewsSentiment): string {
   if (sentiment === "Bullish") return "bg-up/15 text-up border-up/40";
@@ -157,12 +159,12 @@ export default function NewsEventsPage() {
         <div className="grid sm:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs text-fg-muted mb-1">Origin</label>
-            <SelectOrCombobox label="Origin" value={originFilter} onChange={(v) => setOriginFilter(v as "" | "MANUAL" | "FEED")} className="w-full" nativeClassName="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
+            <SelectOrCombobox label="Origin" value={originFilter} onChange={(v) => setOriginFilter(v as "" | "MANUAL" | "FEED")} className="w-full" nativeClassName={FIELD_CLASS}
               options={[{ value: "", label: "All" }, { value: "MANUAL", label: "Cited by a person" }, { value: "FEED", label: "Unverified feed" }]} />
           </div>
           <div>
             <label className="block text-xs text-fg-muted mb-1">Category</label>
-            <SelectOrCombobox label="Category" value={categoryFilter} onChange={(v) => setCategoryFilter(v as NewsEventCategory | "")} className="w-full" nativeClassName="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
+            <SelectOrCombobox label="Category" value={categoryFilter} onChange={(v) => setCategoryFilter(v as NewsEventCategory | "")} className="w-full" nativeClassName={FIELD_CLASS}
               options={[{ value: "", label: "All categories" }, ...CATEGORIES.map((c) => ({ value: c, label: NEWS_EVENT_CATEGORY_LABELS[c] }))]} />
           </div>
           <div>
@@ -256,7 +258,7 @@ export default function NewsEventsPage() {
             <div className="grid sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs text-fg-muted mb-1">Category</label>
-                <SelectOrCombobox label="Category" value={form.category} onChange={(v) => setForm({ ...form, category: v as NewsEventCategory })} className="w-full" nativeClassName="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
+                <SelectOrCombobox label="Category" value={form.category} onChange={(v) => setForm({ ...form, category: v as NewsEventCategory })} className="w-full" nativeClassName={FIELD_CLASS}
                   options={CATEGORIES.map((c) => ({ value: c, label: NEWS_EVENT_CATEGORY_LABELS[c] }))} />
               </div>
               <div>
@@ -270,7 +272,7 @@ export default function NewsEventsPage() {
               </div>
               <div>
                 <label className="block text-xs text-fg-muted mb-1">Sentiment</label>
-                <SelectOrCombobox label="Sentiment" value={form.sentiment} onChange={(v) => setForm({ ...form, sentiment: v as NewsSentiment })} className="w-full" nativeClassName="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
+                <SelectOrCombobox label="Sentiment" value={form.sentiment} onChange={(v) => setForm({ ...form, sentiment: v as NewsSentiment })} className="w-full" nativeClassName={FIELD_CLASS}
                   options={SENTIMENTS.map((s) => ({ value: s, label: s }))} />
               </div>
             </div>

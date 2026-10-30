@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, Disclaimer } from "../components/ui";
 import { PageHeader } from "../components/primitives";
+import { Details } from "../ui/Details";
 import {
   defaultCondition,
   defaultCustomStrategyConfig,
@@ -448,9 +449,9 @@ export function StrategyBuilderFull({ onOpenFlow }: { onOpenFlow?: () => void } 
               />
             </div>
           </div>
-          <p className="text-xs text-fg-muted" data-testid="sb-exits-own">
+          <Details id="strategy-builder.exits" className="mt-0"><p data-testid="sb-exits-own">
             Your own values only. A blank box is off: no stop-loss, no target, no minimum R:R.
-          </p>
+          </p></Details>
           {problem && <div className="text-sm text-warn" role="status">{problem}</div>}
 
           {error && <div className="text-sm text-down">{error}</div>}

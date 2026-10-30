@@ -279,7 +279,7 @@ export default function BacktestPage() {
     <div className="space-y-4">
       <PageHeader title="Backtesting" description="Event-driven simulation with position sizing, stop / target management and dated Indian charges." />
 
-      <DataSourceBar source={source} note="Bars below applies to sample data; broker candles use the lookback." />
+      <DataSourceBar source={source} note={source.sampleHidden ? undefined : "Bars below applies to sample data; broker candles use the lookback."} />
       {dataWarnings.map((w, i) => <div key={i} className="text-xs text-warn">{w}</div>)}
       <Disclaimer kind="backtest" />
 

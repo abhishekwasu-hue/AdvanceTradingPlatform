@@ -16,6 +16,7 @@ import {
   type DayOne, type DayOneList, type DayOneOffer, type DayOneRow, type DayOneWatch,
 } from "./dayOne";
 import { Combobox } from "../ui/Combobox";
+import { Details } from "../ui/Details";
 
 type Api = typeof dayOneApi;
 type State = { status: "loading" } | { status: "off" } | { status: "error" } | { status: "ok"; data: DayOne };
@@ -146,9 +147,11 @@ export function SetupView({ data, busy = false, problem = null, onAdopt, onCance
     <section aria-labelledby={titleId} className={cx(CARD, "space-y-space-4 p-space-4 md:p-space-5")} data-day-one="setup" data-tour="signals-day-one">
       <div>
         <h2 id={titleId} className="text-t15 font-semibold text-fg">Pick a ready strategy and a list to watch</h2>
-        <p className="mt-space-1 text-t14 text-fg-muted">
-          Your own signals start here: the strategy reads every symbol on your list and shows where each one stands. Paper money only.
-        </p>
+        <Details id="signals.day-one" className="mt-space-1">
+          <p>
+            Your own signals start here: the strategy reads every symbol on your list and shows where each one stands. Paper money only.
+          </p>
+        </Details>
         {data.outdated && <p className="mt-space-2 text-t14 text-fg">The ready strategy you picked before has been updated. Pick it again.</p>}
       </div>
       {blocked ? (

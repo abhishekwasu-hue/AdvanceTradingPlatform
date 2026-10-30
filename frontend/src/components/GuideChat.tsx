@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { GuideAnswer, GuideConcept } from "../types";
 import { Card, CollapsibleCard } from "./ui";
+import { Details } from "../ui/Details";
 
 /**
  * Phase AT: ask the guide. Answers come from the concept library (and, for "what is X doing today",
@@ -52,9 +53,11 @@ export default function GuideChat({ plain = false }: { plain?: boolean }) {
     <>
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
         <GraduationCap size={14} className="text-brand" />
-        <span>Ask about any trading concept, or "What is NIFTY doing today?". Answers come from the concept library and the market memory; with an AI key in Settings the AI answers, in English.</span>
         <button onClick={() => setBrowse(!browse)} className="ml-auto rounded border border-border px-2 py-0.5 text-fg hover:bg-surface-2"><BookOpen size={11} className="mr-1 inline" />{browse ? "Close the library" : "All concepts"}</button>
       </div>
+      <Details id="guide.about" className="mt-0 mb-2">
+        <p>Ask about any trading concept, or "What is NIFTY doing today?". Answers come from the concept library and the market memory; with an AI key in Settings the AI answers, in English.</p>
+      </Details>
       {browse && (
         <div className="mb-2 flex flex-wrap gap-1">
           {concepts.map((c) => (

@@ -9,6 +9,7 @@ import {
   answerProblem, askKind, draftConfig, DRAFT_TIMEFRAMES, openAsks, saveLine, type DraftValues, type StrategyDraft,
 } from "../copilot/strategyDraft";
 import { Combobox } from "../ui/Combobox";
+import { Details } from "../ui/Details";
 
 /**
  * Item 5 (owner's handover), job 6: the Copilot's draft on the Paper bot page (v2 only, with the `ai_copilot` switch on).
@@ -58,11 +59,13 @@ export default function CopilotDraftV2({ draft, onSaved, onDiscard, save = api.c
   return (
     <CardV2 title="Your draft from the Copilot" testId="copilot-draft">
       <div className="space-y-space-4">
-        <p className="flex items-start gap-space-2 text-t14 text-fg-muted">
-          <Sparkles size={16} aria-hidden className="mt-0.5 shrink-0 text-brand" />
-          <span>Built from your own words with ATP&apos;s building blocks. Nothing is saved yet: fill in your values, save it as your
-            strategy, then start it on paper below. Every number is yours.</span>
-        </p>
+        <Details id="copilot-draft.about" className="mt-0">
+          <p className="flex items-start gap-space-2">
+            <Sparkles size={16} aria-hidden className="mt-0.5 shrink-0 text-brand" />
+            <span>Built from your own words with ATP&apos;s building blocks. Nothing is saved yet: fill in your values, save it as your
+              strategy, then start it on paper below. Every number is yours.</span>
+          </p>
+        </Details>
 
         <div>
           <label htmlFor={ids.name} className={LABEL}>Name</label>

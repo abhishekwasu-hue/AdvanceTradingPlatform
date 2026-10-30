@@ -66,13 +66,13 @@ FILL_POLL_DELAY_SECONDS = 0.5
 EXIT_PENDING = "pending-exit"
 # A claim younger than this is another exit being placed right now (wait for it); an older one never recorded a broker
 # order (a crash, or a send that errored without a clear answer) and is handled like an exit missing from the book.
-CLAIM_INFLIGHT_SECONDS = 120
+CLAIM_INFLIGHT_SECONDS = config.EXIT_CLAIM_INFLIGHT_SECONDS
 # An order placed this long before the exit's claim can still be its exit (broker and platform clocks differ).
-ADOPT_CLOCK_SKEW_SECONDS = 5
+ADOPT_CLOCK_SKEW_SECONDS = config.EXIT_ADOPT_CLOCK_SKEW_SECONDS
 # Checks in a row that find an earlier exit still working (or its book unreadable) before a CRITICAL alert, and the
 # alert's cooldown.
-EXIT_WAIT_ALERT_CHECKS = 5
-ALERT_COOLDOWN_SECONDS = 1800
+EXIT_WAIT_ALERT_CHECKS = config.EXIT_WAIT_ALERT_CHECKS
+ALERT_COOLDOWN_SECONDS = config.EXIT_ALERT_COOLDOWN_SECONDS
 # What the monitor books when it finishes an exit sent earlier without its own rule having to fire again.
 RESUMED_EXIT_REASON = "Earlier exit order completed"
 

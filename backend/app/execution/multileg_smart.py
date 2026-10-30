@@ -82,7 +82,7 @@ class LegsRun:
 
 
 async def place_legs(broker: BrokerInterface, specs: Sequence[LegSpec], *, strategy_id: str, tenant: Any,
-                     band_pct: float, prices: Dict[str, float], live: bool) -> LegsRun:
+                     band_pct: float, prices: Dict[str, float], live: bool, product: str = "MIS") -> LegsRun:
     """Places `specs` through `broker` with the engine: hedges first, no sold leg before every hedge is confirmed filled
     in full, the first leg that does not fill stops the run. Nothing is retried or undone here."""
     from app.execution.router import OrderRouter
@@ -103,7 +103,7 @@ async def place_legs(broker: BrokerInterface, specs: Sequence[LegSpec], *, strat
             return _stop(failure, f"{what}: no price for the protected limit order - not sent")
         request = BrokerOrderRequest(
             symbol=spec.key, exchange=spec.exchange, transaction_type=OrderSide.BUY if spec.side == "BUY" else OrderSide.SELL,
-            quantity=spec.quantity, order_type=order_type, price=limit, product="MIS",
+            quantity=spec.quantity, order_type=order_type, price=limit, product=product,
             tag=build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag, broker=broker.name,
                                 client_id=new_client_order_id()) if live else None,
             intent=ORDER_INTENT_ENTRY,

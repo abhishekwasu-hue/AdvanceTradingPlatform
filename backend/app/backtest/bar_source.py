@@ -11,6 +11,14 @@ Order of sources (`resolve`):
    organisation's broker wrote.
 3. Otherwise a plain refusal (409) that says what is missing. Never sample data.
 
+M55 T4 (owner order): 15M / 30M / 1H of a backfilled index (`index_history`'s keys) can also run on ATP's stored index
+history - the history owner's 1-minute rows, built into the timeframe on read (`own_bars.scope_for`: the reader's own
+rows, else the shared index scope, ONLY while the bring-your-own-broker data tier is off). The broker stays first for
+every window it serves; the backtest bars route's window beyond the broker's 30 days (`stored_beyond_broker`), or no
+usable broker session with the flag above on, reads the stored history for the whole window (one source per run, never
+mixed). With the data tier on nothing is shared: the broker's 30
+days, and the answer says so in one line.
+
 Parity: lake bars are turned into the very frame a broker's Daily candles give - the same `OHLCVBar` ->
 `bars_to_dataframe` path, each bar stamped like the broker stamps a Daily candle (the trade date at 00:00 India time) -
 so equal bars give an identical frame and an identical backtest result (tests/test_backtest_bar_source.py).
@@ -24,8 +32,8 @@ reads each bar as closed, exactly as with the broker's Daily candles.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+from datetime import UTC, date, datetime, timedelta, timezone
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import pandas as pd
 from fastapi import HTTPException
@@ -75,13 +83,73 @@ class BacktestBars:
     source: str          # broker:<name> | lake:daily - the label recorded on the run
     kind: str            # broker | stored
     words: str           # where the prices come from, in plain words read after "Prices from" (no dates)
+    note: str | None = None    # M55 T4: one plain line, e.g. why longer stored history is not used
 
     def info(self) -> Dict[str, Any]:
         first = day_words(self.frame.index[0]) if len(self.frame) else None
         last = day_words(self.frame.index[-1]) if len(self.frame) else None
         line = f"Prices from {self.words}, {first} to {last}." if first and last else f"Prices from {self.words}."
         return {"source": self.source, "kind": self.kind, "words": self.words, "from_day": first, "to_day": last,
-                "bars": int(len(self.frame)), "line": line}
+                "bars": int(len(self.frame)), "line": line, **({"note": self.note} if self.note else {})}
+
+
+STORED_INTRADAY_SOURCE = "lake:index-intraday"         # starts with "lake": server evidence (evidence.is_server)
+STORED_INTRADAY_WORDS = "ATP's stored index history"
+BROKER_INTRADAY_DAYS = 30                               # the candles route's intraday cap (INTRADAY_MAX_LOOKBACK_DAYS)
+_STORED_TF = {15: "15m", 30: "30m", 60: "1h"}
+
+
+def stored_intraday_tf(timeframe: str) -> str | None:
+    """The chart layer's timeframe ('15m' / '30m' / '1h') when stored index history can serve `timeframe`, else None."""
+    tf = (timeframe or "").strip().lower()
+    if tf in _STORED_TF.values():
+        return tf
+    from app.market_data.intervals import minutes_of
+    minutes = minutes_of(tf) if tf.endswith("min") else (int(tf[:-1]) if tf.endswith("m") and tf[:-1].isdigit() else None)
+    return _STORED_TF.get(minutes) if minutes else None
+
+
+def stored_intraday_key(symbol: str, exchange: str) -> str | None:
+    """The lake key of a backfilled index (NIFTY -> NSE_INDEX:NIFTY50), else None."""
+    if (exchange or "NSE").strip().upper() not in ("NSE", "BSE"):
+        return None
+    from app.market_lake.index_history import is_target_key, lake_key_for
+    try:
+        key = lake_key_for(symbol)
+    except Exception:  # noqa: BLE001 - not an index
+        return None
+    return key if is_target_key(key) else None
+
+
+async def stored_intraday_frame(session: AsyncSession, tenant_id: int, user: Any, symbol: str, exchange: str, timeframe: str,
+                                lookback_days: int, *, now: datetime | None = None) -> pd.DataFrame | None:
+    """M55 T4: the stored index history as a broker-like frame (bar START stamps, closed bars only, by `now`), or None
+    when it may not be read (not an index, the data tier on, nothing stored). Reads only through `own_bars`."""
+    from app.charts import price_action_layer as pal
+    from app.market_lake import own_bars
+    tf, key = stored_intraday_tf(timeframe), stored_intraday_key(symbol, exchange)
+    if tf is None or key is None:
+        return None
+    if user is not None and getattr(user, "tenant_id", None) == tenant_id:
+        scope = await own_bars.scope_for(session, user, key)
+    else:
+        scope = await own_bars.shared_scope(session, tenant_id, key)
+    if scope is None:
+        return None
+    end = now or datetime.now(UTC)
+    days = max(1, min(int(lookback_days), config.LAKE_BACKFILL_INTRADAY_DAYS))
+    rows = await own_bars.fetch_rows(session, scope, key, "1m", end - timedelta(days=days), end, limit=400 * (days + 1))
+    if not rows:
+        return None
+    frame = pal._to_frame(rows, tf, key, end, True)
+    bars = [OHLCVBar(timestamp=pd.Timestamp(r.timestamp).to_pydatetime(), open=float(r.open), high=float(r.high), low=float(r.low),
+                     close=float(r.close), volume=0.0 if pd.isna(r.volume) else float(r.volume)) for r in frame.itertuples(index=False)]
+    if not bars:
+        return None
+    df = bars_to_dataframe(bars)
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC")
+    return df
 
 
 def timeframe_kind(timeframe: str) -> Optional[str]:
@@ -179,19 +247,33 @@ async def lake_frame(session: AsyncSession, symbol: str, timeframe: str, lookbac
 
 async def resolve(session: AsyncSession, tenant_id: int, symbol: str, exchange: str, timeframe: str, *, lookback_days: int = 30,
                   user: Any = None, broker: Optional[str] = None, now: Optional[datetime] = None,
-                  broker_fetch: Optional[Callable[[], Awaitable[Tuple[pd.DataFrame, str]]]] = None) -> BacktestBars:
+                  broker_fetch: Callable[[], Awaitable[tuple[pd.DataFrame, str]]] | None = None,
+                  stored_beyond_broker: bool = False) -> BacktestBars:
     """The bars a backtest runs on: the broker session when usable, else stored Daily history (flag on), else a plain
     409 saying what is missing. `broker_fetch`: the caller's own broker read (the Copilot tools' `_frame`), so a path with a
-    broker session reads exactly what it read before; default `evidence.server_frame`."""
+    broker session reads exactly what it read before; default `evidence.server_frame`. `stored_beyond_broker` (M55 T4,
+    the backtest bars route, whose intraday window was capped at the broker's 30 days): a longer 15M / 30M / 1H window of
+    a backfilled index reads the stored index history (else the broker's 30 days, with the reason when the data tier
+    is on); every other caller keeps its broker read exactly as before."""
     from app.ai import evidence
     from app.platform.controls import flag_enabled
+    note: str | None = None
+    if stored_beyond_broker and stored_intraday_tf(timeframe) and lookback_days > BROKER_INTRADAY_DAYS and stored_intraday_key(symbol, exchange):
+        # M55 T4: beyond the broker's 30 days - the stored index history for the whole window, when it may be read
+        stored = await stored_intraday_frame(session, tenant_id, user, symbol, exchange, timeframe, lookback_days, now=now)
+        if stored is not None:
+            return BacktestBars(stored, STORED_INTRADAY_SOURCE, "stored", STORED_INTRADAY_WORDS)
+        from app.market_lake import own_bars
+        if await own_bars.shared_off(session, tenant_id):
+            note = own_bars.SHARED_OFF_LINE
+        lookback_days = BROKER_INTRADAY_DAYS
     try:
         if broker_fetch is not None:
             df, source = await broker_fetch()
         else:
             df, source = await evidence.server_frame(session, tenant_id, symbol, exchange, timeframe, broker=broker,
                                                      lookback_days=lookback_days, user=user)
-        return BacktestBars(df, source, "broker", broker_words(source))
+        return BacktestBars(df, source, "broker", broker_words(source), note)
     except HTTPException as exc:
         broker_error = exc
     if not await flag_enabled(session, FLAG, tenant_id):
@@ -199,6 +281,9 @@ async def resolve(session: AsyncSession, tenant_id: int, symbol: str, exchange: 
     if timeframe_kind(timeframe) is None:
         if broker_error.status_code != 409:
             raise broker_error                     # a session exists but its read failed: say what the broker said
+        stored = await stored_intraday_frame(session, tenant_id, user, symbol, exchange, timeframe, lookback_days, now=now)
+        if stored is not None:                     # M55 T4: a backfilled index's stored intraday history
+            return BacktestBars(stored, STORED_INTRADAY_SOURCE, "stored", STORED_INTRADAY_WORDS)
         raise HTTPException(status_code=409, detail=INTRADAY_NEEDS_BROKER)
     if (exchange or "NSE").strip().upper() != "NSE":
         raise HTTPException(status_code=409, detail=STORED_ONLY_NSE.format(exchange=exchange.strip().upper()))
@@ -214,5 +299,5 @@ def frame_bars(df: pd.DataFrame) -> List[Dict[str, Any]]:
              "volume": float(r.volume)} for ts, r in df.iterrows()]
 
 
-__all__ = ["FLAG", "LAKE_SOURCE", "STORED_WORDS", "INTRADAY_NEEDS_BROKER", "BacktestBars", "resolve", "lake_frame", "to_frame",
+__all__ = ["FLAG", "LAKE_SOURCE", "STORED_INTRADAY_SOURCE", "stored_intraday_tf", "stored_intraday_key", "stored_intraday_frame", "STORED_WORDS", "INTRADAY_NEEDS_BROKER", "BacktestBars", "resolve", "lake_frame", "to_frame",
            "weekly", "window", "timeframe_kind", "not_stored", "broker_words", "frame_bars"]

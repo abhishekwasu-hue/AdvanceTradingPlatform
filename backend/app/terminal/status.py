@@ -153,11 +153,9 @@ async def _kill_switch(session: AsyncSession, user: User) -> Dict[str, Any]:
 
 async def _mode(session: AsyncSession, user: User) -> Dict[str, Any]:
     """The Terminal places PAPER orders (the one ticket and basket are PAPER-only today). Shown, never changed."""
-    from app.platform import phase0_lock
-    from app.platform.controls import flag_enabled
-    locked = await phase0_lock.is_on(session, user.tenant_id)
-    live_switch = await flag_enabled(session, "live_trading", user.tenant_id)
-    return {"mode": "PAPER", "live_allowed": bool(live_switch and not locked),
+    # M55 S1b: LIVE is allowed for this organisation only with the switch on, the lock off and the owner's grant.
+    from app.platform import live_owner
+    return {"mode": "PAPER", "live_allowed": await live_owner.org_live_open(session, user.tenant_id),
             "message": "Practice mode: no real order is sent and no money moves."}
 
 

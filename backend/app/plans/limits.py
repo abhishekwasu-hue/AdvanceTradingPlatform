@@ -138,7 +138,7 @@ def _upgrade_hint(plan: Plan) -> str:
 async def check_can_add_deployment(session: AsyncSession, tenant: Tenant, *, live: bool, adding: bool = True) -> None:
     ensure_tenant_active(tenant)
     plan = get_plan(tenant.plan)
-    if live and not plan.live_trading:
+    if live and not await _live_granted(session, tenant):
         raise PlanLimitExceeded(f"The {plan.name} plan is paper trading only - LIVE deployments need Pro or Business.")
     if adding:
         current = await count_active_deployments(session, tenant.id)
@@ -180,7 +180,21 @@ async def check_can_add_alert_channel(session: AsyncSession, tenant: Tenant) -> 
 
 
 def live_allowed(tenant: Optional[Tenant]) -> bool:
+    """The plan alone (no plan grants LIVE since M55 S1). The LIVE gates use `live_allowed_for` (M55 S1b)."""
     return tenant is not None and tenant_is_active(tenant) and get_plan(tenant.plan).live_trading
+
+
+async def _live_granted(session: AsyncSession, tenant: Tenant) -> bool:
+    """M55 S1b: the owner's per-organisation LIVE grant - the global `live_trading` switch on, the PAPER-only lock off
+    for this organisation and the organisation on the owner's grant list (app/platform/live_owner.py)."""
+    from app.platform import live_owner
+    return await live_owner.org_live_open(session, tenant.id)
+
+
+async def live_allowed_for(session: AsyncSession, tenant: Optional[Tenant]) -> bool:
+    """The plan check for LIVE (M55 S1b): an active organisation the owner granted LIVE, with the switch on and the
+    lock off. Otherwise refused exactly as before."""
+    return tenant is not None and tenant_is_active(tenant) and await _live_granted(session, tenant)
 
 
 # --- AMW-1: plan limits v2 (flag `plan_limits_v2`, off by default) ---------------------------------------------------

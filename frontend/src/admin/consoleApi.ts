@@ -1,5 +1,6 @@
 import { request } from "../api/client";
 import type { ServerView } from "../api/viewAs";
+import { formatDateIST } from "../ui/format";
 
 /**
  * MO3 addition (a): the admin console's reads. The new sections come from `/api/admin/console/*` (read-only, SUPER_ADMIN
@@ -164,5 +165,5 @@ export function ago(iso: string | null | undefined, now: number = Date.now()): s
 
 export function shortDate(iso: string | null | undefined): string {
   if (!iso) return "-";
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  return formatDateIST(iso);                                // REV-1 M3: the IST day
 }

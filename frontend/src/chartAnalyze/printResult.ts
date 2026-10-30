@@ -1,3 +1,4 @@
+import { formatDateIST } from "../ui/format";
 /**
  * Analyze a chart: "Download PDF" through the browser's own print dialog ("Save as PDF"), so no PDF library is added
  * to the bundle. The result block is copied into a hidden same-origin frame with the page's own stylesheets, in the
@@ -70,6 +71,6 @@ export async function printResult(node: HTMLElement, title: string): Promise<voi
 
 /** "Chart analysis - DEMO 15m - 20 Oct 2026": the file name the browser suggests for the PDF. */
 export function printTitle(symbol: string | null, timeframe: string | null, when: Date = new Date()): string {
-  const date = when.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  const date = formatDateIST(when);                         // REV-1 M3: the IST day
   return ["Chart analysis", [symbol, timeframe].filter(Boolean).join(" "), date].filter(Boolean).join(" - ");
 }

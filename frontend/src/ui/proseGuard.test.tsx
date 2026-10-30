@@ -14,8 +14,19 @@ import { scanSource, scanV2 } from "./proseScan";
  * time it opens. The guard runs the inventory's AST rule (src/ui/proseScan.ts) over every file a user reaches with
  * ui_v2 ON; ALLOWED holds the owner's item 4 only - each entry names its kind and the start of its text.
  */
-type Allowed = "error" | "empty" | "confirm" | "status" | "sebi";
+type Allowed = "error" | "empty" | "confirm" | "status" | "sebi" | "label";
 const ALLOWED: ReadonlyArray<{ file: string; starts: string; kind: Allowed }> = [
+  // confirm: the text a person agrees to or confirms before the action (the box's own label / the dialog's question).
+  { file: "chartAnalyze/ChartAnalyzePageV2.tsx", starts: "The chart image and its analysis are dele", kind: "confirm" },
+  { file: "alerts/WhatsAppSection.tsx", starts: "Every recipient opted in to WhatsApp mes", kind: "confirm" },
+  { file: "components/AiAcknowledgementGate.tsx", starts: "I have read and understood: the AI Copil", kind: "confirm" },
+  { file: "legal/LegalConsentField.tsx", starts: ". I understand that the platform trades o", kind: "confirm" },
+  // label: a switch's own name (the explanation after it is in Details) - reported to the owner as a judgement call.
+  { file: "settings/chainSettings.tsx", starts: "On an expiry day, open the chain and the", kind: "label" },
+  // status: a live status banner whose sentence carries the live reason.
+  { file: "components/BrokerUncertainBanner.tsx", starts: ". Exits keep running. The worker reconcil", kind: "status" },
+  // error: shown after a leg failed to fill.
+  { file: "fno/IncompleteOrdersV2.tsx", starts: "A leg did not fill, so nothing more was s", kind: "error" },
 ];
 
 const allowed = (f: { file: string; text: string }) => ALLOWED.some((a) => a.file === f.file && f.text.startsWith(a.starts));
@@ -36,6 +47,9 @@ describe("PROSE-1: the AST rule", () => {
           <PageHeader title="T" line="${long}" />
           <button onClick={() => setError("${long}")}>Go</button>
           <p>short line</p>
+          <PageHeader title="T" description={<>${long} <b>x</b></>} />
+          <caption className="sr-only">${long}</caption>
+          <PageFootnote>${long}</PageFootnote>
         </div>);
       }`;
     expect(scanSource("a.tsx", src).map((f) => f.line)).toEqual([5, 6]);

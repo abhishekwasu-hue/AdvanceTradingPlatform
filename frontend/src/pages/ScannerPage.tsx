@@ -150,7 +150,7 @@ export default function ScannerPage() {
     <div className="space-y-4">
       <PageHeader title="Market Scanner" description="Filter a watchlist by indicator conditions (same building blocks as the Strategy Builder), price-action structure, and option-chain signals - only symbols clearing every configured filter are returned." />
 
-      <DataSourceBar source={source} note={source.sampleHidden ? undefined : "Option-chain filters read the broker's live chain in Broker mode and a sample chain otherwise."} />
+      <DataSourceBar source={source} note="Option-chain filters read the broker's live chain in Broker mode and a sample chain otherwise." />
       {dataWarnings.map((w, i) => <div key={i} className="text-xs text-warn">{w}</div>)}
       <Disclaimer kind="signals" />
 

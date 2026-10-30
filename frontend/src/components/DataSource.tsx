@@ -1,3 +1,4 @@
+import { Details } from "../ui/Details";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Database, FlaskConical, Plug } from "lucide-react";
@@ -271,11 +272,14 @@ export function DataSourceBar({ source, note }: { source: CandleSourceState; not
           <DataTierBadge badge={source.dataTier} />
         </>
       )}
-      <span className="text-fg-muted">
-        {brokerMode
-          ? "Real candles through your own broker session (history + today, cached 60 s). The backend computes on them exactly as on sample data."
-          : `Deterministic sample OHLCV; the backend computes everything for real on it. Switch to broker candles once a broker is logged in on the Broker page.${note ? " " + note : ""}`}
-      </span>
+      {/* PROSE-1: what the data source means sits in the bar's Details, closed by default. */}
+      <Details id="data-source.about" className="mt-0 basis-full">
+        <p>
+          {brokerMode
+            ? "Real candles through your own broker session (history + today, cached 60 s). The backend computes on them exactly as on sample data."
+            : `Deterministic sample OHLCV; the backend computes everything for real on it. Switch to broker candles once a broker is logged in on the Broker page.${note ? " " + note : ""}`}
+        </p>
+      </Details>
     </div>
   );
 }

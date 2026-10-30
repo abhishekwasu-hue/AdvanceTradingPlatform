@@ -72,7 +72,7 @@ export default function QuantPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="Factor Lab" description="Cross-sectional factor scores and a descriptive risk model on your watchlist. Ranks and statistics of the supplied window; never a signal or an order." />
-      <DataSourceBar source={source} note={source.sampleHidden ? undefined : "Value and quality come from the Fundamentals module: symbols with a company profile and financials get PE, PB, ROE, debt/equity and PAT growth filled in; the rest carry no value/quality score."} />
+      <DataSourceBar source={source} note="Value and quality come from the Fundamentals module: symbols with a company profile and financials get PE, PB, ROE, debt/equity and PAT growth filled in; the rest carry no value/quality score." />
       {dataWarnings.map((w, i) => <div key={i} className="text-xs text-warn">{w}</div>)}
       <Disclaimer kind="signals" />
 

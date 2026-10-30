@@ -117,8 +117,9 @@ export default function ChainSettingsV2({ fetcher = request }: { fetcher?: typeo
         <label className="flex min-h-11 cursor-pointer items-start gap-space-2 text-t14 text-fg">
           <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-brand" data-chain-field="expiry_day_next" checked={nextOnExpiry}
             onChange={(e) => { setNextOnExpiry(e.target.checked); setNote(null); }} />
-          <span>On an expiry day, open the chain and the spread builder on the next expiry. Today&apos;s expiry stays one tap away.</span>
+          <span>On an expiry day, open the chain and the spread builder on the next expiry.</span>
         </label>
+        <Details id="settings.chain.expiry-day" className="mt-0"><p>Today&apos;s expiry stays one tap away.</p></Details>
         {note && <NoteV2 kind={note.kind} testId="chain-settings">{note.text}</NoteV2>}
         <div className="flex flex-wrap gap-space-2">
           <button type="button" className={BUTTON_PRIMARY} disabled={busy} onClick={() => void save(form)} data-chain-field="save">

@@ -17,7 +17,8 @@ import { PROSE_MIN } from "./nodeText";
 
 export { PROSE_MIN };
 
-const HIDDEN_PARENTS = new Set(["Details", "details", "HelpPopover", "TermHint", "noscript"]);
+// PageFootnote draws its children inside its own "About" Details (src/ui/PageFootnote.tsx).
+const HIDDEN_PARENTS = new Set(["Details", "details", "HelpPopover", "TermHint", "noscript", "PageFootnote"]);
 const HIDDEN_ATTRS = /^(title|aria-.*|placeholder|alt|className|class|id|data-.*|href|to|key|role|type|name|value|htmlFor|src|lines|style|testId|dataAttrs)$/;
 /** Props a shared component itself puts behind an ⓘ / Details (PROSE-1 root fixes). */
 const HIDDEN_BY_COMPONENT: Record<string, ReadonlySet<string>> = {
@@ -26,6 +27,7 @@ const HIDDEN_BY_COMPONENT: Record<string, ReadonlySet<string>> = {
   PageIntro: new Set(["lines"]),
   Panel: new Set(["note"]),
   Input: new Set(["hint"]),
+  DataSourceBar: new Set(["note"]),
 };
 const MESSAGE_CALL = /^(set[A-Z]\w*|toast|error|warning|success|info|Error|TypeError|confirm|alert)$/;
 
@@ -52,6 +54,10 @@ function alwaysShown(node: ts.Node): boolean {
   let child: ts.Node = node;
   while (n) {
     if (ts.isJsxElement(n) && HIDDEN_PARENTS.has(tagName(n.openingElement))) return false;
+    // Screen-reader-only text (a table caption) is never on screen.
+    if (ts.isJsxElement(n) && /\bsr-only\b/.test(n.openingElement.attributes.getText())) return false;
+    // JSX given to a prop that its component itself puts behind the ⓘ (PageHeader `description={<>...</>}`).
+    if (ts.isJsxAttribute(n) && !visibleAttr(n)) return false;
     if (ts.isConditionalExpression(n) && child !== n.condition) return false;
     if (ts.isBinaryExpression(n) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(n.operatorToken.kind)) return false;
     if (ts.isIfStatement(n) || ts.isCaseClause(n) || ts.isDefaultClause(n)) return false;
@@ -151,6 +157,11 @@ export function v2Files(srcDir: string): string[] {
   return [...seen].filter((f) => f.endsWith(".tsx") && !/\.(test|stories)\.tsx$/.test(f)).map((f) => relative(srcDir, f)).sort();
 }
 
+/** Pages in the v2 import closure that no user reaches today, skipped by the owner's rule (PROSE-1 item 3). */
+export const UNREACHED: Readonly<Record<string, string>> = {
+  "pages/MarketplacePage.tsx": "flag `marketplace` OFF - the marketplace is the last phase (CLAUDE.md §2)",
+};
+
 export function scanV2(srcDir: string): ProseFinding[] {
-  return v2Files(srcDir).flatMap((f) => scanSource(f, readFileSync(join(srcDir, f), "utf8")));
+  return v2Files(srcDir).filter((f) => !(f in UNREACHED)).flatMap((f) => scanSource(f, readFileSync(join(srcDir, f), "utf8")));
 }

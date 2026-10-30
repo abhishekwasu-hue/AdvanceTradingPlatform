@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { bannerLines, formatOi, formatSigned, isLateChip, slotTime, strikeBars, tone } from "./format";
+import { OPTION_FILTER_LABELS } from "../types";
+import {
+  CHAIN_READ_WORDS, DIRECTION_WORDS, PCR_BAND_WORDS, alertStateWords, bannerLines, chainReadWords, classWords, directionWords, formatOi,
+  formatSigned, isLateChip, leadWords, oiRead, pcrBandWords, slotTime, strikeBars,
+} from "./format";
 import type { OiBannerResponse, OiBannerRow } from "./types";
 
 const row = (over: Partial<OiBannerRow> = {}): OiBannerRow => ({
@@ -16,11 +20,11 @@ const resp = (over: Partial<OiBannerResponse> = {}): OiBannerResponse => ({
 describe("OI banner lines", () => {
   it("lays out headline, classes, PCR and chips as the spec says", () => {
     const l = bannerLines(resp());
-    expect(l.headline).toContain("TESTIDX bias bullish");
-    expect(l.classes).toBe("Put: Writing · Call: Flat/unclear");
-    expect(l.pcr).toBe("PCR 2.20 — Overbought — possible reversal (bull-trap risk)");
+    // M61 OI-5: the read in numbers and neutral words - not the server's verdict message or PCR band label.
+    expect(l.headline).toBe("Put OI above call OI (PCR 2.20)");
+    expect(l.classes).toBe("Put: OI up, premium down · Call: no clear change");
+    expect(l.totals).toBe("Call OI 13,000 · Put OI 28,600");
     expect(l.chips).toEqual(["DTE 16", "Max pain 24,500", "Data as of 09:25"]);
-    expect(l.tone.border).toBe("border-l-up");
   });
   it("shows market closed, late-reading and expiry chips, and the first-of-day text in plain words (OC1)", () => {
     expect(bannerLines(resp({ market_open: false })).chips).toContain("Market closed");
@@ -28,21 +32,52 @@ describe("OI banner lines", () => {
     expect(bannerLines(resp({ banner: row({ dte: 0 }) })).chips[0]).toBe("Expiry today");
     expect(bannerLines(resp({ banner: row({ dte: 1 }) })).chips[0]).toBe("Expiry tomorrow");
     const first = bannerLines(resp({ banner: row({ first_of_day: true, message: "Insufficient data — history builds through the session" }) }));
-    expect(first.classes).toBeNull();
-    expect(first.headline).toBe("OI change will show after the first few minutes");
+    expect(first.classes).toBe("OI change will show after the first few minutes");
+    expect(first.headline).toBe("Put OI above call OI (PCR 2.20)");
     const none = bannerLines(resp({ banner: null, message: "Insufficient data — history builds through the session", stale: true, age_minutes: null }));
     expect(none.headline).toBe("OI change will show after the first few minutes");
     expect(none.chips).toEqual(["No reading yet today"]);
     expect(isLateChip("Last update 22 min ago") && isLateChip("No reading yet today") && !isLateChip("Market closed")).toBe(true);
     // No "Insufficient data" and no "Stale" label anywhere in the banner's words.
     for (const l of [first, none, bannerLines(resp({ stale: true, age_minutes: 5 }))]) expect(JSON.stringify(l)).not.toMatch(/insufficient|stale/i);
-    expect(bannerLines(resp({ banner: row({ pcr: null }) })).pcr).toBe("PCR — (no call OI)");
+    expect(bannerLines(resp({ banner: row({ pcr: null }) })).headline).toBe("Put OI above call OI (PCR –)");
   });
-  it("maps every direction to a theme token and never to a raw colour", () => {
-    expect(tone("BEARISH").border).toBe("border-l-down");
-    expect(tone("MIXED").text).toBe("text-warn");
-    expect(tone("SOMETHING").label).toBe("Neutral");
-    expect(tone(null).label).toBe("Neutral");
+  it("maps the engine's internal labels to neutral words (M61 OI-5)", () => {
+    expect(directionWords("BULLISH")).toBe("Put premium down / call premium up");
+    expect(directionWords("BEARISH")).toBe("Put premium up / call premium down");
+    expect(directionWords("MIXED")).toBe("Put and call readings differ");
+    expect(directionWords("SOMETHING")).toBe("No clear OI change");
+    expect(directionWords(null)).toBe("No clear OI change");
+    expect(leadWords("BULLISH (Strong)")).toBe("Put OI lead, growing");
+    expect(leadWords("BEARISH Weakening")).toBe("Call OI lead, not growing");
+    expect(leadWords("NEUTRAL")).toBe("No OI lead");
+    expect(pcrBandWords("OVERSOLD")).toBe("Very low PCR zone");
+    expect(pcrBandWords("MILD_BULLISH")).toBe("High PCR zone");
+    expect(classWords("Short covering")).toBe("OI down, premium up");
+    expect(classWords("LONG_UNWINDING")).toBe("OI down, premium down");
+    expect(alertStateWords("PCR_BAND", "OVERBOUGHT")).toBe("Very high PCR zone");
+    expect(alertStateWords("STRENGTH_CHANGE", "BULLISH Strong")).toBe("Put OI lead, growing");
+    expect(alertStateWords("OI_WALL", "formed CE@25000")).toBe("formed CE@25000");
+    expect(alertStateWords("DIRECTION_CHANGE", null)).toBe("—");
+    expect(oiRead({ total_call_oi: 120, total_put_oi: 100, pcr: 0.83 })).toBe("Call OI above put OI (PCR 0.83)");
+    expect(chainReadWords("BULLISH")).toBe("PCR above 1.2, put OI building");
+    expect(chainReadWords("CONFLICTING")).toBe("PCR and OI change differ");
+    expect(chainReadWords(undefined)).toBe("No one-sided read");
+  });
+  it("guard: no user-facing OI / PCR text carries a verdict word (M61 OI-5)", () => {
+    const VERDICT = /\b(bullish|bearish|overbought|oversold|mildly)\b/i;
+    const labels = ["BULLISH", "BEARISH", "MIXED", "NEUTRAL", "SIDEWAYS", "BULLISH (Strong)", "BEARISH (Weakening)", ...Object.keys(PCR_BAND_WORDS)];
+    const texts: string[] = [...Object.values(DIRECTION_WORDS), ...Object.values(PCR_BAND_WORDS), ...Object.values(CHAIN_READ_WORDS),
+      ...Object.values(OPTION_FILTER_LABELS)];
+    for (const label of [...labels, "CONFLICTING"]) {
+      texts.push(directionWords(label), leadWords(label), pcrBandWords(label), chainReadWords(label));
+      for (const t of ["DIRECTION_CHANGE", "STABLE_FLIP", "STRENGTH_CHANGE", "PCR_BAND"]) texts.push(alertStateWords(t, label));
+    }
+    for (const d of ["BULLISH", "BEARISH", "MIXED", "NEUTRAL"] as const) {
+      // The server's own verdict message and band label are in the row; none of it may reach the banner's words.
+      texts.push(JSON.stringify(bannerLines(resp({ banner: row({ direction: d, signal: `${d} (Strong)` }) }))));
+    }
+    for (const t of texts) expect(t).not.toMatch(VERDICT);
   });
   it("formats numbers from data only", () => {
     // M61 OI-1: the app's one count formatter ("12.35 L"), not full digits.

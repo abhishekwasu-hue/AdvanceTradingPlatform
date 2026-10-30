@@ -65,13 +65,16 @@ describe("UI2-2 market strip", () => {
     expect(partlyConnected([{ needs_login: false }])).toBeNull();
   });
 
-  it("one OI line per index: PCR and the first clause of the banner, nothing for no history", () => {
-    const b = (underlying: string, pcr: number | null, message: string, direction = "BULLISH") =>
+  it("one OI line per index: the neutral read with PCR, never the banner's verdict message (M61 OI-5)", () => {
+    const b = (underlying: string, pcr: number | null, message: string, direction = "BULLISH", totals: object = {}) =>
       ({ underlying, date: "", market_open: true, stale: false, age_minutes: 1, stale_after_minutes: 15,
-        banner: { pcr, message, direction } }) as never;
-    expect(oiLines([b("NIFTY", 1.123, "Put writing rising → avoid shorting calls; NIFTY bias bullish"),
-      b("BANKNIFTY", 0.86, "Insufficient data — history builds through the session", "NEUTRAL"), b("FINNIFTY", 1, "x")]))
-      .toEqual({ "NIFTY 50": "PCR 1.12 · Put writing rising", "NIFTY BANK": "PCR 0.86" });
+        banner: { pcr, message, direction, ...totals } }) as never;
+    const lines = oiLines([b("NIFTY", 1.123, "Put writing rising → avoid shorting calls; NIFTY bias bullish", "BULLISH", { total_call_oi: 1000, total_put_oi: 1123 }),
+      b("BANKNIFTY", 0.86, "Insufficient data — history builds through the session", "NEUTRAL"), b("FINNIFTY", 1, "x")]);
+    expect(lines).toEqual({ "NIFTY 50": "Put OI above call OI (PCR 1.12)", "NIFTY BANK": "PCR 0.86" });
+    expect(oiLines([b("BANKNIFTY", 0.82, "Call writing rising → avoid shorting puts; BANKNIFTY bias bearish", "BEARISH", { total_call_oi: 1000, total_put_oi: 820 })]))
+      .toEqual({ "NIFTY BANK": "Call OI above put OI (PCR 0.82)" });
+    expect(JSON.stringify(lines)).not.toMatch(/\b(bullish|bearish|overbought|oversold|mildly|shorting)\b/i);
     expect(oiLines(null)).toEqual({});
   });
 

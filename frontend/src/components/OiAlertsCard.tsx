@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { OI_ALERT_TYPES, type OiAlertLogResponse, type OiAlertSettings, type OiSettingsResponse } from "../oi/types";
-import { slotTime } from "../oi/format";
+import { alertStateWords, slotTime } from "../oi/format";
 
 const LABEL: Record<string, string> = {
-  DIRECTION_CHANGE: "Banner direction change", STABLE_FLIP: "Confirmed trend flip", STRENGTH_CHANGE: "Strong ↔ Weakening",
+  DIRECTION_CHANGE: "OI read change", STABLE_FLIP: "Confirmed OI lead flip", STRENGTH_CHANGE: "OI lead growing ↔ not growing",
   PCR_BAND: "PCR band change", MAX_PAIN_MOVE: "Max pain move", OI_WALL: "OI wall formed / broken", DTE: "Expiry tomorrow / today",
   COLLECTOR_STALE: "Readings are late",
 };
@@ -70,7 +70,7 @@ export default function OiAlertsCard({ underlying }: { underlying: string }) {
         <ul className="space-y-0.5 tabular-nums">
           {log.alerts.slice(0, 20).map((a, i) => (
             <li key={i} className="text-fg-muted">
-              {slotTime(a.slot)} · {LABEL[a.alert_type] ?? a.alert_type}: {a.old_state ?? "—"} → {a.new_state}
+              {slotTime(a.slot)} · {LABEL[a.alert_type] ?? a.alert_type}: {alertStateWords(a.alert_type, a.old_state)} → {alertStateWords(a.alert_type, a.new_state)}
               <span className={a.status === "SENT" ? " text-fg" : " text-warn"}> · {a.status.toLowerCase()}</span>
             </li>
           ))}

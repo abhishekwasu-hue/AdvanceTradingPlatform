@@ -132,14 +132,9 @@ export function highestOi(series: readonly OiStrikeSeries[] | null | undefined, 
   return best;
 }
 
-/** OI-5: the one-line read in neutral words: "Put OI above call OI (PCR 1.04)". */
-export function oiRead(row: Pick<OiBannerRow, "total_call_oi" | "total_put_oi" | "pcr"> | null | undefined): string | null {
-  if (!row || typeof row.total_call_oi !== "number" || typeof row.total_put_oi !== "number") return null;
-  const pcr = row.pcr === null || row.pcr === undefined ? "PCR –" : `PCR ${formatNumber(row.pcr, 2)}`;
-  if (row.total_put_oi > row.total_call_oi) return `Put OI above call OI (${pcr})`;
-  if (row.total_put_oi < row.total_call_oi) return `Call OI above put OI (${pcr})`;
-  return `Put OI equal to call OI (${pcr})`;
-}
+/** OI-5: the one-line read in neutral words: "Put OI above call OI (PCR 1.04)" - one helper, shared with the
+ * dashboard and the OI banner (../oi/format.ts). */
+export { oiRead } from "../oi/format";
 
 /** OI-5: the change line - "No OI change since 15:29" when the newest readings repeat the last change, else what the
  * last reading changed ("Last reading: Call OI up 1.2 L, Put OI down 30,000"). Null before the second reading. */

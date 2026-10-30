@@ -63,7 +63,8 @@ export const PANELS: Record<PanelId, PanelInfo> = {
   "chart-4": { label: "Chart 4", minW: 3, minH: 6, w: 6, h: 8 },
   chain: { label: "Option chain", minW: 3, minH: 6, w: 3, h: 11 },
   order: { label: "Order", minW: 3, minH: 8, w: 4, h: 11 },
-  positions: { label: "Positions", minW: 3, minH: 4, w: 5, h: 7 },
+  // TERM-2 step 3: the one bottom panel - Positions · Orders · Alerts as tabs (TradingView's Account Manager pattern).
+  positions: { label: "Positions & orders", minW: 4, minH: 5, w: 12, h: 8 },
   orders: { label: "Orders", minW: 3, minH: 4, w: 4, h: 7 },
   basket: { label: "Basket", minW: 3, minH: 4, w: 3, h: 7 },   // TERM-2 step 2: the one basket
   bots: { label: "Bots & signals", minW: 3, minH: 4, w: 4, h: 6 },
@@ -77,19 +78,19 @@ const p = (id: PanelId, x: number, y: number, w: number, h: number, open = true,
   ({ id, x, y, w, h, open, symbol });
 
 export const PRESETS: Record<PresetId, { name: string; description: string; panels: PanelPlace[] }> = {
+  // TERM-2 step 3 (owner 30 Oct): chart | chain | basket above the one bottom panel (Positions · Orders · Alerts). A price
+  // on the chain opens the action sheet; Buy / Sell there open the one order ticket.
   option_seller: {
     name: "Option seller",
-    description: "The chart, the option chain and the order panel side by side; your positions, basket and orders below.",
-    // T1-3: the chain gets half of the twelve columns, so its OI / change in OI / IV / delta / LTP per side fit on one line.
-    panels: [p("chart-1", 0, 0, 3, 11), p("chain", 3, 0, 6, 11), p("order", 9, 0, 3, 11),
-      p("positions", 0, 11, 5, 7), p("basket", 5, 11, 3, 7), p("orders", 8, 11, 4, 7),
-      p("bots", 0, 18, 6, 6, false), p("payoff", 6, 18, 6, 6, false)],
+    description: "The chart, the option chain and your basket side by side; positions, orders and alerts below.",
+    panels: [p("chart-1", 0, 0, 4, 12), p("chain", 4, 0, 5, 12), p("basket", 9, 0, 3, 12), p("positions", 0, 12, 12, 8),
+      p("order", 0, 20, 4, 11, false), p("orders", 8, 20, 4, 7, false), p("bots", 0, 31, 6, 6, false), p("payoff", 6, 31, 6, 6, false)],
   },
   quick_trade: {
     name: "Quick trade",
-    description: "A large chart with the order panel beside it; your positions and orders below.",
-    panels: [p("chart-1", 0, 0, 8, 12), p("order", 8, 0, 4, 12), p("positions", 0, 12, 8, 7), p("orders", 8, 12, 4, 7),
-      p("chain", 0, 19, 3, 11, false), p("basket", 3, 19, 3, 7, false)],
+    description: "The option chain with the order panel beside it; positions, orders and alerts below.",
+    panels: [p("chain", 0, 0, 7, 12), p("order", 7, 0, 5, 12), p("positions", 0, 12, 12, 8),
+      p("chart-1", 0, 20, 6, 10, false), p("basket", 6, 20, 3, 7, false), p("orders", 9, 20, 3, 7, false)],
   },
   multi_chart: {
     name: "Multi-chart",
@@ -330,8 +331,9 @@ export function forSave(prefs: TerminalPrefs): TerminalPrefs {
 // --- the phone ---------------------------------------------------------------------------------------------------------
 
 /** Phone (360 / 390): the panels as tabs, one at a time (T1). "bots" stays a type but no tab until T2/T3 (HIDDEN_PANELS). */
-export type PhoneTab = "chart" | "chain" | "order" | "positions" | "orders" | "bots";
+export type PhoneTab = "chart" | "chain" | "basket" | "order" | "positions" | "orders" | "bots";
 export const PHONE_TABS: readonly { key: PhoneTab; label: string }[] = [
-  { key: "chart", label: "Chart" }, { key: "chain", label: "Chain" }, { key: "order", label: "Order" },
+  // TERM-2 step 3: Chart · Chain · Basket · Positions · Orders; a price opens the order ticket as a bottom sheet.
+  { key: "chart", label: "Chart" }, { key: "chain", label: "Chain" }, { key: "basket", label: "Basket" },
   { key: "positions", label: "Positions" }, { key: "orders", label: "Orders" },
 ];

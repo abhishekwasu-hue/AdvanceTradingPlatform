@@ -21,6 +21,7 @@ import type { ChainLeg, LiveChain } from "../optionChain/types";
 import { NO_STOP, stopText, type HeldRow } from "../trading/model";
 import { ContextBarV2, contextFigures } from "./ContextBarV2";
 import { terminalLevels } from "./chartLevels";
+import { AccountPanelV2 } from "./AccountPanelV2";
 import exitAllSource from "../trading/ExitAllV2.tsx?raw";
 import { ExitAllV2, exitableRows } from "../trading/ExitAllV2";
 import listSource from "../trading/PositionsV2.tsx?raw";
@@ -62,8 +63,9 @@ describe("layout model: presets", () => {
       for (const p of l.panels) expect(p.x + p.w).toBeLessThanOrEqual(COLUMNS);
     }
     const open = (id: (typeof PRESET_IDS)[number]) => presetLayout(id).panels.filter((p) => p.open).map((p) => p.id);
-    expect(open("option_seller")).toEqual(["chart-1", "chain", "order", "positions", "basket", "orders"]);
-    expect(open("quick_trade")).toEqual(["chart-1", "order", "positions", "orders"]);
+    // TERM-2 step 3: chart | chain | basket, and chain | order - each above the one bottom panel (positions & orders).
+    expect(open("option_seller")).toEqual(["chart-1", "chain", "basket", "positions"]);
+    expect(open("quick_trade")).toEqual(["chain", "order", "positions"]);
     expect(open("multi_chart")).toEqual(["chart-1", "chart-2", "chart-3", "chart-4", "positions"]);
   });
 
@@ -96,19 +98,19 @@ describe("layout model: move, resize, open, close", () => {
     // A closed panel reopens at its last place ("bots" / "payoff" are hidden until T2/T3, so "basket" closed first).
     const opened = openPanel(closePanel(seller(), "basket"), "basket");
     expect(layoutProblem(opened)).toBeNull();
-    expect(opened.find((p) => p.id === "basket")).toMatchObject({ open: true, x: 5, y: 11 });
+    expect(opened.find((p) => p.id === "basket")).toMatchObject({ open: true, x: 9, y: 0 });
     const chart2 = openPanel(seller(), "chart-2");                                // never in the preset: added at a free place
     expect(chart2.find((p) => p.id === "chart-2")).toMatchObject({ open: true });
     expect(layoutProblem(chart2)).toBeNull();
     const closed = closePanel(seller(), "chain");
-    expect(closed.find((p) => p.id === "chain")).toMatchObject({ open: false, x: 3, y: 0 });
+    expect(closed.find((p) => p.id === "chain")).toMatchObject({ open: false, x: 4, y: 0 });
     const one = [{ id: "chart-1" as const, x: 0, y: 0, w: 6, h: 6, open: true }];
     expect(closePanel(one, "chart-1")[0].open).toBe(true);
-    expect(firstFree(seller(), 12, 6)).toEqual({ x: 0, y: 18 });
+    expect(firstFree(seller(), 12, 6)).toEqual({ x: 0, y: 20 });
   });
 
   it("reading order is top to bottom, then left to right", () => {
-    expect(readingOrder(seller()).map((p) => p.id)).toEqual(["chart-1", "chain", "order", "positions", "basket", "orders"]);
+    expect(readingOrder(seller()).map((p) => p.id)).toEqual(["chart-1", "chain", "basket", "positions"]);
   });
 });
 
@@ -272,14 +274,14 @@ describe("status bar", () => {
 
 describe("phone tabs", () => {
   it("T1-1: the shared PageTabs - one scrolling row, one selected, 44 px targets, the tab ids the panel names", () => {
-    expect(PHONE_TABS.map((t) => t.label)).toEqual(["Chart", "Chain", "Order", "Positions", "Orders"]);
-    const html = renderToStaticMarkup(<PhoneTabsV2 tab="order" onTab={() => undefined} counts={{ positions: 3 }} />);
+    expect(PHONE_TABS.map((t) => t.label)).toEqual(["Chart", "Chain", "Basket", "Positions", "Orders"]);   // TERM-2 step 3
+    const html = renderToStaticMarkup(<PhoneTabsV2 tab="basket" onTab={() => undefined} counts={{ positions: 3 }} />);
     expect(html.match(/role="tab"/g)).toHaveLength(5);
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
     expect(html).toContain('data-level="primary"');                     // PageTabs, not the old 2 x 3 grid
     expect(html).toContain('data-mode="scroll"');                       // one row, never wrapped (W0-1)
     expect(html).not.toContain("grid-cols-3");
-    expect(html).toMatch(/id="terminal-tab-order"[^>]*aria-controls="terminal-panel-order"|aria-controls="terminal-panel-order"[^>]*id="terminal-tab-order"/);
+    expect(html).toMatch(/id="terminal-tab-basket"[^>]*aria-controls="terminal-panel-basket"|aria-controls="terminal-panel-basket"[^>]*id="terminal-tab-basket"/);
     expect(html).toContain("data-terminal-tabs");
     expect(text(html)).toContain("Positions 3");
   });
@@ -578,5 +580,16 @@ describe("CT-1 T4: Exit all in the one position list", () => {
     const html = renderToStaticMarkup(<ExitAllV2 rows={paper} byId={byId} groups={[]} hooks={{ onChanged: () => undefined, onNote: () => undefined }} />);
     expect(html).toContain("Exit all (2)");
     expect(listSource).toContain("exitableRows(rows, byId)");
+  });
+});
+
+describe("TERM-2 step 3: the one bottom panel", () => {
+  it("Positions · Orders · Alerts as tabs, positions first, the count on Positions", () => {
+    const html = renderToStaticMarkup(<MemoryRouter><AccountPanelV2 positions={<p>the list</p>} orders={<p>orders</p>} counts={{ positions: 2 }} /></MemoryRouter>);
+    expect(text(html)).toContain("Positions 2");
+    expect(html.match(/role="tab"/g)).toHaveLength(3);
+    expect(html).toContain('data-account-tab="positions"');
+    expect(text(html)).toContain("the list");
+    expect(text(html)).not.toContain("orders orders");
   });
 });

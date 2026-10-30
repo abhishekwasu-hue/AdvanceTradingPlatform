@@ -174,7 +174,8 @@ def _areas(frames: Mapping[str, pd.DataFrame], as_of: pd.Timestamp) -> list[tupl
             dyn[tf] = c[(ts > as_of - pd.Timedelta(days=recent)).to_numpy()].reset_index(drop=True)
     if not cut and not dyn:
         return []
-    rows = sorted(live_rows(build_snapshot(cut, dyn, s)), key=lambda r: (-zone_strength(r), str(r.get("zone_key"))))
+    snapshot: list[Mapping[str, Any]] = list(build_snapshot(cut, dyn, s))   # live_rows reads rows, never writes
+    rows = sorted(live_rows(snapshot), key=lambda r: (-zone_strength(r), str(r.get("zone_key"))))
     out: list[tuple[float, float]] = []
     for row in rows:
         area = area_of(row["zone_low"], row["zone_high"])

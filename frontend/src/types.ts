@@ -2106,6 +2106,9 @@ export interface FeatureFlag {
   plain?: string;
   area?: string;
   area_label?: string;
+  /** ADM-1: the finer category the admin list folds the flag under (falls back to the area). */
+  group?: string;
+  group_label?: string;
   turns_on?: string;
   depends_on?: string[];
   needs?: string;

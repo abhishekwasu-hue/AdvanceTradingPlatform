@@ -11,6 +11,8 @@ import { openAdmin, type Theme } from "./adminMocks";
  *   TM 9.4 (23 Oct): `admin-system-v2-*` updated - the "Chain history" card at the end of System.
  *   Trader pack (23 Oct): `admin-controls-v2-*` updated - the "Trader features" card; NEW
  *   `admin-trader-pack-v2-{1440,390}-{light,dark}.png` (the card alone, before "Enable trader features").
+ *   ADM-1 (30 Oct): `admin-controls-v2-*` updated - Controls opens on its Safety group; NEW
+ *   `admin-controls-<limits|flags>-v2-{1440,390}-{light,dark}.png` (Risk limits; Feature flags folded by category).
  * Every reply is made up (e2e/adminMocks.ts). After an intended change:
  * `npx playwright test --project=phone e2e/admin-console-v2.e2e.ts --update-snapshots`.
  */
@@ -46,8 +48,18 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
         });
       }
 
+      for (const group of ["limits", "flags"]) {
+        test(`Controls › ${group} looks the same (${theme})`, async ({ page }) => {
+          await openAdmin(page, `/admin?section=controls&group=${group}`, { theme });
+          await expect(page.locator(`[data-controls-groups='${group}']`)).toBeVisible();
+          await expect(page.locator("[aria-busy='true']")).toHaveCount(0, { timeout: 15_000 });
+          await noSidewaysScroll(page);
+          await expect(page).toHaveScreenshot(`admin-controls-${group}-v2-${size.name}-${theme}.png`, SHOT);
+        });
+      }
+
       test(`the Trader features card looks the same (${theme})`, async ({ page }) => {
-        await openAdmin(page, "/admin?section=controls", { theme });
+        await openAdmin(page, "/admin?section=controls&group=features", { theme });
         const card = page.locator("[data-console-card='trader-pack']");
         await expect(card.locator("[data-trader-pack-summary]")).toContainText("4 of 7");
         await expect(card).toHaveScreenshot(`admin-trader-pack-v2-${size.name}-${theme}.png`, SHOT);
@@ -88,7 +100,7 @@ test.describe("Admin console behaviour", () => {
   });
 
   test("Trader features: enable turns the pack on, Undo puts it back, and the status says what needs setup", async ({ page }) => {
-    const asked = await openAdmin(page, "/admin?section=controls");
+    const asked = await openAdmin(page, "/admin?section=controls&group=features");
     const card = page.locator("[data-console-card='trader-pack']");
     await expect(card.locator("[data-trader-pack-summary]")).toHaveText("4 of 7 trader features are on; 1 needs setup.");
     await expect(card.locator("[data-pack-flag='ai_copilot']")).toContainText("No AI key yet");
@@ -116,9 +128,19 @@ test.describe("Admin console behaviour", () => {
     await expect(page).toHaveURL(/\/admin\?section=controls$/);
     await expect(page.locator("[data-console-card='phase0']")).toContainText("LIVE is locked");
     await expect(page.locator("[data-admin-cards='controls']")).toContainText("Global kill switch");
+    // ADM-1: one control group at a time; the flags are folded by category until a filter or a search opens them.
+    await expect(page.locator("[data-flag-area]").first()).toHaveCount(0);
+    await page.getByRole("navigation", { name: "Control groups" }).getByRole("link", { name: "All flags" }).click();
+    await expect(page).toHaveURL(/\/admin\?section=controls&group=flags$/);
+    await expect(page.locator("[data-admin-cards='controls']")).not.toContainText("Global kill switch");
+    await expect(page.locator("[data-flag='live_trading']")).toBeHidden();
+    await page.locator("[data-flag-filter='off']").click();
     await expect(page.locator("[data-flag='live_trading']")).toBeVisible();
     await page.reload();
     await expect(consoleRoot(page)).toHaveAttribute("data-admin-console", "controls");
+    await expect(page.locator("[data-controls-groups='flags']")).toBeVisible();
+    await page.goBack();
+    await expect(page.locator("[data-controls-groups='safety']")).toBeVisible();
     await page.goBack();
     await expect(consoleRoot(page)).toHaveAttribute("data-admin-console", "system");
   });

@@ -20,8 +20,36 @@ const FLAGS: FeatureFlags = {
 describe("UX1 admin Feature flags list", () => {
   it("groups by area in a fixed order and sorts rows by their plain name", () => {
     const groups = groupFlags(FLAGS);
-    expect(groups.map((g) => g.area)).toEqual(["trading", "charts", "screens", "data"]);
+    expect(groups.map((g) => g.area)).toEqual(["charts", "screens", "trading", "data"]);   // ADM-1: finer groups first
     expect(groups.find((g) => g.area === "screens")!.rows.map((r) => r.name)).toEqual(["screener_gallery", "screener_v2"]);
+  });
+
+  it("ADM-1: groups by the finer category when the server sends one, and filters by state and status", () => {
+    const flags: FeatureFlags = {
+      ...FLAGS,
+      live_trading: { ...FLAGS.live_trading, group: "safety", group_label: "Safety and LIVE" },
+      screener_gallery: { ...FLAGS.screener_gallery, group: "screen_library", group_label: "Screens: ready-made screens and ideas" },
+    };
+    const groups = groupFlags(flags);
+    expect(groups.map((g) => g.area)).toEqual(["safety", "charts", "screens", "screen_library", "data"]);
+    expect(groups[0].label).toBe("Safety and LIVE");
+    const names = (filter: Parameters<typeof groupFlags>[2]) => groupFlags(flags, "", filter).flatMap((g) => g.rows.map((r) => r.name));
+    expect(names("on")).toEqual(["history_backfill"]);
+    expect(names("setup")).toEqual(["chart_contracts"]);
+    expect(names("decision")).toEqual(["live_trading"]);
+    expect(names("off")).not.toContain("history_backfill");
+  });
+
+  it("ADM-1: each category is folded with its count; the flag name and the allow-list sit in Details", () => {
+    const html = renderToStaticMarkup(
+      <FeatureFlagsCard flags={FLAGS} tenants={{}} onTenants={() => {}} busy={false} onSet={() => {}} onSaveList={() => {}} />);
+    expect(html).toContain("1 of 5 switches on, in 4 categories");
+    expect(html).toMatch(/<details aria-label="Data and alerts" data-flag-area="data"[^>]*>/);
+    expect(html).not.toMatch(/<details aria-label="Data and alerts"[^>]*open/);
+    expect(html).toContain("1 of 1 on");
+    expect(html.match(/data-flag-details/g)?.length).toBe(5);
+    expect(html).toContain("Keep it on for these organisations only");
+    expect(html.match(/data-flag-filter=/g)?.length).toBe(5);
   });
 
   it("searches the name, the plain words and the status", () => {

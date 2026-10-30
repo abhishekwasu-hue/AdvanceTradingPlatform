@@ -74,7 +74,7 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
   const paper = mode.label.toUpperCase() === "PAPER";
   return (
     <section aria-label="Symbol and expiry" data-block="terminal-context" data-symbol={symbol} data-expiry={chain.expiry ?? ""}
-      className="flex flex-wrap items-end gap-x-space-4 gap-y-space-2 rounded-panel border border-border border-l-4 bg-surface-1 px-space-3 py-space-2"
+      className="relative flex flex-wrap items-end gap-x-space-4 gap-y-space-2 rounded-panel border border-border border-l-4 bg-surface-1 px-space-3 py-space-2"
       style={{ borderLeftColor: LINK_COLOUR }}>
       <div className={cx("grid min-w-0 grid-cols-2 gap-space-2", compact ? "w-full" : "w-[26rem] max-w-full")}>
         <div className="min-w-0">
@@ -104,7 +104,9 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
         <Figure name="dte" label="Expiry in">{daysText(f.dte)}</Figure>
       </dl>
       <span title={mode.title} data-terminal="mode" data-mode={paper ? "paper" : "live"}
-        className={cx("ml-auto inline-flex min-h-9 items-center gap-space-1 self-center rounded-full border px-space-3 text-t12 font-bold tracking-wide",
+        className={cx("inline-flex items-center gap-space-1 rounded-full border px-space-3 text-t12 font-bold tracking-wide",
+          // On a phone the badge sits top-right (beside the Expiry label), so it never takes a row of its own.
+          compact ? "absolute right-space-3 top-space-2 min-h-6" : "ml-auto min-h-9 self-center",
           paper ? "border-warn/40 bg-warn-tint text-warn" : "border-down/40 text-down")}>
         <ShieldCheck size={14} aria-hidden />{paper ? "PAPER" : "LIVE"}
       </span>

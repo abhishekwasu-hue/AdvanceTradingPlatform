@@ -281,6 +281,7 @@ def view(record: Any, ceilings: dict[str, float]) -> dict[str, Any]:
         checks.append({
             "id": c.id, "label": c.label, "help": c.help, "group": c.group, "enabled": c.id in sw["enabled"], "saved": c.id in sw["saved"],
             "fields": [{"key": f.key, "label": f.label, "unit": f.unit, "min": f.low, "max": min(f.high, _ceiling(f.key, ceilings)),
+                        "ceiling": _ceiling(f.key, ceilings) if _ceiling(f.key, ceilings) < f.high else None,
                         "whole": f.whole, "optional": f.optional, "value": values.get(f.key)} for f in c.fields],
         })
     return {"checks": checks, "capital": getattr(record, "capital", None) if record is not None else None,

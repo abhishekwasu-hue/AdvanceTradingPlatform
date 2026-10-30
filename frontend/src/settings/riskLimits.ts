@@ -10,6 +10,8 @@ export const RISK_LIMITS_PATH = "/settings/risk-limits";
 
 export interface RiskLimitField {
   key: string; label: string; unit: string; min: number; max: number; whole: boolean; optional: boolean; value: number | null;
+  /** The platform ceiling (an admin setting) when it is below the field's own top; null: none. */
+  ceiling?: number | null;
 }
 
 export interface RiskLimitCheck {
@@ -68,6 +70,9 @@ export function bodyOf(view: RiskLimitsView, draft: RiskLimitsDraft): { body: Re
     for (const f of c.fields) {
       const v = number(d.values[f.key] ?? "");
       if (v !== null && Number.isNaN(v)) return { body: null, problem: `${c.label}: enter a number.` };
+      if (v !== null && typeof f.ceiling === "number" && v > f.ceiling) {
+        return { body: null, problem: `${c.label}: the most allowed is ${f.ceiling} (your admin's ceiling). Ask your admin to change it.` };
+      }
       if (v !== null && (v < f.min || v > f.max)) return { body: null, problem: `${c.label}: ${f.label.toLowerCase()} must be between ${f.min} and ${f.max}.` };
       if (v !== null && f.whole && !Number.isInteger(v)) return { body: null, problem: `${c.label}: enter a whole number.` };
       values[f.key] = v;
@@ -77,6 +82,14 @@ export function bodyOf(view: RiskLimitsView, draft: RiskLimitsDraft): { body: Re
       return { body: null, problem: `${c.label}: enter a value to switch it on.` };
     }
     if (changed) checks[c.id] = { enabled: d.enabled, values };
+  }
+  // the halve-size step cannot be further below the peak than the pause step (the server checks it too)
+  const dd = draft.checks.drawdown;
+  if (dd?.enabled) {
+    const half = number(dd.values.dd_level_1_pct ?? ""), pause = number(dd.values.dd_level_2_pct ?? "");
+    if (half !== null && pause !== null && !Number.isNaN(half) && !Number.isNaN(pause) && pause > 0 && half > pause) {
+      return { body: null, problem: `Drawdown steps: halve the size at a drawdown no larger than the one that pauses new entries (${pause}%).` };
+    }
   }
   const capital = number(draft.capital);
   if (capital !== null && (Number.isNaN(capital) || capital <= 0)) {

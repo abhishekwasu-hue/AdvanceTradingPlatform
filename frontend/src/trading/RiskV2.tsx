@@ -300,8 +300,8 @@ const EDIT_LIMITS_HERE: boolean = false;
 /** M64 RM-5: where the limits are set now. */
 export function RiskLimitsLinkV2() {
   return (
-    <CardV2 title="Your limits" testId="risk-limits-link">
-      <p className="text-t13 text-fg-muted">Every risk check is a switch, off until you turn it on. Set them on one page.</p>
+    <CardV2 title="Your limits" testId="risk-limits-link" tour="risk-limits-link">
+      <p className="text-t13 text-fg-muted">Each check is a switch, off by default.</p>
       <Link to={RISK_LIMITS_PATH} className={`${BUTTON_SECONDARY} mt-space-3 inline-flex w-full items-center justify-center sm:w-auto`}
         data-testid="open-risk-limits">Open Settings › Risk limits</Link>
     </CardV2>

@@ -5,7 +5,7 @@ import { BellRing, Mail, Send, Smartphone } from "lucide-react";
 import { useEffect, useId, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
-import { ApiError } from "../api/errors";
+import { ApiError, errorSentence } from "../api/errors";
 import { currentPushEnv, pushReadiness, vapidKeyBytes } from "../alerts/push";
 import { ChipV2, LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import type { TelegramLinkCode } from "../alerts/rules";
@@ -306,9 +306,9 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
       onChanged();
     } catch (e) {
       setStart({ tone: "problem", text: e instanceof ApiError && e.status === 409
-        // 409: this strategy already runs on paper for this symbol in the organisation (perhaps a teammate's), so nothing
-        // new was started and this step is not done by it. Say so, and point to "Test it".
-        ? `Nothing new was started: this strategy already runs on paper for ${s.symbol} in your organisation. Use Test it to try it yourself, or pick another one.`
+        // REV-H1: a 409 names its own reason (no broker, contracts not loaded, a bot already running, ...): the shared
+        // sentence for that reason, so nothing new was started and this step is not done by it.
+        ? errorSentence(e)
         : problemText(e, "It could not be started just now. Try again, or set it up on the Paper bot page.") });
     } finally {
       setBusy(null);

@@ -36,7 +36,7 @@ const BOTS = [
 
 interface Server { bots: typeof BOTS; sent: { method: string; url: string; body: unknown }[] }
 
-async function open(page: Page, o: { theme?: "light" | "dark"; empty?: boolean; noBroker?: boolean } = {}): Promise<Server> {
+async function open(page: Page, o: { theme?: "light" | "dark"; empty?: boolean; noBroker?: boolean; failDelete?: boolean; refuseStart?: string } = {}): Promise<Server> {
   const server: Server = { bots: o.empty ? [] : structuredClone(BOTS), sent: [] };
   await page.clock.install({ time: new Date(NOW) });
   await page.addInitScript((theme) => {
@@ -65,6 +65,8 @@ async function open(page: Page, o: { theme?: "light" | "dark"; empty?: boolean; 
       return route.fulfill({ json: server.bots.filter((b) => all || b.status !== "STOPPED") });
     }
     const body = sent(route) as Record<string, unknown>;
+    // REV-H1: the server's 409 names its reason (detail.code + a plain message).
+    if (o.refuseStart) return route.fulfill({ status: 409, json: { detail: { code: o.refuseStart, message: "Server sentence." } } });
     const bot = { ...base, ...body, id: 60 + server.bots.length, status: "ACTIVE", pause_reason: null, last_evaluated_at: null, open_positions: 0 };
     server.bots.unshift(bot as (typeof BOTS)[number]);
     return route.fulfill({ json: bot });
@@ -76,6 +78,16 @@ async function open(page: Page, o: { theme?: "light" | "dark"; empty?: boolean; 
     bot.status = action === "pause" ? "PAUSED" : action === "resume" ? "ACTIVE" : "STOPPED";
     bot.pause_reason = action === "resume" ? null : body?.reason ?? null;
     return route.fulfill({ json: bot });
+  });
+  // REV-H2: the existing DELETE removes a stopped bot (the server refuses one that is not stopped).
+  await page.route(api("/deployments/\\d+$"), (route) => {
+    if (route.request().method() !== "DELETE") return route.fallback();
+    sent(route);
+    const id = Number(/\/deployments\/(\d+)$/.exec(route.request().url())![1]);
+    const bot = server.bots.find((b) => b.id === id);
+    if (o.failDelete || !bot || bot.status !== "STOPPED") return route.fulfill({ status: 409, json: { detail: "Stop the bot before removing it." } });
+    server.bots = server.bots.filter((b) => b.id !== id);
+    return route.fulfill({ status: 204, body: "" });
   });
   await page.route(api("/worker/status$"), (route) => route.fulfill({ json: { running: true, market_open: true, market_status: "Open" } }));
   await page.goto("/deployments");
@@ -176,6 +188,41 @@ test.describe("Paper bot behaviour", () => {
     await first.getByRole("button", { name: "Yes, stop it" }).click();
     await expect(bots(page)).toContainText("is stopped.");
     expect(server.sent.map((c) => c.url)).toEqual(["/deployments/52/pause", "/deployments/52/resume", "/deployments/52/stop"]);
+  });
+
+  test("REV-H2: Remove on a stopped bot only, after a confirm; a running or paused bot has none", async ({ page }) => {
+    const server = await open(page);
+    await expect(bots(page).getByRole("button", { name: "Remove" })).toHaveCount(0);       // running and paused: no Remove
+    await bots(page).getByRole("button", { name: /Show stopped bots/ }).click();
+    const stopped = bots(page).locator("[data-bot='40']");
+    await expect(bots(page).getByRole("button", { name: "Remove" })).toHaveCount(1);
+    await stopped.getByRole("button", { name: "Remove" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("It leaves your list of bots.");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    expect(server.sent.some((c) => c.method === "DELETE")).toBe(false);
+    await stopped.getByRole("button", { name: "Remove" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Remove bot" }).click();
+    await expect(bots(page)).toContainText("is removed from your bots.");
+    await expect(bots(page).locator("[data-bot='40']")).toHaveCount(0);
+    expect(server.sent.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual(["/deployments/40"]);
+  });
+
+  test("REV-H2: a failed Remove says so and keeps the bot", async ({ page }) => {
+    await open(page, { failDelete: true });
+    await bots(page).getByRole("button", { name: /Show stopped bots/ }).click();
+    await bots(page).locator("[data-bot='40']").getByRole("button", { name: "Remove" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Remove bot" }).click();
+    await expect(bots(page)).toContainText("was not removed. Stop the bot before removing it.");
+    await expect(bots(page).locator("[data-bot='40']")).toHaveCount(1);
+  });
+
+  test("REV-H1: a refused start shows the server's reason, not 'already runs' for every 409", async ({ page }) => {
+    await open(page, { refuseStart: "no_instrument_master" });
+    await choose(page, form(page).getByLabel("Pick a symbol"), "NIFTY BANK");
+    await form(page).getByRole("button", { name: "Start on paper" }).click();
+    await expect(form(page)).toContainText("The contracts for this symbol are not loaded yet");
+    await expect(form(page)).not.toContainText("already runs");
   });
 
   test("More ways to trade: the full form, paper only - no PAPER / LIVE switch, no worker tiles, no second list", async ({ page }) => {

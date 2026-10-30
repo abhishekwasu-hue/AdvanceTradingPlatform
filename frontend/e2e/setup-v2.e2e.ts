@@ -119,7 +119,7 @@ async function open(page: Page, o: Open = {}): Promise<Server> {
   await page.route(api("/deployments$"), (route) => {
     if (route.request().method() !== "POST") return route.fulfill({ json: F.deployments });
     const body = sent(route) as Record<string, unknown>;
-    if (o.deployConflict) return route.fulfill({ status: 409, json: { detail: "Deployment already exists" } });
+    if (o.deployConflict) return route.fulfill({ status: 409, json: { detail: { code: "duplicate_active_bot", message: "This strategy already runs for this symbol in your organisation." } } });
     server.done.strategy = true;
     return route.fulfill({ json: { id: 91, status: "ACTIVE", ...body } });
   });
@@ -273,11 +273,11 @@ test.describe("setup wizard 390 x 844", () => {
     expect(server.sent.filter((c) => c.url === "/paper/account")).toEqual([]);
   });
 
-  test("the strategy step: already deployed in the organisation (409) says nothing new started and is not done", async ({ page }) => {
+  test("the strategy step: already running in the organisation (409 duplicate_active_bot) says nothing new started and is not done", async ({ page }) => {
     await open(page, { done: { broker: true, risk: true }, deployConflict: true });
     const first = wizard(page).locator("[data-suggestion]").first();
     await first.getByRole("button", { name: "Start a paper bot" }).click();
-    await expect(first).toContainText("Nothing new was started: this strategy already runs on paper for NIFTY 50 in your organisation. Use Test it");
+    await expect(first).toContainText("Nothing new was started: this strategy already runs for this symbol in your organisation. Stop that bot first");
     await expect(first).not.toContainText("Started as a paper bot");
     await expect(wizard(page).locator("[data-step-state='done']")).toHaveCount(2);
   });

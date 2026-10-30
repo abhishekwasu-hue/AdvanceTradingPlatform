@@ -404,15 +404,44 @@ async def _get_owned_or_404(deployment_id: int, user: User, session: AsyncSessio
     return record
 
 
+# REV-H1: every 409 on starting (or resuming) a bot names its own reason - a machine code the page maps to one plain
+# sentence with the next step, plus the server's own plain sentence in `message` (shown as-is by any other client).
+REFUSED_NO_INSTRUMENT_MASTER = "no_instrument_master"
+REFUSED_NO_BROKER = "no_broker"
+REFUSED_BROKER_LOGIN = "broker_login_needed"
+REFUSED_BROKER_ACCOUNT_OFF = "broker_account_off"
+REFUSED_DUPLICATE_ACTIVE_BOT = "duplicate_active_bot"
+
+
+def _refused(code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=409, detail={"code": code, "message": message})
+
+
+def _duplicate_refusal() -> HTTPException:
+    return _refused(REFUSED_DUPLICATE_ACTIVE_BOT,
+                    "This strategy already runs for this symbol in your organisation. Stop that bot first, or pick another strategy or symbol.")
+
+
+async def _active_duplicate(session: AsyncSession, tenant_id: int, strategy_id: str, symbol: str, mode: str, instrument_kind: str) -> bool:
+    """REV-H2: a bot that is not STOPPED on the same strategy + symbol + mode + instrument kind (the partial unique index
+    uq_deployment_open_tenant_strategy_symbol_mode_kind is the backstop). A stopped bot is history and blocks nothing."""
+    found = await session.scalar(select(StrategyDeploymentRecord.id).where(
+        StrategyDeploymentRecord.tenant_id == tenant_id, StrategyDeploymentRecord.strategy_id == strategy_id,
+        StrategyDeploymentRecord.symbol == symbol, StrategyDeploymentRecord.mode == mode,
+        StrategyDeploymentRecord.instrument_kind == instrument_kind,
+        StrategyDeploymentRecord.status != DeploymentStatus.STOPPED.value,
+    ).limit(1))
+    return found is not None
+
+
 async def _require_usable_broker(session: AsyncSession, tenant_id: int, broker_name: str, account_label: str = "primary") -> BrokerCredentialRecord:
     record = await get_credential_record(session, tenant_id, broker_name, account_label)
     if record is None:
-        raise HTTPException(status_code=409, detail=f"No stored credentials for broker '{broker_name}' - add them on the Broker page first")
+        raise _refused(REFUSED_NO_BROKER, f"{broker_name} is not connected yet. Connect it on the Broker page first, then try again.")
     if not token_is_usable(record):
-        raise HTTPException(
-            status_code=409,
-            detail=f"{broker_name} session is {record.token_status} - log in to {broker_name} on the Broker page before going LIVE",
-        )
+        raise _refused(REFUSED_BROKER_LOGIN,
+                       f"Your {broker_name} login is not active ({str(record.token_status).lower()}). "
+                       f"Log in to {broker_name} again on the Broker page, then try again.")
     return record
 
 
@@ -487,10 +516,10 @@ async def create_deployment(
             session, underlying, instrument_type="FUT" if rules.instrument_kind == InstrumentKind.FUTURE else "CE",
         )
         if not listed:
-            raise HTTPException(
-                status_code=409,
-                detail=f"No {underlying} {'futures' if rules.instrument_kind == InstrumentKind.FUTURE else 'options'} in the instrument master - "
-                       f"sync it (Admin Console) or check the symbol",
+            raise _refused(
+                REFUSED_NO_INSTRUMENT_MASTER,
+                f"The {underlying} {'futures' if rules.instrument_kind == InstrumentKind.FUTURE else 'options'} are not loaded yet, so the bot "
+                f"cannot pick a contract. Ask your admin to sync the instrument list, or check the symbol.",
             )
 
     broker_name = request.broker_name
@@ -513,7 +542,8 @@ async def create_deployment(
         if not broker_name:
             raise HTTPException(status_code=400, detail="LIVE deployments must name the broker to trade through")
         if account is not None and account.status != "ACTIVE":
-            raise HTTPException(status_code=409, detail=f"Broker account #{account.id} is {account.status} - enable it before deploying LIVE to it")
+            raise _refused(REFUSED_BROKER_ACCOUNT_OFF,
+                           f"This {account.broker_name} account is switched off ({str(account.status).lower()}). Switch it on on the Broker page, then try again.")
         await _require_usable_broker(session, user.tenant_id, broker_name, account.account_label if account is not None else "primary")
     else:
         # PAPER still needs a market-data source. Fall back to the tenant's only stored broker.
@@ -522,15 +552,16 @@ async def create_deployment(
                 select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)
             ))
             if not stored:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Store broker credentials on the Broker page first - even paper trading needs a broker session for live candles",
-                )
+                raise _refused(REFUSED_NO_BROKER,
+                               "Connect your broker on the Broker page first: even a paper bot reads live prices through your broker.")
             if len(stored) > 1:
                 raise HTTPException(status_code=400, detail="Several brokers stored - name the one to use for market data")
             broker_name = stored[0].broker_name
         elif await get_credential_record(session, user.tenant_id, broker_name) is None:
-            raise HTTPException(status_code=409, detail=f"No stored credentials for broker '{broker_name}'")
+            raise _refused(REFUSED_NO_BROKER, f"{broker_name} is not connected yet. Connect it on the Broker page first, then try again.")
+
+    if await _active_duplicate(session, user.tenant_id, request.strategy_id, symbol, request.mode.value, rules.instrument_kind.value):
+        raise _duplicate_refusal()
 
     record = StrategyDeploymentRecord(
         tenant_id=user.tenant_id, strategy_id=request.strategy_id, symbol=symbol,
@@ -562,9 +593,7 @@ async def create_deployment(
         await session.flush()
     except IntegrityError as exc:
         await session.rollback()
-        raise HTTPException(
-            status_code=409, detail="A deployment of this strategy on this symbol in this mode (and instrument kind) already exists",
-        ) from exc
+        raise _duplicate_refusal() from exc      # a race past the check above: the partial unique index is the backstop
     await write_audit_log(
         session, user.tenant_id, user.id, "deployment_created",
         f"#{record.id} {record.strategy_id} {record.symbol} {record.mode} via {broker_name} ({describe_deployment(record)})",

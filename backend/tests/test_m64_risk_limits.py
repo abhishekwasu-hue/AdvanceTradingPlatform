@@ -324,7 +324,7 @@ def test_migration_keeps_saved_values_on_switches_the_rest_off_and_goes_down():
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     module = _migration()
-    assert module.ROLLBACK_SAFE is True and module.down_revision == "f4b6d8a0c2e3"
+    assert module.ROLLBACK_SAFE is True and module.down_revision == "c7e9a1b3d5f7"
     engine = sa.create_engine("sqlite://")
     with engine.begin() as conn:
         conn.execute(sa.text(

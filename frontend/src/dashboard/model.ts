@@ -224,12 +224,20 @@ export interface PositionRow {
   pnlPct: number | null;
 }
 
-/** The live price of each priced symbol, from the exposure's per-symbol notional: notional = Σ|qty| × price. */
+/** The live price of each priced symbol. REV-H4: the price the server valued it at (`prices`) whenever it is given, so
+ * the price never depends on whose positions the page lists; an older server's answer falls back to the per-symbol
+ * notional over the listed quantity (notional = Σ|qty| × price, right only when both have the same scope). */
 export function symbolPrices(positions: TradeRecord[], exposure: PortfolioExposure | null | undefined): Record<string, number> {
   const out: Record<string, number> = {};
   // A symbol converted from another currency is valued in rupees against an entry in its own currency: no P&L from it.
   if (!exposure || !pricedInRupees(exposure)) return out;
   const priced = new Set(exposure.priced_symbols ?? []);
+  if (exposure.prices) {
+    for (const [symbol, price] of Object.entries(exposure.prices)) {
+      if (priced.has(symbol) && Number.isFinite(price) && price > 0) out[symbol] = price;
+    }
+    return out;
+  }
   for (const row of exposure.by_symbol ?? []) {
     if (!priced.has(row.symbol)) continue;
     const qty = positions.filter((p) => p.symbol === row.symbol).reduce((a, p) => a + Math.abs(p.quantity), 0);

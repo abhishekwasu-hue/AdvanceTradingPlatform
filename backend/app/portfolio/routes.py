@@ -35,9 +35,13 @@ async def risk(user: User = Depends(get_current_user), session: AsyncSession = D
 
 
 @router.get("/exposure")
-async def exposure(live_prices: bool = Query(default=True), user: User = Depends(get_current_user),
+async def exposure(live_prices: bool = Query(default=True), mine: bool = Query(default=False), user: User = Depends(get_current_user),
                    session: AsyncSession = Depends(get_session)) -> dict:
-    trades = await engine.open_trades(session, user.tenant_id)
+    """REV-H4: `?mine=true` reads only the caller's own open trades (the scope of `/positions?mine=true`), so a page that
+    shows his own positions prices and totals them from his own book; without it the answer is the organisation's, as
+    before. Read-only."""
+    own_user = user.id if mine else None
+    trades = await engine.open_trades(session, user.tenant_id, user_id=own_user)
     risk = await get_tenant_risk_config(user.tenant_id, session)
     # DEF-0: the organisation's own capital, else the PAPER account's starting balance - never a built-in 100,000.
     capital = float(risk.capital) if risk is not None and risk.capital is not None else float(app_config.PAPER_STARTING_CAPITAL)
@@ -98,10 +102,13 @@ async def exposure(live_prices: bool = Query(default=True), user: User = Depends
             continue
         fx_used[f"{ccy}->{base_ccy}"] = factor
         converted[trade.symbol] = (prices.get(trade.symbol) or float(trade.entry_price)) * factor
-    snap = engine.snapshot(trades, converted, capital=capital, realised_today=await engine.realised_today(session, user.tenant_id))
+    snap = engine.snapshot(trades, converted, capital=capital, realised_today=await engine.realised_today(session, user.tenant_id, user_id=own_user))
     out = snap.to_dict()
     out["price_source"] = price_source
     out["priced_symbols"] = sorted(prices)
+    # REV-H4: the price each priced symbol was valued at (live or the last mark, in the symbol's own currency), so a page
+    # never has to divide a notional by a quantity of a different scope.
+    out["prices"] = {symbol: round(value, 4) for symbol, value in sorted(prices.items())}
     out["marks"] = {symbol: (when if when.tzinfo else when.replace(tzinfo=timezone.utc)).isoformat() for symbol, (_, when) in marks.items()}
     out["base_currency"] = base_ccy
     out["fx_rates_used"] = fx_used

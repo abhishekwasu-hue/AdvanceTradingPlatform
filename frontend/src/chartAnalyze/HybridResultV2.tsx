@@ -1,6 +1,6 @@
 import { CheckCircle2, CircleSlash, Download, Eye, Trash2 } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
-import { Button } from "../components/primitives";
+import { Button, Skeleton } from "../components/primitives";
 import { cx } from "../components/primitives/cx";
 import { EMPTY, formatNumber } from "../ui/format";
 import { guardDeep, guardText } from "./signalLanguage";
@@ -114,7 +114,7 @@ export default function HybridResultV2({ result, userImageSrc, readingSrc, image
           <figure className="min-w-0" data-figure="atp">
             <figcaption className="mb-space-1 text-t13 font-semibold text-fg">ATP&apos;s reading of {title}</figcaption>
             {readingSrc ? <img src={readingSrc} alt={`ATP's reading of ${title}, drawn on the stored candles`} className="w-full rounded-control border border-subtle" />
-              : <div className="aspect-video w-full animate-pulse rounded-control bg-surface-2" aria-label="Loading ATP's chart" />}
+              : <Skeleton className="aspect-video w-full" label="Loading ATP's chart" />}
             <Legend />
           </figure>
         </div>

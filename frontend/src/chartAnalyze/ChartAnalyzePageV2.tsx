@@ -1,5 +1,6 @@
 import { ImagePlus, Link2, TriangleAlert, Upload } from "lucide-react";
 import { ComingSoon } from "../ui/ComingSoon";
+import { Combobox } from "../ui/Combobox";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent } from "react";
 import { useSearchParams } from "react-router";
 import { friendlyError } from "../api/errors";
@@ -474,11 +475,8 @@ export default function ChartAnalyzePageV2() {
             </div>
             <div>
               <label htmlFor={`${linkId}-tf`} className="mb-space-1 block text-t12 font-medium text-fg-muted">The chart&apos;s timeframe</label>
-              <select id={`${linkId}-tf`} value={timeframe} onChange={(e) => setTimeframe(e.target.value)}
-                className="h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9">
-                <option value="">Choose…</option>
-                {(status?.hybrid?.timeframes ?? []).map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-              </select>
+              <Combobox id={`${linkId}-tf`} label="The chart's timeframe" value={timeframe} onChange={setTimeframe} className="w-full"
+                options={(status?.hybrid?.timeframes ?? []).map((t) => ({ value: t.id, label: t.label }))} />
             </div>
             <p className="text-t12 text-fg-muted sm:col-span-2">No price is read from your picture: every number comes from ATP&apos;s stored candles for this symbol and timeframe.</p>
           </div>

@@ -42,6 +42,7 @@ from app.instruments.spreads import (
     MAX_CUSTOM_LEGS,
     MAX_LEG_RATIO,
     CustomLeg,
+    can_hold_for_days,
     custom_legs_json,
     describe_structure,
     is_debit,
@@ -333,9 +334,22 @@ def _exits_answer(record: StrategyDeploymentRecord) -> Optional[dict]:
     return None if choice.is_default else {k: v for k, v in choice.columns().items() if v is not None}
 
 
+def _holds_spread(request: "DeploymentCreateRequest") -> bool:
+    """M55 T1: "Hold for days" on a defined-risk credit structure (bull put, bear call, iron condor, iron butterfly)."""
+    return (request.holding == "SWING" and request.instrument_kind == InstrumentKind.OPTION
+            and can_hold_for_days(request.option_strategy))
+
+
 def _check_holding(request: "DeploymentCreateRequest", strategy) -> None:
     """Phase AS: what a swing (overnight) deployment may and may not be."""
     daily = list(getattr(strategy, "timeframes", [])) == ["day"]
+    if _holds_spread(request):
+        # M55 T1: a defined-risk credit structure held for days - entries on the user's own timeframe (intraday or daily).
+        if daily and request.timeframe != "day":
+            raise HTTPException(status_code=400, detail=f"{strategy.name} trades daily candles: set timeframe to 'day'")
+        if not daily and request.timeframe == "day":
+            raise HTTPException(status_code=400, detail=f"{strategy.name} reads intraday candles: pick an intraday timeframe")
+        return
     if request.holding == "SWING":
         if request.option_strategy != OptionStrategy.SINGLE:
             raise HTTPException(status_code=400, detail="Swing (overnight) holding is for single positions; multi-leg structures stay intraday")
@@ -464,10 +478,12 @@ async def create_deployment(
 
     # Phase AS: a swing deployment reads daily candles (checked by _check_holding); the intraday
     # base-timeframe rules below are for everything else.
-    if request.holding != "SWING" and request.timeframe not in SUPPORTED_BASE_TIMEFRAMES:
+    # M55 T1: a spread held for days on intraday candles keeps these rules (only its square-off differs).
+    reads_daily = request.holding == "SWING" and request.timeframe == "day"
+    if not reads_daily and request.timeframe not in SUPPORTED_BASE_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"timeframe must be one of {list(SUPPORTED_BASE_TIMEFRAMES)}")
     base_minutes = _timeframe_minutes(request.timeframe)
-    for tf in ([] if request.holding == "SWING" else strategy.timeframes):
+    for tf in ([] if reads_daily else strategy.timeframes):
         tf_minutes = _timeframe_minutes(tf)
         if tf_minutes is None or base_minutes is None or tf_minutes < base_minutes or tf_minutes % base_minutes != 0:
             raise HTTPException(

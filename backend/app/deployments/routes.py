@@ -287,6 +287,7 @@ class DeploymentResponse(BaseModel):
     routing_policy: Optional[str] = None
     route_across_brokers: bool = False
     last_route: Optional[str] = None
+    wait_reason: Optional[str] = None      # M55 S7: why a running bot waits, in plain words ("Waiting: market closed")
     exit_rules: Optional[dict] = None
     regime_filter: Optional[List[str]] = None
     oi_gates: Optional[List[str]] = None
@@ -317,7 +318,7 @@ class DeploymentResponse(BaseModel):
             custom_legs=json.loads(record.custom_legs) if getattr(record, "custom_legs", None) else None,
             broker_account_id=record.broker_account_id, exit_rules=json.loads(record.exit_rules) if record.exit_rules else None,
             routing_policy=getattr(record, "routing_policy", None), route_across_brokers=bool(getattr(record, "route_across_brokers", False)),
-            last_route=getattr(record, "last_route", None),
+            last_route=getattr(record, "last_route", None), wait_reason=getattr(record, "wait_reason", None),
             regime_filter=parse_filter(record.regime_filter) or None, contract_rules=describe_deployment(record),
             oi_gates=[g for g in (getattr(record, "oi_gates", None) or "").split(",") if g] or None,
             holding=getattr(record, "holding", None) or "INTRADAY",
@@ -780,6 +781,8 @@ async def resume_deployment(
     record.status = DeploymentStatus.ACTIVE.value
     record.pause_reason = None
     record.consecutive_failures = 0
+    record.data_failures = 0                # M55 S7: a fresh start for the data-failure streak too
+    record.waiting_for_data_since = None
     record.last_error = None
     await write_audit_log(session, user.tenant_id, user.id, "deployment_resumed", f"#{record.id}")
     await session.commit()

@@ -406,6 +406,13 @@ BROKER_CIRCUIT_OPEN_SECONDS = float(os.environ.get("BROKER_CIRCUIT_OPEN_SECONDS"
 # Autonomous trading worker (app/workers/trading_worker.py) cadence in seconds. 60 matches the
 # 1-minute base candle; anything shorter mostly re-reads the same cached candles.
 WORKER_CYCLE_SECONDS = int(os.environ.get("WORKER_CYCLE_SECONDS", "60"))
+# M55 S7: a bot whose market-data read failed this many cycles in a row is "waiting for data" (a WARNING; it resumes by
+# itself when a read works again). Code errors keep pausing it after MAX_CONSECUTIVE_FAILURES (trading_worker.py).
+DEPLOYMENT_DATA_FAILURES_BEFORE_WAIT = _env_int_in("DEPLOYMENT_DATA_FAILURES_BEFORE_WAIT", 5, 1, 1000)
+# M55 S7: the API (never the worker) tells each organisation with running bots, once (CRITICAL), when the worker's
+# heartbeat is older than this many cycles; the same silence is not repeated within the cool-down.
+WORKER_SILENT_CYCLES_ALERT = _env_int_in("WORKER_SILENT_CYCLES_ALERT", 3, 1, 1000)
+WORKER_SILENCE_ALERT_COOLDOWN_SECONDS = _env_int_in("WORKER_SILENCE_ALERT_COOLDOWN_SECONDS", 3600, 60, 7 * 86400)
 # TM2-4 (owner, 24 Oct): a waiting order the trigger engine sent and that is still "Sending" (FIRING) after this many
 # seconds is looked up at its broker by its own client id / tag and settled from what is there (found: its state; not
 # found: sent once with the same id). On worker start every FIRING order is settled this way before any new work.

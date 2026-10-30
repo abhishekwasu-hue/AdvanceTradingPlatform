@@ -30,7 +30,7 @@ import { useFeatures } from "../ui/useFeatures";
 import { draftFromState, formSymbol } from "../copilot/strategyDraft";
 import CopilotDraftV2 from "./CopilotDraftV2";
 import {
-  IDEA_SYMBOL, READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWhat, cleanSymbol, lastChecked, lastSignal, paperBotRequestWithDefaults, whyNoTrade, sortBots,
+  BOTS_NOT_CHECKED, IDEA_SYMBOL, READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWaitText, botWhat, cleanSymbol, lastChecked, lastSignal, paperBotRequestWithDefaults, whyNoTrade, sortBots,
   isIndex, isSwing, startSummaryParts, strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
 import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
@@ -105,7 +105,10 @@ export default function PaperBotV2(_props: PageProps) {
   // UI-28 U2.4: the bots' own open positions and their live P&L (one read each per refresh, only while a bot holds one).
   const [positions, setPositions] = useState<TradeRecord[] | null>(null);
   const [exposure, setExposure] = useState<PortfolioExposure | null>(null);
+  // M55 S7: false while the engine that checks the bots is silent (GET /api/system/worker-status), read with the bots.
+  const [checked, setChecked] = useState<boolean | null>(null);
   const loadBots = useCallback(async () => {
+    Promise.resolve().then(() => api.workerStatus()).then((w) => setChecked(w?.bots_checked !== false)).catch(() => setChecked(null));
     try {
       const list = await api.listDeployments(true);
       setBots(list);
@@ -216,6 +219,8 @@ export default function PaperBotV2(_props: PageProps) {
           : shown.length === 0 ? (
             <p className="text-t14 text-fg-muted">Start a trading bot below: it trades with paper money.</p>
           ) : (
+            <>
+            {checked === false && <p role="status" className="mb-space-2 text-t13 font-semibold text-warn" data-bots-not-checked>{BOTS_NOT_CHECKED}</p>}
             <ul className="divide-y divide-border-subtle">
               {shown.map((bot) => (
                 <BotRow key={bot.id} bot={bot} name={botName(bot, names)} busy={busyBot === bot.id} disabled={busyBot !== null || !canChange}
@@ -227,6 +232,7 @@ export default function PaperBotV2(_props: PageProps) {
                   why={features.on("why_no_trade") ? <BotWhyV2 botId={bot.id} /> : undefined} />
               ))}
             </ul>
+            </>
           )}
         {botNote && <div className="mt-space-3"><NoteV2 kind={botNote.kind}>{botNote.text}</NoteV2></div>}
         {stoppedCount > 0 && (
@@ -307,6 +313,7 @@ export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel,
             {state !== "stopped" && <span>{lastChecked(bot.last_evaluated_at)}</span>}
             {state !== "stopped" && <span data-bot-signal>{lastSignal(bot.last_signal_at)}</span>}
             {whyNoTrade(bot) && <Chip tone="warn" variant="meaning" icon="!" name="why-no-trade">{whyNoTrade(bot)}</Chip>}
+            {botWaitText(bot) && <span data-bot-wait>{botWaitText(bot)}</span>}
             {bot.open_positions > 0 && !held && <span>{bot.open_positions} open {bot.open_positions === 1 ? "trade" : "trades"}</span>}
           </p>
           {held}

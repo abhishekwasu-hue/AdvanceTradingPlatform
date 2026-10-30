@@ -210,6 +210,17 @@ export function whyNoTrade(d: Pick<Deployment, "status" | "consecutive_failures"
   return null;
 }
 
+/** M55 S7: the one line shown on the bot cards and Today while the engine that checks the bots is silent. */
+export const BOTS_NOT_CHECKED = "Bots are not being checked right now";
+
+/** M55 S7: why a running bot waits right now ("Waiting: market closed"), only when it reads as plain words; else null. */
+export function botWaitText(d: Pick<Deployment, "status" | "wait_reason">): string | null {
+  if (botState(d as Deployment) !== "running") return null;
+  const reason = (d.wait_reason ?? "").trim();
+  if (!reason.startsWith("Waiting") || reason.length > 160 || /[_{}[\]<>=]|#\d/.test(reason)) return null;
+  return reason;
+}
+
 /** Running first, then paused, then stopped; newest first inside each. Stopped bots only when asked for. */
 export function sortBots<T extends Pick<Deployment, "status" | "id">>(bots: readonly T[], showStopped = false): T[] {
   const rank: Record<BotState, number> = { running: 0, paused: 1, stopped: 2 };

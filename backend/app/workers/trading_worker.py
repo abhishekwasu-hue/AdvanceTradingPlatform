@@ -34,7 +34,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from datetime import time as dtime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
@@ -103,8 +103,40 @@ LOCK_KEY = "atp:trading_worker:lock"
 NO_NEW_ENTRIES_AFTER = dtime(15, 0)
 SQUARE_OFF_AT = dtime(15, 15)
 
-# A deployment that fails this many cycles in a row is paused rather than retried forever.
+# A deployment that fails this many cycles in a row is paused rather than retried forever. M55 S7: code errors only - a
+# market-data read that fails makes it "waiting for data" instead (app_config.DEPLOYMENT_DATA_FAILURES_BEFORE_WAIT).
 MAX_CONSECUTIVE_FAILURES = 5
+
+# M55 S7: why a bot waits, on its card in plain words (StrategyDeploymentRecord.wait_reason), written with
+# last_evaluated_at on every pass - also the early skips.
+WAIT_MARKET_CLOSED = "Waiting: market closed"
+WAIT_BROKER_LOGIN = "Waiting: broker login needed"
+WAIT_CUTOFF = "Waiting: no new entries after the cut-off"
+WAIT_DATA = "Waiting: market data did not arrive - it resumes by itself when data returns"
+WAIT_DATA_BEHIND = "Waiting: market data is behind"
+WAIT_HISTORY = "Waiting: more candles needed"
+WAIT_DATA_BROKER = "Waiting: a broker that may show its data in the app is needed"
+WAIT_NO_USER = "Waiting: no active user in the organisation"
+WAIT_ORG_INACTIVE = "Waiting: the account is not active"
+WAIT_PRACTICE_ONLY = "Waiting: practice (PAPER) only for now"
+WAIT_PLAN = "Waiting: your plan does not include live trading"
+WAIT_NEXT_CHECK = "Waiting: the next check"
+WAIT_BROKER_CHECK = "Waiting: a broker check is needed"
+WAIT_OWNER = "Waiting: the person who set up this bot cannot trade right now"
+# Errors of the code itself, never a market-data problem - they keep the PAUSED path even inside the data read.
+_CODE_ERRORS = (TypeError, AttributeError, NameError, KeyError, IndexError, AssertionError, ImportError, NotImplementedError)
+
+
+class DataReadFailed(RuntimeError):
+    """M55 S7: a deployment's market-data read raised (the cause is chained). Counted in data_failures, never PAUSED."""
+
+
+def _waiting(dep: "StrategyDeploymentRecord", now: datetime, reason: Optional[str]) -> None:
+    """M55 S7: this pass looked at the deployment (also an early skip) and why it waits (None: evaluated normally)."""
+    dep.last_evaluated_at = now.astimezone(UTC)
+    dep.wait_reason = reason
+
+
 # How often a VALID token is re-proven against the broker.
 TOKEN_RECHECK_SECONDS = 300
 RHYTHM_EVERY_MINUTES = 5            # MO4: how often the worker looks for daily-rhythm digests due on Telegram
@@ -493,6 +525,7 @@ class TradingWorker:
                         return report   # H-1: another replica holds the lock - its cycle runs the housekeeping
                 else:
                     logger.debug("Market closed: %s", reason)
+                    await self._mark_all_waiting(session, now, WAIT_MARKET_CLOSED)
                 # BT1: open / refresh / close each user's own broker session (flag byob_data_tier; market closed = day end).
                 # BT1b: its own DB session, so a failure here never rolls back the cycle's session.
                 async with self.session_factory() as byob_session:
@@ -1326,6 +1359,7 @@ class TradingWorker:
             if not exits_only:
                 for dep in deployments:
                     dep.last_error = message
+                    _waiting(dep, now, WAIT_BROKER_LOGIN)
                 await session.commit()
             # M55 S2 (A3, ADR-0004): the exits still run - a PAPER exit needs only a price, here the newest one ATP already
             # holds without a broker call (its own hub, else the shared stream keys - never another organisation's own
@@ -1466,6 +1500,7 @@ class TradingWorker:
         if user is None:
             for dep in deployments:
                 dep.last_error = "No active user in the organisation: exits only, no new entries"
+                _waiting(dep, now, WAIT_NO_USER)
             await session.commit()
             return
         tenant_started = time.monotonic()
@@ -1474,6 +1509,7 @@ class TradingWorker:
             # Exits above still ran (a suspended org's open risk is still real); no new entries.
             for dep in deployments:
                 dep.last_error = f"Organisation is {tenant.status}: no new entries"
+                _waiting(dep, now, WAIT_ORG_INACTIVE)
             await session.commit()
             return
         data_key = next((k for k, a in adapters.items() if a is data_broker), getattr(data_broker, "name", ""))
@@ -1482,6 +1518,7 @@ class TradingWorker:
             # allow its data in ATP (execution-only / pending). Exits, square-off and the stop guard above still ran.
             for dep in deployments:
                 dep.last_error = WAITING_FOR_CONFIRMED_DATA
+                _waiting(dep, now, WAIT_DATA_BROKER)
             await session.commit()
             return
         # SE-7: "Complete the rest" he tapped on an incomplete multi-leg order - an entry, so after the entry gates above
@@ -1519,31 +1556,37 @@ class TradingWorker:
             evaluated += 1
             family = session_family(dep.exchange)
             if family not in open_families:
+                _waiting(dep, now, WAIT_MARKET_CLOSED)
+                await session.commit()
                 await self._store_why(session, dep, now, ("outside_hours", None, None))
                 continue  # Phase O2: this venue is closed right now; nothing to evaluate
             if dep.mode == ExecutionMode.LIVE.value and phase0_lock.locked(tenant_id):
                 # Z10-c / Phase 0 defaults: the LIVE entry path is not started at all while the PAPER-only lock is on
                 # (layers 1 and 2 would refuse the entry anyway). Exits, stops and square-off above already ran.
-                if dep.last_error != phase0_lock.WORKER_NOT_EVALUATED:     # written once, not every cycle
-                    dep.last_error = phase0_lock.WORKER_NOT_EVALUATED
-                    await session.commit()
+                dep.last_error = phase0_lock.WORKER_NOT_EVALUATED
+                _waiting(dep, now, WAIT_PRACTICE_ONLY)                     # M55 S7: every pass, with its time
+                await session.commit()
                 continue
             if dep.mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"
+                _waiting(dep, now, WAIT_PLAN)
                 await session.commit()
                 continue
             if self._lock_lost:
                 dep.last_error = "Worker lock was lost this cycle (Redis eviction?) - no new entries until the next cycle; exits continue"
+                _waiting(dep, now, WAIT_NEXT_CHECK)
                 await session.commit()
                 continue
             if dep.mode == ExecutionMode.LIVE.value:
                 ip_problem = await live_entry_problem(session, tenant_id, dep.broker_name)   # Part D4 (flag-gated)
                 if ip_problem:
                     dep.last_error = ip_problem
+                    _waiting(dep, now, WAIT_BROKER_CHECK)
                     await session.commit()
                     continue
             if dep.mode == ExecutionMode.LIVE.value and self.require_lock_for_live and self._lock_degraded:
                 dep.last_error = "Redis replica lock unavailable - LIVE entries paused this cycle (a second worker could double-trade); exits continue"
+                _waiting(dep, now, WAIT_NEXT_CHECK)
                 await session.commit()
                 continue
             no_new_after = intraday_cutoffs(family)[0]
@@ -1562,9 +1605,9 @@ class TradingWorker:
                         continue
                     if resolved is None:
                         # Entries only: the monitor, square-off and stop guard above already ran for its positions.
-                        if dep.last_error != refusal:
-                            dep.last_error = refusal
-                            await session.commit()
+                        dep.last_error = refusal
+                        _waiting(dep, now, WAIT_OWNER)                  # M55 S7: every pass, with its time
+                        await session.commit()
                         continue
                     dep_user = resolved
                     async with guarded(session, keep=(dep, tenant, user, dep_user)):
@@ -1823,13 +1866,20 @@ class TradingWorker:
         template_exits = TemplateExits.from_record(dep)
         if not template_exits.is_default and hasattr(strategy, "use_exits"):
             strategy.use_exits(template_exits)
-        frames = await _history_source(market_data, strategy).get_frames(dep.symbol, dep.exchange, dep.timeframe, strategy.timeframes)
+        try:
+            frames = await _history_source(market_data, strategy).get_frames(dep.symbol, dep.exchange, dep.timeframe, strategy.timeframes)
+        except _CODE_ERRORS:
+            raise
+        except Exception as exc:  # noqa: BLE001 - M55 S7: a data problem, counted apart from code errors (_record_failure)
+            raise DataReadFailed(f"{type(exc).__name__}: {exc}") from exc
         # Always persist UTC: a DB that drops tzinfo (SQLite) would otherwise store an IST wall
         # time that reads back as if it were UTC, 5.5h in the future.
-        dep.last_evaluated_at = now.astimezone(timezone.utc)
+        _waiting(dep, now, None if entries_allowed else WAIT_CUTOFF)
+        await self._data_back(session, dep, user.id)
         if not frames or not strategy.has_enough_history(frames):
             bars = len(next(iter(frames.values()))) if frames else 0
             dep.last_error = f"Insufficient history ({bars} bars) - waiting for more candles"
+            dep.wait_reason = WAIT_HISTORY
             self._why(dep, "not_enough_history", None, dep.last_error)
             await session.commit()
             return False
@@ -1842,6 +1892,7 @@ class TradingWorker:
         stale = candle_staleness(last_bar, dep.timeframe, now)
         if stale is not None:
             dep.last_error = f"Skipped: {stale}"
+            dep.wait_reason = WAIT_DATA_BEHIND
             self._why(dep, "stale_data", None, str(stale))
             await session.commit()
             MARKET_DATA_STALE.labels(kind="candles").inc()
@@ -1857,6 +1908,7 @@ class TradingWorker:
         closed_bar = base.index[-1].to_pydatetime() if len(base) else None
         if not strategy.has_enough_history(frames):
             dep.last_error = f"Insufficient history ({len(base)} closed bars) - waiting for more candles"
+            dep.wait_reason = WAIT_HISTORY
             self._why(dep, "not_enough_history", closed_bar, dep.last_error)
             await session.commit()
             return False
@@ -2381,6 +2433,9 @@ class TradingWorker:
         return closed
 
     async def _record_failure(self, session: AsyncSession, dep: StrategyDeploymentRecord, exc: Exception, user_id: int) -> None:
+        if isinstance(exc, DataReadFailed):
+            await self._record_data_failure(session, dep, exc, user_id)
+            return
         logger.exception("Deployment %s evaluation failed", dep.id)
         dep.consecutive_failures = (dep.consecutive_failures or 0) + 1
         dep.last_error = f"{type(exc).__name__}: {exc}"[:500]
@@ -2396,6 +2451,57 @@ class TradingWorker:
             )
             return
         await session.commit()
+
+    async def _record_data_failure(self, session: AsyncSession, dep: StrategyDeploymentRecord, exc: Exception, user_id: int) -> None:
+        """M55 S7: a market-data read failed. Never PAUSED: after DEPLOYMENT_DATA_FAILURES_BEFORE_WAIT in a row the bot is
+        "waiting for data" (one WARNING) and stays ACTIVE, so the first cycle that reads data again resumes it (_data_back).
+        Only entries wait; exits run before this path and never depend on it (ADR-0004)."""
+        logger.warning("Deployment %s: market data not read: %s", dep.id, exc)
+        now = datetime.now(UTC)
+        dep.data_failures = (dep.data_failures or 0) + 1
+        dep.last_error = f"Market data not read: {exc}"[:500]
+        _waiting(dep, now, WAIT_DATA)
+        start_wait = (dep.data_failures >= app_config.DEPLOYMENT_DATA_FAILURES_BEFORE_WAIT and dep.waiting_for_data_since is None
+                      and dep.status == DeploymentStatus.ACTIVE.value)
+        if start_wait:
+            dep.waiting_for_data_since = now
+        await session.commit()
+        if start_wait:
+            await notify(
+                session, dep.tenant_id, NotificationType.SYSTEM_FAILURE,
+                title=f"Bot waiting for market data: {dep.symbol}",
+                message=(f"Market data for {dep.symbol} did not arrive {dep.data_failures} checks in a row. The bot keeps "
+                         "trying and resumes by itself when data returns. Open positions are still watched."),
+                severity=NotificationSeverity.WARNING, user_id=user_id,
+            )
+
+    async def _data_back(self, session: AsyncSession, dep: StrategyDeploymentRecord, user_id: int) -> None:
+        """M55 S7: this cycle read market data - the data-failure streak ends; a bot that was waiting for data resumes by
+        itself (it never left ACTIVE). A PAUSED bot is never evaluated, so a person's own pause is never undone here."""
+        was_waiting = dep.waiting_for_data_since is not None
+        if not was_waiting and not dep.data_failures:
+            return
+        dep.data_failures = 0
+        dep.waiting_for_data_since = None
+        if was_waiting:
+            await session.commit()
+            await notify(session, dep.tenant_id, NotificationType.SYSTEM_FAILURE, title=f"Bot resumed: {dep.symbol}",
+                         message=f"Market data for {dep.symbol} is back; the bot is checking its chart again.",
+                         severity=NotificationSeverity.INFO, user_id=user_id)
+
+    async def _mark_all_waiting(self, session: AsyncSession, now: datetime, reason: str) -> None:
+        """M55 S7: no venue is open, so no deployment is looked at this cycle - every ACTIVE one still gets this pass's time
+        and why it waits (one UPDATE; its updated_at is kept). Never breaks the cycle."""
+        try:
+            async with guarded(session):
+                await session.execute(update(StrategyDeploymentRecord)
+                                      .where(StrategyDeploymentRecord.status == DeploymentStatus.ACTIVE.value)
+                                      .values(last_evaluated_at=now.astimezone(UTC), wait_reason=reason,
+                                              updated_at=StrategyDeploymentRecord.updated_at)
+                                      .execution_options(synchronize_session=False))
+                await session.commit()
+        except Exception:  # noqa: BLE001 - a display field only
+            logger.warning("Could not record the market-closed wait on the deployments", exc_info=True)
 
     async def _guard_stops(self, session: AsyncSession, tenant: Tenant, accounts: List, adapters: Dict[str, BrokerInterface],
                            user_id: Optional[int], families: Optional[set] = None) -> int:

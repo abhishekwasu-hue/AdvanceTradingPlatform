@@ -90,7 +90,11 @@ def test_worker_trades_mcx_in_the_evening_and_leaves_nse_deployments_alone(monke
     assert report.market_open and report.open_exchanges == ["MCX"] and "NSE: closed" in report.session_reason
     assert report.deployments_evaluated == 1
     assert _get(StrategyDeploymentRecord, mcx_id).last_evaluated_at is not None
-    assert _get(StrategyDeploymentRecord, nse_id).last_evaluated_at is None
+    # M55 S7: the NSE deployment is not evaluated (deployments_evaluated == 1 above), but this pass still writes its time
+    # and why it waits.
+    nse = _get(StrategyDeploymentRecord, nse_id)
+    assert nse.last_evaluated_at is not None and nse.wait_reason == "Waiting: market closed"
+    assert _get(StrategyDeploymentRecord, mcx_id).wait_reason != "Waiting: market closed"
 
 
 def test_worker_with_only_nse_deployments_is_closed_in_the_evening(monkeypatch):
@@ -334,7 +338,9 @@ def test_chaos_market_data_failure_is_recorded_not_fatal(monkeypatch):
     worker = _worker(monkeypatch, _NoData())
     report = _run(worker.run_cycle(now=OPEN_NOW))
     assert report.errors and "TimeoutError" in (_get(StrategyDeploymentRecord, dep_id).last_error or "")
-    assert _get(StrategyDeploymentRecord, dep_id).consecutive_failures == 1
+    # M55 S7: a market-data failure is counted apart from code errors (it never pauses the deployment; it waits for data).
+    dep = _get(StrategyDeploymentRecord, dep_id)
+    assert dep.data_failures == 1 and dep.consecutive_failures == 0 and dep.status == "ACTIVE"
 
 
 def test_chaos_alert_dispatch_failure_never_breaks_trading(monkeypatch):

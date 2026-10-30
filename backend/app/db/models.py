@@ -558,6 +558,14 @@ class StrategyDeploymentRecord(Base):
     last_signal_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # M55 S7: why the bot is waiting right now, in plain words for its card ("Waiting: market closed"); written with
+    # last_evaluated_at on every pass, also the early skips. NULL = it was evaluated normally.
+    wait_reason: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    # M55 S7: market-data read failures in a row (code errors keep using consecutive_failures). After
+    # DEPLOYMENT_DATA_FAILURES_BEFORE_WAIT of them the bot is "waiting for data" (still ACTIVE, never PAUSED) from
+    # waiting_for_data_since; the first cycle that reads data again clears both by itself.
+    data_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    waiting_for_data_since: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Phase F2: what to trade when the strategy signals on `symbol`. UNDERLYING keeps the original
     # behaviour; OPTION/FUTURE resolve a contract from the instrument master at signal time using
     # the rules below (app/instruments/contracts.py).

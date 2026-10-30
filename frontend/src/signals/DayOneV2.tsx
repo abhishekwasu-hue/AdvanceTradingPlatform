@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { api as mainApi } from "../api/client";
 import { ApiError } from "../api/errors";
-import { TEMPLATE_ID_PREFIX, botName, botStatusText, lastChecked } from "../paperbot/model";
+import { BOTS_NOT_CHECKED, TEMPLATE_ID_PREFIX, botName, botStatusText, botWaitText, lastChecked } from "../paperbot/model";
 import type { Deployment } from "../types";
 import { cx } from "../components/primitives/cx";
 import { CARD, LINK_PRIMARY, LINK_SECONDARY, LoadingRowsV2 } from "../dashboard/CardV2";
@@ -30,8 +30,11 @@ const BUTTON = "inline-flex min-h-11 items-center justify-center gap-space-2 rou
  * bars. Then: his watch - each symbol's state in structure words, the new setups and the ones waiting for a trigger first.
  * The server answers 404 while `ui_v2` or `strategy_templates` is off: nothing shows.
  */
-export default function DayOneV2({ api = dayOneApi, onAdopted, loadBots = () => mainApi.listDeployments(false) }: {
+export default function DayOneV2({ api = dayOneApi, onAdopted, loadBots = () => mainApi.listDeployments(false),
+  loadChecked = () => mainApi.workerStatus().then((w) => w?.bots_checked !== false) }: {
   api?: Api; onAdopted?: (adopted: boolean) => void; loadBots?: () => Promise<Deployment[]>;
+  /** M55 S7: false while the engine that checks the bots is silent. */
+  loadChecked?: () => Promise<boolean>;
 }) {
   const [state, setState] = useState<State>({ status: "loading" });
   // Day-one fix 7: the trading bots he already runs (a bot he just started from an idea, for example). With one running
@@ -39,9 +42,12 @@ export default function DayOneV2({ api = dayOneApi, onAdopted, loadBots = () => 
   const [bots, setBots] = useState<Deployment[] | null>(null);
   const [alsoList, setAlsoList] = useState(false);
   const loader = useRef(loadBots);
+  const [checked, setChecked] = useState<boolean | null>(null);
+  const checker = useRef(loadChecked);
   useEffect(() => {
     let live = true;
     loader.current().then((b) => { if (live) setBots(Array.isArray(b) ? b : []); }).catch(() => { if (live) setBots([]); });
+    Promise.resolve().then(() => checker.current()).then((c) => { if (live) setChecked(c); }).catch(() => { if (live) setChecked(null); });
     return () => { live = false; };
   }, []);
   const [busy, setBusy] = useState(false);
@@ -76,7 +82,7 @@ export default function DayOneV2({ api = dayOneApi, onAdopted, loadBots = () => 
   }
   const running = (bots ?? []).filter((b) => b.mode === "PAPER" && (b.status === "ACTIVE" || b.status === "PAUSED"));
   if (!data.adopted && running.length > 0 && !alsoList) {
-    return <BotsView bots={running} offers={data.offers} onAlsoList={data.can_adopt && data.offers.length ? () => setAlsoList(true) : undefined} />;
+    return <BotsView bots={running} offers={data.offers} checked={checked} onAlsoList={data.can_adopt && data.offers.length ? () => setAlsoList(true) : undefined} />;
   }
   return <SetupView data={data} busy={busy} problem={problem}
     onCancel={data.adopted ? () => setChanging(false) : alsoList ? () => setAlsoList(false) : undefined}
@@ -90,8 +96,10 @@ export function botCheckWords(b: Pick<Deployment, "status" | "last_evaluated_at"
 }
 
 /** Day-one fix 7: his own running trading bots, in place of "Pick a ready strategy" (he already picked one). */
-export function BotsView({ bots, offers, onAlsoList, now }: {
+export function BotsView({ bots, offers, onAlsoList, now, checked = null }: {
   bots: Deployment[]; offers: DayOneOffer[]; onAlsoList?: () => void; now?: number;
+  /** M55 S7: false while the engine that checks the bots is silent - one line says so. */
+  checked?: boolean | null;
 }) {
   const titleId = useId();
   const names = new Map<string, string>(offers.map((o) => [TEMPLATE_ID_PREFIX + o.id, o.name] as [string, string]));
@@ -105,12 +113,14 @@ export function BotsView({ bots, offers, onAlsoList, now }: {
           {" "}under Waiting for you or Today. Paper money only.
         </p>
       </div>
+      {checked === false && <p role="status" className="text-t13 font-semibold text-warn" data-bots-not-checked>{BOTS_NOT_CHECKED}</p>}
       <ul className="divide-y divide-subtle rounded-panel border border-subtle">
         {bots.map((b) => (
           <li key={b.id} className="flex flex-col gap-space-1 px-space-3 py-space-3 md:flex-row md:items-center md:justify-between" data-day-one-bot={b.id}>
             <span className="min-w-0">
               <span className="block text-t14 font-semibold text-fg">{botName(b, names)} · {b.symbol}</span>
               <span className="block text-t13 text-fg-muted">{botStatusText(b)} · {botCheckWords(b, now)}</span>
+              {botWaitText(b) && <span className="block text-t13 text-fg-muted" data-bot-wait>{botWaitText(b)}</span>}
             </span>
           </li>
         ))}

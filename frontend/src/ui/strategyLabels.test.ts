@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BANNED_UI_WORDS } from "../ux/bannedUiWords";
-import { INDICATOR_LABEL, exitRuleWords, metricLabel, paramChips, paramLabel, timeframeWords, wordsOf } from "./strategyLabels";
+import { INDICATOR_LABEL, exitRuleWords, libraryChips, metricLabel, paramChips, paramLabel, timeframeWords, wordsOf } from "./strategyLabels";
 
 describe("SB-UX SU8: the one strategy label map", () => {
   it("names every engine indicator in plain words, never by its id", () => {
@@ -18,6 +18,12 @@ describe("SB-UX SU8: the one strategy label map", () => {
     for (const c of chips) expect(c).not.toMatch(/[{}[\]"_]/);
     expect(paramChips({})).toEqual([]);
     expect(paramChips(null)).toEqual([]);
+  });
+
+  it("REV-B2: the Library never shows a built-in's no-op reward:risk chip", () => {
+    expect(libraryChips({ ema_fast: 9, target_rr: [1.5, 2.5], min_rr: 1.2 })).toEqual(["Fast EMA 9", "Targets (R) 1.5 / 2.5"]);
+    expect(libraryChips({ ema_fast: 9 })).toEqual(paramChips({ ema_fast: 9 }));
+    expect(libraryChips(null)).toEqual([]);
   });
 
   it("falls back to words for an unknown key and names the scores and exits", () => {

@@ -75,7 +75,7 @@ export function topBarNotices(status: SystemStatus | null, _user: UserResponse |
  * past the screen edge. Then the title steps down one text size (t18 -> t15); it steps back up when there is room.
  * Measured, not guessed from the number of letters; only on a phone with colour v2 (the row's own overflow).
  */
-export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean): boolean {
+export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean, extras = ""): boolean {
   const [small, setSmall] = useState(false);
   useLayoutEffect(() => {
     if (!enabled) { setSmall(false); return; }
@@ -96,7 +96,9 @@ export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, 
     void document.fonts?.ready.then(() => { if (live) check(); });
     window.addEventListener("resize", check);
     return () => { live = false; window.removeEventListener("resize", check); };
-  }, [row, title, enabled]);
+    // `extras`: what else sits in the row (PROSE-1: the (?) appears once the page has set its subtitle), so the row is
+    // measured again when it changes.
+  }, [row, title, enabled, extras]);
   return small;
 }
 
@@ -109,10 +111,10 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
   const notices = topBarNotices(status, user, paperOnly);
   const shortcut = shortcutLabel(currentPlatform());
   const row = useRef<HTMLDivElement>(null);
-  const small = useTitleFits(row, title, colour);
   const help = usePageHelp();
   // PROSE-1: the page's subtitle sits behind the same (?), first - never a line under the title.
   const subtitle = usePageSubtitle();
+  const small = useTitleFits(row, title, colour, `${help ? "h" : ""}${subtitle ? "s" : ""}${onTour ? "t" : ""}`);
   // UX-7: the price-feed dot, only with live prices on (flag `data_hub`) for a signed-in user.
   const liveOn = useFeatures().on("data_hub") && !!user;
 
@@ -128,24 +130,29 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
         {tint && SectionIcon && (
           <span aria-hidden data-section-chip={tint} data-topbar-chip className={`${sectionChipClass(tint, "sm")} md:hidden`}><SectionIcon size={16} /></span>
         )}
-        {/* With colour v2 (CA7) the title wraps on a phone instead of being cut (H9): only between words, never inside one
-            (no min-w-0 there, so the longest word sets its width); with it off the bar is as before. */}
-        <span data-topbar-title data-title-size={small ? "small" : undefined}
-          className={`shrink ${small ? "text-t15 group-data-[title-fit=measure]/bar:text-t18" : "text-t18"} font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:normal] [word-break:normal] md:min-w-0 md:truncate md:py-0" : "min-w-0 truncate"}`}>{title}</span>
-        {/* UX-6: the page's help line (and its tips) behind one (?) beside the title - never a paragraph above the data. */}
-        {(help || subtitle) && (
-          <HelpPopover title={title} className="-ml-space-1 shrink-0">
-            {subtitle && <p data-page-subtitle>{subtitle}</p>}
-            {help && <p data-page-help={help.id}>{help.lines.join(" ")}</p>}
-            {help?.showMe && <a href={help.showMe.href} className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">{help.showMe.label ?? "Show me"}</a>}
-            {onTour && (
-              <button type="button" onClick={onTour} data-tour="tour-replay"
-                className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-0">
-                Show the tips for this page
-              </button>
-            )}
-          </HelpPopover>
-        )}
+        {/* PROSE-1 / H9: with colour v2 the title and its (?) share one group that may wrap, so on a narrow phone the (?)
+            moves under the title instead of pushing the bar past the edge; with colour v2 off the group is invisible to
+            the layout (`contents`) and the bar is as before. */}
+        <span data-topbar-title-group className={colour ? "flex shrink flex-wrap items-center gap-x-space-2 md:min-w-0 md:flex-nowrap" : "contents"}>
+          {/* With colour v2 (CA7) the title wraps on a phone instead of being cut (H9): only between words, never inside one
+              (no min-w-0 there, so the longest word sets its width); with it off the bar is as before. */}
+          <span data-topbar-title data-title-size={small ? "small" : undefined}
+            className={`shrink ${small ? "text-t15 group-data-[title-fit=measure]/bar:text-t18" : "text-t18"} font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:normal] [word-break:normal] md:min-w-0 md:truncate md:py-0" : "min-w-0 truncate"}`}>{title}</span>
+          {/* UX-6: the page's help line (and its tips) behind one (?) beside the title - never a paragraph above the data. */}
+          {(help || subtitle) && (
+            <HelpPopover title={title} className={colour ? "shrink-0" : "-ml-space-1 shrink-0"}>
+              {subtitle && <p data-page-subtitle>{subtitle}</p>}
+              {help && <p data-page-help={help.id}>{help.lines.join(" ")}</p>}
+              {help?.showMe && <a href={help.showMe.href} className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">{help.showMe.label ?? "Show me"}</a>}
+              {onTour && (
+                <button type="button" onClick={onTour} data-tour="tour-replay"
+                  className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-0">
+                  Show the tips for this page
+                </button>
+              )}
+            </HelpPopover>
+          )}
+        </span>
         {!help && !subtitle && onTour && (
           <button type="button" onClick={onTour} title="Tips for this page" aria-label="Show the tips for this page" data-tour="tour-replay"
             className={`${iconButton} -ml-space-2 shrink-0`}>

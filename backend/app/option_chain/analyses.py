@@ -38,8 +38,10 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from app.brokers.models import OptionChain, OptionChainRow
+from app.core import config
 from app.core.config import RISK_FREE_RATE
 from app.market_data.calendar import trading_days_until
+from app.option_chain import session_rows as SR
 from app.option_chain.models import OptionType
 
 logger = logging.getLogger(__name__)
@@ -404,16 +406,61 @@ def _largest(rows: Sequence[Dict[str, Any]], side: str) -> Optional[Dict[str, An
 
 PCR_TITLE = "PCR"
 PCR_METHOD = ("PCR is total put OI divided by total call OI: overall over every strike of the chain, and near the money over the ATM "
-              "strike and the 5 strikes on each side of it. The session path is the near-ATM PCR at each snapshot.")
+              "strike and the 5 strikes on each side of it. The session path is the near-ATM PCR at each reading that changed it; "
+              "only readings between the open and the close of a trading day count, and a reading with fewer strikes than the "
+              "session's usual count (partial) is drawn hollow and left out of the comparison.")
+PCR_NEAR_HELP = ("Near ATM: the ATM strike (the listed strike nearest the spot) and the {n} listed strikes on each side of it - "
+                 "here {window}.")
 
 
-def pcr_of(rows: Sequence[OptionChainRow]) -> Tuple[float, float, Optional[float]]:
+def pcr_of(rows: Sequence[OptionChainRow]) -> tuple[float, float, float | None]:
     """(put OI, call OI, put / call) - the ratio is None when call OI is 0."""
     puts, calls = sum(_oi(r.put_oi) for r in rows), sum(_oi(r.call_oi) for r in rows)
     return puts, calls, (puts / calls if calls else None)
 
 
-def pcr(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> Dict[str, Any]:
+def fmt_count(value: float) -> str:
+    """M61 OI-1: an OI figure as the app shows it - under 1 lakh in Indian grouping ("85,000"), then "12.35 L", then
+    "1.24 Cr" (the frontend's formatCount; trailing zeros dropped, a figure under 1 crore never rounds up to "100 L")."""
+    a = abs(float(value))
+    sign = "-" if value < 0 and round(a) != 0 else ""
+
+    def trim(text: str) -> str:
+        return text.rstrip("0").rstrip(".") if "." in text else text
+
+    if a >= 1e7:
+        return f"{sign}{trim(fmt_number(a / 1e7, 2))} Cr"
+    if a >= 1e5:
+        return f"{sign}{trim(f'{min(round(a / 1e5, 2), 99.99):.2f}')} L"
+    return f"{sign}{fmt_number(a, 0)}"
+
+
+def _strike_grouped(strike: float) -> str:
+    """A strike in a sentence with Indian grouping: 22,800; 122.5."""
+    return fmt_number(strike, 0) if float(strike).is_integer() else fmt_strike(strike)
+
+
+def _near_words(window: Sequence[OptionChainRow]) -> str:
+    """"11 strikes 22,800-23,300" (plain ASCII, as every analysis text; the page shows the headline with its own dash)."""
+    n = len(window)
+    return f"{n} {'strike' if n == 1 else 'strikes'} {_strike_grouped(window[0].strike)}-{_strike_grouped(window[-1].strike)}"
+
+
+def _one_per_change(path: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """M61 PCR-2: one row per change, not per poll - a reading is kept when its near-ATM put OI, call OI or ATM strike
+    differs from the last kept reading (the first is always kept)."""
+    kept: list[dict[str, Any]] = []
+    for p in path:
+        key = (p["put_oi"], p["call_oi"], p["atm"])
+        if not kept or key != (kept[-1]["put_oi"], kept[-1]["call_oi"], kept[-1]["atm"]):
+            kept.append(p)
+    return kept
+
+
+def pcr(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False, holidays: Iterable[date] = (),
+        exchange: str = "NSE", partial_ratio: float | None = None) -> dict[str, Any]:
+    ratio = config.OI_PARTIAL_SNAPSHOT_RATIO if partial_ratio is None else partial_ratio
+    closed = set(holidays)
     rows = sorted_rows(chain)
     puts, calls, overall = pcr_of(rows)
     window = near_atm(rows, chain.underlying_ltp)
@@ -422,36 +469,68 @@ def pcr(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, histo
         return _no_data("pcr", PCR_TITLE, PCR_METHOD, "The chain has no call open interest, so the put-call ratio cannot be formed.")
     atm = rows[atm_index(rows, chain.underlying_ltp)].strike if window else None   # type: ignore[index]
     now_rows = [{"scope": f"Overall ({len(rows)} strikes)", "put_oi": puts, "call_oi": calls, "pcr": _r(overall)}]
-    span = _window_words(window, atm) if window else ""
     if window:
-        now_rows.append({"scope": f"Near ATM: {span}", "put_oi": n_puts, "call_oi": n_calls, "pcr": _r(near)})
-    tables = [_table("Now", [_column("scope", "Strikes", "text"), _column("put_oi", "Put OI", "oi"), _column("call_oi", "Call OI", "oi"),
-                             _column("pcr", "PCR", "ratio")], now_rows)]
-    sentences = [f"Overall PCR is {overall:.2f}: put OI {fmt_number(puts)} against call OI {fmt_number(calls)} across {len(rows)} strikes."]
+        now_rows.append({"scope": f"Near ATM ({_near_words(window)})", "put_oi": n_puts, "call_oi": n_calls, "pcr": _r(near)})
+    now_table = _table("Now", [_column("scope", "Strikes", "text"), _column("put_oi", "Put OI", "oi"), _column("call_oi", "Call OI", "oi"),
+                               _column("pcr", "PCR", "ratio")], now_rows)
+    if window:
+        now_table["help"] = PCR_NEAR_HELP.format(n=NEAR_ATM_STRIKES, window=_window_words(window, atm).removeprefix("the "))
+    tables = [now_table]
+    # M61 PCR-3: the headline is numbers only.
+    headline = f"Overall PCR {overall:.2f}"
     if near is not None:
-        sentences.append(f"Near the money ({span}) PCR is {near:.2f}, so {_larger(n_puts, n_calls)} there.")
+        headline += f" | Near-ATM PCR {near:.2f} ({_near_words(window)})"
+    sentences = [headline]
 
     past = session_history(chain, history)
-    path: List[Dict[str, Any]] = []
+    raw: list[dict[str, Any]] = []
     for at, c in [(s.at, s.chain) for s in past] + [(now, chain)]:
         crow = sorted_rows(c)
         w = near_atm(crow, c.underlying_ltp)
-        _, _, value = pcr_of(w)
+        p_oi, c_oi, value = pcr_of(w)
         i = atm_index(crow, c.underlying_ltp)
-        path.append({"time": _iso(at), "spot": _r(c.underlying_ltp), "atm": crow[i].strike if i is not None else None, "pcr": _r(value)})
+        raw.append({"time": _iso(at), "phase": SR.phase(at, closed, exchange), "spot": _r(c.underlying_ltp),
+                    "atm": crow[i].strike if i is not None else None, "put_oi": p_oi if w else None, "call_oi": c_oi if w else None,
+                    "pcr": _r(value), "strikes": SR.strike_count(c)})
+    for r, flag in zip(raw, SR.partial_flags([r["strikes"] for r in raw], [r["phase"] for r in raw], ratio)):
+        r["partial"] = flag
+        r["note"] = (f"Partial ({r['strikes']} strikes)" if flag else "" if r["phase"] == SR.SESSION else SR.PHASE_LABELS[r["phase"]])
+    path = _one_per_change(raw)
+    counted = [p for p in path if p["phase"] == SR.SESSION and not p["partial"]]
     if past:
-        tables.append(_table("Through the session (near ATM)", [_column("time", "Time", "time"), _column("spot", "Spot", "price"),
-                                                              _column("atm", "ATM", "strike"), _column("pcr", "PCR", "ratio")], path))
-        first, last = path[0]["pcr"], path[-1]["pcr"]
-        if first is None or last is None:
-            sentences.append(f"Since {fmt_time(past[0].at)} IST the near-ATM PCR was not available at every snapshot.")
-        elif first == last:
-            sentences.append(f"Since {fmt_time(past[0].at)} IST the near-ATM PCR is unchanged at {last:.2f}.")
+        tables.append(_table("Through the session (near ATM)", [_column("time", "Time", "time"), _column("note", "Reading", "text"),
+                                                              _column("spot", "Spot", "price"), _column("atm", "ATM", "strike"),
+                                                              _column("put_oi", "Put OI", "oi"), _column("call_oi", "Call OI", "oi"),
+                                                              _column("pcr", "PCR", "ratio")], path))
+        first_at = datetime.fromisoformat(counted[0]["time"]) if counted else None
+        if len(counted) < 2 or first_at is None:
+            sentences.append("No two full session readings of the near-ATM PCR to compare yet.")
+        elif counted[0]["pcr"] is None or counted[-1]["pcr"] is None:
+            sentences.append(f"Since {fmt_time(first_at)} IST the near-ATM PCR was not available at every reading.")
+        elif counted[0]["pcr"] == counted[-1]["pcr"]:
+            sentences.append(f"Since {fmt_time(first_at)} IST the near-ATM PCR is unchanged at {counted[-1]['pcr']:.2f}.")
         else:
-            sentences.append(f"Since {fmt_time(past[0].at)} IST the near-ATM PCR moved from {first:.2f} to {last:.2f}.")
+            sentences.append(f"Since {fmt_time(first_at)} IST the near-ATM PCR moved from {counted[0]['pcr']:.2f} to {counted[-1]['pcr']:.2f}.")
+        outside = sum(1 for p in path if p["phase"] != SR.SESSION)
+        partial = sum(1 for p in path if p["partial"])
+        if outside or partial:
+            parts = ([f"{outside} {'reading' if outside == 1 else 'readings'} outside the session"] if outside else []) + \
+                    ([f"{partial} partial {'reading' if partial == 1 else 'readings'}"] if partial else [])
+            sentences.append(f"Left out of the comparison: {' and '.join(parts)}.")
     else:
         sentences.append(HISTORY_OFF if history_off else NO_HISTORY)
-    chart = _chart("line", "time", "Time", "PCR", [_series("pcr_near", "Near-ATM PCR", "brand", [(p["time"], p["pcr"]) for p in path])])
+    points = [{"x": p["time"], "y": p["pcr"], "phase": p["phase"], "hollow": p["partial"], "put_oi": p["put_oi"], "call_oi": p["call_oi"],
+               "atm": p["atm"]} for p in path]
+    chart = _chart("line", "time", "Time", "PCR", [{"key": "pcr_near", "label": "Near-ATM PCR", "tone": "brand", "points": points}])
+    marks: list[dict[str, Any]] = []
+    last_atm: float | None = None
+    for p in path:
+        if p["phase"] != SR.SESSION or p["atm"] is None:
+            continue
+        if last_atm is not None and p["atm"] != last_atm:
+            marks.append({"x": p["time"], "label": f"ATM {_strike_grouped(p['atm'])}"})
+        last_atm = p["atm"]
+    chart["x_marks"] = marks
     return _result("pcr", PCR_TITLE, PCR_METHOD, tables=tables, chart=chart, sentences=sentences,
                    values={"overall": _r(overall, 4), "near_atm": _r(near, 4), "atm": atm, "window": [w.strike for w in window]})
 
@@ -731,8 +810,8 @@ def compute_all(chain: OptionChain, history: Sequence[Snapshot], now: datetime, 
     out: List[Dict[str, Any]] = []
     for key, fn in ANALYSES:
         try:
-            if fn is expected_move:                         # B3: the trading-day count needs the exchange's closed days
-                out.append(expected_move(chain, history, now, history_off=history_off, holidays=holidays))
+            if fn is expected_move or fn is pcr:            # B3: the trading-day count needs the exchange's closed days;
+                out.append(fn(chain, history, now, history_off=history_off, holidays=holidays))   # M61 PCR-1: session rows too
             else:
                 out.append(fn(chain, history, now, history_off=history_off))
         except Exception as exc:  # noqa: BLE001 - one tab's failure must not take the other five down

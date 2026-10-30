@@ -23,7 +23,8 @@ import BottomNavV2 from "./BottomNavV2";
 import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./common";
 import MoreSheetV2 from "./MoreSheetV2";
-import { navEntryFor, visiblePinned, visibleSections, type NavContext } from "./navModel";
+import { LEARN_IDEAS_ADDRESS, LEARN_WORDS_ADDRESS, visiblePinned, visibleSections, type NavContext } from "./navModel";
+import { WIDE_QUERY, isSidebarShortcut, useSidebarMode } from "./sidebarPrefs";
 import PageTabsV2 from "./PageTabsV2";
 import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
 import { MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS, WATCHLIST_ADDRESS } from "./aliases";
@@ -91,6 +92,14 @@ export default function AppShellV2() {
   const replayTour = tourId && tours.known && tours.store ? () => tours.store?.request({ kind: "page", id: tourId }) : undefined;
 
   const [moreOpen, setMoreOpen] = useState(false);
+  // M57 U7-2: the sheet opened from the top bar's menu button lists every section; from More, what the bar leaves out.
+  const [sheetAll, setSheetAll] = useState(false);
+  // M57 U7-1: the sidebar's show / hide state (md and up), per user on the server; the default follows the width.
+  const wideScreen = useMediaQuery(WIDE_QUERY);
+  const phone = useMediaQuery(PHONE_QUERY);
+  const sidebar = useSidebarMode(user?.id ?? null, wideScreen);
+  const toggleSidebar = sidebar.toggle;
+  const openMenuSheet = useCallback(() => { setCommandOpen(false); setSheetAll(true); setMoreOpen((o) => !o); }, []);
   const [commandOpen, setCommandOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackLoaded, setFeedbackLoaded] = useState(false);
@@ -113,6 +122,18 @@ export default function AppShellV2() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // M57 U7-1: `[` hides and shows the menu (on a phone it opens the menu sheet) - never while typing or in a dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !isSidebarShortcut(e) || otherDialogOpen(document)) return;
+      e.preventDefault();
+      if (phone) openMenuSheet();
+      else toggleSidebar();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phone, openMenuSheet, toggleSidebar]);
 
   // A new page closes the More sheet, starts at the top, names the browser tab and moves focus to the content.
   const mainRef = useRef<HTMLElement>(null);
@@ -168,6 +189,9 @@ export default function AppShellV2() {
           <Route path={SETUP_ADDRESS} caseSensitive element={<SetupPage onNavigate={go} />} />
           <Route path={TRADING_DEFAULTS_ADDRESS} caseSensitive element={<TradingDefaultsPage onNavigate={go} />} />
           <Route path={IDEAS_ADDRESS} caseSensitive element={<IdeasPage onNavigate={go} />} />
+          {/* M60: Learn › Ideas and Learn › Words explained (the old /ideas forwards here). */}
+          <Route path={LEARN_IDEAS_ADDRESS} caseSensitive element={<IdeasPage onNavigate={go} />} />
+          <Route path={LEARN_WORDS_ADDRESS} caseSensitive element={<LearnPage onNavigate={go} />} />
           <Route path={MARKETS_ADDRESS} caseSensitive element={<MarketsPage onNavigate={go} />} />
           <Route path={LEARN_ADDRESS} caseSensitive element={<LearnPage onNavigate={go} />} />
           <Route path={TERMINAL_ADDRESS} caseSensitive element={<TerminalPage onNavigate={go} />} />
@@ -193,7 +217,8 @@ export default function AppShellV2() {
 
   let content: ReactNode;
   if (legacy) content = <Navigate to={`${pathFor(legacy)}${withoutPageParam(location.search)}`} replace />;
-  else if (redirect) content = <Navigate to={redirect} replace />;
+  // M60: a forward keeps the address's #part (a journal row, a Settings part), as the router would without it.
+  else if (redirect) content = <Navigate to={`${redirect}${location.hash}`} replace />;
   else if (closed) content = <ComingSoon flag={closed} />;
   // The gate stays mounted while the trader moves between data pages, so the broker status is not re-read per click.
   // A page that shows the broker states itself (UI2-2: the dashboard) is not wrapped (src/shell/pagesV2.ts).
@@ -220,14 +245,15 @@ export default function AppShellV2() {
           className="sr-only focus:not-sr-only focus:fixed focus:left-space-2 focus:top-space-2 focus:z-[70] focus:rounded-control focus:bg-surface-1 focus:px-space-3 focus:py-space-2 focus:text-t14 focus:text-fg focus:shadow-raised">
           Skip to content
         </a>
-        <SidebarV2 sections={sections} pinned={pinned} dot={dot} current={key} user={user} accountPath={accountPath} />
+        <SidebarV2 sections={sections} pinned={pinned} dot={dot} current={key} user={user} accountPath={accountPath} mode={sidebar.mode} />
         <div className="relative flex min-w-0 flex-1 flex-col">
           {/* UX-12: the dotted backdrop behind the top of the page (decoration; tokens.css .dot-backdrop). */}
           <div aria-hidden className="dot-backdrop" data-dot-backdrop />
           <TopBarWithAskAi on={features.on} title={title} section={key} user={user} accountPath={accountPath}
             notificationsActive={key === "notifications"} accountActive={key === "account"}
             onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined}
-            paperOnly={frontPaperOnly || liveHidden} onTour={replayTour} />
+            paperOnly={frontPaperOnly || liveHidden} onTour={replayTour}
+            menu={{ mode: sidebar.mode, onToggle: toggleSidebar, onOpenSheet: openMenuSheet, sheetOpen: moreOpen && sheetAll }} />
           <PwaBanners />
           <LegalAcceptanceBanner />
           {/* TT12-1: one-time notices (the server decides who; seen once per user, stored in his prefs). */}
@@ -245,8 +271,8 @@ export default function AppShellV2() {
             {content}
           </main>
         </div>
-        <BottomNavV2 current={navEntryFor(key)} ctx={ctx} dot={dot} moreOpen={moreOpen} onMore={() => setMoreOpen((o) => !o)} onPick={() => setMoreOpen(false)} />
-        <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key} dot={dot}
+        <BottomNavV2 current={key} ctx={ctx} dot={dot} moreOpen={moreOpen} onMore={() => { setSheetAll(false); setMoreOpen((o) => !o); }} onPick={() => setMoreOpen(false)} />
+        <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key} dot={dot} all={sheetAll}
           onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
         <BrokerPromptHost />
         {/* Readiness C13: a new account names the invite link it arrived with, once (flag `referrals`). */}

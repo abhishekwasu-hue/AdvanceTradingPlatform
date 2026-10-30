@@ -334,15 +334,18 @@ test.describe("desktop 1440", () => {
     expect(oauthLabel).toBe("primary");
   });
 
-  test("the v2 shell shows the same Broker page, with Broker just above Settings in its sidebar (day-one fix 9)", async ({ page }) => {
+  test("M60: the v2 shell shows the same Broker page in Settings › Account & broker, the dot on the Settings entry", async ({ page }) => {
     await open(page, "/broker", { session: LATER, mocks: { features: { ui_v2: true }, connections: [UPSTOX_DATA, ZERODHA_LOGIN] } });
+    await expect(page).toHaveURL(/\/settings\/broker$/);
     await expect(page.locator("[data-shell='v2']")).toBeVisible();
     await expect(page.locator("[data-broker-page]")).toBeVisible();
     const nav = page.getByRole("navigation", { name: "Pages" });
     await expect(nav.getByRole("link").first()).toContainText("Today");
-    await expect(nav.getByRole("link").last()).toContainText("Settings");
-    await expect(nav.getByRole("link").nth(-2)).toContainText("Broker");
-    await expect(nav.locator("[data-broker-dot='needs_login']")).toBeVisible();
+    const settings = nav.getByRole("link").last();
+    await expect(settings).toContainText("Settings");
+    await expect(settings).toHaveAttribute("aria-current", "page");
+    await expect(settings.locator("[data-broker-dot='needs_login']")).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Account & broker" }).getByRole("link", { name: "Broker accounts" })).toHaveAttribute("aria-current", "page");
   });
 });
 

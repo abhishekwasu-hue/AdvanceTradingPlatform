@@ -178,7 +178,7 @@ describe("the page", () => {
 });
 
 describe("the shell", () => {
-  it("/markets is the v2 page behind `markets_view`, in the Markets section, found by search", () => {
+  it("/markets is the v2 page behind `markets_view`, in the Find section (M60), found by search", () => {
     expect(shellKeyFromPath("/markets")).toBe("markets");
     expect(shellTitle("markets")).toBe("Sectors & indices");
     expect(PAGE_COMPONENTS_V2.markets).toBeDefined();
@@ -187,9 +187,10 @@ describe("the shell", () => {
     expect(closedFlag("markets", { answered: true, on: (f) => f === "markets_view" })).toBeNull();
     const off = { on: () => false, role: "OWNER" };
     const on = { on: (f: string) => f === "markets_view", role: "OWNER" };
-    expect(visibleSections(off)[0].items.map((i) => i.key)).not.toContain("markets");
-    expect(visibleSections(on)[0].items.map((i) => i.key)).toEqual(["dashboard", "charts", "option-chain", "markets"]);
-    expect(NAV_SECTIONS_V2[0].items.find((i) => i.key === "markets")?.path).toBe("/markets");
+    const find = (ctx: { on: (f: string) => boolean; role: string }) => visibleSections(ctx).find((sec) => sec.id === "find")!.items.map((i) => i.key);
+    expect(find(off)).not.toContain("markets");
+    expect(find(on)).toEqual(["signals", "markets"]);
+    expect(NAV_SECTIONS_V2.find((sec) => sec.id === "find")!.items.find((i) => i.key === "markets")?.path).toBe("/markets");
     expect(searchPages("sector", on)[0].key).toBe("markets");
     expect(searchPages("heat map", off).map((i) => i.key)).not.toContain("markets");
   });

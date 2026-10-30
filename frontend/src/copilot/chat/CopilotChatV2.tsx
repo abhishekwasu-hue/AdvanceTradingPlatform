@@ -1,5 +1,5 @@
 import { SETTINGS_PATH } from "../../settings/paths";
-import { KeyRound, SendHorizontal, Sparkles } from "lucide-react";
+import { KeyRound, Paperclip, SendHorizontal, Sparkles } from "lucide-react";
 import { IndexCell } from "../../dashboard/MarketStripV2";
 import { vixBand } from "../../dashboard/model";
 import type { MarketStrip } from "../../dashboard/types";
@@ -71,11 +71,19 @@ export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const q = cleanQuestion(draft); if (q && !busy) onAsk(q); }
   };
   const bottom = placement === "bottom";
+  // M60 default 1: the Ask box's attach button opens Analyze a chart (upload a chart or a TradingView snapshot link).
+  const analyzeOn = useFeatures().on("chart_analyze");
   return (
     <form onSubmit={submit} data-composer={placement} data-tour="copilot-ask"
       className={bottom
         ? "fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 flex items-end gap-space-2 border-t border-subtle bg-surface-1 px-space-4 py-space-2 shadow-raised"
         : "sticky top-space-2 z-10 flex items-end gap-space-2 rounded-panel border border-border bg-surface-1 p-space-3 shadow-card"}>
+      {analyzeOn && (
+        <Link to="/copilot/analyze" aria-label={t("v2tabs.attach")} title={t("v2tabs.attach")} data-attach-chart
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border bg-surface-2 text-fg-muted hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+          <Paperclip size={18} aria-hidden />
+        </Link>
+      )}
       <label className="sr-only" htmlFor="copilot-question">{t("chat.boxLabel")}</label>
       <textarea id="copilot-question" value={draft} maxLength={MAX_QUESTION} rows={bottom ? 1 : 2} onChange={(e) => onDraft(e.target.value)} onKeyDown={onKey}
         placeholder={placeholder ?? t("chat.placeholder")} disabled={busy}

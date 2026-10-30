@@ -13,7 +13,7 @@ import { navTone } from "../shell/navTone";
 import { SECTION_TINT, navChipClass, navWordClass, sectionTintOf, type SectionTint } from "./accents";
 import BottomNavV2 from "../shell/BottomNavV2";
 import TopBarV2 from "../shell/TopBarV2";
-import { BOTTOM_BAR_V2 } from "../shell/navModel";
+import { visibleBottomBar } from "../shell/navModel";
 import { ColourV2Provider } from "./colourV2";
 import { NewBadge } from "./NewBadge";
 import { PageHeader } from "./PageHeader";
@@ -98,16 +98,20 @@ describe("CA1 / CA3 / CA4 tokens: WCAG AA from the token values, both themes", (
 describe("CA3: one section -> tint map for the nav and the PageHeader", () => {
   it("covers every navigation section, user and admin, and every entry in them", () => {
     const sections = NAV_SECTIONS_V2.map((s) => s.id);
-    expect(sections).toEqual(expect.arrayContaining(["markets", "trading", "insights", "account", "admin"]));
+    // M60: one accent per sidebar section.
+    expect(sections).toEqual(["trade", "find", "build", "learn", "account"]);
     for (const id of sections) expect(SECTION_TINT[id as SectionId], id).toBeDefined();
     for (const item of [...allNavItems(), ...NAV_PINNED_V2]) expect(sectionTintOf(item.key), item.key).not.toBeNull();
     expect(sectionTintOf("dashboard")).toBe("today");
     expect(sectionTintOf("charts")).toBe("charts");
     expect(sectionTintOf("signals")).toBe("signals");
     expect(sectionTintOf("positions")).toBe("trades");
-    expect(sectionTintOf("option-chain")).toBe("markets");
-    expect(sectionTintOf("terminal")).toBe("trading");
-    expect(sectionTintOf("analytics")).toBe("insights");
+    expect(sectionTintOf("option-chain")).toBe("trading");
+    expect(sectionTintOf("terminal")).toBe("charts");               // M60: the Terminal takes Charts' place (and hue) on the bar
+    expect(sectionTintOf("analytics")).toBe("trading");              // My trades › Results
+    expect(sectionTintOf("screener")).toBe("signals");               // Find
+    expect(sectionTintOf("strategies")).toBe("insights");            // Build
+    expect(sectionTintOf("learn")).toBe("copilot");                  // Learn & AI
     expect(sectionTintOf("settings")).toBe("account");
     expect(sectionTintOf("admin")).toBe("admin");
     expect(sectionTintOf("broker")).toBe("broker");
@@ -117,7 +121,7 @@ describe("CA3: one section -> tint map for the nav and the PageHeader", () => {
 
   it("the plain nav icons read the same map (navTone)", () => {
     expect(navTone("charts")).toBe("info");
-    expect(navTone("terminal")).toBe("teal");
+    expect(navTone("terminal")).toBe("info");
     expect(navTone("admin")).toBe("neutral");
   });
 });
@@ -127,7 +131,7 @@ const render = (node: ReactNode, on: boolean) =>
 
 describe("CA2 / CA3 / CA4: the shared components, only with colour v2", () => {
   it("PageHeader shows the page's nav icon in its section chip", () => {
-    expect(render(<PageHeader title="Option chain" section="option-chain" />, true)).toMatch(/data-section-chip="markets" class="[^"]*bg-sec-markets-soft text-sec-markets/);
+    expect(render(<PageHeader title="Option chain" section="option-chain" />, true)).toMatch(/data-section-chip="trading" class="[^"]*bg-sec-trading-soft text-sec-trading/);
     expect(render(<PageHeader title="Admin console" section="admin" />, true)).toContain('data-section-chip="admin"');
     expect(render(<PageHeader title="Option chain" section="option-chain" />, false)).not.toContain("data-section-chip");
   });
@@ -273,14 +277,21 @@ describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today
   });
 
   it("CA6: every tab its own tint, the tab on screen strong + bold, More teal; off as before", () => {
-    const html = render(<BottomNavV2 current="charts" moreOpen={false} onMore={() => {}} />, true);
+    // M60: the bar is the first four entries - Today, Terminal, My trades, Find setups with every feature on.
+    const full = { on: (f: string) => ["terminal", "screener_v2"].includes(f), role: "OWNER" };
+    const html = render(<BottomNavV2 current="terminal" moreOpen={false} onMore={() => {}} ctx={full} />, true);
     const tints = [...html.matchAll(/data-nav-tint="([a-z]+)"/g)].map((m) => m[1]);
-    expect(tints).toEqual(["today", "charts", "signals", "trades", "more"]);           // CA6-1: five different hues
-    expect(BOTTOM_BAR_V2.filter((b) => !b.flag).map((b) => sectionTintOf(b.key))).toEqual(["today", "charts", "signals", "trades"]);
+    expect(tints).toEqual(["today", "charts", "trades", "signals", "more"]);           // CA6-1: five different hues
+    expect(visibleBottomBar(full).map((b) => sectionTintOf(b.key))).toEqual(["today", "charts", "trades", "signals"]);
+    // Without the Terminal its stand-ins come first, still five different hues.
+    expect([...render(<BottomNavV2 current="charts" moreOpen={false} onMore={() => {}} />, true).matchAll(/data-nav-tint="([a-z]+)"/g)].map((m) => m[1]))
+      .toEqual(["today", "charts", "trading", "trades", "more"]);
     expect(html).toContain(navChipClass("charts", true));
     // UX-13 option C (owner, 27 Oct): the other four tabs keep their colour on the icon, with no soft round fill.
     expect(html.match(/rounded-pill[^"]*bg-sec-[a-z]+-soft/g)).toBeNull();
     expect(html.match(/rounded-pill[^"]* text-sec-(today|signals|trades|more)"/g)).toHaveLength(4);
+    // A page inside the Terminal lights up its tab (the Option chain while the Terminal is on).
+    expect(render(<BottomNavV2 current="option-chain" moreOpen={false} onMore={() => {}} ctx={full} />, true)).toMatch(/aria-current="page"[^>]*data-bar-key="terminal"/);
     expect(html).toContain(`${navWordClass("charts")} font-semibold`);
     // 44 px targets: every tab is at least 64 px tall and a fifth of the bar wide.
     expect(html.match(/min-h-16 flex-1/g)).toHaveLength(5);
@@ -289,12 +300,12 @@ describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today
     expect(render(<BottomNavV2 current="charts" moreOpen={false} onMore={() => {}} />, false)).not.toMatch(/data-nav-tint|bg-sec-/);
   });
 
-  it("UI-28 U3.5: with `watchlists` on, the bar keeps four tabs and More (Watchlist lives in the Charts panel and in More)", () => {
+  it("UI-28 U3.5 + M60: with `watchlists` on, the bar keeps four tabs and More (Watchlist is found by search)", () => {
     const watch = { on: (f: string) => f === "watchlists" };
     const html = render(<BottomNavV2 current="watchlist" moreOpen={false} onMore={() => {}} ctx={watch} />, true);
     expect(html.match(/min-h-16 flex-1/g)).toHaveLength(5);
     expect(html).not.toContain('href="/watchlist"');
-    expect([...html.matchAll(/data-nav-label[^>]*>([^<]+)</g)].map((m) => m[1])).toEqual(["Today", "Charts", "Signals", "My trades", "More"]);
+    expect([...html.matchAll(/data-nav-label[^>]*>([^<]+)</g)].map((m) => m[1])).toEqual(["Today", "Charts", "Chain", "My trades", "More"]);
     expect(html).not.toContain("tracking-tight");
   });
 
@@ -303,15 +314,16 @@ describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today
 
   it("CA7: the phone top bar shows the page's section chip before the title; the title is never cut on a phone", () => {
     const on = bar(true, "option-chain");
-    expect(on).toMatch(/data-section-chip="markets" data-topbar-chip="true" class="[^"]*bg-sec-markets-soft text-sec-markets[^"]*md:hidden/);
+    expect(on).toMatch(/data-section-chip="trading" data-topbar-chip="true" class="[^"]*bg-sec-trading-soft text-sec-trading[^"]*md:hidden/);
     expect(on.indexOf("data-topbar-chip")).toBeLessThan(on.indexOf("data-topbar-title"));
-    expect(bar(true, "terminal")).toContain('data-section-chip="trading"');
+    expect(bar(true, "terminal")).toContain('data-section-chip="charts"');
     expect(bar(false, "option-chain")).not.toContain("data-topbar-chip");
     expect(bar(true, null)).not.toContain("data-topbar-chip");
-    // H9: no truncation on a phone (wraps instead; the bar grows), one line from md up.
+    // H9: no truncation on a phone (wraps instead; the bar grows); #759 review: from md up one line, never cut either.
     const title = /data-topbar-title="true" class="([^"]*)"/.exec(bar(true, "markets", "Sectors & indices"))![1].split(" ");
     expect(title).not.toContain("truncate");
-    expect(title).toContain("md:truncate");
+    expect(title).not.toContain("md:truncate");
+    expect(title).toContain("md:whitespace-nowrap");
     // H9 (26 Oct): wrap only between words - never "Watchlis / t" - so no break-anywhere and no phone min-w-0.
     expect(title).not.toContain("[overflow-wrap:anywhere]");
     expect(title).toContain("[overflow-wrap:normal]");

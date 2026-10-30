@@ -60,7 +60,9 @@ export function storedDailyFor(pathname: string): string | null {
  * UX3-9: sub-paths of a data page that are not data pages themselves - My trades › Orders (`/positions/orders`) is the
  * trader's own order record, which worked without a broker session at `/orders` and still does.
  */
-export const NOT_DATA_SUBPATHS: readonly string[] = ["/positions/orders"];
+// M60: My trades › Results (and its Journal part) is today's Performance, the Copilot's Coach today's Coach page and Analyze a
+// chart today's upload page - none of them needed a broker session at their old addresses, and none does now.
+export const NOT_DATA_SUBPATHS: readonly string[] = ["/positions/orders", "/positions/results", "/positions/results/journal", "/copilot/coach", "/copilot/analyze"];
 
 /** True when `pathname` is a data page or one of its sub-paths (`/copilot/market-pulse`, `/charts/NIFTY`). */
 export function isDataPath(pathname: string): boolean {

@@ -51,6 +51,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   terminal: lazy(() => import("../terminal/TerminalPageV2")),
   // P1-8 (2): the Watchlist page (src/watchlist) at /watchlist - a v2-only page behind `watchlists`, the Charts panel.
   watchlist: lazy(() => import("../watchlist/WatchlistPageV2")),
+  // M60: Learn › News & events at /learn/news - today's News & events page plus the Copilot's news part (src/learn).
+  "news-events": lazy(() => import("../learn/LearnNewsV2")),
   ...Object.fromEntries(SETTINGS_SECTIONS.map((s) => [s.key, SettingsSection])),
 };
 

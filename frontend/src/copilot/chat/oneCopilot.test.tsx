@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import myDataSource from "../../settings/MyDataCardV2.tsx?raw";
 import { CopilotConversationRow } from "../../settings/MyDataCardV2";
 import { copilotI18n } from "../i18n";
-import { BUILD_PATH, COPILOT_TABS, COPILOT_V2_TABS, FOLDED_TABS, isCopilotTab, isFoldedTab } from "../tabs";
+import { BUILD_PATH, COPILOT_TABS, COPILOT_V2_TABS, FOLDED_TABS, isCopilotTab, isFoldedTab, v2TabOf } from "../tabs";
 import chatSource from "./CopilotChatV2.tsx?raw";
 import foldedSource from "./CopilotFoldedV2.tsx?raw";
 import pageSource from "./CopilotPageV2.tsx?raw";
@@ -21,48 +21,66 @@ function render(node: React.ReactNode, at = "/copilot"): string {
   return renderToStaticMarkup(<I18nextProvider i18n={copilotI18n}><MemoryRouter initialEntries={[at]}>{node}</MemoryRouter></I18nextProvider>);
 }
 
-describe("CU4: one Copilot", () => {
-  it("has five tabs - Ask, Brief, Build, Review, Signals - each a link with its own address", () => {
+describe("CU4 + M60: one Copilot", () => {
+  it("M60: four tabs at most - Ask, Read the chart, Analyze a chart (with chart_analyze on), Coach - each a link with its own address", () => {
     const html = render(<CopilotTabsV2 active="ask" />);
-    expect(text(html)).toBe("Ask Brief Build Review Signals");
-    expect([...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/copilot", "/copilot/brief", "/strategies/build", "/copilot/review", "/copilot/signals"]);
+    // Without chart_analyze (no flags in this render) the Analyze a chart tab is left out.
+    expect(text(html)).toBe("Ask Read the chart Coach");
+    expect([...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/copilot", "/copilot/read", "/copilot/coach"]);
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
     expect(html).toMatch(/<a[^>]*aria-current="page"[^>]*data-copilot-tab="ask"/);
     expect(html).toContain('aria-label="Copilot"');
+    expect(COPILOT_V2_TABS.map((t) => [t.key, t.to, t.flag ?? null])).toEqual([
+      ["ask", "/copilot", null], ["read", "/copilot/read", null], ["analyze", "/copilot/analyze", "chart_analyze"], ["coach", "/copilot/coach", null],
+    ]);
   });
 
   it("every tab target is at least 44 px", () => {
-    const html = render(<CopilotTabsV2 active="brief" />);
+    const html = render(<CopilotTabsV2 active="read" />);
     const links = [...html.matchAll(/<a [^>]*class="([^"]+)"/g)].map((m) => m[1]);
-    expect(links).toHaveLength(5);
+    expect(links).toHaveLength(3);
     for (const cls of links) {
       expect(cls).toContain("min-h-11");
       expect(cls).not.toMatch(/md:min-h-(?:[0-9]|10)\b/);
     }
   });
 
-  it("Build is a link to the one builder (Strategies › Build), never a second builder", () => {
+  it("M60: Build left the row (Strategies › Build is the one builder), never a second builder here", () => {
     expect(BUILD_PATH).toBe("/strategies/build");
-    expect(COPILOT_V2_TABS.find((t) => t.key === "build")?.to).toBe(BUILD_PATH);
+    expect(COPILOT_V2_TABS.map((t) => t.key)).not.toContain("build");
     expect(isFoldedTab("build")).toBe(false);
     expect(foldedSource).not.toMatch(/StrategyLab|IdeaBuilder|StrategyBuilder/);
   });
 
-  it("folds Market Pulse + News Radar into Brief, Coach into Review, Watchtower into Signals - the same components", () => {
-    expect(FOLDED_TABS).toEqual(["brief", "review", "signals"]);
+  it("Read the chart = Market Pulse, Coach = Review + the Guide; the old Brief / Review / Signals bodies stay - the same components", () => {
+    expect(FOLDED_TABS).toEqual(["read", "coach", "brief", "review", "signals"]);
     for (const tab of ["MarketPulseTab", "NewsRadarTab", "CoachTab", "WatchtowerTab"]) expect(foldedSource).toContain(`import("../tabs/${tab}")`);
+    expect(foldedSource).toContain('import("../../components/GuideChat")');
+    expect(foldedSource).toMatch(/tab === "read"[\s\S]*<MarketPulse \/>/);
+    expect(foldedSource).toMatch(/tab === "coach"[\s\S]*<Coach \/>[\s\S]*<Guide plain \/>/);
     expect(foldedSource).toMatch(/tab === "brief"[\s\S]*<MarketPulse \/>[\s\S]*<NewsRadar \/>/);
     expect(foldedSource).toContain('tab === "review" ? <Coach /> : <Watchtower />');
     expect(foldedSource.match(/data-disclaimer/g)).toHaveLength(1);
     expect(foldedSource).toContain("<FirstUseModal");
+    expect(v2TabOf("brief")).toBe("read");
+    expect(v2TabOf("review")).toBe("coach");
+    expect(v2TabOf("analyze")).toBe("analyze");
+    expect(v2TabOf(null)).toBe("ask");
   });
 
-  it("keeps the seven older tabs at their addresses (under Advanced) until the owner's ✅", () => {
+  it("keeps the seven older tabs at their addresses (under Advanced); /copilot/coach is now the Coach tab", () => {
     expect(COPILOT_TABS).toHaveLength(7);
-    for (const tab of COPILOT_TABS) { expect(isCopilotTab(tab)).toBe(true); expect(isFoldedTab(tab)).toBe(false); }
-    expect(pageSource).toContain("if (isCopilotTab(tab)) return <Suspense fallback={null}><LegacyCopilot /></Suspense>;");
+    for (const tab of COPILOT_TABS) expect(isCopilotTab(tab)).toBe(true);
+    expect(COPILOT_TABS.filter((tab) => isFoldedTab(tab))).toEqual(["coach"]);
+    expect(pageSource).toContain("if (!folded && !analyze && isCopilotTab(tab)) return <Suspense fallback={null}><LegacyCopilot /></Suspense>;");
+    expect(pageSource).toContain('import("../../chartAnalyze/ChartAnalyzePageV2")');
     expect(chatSource).toContain("COPILOT_TABS.map((tab) =>");
-    expect(pageSource).toContain("<CopilotTabsV2 active={folded ?? \"ask\"} />");
+    expect(pageSource).toContain("<CopilotTabsV2 active={active} />");
+  });
+
+  it("M60 default 1: the Ask box's attach button opens Analyze a chart (while chart_analyze is on)", () => {
+    expect(chatSource).toContain('const analyzeOn = useFeatures().on("chart_analyze");');
+    expect(chatSource).toMatch(/analyzeOn && \([\s\S]*to="\/copilot\/analyze"[\s\S]*data-attach-chart/);
   });
 });
 

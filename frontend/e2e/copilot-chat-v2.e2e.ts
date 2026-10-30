@@ -200,12 +200,12 @@ test.describe("v2 copilot chat 1440 desktop", () => {
 test.describe("v2 copilot - one Copilot (CU4) and the kept conversation (CU6)", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
-  test("CU4: the tab bar - Ask, Brief, Build, Review, Signals - every target at least 44 px", async ({ page }) => {
+  test("CU4 + M60: the tab bar - Ask, Read the chart, Coach (Analyze a chart with chart_analyze on) - every target at least 44 px", async ({ page }) => {
     await open(page, "light");
     const tabs = page.locator("[data-copilot-tabs='v2'] a");
-    await expect(tabs).toHaveText(["Ask", "Brief", "Build", "Review", "Signals"]);
+    await expect(tabs).toHaveText(["Ask", "Read the chart", "Coach"]);
     await expect(page.locator("[data-copilot-tab='ask']")).toHaveAttribute("aria-current", "page");
-    await expect(page.locator("[data-copilot-tab='build']")).toHaveAttribute("href", "/strategies/build");
+    await expect(page.locator("[data-copilot-tab='build']")).toHaveCount(0);       // Strategies › Build is the one builder
     for (const box of await Promise.all((await tabs.all()).map((t) => t.boundingBox()))) expect(box!.height).toBeGreaterThanOrEqual(44);
     await expectPhoneLayout(page);
   });
@@ -222,18 +222,21 @@ test.describe("v2 copilot - one Copilot (CU4) and the kept conversation (CU6)", 
     await expect(page.locator("[data-turn]")).toContainText("Read the NIFTY chart");
   });
 
-  test("CU4: Brief holds Market Pulse and News Radar; Review the Coach; Signals the Watchtower - the old tabs stay under Advanced", async ({ page }) => {
+  test("M60: Brief forwards to Read the chart (Market Pulse); Review to the Coach; Signals to the Signals page - the old tabs stay under Advanced", async ({ page }) => {
     await open(page, "light", undefined, "/copilot/brief");
-    await expect(page.locator("[data-copilot-folded='brief']")).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator("[data-copilot-tab='brief']")).toHaveAttribute("aria-current", "page");
-    await expect(page.locator("#copilot-brief-pulse")).toHaveText("Market pulse");
-    await expect(page.locator("[data-folded-part='copilot-brief-news'] [data-testid='tab-panel-news-radar']")).toBeVisible();
+    await expect(page).toHaveURL(/\/copilot\/read$/);
+    await expect(page.locator("[data-copilot-folded='read']")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("[data-copilot-tab='read']")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("#copilot-read-pulse")).toHaveText("Market pulse");
     await expect(page.locator("[data-disclaimer]")).toHaveCount(1);
-    await page.locator("[data-copilot-tab='review']").click();
-    await expect(page.locator("[data-copilot-folded='review']")).toBeVisible();
-    await expect(page).toHaveURL(/\/copilot\/review$/);
-    await page.locator("[data-copilot-tab='signals']").click();
-    await expect(page.locator("[data-copilot-folded='signals']")).toBeVisible();
+    await page.locator("[data-copilot-tab='coach']").click();
+    await expect(page.locator("[data-copilot-folded='coach']")).toBeVisible();
+    await expect(page).toHaveURL(/\/copilot\/coach$/);
+    await expect(page.locator("[data-folded-part='copilot-coach-guide']")).toBeVisible();
+    await page.goto("/copilot/review");
+    await expect(page).toHaveURL(/\/copilot\/coach$/);
+    await page.goto("/copilot/signals");
+    await expect(page).toHaveURL(/\/signals$/);
     await page.goto("/copilot/market-pulse");                      // an older tab keeps its address
     await expect(page.locator("[data-testid='copilot-page']")).toBeVisible({ timeout: 15_000 });
     await expectPhoneLayout(page);

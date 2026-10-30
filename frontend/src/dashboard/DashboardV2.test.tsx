@@ -128,7 +128,7 @@ describe("UI2-2 blocks", () => {
 describe("UI2-2 router wiring (UI v2 §12: PageV2 ?? Page)", () => {
   it("the v2 shell has a v2 dashboard; today's router and App do not load it", () => {
     expect(Object.keys(PAGE_COMPONENTS_V2)).toEqual(["dashboard", "signals", "charts", "option-chain", "positions", "portfolio", "risk-management", "orders", "setup", "trading-defaults", "deployments", "strategy-builder", "copilot",
-      "settings", "markets", "admin", "ideas", "learn", "terminal", "watchlist", "settings-ai", "settings-alerts", "settings-appearance", "settings-help", "settings-advanced"]);
+      "settings", "markets", "admin", "ideas", "learn", "terminal", "watchlist", "news-events", "settings-ai", "settings-alerts", "settings-appearance", "settings-help", "settings-advanced"]);
     expect(routesSource).not.toMatch(/DashboardV2|pagesV2/);
     expect(appSource).not.toMatch(/DashboardV2|pagesV2/);
   });
@@ -139,8 +139,9 @@ describe("UI2-2 router wiring (UI v2 §12: PageV2 ?? Page)", () => {
     expect(isGatedPath("/")).toBe(true);                         // still a data page (the waiting screen and the gate rule)
     expect(isGatedPath("/positions")).toBe(true);
     for (const p of ["/", "/positions", "/%70ositions"]) expect(shellGates(p, OWN_BROKER_STATES), p).toBe(false);
-    for (const p of ["/portfolio", "/charts/NIFTY", "/option-chain", "/positions/x", "/copilot/coach", "/%E0%A4"]) expect(shellGates(p, OWN_BROKER_STATES), p).toBe(true);
-    for (const p of ["/settings", "/orders"]) expect(shellGates(p, OWN_BROKER_STATES), p).toBe(false);
+    for (const p of ["/portfolio", "/charts/NIFTY", "/option-chain", "/positions/x", "/copilot/market-pulse", "/%E0%A4"]) expect(shellGates(p, OWN_BROKER_STATES), p).toBe(true);
+    // M60: My trades › Results and the Copilot's Coach are today's Performance and Coach pages - no broker needed there.
+    for (const p of ["/settings", "/orders", "/positions/results", "/copilot/coach"]) expect(shellGates(p, OWN_BROKER_STATES), p).toBe(false);
   });
 
   it("signed out goes to the sign-in page (UI-14); no broker shows the gate's 'Connect your broker' and nothing else", () => {

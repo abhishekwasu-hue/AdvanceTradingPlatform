@@ -89,10 +89,11 @@ describe("colour v2 shared pieces", () => {
   it("navigation: one muted colour per group, brand for Broker, violet for the AI Copilot only", () => {
     expect(navTone("broker")).toBe("brand");
     expect(navTone("dashboard")).toBe("info");
-    expect(navTone("option-chain")).toBe("info");
+    expect(navTone("option-chain")).toBe("teal");          // M60: Trade's accent
     expect(navTone("signals")).toBe("teal");
     expect(navTone("positions")).toBe("teal");
-    expect(navTone("analytics")).toBe("insights");
+    expect(navTone("analytics")).toBe("teal");             // M60: My trades › Results
+    expect(navTone("strategies")).toBe("insights");
     expect(navTone("copilot")).toBe("ai");
     expect(navTone("settings")).toBe("neutral");
     expect(navTone(null)).toBe("neutral");
@@ -250,15 +251,16 @@ describe("colour v2 on the pages (off = as before)", () => {
     expect(sideOn).toContain("bg-sec-insights-soft text-sec-insights");
     const sideOff = render(<SidebarV2View sections={sections} current="dashboard" user={null} accountPath="/login" />, false);
     expect(sideOff).not.toMatch(/text-(?:teal-accent|nav-insights|info)\b|data-section-chip/);
-    const barOn = render(<BottomNavV2 current="signals" moreOpen={false} onMore={noop} />, true);
+    // M60: without the Terminal the bar is Today, Charts, Option chain, My trades.
+    const barOn = render(<BottomNavV2 current="option-chain" moreOpen={false} onMore={noop} />, true);
     expect(barOn.match(/data-nav-pill="true"/g)).toHaveLength(1);
     // UI-H CA6 (owner, 25 Oct; supersedes CV-1's neutral grey tabs): every tab on its section's soft round chip, the tab
     // on screen on the strong tint (the solid section colour) with its word in that colour, bold.
-    expect(barOn).toMatch(/data-nav-pill="true" data-nav-tint="signals" class="[^"]*bg-sec-signals text-surface-1/);   // CA6-1: its own hue
+    expect(barOn).toMatch(/data-nav-pill="true" data-nav-tint="trading" class="[^"]*bg-sec-trading text-surface-1/);   // CA6-1: its own hue
     // UX-13 option C (owner, 27 Oct): the other tabs keep the section colour on the icon, with no soft round fill.
     expect(barOn.match(/data-nav-tint="[a-z]+" class="[^"]*bg-sec-[a-z]+-soft/g)).toBeNull();
     expect(barOn.match(/data-nav-tint="[a-z]+" class="[^"]* text-sec-[a-z]+"/g)).toHaveLength(4);
-    expect(barOn).toMatch(/class="[^"]*text-sec-signals font-semibold"[^>]*>.*Signals/);
+    expect(barOn).toMatch(/class="[^"]*text-sec-trading font-semibold"[^>]*>.*Chain/);
     expect(barOn).not.toContain("bg-brand-tint");
     for (const current of ["dashboard", "charts", "positions", null] as const) {
       const bar = render(<BottomNavV2 current={current} moreOpen={false} onMore={noop} />, true);

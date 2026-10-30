@@ -1,12 +1,13 @@
 import { ChevronDown, ExternalLink, GraduationCap, PlayCircle, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { ApiError } from "../api/errors";
 import { CARD, LINK_SECONDARY, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import type { PageProps } from "../routes";
 import { PageTitleV2 } from "../trading/PartsV2";
 import { ComingSoon } from "../ui/ComingSoon";
 import { learnApi, type LearnLibrary, type Lesson } from "./api";
+import { LEARN_WORDS_ADDRESS } from "../shell/navModel";
 import { ALL, LEARN_FLAG, isAppPath, learnGlossary, lessonsIn, safeVideoUrl, searchLessons } from "./model";
 import { EducationFrame } from "../ui/EducationFrame";
 import { PageTabs } from "../ui/PageTabs";
@@ -23,6 +24,9 @@ const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:rin
  * backend content guard runs over every lesson line). Nothing here places an order.
  */
 export default function LearnPageV2(_props: PageProps = {}) {
+  // M60: Lessons (/learn) and Words explained (/learn/words) are tabs of the shell's Learn row, beside Ideas and News & events.
+  const { pathname } = useLocation();
+  const words = pathname.replace(/\/+$/, "") === LEARN_WORDS_ADDRESS;
   const [library, setLibrary] = useState<LearnLibrary | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "failed" | "off">("loading");
 
@@ -41,14 +45,16 @@ export default function LearnPageV2(_props: PageProps = {}) {
         subtitle={library?.header.subtitle ?? "Short lessons on reading the chart, managing risk and practising on paper."} />
       {state === "loading" && <section className={`${CARD} p-space-4 md:p-space-5`} aria-busy="true"><LoadingRowsV2 rows={4} /></section>}
       {state === "failed" && <section className={`${CARD} p-space-4 md:p-space-5`}><LoadFailedV2 what="the lessons" /></section>}
-      {library && <LearnView library={library} />}
+      {library && <LearnView library={library} initialTab={words ? "glossary" : "lessons"} linked />}
     </div>
   );
 }
 
 /** The page once loaded. `initialTab` / `initialOpen` let the static render tests show any state. */
-export function LearnView({ library, initialTab = "lessons", initialOpen = [] }: {
+export function LearnView({ library, initialTab = "lessons", initialOpen = [], linked = false }: {
   library: LearnLibrary; initialTab?: "lessons" | "glossary"; initialOpen?: string[];
+  /** M60: the shell's Learn tab row names the tab (each has its own address), so this page draws no row of its own. */
+  linked?: boolean;
 }) {
   const [tab, setTab] = useState(initialTab);
   const [group, setGroup] = useState(ALL);
@@ -66,7 +72,8 @@ export function LearnView({ library, initialTab = "lessons", initialOpen = [] }:
     <>
       <EducationFrame block="learn-frame" label="About these lessons" lines={library.header.frame} />
 
-      {startHere.length > 0 && (
+      {/* M60: on its own tab (Words explained) the newcomer's lessons stay with the Lessons tab. */}
+      {startHere.length > 0 && !(linked && tab === "glossary") && (
         <section data-block="learn-start" aria-label="Start here" className={`${CARD} p-space-4 md:p-space-5`}>
           <div className="flex flex-col gap-space-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
@@ -94,8 +101,10 @@ export function LearnView({ library, initialTab = "lessons", initialOpen = [] }:
       )}
 
       <div className="flex flex-col gap-space-3 md:flex-row md:items-center md:justify-between">
-        <PageTabs label="Learn" value={tab} onChange={setTab}
-          items={[{ key: "lessons", label: "Lessons" }, { key: "glossary", label: "Words explained" }] as const} />
+        {!linked && (
+          <PageTabs label="Learn" value={tab} onChange={setTab}
+            items={[{ key: "lessons", label: "Lessons" }, { key: "glossary", label: "Words explained" }] as const} />
+        )}
         <label htmlFor={searchId} className="relative block w-full md:w-72">
           <span className="sr-only">{tab === "lessons" ? "Search the lessons" : "Search the words"}</span>
           <Search size={16} aria-hidden className="pointer-events-none absolute left-space-3 top-1/2 -translate-y-1/2 text-fg-muted" />

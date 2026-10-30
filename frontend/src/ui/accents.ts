@@ -27,13 +27,13 @@ export type SectionTint = "markets" | "trading" | "insights" | "account" | "admi
 
 /** CA3: THE section -> tint map. The nav chips and the PageHeader chip both read it, so they can never disagree. */
 export const SECTION_TINT: Record<SectionId, SectionTint> = {
-  markets: "markets",
-  strategies: "insights",
-  trading: "trading",
-  insights: "insights",
+  // M60 (owner order, approved 30 Oct): one accent per sidebar section, from the existing section tokens.
+  trade: "trading",
+  find: "signals",
+  build: "insights",
+  learn: "copilot",
   account: "account",
   more: "more",
-  admin: "admin",
 };
 
 /**
@@ -44,6 +44,8 @@ export const SECTION_TINT: Record<SectionId, SectionTint> = {
  */
 const OWN_TINT: Partial<Record<ShellKey, SectionTint>> = {
   broker: "broker", copilot: "copilot", dashboard: "today", charts: "charts", signals: "signals", positions: "trades",
+  // M60: the Terminal takes Charts' place on the bottom bar (and its hue); the Admin console keeps its own tint.
+  terminal: "charts", admin: "admin",
 };
 
 export function sectionTintOf(key: ShellKey | null): SectionTint | null {

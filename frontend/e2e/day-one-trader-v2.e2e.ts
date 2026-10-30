@@ -5,7 +5,7 @@ import { mockCharts } from "./chartsMocks";
 import { choose, expectChoice, expectComboValue } from "./combobox";
 import { mockApi } from "./mockApi";
 import { PRE_MARKET } from "../src/rhythm/fixtures";
-import { screenerTool } from "./screenerTools";
+import { openListPicker, screenerTool } from "./screenerTools";
 
 /**
  * The day-one trader test (owner order 23 Oct, trader review: "a day-one trader test with screenshots (Today ->
@@ -397,6 +397,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
 
         // 3 Find setups: NIFTY 50 on open, a ready gallery scan in one tap, its matches
         await go("/screener");
+        await openListPicker(page);                                        // M49 U6: the pickers open on "Change"
         await expectComboValue(page.getByTestId("universe-select"), "sys:index-nifty50");
         await expect(page.getByTestId("universe-count")).toHaveText("50 stocks · NIFTY 50");
         await shot("03a-find-setups");

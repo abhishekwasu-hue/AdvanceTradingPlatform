@@ -334,12 +334,13 @@ describe("FNO-1 on the chain", () => {
     expect(html).toContain("+2.2%");                       // 24,800 call: OI 7 L, change +15,000 -> 15,000 / 685,000
   });
 
-  it("the bottom strip: PCR, max pain, ATM IV, days to expiry, tap ATM to recentre, the change toggle, the basket count", () => {
+  it("the bottom strip: tap ATM to recentre, the change toggle, the basket count - no figure repeated from the summary (CT-1 C4)", () => {
     const onRecentre = vi.fn();
     const onPct = vi.fn();
     const html = renderToStaticMarkup(<ChainBottomStripV2 summary={liveChain().summary} pct={false} onPct={onPct} onRecentre={onRecentre} basketCount={2} />);
     const words = text(html);
-    for (const part of ["ATM 24,500", "PCR 0.88", "Max pain 24,500", "ATM IV 12.5%", "Expiry in 7 days", "Count %"]) expect(words).toContain(part);
+    for (const part of ["ATM 24,500", "Count %"]) expect(words).toContain(part);
+    for (const part of ["PCR", "Max pain", "ATM IV", "Expiry in"]) expect(words).not.toContain(part);   // in the summary strip only
     expect(html).toContain('aria-label="Basket: 2 legs"');
     expect(words).not.toMatch(/percentile/i);                // not available yet: left out, never made up
     expect(tradingSource).toContain("onRecentre={() => setRecentre((n) => n + 1)}");

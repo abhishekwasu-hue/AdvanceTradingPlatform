@@ -20,7 +20,8 @@ from app.core import config
 from app.core.logging_config import QueryRedactionFilter, redact_query
 from app.db.models import AuditLogRecord, LoginEventRecord, User, UserSessionRecord
 from app.main import app
-from tests.test_auth_api import _register as _register_new, _session_factory, client
+from tests.test_auth_api import _register as _register_new
+from tests.test_auth_api import _session_factory, client
 
 CLIENT_ID = "test-client-id.apps.googleusercontent.com"
 CLIENT_SECRET = "test-client-secret-never-shown"

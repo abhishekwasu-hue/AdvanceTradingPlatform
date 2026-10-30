@@ -15,7 +15,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_trader
 from app.auth.scopes import require_scope
-from app.db.models import AlertChannelRecord, AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, NotificationPolicyRecord, NotificationRecord, ScreenRecord, User
+from app.db.models import (
+    AlertChannelRecord,
+    AlertDeliveryRecord,
+    AlertEventRecord,
+    AlertRuleRecord,
+    NotificationPolicyRecord,
+    NotificationRecord,
+    ScreenRecord,
+    User,
+)
 from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
 
@@ -332,7 +341,7 @@ async def put_policy(body: PolicyBody, user: User = Depends(require_trader), ses
 
 
 async def _visible_deliveries(session: AsyncSession, user: User) -> list:
-    from app.alerts.routes import _deliveries_visible            # BT1b: the same rule as /api/alert-channels/deliveries
+    from app.alerts.routes import _deliveries_visible  # BT1b: the same rule as /api/alert-channels/deliveries
     return await _deliveries_visible(session, user)
 
 

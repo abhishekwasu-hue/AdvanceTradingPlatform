@@ -1,5 +1,5 @@
 from app.core.enums import FundamentalGrade, FusionBias, InvestmentHorizon, SignalDirection
-from app.fundamentals.engines.score import FundamentalScoreEngine, FusionEngine, WEIGHTS
+from app.fundamentals.engines.score import WEIGHTS, FundamentalScoreEngine, FusionEngine
 
 
 def test_weights_sum_to_100():

@@ -270,8 +270,8 @@ def test_the_flag_is_off_by_default_and_reaches_the_run_and_the_bar_close_engine
         seen.append(kwargs.get("vectorized"))
         return real(*args, **kwargs)
     monkeypatch.setattr(barclose, "run_screen", spy)
-    from tests.test_s4a_barclose import TUE, FakeFetch, _bars, _evaluate, _rule, ist
     from tests.test_phase_l_ai import _owner
+    from tests.test_s4a_barclose import TUE, FakeFetch, _bars, _evaluate, _rule, ist
     _, me = _owner("z10d-flag@example.com")
     rid = _rule(me["tenant_id"])
     _evaluate(rid, ist(TUE, 9, 27), FakeFetch({"TCS": _bars(ist(TUE, 9, 15), [99, 105, 50])}))
@@ -344,11 +344,12 @@ def test_the_bar_close_engine_fires_the_same_with_and_without_the_flag():
     """BK1's cycle cache (lookback per timeframe) and daily attach, then the screen: vectorised or not, the same events."""
     import json as _json
 
+    from sqlalchemy import select
+
     from app.alerts import barclose
     from app.db.models import AlertEventRecord, AlertRuleRecord, ScreenRecord
     from app.market_data.calendar import IST
     from app.screener import nodes as n
-    from sqlalchemy import select
     from tests.test_auth_api import _session_factory
     from tests.test_phase_l_ai import _owner
 

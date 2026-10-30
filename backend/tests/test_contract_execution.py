@@ -18,10 +18,10 @@ from app.execution.contract_execution import ContractExecutionError, build_order
 from app.execution.signal_execution import execute_signal_for_user
 from app.instruments.contracts import ContractRules, resolve_contract
 from app.instruments.master import parse_upstox_master, replace_master
+from tests.def0_legacy import legacy
 from tests.master_fixture import NIFTY_LOT, build_master
 from tests.test_auth_api import _register, _session_factory
 from tests.test_live_execution import _upgrade_plan
-from tests.def0_legacy import legacy
 
 TODAY = date(2026, 9, 28)
 BIG = RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0, max_open_positions=10, max_trades_per_day=50)
@@ -327,7 +327,7 @@ def test_paper_future_trades_translated_levels():
 
 def test_worker_trades_option_deployment_end_to_end(monkeypatch):
     from app.workers import trading_worker as tw
-    from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _tenant, _trades, _worker
+    from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _tenant, _trades, _worker
 
     _load_master()
     t = _tenant("fno-worker@example.com")
@@ -366,7 +366,7 @@ def test_worker_trades_option_deployment_end_to_end(monkeypatch):
 
 
 def test_worker_records_resolution_failure_without_trading(monkeypatch):
-    from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _tenant, _trades, _worker
+    from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _tenant, _trades, _worker
 
     _load_master()
     t = _tenant("fno-worker-fail@example.com")

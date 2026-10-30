@@ -3,8 +3,8 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from app.core.enums import SignalDirection
-from app.execution import india_costs
 from app.core.models import Signal, Trade
+from app.execution import india_costs
 
 IST = ZoneInfo("Asia/Kolkata")
 

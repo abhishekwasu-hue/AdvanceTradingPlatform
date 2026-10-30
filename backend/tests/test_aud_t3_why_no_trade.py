@@ -16,9 +16,9 @@ from app.db.models import DeploymentBarReasonRecord, StrategyDeploymentRecord
 from app.deployments import why
 from app.market_data.calendar import IST
 from app.strategy_engine.registry import registry
+from tests.test_auth_api import _session_factory, client
 from tests.test_settings_a_connect_ai import _flags
 from tests.test_trading_worker import STRATEGY, _deploy, _FakeBroker, _run, _signal, _tenant, _worker
-from tests.test_auth_api import _session_factory, client
 
 NOW = datetime(2026, 9, 25, 10, 32, 30, tzinfo=IST)
 

@@ -1,7 +1,7 @@
 """Phase AT: the guide - a concept library, market-aware answers, AI-grounded when configured. English only (the owner's
 ruling): a question in another script is still answered, in English."""
-import re
 import asyncio
+import re
 
 from app.ai import knowledge as k
 from tests.test_auth_api import _register, client

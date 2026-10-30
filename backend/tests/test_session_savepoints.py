@@ -16,7 +16,7 @@ from app.db.models import MarketHolidayRecord, StrategyDeploymentRecord, TradeRe
 from app.db.savepoint import guarded
 from app.workers import trading_worker as tw
 from tests.test_auth_api import _session_factory
-from tests.test_trading_worker import OPEN_NOW, STRATEGY, _FakeBroker, _deploy, _tenant, _worker
+from tests.test_trading_worker import OPEN_NOW, STRATEGY, _deploy, _FakeBroker, _tenant, _worker
 
 
 def _run(coro):
@@ -277,6 +277,7 @@ def test_a_rearmed_stop_id_survives_a_later_positions_error():
 @pytest.mark.skipif(_pg_url() is None, reason="needs Postgres at DATABASE_URL (the default unit run uses SQLite)")
 def test_on_postgres_a_rearmed_stop_id_survives_a_later_positions_error():
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
     from app.db.models import Base
 
     async def go():
@@ -294,6 +295,7 @@ def test_on_postgres_a_rearmed_stop_id_survives_a_later_positions_error():
 
 def test_one_accounts_sql_error_never_blocks_the_other_accounts_reconciliation(monkeypatch):
     from types import SimpleNamespace
+
     from app.db.models import Tenant
     from app.reconciliation import service as recon
     t = _tenant("sp-recon@example.com")

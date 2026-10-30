@@ -9,41 +9,52 @@ deployment would only discover the problem at 09:15 with real money on the line.
 import json
 import logging
 import re
-from typing import Literal, List, Optional
+from datetime import date, datetime
+from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.audit.log import write_audit_log
-from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
-from app.brokers.registry import available_brokers
-from app.brokers.gates import data_sources
-from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
 from app.accounts.routing import RoutingPolicy
 from app.accounts.service import get_account
-from app.market_data.calendar import IST
-from datetime import datetime, date
+from app.ai.regime import parse_filter, validate_filter
+from app.audit.log import write_audit_log
+from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
+from app.brokers.gates import data_sources
+from app.brokers.registry import available_brokers
+from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
 from app.core.enums import DeploymentStatus, ExecutionMode, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, SignalDirection, StrikeRule
-from app.custom_strategies.resolver import TEMPLATE_PREFIX, resolve_strategy, normalize_strategy_id
+from app.custom_strategies.resolver import TEMPLATE_PREFIX, normalize_strategy_id, resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
+from app.db.session import get_session
+from app.execution.contract_execution import contract_ltp
 from app.instruments import master as instrument_master
+from app.instruments.contracts import (
+    ContractResolutionError,
+    ContractRules,
+    describe_rules,
+    resolve_contract,
+)
+from app.instruments.spreads import (
+    MAX_CUSTOM_LEGS,
+    MAX_LEG_RATIO,
+    CustomLeg,
+    custom_legs_json,
+    describe_structure,
+    is_debit,
+    parse_custom_legs,
+    resolve_structure,
+    structure_metrics,
+)
 from app.instruments.strike_selection import StrikeFilters
-from app.trading.exit_rules import ExitRules
+from app.market_data.calendar import IST
+from app.plans.limits import check_can_add_deployment, load_tenant
 from app.strategy_templates import exits as exit_settings
 from app.strategy_templates.exits import TemplateExits, TemplateExitsBody
-from app.ai.regime import parse_filter, validate_filter
-from app.instruments.spreads import (
-    MAX_CUSTOM_LEGS, MAX_LEG_RATIO, CustomLeg, custom_legs_json, describe_structure, is_debit, parse_custom_legs, resolve_structure, structure_metrics,
-)
-from app.execution.contract_execution import contract_ltp
-from app.instruments.contracts import (
-    ContractResolutionError, ContractRules, describe_rules, resolve_contract,
-)
-from app.db.session import get_session
-from app.plans.limits import check_can_add_deployment, load_tenant
+from app.trading.exit_rules import ExitRules
 
 logger = logging.getLogger(__name__)
 

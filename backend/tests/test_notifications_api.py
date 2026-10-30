@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from app.core.models import RiskConfig, Signal
 from app.core.enums import SignalDirection, SignalGrade
+from app.core.models import RiskConfig, Signal
 from app.db.models import TradeRecord, User
 from app.strategy_engine.registry import registry
 from tests.broker_fakes import KITE_KEY

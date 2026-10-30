@@ -251,8 +251,9 @@ def test_test_send_reports_failure_detail(monkeypatch):
 
 
 def test_worker_cycle_drains_outbox(monkeypatch):
-    from app.workers.trading_worker import TradingWorker
     from zoneinfo import ZoneInfo
+
+    from app.workers.trading_worker import TradingWorker
     headers, me = _auth("alert-worker@example.com")
     _put(headers, "email", EMAIL)
     sent = []

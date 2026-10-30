@@ -13,15 +13,24 @@ All data here is made up for the test."""
 import asyncio
 import json
 import uuid
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 
 import numpy as np
 import pandas as pd
 import pytest
 from sqlalchemy import func, select
 
-from app.db.models import (AiActionRecord, AuditLogRecord, MdCandleRecord, OrderRecord, StrategyDeploymentRecord, SystemWatchlistRecord,
-                           UserPrefsRecord, WatchlistRecord)
+from app.db.models import (
+    AiActionRecord,
+    AuditLogRecord,
+    MdCandleRecord,
+    OrderRecord,
+    StrategyDeploymentRecord,
+    SystemWatchlistRecord,
+    UserPrefsRecord,
+    WatchlistRecord,
+)
 from app.market_data.calendar import IST
 from app.signals import language as L
 from app.signals_feed import day_one as D
@@ -203,6 +212,7 @@ def test_adopt_is_paper_and_approval_only_by_construction_and_creates_no_bot_pro
     assert _count(AuditLogRecord, AuditLogRecord.tenant_id == tenant, AuditLogRecord.event == "signals_day_one_adopted") == 1
     # the module itself has no path to a deployment, a proposal or an order
     import inspect
+
     from app.signals_feed import day_one_routes
     src = inspect.getsource(D) + inspect.getsource(day_one_routes)
     for word in ("StrategyDeploymentRecord", "AiActionRecord", "OrderRecord", "place_order", "submit(", "LIVE\""):

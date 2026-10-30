@@ -11,9 +11,9 @@ from fastapi.testclient import TestClient
 
 from app.auth.routes import login_rate_limit, register_rate_limit
 from app.core.rate_limit import _WINDOWS
+from app.db.session import get_session
 from app.main import app
 from tests.test_auth_api import _override_get_session
-from app.db.session import get_session
 
 
 @contextmanager

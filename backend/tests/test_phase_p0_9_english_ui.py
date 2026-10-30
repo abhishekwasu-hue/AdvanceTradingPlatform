@@ -123,6 +123,7 @@ def test_the_provider_card_lists_every_task_model_and_an_estimated_cost():
 # --- review follow-ups --------------------------------------------------------------------------------------------------
 def test_a_candidate_without_unseen_session_trades_cannot_be_adopted():
     import asyncio
+
     from app.db.models import AiCandidateRecord
     from tests.test_auth_api import _session_factory
     headers = {"Authorization": f"Bearer {_register('p09-adopt@example.com')}"}

@@ -1,5 +1,6 @@
 import pandas as pd
 
+from app.price_action.swings import alternate_swings, find_swings
 from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.levels import (
     fibonacci_levels,
@@ -9,7 +10,6 @@ from app.support_resistance.levels import (
     vwap_zone,
 )
 from app.support_resistance.zones import build_swing_zones
-from app.price_action.swings import alternate_swings, find_swings
 from tests.utils import make_series, noisy_uptrend
 
 

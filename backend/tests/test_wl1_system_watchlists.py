@@ -11,9 +11,20 @@ import pytest
 from sqlalchemy import delete, select
 
 from app.core import config
-from app.db.models import (ClassificationRecord, DataQualityEventRecord, FoMembershipRecord, IndexMembershipRecord, IndexRecord,
-                           InstrumentRecord, SecurityRecord, SymbolHistoryRecord, SystemWatchlistRecord, SystemWatchlistRefreshRecord,
-                           User, WatchlistRecord)
+from app.db.models import (
+    ClassificationRecord,
+    DataQualityEventRecord,
+    FoMembershipRecord,
+    IndexMembershipRecord,
+    IndexRecord,
+    InstrumentRecord,
+    SecurityRecord,
+    SymbolHistoryRecord,
+    SystemWatchlistRecord,
+    SystemWatchlistRefreshRecord,
+    User,
+    WatchlistRecord,
+)
 from app.universe import classification, fo_eod, indices, sources, sync
 from app.watchlists import service, system
 from tests.test_amw2_watchlists import _owner, _set_plan

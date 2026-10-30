@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import delete, select
 
+from app.beta.routes import feedback_rate_limit
 from app.db.models import AuditLogRecord, FeedbackRecord, MarketHolidayRecord, PlatformControlRecord, User
 from app.main import app
 from app.market_data.calendar import IST, SessionStatus
@@ -16,7 +17,6 @@ from app.platform.flag_catalog import FLAG_INFO
 from app.support import desk
 from app.support.desk_routes import report_rate_limit
 from app.support.scrub import REMOVED_EMAIL, REMOVED_NUMBER, REMOVED_TOKEN, REMOVED_VALUE, scrub
-from app.beta.routes import feedback_rate_limit
 from tests.test_admin_api import _admin, _owner
 from tests.test_auth_api import _session_factory, client
 

@@ -15,21 +15,21 @@ from app.accounts.service import ensure_account_for_credential
 from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, ensure_live_step_up, ensure_trader, get_current_user, require_trader
 from app.auth.scopes import require_scope
+from app.brokers import upstox_analytics
 from app.brokers.exceptions import BrokerError
 from app.brokers.field_specs import BROKER_FIELD_SPECS, SERVER_WRITTEN_FIELDS, normalise_value, public_view, validate_credentials
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
-from app.brokers import upstox_analytics
 from app.brokers.smoke import run_smoke
 from app.brokers.token_lifecycle import (
-    _is_auth_failure,
-    build_adapter,
     LOGIN_URL_BROKERS,
     OAUTH_BROKERS,
     OAUTH_CALLBACK_BROKERS,
     PERMANENT_KEY_BROKERS,
     TOKEN_DAILY_EXPIRY_IST,
+    _is_auth_failure,
     begin_oauth_login,
+    build_adapter,
     build_login_url,
     build_oauth_login_url,
     build_upstox_authorization_url,
@@ -45,9 +45,10 @@ from app.brokers.token_lifecycle import (
 )
 from app.core import config as app_config
 from app.core.config import FRONTEND_URL
-from app.core.rate_limit import allow as rate_limit_allow, user_rate_limit
 from app.core.enums import BrokerTokenStatus, NotificationSeverity, NotificationType, UserRole
 from app.core.logging_config import install_callback_query_redaction
+from app.core.rate_limit import allow as rate_limit_allow
+from app.core.rate_limit import user_rate_limit
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.notifications.service import notify

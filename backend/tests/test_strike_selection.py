@@ -4,13 +4,13 @@ import asyncio
 from datetime import date
 
 import pytest
+from sqlalchemy import select
 
 from app.brokers.models import OptionChain, OptionChainRow
 from app.core.enums import InstrumentKind, OptionPosition, SignalDirection
 from app.db.models import OrderRecord, StrategyDeploymentRecord
 from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
 from app.instruments.strike_selection import StrikeFilters, StrikeSelectionError, select_strike_with_chain
-from sqlalchemy import select
 from tests.master_fixture import NIFTY_LOT
 from tests.test_auth_api import _session_factory, client
 from tests.test_contract_rules import TODAY, _load_master
@@ -151,7 +151,7 @@ def test_filters_are_validated_stored_and_echoed_on_deployments(monkeypatch):
 def test_worker_trades_the_filtered_strike_and_records_why(monkeypatch):
     from app.workers import trading_worker as tw
     from tests.test_contract_execution import BIG
-    from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker
+    from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker
 
     _load_master()
     t = _tenant("filters-worker@example.com")

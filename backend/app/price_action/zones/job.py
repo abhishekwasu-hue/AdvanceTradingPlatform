@@ -41,8 +41,19 @@ from app.db.models import MarketZoneRunRecord, MdCandleRecord
 from app.market_data.calendar import EXCHANGE_SESSIONS, IST, ExchangeSession, session_family
 from app.price_action.zones.settings import ZoneSettings
 from app.price_action.zones.snapshot import build_snapshot, family_of, is_line
-from app.price_action.zones.store import (PLATFORM_SCOPE, followed, latest_run, normalise_key, platform_settings, rows_of, run_exists,
-                                          settings_for, settings_hash, tenant_scope, write_run)
+from app.price_action.zones.store import (
+    PLATFORM_SCOPE,
+    followed,
+    latest_run,
+    normalise_key,
+    platform_settings,
+    rows_of,
+    run_exists,
+    settings_for,
+    settings_hash,
+    tenant_scope,
+    write_run,
+)
 
 logger = logging.getLogger(__name__)
 

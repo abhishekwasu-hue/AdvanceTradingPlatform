@@ -24,6 +24,7 @@ from tests.test_exit_rules_and_backtest_depth import _candles
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND / "scripts"))
 from bench_backtest import crafted_bars  # noqa: E402
+
 from tests.def0_legacy import legacy
 
 GOLDEN = json.loads((BACKEND / "tests" / "golden" / "c2_default_models.json").read_text())

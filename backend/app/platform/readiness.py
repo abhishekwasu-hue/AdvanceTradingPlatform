@@ -28,8 +28,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.alerts import fcm, webpush
 from app.brokers.token_lifecycle import token_is_usable
 from app.core import config
-from app.db.models import (AiProviderConfigRecord, AlertChannelRecord, BrokerCredentialRecord, KillSwitchRecord, MarketHolidayRecord,
-                           RiskLimitRecord, RiskSettingsRecord, StrategyDeploymentRecord, Tenant, User)
+from app.db.models import (
+    AiProviderConfigRecord,
+    AlertChannelRecord,
+    BrokerCredentialRecord,
+    KillSwitchRecord,
+    MarketHolidayRecord,
+    RiskLimitRecord,
+    RiskSettingsRecord,
+    StrategyDeploymentRecord,
+    Tenant,
+    User,
+)
 from app.instruments.master import master_status
 from app.notifications import mailer
 from app.observability.routes import _check_migrations, _check_redis, _check_worker

@@ -570,10 +570,10 @@ def _overdue(row: PaperRestingOrderRecord, now: datetime, timeout: float) -> boo
 
 async def _resolve_firing(session: AsyncSession, tenant_id: Optional[int], purpose: Optional[str], prices: Optional[_Prices],
                           broker: Optional[BrokerInterface], now: datetime, report: EngineReport, paper_only: bool,
-                          timeout: Optional[float] = None) -> None:
+                          ack_timeout: Optional[float] = None) -> None:
     """Every FIRING order (of the organisation and purpose; None = all) still not acknowledged after the ack timeout
-    (`timeout` 0: every one, at start-up) - exits first - settled through `_reconcile`, before any new trigger."""
-    timeout = TRIGGER_ACK_TIMEOUT_SECONDS if timeout is None else timeout
+    (`ack_timeout` 0: every one, at start-up) - exits first - settled through `_reconcile`, before any new trigger."""
+    timeout = TRIGGER_ACK_TIMEOUT_SECONDS if ack_timeout is None else ack_timeout
     query = select(PaperRestingOrderRecord).where(PaperRestingOrderRecord.status == book.FIRING)
     if tenant_id is not None:
         query = query.where(PaperRestingOrderRecord.tenant_id == tenant_id)
@@ -598,7 +598,7 @@ async def reconcile_on_start(session: AsyncSession, now: Optional[datetime] = No
     on the first pass that has its price (and, for a LIVE exit, the position's broker session)."""
     now = now or datetime.now(timezone.utc)
     report = EngineReport()
-    await _resolve_firing(session, None, None, None, None, now, report, False, timeout=0.0)
+    await _resolve_firing(session, None, None, None, None, now, report, False, ack_timeout=0.0)
     return report
 
 # --- combined exits (CX / SX, app/execution/group_exits.py) -------------------------------------------------------------

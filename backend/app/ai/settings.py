@@ -7,7 +7,17 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.providers import DEFAULT_MODELS, DEFAULT_PROVIDER, LLMProvider, PROVIDERS, ProviderError, RuleBasedProvider, build_provider, default_models, model_for
+from app.ai.providers import (
+    DEFAULT_MODELS,
+    DEFAULT_PROVIDER,
+    PROVIDERS,
+    LLMProvider,
+    ProviderError,
+    RuleBasedProvider,
+    build_provider,
+    default_models,
+    model_for,
+)
 from app.audit.log import write_audit_log
 from app.db.models import AiProviderConfigRecord, Tenant, User
 from app.plans.limits import feature_allowed

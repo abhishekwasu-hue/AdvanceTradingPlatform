@@ -19,7 +19,8 @@ modifies the broker-side SL-M to the new trigger).
 """
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, time as dtime, timedelta
+from datetime import datetime, timedelta
+from datetime import time as dtime
 from typing import Optional
 from zoneinfo import ZoneInfo
 

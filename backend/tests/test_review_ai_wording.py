@@ -7,7 +7,8 @@ import json
 
 import pytest
 
-from app.ai import copilot, generator, knowledge as k, strategist, wording
+from app.ai import copilot, generator, strategist, wording
+from app.ai import knowledge as k
 from app.db.models import Tenant, User
 from tests.test_auth_api import _session_factory, client
 from tests.test_phase_l_ai import VALID_ANSWER, _owner

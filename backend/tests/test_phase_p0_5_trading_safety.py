@@ -130,9 +130,9 @@ def test_stop_order_type_follows_the_broker_capability_matrix():
     assert stop_order_params(BrokerCapabilities(stop_market=False), "BTCINR", OrderSide.SELL, 100.0) == ("SL", 99.0)
     assert stop_order_params(kite, "RELIANCE", OrderSide.SELL, 98.0, is_option=True)[0] == "SL"         # caller knows better
     assert [looks_like_option(s) for s in ("RELIANCE", "ICICIPRULI", "NIFTY FUT 30 OCT 26", "NIFTY-OCT2026-26000-CE", "NIFTY30OCT26C26000")] == [False, False, False, True, True]
-    from app.brokers.zerodha import ZerodhaBroker
     from app.brokers.coindcx import CoinDCXBroker
     from app.brokers.fyers import FyersBroker
+    from app.brokers.zerodha import ZerodhaBroker
     assert ZerodhaBroker.capabilities.stop_market_on_options is False and FyersBroker.capabilities.stop_market_on_options is True
     assert CoinDCXBroker.capabilities.stop_market is True            # the adapter converts SL-M to its stop-limit itself
 
@@ -173,9 +173,9 @@ def test_protected_limit_entries_send_a_marketable_limit_and_default_stays_marke
 
 # --- T3 ------------------------------------------------------------------------------------------------------------------
 def test_structure_shorts_wait_for_confirmed_wing_fills(monkeypatch):
+    from app.core.enums import OptionStrategy
     from app.execution.multileg import _place_live_legs
     from app.instruments.spreads import resolve_structure
-    from app.core.enums import OptionStrategy
     from tests.test_contract_rules import TODAY, _load_master
     from tests.test_multileg import SPOT, _OptionBroker, _rules
     monkeypatch.setattr("app.execution.router.OrderRouter.fill_poll_delay_seconds", 0)
@@ -286,8 +286,8 @@ def test_trading_day_starts_at_ist_midnight():
 
 
 def test_daily_loss_counts_marked_open_positions_on_the_ist_day():
-    from app.risk_engine.hierarchy import RiskContext, RiskLimitType, _measure
     from app.db.models import RiskLimitRecord
+    from app.risk_engine.hierarchy import RiskContext, RiskLimitType, _measure
     headers = _headers(_register("p05-marks@example.com"))
     me = client.get("/api/auth/me", headers=headers).json()
     now = datetime.now(timezone.utc)
@@ -368,9 +368,9 @@ def test_a_remainder_already_terminal_at_the_broker_is_not_cancelled_again():
 
 
 def test_structure_leg_filled_during_the_cancel_is_unwound_not_orphaned(monkeypatch):
+    from app.core.enums import OptionStrategy
     from app.execution.multileg import _place_live_legs
     from app.instruments.spreads import resolve_structure
-    from app.core.enums import OptionStrategy
     from tests.test_contract_rules import TODAY, _load_master
     from tests.test_multileg import SPOT, _OptionBroker, _rules
     monkeypatch.setattr("app.execution.router.OrderRouter.fill_poll_delay_seconds", 0)
@@ -432,7 +432,9 @@ def test_unrealised_counts_only_positions_opened_and_marked_today():
 
 def test_coindcx_book_includes_filled_orders_it_placed_and_refuses_trigger_edits():
     import json as _json
+
     import httpx
+
     from app.brokers.coindcx import CoinDCXBroker
     from app.brokers.exceptions import BrokerAPIError
     from app.brokers.models import BrokerCredentials

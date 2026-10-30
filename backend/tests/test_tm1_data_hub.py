@@ -33,7 +33,7 @@ from app.market_data.service import MarketDataService
 from app.market_data.stream import Tick, TickStream
 from app.platform import controls
 from tests.test_auth_api import _session_factory, client
-from tests.test_market_data_service import _MemoryCache, _install_cache
+from tests.test_market_data_service import _install_cache, _MemoryCache
 from tests.test_phase_aa_market_data_api import _store_credentials
 from tests.test_phase_k_commercial import _owner
 
@@ -496,7 +496,7 @@ def test_rate_limited_outcome_is_counted_apart():
 # --- the worker ---------------------------------------------------------------------------------------------------------
 
 def test_worker_streams_the_organisation_through_the_hub_when_the_flag_is_on(monkeypatch):
-    from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _tenant, _worker
+    from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _tenant, _worker
     t = _tenant(_email("worker"))
     _deploy(t, symbol="RELIANCE")
     _flags([t["tenant_id"]], data_hub=True)
@@ -530,7 +530,7 @@ def test_worker_streams_the_organisation_through_the_hub_when_the_flag_is_on(mon
 
 
 def test_worker_with_an_ended_login_says_renew_once(monkeypatch):
-    from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _tenant, _worker
+    from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _tenant, _worker
     t = _tenant(_email("worker-exp"), token_status="EXPIRED")
     _deploy(t, symbol="RELIANCE")
     _flags([t["tenant_id"]], data_hub=True)

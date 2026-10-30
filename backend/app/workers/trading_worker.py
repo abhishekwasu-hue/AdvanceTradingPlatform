@@ -30,66 +30,64 @@ import socket
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.brokers.base import BrokerInterface
+from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
+from app.accounts.service import default_account, get_account, list_accounts, routing_for_deployment, sync_account
+from app.ai import monitor as ai_monitor
+from app.ai import thesis as thesis_module
+from app.ai.regime import classify_regime, parse_filter, regime_note
 from app.alerts.dispatcher import dispatch_pending
+from app.backtest import chain_recorder
+from app.billing.service import sweep as billing_sweep
+from app.brokers import login_reminder
+from app.brokers.base import BrokerInterface
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, daily_budget_for, limits_for
-from app.platform import phase0_lock
-from app.execution.ops_throttle import OpsThrottle
-from app.compliance.static_ip import live_entry_problem
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
 from app.cache.client import cache_lock_holder, cache_release_lock, cache_renew_lock, cache_try_lock
+from app.compliance.static_ip import live_entry_problem
 from app.core import config as app_config
-from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, WORKER_CYCLE_SECONDS
+from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST, WORKER_CYCLE_SECONDS
 from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy, SignalDirection
 from app.core.logging_config import bind_log_context, configure_logging
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import StrategyDeploymentRecord, Tenant, TradeRecord, User, VisionReportRecord, WorkerHeartbeatRecord
 from app.db.savepoint import guarded
-from app.plans.limits import live_allowed, tenant_is_active
-from app.retention.service import RetentionReport, run_retention
-from app.billing.service import sweep as billing_sweep
-from app.ai import monitor as ai_monitor
-from app.ai import thesis as thesis_module
-from app.brokers import login_reminder
-from app.workers import eod_summary
-from app.workers.redis_guard import RedisGuard
-from app.news_feed import service as news_feed
-from app.platform import controls as platform_controls
-from app.ai.regime import classify_regime, parse_filter, regime_note
-from app.observability.metrics import RETENTION_DELETED, observe_cycle
-from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
-from app.instruments import master
-from app.instruments.master import sync_upstox
-from app.backtest import chain_recorder
-from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
-from app.instruments.spreads import parse_custom_legs, resolve_structure
+from app.deployments import why as why_log
 from app.execution import approval
 from app.execution.multileg import execute_structure
+from app.execution.ops_throttle import OpsThrottle
 from app.execution.signal_execution import execute_signal_for_user
+from app.instruments import master
+from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
+from app.instruments.master import sync_upstox
+from app.instruments.spreads import parse_custom_legs, resolve_structure
 from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
-from app.market_data.freshness import candle_staleness, closed_frames
-from app.deployments import why as why_log
-from app.market_data.service import MarketDataService
 from app.market_data.fanin import UserSessionFanIn
+from app.market_data.freshness import candle_staleness, closed_frames
 from app.market_data.hub import DataHub
+from app.market_data.service import MarketDataService
 from app.market_data.stream import StreamManager
 from app.market_lake.recorder import LakeRecorder
-from app.observability.metrics import MARKET_DATA_STALE
-from app.reconciliation.service import broker_uncertain_reason, reconcile_accounts, run_reconciliation
-from app.secrets_store.envelope import ensure_tenant_key
-from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
-from app.accounts.service import default_account, get_account, list_accounts, routing_for_deployment, sync_account
+from app.news_feed import service as news_feed
 from app.notifications.service import notify
-from app.trading.position_monitor import (broker_for_trade, close_group, close_position, monitor_open_positions,
-                                          open_trade_families_by_tenant, trade_venues)
-from app.trading.stop_guard import verify_protective_stops
+from app.observability.metrics import MARKET_DATA_STALE, RETENTION_DELETED, observe_cycle
+from app.plans.limits import live_allowed, tenant_is_active
+from app.platform import controls as platform_controls
+from app.platform import phase0_lock
+from app.reconciliation.service import broker_uncertain_reason, reconcile_accounts, run_reconciliation
+from app.retention.service import RetentionReport, run_retention
+from app.secrets_store.envelope import ensure_tenant_key
 from app.strategy_templates.exits import TemplateExits
+from app.trading.position_monitor import broker_for_trade, close_group, close_position, monitor_open_positions, open_trade_families_by_tenant, trade_venues
+from app.trading.stop_guard import verify_protective_stops
+from app.workers import eod_summary
+from app.workers.redis_guard import RedisGuard
 
 logger = logging.getLogger(__name__)
 
@@ -749,15 +747,15 @@ class TradingWorker:
                             from app.universe.sync import sync_equity_lists
                             u = await sync_equity_lists(session, NseArchiveSource(), ist_now.date())
                             report.universe_synced = {"inserted": u.inserted, "updated": u.updated, "seen": u.seen, "refused": len(u.refused)}
-                            from app.universe import indices as universe_indices                     # U1-b: constituents after the list
+                            from app.universe import indices as universe_indices  # U1-b: constituents after the list
                             idx = await universe_indices.sync_indices(session, NseArchiveSource(universe_indices.source_urls()), ist_now.date())
                             report.universe_synced.update(indices=len(idx), rebalanced=sum(1 for r in idx if r.entered or r.exited),
                                                           indices_refused=sum(1 for r in idx if r.refused))
-                            from app.universe import fo_eod                                          # U1-c: closes, lots, ban list
+                            from app.universe import fo_eod  # U1-c: closes, lots, ban list
                             fo = await fo_eod.sync_fo_and_index_eod(session, NseArchiveSource(fo_eod.dated_urls(ist_now.date())), ist_now.date())
                             report.universe_synced.update(index_closes=fo.index_rows, fo_changes=len(fo.fo_entered) + len(fo.fo_exited) + len(fo.lot_changes),
                                                           banned=len(fo.banned), fo_refused=len(fo.refused))
-                            from app.universe import classification                                  # WL1: the full NSE classification,
+                            from app.universe import classification  # WL1: the full NSE classification,
                             cls = await classification.sync_classification(session, NseArchiveSource(), ist_now.date())  # when its URL is set
                             if cls is not None:
                                 report.universe_synced.update(classified=cls.changed, classification_refused=int(bool(cls.refused)))
@@ -941,7 +939,8 @@ class TradingWorker:
         usable broker session and stored as ITS rows - never through another organisation's session, never read by
         another organisation (an organisation without a usable session simply has no slot). A slot already stored (by
         another replica or cycle) is skipped. Never places an order."""
-        from app.option_chain import oi_regime, snapshots as oi_snapshots
+        from app.option_chain import oi_regime
+        from app.option_chain import snapshots as oi_snapshots
         wanted: Dict[str, List[Tuple[int, str]]] = {}
         for tenant_id, underlying, exchange in await oi_snapshots.enabled_underlyings(session):
             wanted.setdefault(underlying, []).append((tenant_id, exchange))

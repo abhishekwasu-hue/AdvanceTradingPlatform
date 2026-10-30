@@ -11,13 +11,29 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import evidence
-from app.ai.rate_limit import ai_rate_limit
-from app.ai import advisor, briefing, proposal_card, coach, copilot, generator, market_study, strategist, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings, thesis
+from app.ai import (
+    advisor,
+    briefing,
+    coach,
+    copilot,
+    evidence,
+    generator,
+    global_cues,
+    interview,
+    knowledge,
+    market_memory,
+    market_study,
+    monitor,
+    proposal_card,
+    strategist,
+    thesis,
+)
 from app.ai import compliance_terms as terms
 from app.ai import resolve as ai_resolve
+from app.ai import settings as ai_settings
 from app.ai.compliance_terms import ai_acknowledged, require_ai_acknowledged
 from app.ai.providers import ProviderError
+from app.ai.rate_limit import ai_rate_limit
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_owner, require_trader
 from app.auth.scopes import require_scope
@@ -28,9 +44,9 @@ from app.core.models import OHLCVBar, RiskConfig, bars_to_dataframe
 from app.db.models import AiActionRecord, AiCandidateRecord, AiStrategyDraftRecord, BacktestRunRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
 from app.db.session import get_session
 from app.plans.limits import require_feature
+from app.platform.controls import flag_enabled, require_flag
 from app.risk_engine.routes import get_tenant_risk_config
 from app.strategy_engine.declarative import DeclarativeStrategy
-from app.platform.controls import flag_enabled, require_flag
 
 router = APIRouter(prefix="/api/ai", tags=["ai"], dependencies=[Depends(ai_rate_limit)])      # H-C1 b
 
@@ -726,6 +742,7 @@ async def snooze_action(action_id: int, body: SnoozeBody, user: User = Depends(r
 
 async def _coach_review(session: AsyncSession, user: User, lang: str, days: int, mode: str) -> dict:
     from datetime import timedelta
+
     from app.db.models import TradeRecord
     since = datetime.now(timezone.utc) - timedelta(days=days)
     query = select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id,

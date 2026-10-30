@@ -91,7 +91,8 @@ async def _analyses(session: AsyncSession, user: User, tenant: Tenant, now: date
     from app.platform.controls import flag_enabled
     if not await flag_enabled(session, "chart_analyze", tenant.id):
         return None
-    from app.chart_analyze import limits as ca_limits, settings as ca_settings
+    from app.chart_analyze import limits as ca_limits
+    from app.chart_analyze import settings as ca_settings
     return await ca_limits.usage(session, user, tenant, await ca_settings.load(session), now)
 
 

@@ -2,7 +2,11 @@ from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from app.market_data.calendar import (
-    IST, is_trading_day, next_trading_day, session_status, to_ist,
+    IST,
+    is_trading_day,
+    next_trading_day,
+    session_status,
+    to_ist,
 )
 
 REPUBLIC_DAY_2026 = date(2026, 1, 26)

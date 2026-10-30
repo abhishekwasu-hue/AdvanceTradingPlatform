@@ -26,14 +26,14 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))          # backend/
 
-from app.screener import runtime                                        # noqa: E402
-from app.screener.breakouts import screens                              # noqa: E402
-from app.screener.breakouts import templates as bt                      # noqa: E402
-from app.screener.parser import parse                                   # noqa: E402
-from app.screener.runtime import SymbolData, evaluate                   # noqa: E402
-from app.strategy_templates import compile as C                        # noqa: E402
-from app.strategy_templates import engine, library                     # noqa: E402
-from tests.mirror_tie_fixtures import legacy_dow, legacy_swing_label, series   # noqa: E402
+from app.screener import runtime  # noqa: E402
+from app.screener.breakouts import screens  # noqa: E402
+from app.screener.breakouts import templates as bt  # noqa: E402
+from app.screener.parser import parse  # noqa: E402
+from app.screener.runtime import SymbolData, evaluate  # noqa: E402
+from app.strategy_templates import compile as C  # noqa: E402
+from app.strategy_templates import engine, library  # noqa: E402
+from tests.mirror_tie_fixtures import legacy_dow, legacy_swing_label, series  # noqa: E402
 
 TFS = ("15m", "1h", "1d")
 Hits = Set[Tuple[Any, ...]]

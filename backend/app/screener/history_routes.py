@@ -27,8 +27,8 @@ from app.db.session import get_session
 from app.platform.controls import require_flag
 from app.screener import history as H
 from app.screener import nodes
-from app.screener.routes import _compiled, _gate, _owned, missing_data, run_rate_limit
 from app.screener.routes import FLAG as SCREENER_FLAG
+from app.screener.routes import _compiled, _gate, _owned, missing_data, run_rate_limit
 
 router = APIRouter(prefix="/api/screener/history", tags=["screener"])
 
@@ -96,9 +96,9 @@ async def _screen(session: AsyncSession, user: User, body: Screen) -> Tuple[Any,
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation",
                                                      "problems": [p.as_dict() for p in validated.problems]})
     from app.screener import fundamentals as fundamentals_gate
+    from app.screener import ownership as ownership_gate
     from app.screener import ranking as ranking_gate
     from app.screener import zones as zone_gate
-    from app.screener import ownership as ownership_gate
     owned = ownership_gate.flagged_calls(ast)
     if owned:                                     # N3 S8a (provisional S8-4): history does not load ownership / events yet
         raise HTTPException(status_code=422, detail=ownership_gate.elsewhere_refusal(owned, "screen history runs"))
@@ -398,8 +398,8 @@ async def _backtest_trials(session: AsyncSession, tenant_id: int, since: datetim
 async def _rank_gates(session: AsyncSession, user: User, rank_ast: Any, rank_validated: Any, params: Dict[str, Any]) -> None:
     """Review of S6b (MED): rank_by passes the gates a screen passes - the flagged families (breakouts, zones...), the
     data the history run does not load, the last-bar-only functions (no series to read back) - and must be a number."""
-    from app.screener import ownership as ownership_gate
     from app.screener import fundamentals as fundamentals_gate
+    from app.screener import ownership as ownership_gate
     from app.screener import zones as zone_gate
     from app.screener.registry import NUM
     from app.screener.validator import NOT_A_CONDITION, _Checker

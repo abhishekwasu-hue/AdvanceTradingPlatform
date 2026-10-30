@@ -27,10 +27,10 @@ broker's order API, and nothing here ever stands in the way of an exit (ADR-0004
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 from dataclasses import dataclass, field
-import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 

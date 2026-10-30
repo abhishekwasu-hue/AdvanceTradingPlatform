@@ -34,8 +34,7 @@ from app.brokers import catalog as cat
 from app.brokers import upstox_analytics as ua
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import BrokerCredentials
-from app.brokers.routes import (_byob, _clean_label, _code_from_paste, _ensure_holder, _probe_quietly, run_authentication,
-                                save_credentials)
+from app.brokers.routes import _byob, _clean_label, _code_from_paste, _ensure_holder, _probe_quietly, run_authentication, save_credentials
 from app.brokers.token_lifecycle import LOGIN_URL_BROKERS, _is_auth_failure, get_credential_record, load_credentials, token_is_usable
 from app.core.enums import BrokerTokenStatus
 from app.core.rate_limit import user_rate_limit

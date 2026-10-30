@@ -84,6 +84,7 @@ def _lookalike(order_id, status, *, tag=None, placed_at=None, product=None, exch
 def _exit_tag(broker):
     """The tag this platform's exits of a STRATEGY position carry at `broker` (no algo id registered)."""
     from types import SimpleNamespace
+
     from app.compliance.algo_id import order_algo_id
     return pm.expected_exit_tag(SimpleNamespace(strategy_id=STRATEGY), broker, order_algo_id(None, broker.name))
 
@@ -922,6 +923,7 @@ def test_the_stop_guard_never_counts_an_order_another_position_records_as_this_e
 def test_adapters_read_a_naive_order_time_as_ist():
     """Kite and Upstox send `order_timestamp` as a naive IST wall time; Noren sends `norentm` as "HH:MM:SS DD-MM-YYYY"."""
     import httpx
+
     from app.brokers.models import BrokerCredentials
     from app.brokers.shoonya import ShoonyaBroker
     from app.brokers.upstox import UpstoxBroker

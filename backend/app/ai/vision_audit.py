@@ -56,8 +56,16 @@ from app.ai.metering import log_call
 from app.ai.providers import Completion, ProviderError
 from app.audit.log import write_audit_log
 from app.core import config
-from app.db.models import (AiActionRecord, AlertChannelRecord, AlertRuleRecord, StrategyDeploymentRecord, TradeRecord, User, UserVisionPrefsRecord,
-                           VisionReportRecord)
+from app.db.models import (
+    AiActionRecord,
+    AlertChannelRecord,
+    AlertRuleRecord,
+    StrategyDeploymentRecord,
+    TradeRecord,
+    User,
+    UserVisionPrefsRecord,
+    VisionReportRecord,
+)
 
 logger = logging.getLogger(__name__)
 

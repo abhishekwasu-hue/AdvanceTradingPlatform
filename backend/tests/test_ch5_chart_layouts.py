@@ -71,6 +71,7 @@ def test_layouts_accept_week_month_and_bars_and_still_refuse_unknown_values():
     """UI2-4a2-pre: the Charts page saves W, M and the "bars" chart type; W/M/D are stored as their ids; old layouts and
     every older value stay valid; anything else is still refused."""
     from typing import get_args
+
     from app.charts.layouts import Cell
     assert get_args(Cell.model_fields["timeframe"].annotation) == layouts.TIMEFRAMES
     assert get_args(Cell.model_fields["chart_type"].annotation) == layouts.CHART_TYPES

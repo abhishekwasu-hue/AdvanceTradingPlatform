@@ -19,12 +19,11 @@ from typing import Awaitable, Callable, Optional, Sequence, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.brokers.models import OptionChain
 from app.core.enums import ExpiryRule, InstrumentKind, OptionPosition, OrderSide, SignalDirection, StrikeRule
 from app.db.models import InstrumentRecord, StrategyDeploymentRecord
-from app.brokers.models import OptionChain
 from app.instruments import master
 from app.instruments.strike_selection import SelectionResult, StrikeFilters, StrikeSelectionError, select_strike_with_chain
-
 
 
 class ContractResolutionError(ValueError):

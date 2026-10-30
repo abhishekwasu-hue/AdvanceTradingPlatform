@@ -415,8 +415,7 @@ def test_platform_wide_and_other_tenant_rows_survive_the_cleanup(db):
 
     from sqlalchemy import delete, select
 
-    from app.db.models import (CustomStrategyRecord, MarketEventRecord, MarketplaceChargeRecord, MarketplaceListingRecord,
-                               PlatformControlRecord, User)
+    from app.db.models import CustomStrategyRecord, MarketEventRecord, MarketplaceChargeRecord, MarketplaceListingRecord, PlatformControlRecord, User
     api._register("h2.bystander@example.org")
     stamp, accounts, info = _seeded(api, 2)
     lt_user = info["user_ids"][0]
@@ -462,12 +461,9 @@ def test_platform_wide_and_other_tenant_rows_survive_the_cleanup(db):
 
 def test_rows_the_org_owns_outside_the_allowlist_refuse_the_whole_cleanup(db):
     api = db
-    from sqlalchemy import func, select
+    from sqlalchemy import func, select, update
 
-    from app.db.models import CustomStrategyRecord, UserSessionRecord
-    from sqlalchemy import update
-
-    from app.db.models import User
+    from app.db.models import CustomStrategyRecord, User, UserSessionRecord
     stamp, accounts, info = _seeded(api, 1)
     bystander = api._register(f"refused.bystander.{stamp}@example.org")             # another organisation: must stay as it is
     assert api.client.post("/api/auth/login", json={"email": accounts[0][0], "password": accounts[0][1]}).status_code == 200

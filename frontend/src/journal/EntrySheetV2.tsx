@@ -4,7 +4,7 @@ import { errorSentence } from "../api/errors";
 import { Sheet } from "../components/primitives/Dialog";
 import { useToast } from "../components/Toast";
 import { LoadingRowsV2 } from "../dashboard/CardV2";
-import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD } from "../trading/PartsV2";
+import { BUTTON_PRIMARY, BUTTON_SECONDARY } from "../trading/PartsV2";
 import { chipClass } from "../ui/Chip";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ErrorState } from "../ui/ErrorState";

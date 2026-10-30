@@ -18,6 +18,7 @@ import { resultShapes } from "./shapes";
 import { guardResult } from "./signalLanguage";
 import type { StrikesState } from "./StrikesSectionV2";
 import type { AnalysisItem, AnalyzeStatus } from "./types";
+import { ENGINE_ADMIN_TITLE } from "../admin/chartEngineNotice";
 
 /**
  * Analyze a chart (docs/design/CHART_ANALYZE.md): upload a chart image (file, paste, drag and drop) or paste a chart
@@ -36,7 +37,7 @@ export const SNAPSHOT_HELP = "On TradingView press Alt+S (Option+S on a Mac): it
  * (no internal names) and the admin's headline (the server sends the owner's steps to SUPER_ADMIN only). */
 export const ENGINE_USER_TITLE = "Chart upload analysis is being switched on";
 export const ENGINE_USER_LINE = "Your saved analyses are kept. Please check again later.";
-export const ENGINE_ADMIN_TITLE = "Chart analysis engine not installed — owner action";
+export { ENGINE_ADMIN_TITLE };                              // admin text: frontend/src/admin/chartEngineNotice.ts
 /** The "Option strikes · from your settings" block has its own flag on top (owner's tenant first). */
 export const STRIKES_FLAG = "chart_analyze_strikes";
 /** "Share with my organisation" (PR-A4): its own flag on top; a link opens `?shared=<link>` on this page. */

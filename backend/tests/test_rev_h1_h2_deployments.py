@@ -61,6 +61,7 @@ def test_no_contracts_in_the_instrument_list_is_its_own_reason():
     assert "master" not in detail["message"]                       # plain words, no internal table name
 
 
+@pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: LIVE is off by default; the owner's LIVE posture
 def test_broker_login_needed_for_live_is_its_own_reason():
     headers = _auth("rev-h1-login@example.com")
     _store_broker(headers)                                         # token UNKNOWN

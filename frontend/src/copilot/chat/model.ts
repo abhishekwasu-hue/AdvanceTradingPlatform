@@ -138,6 +138,8 @@ export function actionState(answer: Pick<ChatAnswer, "draft">): { copilotDraft: 
 export const chatApi = {
   home: () => request<ChatHome>("/ai/chat/home"),
   ask: (message: string) => request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message }) }),
+  /** M59 CR-2: the rule answer only (its structure card), never the AI wording - no metered AI call the user did not ask for. */
+  askRules: (message: string) => request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message, wording: false }) }),
   /** CU6: the person's own conversation, oldest turn first. */
   history: () => request<ChatHistory>("/ai/chat/history"),
   /** CU6: Settings → My data, "Delete my Copilot conversation". */

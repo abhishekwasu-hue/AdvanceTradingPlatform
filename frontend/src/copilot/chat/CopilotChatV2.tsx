@@ -216,6 +216,15 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
                     <div className={`${CARD} space-y-space-2 p-space-4`} data-chart-reading>
                       <h3 className="text-t13 font-semibold text-fg-muted">{t("chat.chartReading")}</h3>
                       <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
+                      {(() => {
+                        // M59 CR-2: the AI words only on the user's own tap (an ordinary question, metered as any other)
+                        const question = turn.chart.status === "done" ? readingQuestion(turn.chart.item) : null;
+                        return question ? (
+                          <button type="button" className={CHIP} disabled={busy} data-explain-words onClick={() => onAsk(question)}>
+                            {t("chat.explainWords")}
+                          </button>
+                        ) : null;
+                      })()}
                     </div>
                   )}
                 </>
@@ -385,9 +394,11 @@ export function CopilotChatV2() {
       let imageSrc: string | null = null;
       try { imageSrc = URL.createObjectURL(await chartAnalyzeApi.image(done.id)); images.current.push(imageSrc); } catch { /* the reading shows without the picture */ }
       show({ status: "done", item: done, imageSrc });
+      // ATP's own structure card for the picture's symbol: the rule answer only (wording=false) - no AI call here; the
+      // AI words come only when the user taps "Explain in words" (an ordinary question of his own)
       const question = readingQuestion(done);
       if (question) {
-        const answer = await chatApi.ask(question).catch(() => null);
+        const answer = await chatApi.askRules(question).catch(() => null);
         if (answer) setTurns((all) => settled(all, id, answer, null));
       }
     } catch (e) {

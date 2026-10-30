@@ -45,10 +45,10 @@ function analysed(id: number): AnalysisItem {
   return { ...item, result: { ...item.result!, recognised: { ...item.result!.recognised, symbol: "NIFTY" } } };
 }
 
-interface Seen { adds: { link: string | null; file: boolean }[]; analyzes: number; asked: string[] }
+interface Seen { adds: { link: string | null; file: boolean }[]; analyzes: number; asked: string[]; wording: boolean[] }
 
 async function open(page: Page, { chart = true, engine = fixtureStatus().engine, admin = false }: { chart?: boolean; engine?: AnalyzeStatus["engine"]; admin?: boolean } = {}): Promise<Seen> {
-  const seen: Seen = { adds: [], analyzes: 0, asked: [] };
+  const seen: Seen = { adds: [], analyzes: 0, asked: [], wording: [] };
   await page.clock.install({ time: new Date("2026-10-21T09:00:00+05:30") });
   await page.addInitScript(() => {
     try { localStorage.setItem("atp_appearance", JSON.stringify({ theme: "light" })); localStorage.setItem("atp_install_dismissed", "1"); } catch { /* none */ }
@@ -61,8 +61,9 @@ async function open(page: Page, { chart = true, engine = fixtureStatus().engine,
     const r = route.request();
     if (r.url().endsWith("/history")) return route.fulfill({ json: { turns: [], keep: 20 } });
     if (r.method() === "GET") return route.fulfill({ json: F.home });
-    const message = (r.postDataJSON() as { message: string }).message;
+    const { message, wording } = r.postDataJSON() as { message: string; wording?: boolean };
     seen.asked.push(message);
+    seen.wording.push(wording !== false);
     return route.fulfill({ json: message === "Read the NIFTY chart" ? CARD : F.answers["Should I buy RELIANCE today?"] });
   });
   await page.route(/\/api(?:\/v1)?\/chart-analyze\/.*/, async (route: Route) => {
@@ -109,6 +110,7 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
       expect(seen.adds).toEqual([{ link: null, file: true }]);
       expect(seen.analyzes).toBe(1);
       expect(seen.asked).toEqual(["Read the NIFTY chart"]);
+      expect(seen.wording).toEqual([false]);                       // no AI wording (no metered AI call) until the user taps
       if (width === 390) await expectPhoneLayout(page);
       const dir = process.env.M59_SHOTS;
       if (dir) {
@@ -121,6 +123,18 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
 
 test.describe("v2 copilot - M59 CR-2 attach, 390", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  test("the AI words come only on the user's tap: 'Explain in words' asks the ordinary question", async ({ page }) => {
+    const seen = await open(page);
+    await upload(page);
+    const explain = page.locator("[data-explain-words]");
+    await expect(explain).toBeVisible();
+    expect(seen.wording).toEqual([false]);
+    await explain.click();
+    await expect(page.locator("[data-turn]")).toHaveCount(2);
+    expect(seen.asked).toEqual(["Read the NIFTY chart", "Read the NIFTY chart"]);
+    expect(seen.wording).toEqual([false, true]);
+  });
 
   test("the menu above the Ask box: two choices and the Alt+S line", async ({ page }) => {
     await open(page);

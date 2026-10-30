@@ -125,6 +125,7 @@ export const COPILOT_EN = {
     chartFailed: "The analysis did not finish.",
     chartOpenPage: "Open in Analyze a chart",
     chartReading: "ATP's own structure reading",
+    explainWords: "Explain in words",
   },
   firstUse: {
     title: "Before you start",

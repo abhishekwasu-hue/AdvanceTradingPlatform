@@ -83,6 +83,12 @@ describe("M59 CR-2: the chart attach in the Ask box", () => {
     expect(html).toContain("data-chart-card");
     expect(text(html)).toContain("Analyze my chart");
     expect(html).not.toContain("data-chart-reading");
+    const done: Turn = { ...turn, chart: { status: "done", item: { ...fixtureItem(7, "formed"), result: { ...fixtureItem(7, "formed").result!,
+      recognised: { ...fixtureItem(7, "formed").result!.recognised, symbol: "NIFTY" } } }, imageSrc: null },
+      answer: { job: "chart", summary: [], sections: [], blocks: [], unknowns: [], worked: [], notes: [], starters: [], source: "rules" } as never };
+    const withReading = view([done], noop);
+    expect(withReading).toContain("data-chart-reading");
+    expect(withReading).toMatch(/<button[^>]*data-explain-words[^>]*>Explain in words<\/button>/);
   });
 
   it("CR-3 in the thread: a user gets the plain line, the admin the owner action and the steps", () => {
@@ -104,5 +110,9 @@ describe("M59 CR-2: the chart attach in the Ask box", () => {
     expect(chatSource).toContain('chartAnalyzeApi.add(source.kind === "file" ? { file: source.file, fileName: source.name } : { link: source.link }, "image_only")');
     expect(chatSource).toContain("chartAnalyzeApi.analyze(item.id)");
     expect(chatSource).not.toMatch(/placeOrder|exitNow|cancelOrder/);
+    // M59 CR-2: after the analysis only the rule answer is asked (no AI wording); the AI words only on the user's tap
+    const flow = chatSource.slice(chatSource.indexOf("async function attachChart"), chatSource.indexOf("return (\n    <>\n      <PageIntro"));
+    expect(flow).toContain("chatApi.askRules(question)");
+    expect(flow).not.toMatch(/chatApi\.ask\(/);
   });
 });

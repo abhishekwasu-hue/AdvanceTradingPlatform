@@ -396,6 +396,26 @@ def test_chat_uses_the_ai_wording_only_when_it_passes_the_checks(v2_on, recorded
     assert body["source"] == "rules" and "ATP's own sentences" in body["note"] and "26,500" not in json.dumps(body)
 
 
+def test_m59_wording_false_makes_no_ai_provider_call(v2_on, recorded_tools, monkeypatch):
+    """M59 CR-2: the chart attach's structure reading (wording=false) is the rule answer with its card and makes ZERO
+    AI-provider calls even with a key connected; the AI words come only on the user's own question."""
+    headers, _ = _owner("cop2-nowords@example.com")
+    from app.ai import chat_routes
+
+    class Writer(runner.ScriptedWriter):
+        name = "anthropic"
+    writer = Writer("NIFTY last closed at 24,850.5; the daily protected level is 24,310.")
+
+    async def provider(session, tenant_id, user_id):
+        return writer
+    monkeypatch.setattr(chat_routes, "_provider", provider)
+    body = client.post("/api/ai/chat", headers=headers, json={"message": "Read the NIFTY chart", "wording": False}).json()
+    assert writer.calls == 0 and body["source"] == "rules" and body["structure_card"]["symbol"] == "NIFTY"
+    assert body["ai"]["ready"] is True and "usage" not in body
+    body = client.post("/api/ai/chat", headers=headers, json={"message": "Read the NIFTY chart"}).json()
+    assert writer.calls == 1 and body["source"] == "ai"
+
+
 def test_admin_sees_diagnostics_with_the_indicator_regime(v2_on, recorded_tools):
     from tests.test_admin_api import _admin
     headers, _ = _admin("cop2-admin@example.com")

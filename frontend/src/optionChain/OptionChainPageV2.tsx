@@ -9,7 +9,7 @@ import { SIGNAL_PARAM, TRADE_PARAM, setupMarks, setupTrade, type SetupItem } fro
 import SymbolHubTabsV2 from "../fno/SymbolHubTabsV2";
 import type { PageProps } from "../routes";
 import { cx } from "../components/primitives/cx";
-import { formatDateIST, formatTimeIST } from "../ui/format";
+import { formatTimeIST } from "../ui/format";
 import { useTerminalSpot } from "../terminal/spot";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
@@ -18,7 +18,7 @@ import ChainCharts from "./ChartsViewV2";
 import OiViewV2 from "./OiViewV2";
 import ColumnsMenuV2 from "./ColumnsMenuV2";
 import {
-  INDEX_SYMBOLS, STOCK_SYMBOLS, TEXT, chainNotes, initialSymbol, readColumns, writeColumns, type ColumnPrefs,
+  INDEX_SYMBOLS, STOCK_SYMBOLS, chainNotes, initialSymbol, readColumns, writeColumns, type ColumnPrefs,
 } from "./model";
 import RowDetailsV2 from "./RowDetailsV2";
 import { ChainLadderV2, Note } from "./ChainLadderV2";
@@ -26,7 +26,7 @@ import SummaryStripV2 from "./SummaryStripV2";
 import { usePrevClose } from "./spotChange";
 import type { ChainRow } from "./types";
 import { useOptionChain, type OptionChainData } from "./useOptionChain";
-import { Combobox, type ComboOption } from "../ui/Combobox";
+import { Combobox } from "../ui/Combobox";
 import { Sheet } from "../components/primitives/Dialog";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { AskAi } from "./AskAiV2";

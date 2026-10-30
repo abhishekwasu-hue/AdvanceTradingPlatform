@@ -13,7 +13,6 @@ import type { TicketTarget } from "../fno/ticketModel";
 import { readColumns, writeColumns, type ColumnPrefs } from "../optionChain/model";
 import { TerminalChainV2 } from "./TerminalChainV2";
 import { terminalLevels } from "./chartLevels";
-import type { LiveChain } from "../optionChain/types";
 import type { PageProps } from "../routes";
 import { NoteV2 } from "../trading/PartsV2";
 import { PageIntro } from "../ui/PageIntro";
@@ -27,7 +26,7 @@ import { ContextBarV2, useStripFigures } from "./ContextBarV2";
 import { modeChip } from "./statusModel";
 import { defaultTerminalApi, type TerminalApi } from "./api";
 import {
-  CHOOSER_PANEL_IDS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, UNDERLYINGS, activeKey, changed, closePanel,
+  CHOOSER_PANEL_IDS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, activeKey, changed, closePanel,
   isPreset, layoutFor, nameProblem, openPanel, remove, rename, resetToPreset, saveAs, saveOver, switchTo,
   type Layout, type PanelId, type PanelPlace, type PhoneTab, type TerminalPrefs,
 } from "./layoutModel";
@@ -38,7 +37,6 @@ import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { chartLiveOf, useTerminalSpot } from "./spot";
 import BasketPanelV2 from "../fno/BasketPanelV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
-import { ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { StatusBarV2 } from "./StatusBarV2";
 import { useCombinedExits } from "../fno/CombinedExitV2";
 import { TerminalGridV2 } from "./TerminalGridV2";
@@ -62,7 +60,6 @@ import { Combobox } from "../ui/Combobox";
 const STATUS_MS = 15_000;
 const LIST_MS = 30_000;
 const NARROW = NARROW_QUERY;
-const COLUMNS_OFF: ColumnPrefs = { greeks: false, quotes: false, more: false };
 const BUTTON = "inline-flex min-h-11 shrink-0 items-center justify-center gap-space-1 rounded-control border border-border bg-surface-1 px-space-3 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50 md:min-h-9";
 
 const asRead = <T,>(l: Loadable<T>): Read<T> => (l.status === "ok" ? { status: "ok", value: l.data } : l.status === "error" ? { status: "error" } : { status: "loading" });
@@ -146,7 +143,6 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
 
   const openIds = useMemo(() => new Set(working.panels.filter((x) => x.open).map((x) => x.id)), [working.panels]);
   const wants = (id: PanelId, phoneTab: PhoneTab) => (narrow ? tab === phoneTab : openIds.has(id));
-  const chainWanted = wants("chain", "chain") || wants("order", "order") || openIds.has("chain");
 
   // His own figures (TT-15): the status bar, his positions and his orders. The chain of the underlying the panels follow.
   const [statusL] = usePolled(terminal.status, () => STATUS_MS, signedIn);
@@ -163,12 +159,9 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const market = useMarketStatus();
   const chain = useOptionChain(underlying, market.status?.sessions?.NSE?.is_open ?? null);
   const live = chain.live;
-  const chainL: Loadable<LiveChain> = live ? { status: "ok", data: live } : chain.problem ? { status: "error" } : { status: "loading" };
   const strip = useStripFigures(underlying, signedIn);
   // T1-3: one spot for the chain and the chart (the same read, the same time).
   const spotSymbol = spotSymbolOf(underlying);
-  // T1-5: the product of the spread builder's numbers from his own trading defaults.
-  const savedProduct = ticketPrefill(useTradingDefaults(features.on("ui_v2"))).product;
   const spot = useTerminalSpot({ symbol: spotSymbol, hub: features.on("data_hub"), enabled: signedIn, chain: live });
   // The chain page's own column choice (one setting for both).
   const [columns, setColumns] = useState<ColumnPrefs>(() => readColumns());

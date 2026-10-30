@@ -348,6 +348,7 @@ FINISH: Dict[str, str] = {
     "strategy_lab_pine": "FN3", "daily_rhythm": "P2-4 / FN7", "chart_contracts": "DATA-H / FN7",
     "chart_futures_basis": "DATA-H / FN7", "help_centre": "P2-6 (early, once the support contact is set)",
     "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",
+    "term_roll": "TERM-2 R1", "term_whatif": "TERM-2 R2", "term_strike_area": "TERM-2 R3", "term_margin_pair": "TERM-2 R4",
 }
 KEEP_OFF: Dict[str, str] = {
     "chart_analyze_strikes": "strikes next to a setup read close to advice; after P2-5 is on",

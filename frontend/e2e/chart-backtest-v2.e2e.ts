@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { api, mockCharts } from "./chartsMocks";
+import { api, madeUpBars, mockCharts } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 
@@ -50,8 +50,9 @@ async function open(page: Page, theme: "light" | "dark", v2 = true) {
   await page.route(api("/strategies$"), (r) => r.fulfill({ json: [STRATEGY] }));
   await page.route(api("/backtests$"), (r) => r.fulfill({ json: [] }));
   await page.route(api("/backtest$"), (r) => {
-    const body = r.request().postDataJSON() as { candles: Bar[] };
-    return r.fulfill({ json: madeUpResult(body.candles) });
+    // M55 T3: the page names symbol + timeframe and the server loads the bars itself (the same made-up bars here).
+    const body = r.request().postDataJSON() as { candles?: Bar[]; base_timeframe: string; data_mode?: string };
+    return r.fulfill({ json: { ...madeUpResult(body.candles ?? madeUpBars(body.base_timeframe)), data_source: "broker:upstox" } });
   });
   await page.goto("/strategies/test");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });

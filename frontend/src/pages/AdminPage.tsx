@@ -203,7 +203,9 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
         onSet={(name, on, confirm) => act(`${flags?.[name]?.plain ?? name} turned ${on ? "on" : "off"}.`, () => (on
           ? api.adminSetFlag(name, true, [], confirm).then(flagsChanged)
           : api.adminSetFlag(name, false, flags?.[name]?.owner_only ? [] : allowList(name), confirm).then(flagsChanged)))}
-        onSaveList={(name) => act(`${flags?.[name]?.plain ?? name}: allow-list saved.`, () => api.adminSetFlag(name, false, allowList(name)).then(flagsChanged))} />}
+        onSaveList={(name) => act(`${flags?.[name]?.plain ?? name}: allow-list saved.`, () => api.adminSetFlag(name, false, allowList(name)).then(flagsChanged))}
+        onGrantLive={(tenantId, granted, confirm) => act(`LIVE ${granted ? "granted to" : "revoked for"} organisation ${tenantId}.`,
+          () => api.adminSetLiveOrg(tenantId, granted, confirm).then(flagsChanged))} />}
       {oneKey && show("users") && <div data-admin-ai-provider><AiProviderCard /></div>}
       {show("system") && encryption && (
         <Card title="Secrets at rest">

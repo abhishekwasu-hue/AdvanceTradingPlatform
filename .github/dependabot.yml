@@ -2,6 +2,10 @@
 # Minor and patch updates of each ecosystem come grouped in one PR; majors one by one. Security updates come at once.
 version: 2
 updates:
+  # M55 O3: the pip PRs edit backend/requirements.txt (the direct dependencies). backend/requirements.lock (hashed, what
+  # the image installs) is made by `uv pip compile`, which this updater does not regenerate (it handles only pip-compile
+  # .in / .txt pairs): run `sh scripts/lock_requirements.sh` in backend/ on the PR branch and push - the CI lint job's
+  # lock check stays red until then.
   - package-ecosystem: pip
     directory: /backend
     schedule: { interval: weekly, day: saturday }

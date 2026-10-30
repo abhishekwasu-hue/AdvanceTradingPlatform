@@ -12,7 +12,7 @@ import {
 import { ConfirmBox } from "./ConfirmBox";
 import { ListBrowser } from "./ListBrowser";
 import {
-  MY_LISTS, ROW_SORTS, browserGroups, copyNote, filterRows, groupOf, namesCount, pickList, sortRows, systemListsApi,
+  LISTS_FALLBACK_NOTE, MY_LISTS, ROW_SORTS, browserGroups, copyNote, filterRows, groupOf, namesCount, pickList, sortRows, systemListsApi,
   type ListRef, type RowSort, type SystemGroup, type SystemItem, type SystemList,
 } from "./systemLists";
 import {
@@ -101,16 +101,22 @@ export function useContractFacts(items: readonly WatchItem[]): ReadonlyMap<strin
   return facts;
 }
 
-/** WL1: the system groups, read once. Any failure (the flag off included) reads as "none", so the panel is as before. */
-function useSystemGroups(off: boolean): SystemGroup[] {
+/** WL1: the system groups, read once. Any failure (the flag off included) reads as "none", so the panel is as before.
+ * M55 T3: `fallback` - the server says the lists are the fallback copy (universe sync off). */
+function useSystemGroups(off: boolean): { groups: SystemGroup[]; fallback: boolean } {
   const [groups, setGroups] = useState<SystemGroup[]>([]);
+  const [fallback, setFallback] = useState(false);
   useEffect(() => {
     if (off) return undefined;
     let live = true;
-    systemListsApi.groups().then((r) => { if (live) setGroups(Array.isArray(r?.groups) ? r.groups : []); }, () => { if (live) setGroups([]); });
+    systemListsApi.groups().then((r) => {
+      if (!live) return;
+      setGroups(Array.isArray(r?.groups) ? r.groups : []);
+      setFallback(r?.fallback === true);
+    }, () => { if (live) { setGroups([]); setFallback(false); } });
     return () => { live = false; };
   }, [off]);
-  return groups;
+  return { groups, fallback };
 }
 
 /** WL1: the rows of the system lists opened, kept while the panel is open ("failed": they could not be read). */
@@ -223,7 +229,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
   // WL1: the system lists (none: the panel works exactly as before).
   const [wantedKey, setWantedKey] = useState<string | null>(systemKey);
   useEffect(() => { setWantedKey(systemKey); }, [systemKey]);
-  const systemGroups = useSystemGroups(state.off);
+  const { groups: systemGroups, fallback: listsFallback } = useSystemGroups(state.off);
   const hasSystem = systemGroups.length > 0;
   // Chosen once the trader's own lists are known, so a first open does not flash a system list before his own.
   const ref: ListRef | null = state.off || !state.loaded || !hasSystem ? null : pickList(wantedKey, listId, state.lists, systemGroups);
@@ -385,6 +391,9 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
         {onClose && <button type="button" aria-label="Hide watchlist" title="Hide the watchlist" className={iconBtn} onClick={onClose}><PanelRightClose size={16} aria-hidden /></button>}
       </div>
 
+      {browsing && hasSystem && listsFallback && (
+        <p className="border-b border-subtle px-space-2 py-space-1 text-t12 text-fg-muted" data-testid="lists-fallback">{LISTS_FALLBACK_NOTE}</p>
+      )}
       {browsing && hasSystem && (
         <ListBrowser groups={browserGroups(systemGroups, state.lists, listQuery)} open={openGroups} onToggle={toggleGroup} current={ref}
           onPick={choose} query={listQuery} onQuery={setListQuery} touch={touch} />

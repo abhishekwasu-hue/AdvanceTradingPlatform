@@ -47,6 +47,7 @@ import { builderOf, clearStore, readStore, readsOf, snapshot, syncDeviceHistory,
 import { UniversePicker } from "../screener/UniversePicker";
 import { CUSTOM, DEFAULT_CHOICE, DEFAULT_KEY, FALLBACK_PLAN, NIFTY50_FALLBACK, NIFTY50_FALLBACK_NOTE, RUN_MAX, effectiveUniverse, heldBack, isUniverses, listLabel,
   runInBatches, serverHasDefault, universesApi, type UniverseSymbols, type UniversesResponse } from "../screener/universe";
+import { LISTS_FALLBACK_NOTE } from "../chart/systemLists";
 import { isWatchlists, watchlistsApi, type Watchlist } from "../screener/watchlists";
 
 // Handover 11c-1 (flag `strategy_lab_pine`): the Pine Script panel loads only when it is opened.
@@ -593,6 +594,7 @@ export default function ScreenerPage(_props: PageProps) {
                           symbolsText={symbolsText} onSymbolsText={setSymbolsText}
                           count={symbols.length} name={universe.name} loading={universe.loading} note={universe.note} maxSymbols={plan.max_symbols} />
           {universe.builtin && <p className="mt-1 text-t12 text-warn" data-testid="universe-builtin">{NIFTY50_FALLBACK_NOTE}</p>}
+          {!universe.builtin && universes?.fallback && <p className="mt-1 text-t12 text-fg-muted" data-testid="universe-fallback">{LISTS_FALLBACK_NOTE}</p>}
           </div>
           ) : (
           <div>

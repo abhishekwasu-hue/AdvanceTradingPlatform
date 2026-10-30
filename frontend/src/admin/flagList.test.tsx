@@ -120,4 +120,26 @@ describe("UX1 admin Feature flags list", () => {
     expect(owner).toContain('placeholder="Type ENABLE LIVE"');
     expect(owner.match(/<button[^>]*disabled=""[^>]*>Turn (on|off)<\/button>/g)?.length).toBe(2);   // until typed
   });
+
+  it("M55 S1b: LIVE for organisations - read-only for anyone but the owner; Grant / Revoke wait for the confirmation", () => {
+    const live = (canSwitch: boolean, orgs: { id: number; name: string }[]): FeatureFlags => ({
+      live_trading: { ...FLAGS.live_trading, tenants: orgs.map((o) => o.id), owner_only: true, can_switch_live: canSwitch,
+        confirm_text: "ENABLE LIVE", opens_live_when_on: true, live_orgs: orgs },
+    });
+    const render = (flags: FeatureFlags) => renderToStaticMarkup(
+      <FeatureFlagsCard flags={flags} tenants={{}} onTenants={() => {}} busy={false} onSet={() => {}} onSaveList={() => {}}
+        onGrantLive={() => {}} />);
+    const empty = render(live(true, []));
+    expect(empty).toContain("LIVE for organisations");
+    expect(empty).toContain("No organisation has LIVE.");
+    expect(empty).toMatch(/<button[^>]*disabled=""[^>]*>Grant<\/button>/);
+    const other = render(live(false, [{ id: 7, name: "Desk Seven" }]));
+    expect(other).toContain("Desk Seven");
+    expect(other).toContain("Only the owner can grant or revoke LIVE.");
+    expect(other).not.toMatch(/>Grant<|>Revoke<|data-live-org-confirm/);
+    expect(other).not.toContain("(1 allowed)");
+    const owner = render(live(true, [{ id: 7, name: "Desk Seven" }]));
+    expect(owner).toMatch(/<button[^>]*disabled=""[^>]*>Revoke<\/button>/);
+    expect(owner).toContain("data-live-org-confirm");
+  });
 });

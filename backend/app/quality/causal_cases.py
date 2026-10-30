@@ -233,6 +233,10 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
                        'RetestEntryRef("stop_level_atr", "up", "trendline", 20, FALSE, 1, k=0)',
                        'RetestEntryRef("retest_low", "down", "swing", 20, FALSE, k=0, swing=0)',
                        'RetestEntryRef("held_level", "down", "trendline_projected", 20, FALSE, k=0)'],
+    # M55 T5: the ported level gate as a series (strategy template A1), on 15-minute bars long enough for the Daily trend
+    # (AREA_GATE_CASE: 60 sessions, where the gate fires on the short side; tests/test_m55_t5_pullback_area.py checks both sides)
+    "AreaGate": ['AreaGate("down")', 'AreaGate("down", min_rr=1, max_armed_bars=12)'],
+    "AreaGateRef": ['AreaGateRef("invalidation", "down")', 'AreaGateRef("invalidation", "down", sl_buffer_mr=0.5)'],
     # Z7a-3: market zones from stored snapshots - the case builds a causal snapshot timeline from the bars (_zone_timeline)
     "NearZone": ['NearZone("demand", 0.5)', "NearZone()@1h", 'NearZone("supply", 1.0, "zones")'],
     "ZoneRole": ["ZoneRole(0.5)", "ZoneRole(1.0)@1h"],
@@ -584,9 +588,15 @@ def _register_zones() -> None:
              kind=LAST_BAR, group="zone", bars="15m", samples=4)
 
 
+AREA_GATE_CASE: dict[str, Any] = {"bars": "15m", "length": 1500, "min_t": 1390, "samples": 3}   # the short entry is bar 1399
+
+
 def _register_screenql() -> None:
     for exprs in SCREENQL_SERIES.values():
         for text in exprs:
+            if text.startswith("AreaGate"):
+                register(f"screenql.{text}", _screenql(text, "15m"), group="screenql", **AREA_GATE_CASE)
+                continue
             heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType", "VCPReady", "Gap", "Retest",
                                             "RsiDivergence", "SwingLabel", "Wave"))
             register(f"screenql.{text}", _screenql(text), group="screenql", samples=4 if heavy else 8)

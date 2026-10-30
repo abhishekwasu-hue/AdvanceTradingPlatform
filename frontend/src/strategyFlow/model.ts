@@ -44,7 +44,7 @@ export const START_CARDS: StartCard[] = [
   { key: "bull-put", title: "Bull put spread", line: "Sell a put spread when your long entry fires.", engine: "custom", structure: "BULL_PUT_SPREAD", side: "long" },
   { key: "bear-call", title: "Bear call spread", line: "Sell a call spread when your short entry fires.", engine: "custom", structure: "BEAR_CALL_SPREAD", side: "short" },
   { key: "iron-condor", title: "Iron condor", line: "Sell both sides when your entry fires.", engine: "custom", structure: "IRON_CONDOR", side: "both" },
-  { key: "pullback-area", title: "Pullback to a demand / supply area", line: "Waits for area blocks in the builder.", engine: "soon" },
+  { key: "pullback-area", title: "Pullback to a demand / supply area", line: "In the Daily trend's direction, the price comes back into an area and a candle commits.", engine: "template", templateId: "A1" },
   { key: "breakout-retest", title: "Breakout and retest", line: "A level breaks, the price comes back to it and holds.", engine: "template", templateId: "A5" },
   { key: "own", title: "My own rules", line: "Start empty and add your entry blocks.", engine: "custom" },
 ];
@@ -256,6 +256,11 @@ export interface FlowState {
 export function emptyFlow(): FlowState {
   return { card: null, engine: "custom", templateId: null, name: "", symbol: "", timeframe: null, side: null, blocks: [], exits: { ...EMPTY_EXITS },
     options: { ...EMPTY_OPTIONS } };
+}
+
+/** M55 T5: a card is locked ("Coming soon") when it has no engine yet, or its template is not offered to this organisation. */
+export function cardLocked(card: StartCard, templatesOn: boolean, templateIds: readonly string[]): boolean {
+  return card.engine === "soon" || (card.engine === "template" && !(templatesOn && templateIds.includes(card.templateId ?? "")));
 }
 
 /** A card picked on Start: its structure and side are what the card names; nothing else is filled in. */

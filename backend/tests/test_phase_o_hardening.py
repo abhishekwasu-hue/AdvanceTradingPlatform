@@ -298,8 +298,10 @@ def test_chaos_redis_down_does_not_stop_the_single_worker(monkeypatch):
     _force_signal(monkeypatch, _signal)
     worker = _worker(monkeypatch, _FakeBroker(ltp=101.0))
     report = _run(worker.run_cycle(now=OPEN_NOW))
-    assert not report.skipped_lock and report.deployments_evaluated == 1 and report.signals_executed == 1
-    assert _get(StrategyDeploymentRecord, dep_id).last_error is None
+    # The cycle still runs (exits continue - tests/test_m55_s6_entry_guards.py), but M55 A18 fails closed for new
+    # automated entries without the replica lock, PAPER included.
+    assert not report.skipped_lock and report.market_open and report.lock_degraded and report.signals_executed == 0
+    assert "Redis replica lock unavailable" in (_get(StrategyDeploymentRecord, dep_id).last_error or "")
 
 
 def test_chaos_live_broker_exception_marks_tenant_uncertain_and_opens_nothing(monkeypatch):

@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>U3 Strategy Library mockup</title>
+<!-- M49 design-first mockup (U3). Nothing here is built; it waits for the owner's approval.
+     Token values are copied from frontend/src/styles/tokens.css (colour v3 palette, light and dark). Mock data only. -->
+<style>
+:root {
+  color-scheme: light;
+  /* tokens.css, :root[data-palette="v3"][data-theme="light"] */
+  --surface: 247 248 250; --surface-1: 255 255 255; --surface-2: 241 243 246; --surface-3: 233 236 241;
+  --surface-inset: 236 239 243; --border: 138 140 143; --border-subtle: 227 230 235;
+  --fg: 15 23 42; --fg-muted: 91 100 117; --brand: 40 96 250; --brand-fill: 41 98 255; --brand-fill-strong: 30 80 230;
+  --on-brand: 255 255 255; --brand-tint: 229 236 255; --up: 10 125 85; --down: 210 44 61; --warn: 180 83 9;
+  --warn-tint: 246 234 225; --ai: 124 58 237;
+  /* the section accent of Strategies (sec-insights, light) */
+  --sec: 134 25 143; --sec-soft: 250 232 255;
+  --radius-control: 6px; --radius-panel: 10px; --radius-pill: 999px;
+  --shadow-raised: 0 8px 24px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    /* tokens.css, :root[data-palette="v3"]:not([data-theme="light"]) */
+    --surface: 11 14 20; --surface-1: 19 23 34; --surface-2: 28 33 48; --surface-3: 37 43 61; --surface-inset: 7 9 14;
+    --border: 104 107 117; --border-subtle: 42 47 61; --fg: 230 233 239; --fg-muted: 154 163 178;
+    --brand: 84 129 255; --brand-fill: 41 98 255; --brand-fill-strong: 30 80 230; --on-brand: 255 255 255;
+    --brand-tint: 22 34 67; --up: 46 189 133; --down: 246 70 93; --warn: 240 169 59; --warn-tint: 46 41 37; --ai: 152 110 247;
+    --sec: 240 171 252; --sec-soft: 80 36 96;
+    --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: 11 14 20; --surface-1: 19 23 34; --surface-2: 28 33 48; --surface-3: 37 43 61; --surface-inset: 7 9 14;
+  --border: 104 107 117; --border-subtle: 42 47 61; --fg: 230 233 239; --fg-muted: 154 163 178;
+  --brand: 84 129 255; --brand-fill: 41 98 255; --brand-fill-strong: 30 80 230; --on-brand: 255 255 255;
+  --brand-tint: 22 34 67; --up: 46 189 133; --down: 246 70 93; --warn: 240 169 59; --warn-tint: 46 41 37; --ai: 152 110 247;
+  --sec: 240 171 252; --sec-soft: 80 36 96;
+  --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: rgb(var(--surface-inset)); color: rgb(var(--fg));
+  font-family: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px; line-height: 1.5;
+}
+.num { font-variant-numeric: tabular-nums; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid rgb(var(--brand)); outline-offset: 2px; }
+
+/* ---------- the review page around the frames ---------- */
+.review { max-width: 1520px; margin: 0 auto; padding: 24px 16px 48px; }
+.review-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.review-head h1 { font-size: 22px; line-height: 30px; margin: 0; }
+.review-head p { margin: 4px 0 0; color: rgb(var(--fg-muted)); font-size: 14px; }
+.mock-tag { display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: .02em; padding: 2px 8px; border-radius: var(--radius-pill);
+  background: rgb(var(--warn-tint)); color: rgb(var(--warn)); border: 1px solid rgb(var(--warn) / .4); }
+.theme-btn { min-height: 44px; padding: 0 14px; border-radius: var(--radius-control); border: 1px solid rgb(var(--border)); background: rgb(var(--surface-1)); }
+.row-frames { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.row-frames > div { min-width: 0; max-width: 100%; }
+@media (max-width: 430px) { .review { padding: 16px 0 48px; } .review-head, .notes, .frame-label { padding: 0 16px; } .phone { border-radius: 0; border-left: 0; border-right: 0; } }
+.frame-label { font-size: 13px; font-weight: 600; color: rgb(var(--fg-muted)); margin: 0 0 8px; }
+.notes { flex: 1 1 320px; max-width: 560px; font-size: 14px; color: rgb(var(--fg-muted)); }
+.notes h2 { font-size: 16px; color: rgb(var(--fg)); margin: 0 0 8px; }
+.notes li { margin-bottom: 6px; }
+.notes b { color: rgb(var(--fg)); }
+
+/* ---------- the two frames ---------- */
+.phone { width: 390px; max-width: 100%; height: 844px; overflow: hidden; display: flex; flex-direction: column;
+  border: 1px solid rgb(var(--border-subtle)); border-radius: 28px; background: rgb(var(--surface)); box-shadow: var(--shadow-raised); }
+.phone-scroll { flex: 1; overflow-y: auto; padding: 16px; }
+.desk-wrap { overflow-x: auto; margin-top: 32px; }
+.desk { width: 1440px; min-height: 900px; display: flex; border: 1px solid rgb(var(--border-subtle)); border-radius: 12px;
+  background: rgb(var(--surface)); overflow: hidden; box-shadow: var(--shadow-raised); }
+
+/* ---------- app shell bits ---------- */
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); font-size: 14px; color: rgb(var(--fg-muted)); }
+.topbar b { color: rgb(var(--fg)); font-size: 15px; }
+.bottomnav { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); }
+.bottomnav span { text-align: center; font-size: 12px; padding: 8px 0 12px; color: rgb(var(--fg-muted)); white-space: nowrap; }
+.bottomnav span.on { color: rgb(var(--brand)); font-weight: 600; }
+.bottomnav i { display: block; width: 22px; height: 22px; margin: 0 auto 2px; border-radius: 6px; background: currentColor; opacity: .25; }
+.bottomnav span.on i { opacity: 1; background: rgb(var(--brand-fill)); }
+.sidenav { width: 232px; flex: none; border-right: 1px solid rgb(var(--border-subtle)); background: rgb(var(--surface-1)); padding: 16px 12px; font-size: 14px; }
+.sidenav .brand { font-weight: 700; font-size: 16px; padding: 4px 8px 16px; }
+.sidenav a { display: block; padding: 8px 10px; border-radius: var(--radius-control); color: rgb(var(--fg-muted)); text-decoration: none; white-space: nowrap; }
+.sidenav a.on { background: rgb(var(--brand-tint)); color: rgb(var(--brand)); font-weight: 600; }
+.desk-main { flex: 1; min-width: 0; padding: 24px 32px; }
+
+/* ---------- page template: icon + title + one line ---------- */
+.page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.page-icon { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; background: rgb(var(--sec-soft)); color: rgb(var(--sec)); }
+.page-head h1 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-head p { margin: 0; font-size: 14px; line-height: 20px; color: rgb(var(--fg-muted)); }
+
+/* hero summary */
+.hero { display: flex; gap: 8px; margin-bottom: 16px; }
+.stat { flex: 1; min-width: 0; padding: 12px; border-radius: var(--radius-panel); background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); }
+.stat .v { font-size: 22px; line-height: 28px; font-weight: 600; }
+.stat .l { font-size: 13px; color: rgb(var(--fg-muted)); white-space: nowrap; }
+
+/* category chips: one row, never wraps, scrolls sideways inside its own strip */
+.chips { display: flex; gap: 8px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; margin-bottom: 12px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex: none; white-space: nowrap; min-height: 36px; padding: 0 14px; border-radius: var(--radius-pill);
+  border: 1px solid rgb(var(--border)); background: rgb(var(--surface-1)); font-size: 14px; }
+.chip[aria-pressed="true"] { background: rgb(var(--brand-fill)); border-color: rgb(var(--brand-fill)); color: rgb(var(--on-brand)); font-weight: 600; }
+.chip .num { opacity: .75; margin-left: 4px; }
+
+/* strategy card */
+.cards { display: grid; gap: 12px; }
+.card { background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); border-radius: var(--radius-panel); padding: 16px; }
+.card[aria-current="true"] { border-color: rgb(var(--brand)); box-shadow: 0 0 0 1px rgb(var(--brand)); }
+.card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card h3 { margin: 0; font-size: 17px; line-height: 24px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag { flex: none; font-size: 12px; padding: 2px 8px; border-radius: var(--radius-pill); background: rgb(var(--surface-2)); color: rgb(var(--fg-muted)); white-space: nowrap; }
+.tag.use { background: rgb(var(--up) / .12); color: rgb(var(--up)); }
+.card .line { margin: 4px 0 12px; font-size: 15px; color: rgb(var(--fg-muted)); }
+.params { display: flex; gap: 6px; flex-wrap: wrap; list-style: none; margin: 0 0 8px; padding: 0; }
+.params li { font-size: 13px; padding: 3px 10px; border-radius: var(--radius-pill); background: rgb(var(--surface-2)); white-space: nowrap; }
+.params li b { font-weight: 600; }
+.help { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgb(var(--border)); font-size: 11px; font-weight: 700; color: rgb(var(--fg-muted)); margin-left: 4px; vertical-align: 1px; background: none; padding: 0; cursor: help; }
+details.adv { border-top: 1px solid rgb(var(--border-subtle)); margin-top: 8px; padding-top: 8px; }
+details.adv summary { cursor: pointer; font-size: 14px; color: rgb(var(--brand)); min-height: 32px; display: flex; align-items: center; list-style: none; }
+details.adv summary::-webkit-details-marker { display: none; }
+details.adv summary::before { content: "+"; display: inline-block; width: 16px; font-weight: 700; }
+details.adv[open] summary::before { content: "\2212"; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 8px 0 0; font-size: 14px; }
+.kv dt { color: rgb(var(--fg-muted)); }
+.kv dd { margin: 0; text-align: right; font-weight: 500; }
+.actions { display: flex; gap: 8px; margin-top: 12px; }
+.btn { min-height: 44px; padding: 0 16px; border-radius: var(--radius-control); border: 1px solid rgb(var(--border)); background: rgb(var(--surface-1)); font-size: 15px; font-weight: 600; white-space: nowrap; }
+.btn.primary { background: rgb(var(--brand-fill)); border-color: rgb(var(--brand-fill)); color: rgb(var(--on-brand)); }
+.btn.ghost { border-color: transparent; background: none; color: rgb(var(--brand)); }
+
+/* empty state: one collapsed line, not a big box */
+.empty { display: none; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; border-radius: var(--radius-panel);
+  border: 1px dashed rgb(var(--border)); font-size: 15px; color: rgb(var(--fg-muted)); }
+.empty.show { display: flex; }
+.tip { position: relative; }
+.tip-pop { display: none; position: absolute; z-index: 5; left: 0; top: 24px; width: 240px; padding: 10px 12px; border-radius: var(--radius-control);
+  background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border)); box-shadow: var(--shadow-raised); font-size: 13px; font-weight: 400; color: rgb(var(--fg)); white-space: normal; }
+.tip.open .tip-pop { display: block; }
+
+/* desktop master-detail */
+.md { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 24px; align-items: start; }
+.md .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.detail { position: sticky; top: 0; background: rgb(var(--surface-1)); border: 1px solid rgb(var(--border-subtle)); border-radius: var(--radius-panel); padding: 20px; }
+.detail h2 { margin: 0 0 4px; font-size: 20px; line-height: 28px; }
+.detail h4 { margin: 16px 0 4px; font-size: 14px; font-weight: 600; color: rgb(var(--fg-muted)); text-transform: none; }
+.search { width: 260px; min-height: 40px; padding: 0 12px; border-radius: var(--radius-control); border: 1px solid rgb(var(--border)); background: rgb(var(--surface-1)); color: rgb(var(--fg)); font: inherit; font-size: 15px; }
+.toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.toolbar .chips { margin: 0; flex: 1; min-width: 0; }
+.foot { margin-top: 24px; font-size: 13px; color: rgb(var(--fg-muted)); }
+</style>
+</head>
+<body>
+<div class="review">
+  <div class="review-head">
+    <div>
+      <h1>U3 Strategy Library <span class="mock-tag">Mock data</span></h1>
+      <p>M49 design mockup. Nothing is built yet; this waits for the owner's approval. Tap a category chip, a (?) or "More settings".</p>
+    </div>
+    <button class="theme-btn" type="button" id="themeBtn">Switch light / dark</button>
+  </div>
+
+  <div class="row-frames">
+    <!-- ===================== PHONE 390 ===================== -->
+    <div>
+      <p class="frame-label">Phone, 390 px</p>
+      <div class="phone" id="phoneFrame" data-scope>
+        <div class="topbar"><b>ATP</b><span>Paper</span></div>
+        <div class="phone-scroll">
+          <div class="page-head">
+            <div class="page-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+            </div>
+            <div style="min-width:0">
+              <h1>Strategy library</h1>
+              <p>Ready-made strategies to try on paper.</p>
+            </div>
+          </div>
+
+          <div class="hero">
+            <div class="stat"><div class="v num">8</div><div class="l">Ready to try</div></div>
+            <div class="stat"><div class="v num">2</div><div class="l">You use now</div></div>
+          </div>
+
+          <div class="chips" role="toolbar" aria-label="Category">
+            <button class="chip" type="button" data-cat="all" aria-pressed="true">All<span class="num">8</span></button>
+            <button class="chip" type="button" data-cat="trend" aria-pressed="false">Trend<span class="num">3</span></button>
+            <button class="chip" type="button" data-cat="swing" aria-pressed="false">Swing areas<span class="num">3</span></button>
+            <button class="chip" type="button" data-cat="multi" aria-pressed="false">Multi-timeframe<span class="num">2</span></button>
+            <button class="chip" type="button" data-cat="options" aria-pressed="false">Options<span class="num">0</span></button>
+          </div>
+
+          <div class="cards">
+            <article class="card" data-cat="trend">
+              <div class="card-top"><h3>Two moving averages</h3><span class="tag use">You use it</span></div>
+              <p class="line">Marks when a fast average crosses a slow one.</p>
+              <ul class="params" aria-label="Main settings">
+                <li>Fast average <b class="num">9</b></li>
+                <li>Slow average <b class="num">21</b></li>
+                <li>Chart <b>15-minute</b></li>
+              </ul>
+              <details class="adv">
+                <summary>More settings (3)</summary>
+                <dl class="kv">
+                  <dt>Average type <span class="tip"><button class="help" type="button" aria-label="What is average type?">?</button><span class="tip-pop">Simple gives every bar the same weight; exponential gives the latest bars more.</span></span></dt><dd>Exponential</dd>
+                  <dt>Confirm on bar close</dt><dd>On</dd>
+                  <dt>Second chart</dt><dd>Off</dd>
+                </dl>
+              </details>
+              <div class="actions"><button class="btn primary" type="button">Try it on a symbol</button></div>
+            </article>
+
+            <article class="card" data-cat="swing">
+              <div class="card-top"><h3>Pullback to an area</h3><span class="tag">Swing areas</span></div>
+              <p class="line">Marks when price comes back into an area it left with force.</p>
+              <ul class="params" aria-label="Main settings">
+                <li>Area width <b class="num">0.5</b> ATR</li>
+                <li>Look back <b class="num">60</b> bars</li>
+                <li>Chart <b>1-hour</b></li>
+              </ul>
+              <details class="adv">
+                <summary>More settings (4)</summary>
+                <dl class="kv">
+                  <dt>Times an area can be used</dt><dd class="num">1</dd>
+                  <dt>Strength of the move away <span class="tip"><button class="help" type="button" aria-label="What is strength of the move away?">?</button><span class="tip-pop">How large the bar that left the area must be, in ATR. Bigger means fewer, stronger areas.</span></span></dt><dd class="num">1.5</dd>
+                  <dt>ATR length</dt><dd class="num">14</dd>
+                  <dt>Confirm on bar close</dt><dd>On</dd>
+                </dl>
+              </details>
+              <div class="actions"><button class="btn primary" type="button">Try it on a symbol</button></div>
+            </article>
+
+            <article class="card" data-cat="swing">
+              <div class="card-top"><h3>RSI divergence at a swing</h3><span class="tag">Swing areas</span></div>
+              <p class="line">Marks when price and RSI move apart at a swing point.</p>
+              <ul class="params" aria-label="Main settings">
+                <li>RSI length <b class="num">14</b></li>
+                <li>Swing size <b class="num">5</b> bars</li>
+                <li>Chart <b>15-minute</b></li>
+              </ul>
+              <details class="adv">
+                <summary>More settings (2)</summary>
+                <dl class="kv"><dt>Hidden divergence too</dt><dd>Off</dd><dt>Confirm on bar close</dt><dd>On</dd></dl>
+              </details>
+              <div class="actions"><button class="btn primary" type="button">Try it on a symbol</button></div>
+            </article>
+
+            <article class="card" data-cat="multi">
+              <div class="card-top"><h3>Higher chart sets the side</h3><span class="tag">Multi-timeframe</span></div>
+              <p class="line">The bigger chart's trend picks the side; the smaller chart marks the moment.</p>
+              <ul class="params" aria-label="Main settings">
+                <li>Big chart <b>1-hour</b></li>
+                <li>Small chart <b>5-minute</b></li>
+                <li>Trend average <b class="num">50</b></li>
+              </ul>
+              <details class="adv"><summary>More settings (3)</summary>
+                <dl class="kv"><dt>Fast average</dt><dd class="num">9</dd><dt>Slow average</dt><dd class="num">21</dd><dt>Confirm on bar close</dt><dd>On</dd></dl>
+              </details>
+              <div class="actions"><button class="btn primary" type="button">Try it on a symbol</button></div>
+            </article>
+
+            <div class="empty" data-empty>
+              <span>No strategies here yet.</span>
+              <button class="btn ghost" type="button" data-showall>Show all</button>
+            </div>
+          </div>
+          <p class="foot">Signals only, from your own settings. Not advice.</p>
+        </div>
+        <nav class="bottomnav" aria-label="Main">
+          <span><i></i>Today</span><span><i></i>Charts</span><span><i></i>Signals</span><span><i></i>My trades</span><span class="on"><i></i>More</span>
+        </nav>
+      </div>
+    </div>
+
+    <div class="notes">
+      <h2>What changes (for approval)</h2>
+      <ul>
+        <li><b>Page template:</b> icon + one-word title + one line; a two-number summary; no help paragraph at the top.</li>
+        <li><b>Card:</b> plain name, one plain line, at most 3 settings as chips. The rest sits under "More settings", and a hard word has its own (?).</li>
+        <li><b>Plain names:</b> no raw setting keys and no "Indicator-based" label; the category is a word a trader uses.</li>
+        <li><b>Category chips</b> stay on one line and scroll sideways; each shows its count. Tap "Options" to see the empty state.</li>
+        <li><b>Empty state</b> is one short line with "Show all", never an empty box.</li>
+        <li><b>Desktop:</b> master-detail. The list on the left; the chosen strategy's full settings on the right.</li>
+        <li><b>Wording:</b> strategies "mark" structure. No buy / sell / target words; no prices; no results claims.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===================== DESKTOP 1440 ===================== -->
+  <div class="desk-wrap">
+    <p class="frame-label">Desktop, 1440 px</p>
+    <div class="desk" id="deskFrame" data-scope>
+      <nav class="sidenav" aria-label="Main">
+        <div class="brand">ATP</div>
+        <a>Today</a><a>Charts</a><a>Signals</a><a>My trades</a><a>Find setups</a><a class="on">Strategy library</a><a>AI Trading Bot</a><a>Settings</a>
+      </nav>
+      <div class="desk-main">
+        <div class="page-head">
+          <div class="page-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+          </div>
+          <div><h1>Strategy library</h1><p>Ready-made strategies to try on paper.</p></div>
+        </div>
+        <div class="hero" style="max-width:520px">
+          <div class="stat"><div class="v num">8</div><div class="l">Ready to try</div></div>
+          <div class="stat"><div class="v num">2</div><div class="l">You use now</div></div>
+          <div class="stat"><div class="v num">4</div><div class="l">Categories</div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin:-60px 0 28px"><input class="search" type="search" placeholder="Search strategies" aria-label="Search strategies"></div>
+
+        <div class="md">
+          <div>
+            <div class="toolbar">
+              <div class="chips" role="toolbar" aria-label="Category">
+                <button class="chip" type="button" data-cat="all" aria-pressed="true">All<span class="num">8</span></button>
+                <button class="chip" type="button" data-cat="trend" aria-pressed="false">Trend<span class="num">3</span></button>
+                <button class="chip" type="button" data-cat="swing" aria-pressed="false">Swing areas<span class="num">3</span></button>
+                <button class="chip" type="button" data-cat="multi" aria-pressed="false">Multi-timeframe<span class="num">2</span></button>
+                <button class="chip" type="button" data-cat="options" aria-pressed="false">Options<span class="num">0</span></button>
+              </div>
+            </div>
+            <div class="cards">
+              <article class="card" data-cat="trend" aria-current="true" tabindex="0">
+                <div class="card-top"><h3>Two moving averages</h3><span class="tag use">You use it</span></div>
+                <p class="line">Marks when a fast average crosses a slow one.</p>
+                <ul class="params"><li>Fast average <b class="num">9</b></li><li>Slow average <b class="num">21</b></li><li>Chart <b>15-minute</b></li></ul>
+              </article>
+              <article class="card" data-cat="swing" tabindex="0">
+                <div class="card-top"><h3>Pullback to an area</h3></div>
+                <p class="line">Marks when price comes back into an area it left with force.</p>
+                <ul class="params"><li>Area width <b class="num">0.5</b> ATR</li><li>Look back <b class="num">60</b> bars</li><li>Chart <b>1-hour</b></li></ul>
+              </article>
+              <article class="card" data-cat="swing" tabindex="0">
+                <div class="card-top"><h3>RSI divergence at a swing</h3></div>
+                <p class="line">Marks when price and RSI move apart at a swing point.</p>
+                <ul class="params"><li>RSI length <b class="num">14</b></li><li>Swing size <b class="num">5</b> bars</li><li>Chart <b>15-minute</b></li></ul>
+              </article>
+              <article class="card" data-cat="multi" tabindex="0">
+                <div class="card-top"><h3>Higher chart sets the side</h3></div>
+                <p class="line">The bigger chart's trend picks the side; the smaller chart marks the moment.</p>
+                <ul class="params"><li>Big chart <b>1-hour</b></li><li>Small chart <b>5-minute</b></li><li>Trend average <b class="num">50</b></li></ul>
+              </article>
+              <article class="card" data-cat="trend" tabindex="0">
+                <div class="card-top"><h3>Range break with volume</h3></div>
+                <p class="line">Marks when price leaves a quiet range on higher volume.</p>
+                <ul class="params"><li>Range length <b class="num">20</b> bars</li><li>Volume vs average <b class="num">1.5</b>x</li><li>Chart <b>Daily</b></li></ul>
+              </article>
+              <article class="card" data-cat="swing" tabindex="0">
+                <div class="card-top"><h3>Higher low in an uptrend</h3></div>
+                <p class="line">Marks a new swing low that holds above the last one.</p>
+                <ul class="params"><li>Swing size <b class="num">5</b> bars</li><li>Trend average <b class="num">50</b></li><li>Chart <b>1-hour</b></li></ul>
+              </article>
+              <div class="empty" data-empty style="grid-column:1 / -1">
+                <span>No strategies here yet.</span>
+                <button class="btn ghost" type="button" data-showall>Show all</button>
+              </div>
+            </div>
+          </div>
+
+          <aside class="detail" aria-label="Chosen strategy">
+            <div class="card-top"><h2>Two moving averages</h2><span class="tag use">You use it</span></div>
+            <p class="line" style="margin:0;color:rgb(var(--fg-muted))">Marks when a fast average crosses a slow one.</p>
+            <h4>Main settings</h4>
+            <dl class="kv" data-main>
+              <dt>Fast average</dt><dd class="num">9</dd>
+              <dt>Slow average</dt><dd class="num">21</dd>
+              <dt>Chart</dt><dd>15-minute</dd>
+            </dl>
+            <details class="adv">
+              <summary>More settings (3)</summary>
+              <dl class="kv">
+                <dt>Average type <span class="tip"><button class="help" type="button" aria-label="What is average type?">?</button><span class="tip-pop">Simple gives every bar the same weight; exponential gives the latest bars more.</span></span></dt><dd>Exponential</dd>
+                <dt>Confirm on bar close</dt><dd>On</dd>
+                <dt>Second chart</dt><dd>Off</dd>
+              </dl>
+            </details>
+            <details class="adv">
+              <summary>How it reads the chart</summary>
+              <p style="font-size:14px;color:rgb(var(--fg-muted));margin:8px 0 0">Each closed bar, the two averages are compared. A mark appears on the bar where the fast one moves to the other side of the slow one. Quantity, exits and limits come from your own settings, never from the strategy.</p>
+            </details>
+            <div class="actions">
+              <button class="btn primary" type="button">Try it on a symbol</button>
+              <button class="btn" type="button">Copy and edit</button>
+            </div>
+          </aside>
+        </div>
+        <p class="foot">Signals only, from your own settings. Not advice. Mock data.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// A few lines for the clickable states: theme switch, category filter + empty state, (?) popovers, desktop selection.
+document.getElementById("themeBtn").onclick = function () {
+  var r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  r.dataset.theme = dark ? "light" : "dark";
+};
+document.querySelectorAll("[data-scope]").forEach(function (scope) {
+  function show(cat) {
+    var n = 0;
+    scope.querySelectorAll(".chip").forEach(function (c) { c.setAttribute("aria-pressed", String(c.dataset.cat === cat)); });
+    scope.querySelectorAll("article.card").forEach(function (a) { var on = cat === "all" || a.dataset.cat === cat; a.hidden = !on; if (on) n++; });
+    scope.querySelector("[data-empty]").classList.toggle("show", n === 0);
+  }
+  scope.querySelectorAll(".chip").forEach(function (c) { c.onclick = function () { show(c.dataset.cat); }; });
+  scope.querySelector("[data-showall]").onclick = function () { show("all"); };
+  scope.querySelectorAll(".help").forEach(function (b) {
+    b.onclick = function (e) { e.preventDefault(); b.parentNode.classList.toggle("open"); };
+  });
+  var detail = scope.querySelector(".detail");
+  if (detail) scope.querySelectorAll("article.card").forEach(function (a) {
+    a.onclick = function () {
+      scope.querySelectorAll("article.card").forEach(function (x) { x.removeAttribute("aria-current"); });
+      a.setAttribute("aria-current", "true");
+      detail.querySelector("h2").textContent = a.querySelector("h3").textContent;
+      detail.querySelector(".line").textContent = a.querySelector(".line").textContent;
+      detail.querySelector(".tag").hidden = !a.querySelector(".tag.use");
+      var twin = [].slice.call(document.querySelectorAll("#phoneFrame article.card")).filter(function (x) { return x.querySelector("h3").textContent === a.querySelector("h3").textContent; })[0];
+      var adv = detail.querySelector("details.adv");
+      adv.querySelector("summary").textContent = twin ? twin.querySelector("details.adv summary").textContent : "More settings (1)";
+      adv.querySelector("dl").innerHTML = twin ? twin.querySelector("details.adv dl").innerHTML : "<dt>Confirm on bar close</dt><dd>On</dd>";
+      adv.querySelectorAll(".help").forEach(function (h) { h.onclick = function (e) { e.preventDefault(); h.parentNode.classList.toggle("open"); }; });
+      var dl = detail.querySelector("[data-main]"); dl.innerHTML = "";
+      a.querySelectorAll(".params li").forEach(function (li) {
+        var dt = document.createElement("dt"), dd = document.createElement("dd");
+        dt.textContent = li.firstChild.textContent.trim(); dd.textContent = li.textContent.replace(dt.textContent, "").trim();
+        dd.className = "num"; dl.appendChild(dt); dl.appendChild(dd);
+      });
+    };
+  });
+});
+</script>
+</body>
+</html>

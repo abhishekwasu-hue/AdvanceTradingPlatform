@@ -11,6 +11,7 @@ import { ASK_OWNER } from "./brokerState";
 import MultiAccountCard from "./MultiAccountCard";
 import PracticeAccountsCard from "./PracticeAccountsCard";
 import { BTN_PRIMARY, BTN_SECONDARY } from "./parts";
+import { Details } from "../ui/Details";
 
 /**
  * P2b: "Advanced", collapsed at the bottom of the Broker page - the technical settings moved off the main screen:
@@ -41,7 +42,7 @@ export function AnotherAccount({ entries, canChange, onConnect }: {
   const submit = (e: FormEvent) => { e.preventDefault(); if (ok) onConnect(picked, name.trim()); };
   return (
     <form onSubmit={submit} className="space-y-space-2" data-another-account>
-      <p className="text-t13 text-fg-muted">A second account at the same broker gets its own name, for example &quot;family&quot;.</p>
+      <Details id="broker.another-account" className="mt-0"><p className="text-t13 text-fg-muted">A second account at the same broker gets its own name, for example &quot;family&quot;.</p></Details>
       <div className="flex flex-wrap items-end gap-space-2">
         <div className="space-y-space-1">
           <label htmlFor={`${ids}-b`} className="block text-t13 font-medium text-fg">Broker</label>

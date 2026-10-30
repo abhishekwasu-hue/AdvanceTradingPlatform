@@ -9,6 +9,7 @@ import { Card } from "../components/ui";
 import type { AlertChannel, AlertChannelType, AlertDelivery, NotificationSeverity, TelegramInboundStatus } from "../types";
 import { useFeatures } from "../ui/useFeatures";
 import { formatDateTimeIST } from "../ui/format";
+import { Details } from "../ui/Details";
 
 const OWN_BOT_PATH = "/settings/advanced#own-bot";
 const SEVERITIES: NotificationSeverity[] = ["INFO", "WARNING", "CRITICAL"];
@@ -236,12 +237,14 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
 
   return (
     <Card title="Alert delivery (Telegram / email / webhook / push / SMS)">
-      <p className="text-xs text-fg-muted mb-3">
-        The trading worker raises CRITICAL alerts (broker session expired, stop-loss could not be
-        placed, deployment auto-paused, daily loss limit) while no browser is open. Configure at
-        least one channel so they reach you. Secrets are stored encrypted and never shown again;
-        leave a secret blank when editing to keep the stored one.
-      </p>
+      <Details id="alerts.channels" className="mt-0 mb-3">
+        <p className="text-xs text-fg-muted">
+          The trading worker raises CRITICAL alerts (broker session expired, stop-loss could not be
+          placed, deployment auto-paused, daily loss limit) while no browser is open. Configure at
+          least one channel so they reach you. Secrets are stored encrypted and never shown again;
+          leave a secret blank when editing to keep the stored one.
+        </p>
+      </Details>
 
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
@@ -305,10 +308,12 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2 lg:col-span-2">
           <div className="flex items-center gap-2 text-sm font-bold text-fg"><Webhook size={14} /> Webhook (signed JSON POST)</div>
           <div className="text-xs">{status("WEBHOOK")}</div>
-          <p className="text-xs text-fg-muted">
-            Every event is POSTed as JSON with <code>X-ATP-Signature: sha256=HMAC-SHA256(secret, timestamp + "." + body)</code> and
-            <code> X-ATP-Timestamp</code>, so your receiver (a bot, n8n, Zapier, a Slack relay) can verify it came from here. HTTPS only.
-          </p>
+          <Details id="alerts.webhook" className="mt-0">
+            <p className="text-xs text-fg-muted">
+              Every event is POSTed as JSON with <code>X-ATP-Signature: sha256=HMAC-SHA256(secret, timestamp + "." + body)</code> and
+              <code> X-ATP-Timestamp</code>, so your receiver (a bot, n8n, Zapier, a Slack relay) can verify it came from here. HTTPS only.
+            </p>
+          </Details>
           <div className="grid grid-cols-3 gap-2">
             <input className={`${input} col-span-2`} placeholder="https://your-endpoint.example/atp" value={wh.url} onChange={(e) => setWh({ ...wh, url: e.target.value })} />
             <input className={input} type="password" autoComplete="off" placeholder="Shared secret, 16+ chars (blank = keep)" value={wh.secret} onChange={(e) => setWh({ ...wh, secret: e.target.value })} />

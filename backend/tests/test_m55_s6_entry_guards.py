@@ -153,7 +153,7 @@ def test_migration_is_additive_rollback_safe_reversible_and_the_only_head():
     spec = importlib.util.spec_from_file_location("m55_s6_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module.ROLLBACK_SAFE is True and module.revision == "c7e9a1b3d5f7" and module.down_revision == "e1a2c3d4f506"
+    assert module.ROLLBACK_SAFE is True and module.revision == "c7e9a1b3d5f7" and module.down_revision == "f4b6d8a0c2e3"
     source = path.read_text(encoding="utf-8")
     assert risky_operations(source) == [] and not [p for p in lint() if p.startswith(path.name)]
     assert "server_default='deny'" in source and "drop_column('risk_settings', 'opposite_positions')" in source

@@ -266,3 +266,26 @@ Checked: entry logic of all 13, closed-bar feed (worker uses `closed_frames`, AU
 | Low | The ready-made Swing EMA Pullback line says only "Waits for a pullback inside an uptrend", but the strategy also signals the downtrend mirror (taken on an option / future; skipped on shares). | paperbot/model.ts:24; swing_strategies.py:79-84 |
 | Low | RSI returns 100 when price did not move at all over the period (no gains and no losses), so a flat stretch reads as overbought. | indicators/momentum.py:18 `result.where(avg_loss != 0, 100.0)` |
 | Info | None of the 13 uses the owner's method (trend -> buyer/seller area -> corrective pullback -> commitment candle; RSI divergence only): they are EMA / RSI level / ADX / MACD / Bollinger / Supertrend / opening-range / 20-day-breakout rules. The owner's method lives only in templates F (seller packs over D1/D3/A2/E3) and G (waves). | strategy_engine/*.py |
+
+## 5. Strategy test (owner order: "test all predefined strategy on multiple index and stocks")
+Method: ATP's own `run_backtest` + `TemplateStrategy` (no strategy logic re-written), default settings, one lot, the paper
+broker's 0.02 % slippage. Live NSE rules added by the test harness because the underlying backtest does not have them: no
+new entries from 15:00 IST and square-off at 15:15 IST. Data (private trade-data repo): 1-minute index prices BANKNIFTY
+23 Jul-19 Oct 2026 and NIFTY 1 Jul-8 Oct 2026 (2 bad ticks removed); BANKNIFTY daily 2016-2026 for the daily strategies.
+Not tested: stocks and other indices - no data reachable from the review session (the live site's own backtest with the
+owner's broker is the way to run them). Charts, full results and scripts: trade-data review/atp_strategy_tests/2026-10-30.
+Result unit: R = the strategy's own stop distance; "gross" = before entry slippage.
+
+| Group | Result |
+|---|---|
+| 11 intraday built-ins | All 11 lose after slippage on both indices except MTF 5m/60m on NIFTY (+0.01R, 6 trades). Before slippage they sit between -0.16R and +0.18R per trade: no edge that survives costs. EMA + RSI 1m: 887 / 1056 trades in about 3 months, -0.34R / -0.38R per trade (gross -0.01R / +0.04R) - the cost decides it. |
+| Ready-made on the Paper bot form | Opening range 5m: -0.22R (65 tr) / -0.18R (86 tr). VWAP + Supertrend 5m: -0.11R (82) / -0.06R (97). Swing EMA pullback (daily BANKNIFTY 10 y): +0.12R, 83 trades, PF 1.18, worst run -11.4R. |
+| 2 daily built-ins | Swing EMA pullback +0.12R (83 tr, PF 1.18); Swing breakout +0.15R (103 tr, PF 1.23) - the only positive results with a sample above 80 trades. |
+| 43 templates, 15 min | No template is positive on both indices with 30+ trades each. Positive on both but small samples: B3 Channel breakout (+0.06R / 11 tr, +0.03R / 13 tr). F1 Directional seller pack = D1 Supertrend flip (by design): -0.01R / -0.05R. |
+| Zero trades | All 11 wave templates (G1-G11) on both indices; B9 Volume breakout and E5 Session VWAP (an index has no volume); C3, C4; B11 on daily BANKNIFTY. Whether the G templates need more higher-timeframe (daily) history than 3 months is NOT proven - needs a check. |
+
+Engine facts found by the test:
+| Sev | Finding | Proof |
+|---|---|---|
+| Medium | Backtest != live for intraday: the underlying backtest has no 15:00 no-new-entry rule and no 15:15 square-off (only a user time exit), so an intraday strategy's test can hold overnight, which live never does. | backtest/engine.py run_backtest (no holding / square-off); backtest/routes.py:176 rules only from the request; workers/trading_worker.py:103 `SQUARE_OFF_AT = dtime(15, 15)` |
+| Low | On the bar where a time exit fires, the time exit is taken at the bar close before the stop is checked, so a stop hit inside that bar can exit beyond the stop. | backtest/engine.py: `update.time_exit_reason` -> outcome before `fill.exit(... stop ...)` |

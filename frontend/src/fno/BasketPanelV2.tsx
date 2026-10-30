@@ -84,8 +84,13 @@ const num = (text: string): number | null => {
 };
 const strip = (l: BasketLeg): NewLeg => { const { id: _id, ...rest } = l; return rest; };
 
-export default function BasketPanelV2({ open, onClose, chain, store = defaultBasket, api = basketApi, fetcher = request, onPlaced }: {
+export default function BasketPanelV2({ open, onClose, chain, store = defaultBasket, api = basketApi, fetcher = request, onPlaced, embedded = false, onNumbers }: {
   open: boolean;
+  /** TERM-2 step 2: the server's figures as they change (the Terminal draws the breakevens on its chart). */
+  onNumbers?: (numbers: BasketNumbers | null) => void;
+  /** TERM-2 step 2: the same basket placed inside a page (the Terminal's basket panel) instead of a side sheet - the
+   * same legs, payoff, figures, exits, confirm and result; no close button and no second PAPER mark (the page has one). */
+  embedded?: boolean;
   onClose: () => void;
   chain: BasketChain;
   store?: BasketStore;
@@ -152,6 +157,10 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     api.settings(chain.symbol).then((s) => { if (alive) setSettings(s); }).catch(() => { if (alive) setSettings(null); });
     return () => { alive = false; };
   }, [open, chain.symbol, api]);
+
+  const numbersOut = useRef(onNumbers);
+  numbersOut.current = onNumbers;
+  useEffect(() => { numbersOut.current?.(numbers); }, [numbers]);
 
   // The numbers follow every edit (debounced); an older reply never overwrites a newer one.
   useEffect(() => {
@@ -318,24 +327,8 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     onBrokerApp: () => { void brokerApp(); },
   };
 
-  return (
-    <RD.Root open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      {confirmBox.dialog}
-      <RD.Portal>
-        <RD.Overlay className="fixed inset-0 z-40 bg-scrim/50" />
-        <RD.Content aria-describedby={undefined} data-basket-panel data-step={step.kind}
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[94dvh] flex-col overflow-hidden rounded-t-panel border border-border bg-surface-1 text-fg shadow-raised focus:outline-none md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[44rem] md:rounded-none md:rounded-l-panel">
-          <div className="flex items-center justify-between gap-space-3 px-space-4 pt-space-3">
-            <div className="flex min-w-0 items-center gap-space-2">
-              <RD.Title className="text-t18 font-semibold text-fg">
-                Basket <span className="text-t14 font-normal text-fg-muted">{legs.length} leg{legs.length === 1 ? "" : "s"}{chain.symbol ? ` · ${chain.symbol}` : ""}</span>
-              </RD.Title>
-              <PracticeFrame />
-            </div>
-            <RD.Close aria-label="Close" className="-mr-space-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg">
-              <X size={18} aria-hidden />
-            </RD.Close>
-          </div>
+  const steps = (
+    <>
           {step.kind === "edit" && (
             <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} rows={rows} pick={pick} atm={atm} spot={spot}
               product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks}
@@ -357,6 +350,36 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
             <ResultView result={step.result} onRemaining={() => { void confirm(remainingLegs(step.legs, step.result)); }} onEdit={() => setStep({ kind: "edit" })}
               onClear={() => { store.clear(); onClose(); }} onClose={onClose} api={api} />
           )}
+    </>
+  );
+  const title = <>Basket <span className="text-t14 font-normal text-fg-muted">{legs.length} leg{legs.length === 1 ? "" : "s"}{chain.symbol ? ` · ${chain.symbol}` : ""}</span></>;
+
+  if (embedded) {
+    return (
+      <div data-basket-panel data-embedded data-step={step.kind} className="flex min-h-0 flex-col">
+        {confirmBox.dialog}
+        {steps}
+      </div>
+    );
+  }
+
+  return (
+    <RD.Root open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      {confirmBox.dialog}
+      <RD.Portal>
+        <RD.Overlay className="fixed inset-0 z-40 bg-scrim/50" />
+        <RD.Content aria-describedby={undefined} data-basket-panel data-step={step.kind}
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[94dvh] flex-col overflow-hidden rounded-t-panel border border-border bg-surface-1 text-fg shadow-raised focus:outline-none md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[44rem] md:rounded-none md:rounded-l-panel">
+          <div className="flex items-center justify-between gap-space-3 px-space-4 pt-space-3">
+            <div className="flex min-w-0 items-center gap-space-2">
+              <RD.Title className="text-t18 font-semibold text-fg">{title}</RD.Title>
+              <PracticeFrame />
+            </div>
+            <RD.Close aria-label="Close" className="-mr-space-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg">
+              <X size={18} aria-hidden />
+            </RD.Close>
+          </div>
+          {steps}
         </RD.Content>
       </RD.Portal>
     </RD.Root>
@@ -453,8 +476,8 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
 
         <section aria-label="Legs" className="space-y-space-2">
           {legs.length === 0 && (
-            <p className="rounded-control bg-surface-2 px-space-3 py-space-3 text-t13 text-fg-muted" data-basket="empty">
-              No legs yet. Tap a strike on the chain and choose Add to basket, or pick a ready strategy.
+            <p className="rounded-control bg-surface-2 px-space-3 py-space-3 text-t13 text-fg-muted" data-basket="empty" data-empty>
+              No legs yet. Tap a price on the chain, or pick a ready strategy.
             </p>
           )}
           <ol className="space-y-space-2" data-basket="legs">

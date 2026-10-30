@@ -62,7 +62,9 @@ def underlying_exit(direction: str, stop_loss: Optional[float], target1: Optiona
     tolerant of missing targets (an option deployment's strategy may only have a stop) and of a missing stop (strategy
     templates section 5: a single option whose stop is the premium stop only still exits at its underlying target)."""
     stop_side, target_side = (BELOW, ABOVE) if direction == "LONG" else (ABOVE, BELOW)
-    if stop_loss is not None and touched(stop_loss, stop_side, price, price):
+    # DEF-0 D7 (as `determine_exit_price`): a short's stop of 0 is "no stop set" (SB-UX SU4: a builder strategy with a
+    # blank stop signals one); a long's 0 is never touched
+    if stop_loss is not None and (direction == "LONG" or stop_loss > 0) and touched(stop_loss, stop_side, price, price):
         return "Stop Loss"
     if target2 is not None and touched(target2, target_side, price, price):
         return "Target 2"

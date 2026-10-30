@@ -51,15 +51,16 @@ def test_prefill_reads_what_the_trader_already_said():
     assert "symbol" not in iv.start("I have 2 lakh and want nifty scalping")["remaining"]
 
 
-def test_risk_plan_follows_the_answers_and_keeps_two_losses_inside_the_day():
+def test_risk_plan_holds_only_the_traders_own_answers():
     # P0.10: experience changes nothing - the trader's own risk answer is used, inside the operator's ceilings.
     cfg, notes = iv.risk_plan(iv.InterviewAnswers(experience="new", risk="aggressive", daily_loss=3, capital=200_000))
     assert cfg.risk_per_trade_pct == 1.5 and cfg.capital == 200_000         # P0.8-D: the entered capital - no allocation advice
     # DEF-0: only what the trader answered - every other limit is not set (off)
     assert cfg.max_daily_loss_pct == 3.0 and cfg.max_open_positions is None
     assert cfg.max_consecutive_losses is None and cfg.max_trades_per_day is None and cfg.stop_cooldown_minutes is None and not notes
-    cfg, _ = iv.risk_plan(iv.InterviewAnswers(experience="experienced", risk="aggressive", daily_loss=1))
-    assert cfg.max_daily_loss_pct == 1.0 and cfg.risk_per_trade_pct == 0.5  # two losses fit the 1% day
+    # SB-UX SU4: no "two losses must fit the day" rule - his 1.5% and his 1% day stay as he answered
+    cfg, notes = iv.risk_plan(iv.InterviewAnswers(experience="experienced", risk="aggressive", daily_loss=1))
+    assert cfg.max_daily_loss_pct == 1.0 and cfg.risk_per_trade_pct == 1.5 and not notes
     cfg, _ = iv.risk_plan(iv.InterviewAnswers(experience="experienced", risk="aggressive", daily_loss=3), {"risk_per_trade_pct": 1.0})
     assert cfg.risk_per_trade_pct == 1.0                                       # the platform ceiling wins
 
@@ -103,8 +104,9 @@ def test_plan_in_marathi_with_a_deployable_paper_setup():
     dep = plan["deployment"]
     assert dep["mode"] == "PAPER" and dep["regime_filter"] == ["TRENDING_UP", "TRENDING_DOWN"]
     DeploymentCreateRequest(**dep).normalised()                               # the create API accepts it as is
-    # DEF-0 D2: no capital given - none is pre-filled
-    assert plan["risk_config"]["risk_per_trade_pct"] == 0.5 and plan["risk_config"]["capital"] is None and "Capital not given" in plan["ai_prompt"]
+    # DEF-0 D2 / SB-UX SU4: no capital and no risk answered - none is pre-filled
+    assert plan["risk_config"]["risk_per_trade_pct"] is None and plan["risk_config"]["max_daily_loss_pct"] is None
+    assert plan["risk_config"]["capital"] is None and "Capital not given" in plan["ai_prompt"] and "no risk per trade set" in plan["ai_prompt"]
     tested = [r for r in [plan["recommended"], *plan["alternatives"]] if r["evidence"]["tested"]]
     assert tested
 

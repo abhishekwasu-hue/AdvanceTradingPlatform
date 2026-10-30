@@ -7,6 +7,7 @@ import AdminPage from "../pages/AdminPage";
 import type { PageProps } from "../routes";
 import { NotFound } from "../shell/common";
 import { PageTabs } from "../ui/PageTabs";
+import { SubTabs } from "../ui/SubTabs";
 import { useFeatures } from "../ui/useFeatures";
 import AlertsPanelV2 from "./AlertsPanelV2";
 import GrowthSettingsPanelV2 from "./GrowthSettingsPanelV2";
@@ -14,7 +15,7 @@ import ChainHistoryCard from "./ChainHistoryCard";
 import CompliancePanelV2 from "./CompliancePanelV2";
 import { ActivationPanel, AiCostPanel, BUTTON, Phase0Notice, Pill, SupportPanel, SystemPanels, TestingToolsPanel, UsersPanel } from "./AdminSectionsV2";
 import { SupportDeskSettingsPanel, SupportTicketsPanel } from "./SupportDeskV2";
-import { ADMIN_SECTIONS, ago, consoleApi, isAdminSection, type AdminSection, type ConsoleDiagnostics } from "./consoleApi";
+import { ADMIN_SECTIONS, CONTROLS_GROUPS, ago, consoleApi, isAdminSection, isControlsGroup, type AdminSection, type ConsoleDiagnostics, type ControlsGroup } from "./consoleApi";
 
 /**
  * MO3 addition (a), behind `ui_v2`: the admin console at `/admin`, in sections - System, Controls, Users & business,
@@ -25,7 +26,8 @@ import { ADMIN_SECTIONS, ago, consoleApi, isAdminSection, type AdminSection, typ
  * The server is the gate (every `/api/admin/*` route: SUPER_ADMIN + two-factor). Here a non-admin sees the plain "This
  * page does not exist" card, never a hint that a console exists. MO3-A1: Support › one person › "View as this person"
  * opens the app as they see it - a time-limited, audited, read-only session on the server (app/auth/view_as.py) with the
- * banner on top (src/admin/ViewAsBanner.tsx).
+ * banner on top (src/admin/ViewAsBanner.tsx). ADM-1: Controls shows one group at a time - Safety, Risk limits, Trader
+ * features, Feature flags (`&group=`).
  */
 export default function AdminConsoleV2(_props: PageProps) {
   const { user, loading } = useAuth();
@@ -34,6 +36,8 @@ export default function AdminConsoleV2(_props: PageProps) {
   const growth = useFeatures().on("growth_v2");     // MO4 slice 3: the activation events in Users & business
   const raw = params.get("section");
   const section: AdminSection = isAdminSection(raw) ? raw : "system";
+  const rawGroup = params.get("group");
+  const group: ControlsGroup = isControlsGroup(rawGroup) ? rawGroup : "safety";   // ADM-1: Controls in four groups
   const userParam = parseInt(params.get("user") ?? "", 10);
   const supportUser = Number.isNaN(userParam) ? null : userParam;
 
@@ -58,7 +62,15 @@ export default function AdminConsoleV2(_props: PageProps) {
         items={ADMIN_SECTIONS.map((s) => ({ key: s.id, label: s.label, to: s.id === "system" ? "/admin" : `/admin?section=${s.id}` }))} />
 
       {section === "system" && <><AlertsPanelV2 /><SystemPanels /><ChainHistoryCard /></>}
-      {section === "controls" && <Phase0Notice />}
+      {section === "controls" && (
+        <>
+          <SubTabs kind="links" label="Control groups" value={group} data={{ "data-controls-groups": group }}
+            onChange={(next) => setParams(next === "safety" ? { section: "controls" } : { section: "controls", group: next })}
+            items={CONTROLS_GROUPS.map((g) => ({ key: g.id, label: g.label, to: g.id === "safety" ? "/admin?section=controls" : `/admin?section=controls&group=${g.id}` }))} />
+          <p className="text-t12 text-fg-muted" data-controls-hint>{CONTROLS_GROUPS.find((g) => g.id === group)!.hint}.</p>
+          {group === "safety" && <Phase0Notice />}
+        </>
+      )}
       {section === "users" && <><UsersPanel />{growth && <ActivationPanel />}<GrowthSettingsPanelV2 /><AiCostPanel /></>}
       {section === "testing" && <TestingToolsPanel />}
       {section === "support" && (
@@ -70,7 +82,7 @@ export default function AdminConsoleV2(_props: PageProps) {
         </>
       )}
       {section === "compliance" && <CompliancePanelV2 />}
-      {section !== "testing" && section !== "support" && section !== "compliance" && <AdminPage section={section} />}
+      {section !== "testing" && section !== "support" && section !== "compliance" && <AdminPage section={section} controlsGroup={group} />}
 
       <Sheet open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} title="Diagnostics"
         description="What already went wrong, newest first. Search the server logs by the request id for the full story.">

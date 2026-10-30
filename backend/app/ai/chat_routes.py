@@ -155,7 +155,8 @@ async def chat_ask(body: ChatBody, user: User = Depends(require_ai_acknowledged)
         if text:
             from app.ai import grounding
             facts = "\n".join(out.lines())
-            result.update(summary=[text], answer=text, source="ai",
+            named = chat.symbol_line(out, text)          # CU1: the AI wording names the symbol it read, or the line is added
+            result.update(summary=[text, *([named] if named else [])], answer=text, source="ai",
                           numbers=grounding.provenance(text, grounding.allowed_from_text(facts), grounding.allowed_from_text(body.message)))
         else:
             result["note"] = "The AI wording did not pass ATP's checks, so this answer uses ATP's own sentences."

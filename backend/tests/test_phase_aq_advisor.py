@@ -22,14 +22,14 @@ def test_feedback_becomes_preferences():
     assert answers.style == "swing" and answers.time == "auto" and p.trades_bias == -2
 
 
-def test_desired_targets_follow_the_feedback():
+def test_desired_is_the_traders_own_answer_whatever_the_feedback():
+    # SB-UX SU4 (DEF-0): feedback moves the template ranking only - no risk, trades-a-day or reward:risk number of its own.
     a = InterviewAnswers(experience="learning", risk="moderate", style="intraday", vehicle="option_buy")
     base = ad.desired(a, ad.Preferences())
-    assert base == {"risk_pct": 1.0, "trades": 3, "rr": 2.0}
-    calmer = ad.desired(a, ad.Preferences(risk_bias=-2, trades_bias=-1, reward_bias=1))
-    assert calmer["risk_pct"] == 0.5 and calmer["trades"] == 2 and calmer["rr"] == 2.5
-    # P0.10: "more risk is ok" stays within the trader's own answer plus a quarter - experience sets no cap.
-    assert ad.desired(InterviewAnswers(experience="new", risk="aggressive"), ad.Preferences(risk_bias=2))["risk_pct"] == 1.88
+    assert base == {"risk_pct": 1.0, "trades": None, "rr": None}
+    assert ad.desired(a, ad.Preferences(risk_bias=-2, trades_bias=-1, reward_bias=1)) == base
+    assert ad.desired(InterviewAnswers(experience="new", risk="aggressive"), ad.Preferences(risk_bias=2))["risk_pct"] == 1.5
+    assert ad.desired(InterviewAnswers(), ad.Preferences())["risk_pct"] is None              # not answered = not set
 
 
 def test_three_options_each_a_deployable_plan_without_a_match_score():
@@ -37,9 +37,14 @@ def test_three_options_each_a_deployable_plan_without_a_match_score():
     r = ad.build_options(a, ad.Preferences(), _sessions(days=6), "5min")
     assert [o["option"]["id"] for o in r["options"]] == ["safe", "balanced", "active"]
     safe, balanced, active = r["options"]
-    assert safe["risk_config"]["risk_per_trade_pct"] < balanced["risk_config"]["risk_per_trade_pct"]
-    assert safe["risk_config"]["max_trades_per_day"] < active["risk_config"]["max_trades_per_day"]
-    assert safe["risk_config"]["min_risk_reward"] > active["risk_config"]["min_risk_reward"]
+    # SB-UX SU4 (DEF-0): every option carries the trader's own risk answer and nothing he did not set - no tilt, no
+    # trades-a-day cap, no minimum reward:risk, no break-even move, no time exit.
+    for o in (safe, balanced, active):
+        assert o["risk_config"] == balanced["risk_config"] and o["risk_config"]["risk_per_trade_pct"] == 1.0
+        assert o["risk_config"]["max_trades_per_day"] is None and o["risk_config"]["min_risk_reward"] == 0.0
+        assert o["risk_config"]["max_daily_loss_pct"] is None and o["risk_config"]["max_portfolio_risk_pct"] is None
+        assert o["deployment"]["exit_rules"] == {"break_even_at_r": None, "time_exit_at": None}
+        assert o["option"]["headline"] is None
     for o in r["options"]:
         assert "match" not in o["option"] and "market_fit" not in o["option"]      # P0.8-D: no score on a template
         assert o["option"]["regime_filter_open"] in (True, False, None)

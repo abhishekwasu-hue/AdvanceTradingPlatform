@@ -149,7 +149,7 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
                       <ul className="list-disc pl-4 text-fg">{selected.config![side].map((c, i) => <li key={i}>{conditionText(c, t)}</li>)}</ul>
                     </div>
                   ))}
-                  <div className="mt-1 text-xs text-fg-muted">{t("lab.drafts.exits", { atr: selected.config.stop_loss_atr_mult, period: selected.config.atr_period, targets: selected.config.target_rr.join("R / ") })}</div>
+                  <div className="mt-1 text-xs text-fg-muted">{t("lab.drafts.exits", { atr: selected.config.stop_loss_atr_mult, period: selected.config.atr_period, targets: selected.config.target_rr?.join("R / ") ?? "-" })}</div>
                 </div>
               )}
               {selected.compliance && (

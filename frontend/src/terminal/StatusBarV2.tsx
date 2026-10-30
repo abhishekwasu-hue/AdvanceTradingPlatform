@@ -17,9 +17,13 @@ const LABEL = "text-t12 text-fg-muted";
 const VALUE = "whitespace-nowrap font-tabular text-t15 font-semibold";
 const tone = (t: Tone) => (t === "neutral" ? "text-fg" : toneClass(t));
 
-export function StatusBarV2({ status, failed, masked, onMask, compact = false, combined = [] }: {
+export function StatusBarV2({ status, failed, masked, onMask, compact = false, combined = [], showMode = true, showFeed = true }: {
   status: TerminalStatus | null; failed: boolean; masked: boolean; onMask: () => void; compact?: boolean;
   combined?: readonly CombinedExit[];
+  /** TERM-2 step 1: false where the context bar already shows the one PAPER badge (one badge per screen). */
+  showMode?: boolean;
+  /** TERM-2 step 2 / CT-1 C9: false where the shell's feed dot and the chart's live chip already say it (one freshness mark). */
+  showFeed?: boolean;
 }) {
   const mode = modeChip(status);
   const cx6 = statusSummary(combined, masked);
@@ -53,7 +57,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
         <p className="min-w-0 flex-1 text-t13 text-fg-muted" role="status">
           {failed ? "Your figures could not be read. We will try again in a moment." : "Loading your figures…"}
         </p>
-        {modeChipEl}
+        {showMode && modeChipEl}
         {maskButton}
       </section>
     );
@@ -72,7 +76,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
           <span className={cx(VALUE, "text-fg")}>{money(status.funds.available, masked)}</span>
         </div>
         {combinedChip}
-        {modeChipEl}
+        {showMode && modeChipEl}
         {maskButton}
       </section>
     );
@@ -99,13 +103,13 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
         <span className={LABEL}>Margin used <span className="text-fg-muted">(estimate)</span></span>
         <span className={cx(VALUE, "text-fg")}>{money(status.margin.used, masked)}</span>
       </div>
-      <span data-status="feed" data-state={status.feed.state} title={status.feed.message}
+      {showFeed && <span data-status="feed" data-state={status.feed.state} title={status.feed.message}
         className={cx("inline-flex shrink-0 items-center gap-space-1 text-t13 font-medium", tone(feed.tone))}>
         {status.feed.state === "none" || status.feed.state === "reconnecting" || status.feed.state === "renew_needed"
           ? <WifiOff size={14} aria-hidden /> : <Wifi size={14} aria-hidden />}
         {feed.label}
-      </span>
-      {modeChipEl}
+      </span>}
+      {showMode && modeChipEl}
       <span data-status="kill-switch" data-engaged={status.kill_switch.engaged ? "" : undefined} title={status.kill_switch.message}
         className={cx("inline-flex shrink-0 items-center gap-space-1 text-t13 font-medium", status.kill_switch.engaged ? "text-warn" : "text-fg-muted")}>
         {status.kill_switch.engaged ? <ShieldAlert size={14} aria-hidden /> : <ShieldCheck size={14} aria-hidden />}

@@ -37,8 +37,11 @@ import VisionReviewSwitchesV2 from "./VisionReviewSwitchesV2";
 const HelpCentreV2 = lazy(() => import("../support/HelpCentreV2"));
 
 const TITLE: Record<SettingsSectionId, string> = {
-  ai: "AI", alerts: "Alerts", appearance: "Appearance", help: "Help & tips", advanced: "Advanced",
+  ai: "AI", alerts: "Alerts", appearance: "Appearance", help: "Help & tips", advanced: "Advanced", "risk-limits": "Risk limits",
 };
+
+// M64: Settings › Risk limits, its own chunk.
+const RiskLimitsV2 = lazy(() => import("./RiskLimitsV2"));
 
 /** `#<id>`: open every fold around (and at) the element, then bring it into view - now, and once the cards loaded. */
 function useHashTarget() {
@@ -199,6 +202,7 @@ const BODY: Record<SettingsSectionId, () => ReactNode> = {
   appearance: () => <div id="appearance" className="scroll-mt-20"><AppearanceCard /></div>,
   help: () => <HelpSection />,
   advanced: () => <AdvancedSection />,
+  "risk-limits": () => <Suspense fallback={null}><RiskLimitsV2 /></Suspense>,
 };
 
 export default function SettingsSectionV2(_props: PageProps = {}) {

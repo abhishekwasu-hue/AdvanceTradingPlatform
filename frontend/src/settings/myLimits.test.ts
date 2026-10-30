@@ -33,7 +33,7 @@ describe("DEF-0 My limits", () => {
   it("D6: a placeable order names nothing; a held one names its rule, and his own limit links to My limits", () => {
     expect(blockedBy({ can_place: true, errors: [], refusals: [] })).toBeNull();
     expect(blockedBy({ can_place: false, errors: [], refusals: ["Your risk per trade (₹500) allows 0 lot(s) at this stop-loss."] }))
-      .toEqual({ text: "Your risk per trade (₹500) allows 0 lot(s) at this stop-loss.", link: "/risk-management" });
+      .toEqual({ text: "Your risk per trade (₹500) allows 0 lot(s) at this stop-loss.", link: "/settings/risk-limits" });   // M64
     expect(blockedBy({ can_place: false, errors: [], refusals: ["NIFTY is in the F&O ban list today."] })?.link).toBeNull();
   });
 });

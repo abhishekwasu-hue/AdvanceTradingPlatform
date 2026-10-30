@@ -21,6 +21,7 @@ import { riskLine, structureOf, ticketPayoffSentence, type RiskBudget, type Risk
 import type { ChainRow } from "../optionChain/types";
 import { eventLine, legLiquidity, liquidityLine, marginLine, type EventRisk } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
+import RiskBlockV2 from "../risk/RiskBlockV2";
 import { Combobox } from "../ui/Combobox";
 
 /**
@@ -96,7 +97,7 @@ function Line({ label, children, testId }: { label: string; children: ReactNode;
 export interface OrderTicketState {
   draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string; defaults?: DraftDefaults;
   budget: RiskBudget | null; events: EventRisk | "error" | null; liquidity: RiskLine | null;
-  onDraft: (patch: Partial<Draft>) => void; review: () => Promise<void>; place: () => Promise<void>; back: () => void;
+  onDraft: (patch: Partial<Draft>) => void; review: (over?: Partial<Draft>) => Promise<void>; place: () => Promise<void>; back: () => void;
   multi?: MultiTicket;
 }
 
@@ -160,12 +161,15 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     return () => window.removeEventListener("keydown", onKey);
   }, [shortcuts, open, step.kind]);
 
-  async function review() {
-    const missing = draftProblems(draft, target?.right);
+  async function review(over?: Partial<Draft>) {
+    // M64 RM-3: "Use N lots" from a size limit's block message checks the order again at the smaller size.
+    const d = over ? { ...draft, ...over } : draft;
+    if (over) setDraft(d);
+    const missing = draftProblems(d, target?.right);
     if (!target || missing.length) { setProblem(missing[0] ?? null); return; }
     setBusy(true);
     try {
-      setStep({ kind: "review", preview: await api.preview(askOf(target, draft, ref.current)) });
+      setStep({ kind: "review", preview: await api.preview(askOf(target, d, ref.current)) });
     } catch (e) {
       setProblem(errorSentence(e));
     } finally {
@@ -242,7 +246,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
           </div>
           <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults}
             budget={t.budget} events={t.events} liquidity={t.liquidity}
-            onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onBack={t.back} onClose={onClose} multi={t.multi} />
+            onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onReviewWith={(patch) => void t.review(patch)} onBack={t.back} onClose={onClose} multi={t.multi} />
         </RD.Content>
       </RD.Portal>
     </RD.Root>
@@ -285,7 +289,7 @@ export function ExitEveryAccount({ busy, accounts, onExit }: { busy: boolean; ac
 }
 
 /** The ticket's fields, the confirm step and the buttons (no state, no hooks). */
-export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi }: {
+export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onReviewWith, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi }: {
   target: TicketTarget; draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string;
   /** Settings part C: the user's own ticket defaults, to mark the fields that still show them. */
   defaults?: DraftDefaults;
@@ -297,6 +301,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
   /** Trading Terminal T1: false where the B / S keys are not listened to (the Terminal's order panel). */
   keysHint?: boolean;
   onDraft: (patch: Partial<Draft>) => void; onReview: () => void; onPlace: () => void; onBack: () => void; onClose: () => void;
+  /** M64 RM-3: check the order again with a change (a size limit's "Use N lots"). */
+  onReviewWith?: (patch: Partial<Draft>) => void;
   /** Owner fix T1-2 (Terminal, phone): the main action (Review / Place) stays in view, just above the bottom navigation
    *  (4rem + its border + the home-indicator inset); from md it sits at the end of the panel as before. */
   stickyActions?: boolean;
@@ -428,10 +434,15 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
         {step.kind === "review" && (
           <>
             {(() => {
+              // M64 RM-3: a Risk limits refusal is a block message (its numbers, Change limit, a smaller size offered).
+              const block = step.preview.risk?.blocks?.[0];
+              if (block && !step.preview.errors.length) {
+                return <RiskBlockV2 block={block} busy={busy} testId="ticket-risk-block" onSmaller={onReviewWith ? (lots) => onReviewWith({ lots }) : undefined} />;
+              }
               const why = blockedBy(step.preview);
               return why && (
                 <p className="basis-full text-t13 text-fg" data-ticket="blocked-by">
-                  {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-ticket="change-limits">Change it in My limits</a></>}
+                  {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-ticket="change-limits">Change limit</a></>}
                 </p>
               );
             })()}

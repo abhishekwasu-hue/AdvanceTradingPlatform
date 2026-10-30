@@ -31,7 +31,9 @@ from app.risk_engine.risk_manager import nonfinite_levels
 
 logger = logging.getLogger(__name__)
 
-MARGIN_SAFETY = 0.8          # never plan to use more than this share of available margin
+# M64 (owner, 30 Oct): margin safety is the trader's own switch on Settings > Risk limits (RiskConfig.margin_share(), off =
+# the whole available margin). This old share stays only as the callers' default when no config is passed.
+MARGIN_SAFETY = 0.8
 DEFAULT_WRITE_MAX_LOTS = 1   # kept for imports; DEF-0: no longer a cap - a written option's size is the trader's own
 
 
@@ -142,10 +144,10 @@ def build_order_plan(signal: Signal, contract: ResolvedContract, rules: Contract
     return OrderPlan(order_signal, spec, max_quantity, meta, notes)
 
 
-async def written_lot_cap(broker: BrokerInterface, contract: ResolvedContract) -> Tuple[int, str]:
+async def written_lot_cap(broker: BrokerInterface, contract: ResolvedContract, share: float = MARGIN_SAFETY) -> Tuple[int, str]:
     """LIVE only: how many lots of this written option the account can carry - the broker's
-    margin requirement for one lot against `MARGIN_SAFETY` of available margin. Unknown margin
-    is a refusal, not a guess."""
+    margin requirement for one lot against `share` of available margin (M64: the trader's margin safety %, or all of
+    it when that check is off). Unknown margin is a refusal, not a guess."""
     probe = BrokerOrderRequest(
         symbol=contract.instrument_key if _is_upstox(broker) and "|" in (contract.instrument_key or "") else contract.tradingsymbol,
         exchange=contract.exchange, transaction_type=OrderSide.SELL, quantity=contract.lot_size, order_type="MARKET", product="MIS",
@@ -155,7 +157,7 @@ async def written_lot_cap(broker: BrokerInterface, contract: ResolvedContract) -
         raise ContractExecutionError(f"{broker.name} did not report a margin requirement for writing {contract.tradingsymbol} - refused")
     margins = await broker.get_margins()
     available = float(margins.available_margin or margins.available_cash or 0.0)
-    lots = int((available * MARGIN_SAFETY) // per_lot)
+    lots = int((available * share) // per_lot)
     if lots < 1:
         raise ContractExecutionError(
             f"Insufficient margin to write {contract.tradingsymbol}: {per_lot:,.0f} per lot needed, {available:,.0f} available"

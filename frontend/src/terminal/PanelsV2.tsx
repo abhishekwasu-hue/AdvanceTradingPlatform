@@ -265,7 +265,7 @@ export function OrderPanelV2({ ticket, state: t, onClear, paperBadge = true }: {
       </div>
       <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults}
         budget={t.budget} events={t.events} liquidity={t.liquidity} keysHint={false} stickyActions
-        onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onBack={t.back} onClose={onClear} />
+        onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onReviewWith={(patch) => void t.review(patch)} onBack={t.back} onClose={onClear} />
     </div>
   );
 }

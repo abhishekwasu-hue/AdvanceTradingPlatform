@@ -10,7 +10,7 @@ from app.core.models import RiskConfig
 from app.db.models import RiskSettingsRecord, User
 from app.db.session import get_session
 from app.platform import controls
-from app.risk_engine import loss_streak
+from app.risk_engine import loss_streak, risk_limits
 
 router = APIRouter(prefix="/api/risk-settings", tags=["risk"])
 
@@ -35,7 +35,14 @@ def org_min_rr_to_store(value: float) -> float:
     return _OWN_LEGACY_ORG_MIN_RR if value == LEGACY_ORG_MIN_RR else value
 
 
-def _record_to_config(record: RiskSettingsRecord) -> RiskConfig:
+def _record_to_config(record: RiskSettingsRecord, *, switched: bool = True) -> RiskConfig:
+    """The organisation's limits as the engine checks them: M64 - a check switched off on Settings > Risk limits reads
+    as not set (`switched`; app/risk_engine/risk_limits.py). `switched=False` is the stored values, switches ignored."""
+    cfg = _stored_config(record)
+    return risk_limits.apply_switches(cfg, risk_limits.switches_of(record)["enabled"]) if switched else cfg
+
+
+def _stored_config(record: RiskSettingsRecord) -> RiskConfig:
     return RiskConfig(
         capital=record.capital,
         risk_per_trade_pct=record.risk_per_trade_pct,
@@ -52,6 +59,9 @@ def _record_to_config(record: RiskSettingsRecord) -> RiskConfig:
         dd_level_2_pct=record.dd_level_2_pct,
         event_size_cut_pct=record.event_size_cut_pct,
         loss_streak_pause=record.loss_streak_pause if record.loss_streak_pause in loss_streak.PAUSE_MODES else loss_streak.NEXT_SESSION,
+        max_lots_per_order=record.max_lots_per_order, daily_loss_rupees=record.daily_loss_rupees,
+        risk_per_trade_rupees=record.risk_per_trade_rupees, loss_cooldown_minutes=record.loss_cooldown_minutes,
+        margin_safety_pct=record.margin_safety_pct,
     )
 
 
@@ -120,6 +130,24 @@ async def update_risk_settings(
     record.dd_level_2_pct = config.dd_level_2_pct
     record.event_size_cut_pct = config.event_size_cut_pct
     record.loss_streak_pause = config.loss_streak_pause
+    # M64: the fields this older form does not send keep their values; each check it sends is ON when its value is set,
+    # OFF when cleared, and counts as saved by the trader (app/risk_engine/risk_limits.py).
+    for key in ("max_lots_per_order", "daily_loss_rupees", "risk_per_trade_rupees", "loss_cooldown_minutes", "margin_safety_pct"):
+        if key in config.model_fields_set:
+            setattr(record, key, getattr(config, key))
+    switches = risk_limits.switches_of(record if record.id is not None else None)
+    enabled, saved = set(switches["enabled"]), set(switches["saved"])
+    sent = set(config.model_fields_set)
+    stored = risk_limits.values_of(record)
+    for check in risk_limits.CHECKS:
+        if not any(f.key in sent for f in check.fields):
+            continue
+        saved.add(check.id)
+        if any(risk_limits.is_set(f.key, stored.get(f.key)) for f in check.fields):
+            enabled.add(check.id)
+        else:
+            enabled.discard(check.id)
+    record.limits_switches_json = risk_limits.switches_json({"enabled": sorted(enabled), "saved": sorted(saved)})
 
     await session.commit()
     await session.refresh(record)
@@ -159,3 +187,111 @@ async def resume_after_loss_streak(user: User = Depends(require_trader), session
                           f"losses_in_a_row={status['losses_in_a_row']} limit={status['limit']}")
     await session.commit()
     return await loss_streak_status(session, user.tenant_id)
+
+
+# --- M64: Settings > Risk limits (one page; every check a switch, OFF by default) ----------------------------------------
+
+# The checks the PAPER ticket's own limits (app/risk_engine/by_default.py, flag risk_by_default) also hold: Risk limits
+# writes them there too, so the trader sees and sets ONE value (that module keeps its rule that a looser value waits for
+# the next day).
+PAPER_TWINS: dict[str, dict[str, str]] = {
+    "risk_sizing": {"risk_per_trade_pct": "risk_per_trade_pct", "risk_per_trade_rupees": "risk_per_trade_amount"},
+    "daily_loss": {"max_daily_loss_pct": "daily_loss_pct"},
+    "max_entries_per_day": {"max_trades_per_day": "max_trades_per_day"},
+    "min_reward_risk": {"min_risk_reward": "min_rr"},
+    "max_open_positions": {"max_open_positions": "max_open_positions"},
+}
+
+
+async def _paper_twin_values(session: AsyncSession, user: User) -> dict:
+    """The PAPER ticket's own values of the twin checks the trader set there (flag on), {check: {field: value}}."""
+    from app.market_data.calendar import to_ist
+    from app.risk_engine import by_default
+    if not await by_default.enabled(session, user.tenant_id):
+        return {}
+    stored = (await by_default.user_settings(session, user)).as_dict()
+    row = await by_default._account(session, user)
+    keys = set(by_default.set_on(row.risk_settings_json if row is not None else None, to_ist(None).date()))
+    out: dict = {}
+    for check_id, pairs in PAPER_TWINS.items():
+        vals = {field: stored[twin] for field, twin in pairs.items() if twin in keys and stored.get(twin)}
+        if vals:
+            out[check_id] = vals
+    return out
+
+
+@router.get("/limits")
+async def get_risk_limits(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Settings > Risk limits: every check with its switch (OFF until the trader turns it on), its values, units, bounds
+    and one-line help; the PAPER ticket's own values of the same checks (flag risk_by_default) under `paper`."""
+    record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
+    view = risk_limits.view(record, await controls.risk_ceilings(session))
+    view["paper"] = await _paper_twin_values(session, user)
+    return view
+
+
+@router.put("/limits", dependencies=[Depends(require_scope("risk:write"))])
+async def put_risk_limits(body: dict, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+    """Saves switches and values from Settings > Risk limits (`{"checks": {id: {"enabled", "values"}}, "capital",
+    "loss_streak_pause"}`). A check switched on needs its value; a switched-off one keeps its value. Each check sent
+    counts as saved by the trader. Audited. Places nothing; exits are never checked (ADR-0004)."""
+    from app.audit.log import write_audit_log
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="The limits could not be read. Reload the page and try again.")
+    ceilings = await controls.risk_ceilings(session)
+    record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
+    values, switches, problems = risk_limits.plan_save(record, body, ceilings)
+    capital = body.get("capital", getattr(record, "capital", None) if record is not None else None)
+    if capital is not None and (not isinstance(capital, (int, float)) or isinstance(capital, bool) or not math.isfinite(capital) or capital <= 0):
+        problems.append("Account basis: enter an amount above 0, or leave it empty to use your paper balance.")
+    pause = body.get("loss_streak_pause", getattr(record, "loss_streak_pause", None) if record is not None else None) or loss_streak.NEXT_SESSION
+    if pause not in loss_streak.PAUSE_MODES:
+        problems.append("Cool-down after losses in a row: pick when the pause ends.")
+    if problems:
+        raise HTTPException(status_code=422, detail=problems[0])
+    if record is None:
+        record = RiskSettingsRecord(tenant_id=user.tenant_id, updated_by=user.id, min_risk_reward=0.0, lot_size=1)
+        session.add(record)
+    record.updated_by = user.id
+    for key, value in values.items():
+        setattr(record, key, value)
+    record.capital = float(capital) if capital is not None else None
+    record.loss_streak_pause = pause
+    record.limits_switches_json = risk_limits.switches_json(switches)
+    sent = sorted((body.get("checks") or {}).keys())
+    await write_audit_log(session, user.tenant_id, user.id, "risk_limits_set",
+                          (f"on: {', '.join(switches['enabled']) or 'none'}; changed: {', '.join(sent) or 'none'}")[:500])
+    await session.commit()
+    note = await _write_paper_twins(session, user, body.get("checks") or {}, switches["enabled"], values)
+    from app.me import notices
+    await notices.mark_seen(session, user, notices.RISK_LIMITS_OFF)
+    record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
+    view = risk_limits.view(record, ceilings)
+    view["paper"] = await _paper_twin_values(session, user)
+    view["note"] = note
+    return view
+
+
+async def _write_paper_twins(session: AsyncSession, user: User, sent: dict, enabled: list[str], values: dict) -> str | None:
+    """The PAPER ticket's own limits get the same values for the twin checks sent (flag risk_by_default on). A value its
+    narrower bounds refuse is left as it was and said in the returned note."""
+    from app.paper import ticket
+    from app.risk_engine import by_default
+    if not await by_default.enabled(session, user.tenant_id):
+        return None
+    out: dict = {}
+    for check_id, pairs in PAPER_TWINS.items():
+        if check_id not in sent:
+            continue
+        for field, twin in pairs.items():
+            value = values.get(field) if check_id in enabled else None
+            out[twin] = value if isinstance(value, (int, float)) and value > 0 else None
+    if not out:
+        return None
+    try:
+        change = await ticket.save_settings(session, user, out)
+    except ValueError:
+        return "Your paper ticket keeps its own earlier values for one of these limits; they are outside its range."
+    if change.get("deferred"):
+        return f"On the paper ticket, a looser value starts on {change.get('from')} (a limit is never widened during the day it protects)."
+    return None

@@ -358,7 +358,12 @@ async def execute_signal_for_user(
             # DEF-0 D3: an Autopilot option with no premium stop of the trader's own gets no broker stop at its premium
             place_protective_stop=not (plan is not None and plan.meta.get("instrument_kind") == "OPTION"
                                        and plan.meta.get("premium_stop_pct") is None),
+            order_ref=order.id,
         )
+        # M55 S4: the tag (with this row's client order id) is on the row before anything is sent, so the start-up order
+        # sweeper (app/execution/order_sweeper.py) can find the order in the broker's book by it after a crash.
+        order.algo_tag = order_router.entry_tag(signal.strategy_id)
+        await session.commit()
         async def hierarchy_check(quantity: float):
             # Phase I1: every applicable risk limit (GLOBAL -> TENANT -> USER -> ACCOUNT ->
             # STRATEGY -> INSTRUMENT), strictest wins, each check recorded as a risk event.

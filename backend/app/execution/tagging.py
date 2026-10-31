@@ -14,9 +14,17 @@ own order trail and the exchange's records can be reconciled. The algo id itself
 configuration (`tenants.algo_id`, set by an OWNER on the Team page after the broker registers
 the algo); without one, tags fall back to `<strategy>-<leg>` and - when
 `ALGO_ID_REQUIRED_FOR_LIVE` is on - LIVE orders are refused before they reach the broker.
+
+M55 S4: a client order id per order. `client_order_id` makes a short id (letters and digits) that is stable for one
+order - derived from the order row (an entry: its `orders` row id; an exit: the position id and the time its exit was
+claimed; a stop: the position id and the time it was placed) - and `build_order_tag(client_id=...)` puts it in the tag
+just before the leg: `<algo id>-<strategy>-<client id>-<leg>`. The algo id and the leg stay whole first; the client id
+is shortened (never below `CLIENT_ID_MIN_LENGTH`) before it is left out; the strategy part gives way first. Two orders
+get two tags, so an order is found again in the broker's book by its own tag (`has_client_id`) without any time window.
 """
+import hashlib
 import re
-from typing import Optional
+import uuid
 
 # Conservative default: Zerodha documents `tag` as alphanumeric, at most 20 characters, and
 # every other adapter accepts at least that. Adapters raise `max_tag_length` where they can.
@@ -35,6 +43,36 @@ LEG_EXIT = "EXIT"
 # the leg whole and cuts the id), and the exchange could not attribute those orders to the registered algo.
 ALGO_ID_MAX_SAVED = DEFAULT_MAX_TAG_LENGTH - len("-" + LEG_EXIT)
 
+# M55 S4: the client order id - CLIENT_ID_LENGTH base-36 characters (36**6, about 2.2 billion values), cut to no less
+# than CLIENT_ID_MIN_LENGTH when the broker's tag is short; below that it is left out (the tag then matches as before).
+CLIENT_ID_LENGTH = 6
+CLIENT_ID_MIN_LENGTH = 4
+_B36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def client_order_id(*parts: object) -> str:
+    """A short, stable id for one order: the same `parts` (for example "E" and the order row id) always give the same
+    id, two different orders two different ids (a 6-character base-36 digest)."""
+    number = int.from_bytes(hashlib.sha256("|".join(str(p) for p in parts).encode()).digest()[:8], "big")
+    out = ""
+    for _ in range(CLIENT_ID_LENGTH):
+        number, digit = divmod(number, 36)
+        out += _B36[digit]
+    return out
+
+
+def new_client_order_id() -> str:
+    """A fresh id for an order that has no row of its own to derive one from (a multi-leg leg, an unwind)."""
+    return client_order_id("N", uuid.uuid4().hex)
+
+
+def has_client_id(tag: str | None, client_id: str | None) -> bool:
+    """Whether `tag` (as built by `build_order_tag`) carries `client_id`, whole or shortened."""
+    if not tag or not client_id:
+        return False
+    upper = tag.upper()
+    return any(client_id[:size].upper() in upper for size in range(len(client_id), CLIENT_ID_MIN_LENGTH - 1, -1))
+
 
 def sanitize_tag_part(value: str) -> str:
     """Broker tag fields reject most punctuation and whitespace; keep letters, digits, `_`, `-`."""
@@ -46,8 +84,8 @@ def valid_algo_id(value: str) -> bool:
 
 
 def build_order_tag(
-    *, strategy_id: str, leg: str, algo_id: Optional[str] = None, max_length: int = DEFAULT_MAX_TAG_LENGTH,
-    broker: Optional[str] = None,
+    *, strategy_id: str, leg: str, algo_id: str | None = None, max_length: int = DEFAULT_MAX_TAG_LENGTH,
+    broker: str | None = None, client_id: str | None = None,
 ) -> str:
     """`<algo_id>-<strategy>-<leg>` shortened to `max_length`, dropping strategy characters first
     (the algo id is the compliance value and the leg is what reconciliation keys on), then, if
@@ -55,7 +93,10 @@ def build_order_tag(
     (Z10-c review M1: a cut leg made an exit tag end in whatever the algo id's characters were).
 
     D1: with `broker`, that broker's tag format from the rule-set applies (IN-SEBI.algo_id.tag `brokers`): a stricter
-    length and/or charset (`alnum` drops the separators). Without an entry nothing changes."""
+    length and/or charset (`alnum` drops the separators). Without an entry nothing changes.
+
+    M55 S4: `client_id` (`client_order_id`) goes just before the leg, after the algo id and the leg and before the
+    strategy part; shortened to fit, left out below CLIENT_ID_MIN_LENGTH. None: the tag is exactly as before."""
     from app.compliance.algo_id import CHARSETS, tag_format  # local: compliance loads rule-set data lazily
     fmt = tag_format(broker) if broker else {"max_length": None, "charset": "alnum_dash"}
     if fmt["max_length"]:
@@ -69,6 +110,14 @@ def build_order_tag(
     leg_part = leg_part[:max_length]
     if algo and len(algo) + len(sep) + len(leg_part) > max_length:
         algo = algo[:max(0, max_length - len(sep) - len(leg_part))]
+    cid = strip.sub("", sanitize_tag_part(client_id or "")).upper()
+    if cid:
+        used = sum(len(p) + len(sep) for p in (algo, leg_part) if p)      # each fixed part and one separator to the id
+        cid = cid[:max(0, max_length - used)]
+        if len(cid) < CLIENT_ID_MIN_LENGTH:
+            cid = ""
+    if cid:
+        leg_part = cid + sep + leg_part                               # one fixed block: `<client id>-<leg>`
     fixed = [p for p in (algo, leg_part) if p]
     fixed_len = sum(len(p) for p in fixed) + len(sep) * (len(fixed) - 1)  # separators between fixed parts
     room_for_strategy = max_length - fixed_len - len(sep)  # one more separator for the strategy part

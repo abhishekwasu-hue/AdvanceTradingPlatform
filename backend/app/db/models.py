@@ -688,6 +688,23 @@ class StrategyDeploymentRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 
+class RuntimeCounterRecord(Base):
+    """M55 S4: the worker's per-position counters and alert cool-downs (app/trading/stop_state.py), kept here so a restart
+    (or a Redis flush) does not reset them: how many immediate exits a position has had, the stop re-arm rejections in a
+    row, the checks an earlier exit has been waiting, and when each CRITICAL alert last went out. One row per
+    (`name`, `key`): `name` the counter table, `key` the position (or leg group) id, `value` its JSON value (an alert time
+    is wall-clock UTC seconds)."""
+
+    __tablename__ = "runtime_counters"
+    __table_args__ = (UniqueConstraint("name", "key", name="uq_runtime_counter_name_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(40), nullable=False)
+    key: Mapped[str] = mapped_column(String(80), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False, default="null")
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
 class WorkerHeartbeatRecord(Base):
     """Liveness record for each long-running background worker, upserted at the end of every
     cycle (one row per `worker_name`). The API reads it (GET /api/system/worker-status) so the

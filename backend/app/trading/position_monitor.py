@@ -31,7 +31,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from app.brokers.base import BrokerInterface, round_stop_trigger
 from app.brokers.exceptions import is_clear_rejection
-from app.brokers.models import BrokerOrderRequest, BrokerOrderStatus
+from app.brokers.models import BrokerOrderRequest, BrokerOrderResponse, BrokerOrderStatus
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
 from app.compliance.algo_id import audit_order, order_algo_id
@@ -42,7 +42,7 @@ from app.db.savepoint import guarded
 from app.execution import approval as approval_policy
 from app.execution.paper_broker import PaperBroker
 from app.execution.products import product_for_trade
-from app.execution.tagging import LEG_EXIT, build_order_tag
+from app.execution.tagging import LEG_EXIT, build_order_tag, client_order_id, has_client_id
 from app.instruments.master import INDEX_EXCHANGE, underlying_of
 from app.instruments.registry import get_contract_spec
 from app.journal import capture as journal_capture
@@ -251,6 +251,18 @@ async def _read_order(broker: BrokerInterface, order_id: str) -> Tuple[bool, Opt
     return True, next((o for o in book if o.order_id == order_id), None)
 
 
+async def _placed_by_client_id(broker: BrokerInterface, tag: str | None, client_id: str | None) -> BrokerOrderStatus | None:
+    """M55 S4: the order this platform placed with `tag` when the tag carries a client order id, from the broker's book;
+    None when the tag has no id, the book does not list it or cannot be read (the caller then keeps its claim)."""
+    if not tag or not has_client_id(tag, client_id):
+        return None
+    try:
+        return await broker.find_order_by_client_id(tag)
+    except Exception as exc:  # noqa: BLE001 - unknown is never "not there": the caller keeps waiting, flagged
+        logger.warning("Looking up order %s by its client id at %s failed: %s", tag, broker.name, exc)
+        return None
+
+
 async def _find_order(broker: BrokerInterface, order_id: str) -> Optional[BrokerOrderStatus]:
     """The order, or None when it is not in the book or the book cannot be read (callers that must tell those apart use
     `_read_order`)."""
@@ -348,8 +360,27 @@ def absent_exit_dead_reason(trade) -> Optional[str]:
             "order working on it")
 
 
+def exit_client_id(trade) -> str | None:
+    """M55 S4: the client order id of `trade`'s current exit attempt - derived from the position and the time its exit was
+    claimed (`exit_sent_at`, whole seconds UTC), so each attempt has its own id and the id is found again from the row
+    alone after a restart. None: no exit claimed yet (the tag then carries no id)."""
+    sent = _utc(getattr(trade, "exit_sent_at", None))
+    if sent is None or getattr(trade, "id", None) is None:
+        return None
+    return client_order_id("X", trade.id, int(sent.timestamp()))
+
+
 def expected_exit_tag(trade, broker: BrokerInterface, algo_id: Optional[str]) -> str:
-    """The tag every exit of `trade` carries at this broker (built exactly as `_square_off_live` builds it)."""
+    """The tag every exit of `trade` carries at this broker (built exactly as `_square_off_live` builds it): with the
+    current exit attempt's client order id (`exit_client_id`) when the broker's tag has room for it."""
+    return build_order_tag(strategy_id=trade.strategy_id, leg=LEG_EXIT, algo_id=algo_id,
+                           max_length=getattr(broker, "max_tag_length", None) or 20, broker=broker.name,
+                           client_id=exit_client_id(trade))
+
+
+def legacy_exit_tag(trade, broker: BrokerInterface, algo_id: Optional[str]) -> str:
+    """The exit tag without a client order id (orders placed before M55 S4, or a broker tag too short for the id): matched
+    by tag plus the claim time window only."""
     return build_order_tag(strategy_id=trade.strategy_id, leg=LEG_EXIT, algo_id=algo_id,
                            max_length=getattr(broker, "max_tag_length", None) or 20, broker=broker.name)
 
@@ -367,7 +398,7 @@ _ADOPT, _FOREIGN, _UNVERIFIED = "adopt", "foreign", "unverified"
 
 
 def _exit_lookalike(trade, order: BrokerOrderStatus, exclude: frozenset, tag: Optional[str],
-                    exchange: Optional[str]) -> Tuple[Optional[str], str]:
+                    exchange: Optional[str], legacy_tag: str | None = None) -> Tuple[Optional[str], str]:
     """(verdict, why) for one book order against `trade`'s exit. None: not even shaped like the exit (another symbol or
     side, not MARKET, larger than the position, dead with nothing filled, or an id a position records). Else:
 
@@ -377,7 +408,11 @@ def _exit_lookalike(trade, order: BrokerOrderStatus, exclude: frozenset, tag: Op
     - `_FOREIGN`: provably not this exit (another tag, product or exchange, or placed outside the window) - a manual
       order on the same symbol;
     - `_UNVERIFIED`: may be this exit but cannot be shown to be (no `placed_at`, or no tag and no product / exchange, or
-      no send time on record) - never adopted, never ignored while it works (see `_judge_earlier_exit`)."""
+      no send time on record) - never adopted, never ignored while it works (see `_judge_earlier_exit`).
+
+    M55 S4: when `tag` carries this exit attempt's client order id (`exit_client_id`), an order whose tag is exactly that
+    is this exit - adopted by its id, no time window. The tag + time window match stays only for an order without the id
+    (`legacy_tag`: the exit tag as it was built before the id)."""
     side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
     own = {trade.broker_order_id, trade.sl_order_id, trade.exit_order_id}
     if order.order_id in exclude or order.order_id in own:
@@ -390,7 +425,10 @@ def _exit_lookalike(trade, order: BrokerOrderStatus, exclude: frozenset, tag: Op
         return None, ""
     order_tag = (order.tag or "").strip().upper()
     if order_tag:
-        if not tag or order_tag != tag.strip().upper():
+        if tag and order_tag == tag.strip().upper() and has_client_id(tag, exit_client_id(trade)):
+            return _ADOPT, ""                              # M55 S4: this exit attempt's own client order id
+        known = {t.strip().upper() for t in (tag, legacy_tag) if t}
+        if order_tag not in known:
             return _FOREIGN, f"tag {order.tag!r} is not this position's exit tag"
     else:
         product, venue = (order.product or "").upper(), (order.exchange or "").upper()
@@ -412,24 +450,25 @@ def _exit_lookalike(trade, order: BrokerOrderStatus, exclude: frozenset, tag: Op
 
 
 def adoptable_exit(trade, orders: List[BrokerOrderStatus], exclude: frozenset = frozenset(), *, tag: Optional[str] = None,
-                   exchange: Optional[str] = None) -> Optional[BrokerOrderStatus]:
+                   exchange: Optional[str] = None, legacy_tag: str | None = None) -> Optional[BrokerOrderStatus]:
     """P2: an order in the book that is this position's exit although its id was never recorded (a send that errored
     without a clear answer, but reached the broker). Adopting it instead of sending again is what keeps a second exit off a
     position that is already being closed - and only an order this platform placed for it inside the claim window is
     adopted (`_exit_lookalike`): a manual order on the same symbol is never booked as this position's exit. `tag`: the
     exit tag (`expected_exit_tag`); `exchange`: the position's venue."""
     for order in orders:
-        if _exit_lookalike(trade, order, exclude, tag, exchange)[0] == _ADOPT:
+        if _exit_lookalike(trade, order, exclude, tag, exchange, legacy_tag)[0] == _ADOPT:
             return order
     return None
 
 
 def unverified_working_exits(trade, orders: List[BrokerOrderStatus], exclude: frozenset = frozenset(), *,
-                             tag: Optional[str] = None, exchange: Optional[str] = None) -> List[Tuple[BrokerOrderStatus, str]]:
+                             tag: Optional[str] = None, exchange: Optional[str] = None,
+                             legacy_tag: str | None = None) -> List[Tuple[BrokerOrderStatus, str]]:
     """Orders still working that may be this position's exit but cannot be shown to be (`_UNVERIFIED`), with why."""
     out = []
     for order in orders:
-        verdict, why = _exit_lookalike(trade, order, exclude, tag, exchange)
+        verdict, why = _exit_lookalike(trade, order, exclude, tag, exchange, legacy_tag)
         status = (order.status or "").upper()
         if verdict == _UNVERIFIED and not _stop_is_dead(status) and status not in _FILLED_STATUSES:
             out.append((order, why))
@@ -589,7 +628,8 @@ async def _still_open_now(trade: TradeRecord, broker: BrokerInterface, ledger: O
 
 async def _judge_earlier_exit(trade: TradeRecord, earlier_id: str, broker: BrokerInterface, reference_price: float,
                               outcome: CloseOutcome, ledger: Optional[_ExitLedger], resume_only: bool,
-                              exit_tag: Optional[str] = None, exchange: Optional[str] = None) -> _Earlier:
+                              exit_tag: Optional[str] = None, exchange: Optional[str] = None,
+                              legacy_tag: str | None = None) -> _Earlier:
     """Re-exit guard: this position already claimed or sent an exit (the booking did not happen). A second exit on top of
     a live or filled one would open a position the other way - so the earlier one decides:
 
@@ -624,9 +664,9 @@ async def _judge_earlier_exit(trade: TradeRecord, earlier_id: str, broker: Broke
     unverified: List[Tuple[BrokerOrderStatus, str]] = []
     if earlier is None:
         exclude = await ledger.ids_elsewhere() if ledger is not None else frozenset()
-        adopted = adoptable_exit(trade, book, exclude, tag=exit_tag, exchange=exchange)
+        adopted = adoptable_exit(trade, book, exclude, tag=exit_tag, exchange=exchange, legacy_tag=legacy_tag)
         if adopted is None:
-            unverified = unverified_working_exits(trade, book, exclude, tag=exit_tag, exchange=exchange)
+            unverified = unverified_working_exits(trade, book, exclude, tag=exit_tag, exchange=exchange, legacy_tag=legacy_tag)
         if adopted is not None:
             outcome.warnings.append(f"Order {adopted.order_id} in the broker's book is this position's exit ({adopted.status}) - "
                                     "adopted, no second exit")
@@ -729,7 +769,8 @@ async def _square_off_live(
     earlier_id = trade.exit_order_id
     if earlier_id:
         earlier = await _judge_earlier_exit(trade, earlier_id, broker, reference_price, outcome, ledger, resume_only,
-                                            exit_tag=expected_exit_tag(trade, broker, algo_id), exchange=exchange)
+                                            exit_tag=expected_exit_tag(trade, broker, algo_id), exchange=exchange,
+                                            legacy_tag=legacy_exit_tag(trade, broker, algo_id))
         if not earlier.proceed:
             return earlier.price
         stop_dead = True              # its stop was handled by that earlier attempt (a fresh read still decides)
@@ -807,15 +848,22 @@ async def _square_off_live(
                     tag=exit_tag,
                 ))
             except Exception as exc:  # noqa: BLE001
-                outcome.warnings.append(f"Exit order failed at {broker.name}: {exc}")
-                logger.error("Exit order failed for trade %s: %s", trade.id, exc)
-                if not is_clear_rejection(exc):
-                    # MED-2: the order may stand at the broker - whatever the stop switches, the tenant is flagged and the
-                    # claim stays, so no second exit goes out until reconciliation shows the position still open.
-                    outcome.broker_uncertain = f"exit order for trade {trade.id} errored without a clear answer: {exc}"
-                    if ledger is not None:
-                        ledger.keep_claim = True
-                return None
+                # M55 S4: an answer that is not a clear refusal - the order may stand at the broker. It is looked up at once
+                # by this attempt's own client order id; found, it is this exit (its id is recorded, its fill read as usual).
+                found = None if is_clear_rejection(exc) else await _placed_by_client_id(broker, exit_tag, exit_client_id(trade))
+                if found is None:
+                    outcome.warnings.append(f"Exit order failed at {broker.name}: {exc}")
+                    logger.error("Exit order failed for trade %s: %s", trade.id, exc)
+                    if not is_clear_rejection(exc):
+                        # MED-2: the order may stand at the broker - whatever the stop switches, the tenant is flagged and
+                        # the claim stays, so no second exit goes out until reconciliation shows the position still open.
+                        outcome.broker_uncertain = f"exit order for trade {trade.id} errored without a clear answer: {exc}"
+                        if ledger is not None:
+                            ledger.keep_claim = True
+                    return None
+                outcome.warnings.append(f"The exit call to {broker.name} errored ({exc}), but order {found.order_id} with this "
+                                        "exit's own id is in the broker's book - taken as the exit, no second exit")
+                response = BrokerOrderResponse(order_id=found.order_id, status=found.status or "OPEN")
             status = response.status.upper()
             if status not in ("REJECTED", "CANCELLED"):
                 outcome.exit_rejected = None
@@ -1385,6 +1433,7 @@ async def monitor_open_positions(
                                                                  if t.exit_time is None and t.mark_price is not None})
     for trade, reason, price in asks:
         await approval_policy.propose_exit(session, trade, reason, price)
+    await stop_state.save(session)      # M55 S4: the exit-wait counters and alert cool-downs survive a restart (never raises)
     return outcomes
 
 

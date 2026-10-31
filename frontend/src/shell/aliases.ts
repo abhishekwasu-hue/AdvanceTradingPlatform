@@ -16,8 +16,13 @@ export const V2_ALIASES: readonly { path: string; page: Page; old: string }[] = 
   { path: "/positions/money", page: "portfolio", old: "/portfolio" },
   { path: "/strategies/build", page: "strategy-builder", old: "/strategy-builder" },
   { path: "/strategies/test", page: "backtest", old: "/backtest" },
-  { path: "/analytics/journal", page: "journal", old: "/journal" },
   { path: "/analytics/coach", page: "coach", old: "/coach" },
+  // M60 (owner order, approved 30 Oct): Performance is My trades › Results, Journal a part of it; Broker accounts sit in
+  // Settings; News & events is a Learn tab.
+  { path: "/positions/results", page: "analytics", old: "/analytics" },
+  { path: "/positions/results/journal", page: "journal", old: "/journal" },
+  { path: "/settings/broker", page: "broker", old: "/broker" },
+  { path: "/learn/news", page: "news-events", old: "/news-events" },
 ];
 
 /**
@@ -26,7 +31,30 @@ export const V2_ALIASES: readonly { path: string; page: Page; old: string }[] = 
  */
 export const V2_RETIRED_ALIASES: readonly { path: string; now: string; old: string }[] = [
   { path: "/journal/coach", now: "/analytics/coach", old: "/coach" },
+  // M60: the Journal's UX3-9 address forwards to its new part of My trades › Results.
+  { path: "/analytics/journal", now: "/positions/results/journal", old: "/journal" },
 ];
+
+/**
+ * M60 (owner order, approved 30 Oct with the five defaults): old addresses that forward to a new home while `ui_v2` is
+ * on - inside the v2 shell only (with the flag off today's app keeps them). `when`: only while that feature is on (its
+ * new home lives behind it); otherwise the old address keeps its page. The query string is kept.
+ */
+export const V2_MOVED: readonly { from: string; to: string; when?: string }[] = [
+  // Default 3: the Coach is an AI Copilot tab (Review folds into it); Brief becomes Read the chart; Copilot Signals
+  // (the Watchtower) opens the Signals page. The Watchtower itself keeps /copilot/watchtower under "Advanced".
+  { from: "/analytics/coach", to: "/copilot/coach", when: "ai_copilot" },
+  { from: "/coach", to: "/copilot/coach", when: "ai_copilot" },
+  { from: "/journal/coach", to: "/copilot/coach", when: "ai_copilot" },
+  { from: "/copilot/review", to: "/copilot/coach" },
+  { from: "/copilot/brief", to: "/copilot/read" },
+  { from: "/copilot/signals", to: "/signals" },
+  // The idea library is a Learn tab.
+  { from: "/ideas", to: "/learn/ideas" },
+];
+
+/** M60: Learn's v2-only tabs (with `ui_v2` off they go to the dashboard, like the Learn page itself has no old page). */
+export const LEARN_V2_ONLY: readonly string[] = ["/learn/ideas", "/learn/words"];
 
 /** UI2-7: Settings → Setup, a v2-only page (the setup wizard). With the flag off it goes back to Settings. */
 export const SETUP_ADDRESS = "/settings/setup";
@@ -55,6 +83,7 @@ export function flagOffFallback(pathname: string): string | null {
   const clean = `/${path.replace(/^\/+|\/+$/g, "")}`;
   if (clean === SETUP_ADDRESS || clean === TRADING_DEFAULTS_ADDRESS) return "/settings";
   if (clean === MARKETS_ADDRESS || clean === TERMINAL_ADDRESS || clean === WATCHLIST_ADDRESS) return "/";
+  if (LEARN_V2_ONLY.includes(clean)) return "/";
   // Settings redesign B: a section page goes back to today's Settings page, at the part that holds it.
   const section = settingsSectionAt(clean);
   if (section) return section.old;

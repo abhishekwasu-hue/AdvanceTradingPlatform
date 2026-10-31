@@ -1,4 +1,4 @@
-import { Bell, CircleHelp, LifeBuoy, MessageSquarePlus, Search, Sparkles, TriangleAlert } from "lucide-react";
+import { Bell, CircleHelp, LifeBuoy, MessageSquarePlus, PanelLeft, PanelLeftClose, Search, Sparkles, TriangleAlert } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Link } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
@@ -13,6 +13,7 @@ import { sectionChipClass, sectionTintOf } from "../ui/accents";
 import { useColourV2 } from "../ui/colourV2";
 import { useFeatures } from "../ui/useFeatures";
 import { FeedDot } from "./FeedDot";
+import { SIDEBAR_SHORTCUT, type SidebarMode } from "./sidebarPrefs";
 
 /**
  * UI2-1 (UI v2 proposal §9 rule 3, mockups dashboard-desktop-1440 / nav-bottom-mobile): the v2 top bar.
@@ -34,6 +35,11 @@ import { FeedDot } from "./FeedDot";
  * phone, the icon and its name from md up; it opens the shell's Ask AI sheet (src/shell/AskAiSheetV2.tsx). The phone bar then leaves out the "AT" mark and the gaps between its icons, so a title such as "Option chain" fits.
  * User-friendly pass item 1 (UX audit M13): "Verify your email" is never a chip on every page; it is one row in the
  * Dashboard's Needs attention list (with Resend) and the Email verification card in Settings › Account.
+ * M57 U7-1 / U7-2 (owner order 30 Oct): one menu button left of the title (`menu`) - from md up it hides the sidebar to
+ * its icon rail and shows it again (shortcut `[`); on a phone it opens the full navigation as a sheet (it takes the "AT"
+ * mark's place: Today is on the bottom bar). The title is never cut (#759 review): from md up it keeps to one line at
+ * its full width and the search box gives way instead; on a phone #741's rule applies (one size down, then a wrap
+ * between words).
  */
 
 const iconButton = "flex h-11 w-11 items-center justify-center rounded-control text-fg-muted transition-colors duration-fast hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-9 md:w-9";
@@ -57,6 +63,8 @@ export interface TopBarV2Props {
   /** CT-1 C10: opens the one Ask AI sheet (absent: nothing to offer on this page). */
   onAskAi?: () => void;
   askAiOpen?: boolean;
+  /** M57: the menu button - the sidebar's state (md and up) and the phone's navigation sheet. */
+  menu?: { mode: SidebarMode; onToggle: () => void; onOpenSheet: () => void; sheetOpen: boolean };
 }
 
 /** The notices under the top bar, in plain words. `paperOnly` leaves out the LIVE ones. Never an e-mail chip (item 1). */
@@ -76,13 +84,9 @@ export function topBarNotices(status: SystemStatus | null, _user: UserResponse |
  * when the bar would run past the screen edge; 2 = still too wide at the small size: the (?) moves under the title and,
  * only as the last resort, the title wraps between words (never inside one, never cut). It steps back up when there is
  * room (rotation). `extras`: what else sits in the row (PROSE-1: the (?) appears once the page has set its subtitle).
- *
- * REV-1 M3 (Settings at 375 px: the avatar was cut and the page scrolled sideways): the row is measured again whenever
- * one of its parts changes size (the Ask AI button, the tips button or the price dot arrive after the first paint), so
- * the buttons always stay on screen - by the steps above, never by cutting the title.
- * 3 = even wrapped between words the row would run past the edge (a 320 / 375 px phone with Ask AI, the price dot,
- * search, bell and avatar): the title then takes a line of its own under the buttons - never cut, every button on screen
- * (the same step as M57, #784).
+ * REV-1 M3 (#759): the row is measured again whenever one of its parts arrives or changes size (the Ask AI button, the
+ * tips button, the price dot); #759's last step cut the title with "..." - here the last step wraps between words, so the
+ * whole title always shows (M57 / #759 review).
  */
 export type TitleFit = 0 | 1 | 2 | 3;
 export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean, extras = ""): TitleFit {
@@ -96,6 +100,9 @@ export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, 
       if (!phone) { setFit(0); return; }
       // Measure at the normal size first, then one size down, both on one line.
       const overflowsAt = (mode: string) => { el.dataset.titleFit = mode; return el.scrollWidth > el.clientWidth; };
+      // M57 / #759 review: 3 = even wrapped between words the row would run past the edge (a 320 px phone with the menu
+      // button, Ask AI, the price dot, search, bell and avatar): the title then takes a line of its own under the buttons -
+      // never cut, and every button stays on screen.
       const next: TitleFit = !overflowsAt("measure") ? 0 : !overflowsAt("measure-small") ? 1 : !overflowsAt("measure-wrap") ? 2 : 3;
       delete el.dataset.titleFit;
       setFit(next);
@@ -105,7 +112,7 @@ export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, 
     let live = true;
     void document.fonts?.ready.then(() => { if (live) check(); });
     window.addEventListener("resize", check);
-    // A part of the row that arrives or changes size later (a button, the price dot) is measured too.
+    // REV-1 M3 (#759): a part of the row that arrives or changes size later (a button, the price dot) is measured too.
     const el = row.current;
     const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(() => check()) : null;
     const watch = () => { if (el && sizes) { sizes.disconnect(); for (const child of Array.from(el.children)) sizes.observe(child); } };
@@ -135,7 +142,7 @@ const GROUP_MEASURE = "group-data-[title-fit=measure]/bar:flex-nowrap group-data
 const ROW_MEASURE = "data-[title-fit=measure]:flex-nowrap data-[title-fit=measure-small]:flex-nowrap data-[title-fit=measure-wrap]:flex-nowrap "
   + "data-[title-fit=measure]:py-0 data-[title-fit=measure-small]:py-0 data-[title-fit=measure-wrap]:py-0";
 
-export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour, section = null, onAskAi, askAiOpen = false }: TopBarV2Props) {
+export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour, section = null, onAskAi, askAiOpen = false, menu }: TopBarV2Props) {
   const colour = useColourV2();
   const tint = colour ? sectionTintOf(section) : null;
   const SectionIcon = tint ? navItemFor(section)?.icon : undefined;
@@ -156,11 +163,33 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
       <div ref={row} data-title-step={colour ? fit : undefined} className={`group/bar flex ${colour ? `min-h-14 ${fit === 3 ? "flex-wrap gap-y-0 pb-space-2" : ""} ${ROW_MEASURE} md:flex-nowrap md:pb-0` : "h-14"} items-center gap-space-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] md:px-space-8`}>
         {/* CT-1 C10: on a phone the Ask AI button takes the mark's room (Today is in the bottom bar), so a title such as
             "Option chain" is not cut. */}
-        <Link to="/" aria-label="AiAlgoDesk - Dashboard" className={`shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:hidden ${onAskAi ? "hidden" : ""}`}>
+        {menu && (
+          <>
+            {/* M57 U7-1: from md up, hide the sidebar to its icon rail and show it again (the shortcut [ does the same). */}
+            <button type="button" onClick={menu.onToggle} data-menu-toggle={menu.mode}
+              aria-label={menu.mode === "expanded" ? "Hide menu" : "Show menu"} aria-keyshortcuts={SIDEBAR_SHORTCUT}
+              aria-expanded={menu.mode === "expanded"}
+              title={`${menu.mode === "expanded" ? "Hide menu" : "Show menu"} (${SIDEBAR_SHORTCUT})`}
+              className={`${iconButton} -ml-space-2 hidden shrink-0 md:flex`}>
+              {menu.mode === "expanded" ? <PanelLeftClose size={18} aria-hidden /> : <PanelLeft size={18} aria-hidden />}
+            </button>
+            {/* M57 U7-2: on a phone the same button opens every page as a sheet. It takes the section chip's place (CA7: the
+                chip's tint stays, before the title) and the chip's width (its 44 px target reaches into the gaps beside it),
+                so the title keeps the room it had. */}
+            <button type="button" onClick={menu.onOpenSheet} data-menu-sheet aria-label="Show menu" aria-haspopup="dialog"
+              aria-expanded={menu.sheetOpen} aria-keyshortcuts={SIDEBAR_SHORTCUT}
+              className={`${iconButton} -mx-space-2 shrink-0 md:hidden`}>
+              {tint
+                ? <span aria-hidden data-section-chip={tint} data-topbar-chip className={sectionChipClass(tint, "sm")}><PanelLeft size={16} /></span>
+                : <PanelLeft size={20} aria-hidden />}
+            </button>
+          </>
+        )}
+        <Link to="/" aria-label="AiAlgoDesk - Dashboard" className={`shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:hidden ${onAskAi || menu ? "hidden" : ""}`}>
           {/* A text monogram, not the logo SVG: the sidebar's (hidden on phones) owns the logo's gradient id. */}
           <span aria-hidden className="flex h-7 w-7 items-center justify-center rounded-control bg-fg text-t12 font-bold text-surface">AT</span>
         </Link>
-        {tint && SectionIcon && (
+        {!menu && tint && SectionIcon && (
           <span aria-hidden data-section-chip={tint} data-topbar-chip className={`${sectionChipClass(tint, "sm")} md:hidden`}><SectionIcon size={16} /></span>
         )}
         {/* PROSE-1 / H9 / REV-S5: with colour v2 the title and its (?) share one group, on one line; only at the last step

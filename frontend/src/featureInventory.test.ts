@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { PAGES, pathFor } from "./routes";
 import {
-  MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS, V2_ALIASES, V2_RETIRED_ALIASES, WATCHLIST_ADDRESS,
+  LEARN_V2_ONLY, MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS, V2_ALIASES, V2_MOVED, V2_RETIRED_ALIASES,
+  WATCHLIST_ADDRESS,
 } from "./shell/aliases";
 import { SETTINGS_SECTIONS } from "./settings/paths";
 import { IDEAS_ADDRESS } from "./ideas/model";
@@ -20,6 +21,8 @@ const listed = new Set([...inventory.matchAll(/`(\/[^`\s]*)`/g)].map((m) => m[1]
 const v2Addresses = [
   ...V2_ALIASES.flatMap((a) => [a.path, a.old]),
   ...V2_RETIRED_ALIASES.map((a) => a.path),
+  // M60: the moved addresses and their new homes, and Learn's v2-only tabs.
+  ...V2_MOVED.flatMap((m) => [m.from, m.to]), ...LEARN_V2_ONLY, "/copilot/analyze",
   SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS, MARKETS_ADDRESS, TERMINAL_ADDRESS, WATCHLIST_ADDRESS, IDEAS_ADDRESS, LEARN_ADDRESS,
   ...SETTINGS_SECTIONS.map((s) => s.path),
   ...[...COPILOT_TABS, ...FOLDED_TABS].map((t) => `/copilot/${t}`),

@@ -339,12 +339,12 @@ describe("navigation behind the `terminal` flag (TT-18)", () => {
   const flags = (...on: string[]) => (f: string) => on.includes(f);
   const entries = (on: string[]) => [...visiblePinned({ on: flags(...on), role: "OWNER" }), ...visibleSections({ on: flags(...on), role: "OWNER" }).flatMap((s) => s.items)];
 
-  it("first in the Trading group with the flag on: 13 entries off, 14 on", () => {
-    expect(entries(["ai_copilot", "screener_v2"])).toHaveLength(13);
-    const on = entries(["ai_copilot", "screener_v2", "terminal"]);
-    expect(on).toHaveLength(14);
-    const trading = NAV_SECTIONS_V2.find((s) => s.id === "trading");
-    expect(trading?.items[0]).toMatchObject({ key: "terminal", label: "Terminal", path: "/terminal", flag: "terminal" });
+  it("M60: second in Trade with the flag on, where Charts and Option chain stood in for it while it was off", () => {
+    const keys = (on: string[]) => entries(on).map((i) => i.key);
+    expect(keys(["ai_copilot", "screener_v2"]).slice(0, 4)).toEqual(["dashboard", "charts", "option-chain", "positions"]);
+    expect(keys(["ai_copilot", "screener_v2", "terminal"]).slice(0, 3)).toEqual(["dashboard", "terminal", "positions"]);
+    const trade = NAV_SECTIONS_V2.find((s) => s.id === "trade");
+    expect(trade?.items[1]).toMatchObject({ key: "terminal", label: "Terminal", path: "/terminal", flag: "terminal" });
   });
 
   it("flag off: the address says Coming soon; ui_v2 off: back to the dashboard", () => {

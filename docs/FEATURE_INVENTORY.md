@@ -167,20 +167,20 @@ navigation and shows "Coming soon" at its address (`frontend/src/shell/pageFlags
 | My trades - Positions | `/positions` | Trading (bottom bar) | - | WORKS | unknown until the owner's check |
 | My trades - Orders | `/positions/orders` (old `/orders`) | tab | - | WORKS | unknown until the owner's check |
 | My trades - Money | `/positions/money` (old `/portfolio`) | tab | - | WORKS + DUPLICATE (tiles = Positions tiles) | unknown until the owner's check |
-| Performance - Results | `/analytics` | Insights | - | WORKS (old page) | unknown until the owner's check |
-| Performance - Journal | `/analytics/journal` (old `/journal`) | tab | `discipline_engine` | EMPTY-BY-DEFAULT | unknown until the owner's check |
-| Performance - Coach | `/analytics/coach` (old `/coach`, retired `/journal/coach`) | tab | - (AI acknowledgement) | WORKS (old page) | unknown until the owner's check |
+| Performance - Results | `/analytics` | redirect → `/positions/results` (M60) | - | WORKS (old page) | unknown until the owner's check |
+| Performance - Journal | `/analytics/journal` (old `/journal`) | redirect → `/positions/results/journal` (M60) | `discipline_engine` | EMPTY-BY-DEFAULT | unknown until the owner's check |
+| Performance - Coach | `/analytics/coach` (old `/coach`, retired `/journal/coach`) | redirect → `/copilot/coach` while `ai_copilot` is on (M60); else a part of My trades › Results | - (AI acknowledgement) | WORKS (old page) | unknown until the owner's check |
 | Strategies - Library | `/strategies` | Insights | - | WORKS (old page) | unknown until the owner's check |
-| Strategies - Ideas | `/ideas` | tab | `idea_library` | EMPTY-BY-DEFAULT | unknown until the owner's check |
+| Strategies - Ideas | `/ideas` | redirect → `/learn/ideas` (M60) | `idea_library` | EMPTY-BY-DEFAULT | unknown until the owner's check |
 | Strategies - Build | `/strategies/build` (old `/strategy-builder`) | tab | - (template cards: `strategy_templates`) | PARTIAL (one area-pullback card and the 1W timeframe marked "soon") | STUB (the "soon" card and 1W) |
 | Strategies - Test | `/strategies/test` (old `/backtest`) | tab | - (broker gate) | WORKS (old page) | unknown until the owner's check |
 | AI Copilot - Ask | `/copilot` | Insights | `ai_copilot` (ON) | WORKS | unknown until the owner's check |
-| AI Copilot - Brief / Review / Signals | `/copilot/brief`, `/copilot/review`, `/copilot/signals` | tabs | `ai_copilot` (ON) | DUPLICATE (Today brief + News / Coach / Signals) | unknown until the owner's check |
+| AI Copilot - Brief / Review / Signals | `/copilot/brief`, `/copilot/review`, `/copilot/signals` | redirect → `/copilot/read`, `/copilot/coach`, `/signals` (M60) | `ai_copilot` (ON) | DUPLICATE (Today brief + News / Coach / Signals) | unknown until the owner's check |
 | Old Copilot (7 tabs) | `/copilot/market-pulse`, `/copilot/strategy-lab`, `/copilot/idea-builder`, `/copilot/ask`, `/copilot/watchtower`, `/copilot/news-radar`, `/copilot/coach` | Advanced only | `ai_copilot` (ON) | DUPLICATE (kept until the owner's ✅) | unknown until the owner's check |
-| News and events | `/news-events` | Insights | - (feeds: `news_feed`) | WORKS (old page) | unknown until the owner's check |
+| News and events | `/news-events` | redirect → `/learn/news` (M60) | - (feeds: `news_feed`) | WORKS (old page) | unknown until the owner's check |
 | Learn | `/learn` | Insights | `learn` | EMPTY-BY-DEFAULT | unknown until the owner's check |
 | Company research | `/fundamentals` | extras | - | PARTIAL (manual entry, equities) | unknown until the owner's check |
-| Broker | `/broker` | pinned first | - | WORKS | unknown until the owner's check |
+| Broker | `/broker` | redirect → `/settings/broker` (M60) | - | WORKS | unknown until the owner's check |
 | Settings (index) | `/settings` | Account | - | WORKS | unknown until the owner's check |
 | Settings - AI | `/settings/ai` | Settings | - (`ai_one_key`) | WORKS | unknown until the owner's check |
 | Settings - Alerts | `/settings/alerts` | Settings | - (`alert_webhooks`, `mobile_push`, `daily_rhythm`) | WORKS | unknown until the owner's check |
@@ -200,6 +200,26 @@ navigation and shows "Coming soon" at its address (`frontend/src/shell/pageFlags
 | Activity log | `/system-logs` | More | - | WORKS (old page) | unknown until the owner's check |
 | Admin console | `/admin` | Admin (SUPER_ADMIN only) | role | WORKS | unknown until the owner's check |
 | Status (public) | `/status` | outside the shell | - | WORKS | unknown until the owner's check |
+
+### M60 / M57 addresses (PR #784: sidebar in five sections, tab rows of four, show / hide rail)
+
+The sidebar is Trade · Find · Build · Learn & AI · Account; the phone bottom bar is the first four entries + More. The
+sidebar's show / hide choice is stored per user in the `shell` namespace of `/api/me/prefs` (router prefix `/api/me`,
+already listed). Every old address above that moved forwards to the row below (query and `#part` kept).
+
+| Page / tab | Address | Where in nav | Flag (default) | Code status | On production |
+|---|---|---|---|---|---|
+| My trades - Results (Performance) | `/positions/results` | My trades tab | - | WORKS (old page) | unknown until the owner's check |
+| My trades - Results - Journal | `/positions/results/journal` | Results part | `discipline_engine` | EMPTY-BY-DEFAULT | unknown until the owner's check |
+| AI Copilot - Read the chart | `/copilot/read` | Copilot tab | `ai_copilot` (ON) | WORKS (Market Pulse) | unknown until the owner's check |
+| AI Copilot - Analyze a chart | `/copilot/analyze` | Copilot tab | `ai_copilot` (ON) + `chart_analyze` + private engine | EMPTY-BY-DEFAULT (same tool as `/chart-analyze`) | unknown until the owner's check |
+| AI Copilot - Coach | `/copilot/coach` | Copilot tab | `ai_copilot` (ON) | WORKS (Review + Guide) | unknown until the owner's check |
+| Learn - Words explained | `/learn/words` | Learn tab | `learn` | EMPTY-BY-DEFAULT | unknown until the owner's check |
+| Learn - Ideas | `/learn/ideas` | Learn tab | `idea_library` | EMPTY-BY-DEFAULT | unknown until the owner's check |
+| Learn - News and events | `/learn/news` | Learn tab (sidebar stand-in while `learn` is off) | - (feeds: `news_feed`; news part: `ai_copilot`) | WORKS (old page) | unknown until the owner's check |
+| Settings - Broker accounts | `/settings/broker` | Settings › Account & broker | - | WORKS | unknown until the owner's check |
+| Charts, Option chain | `/charts`, `/option-chain` | search only while `terminal` is on (sidebar stand-ins while it is off); no redirect until the Terminal has a Chart-only layout | - | WORKS | unknown until the owner's check |
+| Watchlist | `/watchlist` | search only; no redirect until the Terminal has a Watchlist panel | `watchlists` | EMPTY-BY-DEFAULT | unknown until the owner's check |
 
 ## 5. Old-shell page addresses (`frontend/src/routes.ts`)
 

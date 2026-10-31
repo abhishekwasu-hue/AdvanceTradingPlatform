@@ -17,6 +17,12 @@ export const COPILOT_EN = {
   v2tabs: {
     label: "Copilot",
     ask: "Ask",
+    // M60: the four tabs - Ask · Read the chart · Analyze a chart · Coach (the older names stay for their bodies).
+    read: "Read the chart",
+    analyze: "Analyze a chart",
+    coach: "Coach",
+    coachGuide: "Guide",
+    attach: "Attach a chart to analyze",
     brief: "Brief",
     build: "Build",
     review: "Review",

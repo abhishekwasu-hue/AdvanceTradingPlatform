@@ -20,6 +20,7 @@ import { Details } from "../ui/Details";
 import { Signed as SignedV2 } from "../ui/Signed";
 import { Sparkline } from "../ui/Sparkline";
 import { useFeatures } from "../ui/useFeatures";
+import JournalPageV2 from "../journal/JournalPageV2";
 
 const OFF_TEXT = "The discipline score is not turned on for your account yet.";
 
@@ -260,7 +261,11 @@ function SettingsTab() {
     for (const c of Object.keys(settings.components)) labels[`w:${c}`] = `${COMPONENT_LABELS[c] ?? c} weight`;
     const problems = settingsProblems(texts, labels, settings.ranges);
     if (problems.length) { toast.error(`Not saved. ${problems.join("; ")}.`); return; }
+    // M62: his own tag / rule lists and the image limit are saved by their own card; never sent back from here stale.
     const values: DisciplineSettings = { ...draft, weights: { ...draft.weights } };
+    delete values.custom_tags;
+    delete values.checklist_rules;
+    delete values.attachment_max_mb;
     for (const k of NUMBER_KEYS) (values as unknown as Record<string, number>)[k as string] = parseSettingNumber(texts[k as string]) as number;
     for (const c of Object.keys(settings.components)) if (texts[`w:${c}`] !== undefined) values.weights[c] = parseSettingNumber(texts[`w:${c}`]) as number;
     try {
@@ -315,7 +320,16 @@ function SettingsTab() {
   );
 }
 
-export default function JournalPage(_props: PageProps) {
+/** M62 JN-3: with `ui_v2` the v2 Journal page (list first, entry editor, stats, weekly review, export); else today's. */
+export default function JournalPage(props: PageProps) {
+  const features = useFeatures();
+  if (features.on("ui_v2")) {
+    return <JournalPageV2 shareCard={features.on("growth_v2")} recallOn={features.on("setup_recall")} settings={<SettingsTab />} />;
+  }
+  return <JournalClassic {...props} />;
+}
+
+function JournalClassic(_props: PageProps) {
   const toast = useToast();
   const features = useFeatures();
   // MO4 slice 3: "Share my week" - the discipline card (ui_v2 + growth_v2).

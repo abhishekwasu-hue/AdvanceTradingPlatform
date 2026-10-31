@@ -587,6 +587,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/journal/manual/{manual_id}"): S_OWN_JOURNAL_LAYER,
     ("GET", "/api/journal/attachments/{attachment_id}"): "member: the caller's own journal image only",
     ("DELETE", "/api/journal/attachments/{attachment_id}"): S_OWN_JOURNAL_LAYER,
+    # M62 JN-3: the caller's own journal list, statistics and export (his ATP trades and his own outside-ATP entries)
+    ("GET", "/api/journal/entries"): "member: the caller's own journal entries only",
+    ("GET", "/api/journal/stats"): "member: statistics over the caller's own journal entries only",
+    ("GET", "/api/journal/export"): "member: a CSV / PDF of the caller's own journal entries only",
     ("POST", "/api/kill-switch/emergency-exit"): "trader",
     ("POST", "/api/kill-switch/global/disengage"): "admin",
     ("POST", "/api/kill-switch/global/engage"): "admin",

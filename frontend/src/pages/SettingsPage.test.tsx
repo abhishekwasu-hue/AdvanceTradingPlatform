@@ -23,6 +23,8 @@ describe("Settings page", () => {
     auth.user = TRADER; auth.loading = false;
     // The web-push section reads the browser's display mode while it renders (as in ui/dots.test.tsx).
     vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
+    // ...and the navigator (Node 20 in CI has no global navigator; Node 22 has one).
+    vi.stubGlobal("navigator", { userAgent: "vitest", maxTouchPoints: 0 });
   });
   afterEach(() => { vi.unstubAllGlobals(); });
 

@@ -305,7 +305,7 @@ function SettingsTab() {
               value={texts[`w:${c}`] ?? ""} onChange={(ev) => setText(`w:${c}`, ev.target.value)} />
           ))}
         </div>
-        <p className="mt-2 text-xs text-fg-muted">Only the proportions matter. The defaults and the reasoning behind each one are in the discipline engine's design note.</p>
+        <Details id="journal.score-weights" className="mt-2"><p>Only the proportions matter. The defaults and the reasoning behind each one are in the discipline engine's design note.</p></Details>
       </Card>
       <div className="flex gap-2">
         <Button variant="primary" onClick={save}>Save settings</Button>

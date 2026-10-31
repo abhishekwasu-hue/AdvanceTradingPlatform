@@ -15,6 +15,7 @@ import {
 } from "./positionInsights";
 import { moneyText } from "./ticketModel";
 import { Combobox } from "../ui/Combobox";
+import { Details } from "../ui/Details";
 
 /**
  * F&O workspace 8b, slice 2: side-by-side outcomes, information only.
@@ -395,7 +396,7 @@ export function StrategyCompareV2({ underlying, legs, saved, rows, expiry, aroun
       <div className="flex gap-space-2">{select(0, a)}{select(1, b)}</div>
       {!spot && <p className="text-t13 text-fg-muted">The numbers appear once the chain&apos;s price is known.</p>}
       <CompareView columns={[basketColumn(a, ea.out, ea.busy), basketColumn(b, eb.out, eb.busy)]} underlying={underlying} spot={spot} testId="baskets" />
-      <p className="text-t12 text-fg-muted">Comparing places nothing. Load a basket or pick a ready strategy to work with it.</p>
+      <Details id="baskets.compare" className="mt-0"><p>Comparing places nothing. Load a basket or pick a ready strategy to work with it.</p></Details>
     </section>
   );
 }

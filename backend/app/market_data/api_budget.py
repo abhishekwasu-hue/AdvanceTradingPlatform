@@ -76,6 +76,7 @@ HISTORY_CALLS = frozenset({"get_historical_data", "get_intraday_candles"})
 UPSTOX_API_PER_30MIN = 500        # of Upstox's 1,000 (lower published set) standard requests per 30 minutes per user
 TOKEN_WAIT_SECONDS = 2.0
 RETRY_EVERY_SECONDS = 0.2
+WINDOW_RETRY_SECONDS = 1.0        # M71 PL-2: how often a data read waiting on a full minute / 30-minute window asks again
 QUOTE_CACHE_SECONDS = 4
 FETCH_LOCK_SECONDS = 5
 
@@ -242,17 +243,20 @@ async def try_take(record_id: int, broker: str, kind: str = "quote") -> bool:
     return await _attempt(record_id, broker, kind) == 1
 
 
-async def take(record_id: int, broker: str, wait_seconds: Optional[float] = None, kind: str = "quote") -> bool:
+async def take(record_id: int, broker: str, wait_seconds: Optional[float] = None, kind: str = "quote",
+               windows: bool = False) -> bool:
     """A token within `wait_seconds` (TOKEN_WAIT_SECONDS), or False - the caller answers 429 rather than queue. Only
-    the bucket is waited for; a full minute or 30-minute window refuses at once."""
+    the bucket is waited for; a full minute or 30-minute window refuses at once - unless `windows` (M71 PL-2: a data
+    read of BudgetedAdapter), which waits for a full window too, retrying every WINDOW_RETRY_SECONDS until the bound."""
     deadline = time.monotonic() + (TOKEN_WAIT_SECONDS if wait_seconds is None else wait_seconds)
     while True:
         verdict = await _attempt(record_id, broker, kind)
         if verdict == 1:
             return True
-        if verdict != -1 or time.monotonic() + RETRY_EVERY_SECONDS > deadline:
+        pause = RETRY_EVERY_SECONDS if verdict == -1 else WINDOW_RETRY_SECONDS
+        if (verdict != -1 and not windows) or time.monotonic() + pause > deadline:
             return False
-        await asyncio.sleep(RETRY_EVERY_SECONDS)
+        await asyncio.sleep(pause)
 
 
 # --- the shared quote ----------------------------------------------------------------------------------------------------
@@ -344,6 +348,9 @@ BUDGETED_CALLS = frozenset({"get_historical_data", "get_intraday_candles", "get_
                             "get_ltp_for_symbol", "get_option_chain"})
 
 
+BUSY_GAP = "Data is busy; try again in a minute."
+
+
 class BudgetUsed(Exception):
     """No token for this credential right now: the call was not made."""
 
@@ -381,7 +388,9 @@ class BudgetedAdapter:
     every other attribute passes through - the instrument master, the adapter's name). Calls wait for the per-second
     window only within one time allowance for the whole request (`wait_seconds`); a call that gets no token raises
     BudgetUsed without reaching the broker, and after the first refusal the next ones do not wait (the rest of a screen
-    run is marked at once)."""
+    run is marked at once). M71 PL-2: a call also waits for a full minute or 30-minute window (not only the bucket), at
+    most BROKER_DATA_CALL_WAIT_SECONDS of the request's allowance (default the larger of CANDLE_WAIT_SECONDS and that
+    setting); only then is it the plain gap BUSY_GAP ("Data is busy; try again in a minute.")."""
 
     def __init__(self, inner: Any, record_id: int, broker: str, wait_seconds: float | None = None,
                  purpose: str | None = None) -> None:
@@ -389,7 +398,8 @@ class BudgetedAdapter:
         self._record_id = record_id
         self._broker = broker
         self._purpose = purpose
-        self._deadline = time.monotonic() + (CANDLE_WAIT_SECONDS if wait_seconds is None else wait_seconds)
+        # M71 PL-2: the request's (run's) allowance in all; each call waits at most BROKER_DATA_CALL_WAIT_SECONDS of it.
+        self._deadline = time.monotonic() + (_default_run_wait() if wait_seconds is None else wait_seconds)
         self.refused = 0
         self.taken = 0
 
@@ -427,7 +437,7 @@ class BudgetedAdapter:
                 delay = broker_limits.backoff_delay(attempt)
                 left = min(self._deadline - time.monotonic(), _config_429_data_wait())
                 if _NO_WAIT.get() or delay > left:
-                    raise BudgetUsed("broker rate budget used - try again shortly") from exc
+                    raise BudgetUsed(BUSY_GAP) from exc
                 await asyncio.sleep(delay)
                 attempt += 1
 
@@ -439,18 +449,27 @@ class BudgetedAdapter:
                 raise WouldWait("no token this instant - fetched outside the shared fill")
             if verdict != 1:
                 self.refused += 1
-                raise BudgetUsed("broker rate budget used - try again shortly")
+                raise BudgetUsed(BUSY_GAP)
             self.taken += 1
             return await attr(*args, **kwargs)
-        wait = 0.0 if self.refused else max(0.0, self._deadline - time.monotonic())
+        wait = 0.0 if self.refused else min(_call_wait(), max(0.0, self._deadline - time.monotonic()))
         started = time.monotonic()
-        granted = await take(self._record_id, self._broker, wait, kind)
+        granted = await take(self._record_id, self._broker, wait, kind, windows=True)
         _observe_wait(kind, time.monotonic() - started)
         if not granted:
             self.refused += 1
-            raise BudgetUsed("broker rate budget used - try again shortly")
+            raise BudgetUsed(BUSY_GAP)
         self.taken += 1
         return await attr(*args, **kwargs)
+
+
+def _call_wait() -> float:
+    from app.core import config
+    return float(config.BROKER_DATA_CALL_WAIT_SECONDS)
+
+
+def _default_run_wait() -> float:
+    return max(CANDLE_WAIT_SECONDS, _call_wait())
 
 
 def _config_429_data_wait() -> float:

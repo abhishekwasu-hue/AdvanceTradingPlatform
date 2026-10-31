@@ -534,3 +534,21 @@ def test_the_budgeted_data_adapter_factory_retries_a_429_and_counts_by_purpose(m
     always = api_budget.budgeted_data_adapter(record, "chart", adapter=_Broker(fail_429=100), wait_seconds=0.05)
     with pytest.raises(api_budget.BudgetUsed):
         run(always.get_ltp(["X"]))
+
+
+def test_a_data_read_waits_for_a_full_window_within_its_bound_then_gets_the_plain_gap(monkeypatch):
+    from app.market_data import api_budget
+    verdicts = [-2, -2, 1]
+
+    async def attempt(record_id, broker, kind="quote"):
+        return verdicts.pop(0) if verdicts else -2
+    monkeypatch.setattr(api_budget, "_attempt", attempt)
+    monkeypatch.setattr(api_budget, "WINDOW_RETRY_SECONDS", 0.01)
+    inner = _Broker()
+    adapter = api_budget.BudgetedAdapter(inner, 1, "upstox", wait_seconds=1.0)
+    assert run(adapter.get_historical_data("X", "NSE", "1d", None, None)) == "history"     # waited for the window
+    monkeypatch.setattr(config, "BROKER_DATA_CALL_WAIT_SECONDS", 0.05)
+    with pytest.raises(api_budget.BudgetUsed) as err:
+        run(adapter.get_historical_data("X", "NSE", "1d", None, None))
+    assert str(err.value) == api_budget.BUSY_GAP == "Data is busy; try again in a minute."
+    assert api_budget._default_run_wait() >= api_budget.CANDLE_WAIT_SECONDS

@@ -46,7 +46,7 @@ page; the figure in force is the lower one.
 - Exit reserve: entries leave `BROKER_ORDER_EXIT_RESERVE_SHARE` (20 %) of every order window free; ordinary data calls
   leave `BROKER_DATA_PRIORITY_RESERVE_SHARE` (10 %) for an exit's reads (price under `exit_reads()`, positions, order
   book). A priority call waits at most `BROKER_EXIT_MAX_WAIT_SECONDS` (2 s) for the next slot, then is sent and counted.
-- Data calls wait for a slot at most `BROKER_DATA_MAX_WAIT_SECONDS` (30 s) in all; a slot further away (a full 30-minute
+- API data reads (BudgetedAdapter: charts, screens, the store reader) wait for the next slot, a full minute or 30-minute window included, at most `BROKER_DATA_CALL_WAIT_SECONDS` (20 s) per call within the request's allowance, then a plain "Data is busy; try again in a minute." gap. Worker data calls wait for a slot at most `BROKER_DATA_MAX_WAIT_SECONDS` (30 s) in all; a slot further away (a full 30-minute
   or day window) is refused at once with "The broker is busy right now; please try again in a minute."
 - The API (`api_budget`) adds the same published windows to its own script, so worker and API share one count.
 - HTTP 429 / "too many requests": retried after `base x 2^n` (0.5 s, capped at 8 s) with equal jitter, each retry taking

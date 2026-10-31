@@ -1010,6 +1010,9 @@ BROKER_BUDGET_SAFETY_MARGIN = _bounded_float("BROKER_BUDGET_SAFETY_MARGIN", 0.10
 BROKER_ORDER_EXIT_RESERVE_SHARE = _bounded_float("BROKER_ORDER_EXIT_RESERVE_SHARE", 0.2, 0.0, 0.5)
 BROKER_DATA_PRIORITY_RESERVE_SHARE = _bounded_float("BROKER_DATA_PRIORITY_RESERVE_SHARE", 0.1, 0.0, 0.5)
 BROKER_DATA_MAX_WAIT_SECONDS = _bounded_float("BROKER_DATA_MAX_WAIT_SECONDS", 30.0, 0.0, 600.0)
+# - BROKER_DATA_CALL_WAIT_SECONDS: an API data read (chart, screen, Copilot) waits at most this long for its next slot
+#   (also when a minute or 30-minute window is full), within its request's own allowance, before a plain "busy" gap.
+BROKER_DATA_CALL_WAIT_SECONDS = _bounded_float("BROKER_DATA_CALL_WAIT_SECONDS", 20.0, 0.0, 300.0)
 BROKER_EXIT_MAX_WAIT_SECONDS = _bounded_float("BROKER_EXIT_MAX_WAIT_SECONDS", 2.0, 0.0, 60.0)
 BROKER_429_BASE_SECONDS = _bounded_float("BROKER_429_BASE_SECONDS", 0.5, 0.05, 10.0)
 BROKER_429_CAP_SECONDS = _bounded_float("BROKER_429_CAP_SECONDS", 8.0, 0.1, 120.0)

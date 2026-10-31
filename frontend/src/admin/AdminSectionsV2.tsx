@@ -13,6 +13,7 @@ import {
   type ConsoleAiCost, type ConsoleSystem, type ConsoleUsers, type DeadLetter, type OutboxState, type RetentionState, type SupportUser,
 } from "./consoleApi";
 import { SkeletonRows } from "../components/primitives";
+import FeedStatusCard from "./FeedStatusCard";
 import { formatDateIST, formatINR, formatNumber, formatTimeIST } from "../ui/format";
 
 /**
@@ -128,6 +129,7 @@ export function SystemPanels() {
           </ul>
         )}
       </Panel>
+      <FeedStatusCard feed={data.market_feed} marketOpen={feed.market_open} />
     </>
   );
 }

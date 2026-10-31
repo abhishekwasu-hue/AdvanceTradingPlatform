@@ -114,6 +114,8 @@ for (const size of SIZES) {
         await card.getByRole("button", { name: "See its settings" }).click();
         const confirm = page.locator("[data-day-one='confirm']");
         for (const s of SETTINGS) { await expect(confirm.getByText(s.label, { exact: true })).toBeVisible(); }
+        // PROSE-1: the terms sit in a closed Details; open it to read them.
+        await confirm.locator("[data-details='day-one.terms'] summary").click();
         await expect(confirm.getByText("Paper money only. Nothing is placed: each setup waits for you.")).toBeVisible();
         if (size.phone && !process.env.SIG1_SHOTS) await expectPhoneLayout(page);   // a full-page capture resizes the page
         await shot(page, `day-one-${size.width}-${theme}-2-settings`);

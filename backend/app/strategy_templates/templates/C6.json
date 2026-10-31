@@ -1,0 +1,65 @@
+{
+  "schema": "atp.template/1",
+  "id": "C6",
+  "version": 1,
+  "name": "Previous-day high / low break and retest",
+  "family": "C",
+  "idea": "Within one session, after a close beyond the previous day's high (or low), wait for the market to come back to that level and hold it; the idea is wrong back through the level.",
+  "difficulty": "Beginner",
+  "style": "Intraday (session-based)",
+  "allowed_timeframes": ["5m", "15m", "30m"],
+  "params": [
+    {"key": "k", "label": "Break distance", "help": "How far beyond the previous day's high (or low) the breaking close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.0, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "atr_n", "label": "ATR period", "help": "The bars of the average true range that the break distance, the retest zone and the buffer are measured in.", "type": "int", "default": 14, "min": 1, "max": 100, "step": 1},
+    {"key": "retest_confirm", "label": "What counts as the retest", "help": "A return into the zone around the level with the close held beyond it, or a reversal at the level.", "type": "enum", "default": "touch", "choices": ["touch", "reversal"], "choice_labels": ["A return to the level with the close held beyond it", "A reversal at the level"]},
+    {"key": "touch_atr", "label": "Retest zone", "help": "For a return to the level: how close to the level it must come, in average true ranges (0 means it must reach the level itself). The bar before must have stayed outside that zone.", "type": "float", "default": 0.1, "min": 0.0, "max": 3.0, "step": 0.05},
+    {"key": "retest_max_bars", "label": "Retest within (bars)", "help": "The return to the level must come within this many bars after the break, in the same session; a close back through the level first ends the idea.", "type": "int", "default": 12, "min": 1, "max": 100, "step": 1},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "Just beyond the broken level by a buffer, or the extreme since the break.", "type": "enum", "default": "level_buffer", "choices": ["level_buffer", "since_break"], "choice_labels": ["Just beyond the broken level", "The extreme since the break"]},
+    {"key": "stop_mult", "label": "Level buffer", "help": "For 'just beyond the broken level': how many average true ranges beyond it.", "type": "float", "default": 0.5, "min": 0.0, "max": 10.0, "step": 0.1},
+    {"key": "exit_rule", "label": "The idea has ended", "help": "No exit signal from this template, or a close back through the previous day's high (or low) of that bar's own session.", "type": "enum", "default": "none", "choices": ["none", "level"], "choice_labels": ["No exit signal", "A close back through the level"]}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "CrossAbove(close, PDH() + $k * ATR($atr_n)[1])",
+    "short": "CrossBelow(close, PDL() - $k * ATR($atr_n)[1])",
+    "expiry_bars": "$retest_max_bars",
+    "same_bar": false,
+    "arm_level": {"long": "PDH()", "short": "PDL()"},
+    "breach_on": "close",
+    "session_bound": true
+  },
+  "trigger": {
+    "by": "retest_confirm",
+    "variants": {
+      "touch": {
+        "long": "low <= PDH() + $touch_atr * ATR($atr_n)[1] AND low[1] > PDH() + $touch_atr * ATR($atr_n)[1] AND close > PDH()",
+        "short": "high >= PDL() - $touch_atr * ATR($atr_n)[1] AND high[1] < PDL() - $touch_atr * ATR($atr_n)[1] AND close < PDL()"
+      },
+      "reversal": {
+        "long": "ReversalAt(PDH(), \"bullish\") AND close > PDH()",
+        "short": "ReversalAt(PDL(), \"bearish\") AND close < PDL()"
+      }
+    }
+  },
+  "invalidation": {
+    "by": "invalidation",
+    "variants": {
+      "level_buffer": {"long": "PDH() - $stop_mult * ATR($atr_n)[1]", "short": "PDL() + $stop_mult * ATR($atr_n)[1]"},
+      "since_break": {"extreme": "since_setup"}
+    }
+  },
+  "exit_signal": {
+    "by": "exit_rule",
+    "variants": {
+      "none": null,
+      "level": {"long": "close < PDH()", "short": "close > PDL()"}
+    }
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "previous_day_high_retest_held"}],
+    "short": [{"token": "previous_day_low_retest_held"}]
+  }
+}

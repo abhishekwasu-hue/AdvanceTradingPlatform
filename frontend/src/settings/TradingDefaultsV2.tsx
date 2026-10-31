@@ -152,7 +152,7 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
     <div className="space-y-space-4">
       <CardV2 title="What a new bot trades" testId="what">
         <div className={grid}>
-          <Field id={id("kind")} label="Trade as" hint="On an index the bot trades its options unless you pick futures.">
+          <Field id={id("kind")} label="Trade as">
             <Choice id={id("kind")} label="Trade as" value={kind} options={KINDS} onChange={(v) => set("instrument_kind", v)} />
           </Field>
           {options && (
@@ -206,6 +206,7 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
             </Field>
           )}
         </div>
+        <Details id="settings.what"><p className="text-t12 text-fg-muted">On an index the bot trades its options unless you pick futures.</p></Details>
       </CardV2>
 
       <CardV2 title="Exits" testId="exits">
@@ -279,7 +280,7 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
       )}
 
       <CardV2 title="Risk limits" testId="risk">
-        <p className="text-t14 text-fg-muted">Your daily loss limit and the most open positions live on their own page and apply to every trade.</p>
+        <Details id="settings.risk" className="mt-0"><p className="text-t14 text-fg-muted">Your daily loss limit and the most open positions live on their own page and apply to every trade.</p></Details>
         <Link to={RISK_LIMITS_PATH}
           className="mt-space-2 inline-flex min-h-11 items-center gap-space-1 rounded-control text-t14 font-medium text-brand hover:underline md:min-h-0">
           Open Risk limits <ChevronRight size={16} aria-hidden />

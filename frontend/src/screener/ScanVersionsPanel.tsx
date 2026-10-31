@@ -5,6 +5,7 @@
  * the server (at most `max` per scan); the history this device kept before was uploaded once.
  */
 import { Button } from "../components/primitives";
+import { Details } from "../ui/Details";
 import type { ServerVersion } from "./api";
 import { savedAt } from "./versions";
 
@@ -43,9 +44,9 @@ export default function ScanVersionsPanel({ versions, onOpen, max = 50, opening 
           </li>
         ))}
       </ol>
-      <p className="text-t12 text-fg-muted">
+      <Details id="screener.versions" className="mt-0"><p>
         Kept with your account, the newest {max} for each scan. Opening a version changes nothing until you save; saving adds it as the newest version.
-      </p>
+      </p></Details>
     </div>
   );
 }

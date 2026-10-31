@@ -1,6 +1,7 @@
 import { Bell, Check, Download, FileDown, Share2, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "../components/primitives";
+import { Details } from "../ui/Details";
 import { CANNOT_ALERT, alertCondition } from "./alerts";
 import AnnotatedChartV2, { StructureSketch } from "./AnnotatedChartV2";
 import type { AlertTarget } from "./AlertDialogV2";
@@ -169,7 +170,7 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
           <Ref label="Invalidation" value={result.setup.invalidation} approximate={approx} />
           {result.setup.next_areas.map((n, i) => <Ref key={i} label={i === 0 ? "Next areas" : ""} value={n} approximate={approx} />)}
         </dl>
-        <p className="mt-space-2 text-t12 text-fg-muted">These are conditions the method watches, not an instruction to trade.</p>
+        <Details id="chart-analyze.setup" className="mt-space-2"><p>These are conditions the method watches, not an instruction to trade.</p></Details>
       </Section>
 
       <Section title="Evidence" id="ca-evidence">

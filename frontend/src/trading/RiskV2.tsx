@@ -334,7 +334,7 @@ function PauseChoice({ value, onChange, resumedText }: { value: LossStreakPause;
   return (
     <fieldset className="mt-space-5" data-field="loss_streak_pause">
       <legend className="text-t14 font-semibold text-fg">After the losses-in-a-row limit</legend>
-      <p className="mt-space-1 text-t13 text-fg-muted">When new entries start again once your losses in a row reach the limit above.</p>
+      <Details id="risk.loss-streak-pause" className="mt-space-1"><p>When new entries start again once your losses in a row reach the limit above.</p></Details>
       <div className="mt-space-3 grid grid-cols-1 gap-space-3 sm:grid-cols-2">
         {LOSS_STREAK_CHOICES.map((c) => {
           const id = `${name}-${c.value}`;

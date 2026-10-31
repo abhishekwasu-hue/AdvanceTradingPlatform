@@ -17,6 +17,9 @@ CHAIN_HISTORY_SLOT_MINUTES while a venue is open):
   `acquire_spare` (CHAIN_HISTORY_RESERVE of both buckets stays free for exits; the budget's lock is never held while
   waiting). No token within CHAIN_HISTORY_TOKEN_WAIT_SECONDS = the slot's remaining reads are skipped (a gap), never
   queued. A 429 or an expired login ends the slot.
+- **M71 W2-E (flag `market_store_reads` on for the owner's organisation).** Each read takes a token from the session's
+  shared, paced DATA budget instead (`market_store.reader.paced_adapter` -> `api_budget.BudgetedAdapter`), never the
+  worker's order budget; no token within CHAIN_HISTORY_TOKEN_WAIT_SECONDS = the rest of the slot is a gap. Off = as above.
 - **Read-only.** Only `get_option_chain` is called; no order path is reachable from here (Phase 0: PAPER only).
 - Flag `chain_history` (off by default) for the owner's tenant; off = nothing is read.
 """
@@ -31,6 +34,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.rate_budget import RateBudget, limits_for
 from app.core import config
+from app.market_data.api_budget import BudgetUsed
 from app.market_data.calendar import IST, market_session_status, session_family
 from app.market_lake import chain_store, intraday_history
 
@@ -116,6 +120,20 @@ async def _plan(session: Any, now: datetime, report: SlotReport) -> List[Tuple[s
     return plan
 
 
+async def store_first(session: Any, tenant_id: int) -> bool:
+    """M71 W2-E: the flag `market_store_reads` for the owner's organisation - its chain reads draw the data pool."""
+    from app.market_store.models import FLAG as STORE_FLAG
+    from app.platform.controls import flag_enabled
+    return await flag_enabled(session, STORE_FLAG, tenant_id)
+
+
+def _paced(adapter: Any, record: Any, wait: float) -> Any:
+    """One read's adapter on the data pool: a token from the credential's shared data budget first, within `wait`."""
+    from app.market_store.models import RestSource
+    from app.market_store.reader import paced_adapter
+    return paced_adapter(RestSource(adapter, int(record.id), str(record.broker_name), wait))
+
+
 async def record_slot(session_factory: Any, now: Optional[datetime] = None, *, budget_for: Optional[BudgetFor] = None,
                       adapter_factory: Optional[AdapterFactory] = None, adapter_cache: Optional[Dict[Any, Any]] = None,
                       reserve: Optional[float] = None, token_wait_seconds: Optional[float] = None) -> SlotReport:
@@ -154,6 +172,7 @@ async def record_slot(session_factory: Any, now: Optional[datetime] = None, *, b
             report.notes.append("no usable broker session of the owner's own today: nothing read (never another user's)")
             return report
         user, record = found
+        data_pool = await store_first(session, tenant_id)
         todo: List[Tuple[str, date]] = []
         for underlying, expiry in plan:
             if await chain_store.exists(session, tenant_id, underlying, expiry, slot):
@@ -169,7 +188,10 @@ async def record_slot(session_factory: Any, now: Optional[datetime] = None, *, b
                                         now.astimezone(IST).date())
     from app.instruments import master
     for i, (underlying, expiry) in enumerate(todo):
-        if not await budget.acquire_spare(reserve, deadline=budget.now() + wait):
+        reader = adapter
+        if data_pool:                 # M71 W2-E: the data pool (the credential's paced data budget), never the order budget
+            reader = _paced(adapter, record, wait)
+        elif not await budget.acquire_spare(reserve, deadline=budget.now() + wait):
             report.status = "rate_budget"
             report.skipped += len(todo) - i
             report.notes.append("the trading worker held the rate budget: the rest of this slot is a gap")
@@ -177,7 +199,13 @@ async def record_slot(session_factory: Any, now: Optional[datetime] = None, *, b
         report.reads += 1
         started = monotonic_clock.monotonic()
         try:
-            chain = await adapter.get_option_chain(master.INDEX_SYMBOLS.get(underlying, underlying), expiry)
+            chain = await reader.get_option_chain(master.INDEX_SYMBOLS.get(underlying, underlying), expiry)
+        except BudgetUsed:
+            report.reads -= 1                       # no token: the call was not made
+            report.status = "rate_budget"
+            report.skipped += len(todo) - i
+            report.notes.append("the data budget of the owner's session is in use: the rest of this slot is a gap")
+            break
         except BrokerAuthenticationError:
             report.status = "auth"
             report.skipped += len(todo) - i - 1

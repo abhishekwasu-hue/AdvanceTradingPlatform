@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Optional, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 SPOT_BROKER = "broker"
 SPOT_LAST_CLOSE = "last_close"
+LOOKBACK_DAYS = 5                 # the one-minute window the last close is looked for in (as the chart read)
 
 
 @dataclass(frozen=True)
@@ -59,11 +60,18 @@ def strike_rounded(spot: Optional[float], chain: OptionChain) -> bool:
 async def own_last_close(user: User, session: AsyncSession, underlying: str, broker: Optional[str] = None,
                          account_label: str = "primary") -> Optional[Tuple[float, datetime]]:
     """(close, bar time) of the index's newest one-minute bar from our own candles - the chart's read, through the
-    caller's own session, entitlement and budget; None when it cannot be read."""
+    caller's own session, entitlement and budget; None when it cannot be read. M71 W2-E (flag `market_store_reads`):
+    the own store first (`market_store.read_bars`, the newest bars only through his own session, paced); nothing stored
+    = the chart's read as before."""
     from fastapi import HTTPException
 
     from app.market_data.candles_routes import CandlesBody, candles
     symbol, exchange = chain_view.spot_instrument(underlying)
+    from app.option_chain.chain_reads import store_on
+    if await store_on(session, getattr(user, "tenant_id", None)):
+        stored = await stored_last_close(user, session, symbol, exchange, broker)
+        if stored is not None:
+            return stored
     try:
         body = await candles(CandlesBody(symbols=[symbol], exchange=exchange, timeframe="1min", lookback_days=5, broker=broker,
                                          account_label=account_label or "primary"), user=user, session=session)
@@ -81,6 +89,26 @@ async def own_last_close(user: User, session: AsyncSession, underlying: str, bro
         return float(last["close"]), datetime.fromisoformat(str(last["timestamp"]))
     except (KeyError, TypeError, ValueError):
         return None
+
+
+async def stored_last_close(user: User, session: AsyncSession, symbol: str, exchange: str, broker: str | None = None,
+                            now: datetime | None = None) -> tuple[float, datetime] | None:
+    """(close, bar time) of the newest stored one-minute bar (`market_store.read_bars`, LOOKBACK_DAYS back, the newest
+    bars topped up only through the reader's OWN session - M71Q-2), or None when the store holds none."""
+    from app.market_store import read_bars
+    from app.market_store.sources import own_rest
+    now = now or datetime.now(UTC)
+    try:
+        rest = await own_rest(session, user, symbol, exchange, broker=broker)
+        got = await read_bars(session, symbol, "1min", now - timedelta(days=LOOKBACK_DAYS), now, user=user,
+                              purpose="option_chain", exchange=exchange, rest=rest, now=now)
+    except Exception as exc:  # noqa: BLE001 - no stored close: the chart's read decides
+        logger.info("Stored last index close not read for %s: %s", symbol, type(exc).__name__)
+        return None
+    if not got.served:
+        return None
+    ts = got.frame.index[-1].to_pydatetime()
+    return float(got.frame["close"].iloc[-1]), ts
 
 
 async def resolve_spot(user: User, session: AsyncSession, underlying: str, chain: OptionChain, spot: Optional[float], as_of: AsOf,

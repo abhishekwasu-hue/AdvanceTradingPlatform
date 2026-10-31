@@ -46,7 +46,7 @@ Read order:
 | 8 | Worker strategies | `workers/trading_worker.py:1882` (`_history_source(...).get_frames`) | strategy tf | history + today per symbol every cycle | wave 2 (W2-D) |
 | 9 | M66 engine | `engine_provider/sources.py:95-129` (`broker_bars`, futures), `workers/engine_runner.py` | 1m, 1d | 1m history + intraday + Daily if not stored + future 1m | wave 2 (W2-C): `read_bars(..., dh3=False)` |
 | 10 | VIX gate | `risk_engine/vix_gate.py:165` | day | 1 per cycle | wave 2 (W2-D): Daily from the store |
-| 11 | Option chain spot / probes | `option_chain/probe.py:103`, `market_data/probe.py:88,101` | 1min | 1-2 per probe | wave 2 (W2-E) |
+| 11 | Option chain spot / probes | `option_chain/probe.py:103`, `market_data/probe.py:88,101` | 1min | 1-2 per probe | **switched** (W2-E, flag on): chain pages (analyses / charts / ask) paced on the credential's data budget, one chain call per credential per snapshot window (`option_chain/chain_reads.py`), a busy broker = the last chain with its age; the spot's last close and the probe's own close via `read_bars`; the chain recorder on the data pool. `market_data/probe.py` not in this slice |
 | 12 | Backfills (writers, not readers) | `market_lake/intraday_history.py:558-561`, `index_history.py:434-436,695`, `ingest.py:213` | 1m, day | 1 per window, off-hours, paced | unchanged (PL-1c owns gap fill) |
 
 ## What wave 2 must keep

@@ -26,7 +26,8 @@ from app.db.models import User
 from app.db.session import get_session
 from app.market_data.calendar import IST, family_holidays
 from app.option_chain import chain_view
-from app.option_chain.as_of import as_of_for, strike_rounded
+from app.option_chain.as_of import as_of_for, stored_last_close, strike_rounded
+from app.option_chain.chain_reads import store_on as store_first
 
 # MO3: SUPER_ADMIN with a two-factor-verified session, like every admin router.
 admin_router = APIRouter(prefix="/api/admin/option-chain", tags=["admin"],
@@ -79,15 +80,22 @@ def summarise(underlying: str, chain: Optional[OptionChain], error: Optional[str
 
 
 async def run_chain_probe(session: AsyncSession, user: User, underlying: str, now: Optional[datetime] = None) -> Dict[str, Any]:
-    """One chain read (nearest expiry) and one candle read through the caller's own broker session and API budget."""
+    """One chain read (nearest expiry) and one candle read through the caller's own broker session and API budget.
+    M71 W2-E: both calls through the data pool's one pacing point (`reader.paced_adapter`); with the flag
+    `market_store_reads` on, our last index close from the own store first (`as_of.stored_last_close`); nothing stored =
+    the candle read."""
     from app.brokers.base import BrokerInterface
     from app.brokers.token_lifecycle import build_adapter
-    from app.market_data import api_budget, lake_fill
+    from app.market_data import lake_fill
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
+    from app.market_store.models import RestSource
+    from app.market_store.reader import paced_adapter
     now = now or datetime.now(timezone.utc)
     record = await _pick_record(session, user.tenant_id, None, "primary")
-    adapter = api_budget.BudgetedAdapter(build_adapter(record), record.id, record.broker_name)
+    store = await store_first(session, user.tenant_id)
+    # The data pool's one pacing point (the same `api_budget.BudgetedAdapter` the probe used, built in one place).
+    adapter = paced_adapter(RestSource(build_adapter(record), int(record.id), str(record.broker_name)))
     spot_symbol, spot_exchange = chain_view.spot_instrument(underlying)
     when = as_of_for(now, await family_holidays(session, spot_exchange), spot_exchange)
     chain: Optional[OptionChain] = None
@@ -96,15 +104,16 @@ async def run_chain_probe(session: AsyncSession, user: User, underlying: str, no
         chain = await adapter.get_option_chain(underlying, None)
     except Exception as exc:  # noqa: BLE001 - the probe reports the broker's error, it never raises it
         error = scrub(f"{type(exc).__name__}: {exc}")
-    own = None
-    try:
-        service = MarketDataService(cast(BrokerInterface, adapter), lookback_days=5)
-        service.lake_fill = lake_fill.for_reader(session, user)          # DH6: the last session from the own lake
-        bars = await service.get_candles(spot_symbol, spot_exchange, "1min")
-        if bars:
-            own = (float(bars[-1].close), bars[-1].timestamp)
-    except Exception:  # noqa: BLE001 - no own close: shown as "-"
-        own = None
+    own = await stored_last_close(user, session, spot_symbol, spot_exchange, record.broker_name, now=now) if store else None
+    if own is None:
+        try:
+            service = MarketDataService(cast(BrokerInterface, adapter), lookback_days=5)
+            service.lake_fill = lake_fill.for_reader(session, user)      # DH6: the last session from the own lake
+            bars = await service.get_candles(spot_symbol, spot_exchange, "1min")
+            if bars:
+                own = (float(bars[-1].close), bars[-1].timestamp)
+        except Exception:  # noqa: BLE001 - no own close: shown as "-"
+            own = None
     result = summarise(underlying, chain, error, own, when)
     result["broker"] = record.broker_name
     return result

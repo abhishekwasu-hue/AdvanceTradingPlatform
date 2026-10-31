@@ -23,12 +23,12 @@ def _run(coro):
 
 
 def _who(tag: str):
-    headers, me = _owner(f"ui24a1-{tag}-{uuid.uuid4().hex[:6]}@example.com")
+    headers, me = _owner(f"ui24a1-{tag}-{uuid.uuid4().hex[:12]}@example.com")
     return {"headers": headers, "tenant_id": me["tenant_id"], "user_id": me["id"]}
 
 
 def _invite(owner: dict, role: str) -> dict:
-    email = f"ui24a1-{role.lower()}-{uuid.uuid4().hex[:6]}@example.com"
+    email = f"ui24a1-{role.lower()}-{uuid.uuid4().hex[:12]}@example.com"
     invite = client.post("/api/team/invites", headers=owner["headers"], json={"email": email, "role": role})
     assert invite.status_code in (200, 201), invite.text
     token = parse_qs(urlparse(invite.json()["invite_url"]).query)["invite"][0]

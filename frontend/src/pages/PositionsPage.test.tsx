@@ -15,7 +15,7 @@ vi.mock("../auth/AuthContext", () => {
 
 import PositionsPage from "./PositionsPage";
 import source from "./PositionsPage.tsx?raw";
-import { expectNoDeveloperText, expectPlainErrorSentences, renderPage, textOf } from "./pageSmoke.fixture";
+import { expectNoDeveloperText, expectPlainErrorSentences, renderPage, routesErrorsThroughSentence, textOf } from "./pageSmoke.fixture";
 
 const TRADER = { id: 1, email: "trader@example.com", tenant_id: 1, role: "OWNER", scopes: [] };
 
@@ -40,8 +40,8 @@ describe("Positions page", () => {
     expectNoDeveloperText(html);
   });
 
-  it("turns its main read failures into plain sentences", () => {
+  it("turns every caught failure, the mark-price and exit messages too, into one plain sentence", () => {
     expectPlainErrorSentences();
-    expect(source).toMatch(/errorSentence\(/);
+    expect(routesErrorsThroughSentence(source)).toBe(true);
   });
 });

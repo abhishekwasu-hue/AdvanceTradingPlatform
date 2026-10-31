@@ -91,7 +91,7 @@ export default function NewsEventsPage() {
   const [symbolFilter, setSymbolFilter] = useState("");
   const symbolQuery = useDebouncedValue(symbolFilter.trim(), NEWS_SEARCH_DEBOUNCE_MS);   // REV-1 M3: one read when typing stops
   const [originFilter, setOriginFilter] = useState<"" | "MANUAL" | "FEED">("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);                // M63 I-7: the list is read on open - placeholder rows first
   const [error, setError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [form, setForm] = useState<NewsEvent>(defaultNewsEvent());

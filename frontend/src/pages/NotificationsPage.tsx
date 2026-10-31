@@ -7,7 +7,8 @@ import type { NotificationEntry, NotificationSeverity, VisionReportsResponse } f
 import { VisionReportView } from "../components/VisionReportPanel";
 import VisionDailyReview from "../components/VisionDailyReview";
 import { byNotification, single } from "../components/visionReport";
-import { PageHeader, Tabs } from "../components/primitives";
+import { PageHeader, SkeletonRows, Tabs } from "../components/primitives";
+import { EmptyStateV2 } from "../dashboard/CardV2";
 import { AlertRulesPanel } from "../components/AlertRulesPanel";
 import { useDeepLinkTarget } from "../utils/useDeepLinkTarget";
 import { useNotificationReads } from "../live/useNotificationReads";
@@ -31,6 +32,8 @@ export default function NotificationsPage() {
   // PW3: a push opens /notifications?n=<id> - that notification is scrolled to and outlined.
   const target = useDeepLinkTarget("n", "notification", notifications.length > 0);
   const [error, setError] = useState<string | null>(null);
+  // M63 I-7: false until the feed's first answer (or failure) - placeholder rows, never "No notifications" before it.
+  const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("feed");
   // BYOK-V3: the caller's own Vision reports on their scan alerts and their daily review. Null while the flags are off
   // (the API answers 404) - then nothing about Vision is shown.
@@ -39,7 +42,8 @@ export default function NotificationsPage() {
 
   // REV-1 M3: a new alert or Mark read re-reads only the feed (src/live/useNotificationReads.ts).
   const { refresh, refreshFeed } = useNotificationReads(!!user, {
-    setNotifications, setError: (e) => setError(errorSentence(e)), setScanVision, setDailyVision,
+    setNotifications: (rows) => { setNotifications(rows); setLoaded(true); },
+    setError: (e) => { setError(errorSentence(e)); setLoaded(true); }, setScanVision, setDailyVision,
   });
 
   async function markRead(id: number) {
@@ -78,8 +82,10 @@ export default function NotificationsPage() {
   const scanReports = byNotification(scanVision);
   const feed = (
       <Card className="mt-3">
-        {notifications.length === 0 ? (
-          <div className="text-sm text-fg-muted py-4 text-center">No notifications yet.</div>
+        {!loaded ? (
+          <SkeletonRows rows={3} label="Loading your notifications" />
+        ) : notifications.length === 0 ? (
+          <EmptyStateV2 text="No notifications yet." />
         ) : (
           <div className="space-y-2">
             {notifications.map((n) => (
@@ -134,7 +140,7 @@ export default function NotificationsPage() {
       {error && <div className="text-sm text-down">{error}</div>}
 
       <Tabs value={tab} onChange={setTab} items={[
-        { value: "feed", label: `Feed (${notifications.length})`, content: feed },
+        { value: "feed", label: loaded ? `Feed (${notifications.length})` : "Feed", content: feed },
         { value: "rules", label: "Rules & delivery", content: <div className="pt-3"><AlertRulesPanel /></div> },
         ...(dailyVision && dailyVision.in_app ? [{ value: "vision-daily", label: "Vision daily review",
                                                    content: <Card className="mt-3"><VisionDailyReview resp={dailyVision} onChanged={refresh} /></Card> }] : []),

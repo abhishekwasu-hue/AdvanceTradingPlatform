@@ -2,6 +2,7 @@ import { Check } from "lucide-react";
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { errorSentence } from "../api/errors";
+import { Skeleton } from "../components/primitives";
 import { CARD, LINK_PRIMARY } from "../dashboard/CardV2";
 import type { StrategyInfo } from "../types";
 import { Chip, FilterChip } from "../ui/Chip";
@@ -124,6 +125,13 @@ export function LibraryView({ strategies, error, inUse, category, query, chosen,
 
       <div className="grid items-start gap-space-6 lg:grid-cols-[minmax(0,1fr)_400px]">
         <div className="grid gap-space-3 lg:grid-cols-2" aria-busy={strategies === null}>
+          {/* M63 I-7: placeholder cards while the list loads (never an empty grid). */}
+          {strategies === null && (
+            <>
+              <Skeleton className="h-40" panel label="Loading strategies" />
+              <Skeleton className="h-40" panel />
+            </>
+          )}
           {shown.map((s) => {
             const rows = libraryCardSettings(s.default_params, s.timeframes);
             const current = picked?.id === s.id;

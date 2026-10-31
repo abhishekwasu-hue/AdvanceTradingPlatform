@@ -88,7 +88,7 @@ test.describe("settings index behaviour", () => {
   test("the rows, each with its chip and where it leads", async ({ page }) => {
     await openSettings(page, "/settings", FULL);
     const rows = index(page).locator("[data-row]");
-    await expect(rows).toHaveText([/Account & plan/, /Team/, /Broker/, /AI/, /Alerts/, /My trading defaults/, /Risk limits/, /Appearance/, /Help & tips/, /Set up your account/]);
+    await expect(rows).toHaveText([/Account & plan/, /Team/, /Broker/, /AI/, /Alerts/, /Trade settings/, /My trading defaults/, /Risk limits/, /Appearance/, /Help & tips/, /Set up your account/]);
     // UX3-9: Team and Risk limits left the sidebar; Settings opens them.
     await expect(row(page, "team").locator("a")).toHaveAttribute("href", "/team");
     await expect(row(page, "risk").locator("a")).toHaveAttribute("href", "/settings/risk-limits");     // M64 RM-5: the one Risk limits page

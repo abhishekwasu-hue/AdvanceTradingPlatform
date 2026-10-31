@@ -42,6 +42,8 @@
   `option_chain` (B4, UI-H bug lane) holds his own Option chain settings: the PCR zone edges that word "What the chain
   shows" (defaults = the values used before). Display words only.
   `shell` (M57) holds the app shell's own display choices: whether the sidebar is the full menu or the icon rail.
+  `trade_settings` (M68 PR-0) holds the user's own Settings > Trade settings, every field "Not set" until he saves it; the
+  registry, its rules and its own routes are app/me/trade_settings.py.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -61,6 +63,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.db.models import User, UserPrefsRecord
 from app.db.session import get_session
+from app.me import trade_settings
 from app.option_chain.ask_spec import AnalysisSpec
 
 MAX_BODY_BYTES = 16 * 1024
@@ -487,6 +490,18 @@ class StrategyExitPrefs(_Prefs):
     trail_by: Optional[float] = Field(default=None, gt=0, lt=1e7, allow_inf_nan=False)
 
 
+class TradeSettingsPrefs(_Prefs):
+    """`trade_settings` (M68 PR-0): the user's own Settings > Trade settings, ``{"values": {key: value}}``. A key present is
+    a value he saved himself (the saved marker); an absent key is "Not set". Validated against the one registry
+    (app/me/trade_settings.py), which also serves the page's own routes (GET / PUT /api/me/trade-settings)."""
+    values: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _registry(self) -> TradeSettingsPrefs:
+        trade_settings.check_stored(self.values)
+        return self
+
+
 class ShellPrefs(_Prefs):
     """`shell` (M57 U7-1, owner 30 Oct): the app shell's own display choices. `sidebar`: the menu from md up, the full menu
     ("expanded") or a 56 px rail of icons ("rail"); None = never chosen (the frontend then shows the full menu from
@@ -499,7 +514,8 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
                                        "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs,
                                        "option_chain": OptionChainPrefs, "terminal": TerminalPrefs,
-                                       "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs}
+                                       "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs,
+                                       "trade_settings": TradeSettingsPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -588,6 +604,8 @@ async def put_prefs(namespace: str, request: Request, version: Optional[int] = N
     `version` (optional): the version the change was made on; a stale one is refused with 409 and the current value."""
     if namespace not in NAMESPACES:
         raise HTTPException(status_code=404, detail="Unknown preferences namespace")
+    if namespace == trade_settings.NAMESPACE:            # one write path: it saves only the fields sent (M68 PR-0)
+        raise HTTPException(status_code=405, detail="Trade settings are saved at PUT /api/me/trade-settings")
     value, saved_version = await save(namespace, await read_body(request), version, user, session)
     return {"namespace": namespace, "value": value, "version": saved_version}
 
@@ -632,7 +650,7 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
 
 
 async def own_limits(session: AsyncSession, user: User) -> Dict[str, Any]:

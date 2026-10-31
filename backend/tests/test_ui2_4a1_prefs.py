@@ -49,7 +49,7 @@ def test_defaults_before_anything_is_saved():
     got = client.get(BASE, headers=who["headers"])
     assert got.status_code == 200, got.text
     assert got.json()["prefs"]["chart"] == CHART_DEFAULTS and got.json()["versions"]["chart"] == 0
-    assert set(got.json()["prefs"]) == set(got.json()["versions"]) == {"chart", "setup", "oc_analyses", "fno_baskets", "appearance", "tours", "trading_defaults", "daily_rhythm", "fno", "smart_execution", "notices", "option_chain", "terminal", "strategy_exits", "my_limits", "shell"}      # the allow-list, exactly (M57 shell, DEF-0 my_limits, SX1 strategy_exits, B4 option_chain, OC3 oc_analyses, FNO-2 fno_baskets, item 1 appearance, MO2 tours, part C trading_defaults, MO4 daily_rhythm, FNO-8B-28 fno, TM Part 7 smart_execution, TT12-1 notices)
+    assert set(got.json()["prefs"]) == set(got.json()["versions"]) == {"chart", "setup", "oc_analyses", "fno_baskets", "appearance", "tours", "trading_defaults", "daily_rhythm", "fno", "smart_execution", "notices", "option_chain", "terminal", "strategy_exits", "my_limits", "shell", "trade_settings"}      # the allow-list, exactly (M68 trade_settings, M57 shell, DEF-0 my_limits, SX1 strategy_exits, B4 option_chain, OC3 oc_analyses, FNO-2 fno_baskets, item 1 appearance, MO2 tours, part C trading_defaults, MO4 daily_rhythm, FNO-8B-28 fno, TM Part 7 smart_execution, TT12-1 notices)
     assert prefs.defaults("chart") == CHART_DEFAULTS                    # no grid by default; volume and RSI on
 
 

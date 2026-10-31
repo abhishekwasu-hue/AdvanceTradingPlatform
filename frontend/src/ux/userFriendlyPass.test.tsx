@@ -101,10 +101,11 @@ describe("user-friendly pass: guards", () => {
     const page = SOURCES["./chartAnalyze/ChartAnalyzePageV2.tsx"];
     expect(page).not.toMatch(/administrator installs/i);
     // M59 CR-3 (owner order): "engine not installed — owner action" is the admin's headline only - written once, as the
-    // admin constant (in admin/chartEngineNotice.ts, so the user-string guard reads it as admin text), and shown only on the admin branch (chartAnalyze.test.tsx renders both audiences)
+    // admin constant (in admin/chartEngineNotice.ts, re-exported by chartAnalyze/engineWords.ts, so the user-string guard
+    // reads it as admin text), and shown only on the admin branch (chartAnalyze.test.tsx renders both audiences)
     const adminNotice = SOURCES["./admin/chartEngineNotice.ts"];
-    expect(page.match(/engine not installed/gi)).toBeNull();                    // the page imports it; the text is admin code
-    expect(adminNotice.match(/engine not installed/gi)).toHaveLength(1);
+    expect(page).not.toMatch(/engine not installed/i);
+    expect(SOURCES["./chartAnalyze/engineWords.ts"]).not.toMatch(/engine not installed/i);
     expect(adminNotice).toContain('export const ENGINE_ADMIN_TITLE = "Chart analysis engine not installed — owner action";');
     expect(page).toContain("{admin ? ENGINE_ADMIN_TITLE : ENGINE_USER_TITLE}");
     expect(page).toContain("if (engineMissing && !off) return <EngineUnavailable engine={status.engine} />;");

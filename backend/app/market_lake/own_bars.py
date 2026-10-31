@@ -154,11 +154,12 @@ def apply_flags(rows: Sequence[RowTuple], marks: Dict[datetime, Dict[str, Option
 
 
 async def fetch_rows(session: AsyncSession, scope: Scope, key: str, label: str, start: datetime, end: datetime, *,
-                     limit: Optional[int] = None, point_in_time: str = "first_version_by_end") -> List[RowTuple]:
+                     limit: Optional[int] = None, point_in_time: str = "first_version_by_end", dh3: bool = True) -> List[RowTuple]:
     """The member's private bars of one lake label with END in (start, end], one per END (its highest visible version),
     as plain tuples, DH3 flags applied. point_in_time: "first_version_by_end" (a bar's first version counts by its END,
     a correction once ingested - the chart layer's rule) or "ingested" (only rows ingested by `end` - the zones job's).
-    More than `limit` rows raises ValueError (refused, never cut)."""
+    More than `limit` rows raises ValueError (refused, never cut). dh3=False (M66 EN-2, the engine adapter): the rows as
+    stored, without the DH3 flags applied - the adapter hands the flags to the engine as marks instead."""
     cond = _scoped(scope, key, (label,))
     if point_in_time == "ingested":
         cond.append(MdTenantCandleRecord.ingested_at <= end)
@@ -180,6 +181,8 @@ async def fetch_rows(session: AsyncSession, scope: Scope, key: str, label: str, 
             raise ValueError(f"the window holds more than {limit} private bars on {label}; choose a later start")
         await asyncio.sleep(0)
     rows = [best[t] for t in sorted(best)]
+    if not dh3:
+        return rows
     return apply_flags(rows, await flags(session, scope[0], key, label, start, end)) if rows else rows
 
 

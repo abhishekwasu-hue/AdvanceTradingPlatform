@@ -1,4 +1,5 @@
 import { Clock, Eye, EyeOff, Layers, ShieldAlert, ShieldCheck, Wifi, WifiOff } from "lucide-react";
+import { Skeleton } from "../components/primitives";
 import { cx } from "../components/primitives/cx";
 import { toneClass } from "../dashboard/CardV2";
 import { statusSummary, type CombinedExit } from "../fno/combinedExit";
@@ -54,9 +55,20 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
   if (!status) {
     return (
       <section aria-label="Status bar" data-block="terminal-status" data-state={failed ? "error" : "loading"} className={shell}>
-        <p className="min-w-0 flex-1 text-t13 text-fg-muted" role="status">
-          {failed ? "Your figures could not be read. We will try again in a moment." : "Loading your figures…"}
-        </p>
+        {failed ? (
+          <p className="min-w-0 flex-1 text-t13 text-fg-muted" role="status">Your figures could not be read. We will try again in a moment.</p>
+        ) : (
+          // M63 I-7: placeholder figures (the shared Skeleton) while the first read is on its way, never a text line.
+          <div className="flex min-w-0 flex-1 items-center gap-space-4" role="status" aria-busy="true" data-skeleton>
+            <span className="sr-only">Loading your figures</span>
+            {(compact ? [0, 1] : [0, 1, 2, 3]).map((i) => (
+              <div key={i} className={ITEM}>
+                <Skeleton className="mb-1 h-3 w-12" />
+                <Skeleton className="h-4 w-16" />
+              </div>
+            ))}
+          </div>
+        )}
         {showMode && modeChipEl}
         {maskButton}
       </section>

@@ -8,7 +8,8 @@ import { api } from "../api/client";
 import RenewBanner from "../broker/RenewBanner";
 import { useAuth } from "../auth/AuthContext";
 import { Card, signClass, signTone } from "../components/ui";
-import { Badge, Button, PageHeader } from "../components/primitives";
+import { Badge, Button, PageHeader, SkeletonRows } from "../components/primitives";
+import { EmptyStateV2 } from "../dashboard/CardV2";
 import MarketPulseCard from "../components/MarketPulseCard";
 import ContextPanelCard from "../progression/ContextPanelCard";
 import OiBannersCard from "../components/OiBannersCard";
@@ -138,6 +139,8 @@ function Bars({ rows, valueLabel, signed = false }: { rows: { key: string; value
 
 const SEVERITY: Record<string, Tone> = { INFO: "sky", WARNING: "amber", CRITICAL: "rose", EMERGENCY: "rose" };
 const STATUS_TONE: Record<string, Tone> = { ACTIVE: "emerald", PAUSED: "amber", STOPPED: "rose" };
+type ReadFlags = { exposure: boolean; positions: boolean; deployments: boolean; alerts: boolean };
+const NOT_READ: ReadFlags = { exposure: false, positions: false, deployments: false, alerts: false };
 
 export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page) => void } = {}) {
   const { user } = useAuth();
@@ -152,6 +155,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [accounts, setAccounts] = useState<BrokerAccount[]>([]);
   const [alerts, setAlerts] = useState<NotificationEntry[]>([]);
+  // M63 I-7: which of the book's reads have answered once (placeholder rows until then, never an empty line first).
+  const [read, setRead] = useState<ReadFlags>(NOT_READ);
 
   useEffect(() => {
     Promise.all([api.listStrategies(), api.availableBrokers(), api.health()])
@@ -160,15 +165,16 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
   }, []);
 
   useEffect(() => {
-    if (!user) { setWorker(null); setSummary(null); setExposure(null); setPositions([]); setDeployments([]); setAccounts([]); setAlerts([]); return; }
+    if (!user) { setWorker(null); setSummary(null); setExposure(null); setPositions([]); setDeployments([]); setAccounts([]); setAlerts([]); setRead(NOT_READ); return; }
+    const seen = (k: keyof ReadFlags) => () => setRead((r) => (r[k] ? r : { ...r, [k]: true }));
     const load = () => {
       api.workerStatus().then(setWorker).catch(() => setWorker(null));
       api.getAnalyticsSummary().then(setSummary).catch(() => setSummary(null));
-      api.portfolioExposure(true).then(setExposure).catch(() => setExposure(null));
-      api.listPositions().then(setPositions).catch(() => setPositions([]));
-      api.listDeployments().then(setDeployments).catch(() => setDeployments([]));
+      api.portfolioExposure(true).then(setExposure).catch(() => setExposure(null)).finally(seen("exposure"));
+      api.listPositions().then(setPositions).catch(() => setPositions([])).finally(seen("positions"));
+      api.listDeployments().then(setDeployments).catch(() => setDeployments([])).finally(seen("deployments"));
       api.listAccounts().then(setAccounts).catch(() => setAccounts([]));
-      api.listNotifications().then((n) => setAlerts(n.slice(0, 6))).catch(() => setAlerts([]));
+      api.listNotifications().then((n) => setAlerts(n.slice(0, 6))).catch(() => setAlerts([])).finally(seen("alerts"));
     };
     load();
     const timer = setInterval(load, 30000);
@@ -227,10 +233,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                  value={user ? (summary ? money(netPnl) : "…") : "Log in"} sub={summary ? `${summary.closed_trades} closed · PF ${formatNumber(summary.profit_factor, 2)}` : "all trades, net of charges"} onClick={onNavigate && (() => onNavigate("analytics"))} />
         <KpiTile icon={Target} tone="sky" label="Win rate" value={user && summary ? pct(summary.win_rate) : "…"}
                  sub={summary ? `avg win ${money(summary.avg_win)} · avg loss ${money(summary.avg_loss)}` : "closed trades"} onClick={onNavigate && (() => onNavigate("analytics"))} />
-        <KpiTile icon={Briefcase} tone="violet" label="Open positions" value={user ? positions.length : "…"}
+        <KpiTile icon={Briefcase} tone="violet" label="Open positions" value={user && read.positions ? positions.length : "…"}
                  sub={exposure ? `${money(exposure.gross_notional)} gross · ${pct(exposure.risk_pct_of_capital)} at stops` : "across every account"} onClick={onNavigate && (() => onNavigate("positions"))} />
-        <KpiTile icon={Bot} tone="sky" label="Deployments" value={user ? `${live + paper}` : "…"}
-                 sub={user ? <>{anyLive && <><span className="font-semibold text-fg">{live} LIVE</span> · </>}<span className="text-fg-muted">{paper} PAPER</span>{paused ? <> · <span className="text-warn">{paused} paused</span></> : null}</> : "active strategies"} onClick={onNavigate && (() => onNavigate("deployments"))} />
+        <KpiTile icon={Bot} tone="sky" label="Deployments" value={user && read.deployments ? `${live + paper}` : "…"}
+                 sub={user && read.deployments ? <>{anyLive && <><span className="font-semibold text-fg">{live} LIVE</span> · </>}<span className="text-fg-muted">{paper} PAPER</span>{paused ? <> · <span className="text-warn">{paused} paused</span></> : null}</> : "active strategies"} onClick={onNavigate && (() => onNavigate("deployments"))} />
         <KpiTile icon={Wallet} tone="orange" label="Broker funds" value={user ? (accounts.length ? money(balance) : "-") : "…"}
                  sub={`${accounts.length} account${accounts.length === 1 ? "" : "s"} · ${brokers.length} adapters`} onClick={onNavigate && (() => onNavigate("broker"))} />
         <KpiTile icon={GitMerge} tone="fuchsia" label="Strategies" value={strategies.length || "…"}
@@ -267,7 +273,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
         <div className="grid lg:grid-cols-3 gap-4">
           {/* Exposure */}
           <Card title="Exposure by symbol">
-            {bySymbol.length > 0 && exposure ? (
+            {!read.exposure ? (
+              <SkeletonRows rows={3} label="Loading your exposure" />
+            ) : bySymbol.length > 0 && exposure ? (
               <>
                 <div className="mb-3 flex items-center gap-4">
                   <Ring size={96} segments={[{ value: exposure.long_notional, tone: "emerald" }, { value: exposure.short_notional, tone: "rose" }]} label={pct(exposure.gross_pct_of_capital, 0)} sub="of capital" />
@@ -280,17 +288,16 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                 <Bars rows={bySymbol.map((s, i) => ({ key: s.symbol, value: s.notional, tone: PALETTE[i % PALETTE.length], hint: `${s.positions} pos` }))} valueLabel={(v) => money(v)} />
               </>
             ) : (
-              <div className="flex h-32 items-center justify-center text-xs text-fg-muted">No open positions - exposure is empty.</div>
+              <EmptyStateV2 text="No open positions - exposure is empty." />
             )}
           </Card>
 
           {/* Deployments */}
           <Card title="Running deployments">
-            {deployments.length === 0 ? (
-              <div className="flex h-32 flex-col items-center justify-center gap-2 text-xs text-fg-muted">
-                Nothing deployed yet.
-                {onNavigate && <Button size="sm" variant="primary" onClick={() => onNavigate("deployments")}>Deploy the first one</Button>}
-              </div>
+            {!read.deployments ? (
+              <SkeletonRows rows={3} label="Loading your deployments" />
+            ) : deployments.length === 0 ? (
+              <EmptyStateV2 text="Nothing deployed yet." action={onNavigate && { label: "Deploy the first one", onClick: () => onNavigate("deployments") }} />
             ) : (
               <ul className="space-y-2">
                 {deployments.slice(0, 6).map((d) => (
@@ -311,8 +318,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
           {/* Positions + alerts */}
           <div className="space-y-4">
             <Card title="Open positions">
-              {positions.length === 0 ? (
-                <div className="text-xs text-fg-muted">Flat. Nothing at risk right now.</div>
+              {!read.positions ? (
+                <SkeletonRows rows={2} label="Loading your open positions" />
+              ) : positions.length === 0 ? (
+                <EmptyStateV2 text="Flat. Nothing at risk right now." />
               ) : (
                 <ul className="space-y-1.5">
                   {positions.slice(0, 5).map((p) => (
@@ -328,8 +337,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
               )}
             </Card>
             <Card title={`Latest alerts${unread ? ` · ${unread} unread` : ""}`}>
-              {alerts.length === 0 ? (
-                <div className="text-xs text-fg-muted">Quiet. Entries, exits and risk events will show here.</div>
+              {!read.alerts ? (
+                <SkeletonRows rows={2} label="Loading your alerts" />
+              ) : alerts.length === 0 ? (
+                <EmptyStateV2 text="Quiet. Entries, exits and risk events will show here." />
               ) : (
                 <ul className="space-y-1.5">
                   {alerts.map((a) => (

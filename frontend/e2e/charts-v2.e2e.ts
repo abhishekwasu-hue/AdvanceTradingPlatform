@@ -1277,14 +1277,14 @@ test.describe("flag off", () => {
   }
 
   for (const [name, answer] of [["answers 500", "500"], ["never answers", "never"]] as const) {
-    test(`the flags read ${name}: the old chart window loads (no redirect), with "Loading…" while it waits`, async ({ page }) => {
+    test(`the flags read ${name}: the old chart window loads (no redirect), with the placeholder while it waits`, async ({ page }) => {
       const t0 = Date.now();
       let empty: Awaited<ReturnType<typeof watchEmptyText>> | null = null;
       const calls = await open(page, "dark", { flag: false, path: "/?chart=NIFTY%2050&tf=15min", settle: false, before: async (p) => {
         empty = await watchEmptyText(p);
         await p.route(/\/api(?:\/v1)?\/system\/features$/, (r) => (answer === "500" ? r.fulfill({ status: 500, json: { detail: "error" } }) : new Promise<void>(() => undefined)));
       } });
-      if (answer === "never") await expect(page.getByText("Loading…")).toBeVisible();
+      if (answer === "never") await expect(page.getByRole("status", { name: "Loading the chart" })).toBeVisible();
       await expect(page.getByText("refreshes every minute · live price every 5 s · scroll left for older history")).toBeVisible({ timeout: 6_000 });
       expect(Date.now() - t0, "the shell's 3 s cap, not the 10 s fetch timeout").toBeLessThan(9_000);
       await expect.poll(() => calls.candles.some((c) => c.symbol === "NIFTY 50" && c.timeframe === "15min")).toBe(true);

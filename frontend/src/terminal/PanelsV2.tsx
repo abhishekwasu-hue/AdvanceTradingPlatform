@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
 import type { LevelLine } from "../chart/chartCore";
 import EmbeddedChartV2 from "../chart/EmbeddedChartV2";
+import { SkeletonRows } from "../components/primitives";
 import { cx } from "../components/primitives/cx";
 import { LoadingRowsV2 } from "../dashboard/CardV2";
 import type { ChainTrading } from "../fno/ChainTradingV2";
@@ -421,7 +422,7 @@ export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; term
               {group === "rejected" && o.reasons.length > 0 && <p className="pl-space-5 text-t12 text-warn">{o.reasons[0]}</p>}
               {openId === o.id && (
                 <div className="pl-space-5" data-order-trail={o.id}>
-                  {trail.status === "loading" ? <p className={MUTED}>Loading the order&apos;s steps…</p>
+                  {trail.status === "loading" ? <SkeletonRows rows={2} label="Loading the order's steps" />
                     : trail.status === "error" ? <p className={MUTED}>The order&apos;s steps could not be read just now.</p>
                       : trail.value.length === 0 ? <p className={MUTED}>Each step shows here as it happens.</p> : (
                         <ol className="space-y-px text-t12 text-fg-muted">

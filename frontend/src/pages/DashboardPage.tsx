@@ -13,6 +13,7 @@ import MarketPulseCard from "../components/MarketPulseCard";
 import ContextPanelCard from "../progression/ContextPanelCard";
 import OiBannersCard from "../components/OiBannersCard";
 import GetStartedCardV2 from "../setup/GetStartedCardV2";
+import { formatINR, formatNumber, formatPrice } from "../ui/format";
 import type { Page } from "../components/Sidebar";
 import type {
   AnalyticsSummary, BrokerAccount, Deployment, NotificationEntry, PortfolioExposure, StrategyInfo, TradeRecord, WorkerStatus,
@@ -55,9 +56,9 @@ const ENGINES: { icon: LucideIcon; tone: Tone; title: string; description: strin
   { icon: Bot, tone: "sky", title: "Autopilot + AI", description: "Worker trades deployments every cycle; AI Copilot drafts behind a human approval gate" },
 ];
 
-const money = (v: number | null | undefined, digits = 0) =>
-  v == null ? "-" : `${v < 0 ? "-" : ""}₹${Math.abs(v).toLocaleString("en-IN", { maximumFractionDigits: digits })}`;
-const pct = (v: number | null | undefined, digits = 1) => (v == null ? "-" : `${(v * (Math.abs(v) <= 1 ? 100 : 1)).toFixed(digits)}%`);
+/** Whole rupees, Indian grouping, "−" for a loss (the money rule, ui/format.ts). */
+const money = (v: number | null | undefined) => formatINR(v);
+const pct = (v: number | null | undefined, digits = 1) => (v == null ? "-" : `${formatNumber(v * (Math.abs(v) <= 1 ? 100 : 1), digits)}%`);
 const ago = (iso: string | null) => {
   if (!iso) return "";
   const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
@@ -223,7 +224,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
       {/* KPI tiles */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <KpiTile icon={netPnl != null && netPnl < 0 ? ArrowDownRight : ArrowUpRight} tone={netPnl == null || netPnl === 0 ? "sky" : netPnl < 0 ? "rose" : "emerald"} label="Net P&L"
-                 value={user ? (summary ? money(netPnl) : "…") : "Log in"} sub={summary ? `${summary.closed_trades} closed · PF ${summary.profit_factor?.toFixed(2) ?? "-"}` : "all trades, net of charges"} onClick={onNavigate && (() => onNavigate("analytics"))} />
+                 value={user ? (summary ? money(netPnl) : "…") : "Log in"} sub={summary ? `${summary.closed_trades} closed · PF ${formatNumber(summary.profit_factor, 2)}` : "all trades, net of charges"} onClick={onNavigate && (() => onNavigate("analytics"))} />
         <KpiTile icon={Target} tone="sky" label="Win rate" value={user && summary ? pct(summary.win_rate) : "…"}
                  sub={summary ? `avg win ${money(summary.avg_win)} · avg loss ${money(summary.avg_loss)}` : "closed trades"} onClick={onNavigate && (() => onNavigate("analytics"))} />
         <KpiTile icon={Briefcase} tone="violet" label="Open positions" value={user ? positions.length : "…"}
@@ -318,7 +319,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                     <li key={p.id} className="flex items-center gap-2 text-xs">
                       <span className={`rounded-md px-1.5 py-0.5 font-bold ${p.direction === "LONG" ? "bg-up/20 text-up" : "bg-down/20 text-down"}`}>{p.direction === "LONG" ? "L" : "S"}</span>
                       <span className="min-w-0 flex-1 truncate font-semibold text-fg">{p.symbol}</span>
-                      <span className="font-tabular text-fg-muted">{p.quantity} @ {p.entry_price.toLocaleString("en-IN")}</span>
+                      <span className="font-tabular text-fg-muted">{p.quantity} @ {formatPrice(p.entry_price)}</span>
                       <span className={`rounded px-1 text-xs ${p.mode === "LIVE" ? "font-semibold text-warn" : "text-fg-muted"}`}>{p.mode}</span>
                     </li>
                   ))}

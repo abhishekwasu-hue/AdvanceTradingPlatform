@@ -1,14 +1,16 @@
 import { Coins } from "lucide-react";
+import { formatINR, formatNumber } from "../../ui/format";
 import { useCopilotT } from "../i18n";
 
 /** "≈ 1.2k tokens · ₹0.42" under an AI answer (BYOK: the trader's own key pays). `estimate` marks a figure that
  * comes from the typical-call size, not this call's metered usage. */
 export function formatTokens(n: number): string {
-  return n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n));
+  return n >= 10_000 ? `${formatNumber(n / 1000)}k` : n >= 1000 ? `${formatNumber(n / 1000, 1)}k` : formatNumber(n);
 }
 
 export function formatInr(v: number): string {
-  return v < 0.01 ? "<₹0.01" : v < 10 ? `₹${v.toFixed(2)}` : `₹${Math.round(v).toLocaleString("en-IN")}`;
+  // Paise below ₹10 (a call costs a few paise), whole rupees above.
+  return v < 0.01 ? "<₹0.01" : formatINR(v, { paise: v < 10 });
 }
 
 export default function CostChip({ tokens, inr, estimate = false }: { tokens: number; inr: number; estimate?: boolean }) {

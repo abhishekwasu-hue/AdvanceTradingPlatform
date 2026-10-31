@@ -341,7 +341,7 @@ describe("OC1 phone layout", () => {
     expect(desktop).toEqual(["oi", "oi_change", "volume", "iv", "ltp"]);
     const html = table();
     for (const label of ["OI change", "Volume", "IV"]) {
-      expect(html).toMatch(new RegExp(`<th[^>]*class="[^"]*hidden md:table-cell[^"]*"[^>]*><span class="sr-only">Call </span>${label}</th>`));
+      expect(html).toMatch(new RegExp(`<th[^>]*class="[^"]*hidden md:table-cell[^"]*"[^>]*><span class="sr-only">Call </span>${label}(?: <span[^>]*>.*?</span>)?</th>`));   // M63 I-7: a (?) may follow
     }
     expect(html).not.toMatch(/Delta|Bid/);                                   // Greeks and bid / ask are off by default
     const all = table(liveChain(), { greeks: true, quotes: true, more: true });

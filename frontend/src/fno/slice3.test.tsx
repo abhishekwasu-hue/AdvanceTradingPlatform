@@ -171,7 +171,8 @@ describe("8b-i the cockpit: his own open PAPER F&O positions, read only", () => 
     const units = [SPREAD, LONG];
     const html = renderToStaticMarkup(<MemoryRouter><CockpitView units={units} summary={summarise(units)} greeks={greeks}
       line={cockpitRiskLine(summarise(units), BUDGET)} expiries={upcomingExpiries(units, "2026-10-27")} alerts={[]} /></MemoryRouter>);
-    expect(html).not.toContain("<button");
+    // M63 I-7: the only buttons are the (?) help marks on Theta / Delta / Gamma / Vega - help, not a control.
+    expect(html.replace(/<button[^>]*aria-label="What is [^"]+\?"[^>]*>[\s\S]*?<\/button>/g, "")).not.toContain("<button");
     expect(html).not.toContain("<a ");
     const words = text(html);
     expect(words).toContain("F&O at a glance");

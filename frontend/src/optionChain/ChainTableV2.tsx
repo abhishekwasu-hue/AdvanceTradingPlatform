@@ -2,6 +2,8 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { cx } from "../components/primitives/cx";
 import { useColourV2 } from "../ui/colourV2";
 import { formatPrice } from "../ui/format";
+import type { GlossaryKey } from "../ui/glossary";
+import { TermHint } from "../ui/TermHint";
 import {
   CALL_COLUMNS, PUT_COLUMNS, atmIndex, barPercent, centreScrollTop, columnShown, formatCount, formatCountChange, formatGreek,
   formatIv, formatOiChangePct, formatStrike, isItm, maxOi, type ColumnDef, type ColumnKey, type ColumnPrefs,
@@ -50,6 +52,8 @@ function cellText(key: ColumnDef["key"], leg: ChainLeg, pct = false): string {
 }
 
 const SHOWN_CLASS = { all: "", desktop: "hidden md:table-cell", none: "hidden" } as const;
+/** M63 I-7: the (?) on a jargon column, on the calls' header only (the first time the term shows; the puts mirror it). */
+const COLUMN_TERMS: Partial<Record<ColumnKey, GlossaryKey>> = { ltp: "ltp", oi: "oi", iv: "iv", delta: "delta", gamma: "gamma", theta: "theta", vega: "vega" };
 
 export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg, held, setup, areaMarks, hide }: {
   live: LiveChain;
@@ -150,7 +154,7 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
           <tr className="text-t12 font-medium text-fg-muted">
             {calls.map((c) => (
               <th key={c.key} scope="col" className={cx("whitespace-nowrap border-b border-subtle bg-surface-1 px-space-2 py-space-2 text-right font-medium", SHOWN_CLASS[columnShown(c, prefs)])}>
-                <span className="sr-only">Call </span>{c.label}
+                <span className="sr-only">Call </span>{c.label}{termOf(c.key)}
               </th>
             ))}
             <th scope="col" className={cx(strikeSticky, "border-b border-subtle bg-surface-2 px-space-2 py-space-2 font-semibold text-fg")}>Strike</th>
@@ -228,4 +232,10 @@ function SetupMark({ call, put }: { call?: string; put?: string }) {
 /** "Max" next to the highest OI of a side (from the md breakpoint; a phone has the outline and the bold figure). */
 function MaxMark() {
   return <span aria-hidden className="hidden rounded-pill bg-brand px-space-1 text-t12 font-semibold leading-4 text-on-brand md:inline">Max</span>;
+}
+
+/** The column's (?) when its label is a trading term (floating: the chain box scrolls both ways). */
+function termOf(key: ColumnKey) {
+  const term = COLUMN_TERMS[key];
+  return term ? <> <TermHint term={term} floating /></> : null;
 }

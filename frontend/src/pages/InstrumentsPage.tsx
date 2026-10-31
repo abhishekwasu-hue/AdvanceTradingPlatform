@@ -25,7 +25,7 @@ export default function InstrumentsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Instruments" description={<>MCX commodity and crypto contract specs the platform knows about, beyond plain NSE/BSE equity & index options (which already size correctly off your Risk Management lot size). These are static reference contract specifications - standard MCX lot sizes and common crypto tick sizes - not a live price feed. Trading a symbol below runs its position sizing off its own lot size (whole lots for commodities, fractional units for crypto) instead of your account's default lot size.</>} />
+      <PageHeader title="Instruments" description="MCX commodity and crypto contract specs the platform knows about, beyond plain NSE/BSE equity & index options (which already size correctly off your Risk Management lot size). These are static reference contract specifications - standard MCX lot sizes and common crypto tick sizes - not a live price feed. Trading a symbol below runs its position sizing off its own lot size (whole lots for commodities, fractional units for crypto) instead of your account's default lot size." />
 
       {error && <div className="text-sm text-down">{error}</div>}
 

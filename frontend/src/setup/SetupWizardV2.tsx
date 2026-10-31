@@ -8,6 +8,9 @@ import {
 } from "./model";
 import { ActionV2, AlertsStepV2, BrokerStepV2, RiskStepV2, StrategyStepV2 } from "./StepsV2";
 import { useSetup } from "./useSetup";
+import { Details } from "../ui/Details";
+
+const WIZARD_INTRO = "Four short steps to start trading on paper. Skip any of them and come back here later.";
 
 /**
  * UI2-7 (UI v2 proposal §11): the setup wizard - four steps, each skippable ("Skip for now") and resumable: the progress
@@ -73,11 +76,12 @@ export default function SetupWizardV2() {
   };
   const forward = () => { if (step) setShown(stepAfter(view, step.key) ?? "finished"); };
   const props = { done: !!step?.done, onChanged: setup.reload };
-  const intro = <p className="text-t14 text-fg-muted">Four short steps to start trading on paper. Skip any of them and come back here later.</p>;
+  // PROSE-1: the intro is shown only inside a Details (here, and in the broker step's Details).
+  const intro = <p className="text-t14 text-fg-muted">{WIZARD_INTRO}</p>;
 
   return (
     <section className={`${CARD} space-y-space-4 p-space-4 md:p-space-5`} data-block="wizard" data-step={shown}>
-      {(shown === "finished" || step?.key !== "broker") && intro}
+      {(shown === "finished" || step?.key !== "broker") && <Details id="setup.wizard" className="mt-0">{intro}</Details>}
       <Stepper view={view} current={shown} onPick={setShown} />
       {step ? (
         <>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BANNED_UI_WORDS } from "../ux/bannedUiWords";
-import { INDICATOR_LABEL, exitRuleWords, libraryChips, metricLabel, paramChips, paramLabel, timeframeWords, wordsOf } from "./strategyLabels";
+import { INDICATOR_LABEL, SUGGESTED_NOTE, exitRuleWords, libraryChips, librarySplit, metricLabel, paramChips, paramLabel, timeframeWords, wordsOf } from "./strategyLabels";
 
 describe("SB-UX SU8: the one strategy label map", () => {
   it("names every engine indicator in plain words, never by its id", () => {
@@ -24,6 +24,16 @@ describe("SB-UX SU8: the one strategy label map", () => {
     expect(libraryChips({ ema_fast: 9, target_rr: [1.5, 2.5], min_rr: 1.2 })).toEqual(["Fast EMA 9", "Targets (R) 1.5 / 2.5"]);
     expect(libraryChips({ ema_fast: 9 })).toEqual(paramChips({ ema_fast: 9 }));
     expect(libraryChips(null)).toEqual([]);
+  });
+
+  it("STRAT-X: the Library shows a built-in's stop and targets apart, as suggested values for his own settings", () => {
+    const split = librarySplit({ ema_fast: 9, atr_mult_sl: 1.2, target_rr: [1.5, 2.5], min_rr: 1.2, tf: "5min" });
+    expect(split.settings).toEqual(["Fast EMA 9", "Timeframe 5-minute"]);
+    expect(split.suggested).toEqual(["Stop (x ATR) 1.2", "Targets (R) 1.5 / 2.5"]);
+    expect(SUGGESTED_NOTE).toBe("Suggested — change in settings");
+    expect([...split.settings, ...split.suggested].some((c) => /R:R/.test(c))).toBe(false);
+    expect(librarySplit(null)).toEqual({ settings: [], suggested: [] });
+    expect(librarySplit({ ema_fast: 9 })).toEqual({ settings: ["Fast EMA 9"], suggested: [] });
   });
 
   it("falls back to words for an unknown key and names the scores and exits", () => {

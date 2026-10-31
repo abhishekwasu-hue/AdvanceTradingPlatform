@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import type { AlertChannel, AlertDelivery, NotificationSeverity } from "../types";
 import { PUSH_CATEGORIES, currentPushEnv, pushReadiness, selectedCategories, vapidKeyBytes } from "./push";
+import { Details } from "../ui/Details";
 
 /**
  * PW3: browser push on every platform, inside Settings -> Alert delivery.
@@ -51,11 +52,13 @@ export default function WebPushSection({ channel, deliveries, busy, run, test }:
   return (
     <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2" data-testid="push-section">
       <div className="flex items-center gap-2 text-sm font-bold text-fg"><Smartphone size={14} /> Push notifications</div>
-      <p className="text-xs text-fg-muted">
-        Alerts as system notifications on this phone or computer, even with the app closed. Messages are encrypted to this
-        device; the push service in between cannot read them. Tapping one opens the exact screen - the proposal, the position
-        or the alert. Add each device you use.
-      </p>
+      <Details id="alerts.push" className="mt-0">
+        <p className="text-xs text-fg-muted">
+          Alerts as system notifications on this phone or computer, even with the app closed. Messages are encrypted to this
+          device; the push service in between cannot read them. Tapping one opens the exact screen - the proposal, the position
+          or the alert. Add each device you use.
+        </p>
+      </Details>
 
       {readiness === "ios-install-first" && (
         <p className="rounded border border-warn/40 bg-warn/10 p-2 text-xs text-fg" data-testid="push-ios">

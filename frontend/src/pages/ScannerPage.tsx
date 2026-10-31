@@ -112,7 +112,7 @@ export default function ScannerPage({ embedded = false }: PageProps & { embedded
   const [swingText, setSwingTextState] = useState(readSwingText);
   const setSwingText = (next: string) => {
     setSwingTextState(next);
-    try { window.localStorage.setItem(SWING_KEY, next); } catch { /* not remembered in this browser */ }
+    try { window.localStorage.setItem(SWING_KEY, next); } catch { /* intentional: storage unavailable - not remembered in this browser */ }
   };
 
   async function planWithAi() {

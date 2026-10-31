@@ -85,7 +85,7 @@ function Tabs() {
   const tab: CopilotTab = fromUrl ?? storedTab();
   useEffect(() => {
     if (!fromUrl) navigate(copilotPath(tab), { replace: true });          // /copilot (or an unknown tab) -> a real address
-    else { try { localStorage.setItem(TAB_KEY, fromUrl); } catch { /* storage unavailable */ } }
+    else { try { localStorage.setItem(TAB_KEY, fromUrl); } catch { /* intentional: storage unavailable */ } }
   }, [fromUrl]); // eslint-disable-line react-hooks/exhaustive-deps
   const Panel = TAB_COMPONENTS[tab];
   return (

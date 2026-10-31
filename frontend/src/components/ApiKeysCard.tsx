@@ -7,6 +7,7 @@ import { Card } from "./ui";
 import type { ApiKey } from "../types";
 import { formatDateIST, formatDateTimeIST } from "../ui/format";
 import { Details } from "../ui/Details";
+import { toast } from "./Toast";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
 
@@ -23,7 +24,7 @@ export default function ApiKeysCard() {
 
   function refresh() {
     api.listApiKeys().then(setKeys).catch((e) => setError(errorSentence(e)));
-    api.apiKeyScopes().then(setScopes).catch(() => {});
+    api.apiKeyScopes().then(setScopes).catch((e) => toast.error(errorSentence(e)));
   }
   useEffect(refresh, []);
 

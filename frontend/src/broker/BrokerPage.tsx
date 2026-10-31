@@ -128,7 +128,7 @@ export default function BrokerPage() {
       if (!found) return;
       setOutcome(found);
       window.history.replaceState(window.history.state, "", window.location.pathname);
-    } catch { /* URL APIs unavailable: nothing to show */ }
+    } catch { /* intentional: URL APIs unavailable: nothing to show */ }
   }, []);
 
   const openPanel = (broker: string, mode: PanelMode, label?: string) => { setPanel({ broker, mode, label }); setPanelOpen(true); };

@@ -24,7 +24,7 @@ export default function WebhookCard() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // clipboard unavailable - the URL is still shown in the input for manual copy
+      // intentional: clipboard unavailable - the URL is still shown in the input for manual copy
     }
   }
 

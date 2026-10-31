@@ -7,6 +7,7 @@ import MyLimitsCardV2 from "../settings/MyLimitsCardV2";
 import { Card, Disclaimer } from "../components/ui";
 import type { GuardianStatus, MarketEvent, RiskCeilings, RiskConfig } from "../types";
 import { Badge, PageHeader, SkeletonRows } from "../components/primitives";
+import { toast } from "../components/Toast";
 
 const FIELDS: { key: keyof RiskConfig; label: string; step?: string; ceiling?: string }[] = [
   { key: "capital", label: "Capital (₹)" },
@@ -49,14 +50,14 @@ export default function RiskManagementPage() {
   const [evDesc, setEvDesc] = useState("");
 
   function refreshGuardian() {
-    api.guardianStatus().then(setGuardian).catch(() => {});
-    api.listMarketEvents().then(setEvents).catch(() => {});
+    api.guardianStatus().then(setGuardian).catch((e) => toast.error(errorSentence(e)));
+    api.listMarketEvents().then(setEvents).catch((e) => toast.error(errorSentence(e)));
   }
 
   useEffect(() => {
     if (!user) return;
     api.getRiskSettings().then(setConfig).catch((e) => setError(errorSentence(e)));
-    api.riskCeilings().then(setCeilings).catch(() => {});
+    api.riskCeilings().then(setCeilings).catch((e) => toast.error(errorSentence(e)));
     refreshGuardian();
   }, [user]);
 

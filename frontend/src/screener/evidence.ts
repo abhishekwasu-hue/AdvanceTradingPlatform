@@ -430,6 +430,6 @@ export function sendRefusal(body: string): { reason: TelegramReason | null; mess
     if (detail && typeof detail === "object") {
       return { reason: REASONS.find((r) => r === detail.reason) ?? null, message: typeof detail.message === "string" ? detail.message : null };
     }
-  } catch { /* not JSON */ }
+  } catch { /* intentional: not JSON */ }
   return { reason: null, message: null };
 }

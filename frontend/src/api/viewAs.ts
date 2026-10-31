@@ -37,7 +37,7 @@ export async function endView(): Promise<void> {
   try {
     await request<{ ended: boolean }>("/view-session/end", { method: "POST" });
   } catch {
-    // already ended on the server
+    // intentional: already ended on the server
   }
   setView(null);
 }

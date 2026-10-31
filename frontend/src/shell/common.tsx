@@ -9,7 +9,7 @@ import { PAGES } from "../routes";
 export function LegacyCopilot() {
   const { tab } = useParams<{ tab?: string }>();
   let stored: string | null = null;
-  try { stored = localStorage.getItem("atp_copilot_tab"); } catch { /* storage unavailable */ }
+  try { stored = localStorage.getItem("atp_copilot_tab"); } catch { /* intentional: storage unavailable */ }
   return <Navigate to={legacyCopilotPath(tab, stored)} replace />;
 }
 

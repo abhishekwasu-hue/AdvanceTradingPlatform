@@ -11,7 +11,7 @@ export interface CostEstimate { tokens: number; inr: number }
 
 let cached: Promise<AiProviderConfig | null> | null = null;
 function providerConfig(): Promise<AiProviderConfig | null> {
-  cached ??= api.aiProvider().catch(() => null);
+  cached ??= api.aiProvider().catch(() => null);  // intentional: no provider settings: the cost line is left out
   return cached;
 }
 

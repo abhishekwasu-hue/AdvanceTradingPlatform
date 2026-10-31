@@ -233,7 +233,7 @@ export class WatchlistsStore {
   /** Requests run one at a time, in order, so each save starts from the version the one before it got back. */
   private run<T>(fn: () => Promise<T>): Promise<T> {
     const next = this.queue.then(fn, fn);
-    this.queue = next.catch(() => undefined);
+    this.queue = next.catch(() => undefined);  // intentional: keeps the queue going; the caller gets the failure through `next`
     return next;
   }
 

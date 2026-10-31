@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setUser(await api.me());
     } catch {
-      // token gone - the next request handles it
+      // intentional: token gone - the next request handles it
     }
   }
 
@@ -98,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // brings the admin back) - it never signs the person out.
     if (currentView()) { void endView(); return; }
     // Best effort server-side revoke; the local tokens are cleared regardless.
-    api.logout().catch(() => {});
+    api.logout().catch(() => {});  // intentional: best-effort server revoke; the local tokens are cleared regardless
     clearToken();
     clearSignIn();
     setUser(null);

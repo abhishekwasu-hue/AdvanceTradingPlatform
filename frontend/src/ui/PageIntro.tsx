@@ -28,7 +28,7 @@ export interface IntroStore {
 /** The browser's localStorage; a blocked or full storage just means the card shows again next visit. */
 export const LOCAL_INTRO_STORE: IntroStore = {
   read: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
-  write: (key, value) => { try { localStorage.setItem(key, value); } catch { /* storage unavailable */ } },
+  write: (key, value) => { try { localStorage.setItem(key, value); } catch { /* intentional: storage unavailable */ } },
 };
 
 const storageKey = (userId: number | string) => `atp_page_intro_dismissed:${userId}`;

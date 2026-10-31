@@ -71,18 +71,18 @@ export default function MarketplacePage() {
 
   function refresh() {
     api.marketplace().then((l) => { setListings(l); setGate(null); }).catch((e) => setGate(errorSentence(e)));
-    api.marketplaceMine().then(setMine).catch(() => {});
-    api.marketplaceSubscriptions().then(setSubs).catch(() => {});
-    api.listCustomStrategies().then(setStrategies).catch(() => {});
-    api.listBacktests().then(setRuns).catch(() => {});
-    api.marketplacePurchases().then(setPurchases).catch(() => {});
-    api.marketplaceEarnings().then(setEarnings).catch(() => {});
-    api.marketplaceTerms().then(setTerms).catch(() => {});
+    api.marketplaceMine().then(setMine).catch(() => {});  // intentional: the marketplace read above shows the page's one error state
+    api.marketplaceSubscriptions().then(setSubs).catch(() => {});  // intentional: the marketplace read above shows the page's one error state
+    api.listCustomStrategies().then(setStrategies).catch(() => {});  // intentional: the marketplace read above shows the page's one error state
+    api.listBacktests().then(setRuns).catch(() => {});  // intentional: the marketplace read above shows the page's one error state
+    api.marketplacePurchases().then(setPurchases).catch(() => {});  // intentional: the marketplace read above shows the page's one error state
+    api.marketplaceEarnings().then(setEarnings).catch(() => {});  // intentional: the marketplace read above shows the page's one error state
+    api.marketplaceTerms().then(setTerms).catch(() => {});  // intentional: the marketplace read above shows the page's one error state
     if (isAdmin) {
-      api.adminMarketplacePending().then(setPending).catch(() => {});
-      api.adminMarketplaceCharges("OPEN").then(setOpenCharges).catch(() => {});
-      api.adminMarketplacePayouts("REQUESTED").then(setPayoutQueue).catch(() => {});
-      api.adminMarketplaceRevenue().then((r) => { setRevenue(r); setTermsDraft(Object.fromEntries(Object.entries(r.terms).map(([k, v]) => [k, String(v)]))); }).catch(() => {});
+      api.adminMarketplacePending().then(setPending).catch(() => {});  // intentional: the marketplace read above shows the page's one error state
+      api.adminMarketplaceCharges("OPEN").then(setOpenCharges).catch(() => {});  // intentional: the marketplace read above shows the page's one error state
+      api.adminMarketplacePayouts("REQUESTED").then(setPayoutQueue).catch(() => {});  // intentional: the marketplace read above shows the page's one error state
+      api.adminMarketplaceRevenue().then((r) => { setRevenue(r); setTermsDraft(Object.fromEntries(Object.entries(r.terms).map(([k, v]) => [k, String(v)]))); }).catch(() => {});  // intentional: the marketplace read above shows the page's one error state
     }
   }
   useEffect(refresh, [isAdmin]);

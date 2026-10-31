@@ -27,7 +27,7 @@ export function loadCopilotLanguage(): CopilotLanguage {
 }
 
 export function saveCopilotLanguage(l: CopilotLanguage): void {
-  try { localStorage.setItem(KEY, JSON.stringify(l)); } catch { /* storage unavailable: this tab only */ }
+  try { localStorage.setItem(KEY, JSON.stringify(l)); } catch { /* intentional: storage unavailable: this tab only */ }
   window.dispatchEvent(new CustomEvent(LANGUAGE_EVENT));
 }
 

@@ -249,7 +249,7 @@ export class DrawingController {
   /** Edits run one at a time, in order (a double click never saves twice in parallel). */
   private run<T>(fn: () => Promise<T>): Promise<T> {
     const next = this.queue.then(fn, fn);
-    this.queue = next.catch(() => undefined);
+    this.queue = next.catch(() => undefined);  // intentional: keeps the queue going; the caller gets the failure through `next`
     return next;
   }
 

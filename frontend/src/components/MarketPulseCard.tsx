@@ -46,7 +46,7 @@ export default function MarketPulseCard({ onNavigate }: { onNavigate?: (page: Pa
   const broker = source.broker || undefined;
   const usable = source.usable && !!source.broker;
 
-  useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(symbols)); } catch { /* per-viewer convenience only */ } }, [symbols]);
+  useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(symbols)); } catch { /* intentional: per-viewer convenience only */ } }, [symbols]);
 
   useEffect(() => {
     if (!usable || symbols.length === 0) { setCandles({}); return; }

@@ -101,7 +101,7 @@ function dismissed(): boolean {
 
 /** Closes the banner on screen and remembers it. */
 export function dismissInstall(): void {
-  try { localStorage.setItem(DISMISS_KEY, "1"); } catch { /* storage unavailable: hidden for this visit only */ }
+  try { localStorage.setItem(DISMISS_KEY, "1"); } catch { /* intentional: storage unavailable: hidden for this visit only */ }
   set({ install: null });
 }
 
@@ -131,7 +131,7 @@ function watchRegistration(reg: ServiceWorkerRegistration) {
     const worker = reg.installing;
     worker?.addEventListener("statechange", () => { if (worker.state === "installed") offer(worker); });
   });
-  const check = () => { reg.update().catch(() => undefined); };
+  const check = () => { reg.update().catch(() => undefined); };  // intentional: the next update check tries again
   window.setInterval(check, UPDATE_CHECK_MS);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") check(); });
 }

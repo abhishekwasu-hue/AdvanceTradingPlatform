@@ -31,7 +31,7 @@ export default function MemoryPanel() {
     setBusy(true); setError(null);
     try { setMemory(await api.aiMarketMemoryRefresh()); } catch (e) {
       setError(friendlyError(e, t));
-      void api.aiMarketMemory().then(setMemory).catch(() => undefined);
+      void api.aiMarketMemory().then(setMemory).catch(() => undefined);  // intentional: the refresh error is already shown above
     } finally { setBusy(false); }
   }
 

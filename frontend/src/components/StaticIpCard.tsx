@@ -24,7 +24,7 @@ export default function StaticIpCard() {
   const load = () => api.staticIps().then(setData).catch((e) => setMessage(errorSentence(e)));
   useEffect(() => { load(); }, []);
   useEffect(() => {
-    api.availableBrokers().then((r) => setRegistry(r.brokers)).catch(() => undefined);   // keep the built-in list
+    api.availableBrokers().then((r) => setRegistry(r.brokers)).catch(() => undefined);   // intentional: keep the built-in list
   }, []);
 
   const save = async () => {

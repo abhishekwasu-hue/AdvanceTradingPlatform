@@ -33,7 +33,7 @@ export function readStoredSidebar(): SidebarMode | null {
 }
 
 function storeSidebar(mode: SidebarMode): void {
-  try { localStorage.setItem(SIDEBAR_STORAGE_KEY, mode); } catch { /* storage unavailable: the server copy still holds it */ }
+  try { localStorage.setItem(SIDEBAR_STORAGE_KEY, mode); } catch { /* intentional: storage unavailable - the server copy still holds it */ }
 }
 
 interface PrefsRead { prefs?: { shell?: { sidebar?: unknown } }; versions?: { shell?: number } }

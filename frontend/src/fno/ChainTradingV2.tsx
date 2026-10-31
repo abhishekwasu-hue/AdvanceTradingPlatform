@@ -93,7 +93,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
   useEffect(() => {
     if (!enabled || !expiry) { setHeld([]); return undefined; }
     let alive = true;
-    const read = () => fno.held(symbol, expiry).then((h) => { if (alive) setHeld(h); }).catch(() => { /* the markers wait for the next read */ });
+    const read = () => fno.held(symbol, expiry).then((h) => { if (alive) setHeld(h); }).catch(() => { /* intentional: the markers wait for the next read */ });
     void read();
     const timer = window.setInterval(read, HELD_EVERY_MS);
     return () => { alive = false; window.clearInterval(timer); };
@@ -132,7 +132,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
   function noteSignal(tradeIds: (number | null | undefined)[]) {
     const ids = tradeIds.filter((id): id is number => typeof id === "number");
     if (!origin || !ids.length) return;
-    insights.linkJournal(origin, ids).catch(() => { /* the journal note is a convenience; the trades are as placed */ });
+    insights.linkJournal(origin, ids).catch(() => { /* intentional: the journal note is a convenience; the trades are as placed */ });
   }
 
   async function tradeSetup(t: SetupTrade) {
@@ -146,7 +146,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
       fno.contract(t.target.underlying, t.target.expiry, t.target.strike, t.target.right)
         .then((c) => setTicket((cur) => (cur && cur.target.strike === t.target.strike && cur.target.right === t.target.right
           ? { ...cur, target: { ...cur.target, label: c.label ?? null, lotSize: c.lot_size ?? null } } : cur)))
-        .catch(() => { /* the ticket reads the lot size on its review step */ });
+        .catch(() => { /* intentional: the ticket reads the lot size on its review step */ });
       return;
     }
     if (legs.length && !(await confirmBox.ask("Replace your basket?", `Your basket has ${legs.length} leg${legs.length === 1 ? "" : "s"}. This setup takes their place.`, "Replace basket"))) return;

@@ -29,7 +29,7 @@ async function share(row: ReportRow): Promise<string | null> {
   if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
     const data: ShareData = { title: card.title, text: shareText(card) };
     if (navigator.canShare?.({ files: [file] })) data.files = [file];
-    try { await navigator.share(data); } catch { /* he closed the share sheet */ }
+    try { await navigator.share(data); } catch { /* intentional: he closed the share sheet */ }
     return null;
   }
   const url = URL.createObjectURL(blob);

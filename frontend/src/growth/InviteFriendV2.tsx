@@ -16,7 +16,7 @@ export function InviteFriendBodyV2({ data, onCreate, busy = false }: { data: Ref
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
   const copy = async () => {
     if (!data.link) return;
-    try { await navigator.clipboard.writeText(data.link); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { /* the link stays visible to copy by hand */ }
+    try { await navigator.clipboard.writeText(data.link); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { /* intentional: the link stays visible to copy by hand */ }
   };
   return (
     <div className="flex flex-col gap-space-3">
@@ -36,7 +36,7 @@ export function InviteFriendBodyV2({ data, onCreate, busy = false }: { data: Ref
             </button>
             {canShare && (
               <button type="button" className={LINK_SECONDARY}
-                onClick={() => { navigator.share({ title: "AiAlgoDesk", text: "Learn to read the market and practise on paper.", url: data.link! }).catch(() => undefined); }}>
+                onClick={() => { navigator.share({ title: "AiAlgoDesk", text: "Learn to read the market and practise on paper.", url: data.link! }).catch(() => { /* intentional: he closed the share sheet */ }); }}>
                 <Share2 size={16} aria-hidden />Share
               </button>
             )}

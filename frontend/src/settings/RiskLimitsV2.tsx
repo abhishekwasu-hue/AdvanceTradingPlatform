@@ -38,7 +38,7 @@ export default function RiskLimitsV2({ load = loadRiskLimits, save = saveRiskLim
     try {
       const s = await loadSwitches();
       setSwitches(s.value); setSwitchesSaved(s.value); setSwitchesVersion(s.version);
-    } catch { /* the two ticket switches stay as shown; the checks above still load */ }
+    } catch { /* intentional: the two ticket switches stay as shown; the checks above still load */ }
   }, [load]);
   useEffect(() => { void reload(); }, [reload]);
 

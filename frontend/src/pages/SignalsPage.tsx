@@ -11,6 +11,7 @@ import type { EnrichedSignal, OHLCVBar, SRZone, SignalHistoryEntry, StrategyInfo
 import { buildTimeframeData } from "../utils/sampleData";
 import { Button, Input, PageHeader, Select } from "../components/primitives";
 import { formatDateTimeIST } from "../ui/format";
+import { toast } from "../components/Toast";
 
 export default function SignalsPage() {
   const { user } = useAuth();
@@ -41,7 +42,7 @@ export default function SignalsPage() {
   }, []);
 
   function refreshHistory() {
-    if (user) api.listSignalHistory().then(setHistory).catch(() => {});
+    if (user) api.listSignalHistory().then(setHistory).catch((e) => toast.error(errorSentence(e)));
   }
 
   useEffect(refreshHistory, [user]);

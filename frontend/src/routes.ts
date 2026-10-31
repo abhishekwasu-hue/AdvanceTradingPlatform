@@ -50,7 +50,7 @@ export const PAGE_COMPONENTS = Object.fromEntries(
 /** Starts downloading a page's chunk before the click lands (sidebar hover / focus). Failures are ignored here - the
  * real navigation reports them through the error boundary. */
 export function preloadPage(page: Page): void {
-  loaders[page]().catch(() => undefined);
+  loaders[page]().catch(() => undefined);  // intentional: a preload only; a real navigation reports a failure through the error boundary
 }
 
 export function pathFor(page: Page): string {

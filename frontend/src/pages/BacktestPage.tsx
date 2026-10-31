@@ -25,6 +25,7 @@ import { AdvancedFold } from "../ui/AdvancedFold";
 import { optimisableParams, type GridRow } from "../backtest/optimiserGrid";
 import { exitRuleWords, metricLabel, paramChips } from "../ui/strategyLabels";
 import { strategyDisplayName } from "../ui/strategyName";
+import { toast } from "../components/Toast";
 
 const INDEX_START_PRICES: Record<string, number> = { NIFTY: 24500, "NIFTY 50": 24500, BANKNIFTY: 52500, "NIFTY BANK": 52500, FINNIFTY: 23500, MIDCPNIFTY: 12500, SENSEX: 80500, BANKEX: 60500 };
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -169,7 +170,7 @@ export default function BacktestPage() {
     try {
       const out = await api.uploadOptionChainSnapshots(symbol, uploadedRows);
       setUploadNote(`${out.written} of ${out.received} quotes stored for ${out.underlying}`);
-      api.optionChainCoverage().then(setCoverage).catch(() => undefined);
+      api.optionChainCoverage().then(setCoverage).catch((e) => toast.error(errorSentence(e)));
     } catch (e) { setUploadNote(errorSentence(e)); }
   }
 

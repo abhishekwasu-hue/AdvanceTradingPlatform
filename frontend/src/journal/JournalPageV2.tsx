@@ -82,7 +82,7 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
 
   useEffect(() => {
     let alive = true;
-    api.settings().then((d) => { if (alive) setCustomTags(d.settings.custom_tags ?? []); }).catch(() => { /* the list shows its own error */ });
+    api.settings().then((d) => { if (alive) setCustomTags(d.settings.custom_tags ?? []); }).catch(() => { /* intentional: custom tags stay empty; the list shows its own error */ });
     return () => { alive = false; };
   }, [api]);
 

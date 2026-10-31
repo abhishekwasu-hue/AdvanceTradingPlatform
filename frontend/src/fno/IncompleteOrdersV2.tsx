@@ -101,7 +101,7 @@ export default function IncompleteOrdersV2({ api = incompleteApi }: { api?: Inco
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const load = useCallback(() => api.list().then((v) => { setItems(v.items); setReadAt(Date.now()); }).catch(() => undefined), [api]);
+  const load = useCallback(() => api.list().then((v) => { setItems(v.items); setReadAt(Date.now()); }).catch(() => undefined), [api]);  // intentional: polled; the list keeps its last read (with its time) and the next poll tries again
   useEffect(() => {
     void load();
     const poll = window.setInterval(() => { void load(); }, POLL_MS);

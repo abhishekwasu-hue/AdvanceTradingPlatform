@@ -258,7 +258,7 @@ export async function saveBaskets(items: SavedBaskets, version: number, fetcher:
           return { ok: false, conflict: { items: readItems(detail.current), version: detail.version },
             message: "Your saved baskets changed on another device. That list is shown now; save again." };
         }
-      } catch { /* fall through */ }
+      } catch { /* intentional: not the conflict shape: the plain message below */ }
     }
     return { ok: false, conflict: null, message: e instanceof Error ? e.message : String(e) };
   }

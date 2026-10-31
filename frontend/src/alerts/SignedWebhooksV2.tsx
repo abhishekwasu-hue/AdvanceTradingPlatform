@@ -39,7 +39,7 @@ export function SignedWebhooksBodyV2({ state, busy, url, label, onUrl, onLabel, 
           <p className="text-t14 text-fg">{WEBHOOK_TEXT.secretOnce}</p>
           <code className="block break-all rounded-control bg-surface-2 p-space-2 font-tabular text-t13 text-fg">{state.revealed.secret}</code>
           <div className="flex flex-col gap-space-2 sm:flex-row">
-            <ActionV2 onClick={() => { void navigator.clipboard?.writeText(state.revealed?.secret ?? "").catch(() => undefined); }}>
+            <ActionV2 onClick={() => { void navigator.clipboard?.writeText(state.revealed?.secret ?? "").catch(() => { /* intentional: clipboard blocked: the secret stays on screen to copy by hand */ }); }}>
               <Copy size={16} aria-hidden /> Copy secret
             </ActionV2>
             <ActionV2 primary onClick={onDismiss}>{WEBHOOK_TEXT.saved}</ActionV2>

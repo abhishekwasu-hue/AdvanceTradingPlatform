@@ -23,7 +23,7 @@ export async function copyRedirectUrl(
     await clipboard.writeText(text);
     return "copied";
   } catch {
-    try { selectText(); } catch { /* nothing more to do: the address is still shown */ }
+    try { selectText(); } catch { /* intentional: nothing more to do: the address is still shown */ }
     return "selected";
   }
 }

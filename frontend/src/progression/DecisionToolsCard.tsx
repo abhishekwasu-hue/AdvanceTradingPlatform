@@ -26,7 +26,7 @@ export default function DecisionToolsCard() {
 
   useEffect(() => {
     api.decisionPositions().then((r) => setSubjects(r.subjects)).catch(() => setSubjects(null));
-    api.paperLadder().then((l) => l.evidence).catch(() => undefined).then((ev) => {
+    api.paperLadder().then((l) => l.evidence).catch(() => undefined).then((ev) => {  // intentional: no paper record: the inputs start empty
       const p = ruinPrefill(ev);
       setInputs(p.inputs); setPrefilled(p.prefilled);
     });

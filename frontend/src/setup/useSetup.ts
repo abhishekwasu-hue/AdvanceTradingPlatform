@@ -61,7 +61,7 @@ export class SetupStore {
   private set(next: Partial<SetupState>): void {
     this.state = { ...this.state, ...next };
     if (this.state.view) {
-      try { localStorage.setItem(CACHE_PREFIX + this.userKey, JSON.stringify(this.state.view)); } catch { /* storage unavailable */ }
+      try { localStorage.setItem(CACHE_PREFIX + this.userKey, JSON.stringify(this.state.view)); } catch { /* intentional: storage unavailable */ }
     }
     for (const l of this.listeners) l();
   }

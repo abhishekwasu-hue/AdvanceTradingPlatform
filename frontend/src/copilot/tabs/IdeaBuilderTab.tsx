@@ -226,7 +226,7 @@ function IdeaBuilderInterview() {
   async function choose(option: InterviewPlan) {
     if (!option.option) return;
     setSelected(option.option.id);
-    try { await api.aiInterviewChoose(answersBody(), option.option.id, option.recommended?.strategy_id ?? null); } catch { /* remembering is best effort */ }
+    try { await api.aiInterviewChoose(answersBody(), option.option.id, option.recommended?.strategy_id ?? null); } catch { /* intentional: remembering is best effort */ }
     setDone(t("idea.chosen", { label: option.option.label }));
   }
 

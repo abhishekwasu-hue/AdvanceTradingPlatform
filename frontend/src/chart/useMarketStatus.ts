@@ -56,7 +56,7 @@ export class StatusPoll {
       this.snap = { status, at: this.now() };
       for (const l of [...this.listeners]) l();
     } catch {
-      /* the last answer stays */
+      /* intentional: the last answer stays */
     } finally {
       this.inFlight = false;
     }

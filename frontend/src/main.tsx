@@ -16,8 +16,8 @@ function start(app: ReactNode) {
   initPwa();          // PW1: service worker (production builds), update and install offers; not inside the app
   // PW6: install/update metrics are the browser's; the Android app's versions are its own (plan §9)
   if (!isNativeApp()) {
-    try { startPwaEvents(); } catch { /* PW6: install/update metrics are best effort */ }
-    try { startWebVitals(); } catch { /* AUD-G1.5: Core Web Vitals are best effort */ }
+    try { startPwaEvents(); } catch { /* intentional: PW6: install/update metrics are best effort */ }
+    try { startWebVitals(); } catch { /* intentional: AUD-G1.5: Core Web Vitals are best effort */ }
   }
 
   ReactDOM.createRoot(document.getElementById("root")!).render(

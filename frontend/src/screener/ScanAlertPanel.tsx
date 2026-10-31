@@ -66,7 +66,7 @@ export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, 
   useEffect(() => {
     if (initialRules) return undefined;
     let alive = true;
-    api.rules().then((all) => { if (alive) setRules(all); }).catch(() => undefined);   // no list is not an error here
+    api.rules().then((all) => { if (alive) setRules(all); }).catch(() => undefined);   // intentional: no list is not an error here
     return () => { alive = false; };
   }, [api, initialRules]);
 

@@ -18,7 +18,7 @@ export async function startNativeLinks(open: (path: string) => void = navigateIn
     stops.push(() => void handle.remove());
     const launch = await App.getLaunchUrl();
     if (launch?.url) open(resolveDeepLink(launch.url, hosts));
-  } catch { /* no App plug-in: links simply open Home */ }
+  } catch { /* intentional: no App plug-in: links simply open Home */ }
   const tap = await onNotificationTap((data) => open(pathFromNotification(data, hosts)));
   if (tap) stops.push(() => void tap.remove());
   return () => stops.forEach((stop) => stop());

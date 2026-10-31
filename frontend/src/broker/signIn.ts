@@ -24,7 +24,7 @@ function read(key: string): string | null {
   try {
     const v = window.localStorage.getItem(key);
     if (v !== null) return v;
-  } catch { /* storage unavailable: memory below */ }
+  } catch { /* intentional: storage unavailable: memory below */ }
   return memory.get(key) ?? null;
 }
 
@@ -32,13 +32,13 @@ function write(key: string, value: string | null): void {
   if (value === null) memory.delete(key); else memory.set(key, value);
   try {
     if (value === null) window.localStorage.removeItem(key); else window.localStorage.setItem(key, value);
-  } catch { /* storage unavailable: memory only */ }
+  } catch { /* intentional: storage unavailable: memory only */ }
 }
 
 function newId(): string {
   try {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  } catch { /* fall through */ }
+  } catch { /* intentional: no crypto API: the fallback id below */ }
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
@@ -47,7 +47,7 @@ function parse(raw: string | null): SignIn | null {
   try {
     const v = JSON.parse(raw) as Partial<SignIn>;
     if (typeof v.userId === "number" && typeof v.id === "string" && v.id) return { userId: v.userId, id: v.id, isNew: v.isNew === true };
-  } catch { /* unreadable: no record */ }
+  } catch { /* intentional: unreadable: no record */ }
   return null;
 }
 

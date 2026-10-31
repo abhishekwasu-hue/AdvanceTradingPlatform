@@ -10,6 +10,7 @@ import type { AlertChannel, AlertChannelType, AlertDelivery, NotificationSeverit
 import { useFeatures } from "../ui/useFeatures";
 import { formatDateTimeIST } from "../ui/format";
 import { Details } from "../ui/Details";
+import { toast } from "./Toast";
 
 const OWN_BOT_PATH = "/settings/advanced#own-bot";
 const SEVERITIES: NotificationSeverity[] = ["INFO", "WARNING", "CRITICAL"];
@@ -102,7 +103,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
         }));
       }
     }).catch((e) => setError(errorSentence(e)));
-    api.listAlertDeliveries(30).then(setDeliveries).catch(() => {});
+    api.listAlertDeliveries(30).then(setDeliveries).catch((e) => toast.error(errorSentence(e)));
     api.telegramInboundStatus().then((s) => {
       setInbound(s); setInboundChats(s.allowed_chat_ids.slice(1).join(", "));
       setInboundApprovers((s.approvers ?? []).map((a) => `${a.telegram_user_id} ${a.email}`).join("\n"));

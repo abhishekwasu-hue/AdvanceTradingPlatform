@@ -63,7 +63,7 @@ export function AskAi({ symbol, expiry = null, refreshKey, ask = askAi, evaluate
     let live = true;
     calls.current.evaluate(symbol, expiry, spec)
       .then((r) => { if (live && r.state === "ok") setResponse((prev) => (prev ? { ...prev, ...r, state: "ok" } : r)); })
-      .catch(() => { /* the last result stays; the next refresh tries again */ });
+      .catch(() => { /* intentional: the last result stays; the next refresh tries again */ });
     return () => { live = false; };
   }, [refreshKey]);   // the shown spec is read through `response` at the time of the refresh
 

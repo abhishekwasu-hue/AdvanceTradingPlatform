@@ -45,7 +45,7 @@ export function setV2ThemeDefault(on: boolean): void {
   try {
     if (on) localStorage.setItem(V2_THEME_HINT_KEY, "system");
     else localStorage.removeItem(V2_THEME_HINT_KEY);
-  } catch { /* storage unavailable: this tab only */ }
+  } catch { /* intentional: storage unavailable: this tab only */ }
   if (on === v2Default) return;
   v2Default = on;
   if (typeof document !== "undefined") applyAppearance();
@@ -90,7 +90,7 @@ export function applyAppearance(a: Appearance = loadAppearance()): void {
 }
 
 export function saveAppearance(a: Appearance): void {
-  try { localStorage.setItem(KEY, JSON.stringify(a)); } catch { /* storage unavailable: this tab only */ }
+  try { localStorage.setItem(KEY, JSON.stringify(a)); } catch { /* intentional: storage unavailable: this tab only */ }
   applyAppearance(a);
 }
 

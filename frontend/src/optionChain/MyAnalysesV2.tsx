@@ -65,7 +65,7 @@ export function MyAnalyses({ symbol, expiry = null, refreshKey, load = loadSaved
     let live = true;
     calls.current.evaluate(symbol, expiry, spec)
       .then((r) => { if (live) setResponse(r); })
-      .catch(() => { /* the last table stays; the next refresh tries again */ });
+      .catch(() => { /* intentional: the last table stays; the next refresh tries again */ });
     return () => { live = false; };
   }, [refreshKey]);   // a new chain reading: the same spec, new numbers
 

@@ -84,7 +84,7 @@ export function writePending(p: RollPending | null): void {
   try {
     if (p) sessionStorage.setItem(ROLL_PENDING_KEY, JSON.stringify(p));
     else sessionStorage.removeItem(ROLL_PENDING_KEY);
-  } catch { /* storage unavailable: the notice lives for this page only */ }
+  } catch { /* intentional: storage unavailable: the notice lives for this page only */ }
   memory = p;
   listeners.forEach((fn) => fn());
 }

@@ -42,6 +42,7 @@ import {
   type RoutingPolicy,
 } from "../types";
 import { formatDateTimeIST } from "../ui/format";
+import { toast } from "../components/Toast";
 
 // Index symbols have no cash leg: picking one switches the form to options (server rejects UNDERLYING on an index).
 const INDEX_SYMBOLS = new Set(["NIFTY 50", "NIFTY", "NIFTY BANK", "BANKNIFTY", "NIFTY FIN SERVICE", "FINNIFTY", "NIFTY MID SELECT", "MIDCPNIFTY", "NIFTY NEXT 50", "SENSEX", "BANKEX"]);
@@ -225,11 +226,11 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
       setStrategies(s);
       if (!strategyId && s.length) setStrategyId(s[0].id);
     });
-    api.listCustomStrategies().then(setCustomStrategies).catch(() => {});
+    api.listCustomStrategies().then(setCustomStrategies).catch((e) => toast.error(errorSentence(e)));
     api.listStoredBrokerCredentials().then((b) => {
       setBrokers(b);
       if (b.length === 1) setBrokerName(b[0].broker_name);
-    }).catch(() => {});
+    }).catch((e) => toast.error(errorSentence(e)));
     api.listAccounts().then(setAccounts).catch(() => setAccounts([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);

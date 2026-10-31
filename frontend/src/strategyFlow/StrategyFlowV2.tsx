@@ -16,6 +16,7 @@ import type { BacktestResult, ConditionOperator, CustomStrategyResponse, Indicat
 import { Chip, FilterChip } from "../ui/Chip";
 import { AdvancedFold } from "../ui/AdvancedFold";
 import { Combobox } from "../ui/Combobox";
+import { Details } from "../ui/Details";
 import { PageFootnote, Signed } from "../ui/numbersFirst";
 import { OptionCards } from "../ui/OptionCards";
 import { Sparkline } from "../ui/Sparkline";
@@ -328,7 +329,7 @@ function EntryStep({ flow, setFlow, template }: { flow: FlowState; setFlow: SetF
         </CardV2>
       ))}
       <CardV2 title="Price-action blocks" testId="flow-soon">
-        <p className="text-t13 text-fg-muted">Coming soon to the builder. Until then, use the strategy templates for these ideas.</p>
+        <Details id="strategy-flow.soon-blocks" className="mt-0"><p>Coming soon to the builder. Until then, use the strategy templates for these ideas.</p></Details>
         <ul className="mt-space-2 space-y-space-1" data-soon-blocks>
           {SOON_BLOCKS.map((s) => (
             <li key={s} className="flex items-start gap-space-2 text-t13 text-fg-muted"><Lock size={14} aria-hidden className="mt-0.5 shrink-0" />{s}</li>

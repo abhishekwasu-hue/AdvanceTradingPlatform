@@ -2,6 +2,7 @@ import { Check, Copy, Gift, Share2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CardV2, LINK_PRIMARY, LINK_SECONDARY, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { joinedLine, referralApi, type ReferralCard } from "./referral";
+import { Details } from "../ui/Details";
 
 /**
  * Readiness C13 (`ui_v2` + `referrals`): "Invite a friend" on Settings → Account & plan - his own invite link (made
@@ -19,7 +20,7 @@ export function InviteFriendBodyV2({ data, onCreate, busy = false }: { data: Ref
   };
   return (
     <div className="flex flex-col gap-space-3">
-      <p className="text-t14 text-fg">Know someone who wants to learn trading the careful way? Send them your link.</p>
+      <Details id="growth.invite" className="mt-0"><p className="text-t14 text-fg">Know someone who wants to learn trading the careful way? Send them your link.</p></Details>
       {data.reward_text && (
         <p className="flex items-start gap-space-2 rounded-control bg-surface-2 p-space-3 text-t14 text-fg" data-reward>
           <Gift size={16} aria-hidden className="mt-0.5 shrink-0 text-brand" /><span className="min-w-0">{data.reward_text}</span>

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useOptionalAuth } from "../auth/AuthContext";
 import { setHighContrast, setTextSize } from "../appearanceSync";
 import { DENSITIES, TEXT_SIZES, useAppearance, type TextSize, type ThemeChoice } from "../theme";
+import { Details } from "../ui/Details";
 import { useUiV2 } from "../ui/useFeatures";
 import { Button } from "./primitives";
 import { Card } from "./ui";
@@ -41,7 +42,6 @@ export default function AppearanceCard() {
                 onClick={() => void pickSize(t.value)}>{t.label}</Button>
             ))}
           </div>
-          <p className="mt-1 text-xs text-fg-muted">Makes all text, numbers and charts bigger on every device you use.</p>
           {sizeNote && <p role="status" className="mt-1 text-xs text-warn">{sizeNote}</p>}
         </div>
         {/* UX-8: the redesigned pages' spacing (the space tokens), so only with ui_v2. Saved on this device. */}
@@ -68,10 +68,7 @@ export default function AppearanceCard() {
         <label className="flex items-start gap-3 text-sm text-fg">
           <input type="checkbox" data-testid="appearance-high-contrast" className="mt-0.5 h-4 w-4 accent-[rgb(var(--brand))]"
             checked={a.highContrast} onChange={(e) => void pickContrast(e.target.checked)} />
-          <span>
-            High contrast
-            <span className="mt-0.5 block text-xs text-fg-muted">Stronger borders and brighter text and icons - easier to read outdoors. Kept on every device you use.</span>
-          </span>
+          <span>High contrast</span>
         </label>
         <div role="group" aria-labelledby="appearance-theme-label">
           <div id="appearance-theme-label" className="mb-2 text-xs font-medium text-fg-muted">Theme</div>
@@ -85,10 +82,7 @@ export default function AppearanceCard() {
         <label className="flex items-start gap-3 text-sm text-fg">
           <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[rgb(var(--brand))]" checked={a.colorBlind}
             onChange={(e) => save({ ...a, colorBlind: e.target.checked })} />
-          <span>
-            Colour-blind friendly profit and loss
-            <span className="mt-0.5 block text-xs text-fg-muted">Profit shows blue and loss orange instead of green and red. Signs (+ / -) are always shown too.</span>
-          </span>
+          <span>Colour-blind friendly profit and loss</span>
         </label>
         <div className="flex items-center gap-3 text-xs text-fg-muted" aria-hidden>
           <span className="font-tabular text-up">+1,250.00</span><span className="font-tabular text-down">-830.50</span>
@@ -97,11 +91,15 @@ export default function AppearanceCard() {
         <label className="flex items-start gap-3 text-sm text-fg">
           <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[rgb(var(--brand))]" checked={a.reduceMotion}
             onChange={(e) => save({ ...a, reduceMotion: e.target.checked })} />
-          <span>
-            Reduce motion
-            <span className="mt-0.5 block text-xs text-fg-muted">Turns off animations, card tilt and the AI Copilot's 3D scene (a still image is shown). The device's own reduced-motion setting does the same.</span>
-          </span>
+          <span>Reduce motion</span>
         </label>
+        {/* PROSE-1: the options' explanations, word for word, in the card's one Details. */}
+        <Details id="settings.appearance" className="mt-0">
+          <p>Makes all text, numbers and charts bigger on every device you use.</p>
+          <p>Stronger borders and brighter text and icons - easier to read outdoors. Kept on every device you use.</p>
+          <p>Profit shows blue and loss orange instead of green and red. Signs (+ / -) are always shown too.</p>
+          <p>Turns off animations, card tilt and the AI Copilot's 3D scene (a still image is shown). The device's own reduced-motion setting does the same.</p>
+        </Details>
       </div>
     </Card>
   );

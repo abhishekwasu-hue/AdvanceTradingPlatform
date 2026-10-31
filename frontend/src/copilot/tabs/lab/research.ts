@@ -3,6 +3,7 @@
  * A study is a background job (queued -> running -> done | failed | interrupted); the panel polls while any is active.
  */
 import type { ResearchStatus, ResearchStudy } from "../../../types";
+import { formatNumber } from "../../../ui/format";
 
 export const ACTIVE_STATUSES: readonly ResearchStatus[] = ["queued", "running"];
 export const POLL_MS = 10_000;
@@ -29,13 +30,13 @@ export function progressFraction(s: Pick<ResearchStudy, "status" | "progress">):
 }
 
 /** A probability shown as 0.00-1.00, or "n/a" (never a made-up number). */
-export const prob = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(2) : "n/a");
+export const prob = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? formatNumber(v, 2) : "n/a");
 
 /** The few metrics worth a column, in a fixed order; missing ones are skipped, numbers rounded. */
 // The keys research_loop._metrics writes (backend/app/ai/research_loop.py).
 const METRIC_ORDER: [key: string, label: string][] = [["trades", "trades"], ["win_rate", "win %"], ["profit_factor", "PF"], ["max_drawdown", "max DD"], ["net_pnl", "net"]];
 export function metricLine(m: Record<string, unknown>): string {
   return METRIC_ORDER.filter(([k]) => typeof m[k] === "number" && Number.isFinite(m[k] as number))
-    .map(([k, label]) => `${label} ${Number.isInteger(m[k]) ? m[k] : (m[k] as number).toFixed(2)}`)
+    .map(([k, label]) => `${label} ${formatNumber(m[k] as number, Number.isInteger(m[k]) ? 0 : 2)}`)
     .join(" · ");
 }

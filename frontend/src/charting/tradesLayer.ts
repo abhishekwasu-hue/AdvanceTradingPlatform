@@ -8,6 +8,7 @@
 import { ApiError, request } from "../api/client";
 import type { LayerData, LayerLabel, LayerLine, LayerSegment } from "./engine";
 import { parseCandleTime } from "./replay";
+import { formatNumber } from "../ui/format";
 
 export const TRADES_LAYER_ID = "trades";
 export const TRADE_COLORS = { long: "#0072B2", short: "#D55E00", exit: "#6B7280" } as const;   // Okabe-Ito, colour-blind safe
@@ -58,7 +59,7 @@ export function barAt(t: number, bars: readonly LayerBar[]): LayerBar | null {
   return found < 0 ? null : bars[found];
 }
 
-const money = (v: number) => v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = (v: number) => formatNumber(v, 2);
 
 /** The trades as chart shapes: a label at each entry and exit, a dashed segment from entry to exit (own chart), and the
  * open trade's stop and target as price lines (own chart only - a premium level never goes on the underlying's axis). */

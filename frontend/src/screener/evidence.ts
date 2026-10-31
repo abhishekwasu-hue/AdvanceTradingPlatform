@@ -8,6 +8,7 @@
  * only when "Show failed conditions" is on (the backend sends its drawing only with `debug`).
  */
 import { request } from "../api/client";
+import { formatDateTimeIST, formatNumber } from "../ui/format";
 import type { LevelLine } from "../chart/chartCore";
 import type { ChartBar, TimeframeId } from "../chart/timeframes";
 import type { ChartMarker } from "../charting/markers";
@@ -130,7 +131,7 @@ export function barTimeText(pack: Pick<EvidencePack, "base_tf" | "as_of">): stri
   const d = new Date(intraday ? pack.as_of.bar_close : pack.as_of.bar_start);
   if (Number.isNaN(d.getTime())) return "";
   if (!intraday) return `bar of ${d.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" })}`;
-  return `bar closed ${d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })} IST`;
+  return `bar closed ${formatDateTimeIST(d)}`;
 }
 
 /** The drawables to show: not those of hidden blocks, failed ones only with `showFailed`. */
@@ -336,7 +337,7 @@ export function matchedBar(pack: Pick<EvidencePack, "bars" | "matched_index">): 
 
 /** A price with two decimals and Indian grouping ("1,23,456.70"). */
 export function priceText(p: number): string {
-  return p.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatNumber(p, 2);
 }
 
 /**

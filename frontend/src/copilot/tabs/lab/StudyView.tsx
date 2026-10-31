@@ -4,6 +4,7 @@ import type { MarketStudy } from "../../../types";
 import TiltCard from "../../components/TiltCard";
 import { useCopilotT } from "../../i18n";
 import { num } from "../shared";
+import { formatNumber } from "../../../ui/format";
 
 /** The market study the templates were tested on: the read, the trend by timeframe and today's levels. */
 export default function StudyView({ s, source }: { s: MarketStudy; source: string }) {
@@ -30,7 +31,7 @@ export default function StudyView({ s, source }: { s: MarketStudy; source: strin
             <div className="absolute -top-1 h-4 w-1.5 rounded bg-fg shadow" style={{ left: `calc(${Math.min(98, Math.max(1, pct))}% - 3px)` }} />
           </div>
         </div>
-        <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-fg"><CharIcon size={15} className="text-ai" />{t(`lab.study.char.${s.character}`)}{s.vix != null && <span className="ml-auto text-xs text-fg-muted">VIX {s.vix.toFixed(1)}</span>}</div>
+        <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-fg"><CharIcon size={15} className="text-ai" />{t(`lab.study.char.${s.character}`)}{s.vix != null && <span className="ml-auto text-xs text-fg-muted">VIX {formatNumber(s.vix, 1)}</span>}</div>
         <ul className="space-y-1 text-xs text-fg-muted">{s.lines.map((l) => <li key={l}>· {l}</li>)}</ul>
       </TiltCard>
 

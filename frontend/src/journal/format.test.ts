@@ -17,10 +17,10 @@ describe("journal format helpers", () => {
   });
 
   it("formats money, R and holding time", () => {
-    expect(money(-1234.5)).toBe("-₹1,234.50");
+    expect(money(-1234.5)).toBe("−₹1,234.50");
     expect(money(null)).toBe("-");
     expect(rText(1.5)).toBe("+1.50R");
-    expect(rText(-0.25)).toBe("-0.25R");
+    expect(rText(-0.25)).toBe("−0.25R");
     expect(minutesText(25)).toBe("25 min");
     expect(minutesText(125)).toBe("2 h 5 min");
     expect(minutesText(60 * 50)).toBe("2 d 2 h");

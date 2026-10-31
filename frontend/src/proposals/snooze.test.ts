@@ -48,7 +48,7 @@ describe("isSnoozed / timeLeft / evidenceSummary", () => {
   });
 
   it("summarises scalar evidence in a few pairs", () => {
-    expect(evidenceSummary({ day_pnl: -2345.678, capital: 100000, threshold_pct: 2, extra: 1 })).toEqual(["day pnl: -2345.68", "capital: 100000", "threshold pct: 2"]);
+    expect(evidenceSummary({ day_pnl: -2345.678, capital: 100000, threshold_pct: 2, extra: 1 })).toEqual(["day pnl: −2,345.68", "capital: 1,00,000", "threshold pct: 2"]);
     expect(evidenceSummary({ losses: [-1, -2, -3], regime: "VOLATILE", nested: { a: 1 } })).toEqual(["losses: -1, -2, -3", "regime: VOLATILE"]);
     expect(evidenceSummary(undefined)).toEqual([]);
   });

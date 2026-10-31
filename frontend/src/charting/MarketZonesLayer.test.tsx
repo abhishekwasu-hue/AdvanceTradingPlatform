@@ -16,7 +16,7 @@ describe("MarketZonesLegend (Z7a-3)", () => {
     expect(html).toContain("· 2 touches");
     expect(html).toContain("· no touches");
     expect(html).toContain('data-role="supply"');
-    expect(html).toContain("as of 09 Oct, 15:30 IST");
+    expect(html).toContain("as of 9 Oct, 15:30 IST");
     expect(html).toContain('title="reference levels"');
     expect(html).not.toContain("market-zones-fallback");
     const fb = renderToStaticMarkup(<MarketZonesLegend bands={bands} asOf={null} settingsNote="platform default settings" />);

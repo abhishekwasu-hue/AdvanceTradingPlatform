@@ -4,7 +4,7 @@ import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
 import { Button } from "../components/primitives";
 import { guardStrikes } from "./signalLanguage";
 import type { StrikesAnswer } from "./types";
-import { EMPTY, formatDateIST } from "../ui/format";
+import { EMPTY, formatDateIST, formatNumber } from "../ui/format";
 
 /**
  * Analyze a chart: "Option strikes · from your settings". The analysis never picks a strike: this block only shows what
@@ -21,7 +21,7 @@ export type StrikesState =
 const RIGHT = { CE: "Call", PE: "Put" } as const;
 
 function strikeText(value: number): string {
-  return value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  return formatNumber(value, 2, { trim: true });
 }
 
 function expiryText(iso: string | null): string {

@@ -4,6 +4,7 @@
  * proposal they approve). AUTO_LIVE is never offered. */
 import { ApiError } from "../../api/errors";
 import type { ThenT } from "./i18n";
+import { formatNumber } from "../../ui/format";
 
 export const THEN_MODES = ["NOTIFY", "ONE_CLICK", "AUTO_PAPER"] as const;
 export type ThenMode = (typeof THEN_MODES)[number];
@@ -149,7 +150,7 @@ export function outcomeOf(i: ThenIntent): { key: string; vars: Record<string, st
   return { key: "intents.outcomes.queued", vars: {} };
 }
 
-const fmt = (v: number | null): string => (v === null || v === undefined ? "-" : v.toLocaleString("en-IN", { maximumFractionDigits: 2 }));
+const fmt = (v: number | null): string => (v === null || v === undefined ? "-" : formatNumber(v, 2, { trim: true }));
 
 export function levelsVars(i: ThenIntent): Record<string, string> {
   return { entry: fmt(i.entry), sl: fmt(i.stop_loss), target: fmt(i.target), rr: fmt(i.rr) };

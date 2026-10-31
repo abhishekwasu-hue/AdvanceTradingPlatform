@@ -280,6 +280,7 @@ def lots_in(message: str) -> Optional[int]:
 # --- the answer --------------------------------------------------------------------------------------------------------
 
 TF_LABELS = {"1w": "Weekly", "1d": "Daily", "1h": "1-hour", "15m": "15-minute"}
+SHORT_WORDS = "data not ready"     # M59 CR-1: a timeframe whose history is not stored yet - never its bar counts
 
 # Day-one fix 5 (README row 19): the Copilot's answers in a beginner's words - no structure codes, no ISO dates.
 TREND_WORDS = {"UPTREND": "up", "UP": "up", "BULLISH": "up", "DOWNTREND": "down", "DOWN": "down", "BEARISH": "down",
@@ -356,6 +357,8 @@ class Answer:
     symbol_default: bool = False
     # CU3: the answer card's headline numbers (the chart reader: price, trend, nearest area, distance; None elsewhere)
     headline: dict[str, Any] | None = None
+    # M59 CR-1: the chart reader's structure as data for the answer card (None elsewhere; the sentences stay for others)
+    structure_card: dict[str, Any] | None = None
 
     def flag_on(self, name: str) -> bool:
         return self.flags is None or bool(self.flags.get(name))
@@ -375,6 +378,7 @@ class Answer:
                 "worked": [s.as_dict() for s in self.worked], "action": self.action, "refused": self.refused, "starters": self.starters,
                 "concepts": self.concepts, "notes": self.notes, "disclaimer": DISCLAIMER, "source": "rules", "draft": self.draft,
                 "followup": self.followup, "symbols": self.symbols, "symbol_default": self.symbol_default, "headline": self.headline,
+                "structure_card": self.structure_card,
                 "tool_calls": [s.tool for s in self.worked if not s.tool.startswith("calc:") and s.tool not in NOT_TOOLS],
                 "tools_used": tools_used(self.worked)}
 
@@ -566,12 +570,23 @@ def _structure_rows(res: ToolResult) -> List[Dict[str, Any]]:
     return [r for r in (res.data or {}).get("timeframes") or [] if r.get("tf") in TF_LABELS] if res.ok else []
 
 
+def _is_short(text: Any) -> bool:
+    from app.context_panel.service import is_short_history
+    return is_short_history(text)
+
+
+def _dont_know(what: str, reason: str) -> str:
+    """"I don't know <what>: <reason>." - or, for a history not stored yet, "I don't know <what> yet. Daily: data not
+    ready (history is loading)." (M59 CR-1: no counts, no double colon)."""
+    return f"I don't know {what} yet. {reason}." if _is_short(reason) else f"I don't know {what}: {reason}."
+
+
 def _structure_lines(symbol: str, res: ToolResult) -> List[str]:
     out = []
     for r in _structure_rows(res):
         if r.get("short"):
             # DH5: a short history is said as such - never "no clear trend" / "none" as if the market had no structure
-            out.append(f"{TF_LABELS[r['tf']]}: {r.get('note') or 'not enough history stored yet'}")
+            out.append(r.get("note") if _is_short(r.get("note")) else f"{TF_LABELS[r['tf']]}: {SHORT_WORDS}")
             continue
         line = f"{TF_LABELS[r['tf']]}: {trend_words(r.get('direction')) if r.get('direction') else 'no clear trend'}"
         if r.get("protected") is not None:
@@ -589,7 +604,7 @@ def _structure_table(symbol: str, res: ToolResult) -> Optional[Dict[str, Any]]:
 
     def direction(r: Dict[str, Any]) -> str:
         if r.get("short"):
-            return f"not enough history ({int(r.get('bars') or 0)} of {int(r.get('needed') or 0)} bars)"
+            return SHORT_WORDS                              # M59 CR-1: never the bar counts
         return trend_words(r.get("direction")) if r.get("direction") else "no clear trend"
 
     def last(r: Dict[str, Any]) -> str:
@@ -621,9 +636,9 @@ def _zones_unknown(symbol: str, zones: ToolResult, structure: Optional[ToolResul
         return f"I don't know {what} near the price: no stored area is within reach of the last close"
     daily = next((r for r in _structure_rows(structure) if r.get("tf") == "1d"), None) if structure is not None else None
     if daily is not None and daily.get("short"):
-        return f"I don't know {what} yet: they are built from the daily history, and {daily.get('note')}"
-    if structure is not None and not structure.ok and str(structure.error or "").startswith("only "):
-        return f"I don't know {what} yet: they are built from the daily history, and {plain_reason(structure.error)}"
+        return f"I don't know {what} yet: they are built from the daily history. {daily.get('note') or 'Daily: ' + SHORT_WORDS}"
+    if structure is not None and not structure.ok and _is_short(structure.error):
+        return f"I don't know {what} yet: they are built from the daily history. {plain_reason(structure.error)}"
     reason = plain_reason(zones.error, zones.source)
     if reason.startswith("no zones for this instrument"):
         reason = f"no key areas have been computed for {symbol} yet"
@@ -651,7 +666,7 @@ async def brief(answer: Answer, run: Runner, message: str) -> None:
             if table:
                 answer.blocks.append(table)
         else:
-            answer.unknowns.append(f"I don't know the {sym} structure: {plain_reason(res.error, res.source)}.")
+            answer.unknowns.append(_dont_know(f"the {sym} structure", plain_reason(res.error, res.source)))
     zones = await _call(answer, run, "get_market_zones", "NIFTY key areas (market zones)", {"symbol": "NIFTY"}, ("price",))
     areas = _zone_lines(zones)
     if areas:
@@ -763,6 +778,86 @@ def chart_headline(symbol: str, tf: str, res: ToolResult, zones: ToolResult) -> 
             "chart": {"symbol": INDEX_NAMES.get(symbol, symbol), "exchange": exchange_of(symbol), "timeframe": CHART_TF.get(tf, "day")}}
 
 
+# M59 CR-1: the chart answer as a card - short break words for the table's chips (the long EVENT_WORDS stay for the
+# sentences), and the one "what to watch" line (no buy / sell / target / stop wording, no price).
+BREAK_WORDS = {"BOS": "Swing break", "CHOCH": "Break against the trend", "MSS": "Break against the trend"}
+WATCH_LINE = ("Whether the {tf} protected level holds or breaks on a closed bar, and how the price behaves when it reaches "
+              "the nearest area.")
+WATCH_NO_LEVEL = "How the price behaves when it reaches the nearest area, and which side of it the next bar closes on."
+SWING_SIDE = {"resistance": "high", "high": "high", "swing_high": "high", "support": "low", "low": "low", "swing_low": "low"}
+CARD_MAX_AREAS = 3          # per side ("Areas nearby": two short lists)
+
+
+def _card_trend(raw: Any) -> tuple[str | None, bool]:
+    """"up (weak)" -> ("up", True); "range" -> ("sideways", False); "none" / unknown -> (None, False). Words only."""
+    text = str(raw or "").strip().lower()
+    weak = "weak" in text
+    word = trend_words(text.replace("(weak)", "").strip()) if text and text != "none" else ""
+    return (word if word in ("up", "down", "sideways") else None), weak
+
+
+def _card_side(role: Any) -> str | None:
+    return {"bullish": "demand", "bearish": "supply"}.get(_role_side(role) or "")
+
+
+def structure_card(symbol: str, tf: str, res: ToolResult, zones: ToolResult) -> dict[str, Any] | None:
+    """M59 CR-1: the chart reader's structure answer as data for a card - per timeframe (Weekly, Daily, 1-hour,
+    15-minute; always all four, in that order) the trend word, weak or not, the protected level and the last break, or
+    `ready: false` when that timeframe's history is not stored yet (the card says "data not ready", never a bar count);
+    the stored areas above and below the last close with their distance in points; the nearest swing levels; and ONE
+    plain "what to watch" line. Only numbers the tools gave; the reading itself is unchanged (presentation only). Pure."""
+    short_history = not res.ok and _is_short(res.error)
+    if not res.ok and not zones.ok and not short_history:
+        return None
+    rows = {r.get("tf"): r for r in _structure_rows(res)}
+    d = (res.data or {}) if res.ok else {}
+    oc = d.get("official_close") or {}
+    price = oc.get("close") if oc.get("close") is not None else d.get("last_close")
+    if not isinstance(price, (int, float)) and zones.ok:
+        price = (zones.data or {}).get("price")
+    timeframes: list[dict[str, Any]] = []
+    for key, label in TF_LABELS.items():
+        r = rows.get(key)
+        if r is None or r.get("short"):
+            timeframes.append({"tf": key, "label": label, "ready": False, "trend": None, "weak": False, "protected": None, "last_break": None})
+            continue
+        trend, weak = _card_trend(r.get("direction"))
+        name, at = r.get("last_event"), r.get("last_event_price")
+        last = ({"label": BREAK_WORDS.get(str(name).upper(), str(name)), "price": at}
+                if name and isinstance(at, (int, float)) else None)
+        timeframes.append({"tf": key, "label": label, "ready": True, "trend": trend, "weak": weak,
+                           "protected": r.get("protected") if isinstance(r.get("protected"), (int, float)) else None, "last_break": last})
+    above: list[dict[str, Any]] = []
+    below: list[dict[str, Any]] = []
+    if zones.ok and isinstance(price, (int, float)) and price > 0:
+        for b in (zones.data or {}).get("bands") or []:
+            low, high = b.get("low"), b.get("high")
+            if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
+                continue
+            low, high = min(low, high), max(low, high)
+            side = _card_side(b.get("role"))
+            if low <= price <= high:
+                where, gap = "inside", 0.0
+            elif high < price:
+                where, gap = "below", price - high
+            else:
+                where, gap = "above", low - price
+            item = {"side": side, "from": float(low), "to": float(high), "where": where, "distance": round(gap, 2)}
+            # an area the price is inside sits with its own side: a buyer area under the price, a seller area over it
+            goes_above = where == "above" or (where == "inside" and side == "supply")
+            (above if goes_above else below).append(item)
+    above.sort(key=lambda a: a["distance"])
+    below.sort(key=lambda a: a["distance"])
+    levels = [{"side": SWING_SIDE.get(str(lv.get("kind") or "").lower()), "price": lv["price"]} for lv in d.get("levels") or []
+              if isinstance(lv.get("price"), (int, float))]
+    asked = next((t for t in timeframes if t["tf"] == tf), None)
+    watch = (None if not any(t["ready"] for t in timeframes) and not above and not below
+             else WATCH_LINE.format(tf=TF_LABELS.get(tf, tf).lower()) if asked and asked["protected"] is not None else WATCH_NO_LEVEL)
+    return {"symbol": symbol, "price": price if isinstance(price, (int, float)) else None, "timeframe": TF_LABELS.get(tf, tf),
+            "timeframes": timeframes, "areas_above": above[:CARD_MAX_AREAS], "areas_below": below[:CARD_MAX_AREAS],
+            "swing_levels": levels, "watch": watch}
+
+
 async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
     symbol, tf = symbol_in(message), timeframe_in(message)
     res = await _call(answer, run, "get_chart_structure", f"{symbol} structure per timeframe", {"symbol": symbol, "timeframe": tf},
@@ -776,7 +871,7 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
         head = _close_head(symbol, d, tf)
         row = next((r for r in _structure_rows(res) if r.get("tf") == tf), None)
         if row is not None and row.get("short"):
-            head += f" On the {TF_LABELS.get(tf, tf).lower()} chart {row.get('note')}."
+            head += f" {row.get('note') or TF_LABELS.get(tf, tf) + ': ' + SHORT_WORDS}."
         elif state.get("direction"):
             head += f" On the {TF_LABELS.get(tf, tf).lower()} chart the structure reads {state['direction']}"
             head += f", protected level {_f(state['protected'])}." if state.get("protected") is not None else "."
@@ -788,8 +883,8 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
         answer.section("Nearest swing levels", _level_lines(res))
     else:
         reason = plain_reason(res.error, res.source)
-        answer.summary = [f"For the {symbol} chart, {reason}." if reason.startswith("only ") else f"I can't read the {symbol} chart right now."]
-        answer.unknowns.append(f"I don't know the {symbol} structure: {reason}.")
+        answer.summary = [f"I can't read the {symbol} chart yet. {reason}." if _is_short(reason) else f"I can't read the {symbol} chart right now."]
+        answer.unknowns.append(_dont_know(f"the {symbol} structure", reason))
     areas = _zone_lines(zones)
     if areas:
         answer.section("Key areas", areas)
@@ -801,6 +896,7 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
     else:
         answer.unknowns.append(_zones_unknown(symbol, zones, res) + ".")
     answer.headline = chart_headline(symbol, tf, res, zones)
+    answer.structure_card = structure_card(symbol, tf, res, zones)
     answer.section("What to watch", ["Whether the protected level holds or breaks on a closed bar.",
                                      "How the price behaves when it reaches one of the key areas above."] if res.ok else [])
 
@@ -1112,7 +1208,7 @@ async def trade_check(answer: Answer, run: Runner, message: str) -> None:
         rows = _tf_rows(res, tf)
         answer.section("Trend side", [_trend_line(idea.side, r) for r in rows] or ["The structure has no reading on this timeframe yet."])
     else:
-        answer.unknowns.append(f"I don't know the {symbol} structure: {plain_reason(res.error, res.source)}.")
+        answer.unknowns.append(_dont_know(f"the {symbol} structure", plain_reason(res.error, res.source)))
     if idea.side is None:
         missing.append("The side: bullish or bearish.")
 
@@ -1795,7 +1891,7 @@ async def full_view(answer: Answer, run: Runner, message: str) -> None:
         if table:
             answer.blocks.append(table)
     else:
-        answer.unknowns.append(f"I don't know the {symbol} structure: {plain_reason(res.error, res.source)}.")
+        answer.unknowns.append(_dont_know(f"the {symbol} structure", plain_reason(res.error, res.source)))
     if oc.ok:
         read += 1
         found = {a["key"]: a for a in (oc.data or {}).get("analyses") or [] if a.get("state") == "ok"}

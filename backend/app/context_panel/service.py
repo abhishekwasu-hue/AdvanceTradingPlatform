@@ -141,11 +141,22 @@ async def _bars(session: AsyncSession, name: str, days: int, today: date) -> pd.
 REGIME_BARS = 30           # daily bars the regime read needs
 
 
+SHORT_HISTORY_MARK = "data not ready"
+
+
 def short_history(have: int, need: int, what: str, key: str) -> str:
-    """DATA-H DH5: the plain sentence for a history too short to read - never "no structure" as if the market had none."""
+    """DATA-H DH5: the plain sentence for a history too short to read - never "no structure" as if the market had none.
+    M59 CR-1: never the internal counts either - "Daily: data not ready (history is loading)". `have` / `need` stay
+    in the signature for the callers (the counts are data for the admin's health line, not for a user's sentence)."""
     from app.market_lake.index_history import is_target_key
     loading = "history is loading" if is_target_key(key) else "more history is needed"
-    return f"only {have} of the {need} {what} needed are stored; {loading}"
+    label = what.strip().removesuffix(" bars").strip() or "History"
+    return f"{label[:1].upper()}{label[1:]}: {SHORT_HISTORY_MARK} ({loading})"
+
+
+def is_short_history(text: object) -> bool:
+    """True when a reason is `short_history`'s sentence (the history is not stored yet, not a failure)."""
+    return SHORT_HISTORY_MARK in str(text or "")
 
 
 async def _own_daily(session: AsyncSession, user: Viewer, name: str, days: int, today: date) -> Optional[pd.DataFrame]:

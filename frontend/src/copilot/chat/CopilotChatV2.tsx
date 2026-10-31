@@ -8,7 +8,7 @@ import { Skeleton } from "../../components/primitives/Feedback";
 import { LevelChip } from "../../ui/LevelChip";
 import { Signed } from "../../ui/numbersFirst";
 import { EMPTY, formatPrice } from "../../ui/format";
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../api/client";
@@ -22,11 +22,20 @@ import FirstUseModal from "../components/FirstUseModal";
 import { useCopilotT } from "../i18n";
 import { COPILOT_TABS, copilotPath } from "../tabs";
 import { AnswerV2 } from "./AnswerV2";
+import { AttachMenu, imageFrom } from "./ChartAttachV2";
 import {
-  chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, restoredTurns, settled, withTurn,
-  type ChatAnswer, type ChatHome, type Turn,
+  chartQuestion, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
+  restoredTurns, settled, withChart, withTurn,
+  type ChartSource, type ChatAnswer, type ChatHome, type Turn,
 } from "./model";
+import { chartAnalyzeApi, isFeatureOff } from "../../chartAnalyze/api";
+import { engineAudience } from "../../chartAnalyze/engineWords";
+import type { AnalyzeStatus } from "../../chartAnalyze/types";
+import { friendlyError as apiFriendlyError } from "../../api/errors";
 import { Details } from "../../ui/Details";
+
+// M59 CR-2: the attached chart's turn (the chart drawing and the reading) loads in its own chunk, only when used.
+const ChartTurnV2 = lazy(() => import("./ChartTurnV2"));
 
 /**
  * Item 5 (owner's handover 5 C), reworked by CP-UX CU2 (owner order 30 Oct): Copilot screen 1, phone first, top to
@@ -62,13 +71,20 @@ export interface ChatViewProps {
   /** CU2: the key setup is open (the "AI off" chip toggles it). */
   keyOpen?: boolean;
   onKeyOpen?: (open: boolean) => void;
+  /** M59 CR-2: a chart in the Ask box (upload / TradingView snapshot link); left out: no attach button. */
+  onAttach?: (source: ChartSource) => void;
 }
 
-export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk"> & { placeholder?: string }) {
+export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, onAttach }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk" | "onAttach"> & { placeholder?: string }) {
   const t = useCopilotT();
   const submit = (e: FormEvent) => { e.preventDefault(); const q = cleanQuestion(draft); if (q && !busy) onAsk(q); };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const q = cleanQuestion(draft); if (q && !busy) onAsk(q); }
+  };
+  // M59 CR-2: a chart screenshot pasted in the box is attached as a chart (a text paste stays text)
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const image = onAttach && !busy ? imageFrom(e.clipboardData?.files) : null;
+    if (image) { e.preventDefault(); onAttach!({ kind: "file", file: image, name: image.name || "pasted-chart.png" }); }
   };
   const bottom = placement === "bottom";
   // M60 default 1: the Ask box's attach button opens Analyze a chart (upload a chart or a TradingView snapshot link).
@@ -78,14 +94,16 @@ export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder }
       className={bottom
         ? "fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 flex items-end gap-space-2 border-t border-subtle bg-surface-1 px-space-4 py-space-2 shadow-raised"
         : "sticky top-space-2 z-10 flex items-end gap-space-2 rounded-panel border border-border bg-surface-1 p-space-3 shadow-card"}>
-      {analyzeOn && (
+      {/* M59 CR-2 attaches the chart in the chat itself when the Copilot can read charts; otherwise the M60 attach
+          button opens Analyze a chart. Never both. */}
+      {onAttach ? <AttachMenu onAttach={onAttach} disabled={busy} /> : analyzeOn && (
         <Link to="/copilot/analyze" aria-label={t("v2tabs.attach")} title={t("v2tabs.attach")} data-attach-chart
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border bg-surface-2 text-fg-muted hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
           <Paperclip size={18} aria-hidden />
         </Link>
       )}
       <label className="sr-only" htmlFor="copilot-question">{t("chat.boxLabel")}</label>
-      <textarea id="copilot-question" value={draft} maxLength={MAX_QUESTION} rows={bottom ? 1 : 2} onChange={(e) => onDraft(e.target.value)} onKeyDown={onKey}
+      <textarea id="copilot-question" value={draft} maxLength={MAX_QUESTION} rows={bottom ? 1 : 2} onChange={(e) => onDraft(e.target.value)} onKeyDown={onKey} onPaste={onPaste}
         placeholder={placeholder ?? t("chat.placeholder")} disabled={busy}
         className={`min-w-0 flex-1 resize-none rounded-control border border-border bg-surface-2 px-space-3 py-space-2 text-t15 text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-60 ${bottom ? "min-h-11" : "min-h-16"}`} />
       <button type="submit" className={BUTTON} disabled={busy || !cleanQuestion(draft)} aria-label={t("chat.ask")} data-primary>
@@ -134,13 +152,14 @@ export function NumbersStrip({ strip, home, nowMs }: { strip: Loadable<MarketStr
   );
 }
 
-export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen }: ChatViewProps) {
+export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach }: ChatViewProps) {
   const t = useCopilotT();
   const line = marketLineText(home);
   const chips = home ? quickChips(home.jobs) : [];
   const empty = turns.length === 0;
   const aiOff = needsKey(home);
-  const composer = <Composer draft={draft} busy={busy} placement={placement} onDraft={onDraft} onAsk={onAsk} placeholder={placement === "bottom" ? t("chat.placeholderShort") : home?.top_line} />;
+  const composer = <Composer draft={draft} busy={busy} placement={placement} onDraft={onDraft} onAsk={onAsk} onAttach={onAttach}
+    placeholder={placement === "bottom" ? t("chat.placeholderShort") : home?.top_line} />;
   return (
     <div className="space-y-space-4" data-page="copilot-v2" data-placement={placement}>
       <header className="flex items-center justify-between gap-space-2">
@@ -196,11 +215,35 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
               <p className="ml-auto w-fit max-w-full rounded-panel bg-surface-2 px-space-4 py-space-2 text-t14 text-fg">
                 <span className="sr-only">{t("chat.youAsked")}: </span>{turn.question}
               </p>
-              <div className={`${CARD} p-space-4`}>
-                {turn.answer ? <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
-                  : turn.error ? <p role="alert" className="text-t14 text-fg">{turn.error}</p>
-                  : <p aria-busy="true" className="text-t14 text-fg-muted">{t("chat.asking")}</p>}
-              </div>
+              {turn.chart ? (
+                <>
+                  {/* M59 CR-2: the attached chart's analysis, then the Copilot's own structure card for its symbol (CR-1) */}
+                  <div className={`${CARD} p-space-4`} data-chart-card>
+                    <Suspense fallback={<p aria-busy="true" className="text-t14 text-fg-muted">{t("chat.chartAnalysing")}</p>}><ChartTurnV2 chart={turn.chart} /></Suspense>
+                  </div>
+                  {turn.answer && (
+                    <div className={`${CARD} space-y-space-2 p-space-4`} data-chart-reading>
+                      <h3 className="text-t13 font-semibold text-fg-muted">{t("chat.chartReading")}</h3>
+                      <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
+                      {(() => {
+                        // M59 CR-2: the AI words only on the user's own tap (an ordinary question, metered as any other)
+                        const question = turn.chart.status === "done" ? readingQuestion(turn.chart.item) : null;
+                        return question ? (
+                          <button type="button" className={CHIP} disabled={busy} data-explain-words onClick={() => onAsk(question)}>
+                            {t("chat.explainWords")}
+                          </button>
+                        ) : null;
+                      })()}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className={`${CARD} p-space-4`}>
+                  {turn.answer ? <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
+                    : turn.error ? <p role="alert" className="text-t14 text-fg">{turn.error}</p>
+                    : <p aria-busy="true" className="text-t14 text-fg-muted">{t("chat.asking")}</p>}
+                </div>
+              )}
             </li>
           ))}
         </ol>
@@ -281,6 +324,19 @@ export function CopilotChatV2() {
   const [aiLabel, setAiLabel] = useState<string | null>(null);
   const [keyOpen, setKeyOpen] = useState(false);
   const [strip] = usePolled(readNumbers, stripDelay, true);
+  // M59 CR-2: the attach button shows while chart analysis is on for this account; with the flag answered off, the
+  // status is asked once - an admin then gets the button and the engine's owner action (CR-3), a user nothing.
+  const chartOn = features.on("chart_analyze");
+  const [engine, setEngine] = useState<AnalyzeStatus["engine"] | null>(null);
+  useEffect(() => {
+    if (!features.loaded || chartOn) return undefined;
+    let live = true;
+    chartAnalyzeApi.status().then((s) => { if (live) setEngine(s.engine); }, () => undefined);
+    return () => { live = false; };
+  }, [features.loaded, chartOn]);
+  const canAttach = chartOn || (engine !== null && !engine.installed && engineAudience(engine) === "admin");
+  const images = useRef<string[]>([]);
+  useEffect(() => () => { for (const url of images.current) URL.revokeObjectURL(url); }, []);
 
   // CU6: the conversation the server kept for this person comes back after a reload (read once, before any new turn).
   useEffect(() => {
@@ -330,11 +386,44 @@ export function CopilotChatV2() {
     }
   }
 
+  // M59 CR-2: an attached chart goes through the SAME chart_analyze pipeline as the Analyze a chart page (store, then
+  // analyse, Image only); the result is this turn; then the Copilot's own reading of the symbol the picture shows.
+  async function attachChart(source: ChartSource) {
+    const id = next.current++;
+    setTurns((all) => withTurn(all, { id, question: chartQuestion(source), answer: null, error: null, chart: { status: "working", step: "adding" } }, home?.keep ?? keep));
+    setBusy(true);
+    const show = (chart: Parameters<typeof withChart>[2]) => setTurns((all) => withChart(all, id, chart));
+    try {
+      const status = await chartAnalyzeApi.status();
+      if (!status.engine.installed) { show({ status: "unavailable", engine: status.engine }); return; }
+      const item = await chartAnalyzeApi.add(source.kind === "file" ? { file: source.file, fileName: source.name } : { link: source.link }, "image_only");
+      show({ status: "working", step: "analysing" });
+      const done = await chartAnalyzeApi.analyze(item.id);
+      if (done.status !== "done" || !done.result) { show({ status: "failed", message: done.error ?? t("chat.chartFailed") }); return; }
+      let imageSrc: string | null = null;
+      try { imageSrc = URL.createObjectURL(await chartAnalyzeApi.image(done.id)); images.current.push(imageSrc); } catch { /* the reading shows without the picture */ }
+      show({ status: "done", item: done, imageSrc });
+      // ATP's own structure card for the picture's symbol: the rule answer only (wording=false) - no AI call here; the
+      // AI words come only when the user taps "Explain in words" (an ordinary question of his own)
+      const question = readingQuestion(done);
+      if (question) {
+        const answer = await chatApi.askRules(question).catch(() => null);
+        if (answer) setTurns((all) => settled(all, id, answer, null));
+      }
+    } catch (e) {
+      if (isFeatureOff(e)) show({ status: "unavailable", engine: { installed: false } });
+      else show({ status: "failed", message: apiFriendlyError(e) || t("chat.failed") });
+    } finally {
+      setBusy(false);
+      document.querySelector(`[data-turn='${id}']`)?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    }
+  }
+
   return (
     <>
       <PageIntro id="copilot-chat" title={t("chat.introTitle")} lines={[t("chat.intro1"), t("chat.intro2")]} />
       <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={placement} onDraft={setDraft} onAsk={(q) => void ask(q)}
-        strip={strip} keyOpen={keyOpen} onKeyOpen={setKeyOpen}
+        strip={strip} keyOpen={keyOpen} onKeyOpen={setKeyOpen} onAttach={canAttach ? (source) => void attachChart(source) : undefined}
         connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined} />
     </>
   );

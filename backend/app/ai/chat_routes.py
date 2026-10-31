@@ -40,6 +40,9 @@ PAGE_FLAG = "ui_v2"
 
 class ChatBody(BaseModel):
     message: str = Field(min_length=2, max_length=1000)
+    # M59 CR-2: false = the rule answer only, no AI wording (no metered AI call) - the Copilot's chart attach asks this
+    # way after an analysis; the AI words come only when the user taps "Explain in words" (a normal question).
+    wording: bool = True
 
 
 async def _flags(session: AsyncSession, user: User) -> None:
@@ -152,7 +155,7 @@ async def chat_ask(body: ChatBody, user: User = Depends(require_ai_acknowledged)
     result = out.as_dict()
     provider = await _provider(session, tenant_id, user_id)
     result["ai"] = _ai_state(provider, await ai_resolve.one_key_on(session, tenant_id))
-    if out.job in chat.BUILT and result["ai"]["ready"]:
+    if out.job in chat.BUILT and result["ai"]["ready"] and body.wording:
         text, why = await chat.narrate(provider, out, body.message)
         await ai_resolve.mark_used(session, tenant_id, provider, error=None if text else f"AI answer not used ({why}); answered from the rules")
         await session.commit()                       # P0.8-C: the metered call, used or not

@@ -201,6 +201,7 @@ class CycleReport:
     intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
     lake_backfill_started: bool = False      # DATA-H: the owner's index-history pass was started this cycle
     chain_history_started: bool = False      # TM 9.4: an owner chain-history slot was started this cycle
+    market_backfill_started: bool = False    # M71 PL-1c: the paced backfill / gap-drain task was started this cycle
 
 
 def _just_closed(now: datetime) -> bool:
@@ -337,6 +338,15 @@ class TradingWorker:
         self._last_lake_backfill_day: Optional[date] = None
         self._lake_backfill_task: Optional["asyncio.Task[None]"] = None
         self._lake_backfill_retry_at = 0.0
+        # M71 PL-1c: the paced universe backfill + gap drain - its task, the IST date the backfill last COMPLETED and when
+        # the next gap drain / unfinished backfill may start (monotonic seconds).
+        self._market_backfill_task: asyncio.Task[None] | None = None
+        self._market_backfill_day: date | None = None
+        self._market_gap_at = 0.0
+        self._market_backfill_retry_at = 0.0
+        if app_config.MARKET_BACKFILL_ENABLED:
+            from app.market_lake import backfill as market_backfill
+            market_backfill.register_with_feed()   # PL-1b's gap hook -> this paced queue (a no-op without that module)
         self._intraday_adapters: Dict[Any, Any] = {}   # one owner adapter per IST day, reused by that evening's passes
         # TM 9.4: the owner's chain history - the last slot started, its task, the adapter of the day, the last report.
         self._last_chain_slot: Optional[datetime] = None
@@ -391,6 +401,8 @@ class TradingWorker:
             self._lake_backfill_task.cancel()        # DATA-H: resumable - a window is written and recorded in one transaction
         if self._intraday_task is not None and not self._intraday_task.done():
             self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
+        if self._market_backfill_task is not None and not self._market_backfill_task.done():
+            self._market_backfill_task.cancel()      # M71 PL-1c: resumable - each request's windows are written in one transaction
         if self._chain_task is not None and not self._chain_task.done():
             self._chain_task.cancel()                # TM 9.4: one slot - a cancelled slot is a gap, the next one runs
         if self._then_warm_task is not None and not self._then_warm_task.done():
@@ -913,6 +925,13 @@ class TradingWorker:
                         logger.exception("Index history pass not started")
                         report.errors.append(f"index history: {exc}")
                         await session.rollback()
+                # M71 PL-1c: the gap queue (any time) and the one-time universe backfill (NSE closed), paced through the
+                # owner session's rate budget; one background task, never per request.
+                try:
+                    report.market_backfill_started = self._maybe_start_market_backfill(now, nse_open=nse.is_open)
+                except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                    logger.exception("Market backfill not started")
+                    report.errors.append(f"market backfill: {exc}")
                 # TM 9.4: the owner's chain history (flag `chain_history`, off by default) - one slot per
                 # CHAIN_HISTORY_SLOT_MINUTES while a venue is open, through the owner's own broker session, drawing from that
                 # session's rate budget only while a reserve stays free for exits. Its own task and sessions; read-only.
@@ -1775,6 +1794,38 @@ class TradingWorker:
                 logger.exception("Index history pass failed")
 
         self._lake_backfill_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    def _maybe_start_market_backfill(self, now: datetime, *, nse_open: bool) -> bool:
+        """M71 PL-1c (app/market_lake/backfill.py): one background task that drains the gap queue at most every
+        MARKET_BACKFILL_GAP_EVERY_SECONDS and, while NSE is closed, runs the universe backfill until a pass completes for
+        the IST day (an unfinished pass is retried at most every MARKET_BACKFILL_RETRY_MINUTES). Both draw from this
+        worker's RateBudget of the session (`acquire_spare`, a reserve kept free for exits)."""
+        from app.market_lake import backfill
+
+        if not app_config.MARKET_BACKFILL_ENABLED:
+            return False
+        if self._market_backfill_task is not None and not self._market_backfill_task.done():
+            return False
+        mono = time.monotonic()
+        day = now.astimezone(IST).date()
+        backfill_due = not nse_open and self._market_backfill_day != day and mono >= self._market_backfill_retry_at
+        if mono < self._market_gap_at and not backfill_due:
+            return False
+        self._market_gap_at = mono + app_config.MARKET_BACKFILL_GAP_EVERY_SECONDS
+
+        async def run() -> None:
+            try:
+                await backfill.drain_gaps(self.session_factory, budget_for=self._budget_for)
+                if backfill_due:
+                    self._market_backfill_retry_at = time.monotonic() + app_config.MARKET_BACKFILL_RETRY_MINUTES * 60
+                    result = await backfill.run_backfill(self.session_factory, budget_for=self._budget_for)
+                    if result.complete or result.status in ("not_configured", "disabled"):
+                        self._market_backfill_day = day
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("Market backfill task failed")
+
+        self._market_backfill_task = asyncio.get_running_loop().create_task(run())
         return True
 
     async def _maybe_start_chain_history(self, session: AsyncSession, now: datetime) -> bool:

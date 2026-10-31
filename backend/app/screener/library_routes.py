@@ -34,7 +34,7 @@ from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.parser import ScreenQLSyntaxError, parse
-from app.screener.routes import DISCLAIMER, FLAG, GALLERY_FLAG, MAX_SYMBOLS, _cost_cap, _gate, _owned, charge_runs, fetch_frames, missing_data
+from app.screener.routes import DISCLAIMER, FLAG, GALLERY_FLAG, MAX_SYMBOLS, _cost_cap, _gate, _owned, charge_runs, fetch_frames, missing_data, store_first
 from app.screener.runtime import SymbolData, run_screen
 
 router = APIRouter(prefix="/api/screener/library", tags=["screener"])
@@ -143,8 +143,9 @@ async def _resolve(session: AsyncSession, user: User, ref: str, taxonomy: tx.Tax
 async def _universe(session: AsyncSession, user: User, symbols: List[str], exchange: str, base_tf: str,
                     lookback: Dict[str, int]) -> Tuple[List[SymbolData], Dict[str, str], Dict[str, Any]]:
     tier: Dict[str, Any] = {}
+    store = await store_first(session, user.tenant_id)          # M71 W2-G: store-first, broker calls budgeted (flag on only)
     universe, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, base_tf, lookback, user_id=user.id,
-                                                    tier_out=tier)
+                                                    tier_out=tier, store=store, budget_out={} if store else None)
     return universe, problems, {"data_source": source, **({"data_tier": tier["data_tier"]} if tier else {})}
 
 

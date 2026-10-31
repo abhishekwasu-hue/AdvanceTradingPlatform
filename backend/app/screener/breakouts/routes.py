@@ -27,7 +27,7 @@ from app.screener.breakouts import gate, quality, style, templates
 from app.screener.breakouts import params as bp
 from app.screener.breakouts import session as ses
 from app.screener.breakouts.screens import BK3_SCREENS, BK4_SCREENS, INTRADAY_SCREENS, SCREEN_TIMEFRAMES, SCREENS
-from app.screener.routes import fetch_frames, run_rate_limit
+from app.screener.routes import fetch_frames, run_rate_limit, store_first
 
 router = APIRouter(prefix="/api/screener/breakouts", tags=["screener"])
 
@@ -192,26 +192,29 @@ async def _frames(session: AsyncSession, user: User, symbols: List[str], exchang
       daily-or-coarser context is built from a separate daily fetch (deeper than the intraday window). `bars`: signal
       bars to fetch (U6 BK2: whole sessions for the intraday screens, `history_bars`)."""
     tier = tier if tier is not None else {}                           # BT1b: the run's own user session, its data-tier badge
+    # M71 W2-G (flag `market_store_reads`): every read store-first (`fetch_frames(store=True)`); a broker call it still
+    # makes (the newest bars, a symbol not stored) takes a token from the credential's API budget first. Flag off: as before.
+    store = await store_first(session, user.tenant_id)
     daily_tf = bp.TF_MINUTES["1d"]
     frames: Dict[str, Dict[str, pd.DataFrame]] = {}
     if bp.TF_MINUTES[signal_tf] >= daily_tf:
         # U6 BK3 review L4: `daily_bars` - the daily bars the signal bars asked for need (a BK3 screen's windows)
         daily, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, "1d", {"1d": max(SIGNAL_HISTORY_BARS, daily_bars)},
-                                                     user_id=user.id, tier_out=tier)
+                                                     user_id=user.id, tier_out=tier, store=store, budget_out={} if store else None)
         for d in daily:
             base = d.frames["1d"]
             frames[d.symbol] = {tf: style.resample(base, "1d", tf) for tf in (signal_tf, *context)}
         return frames, problems, source
     fetch_tf = FETCH_TF.get(signal_tf, signal_tf)
     universe, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, fetch_tf, {fetch_tf: bars},
-                                                    user_id=user.id, tier_out=tier)
+                                                    user_id=user.id, tier_out=tier, store=store, budget_out={} if store else None)
     for d in universe:
         f = d.frames[fetch_tf]
         frames[d.symbol] = {signal_tf: style.resample(f, fetch_tf, signal_tf) if fetch_tf != signal_tf else f}
     daily_ctx = [tf for tf in context if bp.TF_MINUTES[tf] >= daily_tf]
     if daily_ctx and frames:
         daily, daily_problems, _ = await fetch_frames(session, user.tenant_id, list(frames), exchange, "1d", {"1d": SIGNAL_HISTORY_BARS},
-                                                      user_id=user.id)
+                                                      user_id=user.id, store=store, budget_out={} if store else None)
         problems.update({s: f"daily context: {why}" for s, why in daily_problems.items() if s not in problems})
         for d in daily:
             for tf in daily_ctx:

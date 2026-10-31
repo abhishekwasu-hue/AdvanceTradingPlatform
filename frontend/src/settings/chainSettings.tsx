@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { request } from "../api/client";
 import { CardV2 } from "../dashboard/CardV2";
 import { BUTTON_PRIMARY, FIELD, NoteV2 } from "../trading/PartsV2";
+import { Details } from "../ui/Details";
 
 export const CHAIN_NAMESPACE = "option_chain";
 export const PCR_KEYS = ["very_low_below", "low_below", "balanced_max", "high_max"] as const;
@@ -99,9 +100,12 @@ export default function ChainSettingsV2({ fetcher = request }: { fetcher?: typeo
   return (
     <CardV2 title="Option chain settings" testId="chain-settings">
       <div className="space-y-space-3">
-        <p className="text-t14 text-fg-muted">
-          PCR zones: where the put-call ratio counts as very low, low, balanced, high or very high in &quot;What the chain shows&quot;.
-        </p>
+        <Details id="settings.chain" className="mt-0">
+          <p className="text-t14 text-fg-muted">
+            PCR zones: where the put-call ratio counts as very low, low, balanced, high or very high in &quot;What the chain shows&quot;.
+          </p>
+          <p>Today&apos;s expiry stays one tap away.</p>
+        </Details>
         <div className="grid gap-space-3 md:grid-cols-2">
           {PCR_KEYS.map((k) => (
             <label key={k} className="space-y-space-1 text-t14 text-fg">
@@ -114,7 +118,7 @@ export default function ChainSettingsV2({ fetcher = request }: { fetcher?: typeo
         <label className="flex min-h-11 cursor-pointer items-start gap-space-2 text-t14 text-fg">
           <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-brand" data-chain-field="expiry_day_next" checked={nextOnExpiry}
             onChange={(e) => { setNextOnExpiry(e.target.checked); setNote(null); }} />
-          <span>On an expiry day, open the chain and the spread builder on the next expiry. Today&apos;s expiry stays one tap away.</span>
+          <span>On an expiry day, open the chain and the spread builder on the next expiry.</span>
         </label>
         {note && <NoteV2 kind={note.kind} testId="chain-settings">{note.text}</NoteV2>}
         <div className="flex flex-wrap gap-space-2">

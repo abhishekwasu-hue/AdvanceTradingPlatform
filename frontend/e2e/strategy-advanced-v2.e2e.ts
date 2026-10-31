@@ -88,7 +88,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await expect(settings).toBeVisible();
         await expect(settings).not.toHaveAttribute("open", "");
         await expect(settings.getByText("Premiums from")).toBeHidden();
-        await settings.locator("summary").click();
+        await settings.locator(":scope > summary").click();
         await expect(settings.getByText("Premiums from")).toBeVisible();
         await choose(page, page.locator("select").filter({ has: page.locator("option[value='OPTION']") }), "UNDERLYING");
 
@@ -96,7 +96,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await expect(page.getByText("Total Trades")).toBeVisible();
         const checks = page.locator("[data-advanced='checks']");
         await expect(checks).not.toHaveAttribute("open", "");
-        await checks.locator("summary").click();
+        await checks.locator(":scope > summary").click();
 
         const fields = page.locator("[data-optimiser-fields]");
         await expect(fields.locator("input.font-mono")).toHaveCount(0);

@@ -19,6 +19,7 @@ import { EvidenceChartLive } from "./EvidenceChart";
 import { evidenceApi, visibleDrawables, type EvidencePack } from "./evidence";
 import { ResultBoard, type ResultBoardProps } from "./ResultBoard";
 import { SubTabs } from "../ui/SubTabs";
+import { Details } from "../ui/Details";
 
 /** SCR-FIX C5: the heatmap's labels in viewBox units - the 380-wide box is drawn about 1:1 on a phone, so 12 reads as
  * about 12 px there (it was 9: about 8 px on a phone). A tile too small for its symbol shows none (its name is in its label). */
@@ -53,7 +54,7 @@ export function HeatmapView({ results, context, width = 380, height = 300 }: { r
       </svg>
       <figcaption className="mt-1 text-t12 text-fg-muted">
         {shown.length < results.length && <>First {shown.length} of {results.length} shown · </>}
-        Sized by market cap (a symbol without one is shown at the median) · colour: the last day's change · ringed: matched
+        <Details id="screener.heatmap" className="mt-0"><p>Sized by market cap (a symbol without one is shown at the median) · colour: the last day's change · ringed: matched</p></Details>
       </figcaption>
     </figure>
   );

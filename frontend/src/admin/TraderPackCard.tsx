@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { request } from "../api/client";
 import { Card } from "../components/ui";
 import { SkeletonRows } from "../components/primitives";
+import { Details } from "../ui/Details";
 
 /**
  * Owner decision 23 Oct: "Enable trader features" - one audited, reversible admin action that turns ON every flag a
@@ -49,12 +50,12 @@ export function TraderPackView({ status, busy = false, onEnable, onUndo }: {
 }) {
   return (
     <div className="space-y-3 text-sm" data-trader-pack>
-      <p className="text-xs text-fg-muted">
+      <Details id="admin.trader-pack" className="mt-0">
         Turns on everything a trader uses: the Copilot, strategy templates and the Pine Lab, the screens, the idea library,
         watchlists, the chart tools and the paper account with its risk tools. LIVE trading, the paper-only lock, the
         marketplace, developer API keys, open sign-up, automatic paper orders and every owner decision stay as they are.
         Each change is recorded in the audit log; Undo puts every switch back exactly as it was.
-      </p>
+      </Details>
       <div className="flex flex-wrap items-center gap-2">
         <span data-trader-pack-summary className="font-semibold text-fg">{summary(status)}</span>
         <div className="ml-auto flex flex-wrap gap-2">

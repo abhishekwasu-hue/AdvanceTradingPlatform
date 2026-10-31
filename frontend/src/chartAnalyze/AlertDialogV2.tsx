@@ -4,6 +4,7 @@ import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
 import { api } from "../api/client";
 import { friendlyError } from "../api/errors";
 import { Button, Dialog, Input } from "../components/primitives";
+import { Details } from "../ui/Details";
 import { plainCondition } from "../screener/evidence";
 import { APPROXIMATE_NOTE, bandCondition, draftErrors, ruleBody, ruleTimeframe } from "./alerts";
 
@@ -64,7 +65,6 @@ export default function AlertDialogV2({ target, onClose, onCreated }: { target: 
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={target.title}
-      description="An alert tells you when the condition matches on a closed bar. It never places an order."
       footer={<>
         <Button className="h-11 md:h-9" onClick={onClose}>Cancel</Button>
         <Button variant="primary" className="h-11 md:h-9" loading={busy} onClick={save}>Save alert</Button>
@@ -85,6 +85,7 @@ export default function AlertDialogV2({ target, onClose, onCreated }: { target: 
         ) : null}
         <p className="text-t12 text-fg-muted">When <span className="text-fg">{condition ? plainCondition(condition) : "-"}</span> on {draft.timeframe} bars</p>
         {error && <p role="alert" className="text-t12 text-warn">{error}</p>}
+        <Details id="chart-analyze.alert" className="mt-0"><p>An alert tells you when the condition matches on a closed bar. It never places an order.</p></Details>
       </div>
     </Dialog>
   );

@@ -486,7 +486,7 @@ export function PlaceholderPanelV2({ kind }: { kind: "bots" | "payoff" }) {
   return (
     <div className="space-y-space-2" data-panel-body="payoff">
       <p className="flex items-center gap-space-2 text-t14 font-semibold text-fg"><LineChart size={16} aria-hidden className="text-brand" />Coming in a later update</p>
-      <p className={MUTED}>The payoff of your basket and your open positions, with what-if, will show here. Until then, the basket shows its payoff before you place it.</p>
+      <Details id="terminal.payoff" className="mt-0"><p>The payoff of your basket and your open positions, with what-if, will show here. Until then, the basket shows its payoff before you place it.</p></Details>
     </div>
   );
 }

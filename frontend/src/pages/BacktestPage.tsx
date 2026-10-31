@@ -1,3 +1,4 @@
+import { Details } from "../ui/Details";
 import { errorSentence } from "../api/errors";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
@@ -348,9 +349,9 @@ export default function BacktestPage() {
             <>Recorded: {coverage.map((c) => `${c.underlying} ${c.rows} quotes, ${c.expiries} expiries, ${c.from?.slice(0, 10)} to ${c.to?.slice(0, 10)}`).join(" · ")}</>}
         </div>
       )}
-      <div className="text-xs text-fg-muted">
+      <Details id="backtest.pricing" className="mt-0"><p>
         Synthetic premiums approximate the market (no smile, no bid/ask, no liquidity): use them to study structure mechanics - strikes, expiries, exits, sizing - not to claim an edge. Recorded quotes are what the market actually showed.
-      </div>
+      </p></Details>
     </div>
   );
   const sampleBarsField = (

@@ -146,10 +146,13 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
 
       test("Library: settings as readable chips, never JSON", async ({ page }) => {
         await open(page, theme, "/strategies");
-        const chips = page.locator("[data-rule-chips] li");
-        await expect(chips).toHaveText(["Fast EMA 9", "Slow EMA 21", "RSI length 14", "Targets (R) 1.5 / 2"]);
+        // M49 U3: at most three on the card (the chart is one of them); the rest under "More settings".
+        const chips = page.locator("[data-library-card='demo_trend'] [data-main-settings] li");
+        await expect(chips).toHaveText(["Fast EMA 9", "Slow EMA 21", "Chart 5-minute"]);
         await expect(page.locator("pre")).toHaveCount(0);
-        await expect(page.getByText("Timeframes: 5-minute")).toBeVisible();
+        await page.locator("[data-library-fold='more-settings'] summary:visible").click();
+        await expect(page.getByText("RSI length").locator("visible=true")).toHaveCount(1);
+        await expect(page.getByText("Targets (R)").locator("visible=true")).toHaveCount(1);
         await noPageScroll(page);
       });
     });

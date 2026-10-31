@@ -151,3 +151,10 @@ def test_the_trades_are_the_same_without_the_removed_min_rr(sid):
     old = underlying_engine.run_backtest(_with_old_min_rr(strategy), bars, SYMBOL, base_tf, cfg)
     assert new.trades, f"{sid}: no trade on the fixture bars - the comparison would prove nothing"
     assert _trades(new) == _trades(old)
+
+
+def test_no_built_in_description_says_buy_or_sell():
+    # CLAUDE.md §3: signals, not advice - built-in descriptions read in structure words
+    import re
+    for s in registry.list_all():
+        assert not re.search(r"\b(buy|sell)\b", s.description, re.IGNORECASE), s.id

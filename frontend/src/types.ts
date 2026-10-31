@@ -1079,6 +1079,12 @@ export type OptionStrategy =
   | "CALL_RATIO_SPREAD" | "PUT_RATIO_SPREAD" | "LONG_BUTTERFLY" | "CUSTOM";
 export const DEBIT_STRUCTURES: OptionStrategy[] = ["LONG_STRADDLE", "LONG_STRANGLE", "CALENDAR_SPREAD", "LONG_BUTTERFLY"];
 export const WINGED_STRUCTURES: OptionStrategy[] = ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY"];
+/** M55 T1: a bot may hold an option structure for days only when it is a defined-risk credit structure (the API's rule). */
+export const HOLD_FOR_DAYS_STRUCTURES: OptionStrategy[] = WINGED_STRUCTURES;
+export const HOLD_FOR_DAYS_LINE = "Kept overnight; exits by your own exit rules; settles at expiry";
+export function canHoldForDays(kind: InstrumentKind, structure: OptionStrategy): boolean {
+  return kind === "OPTION" && HOLD_FOR_DAYS_STRUCTURES.includes(structure);
+}
 // Phase U: economics from the expiry payoff, legs with ratios, exits on P&L per unit.
 export const PAYOFF_STRUCTURES: OptionStrategy[] = ["CALL_RATIO_SPREAD", "PUT_RATIO_SPREAD", "LONG_BUTTERFLY", "CUSTOM"];
 export const WIDTH_STRUCTURES: OptionStrategy[] = [...WINGED_STRUCTURES, "CALL_RATIO_SPREAD", "PUT_RATIO_SPREAD", "LONG_BUTTERFLY"];

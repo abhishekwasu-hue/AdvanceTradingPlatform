@@ -33,6 +33,8 @@ import {
   CustomLeg,
   DEBIT_STRUCTURES,
   WINGED_STRUCTURES,
+  HOLD_FOR_DAYS_LINE,
+  canHoldForDays,
   PAYOFF_STRUCTURES,
   WIDTH_STRUCTURES,
   MAX_CUSTOM_LEGS,
@@ -130,6 +132,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   const [targetCredit, setTargetCredit] = useState<string>("");
   const [stopCredit, setStopCredit] = useState<string>("");
   const [underlyingExit, setUnderlyingExit] = useState(false);   // DEF-0: off unless the trader turns it on
+  const [holdForDays, setHoldForDays] = useState(false);         // M55 T1: off unless the trader turns it on
   const [showFilters, setShowFilters] = useState(false);
   const [exitTrail, setExitTrail] = useState("");
   const [exitBreakEven, setExitBreakEven] = useState("");
@@ -272,6 +275,9 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
 
   // Phase AS: a daily strategy is a swing deployment - daily candles, held overnight (CNC / NRML).
   const swing = !!selectedStrategy && selectedStrategy.timeframes.length === 1 && selectedStrategy.timeframes[0] === "day";
+  // M55 T1: "Hold for days" is offered for a defined-risk credit structure only (the API refuses it for anything else).
+  const canHold = canHoldForDays(kind, structure);
+  const held = swing || (canHold && holdForDays);
 
   async function submit() {
     setBusy(true);
@@ -280,7 +286,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
     try {
       const created = await api.createDeployment({
         strategy_id: strategyId, symbol, exchange, timeframe: swing ? "day" : timeframe, mode, broker_name: brokerName || null,
-        holding: swing ? "SWING" : "INTRADAY",
+        holding: held ? "SWING" : "INTRADAY",
         broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, oi_gates: oiGates.length ? oiGates : null, ...contractRules(),
         routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
         order_style: orderStyle, market_protection_pct: orderStyle === "PROTECTED_LIMIT" && protectionPct ? Number(protectionPct) : null,
@@ -568,6 +574,14 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
                       <input type="checkbox" checked={underlyingExit} onChange={(e) => setUnderlyingExit(e.target.checked)} />
                       Close when the underlying crosses a short strike or a breakeven ({underlyingExit ? "on" : "off"})
                     </label>
+                    {canHold && !swing && (
+                      <label className="flex items-start gap-2 text-sm" data-field="hold-for-days">
+                        <input type="checkbox" className="mt-1" checked={holdForDays} onChange={(e) => setHoldForDays(e.target.checked)} />
+                        <span>Hold for days
+                          <span className="block text-xs text-fg-muted">{HOLD_FOR_DAYS_LINE}</span>
+                        </span>
+                      </label>
+                    )}
                   </>
                 )}
               </>

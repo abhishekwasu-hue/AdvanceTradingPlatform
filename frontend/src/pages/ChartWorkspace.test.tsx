@@ -18,7 +18,8 @@ vi.mock("../ui/useFeatures", () => ({
 }));
 
 import ChartWorkspace from "./ChartWorkspace";
-import { expectNoDeveloperText, renderPage, textOf } from "./pageSmoke.fixture";
+import source from "./ChartWorkspace.tsx?raw";
+import { expectNoDeveloperText, expectPlainErrorSentences, renderPage, routesErrorsThroughSentence, textOf } from "./pageSmoke.fixture";
 
 const TRADER = { id: 1, email: "trader@example.com", tenant_id: 1, role: "OWNER", scopes: [] };
 const open = (query: string) => renderPage(<ChartWorkspace params={new URLSearchParams(query)} />);
@@ -51,5 +52,10 @@ describe("Chart workspace window", () => {
     const html = open("workspace=1&chart=NIFTY&tf=15min&exchange=NSE");
     expect(textOf(html)).toContain("NIFTY");
     expectNoDeveloperText(html);
+  });
+
+  it("turns every caught failure into one plain sentence, never the raw error", () => {
+    expectPlainErrorSentences();
+    expect(routesErrorsThroughSentence(source)).toBe(true);
   });
 });

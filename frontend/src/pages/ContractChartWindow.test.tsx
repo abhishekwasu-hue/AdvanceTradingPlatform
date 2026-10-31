@@ -14,7 +14,8 @@ vi.mock("../auth/AuthContext", () => {
 });
 
 import ContractChartWindow from "./ContractChartWindow";
-import { expectNoDeveloperText, renderPage, textOf } from "./pageSmoke.fixture";
+import source from "./ContractChartWindow.tsx?raw";
+import { expectNoDeveloperText, expectPlainErrorSentences, renderPage, routesErrorsThroughSentence, textOf } from "./pageSmoke.fixture";
 
 const TRADER = { id: 1, email: "trader@example.com", tenant_id: 1, role: "OWNER", scopes: [] };
 const open = (query: string) => renderPage(<ContractChartWindow params={new URLSearchParams(query)} />);
@@ -42,5 +43,10 @@ describe("Contract chart window", () => {
   it("asks a signed-out visitor to log in first, in words", () => {
     auth.user = null;
     expect(textOf(open("contract=NIFTY-FUT"))).toBe("Log in in the main tab first, then open the chart again.");
+  });
+
+  it("turns every caught failure into one plain sentence, never the raw error", () => {
+    expectPlainErrorSentences();
+    expect(routesErrorsThroughSentence(source)).toBe(true);
   });
 });

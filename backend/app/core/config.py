@@ -733,6 +733,9 @@ READ_CHART_PER_MINUTE = _bounded_int("READ_CHART_PER_MINUTE", 20, 1, 600)
 OI_BANNER_SLOT_MINUTES = _bounded_int("OI_BANNER_SLOT_MINUTES", 5, 1, 60)
 OI_BANNER_COLLECT_SPAN = _bounded_int("OI_BANNER_COLLECT_SPAN", 15, 1, 60)
 OI_BANNER_DEFAULTS: dict = _json_object("OI_BANNER_DEFAULTS")
+# M61 PCR-1 (data quality, not chart reading): a stored OI snapshot is "partial" when its count of strikes with OI is below
+# this share of the median count of the session's earlier snapshots (0.9 = more than 10 % of the strikes missing).
+OI_PARTIAL_SNAPSHOT_RATIO = min(1.0, max(0.0, _env_float("OI_PARTIAL_SNAPSHOT_RATIO", 0.9)))
 
 # TM 9.4 chain history (docs/design/CHAIN_HISTORY.md): option-chain snapshots recorded through the OWNER's own broker
 # session (HB2's owner: HISTORY_OWNER_TENANT_ID confirmed by HISTORY_OWNER_TENANT_NAME, the session of

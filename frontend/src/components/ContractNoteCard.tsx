@@ -4,7 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/ui";
 import type { ContractNoteIngest, ContractNoteSummary } from "../types";
+import { formatINR } from "../ui/format";
 import { Details } from "../ui/numbersFirst";
+
+/** Charges and P&L from a contract note: paise matter here (the money rule's detail rows). */
+const paise = (v: number | null | undefined) => formatINR(v, { paise: true });
 import { useUiV2 } from "../ui/useFeatures";
 
 /** Phase D4: upload a broker contract note / tradebook CSV so trades carry the broker's actual
@@ -32,7 +36,7 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
       const result = await api.uploadContractNote(file, broker, apply);
       if (apply) {
         setPreview(null);
-        setMessage(`Applied: ${result.matched}/${result.lines} legs matched, ${result.trades_updated.length} trade(s) now carry actual charges (total ${result.total_charges.toFixed(2)}).`);
+        setMessage(`Applied: ${result.matched}/${result.lines} legs matched, ${result.trades_updated.length} trade(s) now carry actual charges (total ${paise(result.total_charges)}).`);
         if (fileRef.current) fileRef.current.value = "";
         refresh();
         onApplied?.();
@@ -70,7 +74,7 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
       {message && <div className="mt-2 text-xs text-up">{message}</div>}
       {preview && (
         <div className="mt-3 text-xs space-y-2">
-          <div className="text-fg font-semibold">Preview: {preview.matched}/{preview.lines} legs matched, {preview.trades_updated.length} trade(s) would change; total charges {preview.total_charges.toFixed(2)}</div>
+          <div className="text-fg font-semibold">Preview: {preview.matched}/{preview.lines} legs matched, {preview.trades_updated.length} trade(s) would change; total charges {paise(preview.total_charges)}</div>
           {preview.warnings.map((w) => <div key={w} className="text-warn">{w}</div>)}
           {preview.trades_updated.length > 0 && (
             <table className="w-full text-xs">
@@ -79,8 +83,8 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
                 {preview.trades_updated.map((u) => (
                   <tr key={u.trade_id} className="border-t border-border">
                     <td className="py-1 pr-3">#{u.trade_id}</td><td className="py-1 pr-3">{u.symbol}</td><td className="py-1 pr-3">{u.legs}</td>
-                    <td className="py-1 pr-3 font-tabular">{u.old_charges.toFixed(2)} → {u.new_charges.toFixed(2)}</td>
-                    <td className="py-1 pr-3 font-tabular">{u.old_pnl?.toFixed(2) ?? "-"} → {u.new_pnl?.toFixed(2) ?? "-"}</td>
+                    <td className="py-1 pr-3 font-tabular">{paise(u.old_charges)} → {paise(u.new_charges)}</td>
+                    <td className="py-1 pr-3 font-tabular">{paise(u.old_pnl)} → {paise(u.new_pnl)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -98,7 +102,7 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
           <div className="text-xs uppercase tracking-wide text-fg-muted mb-1">Uploaded</div>
           <ul className="text-xs text-fg-muted space-y-0.5">
             {notes.slice(0, 8).map((n) => (
-              <li key={n.id}>{n.note_date ?? "?"} · {n.filename}{n.broker_name ? ` (${n.broker_name})` : ""} · {n.matched_lines}/{n.line_count} legs matched · {n.trades_updated} trade(s) · charges {n.total_charges.toFixed(2)}</li>
+              <li key={n.id}>{n.note_date ?? "?"} · {n.filename}{n.broker_name ? ` (${n.broker_name})` : ""} · {n.matched_lines}/{n.line_count} legs matched · {n.trades_updated} trade(s) · charges {paise(n.total_charges)}</li>
             ))}
           </ul>
         </div>

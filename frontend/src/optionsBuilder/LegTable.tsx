@@ -7,6 +7,7 @@
 import { useEffect, useState, type InputHTMLAttributes, type ReactNode } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button, cx } from "../components/primitives";
+import { formatNumber } from "../ui/format";
 import { snapStrike, type Evaluation, type Leg, type OptionKind } from "./model";
 
 const cell = "h-8 rounded-md border border-border bg-surface-2 px-2 font-mono text-xs text-fg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand";
@@ -93,13 +94,13 @@ export function LegTable({ legs, rows, step, onChange, onAdd, compact = false }:
       ),
       iv: (
         <NumberCell aria-label={`Leg ${n} IV percent`} className={w("w-20")} step={0.1} disabled={l.option_type === "FUT"}
-                    value={l.iv == null ? null : +(l.iv * 100).toFixed(2)} placeholder={g?.iv_source ? `${(g.iv * 100).toFixed(1)}` : "solve"}
+                    value={l.iv == null ? null : +(l.iv * 100).toFixed(2)} placeholder={g?.iv_source ? formatNumber(g.iv * 100, 1) : "solve"}
                     valid={(v) => v > 0 && v < 500} empty={null} onCommit={(v) => set(l.id, { iv: v == null ? null : v / 100 })} />
       ),
-      delta: g ? g.greeks.delta.toFixed(1) : "–",
-      gamma: g ? g.greeks.gamma.toFixed(4) : "–",
-      theta: g ? g.greeks.theta.toFixed(0) : "–",
-      vega: g ? g.greeks.vega.toFixed(1) : "–",
+      delta: formatNumber(g?.greeks.delta, 1),
+      gamma: formatNumber(g?.greeks.gamma, 4),
+      theta: formatNumber(g?.greeks.theta, 0),
+      vega: formatNumber(g?.greeks.vega, 1),
       remove: (
         <button type="button" aria-label={`Remove leg ${n}`} onClick={() => onChange(legs.filter((x) => x.id !== l.id))}
                 className="rounded-md p-1 text-fg-muted hover:text-down focus:outline-none focus:ring-2 focus:ring-brand"><Trash2 size={14} /></button>

@@ -95,6 +95,7 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "chart_analyze": "Unfinished: beta, needs an AI key with image support",
     "chart_analyze_strikes": "Unfinished (needs Analyze a chart)",
     "chart_analyze_share": "Unfinished (needs Analyze a chart)",
+    "chart_analyze_hybrid": "Off until the owner's ✅ (needs Analyze a chart)",
     "chart_contracts": "Unfinished: needs the nightly download to have run; turn on later",
     "chart_futures_basis": "Unfinished: needs the nightly download to have run; turn on later",
     "terminal": "ON by default for everyone (owner ✅ 25 Oct, T-D1), so the pack does not need it",

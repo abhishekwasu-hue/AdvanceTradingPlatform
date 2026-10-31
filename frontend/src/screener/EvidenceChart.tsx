@@ -15,6 +15,7 @@ import { useChartPrefs } from "../chart/useChartPrefs";
 import type { LightweightEngine } from "../charting/lightweight";
 import { buttonClass, cx } from "../components/primitives";
 import { chartTabPath } from "../shell/shellRoutes";
+import { formatCount } from "../ui/format";
 import {
   barTimeText, chartSummary, chartTimeframe, drawableColor, evidenceChartLayers, evidenceGeometry, matchedBar, packCandles, priceText,
   type EvidenceDrawable, type EvidencePack,
@@ -185,7 +186,7 @@ export function MatchedBarCard({ pack }: { pack: EvidencePack }) {
   const bar = matchedBar(pack);
   if (!bar) return null;
   const rows: [string, string][] = [["Open", priceText(bar.open)], ["High", priceText(bar.high)], ["Low", priceText(bar.low)], ["Close", priceText(bar.close)]];
-  if (bar.volume != null) rows.push(["Volume", bar.volume.toLocaleString("en-IN")]);
+  if (bar.volume != null) rows.push(["Volume", formatCount(bar.volume)]);
   return (
     <section aria-label="The matched bar" className="rounded-control border border-border bg-surface-2 px-3 py-2 text-t13" data-testid="matched-bar">
       <h3 className="text-t13 font-semibold text-fg">The matched bar</h3>

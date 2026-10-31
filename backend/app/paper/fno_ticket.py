@@ -500,12 +500,20 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         # DEF-0: the risk per trade is the trader's own setting; not set = no risk cap (None) and no refusal for size.
         amount = cfg.risk_amount()
         cap_amount = round(amount, 2) if amount is not None else None
-        risk = {"risk_per_trade": cap_amount, "allowed_lots": int(decision.quantity // contract.lot_size) if decision.approved else 0}
+        allowed = int(decision.quantity // contract.lot_size) if decision.approved else 0
+        # M64 RM-3: every refusal as a block message (plain sentence, numbers, Change limit link, a smaller size offered)
+        blocks = list(decision.blocks)
+        warnings.extend(decision.warnings)
         if not decision.approved:
             refusals.extend(plain(r) for r in decision.reasons)
-        elif cap_amount is not None and decision.quantity + 1e-9 < units:
-            refusals.append(f"Your risk per trade (₹{cap_amount:,.0f}) allows {risk['allowed_lots']} lot(s) at this stop-loss. "
-                            "Lower the lots or set a closer stop-loss.")
+        elif cap_amount is not None and decision.quantity + 1e-9 < units and allowed >= 1:
+            from app.risk_engine import risk_limits
+            item = risk_limits.block("risk_sizing", f"Your risk per trade (₹{cap_amount:,.0f}) allows {risk_limits.lots_text(allowed)} at this "
+                                     f"stop-loss - this order is {risk_limits.lots_text(ask.lots)}. Place {risk_limits.lots_text(allowed)}?",
+                                     numbers={"risk_per_trade": cap_amount, "asked": ask.lots, "limit": allowed}, smaller_lots=allowed)
+            blocks.append(item)
+            refusals.append(item["text"])
+        risk = {"risk_per_trade": cap_amount, "allowed_lots": allowed, "blocks": blocks}
 
     loss = max_loss(side, basis, ask.stop_loss, units, future) if basis is not None and units and not errors else None
     margin_line = None
@@ -553,6 +561,11 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     now = now or datetime.now(timezone.utc)
     view = await assess(session, user, ask, price_lookup=price_lookup, live_only=True, now=now, origin=origin)
     if not view["can_place"]:
+        # M64 RM-3: a Risk limits block on a placing attempt goes to the journal's record (a preview is not logged).
+        from app.risk_engine import risk_limits
+        for item in (view.get("risk") or {}).get("blocks") or []:
+            await risk_limits.log_block(session, tenant_id=user.tenant_id, user_id=user.id, item=item, symbol=view.get("label"),
+                                        strategy_id=STRATEGY_ID, mode=MODE, source="ticket")
         await session.commit()
         return {**view, "status": "REFUSED", "reasons": view["errors"] + view["refusals"], "order_id": None, "trade_id": None, "filled": None}
     await phase0_lock.is_on(session, user.tenant_id)            # refreshes the lock state the assertion reads

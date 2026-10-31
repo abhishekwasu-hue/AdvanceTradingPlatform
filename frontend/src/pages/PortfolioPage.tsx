@@ -6,6 +6,7 @@ import EquityCurveChart from "../components/EquityCurveChart";
 import { Card, StatTile, signTone } from "../components/ui";
 import type { PortfolioExposure, TradeRecord } from "../types";
 import { EmptyState, PageHeader, Signed, Table } from "../components/primitives";
+import { formatINR, formatNumber } from "../ui/format";
 
 export default function PortfolioPage() {
   const { user, loading: authLoading } = useAuth();
@@ -67,8 +68,8 @@ export default function PortfolioPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatTile label="Open Positions" value={positions.length} />
-        <StatTile label="Capital Deployed" value={capitalDeployed.toFixed(2)} />
-        <StatTile label="Realized P&L" value={realizedPnl.toFixed(2)} tone={signTone(realizedPnl)} />
+        <StatTile label="Capital Deployed" value={formatINR(capitalDeployed)} />
+        <StatTile label="Realized P&L" value={formatINR(realizedPnl)} tone={signTone(realizedPnl)} />
         <StatTile label="Symbols Held" value={allocationBySymbol.length} />
       </div>
 
@@ -89,7 +90,7 @@ export default function PortfolioPage() {
                 <div key={symbol}>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-fg font-medium">{symbol}</span>
-                    <span className="text-fg-muted">{amount.toFixed(2)} ({pct.toFixed(0)}%)</span>
+                    <span className="text-fg-muted">{formatINR(amount)} ({formatNumber(pct, 0)}%)</span>
                   </div>
                   <div className="h-1.5 w-full rounded-full bg-surface-2">
                     <div className="h-1.5 rounded-full bg-brand" style={{ width: `${pct}%` }} />
@@ -115,11 +116,11 @@ function ExposureCard() {
   return (
     <Card title={`Exposure (${exposure.price_source === "ltp" ? "live prices" : "entry prices - no broker session"})`}>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3">
-        <StatTile label="Gross notional" value={`${exposure.gross_notional.toFixed(0)} (${exposure.gross_pct_of_capital.toFixed(0)}%)`} />
-        <StatTile label="Net notional" value={exposure.net_notional.toFixed(0)} />
-        <StatTile label="Unrealised P&L" value={exposure.unrealised_pnl.toFixed(0)} tone={signTone(exposure.unrealised_pnl, 0)} />
-        <StatTile label="Risk at stops" value={`${exposure.risk_at_stops.toFixed(0)} (${exposure.risk_pct_of_capital.toFixed(1)}%)`} tone={exposure.risk_at_stops > 0 ? "down" : "default"} />
-        <StatTile label="Largest symbol" value={`${exposure.largest_symbol_pct.toFixed(0)}% of capital`} />
+        <StatTile label="Gross notional" value={`${formatINR(exposure.gross_notional)} (${formatNumber(exposure.gross_pct_of_capital, 0)}%)`} />
+        <StatTile label="Net notional" value={formatINR(exposure.net_notional)} />
+        <StatTile label="Unrealised P&L" value={formatINR(exposure.unrealised_pnl)} tone={signTone(exposure.unrealised_pnl, 0)} />
+        <StatTile label="Risk at stops" value={`${formatINR(exposure.risk_at_stops)} (${formatNumber(exposure.risk_pct_of_capital, 1)}%)`} tone={exposure.risk_at_stops > 0 ? "down" : "default"} />
+        <StatTile label="Largest symbol" value={`${formatNumber(exposure.largest_symbol_pct, 0)}% of capital`} />
       </div>
       {exposure.warnings.length > 0 && <ul className="text-xs text-warn list-disc pl-4 mb-2">{exposure.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
       {exposure.by_symbol.length > 0 && (
@@ -131,10 +132,10 @@ function ExposureCard() {
             { key: "symbol", header: "Symbol", cell: (r) => <span className="font-medium">{r.symbol}</span> },
             { key: "positions", header: "Positions", numeric: true, cell: (r) => r.positions },
             { key: "qty", header: "Net qty", numeric: true, cell: (r) => r.quantity },
-            { key: "notional", header: "Notional", numeric: true, cell: (r) => r.notional.toFixed(0) },
-            { key: "pct", header: "% capital", numeric: true, cell: (r) => <span className={r.pct_of_capital > 40 ? "text-warn" : ""}>{r.pct_of_capital.toFixed(1)}%</span> },
-            { key: "upnl", header: "Unrealised", numeric: true, cell: (r) => <Signed value={r.unrealised_pnl} format={(v) => v.toFixed(0)} /> },
-            { key: "risk", header: "Risk at stop", numeric: true, cell: (r) => <span className={r.risk_at_stop > 0 ? "text-down" : ""}>{r.risk_at_stop.toFixed(0)}</span> },
+            { key: "notional", header: "Notional", numeric: true, cell: (r) => formatINR(r.notional) },
+            { key: "pct", header: "% capital", numeric: true, cell: (r) => <span className={r.pct_of_capital > 40 ? "text-warn" : ""}>{formatNumber(r.pct_of_capital, 1)}%</span> },
+            { key: "upnl", header: "Unrealised", numeric: true, cell: (r) => <Signed value={r.unrealised_pnl} format={(v) => formatINR(v)} /> },
+            { key: "risk", header: "Risk at stop", numeric: true, cell: (r) => <span className={r.risk_at_stop > 0 ? "text-down" : ""}>{formatINR(r.risk_at_stop)}</span> },
             { key: "strategies", header: "Strategies", cell: (r) => <span className="text-fg-muted">{r.strategies.join(", ")}</span> },
           ]}
         />

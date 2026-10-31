@@ -5,7 +5,8 @@ Modules: `settings` (admin settings with their defaults), `imaging` (safe decode
 SSRF-safe link fetch), `storage` (the private per-tenant file store), `provider` (the boundary to the private package),
 `contract` (the output contract and its validation), `limits` (plan limits and the AI cost cap), `engine` (the AI call
 on ATP's existing AI path), `service` (items, history, delete, retention), `share` (the organisation-only share link and its structure-only
-copy) and `routes` (the API).
+copy), `hybrid` and `reading_png` (M59 CR-4: ATP's own structure reading for the symbol / timeframe the user picks, drawn
+by code on a server-rendered chart) and `routes` (the API).
 
 Nothing here places, changes or proposes an order.
 """
@@ -14,3 +15,5 @@ FLAG = "chart_analyze"
 STRIKES_FLAG = "chart_analyze_strikes"
 # The share link (PR-A4, design PR-D): its own flag, on top of FLAG. The shared copy is structure only (share.py).
 SHARE_FLAG = "chart_analyze_share"
+# Hybrid, "Advanced analysis (code + AI)" (M59 CR-4): its own flag, on top of FLAG; OFF until the owner's ✅.
+HYBRID_FLAG = "chart_analyze_hybrid"

@@ -3,6 +3,7 @@ import { ArrowDownRight, ArrowUpRight, ChartCandlestick, Layers, Plus, RefreshCc
 import { Suspense, lazy, useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
+import { errorSentence } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
 import ContractNoteCard from "../components/ContractNoteCard";
 import PaperAccountCard from "../components/PaperAccountCard";
@@ -697,12 +698,18 @@ function ClosedTradesV2({ trades, onSaved }: { trades: Loadable<TradeRecord[]>; 
 function ClosedRowV2({ row, onSaved }: { row: ClosedRow; onSaved: () => void }) {
   const tone = toneClass(signTone(row.pnl));
   const colour = useColourV2();          // colour v2: Long / Short as chips
-  // Today's journal edit (notes, then tags), unchanged; the list reloads instead of the whole page.
+  // REV-1 M2: a failed save says so and keeps what was typed - the next "Edit note" opens with it, nothing is lost.
+  const [unsaved, setUnsaved] = useState<{ notes: string; tags: string; why: string } | null>(null);
+  // Today's journal edit (notes, then tags); the list reloads instead of the whole page.
   function edit() {
-    const notes = window.prompt("Journal notes", row.notes ?? "");
+    const notes = window.prompt("Journal notes", unsaved?.notes ?? row.notes ?? "");
     if (notes === null) return;
-    const tags = window.prompt("Tags (comma separated)", row.tags.join(", "));
-    void api.updateTradeJournal(row.id, { notes, tags: (tags ?? "").split(",").map((t) => t.trim()).filter(Boolean) }).then(onSaved, () => undefined);
+    const tags = window.prompt("Tags (comma separated)", unsaved?.tags ?? row.tags.join(", "));
+    const typedTags = tags ?? "";
+    void api.updateTradeJournal(row.id, { notes, tags: typedTags.split(",").map((t) => t.trim()).filter(Boolean) }).then(
+      () => { setUnsaved(null); onSaved(); },
+      (e: unknown) => setUnsaved({ notes, tags: typedTags, why: errorSentence(e) }),
+    );
   }
   return (
     <li className="py-space-3 first:pt-0 last:pb-0" data-closed={row.id}>
@@ -724,12 +731,17 @@ function ClosedRowV2({ row, onSaved }: { row: ClosedRow; onSaved: () => void }) 
               {row.notes && <span className="italic">{row.notes}</span>}
             </p>
           )}
+          {unsaved && (
+            <div className="mt-space-2" data-journal-unsaved>
+              <NoteV2 kind="warn">{`Your note was not saved. ${unsaved.why} Tap "Edit note" to try again; what you typed is kept.`}</NoteV2>
+            </div>
+          )}
         </div>
         <div className="w-28 shrink-0 text-right">
           <div className="text-t12 text-fg-muted">P&amp;L</div>
           <div className={`font-tabular text-t15 font-semibold ${tone}`}>{formatSignedINR(row.pnl, { paise: true })}</div>
           <button type="button" onClick={edit} className="mt-space-1 inline-flex min-h-11 items-center text-t13 font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-0">
-            {row.notes || row.tags.length ? "Edit note" : "Add a note"}
+            {unsaved || row.notes || row.tags.length ? "Edit note" : "Add a note"}
           </button>
         </div>
       </div>

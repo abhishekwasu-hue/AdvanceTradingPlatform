@@ -311,7 +311,7 @@ async def execute_signal_for_user(
                 unit=float(contract_spec.lot_size) if contract_spec is not None else 1.0, unit_price=signal.entry,
             )
             try:
-                margin_cap, margin_note = await live_margin_cap(broker, **probe)
+                margin_cap, margin_note = await live_margin_cap(broker, **probe, share=effective_risk_config.margin_share())
             except PreCheckRefusal as exc:
                 reason = str(exc)
                 order.reasons_json = json.dumps([reason])
@@ -331,7 +331,7 @@ async def execute_signal_for_user(
         if is_write and execution_mode == ExecutionMode.LIVE:
             # Writing needs the broker's margin number; an unknown requirement is a refusal.
             try:
-                cap_lots, note = await written_lot_cap(broker, contract)
+                cap_lots, note = await written_lot_cap(broker, contract, effective_risk_config.margin_share())
             except ContractExecutionError as exc:
                 reason = str(exc)
                 order.reasons_json = json.dumps([reason])
@@ -410,6 +410,15 @@ async def execute_signal_for_user(
                 )
                 return result, order
 
+            if result.blocks:
+                # M64 RM-3: every Risk limits block to the journal's record, and the trail / notice say where to change it.
+                from app.risk_engine import risk_limits
+                for item in result.blocks:
+                    await risk_limits.log_block(session, tenant_id=user.tenant_id, user_id=user.id, item=item, symbol=signal.symbol,
+                                                strategy_id=strategy_id, order_id=order.id, mode=mode, source=journal_source or origin)
+                texts = {b["text"]: risk_limits.as_text(b) for b in result.blocks}
+                result.reasons = [texts.get(r, r) for r in result.reasons]
+                order.reasons_json = json.dumps(result.reasons)
             order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(result.reasons))
             is_daily_loss = any("daily loss limit" in r.lower() for r in result.reasons)
             logger.warning("Order rejected by risk engine: %s", "; ".join(result.reasons))

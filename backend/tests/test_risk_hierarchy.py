@@ -106,7 +106,7 @@ def test_single_leg_order_is_rejected_by_the_hierarchy_with_the_reason_on_the_tr
                                                  risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0))
     result, order = _run(go())
     # risk 10,000 / 2 per unit = 5,000 shares x 100 = 500,000 order value > 20,000
-    assert not result.executed and order.status == "REJECTED" and any("MAX_ORDER_VALUE" in r for r in result.reasons)
+    assert not result.executed and order.status == "REJECTED" and any("the value of one order" in r and "Ask your admin" in r for r in result.reasons)
     events = client.get("/api/risk/events", headers=headers).json()
     assert events[0]["order_id"] == order.id and events[0]["status"] == "BLOCK"
 
@@ -128,7 +128,7 @@ def test_strategy_loss_limit_stops_the_strategy_and_daily_loss_stops_the_tenant(
             return await execute_signal_for_user(session, user, mode="PAPER", strategy_id=strategy_id, signal=_signal(),
                                                  risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=0.1))
     result, order = _run(go())
-    assert not result.executed and any("MAX_STRATEGY_LOSS" in r for r in result.reasons)
+    assert not result.executed and any("one strategy's loss today" in r for r in result.reasons)
 
     async def switch(scope, strategy_id=None):
         async with _session_factory() as session:
@@ -144,7 +144,7 @@ def test_strategy_loss_limit_stops_the_strategy_and_daily_loss_stops_the_tenant(
 
     _limit(headers, "TENANT", "MAX_DAILY_LOSS", 1_000)
     result, order = _run(go(strategy_id="supertrend_adx_scalper_1m"))
-    assert not result.executed and any("MAX_DAILY_LOSS" in r for r in result.reasons)
+    assert not result.executed and any("today's loss" in r and "Ask your admin" in r for r in result.reasons)
     tenant_switch = _run(switch(KillSwitchScope.TENANT))
     assert tenant_switch is not None and tenant_switch.engaged
     async def clear():
@@ -180,5 +180,5 @@ def test_dry_run_evaluate_endpoint_and_multileg_uses_max_loss():
                                            target_credit_pct=None, stop_credit_pct=None, idempotency_key="risk-ml", quote_broker=_OptionBroker(),
                                            risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0))
     result = _run(go())
-    assert not result.executed and any("MAX_LOSS_PER_TRADE" in r and "9,000" in r for r in result.reasons)
+    assert not result.executed and any("the loss of one trade" in r and "9,000" in r for r in result.reasons)
     assert all(o.status == "REJECTED" for o in result.orders)

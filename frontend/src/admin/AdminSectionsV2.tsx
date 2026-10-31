@@ -13,7 +13,7 @@ import {
   type ConsoleAiCost, type ConsoleSystem, type ConsoleUsers, type DeadLetter, type OutboxState, type RetentionState, type SupportUser,
 } from "./consoleApi";
 import { SkeletonRows } from "../components/primitives";
-import { formatDateIST, formatTimeIST } from "../ui/format";
+import { formatDateIST, formatINR, formatNumber, formatTimeIST } from "../ui/format";
 
 /**
  * MO3 addition (a): the new read-only parts of the admin console's sections. Each reads its own `/api/admin/console/*`
@@ -114,7 +114,7 @@ export function SystemPanels() {
         <dl className="grid gap-space-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat icon={Activity} label="Market" value={feed.market_open ? "Open" : "Closed"} sub={feed.market_open ? feed.market_reason : feed.next_open ? `Opens ${formatDateIST(feed.next_open, { weekday: true })}, ${formatTimeIST(feed.next_open)}` : feed.market_reason} />
           <Stat icon={Database} label="Market memory" value={ago(feed.market_memory.last_captured_at)} sub={`${feed.market_memory.snapshots_last_hour} snapshots in the last hour`} />
-          <Stat icon={Database} label="Instrument master" value={`${feed.instrument_master.instruments.toLocaleString("en-IN")} instruments`} sub={`Synced ${ago(feed.instrument_master.last_synced_at)}`} />
+          <Stat icon={Database} label="Instrument master" value={`${formatNumber(feed.instrument_master.instruments)} instruments`} sub={`Synced ${ago(feed.instrument_master.last_synced_at)}`} />
           <Stat icon={Activity} label="Data quality (24 h)" value={quality.length === 0 ? "No events" : `${quality.reduce((a, [, n]) => a + n, 0)} events`} sub={quality.map(([k, n]) => `${k} ${n}`).join(" · ") || "gaps, spikes, late bars"} />
         </dl>
         <h3 className="mt-space-4 text-t14 font-semibold text-fg">Broker circuits</h3>
@@ -335,9 +335,10 @@ export function GrowthFunnelView({ funnel }: { funnel: GrowthFunnel }) {
   );
 }
 
-const usd = (n: number) => `$${n.toFixed(n >= 10 ? 2 : 4)}`;
-const inr = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-const tokens = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+const usd = (n: number) => `$${formatNumber(n, n >= 10 ? 2 : 4)}`;
+/** AI cost: paise matter at these sizes (one call costs a few paise), so always two decimals. */
+const inr = (n: number) => formatINR(n, { paise: true });
+const tokens = (n: number) => n >= 1_000_000 ? `${formatNumber(n / 1_000_000, 1)}M` : n >= 1000 ? `${formatNumber(n / 1000, 1)}k` : formatNumber(n);
 
 export function AiCostPanel() {
   const [days, setDays] = useState(30);

@@ -139,7 +139,7 @@ def test_paper_execute_applies_users_saved_risk_settings(monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["executed"] is False
-    assert any("Max trades per day" in r for r in body["reasons"])
+    assert any("new entries today; your limit is" in r for r in body["reasons"])
 
 
 def test_anonymous_paper_execute_is_refused(monkeypatch):
@@ -181,7 +181,7 @@ def test_paper_execute_risk_state_is_per_user_not_shared_globally(monkeypatch):
         headers=headers_a, json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}},
     )
     assert blocked.json()["executed"] is False
-    assert any("Max open positions" in r for r in blocked.json()["reasons"])
+    assert any("open positions; your limit is" in r for r in blocked.json()["reasons"])
 
     # A different, fresh user must be unaffected by user A's open positions.
     token_b = _register("otto@example.com")

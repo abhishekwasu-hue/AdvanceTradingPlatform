@@ -196,7 +196,7 @@ describe("UI2-1 page search (More sheet and command bar)", () => {
       // UX3-9: the merged pages' tabs.
       ["orders", "/positions/orders"], ["portfolio", "/positions/money"], ["ideas", "/ideas"], ["strategy-builder", "/strategies/build"],
       ["backtest", "/strategies/test"], ["journal", "/analytics/journal"], ["coach", "/analytics/coach"], ["fundamentals", "/fundamentals"],
-      ["risk-management", "/risk-management"], ["team", "/team"], ["notifications", "/notifications"],
+      ["settings-risk-limits", "/settings/risk-limits"], ["risk-management", "/risk-management"], ["team", "/team"], ["notifications", "/notifications"],
       ["account", "/settings/account"], ["setup", "/settings/setup"], ["trading-defaults", "/settings/trading-defaults"],
       // Settings redesign B: the Settings section pages.
       ["settings-ai", "/settings/ai"], ["settings-alerts", "/settings/alerts"], ["settings-appearance", "/settings/appearance"],

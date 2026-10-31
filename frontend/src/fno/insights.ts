@@ -196,10 +196,10 @@ export function greekLines(g: GreekValues, underlying: string): { name: string; 
     ? "Close to zero: a change in implied volatility barely moves the value just now."
     : `If implied volatility rises by one point, the value moves about ${RUPEE}${r0(v)} ${v > 0 ? "up" : "down"}; a fall works the other way.`;
   return [
-    { name: "Delta", value: d.toFixed(1), text: dText },
-    { name: "Gamma", value: g.gamma.toFixed(3), text: `How much delta itself changes for each point ${underlying} moves. The larger it is, the faster the value speeds up or slows down as the price moves.` },
-    { name: "Theta", value: t.toFixed(0), text: tText },
-    { name: "Vega", value: v.toFixed(0), text: vText },
+    { name: "Delta", value: formatNumber(d, 1), text: dText },
+    { name: "Gamma", value: formatNumber(g.gamma, 3), text: `How much delta itself changes for each point ${underlying} moves. The larger it is, the faster the value speeds up or slows down as the price moves.` },
+    { name: "Theta", value: formatNumber(t, 0), text: tText },
+    { name: "Vega", value: formatNumber(v, 0), text: vText },
   ];
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { ChartEngine } from "../charting/engine";
 import type { ExpectedMove } from "../types";
+import { formatNumber, formatPrice } from "../ui/format";
 import { CONE_LAYER_ID, coneLayer } from "./exposure";
 import { useProgressionT } from "./i18n";
 
@@ -60,9 +61,9 @@ export function ExpectedMoveControls({ on, horizon, move, failed, onToggle, onHo
       )}
       {on && move && s && (
         <span title={move.note}>{t("decision.cone.legend", {
-          instrument: move.instrument, close: move.close.toLocaleString("en-IN"), date: move.close_date, sigma: `${(move.sigma * 100).toFixed(1)}%`,
-          method: move.method, sessions: s.sessions, low1: s.low_1sd.toLocaleString("en-IN"), high1: s.high_1sd.toLocaleString("en-IN"),
-          low2: s.low_2sd.toLocaleString("en-IN"), high2: s.high_2sd.toLocaleString("en-IN") })}</span>
+          instrument: move.instrument, close: formatPrice(move.close), date: move.close_date, sigma: `${formatNumber(move.sigma * 100, 1)}%`,
+          method: move.method, sessions: s.sessions, low1: formatPrice(s.low_1sd), high1: formatPrice(s.high_1sd),
+          low2: formatPrice(s.low_2sd), high2: formatPrice(s.high_2sd) })}</span>
       )}
       {on && failed && <span className="text-warn">{t("decision.cone.failed")}</span>}
     </div>

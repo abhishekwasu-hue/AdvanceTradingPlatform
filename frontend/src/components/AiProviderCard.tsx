@@ -6,7 +6,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "./ui";
 import type { AiProviderConfig, AiProviderName } from "../types";
-import { formatDateIST, formatDateTimeIST } from "../ui/format";
+import { formatDateIST, formatDateTimeIST, formatINR, formatNumber } from "../ui/format";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
 
@@ -73,7 +73,7 @@ export default function AiProviderCard() {
                   <td className="text-fg-muted">{t.tier}</td>
                   <td className="font-mono text-xs text-fg-muted">{t.model}</td>
                   <td className="text-right font-tabular text-fg" title={`$${t.price_per_mtok_usd.input}/$${t.price_per_mtok_usd.output} per million input/output tokens${t.estimated_price ? " (model not in the price table - most expensive row used)" : ""}`}>
-                    ₹{t.est_inr_per_call.toFixed(2)}{t.estimated_price ? "*" : ""}
+                    {formatINR(t.est_inr_per_call, { paise: true })}{t.estimated_price ? "*" : ""}
                   </td>
                 </tr>
               ))}
@@ -82,7 +82,7 @@ export default function AiProviderCard() {
           {/* AUD-V6: one short line; the call sizes and the model tiers in Details (the text budget). */}
           <div className="mt-1 text-xs text-fg-muted">Estimates for one typical call; real calls are metered below.</div>
           <Details id="ai-provider.estimates" className="mt-1 text-xs text-fg-muted">
-            <p>Typical call: {config.typical_call_tokens ? Object.entries(config.typical_call_tokens).map(([tier, v]) => `${tier}: ${v.input.toLocaleString()} in / ${v.output.toLocaleString()} out tokens`).join("; ") : "typical size"}.</p>
+            <p>Typical call: {config.typical_call_tokens ? Object.entries(config.typical_call_tokens).map(([tier, v]) => `${tier}: ${formatNumber(v.input)} in / ${formatNumber(v.output)} out tokens`).join("; ") : "typical size"}.</p>
             <p>The cheap, fast and strong models are set by the operator (cheap = the smallest model, for frequent classification and scanner reads); a model typed here replaces the strong one for this organisation.</p>
           </Details>
         </div>
@@ -91,8 +91,8 @@ export default function AiProviderCard() {
         <div className={`rounded border px-3 py-2 text-xs mb-3 ${config.usage.exhausted ? "border-warn/50 bg-warn/10" : "border-border bg-surface-2"}`}>
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             <span className="font-semibold">AI usage {config.usage.month}</span>
-            <span>₹{config.usage.spent_inr.toLocaleString("en-IN", { maximumFractionDigits: 2 })}{config.usage.budget_inr > 0 ? ` of ₹${config.usage.budget_inr.toLocaleString("en-IN")} budget` : " (no cap on this plan)"}</span>
-            <span className="text-fg-muted">${config.usage.spent_usd.toFixed(4)} · {config.usage.calls} calls · {config.usage.tokens_input.toLocaleString()} in / {config.usage.tokens_output.toLocaleString()} out tokens</span>
+            <span>{formatINR(config.usage.spent_inr, { paise: true })}{config.usage.budget_inr > 0 ? ` of ${formatINR(config.usage.budget_inr)} budget` : " (no cap on this plan)"}</span>
+            <span className="text-fg-muted">${formatNumber(config.usage.spent_usd, 4)} · {formatNumber(config.usage.calls)} calls · {formatNumber(config.usage.tokens_input)} in / {formatNumber(config.usage.tokens_output)} out tokens</span>
           </div>
           {config.usage.budget_inr > 0 && (
             <div className="mt-1 h-1.5 w-full rounded bg-border overflow-hidden">
@@ -101,7 +101,7 @@ export default function AiProviderCard() {
           )}
           {Object.keys(config.usage.by_feature).length > 0 && (
             <div className="mt-1 text-fg-muted">
-              {Object.entries(config.usage.by_feature).sort((a, b) => b[1] - a[1]).map(([f, usd]) => `${f} $${usd.toFixed(4)}`).join(" · ")}
+              {Object.entries(config.usage.by_feature).sort((a, b) => b[1] - a[1]).map(([f, usd]) => `${f} $${formatNumber(usd, 4)}`).join(" · ")}
             </div>
           )}
           <div className={`mt-1 ${config.usage.exhausted ? "text-warn" : "text-fg-muted"}`}>{config.usage.note}</div>

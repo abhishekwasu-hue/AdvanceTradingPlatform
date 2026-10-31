@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { formatOi, formatSigned, slotTime, tone } from "../oi/format";
+import { directionWords, formatOi, formatSigned, leadWords, slotTime } from "../oi/format";
 import type { OiHistoryResponse } from "../oi/types";
 
 const INTERVALS = [5, 10, 15] as const;
 
-/** OI Banner (O3): the day's banner history, newest first, in 5/10/15-minute views (last value per bucket). */
+/** OI Banner (O3): the day's banner history, newest first, in 5/10/15-minute views (last value per bucket). M61 OI-5:
+ *  the stable signal and the direction in neutral words (../oi/format.ts leadWords / directionWords). */
 export default function OiHistoryTable({ underlying, date }: { underlying: string; date?: string }) {
   const [interval, setIntervalMinutes] = useState<(typeof INTERVALS)[number]>(5);
   const [data, setData] = useState<OiHistoryResponse | null>(null);
@@ -33,7 +34,7 @@ export default function OiHistoryTable({ underlying, date }: { underlying: strin
             <thead className="text-fg-muted">
               <tr className="text-left">
                 <th className="py-1 pr-3">Time</th><th className="pr-3">Call OI</th><th className="pr-3">Put OI</th><th className="pr-3">Diff</th>
-                <th className="pr-3">Δ Diff</th><th className="pr-3">Signal</th><th className="pr-3">PCR</th><th>Banner</th>
+                <th className="pr-3">Δ Diff</th><th className="pr-3">OI lead</th><th className="pr-3">PCR</th><th>OI read</th>
               </tr>
             </thead>
             <tbody>
@@ -44,9 +45,9 @@ export default function OiHistoryTable({ underlying, date }: { underlying: strin
                   <td className="pr-3">{formatOi(r.total_put_oi)}</td>
                   <td className="pr-3">{formatSigned(r.diff)}</td>
                   <td className="pr-3">{formatSigned(r.delta_diff)}</td>
-                  <td className="pr-3">{r.signal}</td>
+                  <td className="pr-3">{leadWords(r.signal)}</td>
                   <td className="pr-3">{r.pcr === null ? "—" : r.pcr.toFixed(2)}</td>
-                  <td className={tone(r.direction).text}>{tone(r.direction).label}</td>
+                  <td>{directionWords(r.direction)}</td>
                 </tr>
               ))}
             </tbody>

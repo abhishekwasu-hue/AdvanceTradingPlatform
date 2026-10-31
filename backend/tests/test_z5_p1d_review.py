@@ -264,7 +264,7 @@ def test_console_paper_execute_for_a_locked_user_answers_with_the_reason(monkeyp
     out = local.post("/api/strategies/ema_rsi_scalper_1m/paper-execute", headers=t["headers"],
                      json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}})
     assert out.status_code == 200, out.text
-    assert out.json()["executed"] is False and any("Daily loss limit" in r for r in out.json()["reasons"])
+    assert out.json()["executed"] is False and any("daily loss limit" in r.lower() for r in out.json()["reasons"])
 
 
 # --- M2: no loosening mid-day; the lockout recorded eagerly ------------------------------------------------------------
@@ -490,7 +490,7 @@ def test_an_entry_refused_later_gives_its_slot_back():
                                                       idempotency_key=f"slot:{uuid.uuid4().hex}")
             return result.executed, result.reasons
     executed, reasons = _run(refused_later())
-    assert executed is False and any("Risk/Reward" in r for r in reasons)
+    assert executed is False and any("reward:risk is" in r for r in reasons)
 
     async def used():
         async with _session_factory() as session:

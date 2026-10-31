@@ -120,7 +120,7 @@ def test_the_day_digest_is_sent_once_after_its_time():
         async with _session_factory() as session:
             return await session.scalar(select(NotificationRecord).where(NotificationRecord.tenant_id == me["tenant_id"]).order_by(NotificationRecord.id.desc()))
     n = _run(note())
-    assert "09:20 NEUTRAL → 09:25 BULLISH → 09:35 MIXED" in n.message and json.loads(n.metadata_json)["alert_type"] == "DIGEST"
+    assert "09:20 No clear OI change → 09:25 Put premium down / call premium up → 09:35 Put and call readings differ" in n.message and json.loads(n.metadata_json)["alert_type"] == "DIGEST"
 
 
 def test_test_alert_endpoint_is_for_members():

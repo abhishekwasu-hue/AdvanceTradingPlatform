@@ -348,6 +348,20 @@ def entry_json(entry: TimelineEntry) -> Dict:
     }
 
 
+def session_marks(slots: Sequence[SlotChain], holidays: Sequence[date] | set[date] = (), exchange: str = "NSE",
+                  ratio: float | None = None) -> dict[datetime, dict]:
+    """M61 PCR-1: per stored slot (by `slot_start`, oldest first) its session phase ("session" / "pre_open" /
+    "after_close" / "closed_day", by the capture time on the exchange's calendar), its strike count (strikes with OI on
+    both sides) and whether it is partial (below `ratio` x the median count of the earlier session slots)."""
+    from app.option_chain import session_rows
+    ratio = config.OI_PARTIAL_SNAPSHOT_RATIO if ratio is None else ratio
+    closed = set(holidays)
+    phases = [session_rows.phase(s.captured_at, closed, exchange) for s in slots]
+    counts = [session_rows.strike_count(s.chain) for s in slots]
+    flags = session_rows.partial_flags(counts, phases, ratio)
+    return {s.slot_start: {"phase": ph, "strikes": n, "partial": f} for s, ph, n, f in zip(slots, phases, counts, flags)}
+
+
 def staleness(latest_capture: Optional[datetime], now: datetime, settings: OIRegimeSettings, market_open: bool) -> Dict:
     """`stale` only while the venue is open (a closed market is shown as closed, not as stale)."""
     age = (now - latest_capture).total_seconds() / 60 if latest_capture else None
@@ -411,4 +425,4 @@ async def baselines(session: AsyncSession, underlying: str, day: date, *, tenant
 
 __all__ = ["collect", "CollectResult", "day_chains", "replay", "entry_json", "staleness", "latest_capture", "strike_series",
            "baselines", "recent_session_closes", "SessionClose", "settings_for", "settings_rows_many", "resolve_settings", "day_chains_many", "latest_captures", "enabled_underlyings", "normalise_underlying", "platform_layer", "IST", "DEFAULT_KEY",
-           "legacy_owner", "tenant_scope"]
+           "legacy_owner", "tenant_scope", "session_marks"]

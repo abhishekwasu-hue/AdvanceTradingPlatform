@@ -147,7 +147,8 @@ def test_the_risk_per_trade_says_in_plain_words_how_many_lots_fit(setup):
     t, expiry, strike, _ = setup
     view = _preview(t, _body(expiry, strike, lots=3))            # 3 x 75 x 100 = 22,500 at risk > 10,000
     assert not view["can_place"]
-    assert any("allows 1 lot(s) at this stop-loss" in r for r in view["refusals"]), view["refusals"]
+    assert any("allows 1 lot at this stop-loss - this order is 3 lots. Place 1 lot?" in r for r in view["refusals"]), view["refusals"]
+    assert view["risk"]["blocks"][0]["smaller_lots"] == 1 and view["risk"]["blocks"][0]["link"] == "/settings/risk-limits#risk_sizing"
     assert view["risk"]["allowed_lots"] == 1
     # A closer stop lets more lots fit (75 x 30 = 2,250 per lot -> 4 lots).
     assert _preview(t, _body(expiry, strike, lots=3, stop_loss=70.0))["can_place"] is True

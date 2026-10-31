@@ -337,7 +337,7 @@ test.describe("8b slice 4 flows", () => {
     await ticket.locator("[data-ticket='review']").tap();
     const checks = ticket.locator("[data-risk-checks='ticket']");
     await expect(checks).toContainText("Liquidity: bid-ask gap");
-    await expect(checks).toContainText("Outside your own limits: bid-ask gap 0.7% is above your 0.5%; open interest 4,00,000 is below your 5,00,000.");
+    await expect(checks).toContainText("Outside your own limits: bid-ask gap 0.7% is above your 0.5%; open interest 4 L is below your 5 L.");
     await expect(checks).toContainText("None of this holds back the order or any exit.");
     await expect(checks.locator("button, a, input")).toHaveCount(0);
     await expect(ticket.locator("[data-ticket='place']")).toBeEnabled();
@@ -352,7 +352,7 @@ test.describe("8b slice 4 flows", () => {
     const ticket = page.locator("[data-order-ticket]");
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1
     await ticket.locator("[data-ticket='review']").tap();
-    await expect(ticket.locator("[data-risk-checks='ticket']")).toContainText("Inside your own limits (bid-ask gap up to 1%, open interest at least 1,00,000).");
+    await expect(ticket.locator("[data-risk-checks='ticket']")).toContainText("Inside your own limits (bid-ask gap up to 1%, open interest at least 1 L).");
   });
 
   test("FNO-8B-28: off by default, the confirm step never mentions his own limits", async ({ page }) => {

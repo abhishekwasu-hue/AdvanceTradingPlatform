@@ -79,35 +79,35 @@ describe("FNO-8B-28 the liquidity line with his own limits", () => {
   it("on: says the strike is inside his limits, naming them", () => {
     const line = liquidityLine([legLiquidity(ladder(), 24600, "CE", "24600 CE")], true, ON());
     expect(line).toMatchObject({ tone: "info", note: LIMITS_NOTE });
-    expect(line?.text).toBe("Liquidity: bid-ask gap 1.00 (1.1% of the price), open interest 2,01,000, volume 50,000 today. "
-      + "Inside your own limits (bid-ask gap up to 2%, open interest at least 1,00,000).");
+    expect(line?.text).toBe("Liquidity: bid-ask gap 1.00 (1.1% of the price), open interest 2.01 L, volume 50,000 today. "
+      + "Inside your own limits (bid-ask gap up to 2%, open interest at least 1 L).");
   });
   it("on: says what is outside his limits, even where the chain comparison finds nothing thin", () => {
     const l = legLiquidity(ladder(), 24600, "CE", "24600 CE");
     const line = liquidityLine([l], true, ON({ max_spread_pct: 0.5, min_oi: 300_000 }));
     expect(line?.tone).toBe("warn");
-    expect(line?.text).toContain("Outside your own limits: bid-ask gap 1.1% is above your 0.5%; open interest 2,01,000 is below your 3,00,000.");
+    expect(line?.text).toContain("Outside your own limits: bid-ask gap 1.1% is above your 0.5%; open interest 2.01 L is below your 3 L.");
     expect(checkLimits(l, ON({ max_spread_pct: 1.25, min_oi: null }))).toEqual({ outside: [], unknown: [] });
     expect(limitsText(ON({ max_spread_pct: 1.25, min_oi: null }))).toBe("bid-ask gap up to 1.25%");
   });
   it("on: a basket names each leg outside, or says every leg is inside", () => {
     const rows = ladder();
     const inside = liquidityLine([legLiquidity(rows, 24600, "CE", "A"), legLiquidity(rows, 24700, "PE", "B")], true, ON({ max_spread_pct: 5 }));
-    expect(inside?.text).toContain("Every leg is inside your own limits (bid-ask gap up to 5%, open interest at least 1,00,000).");
+    expect(inside?.text).toContain("Every leg is inside your own limits (bid-ask gap up to 5%, open interest at least 1 L).");
     const out = liquidityLine([legLiquidity(rows, 24600, "CE", "A"), legLiquidity(rows, 25400, "CE", "B")], true, ON({ max_spread_pct: 5 }));
-    expect(out?.text).toMatch(/Outside your own limits: B: bid-ask gap 120\.0% is above your 5%; open interest 900 is below your 1,00,000\.$/);
+    expect(out?.text).toMatch(/Outside your own limits: B: bid-ask gap 120\.0% is above your 5%; open interest 900 is below your 1 L\.$/);
     expect(out?.text).not.toContain("Outside your own limits: A:");
   });
   it("on: says plainly when a limit cannot be checked (no quote, not on screen, no chain)", () => {
     const rows = ladder();
     rows[1].call = leg({ ltp: 5, bid: null, ask: 6, oi: 150_000 });
     expect(liquidityLine([legLiquidity(rows, 24600, "CE", "x")], true, ON())?.text)
-      .toContain("Your own limits (bid-ask gap up to 2%, open interest at least 1,00,000) cannot be fully checked here: the bid-ask gap is not known.");
+      .toContain("Your own limits (bid-ask gap up to 2%, open interest at least 1 L) cannot be fully checked here: the bid-ask gap is not known.");
     expect(liquidityLine([legLiquidity(rows, 26000, "PE", "x")], true, ON())?.text).toContain("the bid-ask gap and the open interest are not known.");
     expect(liquidityLine([legLiquidity(rows, 24600, "CE", "A"), legLiquidity(rows, 26000, "PE", "B")], true, ON())?.text)
       .toContain("cannot be fully checked here: not known for A (the bid-ask gap), B (the bid-ask gap and the open interest).");
     expect(liquidityLine([], false, ON())).toEqual({ tone: "info", note: LIMITS_NOTE,
-      text: `${NO_CHAIN} Your own limits (bid-ask gap up to 2%, open interest at least 1,00,000) cannot be checked here.` });
+      text: `${NO_CHAIN} Your own limits (bid-ask gap up to 2%, open interest at least 1 L) cannot be checked here.` });
   });
   it("is words only: no call words, nothing reads it to place or block, exits untouched", () => {
     const rows = ladder();

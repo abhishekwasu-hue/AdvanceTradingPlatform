@@ -72,7 +72,7 @@ class UserSource:
 
     def reason(self, symbol: str, exchange: str) -> str:
         ent = self.entitlements.get((symbol.strip().upper(), exchange.strip().upper()))
-        return (ent.reason if ent is not None else None) or "EOD data only for this symbol."
+        return (ent.reason if ent is not None else None) or "Only end-of-day prices for this symbol."
 
     def adapter(self) -> Any:
         return _build_adapter(self.record)
@@ -103,7 +103,7 @@ async def user_source(session: AsyncSession, user: Optional[User], symbols: Sequ
     live = next((e for e in ents.values() if e.live and e.record is not None and e.session is not None), None)
     if live is None or live.record is None or live.session is None:
         first = next(iter(ents.values()), None)
-        raise LiveDataRefused((first.reason if first is not None else None) or "EOD data only.")
+        raise LiveDataRefused((first.reason if first is not None else None) or "Only end-of-day prices.")
     return UserSource(record=live.record, ref=live.session, entitlements=ents)
 
 

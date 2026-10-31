@@ -5,7 +5,11 @@ in the private package (`atp_private`), installed on the host only. ATP's public
 
 - `AnalysisProvider`, the interface the private package implements: for an image-only analysis it returns the
   instructions (system text, user text, a prompt version) and parses the model's reply into the generic output
-  contract (`app.chart_analyze.contract`). PR-C adds the hybrid entry point with the same output contract.
+  contract (`app.chart_analyze.contract`).
+- `HybridProvider` (M59 CR-4), the OPTIONAL hybrid entry point: `hybrid_instructions(width, height, facts)` and
+  `parse_hybrid(reply, facts)`. `facts` are ATP's own generic structure facts of the stored candles (app.chart_analyze.
+  hybrid.facts); the reply is parsed into the same output contract (plus, optionally, `version` / `method_version`).
+  An engine without it still serves the hybrid mode: the result is "Advanced analysis (code)", without an AI part.
 - `load()`, which imports `atp_private.chart_analyze` and calls its `get_provider()`. When the package is not
   installed (public CI, a developer box, any host without it), `load()` returns None and the feature answers "Analysis
   engine not installed" - nothing crashes and the rest of ATP is unaffected. The loader logs the engine's name and
@@ -48,6 +52,23 @@ class AnalysisProvider(Protocol):
     def image_only_instructions(self, *, width: int, height: int) -> Instructions: ...
 
     def parse_image_only(self, reply: str, *, width: int, height: int) -> Dict[str, Any]: ...
+
+
+@runtime_checkable
+class HybridProvider(Protocol):
+    """The optional hybrid entry point of the private package (M59 CR-4). `facts` is a plain JSON-able dict of ATP's
+    structure reading (timeframe rows, areas of interest, levels, the last break and its candle, the drawn bars); the
+    picture sent with the instructions is ATP's own server-rendered chart of the same bars (`width` x `height`), never
+    the user's upload. Every word of the instructions stays in the private package."""
+
+    def hybrid_instructions(self, *, width: int, height: int, facts: dict[str, Any]) -> Instructions: ...
+
+    def parse_hybrid(self, reply: str, *, facts: dict[str, Any]) -> dict[str, Any]: ...
+
+
+def supports_hybrid(engine: object | None) -> bool:
+    """True when the installed engine has the hybrid entry point (both callables)."""
+    return engine is not None and isinstance(engine, HybridProvider)
 
 
 _UNSET = object()

@@ -71,7 +71,7 @@ test.describe("v2 risk 1440 desktop", () => {
 
   test("today: the daily loss limit in rupees, the paper limit in use and the guardian's state", async ({ page }) => {
     await open(page, "light");
-    await expect(page.locator("[data-shell='v2'] header").first()).toContainText("Risk limits");
+    await expect(page.locator("[data-shell='v2'] header").first()).toContainText("Risk status");     // M64: limits moved to Settings › Risk limits
     const today = page.locator("[data-block='today']");
     await expect(today.locator("[data-tile='daily-limit']")).toContainText("₹15,000");
     await expect(today.locator("[data-tile='daily-limit']")).toContainText("3.0% of ₹5,00,000 capital");
@@ -84,60 +84,17 @@ test.describe("v2 risk 1440 desktop", () => {
     await expect(page.locator("[data-page-footnote]")).toContainText("Exits are never blocked");   // UI-28 U1.11: said once, in the footnote
   });
 
-  test("one primary action: 'Save limits' sends today's request with the changed value", async ({ page }) => {
+  // M64 RM-5: the limits form moved to Settings › Risk limits (e2e/risk-limits-v2.e2e.ts tests its rules: one primary action,
+  // the ceiling, not set, the drawdown steps, the pause choice). This page links there and keeps today's numbers.
+  test("the limits are set on Settings › Risk limits: a link, no form and no primary action here", async ({ page }) => {
     const writes = await open(page, "light");
-    const primaries = page.locator("main .bg-brand:is(a, button):not([data-subtab])");
-    await expect(primaries).toHaveCount(1);
-    await expect(primaries).toHaveText("Save limits");
-    await page.getByLabel("Daily loss limit (% of capital)").fill("2.5");
-    await primaries.click();
-    await expect(page.locator("[data-note='save']")).toHaveText("Saved. Every paper and live entry now uses these limits and guardian rules.");
-    const put = writes.calls.find((c) => c.method === "PUT" && c.url === "/risk-settings");
-    expect(put?.body).toEqual({ ...(T.risk_settings as object), max_daily_loss_pct: 2.5, loss_streak_pause: "next_session" });
-  });
-
-  test("a value above the platform ceiling is marked next to its field and nothing is sent", async ({ page }) => {
-    const writes = await open(page, "light");
-    const field = page.getByLabel("Risk per trade (% of capital)");
-    await field.fill("3");
-    await field.blur();
-    await expect(page.locator("[data-field='risk_per_trade_pct'] [role='alert']")).toHaveText("The most allowed is 2.");
-    await page.getByRole("button", { name: "Save limits" }).click();
-    await expect(page.locator("[data-note='save']")).toContainText("Fix the values marked below, then save again.");
-    expect(writes.calls.filter((c) => c.url === "/risk-settings")).toHaveLength(0);
-  });
-
-  test("REV-H5: 'Not set' limits stay blank and save as not set next to the one typed", async ({ page }) => {
-    const notSet = { max_trades_per_day: null, max_open_positions: null, max_consecutive_losses: null, dd_level_1_pct: null, dd_level_2_pct: null };
-    const writes = await open(page, "light", { riskSettings: notSet });
-    await expect(page.getByLabel("Trades per day")).toHaveValue("");
-    await expect(page.getByLabel("Trades per day")).toHaveAttribute("placeholder", "Not set");
-    await expect(page.locator("[data-field='max_trades_per_day']")).toContainText("Leave it blank for no limit. 0 blocks every new entry.");
-    await page.getByLabel("Daily loss limit (% of capital)").fill("2");
-    await page.getByRole("button", { name: "Save limits" }).click();
-    await expect(page.locator("[data-note='save']")).toHaveText("Saved. Every paper and live entry now uses these limits and guardian rules.");
-    await expect(page.locator("main [role='alert']")).toHaveCount(0);
-    const put = writes.calls.find((c) => c.method === "PUT" && c.url === "/risk-settings");
-    expect(put?.body).toEqual({ ...(T.risk_settings as object), ...notSet, max_daily_loss_pct: 2, loss_streak_pause: "next_session" });
-  });
-
-  test("halving the size at a larger drawdown than the pause is marked and nothing is sent", async ({ page }) => {
-    const writes = await open(page, "light");
-    await page.getByLabel("Halve the size at a drawdown of (%)").fill("12");
-    await page.getByRole("button", { name: "Save limits" }).click();
-    await expect(page.locator("[data-field='dd_level_1_pct'] [role='alert']"))
-      .toHaveText("Halve the size at a drawdown no larger than the one that pauses new entries (10%).");
-    expect(writes.calls.filter((c) => c.url === "/risk-settings")).toHaveLength(0);
-  });
-
-  test("with the pause turned off (0%), any halving level is fine: a lower daily loss limit saves", async ({ page }) => {
-    const writes = await open(page, "light", { riskSettings: { dd_level_1_pct: 5, dd_level_2_pct: 0 } });
-    await page.getByLabel("Daily loss limit (% of capital)").fill("2");
-    await page.getByRole("button", { name: "Save limits" }).click();
-    await expect(page.locator("[data-note='save']")).toHaveText("Saved. Every paper and live entry now uses these limits and guardian rules.");
-    await expect(page.locator("[data-field='dd_level_1_pct'] [role='alert']")).toHaveCount(0);
-    const put = writes.calls.find((c) => c.method === "PUT" && c.url === "/risk-settings");
-    expect(put?.body).toEqual({ ...(T.risk_settings as object), dd_level_1_pct: 5, dd_level_2_pct: 0, max_daily_loss_pct: 2, loss_streak_pause: "next_session" });
+    const link = page.locator("[data-testid='open-risk-limits']");
+    await expect(link).toHaveAttribute("href", "/settings/risk-limits");
+    await expect(page.locator("form[data-block='limits']")).toHaveCount(0);
+    await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(0);
+    await link.click();
+    await expect(page).toHaveURL(/\/settings\/risk-limits$/);
+    expect(writes.calls.filter((c) => c.url.startsWith("/risk-settings"))).toHaveLength(0);
   });
 
   test("removing an event: a neutral button, then a confirm that names what changes", async ({ page }) => {
@@ -187,20 +144,6 @@ const PAUSED = { mode: "until_resume", mode_label: "Pause until I resume", limit
 test.describe("v2 risk: the losses-in-a-row pause (CP6-15)", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("the choice is saved with the other limits; the default is the next session", async ({ page }) => {
-    const writes = await open(page, "light");
-    const choice = page.locator("[data-field='loss_streak_pause']");
-    await expect(choice).toContainText("After the losses-in-a-row limit");
-    await expect(choice.getByLabel("Pause until the next session")).toBeChecked();
-    await expect(choice).toContainText("A backtest cannot resume, so there the pause lasts to the end of the test.");
-    await expect(page.locator("[data-note='loss-streak']")).toHaveCount(0);                // nothing paused: no note
-    await choice.getByLabel("Pause until I resume").check();
-    await page.getByRole("button", { name: "Save limits" }).click();
-    await expect(page.locator("[data-note='save']")).toContainText("Saved.");
-    const put = writes.calls.find((c) => c.method === "PUT" && c.url === "/risk-settings");
-    expect(put?.body).toEqual({ ...(T.risk_settings as object), loss_streak_pause: "until_resume" });
-  });
-
   test("while paused: the note says when it ends and that exits keep working; Resume is a neutral button", async ({ page }) => {
     const writes = await open(page, "light", { riskSettings: { loss_streak_pause: "until_resume" }, lossStreak: PAUSED });
     const note = page.locator("[data-note='loss-streak']");
@@ -208,7 +151,7 @@ test.describe("v2 risk: the losses-in-a-row pause (CP6-15)", () => {
     await expect(note).toContainText("Last resumed 16 Oct 2026, 10:30");
     const resume = page.getByRole("button", { name: "Resume after losses in a row" });
     await expect(resume).not.toHaveClass(/(^|\s)(bg-brand|text-down|bg-down)(\s|$)/);
-    await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(1);                // still one primary action
+    await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(0);   // M64: no primary action here now
     await resume.click();
     await expect(page.locator("[data-note='save']")).toHaveText("Resumed. New entries are allowed again; only losses from now on count towards your limit.");
     await expect(note).toHaveCount(0);

@@ -233,10 +233,10 @@ describe("the floating controls", () => {
 
   it("the readout names each value in words", () => {
     const out = renderToStaticMarkup(ChartReadout({ readout: { time: 1, open: 1, high: 2, low: 0.5, close: 1.5, volume: 250000 }, format: (p) => p.toFixed(2) }));
-    for (const w of ["Open", "High", "Low", "Close", "Volume", "2.00", "2.5L"]) expect(out).toContain(w);
+    for (const w of ["Open", "High", "Low", "Close", "Volume", "2.00", "2.5 L"]) expect(out).toContain(w);
   });
 
-  it("volume in K, L and Cr", () => {
-    expect([formatVolume(950), formatVolume(61_100), formatVolume(2_50_000), formatVolume(3_45_00_000)]).toEqual(["950", "61.1K", "2.5L", "3.5Cr"]);
+  it("volume in the app's one count format (M61 OI-1): plain under 1 L, then L and Cr", () => {
+    expect([formatVolume(950), formatVolume(61_100), formatVolume(2_50_000), formatVolume(3_45_00_000)]).toEqual(["950", "61,100", "2.5 L", "3.45 Cr"]);
   });
 });

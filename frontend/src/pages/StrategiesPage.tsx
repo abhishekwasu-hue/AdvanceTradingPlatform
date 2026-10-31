@@ -5,6 +5,7 @@ import { Card } from "../components/ui";
 import type { StrategyInfo } from "../types";
 import { PageHeader } from "../components/primitives";
 import { useUiV2 } from "../ui/useFeatures";
+import { Chip } from "../ui/Chip";
 import { LibraryChips } from "../ui/LibraryChips";
 import { timeframeWords } from "../ui/strategyLabels";
 import StrategyLibraryV2 from "./StrategyLibraryV2";
@@ -34,11 +35,12 @@ function StrategiesPageV1() {
       <div className="grid md:grid-cols-2 gap-4">
         {strategies.map((s) => (
           <Card key={s.id}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="font-semibold text-fg">{s.name}</div>
-              <span className="text-xs uppercase tracking-wide text-fg-muted border border-border rounded px-2 py-0.5">
+            {/* REV-S5: the name wraps, the category is the shared chip on one line (a 375 px phone wrapped it). */}
+            <div className="flex items-start justify-between gap-space-2 mb-2">
+              <div className="min-w-0 font-semibold text-fg">{s.name}</div>
+              <Chip name="strategy-category" variant="outline" className="mt-space-1 uppercase tracking-wide">
                 {s.category === "multi_timeframe" ? "Multi-timeframe" : "Indicator-based"}
-              </span>
+              </Chip>
             </div>
             <div className="text-sm text-fg-muted mb-3">{s.description}</div>
             <div className="text-xs text-fg-muted mb-2">Timeframes: {s.timeframes.map((t) => timeframeWords(t)).join(" / ")}</div>

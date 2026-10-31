@@ -209,3 +209,40 @@ describe("UI2-0 format: review fixes (L1, L2)", () => {
     expect(formatLots(150.004, 75)).toBe("2 lots (150)");
   });
 });
+
+// M63 I-7 (one number formatter): the cases the pages moved onto this module rely on.
+describe("M63 I-7: the cases the moved pages rely on", () => {
+  it("money: whole rupees on cards, paise on charges and AI cost, never a hyphen for a loss", () => {
+    expect(formatINR(12345.4)).toBe("₹12,345");                    // Portfolio / Dashboard tiles
+    expect(formatINR(-700)).toBe(`${MINUS}₹700`);
+    expect(formatINR(0.4)).toBe("₹0");                             // rounds to zero: never "−₹0"
+    expect(formatINR(-0.4)).toBe("₹0");
+    expect(formatINR(42.5, { paise: true })).toBe("₹42.50");       // contract-note charges, a premium below ₹100
+    expect(formatINR(0.07, { paise: true })).toBe("₹0.07");        // one AI call
+    expect(formatINR(null)).toBe(EMPTY);
+    expect(formatSignedINR(3120.4)).toBe("+₹3,120");               // a position's unrealised P&L
+    expect(formatSignedINR(-700)).toBe(`${MINUS}₹700`);
+    expect(formatSignedINR(0.2)).toBe("₹0");
+  });
+
+  it("plain figures: Indian grouping, fixed decimals, the true minus, a dash when missing", () => {
+    expect(formatNumber(1234567)).toBe("12,34,567");                // token and chain counts
+    expect(formatNumber(12.345, 1)).toBe("12.3");                   // percent units
+    expect(formatNumber(-0.456, 2)).toBe(`${MINUS}0.46`);           // a z-score, beta, a Greek
+    expect(formatNumber(-0.004, 2)).toBe("0.00");                   // never "−0.00"
+    expect(formatNumber(0.00012, 4)).toBe("0.0001");                // a USD cost
+    expect(formatNumber(undefined, 2)).toBe(EMPTY);
+    expect(formatNumber(null)).toBe(EMPTY);
+    expect(formatNumber(Number.NaN, 1)).toBe(EMPTY);
+  });
+
+  it("prices: two decimals at the default tick, grouped", () => {
+    expect(formatPrice(24812.3)).toBe("24,812.30");                 // a close, an entry price, a 1 sd band
+    expect(formatPrice(123.456)).toBe("123.46");
+    expect(formatPrice(null)).toBe(EMPTY);
+  });
+
+  it("times: a zone-less timestamp is UTC, shown in IST on the 24-hour clock", () => {
+    expect(formatTimeIST("2026-10-08T05:12:00")).toBe("10:42 IST");
+  });
+});

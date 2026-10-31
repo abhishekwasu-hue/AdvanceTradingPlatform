@@ -82,8 +82,13 @@ export interface AnalysisItem {
   cost_usd: number;
   created_at: string | null;
   analysed_at: string | null;
-  summary: { setup_status: SetupStatus; trend: string; symbol: string | null } | null;
+  /** setup_status is null for an "Advanced analysis (code)" result (ATP's reading has no AI setup). */
+  summary: { setup_status: SetupStatus | null; trend: string; symbol: string | null } | null;
   result: AnalysisResult | null;
+  /** M59 CR-4, hybrid items only: the reading once done, the user's pick, and the annotated chart's address. */
+  hybrid?: HybridResult | null;
+  pick?: HybridPick | null;
+  reading_png?: string | null;
   /** The live share link (organisation only), when the owner made one. Absent on older answers. */
   share?: ItemShare | null;
   label: string | null;
@@ -96,6 +101,9 @@ export interface AnalyzeStatus {
   engine: { installed: boolean; message?: string; name?: string; version?: string; reason?: string; owner_steps?: string };
   modes: { image_only: boolean; hybrid: boolean };
   hybrid_note: string;
+  /** M59 CR-4: the hybrid mode's state; `admin` (the flag and where to switch it) comes to SUPER_ADMIN only. */
+  hybrid?: HybridStatus;
+  mode_labels?: { image_only: string; hybrid: string };
   limits: { tier: string; daily_limit: number; monthly_limit: number; daily_used: number; monthly_used: number; cost_cap_usd: number; cost_used_usd: number; resets: string };
   upload: { types: string[]; max_bytes: number; max_width: number; max_height: number };
   retention_days: number;
@@ -126,4 +134,56 @@ export interface StrikesAnswer {
   approximate_note: string | null;
   items: StrikesItem[];
   message: string | null;
+}
+
+/** M59 CR-4: "Advanced analysis (code + AI)" - ATP's own reading of the stored candles for the symbol / timeframe the
+ * user picked (backend app/chart_analyze/hybrid.py). Every price comes from the stored candles, never the picture. */
+export interface HybridPick { symbol: string; timeframe: string }
+
+export interface HybridStatus {
+  on: boolean;
+  label: string;
+  ai_part: boolean;
+  timeframes: { id: string; label: string }[];
+  note: string;
+  message: string | null;
+  admin?: { flag: string; where: string; needs: string[] };
+}
+
+export type HybridTrend = "up" | "down" | "sideways";
+export interface HybridBreak { label: string; price: number; direction: "up" | "down" | null; time: number | null }
+export interface HybridRow { tf: string; label: string; ready: boolean; trend: HybridTrend | null; weak: boolean; protected: number | null; last_break: HybridBreak | null }
+export interface HybridArea { where: "above" | "below" | "inside"; low: number; high: number; distance: number | null; state: string | null; timeframe: string | null }
+export interface HybridBar { t: number; o: number; h: number; l: number; c: number }
+
+export interface HybridReading {
+  symbol: string;
+  timeframe: string;
+  timeframe_label: string;
+  as_of: string | null;
+  last_close: number | null;
+  bars: HybridBar[];
+  table: HybridRow[];
+  areas: HybridArea[];
+  levels: { kind: "swing high" | "swing low"; price: number }[];
+  protected: number | null;
+  last_break: HybridBreak | null;
+  trigger_candle: (HybridBar & { index: number }) | null;
+  zones_note: string | null;
+  checklist: { name: string; present: boolean; reason: string }[];
+}
+
+export interface HybridResult {
+  contract_version: number;
+  mode: "hybrid";
+  method: "code" | "code_ai";
+  label: string;
+  disclaimer: string;
+  pick: HybridPick;
+  side_by_side_note: string;
+  reading: HybridReading;
+  chart: { width: number; height: number };
+  /** The engine's AI part (the generic contract's text blocks), only with the private hybrid entry point. */
+  ai: Pick<AnalysisResult, "story" | "trend" | "current_state" | "setup" | "evidence" | "scenarios" | "what_to_wait_for"> | null;
+  notes: string[];
 }

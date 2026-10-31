@@ -239,8 +239,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                  sub={user && read.deployments ? <>{anyLive && <><span className="font-semibold text-fg">{live} LIVE</span> · </>}<span className="text-fg-muted">{paper} PAPER</span>{paused ? <> · <span className="text-warn">{paused} paused</span></> : null}</> : "active strategies"} onClick={onNavigate && (() => onNavigate("deployments"))} />
         <KpiTile icon={Wallet} tone="orange" label="Broker funds" value={user ? (accounts.length ? money(balance) : "-") : "…"}
                  sub={`${accounts.length} account${accounts.length === 1 ? "" : "s"} · ${brokers.length} adapters`} onClick={onNavigate && (() => onNavigate("broker"))} />
-        <KpiTile icon={GitMerge} tone="fuchsia" label="Strategies" value={strategies.length || "…"}
-                 sub={`${mtf} multi-timeframe · ${indicator} indicator`} onClick={onNavigate && (() => onNavigate("strategies"))} />
+        <KpiTile icon={GitMerge} tone="fuchsia" label="Strategies" value={healthy ? strategies.length : "…"}
+                 sub={healthy ? `${mtf} multi-timeframe · ${indicator} indicator` : "inbuilt strategies"} onClick={onNavigate && (() => onNavigate("strategies"))} />
       </div>
 
       {user && <ContextPanelCard />}
@@ -257,8 +257,12 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
           )}
         </Card>
         <Card title="Strategy mix">
+          {/* M63 I-7: placeholder rows until the strategy list answers (never "0" counts first). */}
+          {healthy === null ? (
+            <SkeletonRows rows={3} label="Loading the strategy mix" />
+          ) : (
           <div className="flex items-center gap-5">
-            <Ring segments={[{ value: mtf, tone: "sky" }, { value: indicator, tone: "violet" }, { value: other, tone: "fuchsia" }]} label={strategies.length || "…"} sub="inbuilt" />
+            <Ring segments={[{ value: mtf, tone: "sky" }, { value: indicator, tone: "violet" }, { value: other, tone: "fuchsia" }]} label={healthy ? strategies.length : "…"} sub="inbuilt" />
             <div className="space-y-2 text-xs">
               {[{ l: "Multi-timeframe", v: mtf, t: "sky" as Tone }, { l: "Indicator-based", v: indicator, t: "violet" as Tone }, ...(other ? [{ l: "Other", v: other, t: "fuchsia" as Tone }] : [])].map((r) => (
                 <div key={r.l} className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: RING_COLORS[r.t] }} /><span className="text-fg-muted">{r.l}</span><span className="ml-auto font-tabular font-bold text-fg">{r.v}</span></div>
@@ -266,6 +270,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
               {onNavigate && <button onClick={() => onNavigate("strategy-builder")} className="mt-1 flex items-center gap-1 text-brand hover:underline">Build your own <ArrowRight size={11} /></button>}
             </div>
           </div>
+          )}
         </Card>
       </div>
 

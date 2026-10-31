@@ -203,6 +203,13 @@ describe("M62 statistics", () => {
     expect(t).not.toMatch(/\b(should|recommend\w*|best|buy|sell)\b/i);
   });
 
+  it("M63 I-7: win rate, profit factor, expectancy and R each carry the glossary (?) once", () => {
+    const out = html(<JournalStatsV2 state={{ status: "ok", data: DEMO_STATS }} onRetry={() => undefined} />);
+    for (const term of ["Win rate", "Profit factor", "Expectancy", "R"]) {
+      expect(out.split(`aria-label="What is ${term}?"`).length - 1, term).toBe(1);
+    }
+  });
+
   it("has loading, error and empty states", () => {
     expect(html(<JournalStatsV2 state={{ status: "loading" }} onRetry={() => undefined} />)).toContain('aria-busy="true"');
     expect(text(html(<JournalStatsV2 state={{ status: "error", error: new Error("x") }} onRetry={() => undefined} />))).toContain("Try again");

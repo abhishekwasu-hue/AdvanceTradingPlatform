@@ -13,7 +13,8 @@ import type { JournalStatsResponse, StatsGroup } from "./types";
 /**
  * M62 JN-3: the statistics of his own journal (the same filters as the list) - win rate, profit factor, expectancy,
  * average win / loss, average R and MAE / MFE where stored, then by setup / timeframe / weekday. Numbers only; how each
- * is worked out sits behind the (?).
+ * is worked out sits behind the (?). M63 I-7: each jargon tile (win rate, profit factor, expectancy, R) carries its
+ * glossary (?) on first appearance.
  */
 
 export type StatsState = { status: "loading" } | { status: "error"; error: unknown } | { status: "ok"; data: JournalStatsResponse };
@@ -42,13 +43,13 @@ const COLUMNS: readonly Column<Row>[] = [
 export function StatsTilesV2({ t }: { t: StatsGroup }) {
   return (
     <TilesV2 columns={4}>
-      <TileV2 label="Win rate" value={winRate(t.win_rate)} sub={`${formatNumber(t.wins)} of ${formatNumber(t.closed)} closed`} testId="win-rate" />
-      <TileV2 label="Profit factor" value={pf(t.profit_factor)} sub={`${formatINR(t.gross_win)} / ${formatINR(Math.abs(t.gross_loss))}`} testId="profit-factor" />
-      <TileV2 label="Expectancy" value={signedMoney(t.expectancy)} tone={tone(t.expectancy)} sub="per closed trade" testId="expectancy" />
+      <TileV2 label="Win rate" hint="win-rate" value={winRate(t.win_rate)} sub={`${formatNumber(t.wins)} of ${formatNumber(t.closed)} closed`} testId="win-rate" />
+      <TileV2 label="Profit factor" hint="profit-factor" value={pf(t.profit_factor)} sub={`${formatINR(t.gross_win)} / ${formatINR(Math.abs(t.gross_loss))}`} testId="profit-factor" />
+      <TileV2 label="Expectancy" hint="expectancy" value={signedMoney(t.expectancy)} tone={tone(t.expectancy)} sub="per closed trade" testId="expectancy" />
       <TileV2 label="Net P&L" value={signedMoney(t.net_pnl)} tone={tone(t.net_pnl)} sub={`${formatNumber(t.trades)} trades · ${formatNumber(t.open)} open`} testId="net" />
       <TileV2 label="Average win" value={signedMoney(t.avg_win)} tone={tone(t.avg_win)} testId="avg-win" />
       <TileV2 label="Average loss" value={signedMoney(t.avg_loss)} tone={tone(t.avg_loss)} testId="avg-loss" />
-      <TileV2 label="Average R" value={signedR(t.avg_r)} tone={tone(t.avg_r)} sub={`${formatNumber(t.r_trades)} with a stop`} testId="avg-r" />
+      <TileV2 label="Average R" hint="r-multiple" value={signedR(t.avg_r)} tone={tone(t.avg_r)} sub={`${formatNumber(t.r_trades)} with a stop`} testId="avg-r" />
       <TileV2 label="MAE / MFE" value={t.excursion_trades ? `${rText(t.avg_mae_r)} / ${rText(t.avg_mfe_r)}` : "–"}
         sub={t.excursion_trades ? `${formatINR(t.avg_mae)} / ${formatINR(t.avg_mfe)} · ${formatNumber(t.excursion_trades)} trades` : "not stored yet"} testId="mae-mfe" />
     </TilesV2>

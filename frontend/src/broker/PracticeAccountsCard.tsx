@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, friendlyError } from "../api/errors";
 import { fnoApi, type PracticeAccount } from "../fno/api";
 import { BTN_SECONDARY } from "./parts";
+import { Details } from "../ui/Details";
 
 /**
  * M45 MA-6 (`ui_v2` + `multi_account`): "Practice accounts" - the user's simulated PAPER accounts, so a multi-account
@@ -48,10 +49,12 @@ export default function PracticeAccountsCard({ api = fnoApi }: { api?: Pick<type
   return (
     <section aria-labelledby="practice-accounts-title" className="space-y-space-3" data-testid="practice-accounts">
       <h3 id="practice-accounts-title" className="text-t14 font-semibold text-fg">Practice accounts</h3>
-      <p className="text-t12 text-fg-muted">
-        Simulated accounts for trying one order on several accounts in practice mode. Choose them in the order ticket under
-        "Run on". Each places its own practice order; nothing reaches a broker.
-      </p>
+      <Details id="broker.practice-accounts" className="mt-0">
+        <p className="text-t12 text-fg-muted">
+          Simulated accounts for trying one order on several accounts in practice mode. Choose them in the order ticket under
+          "Run on". Each places its own practice order; nothing reaches a broker.
+        </p>
+      </Details>
       {error && <div role="alert" className="text-t12 text-down">{error}</div>}
       <ul className="space-y-space-2">
         {(rows ?? []).map((a) => (

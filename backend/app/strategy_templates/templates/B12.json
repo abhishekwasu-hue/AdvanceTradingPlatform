@@ -1,0 +1,47 @@
+{
+  "schema": "atp.template/1",
+  "id": "B12",
+  "version": 1,
+  "name": "52-week high breakout",
+  "family": "B",
+  "idea": "On the Daily chart: a signal on the first close beyond the highest high of the previous weeks you set (one year by default), or below the lowest low for the mirror side; the idea is wrong beyond the latest opposite swing.",
+  "difficulty": "Beginner",
+  "style": "Swing",
+  "allowed_timeframes": ["1d"],
+  "params": [
+    {"key": "high_weeks", "label": "Weeks looked back", "help": "The close must go beyond the highest high (or lowest low) of this many previous calendar weeks; 52 weeks is one year.", "type": "int", "default": 52, "min": 4, "max": 260, "step": 1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond that high the close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "vol_mult", "label": "Volume expansion", "help": "The breakout bar's volume must be at least this many times the average (0 means no volume condition; indices have no volume).", "type": "float", "default": 1.5, "min": 0.0, "max": 20.0, "step": 0.1},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The latest confirmed swing on the other side, or the far end of the breakout bar.", "type": "enum", "default": "swing", "choices": ["swing", "breakout_bar"], "choice_labels": ["The latest confirmed opposite swing", "The far end of the breakout bar"]},
+    {"key": "swing_degree", "label": "Swing size", "help": "Which swings count for the invalidation and the exit: 0 is the smallest, 3 the largest. Larger swings need more history.", "type": "int", "default": 1, "min": 0, "max": 3, "step": 1},
+    {"key": "exit_rule", "label": "The idea has ended", "help": "No exit signal from this template, or a close beyond the latest confirmed opposite swing.", "type": "enum", "default": "none", "choices": ["none", "swing"], "choice_labels": ["No exit signal", "A close beyond the opposite swing"]}
+  ],
+  "constraints": [],
+  "sides_default": "long",
+  "setup": {
+    "kind": "event",
+    "long": "NewHighBreakout(\"up\", $high_weeks, $vol_mult, $k)",
+    "short": "NewHighBreakout(\"down\", $high_weeks, $vol_mult, $k)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "by": "invalidation",
+    "variants": {
+      "swing": {"long": "SwingLow($swing_degree)", "short": "SwingHigh($swing_degree)"},
+      "breakout_bar": {"extreme": "since_setup"}
+    }
+  },
+  "exit_signal": {
+    "by": "exit_rule",
+    "variants": {
+      "none": null,
+      "swing": {"long": "close < SwingLow($swing_degree)", "short": "close > SwingHigh($swing_degree)"}
+    }
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "close_above_multi_week_high"}],
+    "short": [{"token": "close_below_multi_week_low"}]
+  }
+}

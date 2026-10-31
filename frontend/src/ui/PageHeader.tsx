@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { navItemFor, type ShellKey } from "../shell/navModel";
 import { sectionChipClass, sectionTintOf } from "./accents";
 import { useColourV2 } from "./colourV2";
+import { useHasPageHelpSlot, useRegisterPageSubtitle } from "../shell/pageHelp";
 
 /**
  * UI-H Wave 0 (H1, H9): the top of a page - the title (the menu name), one plain line, the ONE status badge and the
@@ -10,6 +11,9 @@ import { useColourV2 } from "./colourV2";
  *
  * UI-H CA3: `section` (the page's navigation key) puts the page's nav icon in its section's round tint chip before the
  * title while colour_v2 is on - the same chip and the same section -> tint map as the nav (src/ui/accents.ts).
+ *
+ * PROSE-1 (owner 30 Oct): inside the v2 shell the `line` is not drawn under the title - it goes behind the (?) beside
+ * the page title in the top bar (src/shell/pageHelp.tsx), closed by default. Outside the shell it shows as before.
  */
 export interface PageHeaderProps {
   title: string;
@@ -30,6 +34,8 @@ export function PageHeader({ title, short, line, status, actions, className = ""
   const colour = useColourV2();
   const tint = colour && section ? sectionTintOf(section) : null;
   const Icon = section ? navItemFor(section)?.icon : undefined;
+  const inShell = useHasPageHelpSlot();
+  useRegisterPageSubtitle(inShell ? line : null);
   return (
     <header data-page-header className={`flex flex-wrap items-start justify-between gap-x-space-4 gap-y-space-2 ${className}`}>
       <div className="min-w-0 flex-1 basis-60">
@@ -40,7 +46,7 @@ export function PageHeader({ title, short, line, status, actions, className = ""
           </h1>
           {status}
         </div>
-        {line && <p data-page-subtitle className="mt-space-1 break-words text-t14 text-fg-muted">{line}</p>}
+        {line && !inShell && <p data-page-subtitle className="mt-space-1 break-words text-t14 text-fg-muted">{line}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-space-2">{actions}</div>}
     </header>

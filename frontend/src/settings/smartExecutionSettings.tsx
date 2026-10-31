@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { request } from "../api/client";
 import { CardV2 } from "../dashboard/CardV2";
 import { BUTTON_PRIMARY, FIELD, NoteV2 } from "../trading/PartsV2";
+import { Details } from "../ui/Details";
 
 export const SMART_NAMESPACE = "smart_execution";
 export type OnNoAnswer = "close_filled" | "keep";
@@ -108,9 +109,15 @@ export default function SmartExecutionSettingsV2({ fetcher = request }: { fetche
   return (
     <CardV2 title="Multi-leg orders and expiry" testId="smart-execution">
       <div className="space-y-space-3">
-        <p className="text-t13 text-fg-muted">
-          A stock F&amp;O position in or near the money, held to expiry, settles by delivery. You get a warning on Positions this many days ahead.
-        </p>
+        {/* PROSE-1: the card's two notes, word for word, in its one Details. */}
+        <Details id="settings.smart-execution" className="mt-0">
+          <p className="text-t13 text-fg-muted">
+            A stock F&amp;O position in or near the money, held to expiry, settles by delivery. You get a warning on Positions this many days ahead.
+          </p>
+          <p className="text-t13 text-fg-muted">
+            When a leg does not fill, nothing more is sent and you choose: complete the rest, or close the filled legs. If you do not answer in time:
+          </p>
+        </Details>
         <div className="grid gap-space-3 md:grid-cols-2">
           <label className="space-y-space-1 text-t14 text-fg">
             <span>Days before expiry</span>
@@ -135,9 +142,6 @@ export default function SmartExecutionSettingsV2({ fetcher = request }: { fetche
         </div>
         <div role="group" aria-labelledby="smart-no-answer" className="space-y-space-2 border-t border-subtle pt-space-3" data-smart-field="no-answer">
           <p id="smart-no-answer" className="text-t14 font-semibold text-fg">If a multi-leg order stops half way</p>
-          <p className="text-t13 text-fg-muted">
-            When a leg does not fill, nothing more is sent and you choose: complete the rest, or close the filled legs. If you do not answer in time:
-          </p>
           <label className="block space-y-space-1 text-t14 text-fg md:max-w-xs">
             <span>Minutes to answer</span>
             <input className={FIELD} inputMode="numeric" value={form.answer_minutes} data-smart-field="answer-minutes"

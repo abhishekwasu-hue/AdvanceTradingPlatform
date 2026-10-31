@@ -131,7 +131,7 @@ def _options_decisions(mode: str):
     result = options_engine.run_option_backtest(_Scripted(), _frame(), "NIFTY 50", "1min", _risk(mode), cfg)
     _outcomes_hold(result)
     # every attempt it did not take was refused by the risk engine's losses in a row, nothing else
-    assert all("consecutive losses" in key.lower() for key in result.options["signals_skipped"]), result.options["signals_skipped"]
+    assert all("losses in a row" in key.lower() for key in result.options["signals_skipped"]), result.options["signals_skipped"]
     return _decisions(result), result
 
 
@@ -342,7 +342,7 @@ def test_exits_are_never_blocked_while_new_entries_are_paused():
             now = datetime.now(timezone.utc)
             state = await build_trading_day_state(session, user)
             decision = RiskManager(await _tenant_cfg(session, me["tenant_id"])).validate_and_size(_signal(now), state)
-            assert not decision.approved and any("consecutive losses" in r for r in decision.reasons)
+            assert not decision.approved and any("losses in a row" in r for r in decision.reasons)
             assert (await loss_streak_status(session, me["tenant_id"]))["paused"]
             open_trade = TradeRecord(tenant_id=me["tenant_id"], user_id=me["id"], mode="PAPER", symbol="OPEN1", strategy_id="s", direction="LONG",
                                      entry_time=now - timedelta(minutes=10), entry_price=100.0, quantity=1, stop_loss=98.0, target1=110.0)

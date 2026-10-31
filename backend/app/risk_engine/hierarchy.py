@@ -172,6 +172,16 @@ async def _measure(session: AsyncSession, ctx: RiskContext, limit_type: RiskLimi
     return 0.0, limit_type.value
 
 
+# M64 RM-3: the plain words a block message uses for each organisation limit (no internal names).
+LIMIT_WORDS = {
+    RiskLimitType.MAX_DAILY_LOSS: "today's loss", RiskLimitType.MAX_STRATEGY_LOSS: "one strategy's loss today",
+    RiskLimitType.MAX_LOSS_PER_TRADE: "the loss of one trade", RiskLimitType.MAX_ORDER_VALUE: "the value of one order",
+    RiskLimitType.MAX_POSITION_QUANTITY: "the size of one order", RiskLimitType.MAX_OPEN_POSITIONS: "open positions",
+    RiskLimitType.MAX_TRADES_PER_DAY: "trades a day", RiskLimitType.MAX_CAPITAL_ALLOCATION_PCT: "the share of capital in one order",
+    RiskLimitType.MAX_GROSS_EXPOSURE: "total exposure", RiskLimitType.MAX_SYMBOL_CONCENTRATION_PCT: "the share of capital in one symbol",
+}
+
+
 def _fmt(limit_type: RiskLimitType, value: float) -> str:
     if limit_type in CURRENCY_TYPES:
         return f"{value:,.0f}"
@@ -201,7 +211,9 @@ async def evaluate(session: AsyncSession, ctx: RiskContext, *, user: Optional[Us
             current, label = float("inf"), f"{limit_type.value} unmeasurable ({type(exc).__name__})"
         if current > rule.limit_value:
             status, action, severity = "BLOCK", RiskAction.BLOCK_ORDER, NotificationSeverity.CRITICAL
-            reason = f"{limit_type.value} ({rule.scope.lower()}): {label} {_fmt(limit_type, current)} exceeds limit {_fmt(limit_type, rule.limit_value)}"
+            # M64 RM-3: an organisation / admin ceiling - one plain sentence with the numbers, and who can change it.
+            reason = (f"Your organisation's limit on {LIMIT_WORDS.get(limit_type, 'this order')}: {label} {_fmt(limit_type, current)} "
+                      f"exceeds limit {_fmt(limit_type, rule.limit_value)}. Ask your admin.")
         elif current >= rule.limit_value * WARN_FRACTION:
             status, action, severity = "WARN", RiskAction.WARN, NotificationSeverity.WARNING
             reason = f"{limit_type.value} ({rule.scope.lower()}): {label} {_fmt(limit_type, current)} is within 20% of limit {_fmt(limit_type, rule.limit_value)}"

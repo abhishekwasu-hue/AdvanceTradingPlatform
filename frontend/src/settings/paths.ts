@@ -5,7 +5,7 @@
  *
  * Account & plan stays at `/settings/account`, the setup wizard at `/settings/setup` and the Broker at `/broker`.
  */
-export type SettingsSectionId = "ai" | "alerts" | "appearance" | "help" | "advanced";
+export type SettingsSectionId = "ai" | "alerts" | "appearance" | "help" | "advanced" | "risk-limits";
 
 /** The v2 shell location of each section page. */
 export type SettingsSectionKey = `settings-${SettingsSectionId}`;
@@ -19,6 +19,8 @@ export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; key: SettingsS
   { id: "appearance", key: "settings-appearance", path: "/settings/appearance", old: "/settings" },
   { id: "help", key: "settings-help", path: "/settings/help", old: "/settings" },
   { id: "advanced", key: "settings-advanced", path: "/settings/advanced", old: "/settings#integrations" },
+  // M64: Settings › Risk limits - every order-time risk check a switch (off by default); with ui_v2 off, today's Risk page.
+  { id: "risk-limits", key: "settings-risk-limits", path: "/settings/risk-limits", old: "/risk-management" },
 ];
 
 export const SETTINGS_PATH: Readonly<Record<SettingsSectionId, string>> =

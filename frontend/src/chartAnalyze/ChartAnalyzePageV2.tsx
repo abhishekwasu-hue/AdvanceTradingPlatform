@@ -1,5 +1,6 @@
 import { ImagePlus, Link2, TriangleAlert, Upload } from "lucide-react";
 import { ComingSoon } from "../ui/ComingSoon";
+import { Combobox } from "../ui/Combobox";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent } from "react";
 import { useSearchParams } from "react-router";
 import { friendlyError } from "../api/errors";
@@ -13,6 +14,7 @@ import { chartAnalyzeApi, errorCode, isFeatureOff } from "./api";
 import { ENGINE_ADMIN_TITLE, ENGINE_USER_LINE, ENGINE_USER_TITLE, engineAudience } from "./engineWords";
 import { renderResultPng, shareOrDownload } from "./exportImage";
 import { printResult, printTitle } from "./printResult";
+import HybridResultV2 from "./HybridResultV2";
 import ResultViewV2 from "./ResultViewV2";
 import ShareDialogV2 from "./ShareDialogV2";
 import SharedAnalysisV2 from "./SharedAnalysisV2";
@@ -22,11 +24,19 @@ import type { StrikesState } from "./StrikesSectionV2";
 import type { AnalysisItem, AnalyzeStatus } from "./types";
 import { EMPTY, formatDateTimeIST } from "../ui/format";
 
+type Mode = "image_only" | "hybrid";
+/** M59 CR-4: the two modes' names (the server's `mode_labels` wins when it sends them). */
+export const MODE_LABELS: Record<Mode, string> = { image_only: "AI only", hybrid: "Advanced analysis (code + AI)" };
+export const PICK_NEEDED = "Pick the chart's symbol and timeframe for Advanced analysis.";
+
 /**
  * Analyze a chart (docs/design/CHART_ANALYZE.md): upload a chart image (file, paste, drag and drop) or paste a chart
  * link, choose a mode, press Analyze, read "what the method sees and the conditions". Behind the `chart_analyze` flag
- * (hidden while off). PR-A: Image only; Hybrid is shown, disabled, "Coming soon". Educational: no buy / sell call and no
- * order button anywhere on this page; the disclaimer closes every result.
+ * (hidden while off). Modes: "AI only" (the picture alone) and, behind `chart_analyze_hybrid` (M59 CR-4), "Advanced
+ * analysis (code + AI)": the user picks the symbol and timeframe, ATP reads its own stored candles and draws its
+ * reading beside his picture (HybridResultV2). While that flag is off the choice is shown disabled with one plain line
+ * (the admin also reads the flag and where to switch it). Educational: no buy / sell call and no order button anywhere
+ * on this page; the disclaimer closes every result.
  */
 
 export const FLAG = "chart_analyze";
@@ -126,6 +136,11 @@ export default function ChartAnalyzePageV2() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [link, setLink] = useState("");
+  const [mode, setMode] = useState<Mode>("image_only");
+  const [symbol, setSymbol] = useState("");
+  const [timeframe, setTimeframe] = useState("");
+  const [readingSrc, setReadingSrc] = useState<string | null>(null);
+  const readingUrlRef = useRef<string | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [problem, setProblem] = useState<Problem | null>(null);
   const [current, setCurrent] = useState<AnalysisItem | null>(null);
@@ -165,6 +180,7 @@ export default function ChartAnalyzePageV2() {
     return () => { live = false; };
   }, [features.loaded, on]);
   useEffect(() => () => { if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current); }, []);
+  useEffect(() => () => { if (readingUrlRef.current) URL.revokeObjectURL(readingUrlRef.current); }, []);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
   const pick = useCallback((f: File | null) => {
@@ -186,9 +202,24 @@ export default function ChartAnalyzePageV2() {
     return () => window.removeEventListener("paste", onPaste);
   }, [on, pick]);
 
+  // M59 CR-4: a done hybrid item's annotated chart of ATP's reading (a Blob: an <img> cannot send the token).
+  const loadReading = useCallback(async (item: AnalysisItem) => {
+    if (readingUrlRef.current) URL.revokeObjectURL(readingUrlRef.current);
+    readingUrlRef.current = null;
+    setReadingSrc(null);
+    if (item.mode !== "hybrid" || !item.hybrid) return;
+    try {
+      readingUrlRef.current = URL.createObjectURL(await chartAnalyzeApi.readingPng(item.id));
+      setReadingSrc(readingUrlRef.current);
+    } catch {
+      setReadingSrc(null);
+    }
+  }, []);
+
   const showItem = useCallback(async (item: AnalysisItem) => {
     setCurrent(item);
     setImageNote(null);
+    void loadReading(item);
     try {
       const blob = await chartAnalyzeApi.image(item.id);
       if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
@@ -198,7 +229,7 @@ export default function ChartAnalyzePageV2() {
       setImageSrc(null);
       setImageNote(errorCode(e) === "image_gone" ? IMAGE_GONE : "The chart image could not be loaded. Try again later.");
     }
-  }, []);
+  }, [loadReading]);
 
   // "Option strikes · from your settings": loaded for the analysis on screen (the symbol read from the picture, or the
   // one the user types when it was not read). A late answer for another analysis is dropped.
@@ -234,10 +265,13 @@ export default function ChartAnalyzePageV2() {
     setProblem(null);
     setNotice(null);
     if (!file && !link.trim()) { setProblem({ message: "Add a chart first: choose an image, paste one, or paste a link.", code: "one_source" }); return; }
+    const hybridMode = mode === "hybrid" && hybridOn;
+    if (hybridMode && (!symbol.trim() || !timeframe)) { setProblem({ message: PICK_NEEDED, code: "symbol_required" }); return; }
     let item: AnalysisItem;
     setPhase("adding");
     try {
-      item = await chartAnalyzeApi.add(file ? { file, fileName: file.name } : { link: link.trim() }, "image_only");
+      item = await chartAnalyzeApi.add(file ? { file, fileName: file.name } : { link: link.trim() }, hybridMode ? "hybrid" : "image_only",
+        hybridMode ? { symbol: symbol.trim().toUpperCase(), timeframe } : undefined);
     } catch (e) {
       setPhase("idle");
       setProblem(problemFrom(e));
@@ -251,6 +285,7 @@ export default function ChartAnalyzePageV2() {
     try {
       const done = await chartAnalyzeApi.analyze(item.id);
       setCurrent(done);
+      void loadReading(done);
       if (done.status === "failed") setProblem({ message: done.error ?? "The analysis failed. Try again.", code: "failed" });
     } catch (e) {
       setProblem(problemFrom(e));
@@ -267,12 +302,28 @@ export default function ChartAnalyzePageV2() {
     try {
       const done = await chartAnalyzeApi.analyze(current.id);
       setCurrent(done);
+      void loadReading(done);
       if (done.status === "failed") setProblem({ message: done.error ?? "The analysis failed. Try again.", code: "failed" });
     } catch (e) {
       setProblem(problemFrom(e));
     } finally {
       setPhase("idle");
       void reload();
+    }
+  };
+
+  const downloadReading = async () => {
+    if (!current || current.mode !== "hybrid" || !current.hybrid) return;
+    setBusy("export");
+    try {
+      const blob = await chartAnalyzeApi.readingPng(current.id);
+      const r = current.hybrid.reading;
+      const how = await shareOrDownload(blob, `atp-reading-${r.symbol.replace(/[^A-Za-z0-9]/g, "")}-${r.timeframe}-${current.id}.png`);
+      setNotice(how === "shared" ? "Image shared." : "Image downloaded.");
+    } catch (e) {
+      setProblem(problemFrom(e));
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -340,6 +391,8 @@ export default function ChartAnalyzePageV2() {
   };
 
   const engineMissing = status?.engine.installed === false;
+  const hybridOn = Boolean(status?.modes.hybrid);
+  const labels = status?.mode_labels ?? MODE_LABELS;
   if (!features.loaded || (!on && !probed)) return <Skeleton className="h-40" panel label="Loading" />;
   // A1: the engine (private package) is not installed - a real "not available" state, never "Coming soon".
   if (engineMissing && !off) return <EngineUnavailable engine={status.engine} />;
@@ -398,21 +451,47 @@ export default function ChartAnalyzePageV2() {
           </div>
         </div>
 
-        <fieldset className="mt-space-4">
+        <fieldset className="mt-space-4" data-testid="mode-picker">
           <legend className="mb-space-2 text-t12 font-medium text-fg-muted">Mode</legend>
           <div className="grid gap-space-2 sm:grid-cols-2">
-            <label className="flex min-h-11 cursor-pointer items-start gap-space-3 rounded-control border border-brand bg-surface-2 p-space-3">
-              <input type="radio" name="ca-mode" checked readOnly className="mt-1" />
-              <span><span className="block text-t14 font-semibold text-fg">Image only</span>
+            <label className={`flex min-h-11 cursor-pointer items-start gap-space-3 rounded-control border p-space-3 ${mode === "image_only" || !hybridOn ? "border-brand bg-surface-2" : "border-subtle"}`}>
+              <input type="radio" name="ca-mode" value="image_only" checked={mode === "image_only" || !hybridOn} onChange={() => setMode("image_only")} className="mt-1" />
+              <span><span className="block text-t14 font-semibold text-fg">{labels.image_only}</span>
                 <span className="block text-t12 text-fg-muted">Read from the picture alone; prices may be approximate.</span></span>
             </label>
-            <label className="flex min-h-11 items-start gap-space-3 rounded-control border border-subtle p-space-3 opacity-60" aria-disabled="true">
-              <input type="radio" name="ca-mode" disabled className="mt-1" />
-              <span><span className="block text-t14 font-semibold text-fg">Hybrid <span className="ml-space-1 rounded-pill bg-surface-2 px-space-2 py-0.5 text-t12 font-medium text-fg-muted">Coming soon</span></span>
-                <span className="block text-t12 text-fg-muted">Rebuilds the chart from real bars before reading it.</span></span>
+            <label className={`flex min-h-11 items-start gap-space-3 rounded-control border p-space-3 ${hybridOn ? `cursor-pointer ${mode === "hybrid" ? "border-brand bg-surface-2" : "border-subtle"}` : "border-subtle opacity-70"}`}
+              aria-disabled={!hybridOn || undefined} data-testid="mode-hybrid">
+              <input type="radio" name="ca-mode" value="hybrid" disabled={!hybridOn} checked={hybridOn && mode === "hybrid"} onChange={() => setMode("hybrid")} className="mt-1" />
+              <span className="min-w-0"><span className="block text-t14 font-semibold text-fg">{labels.hybrid}</span>
+                <span className="block text-t12 text-fg-muted">Reads ATP&apos;s stored candles for the symbol you pick.</span>
+                {!hybridOn && status && (
+                  <span className="mt-space-1 block text-t12 text-fg" data-testid="hybrid-off">{status.hybrid?.message ?? status.hybrid_note}</span>
+                )}
+                {!hybridOn && status?.hybrid?.admin && (
+                  <span className="mt-space-1 block break-words text-t12 text-fg-muted" data-testid="hybrid-admin">
+                    For admins: turn on &quot;{status.hybrid.admin.flag}&quot; in {status.hybrid.admin.where} (needs {status.hybrid.admin.needs.join(", ")}).
+                  </span>
+                )}
+              </span>
             </label>
           </div>
         </fieldset>
+        {hybridOn && mode === "hybrid" && (
+          <div className="mt-space-3 grid gap-space-3 sm:grid-cols-2" data-testid="hybrid-pick">
+            <div>
+              <label htmlFor={`${linkId}-symbol`} className="mb-space-1 block text-t12 font-medium text-fg-muted">The chart&apos;s symbol</label>
+              <input id={`${linkId}-symbol`} value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="For example NIFTY or RELIANCE"
+                autoComplete="off" spellCheck={false} maxLength={40}
+                className="h-11 w-full min-w-0 rounded-control border border-border bg-surface-2 px-space-3 text-t14 uppercase text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9" />
+            </div>
+            <div>
+              <label htmlFor={`${linkId}-tf`} className="mb-space-1 block text-t12 font-medium text-fg-muted">The chart&apos;s timeframe</label>
+              <Combobox id={`${linkId}-tf`} label="The chart's timeframe" value={timeframe} onChange={setTimeframe} className="w-full"
+                options={(status?.hybrid?.timeframes ?? []).map((t) => ({ value: t.id, label: t.label }))} />
+            </div>
+            <p className="text-t12 text-fg-muted sm:col-span-2">No price is read from your picture: every number comes from ATP&apos;s stored candles for this symbol and timeframe.</p>
+          </div>
+        )}
 
         <div className="mt-space-4 flex flex-col gap-space-2 sm:flex-row sm:items-center">
           <Button variant="primary" className="h-11 w-full sm:w-auto md:h-9" loading={working} disabled={engineMissing} onClick={analyze}>Analyze</Button>
@@ -435,6 +514,7 @@ export default function ChartAnalyzePageV2() {
         )}
         <Details id="chart-analyze.add">
           <p>TradingView snapshot links and direct image links. A page that needs a login or a live chart cannot be read.</p>
+          <p>{labels.hybrid}: you pick the symbol and timeframe; ATP reads its own stored candles and draws its reading beside your chart.</p>
           <p>
             Your chart is sent to the AI provider that runs the analysis (your own key's provider, or your organisation's). It is stored privately
             {status ? ` for ${status.retention_days} days` : ""}, and you can delete it at any time.
@@ -442,6 +522,10 @@ export default function ChartAnalyzePageV2() {
         </Details>
       </section>
 
+      {current && current.mode === "hybrid" && current.hybrid && (
+        <HybridResultV2 result={current.hybrid} userImageSrc={imageSrc} readingSrc={readingSrc} imageNote={imageNote}
+          onDownload={() => void downloadReading()} onDelete={() => setConfirmDelete(true)} downloading={busy === "export"} deleting={busy === "delete"} />
+      )}
       {current && current.result && (
         <ResultViewV2 result={current.result} itemLabel={current.label} itemDisclaimer={current.disclaimer} imageNote={imageNote}
           imageSrc={imageSrc} onAlert={setAlertTarget} onExport={exportImage} onDelete={() => setConfirmDelete(true)} onPdf={() => void pdf()}
@@ -449,7 +533,7 @@ export default function ChartAnalyzePageV2() {
           onShare={shareOn ? () => setSharing(true) : undefined} shareLive={Boolean(current.share)}
           exporting={busy === "export"} deleting={busy === "delete"} />
       )}
-      {current && !current.result && (
+      {current && !current.result && !current.hybrid && (
         <section className={card} aria-label="This chart">
           <p className="text-t14 text-fg">{current.status === "failed" ? current.error ?? "The analysis failed." : "This chart is stored but not analysed yet."}</p>
           <div className="mt-space-3 flex flex-col gap-space-2 sm:flex-row">
@@ -487,11 +571,11 @@ export default function ChartAnalyzePageV2() {
                     <button type="button" onClick={() => void open(h.id)} aria-current={current?.id === h.id || undefined}
                       className="flex min-h-12 w-full items-center justify-between gap-space-3 py-space-2 text-left hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
                       <span className="min-w-0">
-                        <span className="block truncate text-t14 font-medium text-fg">{h.summary?.symbol ?? (h.source === "link" ? h.source_host ?? "Linked chart" : "Uploaded chart")}</span>
-                        <span className="block text-t12 text-fg-muted">{when(h.created_at)} · Image only{h.share ? " · Shared" : ""}</span>
+                        <span className="block truncate text-t14 font-medium text-fg">{h.summary?.symbol ?? h.pick?.symbol ?? (h.source === "link" ? h.source_host ?? "Linked chart" : "Uploaded chart")}</span>
+                        <span className="block text-t12 text-fg-muted">{when(h.created_at)} · {h.mode === "hybrid" ? labels.hybrid.replace(/ \(.*\)$/, "") : labels.image_only}{h.share ? " · Shared" : ""}</span>
                       </span>
                       <span className="shrink-0 rounded-pill bg-surface-2 px-space-2 py-0.5 text-t12 text-fg-muted">
-                        {h.status === "done" && h.summary ? SETUP_SHORT[h.summary.setup_status]
+                        {h.status === "done" && h.summary ? (h.summary.setup_status ? SETUP_SHORT[h.summary.setup_status] : "Read")
                           : h.status === "failed" ? "Failed" : h.status === "running" ? "Running" : "Not analysed"}
                       </span>
                     </button>

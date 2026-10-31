@@ -197,7 +197,8 @@ test.describe("Analyze a chart: the flow", () => {
       await expect(page.getByTestId("setup-status")).toHaveText(setup === "formed" ? "Formed" : setup === "forming" ? /^Forming — waiting for/ : "No setup");
       await expect(page.getByRole("button", { name: /buy|sell|order|trade/i })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Open in Chart tab" })).toHaveCount(0);
-      await expect(page.getByRole("radio", { name: /Hybrid/ })).toBeDisabled();
+      await expect(page.getByRole("radio", { name: /Advanced analysis/ })).toBeDisabled();       // M59 CR-4: its own flag is off here
+      await expect(page.getByTestId("hybrid-off")).toHaveText("Advanced analysis is not switched on for your organisation yet. Use AI only for now.");
     });
   }
 

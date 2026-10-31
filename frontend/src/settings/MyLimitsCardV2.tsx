@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useState } from "react";
+import { Link } from "react-router";
 import { api } from "../api/client";
 import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2 } from "../trading/PartsV2";
@@ -8,13 +9,29 @@ import {
   LIMIT_FIELDS, NOT_SET, SWITCHES_OFF, SWITCH_FIELDS, configOf, countSet, loadSwitches, saveSwitches, textOf,
   type LimitsText, type MyLimitSwitches,
 } from "./myLimits";
+import { RISK_LIMITS_PATH } from "./riskLimits";
 
 /**
  * DEF-0 D9 (owner, 28 Oct): one "My limits" card (Risk page and Settings -> Trading defaults). Every limit is the
  * trader's own; a blank one reads "Off" and nothing holds an order back for it. No forced setup: with
  * nothing set the card offers "Set my limits" and nothing else.
  */
-export default function MyLimitsCardV2({ testId = "my-limits" }: { testId?: string }) {
+export default function MyLimitsCardV2({ testId = "my-limits", editHere = false }: { testId?: string; editHere?: boolean }) {
+  // M64 RM-5: the limits are set on Settings › Risk limits (one source); this card now points there. `editHere` keeps the
+  // old card (code kept, CLAUDE.md section 8).
+  if (!editHere) {
+    return (
+      <CardV2 title="My limits" testId={testId}>
+        <p className="text-t13 text-fg-muted">Each check is a switch, off by default. Exits always work.</p>
+        <Link to={RISK_LIMITS_PATH} className="mt-space-2 inline-flex min-h-11 items-center text-t14 font-medium text-brand underline md:min-h-9"
+          data-testid="my-limits-open">Open Settings › Risk limits</Link>
+      </CardV2>
+    );
+  }
+  return <MyLimitsEditor testId={testId} />;
+}
+
+function MyLimitsEditor({ testId }: { testId: string }) {
   const id = useId();
   const [saved, setSaved] = useState<RiskConfig | null>(null);
   const [text, setText] = useState<LimitsText | null>(null);

@@ -54,9 +54,9 @@ def test_no_limit_set_means_no_gate_and_the_traders_own_size():
 
 
 @pytest.mark.parametrize("field, value, state, words", [
-    ("max_trades_per_day", 3, TradingDayState(trades_today=3), "Max trades per day"),
-    ("max_open_positions", 2, TradingDayState(open_positions=2), "Max open positions"),
-    ("max_consecutive_losses", 4, TradingDayState(consecutive_losses=4), "Max consecutive losses"),
+    ("max_trades_per_day", 3, TradingDayState(trades_today=3), "You made 3 new entries today; your limit is 3."),
+    ("max_open_positions", 2, TradingDayState(open_positions=2), "You hold 2 open positions; your limit is 2."),
+    ("max_consecutive_losses", 4, TradingDayState(consecutive_losses=4), "4 losses in a row (your limit is 4)"),
 ])
 def test_each_limit_applies_once_the_trader_sets_it(field, value, state, words):
     decision = RiskManager(RiskConfig(**{field: value})).validate_and_size(_signal(), state)

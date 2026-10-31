@@ -20,7 +20,7 @@ import { expectNoDeveloperText, expectPlainErrorSentences, renderPage } from "./
 
 describe("OptionsBuilder page", () => {
   it("shows its heading on the first screen", () => {
-    expect(renderPage(<OptionsBuilderPage />)).toContain("Options Builder");
+    expect(renderPage(<OptionsBuilderPage />)).toContain("Plan an options trade");
   });
 
   it("shows no developer text", () => {

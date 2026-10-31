@@ -440,6 +440,7 @@ class NoticesPrefs(_Prefs):
     """`notices` (TT12-1): when a one-time notice was seen (dismissed, or made moot by the user's own action). Only
     marks; what a notice says and who gets it live in app/me/notices.py."""
     limits_not_set_seen_at: MarkTime = Field(default=None, description="the 'risk limits are now not set' notice was seen")
+    risk_limits_off_seen_at: MarkTime = Field(default=None, description="the M64 'risk limits are now off by default' notice was seen")
 
 
 class PcrZonesPrefs(_Prefs):

@@ -39,6 +39,11 @@ _FONT: Dict[str, Sequence[int]] = {
     "E": (7, 4, 6, 4, 7), "S": (7, 4, 7, 1, 7), "L": (4, 4, 4, 4, 7), "T": (7, 2, 2, 2, 2), "H": (5, 5, 7, 5, 5),
     "I": (7, 2, 2, 2, 7), "G": (7, 4, 5, 5, 7), "O": (7, 5, 5, 5, 7), "W": (5, 5, 5, 7, 5), "N": (7, 5, 5, 5, 5),
     "R": (6, 5, 6, 5, 5), "Y": (5, 5, 2, 2, 2), "P": (7, 5, 7, 4, 4), "A": (2, 5, 7, 5, 5), "X": (5, 5, 2, 5, 5),
+    # M59 CR-4: the rest of the alphabet and a few signs, for the Analyze-a-chart reading's labels (symbol, timeframe)
+    "B": (6, 5, 6, 5, 6), "C": (7, 4, 4, 4, 7), "D": (6, 5, 5, 5, 6), "F": (7, 4, 6, 4, 4), "J": (1, 1, 1, 5, 7),
+    "K": (5, 5, 6, 5, 5), "M": (5, 7, 7, 5, 5), "Q": (7, 5, 5, 6, 3), "U": (5, 5, 5, 5, 7), "V": (5, 5, 5, 5, 2),
+    "Z": (7, 1, 2, 4, 7), ",": (0, 0, 0, 2, 4), ":": (0, 2, 0, 2, 0), "(": (1, 2, 2, 2, 1), ")": (4, 2, 2, 2, 4),
+    "+": (0, 2, 7, 2, 0), "%": (5, 1, 2, 4, 5), "&": (2, 5, 2, 5, 3), "_": (0, 0, 0, 0, 7),
 }
 SCALE = 2
 
@@ -53,12 +58,14 @@ class Bar:
 
 @dataclass
 class ChartSpec:
-    """What to draw. `levels` maps a short label (ENTRY, SL, TGT, HIGH, LOW) to a price from the engine's data."""
+    """What to draw. `levels` maps a short label (ENTRY, SL, TGT, EXIT, HIGH, LOW) to a price from the engine's data
+    (EXIT: the journal's exit snapshot, M62; the Vision audit never passes it, so its images are unchanged)."""
     bars: List[Bar]
     levels: Dict[str, float] = field(default_factory=dict)
 
 
-_LEVEL_COLORS: Dict[str, Color] = {"ENTRY": ENTRY, "SL": STOP, "TGT": TARGET, "HIGH": ZONE, "LOW": ZONE}
+EXIT: Color = (217, 119, 6)
+_LEVEL_COLORS: Dict[str, Color] = {"ENTRY": ENTRY, "SL": STOP, "TGT": TARGET, "EXIT": EXIT, "HIGH": ZONE, "LOW": ZONE}
 
 
 class _Canvas:
@@ -164,13 +171,13 @@ def render(spec: ChartSpec, *, width: int = WIDTH, height: int = HEIGHT) -> byte
         canvas.rect(cx - body // 2, y0, cx - body // 2 + body - 1, max(y0, y1), color)
 
     used: List[int] = []
-    for name in ("TGT", "ENTRY", "SL", "HIGH", "LOW"):        # trade levels drawn last, on top of the candles
+    for name in ("TGT", "ENTRY", "EXIT", "SL", "HIGH", "LOW"):  # trade levels drawn last, on top of the candles
         if name not in levels:
             continue
         y = y_of(levels[name])
         color = _LEVEL_COLORS[name]
-        if name in ("ENTRY", "SL", "TGT"):
-            canvas.hline(left, right, y, color, dash=0 if name == "ENTRY" else 6)
+        if name in ("ENTRY", "SL", "TGT", "EXIT"):
+            canvas.hline(left, right, y, color, dash=0 if name in ("ENTRY", "EXIT") else 6)
         label = f"{name} {_fmt(levels[name])}"
         ly = y - 5
         while any(abs(ly - u) < 12 for u in used):          # keep labels from overlapping

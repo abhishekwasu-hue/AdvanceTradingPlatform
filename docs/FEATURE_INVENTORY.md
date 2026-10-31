@@ -94,6 +94,7 @@ Facts from the code that the tables rely on:
 | paper | PAPER account, ticket, F&O orders / baskets / exits, report card | `/api/paper`, `/api/paper/fno`, `/api/paper/fno/journal` | `paper_account`, `risk_by_default`, `ui_v2`, `experience_levels`, `paper_report_card` | PARTIAL (F&O desk 404 until flags on) | unknown until the owner's check |
 | plans | Plan registry and limits | - | `plan_limits_v2` | INTERNAL | - |
 | platform | Feature flags, controls, trader pack, readiness, system status | `/api/admin/controls`, `/api/readiness`, `/api/system`, `/api/team/members` | `phase0_paper_only` (ON), `live_trading` | WORKS | unknown until the owner's check |
+| performance | The Performance page's summary and results against backtest, over the user's OWN trades (REV-1 M2) | `/api/performance` | - | WORKS (read-only) | unknown until the owner's check |
 | portfolio | PAPER book risk view | `/api/portfolio` | `portfolio_risk`, `portfolio_risk_caps` | EMPTY-BY-DEFAULT (503 while off) | unknown until the owner's check |
 | price_action | Structure library (swings, legs, zones) | - | `market_zones` (zones job) | INTERNAL; gap context raises NotImplemented (not ported) | STUB (gap context) |
 | public_api | API keys and `/api/public/v1` | `/api/api-keys`, `/api/public/v1` | `public_api` (ON) | PARTIAL (no docs UI) | unknown until the owner's check |
@@ -150,7 +151,7 @@ navigation and shows "Coming soon" at its address (`frontend/src/shell/pageFlags
 | Option chain (Chain, Charts, OI, Analyses) | `/option-chain` | Markets | - (broker gate) | WORKS; OI view PARTIAL (needs recorded snapshots) | unknown until the owner's check |
 | Sectors and indices | `/markets` | Markets | `markets_view` | EMPTY-BY-DEFAULT | unknown until the owner's check |
 | Find setups | `/screener` | Markets | `screener_v2` | EMPTY-BY-DEFAULT | unknown until the owner's check |
-| Custom scan | `/screener/custom` (old `/scanner`) | search only | - | PARTIAL + DUPLICATE (Find setups) | unknown until the owner's check |
+| Custom scan | `/screener/custom` (old `/scanner`) | search only | - (merged view: `screener_v2`) | PARTIAL; M49 U6: opens Find setups with its Conditions block open, the custom scanner inside Conditions ("More filters"); with `screener_v2` off the old page alone | unknown until the owner's check |
 | Plan an options trade | `/option-chain/plan` (old `/options-builder`) | extras | `options_builder` (ON); save: `options_builder_saved` | PARTIAL ("Adjustments and compare" marked coming later) | STUB (adjustments / compare) |
 | Analyze a chart | `/chart-analyze` | extras | `chart_analyze` + private engine | EMPTY-BY-DEFAULT; Hybrid "Coming soon" | STUB (hybrid); rest: unknown until the owner's check |
 | Terminal | `/terminal` | Trading | `terminal` (ON) | PARTIAL | Bots and Payoff panels HIDDEN (never in the Panels menu); rest: unknown until the owner's check |
@@ -182,7 +183,8 @@ navigation and shows "Coming soon" at its address (`frontend/src/shell/pageFlags
 | Account and plan | `/settings/account` (old `/account`) | Settings | - | WORKS (old page) | unknown until the owner's check |
 | Setup wizard | `/settings/setup` | Settings | - | WORKS + DUPLICATE (Today "Get started") | unknown until the owner's check |
 | My trading defaults | `/settings/trading-defaults` | Settings | - | WORKS | unknown until the owner's check |
-| Risk limits | `/risk-management` | Settings | - | WORKS | unknown until the owner's check |
+| Risk limits (M64: every check a switch, off by default) | `/settings/risk-limits` | Settings | - | WORKS | unknown until the owner's check |
+| Risk status (old Risk limits page: today, guardian, events; limits link to `/settings/risk-limits`) | `/risk-management` | Settings | - | WORKS | unknown until the owner's check |
 | Team | `/team` | extras | - | WORKS (old page) | unknown until the owner's check |
 | Notifications | `/notifications` | extras | - | WORKS (old page) | unknown until the owner's check |
 | Factor Lab | `/quant` | More | - | WORKS (equities) | unknown until the owner's check |

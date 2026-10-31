@@ -4,7 +4,9 @@ from app.core.models import RiskConfig
 
 LEGACY_LIMITS = dict(capital=100_000.0, risk_per_trade_pct=0.5, max_daily_loss_pct=3.0, max_trades_per_day=20, max_open_positions=3,
                      max_consecutive_losses=4, max_portfolio_risk_pct=6.0, stop_cooldown_minutes=30, dd_level_1_pct=5.0,
-                     dd_level_2_pct=10.0, event_size_cut_pct=50.0)
+                     dd_level_2_pct=10.0, event_size_cut_pct=50.0,
+                     # M64: the old built-ins that became switches - the market-event rules on, 80% of the available margin
+                     event_rules=True, margin_safety_pct=80.0)
 
 
 def legacy(**overrides) -> RiskConfig:

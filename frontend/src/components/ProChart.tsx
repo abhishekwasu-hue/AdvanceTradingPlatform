@@ -22,6 +22,7 @@ import { SessionBreaksPrimitive } from "../charting/sessionBreaksPrimitive";
 import type { ChartType } from "../charting/workspace";
 import { Sheet } from "./primitives";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
+import { formatCount } from "../ui/format";
 
 export type { ChartMarker, PriceLineSpec } from "../charting/markers";
 
@@ -613,7 +614,7 @@ export default function ProChart({
           <span>O <b className="text-fg">{fmt(bar.open)}</b></span><span>H <b className="text-fg">{fmt(bar.high)}</b></span>
           <span>L <b className="text-fg">{fmt(bar.low)}</b></span>
           <span>C <b className={prev && bar.close < prev.close ? "text-down" : "text-up"}>{fmt(bar.close)}</b></span>
-          {bar.volume > 0 && <span>Vol <b className="text-fg">{bar.volume.toLocaleString("en-IN")}</b></span>}
+          {bar.volume > 0 && <span>Vol <b className="text-fg">{formatCount(bar.volume)}</b></span>}
           {ind.emaFast && <span style={{ color: COLORS.emaFast }}>EMA{settings.emaFast} {fmt(ind.emaFast[idx as number])}</span>}
           {ind.emaSlow && <span style={{ color: COLORS.emaSlow }}>EMA{settings.emaSlow} {fmt(ind.emaSlow[idx as number])}</span>}
           {ind.sma && <span style={{ color: COLORS.sma }}>SMA{settings.smaPeriod} {fmt(ind.sma[idx as number])}</span>}

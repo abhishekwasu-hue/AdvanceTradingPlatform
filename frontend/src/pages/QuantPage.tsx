@@ -6,6 +6,7 @@ import { DataSourceBar, SampleChip, useCandleSource } from "../components/DataSo
 import type { FactorTable, QuantRisk, QuantSymbolInput } from "../types";
 import { PageHeader } from "../components/primitives";
 import { Details } from "../ui/Details";
+import { EMPTY, formatNumber, formatPrice } from "../ui/format";
 
 const FACTOR_LABELS: Record<string, string> = {
   momentum: "Momentum", reversal: "Reversal", low_volatility: "Low volatility", trend: "Trend", liquidity: "Liquidity", value: "Value", quality: "Quality",
@@ -27,7 +28,10 @@ function corrClass(v: number | null): string {
   return "bg-surface-2";
 }
 
-const pct = (v: number | null | undefined, d = 1) => (v == null ? "-" : `${(v * 100).toFixed(d)}%`);
+/** A fraction as a percentage (0.123 -> "12.3%"); a missing value is the formatter's dash, never "-%". */
+const pct = (v: number | null | undefined, d = 1) => (v == null || !Number.isFinite(v) ? EMPTY : `${formatNumber(v * 100, d)}%`);
+/** A figure already in percent units (12.3 -> "12.3%"). */
+const pctUnits = (v: number | null | undefined, d = 1) => (v == null || !Number.isFinite(v) ? EMPTY : `${formatNumber(v, d)}%`);
 
 /** Phase Z: cross-sectional factor scores and a descriptive risk model on a watchlist. */
 export default function QuantPage() {
@@ -144,10 +148,10 @@ export default function QuantPage() {
                 {table.rows.map((r) => (
                   <tr key={r.symbol} className="border-t border-border">
                     <td className="py-1 pr-3 text-fg-muted">{r.rank ?? "-"}</td>
-                    <td className="py-1 pr-3 font-bold text-fg">{r.symbol} <span className="text-fg-muted font-normal">{r.close.toFixed(2)}</span></td>
+                    <td className="py-1 pr-3 font-bold text-fg">{r.symbol} <span className="text-fg-muted font-normal">{formatPrice(r.close)}</span></td>
                     <td className="py-1 pr-3"><span className={`rounded-md border px-1.5 py-0.5 text-xs font-bold ${r.bucket === "LONG" ? "border-up/40 text-up" : r.bucket === "SHORT" ? "border-down/40 text-down" : "border-border text-fg-muted"}`}>{r.bucket}</span></td>
-                    <td className={`py-1 pr-3 ${zClass(r.composite)}`}>{r.composite?.toFixed(2) ?? "-"}</td>
-                    {table.factors.map((f) => <td key={f} className={`py-1 pr-3 ${zClass(r.z[f])}`} title={r.raw[f] != null ? `raw ${r.raw[f]?.toFixed(4)}` : "no data"}>{r.z[f]?.toFixed(2) ?? "-"}</td>)}
+                    <td className={`py-1 pr-3 ${zClass(r.composite)}`}>{formatNumber(r.composite, 2)}</td>
+                    {table.factors.map((f) => <td key={f} className={`py-1 pr-3 ${zClass(r.z[f])}`} title={r.raw[f] != null ? `raw ${formatNumber(r.raw[f], 4)}` : "no data"}>{formatNumber(r.z[f], 2)}</td>)}
                     <td className="py-1 pr-3 text-fg-muted">{r.coverage}/{table.factors.length}</td>
                   </tr>
                 ))}
@@ -173,8 +177,8 @@ export default function QuantPage() {
               <StatTile label="Portfolio vol (annual)" value={pct(chosenPortfolio.vol_annual)} />
               <StatTile label="1-bar VaR 95%" value={pct(chosenPortfolio.var_95, 2)} tone="down" />
               <StatTile label="CVaR 95%" value={pct(chosenPortfolio.cvar_95, 2)} tone="down" />
-              <StatTile label="Max drawdown (window)" value={chosenPortfolio.max_drawdown_pct != null ? `${chosenPortfolio.max_drawdown_pct.toFixed(1)}%` : "-"} tone="down" />
-              <StatTile label="Diversification ratio" value={chosenPortfolio.diversification_ratio?.toFixed(2) ?? "-"} />
+              <StatTile label="Max drawdown (window)" value={pctUnits(chosenPortfolio.max_drawdown_pct)} tone="down" />
+              <StatTile label="Diversification ratio" value={formatNumber(chosenPortfolio.diversification_ratio, 2)} />
             </div>
           )}
           <div className="grid lg:grid-cols-2 gap-4 text-xs">
@@ -183,7 +187,7 @@ export default function QuantPage() {
               <table className="w-full"><thead className="text-fg-muted text-xs uppercase"><tr className="text-left"><th className="py-1 pr-2">Symbol</th><th className="py-1 pr-2">Weight</th><th className="py-1 pr-2">Vol</th><th className="py-1 pr-2">Beta</th><th className="py-1 pr-2">Max DD</th></tr></thead>
                 <tbody>
                   {risk.symbols.map((s) => (
-                    <tr key={s} className="border-t border-border/60"><td className="py-0.5 pr-2 text-fg">{s}</td><td className="py-0.5 pr-2">{pct(chosenWeights[s] ?? 0)}</td><td className="py-0.5 pr-2">{pct(risk.volatility[s])}</td><td className="py-0.5 pr-2">{risk.betas[s]?.toFixed(2) ?? "-"}</td><td className="py-0.5 pr-2">{risk.max_drawdown_pct[s]?.toFixed(1) ?? "-"}%</td></tr>
+                    <tr key={s} className="border-t border-border/60"><td className="py-0.5 pr-2 text-fg">{s}</td><td className="py-0.5 pr-2">{pct(chosenWeights[s] ?? 0)}</td><td className="py-0.5 pr-2">{pct(risk.volatility[s])}</td><td className="py-0.5 pr-2">{formatNumber(risk.betas[s], 2)}</td><td className="py-0.5 pr-2">{pctUnits(risk.max_drawdown_pct[s])}</td></tr>
                   ))}
                 </tbody></table>
             </div>
@@ -192,7 +196,7 @@ export default function QuantPage() {
               <div className="overflow-x-auto"><table className="text-xs"><thead><tr><th></th>{risk.symbols.map((s) => <th key={s} className="px-1 text-fg-muted font-normal">{s.slice(0, 6)}</th>)}</tr></thead>
                 <tbody>
                   {risk.symbols.map((a) => (
-                    <tr key={a}><td className="pr-1 text-fg-muted">{a.slice(0, 8)}</td>{risk.symbols.map((b) => <td key={b} className={`px-1 py-0.5 text-center ${corrClass(risk.correlation[a]?.[b] ?? null)}`}>{risk.correlation[a]?.[b]?.toFixed(2) ?? "-"}</td>)}</tr>
+                    <tr key={a}><td className="pr-1 text-fg-muted">{a.slice(0, 8)}</td>{risk.symbols.map((b) => <td key={b} className={`px-1 py-0.5 text-center ${corrClass(risk.correlation[a]?.[b] ?? null)}`}>{formatNumber(risk.correlation[a]?.[b], 2)}</td>)}</tr>
                   ))}
                 </tbody></table></div>
             </div>

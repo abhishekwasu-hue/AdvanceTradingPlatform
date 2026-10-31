@@ -49,6 +49,7 @@ from app.auth.dependencies import get_current_user
 from app.billing.service import meter
 from app.brokers.base import BrokerInterface
 from app.brokers.catalog import display_name
+from app.brokers.exceptions import BrokerAuthenticationError
 from app.brokers.gates import data_sources, market_data_open
 from app.brokers.token_lifecycle import build_adapter, data_is_usable, token_is_usable
 from app.core import config
@@ -70,6 +71,14 @@ from app.platform.controls import flag_enabled
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
+
+
+def read_failed_reason(exc: BaseException, what: str) -> str:
+    """REV-1 M2: the per-symbol reason a failed read sends - a sentence a trader can act on, never the exception's class
+    name or text (those stay in the log line). `what` names the read ("prices for NIFTY", "the option chain")."""
+    if isinstance(exc, BrokerAuthenticationError):
+        return "Your broker session has ended. Log in to your broker again, then try again."
+    return f"Your broker could not send {what} just now. Try again in a moment."
 
 MAX_SYMBOLS = 50
 INTRADAY_TIMEFRAMES = ("1min", "3min", "5min", "15min", "30min", "60min")
@@ -153,7 +162,7 @@ async def _eod_context(session: AsyncSession, ents: Dict[tuple, Entitlement]) ->
 def _tier_c(ents: Dict[tuple, Entitlement]) -> HTTPException:
     """409 for a request none of whose symbols may be shown live; the first symbol's reason says why."""
     ent = next(iter(ents.values()), None)
-    reason = ent.reason if ent is not None and ent.reason else "EOD data only for this symbol."
+    reason = ent.reason if ent is not None and ent.reason else "Only end-of-day prices for this symbol."
     return HTTPException(status_code=409, detail=reason, headers={"X-Data-Tier": DataTier.EOD.value})
 
 
@@ -533,7 +542,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         ent = ents.get((symbol, exchange))
         if byob and (ent is None or not ent.live):
             # BT1: outside the user's session budget - EOD only for this one, the others still load.
-            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": ent.reason if ent else "EOD data only",
+            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": ent.reason if ent else "Only end-of-day prices are available for this on your plan.",
                            "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None, "volume_source": None}
             continue
         out[symbol] = {}                      # filled below, keeping the order asked for
@@ -544,8 +553,8 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": "budget used", "budget_used": True, "volume_source": None}
             continue
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
-            logger.info("Candle fetch failed for %s:%s via %s: %s", exchange, symbol, record.broker_name, exc)
-            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": f"{type(exc).__name__}: {exc}"[:300], "volume_source": None}
+            logger.info("Candle fetch failed for %s:%s via %s: %s: %s", exchange, symbol, record.broker_name, type(exc).__name__, exc)
+            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": read_failed_reason(exc, f"prices for {symbol}"), "volume_source": None}
             continue
         fut = futures.get(symbol)
         fut_bars: Optional[List[OHLCVBar]] = None
@@ -604,8 +613,8 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
                 warnings.append(f"{symbol}: the broker returned no candles")
                 out[symbol]["empty_reason"] = empty_reason(symbol, exchange, service.holidays, now, body.before)
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
-            logger.info("Candle shaping failed for %s:%s: %s", exchange, symbol, exc)
-            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": f"{type(exc).__name__}: {exc}"[:300], "volume_source": None}
+            logger.info("Candle shaping failed for %s:%s: %s: %s", exchange, symbol, type(exc).__name__, exc)
+            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": read_failed_reason(exc, f"prices for {symbol}"), "volume_source": None}
     if fetched:
         await meter(session, user.tenant_id, "market_data_candles", quantity=fetched, source="api",
                     metadata={"broker": record.broker_name, "timeframe": body.timeframe, "exchange": exchange}, commit=True)
@@ -773,7 +782,7 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
             continue
         ent = ents.get((underlying, "NFO"))
         if byob and (ent is None or not ent.live):
-            out[underlying] = {"chain": None, "rows": 0, "error": ent.reason if ent else "EOD data only",
+            out[underlying] = {"chain": None, "rows": 0, "error": ent.reason if ent else "Only end-of-day prices are available for this on your plan.",
                                "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None}
             continue
         try:
@@ -788,10 +797,10 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
             if not chain.rows:
                 warnings.append(f"{underlying}: the broker returned an empty chain")
         except NotImplementedError:
-            out[underlying] = {"chain": None, "rows": 0, "error": f"{record.broker_name} has no option-chain endpoint in this adapter"}
+            out[underlying] = {"chain": None, "rows": 0, "error": f"{display_name(record.broker_name)} does not offer option chains yet."}
         except Exception as exc:  # noqa: BLE001 - one underlying must not lose the others
-            logger.info("Option chain fetch failed for %s via %s: %s", underlying, record.broker_name, exc)
-            out[underlying] = {"chain": None, "rows": 0, "error": f"{type(exc).__name__}: {exc}"[:300]}
+            logger.info("Option chain fetch failed for %s via %s: %s: %s", underlying, record.broker_name, type(exc).__name__, exc)
+            out[underlying] = {"chain": None, "rows": 0, "error": read_failed_reason(exc, f"the option chain for {underlying}")}
     if fetched:
         await meter(session, user.tenant_id, "market_data_chains", quantity=fetched, source="api",
                     metadata={"broker": record.broker_name, "expiry": body.expiry.isoformat() if body.expiry else None}, commit=True)

@@ -72,7 +72,7 @@ export function figureRows(columns: readonly CompareColumn[]): FigureRow[] {
     { label: "Margin", values: columns.map((c) => c.margin), sub: "ATP's estimate, not your broker's number" },
   ];
   if (columns.some((c) => c.pop !== null)) {
-    rows.push({ label: "Probability of profit", values: columns.map((c) => (c.pop === null ? "–" : `${(c.pop * 100).toFixed(1)}%`)), sub: "Model estimate" });
+    rows.push({ label: "Probability of profit", values: columns.map((c) => (c.pop === null ? "–" : `${formatNumber(c.pop * 100, 1)}%`)), sub: "Model estimate" });
   }
   const extras = [...new Set(columns.flatMap((c) => (c.extra ?? []).map((e) => e.label)))];
   for (const label of extras) rows.push({ label, values: columns.map((c) => c.extra?.find((e) => e.label === label)?.value ?? "–") });

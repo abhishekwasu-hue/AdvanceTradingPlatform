@@ -26,7 +26,7 @@ import type { MyDayArea } from "../dashboard/myDay";
 import { closedText, exitConfirmText, failedText, heldRows } from "../trading/model";
 import { NoteV2 } from "../trading/PartsV2";
 import type { PortfolioExposure, TradeRecord } from "../types";
-import { EMPTY, formatCompactIN, formatDateIST, formatNumber, formatPrice, formatSignedCompactIN, formatTimeIST } from "../ui/format";
+import { EMPTY, formatCount, formatCountChange, formatDateIST, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
 import { Chip } from "../ui/Chip";
 import { Signed } from "../ui/Signed";
 import { SubTabs } from "../ui/SubTabs";
@@ -100,8 +100,8 @@ export function chainProblem(read: Read<LiveChain>): string | null {
 /** T1-3: one side's figures as traders read them; a missing figure is "–", never 0. */
 export function legFigures(leg: ChainLeg): { oi: string; oiChange: string; iv: string; delta: string; ltp: string } {
   return {
-    oi: leg.oi === null ? EMPTY : formatCompactIN(leg.oi),
-    oiChange: leg.oi_change === null ? EMPTY : formatSignedCompactIN(leg.oi_change),
+    oi: leg.oi === null ? EMPTY : formatCount(leg.oi),                       // M61 OI-1: the app's one count formatter
+    oiChange: leg.oi_change === null ? EMPTY : formatCountChange(leg.oi_change),
     iv: leg.iv === null ? EMPTY : formatNumber(leg.iv, 1),
     delta: leg.delta === null ? EMPTY : formatNumber(leg.delta, 2),
     ltp: leg.ltp === null ? EMPTY : formatPrice(leg.ltp),
@@ -265,7 +265,7 @@ export function OrderPanelV2({ ticket, state: t, onClear, paperBadge = true }: {
       </div>
       <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults}
         budget={t.budget} events={t.events} liquidity={t.liquidity} keysHint={false} stickyActions
-        onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onBack={t.back} onClose={onClear} />
+        onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onReviewWith={(patch) => void t.review(patch)} onBack={t.back} onClose={onClear} />
     </div>
   );
 }

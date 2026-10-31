@@ -7,7 +7,7 @@
  */
 import { request } from "../api/client";
 import type { ChainLeg, ChainRow } from "../optionChain/types";
-import { formatDateIST, formatINR, formatNumber, formatPrice } from "../ui/format";
+import { formatCount, formatDateIST, formatINR, formatNumber, formatPrice } from "../ui/format";
 import type { LiquidityLimits } from "../settings/liquidityLimits";
 import type { ContractRight } from "./api";
 import type { RiskBudget, RiskLine } from "./insights";
@@ -96,7 +96,7 @@ function problems(l: LegLiquidity): string[] {
   const g = gapPct(l);
   if (g !== null && l.wide) out.push(`bid-ask gap ${formatPrice((l.ask ?? 0) - (l.bid ?? 0))} (${formatNumber(g, 1)}% of the price), wider than most strikes on screen`);
   if (l.oi === 0) out.push("no open interest yet");
-  else if (l.oi !== null && l.lowOi) out.push(`open interest ${formatNumber(l.oi, 0)}, among the lowest on this side of the chain`);
+  else if (l.oi !== null && l.lowOi) out.push(`open interest ${formatCount(l.oi)}, among the lowest on this side of the chain`);
   if (l.volume === 0) out.push("no trades in it today");
   return out;
 }
@@ -105,8 +105,8 @@ function facts(l: LegLiquidity): string {
   const g = gapPct(l);
   const parts = [
     g !== null ? `bid-ask gap ${formatPrice((l.ask ?? 0) - (l.bid ?? 0))} (${formatNumber(g, 1)}% of the price)` : null,
-    l.oi !== null ? `open interest ${formatNumber(l.oi, 0)}` : null,
-    l.volume !== null ? `volume ${formatNumber(l.volume, 0)} today` : null,
+    l.oi !== null ? `open interest ${formatCount(l.oi)}` : null,
+    l.volume !== null ? `volume ${formatCount(l.volume)} today` : null,
   ].filter(Boolean);
   return parts.join(", ");
 }
@@ -124,7 +124,7 @@ const pctWord = (v: number) => {
 export function limitsText(limits: LiquidityLimits): string {
   return [
     limits.max_spread_pct !== null ? `bid-ask gap up to ${pctWord(limits.max_spread_pct)}` : null,
-    limits.min_oi !== null ? `open interest at least ${formatNumber(limits.min_oi, 0)}` : null,
+    limits.min_oi !== null ? `open interest at least ${formatCount(limits.min_oi)}` : null,
   ].filter(Boolean).join(", ");
 }
 
@@ -141,7 +141,7 @@ export function checkLimits(l: LegLiquidity, limits: LiquidityLimits): LimitChec
   }
   if (limits.min_oi !== null) {
     if (!l.onScreen || l.oi === null) unknown.push("the open interest");
-    else if (l.oi < limits.min_oi) outside.push(`open interest ${formatNumber(l.oi, 0)} is below your ${formatNumber(limits.min_oi, 0)}`);
+    else if (l.oi < limits.min_oi) outside.push(`open interest ${formatCount(l.oi)} is below your ${formatCount(limits.min_oi)}`);
   }
   return { outside, unknown };
 }

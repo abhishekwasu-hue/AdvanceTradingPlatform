@@ -49,6 +49,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   learn: lazy(() => import("../learn/LearnPageV2")),
   // Trading Terminal T1 (src/terminal) at /terminal - a v2-only page behind `terminal`.
   terminal: lazy(() => import("../terminal/TerminalPageV2")),
+  // M49 U6: Custom scan (/screener/custom) is Find setups with its Conditions block open (src/screener/CustomScanV2).
+  scanner: lazy(() => import("../screener/CustomScanV2")),
   // P1-8 (2): the Watchlist page (src/watchlist) at /watchlist - a v2-only page behind `watchlists`, the Charts panel.
   watchlist: lazy(() => import("../watchlist/WatchlistPageV2")),
   ...Object.fromEntries(SETTINGS_SECTIONS.map((s) => [s.key, SettingsSection])),

@@ -2,11 +2,17 @@
 caller's organisation every route below answers the platform's standard 503 with `X-Feature-Disabled: chart_analyze`.
 
 - `GET    /api/chart-analyze/status`              what the page needs: engine installed?, limits used, upload rules
-- `POST   /api/chart-analyze/items`               multipart: `file` (PNG / JPEG) OR `link`, and `mode` -> one stored item
+- `POST   /api/chart-analyze/items`               multipart: `file` (PNG / JPEG) OR `link`, and `mode` -> one stored item;
+                                                  mode `hybrid` (flag chart_analyze_hybrid as well) also takes the
+                                                  `symbol` and `timeframe` the user picks - never read from the picture
 - `GET    /api/chart-analyze/items`               the caller's history (newest first)
 - `GET    /api/chart-analyze/items/{id}`          one item with its result
 - `GET    /api/chart-analyze/items/{id}/image`    the stored (cleaned) image, private, never cached by a proxy
-- `POST   /api/chart-analyze/items/{id}/analyze`  runs the analysis (Image only in PR-A)
+- `POST   /api/chart-analyze/items/{id}/analyze`  runs the analysis: AI only, or hybrid (M59 CR-4: ATP's own structure
+                                                  reading of the stored candles for the pick, then the engine's AI part
+                                                  when it has the hybrid entry point)
+- `GET    /api/chart-analyze/items/{id}/reading.png` a hybrid item's annotated chart of ATP's reading (the download),
+                                                  drawn by code from the candles stored with the result
 - `GET    /api/chart-analyze/items/{id}/strikes`  the option strikes the caller's OWN deployment settings work out to
                                                   at the setup's trigger level (flagged "from your settings"; reads only;
                                                   flag chart_analyze_strikes as well)
@@ -29,14 +35,29 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_mfa_session, require_role
-from app.chart_analyze import FLAG, SHARE_FLAG, STRIKES_FLAG, contract, imaging, limits, linkfetch, service, share, storage, strikes
+from app.chart_analyze import (
+    FLAG,
+    HYBRID_FLAG,
+    SHARE_FLAG,
+    STRIKES_FLAG,
+    contract,
+    hybrid,
+    imaging,
+    limits,
+    linkfetch,
+    reading_png,
+    service,
+    share,
+    storage,
+    strikes,
+)
 from app.chart_analyze import provider as engine_provider
 from app.chart_analyze import settings as settings_mod
 from app.core.enums import UserRole
 from app.core.rate_limit import charge_user
 from app.db.models import Tenant, User
 from app.db.session import get_session
-from app.platform.controls import require_flag
+from app.platform.controls import flag_enabled, require_flag
 
 router = APIRouter(prefix="/api/chart-analyze", tags=["chart-analyze"])
 admin_router = APIRouter(prefix="/api/admin/chart-analyze", tags=["admin"], dependencies=[Depends(require_role()), Depends(require_mfa_session)])
@@ -66,6 +87,26 @@ class SettingsBody(BaseModel):
 async def _gate(session: AsyncSession, user: User) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
     return await settings_mod.load(session)
+
+
+def _is_admin(user: User) -> bool:
+    return user.role == UserRole.SUPER_ADMIN.value
+
+
+async def _hybrid_gate(session: AsyncSession, user: User) -> None:
+    """Hybrid needs its own flag: off -> one plain line for a user; the admin also reads the flag and where it is."""
+    if not await flag_enabled(session, HYBRID_FLAG, user.tenant_id):
+        raise HTTPException(status_code=409, detail=hybrid.off_detail(admin=_is_admin(user)))
+
+
+def _hybrid_status(on: bool, admin: bool) -> dict[str, Any]:
+    ai_part = engine_provider.supports_hybrid(engine_provider.load())
+    out: dict[str, Any] = {"on": on, "label": hybrid.LABEL_CODE_AI if ai_part else hybrid.LABEL_CODE, "ai_part": ai_part,
+                           "timeframes": [{"id": tf, "label": hybrid.tf_label(tf)} for tf in hybrid.TIMEFRAMES],
+                           "note": hybrid.SIDE_BY_SIDE, "message": None if on else hybrid.OFF_MESSAGE}
+    if not on and admin:
+        out["admin"] = hybrid.off_detail(admin=True)["admin"]
+    return out
 
 
 async def _tenant(session: AsyncSession, user: User) -> Tenant:
@@ -101,9 +142,12 @@ async def _read_upload(file: UploadFile, settings: Dict[str, Any]) -> bytes:
 async def status(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     settings = await _gate(session, user)
     tenant = await _tenant(session, user)
+    hybrid_on = await flag_enabled(session, HYBRID_FLAG, user.tenant_id)
+    hybrid_info = _hybrid_status(hybrid_on, _is_admin(user))
     # A1: the admin also sees why the engine is missing and the owner's install steps; a user only "not available".
-    return {"enabled": True, "engine": engine_provider.describe(admin=user.role == UserRole.SUPER_ADMIN.value),
-            "modes": {"image_only": True, "hybrid": False}, "hybrid_note": service.HYBRID_SOON,
+    return {"enabled": True, "engine": engine_provider.describe(admin=_is_admin(user)),
+            "modes": {"image_only": True, "hybrid": hybrid_on}, "hybrid_note": hybrid_info["message"] or hybrid_info["note"],
+            "hybrid": hybrid_info, "mode_labels": {"image_only": hybrid.LABEL_AI_ONLY, "hybrid": hybrid_info["label"]},
             "limits": await limits.usage(session, user, tenant, settings),
             "upload": {"types": ["image/png", "image/jpeg"], "max_bytes": int(settings["max_image_bytes"]),
                        "max_width": int(settings["max_image_width"]), "max_height": int(settings["max_image_height"])},
@@ -113,13 +157,20 @@ async def status(user: User = Depends(get_current_user), session: AsyncSession =
 
 @router.post("/items", status_code=201)
 async def add_item(file: Optional[UploadFile] = File(default=None), link: Optional[str] = Form(default=None, max_length=linkfetch.MAX_URL_LENGTH),
-                   mode: str = Form(default="image_only"), user: User = Depends(get_current_user),
+                   mode: str = Form(default="image_only"), symbol: str | None = Form(default=None, max_length=40),
+                   timeframe: str | None = Form(default=None, max_length=8), user: User = Depends(get_current_user),
                    session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     settings = await _gate(session, user)
     if mode not in service.MODES:
         raise HTTPException(status_code=422, detail={"message": "mode must be image_only or hybrid", "code": "bad_mode"})
+    pick: dict[str, str] | None = None
     if mode == "hybrid":
-        raise HTTPException(status_code=409, detail={"message": service.HYBRID_SOON, "code": "hybrid_soon"})
+        # M59 CR-4: the symbol and timeframe come only from the user's pick; nothing priced is read from the picture.
+        await _hybrid_gate(session, user)
+        try:
+            pick = hybrid.check_pick(symbol, timeframe)
+        except hybrid.PickError as exc:
+            raise HTTPException(status_code=422, detail={"message": str(exc), "code": exc.code}) from None
     has_file = file is not None and bool(file.filename or file.size)
     if has_file == bool((link or "").strip()):
         raise HTTPException(status_code=422, detail={"message": "Send one chart: an image file or a link.", "code": "one_source"})
@@ -146,7 +197,7 @@ async def add_item(file: Optional[UploadFile] = File(default=None), link: Option
             raise HTTPException(status_code=exc.status, detail={"message": str(exc), "code": "image_rejected"}) from None
         raise _unreadable(str(exc)) from None
     try:
-        row = await service.add_item(session, user, tenant, settings, clean, mode=mode, source=source, source_host=source_host)
+        row = await service.add_item(session, user, tenant, settings, clean, mode=mode, source=source, source_host=source_host, pick=pick)
     except storage.StorageUnavailable:
         raise HTTPException(status_code=503, detail={"message": "Chart storage is not available on this server. Ask the administrator.",
                                                      "code": "storage_unavailable"}) from None
@@ -187,9 +238,32 @@ async def get_image(item_id: int, user: User = Depends(get_current_user), sessio
 @router.post("/items/{item_id}/analyze")
 async def analyze(item_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     settings = await _gate(session, user)
+    if (await service.own(session, user, item_id)).mode == "hybrid":
+        await _hybrid_gate(session, user)
     await _rate(user, settings)
     tenant = await _tenant(session, user)
     return service.as_dict(await service.analyze(session, user, tenant, settings, item_id))
+
+
+@router.get("/items/{item_id}/reading.png")
+async def reading_image(item_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Response:
+    """The caller's own hybrid analysis: ATP's reading drawn by code on the candles stored with the result (the same
+    picture as on the page). Reads only; the flag chart_analyze_hybrid as well."""
+    await _gate(session, user)
+    await _hybrid_gate(session, user)
+    row = await service.own(session, user, item_id)
+    done = service.as_dict(row).get("hybrid") if row.mode == "hybrid" else None
+    if not isinstance(done, dict) or not isinstance(done.get("reading"), dict):
+        raise HTTPException(status_code=409, detail={"message": "This chart has no advanced analysis yet.", "code": "not_analysed"})
+    try:
+        png = await run_in_threadpool(reading_png.render, done["reading"])
+    except ValueError:
+        raise HTTPException(status_code=410, detail={"message": "ATP's reading has no candles to draw.", "code": "image_gone"}) from None
+    symbol = "".join(ch for ch in str(done["reading"].get("symbol") or "chart") if ch.isalnum())[:20] or "chart"
+    tf = "".join(ch for ch in str(done["reading"].get("timeframe") or "") if ch.isalnum())[:4]
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+                             "Content-Disposition": f'inline; filename="atp-reading-{symbol}-{tf}-{row.id}.png"'})
 
 
 @router.get("/items/{item_id}/strikes")

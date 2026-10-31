@@ -25,10 +25,11 @@ const ok = (): PublicStatus => ({
 });
 
 describe("Status page", () => {
-  it("shows its heading and says it is checking, before any answer", () => {
+  it("shows its heading and the placeholder block while it checks, before any answer", () => {
     const html = renderPage(<StatusPage />);
     expect(textOf(html)).toContain("AiAlgoDesk status");
-    expect(textOf(html)).toContain("Checking the platform");
+    expect(html).toContain('aria-label="Checking the platform"');
+    expect(html).toContain("data-skeleton-block");
     expectNoDeveloperText(html);
   });
 

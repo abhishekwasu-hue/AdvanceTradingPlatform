@@ -7,7 +7,7 @@ import { Chip, FilterChip, chipClass, type ChipTone } from "./Chip";
 /** Chart + colour order Part 3 (review PR sequence item 8): one Chip behind the old ChipV2 and Badge. */
 describe("Chip", () => {
   it("ChipV2 renders exactly what it rendered before, for every kind", () => {
-    const base = "inline-flex h-5 shrink-0 items-center rounded-pill px-space-2 text-t12 font-medium";
+    const base = "inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-pill px-space-2 text-t12 font-medium";
     const OLD = {
       outline: `${base} border border-border text-fg-muted`, solid: `${base} bg-fg text-surface-1`,
       brand: `${base} bg-brand/10 text-brand`, warn: `${base} bg-warn-tint text-warn`,
@@ -19,7 +19,7 @@ describe("Chip", () => {
   });
 
   it("Badge renders exactly what it rendered before, for every tone", () => {
-    const base = "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs font-semibold";
+    const base = "inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-xs font-semibold";
     const OLD = {
       neutral: "border-border bg-surface-2 text-fg-muted", up: "border-up/40 bg-up/10 text-up", down: "border-down/40 bg-down/10 text-down",
       warn: "border-warn/40 bg-warn/10 text-warn", info: "border-info/40 bg-info/10 text-info", brand: "border-brand/40 bg-brand/10 text-brand",
@@ -40,7 +40,7 @@ describe("Chip", () => {
     }
     expect(chipClass({ tone: "info" })).toContain("bg-info-tint");
     expect(chipClass({ tone: "ai" })).toContain("bg-ai-tint");
-    expect(chipClass({ tone: "warn", variant: "outline" })).toBe("inline-flex h-5 shrink-0 items-center rounded-pill px-space-2 text-t12 font-medium border border-warn/40 text-warn");
+    expect(chipClass({ tone: "warn", variant: "outline" })).toBe("inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-pill px-space-2 text-t12 font-medium border border-warn/40 text-warn");
   });
 
   it("solid is always the text colour (Live), never a hue", () => {

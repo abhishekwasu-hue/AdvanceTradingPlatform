@@ -7,8 +7,14 @@ import { Dialog } from "../components/primitives/Dialog";
 import ShowGetStartedV2 from "../setup/ShowGetStartedV2";
 import { QUESTION_MAX_CHARS, SUGGESTED_QUESTIONS, safeLinks, sourceLabel, supportQuestion, type SupportReply } from "./support";
 import { Details } from "../ui/Details";
+import { RichText } from "../ui/RichText";
 
 interface Turn { q: string; reply?: SupportReply; error?: string }
+
+/** M63 I-7: the answer (help-page passages are markdown) as rich text, never with raw ** or "- ". */
+export function ReplyText({ answer }: { answer: string }) {
+  return <RichText source={answer} className="leading-relaxed" />;
+}
 
 /** Z10-f: the help desk. How-to answers from the help and legal pages; it never reads positions or orders and never
  * places, changes or cancels anything. When it cannot answer, "Send feedback" opens the feedback form with the
@@ -67,7 +73,7 @@ export default function SupportDialog({ open, onOpenChange, onFeedback }: {
               <p className="ml-auto w-fit max-w-[85%] rounded-lg bg-brand/20 px-3 py-1.5 text-sm text-fg"><span className="sr-only">You asked: </span>{t.q}</p>
               {t.reply && (
                 <div className="max-w-[95%] rounded-lg bg-surface-2 px-3 py-2 text-sm text-fg">
-                  <p className="whitespace-pre-wrap leading-relaxed">{t.reply.answer}</p>
+                  <ReplyText answer={t.reply.answer} />
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
                     <span>{sourceLabel(t.reply)}</span>
                     {safeLinks(t.reply.links).map((l) => (

@@ -35,9 +35,11 @@ class ExecutionResult:
         broker_order_id: Optional[str] = None, system_failure: bool = False,
         sl_order_id: Optional[str] = None, sl_failed: bool = False, algo_tag: Optional[str] = None,
         partial_fill: bool = False, requested_quantity: Optional[float] = None, broker_uncertain: bool = False,
-        sl_rejected: bool = False,
+        sl_rejected: bool = False, blocks: list | None = None,
     ) -> None:
         self.executed = executed
+        # M64 RM-3: the Risk limits refusals as data (app/risk_engine/risk_limits.block) for the block message and the log.
+        self.blocks = list(blocks or [])
         # G-LIVE: the stop failed because the broker clearly declined it (not a timeout) - no stop can be standing.
         self.sl_rejected = sl_rejected
         # P0.5 / T1: the broker's book could not confirm what filled (book unsupported, cancel of an unfilled
@@ -174,13 +176,13 @@ class OrderRouter:
         # DEF-0: with no risk per trade set the size is the caller's cap (the trader's lots / max lots), else one lot.
         decision = self.risk_manager.validate_and_size(signal, state, contract_spec=contract_spec, requested_quantity=max_quantity)
         if not decision.approved:
-            return ExecutionResult(executed=False, reasons=decision.reasons)
-        notes: list[str] = []
+            return ExecutionResult(executed=False, reasons=decision.reasons, blocks=decision.blocks)
+        notes: list[str] = list(decision.warnings)      # M64: e.g. the no-stop fallback's WARNING
         if max_quantity is not None and decision.quantity > max_quantity:
             unit = contract_spec.lot_size if contract_spec is not None else 1
             capped = int(max_quantity // unit) * unit if unit else max_quantity
             if capped <= 0:
-                return ExecutionResult(executed=False, reasons=[f"Position cap ({max_quantity:g}) is below one lot ({unit:g})"])
+                return ExecutionResult(executed=False, reasons=[f"The size allowed ({max_quantity:g}) is less than one lot ({unit:g})."])
             notes.append(f"Size capped from {decision.quantity:g} to {capped:g} by the deployment/margin limit")
             decision.quantity = capped
         if pre_place_check is not None:

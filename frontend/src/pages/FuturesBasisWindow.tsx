@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { ApiError } from "../api/client";
+import { errorSentence } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
 import { basisApi, latest, linePaths, pctText, type BasisSeries } from "../charting/futuresBasis";
 import { SkeletonRows } from "../components/primitives";
@@ -65,7 +66,7 @@ export default function FuturesBasisWindow({ params }: { params: URLSearchParams
     let live = true;
     basisApi.basis(underlying).then(
       (s) => { if (live) setSeries(s); },
-      (e: unknown) => { if (live) setError(e instanceof ApiError && e.status === 503 ? "Futures basis charts are not enabled for your organisation." : String(e)); },
+      (e: unknown) => { if (live) setError(e instanceof ApiError && e.status === 503 ? "Futures basis charts are not enabled for your organisation." : errorSentence(e)); },
     );
     return () => { live = false; };
   }, [user, underlying]);

@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 // Recorded with eslint 10.12.0 / typescript-eslint 8.71.2 when the ratchet was added (101 warnings).
 const BASELINE = {
-  "@typescript-eslint/no-unused-vars": 54,
+  "@typescript-eslint/no-unused-vars": 53,
   "react-hooks/exhaustive-deps": 30,
   "no-useless-assignment": 7,
   "unused-disable-directive": 7,   // an `eslint-disable` comment that no longer suppresses anything

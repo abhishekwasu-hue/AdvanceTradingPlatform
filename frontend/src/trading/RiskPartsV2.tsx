@@ -99,7 +99,7 @@ export function MarketEventsV2({ user, defaultCut, nonce, onChanged }: {
   }
 
   return (
-    <CardV2 title="Market events" count={events?.length} testId="events">
+    <CardV2 title="Market events" count={events?.length} testId="events" tour="risk-events">
       <Details id="risk.events" className="mb-space-3">
         <p className="text-t13 text-fg-muted">
           On a budget, policy, expiry or results day - and inside its hours, if you give them - an event either stops new entries

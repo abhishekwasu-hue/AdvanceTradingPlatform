@@ -9,6 +9,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { cx } from "../components/primitives";
+import { formatNumber } from "../ui/format";
 import {
   canvasSize, cone, hitRadius, linear, linePath, maxLossY, money, niceTicks, seriesAt, signAreas, strikeAtPointer, strikeBounds, strikeForKey, yDomain,
   type Evaluation, type Leg,
@@ -109,7 +110,7 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
           </g>
         ))}
         {xTicks.map((v, i) => (
-          <text key={v} x={sx(v)} y={H - M.bottom + 30} textAnchor={i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"} className="font-mono text-xs" style={{ fill: "rgb(var(--chart-text))" }}>{Math.round(v).toLocaleString("en-IN")}</text>
+          <text key={v} x={sx(v)} y={H - M.bottom + 30} textAnchor={i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"} className="font-mono text-xs" style={{ fill: "rgb(var(--chart-text))" }}>{formatNumber(v, 0)}</text>
         ))}
         {areas.profit.map((d, i) => <path key={`p${i}`} d={d} className="fill-up/15" />)}
         {areas.loss.map((d, i) => (
@@ -130,11 +131,11 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
         <path d={linePath(xs, e.on_date, sx, sy)} className="fill-none stroke-signal" strokeWidth={2.25} strokeDasharray={later ? "6 4" : undefined} data-testid="curve-date" />
         {/* the underlying's price */}
         <line x1={sx(spot)} x2={sx(spot)} y1={M.top} y2={H - M.bottom} className="stroke-info" strokeWidth={1.25} />
-        <text x={sx(spot)} y={M.top + 10} dx={4} className="fill-info font-mono text-xs">spot {Math.round(spot).toLocaleString("en-IN")}</text>
+        <text x={sx(spot)} y={M.top + 10} dx={4} className="fill-info font-mono text-xs">spot {formatNumber(spot, 0)}</text>
         {(e.breakevens ?? []).filter((b) => b >= xs[0] && b <= xs[xs.length - 1]).map((b, i) => (
           <g key={b} data-testid="breakeven">{/* alternate labels above / below zero so close breakevens stay readable */}
             <circle cx={sx(b)} cy={sy(0)} r={3.5} className="fill-surface stroke-fg" strokeWidth={1.5} />
-            <text x={sx(b)} y={i % 2 ? sy(0) + 16 : sy(0) - 8} textAnchor="middle" className="fill-fg font-mono text-xs">{Math.round(b).toLocaleString("en-IN")}</text>
+            <text x={sx(b)} y={i % 2 ? sy(0) + 16 : sy(0) - 8} textAnchor="middle" className="fill-fg font-mono text-xs">{formatNumber(b, 0)}</text>
           </g>
         ))}
         {/* strikes: drag on the axis, or focus and use the keys */}
@@ -163,7 +164,7 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
       </svg>
       {inChart && hover != null && (
         <figcaption className="pointer-events-none absolute right-2 top-2 rounded-md border border-border bg-surface-1/95 px-2 py-1 font-mono text-xs text-fg shadow">
-          <div>at {Math.round(hover).toLocaleString("en-IN")}</div>
+          <div>at {formatNumber(hover, 0)}</div>
           {e.at_expiry && <div>expiry {money(seriesAt(xs, e.at_expiry, hover))}</div>}
           {later && <div className="text-signal">today {money(seriesAt(xs, e.today, hover))}</div>}
           <div className="text-signal">{later ? `+${e.days_forward}d` : "today"} {money(seriesAt(xs, e.on_date, hover))}</div>

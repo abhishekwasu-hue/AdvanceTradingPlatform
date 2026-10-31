@@ -17,6 +17,7 @@ import {
   type NewsVerdict,
 } from "../types";
 import { formatDateTimeIST } from "../ui/format";
+import { stripMarkdown, stripMarkdownLine } from "../ui/stripMarkdown";
 import { SelectOrCombobox } from "../ui/Combobox";
 
 /** Phase BB: feed items are unverified - a severity chip and the badge say so on every row. */
@@ -84,6 +85,11 @@ function sentimentClass(sentiment: NewsSentiment): string {
 /** REV-1 M3: the Symbol box reads the list this long after the last key (no read per keystroke). */
 const NEWS_SEARCH_DEBOUNCE_MS = 400;
 
+/** M63 I-7: an event's one-line description (a feed summary or a typed note) as plain words, never raw markdown. */
+export function EventSummary({ text }: { text: string }) {
+  return <div className="mt-0.5 text-xs text-fg-muted">{stripMarkdown(text)}</div>;
+}
+
 export default function NewsEventsPage() {
   const { user, loading: authLoading } = useAuth();
   const [events, setEvents] = useState<NewsEventResponse[]>([]);
@@ -91,7 +97,7 @@ export default function NewsEventsPage() {
   const [symbolFilter, setSymbolFilter] = useState("");
   const symbolQuery = useDebouncedValue(symbolFilter.trim(), NEWS_SEARCH_DEBOUNCE_MS);   // REV-1 M3: one read when typing stops
   const [originFilter, setOriginFilter] = useState<"" | "MANUAL" | "FEED">("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);                // M63 I-7: the list is read on open - placeholder rows first
   const [error, setError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [form, setForm] = useState<NewsEvent>(defaultNewsEvent());
@@ -215,12 +221,12 @@ export default function NewsEventsPage() {
                       </span>
                     )}
                     {e.classification && (
-                      <span className={`ml-2 inline-block rounded border px-1.5 py-0.5 text-xs ${severityClass(e.classification.severity)}`} title={e.classification.one_line_en}>
+                      <span className={`ml-2 inline-block rounded border px-1.5 py-0.5 text-xs ${severityClass(e.classification.severity)}`} title={stripMarkdownLine(e.classification.one_line_en)}>
                         {e.classification.type.toLowerCase().replace("_", " ")} · severity {e.classification.severity}{e.classification.method === "ai" ? " · AI" : ""}
                       </span>
                     )}
                     <div className="mt-1 font-medium text-fg">{e.headline}</div>
-                    {e.description && <div className="mt-0.5 text-xs text-fg-muted">{e.description}</div>}
+                    {e.description && <EventSummary text={e.description} />}
                     {e.affected_symbols.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {e.affected_symbols.map((s) => (

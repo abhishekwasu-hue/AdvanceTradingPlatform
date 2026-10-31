@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, CircleHelp, Wrench, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { LogoMark } from "../components/Logo";
+import { Skeleton } from "../components/primitives";
 import { Details } from "../ui/Details";
 import {
   COMPONENT_NAMES, STATE_LABEL, STATE_TONE, checkedAt, eodLine, incidentText, marketLine, pageHeadline,
@@ -106,9 +107,8 @@ export function StatusView({ load, sessions }: { load: StatusLoad; sessions?: Se
   if (load.kind === "loading") {
     return (
       <Shell>
-        <p role="status" aria-live="polite" className="rounded-xl border border-border bg-surface-1 p-4 text-sm text-fg-muted">
-          Checking the platform…
-        </p>
+        {/* M63 I-7: the shared placeholder block while the first answer is on its way (read out as below). */}
+        <div aria-live="polite"><Skeleton className="h-24" panel label="Checking the platform" /></div>
       </Shell>
     );
   }

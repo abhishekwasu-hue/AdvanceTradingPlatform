@@ -1,8 +1,8 @@
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import SignalDirection
@@ -124,28 +124,28 @@ async def build_trading_day_state(session: AsyncSession, user: User, *, now: Opt
     today_start = trading_day_start(now)   # P0.5 / T6: the Indian trading day, not UTC midnight
     tenant_id = user.tenant_id
 
+    # M64: the legs of one multi-leg structure share a leg_group_id - it is ONE position and ONE entry.
+    one_each = func.count(func.distinct(func.coalesce(TradeRecord.leg_group_id, cast(TradeRecord.id, String))))
     open_positions = await session.scalar(
-        select(func.count()).select_from(TradeRecord)
-        .where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
+        select(one_each).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
     )
     # P0.5 / T6: open positions count at their last mark, so a day going wrong while positions are still open
     # reaches the daily-loss limit before the exits realise it.
     unrealised = await open_unrealised_pnl(session, tenant_id)
     trades_today = await session.scalar(
-        select(func.count()).select_from(TradeRecord)
-        .where(TradeRecord.tenant_id == tenant_id, TradeRecord.entry_time >= today_start,
-               not_a_split())
+        select(one_each).where(TradeRecord.tenant_id == tenant_id, TradeRecord.entry_time >= today_start, not_a_split())
     )
     daily_pnl = await session.scalar(
         select(func.coalesce(func.sum(TradeRecord.pnl), 0.0))
         .where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time >= today_start)
     )
 
-    consecutive_losses = (await loss_streak_count(session, tenant_id, now=now))["losses_in_a_row"]
+    streak = await loss_streak_count(session, tenant_id, now=now)
 
     return TradingDayState(
         trades_today=trades_today or 0, daily_pnl=float(daily_pnl or 0.0) + unrealised,
-        consecutive_losses=consecutive_losses, open_positions=open_positions or 0,
+        consecutive_losses=streak["losses_in_a_row"], open_positions=open_positions or 0,
+        last_loss_at=streak.get("last_loss_at"), as_of=now or datetime.now(UTC),
     )
 
 
@@ -172,13 +172,16 @@ async def loss_streak_count(session: AsyncSession, tenant_id: int, *, now: Optio
     mode, resumed_at, limit = await _pause_settings(session, tenant_id)
     session_start = trading_day_start(now)
     since = loss_streak.counted_since(mode, session_start=session_start, resumed_at=resumed_at)
-    query = select(TradeRecord.pnl).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_not(None))
+    query = select(TradeRecord.pnl, TradeRecord.exit_time).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_not(None))
     if since is not None:
         query = query.where(TradeRecord.exit_time >= since if mode == loss_streak.NEXT_SESSION else TradeRecord.exit_time > since)
     # Enough rows to reach any saved limit; a window bounded by the session or the resume is short anyway.
-    rows = await session.scalars(query.order_by(TradeRecord.exit_time.desc()).limit(max(20, (limit or 0) + 1)))
-    return {"mode": mode, "losses_in_a_row": loss_streak.streak_of(rows), "counted_since": since, "resumed_at": resumed_at,
-            "session_start": session_start, "saved_limit": limit}
+    rows = list(await session.execute(query.order_by(TradeRecord.exit_time.desc()).limit(max(20, (limit or 0) + 1))))
+    count = loss_streak.streak_of(r[0] for r in rows)
+    # M64: when the newest loss of the streak closed (the cool-down in minutes runs from it).
+    last_loss_at = _aware(rows[0][1]) if count > 0 and rows else None
+    return {"mode": mode, "losses_in_a_row": count, "counted_since": since, "resumed_at": resumed_at,
+            "session_start": session_start, "saved_limit": limit, "last_loss_at": last_loss_at}
 
 
 async def loss_streak_status(session: AsyncSession, tenant_id: int, *, now: Optional[datetime] = None) -> Dict[str, Any]:

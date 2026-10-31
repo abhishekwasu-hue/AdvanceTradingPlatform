@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { CoachGroup, CoachReview } from "../types";
 import { Card, signClass } from "./ui";
+import { strategyDisplayName } from "../ui/strategyName";
 
 /**
  * Phase AV: the trade coach - your journal read like a mentor would: the numbers, where the money
@@ -162,7 +163,7 @@ export default function TradeCoach() {
                 <EquityLine points={review.equity} />
               </Card>
               <Card title="By strategy">
-                <Bars rows={review.by_strategy} labelOf={(g) => g.key} />
+                <Bars rows={review.by_strategy} labelOf={(g) => strategyDisplayName(g.key) || "My strategy"} />
               </Card>
               <Card title="By entry hour">
                 <Bars rows={review.by_hour} labelOf={(g) => g.key} />

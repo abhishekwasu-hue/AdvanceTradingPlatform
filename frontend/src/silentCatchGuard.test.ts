@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
  * BASELINE is a ratchet: the count may only go down. When a pass removes some, lower BASELINE to the new count
  * (the test fails when the number is lower too, so the ratchet never goes slack).
  */
-const BASELINE = 19;
+const BASELINE = 14;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = join(ROOT, "src");

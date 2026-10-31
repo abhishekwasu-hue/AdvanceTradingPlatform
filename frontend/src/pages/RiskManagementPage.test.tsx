@@ -24,7 +24,8 @@ describe("Risk Management page", () => {
 
   it("shows a loading placeholder (not a blank or broken screen) while the settings are read", () => {
     const html = renderPage(<RiskManagementPage />);
-    expect(html).toMatch(/Loading/);
+    expect(html).toMatch(/Loading your risk limits/);
+    expect(textOf(html)).toContain("Risk Management");             // the heading stays while loading
     expectNoDeveloperText(html);
   });
 

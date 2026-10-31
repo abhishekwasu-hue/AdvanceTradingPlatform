@@ -23,7 +23,7 @@ describe("ETF screen helpers (S10 J)", () => {
     expect(inrShort(4.5e5)).toBe("4.5 L");
     expect(inrShort(null)).toBe("–");
     expect(pct(2.15)).toBe("+2.15%");
-    expect(pct(-0.06)).toBe("-0.06%");
+    expect(pct(-0.06)).toBe("−0.06%");
     expect(pct(null)).toBe("–");
     expect(etfQuery({ sessions: 20, q: " gold ", minCr: 1, maxTracking: null, sort: "traded_value" })).toBe("sessions=20&sort=traded_value&min_traded_value=10000000&q=gold");
     expect(etfQuery({ sessions: 5, q: "", minCr: 0, maxTracking: 0.5, sort: "symbol" })).toContain("max_abs_tracking=0.5");
@@ -36,7 +36,7 @@ describe("ETF screen helpers (S10 J)", () => {
     expect(t).toContain("2 of 3 ETFs");
     expect(html.indexOf('data-symbol="NIFTYBEES"')).toBeLessThan(html.indexOf('data-symbol="GOLDBEES"'));
     expect(t).toContain("340.0 Cr");
-    expect(t).toContain("-0.06%");
+    expect(t).toContain("−0.06%");
     expect(t).toContain("the tracked index is not in the shared history");
     expect(t).not.toMatch(/\b(buy|sell|recommended|best|top pick|target)\b/i);
   });

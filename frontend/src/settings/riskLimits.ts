@@ -5,6 +5,7 @@
  * with its words, units and bounds (GET /api/risk-settings/limits), so this page and the engine never disagree.
  */
 import { request } from "../api/client";
+import { formatNumber } from "../ui/format";
 
 export const RISK_LIMITS_PATH = "/settings/risk-limits";
 
@@ -106,7 +107,7 @@ export function onCount(view: RiskLimitsView): string {
 /** A switched-on check's value in words ("₹2,000 or 2%"), for the closed row. */
 export function valueWords(check: RiskLimitCheck): string {
   const parts = check.fields.filter((f) => typeof f.value === "number").map((f) =>
-    f.unit === "₹" ? `₹${(f.value as number).toLocaleString("en-IN")}` : f.unit === "%" ? `${f.value}%` : f.unit === "x" ? `${f.value}` : `${f.value} ${f.unit}`);
+    f.unit === "₹" ? `₹${formatNumber(f.value as number, 3, { trim: true })}` : f.unit === "%" ? `${f.value}%` : f.unit === "x" ? `${f.value}` : `${f.value} ${f.unit}`);
   return parts.join(" · ");
 }
 

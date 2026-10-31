@@ -1,3 +1,5 @@
+import { formatNumber, formatPct } from "../ui/format";
+
 /** S10 J: the ETF screen as the server sends it (GET /api/screener/etf; flag `screener_etf`, off by default). */
 export interface EtfRow {
   symbol: string; name: string; underlying: string | null; session: string | null; close: number | null; traded_value: number | null;
@@ -18,14 +20,14 @@ export function isEtfResponse(x: unknown): x is EtfResponse {
 /** Indian grouping in crores / lakhs for traded value ("12.3 Cr", "45.6 L"). */
 export function inrShort(v: number | null): string {
   if (v === null || !Number.isFinite(v)) return "–";
-  if (v >= 1e7) return `${(v / 1e7).toFixed(1)} Cr`;
-  if (v >= 1e5) return `${(v / 1e5).toFixed(1)} L`;
-  return v.toFixed(0);
+  if (v >= 1e7) return `${formatNumber(v / 1e7, 1)} Cr`;
+  if (v >= 1e5) return `${formatNumber(v / 1e5, 1)} L`;
+  return formatNumber(v, 0);
 }
 
 export function pct(v: number | null): string {
   if (v === null || !Number.isFinite(v)) return "–";
-  return `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
+  return formatPct(v);
 }
 
 export function etfQuery(p: { sessions: number; q: string; minCr: number; maxTracking: number | null; sort: EtfSort }): string {

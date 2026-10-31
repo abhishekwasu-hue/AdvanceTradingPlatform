@@ -6,7 +6,7 @@
  * Numbers that belong to an instrument (strike step, lot size, the template width) always come from the trader's
  * inputs (the instrument master), never from defaults here.
  */
-import { formatINR } from "../ui/format";
+import { formatINR, formatNumber } from "../ui/format";
 
 export type Direction = "BUY" | "SELL";
 export type OptionKind = "CE" | "PE" | "FUT";
@@ -339,7 +339,7 @@ export function basketUnderlying(label: string): string | null {
 export function contractLabel(o: Pick<BasketOrder, "side" | "option_type" | "strike" | "expiry">): string {
   const d = new Date(`${o.expiry}T00:00:00Z`);
   const day = Number.isFinite(d.getTime()) ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : o.expiry;
-  return o.option_type === "FUT" ? `${o.side} FUT ${day}` : `${o.side} ${Math.round(o.strike ?? 0).toLocaleString("en-IN")} ${o.option_type} ${day}`;
+  return o.option_type === "FUT" ? `${o.side} FUT ${day}` : `${o.side} ${formatNumber(Math.round(o.strike ?? 0), 0)} ${o.option_type} ${day}`;
 }
 
 /** The canvas's viewBox for the width it is drawn at: the full 800 x 360 from 640 px up; below that (a phone) a

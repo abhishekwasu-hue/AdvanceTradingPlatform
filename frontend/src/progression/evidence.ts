@@ -2,30 +2,29 @@
 // trades (app/decision_tools/own_stats.py); this only formats them. Facts only - no advice wording.
 import type { TFunction } from "i18next";
 import type { LadderCriterion, LadderEvidence } from "../types";
+import { formatINR, formatNumber, formatSignedINR } from "../ui/format";
 
 /** 0.6 -> "60.0%"; null -> "-". */
 export function pct(x: number | null | undefined, digits = 1): string {
-  return x == null ? "-" : `${(x * 100).toFixed(digits)}%`;
+  return x == null ? "-" : `${formatNumber(x * 100, digits)}%`;
 }
 
-/** Rupees with two decimals, signed when asked: "₹1,234.50", "+₹80.00", "-₹20.00". */
+/** Rupees with two decimals, signed when asked: "₹1,234.50", "+₹80.00", "−₹20.00". */
 export function rupees(x: number | null | undefined, signed = false): string {
   if (x == null) return "-";
-  const body = `₹${Math.abs(x).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  if (x < 0) return `-${body}`;
-  return signed && x > 0 ? `+${body}` : body;
+  return signed ? formatSignedINR(x, { paise: true }) : formatINR(x, { paise: true });
 }
 
 /** An upper bound without a misleading "0.00%": below 0.01 % (or underflowed to 0) it reads "< 0.01%". */
 export function probability(p: number | null | undefined): string {
   if (p == null) return "-";
   if (p < 0.0001) return "< 0.01%";
-  return `${(p * 100).toFixed(2)}%`;
+  return `${formatNumber(p * 100, 2)}%`;
 }
 
 /** A ratio with two decimals, or "-". */
 export function ratio(x: number | null | undefined): string {
-  return x == null ? "-" : x.toFixed(2);
+  return x == null ? "-" : formatNumber(x, 2);
 }
 
 export function kellyLine(ev: LadderEvidence, t: TFunction<"progression">): string {

@@ -9,12 +9,12 @@ import type {
   BacktestRunSummary, CustomStrategyResponse, MarketplaceCharge, MarketplaceEarnings, MarketplaceListing, MarketplacePayout, MarketplaceRevenue,
   MarketplaceSubscription, MarketplaceTerms,
 } from "../types";
-import { formatDateIST } from "../ui/format";
+import { formatDateIST, formatNumber } from "../ui/format";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
-const pct = (v: number | null) => (v == null ? "-" : `${(v * (v <= 1 ? 100 : 1)).toFixed(1)}%`);
-const num = (v: number | null, d = 2) => (v == null ? "-" : v.toFixed(d));
-const inr = (v: number, currency = "INR") => (v > 0 ? `${currency === "INR" ? "₹" : `${currency} `}${v.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "Free");
+const pct = (v: number | null) => (v == null ? "-" : `${formatNumber(v * (v <= 1 ? 100 : 1), 1)}%`);
+const num = (v: number | null, d = 2) => (v == null ? "-" : formatNumber(v, d));
+const inr = (v: number, currency = "INR") => (v > 0 ? `${currency === "INR" ? "₹" : `${currency} `}${formatNumber(v, 2, { trim: true })}` : "Free");
 
 function Performance({ l }: { l: MarketplaceListing }) {
   const p = l.performance;
@@ -168,7 +168,7 @@ export default function MarketplacePage() {
           </select>
           <select className={input} value={form.backtest_run_id} onChange={(e) => setForm({ ...form, backtest_run_id: e.target.value })}>
             <option value="">Documented performance (saved backtest run)…</option>
-            {runs.map((r) => <option key={r.id} value={r.id}>#{r.id} {r.strategy_id} {r.symbol} {r.base_timeframe} · {r.total_trades} trades · P&L {r.net_pnl?.toFixed(0)}</option>)}
+            {runs.map((r) => <option key={r.id} value={r.id}>#{r.id} {r.strategy_id} {r.symbol} {r.base_timeframe} · {r.total_trades} trades · P&L {formatNumber(r.net_pnl, 0)}</option>)}
           </select>
           <input className={input} placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           <input className={input} placeholder="Methodology (timeframes, filters, exits, regimes it avoids)" value={form.methodology} onChange={(e) => setForm({ ...form, methodology: e.target.value })} />

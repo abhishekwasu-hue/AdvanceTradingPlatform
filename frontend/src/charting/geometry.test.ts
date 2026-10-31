@@ -81,7 +81,7 @@ describe("drawing geometry", () => {
     expect(of(shapes({ kind: "ray", anchors: [{ t: iso(5), p: 100 }, { t: iso(5), p: 102 }] }, conv), "segment")[0]).toMatchObject({ x1: 50, y1: 500, x2: 50, y2: 0 });
     expect(extendSegment(10, 0, 20, 10, 100, "both")).toEqual({ x1: 0, y1: -10, x2: 100, y2: 90 });
     const measure = of(shapes({ kind: "measure", anchors: [{ t: iso(0), p: 200 }, { t: iso(4), p: 190 }] }, conv), "text");
-    expect(measure[0].text).toBe("-10.00 (-5.00%)");
+    expect(measure[0].text).toBe("−10.00 (−5.00%)");
   });
 
   it("long and short positions: risk, reward and R:R from prices; a wrong-side stop is reported, not flipped", () => {
@@ -91,7 +91,7 @@ describe("drawing geometry", () => {
     const [profit, loss] = of(out, "rect");
     expect(profit).toMatchObject({ x: 200, y: 380, w: 200, h: 120 });                           // entry 100 -> target 112
     expect(loss).toMatchObject({ x: 200, y: 500, w: 200, h: 50 });                              // entry 100 -> stop 95
-    expect(of(out, "text").map((t) => t.text)).toEqual(["Target 112.00 (+12.00%)", "Stop 95.00 (-5.00%)", "R:R 2.40"]);
+    expect(of(out, "text").map((t) => t.text)).toEqual(["Target 112.00 (+12.00%)", "Stop 95.00 (−5.00%)", "R:R 2.40"]);
     const short: DrawingV1 = { kind: "short_position", anchors: [{ t: iso(20), p: 100 }, { p: 106 }, { p: 91 }] };
     expect(positionStats(short)).toMatchObject({ risk: 6, reward: 9, rr: 1.5 });
     const wrong = positionStats({ ...long, anchors: [{ t: iso(20), p: 100 }, { p: 105 }, { p: 112 }] });

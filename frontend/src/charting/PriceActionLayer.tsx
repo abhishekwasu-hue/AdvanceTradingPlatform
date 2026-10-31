@@ -5,6 +5,7 @@
  * Flag `chart_price_action`: while it is off the backend answers 503 and nothing is shown (`onAvailable(false)`).
  */
 import { useEffect, useMemo, useState } from "react";
+import { formatDateTimeIST } from "../ui/format";
 import type { ChartEngine } from "./engine";
 import {
   CONCEPTS, CONCEPT_LABELS, LayerLoader, PA_COLORS, PA_LAYER_ID, layerTf, loadToggles, paApi, saveToggles, mtfRows, toLayerData, trendRows,
@@ -12,7 +13,6 @@ import {
 } from "./priceAction";
 import { windowStart } from "./replay";
 
-const IST = "Asia/Kolkata";
 const btn = "rounded px-1.5 py-0.5 text-xs font-semibold";
 const MTF_LABEL: Record<string, string> = { "1w": "W", "1d": "D", "1h": "1H", "15m": "15m" };
 
@@ -20,7 +20,7 @@ function asOfText(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString("en-IN", { timeZone: IST, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  return formatDateTimeIST(d, { year: false, suffix: false });
 }
 
 /** The panel: toggles, debug, the trend per degree (top degree first) and what the layer was computed from. */

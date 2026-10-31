@@ -31,9 +31,14 @@ from app.risk_engine import by_default
 
 NAMESPACE = "notices"
 LIMITS_NOT_SET = "limits_not_set"
-TEXT = {LIMITS_NOT_SET: "Your risk limits are now OFF by default — set your own in Settings → Risk"}
-LINK = {LIMITS_NOT_SET: "/risk-management"}
-MARK = {LIMITS_NOT_SET: "limits_not_set_seen_at"}
+# M64 (owner amendment, 30 Oct): every order-time risk check is now a switch, OFF unless the trader saved it himself. The
+# users of an organisation whose risk limits row existed before the change (the M64 migration marks it) are told once;
+# dismissing it, or saving Settings > Risk limits, ends it.
+RISK_LIMITS_OFF = "risk_limits_off"
+TEXT = {LIMITS_NOT_SET: "Your risk limits are now OFF by default — set your own in Settings → Risk",
+        RISK_LIMITS_OFF: "Risk limits are now off by default — turn on the ones you want"}
+LINK = {LIMITS_NOT_SET: "/risk-management", RISK_LIMITS_OFF: "/settings/risk-limits"}
+MARK = {LIMITS_NOT_SET: "limits_not_set_seen_at", RISK_LIMITS_OFF: "risk_limits_off_seen_at"}
 PAGE_FLAG = "ui_v2"
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -44,10 +49,30 @@ async def _seen(session: AsyncSession, user: User, notice_id: str) -> bool:
     return bool(value.get(MARK[notice_id]))
 
 
+async def _risk_limits_changed(session: AsyncSession, user: User) -> bool:
+    """Whether the M64 migration switched this organisation's existing risk limits row over to switches."""
+    from sqlalchemy import select
+
+    from app.db.models import RiskSettingsRecord
+    from app.risk_engine import risk_limits
+    row = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
+    return risk_limits.migrated_notice(row)
+
+
 async def due(session: AsyncSession, user: User) -> List[Dict[str, Any]]:
     """The notices due for `user` now (see the module docstring)."""
     from app.platform.controls import flag_enabled
-    if not await flag_enabled(session, PAGE_FLAG, user.tenant_id) or not await by_default.enabled(session, user.tenant_id):
+    if not await flag_enabled(session, PAGE_FLAG, user.tenant_id):
+        return []
+    out: list[dict[str, Any]] = []
+    if await _risk_limits_changed(session, user) and not await _seen(session, user, RISK_LIMITS_OFF):
+        out.append({"id": RISK_LIMITS_OFF, "text": TEXT[RISK_LIMITS_OFF], "link": LINK[RISK_LIMITS_OFF]})
+    return out + await _limits_not_set(session, user)
+
+
+async def _limits_not_set(session: AsyncSession, user: User) -> list[dict[str, Any]]:
+    """TT12-1's notice (see the module docstring)."""
+    if not await by_default.enabled(session, user.tenant_id):
         return []
     account = await by_default._account(session, user)
     if account is None or not by_default.reset_by_tt12(account.risk_settings_json):
@@ -79,4 +104,4 @@ async def notice_seen(notice_id: str, user: User = Depends(get_current_user), se
     return {"notices": await due(session, user)}
 
 
-__all__ = ["router", "due", "mark_seen", "LIMITS_NOT_SET", "TEXT"]
+__all__ = ["router", "due", "mark_seen", "LIMITS_NOT_SET", "RISK_LIMITS_OFF", "TEXT"]

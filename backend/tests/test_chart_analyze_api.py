@@ -136,6 +136,7 @@ def test_status_says_what_the_page_needs():
     who = _owner("status")
     body = client.get(f"{BASE}/status", headers=who["headers"]).json()
     assert body["engine"]["installed"] is True and body["modes"] == {"image_only": True, "hybrid": False}
+    assert body["mode_labels"] == {"image_only": "AI only", "hybrid": "Advanced analysis (code + AI)"} and body["hybrid"]["on"] is False
     assert body["label"] == "Image-only analysis: prices and volume are read from the picture and may be approximate"
     assert body["link_message"] == "Please upload a screenshot instead" and body["retention_days"] == 30
     assert body["limits"]["tier"] == "pro" and body["limits"]["daily_used"] == 0
@@ -173,8 +174,8 @@ def test_upload_refusals():
     both = client.post(f"{BASE}/items", headers=who["headers"], files={"file": ("c.png", PNG, "image/png")},
                        data={"mode": "image_only", "link": "https://img.example.com/c.png"})
     assert both.status_code == 422
-    hybrid = _upload(who, mode="hybrid")
-    assert hybrid.status_code == 409 and hybrid.json()["detail"]["code"] == "hybrid_soon"
+    hybrid = _upload(who, mode="hybrid")                    # its own flag is off (M59 CR-4; tests/test_chart_analyze_hybrid.py)
+    assert hybrid.status_code == 409 and hybrid.json()["detail"]["code"] == "hybrid_off"
     assert client.get(f"{BASE}/items", headers=who["headers"]).json()["items"] == []        # nothing was stored
 
 

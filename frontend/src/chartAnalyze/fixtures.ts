@@ -1,4 +1,4 @@
-import type { AnalysisItem, AnalysisResult, AnalyzeStatus, SetupStatus, StrikesAnswer } from "./types";
+import type { AnalysisItem, AnalysisResult, AnalyzeStatus, HybridResult, SetupStatus, StrikesAnswer } from "./types";
 
 /**
  * Analyze a chart: made-up results for the unit and browser tests (public repository: no real chart, no real data, no
@@ -70,7 +70,7 @@ export function fixtureItem(id: number, status: SetupStatus | null, created = "2
 export function fixtureStatus(over: Partial<AnalyzeStatus> = {}): AnalyzeStatus {
   return {
     enabled: true, engine: { installed: true, name: "fake-engine", version: "0.0" }, modes: { image_only: true, hybrid: false },
-    hybrid_note: "Hybrid analysis is coming soon. Use Image only for now.",
+    hybrid_note: "Advanced analysis is not switched on for your organisation yet. Use AI only for now.",
     limits: { tier: "pro", daily_limit: 10, monthly_limit: 150, daily_used: 1, monthly_used: 3, cost_cap_usd: 10, cost_used_usd: 0.03,
       resets: "daily at 00:00 UTC, monthly on the 1st (UTC)" },
     upload: { types: ["image/png", "image/jpeg"], max_bytes: 5 * 1024 * 1024, max_width: 4096, max_height: 4096 },
@@ -111,5 +111,54 @@ export function fixtureSharedResult(): AnalysisResult {
     shared_note: "Shared by a member of your organisation. The chart's name, its prices, its dates and the picture are left out: this copy shows the structure only.",
     recognised: { symbol: null, exchange: null, timeframe: null, first_bar: null, last_bar: null },
     htf_context: base.htf_context.map((h) => ({ ...h, timeframe: null })),
+  };
+}
+
+/** M59 CR-4: a made-up "Advanced analysis" result - ATP's reading of made-up stored candles for the made-up DEMO 1-hour. */
+export function fixtureHybrid(withAi = true): HybridResult {
+  const bars = Array.from({ length: 40 }, (_, i) => {
+    const o = 100 + Math.sin(i / 4) * 6 + i * 0.2;
+    const c = o + (i % 3 === 0 ? -1.2 : 1.1);
+    return { t: 1_700_000_000 + i * 3600, o, h: Math.max(o, c) + 0.8, l: Math.min(o, c) - 0.7, c };
+  });
+  const brk = { label: "Swing break", price: 104.5, direction: "up" as const, time: bars[34].t };
+  return {
+    contract_version: 1, mode: "hybrid", method: withAi ? "code_ai" : "code",
+    label: withAi ? "Advanced analysis (code + AI)" : "Advanced analysis (code)", disclaimer: DISCLAIMER,
+    pick: { symbol: "DEMO", timeframe: "1h" },
+    side_by_side_note: "ATP does not know your picture's price scale, so nothing is drawn on it. ATP's reading is drawn on its own chart of the stored candles for the symbol and timeframe you picked, shown beside your chart.",
+    reading: {
+      symbol: "DEMO", timeframe: "1h", timeframe_label: "1-hour", as_of: "2026-01-01T10:00:00+00:00", last_close: 106.2, bars,
+      table: [
+        { tf: "1w", label: "Weekly", ready: false, trend: null, weak: false, protected: null, last_break: null },
+        { tf: "1d", label: "Daily", ready: true, trend: "sideways", weak: false, protected: null, last_break: null },
+        { tf: "1h", label: "1-hour", ready: true, trend: "up", weak: true, protected: 101.25, last_break: brk },
+        { tf: "15m", label: "15-minute", ready: true, trend: "down", weak: false, protected: 107.4, last_break: { ...brk, label: "Break against the trend", price: 106.9 } },
+      ],
+      areas: [
+        { where: "above", low: 109.1, high: 110.4, distance: 2.9, state: "fresh", timeframe: "1h" },
+        { where: "below", low: 102.3, high: 103.6, distance: 2.6, state: "tested", timeframe: "1d" },
+      ],
+      levels: [{ kind: "swing high", price: 111.8 }, { kind: "swing low", price: 99.4 }], protected: 101.25, last_break: brk,
+      trigger_candle: { index: 34, ...bars[34] }, zones_note: null,
+      checklist: [
+        { name: "Trend on the 1-hour chart", present: true, reason: "Up (weak)" },
+        { name: "Protected level", present: true, reason: "101.25" },
+        { name: "Last break of structure", present: true, reason: "Swing break at 104.50" },
+        { name: "Trigger candle marked", present: true, reason: "The candle of the last break is marked on ATP's chart" },
+        { name: "Area of interest nearby", present: true, reason: "1 above, 1 below" },
+        { name: "Price inside an area of interest", present: false, reason: "Between areas" },
+        { name: "Higher and lower timeframes read", present: false, reason: "Data not ready: Weekly" },
+      ],
+    },
+    chart: { width: 960, height: 540 },
+    ai: withAi ? {
+      story: ["Made-up story: the made-up candles rise in steps and pause above the made-up protected level."],
+      trend: { side: "up", text: "made-up higher highs" }, current_state: { phase: "pullback", text: "made-up pullback" },
+      setup: fixtureResult("forming").setup, evidence: [],
+      scenarios: { primary: "Made-up primary scenario.", alternative: "Made-up alternative scenario.", primary_invalidated_at: { text: "", price: null } },
+      what_to_wait_for: { condition: "a made-up close back above the made-up area", alert: null },
+    } : null,
+    notes: [],
   };
 }

@@ -153,7 +153,7 @@ async def _teammates_linked(session: AsyncSession, user: User) -> bool:
 def _no_session_reason(records: Sequence[BrokerCredentialRecord], now: datetime, broker: Optional[str], teammates: bool) -> str:
     if not records:
         base = (f"No {terms_for(broker).display_name} account linked by you" if broker else "No broker linked to your login") + \
-               ": EOD data only. Link Upstox or Dhan on the Broker page for live prices."
+               ": end-of-day prices only. Link Upstox or Dhan on the Broker page for live prices."
         if teammates:
             base += " A broker linked by a teammate is theirs: its live data is shown only to that person."
         return base
@@ -163,14 +163,14 @@ def _no_session_reason(records: Sequence[BrokerCredentialRecord], now: datetime,
         name = terms.display_name
         if terms.status is DataTermsStatus.EXECUTION_ONLY:
             reasons.append(f"{name} is execution-only in ATP: its API terms do not allow showing its market data on other "
-                           f"platforms. EOD data here; live prices in your {name} app.")
+                           f"platforms. End-of-day prices here; live prices in your {name} app.")
         elif terms.status is DataTermsStatus.PENDING:
-            reasons.append(f"Live {name} data in ATP waits for the broker's written confirmation. EOD data until then.")
+            reasons.append(f"Live {name} data in ATP waits for the broker's written confirmation. End-of-day prices until then.")
         elif not token_is_usable(record, now):
             reasons.append(f"Your {name} session has no valid token today. Log in to {name} on the Broker page for live data.")
     # Prefer the actionable reason (log in) over the terms ones.
     reasons.sort(key=lambda r: 0 if "Log in" in r else 1)
-    return reasons[0] if reasons else "No live session available: EOD data only."
+    return reasons[0] if reasons else "No live session available: end-of-day prices only."
 
 
 def pick_session(records: Sequence[BrokerCredentialRecord], now: datetime) -> Optional[BrokerCredentialRecord]:
@@ -217,7 +217,7 @@ async def resolve_many(session: AsyncSession, user: User, symbols: Sequence[Tupl
         else:
             out[key] = Entitlement(tier=DataTier.EOD, reason=(
                 f"{key[0]} is outside your {terms.display_name} session budget ({cap} symbols; open positions and charts "
-                "come first). EOD data for it until a slot frees up."), **common)
+                "come first). End-of-day prices for it until a slot frees up."), **common)
     return out
 
 

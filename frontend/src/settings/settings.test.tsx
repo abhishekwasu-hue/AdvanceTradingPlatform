@@ -91,7 +91,7 @@ describe("B1: the v2 router", () => {
     expect(SETTINGS_ROWS.map((r) => r.id)).toEqual(["account", "team", "broker", "ai", "alerts", "defaults", "risk", "appearance", "help", "setup", "advanced"]);
     // UX3-9: Team and Risk limits left the sidebar; Settings opens them at their own addresses.
     expect(SETTINGS_ROWS.find((r) => r.id === "team")?.to).toBe("/team");
-    expect(SETTINGS_ROWS.find((r) => r.id === "risk")?.to).toBe("/risk-management");
+    expect(SETTINGS_ROWS.find((r) => r.id === "risk")?.to).toBe("/settings/risk-limits");     // M64: Settings › Risk limits
     expect(SETTINGS_ROWS.find((r) => r.id === "account")?.to).toBe("/settings/account");
     expect(SETTINGS_ROWS.find((r) => r.id === "broker")?.to).toBe("/broker");
     expect(SETTINGS_ROWS.find((r) => r.id === "defaults")?.to).toBe("/settings/trading-defaults");

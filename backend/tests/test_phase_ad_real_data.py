@@ -1,5 +1,7 @@
 """Phase AD: broker option chains for the research pages (per-underlying success/failure, stub
 brokers, metering) and the exchange-holiday list by year that the Admin console page uses."""
+import logging
+
 from app.brokers.exceptions import BrokerAPIError
 from app.brokers.models import OptionChain, OptionChainRow
 from app.market_data import candles_routes
@@ -26,7 +28,8 @@ class _ChainBroker:
                            rows=[OptionChainRow(strike=26000, call_ltp=210.5, put_ltp=180.0, call_oi=5000, put_oi=7000)] if underlying != "EMPTY" else [])
 
 
-def test_option_chains_per_underlying_and_metered(monkeypatch):
+def test_option_chains_per_underlying_and_metered(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="app.market_data.candles_routes")
     headers, me = _owner("ad-chains@example.com")
     assert client.post("/api/market-data/option-chains", json={"underlyings": ["NIFTY"]}).status_code == 401
     assert client.post("/api/market-data/option-chains", headers=headers, json={"underlyings": ["NIFTY"]}).status_code == 409
@@ -39,14 +42,18 @@ def test_option_chains_per_underlying_and_metered(monkeypatch):
     assert body["source"]["broker"] == "upstox" and body["expiry"] == "2026-11-27" and set(body["symbols"]) == {"NIFTY", "BAD", "EMPTY"}
     nifty = body["symbols"]["NIFTY"]
     assert nifty["rows"] == 1 and nifty["chain"]["rows"][0]["call_ltp"] == 210.5 and nifty["chain"]["underlying_ltp"] == 26050.0 and nifty["chain"]["expiry"] == "2026-11-27"
-    assert body["symbols"]["BAD"]["error"].startswith("BrokerAPIError") and body["symbols"]["BAD"]["chain"] is None
+    # REV-1 M2: the trader reads a plain sentence; the internal class name stays in the log line only.
+    bad_error = body["symbols"]["BAD"]["error"]
+    assert bad_error == "Your broker could not send the option chain for BAD just now. Try again in a moment." and body["symbols"]["BAD"]["chain"] is None
+    assert "BrokerAPIError" not in bad_error
+    assert any("BrokerAPIError" in r.getMessage() and "BAD" in r.getMessage() for r in caplog.records)
     assert any("EMPTY" in w for w in body["warnings"]) and broker.calls[0][1].isoformat() == "2026-11-27"
     usage = client.get("/api/billing/usage", headers=headers).json()
     assert usage["metrics"]["market_data_chains"] == 2                                   # NIFTY + EMPTY
 
     monkeypatch.setattr(candles_routes, "build_adapter", lambda record: _ChainBroker(implemented=False))
     body = client.post("/api/market-data/option-chains", headers=headers, json={"underlyings": ["NIFTY"]}).json()
-    assert "no option-chain endpoint" in body["symbols"]["NIFTY"]["error"] and any("every underlying failed" in w for w in body["warnings"])
+    assert body["symbols"]["NIFTY"]["error"] == "Upstox does not offer option chains yet." and any("every underlying failed" in w for w in body["warnings"])
 
 
 def test_holidays_listed_by_year_for_the_admin_page():

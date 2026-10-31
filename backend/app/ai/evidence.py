@@ -5,7 +5,13 @@ itself - from the tenant's broker session today, from the market-data lake once 
 the client are still accepted for demos, but they are labelled `sample` whatever the request claims, and sample
 evidence cannot approve or deploy anything (AI_EVIDENCE_SERVER_ONLY, on by default). No server data for the window
 means 409 - never a silent fallback to client data (OPEN_QUESTIONS H-5).
+
+M71 W2-B (flag `market_store_reads`): the Copilot / AI reads ask the own store first (`store_frame`,
+app/market_store): Daily from the NSE files (zero broker calls), intraday from the reader's own stored one-minute bars
+plus only the newest ones through his own session. Nothing stored for the window -> `server_frame` exactly as before.
 """
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any, Optional, Tuple
 
 import pandas as pd
@@ -17,6 +23,7 @@ from app.core.models import bars_to_dataframe
 
 SAMPLE = "sample"
 SERVER_PREFIXES = ("broker:", "lake")
+DAILY_MIN_LOOKBACK_DAYS = 400      # as `MarketDataService._lookback`: a daily read always covers about a year
 
 
 def is_server(source: Optional[str]) -> bool:
@@ -66,3 +73,62 @@ async def server_frame(session: AsyncSession, tenant_id: int, symbol: str, excha
     if df.index.tz is None:
         df.index = df.index.tz_localize("UTC")
     return df, f"broker:{record.broker_name}"
+
+
+@dataclass
+class StoredFrame:
+    """M71 W2-B: a Copilot read served by the own store - the closed bars, where they came from, the plain gap lines
+    (what the store does not hold; never filled with zeros) and the broker history calls the read made."""
+    frame: pd.DataFrame
+    source: str
+    gaps: list[str] = field(default_factory=list)
+    rest_calls: int = 0
+
+
+async def store_on(session: AsyncSession | None, tenant_id: int) -> bool:
+    """The flag `market_store_reads` for the tenant (False without a session)."""
+    if session is None:
+        return False
+    from app.market_store.models import FLAG
+    from app.platform.controls import flag_enabled
+    return bool(await flag_enabled(session, FLAG, tenant_id))
+
+
+async def store_frame(session: AsyncSession | None, tenant_id: int, symbol: str, exchange: str, timeframe: str, *,
+                      lookback_days: int, user: Any = None, broker: str | None = None, now: datetime | None = None,
+                      checked: bool = False) -> StoredFrame | None:
+    """M71 W2-B (flag `market_store_reads`): the Copilot's bars from the own store (`market_store.read_bars`), or None
+    (flag off, or the store holds nothing of the window - the caller then reads exactly as before).
+    - Daily on NSE: the NSE daily files over max(`lookback_days`, 400) days - zero broker calls.
+    - Intraday: `user`'s own stored one-minute bars built into the timeframe over `lookback_days` calendar days, plus
+      only the newest bars through his own session (M71Q-2: never another member's bars or session; a reader of
+      another organisation reads nothing). `checked`: the caller already knows the flag is on."""
+    from app.market_data.calendar import IST
+    from app.market_store import read_bars
+    from app.market_store.models import DAILY, WEEKLY, UnknownInterval, canonical
+    from app.market_store.sources import own_rest
+    if session is None or (not checked and not await store_on(session, tenant_id)):
+        return None
+    try:
+        name = canonical(timeframe)
+    except UnknownInterval:
+        return None
+    sym, ex = symbol.strip().upper(), (exchange or "NSE").strip().upper()
+    now = end = now or datetime.now(UTC)
+    days = max(1, int(lookback_days))
+    rest = None
+    if name in (DAILY, WEEKLY):
+        if ex != "NSE":
+            return None
+        days = max(days, DAILY_MIN_LOOKBACK_DAYS)
+    else:
+        if user is None or getattr(user, "tenant_id", None) != tenant_id:
+            return None
+        rest = await own_rest(session, user, sym, ex, broker=broker)
+    first = end.astimezone(IST).date() - timedelta(days=days)
+    start = datetime.combine(first, datetime.min.time(), IST).astimezone(UTC)
+    got = await read_bars(session, sym, name, start, end, user=user, purpose="copilot", exchange=ex, rest=rest, now=now)
+    if not got.served:
+        return None
+    return StoredFrame(got.frame, got.source, got.gap_lines(), got.rest_calls)
+

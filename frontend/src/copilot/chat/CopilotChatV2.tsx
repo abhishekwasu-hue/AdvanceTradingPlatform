@@ -347,7 +347,7 @@ export function CopilotChatV2() {
       setKeep(h.keep);
       setTurns((now) => (now.length ? now : restored));
       next.current = Math.max(next.current, restored.length + 1);
-    }).catch(() => { /* nothing kept or not reachable: the page starts empty */ });
+    }).catch(() => { /* intentional: nothing kept or not reachable: the page starts empty */ });
     return () => { live = false; };
   }, [t]);
 

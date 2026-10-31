@@ -49,7 +49,7 @@ const READINESS = { target: "PLATFORM", ready: false, summary: { ok: 2, todo: 1,
     { key: "smtp", title: "E-mail sending", status: "todo", detail: "SMTP is not configured.", fix: "Set the SMTP settings in the server environment.", link: null, scope: "platform" },
   ] };
 
-const SYSTEM = {
+export const SYSTEM = {
   checked_at: T(0),
   health: { status: "ok", checked_at: T(0), environment: "staging", checks: {
     database: { status: "ok", latency_ms: 1.2 }, migrations: { status: "ok" }, worker: { status: "ok" },

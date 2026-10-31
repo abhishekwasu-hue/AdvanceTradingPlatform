@@ -271,6 +271,24 @@ QUOTE_MAX_STALE_SECONDS = int(os.environ.get("QUOTE_MAX_STALE_SECONDS", "120"))
 STREAMING_QUOTES_ENABLED = os.environ.get("STREAMING_QUOTES_ENABLED", "false").lower() in ("1", "true", "yes")
 # Part B2: streamed ticks -> 1-minute bars in the market data lake (md_candles, source stream:<broker>). Needs the stream.
 LAKE_TICK_WRITER_ENABLED = os.environ.get("LAKE_TICK_WRITER_ENABLED", "false").lower() in ("1", "true", "yes")
+# M71 PL-1b / PL-4 (app/market_data/universe_feed.py): the worker's market-data feed for the active universe (indices,
+# F&O stocks, every watchlist symbol) -> closed 1-minute bars (and 5m / 15m / 60m) in ATP's own store. Off by default.
+MARKET_FEED_ENABLED = os.environ.get("MARKET_FEED_ENABLED", "false").lower() in ("1", "true", "yes")
+# Whose broker data feeds it: "owner" = HB2's owner session (HISTORY_OWNER_TENANT_ID + _NAME, HISTORY_OWNER_USER_ID);
+# "off" = no feed. The bars are stored as that user's own (holder source), visible to that user only (M71Q-2).
+MARKET_FEED_CREDENTIAL = os.environ.get("MARKET_FEED_CREDENTIAL", "owner").strip().lower()
+# Upstox feed mode: "full" carries the day's traded volume (bar volume), "ltpc" carries price only (higher symbol cap).
+MARKET_FEED_MODE = os.environ.get("MARKET_FEED_MODE", "full").strip().lower()
+# Connections the feed may open on the credential (the broker's per-user limit is shared with the credential's other
+# streams, so the default leaves room for them) and an optional lower per-connection symbol cap (0 = the broker's figure).
+MARKET_FEED_MAX_CONNECTIONS = max(1, int(os.environ.get("MARKET_FEED_MAX_CONNECTIONS", "1")))
+MARKET_FEED_SYMBOLS_PER_CONNECTION = max(0, int(os.environ.get("MARKET_FEED_SYMBOLS_PER_CONNECTION", "0")))
+MARKET_FEED_UNIVERSE_SECONDS = max(30, int(os.environ.get("MARKET_FEED_UNIVERSE_SECONDS", "300")))
+MARKET_FEED_LATE_GRACE_SECONDS = max(0.0, float(os.environ.get("MARKET_FEED_LATE_GRACE_SECONDS", "3")))
+# M71Q-2 (docs/BROKER_DATA_TERMS.md): live bars of one credential are never read by another user. While this stays off
+# the feed does not store live bars of the index keys `own_bars.shared_scope` serves to other organisations (M55 T4).
+# Not to be turned on without the owner's written confirmation from the broker and a legal check.
+MARKET_FEED_SHARE_WITH_OTHERS = os.environ.get("MARKET_FEED_SHARE_WITH_OTHERS", "false").lower() in ("1", "true", "yes")
 # Part B3: data-quality thresholds for lake bars (events only - nothing is deleted or blocked).
 LAKE_SPIKE_PCT = float(os.environ.get("LAKE_SPIKE_PCT", "10"))
 LAKE_LATE_SECONDS = float(os.environ.get("LAKE_LATE_SECONDS", "300"))

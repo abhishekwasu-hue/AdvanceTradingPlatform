@@ -2,6 +2,7 @@ import { Sparkles } from "lucide-react";
 import { useId } from "react";
 import { Link } from "react-router";
 import { useOptionalAuth } from "../auth/AuthContext";
+import { Details } from "./Details";
 
 /**
  * UX1 (handover 8b): what a trader sees at the address of a page, or in the place of a feature, that the operator has
@@ -28,7 +29,7 @@ export function ComingSoon({ flag, home = true }: { flag?: string; home?: boolea
         <Sparkles size={20} />
       </div>
       <h2 id={titleId} className="text-t18 font-semibold text-fg">Coming soon</h2>
-      <p className="mt-space-2 text-t14 text-fg-muted">This part of AiAlgoDesk is not open for your account yet. Everything else works as usual.</p>
+      <Details id="coming-soon.about" className="mt-space-2"><p>This part of AiAlgoDesk is not open for your account yet. Everything else works as usual.</p></Details>
       {home && (
         <Link to="/"
           className="mt-space-4 inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface">

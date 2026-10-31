@@ -16,6 +16,7 @@ import {
   type DayOne, type DayOneList, type DayOneOffer, type DayOneRow, type DayOneWatch,
 } from "./dayOne";
 import { Combobox } from "../ui/Combobox";
+import { Details } from "../ui/Details";
 
 type Api = typeof dayOneApi;
 type State = { status: "loading" } | { status: "off" } | { status: "error" } | { status: "ok"; data: DayOne };
@@ -146,9 +147,11 @@ export function SetupView({ data, busy = false, problem = null, onAdopt, onCance
     <section aria-labelledby={titleId} className={cx(CARD, "space-y-space-4 p-space-4 md:p-space-5")} data-day-one="setup" data-tour="signals-day-one">
       <div>
         <h2 id={titleId} className="text-t15 font-semibold text-fg">Pick a ready strategy and a list to watch</h2>
-        <p className="mt-space-1 text-t14 text-fg-muted">
-          Your own signals start here: the strategy reads every symbol on your list and shows where each one stands. Paper money only.
-        </p>
+        <Details id="signals.day-one" className="mt-space-1">
+          <p>
+            Your own signals start here: the strategy reads every symbol on your list and shows where each one stands. Paper money only.
+          </p>
+        </Details>
         {data.outdated && <p className="mt-space-2 text-t14 text-fg">The ready strategy you picked before has been updated. Pick it again.</p>}
       </div>
       {blocked ? (
@@ -213,11 +216,13 @@ function Confirm({ offer, list, busy, onBack, onAdopt }: { offer: DayOneOffer; l
         </dl>
         {offer.rules.length > 0 && <ul className="mt-space-2 list-disc pl-space-5 text-t12 text-fg-muted">{offer.rules.map((r) => <li key={r}>{r}</li>)}</ul>}
       </div>
-      <ul className="space-y-space-1 text-t14 text-fg">
-        <li>Paper money only. Nothing is placed: each setup waits for you.</li>
-        <li>Signals only. What to trade, how much and when to get out stay your own choices.</li>
-        <li>You can change the settings later in a trading bot.</li>
-      </ul>
+      <Details id="day-one.terms" className="mt-0">
+        <ul className="space-y-space-1">
+          <li>Paper money only. Nothing is placed: each setup waits for you.</li>
+          <li>Signals only. What to trade, how much and when to get out stay your own choices.</li>
+          <li>You can change the settings later in a trading bot.</li>
+        </ul>
+      </Details>
       <div className="flex flex-wrap items-center gap-space-2">
         <button type="button" className={LINK_PRIMARY} onClick={onAdopt} disabled={busy} data-day-one-adopt>
           {busy ? "Reading your list…" : "Adopt on paper and read my list"}

@@ -94,7 +94,7 @@ export function SupportTicketsPanel() {
   const counts = data?.counts;
   return (
     <Panel title="Support tickets" id="feedback"
-      note={<>Every “Send feedback” and “Report a problem” message, newest first. Targets: first answer {hours(data?.targets.first_response_hours ?? null)}, resolve {hours(data?.targets.resolve_hours ?? null)} (set them below).</>}>
+      note={`Every “Send feedback” and “Report a problem” message, newest first. Targets: first answer ${hours(data?.targets.first_response_hours ?? null)}, resolve ${hours(data?.targets.resolve_hours ?? null)} (set them below).`}>
       <div className="flex flex-wrap items-center gap-space-2" role="group" aria-label="Show tickets">
         {FILTERS.map((f) => (
           <button key={f} type="button" aria-pressed={filter === f} onClick={() => setFilter(f)}

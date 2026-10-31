@@ -3,6 +3,7 @@
  * feature that owns it counts it. Shown inside the Billing card only while the flag is on (the server then sends
  * `limits_v2`); with the flag off nothing here renders.
  */
+import { Details } from "../ui/Details";
 
 /** Display order and wording. `unit` follows the number; `kind` says how usage compares to the limit. */
 export const PLAN_LIMITS_V2: { key: string; label: string; unit?: string; kind: "count" | "amount" | "max" | "min" | "retention" }[] = [
@@ -63,7 +64,7 @@ export function PlanLimitsV2({ limits, usage }: { limits: Record<string, number>
           ))}
         </tbody>
       </table>
-      <div className="mt-1 text-xs text-fg-muted">Counts are your own. A limit with no count belongs to a feature that is not available yet.</div>
+      <Details id="plan-limits.about" className="mt-1"><p>Counts are your own. A limit with no count belongs to a feature that is not available yet.</p></Details>
     </div>
   );
 }

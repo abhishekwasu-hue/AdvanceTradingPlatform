@@ -6,6 +6,7 @@ import { api } from "../api/client";
 import { Card } from "./ui";
 import type { MfaStatus } from "../types";
 import { formatDateIST } from "../ui/format";
+import { Details } from "../ui/Details";
 
 /**
  * Account-tab card for TOTP two-factor authentication: enrol (QR + manual key), confirm with
@@ -45,11 +46,13 @@ export default function MfaCard({ status, onChange }: { status: MfaStatus | null
         </span>
         {status.enabled && <span className="text-xs text-fg-muted">· {status.backup_codes_remaining} backup codes left · this session {status.session_verified ? "verified" : "not yet verified"}</span>}
       </div>
-      <p className="text-xs text-fg-muted mb-3">
-        Works with Google Authenticator, Authy, 1Password and any RFC 6238 app. {status.required_for_live
-          ? "Your organisation requires it for live trading, broker credentials and the admin console."
-          : "Strongly recommended for anyone who can trade live money."}
-      </p>
+      <Details id="settings.mfa" className="mt-0 mb-3">
+        <p className="text-xs text-fg-muted">
+          Works with Google Authenticator, Authy, 1Password and any RFC 6238 app. {status.required_for_live
+            ? "Your organisation requires it for live trading, broker credentials and the admin console."
+            : "Strongly recommended for anyone who can trade live money."}
+        </p>
+      </Details>
 
       {!status.enabled && !enrol && (
         <button disabled={busy} onClick={() => run(async () => setEnrol(await api.mfaEnrol()))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50">

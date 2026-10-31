@@ -182,6 +182,14 @@ def _pre_open(now: datetime) -> bool:
     return ist.weekday() < 5 and dtime(8, 0) <= ist.time() < dtime(9, 15)
 
 
+def _held_spread_expires(trade: TradeRecord, today: date | None) -> bool:
+    """M55 T1: a deployment's structure held for days (SWING legs in a group) settles at the square-off time of its expiry
+    day, as the option backtest settles it (SETTLEMENT_FROM). Single swing positions are unchanged."""
+    expiry = getattr(trade, "expiry", None)
+    return (today is not None and expiry is not None and bool(trade.leg_group_id) and trade.deployment_id is not None
+            and expiry <= today)
+
+
 def _adapter_key(broker_name: str, account_label: str) -> str:
     return broker_name if (account_label or "primary") == "primary" else f"{broker_name}@{account_label}"
 
@@ -1407,7 +1415,8 @@ class TradingWorker:
             # positions on venues still inside their session are monitored as before.
             due_square_off = {f for f in open_families if (cut := intraday_cutoffs(f)[1]) is not None and now_ist.time() >= cut}
             if due_square_off:
-                report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user_id, families=due_square_off)
+                report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user_id, families=due_square_off,
+                                                                      today=now_ist.date())
             monitored = open_families - due_square_off
             if monitored:
                 # Z3 / BT2: on approval-only positions a target asked "Exit now?"; M55 S2 (A8): every exit is automatic now
@@ -2115,7 +2124,7 @@ class TradingWorker:
             target_credit_pct=dep.target_credit_pct, stop_credit_pct=dep.stop_credit_pct,
             underlying_exit=bool(getattr(dep, "underlying_breach_exit", None)),
             idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", broker=broker, quote_broker=market_data.broker,
-            deployment_id=dep.id, account_id=account_id,
+            deployment_id=dep.id, account_id=account_id, holding=getattr(dep, "holding", None) or "INTRADAY",   # M55 T1
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
@@ -2391,6 +2400,7 @@ class TradingWorker:
     async def _square_off_all(
         self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,
         live_broker: Optional[BrokerInterface], user_id: Optional[int], families: Optional[set] = None,
+        today: date | None = None,
     ) -> int:
         open_trades = list(await session.scalars(
             select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
@@ -2398,10 +2408,13 @@ class TradingWorker:
         venues = await trade_venues(session, open_trades)       # BK2-8: a row without an exchange follows its deployment
         closed = 0
         groups: Dict[str, List[TradeRecord]] = {}
+        expiring: dict[str, list[TradeRecord]] = {}
         for trade in open_trades:
             if families is not None and session_family(venues[trade.id]) not in families:
                 continue
             if (getattr(trade, "holding", None) or "INTRADAY") == "SWING":
+                if _held_spread_expires(trade, today):
+                    expiring.setdefault(trade.leg_group_id, []).append(trade)   # M55 T1: settles on its expiry day
                 continue   # Phase AS: a swing position is held overnight by design
             if trade.leg_group_id:
                 groups.setdefault(trade.leg_group_id, []).append(trade)
@@ -2425,7 +2438,9 @@ class TradingWorker:
                 closed += int(outcome.closed)
             except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
                 logger.error("Square-off of trade %s failed: %s", trade_id, exc)
-        for group_id, legs in groups.items():
+        jobs = [(gid, legs, "Intraday square-off") for gid, legs in groups.items()]
+        jobs += [(gid, legs, "Expiry settlement") for gid, legs in expiring.items()]
+        for group_id, legs, reason in jobs:
             # MED-1 (naked-short guard): a structure's legs close through close_group - shorts first, and its wings are
             # held while a LIVE short has not closed (selling them first would leave a naked short).
             prices: Dict[int, float] = {}
@@ -2436,7 +2451,7 @@ class TradingWorker:
                     logger.warning("Square-off: no price for %s (%s) - left open", leg.symbol, exc)
             try:
                 async with guarded(session, keep=tuple(legs)):
-                    outcomes = await close_group(session, legs, prices, "Intraday square-off", broker=live_broker, user_id=user_id)
+                    outcomes = await close_group(session, legs, prices, reason, broker=live_broker, user_id=user_id)
                 closed += sum(int(o.closed) for o in outcomes)
             except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
                 logger.error("Square-off of group %s failed: %s", group_id, exc)

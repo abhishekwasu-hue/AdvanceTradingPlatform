@@ -90,6 +90,9 @@ UNDEFINED_RISK = frozenset({OptionStrategy.SHORT_STRADDLE, OptionStrategy.SHORT_
 ATM_SHORTS = frozenset({OptionStrategy.SHORT_STRADDLE, OptionStrategy.IRON_BUTTERFLY})
 DEBIT_STRUCTURES = frozenset({OptionStrategy.LONG_STRADDLE, OptionStrategy.LONG_STRANGLE, OptionStrategy.CALENDAR_SPREAD})
 CREDIT_STRUCTURES = WINGED | UNDEFINED_RISK
+# M55 T1: the structures a deployment may hold for days (holding SWING): defined-risk credit structures only - a sold
+# leg always has its bought wing, so nothing naked is carried overnight.
+HOLD_FOR_DAYS = WINGED
 # Phase U: economics from the expiry payoff, legs with ratios, P&L-based exits.
 RATIO_SPREADS = frozenset({OptionStrategy.CALL_RATIO_SPREAD, OptionStrategy.PUT_RATIO_SPREAD})
 PAYOFF_STRUCTURES = RATIO_SPREADS | frozenset({OptionStrategy.LONG_BUTTERFLY, OptionStrategy.CUSTOM})
@@ -99,6 +102,13 @@ MAX_CUSTOM_LEGS = 6
 MAX_LEG_RATIO = 4
 NEUTRAL = frozenset({OptionStrategy.IRON_CONDOR, OptionStrategy.IRON_BUTTERFLY, OptionStrategy.SHORT_STRADDLE,
                      OptionStrategy.SHORT_STRANGLE, OptionStrategy.LONG_STRADDLE, OptionStrategy.LONG_STRANGLE})
+
+
+def can_hold_for_days(strategy) -> bool:
+    try:
+        return OptionStrategy(strategy) in HOLD_FOR_DAYS
+    except ValueError:
+        return False
 
 
 def is_debit(strategy: OptionStrategy) -> bool:

@@ -36,6 +36,7 @@ from tests.test_tpl1_recipe_core import BASE, tpl
 from tests.test_tpl1_recipe_core import bars as marks
 
 NEW = ("C2", "D3", "E1", "E3", "E5")
+LATER = ("C6", "B12", "D9")        # STRAT-X templates (after step 5) may use the step-5 pieces; they are not "earlier"
 T = {tid: library.get(tid) for tid in NEW}
 RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5)
 K = 400.0
@@ -178,7 +179,7 @@ def test_extreme_since_setup_is_a_schema_choice_for_the_invalidation_only():
     with pytest.raises(ValidationError):
         tpl(invalidation={"extreme": "since_breakout"})
     for old in library.templates():                                     # every earlier template reads its expression as before
-        if old.id not in NEW:
+        if old.id not in NEW + LATER:
             recipe = C.compile_recipe(old, C.resolve_settings(old, old.allowed_timeframes[0]))
             assert not recipe.invalidation_since_setup and not recipe.chosen_setup.session_bound
 

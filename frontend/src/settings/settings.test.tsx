@@ -87,8 +87,8 @@ describe("B1: the v2 router", () => {
     }
   });
 
-  it("the rows: account, team, broker, AI, alerts, defaults (part C), risk limits, appearance, help, setup, advanced", () => {
-    expect(SETTINGS_ROWS.map((r) => r.id)).toEqual(["account", "team", "broker", "ai", "alerts", "defaults", "risk", "appearance", "help", "setup", "advanced"]);
+  it("the rows: account, team, broker, AI, alerts, trade settings (M68), defaults (part C), risk limits, appearance, help, setup, advanced", () => {
+    expect(SETTINGS_ROWS.map((r) => r.id)).toEqual(["account", "team", "broker", "ai", "alerts", "trade", "defaults", "risk", "appearance", "help", "setup", "advanced"]);
     // UX3-9: Team and Risk limits left the sidebar; Settings opens them at their own addresses.
     expect(SETTINGS_ROWS.find((r) => r.id === "team")?.to).toBe("/team");
     expect(SETTINGS_ROWS.find((r) => r.id === "risk")?.to).toBe("/settings/risk-limits");     // M64: Settings › Risk limits

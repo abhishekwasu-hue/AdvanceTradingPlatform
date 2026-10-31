@@ -156,7 +156,17 @@ async def system(session: AsyncSession = Depends(get_session)) -> Dict[str, Any]
     health = await deep_health(Response(), session)
     return {"checked_at": now.isoformat(), "health": health, "workers": await _workers(session, now),
             "data_feed": await _data_feed(session, now), "trade_engine": trade_engine.describe(admin=True),
-            "market_feed": await feed_health.snapshot()}     # M71 PL-4: the universe feed's health (admin only)
+            "market_feed": await feed_health.snapshot(),     # M71 PL-4: the universe feed's health (admin only)
+            "broker_calls": await broker_calls_today()}
+
+
+async def broker_calls_today() -> Dict[str, Any]:
+    """M71 PL-2: today's broker REST calls by broker / pool / endpoint kind (HTTP sent and budgeted) - read-only."""
+    from app.brokers.broker_limits import calls_today
+    try:
+        return await calls_today()
+    except Exception:  # noqa: BLE001 - the counters never fail the admin page
+        return {}
 
 
 # --- Users & business ------------------------------------------------------------------------------------------------

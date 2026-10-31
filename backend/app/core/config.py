@@ -393,6 +393,21 @@ LAKE_BACKFILL_AFTER_CLOSE = os.environ.get("LAKE_BACKFILL_AFTER_CLOSE", "true").
 LAKE_BACKFILL_HOUR_IST = max(16, min(23, int(os.environ.get("LAKE_BACKFILL_HOUR_IST", "16") or 16)))
 LAKE_BACKFILL_BUDGET_SECONDS = max(10, int(os.environ.get("LAKE_BACKFILL_BUDGET_SECONDS", "900") or 900))
 LAKE_BACKFILL_PAUSE_SECONDS = max(0.0, float(os.environ.get("LAKE_BACKFILL_PAUSE_SECONDS", "0.3") or 0.3))
+# M71 PL-1(c) (app/market_lake/backfill.py): a one-time, paced 1-minute backfill of what the history owner HIMSELF uses -
+# the indices and his own watchlists (plus the F&O stocks when MARKET_BACKFILL_INCLUDE_FNO) - through his own session into
+# his private store (data terms, M71Q-2: one credential's intraday bars never serve another user); afterwards only gaps
+# (`request_gap_fill`) and the newest closed session when the store lacks it. Daily / Weekly: NSE bhavcopy only, never the
+# broker. Paced: every request takes a spare token of the session's rate budget (MARKET_BACKFILL_RESERVE left free for the
+# trading worker) and at most MARKET_BACKFILL_MAX_REQUESTS requests in any rolling 30 minutes (conservative: Upstox's
+# published 30-minute cap is uncertain, 1,000-2,000). The backfill runs off-hours only; the gap queue any time.
+MARKET_BACKFILL_ENABLED = os.environ.get("MARKET_BACKFILL_ENABLED", "false").lower() in ("1", "true", "yes")
+MARKET_BACKFILL_INTRADAY_DAYS = max(7, min(730, int(os.environ.get("MARKET_BACKFILL_INTRADAY_DAYS", "200") or 200)))
+MARKET_BACKFILL_INCLUDE_FNO = os.environ.get("MARKET_BACKFILL_INCLUDE_FNO", "false").lower() in ("1", "true", "yes")
+MARKET_BACKFILL_MAX_REQUESTS = max(1, int(os.environ.get("MARKET_BACKFILL_MAX_REQUESTS", "250") or 250))
+MARKET_BACKFILL_RESERVE = min(0.95, max(0.0, float(os.environ.get("MARKET_BACKFILL_RESERVE", "0.5") or 0.5)))
+MARKET_BACKFILL_BUDGET_SECONDS = max(10, int(os.environ.get("MARKET_BACKFILL_BUDGET_SECONDS", "900") or 900))
+MARKET_BACKFILL_RETRY_MINUTES = max(1, int(os.environ.get("MARKET_BACKFILL_RETRY_MINUTES", "15") or 15))
+MARKET_BACKFILL_GAP_EVERY_SECONDS = max(10, int(os.environ.get("MARKET_BACKFILL_GAP_EVERY_SECONDS", "60") or 60))
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 # M55 S2 (ADR-0004): an organisation with no usable broker session still gets its exits. Its price is then the newest
 # stored tick of the symbol (its own data hub, else the shared stream keys) when younger than this many seconds;
@@ -1016,3 +1031,24 @@ STOP_GUARD_MAX_EXIT_ATTEMPTS = _bounded_int("STOP_GUARD_MAX_EXIT_ATTEMPTS", 3, 1
 # - BROKER_DAILY_ORDER_EXIT_RESERVE_SHARE: of the per-day order cap, this share is kept for exits (entries stop before it).
 BROKER_DAILY_CAP_SHARE = _bounded_float("BROKER_DAILY_CAP_SHARE", 0.9, 0.1, 1.0)
 BROKER_DAILY_ORDER_EXIT_RESERVE_SHARE = _bounded_float("BROKER_DAILY_ORDER_EXIT_RESERVE_SHARE", 0.1, 0.0, 0.5)
+# M71 PL-2 (operational settings, not trading values; app/brokers/broker_limits.py):
+# - BROKER_BUDGET_SAFETY_MARGIN: ATP stays this share below every published broker limit (all windows).
+# - BROKER_ORDER_EXIT_RESERVE_SHARE: of every order-pool window, this share is kept for exits, stops, changes and cancels.
+# - BROKER_DATA_PRIORITY_RESERVE_SHARE: of every data-pool window, this share is kept for an exit's own reads.
+# - BROKER_DATA_MAX_WAIT_SECONDS: a data call waits at most this long for a slot, then gets a plain "busy" error.
+# - BROKER_EXIT_MAX_WAIT_SECONDS: an exit waits at most this long for the next slot, then is sent (never refused).
+# - BROKER_429_*: back-off after a broker "too many requests" (exponential, with jitter) and its total wait per call.
+# - BROKER_UPSTOX_LIMIT_SET: "conservative" (default, the lower published figures) or "r33" (the owner's research).
+BROKER_BUDGET_SAFETY_MARGIN = _bounded_float("BROKER_BUDGET_SAFETY_MARGIN", 0.10, 0.0, 0.5)
+BROKER_ORDER_EXIT_RESERVE_SHARE = _bounded_float("BROKER_ORDER_EXIT_RESERVE_SHARE", 0.2, 0.0, 0.5)
+BROKER_DATA_PRIORITY_RESERVE_SHARE = _bounded_float("BROKER_DATA_PRIORITY_RESERVE_SHARE", 0.1, 0.0, 0.5)
+BROKER_DATA_MAX_WAIT_SECONDS = _bounded_float("BROKER_DATA_MAX_WAIT_SECONDS", 30.0, 0.0, 600.0)
+# - BROKER_DATA_CALL_WAIT_SECONDS: an API data read (chart, screen, Copilot) waits at most this long for its next slot
+#   (also when a minute or 30-minute window is full), within its request's own allowance, before a plain "busy" gap.
+BROKER_DATA_CALL_WAIT_SECONDS = _bounded_float("BROKER_DATA_CALL_WAIT_SECONDS", 20.0, 0.0, 300.0)
+BROKER_EXIT_MAX_WAIT_SECONDS = _bounded_float("BROKER_EXIT_MAX_WAIT_SECONDS", 2.0, 0.0, 60.0)
+BROKER_429_BASE_SECONDS = _bounded_float("BROKER_429_BASE_SECONDS", 0.5, 0.05, 10.0)
+BROKER_429_CAP_SECONDS = _bounded_float("BROKER_429_CAP_SECONDS", 8.0, 0.1, 120.0)
+BROKER_429_DATA_MAX_WAIT_SECONDS = _bounded_float("BROKER_429_DATA_MAX_WAIT_SECONDS", 20.0, 0.0, 600.0)
+BROKER_429_ORDER_MAX_WAIT_SECONDS = _bounded_float("BROKER_429_ORDER_MAX_WAIT_SECONDS", 60.0, 0.0, 600.0)
+BROKER_UPSTOX_LIMIT_SET = (os.environ.get("BROKER_UPSTOX_LIMIT_SET") or "conservative").strip().lower()

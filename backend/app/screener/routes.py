@@ -475,7 +475,8 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
     M71 PL-3 (`store`, the run route under the flag `market_store_reads` - `store_first`): the bars come store-first
     (`_store_frames`, app/market_store) - a closed-bar screen only; `include_forming` (intrabar alerts) keeps the broker
-    path below. Every other caller (alerts, breakouts, library, ranking, the Copilot tools) keeps it off (M71 wave 2).
+    path below. Breakouts, library, ranking and the Copilot screener tool pass it too (M71 W2-G, with `budget_out` so
+    every broker call left is paced); alerts keep it off (M71 wave 2).
     A missing session raises 409 (the fix is on the Broker page); never a fallback to client data.
     `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars).
 
@@ -619,7 +620,10 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
 
 
 async def store_first(session: AsyncSession, tenant_id: int) -> bool:
-    """M71 PL-3: the flag `market_store_reads` - scans read the own store first (app/market_store)."""
+    """M71 PL-3: the flag `market_store_reads` - scans read the own store first (app/market_store). No session (a
+    caller without a database, e.g. a broker-only read) reads as OFF: today's broker path, unchanged."""
+    if session is None:
+        return False
     from app.market_store.models import FLAG as STORE_FLAG
     return await flag_enabled(session, STORE_FLAG, tenant_id)
 

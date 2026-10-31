@@ -304,6 +304,20 @@ def test_reconnect_detects_the_gap_and_asks_only_the_gap(monkeypatch):
     monkeypatch.setattr(config, "MARKET_FEED_ENABLED", True)
     monkeypatch.setattr(config, "MARKET_FEED_CREDENTIAL", "owner")
     monkeypatch.setattr(st, "BACKOFF_SECONDS", (0.01,))
+    # The published health document lives in an in-memory cache here, so the result does not depend on a reachable
+    # Redis (without it snapshot() falls back to this process's figures read at the real clock, whose IST day is not
+    # the test's DAY, and the day's counters read 0).
+    store: dict[str, str] = {}
+
+    async def cache_set(key: str, value: str, ttl_seconds: int) -> None:
+        store[key] = value
+
+    async def cache_get(key: str) -> str | None:
+        return store.get(key)
+
+    monkeypatch.setattr(feed_health, "cache_set", cache_set)
+    monkeypatch.setattr(feed_health, "cache_get", cache_get)
+    monkeypatch.setattr(feed_health, "health", feed_health.FeedHealth())
     hold = asyncio.Event()
     conns = [_Conn([json.dumps({"NSE:RELIANCE": 100.0})], fail=ConnectionError("dropped")),
              _Conn([json.dumps({"NSE:RELIANCE": 101.0})], hold=hold)]

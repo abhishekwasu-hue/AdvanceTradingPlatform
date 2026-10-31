@@ -193,6 +193,7 @@ navigation and shows "Coming soon" at its address (`frontend/src/shell/pageFlags
 | Setup wizard | `/settings/setup` | Settings | - | WORKS + DUPLICATE (Today "Get started") | unknown until the owner's check |
 | My trading defaults | `/settings/trading-defaults` | Settings | - | WORKS | unknown until the owner's check |
 | Risk limits (M64: every check a switch, off by default) | `/settings/risk-limits` | Settings | - | WORKS | unknown until the owner's check |
+| Trade settings (M68 PR-0: the seven sections, one registry, every field Not set; API `/api/me/trade-settings`; fields not wired yet show only to a platform admin) | `/settings/trade-settings` | Settings | `ui_v2` | SHELL (no field wired yet) | unknown until the owner's check |
 | Risk status (old Risk limits page: today, guardian, events; limits link to `/settings/risk-limits`) | `/risk-management` | Settings | - | WORKS | unknown until the owner's check |
 | Team | `/team` | extras | - | WORKS (old page) | unknown until the owner's check |
 | Notifications | `/notifications` | extras | - | WORKS (old page) | unknown until the owner's check |

@@ -38,13 +38,13 @@ import { useLiveHidden } from "./useLiveHidden";
  */
 
 const ICONS: Record<RowId, LucideIcon> = {
-  account: UserCircle2, team: Users, broker: Plug, ai: Sparkles, alerts: Bell, defaults: SlidersHorizontal, risk: Shield, appearance: Palette,
+  account: UserCircle2, team: Users, broker: Plug, ai: Sparkles, alerts: Bell, trade: SlidersHorizontal, defaults: SlidersHorizontal, risk: Shield, appearance: Palette,
   help: LifeBuoy, setup: ListTodo, advanced: Wrench,
 };
 
 /** Colour v2 (owner, 23 Oct): each row's icon in a soft circle by meaning, like a phone's settings. */
 export const ROW_TONES: Record<RowId, IconTone> = {
-  broker: "brand", ai: "ai", alerts: "warn", risk: "down", appearance: "teal", defaults: "info",
+  broker: "brand", ai: "ai", alerts: "warn", risk: "down", appearance: "teal", defaults: "info", trade: "info",
   account: "neutral", team: "neutral", help: "neutral", setup: "neutral", advanced: "neutral",
 };
 
@@ -131,7 +131,7 @@ function useChips(oneKey: boolean): Partial<Record<RowId, Chip | null>> {
     account: plan, broker: brokerChip(brokers), ai, alerts, defaults: DEFAULTS_CHIP, appearance: appearanceChip(appearance),
     help: tipsChip(tours.known, tours.marks.skip_all_at),
     setup: setup ? { text: setup.label, tone: "warn" } : view ? { text: "Done", tone: "ok" } : null,
-    team: null, risk: null, advanced: null,
+    team: null, risk: null, advanced: null, trade: null,
   };
 }
 

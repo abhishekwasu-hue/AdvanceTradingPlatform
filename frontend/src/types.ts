@@ -1039,6 +1039,8 @@ export interface Deployment {
   status: DeploymentStatus;
   pause_reason: string | null;
   last_evaluated_at: string | null;
+  /** M55 S7: why a running bot waits, in plain words ("Waiting: market closed"); null when it was checked normally. */
+  wait_reason?: string | null;
   last_signal_at: string | null;
   last_error: string | null;
   consecutive_failures: number;
@@ -1404,6 +1406,8 @@ export interface WorkerStatus {
   market_open: boolean;
   market_status: string;
   next_market_open: string | null;
+  /** M55 S7: false while the worker has been silent beyond its cycles ("Bots are not being checked right now"). */
+  bots_checked?: boolean;
 }
 
 export const BASE_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min"] as const;

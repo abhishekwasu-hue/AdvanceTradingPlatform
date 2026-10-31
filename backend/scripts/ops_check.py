@@ -27,6 +27,9 @@ async def run_once(host_facts):
     api_metrics = await ops_alerts.fetch_metrics(config.OPS_API_METRICS_URL)
     worker_metrics = await ops_alerts.fetch_metrics(config.OPS_WORKER_METRICS_URL)
     async with _session_factory() as session:
+        # M55 S7: each organisation with a running bot is told (once per silence) when the worker stopped checking them.
+        from app.workers import liveness
+        await liveness.alert_if_silent(session)
         return await ops_alerts.run(session, host_facts=host_facts, source="server", api_metrics=api_metrics, worker_metrics=worker_metrics)
 
 

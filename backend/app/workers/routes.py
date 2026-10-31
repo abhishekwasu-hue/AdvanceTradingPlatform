@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.core.config import WORKER_CYCLE_SECONDS
+from app.core.config import WORKER_CYCLE_SECONDS, WORKER_SILENT_CYCLES_ALERT
 from app.db.models import User, WorkerHeartbeatRecord
 from app.db.session import get_session
 from app.market_data.calendar import market_session_status
@@ -15,7 +15,7 @@ from app.market_data.calendar import market_session_status
 router = APIRouter(prefix="/api/system", tags=["system"])
 
 # A heartbeat older than this many cycles means the worker is down (or wedged), not just slow.
-STALE_AFTER_CYCLES = 3
+STALE_AFTER_CYCLES = WORKER_SILENT_CYCLES_ALERT      # M55 S7: a setting (default 3)
 
 
 class WorkerStatusResponse(BaseModel):
@@ -34,6 +34,9 @@ class WorkerStatusResponse(BaseModel):
     # TM-2 / TT-6: the trigger engine's last run (waiting orders and armed exits), for the Terminal's status bar.
     trigger_engine_last_run_at: Optional[str] = None
     trigger_engine_seconds_since: Optional[int] = None
+    # M55 S7: false while the heartbeat is older than STALE_AFTER_CYCLES cycles - the bot cards and Today then say "Bots are
+    # not being checked right now". True when no heartbeat was ever written (a new install is not a silence).
+    bots_checked: bool = True
 
 
 @router.get("/worker-status", response_model=WorkerStatusResponse)
@@ -63,10 +66,14 @@ async def worker_status(
     last_seen = record.last_seen_at if record.last_seen_at.tzinfo else record.last_seen_at.replace(tzinfo=timezone.utc)
     age = int((now - last_seen).total_seconds())
     running = age <= WORKER_CYCLE_SECONDS * STALE_AFTER_CYCLES
+    if not running:
+        # M55 S7: the API (never the worker) tells this organisation once per silence, with a cool-down.
+        from app.workers import liveness
+        await liveness.alert_if_silent(session, now, tenant_id=user.tenant_id)
     return WorkerStatusResponse(
         worker_name=record.worker_name, running=running, healthy=running and not record.last_error,
         last_seen_at=last_seen.isoformat(), seconds_since_heartbeat=age, cycle_count=record.cycle_count,
-        last_cycle_ms=record.last_cycle_ms, last_error=record.last_error, cycle_seconds=WORKER_CYCLE_SECONDS,
+        last_cycle_ms=record.last_cycle_ms, last_error=record.last_error, cycle_seconds=WORKER_CYCLE_SECONDS, bots_checked=running,
         market_open=session_status.is_open, market_status=session_status.reason,
         next_market_open=session_status.next_open.isoformat() if session_status.next_open else None, **engine,
     )

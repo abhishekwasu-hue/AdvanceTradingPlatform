@@ -507,7 +507,9 @@ def test_the_broker_id_is_committed_before_the_fill_is_polled(monkeypatch):
 def test_an_unclear_send_that_reached_the_broker_is_adopted_never_sent_twice():
     """Review P2: the send times out but the order reached the broker and stays OPEN (circuit lock). Reconciliation
     compares positions only - with that order working it proves nothing - and once the claim is stale the order in
-    the book is adopted as the exit: one order, ever."""
+    the book is adopted as the exit: one order, ever. M55 S4: the exit carries its own client order id, so the order is
+    found by that id right after the errored send and recorded at once (the tag + window fallback is covered in
+    tests/test_m55_s4_client_order_ids.py)."""
     t = _tenant(f"rxg-unclear-{uuid.uuid4().hex[:6]}@example.com")
     trade_id = _live_trade(t, exit_order_id=None)
 
@@ -520,14 +522,13 @@ def test_an_unclear_send_that_reached_the_broker_is_adopted_never_sent_twice():
             raise TimeoutError("read timed out")
     broker = _Lost(positions=_open_at_broker())
     first = _close(trade_id, broker, t["user_id"])
-    assert not first.closed and _get(TradeRecord, trade_id).exit_order_id == pm.EXIT_PENDING
+    assert not first.closed and first.exit_waiting and _get(TradeRecord, trade_id).exit_order_id == "LOST-1"
     _reconcile(t, broker)                                                     # position still open, but LOST-1 is working
     assert _get(TradeRecord, trade_id).reconciled_open_at is None
     later = datetime.now(timezone.utc) + timedelta(seconds=pm.CLAIM_INFLIGHT_SECONDS + 60)
     second = _close(trade_id, broker, t["user_id"], now=later)
     assert not second.closed and second.exit_waiting and len(broker.placed) == 1
     assert _get(TradeRecord, trade_id).exit_order_id == "LOST-1"
-    assert any("LOST-1" in d for d in _audit(t["tenant_id"], "exit_order_adopted"))
     broker.orders["LOST-1"] = broker.orders["LOST-1"].model_copy(update={"status": "COMPLETE", "filled_quantity": 1,
                                                                          "average_price": 96.5})
     third = _close(trade_id, broker, t["user_id"], now=later)

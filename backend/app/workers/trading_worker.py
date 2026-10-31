@@ -362,6 +362,13 @@ class TradingWorker:
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
         await self.startup_check()
+        # M55 S4: the stop guard's exit-attempt counters and alert cool-downs come back from the database first.
+        from app.trading import stop_state
+        try:
+            async with self.session_factory() as session:
+                await stop_state.load(session)
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting (fresh counters, as before)
+            logger.exception("Loading the stop guard's counters failed")
         # Safety rule 18: before the first cycle, every tenant with an open LIVE position is
         # reconciled against its broker. Whatever happened while this process was down (a fill
         # after a crash, a manual exit at the broker) is known before anything new is traded.
@@ -377,6 +384,14 @@ class TradingWorker:
                 await trigger_engine.reconcile_on_start(session)
         except Exception:  # noqa: BLE001 - never prevents the worker from starting; each pass settles them after the ack timeout
             logger.exception("Trigger engine start-up reconciliation failed")
+        # M55 S4: every order row left between states (RISK_CHECK, SUBMITTED ...) by a stopped process, of every
+        # organisation, is settled against its broker's book (LIVE) or the paper venue (PAPER) - read only, never an order.
+        from app.execution.order_sweeper import sweep_orders
+        try:
+            async with self.session_factory() as session:
+                await sweep_orders(session)
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting; the next start sweeps again
+            logger.exception("Start-up order sweep failed")
         # TM-2 / TT-6: the trigger engine on live ticks between cycles (the cycle runs it too, as the fallback).
         tick_task = asyncio.create_task(trigger_engine.tick_loop(self.session_factory, self._stop))
         while not self._stop.is_set():

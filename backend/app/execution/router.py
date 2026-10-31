@@ -13,7 +13,7 @@ from app.compliance.order_policy import apply_entry_policy
 from app.core.enums import ExecutionMode, OrderSide, SignalDirection
 from app.core.models import RiskConfig, Signal, Trade
 from app.execution.paper_broker import PaperBroker
-from app.execution.tagging import LEG_ENTRY, LEG_STOP, build_order_tag
+from app.execution.tagging import LEG_ENTRY, LEG_STOP, build_order_tag, client_order_id
 from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 
@@ -124,8 +124,12 @@ class OrderRouter:
         exchange: str = "NSE", product: str = "MIS", place_protective_stop: bool = True,
         algo_id: Optional[str] = None, order_style: str = "MARKET", market_protection_pct: Optional[float] = None,
         is_option: Optional[bool] = None, paper_execution: str = "direct", freeze_quantity: Optional[int] = None,
+        order_ref: int | None = None,
     ) -> None:
         self.mode = mode
+        # M55 S4: the `orders` row this execution belongs to - its entry and protective stop carry client order ids
+        # derived from it (app/execution/tagging.py), so the start-up sweeper finds them in the broker's book by id.
+        self.order_ref = order_ref
         # TM-1: how a PAPER order fills - "direct" (PaperBroker.open_trade, every path not yet moved) or "adapter" (the
         # PaperExecutionAdapter, a BrokerInterface over the same fill and cost model). Paths move one at a time, each with
         # an old-vs-new parity test (tests/test_tm1_paper_adapter.py). LIVE ignores it.
@@ -152,6 +156,13 @@ class OrderRouter:
         self.exchange = exchange
         self.product = product
         self.place_protective_stop = place_protective_stop
+
+    def entry_tag(self, strategy_id: str) -> str:
+        """The tag this router's entry goes out with (M55 S4: with the order row's client order id when it has one)."""
+        return build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=self.algo_id,
+                               max_length=getattr(self.broker, "max_tag_length", None) or 20,
+                               broker=getattr(self.broker, "name", None),
+                               client_id=client_order_id("E", self.order_ref) if self.order_ref is not None else None)
 
     async def execute(
         self, signal: Signal, state: TradingDayState, *, contract_spec=None, max_quantity: Optional[float] = None,
@@ -181,9 +192,7 @@ class OrderRouter:
                 return ExecutionResult(executed=False, reasons=notes + reasons)
         started = time.perf_counter()
 
-        max_tag = getattr(self.broker, "max_tag_length", None) or 20
-        entry_tag = build_order_tag(strategy_id=signal.strategy_id, leg=LEG_ENTRY, algo_id=self.algo_id, max_length=max_tag,
-                                    broker=getattr(self.broker, "name", None))
+        entry_tag = self.entry_tag(signal.strategy_id)
         return await self._route(signal, state, decision.quantity, notes, entry_tag, started, contract_spec=contract_spec)
 
     async def _route(self, signal: Signal, state: TradingDayState, quantity: float, notes: list[str],
@@ -314,7 +323,8 @@ class OrderRouter:
                     signal.symbol, self.exchange, stop_side,
                     filled, trigger_price=stop_trigger, product=self.product,
                     tag=build_order_tag(strategy_id=signal.strategy_id, leg=LEG_STOP, algo_id=self.algo_id, max_length=max_tag,
-                                        broker=getattr(self.broker, "name", None)),
+                                        broker=getattr(self.broker, "name", None),
+                                        client_id=client_order_id("S", self.order_ref) if self.order_ref is not None else None),
                     **({"is_option": self.is_option} if self.is_option is not None else {}),
                 )
                 sl_order_id = sl_response.order_id

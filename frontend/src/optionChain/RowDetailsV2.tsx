@@ -1,6 +1,8 @@
 import * as RD from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { formatPrice } from "../ui/format";
+import type { GlossaryKey } from "../ui/glossary";
+import { TermHint } from "../ui/TermHint";
 import { formatCount, formatCountChange, formatGreek, formatIv, formatStrike } from "./model";
 import type { ChainLeg, ChainRow } from "./types";
 
@@ -8,18 +10,18 @@ import type { ChainLeg, ChainRow } from "./types";
  * OC1: one strike's full details - every figure of its call and its put (LTP, OI, OI change, volume, IV, bid, ask and
  * the Greeks). A sheet from the bottom on a phone, a dialog on a desktop. Read-only: nothing here places an order.
  */
-const LINES: { label: string; value: (leg: ChainLeg) => string }[] = [
-  { label: "LTP", value: (l) => formatPrice(l.ltp) },
-  { label: "OI", value: (l) => formatCount(l.oi) },
+const LINES: { label: string; term?: GlossaryKey; value: (leg: ChainLeg) => string }[] = [
+  { label: "LTP", term: "ltp", value: (l) => formatPrice(l.ltp) },
+  { label: "OI", term: "oi", value: (l) => formatCount(l.oi) },
   { label: "OI change", value: (l) => formatCountChange(l.oi_change) },
   { label: "Volume", value: (l) => formatCount(l.volume) },
-  { label: "IV", value: (l) => formatIv(l.iv) },
+  { label: "IV", term: "iv", value: (l) => formatIv(l.iv) },
   { label: "Bid", value: (l) => formatPrice(l.bid) },
   { label: "Ask", value: (l) => formatPrice(l.ask) },
-  { label: "Delta", value: (l) => formatGreek("delta", l.delta) },
-  { label: "Gamma", value: (l) => formatGreek("gamma", l.gamma) },
-  { label: "Theta", value: (l) => formatGreek("theta", l.theta) },
-  { label: "Vega", value: (l) => formatGreek("vega", l.vega) },
+  { label: "Delta", term: "delta", value: (l) => formatGreek("delta", l.delta) },
+  { label: "Gamma", term: "gamma", value: (l) => formatGreek("gamma", l.gamma) },
+  { label: "Theta", term: "theta", value: (l) => formatGreek("theta", l.theta) },
+  { label: "Vega", term: "vega", value: (l) => formatGreek("vega", l.vega) },
 ];
 
 export default function RowDetailsV2({ row, atm, underlying, onClose }: {
@@ -65,7 +67,7 @@ export function RowDetailsBody({ row }: { row: ChainRow }) {
       <tbody>
         {LINES.map((line) => (
           <tr key={line.label} className="border-t border-subtle">
-            <th scope="row" className="py-space-2 text-left font-normal text-fg-muted">{line.label}</th>
+            <th scope="row" className="py-space-2 text-left font-normal text-fg-muted">{line.label}{line.term && <> <TermHint term={line.term} /></>}</th>
             <td className="py-space-2 text-right font-tabular text-fg">{line.value(row.call)}</td>
             <td className="py-space-2 text-right font-tabular text-fg">{line.value(row.put)}</td>
           </tr>

@@ -399,7 +399,7 @@ def test_migration_f9c2a4e6b801_is_additive_and_round_trips(tmp_path):
     spec = importlib.util.spec_from_file_location("m55_counters_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module.down_revision == "c7e9a1b3d5f7" and module.ROLLBACK_SAFE is True
+    assert module.down_revision == "ef28ae662a93" and module.ROLLBACK_SAFE is True
     eng = sa.create_engine(f"sqlite:///{tmp_path / 'm.db'}")
     with eng.begin() as conn:
         conn.execute(sa.text("CREATE TABLE trades (id INTEGER PRIMARY KEY, note VARCHAR(10))"))

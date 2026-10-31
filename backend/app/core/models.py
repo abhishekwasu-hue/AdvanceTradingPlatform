@@ -130,6 +130,20 @@ class RiskConfig(BaseModel):
     # CP6-15: when the losses-in-a-row pause ends - at the next Indian trading session, or when the trader resumes
     # (app/risk_engine/loss_streak.py). Only used once `max_consecutive_losses` is set.
     loss_streak_pause: Literal["next_session", "until_resume"] = "next_session"
+    # M64 (owner, 30 Oct; app/risk_engine/risk_limits.py): Settings > Risk limits. Each is off (None) until the trader
+    # switches its check on. `max_lots_per_order`: a typed size above it is refused with the smaller size offered.
+    # `daily_loss_rupees`: the daily loss limit in rupees (with the % one, the smaller applies). `risk_per_trade_rupees`:
+    # risk-based sizing in rupees (with the % one, the smaller applies). `loss_cooldown_minutes`: the losses-in-a-row pause
+    # ends this many minutes after the last loss (None = `loss_streak_pause` decides). `margin_safety_pct`: plan to use at
+    # most this share of the available margin (None = the whole available margin; the broker's own check stays).
+    max_lots_per_order: int | None = None
+    daily_loss_rupees: float | None = None
+    risk_per_trade_rupees: float | None = None
+    loss_cooldown_minutes: int | None = None
+    margin_safety_pct: float | None = None
+    # M64: the market-event rules (a listed event day blocks or cuts new entries, app/risk_engine/guardian.py) apply only
+    # when the trader switched "Market event days" on - off by default, like every other check.
+    event_rules: bool = False
     # M55 S6 (A11, owner order M55): may two of the organisation's bots hold opposite positions on one symbol? "deny"
     # (the default) skips a NEW automated entry against an open position of another bot; exits are never affected.
     opposite_positions: Literal["allow", "deny"] = "deny"
@@ -142,16 +156,27 @@ class RiskConfig(BaseModel):
         return self.model_copy(update={"capital": float(balance)})
 
     def risk_amount(self) -> Optional[float]:
-        """Risk per trade in money, or None when the trader set no risk per trade (or no capital is known)."""
-        if self.risk_per_trade_pct is None or self.capital is None:
-            return None
-        return self.capital * self.risk_per_trade_pct / 100.0
+        """Risk per trade in money, or None when the trader set no risk per trade (or no capital is known for a %).
+        M64: with both a % and a rupee amount set, the smaller applies."""
+        by_pct = self.capital * self.risk_per_trade_pct / 100.0 if self.risk_per_trade_pct is not None and self.capital is not None else None
+        rupees = float(self.risk_per_trade_rupees) if self.risk_per_trade_rupees is not None and self.risk_per_trade_rupees > 0 else None
+        found = [v for v in (by_pct, rupees) if v is not None]
+        return min(found) if found else None
 
     def daily_loss_amount(self) -> Optional[float]:
-        """The daily loss limit in money (positive), or None when not set."""
-        if self.max_daily_loss_pct is None or self.capital is None:
-            return None
-        return abs(self.capital * self.max_daily_loss_pct / 100.0)
+        """The daily loss limit in money (positive), or None when not set. M64: the % of capital and the rupee amount,
+        the smaller when both are set."""
+        by_pct = abs(self.capital * self.max_daily_loss_pct / 100.0) if self.max_daily_loss_pct is not None and self.capital is not None else None
+        rupees = abs(float(self.daily_loss_rupees)) if self.daily_loss_rupees is not None and self.daily_loss_rupees > 0 else None
+        found = [v for v in (by_pct, rupees) if v is not None]
+        return min(found) if found else None
+
+    def margin_share(self) -> float:
+        """M64: the share of the available margin an entry may plan to use - the trader's margin safety % when he switched
+        it on, else the whole available margin (the broker's own margin check always stays)."""
+        if self.margin_safety_pct is None or not 0 < self.margin_safety_pct <= 100:
+            return 1.0
+        return float(self.margin_safety_pct) / 100.0
 
 
 class RiskDecision(BaseModel):
@@ -162,6 +187,10 @@ class RiskDecision(BaseModel):
     # multiple of its lot size; this only widens the type, it doesn't change equity behavior.
     quantity: float = 0.0
     reasons: List[str] = Field(default_factory=list)
+    # M64 RM-3: each refusal as data for the block message - {"check", "text", "numbers", "link", "admin", "smaller_lots"}
+    # (app/risk_engine/risk_limits.py `block`). `warnings`: an allowed entry the trader should know about (a WARNING chip).
+    blocks: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class Trade(BaseModel):

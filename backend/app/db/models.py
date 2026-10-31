@@ -1043,6 +1043,15 @@ class RiskSettingsRecord(Base):
     # the last "Resume after losses in a row" (only losses closed after it count under "until_resume").
     loss_streak_pause: Mapped[str] = mapped_column(String(16), nullable=False, default="next_session", server_default="next_session")
     loss_streak_resumed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # M64 (owner, 30 Oct; app/risk_engine/risk_limits.py): Settings > Risk limits. New values (NULL = not set) and, per
+    # check, whether it is switched on and whether the trader saved it himself: {"enabled": [...], "saved": [...]}.
+    # NULL switches (a row from before M64 the migration did not reach) read as "on where a value is set".
+    max_lots_per_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    daily_loss_rupees: Mapped[float | None] = mapped_column(Float, nullable=True)
+    risk_per_trade_rupees: Mapped[float | None] = mapped_column(Float, nullable=True)
+    loss_cooldown_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    margin_safety_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    limits_switches_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # M55 S6 (A11, owner order M55): "allow" / "deny" opposite positions of two bots on one symbol; default deny
     # (app/workers/trading_worker.py::_opposite_position - new automated entries only, never an exit).
     opposite_positions: Mapped[str] = mapped_column(String(8), nullable=False, default="deny", server_default="deny")

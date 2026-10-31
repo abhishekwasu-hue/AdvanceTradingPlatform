@@ -154,7 +154,7 @@ def test_flag_is_registered_off_by_default_and_needs_the_engine():
     provider.set_for_tests(None)
     assert HYBRID_FLAG in controls.engine_missing_flags()
     provider.set_for_tests(FakeProvider())
-    assert controls.engine_missing_flags() == {}
+    assert not set(controls.ENGINE_FLAGS) & set(controls.engine_missing_flags())   # M66: the chart flags; trade_engine has its own engine
 
 
 def test_flag_off_a_user_reads_one_plain_line_the_admin_reads_the_flag_and_where():

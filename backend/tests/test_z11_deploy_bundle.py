@@ -271,6 +271,12 @@ if sub == "exec":
         if cmd[:2] == ["python", "scripts/ops_check.py"]:                  # A2: the host facts arrive on stdin
             st["ops_check_input"] = json.loads(sys.stdin.read() or "{}")
             out.append("ops-check: disk=ok | 0 change(s) to report"); finish()
+        if cmd[:2] == ["sh", "-c"] and "trade_engine_state.py" in cmd[2]:  # M66 EN-1: the signal engine's state
+            if st.get("trade_engine") is None:
+                rc = 1
+            else:
+                out.append(json.dumps(st["trade_engine"]))
+            finish()
         if cmd[:2] == ["sh", "-c"] and "engine_status.py" in cmd[2]:      # A1: the chart analysis engine's state
             if st.get("engine") is None:
                 rc = 1

@@ -140,6 +140,9 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "terminal": FlagInfo("The Terminal: chart, option chain, order panel, positions and orders on one screen, with saved layouts and a status bar",
                          "trading", "a Terminal entry under Trading", ("ui_v2",),
                          "the data hub for live prices; smart execution for multi-leg orders", "ready"),
+    "trade_engine": FlagInfo("Signal engine from the private package (admin / owner only; places no orders)", "trading",
+                             "nothing yet: the engine's signals and card come in later steps", (),
+                             "the private engine package on the server", "unfinished"),
     "strategy_templates": FlagInfo("Ready strategy templates adopted as paper strategies", "trading", "templates in the trading bot form", ("ui_v2",), "", "unfinished"),
     "screener_rankings": FlagInfo("Rank a universe 0-100", "screens", "rankings", ("screener_v2",), "", "ready"),
     "screener_backtest": FlagInfo("Back-test a screen over time", "screens", "screen backtest", ("screener_v2",), "", "ready"),
@@ -231,6 +234,7 @@ FLAG_GROUP: dict[str, str] = {
     "discipline_engine": "paper",
     "setup_recall": "paper",
     "why_no_trade": "paper",
+    "trade_engine": "paper",
     "cost_meter": "paper",
     "strategy_templates": "paper",
     # Backtests
@@ -351,6 +355,7 @@ FINISH: Dict[str, str] = {
     "chart_futures_basis": "DATA-H / FN7", "help_centre": "P2-6 (early, once the support contact is set)",
     "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",
     "term_roll": "TERM-2 R1", "term_whatif": "TERM-2 R2", "term_strike_area": "TERM-2 R3", "term_margin_pair": "TERM-2 R4",
+    "trade_engine": "M66 (owner only, after parity is green)",
 }
 KEEP_OFF: Dict[str, str] = {
     "chart_analyze_strikes": "strikes next to a setup read close to advice; after P2-5 is on",

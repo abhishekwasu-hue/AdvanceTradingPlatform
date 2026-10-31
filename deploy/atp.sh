@@ -813,6 +813,8 @@ print(s, "|", "last ok", c.get("last_ok_at") or "never", "|", c.get("rows") or 0
   report_flags
   step "chart analysis engine"
   engine_report
+  step "trade engine (private package, flag trade_engine)"
+  trade_engine_report
   step "market history (bars, first / last date per index per timeframe)"
   lake_report
   step "backups"
@@ -1077,6 +1079,31 @@ print(("OK " + clean(d.get("name")) + " " + clean(d.get("version"))) if d.get("i
     "OK "*) ok "chart analysis engine: OK (${line#OK })" ;;
     "MISSING "*) warn "chart analysis engine: MISSING (${line#MISSING })" ;;
     *) warn "chart analysis engine: unknown (${line#? })" ;;
+  esac
+}
+
+# M66 EN-1: the signal engine (atp_private.trade_engine, from the same checkout and tag ATP_PRIVATE_REF) as the running
+# backend's loader sees it (backend/scripts/trade_engine_state.py). MISSING only WARNs: the `trade_engine` flag is OFF
+# by default and the feature is unavailable without the engine.
+trade_engine_report() {
+  local js line
+  js="$(dc exec -T backend sh -c 'test -f scripts/trade_engine_state.py && python scripts/trade_engine_state.py' 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
+  if [ -z "$js" ]; then info "trade engine: not reported by this release"; return 0; fi
+  line="$(printf '%s' "$js" | python3 -c 'import json, sys
+clean = lambda v: "".join(ch for ch in str(v) if ch.isprintable())[:120]
+try:
+    d = json.load(sys.stdin)
+except ValueError:
+    print("? the answer could not be read"); sys.exit(0)
+if d.get("installed"):
+    tag = clean(d.get("tag") or "")
+    print("OK " + clean(d.get("name")) + " " + clean(d.get("version")) + (" tag " + tag if tag else "") + " interface " + clean(d.get("interface")))
+else:
+    print("MISSING " + clean(d.get("reason") or "unknown"))')"
+  case "$line" in
+    "OK "*) ok "trade engine: OK (${line#OK })" ;;
+    "MISSING "*) warn "trade engine: MISSING (${line#MISSING })" ;;
+    *) warn "trade engine: unknown (${line#? })" ;;
   esac
 }
 

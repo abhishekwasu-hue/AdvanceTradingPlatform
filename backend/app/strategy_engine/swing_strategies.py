@@ -5,7 +5,7 @@ equity, NRML for futures / bought options - until its stop or targets, never squ
 close (deployment `holding="SWING"`).
 
 * Swing EMA pullback - in an EMA(20) > EMA(50) uptrend, a pullback that touches EMA(20) and closes
-  back above it on a bullish day, with RSI still healthy. The professional's "buy the dip in an
+  back above it on a bullish day, with RSI still healthy. The classic "pullback in an
   uptrend". Mirror for downtrends (shorts need futures / options - cash equity cannot be held short).
 * Swing breakout - a close beyond the previous 20 sessions' range with a trending ADX and, where
   the symbol has volume, above-average volume. The "new 20-day high" momentum entry.
@@ -41,7 +41,7 @@ class _Daily(BaseStrategy):
 class SwingEmaPullback(_Daily):
     id = "swing_ema_pullback_d"
     name = "Swing EMA Pullback (daily)"
-    description = ("Daily uptrend (EMA20 above EMA50): buy the pullback that touches EMA20 and closes back above it on a "
+    description = ("Daily uptrend (EMA20 above EMA50): a pullback that touches EMA20 and closes back above it on a "
                    "bullish day, RSI healthy. Stop below the pullback low (at least 1 ATR); held overnight. It also reads the mirror in a "
                    "downtrend: taken on an option or a future, skipped on shares.")
     default_params: Dict[str, Any] = {

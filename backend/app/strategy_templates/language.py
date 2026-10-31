@@ -128,6 +128,18 @@ TOKENS: Dict[str, str] = {
                           " {timeframe} chart"),
     "gap_down_kept_going": ("the session opened below the prior low, held below it through the opening window and kept going on the"
                             " {timeframe} chart"),
+    # STRAT-X (owner decision 30 Oct): C6 previous-day high / low break and retest (a generic intraday template), B12
+    # multi-week high breakout, D9 Weekly trend and Daily pullback - structure words only, no price, no number
+    "previous_day_high_retest_held": ("the close broke above the previous day's high on the {timeframe} chart and the retest of that"
+                                      " level from above held in the same session"),
+    "previous_day_low_retest_held": ("the close broke below the previous day's low on the {timeframe} chart and the retest of that"
+                                     " level from below held in the same session"),
+    "close_above_multi_week_high": "the close broke above the highest high of the weeks looked back on the {timeframe} chart",
+    "close_below_multi_week_low": "the close broke below the lowest low of the weeks looked back on the {timeframe} chart",
+    "daily_pullback_reversed_up": "the pullback reached the pullback average on the {timeframe} chart and a bullish reversal formed there",
+    "daily_rally_reversed_down": "the rally reached the pullback average on the {timeframe} chart and a bearish reversal formed there",
+    "ctx_trend_up": "the {context_timeframe} trend is up",
+    "ctx_trend_down": "the {context_timeframe} trend is down",
     # Family G (wave templates): structure words only - wave labels in words, no number, no price
     "wave_two_pullback_ended": "the wave two pullback ended at an area on the {wave_timeframe} chart",
     "wave_four_pullback_ended": "the wave four pullback ended at an area on the {wave_timeframe} chart",

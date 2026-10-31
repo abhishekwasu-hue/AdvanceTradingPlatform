@@ -79,7 +79,7 @@ function problemFrom(e: unknown): Problem {
   try {
     const body = JSON.parse((e as { body?: string }).body ?? "") as { detail?: { reason?: string } };
     reason = body.detail?.reason;
-  } catch { /* not JSON */ }
+  } catch { /* intentional: not JSON */ }
   return { message: friendlyError(e), reason, code };
 }
 

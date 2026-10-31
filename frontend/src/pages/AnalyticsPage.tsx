@@ -5,6 +5,7 @@ import { Card, StatTile, signClass, signTone } from "../components/ui";
 import type { AnalyticsSummary, DegradationReport, GroupStats, TaxReport } from "../types";
 import { getToken } from "../api/client";
 import { apiErrorFrom, friendlyError, errorSentence } from "../api/errors";
+import { toast } from "../components/Toast";
 import { PageHeader, SkeletonRows } from "../components/primitives";
 import { SelectOrCombobox } from "../ui/Combobox";
 import { useLiveHidden } from "../settings/useLiveHidden";
@@ -127,7 +128,7 @@ export default function AnalyticsPage() {
     if (!user) return;
     // REV-1 M2: the user's own trades only (the Tax card and the Coach read the same), never the whole organisation's.
     api.performanceSummary().then(setSummary).catch((e) => setError(errorSentence(e)));
-    api.performanceVsBacktest().then(setDegradation).catch(() => {});
+    api.performanceVsBacktest().then(setDegradation).catch((e) => toast.error(errorSentence(e)));
   }, [user]);
 
   if (authLoading) return null;

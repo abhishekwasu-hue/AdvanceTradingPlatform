@@ -325,6 +325,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/alerts/unsubscribe"): P_UNSUBSCRIBE,
     ("GET", "/api/analytics/degradation"): "member",
     ("GET", "/api/analytics/summary"): "member",
+    # REV-1 M2: the Performance page - the caller's own trades only
+    ("GET", "/api/performance/summary"): "member",
+    ("GET", "/api/performance/vs-backtest"): "member",
     ("GET", "/api/api-keys"): "member",
     ("POST", "/api/api-keys"): "owner",
     ("GET", "/api/api-keys/scopes"): P_API_SCOPES,
@@ -411,6 +414,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/chart-analyze/items"): S_OWN_CHART_ANALYSES,
     ("GET", "/api/chart-analyze/items/{item_id}"): "member: the caller's own chart analysis only (tenant and user)",
     ("GET", "/api/chart-analyze/items/{item_id}/image"): "member: the caller's own chart image only (tenant and user)",
+    ("GET", "/api/chart-analyze/items/{item_id}/reading.png"): ("member: ATP's reading drawn on the candles stored with the caller's own "
+                                                             "hybrid analysis only (tenant and user; reads only)"),
     ("POST", "/api/chart-analyze/items/{item_id}/analyze"): S_OWN_CHART_ANALYSES,
     ("GET", "/api/chart-analyze/items/{item_id}/strikes"): "member: the caller's own analysis + the caller's organisation's deployment settings (reads only)",
     ("DELETE", "/api/chart-analyze/items/{item_id}"): S_OWN_CHART_ANALYSES,

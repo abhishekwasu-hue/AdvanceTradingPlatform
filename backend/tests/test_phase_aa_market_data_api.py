@@ -3,6 +3,7 @@ session, resampling to the requested timeframe, per-symbol errors, lookback clam
 lookback-aware cache key and metering."""
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 
 from app.brokers.base import BrokerInterface
@@ -77,7 +78,8 @@ def test_sources_and_409_without_a_usable_session(monkeypatch):
     assert client.post("/api/market-data/candles", json={"symbols": ["NIFTY"]}).status_code == 401
 
 
-def test_candles_resample_report_errors_clamp_and_meter(monkeypatch):
+def test_candles_resample_report_errors_clamp_and_meter(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="app.market_data.candles_routes")
     headers, me = _owner("aa-broker@example.com")
     _store_credentials(me)
     broker = _Broker()
@@ -96,7 +98,11 @@ def test_candles_resample_report_errors_clamp_and_meter(monkeypatch):
     first = nifty["bars"][0]
     assert first["open"] == 100 and first["close"] == 104.5 and first["high"] == 105 and first["low"] == 99 and first["volume"] == 50
     assert "09:15" in first["timestamp"]
-    assert body["symbols"]["BAD"]["error"].startswith("BrokerAPIError") and body["symbols"]["BAD"]["count"] == 0
+    # REV-1 M2: the trader reads a plain sentence; the internal class name stays in the log line only.
+    bad_error = body["symbols"]["BAD"]["error"]
+    assert bad_error == "Your broker could not send prices for BAD just now. Try again in a moment." and body["symbols"]["BAD"]["count"] == 0
+    assert "BrokerAPIError" not in bad_error
+    assert any("BrokerAPIError" in r.getMessage() and "BAD" in r.getMessage() for r in caplog.records)
     assert broker.calls[0][1] == "1min" and broker.calls[0][2] <= 30
 
     day = client.post("/api/market-data/candles", headers=headers, json={"symbols": ["NIFTY"], "timeframe": "day", "lookback_days": 400}).json()

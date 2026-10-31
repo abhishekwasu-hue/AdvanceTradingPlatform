@@ -1,7 +1,8 @@
 /**
- * Z5 / P1-c: "Place as basket" - the strategy as the engine would place it: hedge legs first, each with its quantity
- * (lots x lot size) and price. In this release placing is not available: the PAPER basket comes with the
- * plan-before-trade ticket, and the button says so instead of pretending. There is no LIVE path from the builder.
+ * Z5 / P1-c: "Review basket" - the strategy as the engine would place it: hedge legs first, each with its
+ * quantity (lots x lot size) and price. In this release placing is not available: the PAPER basket comes with the
+ * plan-before-trade ticket. REV-1 M2: the dialog is review only and says so - no place button that can never be
+ * pressed; a place button shows only if the server ever answers `placeable`. There is no LIVE path from the builder.
  */
 import { useEffect, useState } from "react";
 import { Button, Dialog } from "../components/primitives";
@@ -28,11 +29,13 @@ export function BasketDialog({ open, onOpenChange, underlying, legs, errorText }
 
   const n = basket?.orders.length ?? legs.length;
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Place as basket"
+    <Dialog open={open} onOpenChange={onOpenChange} title="Order basket (review only)"
             footer={(
               <div className="flex w-full flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
                 {basket && !basket.placeable && <p className="text-xs text-fg-muted sm:mr-auto" data-testid="basket-why-not">{basket.why_not}</p>}
-                <Button variant="primary" disabled={!basket?.placeable} data-testid="basket-place">Place {n} legs in PAPER</Button>
+                {basket?.placeable
+                  ? <Button variant="primary" data-testid="basket-place">Place {n} legs in PAPER</Button>
+                  : <Button onClick={() => onOpenChange(false)} data-testid="basket-close">Close</Button>}
               </div>
             )}>
       {problem && <p role="alert" className="text-sm text-warn">{problem}</p>}
@@ -54,7 +57,7 @@ export function BasketDialog({ open, onOpenChange, underlying, legs, errorText }
           </p>
         </div>
       )}
-      <Details id="optionsBuilder.basket"><p>The legs in the order they would be placed: hedges first, so the margin sees the protection before the short.</p></Details>
+      <Details id="optionsBuilder.basket"><p>The legs in the order they would be placed: hedges first, so the margin sees the protection before the short. Nothing is placed from here.</p></Details>
     </Dialog>
   );
 }

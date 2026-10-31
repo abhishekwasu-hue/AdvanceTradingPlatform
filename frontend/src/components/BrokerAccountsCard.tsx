@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import type { BrokerAccount, SmokeReport } from "../types";
 import { Card } from "./ui";
 import { formatDateTimeIST, formatTimeIST } from "../ui/format";
+import { Details } from "../ui/Details";
 
 /**
  * Phase I2: the trading accounts behind the stored broker credentials - balance, margin and
@@ -52,11 +53,13 @@ export default function BrokerAccountsCard({ refreshKey = 0 }: { refreshKey?: nu
 
   return (
     <Card title={`Broker accounts (${accounts.length})`}>
-      <p className="text-xs text-fg-muted mb-3">
-        One account per stored credential; store a second credential for the same broker with a different account label
-        to trade two accounts. LIVE deployments route to the account they name, else the broker's default (★).
-        Disabling an account stops new LIVE entries to it; exits still run.
-      </p>
+      <Details id="broker-accounts.about" className="mt-0 mb-3">
+        <p>
+          One account per stored credential; store a second credential for the same broker with a different account label
+          to trade two accounts. LIVE deployments route to the account they name, else the broker's default (★).
+          Disabling an account stops new LIVE entries to it; exits still run.
+        </p>
+      </Details>
       {error && <div className="text-xs text-down mb-2">{error}</div>}
       {accounts.length === 0 ? (
         <div className="text-sm text-fg-muted">No accounts yet - store broker credentials first.</div>

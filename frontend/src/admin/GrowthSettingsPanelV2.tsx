@@ -4,6 +4,7 @@ import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { friendlyError } from "../api/errors";
 import { growthSettingsApi, learnBody, type LearnSettings, type ReferralSettings } from "./growthSettingsApi";
 import { SkeletonRows } from "../components/primitives";
+import { Details } from "../ui/Details";
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 const INPUT = `h-11 w-full min-w-0 rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg placeholder:text-fg-muted md:h-9 ${FOCUS}`;
@@ -66,7 +67,7 @@ function LearnVideosCard() {
   return (
     <section data-console-card="learn-videos" aria-label="Learn videos" className={`${CARD} p-space-4 md:p-space-5`}>
       <h2 className="text-t15 font-semibold text-fg">Learn videos</h2>
-      <p className="mt-space-1 text-t12 text-fg-muted">A video link per lesson and one link to the full course. Empty fields show no video. Full https links only. They appear on the Learn page once it is turned on.</p>
+      <Details id="console.learn-videos" className="mt-space-1">A video link per lesson and one link to the full course. Empty fields show no video. Full https links only. They appear on the Learn page once it is turned on.</Details>
       {!data ? (error ? <p className="mt-space-3 text-t12 text-fg-muted">Could not load: {error}</p> : <SkeletonRows rows={2} label="Loading" />) : (
         <form className="mt-space-3 flex flex-col gap-space-3" onSubmit={(e) => { e.preventDefault(); void save.run(); }}>
           <label htmlFor={courseId} className="flex flex-col gap-space-1 text-t14 font-medium text-fg">Full course
@@ -107,7 +108,7 @@ function ReferralCard() {
   return (
     <section data-console-card="referral-settings" aria-label="Invite a friend" className={`${CARD} p-space-4 md:p-space-5`}>
       <h2 className="text-t15 font-semibold text-fg">Invite a friend</h2>
-      <p className="mt-space-1 text-t12 text-fg-muted">What the invite card says about the reward, in your own words. Leave it empty to name no reward. No reward is given automatically yet: payments will handle that.</p>
+      <Details id="console.referral-settings" className="mt-space-1">What the invite card says about the reward, in your own words. Leave it empty to name no reward. No reward is given automatically yet: payments will handle that.</Details>
       {!data ? (error ? <p className="mt-space-3 text-t12 text-fg-muted">Could not load: {error}</p> : <SkeletonRows rows={2} label="Loading" />) : (
         <form className="mt-space-3 flex flex-col gap-space-3" onSubmit={(e) => { e.preventDefault(); void save.run(); }}>
           <dl className="grid grid-cols-3 gap-space-3" data-referral-totals>

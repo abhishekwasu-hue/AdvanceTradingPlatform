@@ -18,6 +18,7 @@ import { Card } from "./ui";
 import type { ThenTemplate } from "../screener/then/model";
 import { useFeatures } from "../ui/useFeatures";
 import { formatDateTimeIST, formatTimeIST } from "../ui/format";
+import { Details } from "../ui/Details";
 
 // N1 X1b (flag scan_then): a rule's Then chip and drawer, loaded only when the flag is on (its i18n bundle stays out of
 // this page's chunk otherwise).
@@ -164,7 +165,7 @@ function PolicyForm() {
         <Input label="Group a burst for (s)" type="number" min={0} max={600} value={policy.group_window_seconds} onChange={(e) => set("group_window_seconds", Number(e.target.value))} />
         <Input label="End-of-day digest (HH:MM)" value={policy.eod_digest_time} onChange={(e) => set("eod_digest_time", e.target.value)} />
       </div>
-      <p className="text-xs text-fg-muted">Critical rules go out during quiet hours and above the hourly cap. Everything else is held and sent after.</p>
+      <Details id="alerts.policy" className="mt-0"><p className="text-xs text-fg-muted">Critical rules go out during quiet hours and above the hourly cap. Everything else is held and sent after.</p></Details>
       <Errors lines={errors} />
       <div className="flex items-center gap-2"><Button onClick={save}>Save policy</Button>{saved && <span className="text-xs text-up">Saved.</span>}</div>
     </div>
@@ -222,7 +223,7 @@ function PersonalChannels() {
     <div className="space-y-3">
       <div className="space-y-1">
         <div className="text-sm text-fg">Your Telegram: {link?.linked ? <Badge tone="up">linked</Badge> : <Badge>not linked</Badge>}</div>
-        <p className="text-xs text-fg-muted">A linked chat gets the alerts of rules you created. It cannot run commands or approve anything.</p>
+        <Details id="alerts.telegram-link" className="mt-0"><p className="text-xs text-fg-muted">A linked chat gets the alerts of rules you created. It cannot run commands or approve anything.</p></Details>
         <div className="flex gap-2">
           <Button size="sm" variant="secondary" onClick={makeCode}>{link?.linked ? "Link another chat" : "Get a link code"}</Button>
           {link?.linked && <Button size="sm" variant="ghost" onClick={unlink}>Unlink</Button>}

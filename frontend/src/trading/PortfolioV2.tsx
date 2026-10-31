@@ -12,6 +12,7 @@ import { PageFootnote } from "../ui/numbersFirst";
 import { useLiveHidden } from "../settings/useLiveHidden";
 import { allocationRows, bookedCurve, longShortLine, portfolioTiles, type AllocationRow } from "./model";
 import { NoteV2, PageTitleV2, ShareBarV2, StateChipV2, TileV2, TilesV2 } from "./PartsV2";
+import { Details } from "../ui/Details";
 
 const REFRESH_MS = 30_000;
 const every = (ms: number) => () => ms;
@@ -98,10 +99,12 @@ export default function PortfolioV2(_props: PageProps = {}) {
         )}
       </CardV2>
 
-      <p className="text-t13 text-fg-muted">
-        Limits on total exposure and on how much sits in one symbol are set on{" "}
-        <Link to="/risk-management" className="font-medium text-brand hover:underline">Risk limits</Link>.
-      </p>
+      <Details id="portfolio.limits" className="mt-0">
+        <p>
+          Limits on total exposure and on how much sits in one symbol are set on{" "}
+          <Link to="/risk-management" className="font-medium text-brand hover:underline">Risk limits</Link>.
+        </p>
+      </Details>
       {/* UX-11 U5: the page's one footer line. */}
       <PageFootnote />
     </div>

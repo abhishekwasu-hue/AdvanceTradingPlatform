@@ -5,6 +5,7 @@ import type { StaticIpOverview } from "../types";
 import { Button } from "./primitives";
 import { brokerDisplayName, staticIpBrokerOptions, staticIpRows } from "./staticIps";
 import { Card } from "./ui";
+import { Details } from "../ui/Details";
 
 /** Part D4 (rule IN-SEBI.static_ip.registered): the IPs registered with each broker for API orders. */
 export default function StaticIpCard() {
@@ -43,11 +44,13 @@ export default function StaticIpCard() {
   return (
     <Card title="Static IP (SEBI)">
       <div className="space-y-3 text-sm">
-        <p className="text-xs text-fg-muted">
-          SEBI&apos;s retail-algo framework accepts API orders only from an IP the broker has on file for you. Register this
-          server&apos;s public IP in each broker&apos;s API console, then record it here. A role can change
-          {data ? ` ${data.max_changes_per_week} time(s)` : ""} in 7 days.
-        </p>
+        <Details id="static-ip.about" className="mt-0">
+          <p>
+            SEBI&apos;s retail-algo framework accepts API orders only from an IP the broker has on file for you. Register this
+            server&apos;s public IP in each broker&apos;s API console, then record it here. A role can change
+            {data ? ` ${data.max_changes_per_week} time(s)` : ""} in 7 days.
+          </p>
+        </Details>
         <div className="text-xs">
           This server&apos;s egress IP: <span className="font-mono">{data?.server_egress_ip ?? "not configured (SERVER_EGRESS_IP)"}</span>
           {data?.required_for_live ? " - LIVE entries need it registered." : " - not enforced yet (STATIC_IP_REQUIRED_FOR_LIVE off)."}

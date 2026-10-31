@@ -1,0 +1,59 @@
+{
+  "schema": "atp.template/1",
+  "id": "D9",
+  "version": 1,
+  "name": "Weekly trend, daily pullback",
+  "family": "D",
+  "idea": "While the Weekly trend is up (a rising trend average, or the swing structure), wait on the Daily chart for a pullback to the pullback average and a bullish reversal there (the mirror in a Weekly downtrend); the idea is wrong beyond the pullback's extreme.",
+  "difficulty": "Intermediate",
+  "style": "Swing",
+  "allowed_timeframes": ["1d"],
+  "params": [
+    {"key": "trend_by", "label": "Weekly trend by", "help": "What tells the Weekly trend: a rising (or falling) trend average with the close beyond it, or the swing structure (higher highs and higher lows, or the mirror).", "type": "enum", "default": "average", "choices": ["average", "structure"], "choice_labels": ["The trend average", "The swing structure"]},
+    {"key": "context_timeframe", "label": "Trend timeframe", "help": "The higher timeframe the trend is read on (closed bars only).", "type": "timeframe", "default": "1w", "choices": ["1w"]},
+    {"key": "ma_type", "label": "Average type", "help": "How the trend average and the pullback average are calculated.", "type": "ma_type", "default": "EMA", "choices": ["EMA", "SMA", "WMA", "HMA"], "choice_labels": ["Exponential", "Simple", "Weighted", "Hull"]},
+    {"key": "trend_period", "label": "Weekly trend average", "help": "For the trend average: the Weekly bars in it.", "type": "int", "default": 30, "min": 2, "max": 200, "step": 1},
+    {"key": "slope_bars", "label": "Trend slope over (weeks)", "help": "For the trend average: it must be higher (uptrend) or lower (downtrend) than it was this many Weekly bars before.", "type": "int", "default": 4, "min": 1, "max": 52, "step": 1},
+    {"key": "swing_degree", "label": "Weekly swing size", "help": "For the swing structure: which Weekly swings count (0 is the smaller, 1 the larger). Larger swings need much more history.", "type": "int", "default": 0, "min": 0, "max": 1, "step": 1},
+    {"key": "pullback_period", "label": "Daily pullback average", "help": "The Daily bars in the average the pullback comes back to.", "type": "int", "default": 20, "min": 2, "max": 200, "step": 1},
+    {"key": "pullback_max_bars", "label": "Reversal within (bars)", "help": "The reversal must come within this many Daily bars after the pullback first reached the average.", "type": "int", "default": 10, "min": 1, "max": 100, "step": 1},
+    {"key": "exit_rule", "label": "The idea has ended", "help": "No exit signal from this template, or a close back across the pullback average.", "type": "enum", "default": "none", "choices": ["none", "pullback_average"], "choice_labels": ["No exit signal", "A close back across the pullback average"]}
+  ],
+  "constraints": [
+    {"left": "context_timeframe", "op": ">", "right": "signal_timeframe", "message": "The trend timeframe must be higher than the signal timeframe."}
+  ],
+  "sides_default": "both",
+  "context": {
+    "by": "trend_by",
+    "variants": {
+      "average": {"long": "close > MA(close, $trend_period, $ma_type) AND MA(close, $trend_period, $ma_type) > Lag(MA(close, $trend_period, $ma_type), $slope_bars)",
+                  "short": "close < MA(close, $trend_period, $ma_type) AND MA(close, $trend_period, $ma_type) < Lag(MA(close, $trend_period, $ma_type), $slope_bars)"},
+      "structure": {"long": "DowTrend($swing_degree) == \"UP\"", "short": "DowTrend($swing_degree) == \"DOWN\""}
+    },
+    "timeframe_param": "context_timeframe"
+  },
+  "setup": {
+    "kind": "event",
+    "long": "low <= MA(close, $pullback_period, $ma_type) AND low[1] > MA(close, $pullback_period, $ma_type)[1]",
+    "short": "high >= MA(close, $pullback_period, $ma_type) AND high[1] < MA(close, $pullback_period, $ma_type)[1]",
+    "expiry_bars": "$pullback_max_bars",
+    "same_bar": false
+  },
+  "trigger": {
+    "long": "ReversalAt(MA(close, $pullback_period, $ma_type), \"bullish\") AND close > MA(close, $pullback_period, $ma_type)",
+    "short": "ReversalAt(MA(close, $pullback_period, $ma_type), \"bearish\") AND close < MA(close, $pullback_period, $ma_type)"
+  },
+  "invalidation": {"extreme": "since_setup"},
+  "exit_signal": {
+    "by": "exit_rule",
+    "variants": {
+      "none": null,
+      "pullback_average": {"long": "close < MA(close, $pullback_period, $ma_type)", "short": "close > MA(close, $pullback_period, $ma_type)"}
+    }
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "daily_pullback_reversed_up"}, {"token": "ctx_trend_up"}],
+    "short": [{"token": "daily_rally_reversed_down"}, {"token": "ctx_trend_down"}]
+  }
+}

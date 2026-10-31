@@ -81,7 +81,7 @@ export default function RiskLimitsV2({ load = loadRiskLimits, save = saveRiskLim
   return (
     <div className="space-y-space-4" data-testid="risk-limits">
       <CardV2 title="Risk limits" badge={<span className="text-t12 font-medium text-fg-muted" data-testid="risk-limits-count">{onCount(view)}</span>}>
-        <p className="text-t13 text-fg-muted">Turn on only the checks you want. Off: your order is the lots you type. Exits are never checked.</p>
+        <Details id="risk-limits.intro" className="mt-0"><p>Turn on only the checks you want. Off: your order is the lots you type. Exits are never checked.</p></Details>
         <ul className="mt-space-3 divide-y divide-subtle" data-testid="risk-limits-main">
           {main.map((c) => <CheckRow key={c.id} check={c} draft={draft} paper={view.paper?.[c.id]} onChange={setCheck}
             pause={draft.pause} onPause={(pause) => { setDraft({ ...draft, pause }); setNote(null); }} />)}

@@ -7,6 +7,7 @@ import { getToken } from "../api/client";
 import { apiErrorFrom, friendlyError, errorSentence } from "../api/errors";
 import { PageHeader, SkeletonRows } from "../components/primitives";
 import { SelectOrCombobox } from "../ui/Combobox";
+import { Details } from "../ui/Details";
 
 function TaxReportCard() {
   const [years, setYears] = useState<string[]>([]);
@@ -37,7 +38,7 @@ function TaxReportCard() {
         {report && <span className="text-fg-muted">{report.trades} closed trades · net {money(report.net_pnl)}</span>}
         {report && <span className="text-fg-muted" title={report.turnover_method_label}>F&amp;O turnover: {report.turnover_method === "ABS_PNL" ? "absolute P&L" : "absolute P&L + option premium sold"}</span>}
       </div>
-      <div className="text-xs text-fg-muted mb-2">Not tax advice. Estimates from your own trades only, to reconcile with your broker&apos;s statement; verify with a chartered accountant.</div>
+      <Details id="analytics.tax-report" className="mt-0 mb-2"><p>Not tax advice. Estimates from your own trades only, to reconcile with your broker&apos;s statement; verify with a chartered accountant.</p></Details>
       {error && <div className="text-xs text-down">{error}</div>}
       {report && (
         <table className="w-full text-xs">

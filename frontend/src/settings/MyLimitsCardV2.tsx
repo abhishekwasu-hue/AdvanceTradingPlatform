@@ -76,7 +76,7 @@ function MyLimitsEditor({ testId }: { testId: string }) {
 
   return (
     <CardV2 title="My limits" testId={testId}>
-      <p className="text-t13 text-fg-muted">Your own limits. A blank one is not set: nothing is held back for it. Exits always work.</p>
+      <Details id="my-limits.about" className="mt-0"><p className="text-t13 text-fg-muted">Your own limits. A blank one is not set: nothing is held back for it. Exits always work.</p></Details>
       {!editing && !anySet && (
         <div className="mt-space-3 flex flex-wrap items-center gap-space-3" data-testid="my-limits-empty">
           <span className="text-t14 text-fg">All limits are off.</span>

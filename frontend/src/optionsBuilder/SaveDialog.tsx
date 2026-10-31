@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { ApiError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
 import { Button, Dialog, Input } from "../components/primitives";
+import { Details } from "../ui/Details";
 import { builderApi, wireLegs, type SavedInputs, type SavedStrategy, type SavedSummary } from "./api";
 import type { Leg } from "./model";
 
@@ -77,7 +78,7 @@ export function SaveDialog({ open, onOpenChange, underlying, inputs, legs, onLoa
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Save strategy" description="Saved strategies are shared with your organisation. Saving places no order.">
+    <Dialog open={open} onOpenChange={onOpenChange} title="Save strategy">
       <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); void save(); }}>
         <div className="min-w-0 flex-1">
           <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="e.g. Weekly iron condor" data-testid="save-name" />
@@ -102,6 +103,7 @@ export function SaveDialog({ open, onOpenChange, underlying, inputs, legs, onLoa
           ))}
         </ul>
       )}
+      <Details id="optionsBuilder.save"><p>Saved strategies are shared with your organisation. Saving places no order.</p></Details>
     </Dialog>
   );
 }

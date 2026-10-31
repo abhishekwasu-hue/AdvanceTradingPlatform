@@ -204,7 +204,7 @@ test.describe("settings index behaviour", () => {
     await openSettings(page, "/settings/alerts", FULL);
     await expect(page.locator("#telegram")).toBeVisible();
     await expect(page.locator("#channels")).not.toHaveAttribute("open", "");
-    await page.locator("#channels summary").click();
+    await page.locator("#channels > summary").click();
     await expect(page.locator("[data-telegram-elsewhere]")).toBeVisible();
     await expect(page.locator("#alerts").getByPlaceholder(/Bot token/)).toHaveCount(0);
     await page.locator("[data-telegram-elsewhere] a").click();

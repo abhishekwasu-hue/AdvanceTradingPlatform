@@ -1,5 +1,7 @@
 import { forwardRef, useId, type InputHTMLAttributes, type ReactNode } from "react";
 import { cx } from "./cx";
+import { Details } from "../../ui/Details";
+import { isProse, nodeText } from "../../ui/nodeText";
 
 export const fieldClass = cx("h-9 w-full rounded-md border border-border bg-surface-2 px-3 text-sm text-fg",
   "placeholder:text-fg-muted/70 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand",
@@ -20,7 +22,10 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       <input ref={ref} id={fieldId} type={type} aria-invalid={error ? true : undefined} aria-describedby={describedBy}
         className={cx(fieldClass, type === "number" && "font-tabular", className)} {...rest} />
       {error ? <p id={`${fieldId}-error`} role="alert" className="text-xs text-down">{error}</p>
-        : hint ? <p id={`${fieldId}-hint`} className="text-xs text-fg-muted">{hint}</p> : null}
+        // PROSE-1: a short format hint stays under the field; an explanation goes into the field's Details (closed).
+        : hint ? (isProse(hint)
+          ? <Details id={`field.${nodeText(label) || fieldId}`} className="mt-space-1"><p id={`${fieldId}-hint`}>{hint}</p></Details>
+          : <p id={`${fieldId}-hint`} className="text-xs text-fg-muted">{hint}</p>) : null}
     </div>
   );
 });

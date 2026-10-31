@@ -4,6 +4,7 @@ import { ApiError } from "../api/errors";
 import { DEFAULT_PREFS, TELEGRAM_CHOICES } from "./model";
 import type { RhythmPrefs, RhythmSettings } from "./types";
 import { Skeleton } from "../components/primitives";
+import { Details } from "../ui/Details";
 
 /**
  * MO4 (Settings → Alerts, behind `ui_v2` + `daily_rhythm`): "Daily briefs on Telegram" - OFF until the user turns it on,
@@ -51,10 +52,12 @@ export default function RhythmTelegramV2() {
   const on = prefs.telegram && !blocked;
   return (
     <div className="space-y-space-3" data-rhythm-telegram>
-      <p className="text-t14 text-fg-muted">
-        A short brief before the open, a closing wrap and your week, from your own lists and trades. It describes the market and your
-        record; it never tells you what to trade.
-      </p>
+      <Details id="rhythm.telegram" className="mt-0">
+        <p className="text-t14 text-fg-muted">
+          A short brief before the open, a closing wrap and your week, from your own lists and trades. It describes the market and your
+          record; it never tells you what to trade.
+        </p>
+      </Details>
       <label className={ROW}>
         <input type="checkbox" className={BOX} checked={on} disabled={busy || blocked !== null}
           onChange={(e) => void save({ ...prefs, telegram: e.target.checked })} />

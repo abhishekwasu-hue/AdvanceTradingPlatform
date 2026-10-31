@@ -343,7 +343,7 @@ async def explain_results(ctx: ToolContext, args: _Explain) -> ToolResult:
         return off
     from app.screener import evidence
     from app.screener import ranking as RK
-    from app.screener.routes import _compiled, _gate, load_universe, missing_data
+    from app.screener.routes import _compiled, _gate, load_universe, missing_data, store_first
     from app.screener.runtime import ScreenRuntimeError, _cross_sectional
     params = dict(args.params)
     ast, validated = _compiled(args.text, args.base_tf, params)
@@ -355,8 +355,10 @@ async def explain_results(ctx: ToolContext, args: _Explain) -> ToolResult:
     if missing:
         return ToolResult(False, None, None, "screener", error=f"{', '.join(m + '()' for m in missing)} need data the screener does not load yet")
     symbols = list(dict.fromkeys(s.strip().upper() for s in args.symbols if s.strip()))
+    store = await store_first(ctx.session, ctx.user.tenant_id)   # M71 W2-G: store-first, broker calls budgeted (flag on only)
     try:
-        universe, problems, source, systems = await load_universe(ctx.session, ctx.user, ast, validated, params, symbols, args.exchange, args.base_tf)
+        universe, problems, source, systems = await load_universe(ctx.session, ctx.user, ast, validated, params, symbols, args.exchange,
+                                                                  args.base_tf, budget={} if store else None, store=store)
     except HTTPException as exc:
         return ToolResult(False, None, None, "screener", error=_detail(exc))
 

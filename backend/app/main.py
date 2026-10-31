@@ -80,6 +80,7 @@ from app.incidents.routes import router as incidents_router
 from app.instruments.reference_routes import router as instrument_reference_router
 from app.instruments.routes import router as instrument_master_router
 from app.journal.routes import router as journal_router
+from app.journal.stats_routes import router as journal_stats_router
 from app.kill_switch.routes import router as kill_switch_router
 from app.lab.pine.routes import router as lab_pine_router
 from app.learn.routes import router as learn_router
@@ -354,6 +355,7 @@ app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the c
 app.include_router(trading_router)
 app.include_router(performance_router)   # REV-1 M2: the Performance page - the user's own trades only
 app.include_router(journal_router)  # Z6 / P1-e: journal, behaviour tags, discipline score (flag discipline_engine, off)
+app.include_router(journal_stats_router)  # M62 JN-3: the journal list, its statistics and the CSV / PDF export (same flag)
 app.include_router(custom_strategies_router)
 app.include_router(options_builder_router)  # P1-c: Options Strategy Builder (research only, no orders)
 app.include_router(options_builder_saved_router)  # Z5: saved builder strategies (flag options_builder_saved, off by default)

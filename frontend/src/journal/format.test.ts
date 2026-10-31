@@ -65,6 +65,8 @@ const BANNED: RegExp[] = [
 const RAW = {
   ...import.meta.glob<string>(["./*.ts", "!./*.test.ts"], { query: "?raw", import: "default", eager: true }),
   ...import.meta.glob<string>(["../pages/JournalPage.tsx"], { query: "?raw", import: "default", eager: true }),
+  // M62 JN-3: the v2 page parts
+  ...import.meta.glob<string>(["./*V2.tsx"], { query: "?raw", import: "default", eager: true }),
 };
 
 function literals(file: string, text: string): string[] {

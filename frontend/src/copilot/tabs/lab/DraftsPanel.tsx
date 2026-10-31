@@ -14,6 +14,7 @@ import { useCopilotT } from "../../i18n";
 import { copilotPath } from "../../tabs";
 import { Panel } from "../shared";
 import { useFeatures } from "../../../ui/useFeatures";
+import { RichText } from "../../../ui/RichText";
 
 /**
  * AI drafts: a plain-language idea becomes a rule set (the same schema as the Strategy Builder), shown in words; the
@@ -27,6 +28,11 @@ function operand(o: Condition["left"]): string {
 /** A condition in words: "EMA(20) crosses above EMA(50)". */
 export function conditionText(c: Condition, t: (key: string, o?: Record<string, unknown>) => string): string {
   return `${operand(c.left)} ${t(`lab.op.${c.operator}`, { defaultValue: c.operator })} ${operand(c.right)}`;
+}
+
+/** M63 I-7: the AI's explanation of a draft as rich text, never with raw ** or "- ". */
+export function DraftExplanation({ text }: { text: string }) {
+  return <RichText source={text} className="text-fg-muted" />;
 }
 
 export default function DraftsPanel({ source, symbol }: { source: CandleSourceState; symbol: string }) {
@@ -138,7 +144,7 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
                 <Badge tone={STATUS_TONE[selected.status] ?? "neutral"}>{t(`lab.drafts.status.${selected.status}`)}</Badge>
                 <span className="text-xs text-fg-muted">{selected.lineage.provider} / {selected.lineage.model}</span>
               </div>
-              {selected.explanation && <p className="whitespace-pre-wrap text-fg-muted">{selected.explanation}</p>}
+              {selected.explanation && <DraftExplanation text={selected.explanation} />}
               {selected.warnings.length > 0 && <ul className="list-disc pl-4 text-xs text-warn">{selected.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
               {selected.config && (
                 <div className="rounded-xl border border-ai/25 bg-ai/5 p-3" data-testid="rules-in-words">

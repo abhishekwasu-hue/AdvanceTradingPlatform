@@ -1,6 +1,7 @@
 import { ChevronDown, Info, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Details } from "../ui/Details";
+import { meaningOf } from "../ui/format";
 
 export function Card({ title, children, className = "" }: { title?: string; children: ReactNode; className?: string }) {
   return (
@@ -45,8 +46,8 @@ export function CollapsibleCard({ title, subtitle, children, storageKey, default
 /** P1.3: a figure is coloured only when it has a sign - zero (and anything not a number) stays neutral. */
 export function signTone(value: number | null | undefined, decimals = 2): "default" | "up" | "down" {
   if (value == null || !Number.isFinite(value)) return "default";
-  const shown = Number(value.toFixed(decimals));
-  return shown > 0 ? "up" : shown < 0 ? "down" : "default";
+  const meaning = meaningOf(value, decimals);
+  return meaning === "flat" ? "default" : meaning;
 }
 
 /** Text class for a signed figure: up / down, neutral when it shows as zero. */

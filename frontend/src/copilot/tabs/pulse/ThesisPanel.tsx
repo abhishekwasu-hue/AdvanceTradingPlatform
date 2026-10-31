@@ -6,6 +6,7 @@ import type { MarketThesis, ThesisHistory } from "../../../types";
 import { friendlyError } from "../../aiTask";
 import { useCopilotT } from "../../i18n";
 import { Panel } from "../shared";
+import { formatNumber } from "../../../ui/format";
 
 /**
  * The market thesis of one watched symbol, in neutral words (P0.8): "the data reads ..." with the factor agreement,
@@ -90,13 +91,13 @@ export default function ThesisPanel() {
             {thesis.confidence != null && !stale && <span className="text-xs text-fg" title={t("thesis.scoreHint")}>{t("thesis.score", { score: thesis.confidence })}</span>}
             <span className="text-xs text-fg-muted">{t("thesis.agree", { agreeing: thesis.agreement.agreeing, total: thesis.agreement.with_opinion, coverage: Math.round(thesis.agreement.coverage * 100) })}</span>
             <span className="ml-auto rounded-md border border-border px-2 py-0.5 text-xs text-fg-muted" title={thesis.shadow.reasons.join("; ") || t("thesis.noReduction")}>
-              {t("thesis.shadow", { mult: thesis.shadow.size_multiplier.toFixed(2) })} <span className="text-warn">{t("thesis.notApplied")}</span>
+              {t("thesis.shadow", { mult: formatNumber(thesis.shadow.size_multiplier, 2) })} <span className="text-warn">{t("thesis.notApplied")}</span>
             </span>
           </div>
           <div className="flex flex-wrap gap-1.5 text-xs">
             {thesis.agreement.matrix.map((r) => (
               <span key={r.factor} className={`rounded-md border px-1.5 py-0.5 ${!r.available ? "border-border text-fg-muted line-through" : r.direction > 0 ? "border-up/40 text-up" : r.direction < 0 ? "border-down/40 text-down" : "border-border text-fg"}`}>
-                {t(`thesis.factor.${r.factor}`, { defaultValue: r.factor })} {!r.available ? "?" : r.direction > 0 ? "↑" : r.direction < 0 ? "↓" : "→"} <span className="text-fg-muted">×{r.weight.toFixed(2)}</span>
+                {t(`thesis.factor.${r.factor}`, { defaultValue: r.factor })} {!r.available ? "?" : r.direction > 0 ? "↑" : r.direction < 0 ? "↓" : "→"} <span className="text-fg-muted">×{formatNumber(r.weight, 2)}</span>
               </span>
             ))}
           </div>

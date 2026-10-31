@@ -9,7 +9,7 @@ import { friendlyError } from "../aiTask";
 import { useCopilotData } from "../data";
 import { useCopilotT } from "../i18n";
 import { Panel, Stagger, StaggerItem } from "./shared";
-import { formatDateTimeIST } from "../../ui/format";
+import { formatDateTimeIST, formatNumber } from "../../ui/format";
 
 /**
  * News Radar: the live feed from the publishers' own public feeds (RBI, SEBI, exchanges...) - headline, source link,
@@ -72,7 +72,7 @@ export default function NewsRadarTab() {
     <div className="space-y-4" data-testid="tab-panel-news-radar">
       <Panel title={t("news.title")} icon={<Radar size={15} />}
              action={<Button size="sm" variant="ghost" icon={<RefreshCw size={13} className={busy ? "animate-spin" : ""} />} disabled={busy} onClick={() => void load()}>{t("states.refresh")}</Button>}>
-        <p className="mb-3 text-xs text-fg-muted">{t("news.intro")}{trust && ` ${t("news.trust", { trust: trust.trust.toFixed(2), n: trust.ratings })}`}</p>
+        <p className="mb-3 text-xs text-fg-muted">{t("news.intro")}{trust && ` ${t("news.trust", { trust: formatNumber(trust.trust, 2), n: trust.ratings })}`}</p>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           <Select label={t("news.window")} value={hours} onChange={setHours} options={[{ value: "6", label: t("news.hours", { n: 6 }) }, { value: "24", label: t("news.hours", { n: 24 }) }, { value: "72", label: t("news.days", { n: 3 }) }]} />
           <Select label={t("news.severity")} value={minSeverity} onChange={setMinSeverity}

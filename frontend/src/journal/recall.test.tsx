@@ -32,7 +32,7 @@ describe("AUD-T6 similar setups", () => {
     expect(recallSummary({ ...recall, count: 0, matches: [] })).toBe("No similar closed trades of yours yet");
     expect(recallSummary({ ...recall, count: 12, enough: true, wins: 7, losses: 5, avg_r: 0.35 }))
       .toBe("12 similar past trades: 7 with a gain, 5 with a loss · average +0.35 R");
-    expect(rWords(-0.5)).toBe("-0.50 R");
+    expect(rWords(-0.5)).toBe("−0.50 R");
     expect(contextWords(recall.context)).toBe("Long · Intraday · 15min chart");
     expect(contextWords({ ...recall.context, timeframe: null })).toBe("Long · Intraday");
   });

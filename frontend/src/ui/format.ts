@@ -216,19 +216,20 @@ export function formatTimeIST(v: When, opts: { seconds?: boolean; suffix?: boole
   return opts.suffix === false ? time : `${time} IST`;
 }
 
-/** "8 Oct 2026" in IST; `weekday` gives "Thu 8 Oct 2026". */
-export function formatDateIST(v: When, opts: { weekday?: boolean } = {}): string {
+/** "8 Oct 2026" in IST; `weekday` gives "Thu 8 Oct 2026"; `year: false` gives "8 Oct" (a recent stamp, a chart label). */
+export function formatDateIST(v: When, opts: { weekday?: boolean; year?: boolean } = {}): string {
   const ms = instant(v);
   if (!Number.isFinite(ms)) return EMPTY;
   const p = istParts(ms);
-  return `${opts.weekday ? `${WEEKDAYS[p.wd]} ` : ""}${p.day} ${MONTHS[p.mo]} ${p.y}`;
+  return `${opts.weekday ? `${WEEKDAYS[p.wd]} ` : ""}${p.day} ${MONTHS[p.mo]}${opts.year === false ? "" : ` ${p.y}`}`;
 }
 
-/** "8 Oct 2026, 10:42 IST". */
-export function formatDateTimeIST(v: When, opts: { seconds?: boolean } = {}): string {
+/** "8 Oct 2026, 10:42 IST". M63 I-7: `year: false` gives "8 Oct, 10:42 IST"; `suffix: false` drops " IST" where the
+ * screen already says it (a chart's as-of label: "8 Oct, 10:42"). */
+export function formatDateTimeIST(v: When, opts: { seconds?: boolean; year?: boolean; suffix?: boolean } = {}): string {
   const ms = instant(v);
   if (!Number.isFinite(ms)) return EMPTY;
-  return `${formatDateIST(ms)}, ${formatTimeIST(ms, opts)}`;
+  return `${formatDateIST(ms, { year: opts.year })}, ${formatTimeIST(ms, { seconds: opts.seconds, suffix: opts.suffix })}`;
 }
 
 // --- Compact Indian units (UI-H Wave 0, H4) -------------------------------------------------------------------------

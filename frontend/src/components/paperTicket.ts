@@ -1,6 +1,7 @@
 // Z5 / P1-d: pure helpers for the plan-before-trade PAPER ticket. The server computes every number (size, risk, cap,
 // gauge fraction, costs, break-even); these only turn the form into a plan and the answer into rows, text and an arc.
 import type { PaperRiskStatus, TicketCostLine, TicketPlan, TicketSetup, TradePlanView } from "../types";
+import { formatDateTimeIST, formatNumber } from "../ui/format";
 
 export interface TicketForm {
   symbol: string; direction: "LONG" | "SHORT"; setup: TicketSetup; entry: string; stop_loss: string; target: string;
@@ -38,7 +39,7 @@ export function planFromForm(form: TicketForm): { plan: TicketPlan | null; missi
 /** Indian grouping, two decimals. */
 export function money(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "-";
-  return n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatNumber(n, 2);
 }
 
 const COST_LABELS: [keyof TicketCostLine["items"], string][] = [
@@ -70,8 +71,8 @@ export function gauge(fraction: number | null | undefined, zone: "ok" | "overrid
 /** "Locked until 12 Oct 00:00 IST" from the server's lockout, or null. */
 export function lockoutLine(status: Pick<PaperRiskStatus, "lockout">): string | null {
   if (!status.lockout) return null;
-  const until = new Date(status.lockout.until).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-  return `New PAPER entries locked until ${until} IST. Exits stay available.`;
+  const until = formatDateTimeIST(new Date(status.lockout.until), { year: false });
+  return `New PAPER entries locked until ${until}. Exits stay available.`;
 }
 
 /** What the ticket says after "Place": the server's status of the stored plan, in words. */

@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { Button, Dialog } from "../components/primitives";
 import { Details } from "../ui/Details";
+import { formatNumber } from "../ui/format";
 import { builderApi } from "./api";
 import { basketUnderlying, contractLabel, money, type Basket, type Leg } from "./model";
 
@@ -47,8 +48,8 @@ export function BasketDialog({ open, onOpenChange, underlying, legs, errorText }
               <li key={o.seq} className="flex items-center justify-between gap-3 px-3 py-2 text-xs" data-testid="basket-order">
                 <span className="font-mono text-fg-muted">{o.seq}</span>
                 <span className={o.side === "BUY" ? "flex-1 font-mono font-semibold text-up" : "flex-1 font-mono font-semibold text-down"}>{contractLabel(o)}</span>
-                <span className="font-mono tabular-nums text-fg">{o.quantity.toLocaleString("en-IN")} qty</span>
-                <span className="w-20 text-right font-mono tabular-nums text-fg-muted">@ {o.price.toFixed(2)}</span>
+                <span className="font-mono tabular-nums text-fg">{formatNumber(o.quantity, 3, { trim: true })} qty</span>
+                <span className="w-20 text-right font-mono tabular-nums text-fg-muted">@ {formatNumber(o.price, 2)}</span>
               </li>
             ))}
           </ol>

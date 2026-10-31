@@ -5,17 +5,17 @@
  * on screen moves the bands are re-picked from the same response (`selectBands`), never re-computed from pixels.
  */
 import { useEffect, useMemo, useState } from "react";
+import { formatDateTimeIST } from "../ui/format";
 import { ApiError } from "../api/client";
 import type { ChartEngine } from "./engine";
 import { LAYER_ID, ZONE_COLORS, bandsAt, bandsLayer, marketZonesApi, type MarketZonesLayerResponse, type ZoneBand } from "./marketZones";
 
-const IST = "Asia/Kolkata";
 
 function asOfText(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString("en-IN", { timeZone: IST, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  return formatDateTimeIST(d, { year: false, suffix: false });
 }
 
 /** The legend: one row per band, top to bottom (the same order as on the chart). Renders nothing without bands. */

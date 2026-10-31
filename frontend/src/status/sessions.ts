@@ -1,5 +1,6 @@
 import { apiUrl } from "../api/base";
 import { formatEodDate, formatIstTime } from "../components/dataTier";
+import { formatNumber } from "../ui/format";
 
 /** AUD-T8: uptime per market session, the published service targets and the in-app degradation notice
  * (`GET /api/v1/status/sessions`, no login; flag `status_page`, 404 while off). Pure helpers, no React. The backend sends
@@ -78,7 +79,7 @@ export const SESSION_TONE: Record<SessionState, string> = {
 /** "99.85%", or "Not measured" before the first sample of that session. */
 export function uptimeText(pct: number | null): string {
   if (pct === null) return "Not measured";
-  return `${Number.isInteger(pct) ? pct.toFixed(0) : pct.toFixed(2).replace(/0$/, "")}%`;
+  return `${formatNumber(pct, Number.isInteger(pct) ? 0 : 2, { trim: true })}%`;
 }
 
 /** The newest session that has begun (in progress or the last one closed). */

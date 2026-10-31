@@ -1,5 +1,6 @@
 import { request } from "../api/client";
 import { V2_ALIASES } from "../shell/aliases";
+import { formatNumber } from "../ui/format";
 
 /**
  * AUD-T6 (owner audit 28 Oct; BR-M3 / BR-R1; flags `ui_v2` + `setup_recall`): the user's own past closed trades whose
@@ -65,7 +66,7 @@ export function recallSummary(r: Recall): string {
 
 export function rWords(r: number | null): string {
   if (r === null || !Number.isFinite(r)) return "-";
-  return `${r > 0 ? "+" : ""}${r.toFixed(2)} R`;
+  return `${r > 0 ? "+" : ""}${formatNumber(r, 2)} R`;
 }
 
 export const SIDE_WORDS: Record<string, string> = { LONG: "Long", SHORT: "Short" };

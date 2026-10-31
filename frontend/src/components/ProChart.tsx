@@ -22,7 +22,7 @@ import { SessionBreaksPrimitive } from "../charting/sessionBreaksPrimitive";
 import type { ChartType } from "../charting/workspace";
 import { Sheet } from "./primitives";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
-import { formatCount } from "../ui/format";
+import { formatCount, formatDateTimeIST, formatNumber, formatTimeIST } from "../ui/format";
 
 export type { ChartMarker, PriceLineSpec } from "../charting/markers";
 
@@ -65,11 +65,9 @@ function refreshThemeColors() {
 }
 
 const toTime = (iso: string): UTCTimestamp => Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp;
-const fmtIst = (t: number, withDate = true) => {
-  const d = new Date(t * 1000);
-  return d.toLocaleString("en-IN", { timeZone: IST, ...(withDate ? { day: "2-digit", month: "short" } : {}), hour: "2-digit", minute: "2-digit", hour12: false });
-};
-const fmt = (v: number | null | undefined, digits = 2) => (v == null || !Number.isFinite(v) ? "-" : v.toLocaleString("en-IN", { minimumFractionDigits: digits, maximumFractionDigits: digits }));
+const fmtIst = (t: number, withDate = true) =>
+  withDate ? formatDateTimeIST(t * 1000, { year: false, suffix: false }) : formatTimeIST(t * 1000, { suffix: false });
+const fmt = (v: number | null | undefined, digits = 2) => (v == null || !Number.isFinite(v) ? "-" : formatNumber(v, digits));
 
 /** CH5-b `venueAxis`: tick labels and the crosshair time in the venue's own zone (UTC for 24x7 crypto, IST otherwise),
  * with dates on day marks; without it the axis is exactly as before (IST times). */
@@ -540,7 +538,7 @@ export default function ProChart({
         )}
         {lastClose != null && (
           <span className={`font-tabular font-bold ${compact ? "text-sm" : "text-base"} ${change != null && change < 0 ? "text-down" : change != null && change > 0 ? "text-up" : "text-fg"}`}>
-            {fmt(lastClose)}{change != null && <span className="ml-1.5 text-xs font-semibold">{change >= 0 ? "+" : ""}{fmt(change)} ({changePct?.toFixed(2)}%)</span>}
+            {fmt(lastClose)}{change != null && <span className="ml-1.5 text-xs font-semibold">{change >= 0 ? "+" : ""}{fmt(change)} ({formatNumber(changePct, 2)}%)</span>}
           </span>
         )}
         {live && (

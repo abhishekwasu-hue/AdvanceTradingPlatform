@@ -25,7 +25,7 @@ describe("progression ladder helpers (Z3-b)", () => {
 
   it("formats signed money", () => {
     expect(signedMoney(1234.5)).toBe("+1,234.50");
-    expect(signedMoney(-20)).toBe("-20.00");
+    expect(signedMoney(-20)).toBe("−20.00");
     expect(signedMoney(0)).toBe("0.00");
   });
 });

@@ -162,6 +162,13 @@ describe("UI2-0 format: times in IST whatever the device zone", () => {
     expect(formatDateIST("2026-10-13T20:00:00Z", { weekday: true })).toBe("Wed 14 Oct 2026");
     expect(formatDateIST("2026-10-08")).toBe("8 Oct 2026");
     expect(formatDateTimeIST(new Date("2026-10-08T05:00:00Z"))).toBe("8 Oct 2026, 10:30 IST");
+    // M63 I-7: a short stamp without the year, and a chart label without " IST".
+    expect(formatDateIST("2026-10-08", { year: false })).toBe("8 Oct");
+    expect(formatDateIST("2026-10-13T20:00:00Z", { weekday: true, year: false })).toBe("Wed 14 Oct");
+    expect(formatDateTimeIST("2026-10-21T03:30:00Z", { year: false })).toBe("21 Oct, 09:00 IST");
+    expect(formatDateTimeIST(new Date("2026-10-08T05:12:45Z"), { year: false, suffix: false })).toBe("8 Oct, 10:42");
+    expect(formatDateTimeIST(new Date("2026-10-08T05:12:45Z"), { seconds: true, suffix: false })).toBe("8 Oct 2026, 10:42:45");
+    expect(formatDateTimeIST(null, { year: false })).toBe(EMPTY);
   });
 
   it("shows a dash for a missing or unreadable time", () => {

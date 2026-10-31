@@ -7,6 +7,7 @@
  */
 import { ApiError, request } from "../api/client";
 import type { OHLCVBar } from "../types";
+import { formatNumber } from "../ui/format";
 
 export interface ContractRow { key: string; tradingsymbol: string; underlying: string; kind: "CE" | "PE" | "FUT"; expiry: string; strike: number | null; lot_size: number }
 export interface ContractSearch { underlying: string; contracts: ContractRow[]; total: number; note: string }
@@ -71,7 +72,7 @@ export function toCandles(s: ContractSeries): OHLCVBar[] {
 
 /** "18.4 %" for a computed IV (per year), "n/a" when it could not be solved. */
 export function ivText(iv: number | null | undefined): string {
-  return iv == null ? "n/a" : `${(iv * 100).toFixed(1)} %`;
+  return iv == null ? "n/a" : `${formatNumber(iv * 100, 1)} %`;
 }
 
 /** Whether contract charts are on for this organisation (a search answering 503 means the flag is off). */

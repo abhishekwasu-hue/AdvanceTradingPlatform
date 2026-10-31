@@ -99,6 +99,7 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "chart_contracts": "Unfinished: needs the nightly download to have run; turn on later",
     "chart_futures_basis": "Unfinished: needs the nightly download to have run; turn on later",
     "terminal": "ON by default for everyone (owner ✅ 25 Oct, T-D1), so the pack does not need it",
+    "trade_engine": "Admin / owner only: needs the private engine package; the owner turns it on for his organisation after parity (M66)",
 }
 
 

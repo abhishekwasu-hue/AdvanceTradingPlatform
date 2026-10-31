@@ -26,12 +26,12 @@ def test_no_engine_means_no_feature_for_users_even_with_the_flag_on():
         features = client.get("/api/system/features", headers=headers).json()
         for flag in controls.ENGINE_FLAGS:
             assert features[flag] is False, flag
-        assert controls.engine_missing_flags() == {f: controls.ENGINE_MISSING_REASON for f in controls.ENGINE_FLAGS}
+        assert {k: v for k, v in controls.engine_missing_flags().items() if k in controls.ENGINE_FLAGS} == {f: controls.ENGINE_MISSING_REASON for f in controls.ENGINE_FLAGS}
         provider.set_for_tests(FakeProvider())
         features = client.get("/api/system/features", headers=headers).json()
         for flag in controls.ENGINE_FLAGS:
             assert features[flag] is True, flag
-        assert controls.engine_missing_flags() == {}
+        assert not set(controls.ENGINE_FLAGS) & set(controls.engine_missing_flags())   # M66: the chart flags; trade_engine has its own engine
     finally:
         for flag in controls.ENGINE_FLAGS:
             _set_flag(flag, tenant, on=False)

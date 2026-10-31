@@ -273,6 +273,15 @@ there. "Trade state" is Trade's own progress on 2026-10-20, from Trade's `docs/W
 | T13 | Data: golden fixtures, parity fixtures and the owner's approved charts | trade-data golden case files, `parity/<layer>/<tag>/` (once it exists), the owner's marked and approved charts | - | the private fixtures store on the host (outside git and outside the Method Pack), read by the parity tests | the store itself | waiting: no parity folder and no manifest yet |
 | T14 | Data: Trade's records and review artefacts (PAPER journal, engine signals, Vision log, review and audit charts and reports) | Trade's database (`cloud_db.py` tables), trade-data review, report and audit folders | - | a private, read-only archive on the host (kept for the shadow comparison and the owner's reference; never served to another tenant) | none | waiting: depends on what `EXPORT_MANIFEST.md` lists |
 
+**M66 EN-1 boundary (31 Oct).** The public side of the engine takeover is `backend/app/engine_provider/`: a typed,
+generic interface (`contract.py`: bars per timeframe with the futures volume and the optional closing-auction /
+extended-session marks, the market calendar in; areas with a state, swings, the higher-timeframe side, signals with a
+model id, an entry zone, an internal invalidation reference, an evidence list and the card as token ids out;
+`INTERFACE_VERSION`) and a loader for the private package's engine module (`loader.py`; absent or refused = the
+feature is unavailable with a plain reason). Its state is on the admin System view and in `atp.sh health` ("trade
+engine"); the flag `trade_engine` is OFF by default. The engine itself, and every rule and number of it, is only in
+atp-private. The rows above keep their status until the snapshot tag exists.
+
 ## 4. Already ported or covered, outside the groups
 
 | Trade module | Purpose | ATP equivalent | Status | Parity test |

@@ -13,10 +13,19 @@ Sources (read only; nothing here writes a row, places an order or reads one):
 - ATP's market calendar (`market_holidays` through `app.market_data.calendar.family_holidays`).
 A source that fails or holds nothing is listed in plain words; `frames.build_frame` turns that into a gap. No new
 table and no migration. EN-3 (the runner) calls `collect` + `frames.build_request`; `probe` is the admin's gap list.
+
+M71 W2-C (flag `market_store_reads`, the runner hands `store=StoreRead(...)`; OFF = no `store`, exactly the path above):
+the broker's 1-minute bars of the symbol and of an index's near-month future are read through ATP's own store
+(`app.market_store.read_bars(..., dh3=False)`): the reader's own stored 1-minute rows, then only the newest missing
+bars through his OWN broker session (M71Q-2, paced by the credential's data budget, kept until the next bar closes, so
+a second run makes no history call). The rows stay AS STORED and the DH3 flags become marks, as in `lake_bars`. The
+store's START labels go back to the END labels `frames.from_lake_rows` takes (START + 1 minute). A missing minute or
+volume stays missing (a gap, never 0). A symbol the store holds nothing of keeps the broker path above.
 """
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -36,6 +45,17 @@ SHARED_INDEX = "shared index history"
 BROKER = "your broker"
 DH3_POST_CLOSE = "post_close"
 DH3_EXTENDED = ("auction_high", "auction_low")
+STORE = f"{OWN_LAKE} and {BROKER}"          # M71 W2-C: the own store, topped up with the newest bars from the own session
+STORE_TRIED = "your stored history (1-minute, newest bars from your broker)"
+
+
+@dataclass(frozen=True)
+class StoreRead:
+    """M71 W2-C: read the 1-minute bars through the own store (flag `market_store_reads` ON). `user`: whose stored
+    rows (M71Q-2: only his own); `rest`: his own broker session for the newest bars (`market_store.RestSource`) or None
+    (the newest bars are then a gap)."""
+    user: Any
+    rest: Any = None
 
 
 def _utc(ts: datetime) -> datetime:
@@ -110,8 +130,51 @@ async def broker_bars(broker: Any, symbol: str, exchange: str, timeframe: str, s
     return F.from_broker_bars(bars, timeframe, cal, source=source, own_volume=own_volume), []
 
 
+async def store_bars(session: AsyncSession, store: StoreRead, symbol: str, exchange: str, start: datetime, end: datetime,
+                     cal: MarketCalendar, *, own_volume: bool = True) -> tuple[F.SourceBars | None, list[str]]:
+    """M71 W2-C: the 1-minute bars of [start, end] from the own store (rows AS STORED, `dh3=False`) plus only the newest
+    missing ones through the reader's own session: (bars or None when the store holds nothing of the window, the
+    store's gap lines in plain words). Only bars closed by `end`; START labels back to END labels; DH3 flags as marks."""
+    from app.market_lake import own_bars
+    from app.market_store import read_bars
+    from app.market_store.reader import intraday_key
+    try:
+        got = await read_bars(session, symbol, "1m", start, end, user=store.user, purpose="engine", exchange=exchange,
+                              rest=store.rest, now=end, dh3=False)
+    except Exception as exc:  # noqa: BLE001 - a store failure is a gap the admin sees, never a crash of the read
+        log.info("engine adapter: stored bars of %s failed: %s", symbol, type(exc).__name__)
+        return None, [f"{OWN_LAKE}: {symbol} 1m could not be read ({type(exc).__name__})"]
+    lines = [f"{OWN_LAKE}: {symbol} 1m: {line}" for line in got.gap_lines()]
+    if not got.served:
+        return None, lines
+    rows = []
+    for ts, bar in got.frame.iterrows():
+        vol = float(bar.volume)
+        rows.append((ts.to_pydatetime() + F.ONE_MINUTE, 1, float(bar.open), float(bar.high), float(bar.low), float(bar.close),
+                     None if math.isnan(vol) else vol))
+    key = intraday_key(symbol, exchange)
+    tenant_id = int(getattr(store.user, "tenant_id", 0) or 0)
+    marks = await own_bars.flags(session, tenant_id, key, "1m", _utc(start), _utc(end)) if key and tenant_id > 0 else {}
+    post = [t for t, kinds in marks.items() if DH3_POST_CLOSE in kinds]
+    source = STORE if got.topped_up_bars else OWN_LAKE
+    return F.from_lake_rows(rows, "1m", cal, source=source, own_volume=own_volume, post_close=post), lines
+
+
+async def _minute_bars(session: AsyncSession, store: StoreRead | None, broker: Any, symbol: str, exchange: str, start: datetime,
+                       end: datetime, cal: MarketCalendar, *, own_volume: bool = True) -> tuple[F.SourceBars | None, list[str]]:
+    """The 1-minute bars of `symbol`: through the own store when `store` is set (flag ON), else - or when the store holds
+    nothing of the window - from the broker as before."""
+    if store is not None:
+        got, lines = await store_bars(session, store, symbol, exchange, start, end, cal, own_volume=own_volume)
+        if got is not None or broker is None:
+            return got, lines
+    if broker is None:
+        return None, [f"{BROKER}: not connected, so no 1m bars of {symbol}"]
+    return await broker_bars(broker, symbol, exchange, "1m", start, end, cal, own_volume=own_volume)
+
+
 async def futures_contracts(session: AsyncSession, broker: Any, index_symbol: str, exchange: str, start: datetime, end: datetime,
-                            cal: MarketCalendar) -> tuple[bool, tuple[F.FuturesContract, ...], list[str]]:
+                            cal: MarketCalendar, *, store: StoreRead | None = None) -> tuple[bool, tuple[F.FuturesContract, ...], list[str]]:
     """(the index has listed futures, the near-month contract's live 1-minute bars from the user's broker, notes).
     Only the contract that is the near month at `end` (brokers do not serve expired contracts); its near-month stretch
     is not known before its expiry month, so earlier days are gaps (frames.FuturesContract.valid_from)."""
@@ -121,9 +184,12 @@ async def futures_contracts(session: AsyncSession, broker: Any, index_symbol: st
     near = await index_volume.near_future(session, index_symbol, exchange, _utc(end).astimezone(F.IST).date())
     if near is None:
         return True, (), [f"no near-month future of {index_symbol} in the instrument list"]
-    if broker is None:
+    if broker is None and store is None:
         return True, (), [f"{BROKER}: not connected, so no futures volume of {near.symbol}"]
-    got, notes = await broker_bars(broker, near.symbol, near.exchange, "1m", start, end, cal)
+    if store is None:
+        got, notes = await broker_bars(broker, near.symbol, near.exchange, "1m", start, end, cal)
+    else:
+        got, notes = await _minute_bars(session, store, broker, near.symbol, near.exchange, start, end, cal)
     if got is None:
         return True, (), notes
     return True, (F.FuturesContract(symbol=near.symbol, expiry=near.expiry, bars=got.bars),), notes
@@ -131,10 +197,12 @@ async def futures_contracts(session: AsyncSession, broker: Any, index_symbol: st
 
 async def collect(session: AsyncSession, *, key: str, exchange: str, timeframes: Sequence[str], starts: Mapping[str, datetime],
                   now: datetime, cal: MarketCalendar, scope: Any = None, broker: Any = None, broker_symbol: str | None = None,
-                  lake_timeframes: Sequence[str] = LAKE_TIMEFRAMES) -> tuple[F.SymbolData, list[str]]:
+                  lake_timeframes: Sequence[str] = LAKE_TIMEFRAMES, store: StoreRead | None = None) -> tuple[F.SymbolData, list[str]]:
     """Everything ATP has for one symbol: the user's broker 1-minute bars (1m / 5m / ... timeframes), the stored
     history's 1-minute bars for `lake_timeframes` (15m / 1h; the broker's when the store has none), the Daily bars
-    (stored history first, else the broker's), the DH3 marks and, for an index, the near-month future's live bars."""
+    (stored history first, else the broker's), the DH3 marks and, for an index, the near-month future's live bars.
+    `store` (M71 W2-C, flag `market_store_reads`): the broker's 1-minute bars and the future's come through the own
+    store first (`store_bars`); None = exactly the broker path."""
     notes: list[str] = []
     tried: list[str] = []
     own_volume = not F.is_index_key(key)
@@ -142,7 +210,13 @@ async def collect(session: AsyncSession, *, key: str, exchange: str, timeframes:
     first = min((starts[tf] for tf in intraday), default=now)
     lake_first = min((starts[tf] for tf in intraday if tf in lake_timeframes), default=None)
     minutes = None
-    if broker is not None and broker_symbol and intraday:
+    if store is not None and broker_symbol and intraday:
+        tried.append(STORE_TRIED)
+        if broker is not None:
+            tried.append(BROKER)
+        minutes, more = await _minute_bars(session, store, broker, broker_symbol, exchange, first, now, cal, own_volume=own_volume)
+        notes += more
+    elif broker is not None and broker_symbol and intraday:
         tried.append(BROKER)
         minutes, more = await broker_bars(broker, broker_symbol, exchange, "1m", first, now, cal, own_volume=own_volume)
         notes += more
@@ -165,7 +239,7 @@ async def collect(session: AsyncSession, *, key: str, exchange: str, timeframes:
             notes += more
     expected, contracts = False, tuple[F.FuturesContract, ...]()
     if not own_volume and broker_symbol:
-        expected, contracts, more = await futures_contracts(session, broker, broker_symbol, exchange, first, now, cal)
+        expected, contracts, more = await futures_contracts(session, broker, broker_symbol, exchange, first, now, cal, store=store)
         notes += more
     data = F.SymbolData(symbol=key, exchange=exchange, minutes=minutes, minutes_by_timeframe=by_tf, daily=daily,
                         extended_days=extended, futures=contracts, futures_expected=expected, sources_tried=tuple(tried))
@@ -205,5 +279,5 @@ async def probe(session: AsyncSession, items: Sequence[ProbeItem], *, timeframes
             "checked": [i.key for i in items]}
 
 
-__all__ = ["LAKE_TIMEFRAMES", "ProbeItem", "CALENDAR_NOTE", "load_calendar", "lake_bars", "broker_bars", "futures_contracts",
-           "collect", "probe"]
+__all__ = ["LAKE_TIMEFRAMES", "ProbeItem", "CALENDAR_NOTE", "StoreRead", "load_calendar", "lake_bars", "broker_bars", "store_bars",
+           "futures_contracts", "collect", "probe"]

@@ -3,6 +3,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useBrokerChart } from "../components/chartHistory";
 import ProChart, { useLiveLtp } from "../components/ProChart";
 import { SymbolTierBadge } from "../components/DataTierBadge";
+import { Skeleton } from "../components/primitives";
 import type { ChartEngine } from "../charting/engine";
 import { MarketZonesLayer } from "../charting/MarketZonesLayer";
 import { PriceActionLayer } from "../charting/PriceActionLayer";
@@ -54,8 +55,9 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
 
   const chart = useBrokerChart({ enabled: reads && !!user && !!symbol, symbol, timeframe, exchange, broker });
   const error = chart.error;
-  // UI2-4e review: until the first candle answer the window says "Loading…", so the chart's empty-state line ("No
-  // candles yet …") never stands in for prices still on their way. After it the chart stays, as before.
+  // UI2-4e review: until the first candle answer the window shows a placeholder (M63 I-7: the shared Skeleton), so the
+  // chart's empty-state line ("No candles yet …") never stands in for prices still on their way. After it the chart
+  // stays, as before.
   const [firstRead, setFirstRead] = useState<"waiting" | "reading" | "done">("waiting");
   if (firstRead === "waiting" && chart.loading) setFirstRead("reading");
   if (firstRead === "reading" && !chart.loading) setFirstRead("done");
@@ -77,10 +79,10 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   // N2-4: the expected-move cone (flag decision_tools; the toggle shows only when the organisation has it)
   const decisionTools = !!user && features.on("decision_tools");
 
-  if (loading || v2 || (user && !known)) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (loading || v2 || (user && !known)) return <ChartLoading />;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
   if (!symbol) return <div className="p-6 text-sm text-fg">No symbol given.</div>;
-  if (firstRead !== "done") return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (firstRead !== "done") return <ChartLoading />;
 
   return (
     <div className="min-h-screen bg-surface p-4">
@@ -115,6 +117,16 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
       {/* Z7a-3: stored market zones (flag market_zones; nothing shows while it is off) - in replay, as of the replay bar */}
       <div className="mt-2"><MarketZonesLayer engine={engine} instrument={`${exchange}:${symbol}`} price={lastClose} at={at} /></div>
       <div className="mt-2"><ExpectedMoveLayer engine={engine} instrument={`${exchange}:${symbol}`} enabled={decisionTools} /></div>
+    </div>
+  );
+}
+
+/** M63 I-7: the window's first screen - a placeholder where the chart will be, never a bare "Loading…" line. */
+function ChartLoading() {
+  return (
+    <div className="min-h-screen bg-surface p-4">
+      <Skeleton className="mb-2 h-4 w-64 max-w-full" />
+      <Skeleton className="h-[60vh] w-full" panel label="Loading the chart" />
     </div>
   );
 }

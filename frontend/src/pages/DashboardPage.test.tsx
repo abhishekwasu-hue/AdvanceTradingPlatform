@@ -26,9 +26,12 @@ describe("Dashboard page", () => {
     expect(textOf(renderPage(<DashboardPage />))).toMatch(/Good (morning|afternoon|evening), trader/);
   });
 
-  it("renders with empty data and shows no developer text", () => {
+  it("before the book answers: placeholder rows, never an empty line first, and no developer text", () => {
     const html = renderPage(<DashboardPage />);
-    expect(textOf(html)).toContain("Nothing deployed yet.");
+    for (const label of ["Loading your exposure", "Loading your deployments", "Loading your open positions", "Loading your alerts"]) {
+      expect(html).toContain(`aria-busy="true" aria-label="${label}"`);
+    }
+    expect(textOf(html)).not.toMatch(/Nothing deployed yet|exposure is empty|Flat\. Nothing at risk|Quiet\. Entries/);
     expectNoDeveloperText(html);
   });
 

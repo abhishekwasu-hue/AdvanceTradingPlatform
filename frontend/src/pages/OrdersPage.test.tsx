@@ -26,9 +26,11 @@ describe("Orders page", () => {
     expect(textOf(renderPage(<OrdersPage />))).toContain("Orders");
   });
 
-  it("renders with empty data: one empty-state line, no developer text", () => {
+  it("before the list answers: placeholder rows under the heading, never \"No orders yet\" or a 0 count", () => {
     const html = renderPage(<OrdersPage />);
-    expect(textOf(html)).toContain("No orders yet");
+    expect(html).toContain('aria-busy="true" aria-label="Loading your orders"');
+    expect(textOf(html)).not.toContain("No orders yet");
+    expect(textOf(html)).not.toContain("(0)");
     expectNoDeveloperText(html);
   });
 

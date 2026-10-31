@@ -30,10 +30,11 @@ const CATEGORIES = Object.keys(CATEGORY_LABEL);
 
 const TRY_BUTTON = "inline-flex min-h-11 items-center rounded-control px-space-1 text-t14 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9";
 
-function Stat({ value, label, className = "" }: { value: number; label: string; className?: string }) {
+/** `value` null while the list loads (M63 I-7: a placeholder, never a "0" before the answer). */
+function Stat({ value, label, className = "" }: { value: number | null; label: string; className?: string }) {
   return (
     <div className={`min-w-0 flex-1 rounded-panel border border-subtle bg-surface-1 p-space-3 ${className}`} data-library-stat>
-      <div className="font-tabular text-t20 font-semibold text-fg">{value}</div>
+      {value === null ? <Skeleton className="my-1 h-5 w-8" /> : <div className="font-tabular text-t20 font-semibold text-fg">{value}</div>}
       <div className="whitespace-nowrap text-t13 text-fg-muted">{label}</div>
     </div>
   );
@@ -94,6 +95,7 @@ export interface LibraryViewProps {
 /** The page itself, from its state (rendered as is by the tests). */
 export function LibraryView({ strategies, error, inUse, category, query, chosen, onCategory, onQuery, onChoose, onTry }: LibraryViewProps) {
   const all = strategies ?? [];
+  const loading = strategies === null;
   const categories = [...CATEGORIES, ...new Set(all.map((s) => s.category).filter((c) => !CATEGORIES.includes(c)))];
   const shown = libraryShown(all, category, query);
   const picked = shown.find((s) => s.id === chosen) ?? shown[0] ?? null;
@@ -112,15 +114,15 @@ export function LibraryView({ strategies, error, inUse, category, query, chosen,
       {error && <p className="text-t14 text-down">{error}</p>}
 
       <div className="flex gap-space-2 lg:max-w-[520px]">
-        <Stat value={all.length} label="Ready to try" />
-        {inUse && <Stat value={all.filter(used).length} label="You use now" />}
-        <Stat value={categories.filter((c) => all.some((s) => s.category === c)).length} label="Categories" className="hidden lg:block" />
+        <Stat value={loading ? null : all.length} label="Ready to try" />
+        {inUse && <Stat value={loading ? null : all.filter(used).length} label="You use now" />}
+        <Stat value={loading ? null : categories.filter((c) => all.some((s) => s.category === c)).length} label="Categories" className="hidden lg:block" />
       </div>
 
       <div role="toolbar" aria-label="Category" className="-mx-space-1 flex flex-nowrap gap-space-2 overflow-x-auto px-space-1 pb-space-1 [scrollbar-width:none]">
         {[ALL, ...categories].map((c) => (
           <FilterChip key={c} selected={category === c} onClick={() => onCategory(c)}>
-            {c === ALL ? "All" : categoryLabel(c)} <span className="font-tabular opacity-75">{c === ALL ? all.length : all.filter((s) => s.category === c).length}</span>
+            {c === ALL ? "All" : categoryLabel(c)}{!loading && <> <span className="font-tabular opacity-75">{c === ALL ? all.length : all.filter((s) => s.category === c).length}</span></>}
           </FilterChip>
         ))}
       </div>

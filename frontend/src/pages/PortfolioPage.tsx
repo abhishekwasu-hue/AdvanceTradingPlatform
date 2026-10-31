@@ -5,7 +5,8 @@ import { useAuth } from "../auth/AuthContext";
 import EquityCurveChart from "../components/EquityCurveChart";
 import { Card, StatTile, signTone } from "../components/ui";
 import type { PortfolioExposure, TradeRecord } from "../types";
-import { EmptyState, PageHeader, Signed, Table } from "../components/primitives";
+import { PageHeader, Signed, Skeleton, SkeletonRows, Table } from "../components/primitives";
+import { EmptyStateV2 } from "../dashboard/CardV2";
 import { formatINR, formatNumber } from "../ui/format";
 
 export default function PortfolioPage() {
@@ -13,6 +14,8 @@ export default function PortfolioPage() {
   const [positions, setPositions] = useState<TradeRecord[]>([]);
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // M63 I-7: false until the lists answer - placeholders then, never 0 / "No open positions" before the answer.
+  const [answered, setAnswered] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -20,6 +23,7 @@ export default function PortfolioPage() {
       .then(([p, t]) => {
         setPositions(p);
         setTrades(t);
+        setAnswered(true);
       })
       .catch((e) => setError(errorSentence(e)));
   }, [user]);
@@ -47,6 +51,9 @@ export default function PortfolioPage() {
 
   const realizedPnl = trades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
 
+  // After a failed read the page shows what it has (as before), with the error line above.
+  const shown = answered || !!error;
+
   if (authLoading) return null;
 
   if (!user) {
@@ -67,21 +74,23 @@ export default function PortfolioPage() {
       {error && <div className="text-sm text-down">{error}</div>}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatTile label="Open Positions" value={positions.length} />
-        <StatTile label="Capital Deployed" value={formatINR(capitalDeployed)} />
-        <StatTile label="Realized P&L" value={formatINR(realizedPnl)} tone={signTone(realizedPnl)} />
-        <StatTile label="Symbols Held" value={allocationBySymbol.length} />
+        <StatTile label="Open Positions" value={shown ? positions.length : <TileLoading />} />
+        <StatTile label="Capital Deployed" value={shown ? formatINR(capitalDeployed) : <TileLoading />} />
+        <StatTile label="Realized P&L" value={shown ? formatINR(realizedPnl) : <TileLoading />} tone={shown ? signTone(realizedPnl) : "default"} />
+        <StatTile label="Symbols Held" value={shown ? allocationBySymbol.length : <TileLoading />} />
       </div>
 
       <ExposureCard />
 
       <Card title="Cumulative realized P&amp;L over time">
-        <EquityCurveChart equity={equityCurve} />
+        {shown ? <EquityCurveChart equity={equityCurve} /> : <Skeleton className="h-32 w-full" label="Loading your P&L curve" />}
       </Card>
 
       <Card title="Allocation by symbol (open positions)">
-        {allocationBySymbol.length === 0 ? (
-          <EmptyState title="No open positions" body="Capital shows here once a paper or live position is open." />
+        {!shown ? (
+          <SkeletonRows rows={3} label="Loading your open positions" />
+        ) : allocationBySymbol.length === 0 ? (
+          <EmptyStateV2 text="No open positions - capital shows here once a position is open." />
         ) : (
           <div className="space-y-2">
             {allocationBySymbol.map(([symbol, amount]) => {
@@ -105,6 +114,11 @@ export default function PortfolioPage() {
   );
 }
 
+
+/** M63 I-7: a tile's value placeholder while the figures are on their way. */
+function TileLoading() {
+  return <Skeleton className="my-1 h-6 w-16" />;
+}
 
 /** Phase M / V4.4: the portfolio engine's view - gross/net notional, concentration, risk at the stops. */
 function ExposureCard() {

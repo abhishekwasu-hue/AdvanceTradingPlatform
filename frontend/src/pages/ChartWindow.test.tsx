@@ -26,15 +26,19 @@ const open = (query: string) => renderPage(<ChartWindow params={new URLSearchPar
 describe("Chart window", () => {
   beforeEach(() => { ctx.user = TRADER; ctx.loading = false; ctx.flags = []; ctx.loaded = true; });
 
-  it("says it is loading, in words, until the first candles answer", () => {
+  it("shows the chart placeholder until the first candles answer (no text line, never an empty chart)", () => {
     const html = open("chart=NIFTY&tf=15min");
-    expect(textOf(html)).toBe("Loading…");
+    expect(html).toContain('aria-busy="true" aria-label="Loading the chart"');
+    expect(textOf(html)).toBe("");
+    expect(html).not.toContain("No candles yet");
     expectNoDeveloperText(html);
   });
 
-  it("says it is loading while the flags are not known yet", () => {
+  it("shows the chart placeholder while the flags are not known yet", () => {
     ctx.loaded = false;
-    expect(textOf(open("chart=NIFTY"))).toBe("Loading…");
+    const html = open("chart=NIFTY");
+    expect(html).toContain('aria-label="Loading the chart"');
+    expect(textOf(html)).toBe("");
   });
 
   it("asks for a symbol when the link carries none", () => {

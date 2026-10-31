@@ -4,7 +4,8 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, DirectionBadge } from "../components/ui";
 import type { TradeRecord } from "../types";
-import { Badge, EmptyState, PageHeader, Table } from "../components/primitives";
+import { Badge, PageHeader, SkeletonRows, Table } from "../components/primitives";
+import { EmptyStateV2 } from "../dashboard/CardV2";
 import { formatDateTimeIST } from "../ui/format";
 
 interface OrderRow {
@@ -39,7 +40,8 @@ function tradeToOrders(trade: TradeRecord): OrderRow[] {
 
 export default function OrdersPage() {
   const { user, loading: authLoading } = useAuth();
-  const [trades, setTrades] = useState<TradeRecord[]>([]);
+  // M63 I-7: null until the list answers (placeholder rows then, never "No orders yet" before the answer).
+  const [trades, setTrades] = useState<TradeRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,7 +50,7 @@ export default function OrdersPage() {
   }, [user]);
 
   const orders = useMemo(
-    () => trades.flatMap(tradeToOrders).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()),
+    () => (trades ?? []).flatMap(tradeToOrders).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()),
     [trades],
   );
 
@@ -71,12 +73,12 @@ export default function OrdersPage() {
 
       {error && <div className="text-sm text-down">{error}</div>}
 
-      <Card title={`Orders (${orders.length})`}>
-        <Table
+      <Card title={trades === null ? "Orders" : `Orders (${orders.length})`}>
+        {trades === null ? (error ? null : <SkeletonRows rows={4} label="Loading your orders" />) : <Table
           caption="Orders"
           rows={orders}
           rowKey={(o) => o.key}
-          empty={<EmptyState title="No orders yet" body="Execute a signal from the Signals page; its entry and exit fills appear here." />}
+          empty={<EmptyStateV2 text="No orders yet - your entry and exit fills show here." />}
           columns={[
             { key: "time", header: "Time", cell: (o) => <span className="text-fg-muted">{formatDateTimeIST(o.time)}</span> },
             { key: "action", header: "Action", cell: (o) => <Badge tone={o.action === "ENTRY" ? "brand" : "neutral"}>{o.action}</Badge> },
@@ -87,7 +89,7 @@ export default function OrdersPage() {
             { key: "qty", header: "Qty", numeric: true, cell: (o) => o.quantity },
             { key: "reason", header: "Reason", cell: (o) => <span className="text-fg-muted">{o.reason}</span> },
           ]}
-        />
+        />}
       </Card>
     </div>
   );

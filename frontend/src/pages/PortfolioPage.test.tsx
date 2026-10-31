@@ -26,9 +26,13 @@ describe("Portfolio page", () => {
     expect(textOf(renderPage(<PortfolioPage />))).toContain("Portfolio");
   });
 
-  it("renders with empty data: empty states in words, no developer text", () => {
+  it("before the lists answer: placeholders under the heading, never 0 figures or \"No open positions\"", () => {
     const html = renderPage(<PortfolioPage />);
-    expect(textOf(html)).toContain("No open positions");
+    expect(html).toContain('aria-busy="true" aria-label="Loading your open positions"');
+    expect(html).toContain('aria-label="Loading your P&amp;L curve"');
+    expect(textOf(html)).not.toContain("No open positions");
+    expect(textOf(html)).not.toContain("Not enough trades");
+    expect(textOf(html)).not.toMatch(/₹\s?0\b/);
     expectNoDeveloperText(html);
   });
 

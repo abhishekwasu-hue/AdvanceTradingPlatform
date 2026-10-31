@@ -94,6 +94,8 @@ S_OWN_CHART_ANALYSES = ("self: the caller's own chart images and analyses (tenan
                         "item is a 404 (rate limited, plan limits)")
 S_OWN_PREFS = "self: the caller's own UI preferences (tenant and user); no route names another user"
 S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own trades"
+S_OWN_JOURNAL_LAYER = ("self: the caller's own journal entries only (notes, own tags, checklist, images, manual outside-ATP "
+                       "entries) - journal data; never an order, a position or a broker call")
 S_READ_MARKS = "self: read marks are per user"
 S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
 S_FEEDBACK = "self: sends product feedback (rate limited)"
@@ -567,6 +569,24 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/journal/trades/{trade_id}"): "member",
     ("POST", "/api/journal/trades/{trade_id}/tags"): S_OWN_JOURNAL,
     ("GET", "/api/journal/week"): "member",
+    # M62 JN-2: the caller's own journal layer - notes, own tags, checklist, images, manual (outside-ATP) entries and the
+    # chart snapshots of his own trades; journal data only (no order, position or broker is touched)
+    ("PATCH", "/api/journal/trades/{trade_id}/notes"): S_OWN_JOURNAL_LAYER,
+    ("PATCH", "/api/journal/trades/{trade_id}/user-tags"): S_OWN_JOURNAL_LAYER,
+    ("PATCH", "/api/journal/trades/{trade_id}/checklist"): S_OWN_JOURNAL_LAYER,
+    ("POST", "/api/journal/trades/{trade_id}/attachments"): S_OWN_JOURNAL_LAYER,
+    ("GET", "/api/journal/trades/{trade_id}/chart"): "member: a chart snapshot of the caller's own trade only",
+    ("PATCH", "/api/journal/manual/{manual_id}/notes"): S_OWN_JOURNAL_LAYER,
+    ("PATCH", "/api/journal/manual/{manual_id}/user-tags"): S_OWN_JOURNAL_LAYER,
+    ("PATCH", "/api/journal/manual/{manual_id}/checklist"): S_OWN_JOURNAL_LAYER,
+    ("POST", "/api/journal/manual/{manual_id}/attachments"): S_OWN_JOURNAL_LAYER,
+    ("GET", "/api/journal/manual/{manual_id}/chart"): "member: a chart snapshot of the caller's own manual entry only",
+    ("POST", "/api/journal/manual"): S_OWN_JOURNAL_LAYER,
+    ("GET", "/api/journal/manual"): "member: the caller's own manual journal entries only",
+    ("GET", "/api/journal/manual/{manual_id}"): "member: the caller's own manual journal entry only",
+    ("DELETE", "/api/journal/manual/{manual_id}"): S_OWN_JOURNAL_LAYER,
+    ("GET", "/api/journal/attachments/{attachment_id}"): "member: the caller's own journal image only",
+    ("DELETE", "/api/journal/attachments/{attachment_id}"): S_OWN_JOURNAL_LAYER,
     ("POST", "/api/kill-switch/emergency-exit"): "trader",
     ("POST", "/api/kill-switch/global/disengage"): "admin",
     ("POST", "/api/kill-switch/global/engage"): "admin",

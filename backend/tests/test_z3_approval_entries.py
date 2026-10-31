@@ -313,22 +313,22 @@ def test_every_order_entry_point_is_reviewed_for_approval():
     # gives ("manual" only on the ticket / basket routes: the user's own confirmed order is his approval); `place` places
     # only what `assess` allowed, PAPER only.
     fno_src = (BACKEND / "app" / "paper" / "fno_ticket.py").read_text()
-    assert fno_src.index("approval.gate_refusal(") < fno_src.index("execute_signal_for_user(", holding="INTRADAY", order_style="MARKET")
+    assert fno_src.index("approval.gate_refusal(") < fno_src.index("execute_signal_for_user(")
     assert 'if not view["can_place"]:' in fno_src and 'MODE = "PAPER"' in fno_src
     # N1 X2: the core's Auto PAPER route asks approval-only mode again right before the pipeline (falls back to a
     # proposal), PAPER only and without a broker (tests/test_n1_e1_execution_core.py checks the call).
     core = (BACKEND / "app" / "execution" / "core" / "dispatcher.py").read_text()
     paper = core[core.index("async def _paper("):core.index("async def _placed(")]
-    assert paper.index("approval.required(") < paper.index("execute_signal_for_user(", holding="INTRADAY", order_style="MARKET")
+    assert paper.index("approval.required(") < paper.index("execute_signal_for_user(")
     # Z5 / P1-d: the plan-before-trade PAPER ticket proposes first under approval-only mode (like the console), PAPER only.
     ticket_src = (BACKEND / "app" / "paper" / "ticket.py").read_text()
     assert "mode=by_default.MODE" in ticket_src
     for rel in ("app/strategy_engine/console_routes.py", "app/webhooks/routes.py", "app/public_api/routes.py", "app/paper/ticket.py"):
         text = (BACKEND / rel).read_text()
-        assert text.index("approval.required(") < text.index("execute_signal_for_user(", holding="INTRADAY", order_style="MARKET"), rel   # proposes first
+        assert text.index("approval.required(") < text.index("execute_signal_for_user("), rel   # proposes first
     worker = (BACKEND / "app" / "workers" / "trading_worker.py").read_text()
     evaluate = worker[worker.index("async def _evaluate_deployment"):worker.index("async def _propose_entry")]
-    assert evaluate.index("approval.required(") < evaluate.index("execute_signal_for_user(", holding="INTRADAY", order_style="MARKET")
+    assert evaluate.index("approval.required(") < evaluate.index("execute_signal_for_user(")
     assert evaluate.index("approval.required(") < evaluate.index("self._evaluate_structure(")
     assert "origin=ORIGIN_APPROVAL, approval_action_id=action.id" in (BACKEND / "app" / "execution" / "approval.py").read_text()
     # The default origin of the pipeline is the refusing one.

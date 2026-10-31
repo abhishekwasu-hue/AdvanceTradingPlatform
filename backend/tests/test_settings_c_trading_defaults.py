@@ -142,5 +142,8 @@ def test_a_stored_value_a_newer_release_wrote_still_reads():
 
 def test_the_server_never_reads_it_to_trade():
     app_dir = Path(__file__).resolve().parents[1] / "app"
-    readers = [p for p in app_dir.rglob("*.py") if "trading_defaults" in p.read_text(encoding="utf-8") and p.name != "prefs.py"]
+    # M68: the Trade settings registry names it as where a value lived ("today"), and the Order defaults reader keeps a
+    # ticket product / order type the user saved there (TS-6) - his own value, never a server default.
+    allowed = {"prefs.py", "trade_settings.py", "order_defaults.py"}
+    readers = [p for p in app_dir.rglob("*.py") if "trading_defaults" in p.read_text(encoding="utf-8") and p.name not in allowed]
     assert readers == [], readers

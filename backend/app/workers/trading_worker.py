@@ -242,6 +242,7 @@ class TradingWorker:
         self.require_lock_for_live = ENVIRONMENT in HARDENED_ENVIRONMENTS if require_lock_for_live is None else require_lock_for_live
         self._lock_degraded = False
         self._lock_lost = False
+        self._rests_paused_warned = False    # M55 A18: one WARNING per outage for held "Complete the rest" orders
         self._lock_ttl = max(cycle_seconds * 2, app_config.WORKER_LOCK_TTL_MIN_SECONDS)
         self.redis_guard = RedisGuard()
         self.market_data_factory = market_data_factory
@@ -1497,7 +1498,7 @@ class TradingWorker:
         # and through every entry refusal again; only the worker sends an entry order (Phase 0 freeze).
         try:
             if not self._lock_lost:      # M55 S2 (A9): an entry needs the replica lock held all cycle
-                await self._complete_rests(session, tenant_id, market_data, adapters, now)
+                await self._complete_rests(session, tenant_id, market_data, adapters, now, paused=self._lock_degraded)
         except Exception as exc:  # noqa: BLE001 - never stops the cycle
             logger.error("Tenant %s: completing incomplete multi-leg orders failed: %s", tenant_id, exc)
             await session.rollback()
@@ -2149,11 +2150,25 @@ class TradingWorker:
         return result.executed
 
     async def _complete_rests(self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,
-                              adapters: Dict[str, BrokerInterface], now: datetime) -> None:
+                              adapters: Dict[str, BrokerInterface], now: datetime, *, paused: bool = False) -> None:
         """SE-7: each incomplete order whose holder tapped "Complete the rest": his own user, the broker of the order's
-        deployment (LIVE; the same checks as a new entry), the engine again (app/execution/incomplete_structures.py)."""
+        deployment (LIVE; the same checks as a new entry), the engine again (app/execution/incomplete_structures.py).
+
+        M55 A18: `paused` (Redis / the replica lock off) sends nothing - the order stays "Complete the rest" (COMPLETING)
+        and is sent on the first cycle with the lock back. It never starts a structure (a group exists only once a leg
+        filled), and no leg left to place is the hedge of a sold leg already open: the engine fills every hedge in full
+        before any sold leg (smart_execution.run). A pending sold leg can lower a debit structure's risk or add uncovered
+        risk (a ratio), which the legs alone do not tell safely - so none is sent. Closing the filled legs is an exit and
+        runs above, never paused (ADR-0004)."""
         from app.execution import incomplete_structures
-        for group_id, legs in (await incomplete_structures.pending_completions(session, tenant_id)).items():
+        pending = await incomplete_structures.pending_completions(session, tenant_id)
+        if paused:
+            if pending and not self._rests_paused_warned:
+                logger.warning("Redis replica lock unavailable - \"Complete the rest\" orders wait until it is back (exits continue)")
+                self._rests_paused_warned = True
+            return
+        self._rests_paused_warned = False
+        for group_id, legs in pending.items():
             block = incomplete_structures.block_of(legs[0]) or {}
             holder = await session.get(User, block.get("user_id")) if block.get("user_id") else None
             if holder is None or holder.tenant_id != tenant_id or not holder.is_active:

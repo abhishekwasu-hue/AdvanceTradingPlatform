@@ -23,7 +23,9 @@ What it does at fire time (TM-23):
   and a refused entry is REJECTED with its plain reasons (and a notification). Same fill and cost model as an order
   placed now (the PaperExecutionAdapter). M55 S3 (A17): a reached LIVE entry meets the same entry chokepoint as the
   ticket (`phase0_lock.assert_paper`): the owner's LIVE switches decide, and while they are off it is refused with
-  their plain reason; nothing LIVE is placed until the LIVE manual path (TT-1) exists;
+  their plain reason; nothing LIVE is placed until the LIVE manual path (TT-1) exists. M55 A18: while Redis (the
+  worker's replica lock) is unreachable no entry fires or is re-sent - each stays waiting and fires on the first pass
+  after Redis is back;
 * an EXIT closes the user's own position through `position_monitor.close_position` - the one exit path (a PAPER fill
   through the PaperExecutionAdapter; a LIVE position squares off at its own broker session, handed in by the worker).
   An exit is NEVER blocked by a kill switch, a limit or the PAPER lock (ADR-0004);
@@ -65,6 +67,11 @@ HEARTBEAT_EVERY_SECONDS = 5.0
 STALL_TITLE = "Your waiting orders are not being watched right now"
 # M55 S3 (A17): what a reached LIVE resting entry says while the owner's PAPER-only lock holds (plain words, no flag name).
 LIVE_ENTRY_SWITCHED_OFF = "Live trading is switched off for your account, so this live order was not sent: nothing was placed"
+
+# M55 A18: while Redis - and with it the worker's replica lock - cannot be reached, a reached entry waits (one WARNING per
+# outage, not one per tick); exits never look at this (ADR-0004).
+ENTRIES_PAUSED_NOTE = "Redis is unreachable, so the worker's replica lock is off: waiting entries are held (exits continue)"
+_entries_paused_warned = False
 
 _last_run: Optional[datetime] = None
 _last_beat = 0.0
@@ -243,14 +250,39 @@ async def run_exits(session: AsyncSession, tenant_id: int, prices: PriceFn, *, b
     return report
 
 
+async def entries_paused() -> bool:
+    """M55 A18: True while Redis is unreachable - the worker's replica lock (trading_worker.LOCK_KEY, read the way the H-1
+    renewal reads it) is then off, and a second worker could fire the same entry, so entries fail closed like the
+    worker's own (#749). One WARNING when an outage starts, one INFO when Redis is back. Entries only - never an exit."""
+    global _entries_paused_warned
+    from app.cache.client import cache_lock_holder
+    from app.workers.trading_worker import LOCK_KEY
+    _, reachable = await cache_lock_holder(LOCK_KEY)
+    if not reachable and not _entries_paused_warned:
+        logger.warning("Trigger engine: %s", ENTRIES_PAUSED_NOTE)
+    elif reachable and _entries_paused_warned:
+        logger.info("Trigger engine: Redis is back - waiting entries fire again when reached")
+    _entries_paused_warned = not reachable
+    return not reachable
+
+
 async def run_entries(session: AsyncSession, tenant_id: int, prices: PriceFn, *, candles: Optional[CandleFn] = None,
-                      now: Optional[datetime] = None) -> EngineReport:
-    """Every waiting entry of the organisation, each placed through the ordinary pipeline when reached."""
+                      now: Optional[datetime] = None, paused: bool | None = None) -> EngineReport:
+    """Every waiting entry of the organisation, each placed through the ordinary pipeline when reached. M55 A18: while
+    the replica lock is off (`paused`; None = read it now, `entries_paused`) nothing is fired or re-sent: every entry
+    stays waiting - the expiry rules still apply - and fires on the first pass after Redis is back."""
     now = now or datetime.now(timezone.utc)
     report = EngineReport()
     reader = _Prices(prices)
-    await _resolve_firing(session, tenant_id, book.ENTRY, reader, None, now, report, False)
+    if paused is None:
+        paused = await entries_paused()
+    if not paused:
+        await _resolve_firing(session, tenant_id, book.ENTRY, reader, None, now, report, False)
     rows = await _expire(session, await _resting(session, tenant_id, book.ENTRY, False), now, report)
+    if paused:
+        report.waiting += len(rows)
+        await _mark_run(session, now, report)
+        return report
     for row in rows:
         report.checked += 1
         try:
@@ -972,13 +1004,16 @@ async def tick_pass(session: AsyncSession, now: Optional[datetime] = None) -> En
     from app.market_data import hub
     now = now or datetime.now(timezone.utc)
     total = EngineReport()
+    paused: bool | None = None             # M55 A18: Redis read once per pass, not once per organisation
     for tenant_id in sorted(await tenants_with_resting(session)):
         ticks = hub.live_ticks(hub.org_namespace(tenant_id))
         if not ticks:
             continue
         prices = _tick_prices(ticks, now)
-        for report in (await run_exits(session, tenant_id, prices, now=now),
-                       await run_entries(session, tenant_id, prices, now=now)):
+        exits = await run_exits(session, tenant_id, prices, now=now)      # exits first, never paused (M55 A18)
+        if paused is None:
+            paused = await entries_paused()
+        for report in (exits, await run_entries(session, tenant_id, prices, now=now, paused=paused)):
             total.checked += report.checked
             total.filled += report.filled
             total.rejected += report.rejected

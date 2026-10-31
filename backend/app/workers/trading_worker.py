@@ -315,6 +315,8 @@ class TradingWorker:
         # BYOK-V3: when the daily-review queue was last checked (every 15 minutes; the queue itself is once per user per day).
         self._last_vision_daily_check: Optional[datetime] = None
         self._then_warm_task: Optional["asyncio.Task[None]"] = None
+        # M66 EN-3a: the signal engine runner (signals only) as one background task per worker, its own session.
+        self._engine_task: Optional[asyncio.Task[None]] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
@@ -338,7 +340,7 @@ class TradingWorker:
         # M71 PL-1c: the paced universe backfill + gap drain - its task, the IST date the backfill last COMPLETED and when
         # the next gap drain / unfinished backfill may start (monotonic seconds).
         self._market_backfill_task: asyncio.Task[None] | None = None
-        self._market_backfill_day: Optional[date] = None
+        self._market_backfill_day: date | None = None
         self._market_gap_at = 0.0
         self._market_backfill_retry_at = 0.0
         if app_config.MARKET_BACKFILL_ENABLED:
@@ -400,6 +402,8 @@ class TradingWorker:
             self._then_warm_task.cancel()            # N1 X1: in memory only - the next worker warms again
         if self._vision_task is not None and not self._vision_task.done():
             self._vision_task.cancel()               # BYOK-V2: a claimed row is closed as "interrupted" by the next drain
+        if self._engine_task is not None and not self._engine_task.done():
+            self._engine_task.cancel()               # M66 EN-3a: an unfinished bar is retried within its grace window
         if self._breakout_fitness_task is not None and not self._breakout_fitness_task.done():
             self._breakout_fitness_task.cancel()     # U6 BK5: resumable - stored templates are skipped next time
 
@@ -618,6 +622,9 @@ class TradingWorker:
                     logger.exception("Scan Then run failed")
                     await session.rollback()
                     report.errors.append(f"scan then: {exc}")
+                # M66 EN-3a (flag trade_engine, owner only): the private signal engine on each closed signal-timeframe bar
+                # (+ a small delay), signals only, into the signals table - a background task with its own session.
+                self._spawn_engine_runner(now)
                 # PW5: snoozed proposals whose time is up are announced once more (in-app, push, Telegram) before the
                 # outbox drain, market open or not - a snooze "until 09:00" must ring at 09:00.
                 try:
@@ -1899,6 +1906,29 @@ class TradingWorker:
 
         self._breakout_fitness_task = asyncio.get_running_loop().create_task(run())
         return True
+
+    def _spawn_engine_runner(self, now: datetime) -> None:
+        """M66 EN-3a: the signal engine runner (app/workers/engine_runner.py) as a background task with its own session -
+        one at a time per worker; nothing is started while the private engine is not installed. Signals only: it places,
+        blocks or changes no order and no exit (ADR-0004 / ADR-0006)."""
+        from app.engine_provider import loader as trade_engine
+        if trade_engine.load() is None or (self._engine_task is not None and not self._engine_task.done()):
+            return
+
+        async def broker_for(session: AsyncSession, tenant_id: int, user: User, at: datetime) -> Optional[BrokerInterface]:
+            return await self._first_usable_broker(session, tenant_id, at)
+
+        async def run() -> None:
+            from app.workers import engine_runner
+            try:
+                await engine_runner.run_due(self.session_factory, now, broker_for=broker_for)
+            except Exception:  # noqa: BLE001 - signals only; never reaches trading
+                logger.exception("Signal engine runner failed")
+
+        try:
+            self._engine_task = asyncio.get_running_loop().create_task(run())
+        except RuntimeError:
+            self._engine_task = None
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own

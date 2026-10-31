@@ -128,7 +128,7 @@ export default function PaperBotV2(_props: PageProps) {
   async function exitBot(list: TradeRecord[]): Promise<number> {
     let closed = 0;
     for (const p of list) {
-      try { await api.exitNow(p.id); closed += 1; } catch { /* the next one still exits; the note says how many closed */ }
+      try { await api.exitNow(p.id); closed += 1; } catch { /* intentional: the next one still exits; the note says how many closed */ }
     }
     await loadBots();
     return closed;

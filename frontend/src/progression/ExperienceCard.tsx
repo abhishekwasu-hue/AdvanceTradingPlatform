@@ -79,7 +79,7 @@ export function ExperiencePanel({ status, canTrade, onOptOut, error }: {
           // UI-28 U1.9: "Sessions" is shown once, on the progression ladder.
           <KeyValueTable caption={t("experience.title")} rows={[
             { label: "Closed PAPER trades", value: r.closed_trades, testId: "trades" },
-            { label: "Largest drawdown", value: <Signed value={-Math.abs(r.max_drawdown_pct)} kind="pct" />, testId: "drawdown" },
+            { label: "Largest drawdown", hint: "drawdown", value: <Signed value={-Math.abs(r.max_drawdown_pct)} kind="pct" />, testId: "drawdown" },
           ]} />
         ) : <p className="text-fg">{t("experience.record", { trades: r.closed_trades, sessions: r.sessions, dd: r.max_drawdown_pct.toFixed(2) })}</p>}
         {next ? (

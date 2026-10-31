@@ -99,7 +99,15 @@ describe("user-friendly pass: guards", () => {
     expect(closedFlag("chart-analyze", off)).toBeNull();                         // A1: the page answers its own closed state
     expect(closedFlag("journal", { answered: true, on: () => false })).toBe("discipline_engine");   // the others: the shell's
     const page = SOURCES["./chartAnalyze/ChartAnalyzePageV2.tsx"];
-    expect(page).not.toMatch(/engine not installed|administrator installs/i);
+    expect(page).not.toMatch(/administrator installs/i);
+    // M59 CR-3 (owner order): "engine not installed — owner action" is the admin's headline only - written once, as the
+    // admin constant (in admin/chartEngineNotice.ts, re-exported by chartAnalyze/engineWords.ts, so the user-string guard
+    // reads it as admin text), and shown only on the admin branch (chartAnalyze.test.tsx renders both audiences)
+    const adminNotice = SOURCES["./admin/chartEngineNotice.ts"];
+    expect(page).not.toMatch(/engine not installed/i);
+    expect(SOURCES["./chartAnalyze/engineWords.ts"]).not.toMatch(/engine not installed/i);
+    expect(adminNotice).toContain('export const ENGINE_ADMIN_TITLE = "Chart analysis engine not installed — owner action";');
+    expect(page).toContain("{admin ? ENGINE_ADMIN_TITLE : ENGINE_USER_TITLE}");
     expect(page).toContain("if (engineMissing && !off) return <EngineUnavailable engine={status.engine} />;");
     expect(page).toContain("if (!on) return <ComingSoon flag={FLAG} />;");
     expect(SOURCES["./shell/navModel.ts"]).toMatch(/"chart-analyze"[\s\S]{0,200}flag: "chart_analyze"/);

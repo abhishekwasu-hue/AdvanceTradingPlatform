@@ -1,6 +1,7 @@
 import { HelpCircle, Maximize2, Minimize2, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
+import { errorSentence } from "../api/errors";
 import { useFeatures } from "../ui/useFeatures";
 import { useAuth } from "../auth/AuthContext";
 import { useBrokerChart } from "../components/chartHistory";
@@ -105,7 +106,7 @@ function Workspace({ params }: { params: URLSearchParams }) {
       try { last = localStorage.getItem(LAST_KEY); } catch { last = null; }
       const found = rows.find((r) => String(r.id) === last);
       if (found && !params.get("chart") && layoutProblem(found.layout) === null) { setCurrent(found); setLayout(found.layout); }
-    }).catch((e) => setMessage(`Saved layouts unavailable: ${String(e).replace(/^Error:\s*/, "")}`));
+    }).catch((e) => setMessage(`Saved layouts unavailable: ${errorSentence(e)}`));
     return () => { live = false; };
   }, [params]);
 
@@ -135,7 +136,7 @@ function Workspace({ params }: { params: URLSearchParams }) {
       store(LAST_KEY, String(row.id));
       setMessage(`Saved “${row.name}”.`);
     } catch (e) {
-      setMessage(e instanceof LayoutConflict ? e.message : `Not saved: ${String(e).replace(/^Error:\s*/, "")}`);
+      setMessage(e instanceof LayoutConflict ? errorSentence(e) : `Not saved: ${errorSentence(e)}`);
     }
   }, [current]);
 
@@ -148,7 +149,7 @@ function Workspace({ params }: { params: URLSearchParams }) {
       store(LAST_KEY, null);
       setMessage(`Deleted “${current.name}”.`);
     } catch (e) {
-      setMessage(e instanceof LayoutConflict ? e.message : `Not deleted: ${String(e).replace(/^Error:\s*/, "")}`);
+      setMessage(e instanceof LayoutConflict ? errorSentence(e) : `Not deleted: ${errorSentence(e)}`);
     }
   }, [current]);
 

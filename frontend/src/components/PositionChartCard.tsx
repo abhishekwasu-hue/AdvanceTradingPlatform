@@ -5,6 +5,7 @@ import { SymbolTierBadge } from "./DataTierBadge";
 import { useCandleSource } from "./DataSource";
 import { Card, signClass } from "./ui";
 import type { TradeRecord } from "../types";
+import { formatPrice, formatSignedINR } from "../ui/format";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -70,8 +71,8 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
         {p && (
           <span className="ml-auto flex items-center gap-3 font-tabular">
             <SymbolTierBadge symbol={chartSymbol} exchange={chartExchange} live={live.ltp?.data_tier} />
-            {held != null && <span className="text-fg-muted">{derivative ? "premium" : "LTP"} <b className="text-fg">{held.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</b></span>}
-            {pnl != null && <span className={`font-bold ${signClass(pnl, 0)}`}>{Math.round(pnl) > 0 ? "+" : Math.round(pnl) < 0 ? "-" : ""}₹{Math.abs(pnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })} unrealised</span>}
+            {held != null && <span className="text-fg-muted">{derivative ? "premium" : "LTP"} <b className="text-fg">{formatPrice(held)}</b></span>}
+            {pnl != null && <span className={`font-bold ${signClass(pnl, 0)}`}>{formatSignedINR(pnl)} unrealised</span>}
             {source.sources.filter((s) => s.usable).length > 1 && (
               <select value={source.broker} onChange={(e) => source.setBroker(e.target.value)} className="rounded bg-surface-2 border border-border px-1 py-0.5 text-xs text-fg">
                 {source.sources.filter((s) => s.usable).map((s) => <option key={`${s.broker}:${s.account_label}`} value={s.broker}>{s.broker}</option>)}

@@ -41,3 +41,13 @@ The mission adds a hard rule: ATP explains numbers and never advises. The trade 
   personal view; a nightly pre-compute can come later if needed.
 - The weekly review (Z6-b) reads the same tables and the same score. The Copilot only narrates those numbers, through
   the existing grounding check and advice filter.
+
+## Addendum (M62 JN-1 / JN-2, 30 Oct)
+- The trader's own layer is added beside the auto-captured data (`app/journal/entries.py`): his rule checklist and his own
+  tags on `journal_entries` (two nullable columns), manual trades done outside ATP in `journal_manual_trades` (journal data
+  only: no order, position, broker, risk or P&L path reads it), images in `journal_attachments` (files in the private
+  store of `app/chart_analyze/storage.py`). Notes of an ATP trade stay on `trades.notes`.
+- Chart snapshots stay references (decision 7): the PNG is drawn on request by `app/ai/chart_png.py` from the stored bars
+  ending at the instant, with entry / exit / stop marked; nothing is stored.
+- `deploy/atp.sh journal-status` (read-only) and `journal-backfill [--tenant ID]` (`app/journal/ops.py`) report and fill
+  the rows of closed trades. The flag stays OFF by default; the owner turns it on per organisation.

@@ -48,7 +48,7 @@ def _sample_option_chain():
 
 
 def test_option_chain_analyze_is_cached_across_identical_calls(monkeypatch):
-    import app.main as main_module
+    import app.option_chain.analyze_routes as main_module  # M55 Q1: the route moved out of app/main.py
 
     call_count = {"n": 0}
     real_analyze = main_module.analyze_option_chain

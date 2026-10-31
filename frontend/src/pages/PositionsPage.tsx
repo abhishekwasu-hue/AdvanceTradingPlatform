@@ -75,7 +75,7 @@ export default function PositionsPage() {
       }));
       if (result.closed) refresh();
     } catch (e) {
-      setMarkMessages((m) => ({ ...m, [tradeId]: String(e) }));
+      setMarkMessages((m) => ({ ...m, [tradeId]: errorSentence(e) }));
     }
   }
 
@@ -90,7 +90,7 @@ export default function PositionsPage() {
       setMarkMessages((m) => ({ ...m, [tradeId]: `Closed: ${first?.exit_reason} @ ${first?.exit_price} (P&L ${first?.pnl?.toFixed(2)})` }));
       refresh();
     } catch (e) {
-      setMarkMessages((m) => ({ ...m, [tradeId]: String(e) }));
+      setMarkMessages((m) => ({ ...m, [tradeId]: errorSentence(e) }));
     }
   }
 

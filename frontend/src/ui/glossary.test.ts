@@ -27,6 +27,16 @@ describe("UI2-0 glossary", () => {
     for (const [key, e] of entries) expect(e.definition, key).not.toMatch(/\b(you should|buy now|sell now|guaranteed|recommend)\b/i);
   });
 
+  it("M63 I-7 / CLAUDE.md §3: no definition carries buy / sell / stop-loss wording; target only on the user's own setting terms", () => {
+    // "Target" and "R:R" name the user's own exit settings (his dashboard values); every other definition stays clear of them.
+    const OWN_SETTING_TERMS = new Set(["target", "reward-risk"]);
+    for (const [key, e] of entries) {
+      expect(e.definition.trim().length, key).toBeGreaterThan(0);
+      expect(e.definition, key).not.toMatch(/\b(buy|buys|buying|bought|buyer|sell|sells|selling|sold|seller|stop[- ]?loss|SL)\b/i);
+      if (!OWN_SETTING_TERMS.has(key)) expect(e.definition, key).not.toMatch(/\btargets?\b/i);
+    }
+  });
+
   it("shows each term once", () => {
     const terms = entries.map(([, e]) => e.term.toLowerCase());
     expect(new Set(terms).size).toBe(terms.length);

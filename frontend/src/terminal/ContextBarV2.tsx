@@ -8,6 +8,8 @@ import { prevCloseOf, spotChange } from "../optionChain/spotChange";
 import type { OptionChainData } from "../optionChain/useOptionChain";
 import { Combobox } from "../ui/Combobox";
 import { formatNumber, formatPrice } from "../ui/format";
+import type { GlossaryKey } from "../ui/glossary";
+import { TermHint } from "../ui/TermHint";
 import { LevelChip } from "../ui/LevelChip";
 import { Signed } from "../ui/numbersFirst";
 import { cx } from "../components/primitives/cx";
@@ -96,11 +98,11 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
           <span className="text-t16 font-semibold text-fg">{formatPrice(f.spot)}</span>
           {f.moved && <span className="ml-space-1"><Signed value={f.moved.pct} kind="pct" /></span>}
         </Figure>
-        <Figure name="vix" label="India VIX">
+        <Figure name="vix" label="India VIX" term="india-vix">
           {f.vix ? <span className="inline-flex items-center gap-space-1"><span className="font-semibold text-fg">{formatNumber(f.vixValue, 2)}</span><LevelChip scale="vix" level={f.vix.level} /></span> : "–"}
         </Figure>
-        <Figure name="pcr" label="PCR">{formatNumber(f.pcr, 2)}</Figure>
-        <Figure name="atm" label="ATM">{formatStrike(f.atm)}</Figure>
+        <Figure name="pcr" label="PCR" term="pcr">{formatNumber(f.pcr, 2)}</Figure>
+        <Figure name="atm" label="ATM" term="atm">{formatStrike(f.atm)}</Figure>
         <Figure name="dte" label="Expiry in">{daysText(f.dte)}</Figure>
       </dl>
       <span title={mode.title} data-terminal="mode" data-mode={paper ? "paper" : "live"}
@@ -114,10 +116,10 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
   );
 }
 
-function Figure({ name, label, children }: { name: string; label: string; children: ReactNode }) {
+function Figure({ name, label, children, term }: { name: string; label: string; children: ReactNode; term?: GlossaryKey }) {
   return (
     <div className="min-w-0" data-figure={name}>
-      <dt className="text-fg-muted">{label}</dt>
+      <dt className="flex items-center gap-space-1 text-fg-muted">{label}{term && <TermHint term={term} floating />}</dt>
       <dd className="font-tabular text-t14 font-semibold text-fg">{children}</dd>
     </div>
   );

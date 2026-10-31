@@ -42,3 +42,22 @@
   .screen-gallery { grid-template-columns: 220px minmax(0, 1fr); }
   .screen-gallery-rail-list { display: block; overflow: visible; }
 }
+
+/* M49 U6 (ui_v2): one "Start a scan" block, the Conditions block and the results - stacked on a phone; from 900 px of
+   the page's own width the results sit beside the start and the conditions; from 1200 px three columns (start /
+   conditions / results). The list and chart picker opens above them on "Change". */
+.screener-grid-v2 { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); grid-template-areas: "start" "conditions" "results"; align-items: start; }
+.screener-grid-v2 .screener-start { grid-area: start; min-width: 0; }
+.screener-grid-v2 .screener-conditions { grid-area: conditions; min-width: 0; }
+.screener-results-empty { display: none; }
+.screener-list-body { display: block; }
+@container (min-width: 640px) {
+  .screener-list-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; align-items: start; }
+}
+@container (min-width: 900px) {
+  .screener-grid-v2 { grid-template-columns: minmax(0, 1fr) 360px; grid-template-areas: "start results" "conditions results"; }
+  .screener-results-empty { display: block; }
+}
+@container (min-width: 1200px) {
+  .screener-grid-v2 { grid-template-columns: 340px minmax(0, 1fr) 380px; grid-template-areas: "start conditions results"; }
+}

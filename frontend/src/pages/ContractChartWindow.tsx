@@ -5,6 +5,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
+import { errorSentence } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
 import ProChart from "../components/ProChart";
 import { contractsApi, ivText, legName, toCandles, type ContractSeries, type SeriesLeg } from "../charting/contracts";
@@ -56,7 +57,7 @@ export default function ContractChartWindow({ params }: { params: URLSearchParam
     let live = true;
     contractsApi.series(legs).then(
       (s) => { if (live) setSeries(s); },
-      (e: unknown) => { if (live) setError(e instanceof ApiError && e.status === 503 ? "Contract charts are not enabled for your organisation." : String(e)); },
+      (e: unknown) => { if (live) setError(e instanceof ApiError && e.status === 503 ? "Contract charts are not enabled for your organisation." : errorSentence(e)); },
     );
     return () => { live = false; };
   }, [user, legs]);

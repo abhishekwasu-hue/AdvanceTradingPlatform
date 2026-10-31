@@ -333,7 +333,21 @@ test.describe("8b slice 3 flows", () => {
     await expect(cockpit.locator("[data-tile='cockpit-kept']")).toContainText("₹2,288");      // 262.50 + 2,025.00 kept, in whole rupees
     await expect(cockpit.locator("[data-cockpit='expiries']")).toContainText("8 days left");
     await expect(cockpit.locator("[data-cockpit='alerts'] li")).toHaveCount(1);                   // his NIFTY one, not the BANKNIFTY one
-    await expect(cockpit.locator("button, a")).toHaveCount(0);
+    // M63 I-7: the only buttons are the (?) help marks (TermHint, "What is …?"); no other control writes, places or changes.
+    const help = cockpit.locator("button[aria-label^='What is ']");
+    await expect(cockpit.locator("button:not([aria-label^='What is ']), a")).toHaveCount(0);
+    await expect(help).toHaveCount(4);                                                              // Theta, Delta, Gamma, Vega
+    const duringHelp: string[] = [];
+    const onRequest = (r: { url: () => string; method: () => string }) => { if (/\/api\//.test(r.url())) duringHelp.push(`${r.method()} ${r.url()}`); };
+    page.on("request", onRequest);
+    for (const mark of await help.all()) {
+      await mark.tap();
+      await expect(mark).toHaveAttribute("aria-expanded", "true");                                  // shows the definition, nothing else
+      await mark.tap();
+      await expect(mark).toHaveAttribute("aria-expanded", "false");
+    }
+    page.off("request", onRequest);
+    expect(duringHelp).toEqual([]);                                                                 // a help mark sends no request
     await expect(cockpit).toContainText("each position keeps its own Exit below");
     const journal = page.locator("[data-block='fno-journal']");
     await expect(journal).toContainText("From your signal: Made-up setup");

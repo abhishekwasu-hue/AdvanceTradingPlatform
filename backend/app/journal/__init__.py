@@ -6,6 +6,8 @@
 * `detectors` - pure behaviour-tag rules over a list of journal trades.
 * `score`     - the pure 0-100 weekly discipline score with its components.
 * `service`   - the database glue (load a week, refresh tags, build the score).
+* `entries`   - M62: the trader's own layer (notes, own tags, rule checklist, images, manual trades, chart snapshots).
+* `ops`       - M62: `atp.sh journal-status` / `journal-backfill` (python -m app.journal.ops).
 * `routes`    - `/api/journal/*`, behind the `discipline_engine` flag (OFF by default).
 
 Numbers only: nothing here recommends a trade, a security or an action.

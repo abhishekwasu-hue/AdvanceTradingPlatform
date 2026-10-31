@@ -27,6 +27,7 @@ import { PageHeader } from "../components/primitives";
 import { WatchlistPicker } from "../screener/WatchlistPicker";
 import { splitSymbols } from "../screener/watchlists";
 import { useFeatures } from "../ui/useFeatures";
+import type { PageProps } from "../routes";
 import { Details } from "../ui/Details";
 
 const STRUCTURE_TYPES = Object.keys(STRUCTURE_FILTER_LABELS) as StructureFilterType[];
@@ -86,7 +87,8 @@ function buildSymbolInput(symbol: string, timeframe: string, candles: OHLCVBar[]
   return { symbol, timeframe, ...(candles ? { candles } : {}), option_chain: chain };
 }
 
-export default function ScannerPage() {
+/** M49 U6: `embedded` - the same scanner inside Find setups' Conditions block (no page heading of its own). */
+export default function ScannerPage({ embedded = false }: PageProps & { embedded?: boolean } = {}) {
   const [watchlist, setWatchlist] = useState("NIFTY, BANKNIFTY, RELIANCE, TCS, HDFCBANK, INFY");
   const [timeframe, setTimeframe] = useState("5min");
   const [indicatorConditions, setIndicatorConditions] = useState<Condition[]>([]);
@@ -196,7 +198,7 @@ export default function ScannerPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Market Scanner" description="Filter a watchlist by indicator conditions (same building blocks as the Strategy Builder), price-action structure, and option-chain signals - only symbols clearing every configured filter are returned." />
+      {!embedded && <PageHeader title="Market Scanner" description="Filter a watchlist by indicator conditions (same building blocks as the Strategy Builder), price-action structure, and option-chain signals - only symbols clearing every configured filter are returned." />}
 
       <DataSourceBar source={source} note="Option-chain filters read the broker's live chain in Broker mode and a sample chain otherwise." />
       {readableWarnings(dataWarnings).map((w, i) => <div key={i} className="text-xs text-warn">{w}</div>)}

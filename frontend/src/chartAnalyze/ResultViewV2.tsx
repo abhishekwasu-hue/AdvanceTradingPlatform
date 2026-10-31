@@ -91,11 +91,14 @@ export interface ResultViewProps {
   onStrikesSymbol?: (symbol: string) => void;
   exporting?: boolean;
   deleting?: boolean;
+  /** M59 CR-2: false hides the top row (alert, export, PDF, share, delete) - the Copilot's thread turn links to the
+   * Analyze a chart page for those instead. The per-area / per-level alert buttons stay. */
+  actions?: boolean;
 }
 
 const noop = () => undefined;
 
-export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, imageNote, imageSrc, onAlert = noop, onExport = noop, onDelete = noop,
+export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, imageNote, imageSrc, onAlert = noop, onExport = noop, onDelete = noop, actions = true,
   onShare, shareLive, shared = false, onPdf, strikes, onStrikesSymbol, exporting, deleting }: ResultViewProps) {
   const result = guardResult(raw);
   const approx = result.approximate_prices;
@@ -117,7 +120,7 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
         {(rec.first_bar || rec.last_bar) && <p className="mt-space-1 text-t12 text-fg-muted">Visible range: {rec.first_bar ?? "?"} to {rec.last_bar ?? "?"}</p>}
         {/* UI-28 U1.8: no sentence under the title - the card's one disclaimer is its footer line. */}
         {shared && <p className="mt-space-2 text-t14 text-fg" data-testid="shared-note" role="note">{result.shared_note ?? SHARED_NOTE}</p>}
-        {!shared && <div className="mt-space-3 flex flex-col gap-space-2 sm:flex-row sm:flex-wrap" {...{ [PRINT_HIDE]: "" }}>
+        {!shared && actions && <div className="mt-space-3 flex flex-col gap-space-2 sm:flex-row sm:flex-wrap" {...{ [PRINT_HIDE]: "" }}>
           <Button className="h-11 md:h-9" icon={<Bell size={16} aria-hidden />} disabled={!firstArea}
             onClick={() => firstArea && onAlert(areaTarget(firstArea.price_low, firstArea.price_high, `${firstArea.side} area`))}>
             Set an alert on this area

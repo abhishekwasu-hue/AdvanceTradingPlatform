@@ -13,6 +13,8 @@ import {
   type AnswerBlock, type AnswerHeadline, type ChatAnswer,
 } from "./model";
 import CostChip from "../components/CostChip";
+import { RichText } from "./RichText";
+import { StructureCardV2 } from "./StructureCardV2";
 
 /** CU3: the answer's ONE action (and the strategy card's second, outlined, "test it" button). */
 const PRIMARY = "inline-flex min-h-11 w-full items-center justify-center py-space-2 text-center gap-space-2 rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto";
@@ -103,15 +105,19 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
   const adminNotSetUp = notSetUpLine(answer);
   const parts = answerParts(answer);
   const h = answer.headline ?? null;
+  // M59 CR-1: the chart reading as a card - its free-text words (the AI wording or the rule sentence) move behind Details
+  const card = answer.structure_card ?? null;
   const chart = h?.chart ?? null;
   const worked = answer.job !== "refuse" && answer.job !== "help";
-  const hasDetails = worked || parts.folded.length > 0 || parts.blocksFolded.length > 0 || answer.unknowns.length > 0 || answer.notes.length > 0;
+  const hasDetails = worked || Boolean(card) || parts.folded.length > 0 || parts.blocksFolded.length > 0 || answer.unknowns.length > 0 || answer.notes.length > 0;
   return (
     <article className="space-y-space-3" data-answer={answer.job} data-source={answer.source} aria-label={answer.title}>
       {h && <HeadlineRow h={h} />}
-      <div className="space-y-space-1" data-summary>
-        {answer.summary.map((line, i) => <p key={i} className="text-t15 text-fg">{line}</p>)}
-      </div>
+      {card ? <StructureCardV2 card={card} /> : (
+        <div className="space-y-space-1" data-summary>
+          {answer.summary.map((line, i) => <RichText key={i} source={line} />)}
+        </div>
+      )}
       {chart && (
         <div data-mini-chart={chart.symbol}>
           <Suspense fallback={<div aria-busy="true" className="h-48 rounded-panel border border-subtle" />}>
@@ -172,6 +178,11 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
       )}
       {hasDetails && (
         <Details id="copilot.answer" label={t("chat.details")} className="mt-0">
+          {card && answer.summary.length > 0 && (
+            <section className="space-y-space-1" data-summary="folded">
+              {answer.summary.map((line, i) => <RichText key={i} source={line} className="text-t14 text-fg" />)}
+            </section>
+          )}
           <Sections sections={parts.folded} />
           <Blocks blocks={parts.blocksFolded} />
           {answer.notes.map((n) => <p key={n} className="text-t13 text-fg-muted" data-note="chart-reader">{n}</p>)}

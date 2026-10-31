@@ -1,13 +1,14 @@
 # ATP feature inventory (M63 I-2)
 
-Every backend module, every FastAPI router prefix, the legacy endpoints in `backend/app/main.py`, and every page /
+Every backend module, every FastAPI router prefix, the endpoints moved out of `backend/app/main.py`, and every page /
 address of the web app, with its flag and its status **from the code defaults**. The column "On production" says what
 the live site shows. It stays "unknown until the owner's check" (M63 I-1: the owner's read-only check of the server)
 except where the code alone proves STUB or HIDDEN. No production values, keys, organisation data or server details live
 in this file.
 
 **Keep it current:** every PR that adds or changes a feature updates its row here. CI enforces the coverage:
-`backend/tests/test_feature_inventory_coverage.py` (every router prefix and every legacy endpoint in `main.py`) and
+`backend/tests/test_feature_inventory_coverage.py` (every router prefix; `main.py` declares no endpoint of its own; every
+endpoint moved out of it is listed under the router file that serves it) and
 `frontend/src/featureInventory.test.ts` (every page address in `routes.ts` and every v2 shell address). Each one must
 appear in this file in backticks.
 
@@ -96,7 +97,7 @@ Facts from the code that the tables rely on:
 | platform | Feature flags, controls, trader pack, readiness, system status | `/api/admin/controls`, `/api/readiness`, `/api/system`, `/api/team/members` | `phase0_paper_only` (ON), `live_trading` | WORKS | unknown until the owner's check |
 | performance | The Performance page's summary and results against backtest, over the user's OWN trades (REV-1 M2) | `/api/performance` | - | WORKS (read-only) | unknown until the owner's check |
 | portfolio | PAPER book risk view | `/api/portfolio` | `portfolio_risk`, `portfolio_risk_caps` | EMPTY-BY-DEFAULT (503 while off) | unknown until the owner's check |
-| price_action | Structure library (swings, legs, zones) | - | `market_zones` (zones job) | INTERNAL; gap context raises NotImplemented (not ported) | STUB (gap context) |
+| price_action | Structure library (swings, legs, zones) | routes `/api/price-action/...` (section 3) | `market_zones` (zones job) | INTERNAL; gap context raises NotImplemented (not ported) | STUB (gap context) |
 | public_api | API keys and `/api/public/v1` | `/api/api-keys`, `/api/public/v1` | `public_api` (ON) | PARTIAL (no docs UI) | unknown until the owner's check |
 | quality | Look-ahead test helpers | - | - | INTERNAL | - |
 | quant | Factor table, risk, exposure | `/api/quant` | - | WORKS (equities) | unknown until the owner's check |
@@ -104,7 +105,7 @@ Facts from the code that the tables rely on:
 | retention | Data retention / erasure | - | - | INTERNAL | - |
 | rhythm | Pre-market brief, pulse, closing wrap, weekly review | `/api/rhythm` | `ui_v2` + `daily_rhythm` | EMPTY-BY-DEFAULT (worker must run) | unknown until the owner's check |
 | risk_engine | Risk config, ceilings, loss streak, guardian events | `/api/risk`, `/api/risk-guardian`, `/api/risk-settings` | `vix_gate`, `risk_by_default` | WORKS | unknown until the owner's check |
-| scanner | AI scan plan / read | `/api/scanner/ai` | `ai_copilot` (ON), `thesis_stock_targets` | PARTIAL (needs an AI key) | unknown until the owner's check |
+| scanner | AI scan plan / read; custom scan run (code in `backend/app/screener/scanner`, `backend/app/scanner` is an import shim) | `/api/scanner/ai`, routes `/api/scanner/run` (section 3) | `ai_copilot` (ON), `thesis_stock_targets` | PARTIAL (needs an AI key) | unknown until the owner's check |
 | screener | Screens, runs, alert rules, breakouts, evidence, history, rankings, ETF, library | `/api/screener`, `/api/screener/board`, `/api/screener/breakouts`, `/api/screener/etf`, `/api/screener/evidence`, `/api/screener/history`, `/api/screener/library`, `/api/screener/rankings`, `/api/screener/universes`, `/api/alerts` | `screener_v2` + sub-flags | EMPTY-BY-DEFAULT (503 until `screener_v2`) | unknown until the owner's check |
 | secrets_store | Envelope encryption of broker / AI keys | - | - | INTERNAL | - |
 | setup_recall | Past trades with the same stored setup | `/api/setup-recall` | `ui_v2` + `setup_recall` | EMPTY-BY-DEFAULT | unknown until the owner's check |
@@ -114,7 +115,7 @@ Facts from the code that the tables rely on:
 | strategy_engine | Built-in strategies, registry, chart run | `/api/strategies` | - | WORKS | unknown until the owner's check |
 | strategy_templates | Signal templates adopted as a PAPER bot | `/api/strategy-templates` | `strategy_templates`, `screener_waves` | EMPTY-BY-DEFAULT | unknown until the owner's check |
 | support | Support bot, Help centre, Report a problem, desk | `/api/support`, `/api/ai/support`, `/api/admin/support` | `support_bot`, `help_centre` (+ `ui_v2`) | STUB (catalog: help pages not complete) | unknown until the owner's check |
-| support_resistance | S/R zone library | - | - | INTERNAL | - |
+| support_resistance | S/R zone library | routes `/api/support-resistance/zones` (section 3) | - | WORKS | unknown until the owner's check |
 | tax | FY P&L / turnover report | `/api/tax` | - | WORKS | unknown until the owner's check |
 | team | Organisation, members, scopes, invites | `/api/team` | - | WORKS | unknown until the owner's check |
 | telegram_inbound | Telegram commands and approve / reject buttons | `/api/telegram` | `telegram_inbound` | PARTIAL (needs the bot token) | unknown until the owner's check |
@@ -126,17 +127,23 @@ Facts from the code that the tables rely on:
 | webhooks | TradingView webhook intake | `/api/webhooks` | `approval_only_entries` | WORKS (PAPER) | unknown until the owner's check |
 | workers | Trading worker loop, research worker, EOD summary | `/api/system` | `phase0_paper_only`, `byob_data_tier` | INTERNAL (separate process) | unknown until the owner's check |
 
-## 3. Legacy endpoints in `backend/app/main.py` (no router)
+## 3. Endpoints moved out of `backend/app/main.py` (M55 Q1)
 
-| Group | Endpoints | Code status | On production |
-|---|---|---|---|
-| strategies | `/api/strategies`, `/api/strategies/{strategy_id}`, `/api/strategies/{strategy_id}/signal`, `/api/strategies/{strategy_id}/signal/enrich`, `/api/strategies/{strategy_id}/paper-execute` | WORKS (candles from the browser) | unknown until the owner's check |
-| backtest | `/api/backtest` | WORKS (409 without broker or stored history) | unknown until the owner's check |
-| price action | `/api/price-action/structure`, `/api/price-action/patterns`, `/api/price-action/reversal`, `/api/price-action/reversal-markers` | WORKS (pure functions) | unknown until the owner's check |
-| support / resistance | `/api/support-resistance/zones` | WORKS | unknown until the owner's check |
-| option chain | `/api/option-chain/analyze`, `/api/option-chain/greeks` | WORKS (pure functions) | unknown until the owner's check |
-| scanner | `/api/scanner/run` | WORKS | unknown until the owner's check |
-| other | `/api/broker/available`, `/api/instruments`, `/api/instruments/{symbol}`, `/api/system/health` | WORKS | unknown until the owner's check |
+`backend/app/main.py` only includes routers; it declares no endpoint of its own. The 18 endpoints that used to live
+there are served, unchanged (same paths, methods, bodies, dependencies and gates), by these module routers. Each
+router has no prefix: it declares the full path.
+
+| Group | Endpoints | Router file | Code status | On production |
+|---|---|---|---|---|
+| strategies | `/api/strategies`, `/api/strategies/{strategy_id}`, `/api/strategies/{strategy_id}/signal`, `/api/strategies/{strategy_id}/signal/enrich`, `/api/strategies/{strategy_id}/paper-execute` | `backend/app/strategy_engine/console_routes.py` | WORKS (candles from the browser) | unknown until the owner's check |
+| backtest | `/api/backtest` | `backend/app/backtest/console_routes.py` | WORKS (409 without broker or stored history) | unknown until the owner's check |
+| price action | `/api/price-action/structure`, `/api/price-action/patterns`, `/api/price-action/reversal`, `/api/price-action/reversal-markers` | `backend/app/price_action/routes.py` | WORKS (pure functions) | unknown until the owner's check |
+| support / resistance | `/api/support-resistance/zones` | `backend/app/support_resistance/routes.py` | WORKS | unknown until the owner's check |
+| option chain | `/api/option-chain/analyze`, `/api/option-chain/greeks` | `backend/app/option_chain/analyze_routes.py` | WORKS (pure functions) | unknown until the owner's check |
+| scanner | `/api/scanner/run` | `backend/app/screener/scanner/run_routes.py` | WORKS | unknown until the owner's check |
+| broker list | `/api/broker/available` | `backend/app/brokers/available_routes.py` | WORKS | unknown until the owner's check |
+| contract specs | `/api/instruments`, `/api/instruments/{symbol}` | `backend/app/instruments/reference_routes.py` | WORKS | unknown until the owner's check |
+| health | `/api/system/health` | `backend/app/platform/health_routes.py` | WORKS | unknown until the owner's check |
 
 ## 4. Frontend pages and tabs (v2 shell, `ui_v2` on)
 
@@ -151,7 +158,7 @@ navigation and shows "Coming soon" at its address (`frontend/src/shell/pageFlags
 | Option chain (Chain, Charts, OI, Analyses) | `/option-chain` | Markets | - (broker gate) | WORKS; OI view PARTIAL (needs recorded snapshots) | unknown until the owner's check |
 | Sectors and indices | `/markets` | Markets | `markets_view` | EMPTY-BY-DEFAULT | unknown until the owner's check |
 | Find setups | `/screener` | Markets | `screener_v2` | EMPTY-BY-DEFAULT | unknown until the owner's check |
-| Custom scan | `/screener/custom` (old `/scanner`) | search only | - | PARTIAL + DUPLICATE (Find setups) | unknown until the owner's check |
+| Custom scan | `/screener/custom` (old `/scanner`) | search only | - (merged view: `screener_v2`) | PARTIAL; M49 U6: opens Find setups with its Conditions block open, the custom scanner inside Conditions ("More filters"); with `screener_v2` off the old page alone | unknown until the owner's check |
 | Plan an options trade | `/option-chain/plan` (old `/options-builder`) | extras | `options_builder` (ON); save: `options_builder_saved` | PARTIAL ("Adjustments and compare" marked coming later) | STUB (adjustments / compare) |
 | Analyze a chart | `/chart-analyze` | extras | `chart_analyze` + private engine | EMPTY-BY-DEFAULT; Hybrid "Coming soon" | STUB (hybrid); rest: unknown until the owner's check |
 | Terminal | `/terminal` | Trading | `terminal` (ON) | PARTIAL | Bots and Payoff panels HIDDEN (never in the Panels menu); rest: unknown until the owner's check |

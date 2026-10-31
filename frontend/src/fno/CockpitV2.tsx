@@ -6,6 +6,8 @@ import { CardV2, toneClass } from "../dashboard/CardV2";
 import { signTone } from "../dashboard/model";
 import { TileV2, TilesV2 } from "../trading/PartsV2";
 import type { PositionGreeks } from "../types";
+import type { GlossaryKey } from "../ui/glossary";
+import { TermHint } from "../ui/TermHint";
 import { EMPTY, formatINR, formatNumber, formatSignedINR } from "../ui/format";
 import { RiskLineV2, useRiskBudget } from "./InsightsV2";
 import {
@@ -69,7 +71,7 @@ export function CockpitView({ units, summary, greeks, line, expiries, alerts }: 
             sub={`${summary.lines} ${summary.lines === 1 ? "line" : "lines"} · ${summary.positions} ${summary.positions === 1 ? "leg" : "legs"}`} />
           <TileV2 testId="cockpit-kept" label="Premium kept so far" value={p ? (p.kept === null ? EMPTY : formatSignedINR(p.kept)) : EMPTY}
             sub={p ? `${p.pct === null ? "waiting for live prices" : `${formatNumber(p.pct, 1)}%`} of ${formatINR(p.received)} received` : "no premium received"} />
-          <TileV2 testId="cockpit-theta" label="Theta a day" value={greeks ? formatSignedINR(greeks.net.net_theta) : EMPTY}
+          <TileV2 testId="cockpit-theta" label="Theta a day" hint="theta" value={greeks ? formatSignedINR(greeks.net.net_theta) : EMPTY}
             sub={greeks ? "time decay, all options together" : undefined} />
           <TileV2 testId="cockpit-worst" label="Most it can lose" value={summary.unbounded ? "No fixed limit" : formatINR(summary.worst)}
             sub="at expiry, all lines together" />
@@ -79,10 +81,10 @@ export function CockpitView({ units, summary, greeks, line, expiries, alerts }: 
 
         {greeks && (
           <dl className="grid grid-cols-2 gap-x-space-4 gap-y-space-1 text-t13 sm:grid-cols-4" data-cockpit="greeks">
-            <Figure label="Net delta" value={formatNumber(greeks.net.net_delta, 2)} />
-            <Figure label="Net gamma" value={formatNumber(greeks.net.net_gamma, 4)} />
+            <Figure label="Net delta" hint="delta" value={formatNumber(greeks.net.net_delta, 2)} />
+            <Figure label="Net gamma" hint="gamma" value={formatNumber(greeks.net.net_gamma, 4)} />
             <Figure label="Net theta" value={formatNumber(greeks.net.net_theta, 2)} />
-            <Figure label="Net vega" value={formatNumber(greeks.net.net_vega, 2)} />
+            <Figure label="Net vega" hint="vega" value={formatNumber(greeks.net.net_vega, 2)} />
           </dl>
         )}
 
@@ -128,10 +130,10 @@ export function CockpitView({ units, summary, greeks, line, expiries, alerts }: 
   );
 }
 
-function Figure({ label, value }: { label: string; value: string }) {
+function Figure({ label, value, hint }: { label: string; value: string; hint?: GlossaryKey }) {
   return (
     <div className="flex items-baseline justify-between gap-space-2 sm:block">
-      <dt className="text-fg-muted">{label}</dt>
+      <dt className="flex items-center gap-space-1 text-fg-muted">{label}{hint && <TermHint term={hint} floating />}</dt>
       <dd className="font-tabular font-semibold text-fg">{value}</dd>
     </div>
   );

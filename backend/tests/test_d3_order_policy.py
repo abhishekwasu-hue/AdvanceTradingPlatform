@@ -64,7 +64,8 @@ def test_refused_market_or_validity_never_reaches_the_broker(monkeypatch, policy
 def test_exits_and_stops_are_not_touched_by_the_policy(monkeypatch):
     _with_policy(monkeypatch, brokers={"fakelive": {"market_for_algo": "map_to_limit", "allowed_validity": ["DAY"]}})
     broker = _LiveBroker()
-    result = asyncio.run(_router(broker).execute(_signal(), TradingDayState()))
+    # M68: map_to_limit needs the user's own price protection (no ATP default) - the user saved 0.5 %
+    result = asyncio.run(_router(broker, market_protection_pct=0.5).execute(_signal(), TradingDayState()))
     assert result.executed
     stop = broker.placed[1]
     assert stop.order_type in ("SL-M", "SL") and stop.tag.endswith("-SL")      # the protective stop is placed as before

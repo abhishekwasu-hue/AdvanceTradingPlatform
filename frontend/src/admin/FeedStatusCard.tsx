@@ -66,7 +66,7 @@ export function tickText(age: number | null): string {
 
 const INTERVALS: Record<string, string> = { "1m": "1 min", "5m": "5 min", "15m": "15 min", "60m": "1 hour" };
 const GAP_STATUS: Record<string, { tone: Tone; label: string }> = {
-  pending: { tone: "warn", label: "Waiting" }, requested: { tone: "warn", label: "Being filled" },
+  pending: { tone: "warn", label: "Waiting" }, requested: { tone: "warn", label: "Filling" },
   filled: { tone: "ok", label: "Filled" }, failed: { tone: "bad", label: "Could not fill" },
 };
 

@@ -87,7 +87,7 @@ describe("market data feed card", () => {
     expect(h).toContain('data-details="console.market-feed.gaps"');
     expect(h).toContain("Pending gaps (3)");
     expect(h).toContain("The latest 2 are shown.");
-    expect(h).toMatch(/data-feed-gap="NSE_INDEX\|Nifty 50"[^]*?>Nifty 50<[^]*?1 min[^]*?09:31–09:34 IST[^]*?Being filled/);
+    expect(h).toMatch(/data-feed-gap="NSE_INDEX\|Nifty 50"[^]*?>Nifty 50<[^]*?1 min[^]*?09:31–09:34 IST[^]*?Filling/);
     expect(h).toMatch(/1 hour[^]*?Could not fill/);
     expect(symbolName("NSE_INDEX|Nifty Bank")).toBe("Nifty Bank");
   });

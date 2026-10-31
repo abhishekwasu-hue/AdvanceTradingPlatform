@@ -61,7 +61,9 @@ export const PAGE_GROUPS_V2: readonly PageGroupV2[] = [
       { key: "setup", label: "Setup" },
     ] },
     { key: "trading-defaults", label: "Trading", parts: [
-      { key: "trading-defaults", label: "My trading defaults" }, { key: "risk-management", label: "Risk limits" },
+      // M64 RM-5: the limits are set on Settings › Risk limits; today's risk status (/risk-management) is found by search,
+      // as before M60 (at most four parts under a tab); it still lights up Settings.
+      { key: "trading-defaults", label: "My trading defaults" }, { key: "settings-risk-limits", label: "Risk limits" },
       { key: "settings-alerts", label: "Alerts" }, { key: "notifications", label: "Inbox" },
     ] },
     { key: "settings-ai", label: "AI" },

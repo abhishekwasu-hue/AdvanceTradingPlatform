@@ -43,7 +43,7 @@ def test_the_risk_check_and_the_kill_switch_still_refuse_a_manual_order(setup):
     t, expiry, strike, _ = setup
     _flag_for(t["tenant_id"])
     too_big = fno1._preview(t, fno1._body(expiry, strike, lots=3))
-    assert not too_big["can_place"] and any("allows 1 lot(s)" in r for r in too_big["refusals"])
+    assert not too_big["can_place"] and any("allows 1 lot at this stop-loss" in r for r in too_big["refusals"])
     assert client.post("/api/kill-switch/tenant/engage", headers=t["headers"], json={"reason": "tt2 test"}).status_code == 200
     try:
         refused = fno1._place(t, fno1._body(expiry, strike, stop_loss=70.0))

@@ -14,7 +14,7 @@ describe("basket: why it cannot be placed, beside the button", () => {
     const why = basketBlockedBy({ can_execute: false, refusals: ["basket room"],
       legs: [leg(["One lot risks more than your risk per trade allows. Set a closer stop-loss or a smaller position."])] });
     expect(why?.text).toMatch(/^One lot risks more than your risk per trade allows/);
-    expect(why?.link).toBe("/risk-management");
+    expect(why?.link).toBe("/settings/risk-limits");     // M64: the one Risk limits page
   });
 
   it("an error beats a refusal; the basket's own reason when no leg has one", () => {

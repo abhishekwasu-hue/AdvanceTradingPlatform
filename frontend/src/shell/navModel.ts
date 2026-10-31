@@ -204,7 +204,10 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   // Settings redesign part C: the user's own starting values for new bots and chain tickets (a pre-fill, never a rule).
   { ...item("trading-defaults", "My trading defaults", "My trading defaults", "/settings/trading-defaults", SlidersHorizontal,
     { keywords: ["defaults", "default lots", "presets", "order presets", "expiry rule", "strike rule", "trailing stop"] }), section: "account" },
-  { ...item("risk-management", "Risk limits", "Risk limits", "/risk-management", Shield, { keywords: ["risk", "risk management", "limits", "daily loss"] }), section: "account" },
+  // M64 RM-5: the limits themselves live on Settings › Risk limits; /risk-management keeps today's risk status (pauses, events).
+  { ...item("settings-risk-limits", "Risk limits", "Risk limits", SETTINGS_PATH["risk-limits"], Shield,
+    { keywords: ["risk limits", "limits", "daily loss", "max lots", "max positions", "cool-down", "margin safety", "risk per trade", "reward risk"] }), section: "account" },
+  { ...item("risk-management", "Risk status", "Risk status", "/risk-management", Shield, { keywords: ["risk", "risk management", "risk today", "pause"] }), section: "account" },
   // M60 default 5: the alert channels in Settings › Trading, with the Inbox (Notifications) beside them.
   { ...item("settings-alerts", "Alerts", "Alerts", SETTINGS_PATH.alerts, Bell, { keywords: ["telegram", "alert channels", "email alerts", "sms", "push notifications"] }), section: "account" },
   { ...item("notifications", "Inbox", "Notifications", "/notifications", Inbox, { keywords: ["notifications", "alerts", "inbox"] }), section: "account" },
@@ -233,7 +236,7 @@ const NAV_HOME: Partial<Record<ShellKey, ShellKey>> = {
   "learn-words": "learn", ideas: "learn", "news-events": "learn",
   broker: "settings", "risk-management": "settings", team: "settings", account: "settings", setup: "settings", "trading-defaults": "settings",
   notifications: "settings", "settings-ai": "settings", "settings-alerts": "settings", "settings-appearance": "settings",
-  "settings-help": "settings", "settings-advanced": "settings",
+  "settings-help": "settings", "settings-advanced": "settings", "settings-risk-limits": "settings",
 };
 
 /** The sidebar / bottom bar entry that shows as current for the page on screen. */

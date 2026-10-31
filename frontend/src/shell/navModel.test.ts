@@ -88,7 +88,7 @@ describe("M60 sidebar: five sections, one feature one home", () => {
     expect(home("strategy-builder", "backtest")).toEqual(["strategies", "strategies"]);
     expect(home("scanner")).toEqual(["screener"]);
     expect(home("broker", "account", "team", "setup", "trading-defaults", "risk-management", "settings-alerts", "notifications",
-      "settings-ai", "settings-appearance", "settings-help", "settings-advanced")).toEqual(Array(12).fill("settings"));
+      "settings-ai", "settings-appearance", "settings-help", "settings-advanced", "settings-risk-limits")).toEqual(Array(13).fill("settings"));
     expect(navEntryFor(null)).toBeNull();
     // A stand-in lights up itself while its home is not listed (Charts while the Terminal is off).
     expect(isCurrentEntry("charts", "charts")).toBe(true);
@@ -167,6 +167,11 @@ describe("M60 search finds every page", () => {
     expect(find("notifications")).toContain("notifications");
     expect(find("backtesting")).toEqual(["backtest"]);
     expect(find("system logs")).toEqual(["system-logs"]);
+    // M64 RM-5: the limits live on Settings › Risk limits; /risk-management keeps today's risk status.
+    expect(find("risk")[0]).toBe("settings-risk-limits");
+    expect(find("risk status")).toContain("risk-management");
+    expect(NAV_EXTRAS_V2.filter((e) => e.key === "settings-risk-limits" || e.key === "risk-management").map((e) => [e.key, e.path, e.section]))
+      .toEqual([["settings-risk-limits", "/settings/risk-limits", "account"], ["risk-management", "/risk-management", "account"]]);
   });
 
   it("one Coach: the Copilot's while it is on, today's page while it is off", () => {

@@ -91,7 +91,7 @@ test.describe("settings index behaviour", () => {
     await expect(rows).toHaveText([/Account & plan/, /Team/, /Broker/, /AI/, /Alerts/, /My trading defaults/, /Risk limits/, /Appearance/, /Help & tips/, /Set up your account/]);
     // UX3-9: Team and Risk limits left the sidebar; Settings opens them.
     await expect(row(page, "team").locator("a")).toHaveAttribute("href", "/team");
-    await expect(row(page, "risk").locator("a")).toHaveAttribute("href", "/risk-management");
+    await expect(row(page, "risk").locator("a")).toHaveAttribute("href", "/settings/risk-limits");     // M64 RM-5: the one Risk limits page
     await expect(row(page, "broker").locator("[data-chip]")).toHaveText("Connected (Upstox)");
     await expect(row(page, "broker").locator("a")).toHaveAttribute("href", "/broker");
     await expect(row(page, "alerts").locator("[data-chip]")).toHaveText("Telegram connected");

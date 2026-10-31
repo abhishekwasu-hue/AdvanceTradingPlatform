@@ -67,6 +67,7 @@ const TABLE: readonly [string, string, ShellKey][] = [
   ["/team", "/team", "team"],
   ["/settings/trading-defaults", "/settings/trading-defaults", "trading-defaults"],
   ["/risk-management", "/risk-management", "risk-management"],
+  ["/settings/risk-limits", "/settings/risk-limits", "settings-risk-limits"],
   ["/settings/alerts", "/settings/alerts", "settings-alerts"],
   ["/notifications", "/notifications", "notifications"],
   ["/settings/ai", "/settings/ai", "settings-ai"],

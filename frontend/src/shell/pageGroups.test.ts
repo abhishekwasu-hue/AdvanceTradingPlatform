@@ -46,7 +46,7 @@ describe("M60 tab rows: at most four tabs each (and four parts under a tab)", ()
     expect(visibleParts(tabOf(settings, "broker")!, full).map((p) => p.label)).toEqual(["Account & plan", "Broker accounts", "Team", "Setup"]);
     // Default 5: the alert channels in Settings › Trading, with the Inbox link beside them.
     expect(visibleParts(tabOf(settings, "notifications")!, full).map((p) => [p.label, p.path])).toEqual([
-      ["My trading defaults", "/settings/trading-defaults"], ["Risk limits", "/risk-management"], ["Alerts", "/settings/alerts"],
+      ["My trading defaults", "/settings/trading-defaults"], ["Risk limits", "/settings/risk-limits"], ["Alerts", "/settings/alerts"],
       ["Inbox", "/notifications"]]);
     expect(visibleParts(tabOf(settings, "settings-help")!, full).map((p) => p.label)).toEqual(["Appearance", "Help & tips", "Advanced"]);
     expect(pageGroupOf("settings")?.id).toBe("settings");

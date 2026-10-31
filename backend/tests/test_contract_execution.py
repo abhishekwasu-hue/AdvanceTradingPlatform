@@ -229,7 +229,7 @@ def test_small_account_is_rejected_below_one_lot_with_a_clear_reason():
     ce = _resolve(BUY)
     result, order, trade = _execute(user, mode="PAPER", contract=ce, rules=BUY, quote_broker=_FnoBroker(premium=120.0), risk=legacy())     # DEF-0: the old 0.5% of 1,00,000, set
     assert not result.executed and order.status == "REJECTED" and trade is None
-    assert any("below one lot" in r for r in result.reasons)
+    assert any("is less than one lot's risk" in r and "Change limit" in r for r in result.reasons)
 
 
 def test_max_lots_caps_the_size():

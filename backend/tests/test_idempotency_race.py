@@ -1,7 +1,7 @@
 """Master prompt Section 50: idempotency tests must cover replaying the same signal/webhook
 "including out-of-order" - which in practice means two concurrent requests racing past the
 existing "does an order for this idempotency_key already exist?" pre-check
-(`main.py::paper_execute`, `app/webhooks/routes.py::tradingview_webhook`) before either commits.
+(`app/strategy_engine/console_routes.py::paper_execute`, `app/webhooks/routes.py::tradingview_webhook`) before either commits.
 
 This is a genuine bug this session found by actually running two concurrent
 `execute_signal_for_user` calls against the same idempotency_key with `asyncio.gather` (confirmed

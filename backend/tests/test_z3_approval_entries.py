@@ -303,7 +303,7 @@ def _pipeline_callers() -> dict:
 def test_every_order_entry_point_is_reviewed_for_approval():
     """A static census: every caller of the two order pipelines in app/ is listed here with how it meets approval-only
     mode. A new caller fails this test until it is reviewed (and the pipelines' own default refuses it meanwhile)."""
-    assert _pipeline_callers() == {"app/main.py": {"execute_signal_for_user"}, "app/webhooks/routes.py": {"execute_signal_for_user"},
+    assert _pipeline_callers() == {"app/strategy_engine/console_routes.py": {"execute_signal_for_user"}, "app/webhooks/routes.py": {"execute_signal_for_user"},
                                    "app/public_api/routes.py": {"execute_signal_for_user"}, "app/execution/approval.py": {"execute_signal_for_user", "execute_structure"},
                                    "app/workers/trading_worker.py": {"execute_signal_for_user", "execute_structure"},
                                    "app/paper/ticket.py": {"execute_signal_for_user"},
@@ -323,7 +323,7 @@ def test_every_order_entry_point_is_reviewed_for_approval():
     # Z5 / P1-d: the plan-before-trade PAPER ticket proposes first under approval-only mode (like the console), PAPER only.
     ticket_src = (BACKEND / "app" / "paper" / "ticket.py").read_text()
     assert "mode=by_default.MODE" in ticket_src
-    for rel in ("app/main.py", "app/webhooks/routes.py", "app/public_api/routes.py", "app/paper/ticket.py"):
+    for rel in ("app/strategy_engine/console_routes.py", "app/webhooks/routes.py", "app/public_api/routes.py", "app/paper/ticket.py"):
         text = (BACKEND / rel).read_text()
         assert text.index("approval.required(") < text.index("execute_signal_for_user("), rel   # proposes first
     worker = (BACKEND / "app" / "workers" / "trading_worker.py").read_text()

@@ -119,7 +119,7 @@ async def validate_instrument(
 
 async def live_margin_cap(
     broker: BrokerInterface, *, symbol: str, exchange: str, side: OrderSide, unit: float,
-    product: str = "MIS", unit_price: Optional[float] = None, exact_cash: bool = False,
+    product: str = "MIS", unit_price: Optional[float] = None, exact_cash: bool = False, share: float = MARGIN_SAFETY,
 ) -> Tuple[Optional[float], str]:
     """`(max_quantity, note)` for a LIVE entry. `unit` is one lot (or one share). `max_quantity`
     is None when margin could not be verified without guessing (no calculator and not a bought
@@ -151,7 +151,7 @@ async def live_margin_cap(
     except Exception as exc:  # noqa: BLE001
         raise PreCheckRefusal(f"Could not read available margin from {broker.name}: {exc} - entry refused") from exc
     available = float(margins.available_margin or margins.available_cash or 0.0)
-    units = int((available * MARGIN_SAFETY) // per_unit)
+    units = int((available * share) // per_unit)      # M64: the trader's margin safety %, or all of it when that is off
     if units < 1:
         raise PreCheckRefusal(
             f"Insufficient margin for {symbol}: {per_unit:,.0f} per {'lot' if unit != 1 else 'share'} needed "

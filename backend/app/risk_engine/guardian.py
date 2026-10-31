@@ -101,9 +101,14 @@ class GuardianVerdict:
 
 def apply_multiplier(cfg: RiskConfig, multiplier: float) -> RiskConfig:
     """A smaller risk per trade is how every sizer (single leg, structure lots) shrinks."""
-    if multiplier >= 1.0 or cfg.risk_per_trade_pct is None:   # DEF-0: no risk per trade set - nothing to shrink
+    if multiplier >= 1.0 or (cfg.risk_per_trade_pct is None and cfg.risk_per_trade_rupees is None):   # DEF-0: nothing to shrink
         return cfg
-    return cfg.model_copy(update={"risk_per_trade_pct": round(cfg.risk_per_trade_pct * max(multiplier, 0.0), 6)})
+    update: dict = {}
+    if cfg.risk_per_trade_pct is not None:
+        update["risk_per_trade_pct"] = round(cfg.risk_per_trade_pct * max(multiplier, 0.0), 6)
+    if cfg.risk_per_trade_rupees is not None:        # M64: the rupee risk per trade shrinks the same way
+        update["risk_per_trade_rupees"] = round(cfg.risk_per_trade_rupees * max(multiplier, 0.0), 2)
+    return cfg.model_copy(update=update)
 
 
 async def last_stop_out(session: AsyncSession, tenant_id: int, mode: str, underlying: str, since: datetime) -> Optional[TradeRecord]:
@@ -224,7 +229,8 @@ async def guard_entry(session: AsyncSession, tenant_id: int, *, mode: str, under
             verdict.notes.append(f"Drawdown ladder: {dd.drawdown_pct:.1f}% below the {mode} equity peak (>= {level_1:g}%): "
                                  f"risk per trade halved (rule P2)")
 
-    for event in await active_events(session, tenant_id, underlying, now_ist):
+    # M64: the event rules apply only when the trader switched "Market event days" on (Settings > Risk limits).
+    for event in (await active_events(session, tenant_id, underlying, now_ist) if cfg.event_rules else []):
         verdict.events.append(event)
         label = f"{event.kind or 'event'}{' - ' + event.description if event.description else ''}"
         if (event.action or "").upper() == "BLOCK":

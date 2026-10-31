@@ -183,7 +183,8 @@ navigation and shows "Coming soon" at its address (`frontend/src/shell/pageFlags
 | Account and plan | `/settings/account` (old `/account`) | Settings | - | WORKS (old page) | unknown until the owner's check |
 | Setup wizard | `/settings/setup` | Settings | - | WORKS + DUPLICATE (Today "Get started") | unknown until the owner's check |
 | My trading defaults | `/settings/trading-defaults` | Settings | - | WORKS | unknown until the owner's check |
-| Risk limits | `/risk-management` | Settings | - | WORKS | unknown until the owner's check |
+| Risk limits (M64: every check a switch, off by default) | `/settings/risk-limits` | Settings | - | WORKS | unknown until the owner's check |
+| Risk status (old Risk limits page: today, guardian, events; limits link to `/settings/risk-limits`) | `/risk-management` | Settings | - | WORKS | unknown until the owner's check |
 | Team | `/team` | extras | - | WORKS (old page) | unknown until the owner's check |
 | Notifications | `/notifications` | extras | - | WORKS (old page) | unknown until the owner's check |
 | Factor Lab | `/quant` | More | - | WORKS (equities) | unknown until the owner's check |

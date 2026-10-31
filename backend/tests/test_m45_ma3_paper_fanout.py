@@ -102,8 +102,12 @@ def test_one_order_becomes_one_paper_child_per_account_with_reasons_for_the_skip
 def test_a_refused_primary_leaves_the_secondaries_unplaced(setup):  # noqa: F811 - the fixture
     t, expiry, strike, _ = setup
     p, s = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}), ("Sec", 500_000, {"role": "SECONDARY", "group_name": "G"}))
-    # A SELL without a stop is refused by the ticket's own checks.
-    body = _body(expiry, strike, side="SELL", lots=1, client_ref=uuid.uuid4().hex)
+    # M64: a SELL without a stop is no longer refused (risk-based sizing falls back to the typed lots with a warning); the
+    # primary is refused by a size limit the trader switched on instead - max lots per order 1, an order of 2 lots.
+    saved = client.put("/api/risk-settings/limits", headers=t["headers"],
+                       json={"checks": {"max_lots_per_order": {"enabled": True, "values": {"max_lots_per_order": 1}}}})
+    assert saved.status_code == 200, saved.text
+    body = _body(expiry, strike, side="SELL", lots=2, client_ref=uuid.uuid4().hex)
     out = _order(t, body, run_on="ALL")
     rows = {r["account_id"]: r for r in out["results"]}
     assert rows[p]["status"] == "REFUSED"

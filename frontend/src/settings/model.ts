@@ -36,7 +36,8 @@ export const SETTINGS_ROWS: readonly SettingsRow[] = [
   { id: "alerts", name: "Alerts", to: SETTINGS_PATH.alerts, tour: "settings-alerts", keywords: ["telegram", "notifications", "email", "sms", "whatsapp", "push", "phone"] },
   // Part C: the user's own starting values for new trading bots and chain tickets (a pre-fill, never a rule).
   { id: "defaults", name: "My trading defaults", to: "/settings/trading-defaults", keywords: ["defaults", "lots", "exits", "presets"] },
-  { id: "risk", name: "Risk limits", to: "/risk-management", keywords: ["risk", "daily loss", "loss limit", "limits", "max positions"] },
+  // M64 RM-5: one Risk limits page (every check a switch, off by default).
+  { id: "risk", name: "Risk limits", to: SETTINGS_PATH["risk-limits"], keywords: ["risk", "daily loss", "loss limit", "limits", "max positions", "max lots", "cool-down", "margin safety"] },
   { id: "appearance", name: "Appearance", to: SETTINGS_PATH.appearance, tour: "settings-appearance", keywords: ["theme", "dark", "light", "text size", "font", "colour-blind", "color blind", "reduce motion"] },
   { id: "help", name: "Help & tips", to: SETTINGS_PATH.help, tour: "settings-help", keywords: ["tips", "tours", "get started", "guide"] },
   { id: "setup", name: "Set up your account", to: "/settings/setup", keywords: ["setup", "setup wizard", "steps"] },

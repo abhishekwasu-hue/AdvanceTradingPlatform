@@ -89,7 +89,7 @@ def test_risk_rejected_paper_execute_produces_rejected_order(monkeypatch):
     assert order["id"] == order_id
     assert order["status"] == "REJECTED"
     assert order["trade_id"] is None
-    assert any("Max trades per day" in r for r in order["reasons"])
+    assert any("new entries today; your limit is" in r for r in order["reasons"])
 
     events = client.get(f"/api/orders/{order_id}/events", headers=headers).json()
     assert [e["to_status"] for e in events] == ["CREATED", "VALIDATING", "RISK_CHECK", "REJECTED"]

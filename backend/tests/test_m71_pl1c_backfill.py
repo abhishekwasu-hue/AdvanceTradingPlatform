@@ -220,3 +220,33 @@ def test_the_universe_is_what_the_owner_himself_uses(monkeypatch):
                                                      ("1H", False, True), ("15min", False, True), ("tick", False, False)])
 def test_interval_kinds(interval, daily, intraday):
     assert bf.is_daily(interval) is daily and bf.is_intraday(interval) is intraday
+
+
+def test_store_keys_from_the_feed_map_to_the_brokers_names():
+    assert (bf.parse_symbol("NSE_INDEX:NIFTY50").symbol, bf.parse_symbol("NSE_INDEX:NIFTY50").exchange) == ("NIFTY 50", "NSE")
+    assert bf.parse_symbol("BSE_INDEX:SENSEX").exchange == "BSE"
+    assert bf.parse_symbol("NSE:RELIANCE") == bf.to_symbol("RELIANCE")
+    with pytest.raises(ValueError):
+        bf.parse_symbol("MCX:CRUDEOIL")
+
+
+def test_the_feeds_gap_hook_queues_here_and_hears_back_when_written(monkeypatch):
+    import sys
+    import types
+    owner = Owner("m71-feed@example.com", monkeypatch)
+    broker = _broker()
+    assert owner.run(broker).complete
+    fake = types.ModuleType("app.market_data.feed_health")
+    fillers, marked = [], []
+    fake.register_gap_filler = fillers.append
+    fake.mark_gap_filled = lambda *a: marked.append(a) or True
+    monkeypatch.setitem(sys.modules, "app.market_data.feed_health", fake)
+    monkeypatch.setattr(bf, "_wall", lambda: NOW)
+    monkeypatch.setattr(bf, "_filler_session_factory", _session_factory)
+    assert bf.register_with_feed() and fillers == [bf.feed_filler]
+    start = datetime.combine(FRI, time(11, 0), tzinfo=IST)
+    end = start + timedelta(minutes=15)
+    assert _run(bf.feed_filler("NSE:RELIANCE", "5m", start, end)) is True
+    report = owner.drain(broker)
+    assert report.gaps_filled == 1
+    assert marked == [("NSE:RELIANCE", "5m", start, end, True)]

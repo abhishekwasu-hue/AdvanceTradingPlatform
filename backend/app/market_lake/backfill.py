@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib
 import logging
 import re
 import sys
@@ -274,7 +275,8 @@ async def _record(session: AsyncSession, tenant_id: int, user_id: int, key: str,
 async def request_gap_fill(symbol: str, interval: str, start: datetime, end: datetime, *,
                            credential: BrokerCredentialRecord | int | None = None, session_factory: Any = None,
                            now: datetime | None = None) -> None:
-    """QUEUES a gap of `symbol`'s bars between `start` and `end` (aware datetimes; naive = IST, as the brokers send them)
+    """The public queue entry (also what the read service calls); the same queue as the feed's filler (`feed_filler`).
+    QUEUES a gap of `symbol`'s bars between `start` and `end` (aware datetimes; naive = IST, as the brokers send them)
     for the paced gap drain - e.g. the live feed after a reconnect. Never calls the broker and never raises (the caller is
     a feed loop): a bad argument or a database error is logged and nothing is queued.
 
@@ -283,8 +285,26 @@ async def request_gap_fill(symbol: str, interval: str, start: datetime, end: dat
     - Intraday intervals (1m, 5m, 15m, 1H, ...) queue the 1-minute windows that overlap the range (the others are
       built from them). Dedupe: one row per window; a second request for an overlapping range widens the queued range.
     - Daily / Weekly never use the broker: a gap there is recorded as a data-quality event (the bhavcopy fills it)."""
+    await _queue(symbol, interval, start, end, credential=credential, session_factory=session_factory, now=now)
+
+
+def parse_symbol(symbol: str) -> Symbol:
+    """A store key ("NSE:RELIANCE", "NSE_INDEX:NIFTY50", "BSE_INDEX:SENSEX") or a name ("NIFTY", "RELIANCE")."""
+    if ":" in symbol:
+        by_key = _symbol_for_key(symbol.strip().upper()) if " " not in symbol.strip() else None
+        if by_key is not None:
+            return by_key
+        venue, _, name = symbol.rpartition(":")
+        return to_symbol(name, venue)
+    return to_symbol(symbol)
+
+
+async def _queue(symbol: str, interval: str, start: datetime, end: datetime, *,
+                 credential: BrokerCredentialRecord | int | None = None, session_factory: Any = None,
+                 now: datetime | None = None) -> bool:
+    """True when the gap is queued (or, for Daily / Weekly, recorded); False when nothing could be queued."""
     try:
-        sym = to_symbol(*symbol.rsplit(":", 1)[::-1]) if ":" in symbol else to_symbol(symbol)
+        sym = parse_symbol(symbol)
         lo, hi = sorted((_ist(start), _ist(end)))
         factory = session_factory or _default_session_factory()
         if is_daily(interval):
@@ -292,7 +312,7 @@ async def request_gap_fill(symbol: str, interval: str, start: datetime, end: dat
                 await quality.record(session, [quality.QualityEvent(
                     "gap", sym.key, DAILY, _utc(lo), DAILY_GAP_SOURCE,
                     f"Daily bars missing {lo.date()}..{hi.date()} - filled only from the NSE bhavcopy, never from the broker")])
-            return
+            return True
         if not is_intraday(interval):
             raise ValueError(f"{interval!r} is not an interval")
         async with factory() as session:
@@ -301,7 +321,7 @@ async def request_gap_fill(symbol: str, interval: str, start: datetime, end: dat
             first_day = max(lo.date(), today - timedelta(days=config.MARKET_BACKFILL_INTRADAY_DAYS))
             last_day = min(hi.date(), today)
             if first_day > last_day:
-                return
+                return False
             for ws, we in dh.windows(MINUTE, first_day, last_day):
                 row = await session.scalar(select(W).where(W.tenant_id == tenant_id, W.user_id == user_id, W.instrument_key == sym.key,
                                                            W.timeframe == MINUTE, W.window_start == ws))
@@ -312,8 +332,66 @@ async def request_gap_fill(symbol: str, interval: str, start: datetime, end: dat
                 await _record(session, tenant_id, user_id, sym.key, ws, we, status=GAP, error=gap_note(g_lo, g_hi, sym),
                               count_attempt=False)
             await session.commit()
+        return True
     except Exception:  # noqa: BLE001 - a feed loop calls this: a queue failure is logged, never raised into it
         logger.exception("M71 gap fill not queued for %s %s %s..%s", symbol, interval, start, end)
+        return False
+
+
+# --- the live feed's gap hook (PL-1b, app/market_data/feed_health.py) ---------------------------------------------------
+# Gaps the feed handed over in this process, by store key: (interval, start, end) exactly as asked, so the drain can
+# report each one written with `mark_gap_filled` (the admin's "gaps filled today").
+FEED_HEALTH = "app.market_data.feed_health"     # PL-1b's module (optional: absent until that PR is merged)
+_feed_gaps: dict[str, list[tuple[str, datetime, datetime]]] = {}
+_filler_session_factory: Any = None              # tests: the database the filler queues into (None = the app's)
+
+
+async def feed_filler(symbol: str, interval: str, start: datetime, end: datetime) -> bool:
+    """The filler the feed calls (`feed_health.register_gap_filler`): queues the END-labelled span (start, end] of the
+    store key `symbol` through the history owner's session. True = accepted (queued)."""
+    accepted = await _queue(symbol, interval, start, end, session_factory=_filler_session_factory)
+    if accepted and not is_daily(interval):
+        try:
+            key = parse_symbol(symbol).key
+        except ValueError:
+            return accepted
+        entry = (interval, start, end)
+        if entry not in _feed_gaps.setdefault(key, []):
+            _feed_gaps[key].append(entry)
+    return accepted
+
+
+def register_with_feed() -> bool:
+    """Registers `feed_filler` with the live feed's gap hook when that module exists (PL-1b); False without it."""
+    try:
+        feed_health = importlib.import_module(FEED_HEALTH)
+    except ImportError:
+        return False
+    register = getattr(feed_health, "register_gap_filler", None)
+    if register is None:
+        return False
+    register(feed_filler)
+    return True
+
+
+def _report_feed_gaps(key: str, lo: date, hi: date, fetched_at: datetime) -> int:
+    """After a window of `key` was written for [lo, hi]: tells the feed which of its gaps are now in the store."""
+    pending = _feed_gaps.get(key)
+    if not pending:
+        return 0
+    try:
+        feed_health = importlib.import_module(FEED_HEALTH)
+        mark = feed_health.mark_gap_filled
+    except (ImportError, AttributeError):
+        return 0
+    done = [g for g in pending if lo <= _ist(g[1]).date() and _ist(g[2]).date() <= hi and _utc(g[2]) <= _utc(fetched_at)]
+    for interval, start, end in done:
+        try:
+            mark(key, interval, start, end, True)
+        except Exception:  # noqa: BLE001 - a status report never fails the drain
+            logger.exception("M71: mark_gap_filled failed for %s", key)
+        pending.remove((interval, start, end))
+    return len(done)
 
 
 def _ist(ts: datetime) -> datetime:
@@ -443,7 +521,7 @@ async def _fetch(ctx: _Ctx, report: PassReport, sym: Symbol, lo: date, hi: date,
 
 
 async def _store(session_factory: Any, ctx: _Ctx, report: PassReport, sym: Symbol, raw: list[Any], parts: Sequence[tuple[date, date, date, date]],
-                 *, final_for: Callable[[date, date, int], str]) -> None:
+                 *, final_for: Callable[[date, date, int], str]) -> bool:
     """Writes the closed bars of every (window_start, window_end, ask_from, ask_to) part and records each window - in one
     transaction (nothing half written)."""
     bars, forming = dh.to_lake_bars(sym.target, MINUTE, raw, ctx.clock())
@@ -464,11 +542,13 @@ async def _store(session_factory: Any, ctx: _Ctx, report: PassReport, sym: Symbo
                 report.open += status == "open"
                 report.no_data += status == "no_data"
             await session.commit()
+            return True
         except Exception as exc:  # noqa: BLE001 - nothing of this request is kept; retried on the next pass
             await session.rollback()
             logger.exception("M71 backfill: storing %s failed", sym.key)
             report.failed += len(parts)
             report.notes.append(f"{sym.symbol}: not stored ({type(exc).__name__})")
+            return False
 
 
 async def _try_lock(session: AsyncSession, key: int) -> bool:
@@ -699,8 +779,9 @@ async def drain_gaps(session_factory: Any, *, now: datetime | None = None, clock
 
                 def final(we: date, a_hi: date, bars: int, _lc: date = last_closed) -> str:
                     return "done" if we <= _lc and bars else "open"
-                await _store(session_factory, ctx, report, sym, raw, [(r.window_start, r.window_end, lo, hi)], final_for=final)
-                report.gaps_filled += 1
+                if await _store(session_factory, ctx, report, sym, raw, [(r.window_start, r.window_end, lo, hi)], final_for=final):
+                    report.gaps_filled += 1
+                    _report_feed_gaps(sym.key, lo, hi, clock())
             if report.status == "ok" and report.remaining:
                 report.status = "no_session"
             return report

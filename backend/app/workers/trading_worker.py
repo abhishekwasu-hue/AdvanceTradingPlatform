@@ -341,6 +341,9 @@ class TradingWorker:
         self._market_backfill_day: Optional[date] = None
         self._market_gap_at = 0.0
         self._market_backfill_retry_at = 0.0
+        if app_config.MARKET_BACKFILL_ENABLED:
+            from app.market_lake import backfill as market_backfill
+            market_backfill.register_with_feed()   # PL-1b's gap hook -> this paced queue (a no-op without that module)
         self._intraday_adapters: Dict[Any, Any] = {}   # one owner adapter per IST day, reused by that evening's passes
         # TM 9.4: the owner's chain history - the last slot started, its task, the adapter of the day, the last report.
         self._last_chain_slot: Optional[datetime] = None

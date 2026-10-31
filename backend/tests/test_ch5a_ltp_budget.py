@@ -203,7 +203,7 @@ def test_tokens_are_counted_in_redis_per_credential_by_every_process(monkeypatch
     assert run(api_budget.try_take(41, "upstox")) is False                          # the shared minute window is full
     assert run(api_budget.try_take(42, "upstox")) is True                           # another member's own credential (BYOK)
     keys, argv = fake.evals[0]
-    assert keys[:3] == ("ab:{41}:tb", "ab:{41}:60", "ab:{41}:1800") and argv[:6] == (100, 100, 60, 3, 1800, 10)   # one hash slot
+    assert keys == ("ab:{41}:tb", "ab:{41}:60", "ab:{41}:1800", "bl:{41}:standard:1", "bl:{41}:standard:60", "bl:{41}:standard:1800") and argv[:6] == (100, 100, 60, 3, 1800, 10)   # one hash slot
     assert len(fake.zsets["ab:{41}:60"]) == 3                                      # the refused call counted nowhere
 
     _use_redis(monkeypatch, None)                                                  # Redis unreachable: the local window limits

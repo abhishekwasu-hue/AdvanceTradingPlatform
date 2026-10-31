@@ -315,7 +315,7 @@ class TradingWorker:
         self._last_vision_daily_check: Optional[datetime] = None
         self._then_warm_task: Optional["asyncio.Task[None]"] = None
         # M66 EN-3a: the signal engine runner (signals only) as one background task per worker, its own session.
-        self._engine_task: Optional["asyncio.Task[None]"] = None
+        self._engine_task: Optional[asyncio.Task[None]] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a

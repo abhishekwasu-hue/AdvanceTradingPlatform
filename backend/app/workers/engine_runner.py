@@ -40,8 +40,8 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -100,7 +100,7 @@ class Watch:
     """One symbol the runner reads: ATP's lake key, its exchange, the broker's name of it and the name shown."""
     key: str
     exchange: str = "NSE"
-    broker_symbol: Optional[str] = None
+    broker_symbol: str | None = None
     name: str = ""
 
     @property
@@ -170,7 +170,7 @@ async def _stored_settings(session: AsyncSession) -> dict[str, Any]:
     return dict(tenants) if isinstance(tenants, dict) else {}
 
 
-async def save_settings(session: AsyncSession, tenant_id: int, values: Mapping[str, Any], user: Optional[User]) -> RunnerSettings:
+async def save_settings(session: AsyncSession, tenant_id: int, values: Mapping[str, Any], user: User | None) -> RunnerSettings:
     """Store one organisation's runner settings (validated first; the caller checks the admin / owner role). Commits."""
     parsed = parse_settings(tenant_id, values)
     tenants = await _stored_settings(session)
@@ -195,7 +195,7 @@ def bar_end(start: datetime, timeframe: str, cal: Any) -> datetime:
     return min(start + timedelta(minutes=F.MINUTES[timeframe]), close)
 
 
-def due_bar(cal: Any, timeframe: str, now: datetime, delay_seconds: float) -> Optional[datetime]:
+def due_bar(cal: Any, timeframe: str, now: datetime, delay_seconds: float) -> datetime | None:
     """The END of the last `timeframe` bar that closed by (now - delay), from the calendar; None when there is none in
     the look-back. A bar that is still running is never due."""
     cut = now.astimezone(F.IST) - timedelta(seconds=delay_seconds)
@@ -213,8 +213,8 @@ def window_starts(cal: Any, timeframes: Sequence[str], as_of: datetime, cfg: Run
 
 # --- records (runtime_counters) --------------------------------------------------------------------------------------------
 
-def _iso(ts: Optional[datetime]) -> Optional[str]:
-    return ts.astimezone(timezone.utc).isoformat() if ts is not None else None
+def _iso(ts: datetime | None) -> str | None:
+    return ts.astimezone(UTC).isoformat() if ts is not None else None
 
 
 def _hash(text: str, size: int = 24) -> str:
@@ -230,12 +230,12 @@ def dedupe_key(tenant_id: int, symbol_key: str, timeframe: str, end: datetime, m
     return _hash(f"{int(tenant_id)}|{symbol_key}|{timeframe}|{_iso(end)}|{model_id}", 64)
 
 
-async def _counter(session: AsyncSession, name: str, key: str) -> Optional[RuntimeCounterRecord]:
+async def _counter(session: AsyncSession, name: str, key: str) -> RuntimeCounterRecord | None:
     return (await session.scalars(select(RuntimeCounterRecord).where(RuntimeCounterRecord.name == name,
                                                                      RuntimeCounterRecord.key == key).limit(1))).first()
 
 
-def _load(row: Optional[RuntimeCounterRecord]) -> dict[str, Any]:
+def _load(row: RuntimeCounterRecord | None) -> dict[str, Any]:
     if row is None:
         return {}
     try:
@@ -296,7 +296,7 @@ async def _unlock(name: str, holder: str) -> None:
 
 # --- the card text -------------------------------------------------------------------------------------------------------------
 
-def card_line(signal: EngineSignal, result: EngineResult, shown: str) -> tuple[Optional[str], Optional[str]]:
+def card_line(signal: EngineSignal, result: EngineResult, shown: str) -> tuple[str | None, str | None]:
     """(the text shown on the user's own signal, or None; a note for the admin when no text is shown). ATP writes the
     words from the card's token ids; the area range is the card's own, else the band of the area the signal refers to;
     the invalidation is never part of it."""
@@ -341,15 +341,15 @@ class SymbolRun:
     "busy" (another run holds the symbol), "missed" (reached after its grace window), "given_up" (attempts or grace used
     up) or the read's status; `outcome` is set when the bar was read on this cycle."""
     state: str
-    bar_end: Optional[datetime] = None
-    outcome: Optional[Outcome] = None
+    bar_end: datetime | None = None
+    outcome: Outcome | None = None
     final: bool = True
 
 
 @dataclass
 class RunReport:
     """What one `run_due` did (counts; the details are in the run records)."""
-    skipped: Optional[str] = None
+    skipped: str | None = None
     tenants: int = 0
     runs: int = 0
     signals: int = 0
@@ -381,7 +381,7 @@ async def _emit(session: AsyncSession, cfg: RunnerSettings, watch: Watch, user: 
         outcome.duplicates += 1
         return
     atp_signal = AtpSignal(symbol=watch.shown, strategy_id=STRATEGY_ID, strategy_name=DISPLAY_NAME,
-                           direction=DIRECTION_OF_SIDE[signal.side], timestamp=signal.bar_end.astimezone(timezone.utc), grade=SignalGrade.VALID,
+                           direction=DIRECTION_OF_SIDE[signal.side], timestamp=signal.bar_end.astimezone(UTC), grade=SignalGrade.VALID,
                            reasons=[text] if text else [], timeframe_combo=signal.timeframe)
     enriched = EnrichedSignal(signal=atp_signal, composite_score=0, grade=SignalGrade.VALID, breakdown={}, confirmations=[])
     record = await persist_signal_history(session, user, enriched)       # commits the row and its dedupe row together
@@ -414,7 +414,7 @@ async def _attempt(session: AsyncSession, cfg: RunnerSettings, watch: Watch, eng
     request = built.request
     try:
         result = await asyncio.wait_for(asyncio.to_thread(engine.read, request), timeout=cfg.read_timeout_seconds)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return Outcome(FAILED, "the engine did not answer in time", (), gaps, notes)
     except Exception as exc:  # noqa: BLE001 - a failing engine read is this bar's problem only
         logger.warning("Signal engine read failed for %s (%s)", watch.shown, exc.__class__.__name__)
@@ -446,7 +446,7 @@ def _record(due: datetime, now: datetime, attempt: int, outcome: Outcome, final:
 
 
 async def run_symbol(session: AsyncSession, cfg: RunnerSettings, watch: Watch, engine: TradeEngineProvider, user: User, broker: Any,
-                     now: datetime, *, collect: Collect = S.collect, holder: Optional[str] = None) -> SymbolRun:
+                     now: datetime, *, collect: Collect = S.collect, holder: str | None = None) -> SymbolRun:
     """One symbol on this cycle: read the due bar when it has not been read (or is being retried). Commits."""
     tf = cfg.signal_timeframe
     first = (now.astimezone(F.IST) - timedelta(days=max(cfg.daily_days, cfg.intraday_days) + DUE_LOOKBACK_DAYS + 7)).date()
@@ -499,7 +499,7 @@ async def run_symbol(session: AsyncSession, cfg: RunnerSettings, watch: Watch, e
         await _unlock(name, holder)
 
 
-async def run_due(session_factory: Any, now: Optional[datetime] = None, *, broker_for: Optional[BrokerFor] = None,
+async def run_due(session_factory: Any, now: datetime | None = None, *, broker_for: BrokerFor | None = None,
                   collect: Collect = S.collect) -> RunReport:
     """Every configured organisation with `trade_engine` ON, every symbol of its runner settings. A no-op (no database
     read) while the engine is not installed. Never raises for one organisation or symbol."""
@@ -507,7 +507,7 @@ async def run_due(session_factory: Any, now: Optional[datetime] = None, *, broke
     if engine is None:
         return RunReport(skipped="engine not installed")
     from app.platform.controls import flag_enabled
-    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    now = (now or datetime.now(UTC)).astimezone(UTC)
     report = RunReport()
     holder = uuid.uuid4().hex
     async with session_factory() as session:

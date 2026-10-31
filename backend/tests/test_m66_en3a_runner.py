@@ -12,7 +12,7 @@ import ast
 import asyncio
 import json
 import uuid
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 import pytest
@@ -187,7 +187,7 @@ def test_one_closed_bar_gives_one_signal_in_the_signals_table():
     row = rows[0]
     assert (row.user_id, row.strategy_id, row.symbol, row.direction, row.timeframe_combo) == (user_id, R.STRATEGY_ID, "TESTSTOCK", "LONG", "5m")
     assert row.entry is None and row.stop_loss is None and row.target1 is None and row.target2 is None and row.risk_reward is None
-    assert row.signal_time.replace(tzinfo=None) == at(D1, 10, 0).astimezone(F.timezone.utc).replace(tzinfo=None)
+    assert row.signal_time.replace(tzinfo=None) == at(D1, 10, 0).astimezone(UTC).replace(tzinfo=None)
     [text] = json.loads(row.reasons_json)
     assert text.startswith("TESTSTOCK · Buyer area: 99–100.")
     assert language.check(text, "signal_own", own_symbols=["TESTSTOCK"]) == []

@@ -27,7 +27,7 @@ from app.db.session import get_session
 from app.platform.controls import require_flag
 from app.screener import ranking as RK
 from app.screener.routes import FLAG as SCREENER_FLAG
-from app.screener.routes import MAX_SYMBOLS, fetch_frames, run_rate_limit
+from app.screener.routes import MAX_SYMBOLS, fetch_frames, run_rate_limit, store_first
 
 router = APIRouter(prefix="/api/screener/rankings", tags=["screener"])
 
@@ -197,8 +197,9 @@ async def run_system(body: RunBody, user: User = Depends(require_trader), sessio
             raise HTTPException(status_code=422, detail="; ".join(dict.fromkeys(missing)))
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
     tier: Dict[str, Any] = {}
+    store = await store_first(session, user.tenant_id)          # M71 W2-G: store-first, broker calls budgeted (flag on only)
     universe, problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, "1d", {"1d": system.lookback},
-                                                         user_id=user.id, tier_out=tier)
+                                                         user_id=user.id, tier_out=tier, store=store, budget_out={} if store else None)
     if system.sector_neutral and universe:
         from app.market_data.calendar import IST
         today = datetime.now(timezone.utc).astimezone(IST).date()

@@ -475,7 +475,8 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
     M71 PL-3 (`store`, the run route under the flag `market_store_reads` - `store_first`): the bars come store-first
     (`_store_frames`, app/market_store) - a closed-bar screen only; `include_forming` (intrabar alerts) keeps the broker
-    path below. Every other caller (alerts, breakouts, library, ranking, the Copilot tools) keeps it off (M71 wave 2).
+    path below. Breakouts, library, ranking and the Copilot screener tool pass it too (M71 W2-G, with `budget_out` so
+    every broker call left is paced); alerts keep it off (M71 wave 2).
     A missing session raises 409 (the fix is on the Broker page); never a fallback to client data.
     `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars).
 

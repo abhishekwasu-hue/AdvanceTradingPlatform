@@ -59,8 +59,9 @@ const BADGE: Record<ChipTone, string> = {
   brand: "border-brand/40 bg-brand/10 text-brand",
   ai: "border-ai/40 bg-ai/10 text-ai",
 };
-const PILL_BASE = "inline-flex h-5 shrink-0 items-center rounded-pill px-space-2 text-t12 font-medium";
-const BADGE_BASE = "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs font-semibold";
+// REV-S5: a chip or badge is one short label: it never wraps (a 375 px phone wrapped "MULTI-TIMEFRAME").
+const PILL_BASE = "inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-pill px-space-2 text-t12 font-medium";
+const BADGE_BASE = "inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-xs font-semibold";
 
 /** The chip's class string (exported for the pieces that style a link or a button as a chip). */
 export function chipClass({ tone = "neutral", variant = "tint", shape = "pill", icon = false, className }: {

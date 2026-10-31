@@ -77,6 +77,8 @@ class StructureResult:
     system_failure: bool = False
     # SE-7 (flag smart_execution): "COMPLETE" / "INCOMPLETE" / "NOTHING_PLACED" on the engine's path, None on the old one.
     state: Optional[str] = None
+    # M64 RM-3: a Risk limits refusal as data (app/risk_engine/risk_limits.block) for the block message.
+    blocks: list[dict] = field(default_factory=list)
 
     @property
     def keeps_entry_slot(self) -> bool:
@@ -213,34 +215,35 @@ async def execute_structure(
     # Phase R: `risk_per_unit` is the max loss of a defined-risk credit structure, the debit of a
     # debit structure, or the stop distance of an undefined-risk short straddle/strangle.
     # A ratio spread can be entered for (almost) nothing: the sizer still needs an entry > 0.
+    # M64 RM-4: the structure is judged as ONE position - its max loss is the risk per unit (a credit spread with its
+    # hedge leg is defined-risk and never reads as a naked short). An undefined-risk structure with no stop carries the
+    # "no stop" 0, so risk-based sizing falls back to the trader's own lots with a warning, never a refusal.
     basis = abs(metrics.net_credit) or 0.05
     sizing_signal = signal.model_copy(update={
         "symbol": structure.underlying_symbol, "direction": SignalDirection.SHORT, "entry": basis,
-        "stop_loss": round(basis + metrics.risk_per_unit, 2), "target1": None, "target2": None, "risk_reward": None,
+        "stop_loss": round(basis + metrics.risk_per_unit, 2) if metrics.risk_per_unit > 0 else 0.0,
+        "target1": None, "target2": None, "risk_reward": None,
     })
-    if cfg.risk_amount() is not None and metrics.risk_per_unit <= 0:
-        # DEF-0: the trader's risk per trade sizes off the loss the stop accepts - an undefined-risk structure needs his stop
-        reasons = list(structure.notes) + ["This structure has no limit to its loss and no stop-loss is set, so your risk per trade cannot size it. "
-                           "Set a stop for it, or clear the risk per trade in My limits."]
-        await _reject_all(session, orders, reasons)
-        return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
     decision = RiskManager(cfg).validate_and_size(sizing_signal, state, contract_spec=spec,
                                                   requested_quantity=float(rules.max_lots * lot) if rules.max_lots else None)
-    notes = list(structure.notes) + [_economics_note(metrics, lot)] + guardian_notes
+    notes = list(structure.notes) + [_economics_note(metrics, lot)] + guardian_notes + list(decision.warnings)
     if not decision.approved:
         reasons = notes + decision.reasons
+        await _log_blocks(session, user, decision.blocks, structure.underlying_symbol, strategy_id, orders[0].id, mode)
         await _reject_all(session, orders, reasons)
-        return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
+        return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics, blocks=decision.blocks)
     lots = int(decision.quantity // lot)
     if lots < 1:
-        reasons = notes + [f"Risk per lot ({metrics.risk_per_unit * lot:,.0f}) exceeds risk per trade ({cfg.risk_amount() or 0:,.0f})"]
+        reasons = notes + [f"One lot of this structure risks {metrics.risk_per_unit * lot:,.0f}, more than your risk per trade "
+                           f"({cfg.risk_amount() or 0:,.0f}). Change limit: Settings > Risk limits"]
         await _reject_all(session, orders, reasons)
         return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
     if rules.max_lots:
         lots = min(lots, rules.max_lots)
     if execution_mode == ExecutionMode.LIVE:
         try:
-            cap, note = await _live_lot_cap(broker, structure, debit_per_unit=-metrics.net_credit if metrics.debit else None, product=product)
+            cap, note = await _live_lot_cap(broker, structure, debit_per_unit=-metrics.net_credit if metrics.debit else None,
+                                            share=cfg.margin_share(), product=product)
         except ContractExecutionError as exc:
             reasons = notes + [str(exc)]
             await _reject_all(session, orders, reasons)
@@ -516,6 +519,15 @@ def _economics_note(metrics: StructureMetrics, lot: int) -> str:
             f"breakeven {be}; exits: {exits}")
 
 
+async def _log_blocks(session: AsyncSession, user: User, blocks: list[dict], symbol: str, strategy_id: str, order_id: int | None,
+                      mode: str) -> None:
+    """M64 RM-3: every Risk limits block of a structure goes to the journal's record (risk_events)."""
+    from app.risk_engine import risk_limits
+    for item in blocks:
+        await risk_limits.log_block(session, tenant_id=user.tenant_id, user_id=user.id, item=item, symbol=symbol, strategy_id=strategy_id,
+                                    order_id=order_id, mode=mode, source="structure")
+
+
 async def _held_margin_blocked(session: AsyncSession, user: User) -> float:
     """M55 T1: the margin his other PAPER structures held for days still block - each one's defined max loss (per unit,
     from its group metadata) x its quantity, as the option backtest's span_like margin counts a defined-risk structure."""
@@ -559,23 +571,26 @@ async def _hold_margin_refusal(session: AsyncSession, user: User, structure: Res
 
 
 async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *, debit_per_unit: Optional[float] = None,
-                        product: str = "MIS") -> Tuple[int, str]:
-    """Lots the account's margin allows: the broker's requirement for one lot of every short
-    leg (no spread benefit assumed - conservative) against MARGIN_SAFETY of available margin.
-    A structure with no short leg (Phase R long straddle/strangle) blocks exactly its debit, so
-    that is the per-lot number (Phase Q's premium rule)."""
+                        share: float = MARGIN_SAFETY, product: str = "MIS") -> Tuple[int, str]:
+    """Lots the account's margin allows against `share` of the available margin (M64: the trader's margin safety %
+    when he switched it on, else the whole available margin). M64 RM-4: the structure's margin is the broker's margin for
+    ALL its legs placed together (the hedge benefit included) when the broker reports one; otherwise the sum of the short
+    legs alone (no spread benefit assumed - conservative). A structure with no short leg (Phase R long
+    straddle/strangle) blocks exactly its debit, so that is the per-lot number (Phase Q's premium rule)."""
     if not structure.short_legs:
         if debit_per_unit is None or debit_per_unit <= 0:
             raise ContractExecutionError("No short leg and no debit to size the long-only structure's margin from - refused")
         per_lot = float(debit_per_unit) * structure.lot_size
         margins = await broker.get_margins()
         available = float(margins.available_margin or margins.available_cash or 0.0)
-        lots = int((available * MARGIN_SAFETY) // per_lot)
+        lots = int((available * share) // per_lot)
         if lots < 1:
             raise ContractExecutionError(f"Insufficient funds for the debit: {per_lot:,.0f} per lot needed, {available:,.0f} available")
         return lots, f"Debit {per_lot:,.0f}/lot, {available:,.0f} available -> at most {lots} lot(s)"
     per_lot = 0.0
-    for leg in structure.short_legs:
+    basket = await _structure_margin(broker, structure, product)
+    source = "for the whole structure"
+    for leg in (structure.short_legs if basket is None else []):
         probe = BrokerOrderRequest(
             symbol=leg.contract.instrument_key if _is_upstox(broker) and "|" in (leg.contract.instrument_key or "") else leg.contract.tradingsymbol,
             exchange=leg.contract.exchange, transaction_type=OrderSide.SELL, quantity=structure.lot_size * leg.ratio,
@@ -585,12 +600,31 @@ async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *
         if margin is None or margin <= 0:
             raise ContractExecutionError(f"{broker.name} did not report a margin requirement for {leg.contract.tradingsymbol} - refused")
         per_lot += float(margin)
+        source = "for the short legs"
+    if basket is not None:
+        per_lot = basket
     margins = await broker.get_margins()
     available = float(margins.available_margin or margins.available_cash or 0.0)
-    lots = int((available * MARGIN_SAFETY) // per_lot) if per_lot > 0 else 0
+    lots = int((available * share) // per_lot) if per_lot > 0 else 0
     if lots < 1:
-        raise ContractExecutionError(f"Insufficient margin for the short legs: {per_lot:,.0f} per lot needed, {available:,.0f} available")
-    return lots, f"Margin {per_lot:,.0f}/lot for the short legs, {available:,.0f} available -> at most {lots} lot(s)"
+        raise ContractExecutionError(f"Insufficient margin {source}: {per_lot:,.0f} per lot needed, {available:,.0f} available")
+    return lots, f"Margin {per_lot:,.0f}/lot {source}, {available:,.0f} available -> at most {lots} lot(s)"
+
+
+async def _structure_margin(broker: BrokerInterface, structure: ResolvedStructure, product: str = "MIS") -> float | None:
+    """M64 RM-4: the broker's margin for one lot of every leg placed together (hedge benefit included), or None when the
+    broker has no basket margin call or it fails - the caller then sums the short legs (never a made-up number)."""
+    requests = [BrokerOrderRequest(
+        symbol=leg.contract.instrument_key if _is_upstox(broker) and "|" in (leg.contract.instrument_key or "") else leg.contract.tradingsymbol,
+        exchange=leg.contract.exchange, transaction_type=OrderSide.SELL if leg in structure.short_legs else OrderSide.BUY,
+        quantity=structure.lot_size * leg.ratio, order_type="MARKET", product=product,
+    ) for leg in structure.legs]
+    try:
+        basket = await broker.get_basket_margin(requests)
+        required = float(basket.required) if basket is not None else None
+    except Exception:  # noqa: BLE001 - no basket number: the short legs' sum below
+        return None
+    return required if required is not None and math.isfinite(required) and required > 0 else None
 
 
 async def _place_live_legs(

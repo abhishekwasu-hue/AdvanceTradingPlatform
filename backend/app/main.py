@@ -127,6 +127,7 @@ from app.paper.fno_routes import router as paper_fno_router
 from app.paper.report_card_routes import router as paper_report_card_router
 from app.paper.routes import router as paper_router
 from app.paper.ticket_routes import router as paper_ticket_router
+from app.performance.routes import router as performance_router
 from app.platform.deployment_phase import on_startup as deployment_phase_startup
 from app.platform.health_routes import router as health_router
 from app.platform.readiness_routes import router as readiness_router
@@ -351,6 +352,7 @@ app.include_router(broker_router)
 app.include_router(broker_connect_router)   # P2a: simple broker connect (catalog, connections, connect, renew)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart
 app.include_router(trading_router)
+app.include_router(performance_router)   # REV-1 M2: the Performance page - the user's own trades only
 app.include_router(journal_router)  # Z6 / P1-e: journal, behaviour tags, discipline score (flag discipline_engine, off)
 app.include_router(custom_strategies_router)
 app.include_router(options_builder_router)  # P1-c: Options Strategy Builder (research only, no orders)

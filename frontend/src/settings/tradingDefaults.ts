@@ -23,7 +23,7 @@ import {
 } from "../types";
 
 export const DEFAULTS_PATH = "/settings/trading-defaults";
-export const RISK_LIMITS_PATH = "/risk-management";
+export const RISK_LIMITS_PATH = "/settings/risk-limits";    // M64: the one Risk limits page
 export const NAMESPACE = "trading_defaults";
 export const FROM_DEFAULTS = "from your defaults";
 

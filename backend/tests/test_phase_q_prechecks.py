@@ -25,7 +25,8 @@ from tests.test_live_execution import _upgrade_plan
 pytestmark = pytest.mark.usefixtures("owner_switched_live_on")  # M55 S1: the LIVE posture the owner switches on (conftest)
 
 TODAY = date(2026, 9, 28)
-RISK = RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0, max_open_positions=10, max_trades_per_day=50)
+# M64: margin safety is a switch (off = the whole available margin); these tests keep the old 80% switched on.
+RISK = RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0, max_open_positions=10, max_trades_per_day=50, margin_safety_pct=80.0)
 
 
 def _run(coro):

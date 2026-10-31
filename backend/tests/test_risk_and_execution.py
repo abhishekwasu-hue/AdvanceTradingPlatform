@@ -74,7 +74,7 @@ def test_risk_manager_rejects_when_daily_loss_limit_breached():
     state = TradingDayState(daily_pnl=-2500.0)
     decision = manager.validate_and_size(_sample_signal(), state)
     assert not decision.approved
-    assert any("Daily loss limit" in r for r in decision.reasons)
+    assert any("has reached your daily loss limit" in r for r in decision.reasons)
 
 
 def test_risk_manager_rejects_when_max_trades_reached():

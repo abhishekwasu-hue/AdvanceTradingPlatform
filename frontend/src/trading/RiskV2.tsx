@@ -18,6 +18,7 @@ import {
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, ShareBarV2, StateChipV2, TileV2, TilesV2 } from "./PartsV2";
 import { LIMIT_FIELDS as SETUP_LIMIT_FIELDS, RISK_LABELS, SETUP_PATH, limitText, type LimitField } from "../setup/model";
 import { MarketEventsV2, OrgLimitsV2, RiskChecksV2 } from "./RiskPartsV2";
+import { RISK_LIMITS_PATH } from "../settings/riskLimits";
 
 interface FieldSpec {
   key: keyof RiskConfig; label: string; unit?: string; hint?: GlossaryKey; ceiling?: string; minimum?: string; help: string; step?: string;
@@ -193,7 +194,7 @@ export default function RiskV2(_props: PageProps = {}) {
   return (
     <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="risk-v2">
       <PageIntro id="risk" lines={["Change a limit and save it."]} />
-      <PageTitleV2 title="Risk limits" subtitle={`How much you can lose today, and the rules ${entries} is checked against.`} />
+      <PageTitleV2 title="Risk status" subtitle={`How much you can lose today, and the rules ${entries} is checked against.`} />
 
       <CardV2 title="Today" testId="today" tour="risk-today">
         {!config && !loadFailed ? <LoadingRowsV2 rows={2} /> : loadFailed ? <LoadFailedV2 what="your limits" /> : (
@@ -259,7 +260,10 @@ export default function RiskV2(_props: PageProps = {}) {
 
       {notice && <NoteV2 kind={notice.kind} testId="save">{notice.text}</NoteV2>}
 
-      {config && (
+      {/* M64 RM-5: the limits are set on Settings › Risk limits (one source); this page keeps today's status. */}
+      <RiskLimitsLinkV2 />
+
+      {config && EDIT_LIMITS_HERE && (
         <form onSubmit={save} noValidate data-block="limits"
           className="rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card md:p-space-5">
           <h2 data-tour="risk-limits" className="text-t15 font-semibold text-fg">Your limits</h2>
@@ -286,6 +290,21 @@ export default function RiskV2(_props: PageProps = {}) {
       {/* UX-11b C5: said once for the page (it repeated in the intro, the guardian card and the pause choice). */}
       <PageFootnote>Exits are never blocked by these limits.</PageFootnote>
     </div>
+  );
+}
+
+/** M64 RM-5: the old limits form stays in the code but no longer shows - Settings › Risk limits is the one place to set
+ * them (every check a switch, off by default). */
+const EDIT_LIMITS_HERE: boolean = false;
+
+/** M64 RM-5: where the limits are set now. */
+export function RiskLimitsLinkV2() {
+  return (
+    <CardV2 title="Your limits" testId="risk-limits-link" tour="risk-limits-link">
+      <p className="text-t13 text-fg-muted">Each check is a switch, off by default.</p>
+      <Link to={RISK_LIMITS_PATH} className={`${BUTTON_SECONDARY} mt-space-3 inline-flex w-full items-center justify-center sm:w-auto`}
+        data-testid="open-risk-limits">Open Settings › Risk limits</Link>
+    </CardV2>
   );
 }
 

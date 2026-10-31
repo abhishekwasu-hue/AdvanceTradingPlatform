@@ -71,37 +71,34 @@ export function topBarNotices(status: SystemStatus | null, _user: UserResponse |
 }
 
 /**
- * H9: a title word is never cut, so on a narrow phone a long one-word title ("Strategies" at 360 px) can push the bar
- * past the screen edge. Then the title steps down one text size (t18 -> t15); it steps back up when there is room.
- * Measured, not guessed from the number of letters; only on a phone with colour v2 (the row's own overflow).
+ * H9 / REV-S5: the phone title stays whole on one line. Three steps, measured (not guessed from the number of letters),
+ * only on a phone with colour v2: 0 = the normal size on one line; 1 = one text size down (t18 -> t15), still on one line,
+ * when the bar would run past the screen edge; 2 = still too wide at the small size: the (?) moves under the title and,
+ * only as the last resort, the title wraps between words (never inside one, never cut). It steps back up when there is
+ * room (rotation). `extras`: what else sits in the row (PROSE-1: the (?) appears once the page has set its subtitle).
  *
  * REV-1 M3 (Settings at 375 px: the avatar was cut and the page scrolled sideways): the row is measured again whenever
- * one of its parts changes size (the Ask AI button, the tips button or the price dot arrive after the first paint),
- * and when even the smaller title does not fit it is cut with "..." ("tight") - the buttons always stay on screen.
+ * one of its parts changes size (the Ask AI button, the tips button or the price dot arrive after the first paint), so
+ * the buttons always stay on screen - by the steps above, never by cutting the title.
+ * 3 = even wrapped between words the row would run past the edge (a 320 / 375 px phone with Ask AI, the price dot,
+ * search, bell and avatar): the title then takes a line of its own under the buttons - never cut, every button on screen
+ * (the same step as M57, #784).
  */
-export type TitleFit = "normal" | "small" | "tight";
-
-export function useTitleFit(row: RefObject<HTMLElement | null>, title: string, enabled: boolean, extras = ""): TitleFit {
-  const [fit, setFit] = useState<TitleFit>("normal");
+export type TitleFit = 0 | 1 | 2 | 3;
+export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean, extras = ""): TitleFit {
+  const [fit, setFit] = useState<TitleFit>(0);
   useLayoutEffect(() => {
-    if (!enabled) { setFit("normal"); return; }
+    if (!enabled) { setFit(0); return; }
     const check = () => {
       const el = row.current;
       if (!el) return;
       const phone = window.matchMedia?.("(max-width: 767.98px)").matches ?? false;
-      if (!phone) { setFit("normal"); return; }
-      // Measured without the cut: at the normal size first (a wider screen - rotation - gets the larger title back),
-      // then at the smaller size. The attributes are put back before the browser paints.
-      const span = el.querySelector<HTMLElement>("[data-topbar-title]");
-      const size = span?.dataset.titleSize;
-      if (span) delete span.dataset.titleSize;
-      el.dataset.titleFit = "measure";
-      const big = el.scrollWidth > el.clientWidth;
-      el.dataset.titleFit = "small";
-      const smaller = el.scrollWidth > el.clientWidth;
+      if (!phone) { setFit(0); return; }
+      // Measure at the normal size first, then one size down, both on one line.
+      const overflowsAt = (mode: string) => { el.dataset.titleFit = mode; return el.scrollWidth > el.clientWidth; };
+      const next: TitleFit = !overflowsAt("measure") ? 0 : !overflowsAt("measure-small") ? 1 : !overflowsAt("measure-wrap") ? 2 : 3;
       delete el.dataset.titleFit;
-      if (span && size !== undefined) span.dataset.titleSize = size;
-      setFit(!big ? "normal" : smaller ? "tight" : "small");
+      setFit(next);
     };
     check();
     // The web font arrives after the first paint and changes the title's width: measure again then.
@@ -116,16 +113,27 @@ export function useTitleFit(row: RefObject<HTMLElement | null>, title: string, e
     const parts = el && typeof MutationObserver === "function" ? new MutationObserver(() => { watch(); check(); }) : null;
     if (el) parts?.observe(el, { childList: true });
     return () => { live = false; window.removeEventListener("resize", check); sizes?.disconnect(); parts?.disconnect(); };
-    // `extras`: what else sits in the row (PROSE-1: the (?) appears once the page has set its subtitle), so the row is
-    // measured again when it changes.
   }, [row, title, enabled, extras]);
   return fit;
 }
 
-/** True when the title is shown one size smaller (or cut): see useTitleFit. */
-export function useTitleFits(row: RefObject<HTMLElement | null>, title: string, enabled: boolean, extras = ""): boolean {
-  return useTitleFit(row, title, enabled, extras) !== "normal";
-}
+/** The title's classes per step (colour v2); the `measure*` modes force a size, on one line, while the row is measured. */
+const TITLE_FIT_CLASS: Record<TitleFit, string> = {
+  0: "text-t18 whitespace-nowrap",
+  1: "text-t15 whitespace-nowrap",
+  2: "text-t15",
+  3: "text-t15",
+};
+const TITLE_MEASURE = "group-data-[title-fit=measure-wrap]/bar:text-t15 group-data-[title-fit=measure-wrap]/bar:whitespace-normal "
+  + "group-data-[title-fit=measure]/bar:text-t18 group-data-[title-fit=measure]/bar:whitespace-nowrap "
+  + "group-data-[title-fit=measure-small]/bar:text-t15 group-data-[title-fit=measure-small]/bar:whitespace-nowrap";
+const GROUP_MEASURE = "group-data-[title-fit=measure]/bar:flex-nowrap group-data-[title-fit=measure-small]/bar:flex-nowrap "
+  + "group-data-[title-fit=measure-wrap]/bar:flex-wrap group-data-[title-fit=measure]/bar:order-none "
+  + "group-data-[title-fit=measure-small]/bar:order-none group-data-[title-fit=measure-wrap]/bar:order-none "
+  + "group-data-[title-fit=measure]/bar:basis-auto group-data-[title-fit=measure-small]/bar:basis-auto group-data-[title-fit=measure-wrap]/bar:basis-auto";
+/** Step 3: the row wraps so the title group sits on its own line under the buttons; never while the row is measured. */
+const ROW_MEASURE = "data-[title-fit=measure]:flex-nowrap data-[title-fit=measure-small]:flex-nowrap data-[title-fit=measure-wrap]:flex-nowrap "
+  + "data-[title-fit=measure]:py-0 data-[title-fit=measure-small]:py-0 data-[title-fit=measure-wrap]:py-0";
 
 export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false, onTour, section = null, onAskAi, askAiOpen = false }: TopBarV2Props) {
   const colour = useColourV2();
@@ -139,14 +147,13 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
   const help = usePageHelp();
   // PROSE-1: the page's subtitle sits behind the same (?), first - never a line under the title.
   const subtitle = usePageSubtitle();
-  const fit = useTitleFit(row, title, colour, `${help ? "h" : ""}${subtitle ? "s" : ""}${onTour ? "t" : ""}`);
-  const small = fit !== "normal";
+  const fit = useTitleFits(row, title, colour, `${help ? "h" : ""}${subtitle ? "s" : ""}${onTour ? "t" : ""}`);
   // UX-7: the price-feed dot, only with live prices on (flag `data_hub`) for a signed-in user.
   const liveOn = useFeatures().on("data_hub") && !!user;
 
   return (
     <header className="shrink-0 border-b border-subtle bg-surface-1 pt-[env(safe-area-inset-top)]">
-      <div ref={row} className={`group/bar flex ${colour ? "min-h-14" : "h-14"} items-center gap-space-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] md:px-space-8`}>
+      <div ref={row} data-title-step={colour ? fit : undefined} className={`group/bar flex ${colour ? `min-h-14 ${fit === 3 ? "flex-wrap gap-y-0 pb-space-2" : ""} ${ROW_MEASURE} md:flex-nowrap md:pb-0` : "h-14"} items-center gap-space-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] md:px-space-8`}>
         {/* CT-1 C10: on a phone the Ask AI button takes the mark's room (Today is in the bottom bar), so a title such as
             "Option chain" is not cut. */}
         <Link to="/" aria-label="AiAlgoDesk - Dashboard" className={`shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:hidden ${onAskAi ? "hidden" : ""}`}>
@@ -156,14 +163,14 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
         {tint && SectionIcon && (
           <span aria-hidden data-section-chip={tint} data-topbar-chip className={`${sectionChipClass(tint, "sm")} md:hidden`}><SectionIcon size={16} /></span>
         )}
-        {/* PROSE-1 / H9: with colour v2 the title and its (?) share one group that may wrap, so on a narrow phone the (?)
-            moves under the title instead of pushing the bar past the edge; with colour v2 off the group is invisible to
-            the layout (`contents`) and the bar is as before. */}
-        <span data-topbar-title-group className={colour ? "flex shrink flex-wrap items-center gap-x-space-2 has-[[data-title-size=tight]]:min-w-0 md:min-w-0 md:flex-nowrap" : "contents"}>
-          {/* With colour v2 (CA7) the title wraps on a phone instead of being cut (H9): only between words, never inside one
-              (no min-w-0 there, so the longest word sets its width); with it off the bar is as before. */}
-          <span data-topbar-title data-title-size={fit === "normal" ? undefined : fit}
-            className={`shrink ${small ? "text-t15 group-data-[title-fit=measure]/bar:text-t18" : "text-t18 group-data-[title-fit=small]/bar:text-t15"} font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:normal] [word-break:normal] data-[title-size=tight]:min-w-0 data-[title-size=tight]:truncate md:min-w-0 md:truncate md:py-0" : "min-w-0 truncate"}`}>{title}</span>
+        {/* PROSE-1 / H9 / REV-S5: with colour v2 the title and its (?) share one group, on one line; only at the last step
+            (still too wide one size down) the (?) moves under the title instead of pushing the bar past the edge. With
+            colour v2 off the group is invisible to the layout (`contents`) and the bar is as before. */}
+        <span data-topbar-title-group className={colour ? `flex shrink ${fit >= 2 ? "flex-wrap" : "flex-nowrap"} ${fit === 3 ? "order-last basis-full" : ""} items-center gap-x-space-2 ${GROUP_MEASURE} md:order-none md:basis-auto md:shrink-0 md:flex-nowrap` : "contents"}>
+          {/* With colour v2 (CA7) the title is never cut on a phone (H9): one line, one size down when needed, and only as
+              the last resort a wrap between words (no min-w-0 there, so the longest word sets its width). */}
+          <span data-topbar-title data-title-size={fit ? "small" : undefined}
+            className={`shrink ${colour ? `${TITLE_FIT_CLASS[fit]} ${TITLE_MEASURE}` : "text-t18"} font-semibold text-fg md:text-t15 ${colour ? "py-space-1 leading-tight [overflow-wrap:normal] [word-break:normal] md:whitespace-nowrap md:py-0" : "min-w-0 leading-tight [overflow-wrap:normal] md:min-w-fit md:whitespace-nowrap"}`}>{title}</span>
           {/* UX-6: the page's help line (and its tips) behind one (?) beside the title - never a paragraph above the data. */}
           {(help || subtitle) && (
             <HelpPopover title={title} className={colour ? "shrink-0" : "-ml-space-1 shrink-0"}>
@@ -186,7 +193,7 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
           </button>
         )}
         <button type="button" onClick={onSearch} aria-label={`${COMMAND_LABEL} (${shortcut})`} aria-haspopup="dialog"
-          className="ml-space-4 hidden h-9 w-full max-w-[420px] items-center gap-space-2 rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg-muted transition-colors duration-fast hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:flex">
+          className="ml-space-4 hidden h-9 w-full min-w-0 max-w-[420px] items-center gap-space-2 rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg-muted transition-colors duration-fast hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:flex">
           <Search size={16} aria-hidden className="shrink-0" />
           <span className="flex-1 truncate text-left">{COMMAND_HINT}</span>
           <kbd className="shrink-0 rounded-control border border-border bg-surface-1 px-space-1 text-t12 text-fg-muted">{shortcut}</kbd>

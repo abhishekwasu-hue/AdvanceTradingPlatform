@@ -160,7 +160,10 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   { ...item("coach", "Coach", "How am I doing?", "/analytics/coach", GraduationCap, { keywords: ["coach and guide", "trade coach", "guide", "learn"] }), section: "insights" },
   { ...item("fundamentals", "Company research", "Company research", "/fundamentals", Building2, { keywords: ["fundamental analysis", "fundamentals"] }), section: "insights" },
   // Settings' sub-pages (audit section 5: "set-once pages leave the main nav"); the Settings index lists them too.
-  { ...item("risk-management", "Risk limits", "Risk limits", "/risk-management", Shield, { keywords: ["risk", "risk management", "limits", "daily loss"] }), section: "account" },
+  // M64 RM-5: the limits themselves live on Settings › Risk limits; /risk-management keeps today's risk status (pauses, events).
+  { ...item("settings-risk-limits", "Risk limits", "Risk limits", SETTINGS_PATH["risk-limits"], Shield,
+    { keywords: ["risk limits", "limits", "daily loss", "max lots", "max positions", "cool-down", "margin safety", "risk per trade", "reward risk"] }), section: "account" },
+  { ...item("risk-management", "Risk status", "Risk status", "/risk-management", Shield, { keywords: ["risk", "risk management", "risk today", "pause"] }), section: "account" },
   { ...item("team", "Team", "Team", "/team", Users, { keywords: ["members", "invite"] }), section: "account" },
   { ...item("notifications", "Notifications", "Notifications", "/notifications", Bell, { keywords: ["alerts", "inbox"] }), section: "account" },
   { ...item("account", "Account", "Account", "/settings/account", UserCircle2, { keywords: ["profile", "password", "two-factor", "sessions", "email"] }), section: "account" },
@@ -193,7 +196,7 @@ const NAV_HOME: Partial<Record<ShellKey, ShellKey>> = {
   scanner: "screener", "options-builder": "option-chain",
   "risk-management": "settings", team: "settings", account: "settings", setup: "settings", "trading-defaults": "settings",
   "settings-ai": "settings", "settings-alerts": "settings", "settings-appearance": "settings", "settings-help": "settings",
-  "settings-advanced": "settings",
+  "settings-advanced": "settings", "settings-risk-limits": "settings",
 };
 
 /** The sidebar / bottom bar entry that shows as current for the page on screen. */

@@ -311,7 +311,8 @@ describe("CA6-CA8 (owner, 25 Oct): the phone - bottom bar, top bar and the Today
     // H9: no truncation on a phone (wraps instead; the bar grows), one line from md up.
     const title = /data-topbar-title="true" class="([^"]*)"/.exec(bar(true, "markets", "Sectors & indices"))![1].split(" ");
     expect(title).not.toContain("truncate");
-    expect(title).toContain("md:truncate");
+    expect(title).not.toContain("md:truncate");
+    expect(title).toContain("md:whitespace-nowrap");
     // H9 (26 Oct): wrap only between words - never "Watchlis / t" - so no break-anywhere and no phone min-w-0.
     expect(title).not.toContain("[overflow-wrap:anywhere]");
     expect(title).toContain("[overflow-wrap:normal]");

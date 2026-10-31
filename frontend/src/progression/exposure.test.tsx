@@ -33,7 +33,7 @@ const MOVE: ExpectedMove = {
 describe("exposure helpers (N2-4)", () => {
   it("formats rupees and orders the pairs by strength", () => {
     expect(rupees0(1440.4)).toBe("₹1,440");
-    expect(rupees0(-6750)).toBe("-₹6,750");
+    expect(rupees0(-6750)).toBe("−₹6,750");
     expect(strongestPairs(VIEW).map((p) => p.b)).toEqual(["NIFTY 50", "CCC"]);
   });
 

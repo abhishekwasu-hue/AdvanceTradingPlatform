@@ -37,7 +37,13 @@ sideways scroll, nothing behind the bottom bar; on a desktop the original and th
 and volume are read from the picture and may be approximate"**; prices are marked approximate everywhere (the
 alert form says so too). Annotations are drawn as an overlay on the user's own image, in that image's pixel space.
 
-**B. Hybrid (PR-B, PR-C).** Shown in PR-A, disabled, "Coming soon".
+**B. Hybrid (PR-B, PR-C).** Built in M59 CR-4 (flag `chart_analyze_hybrid`, OFF until the owner's ✅) as
+"Advanced analysis (code + AI)": the user picks the symbol and timeframe (never read from the picture); the server reads
+ATP's own structure reading of the stored candles (app/chart_analyze/hybrid.py) and code draws it on a server-rendered
+chart of those candles (app/chart_analyze/reading_png.py), shown BESIDE the user's picture - the picture's price axis is
+not known, so nothing is drawn on it. The engine's optional hybrid entry point (`HybridProvider`) gets only the generic
+facts; without it the result is "Advanced analysis (code)". Steps 1-4 below (recognise, broker data, match check)
+remain the longer plan.
 
 1. **Recognise**: symbol, exchange, timeframe, the visible time range (first and last candle on the axis) and the
    price scale, shown as **editable fields**.
@@ -166,7 +172,8 @@ Decided per this note's PR-D proposal and CLAUDE.md (logged as CA-11 to CA-14):
 | `GET /api/chart-analyze/items` | the caller's history (no result bodies; a summary per item) |
 | `GET /api/chart-analyze/items/{id}` | one item with its result |
 | `GET /api/chart-analyze/items/{id}/image` | the cleaned image (410 when retention removed the file) |
-| `POST /api/chart-analyze/items/{id}/analyze` | runs Image only (hybrid: 409 "coming soon"); a done item is returned, not re-run |
+| `POST /api/chart-analyze/items/{id}/analyze` | runs AI only, or hybrid (M59 CR-4, flag `chart_analyze_hybrid` too); a done item is returned, not re-run |
+| `GET /api/chart-analyze/items/{id}/reading.png` | M59 CR-4: a hybrid item's annotated chart of ATP's reading, drawn by code from the candles stored with the result |
 | `GET /api/chart-analyze/items/{id}/strikes?symbol=` | PR-A3, flag `chart_analyze_strikes` too: the strikes block (409 `not_analysed` before a result) |
 | `DELETE /api/chart-analyze/items/{id}` | deletes the image and the result |
 | `POST / DELETE /api/chart-analyze/items/{id}/share` | PR-A4: a new organisation-only link (flag `chart_analyze_share` too) / stop it (always allowed) |
@@ -175,7 +182,8 @@ Decided per this note's PR-D proposal and CLAUDE.md (logged as CA-11 to CA-14):
 
 Errors are JSON `{message, code}`: `link_unreadable` (422, message "Please upload a screenshot instead" plus a short
 reason), `image_rejected` (413 / 415 / 422), `limit_reached` (429), `not_in_plan` (402), `engine_not_installed` (503),
-`no_ai` (409), `hybrid_soon` (409), `storage_unavailable` (503). Flag off: the platform's standard 503 with
+`no_ai` (409), `hybrid_off` (409; the admin also gets the flag and where to switch it), `symbol_required` /
+`bad_symbol` / `timeframe_required` / `bad_timeframe` (422), `not_shareable` (409, a hybrid item), `storage_unavailable` (503). Flag off: the platform's standard 503 with
 `X-Feature-Disabled: chart_analyze`. Every route is in `backend/tests/tenancy_route_table.py`.
 
 ## 6. Upload and link-fetch security

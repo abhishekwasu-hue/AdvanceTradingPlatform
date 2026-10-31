@@ -24,7 +24,6 @@ from app.db.models import ChartAnalysisRecord, Tenant, User
 logger = logging.getLogger(__name__)
 
 MODES = ("image_only", "hybrid")
-HYBRID_SOON = "Hybrid analysis is coming soon. Use Image only for now."
 READY, RUNNING, DONE, FAILED, DELETED = "ready", "running", "done", "failed", "deleted"
 HISTORY_MAX = 100
 
@@ -39,10 +38,13 @@ def _iso(value: Optional[datetime]) -> Optional[str]:
     return (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).isoformat()
 
 
-def as_dict(row: ChartAnalysisRecord, *, with_result: bool = True, now: Optional[datetime] = None) -> Dict[str, Any]:
+def as_dict(row: ChartAnalysisRecord, *, with_result: bool = True, now: datetime | None = None) -> dict[str, Any]:
     """The owner's view of one item. The share link's state (stored with the result, share.py) is never part of
-    `result`; the owner sees it as `share` (the live link's token and expiry, or None)."""
+    `result`; the owner sees it as `share` (the live link's token and expiry, or None). A hybrid item (M59 CR-4) has
+    no `result`: its reading is `hybrid` (once done) and the symbol / timeframe the user picked is `pick`."""
     parsed, state = share.split(row.result_json)
+    if row.mode == "hybrid":
+        return _hybrid_dict(row, parsed if row.status == DONE else None, with_result=with_result)
     summary = None
     if parsed is not None:
         try:
@@ -58,6 +60,20 @@ def as_dict(row: ChartAnalysisRecord, *, with_result: bool = True, now: Optional
             "created_at": _iso(row.created_at), "analysed_at": _iso(row.analysed_at), "summary": summary,
             "result": parsed if with_result else None, "share": link,
             "label": contract.IMAGE_ONLY_LABEL if row.mode == "image_only" else None, "disclaimer": contract.DISCLAIMER}
+
+
+def _hybrid_dict(row: ChartAnalysisRecord, parsed: dict[str, Any] | None, *, with_result: bool) -> dict[str, Any]:
+    from app.chart_analyze import hybrid
+    done = parsed if isinstance(parsed, dict) and parsed.get("mode") == "hybrid" else None
+    return {"id": row.id, "mode": row.mode, "source": row.source, "source_host": row.source_host, "status": row.status,
+            "image": {"width": row.image_width, "height": row.image_height, "url": f"/api/chart-analyze/items/{row.id}/image"},
+            "reading_png": f"/api/chart-analyze/items/{row.id}/reading.png" if done else None,
+            "error": row.error, "provider": row.provider, "model": row.model, "engine_version": row.engine_version,
+            "billed_to_user_key": bool(row.billed_to_user_key), "cost_usd": round(float(row.cost_usd or 0.0), 6),
+            "created_at": _iso(row.created_at), "analysed_at": _iso(row.analysed_at),
+            "summary": hybrid.summary(done) if done else None, "result": None, "hybrid": done if with_result else None,
+            "pick": hybrid.stored_pick(row.result_json), "share": None,
+            "label": done["label"] if done else hybrid.LABEL_CODE_AI, "disclaimer": contract.DISCLAIMER}
 
 
 def ai_floor_minutes() -> int:
@@ -97,15 +113,21 @@ async def own(session: AsyncSession, user: User, item_id: int) -> ChartAnalysisR
 
 
 async def add_item(session: AsyncSession, user: User, tenant: Tenant, settings: Dict[str, Any], clean: imaging.CleanImage, *,
-                   mode: str, source: str, source_host: Optional[str], now: Optional[datetime] = None) -> ChartAnalysisRecord:
-    """Stores the cleaned image and its row. The plan limit is checked first (nothing is written when it refuses)."""
+                   mode: str, source: str, source_host: Optional[str], now: Optional[datetime] = None,
+                   pick: dict[str, str] | None = None) -> ChartAnalysisRecord:
+    """Stores the cleaned image and its row. The plan limit is checked first (nothing is written when it refuses).
+    A hybrid item keeps the symbol / timeframe the user picked with the row (`_pick`, until its result replaces it)."""
+    from app.chart_analyze import hybrid
+    if mode == "hybrid" and pick is None:
+        raise ValueError("a hybrid item needs the user's pick")
     now = now or _utcnow()
     await limits.check_can_add(session, user, tenant, settings, now, lock=True)     # serialised per user until the commit below
     name = storage.new_name(user.tenant_id)
     storage.write(name, clean.png)
     row = ChartAnalysisRecord(tenant_id=user.tenant_id, user_id=user.id, mode=mode, source=source, source_host=source_host, status=READY,
                               image_path=name, image_sha256=clean.sha256, image_width=clean.width, image_height=clean.height,
-                              image_bytes=len(clean.png), created_at=now)
+                              image_bytes=len(clean.png), created_at=now,
+                              result_json=json.dumps({hybrid.PICK_KEY: pick}, separators=(",", ":")) if mode == "hybrid" else None)
     session.add(row)
     try:
         await session.flush()
@@ -122,8 +144,12 @@ async def analyze(session: AsyncSession, user: User, tenant: Tenant, settings: D
                   client: Optional[Any] = None, now: Optional[datetime] = None) -> ChartAnalysisRecord:
     now = now or _utcnow()
     row = await own(session, user, item_id)
+    pick = None
     if row.mode == "hybrid":
-        raise HTTPException(status_code=409, detail={"message": HYBRID_SOON, "code": "hybrid_soon"})
+        from app.chart_analyze import hybrid
+        pick = hybrid.stored_pick(row.result_json)
+        if pick is None and row.status != DONE:
+            raise HTTPException(status_code=409, detail={"message": "Add the chart again and pick its symbol and timeframe.", "code": "pick_missing"})
     if row.status == DONE:
         return row
     if row.status == RUNNING and not is_stale(row, settings, now):
@@ -143,6 +169,8 @@ async def analyze(session: AsyncSession, user: User, tenant: Tenant, settings: D
         raise HTTPException(status_code=409, detail={"message": "This chart is being analysed already.", "code": "running"})
     await session.commit()
     try:
+        if pick is not None:
+            return await _run_hybrid(session, user, tenant, settings, row.id, engine, item_id, pick, client=client, now=now)
         return await _run(session, user, tenant, settings, row, engine, png, item_id, client=client, now=now)
     except BaseException:
         # A cancelled request, a dropped connection or anything unexpected: the row never stays "running". The cleanup is
@@ -187,6 +215,64 @@ async def _run(session: AsyncSession, user: User, tenant: Tenant, settings: Dict
         return await own(session, user, item_id)
     if await _finish(session, row.id, now, DONE, result=json.dumps(result, separators=(",", ":")), cost=answer.cost_usd, **values):
         await write_audit_log(session, user.tenant_id, user.id, "chart_analyze_done", f"#{row.id} {answer.provider}")
+        await session.commit()
+    return await own(session, user, item_id)
+
+
+async def _run_hybrid(session: AsyncSession, user: User, tenant: Tenant, settings: dict[str, Any], row_id: int, engine: Any, item_id: int,
+                      pick: dict[str, str], *, client: Any | None, now: datetime) -> ChartAnalysisRecord:
+    """M59 CR-4: ATP's own reading of the stored candles for the user's pick, drawn by code; then, only when the engine
+    has the hybrid entry point, its AI part on those generic facts and ATP's rendered chart (never the user's picture,
+    never a price read from it). Without the entry point - or when the AI part cannot run - the result is the code
+    reading alone. The layer releases the session while it builds, so only ids are used after it (no lazy loads)."""
+    from app.chart_analyze import hybrid, reading_png
+    try:
+        reading = await hybrid.read(session, user, pick, now=now)
+        png = await anyio.to_thread.run_sync(reading_png.render, reading)
+    except hybrid.ReadingUnavailable as exc:
+        await _finish(session, row_id, now, FAILED, error=str(exc)[:300])
+        return await own(session, user, item_id)
+    except ValueError:
+        await _finish(session, row_id, now, FAILED, error=f"ATP has no stored candles to draw for {pick['symbol']} on this timeframe yet."[:300])
+        return await own(session, user, item_id)
+    width, height = reading_png.WIDTH, reading_png.HEIGHT
+    notes: list[str] = []
+    ai: dict[str, Any] | None = None
+    ai_version: dict[str, str] | None = None
+    cost = 0.0
+    values: dict[str, Any] = {"analysed_at": now, "engine_version": "ATP structure reading (code)"}
+    if engine_provider.supports_hybrid(engine):
+        facts = hybrid.facts(reading, width=width, height=height)
+        answer = None
+        try:
+            instr = engine.hybrid_instructions(width=width, height=height, facts=facts)
+            answer = await ask(session, user, tenant, instr, png, settings, now=now, client=client)
+        except EngineUnavailable as exc:
+            notes.append(f"The AI part did not run: {exc}")
+        except HTTPException:
+            await _finish(session, row_id, now, READY)
+            raise
+        except Exception as exc:  # noqa: BLE001 - the code reading still stands; the AI part is left out
+            logger.warning("Chart analysis %s: the hybrid AI part failed (%s)", row_id, exc.__class__.__name__)
+            notes.append("The AI part could not run this time; ATP's reading is shown on its own.")
+        if answer is not None:
+            cost = answer.cost_usd
+            values.update(provider=answer.provider[:20], model=(answer.model or "")[:80] or None, billed_to_user_key=answer.billed_to_user_key,
+                          engine_version=f"{engine.name} {engine.version} / {engine.method_version}"[:80])
+            if answer.error is not None:
+                notes.append(f"The AI could not answer: {answer.error}"[:300])
+            else:
+                try:
+                    raw = engine.parse_hybrid(answer.text or "", facts=facts)
+                    ai = contract.validate(raw, mode="hybrid", width=width, height=height)
+                    ai_version = {"version": str(raw.get("version") or engine.version)[:40],
+                                  "method_version": str(raw.get("method_version") or engine.method_version)[:64]}
+                except Exception as exc:  # noqa: BLE001 - an unreadable reply leaves the AI part out, never a partial one
+                    logger.info("Chart analysis %s: the hybrid reply did not fill the contract (%s)", row_id, exc.__class__.__name__)
+                    notes.append("The AI's answer could not be read; ATP's reading is shown on its own.")
+    result = hybrid.result(pick, reading, width=width, height=height, ai=ai, notes=notes, ai_version=ai_version)
+    if await _finish(session, row_id, now, DONE, result=json.dumps(result, separators=(",", ":")), cost=cost, **values):
+        await write_audit_log(session, user.tenant_id, user.id, "chart_analyze_done", f"#{row_id} hybrid {result['method']}")
         await session.commit()
     return await own(session, user, item_id)
 
@@ -237,6 +323,9 @@ async def start_sharing(session: AsyncSession, user: User, item_id: int, setting
     """A new organisation-only link for the caller's own finished analysis (any older link stops working)."""
     now = (now or _utcnow()).replace(microsecond=0)
     row = await own(session, user, item_id)
+    if row.mode == "hybrid":
+        from app.chart_analyze import hybrid
+        raise HTTPException(status_code=409, detail={"message": hybrid.NOT_SHAREABLE, "code": "not_shareable"})
     _, state = share.split(row.result_json)
     await _set_share_state(session, row, share.new_state(state, now, int(settings["share_expiry_days"])))
     await write_audit_log(session, user.tenant_id, user.id, "chart_analyze_shared", f"#{item_id}")

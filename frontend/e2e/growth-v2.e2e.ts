@@ -127,7 +127,9 @@ test.describe("growth v2 behaviour", () => {
 
   test("growth_v2 off: no share card on the Journal, nothing asked for", async ({ page }) => {
     const { asked } = await openJournal(page, "light", { ...JOURNAL_ON, growth_v2: false });
-    await expect(page.locator("main")).toContainText("Journal & discipline");
+    // M62 JN-3: with ui_v2 the Journal is the v2 page, headed "Journal" (the classic page's "Journal & discipline" is the
+    // ui_v2-off page).
+    await expect(page.getByRole("heading", { level: 1, name: "Journal", exact: true })).toBeVisible();
     await expect(page.locator("[data-block='discipline-card']")).toHaveCount(0);
     expect(asked).toEqual([]);
   });

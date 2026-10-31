@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { pickOption } from "./combobox";
 import { mockApi, type MockOptions } from "./mockApi";
 import { cardOverflows, expectNoSidewaysOverflow } from "./phoneLayout";
-import { closeScreenerMore, screenerTool } from "./screenerTools";
+import { closeScreenerMore, openListPicker, screenerTool, startWith } from "./screenerTools";
 
 /**
  * Owner order SCR-FIX, PR E2: Find setups at 390 px, dark with colour v2 and light. On each: a formula block with a long
@@ -59,15 +59,19 @@ async function open(page: Page, theme: "dark" | "light", colourV2: boolean, pack
   });
   await page.goto("/screener");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
-  await expect(page.getByText("Start with a template or add your first condition.")).toBeVisible();
+  await expect(page.getByTestId("start-scan")).toBeVisible();
 }
 
 /** Own symbols (one long name), Advanced open, a formula block holding a long formula, then Run. */
 async function formulaScan(page: Page) {
+  await openListPicker(page);
   await pickOption(page, page.getByTestId("universe-select"), "custom");
   await page.locator("#screener-symbols").fill(SYMBOLS.join(", "));
   await screenerTool(page, "screener-advanced");
   await closeScreenerMore(page);
+  // M49 U6: "Blank: I add conditions" opens the Conditions block with nothing in it
+  await startWith(page, "Template");
+  await page.getByTestId("start-blank").click();
   await pickOption(page, page.getByRole("combobox", { name: "Kind of condition to add" }).first(), "formula");
   await page.getByRole("button", { name: "Add a condition" }).first().click();
   const formula = page.getByRole("textbox", { name: "Formula" }).first();
@@ -102,7 +106,8 @@ test.describe("SCR-FIX E2: Find setups on a 390 px phone", () => {
       await formulaScan(page);
       await expect(page.getByRole("region", { name: "Conditions" }).getByRole("button", { name: "Add a condition" })).toBeVisible();
       await expect(page.getByTestId("screener-bottom-bar")).toBeVisible();
-      await expect(page.getByTestId("screener-bottom-bar")).toContainText("Matched 1 of 4");
+      // M49 U6: "Matched N of M" once, in the results header (the bar keeps Save and Run)
+      await expect(page.getByTestId("results-matched")).toHaveText("Matched 1 of 4");
       await expectNoSidewaysOverflow(page);
       // E1: the page's one "not advice" line is its footnote; the run's own note waits in its Details
       expect(await disclaimers(page, "main")).toBe(1);

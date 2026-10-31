@@ -140,6 +140,10 @@ instead.
 | `event_kinds` | all but EXPIRY | subset of the calendar's kinds | Weekly index expiry is the normal life of an options position, not a news-like jump. A trader can add it. |
 | `count_unconfirmed` | true | - | So the score means something without daily clicking. Dismissing a tag removes it from the score. |
 | `weights` | 25/20/25/15/15 | 0-100 each, sum > 0 | The behaviours the mission lists first (no stop, oversizing and revenge) weigh most. Only the proportions matter. |
+| `custom_tags` (M62) | empty | at most 30, 30 characters each | The trader's own mistake / emotion labels; nothing is suggested for him. |
+| `checklist_rules` (M62) | empty | at most 20, 120 characters each | His own strategy rules, answered yes / no on each entry. |
+| `attachment_max_mb` (M62) | 5 | 0.5-8 | The largest image he may attach (8 MB is the API's request limit). |
+| `attachments_per_trade` (M62) | 10 | 1-50 | How many images one entry may hold. |
 
 Revisit these once the PAPER cohort has enough weeks of data. Any change should go through a reviewed PR that updates
 this table, not a tuning run (open question Z6-1).
@@ -196,6 +200,14 @@ While the flag is off, the page says the feature is not enabled.
 | PATCH | `/api/journal/tags/{id}` | `{status: CONFIRMED / DISMISSED / SUGGESTED}`. |
 | GET, PUT | `/api/journal/settings` | Thresholds and weights, the defaults, and each number's range. |
 | GET | `/api/journal/review?week=&history=&narrate=` | The weekly review (Z6-b). |
+| PATCH | `/api/journal/{trades/{id} or manual/{id}}/notes` | M62: `{notes}` - the trader's notes (ATP trade: `trades.notes`). |
+| PATCH | `.../user-tags` | M62: `{tags: [...]}` - his own tags, from `custom_tags`. |
+| PATCH | `.../checklist` | M62: `{items: [{rule, followed: true / false / null}]}` - his own rules, from `checklist_rules`. |
+| POST | `.../attachments` | M62: one PNG / JPEG (multipart `file`), re-encoded, private; at most `attachment_max_mb`. |
+| GET | `.../chart?at=entry or exit` | M62: the snapshot PNG drawn from the stored bars up to that instant, entry / exit / stop marked. |
+| GET, DELETE | `/api/journal/attachments/{id}` | M62: the image; remove it. |
+| POST, GET | `/api/journal/manual` | M62: record / list trades done outside ATP (journal data only, marked `OUTSIDE_ATP`). |
+| GET, DELETE | `/api/journal/manual/{id}` | M62: one manual entry; remove it. |
 
 ## Tests
 

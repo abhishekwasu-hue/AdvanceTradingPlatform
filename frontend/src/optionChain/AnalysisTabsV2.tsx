@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { cx } from "../components/primitives/cx";
 import { SubTabs } from "../ui/SubTabs";
+import { HelpPopover } from "../ui/HelpPopover";
 import { TermHint } from "../ui/TermHint";
+import { formatTimeIST } from "../ui/format";
 import {
-  CHART, TABS, analysisFor, fetchAnalyses, formatCell, isFigure, markerPixel, provenance, stateMessage, toneClasses, xLabel, xPixel,
-  xValues, yPixel, yScale, yTick, type Analysis, type AnalysesResponse, type AnalysisChart, type AnalysisKey, type AnalysisTable,
+  CHART, TABS, analysisFor, fetchAnalyses, formatCell, hasOutside, isFigure, markerPixel, pcrHeadline, pointNote, provenance, stateMessage,
+  timePixel, timeTicks, toneClasses, visibleChart, xLabel, xPixel, xValues, yPixel, yScale, yTick, type Analysis, type AnalysesResponse,
+  type AnalysisChart, type AnalysisKey, type AnalysisTable,
 } from "./analyses";
 
 /**
@@ -100,13 +103,25 @@ export function AnalysisTabsView({ data, error, loading, tab, onTab }: {
 /** One tab: the sentences first (what the numbers say), then the chart and the tables, then how it is worked out. */
 export function AnalysisPanel({ analysis }: { analysis: Analysis }) {
   const term = TABS.find((t) => t.key === analysis.key)?.term;
+  // M61 PCR-1: readings outside the session (pre-open, after close) are left off the chart unless the trader asks.
+  const [showOutside, setShowOutside] = useState(false);
+  // M61 PCR-3: the PCR headline in numbers ("Overall PCR 1.60 · Near-ATM PCR 1.03 (11 strikes 22,800–23,300)").
+  const headline = pcrHeadline(analysis);
+  const sentences = headline ? [headline, ...analysis.sentences.slice(1)] : analysis.sentences;
+  const outside = analysis.chart ? hasOutside(analysis.chart) : false;
   return (
     <div className="space-y-space-3" data-analysis={analysis.key} data-state={analysis.state}>
       <h3 className="flex items-center gap-space-1 text-t14 font-semibold text-fg">{analysis.title}{term && <TermHint term={term} />}</h3>
       <div className="space-y-space-1">
-        {analysis.sentences.map((s, i) => <p key={i} className="text-t14 text-fg">{s}</p>)}
+        {sentences.map((s, i) => <p key={i} className={cx("text-t14", headline && i === 0 ? "font-semibold font-tabular text-fg" : "text-fg")}>{s}</p>)}
       </div>
-      {analysis.chart && <MiniChart chart={analysis.chart} title={analysis.title} />}
+      {outside && (
+        <button type="button" aria-pressed={showOutside} onClick={() => setShowOutside((v) => !v)} data-show-outside
+          className={cx("min-h-8 rounded-control border px-space-2 text-t12", showOutside ? "border-brand text-fg" : "border-subtle text-fg-muted")}>
+          Show pre-open and after-close readings
+        </button>
+      )}
+      {analysis.chart && <MiniChart chart={visibleChart(analysis.chart, showOutside)} title={analysis.title} />}
       {analysis.tables.map((t, i) => <AnalysisTableView key={i} table={t} />)}
       <p className="text-t12 text-fg-muted">How it is worked out: {analysis.method}</p>
     </div>
@@ -117,7 +132,10 @@ export function AnalysisTableView({ table }: { table: AnalysisTable }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-max border-collapse text-t13">
-        <caption className="pb-space-1 text-left text-t12 font-semibold text-fg-muted">{table.title}</caption>
+        <caption className="pb-space-1 text-left text-t12 font-semibold text-fg-muted">
+          <span className="inline-flex items-center gap-space-1">{table.title}
+            {table.help && <HelpPopover title={`${table.title}: the strikes`}><p>{table.help}</p></HelpPopover>}</span>
+        </caption>
         <thead>
           <tr className="border-b border-subtle">
             {table.columns.map((c) => (
@@ -155,6 +173,13 @@ export function MiniChart({ chart, title }: { chart: AnalysisChart; title: strin
   const marker = chart.marker ? markerPixel(chart.marker.x, xs) : null;
   const barWidth = Math.max(1, (slot * 0.8) / Math.max(chart.series.length, 1));
   const index = new Map(xs.map((x, i) => [String(x), i]));
+  // M61 PCR-2: a session line is drawn on a time axis (one point per change, so the gaps are real time), its ticks
+  // every N minutes so they never overlap.
+  const times = chart.type === "line" && chart.x_kind === "time" ? xs.map((x) => Date.parse(String(x))) : [];
+  const timeAxis = times.length > 0 && times.every((t) => Number.isFinite(t));
+  const t0 = timeAxis ? Math.min(...times) : 0, t1 = timeAxis ? Math.max(...times) : 0;
+  const px = (x: number | string) => (timeAxis ? timePixel(Date.parse(String(x)), t0, t1) : xPixel(index.get(String(x)) ?? 0, n));
+  const marks = timeAxis ? (chart.x_marks ?? []).filter((m) => { const t = Date.parse(m.x); return t >= t0 && t <= t1; }) : [];
   return (
     <figure className="space-y-space-1" data-chart={chart.type}>
       <svg viewBox={`0 0 ${width} ${height}`} className="h-40 w-full" role="img" aria-label={`${title}: ${chart.y_label} by ${chart.x_label.toLowerCase()}`}>
@@ -177,14 +202,23 @@ export function MiniChart({ chart, title }: { chart: AnalysisChart; title: strin
             </rect>
           );
         }))}
-        {chart.type === "line" && chart.series.map((s) => <SeriesLine key={s.key} chart={chart} seriesKey={s.key} index={index} n={n} scale={scale} />)}
+        {marks.map((m) => (
+          <g key={m.x} data-x-mark>
+            <line x1={px(m.x)} x2={px(m.x)} y1={padTop} y2={height - padBottom} className="stroke-fg-muted" strokeDasharray="1 3" strokeWidth={1} />
+            <text x={px(m.x) + 3} y={height - padBottom - 3} className="fill-fg-muted text-xs">{m.label}</text>
+          </g>
+        ))}
+        {chart.type === "line" && chart.series.map((s) => <SeriesLine key={s.key} chart={chart} seriesKey={s.key} px={px} scale={scale} />)}
         {marker !== null && chart.marker && (
           <g>
             <line x1={marker} x2={marker} y1={padTop} y2={height - padBottom} className="stroke-fg" strokeDasharray="3 3" strokeWidth={1} />
             <text x={marker + 3} y={padTop + 8} className="fill-fg text-xs">{chart.marker.label}</text>
           </g>
         )}
-        {xs.map((x, i) => (i % labelEvery === 0 || i === n - 1) && (
+        {timeAxis && timeTicks(t0, t1).map((t) => (
+          <text key={t} x={timePixel(t, t0, t1)} y={height - 6} textAnchor="middle" className="fill-fg-muted text-xs">{formatTimeIST(t, { suffix: false })}</text>
+        ))}
+        {!timeAxis && xs.map((x, i) => (i % labelEvery === 0 || i === n - 1) && (
           <text key={String(x)} x={xPixel(i, n)} y={height - 6} textAnchor="middle" className="fill-fg-muted text-xs">{xLabel(x, chart.x_kind)}</text>
         ))}
       </svg>
@@ -195,31 +229,35 @@ export function MiniChart({ chart, title }: { chart: AnalysisChart; title: strin
           </span>
         ))}
         {chart.marker && marker !== null && <span>Dashed line: {chart.marker.label.toLowerCase()}</span>}
+        {marks.length > 0 && <span>Dotted line: the ATM strike changed</span>}
+        {chart.series.some((s) => s.points.some((p) => p.hollow && p.y !== null)) && <span>Hollow dot: partial reading (some strikes missing)</span>}
       </figcaption>
     </figure>
   );
 }
 
-function SeriesLine({ chart, seriesKey, index, n, scale }: {
-  chart: AnalysisChart; seriesKey: string; index: Map<string, number>; n: number; scale: { min: number; max: number };
+function SeriesLine({ chart, seriesKey, px, scale }: {
+  chart: AnalysisChart; seriesKey: string; px: (x: number | string) => number; scale: { min: number; max: number };
 }) {
   const s = chart.series.find((x) => x.key === seriesKey);
   if (!s) return null;
-  // A missing value breaks the line (never drawn through as 0).
+  // A missing value breaks the line (never drawn through as 0). M61 PCR-1: a partial reading is a hollow dot and the
+  // line does not pass through it (its totals are not comparable with the others).
   const runs: string[][] = [[]];
-  const dots: { x: number; y: number; label: string }[] = [];
+  const dots: { x: number; y: number; label: string; hollow: boolean }[] = [];
   for (const p of s.points) {
     if (p.y === null) { runs.push([]); continue; }
-    const x = xPixel(index.get(String(p.x)) ?? 0, n), y = yPixel(p.y, scale);
-    runs[runs.length - 1].push(`${x.toFixed(1)},${y.toFixed(1)}`);
-    dots.push({ x, y, label: `${s.label} at ${xLabel(p.x, chart.x_kind)}: ${yTick(p.y)}` });
+    const x = px(p.x), y = yPixel(p.y, scale);
+    if (!p.hollow) runs[runs.length - 1].push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    dots.push({ x, y, label: pointNote(s.label, p, chart.x_kind), hollow: p.hollow === true });
   }
   const tone = toneClasses(s.tone);
   return (
     <g>
       {runs.filter((r) => r.length > 1).map((r, i) => <polyline key={i} points={r.join(" ")} fill="none" className={tone.stroke} strokeWidth={1.5} />)}
       {dots.map((d, i) => (
-        <circle key={i} cx={d.x} cy={d.y} r={2} className={cx(tone.stroke, tone.fill)}><title>{d.label}</title></circle>
+        <circle key={i} cx={d.x} cy={d.y} r={d.hollow ? 3 : 2} strokeWidth={d.hollow ? 1.5 : 1} data-hollow={d.hollow || undefined}
+          className={cx(tone.stroke, d.hollow ? "fill-surface-1" : tone.fill)}><title>{d.label}</title></circle>
       ))}
     </g>
   );

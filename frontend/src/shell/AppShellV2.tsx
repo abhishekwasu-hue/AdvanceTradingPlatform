@@ -228,7 +228,9 @@ export default function AppShellV2() {
   }
   else content = routes;
 
-  const wide = key === "screener" || key === "options-builder" || key === "charts" || key === "terminal";
+  // M49 U6: Custom scan is Find setups with Conditions open (while the screener is on), so it gets the same layout.
+  const layoutKey = key === "scanner" && features.on("screener_v2") ? "screener" : key;
+  const wide = layoutKey === "screener" || key === "options-builder" || key === "charts" || key === "terminal";
   // Colour v2 (flag `colour_v2`, OFF until the owner approves): shared with every page and shared component below.
   const colour = colourV2On(features.on);
   useColourV3Root(colourV3On(features.on));
@@ -265,7 +267,7 @@ export default function AppShellV2() {
           {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip, and
               SCR-FIX D2: Find setups clips too, so nothing there can scroll the page sideways. */}
           <main id="main" ref={mainRef} tabIndex={-1}
-            className={`relative w-full flex-1 ${key === "copilot" || key === "screener" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${key === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>
+            className={`relative w-full flex-1 ${key === "copilot" || layoutKey === "screener" ? "overflow-x-clip" : "overflow-y-auto"} px-space-4 pt-space-4 ${layoutKey === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(6rem+env(safe-area-inset-bottom))]"} md:px-space-8 md:pb-space-10 md:pt-space-6 ${wide ? "max-w-none" : "max-w-[1304px]"} outline-none`}>
             {/* UX3-9: a merged page's tabs (My trades, Strategies, Performance) above the tab on screen. */}
             {!legacy && !redirect && <PageTabsV2 current={key} ctx={ctx} />}
             {content}

@@ -11,13 +11,7 @@ import OiSettingsCard from "../components/OiSettingsCard";
 import StrikeOiChart from "../components/StrikeOiChart";
 import { getToken } from "../api/client";
 import { chainLinks, contractsAvailable } from "../charting/contracts";
-
-const BIAS_COLOR: Record<string, string> = {
-  BULLISH: "text-up",
-  BEARISH: "text-down",
-  CONFLICTING: "text-warn",
-  NEUTRAL: "text-fg-muted",
-};
+import { chainReadWords } from "../oi/format";
 
 /** Where "the Broker page" is: its own `/broker` route in both shells (Settings redesign B; was Settings -> Brokers). */
 export const BROKER_PAGE_PATH = "/broker";
@@ -124,14 +118,15 @@ export default function OptionChainPage() {
       {analysis && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <StatTile label="Bias" value={<span className={BIAS_COLOR[analysis.bias]}>{analysis.bias}</span>} />
+            {/* M61 OI-5: the analysis' bias as the PCR and OI-change facts it rests on - no verdict word or colour. */}
+            <StatTile label="PCR + OI change" value={chainReadWords(analysis.bias)} />
             <StatTile label="PCR" value={analysis.pcr?.toFixed(2) ?? "-"} />
             <StatTile label="Max Pain" value={analysis.max_pain ?? "-"} />
             <StatTile label="ATM Strike" value={analysis.atm_strike ?? "-"} />
             <StatTile label="Total Call / Put OI" value={`${analysis.total_call_oi} / ${analysis.total_put_oi}`} />
           </div>
 
-          <Card title="Bias reasons">
+          <Card title="How the PCR and OI change read">
             <ul className="text-sm text-fg-muted space-y-1 list-disc list-inside">
               {analysis.bias_reasons.map((r, i) => (
                 <li key={i}>{r}</li>

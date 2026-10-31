@@ -77,7 +77,7 @@ describe("8b-d the liquidity part", () => {
   it("states a liquid strike's facts", () => {
     const l = legLiquidity(ladder(), 24600, "CE", "24600 CE");
     expect(l).toMatchObject({ onScreen: true, wide: false, lowOi: false });
-    expect(liquidityLine([l])).toMatchObject({ tone: "info", text: "Liquidity: bid-ask gap 1.00 (1.1% of the price), open interest 2,01,000, volume 50,000 today." });
+    expect(liquidityLine([l])).toMatchObject({ tone: "info", text: "Liquidity: bid-ask gap 1.00 (1.1% of the price), open interest 2.01 L, volume 50,000 today." });
   });
   it("warns on a wide gap, low open interest and no trades today, compared with the chain on screen", () => {
     const l = legLiquidity(ladder(), 25400, "CE", "25400 CE");

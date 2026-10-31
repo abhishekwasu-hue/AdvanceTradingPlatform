@@ -51,6 +51,13 @@
 #                                                  index history through the owner's own broker session into his
 #                                                  private store, resumable; then the bars per index per timeframe.
 #                                                  --check: what is missing + the stored vs the broker's last close
+#   /opt/atp/deploy/atp.sh journal-status          M62 JN-1, read-only: is discipline_engine on (everyone / which
+#                                                  organisations), journal rows and manual entries per organisation,
+#                                                  closed trades without a journal row. Counts only; nothing written
+#   /opt/atp/deploy/atp.sh journal-backfill [--tenant ID]
+#                                                  M62 JN-1: creates the missing journal rows of closed trades from the
+#                                                  trade rows (organisations the flag is on for, or only ID); a re-run
+#                                                  creates none. Never changes a flag, a trade or an order
 #   /opt/atp/deploy/atp.sh schedule | releases | help
 #
 #   --dry-run (anywhere, or ATP_DRY_RUN=1): prints every step it would take; changes nothing on the host.
@@ -2846,6 +2853,44 @@ cmd_lake_backfill() {
   esac
 }
 
+# M62 JN-1 (owner, 30 Oct): the journal's real state (backend app/journal/ops.py), run in the backend container.
+# Read-only: whether discipline_engine is on and for which organisations, the journal rows and manual entries per
+# organisation, the closed trades without a journal row. Counts, organisation ids and names only; no secret is printed.
+cmd_journal_status() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  [ $# -eq 0 ] || die "usage: atp.sh journal-status" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would print the journal state (read-only; nothing written)\n'; return 0; fi
+  check_tools
+  local rc=0
+  dc exec -T backend python -m app.journal.ops status || rc=$?
+  [ "$rc" = "0" ] || die "the journal status did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1
+}
+
+# M62 JN-1: the journal rows missing for closed trades, rebuilt from the trade rows (the journal's own rebuild,
+# app/journal/capture.py ensure_entries), for the organisations discipline_engine is on for, or only --tenant ID.
+# Idempotent (a re-run creates none). It never changes a flag (Admin > Controls does), a trade, an order or a setting.
+cmd_journal_backfill() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local usage='usage: atp.sh journal-backfill [--tenant ID]' rc=0
+  local args=()
+  case "${1:-}" in
+    "") [ $# -eq 0 ] || die "$usage" 2 ;;
+    --tenant)
+      [ $# -eq 2 ] || die "$usage" 2
+      [[ "$2" =~ ^[1-9][0-9]{0,9}$ ]] || die "the organisation id is a whole number (atp.sh journal-status lists them)" 2
+      args=(--tenant "$2") ;;
+    *) die "$usage" 2 ;;
+  esac
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would create the missing journal rows of closed trades %s\n' "${args[*]:-}"; return 0; fi
+  check_tools
+  dc exec -T backend python -m app.journal.ops backfill "${args[@]+"${args[@]}"}" || rc=$?
+  case "$rc" in
+    0) ;;
+    2) exit 2 ;;            # refused: it printed why (the flag is off for that organisation, or it does not exist)
+    *) die "the journal backfill did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
 # DATA-H DH2: during a deploy, the backfill runs only when a window is missing (a new host, a new index, a stopped
 # run) and for at most 120 s; nothing missing -> it exits at once. Never fails the deploy (the worker's daily pass and
 # `lake-backfill` finish the rest).
@@ -2892,6 +2937,8 @@ main() {
     lists-sync)     cmd_lists_sync "$@" ;;
     probe-candles)  cmd_probe_candles "$@" ;;
     lake-backfill)  cmd_lake_backfill "$@" ;;
+    journal-status) cmd_journal_status "$@" ;;
+    journal-backfill) cmd_journal_backfill "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac

@@ -8,6 +8,7 @@ default used instead, so a bad row can never make a detector misbehave.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -59,6 +60,13 @@ class DisciplineSettings:
     count_unconfirmed: bool = True
     # Score weights per component; normalised by their sum, so only the proportions matter.
     weights: Dict[str, float] = field(default_factory=_default_weights)
+    # M62 JN-2: the trader's own mistake / emotion labels (his own words; none until he adds them).
+    custom_tags: list[str] = field(default_factory=list)
+    # M62 JN-2: his own strategy rules, answered yes / no on every journal entry (none until he adds them).
+    checklist_rules: list[str] = field(default_factory=list)
+    # M62 JN-2: the largest image he may attach to an entry, and how many images one entry may hold.
+    attachment_max_mb: float = 5.0
+    attachments_per_trade: int = 10
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -73,7 +81,13 @@ RANGES: Dict[str, Tuple[float, float]] = {
     "overtrading_lookback_days": (5, 365),
     "overtrading_multiple": (1, 10),
     "overtrading_min_norm": (1, 500),
+    "attachment_max_mb": (0.5, 8),          # at most the API's request body limit (MAX_REQUEST_BODY_BYTES, 8 MB)
+    "attachments_per_trade": (1, 50),
 }
+_INTEGER_KEYS = ("overtrading_daily_norm", "overtrading_lookback_days", "overtrading_min_norm", "attachments_per_trade")
+# The trader's own lists: (most items, longest item).
+LIST_LIMITS: dict[str, tuple[int, int]] = {"custom_tags": (30, 30), "checklist_rules": (20, 120)}
+_TAG_TEXT = re.compile(r"^[a-z0-9][a-z0-9 _-]*$")
 WEIGHT_RANGE = (0.0, 100.0)
 
 
@@ -90,6 +104,32 @@ def _number(name: str, value: Any) -> float:
     return float(value)
 
 
+def clean_label(value: str) -> str:
+    """A tag as stored: trimmed, inner spaces collapsed, lower case."""
+    return " ".join(value.split()).lower()
+
+
+def own_list(name: str, value: Any) -> list[str]:
+    """The trader's own list (custom tags or checklist rules), checked and de-duplicated, in his order."""
+    most, longest = LIST_LIMITS[name]
+    if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
+        raise SettingsError(f"{name} must be a list of texts")
+    out: list[str] = []
+    for raw in value:
+        item = clean_label(raw) if name == "custom_tags" else " ".join(raw.split())
+        if not item:
+            continue
+        if len(item) > longest:
+            raise SettingsError(f"each item of {name} may have at most {longest} characters")
+        if name == "custom_tags" and not _TAG_TEXT.match(item):
+            raise SettingsError("a tag may hold only letters, digits, spaces, _ and -")
+        if item not in out:
+            out.append(item)
+    if len(out) > most:
+        raise SettingsError(f"{name} may hold at most {most} items")
+    return out
+
+
 def validate(values: Dict[str, Any], base: Optional[DisciplineSettings] = None) -> DisciplineSettings:
     """`values` merged over `base` (default: the defaults). Raises SettingsError naming the first bad key."""
     out = DisciplineSettings(**(base or DisciplineSettings()).to_dict())
@@ -99,7 +139,9 @@ def validate(values: Dict[str, Any], base: Optional[DisciplineSettings] = None) 
             raise SettingsError(f"Unknown setting '{key}' - known: {sorted(known)}")
         if key in RANGES:
             number = _number(key, value)
-            setattr(out, key, int(number) if key in ("overtrading_daily_norm", "overtrading_lookback_days", "overtrading_min_norm") else number)
+            setattr(out, key, int(number) if key in _INTEGER_KEYS else number)
+        elif key in LIST_LIMITS:
+            setattr(out, key, own_list(key, value))
         elif key == "event_kinds":
             if not isinstance(value, list) or any(not isinstance(v, str) or v.upper() not in EVENT_KINDS for v in value):
                 raise SettingsError(f"event_kinds must be a list of {list(EVENT_KINDS)}")

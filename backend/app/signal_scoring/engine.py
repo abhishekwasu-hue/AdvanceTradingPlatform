@@ -5,6 +5,7 @@ import pandas as pd
 from app.brokers.models import OptionChain
 from app.core.enums import SignalDirection, grade_from_score
 from app.core.models import Signal
+from app.option_chain import oi_words
 from app.option_chain.analysis import analyze_option_chain
 from app.option_chain.models import OptionChainAnalysis
 from app.price_action.candlestick_patterns import detect_patterns_at
@@ -93,13 +94,15 @@ def _option_chain_component(signal: Signal, analysis: Optional[OptionChainAnalys
         return 50.0, "No option chain data supplied"
     wanted = "BULLISH" if signal.direction == SignalDirection.LONG else "BEARISH"
     bias = analysis.bias.value
+    # M61 OI-5: the note a user reads is in neutral words (oi_words.py); the score and the internal bias are unchanged.
+    words = f"Option chain: {oi_words.chain_read_words(bias)}"
     if bias == wanted:
-        return 100.0, f"Option chain bias is {bias}, confirms {wanted.lower()}"
+        return 100.0, f"{words}, on the signal's side"
     if bias == "CONFLICTING":
-        return 30.0, "Option chain bias is CONFLICTING (PCR and OI-change disagree)"
+        return 30.0, words
     if bias == "NEUTRAL":
-        return 50.0, "Option chain bias is NEUTRAL"
-    return 0.0, f"Option chain bias is {bias}, conflicts with the signal direction"
+        return 50.0, words
+    return 0.0, f"{words}, on the other side to the signal"
 
 
 def _risk_reward_component(signal: Signal) -> Tuple[float, str]:

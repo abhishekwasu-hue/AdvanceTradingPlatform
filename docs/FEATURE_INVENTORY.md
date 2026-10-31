@@ -151,7 +151,7 @@ navigation and shows "Coming soon" at its address (`frontend/src/shell/pageFlags
 | Option chain (Chain, Charts, OI, Analyses) | `/option-chain` | Markets | - (broker gate) | WORKS; OI view PARTIAL (needs recorded snapshots) | unknown until the owner's check |
 | Sectors and indices | `/markets` | Markets | `markets_view` | EMPTY-BY-DEFAULT | unknown until the owner's check |
 | Find setups | `/screener` | Markets | `screener_v2` | EMPTY-BY-DEFAULT | unknown until the owner's check |
-| Custom scan | `/screener/custom` (old `/scanner`) | search only | - | PARTIAL + DUPLICATE (Find setups) | unknown until the owner's check |
+| Custom scan | `/screener/custom` (old `/scanner`) | search only | - (merged view: `screener_v2`) | PARTIAL; M49 U6: opens Find setups with its Conditions block open, the custom scanner inside Conditions ("More filters"); with `screener_v2` off the old page alone | unknown until the owner's check |
 | Plan an options trade | `/option-chain/plan` (old `/options-builder`) | extras | `options_builder` (ON); save: `options_builder_saved` | PARTIAL ("Adjustments and compare" marked coming later) | STUB (adjustments / compare) |
 | Analyze a chart | `/chart-analyze` | extras | `chart_analyze` + private engine | EMPTY-BY-DEFAULT; Hybrid "Coming soon" | STUB (hybrid); rest: unknown until the owner's check |
 | Terminal | `/terminal` | Trading | `terminal` (ON) | PARTIAL | Bots and Payoff panels HIDDEN (never in the Panels menu); rest: unknown until the owner's check |

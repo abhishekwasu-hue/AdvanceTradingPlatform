@@ -128,7 +128,7 @@ describe("UI2-2 blocks", () => {
 describe("UI2-2 router wiring (UI v2 §12: PageV2 ?? Page)", () => {
   it("the v2 shell has a v2 dashboard; today's router and App do not load it", () => {
     expect(Object.keys(PAGE_COMPONENTS_V2)).toEqual(["dashboard", "signals", "charts", "option-chain", "positions", "portfolio", "risk-management", "orders", "setup", "trading-defaults", "deployments", "strategy-builder", "copilot",
-      "settings", "markets", "admin", "ideas", "learn", "terminal", "watchlist", "news-events", "settings-ai", "settings-alerts", "settings-appearance", "settings-help", "settings-advanced", "settings-risk-limits"]);
+      "settings", "markets", "admin", "ideas", "learn", "terminal", "scanner", "watchlist", "news-events", "settings-ai", "settings-alerts", "settings-appearance", "settings-help", "settings-advanced", "settings-risk-limits"]);
     expect(routesSource).not.toMatch(/DashboardV2|pagesV2/);
     expect(appSource).not.toMatch(/DashboardV2|pagesV2/);
   });

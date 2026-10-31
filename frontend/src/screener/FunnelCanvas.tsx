@@ -6,7 +6,7 @@
  * removes. "Add a condition" adds a block of the kind picked beside it.
  */
 import { Plus } from "lucide-react";
-import { useEffect, useState, type DragEvent } from "react";
+import { useEffect, useState, type DragEvent, type ReactNode } from "react";
 import { Button, cx } from "../components/primitives";
 import { duplicateStage, isLive, moveStage, newBlock, newStage, trail, type FunnelResult, type Registry, type Stage, type StageKind } from "./model";
 import { SelectInline } from "./ParamInline";
@@ -44,6 +44,9 @@ export interface FunnelCanvasProps {
   onShowRemoved?: (stageId: string) => void;
   /** U2 (flag `screener_builder_u2`): offer the formula block. */
   formula?: boolean;
+  /** M49 U6: inside the page's own "Conditions" block - no frame, no heading, no starter buttons (the "Start a scan"
+   * chooser holds them) and no Matched count (the results header says it once, after a run). */
+  inBlock?: boolean;
 }
 
 export function FunnelCanvas(props: FunnelCanvasProps) {
@@ -70,6 +73,17 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
     onChange(out);
   };
 
+  if (stages.length === 0 && props.inBlock) {
+    return (
+      <div className="rounded-control border border-dashed border-border px-4 py-6 text-center" data-testid="conditions-empty">
+        <p className="text-t14 text-fg">Pick a scan above, or add your first condition.</p>
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
+          <Button size="sm" variant="primary" onClick={() => onChange([newBlock(registry, kind)])}><Plus size={14} /> Add a condition</Button>
+          <KindPicker value={kind} onChange={setKind} formula={!!props.formula} />
+        </div>
+      </div>
+    );
+  }
   if (stages.length === 0) {
     return (
       <section aria-label="Conditions" className="rounded-panel border border-border bg-surface-1 p-4">
@@ -90,8 +104,8 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
 
   let enabledIndex = -1;
   return (
-    <section aria-label="Conditions" className="rounded-panel border border-border bg-surface-1 p-4" data-run={props.runKey}>
-      <FunnelHead universe={props.universe} withData={total} />
+    <Frame inBlock={!!props.inBlock} runKey={props.runKey}>
+      {!props.inBlock && <FunnelHead universe={props.universe} withData={total} />}
       {/* SCR-FIX D4: the ALL bracket's label reads across, in words, above the stages (it was turned on its side) */}
       <p className="mt-3 pl-6 text-t12 font-medium text-fg-muted" aria-hidden data-testid="all-label">All of these must pass</p>
       <div className="relative mt-1 pl-6">
@@ -128,10 +142,17 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
           <Button size="sm" onClick={() => onChange([...stages, newBlock(registry, kind)])}><Plus size={14} /> Add a condition</Button>
           <KindPicker value={kind} onChange={setKind} formula={!!props.formula} />
         </span>
-        <MatchedFoot matched={props.matched} of={props.fresh ? funnel?.universe ?? null : null} withData={total} kills={rows.some((r) => r.kills)} live={!!props.live} />
+        {!props.inBlock && <MatchedFoot matched={props.matched} of={props.fresh ? funnel?.universe ?? null : null} withData={total} kills={rows.some((r) => r.kills)} live={!!props.live} />}
       </div>
-    </section>
+    </Frame>
   );
+}
+
+/** The canvas's frame: its own "Conditions" card, or (M49 U6, `inBlock`) a plain box inside the page's block. */
+function Frame({ inBlock, runKey, children }: { inBlock: boolean; runKey?: number; children: ReactNode }) {
+  return inBlock
+    ? <div data-run={runKey}>{children}</div>
+    : <section aria-label="Conditions" className="rounded-panel border border-border bg-surface-1 p-4" data-run={runKey}>{children}</section>;
 }
 
 function FunnelHead({ universe, withData = null }: { universe: number; withData?: number | null }) {

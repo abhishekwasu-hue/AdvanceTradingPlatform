@@ -21,7 +21,7 @@ describe("SCR-FIX E1: one not-advice line per page", () => {
   it("the Find setups page has one footnote; the universe note and the run's disclaimer are in Details (v2)", () => {
     const page = read("src/pages/ScreenerPage.tsx");
     expect(count(page, "<PageFootnote")).toBe(1);
-    expect(page).toContain("{universeV2 && <div className=\"mt-space-6\"><PageFootnote /></div>}");
+    expect(page).toContain("<div className=\"mt-space-6\"><PageFootnote /></div>");          // M49 U6: in the v2 layout
     expect(page).toContain('<Details id="screener.universe.about"');
     expect(page).toContain('<Details id="screener.results.about" label="About these results"><p>{run.disclaimer}</p></Details>');
   });

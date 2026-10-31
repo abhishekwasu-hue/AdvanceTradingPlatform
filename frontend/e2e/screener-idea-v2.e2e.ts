@@ -4,7 +4,7 @@ import { pickOption } from "./combobox";
 import { mockApi, type MockOptions } from "./mockApi";
 import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
-import { screenerTool } from "./screenerTools";
+import { openListPicker, screenerTool, startWith } from "./screenerTools";
 
 /**
  * Handover 11j "idea -> scan" (flag `screener_copilot`, behind `ui_v2`): "From an idea" on the Screener page. The trader
@@ -256,6 +256,15 @@ async function open(page: Page, theme: "dark" | "light", options: MockOptions = 
       const last = body.edits?.[body.edits.length - 1];
       return route.fulfill({ json: last === "only banks" ? BANKS : last ? DROPPED : ANSWER });
     }
+    // M49 U6: a run (nothing matches) - "Tell me when it matches" is the next step after one
+    if (/\/run$/.test(url)) {
+      const b = route.request().postDataJSON() as { source: string; symbols: string[]; preview?: boolean };
+      if (b.preview) return route.fulfill({ status: 503, json: { detail: "no preview here" } });
+      return route.fulfill({ json: { run_id: 3, preview: false, text: b.source, base_tf: "1d", data_source: "broker:upstox", scanned: b.symbols.length, matched: [],
+        results: b.symbols.map((s) => ({ symbol: s, matched: false, reason: null })),
+        funnel: { universe: b.symbols.length, with_data: b.symbols.length, stages: b.source.split(" AND ").map((text) => ({ text, survivors: 0 })) },
+        disclaimer: "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations." } });
+    }
     if (/\/screens$/.test(url)) {
       const b = route.request().postDataJSON() as { name: string; source: string; base_tf: string };
       calls.screens.push(b);
@@ -269,13 +278,14 @@ async function open(page: Page, theme: "dark" | "light", options: MockOptions = 
   });
   await page.goto("/screener");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
-  await expect(page.getByText("Start with a template or add your first condition.")).toBeVisible();
+  await expect(page.getByTestId("start-scan")).toBeVisible();
   return calls;
 }
 
+/** M49 U6: "From an idea" is the "Own words" way of the one "Start a scan" chooser (the same panel, inline). */
 async function readIdea(page: Page) {
-  await screenerTool(page, "idea-open-dialog");
-  const dialog = page.getByRole("dialog", { name: "A scan from your idea" });
+  await startWith(page, "Own words");
+  const dialog = page.getByTestId("idea-panel");
   await expect(dialog).toBeVisible();
   await dialog.getByTestId("idea-text").fill(IDEA);
   await dialog.getByTestId("idea-read").click();
@@ -289,6 +299,7 @@ test.describe("From an idea, 1440", () => {
   test("flag off: no button", async ({ page }) => {
     await open(page, "light", OFF);
     await expect(page.getByTestId("idea-open-dialog")).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Own words" })).toHaveCount(0);
   });
 
   test("an idea becomes parts, then editable blocks in the funnel", async ({ page }) => {
@@ -299,7 +310,7 @@ test.describe("From an idea, 1440", () => {
     await expect(dialog.getByTestId("idea-unsupported")).toContainText("“pulling back”");
     await expect(dialog.getByText("Checks: the market-structure trend is up.")).toBeVisible();
     await dialog.getByTestId("idea-open").click();
-    await expect(dialog).toBeHidden();
+    await expect(dialog).toBeVisible();                                   // M49 U6: the panel stays in the chooser
     await expect(page.getByLabel("Scan name")).toHaveValue("Scan from my idea");
     await expect(page.getByRole("list", { name: "Stages - every one must pass" }).locator(":scope > li")).toHaveCount(6);
   });
@@ -330,14 +341,18 @@ test.describe("From an idea, 1440", () => {
     const dialog = await readIdea(page);
     await dialog.getByTestId("idea-open").click();
     await expect(page.getByTestId("scan-versions-open")).toHaveCount(0);
-    await screenerTool(page, "scan-alert-open");
+    // M49 U6: "Tell me when it matches" is the next step after a run
+    await expect(page.getByTestId("scan-alert-open")).toHaveCount(0);
+    await page.getByTestId("run-scan").click();
+    await page.getByTestId("scan-alert-open").click();
     const alert = page.getByRole("dialog", { name: "Tell me when it matches" });
     // owner order 23 Oct: the universe is never empty - NIFTY 50 until the trader picks another list
     await expect(alert).toContainText("for “Scan from my idea” on NIFTY 50 (50 stocks), and tells you when one matches.");
     await page.keyboard.press("Escape");
+    await openListPicker(page);
     await pickOption(page, page.getByTestId("universe-select"), "custom");
     await page.getByLabel("Your symbols (up to 500)").fill("RELIANCE, TCS, INFY");
-    await screenerTool(page, "scan-alert-open");
+    await page.getByTestId("scan-alert-open").click();
     await expect(alert).toContainText("ATP checks each time a daily bar closes for “Scan from my idea” on your own symbols (3 stocks), and tells you when one matches.");
     await alert.getByTestId("scan-alert-create").click();
     await expect(alert.getByTestId("scan-alert-done")).toBeVisible();

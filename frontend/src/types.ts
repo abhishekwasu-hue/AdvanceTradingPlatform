@@ -854,8 +854,8 @@ export const STRUCTURE_FILTER_LABELS: Record<StructureFilterType, string> = {
 
 export const OPTION_FILTER_LABELS: Record<OptionFilterType, string> = {
   PCR: "PCR threshold",
-  BIAS_BULLISH: "Option chain bias: Bullish",
-  BIAS_BEARISH: "Option chain bias: Bearish",
+  BIAS_BULLISH: "Option chain: PCR above 1.2, put OI building",   // M61 OI-5: what the numbers show, no verdict word
+  BIAS_BEARISH: "Option chain: PCR below 0.8, call OI building",
   NEAR_MAX_PAIN: "Near Max Pain",
 };
 

@@ -47,7 +47,7 @@ describe("SCR-FIX PR D: Find setups on a phone", () => {
     expect(html).toContain("<textarea");
     expect(html).not.toContain("min-w-[14rem] flex-1");                                   // the old phone minimum
     expect(html).toContain("sm:min-w-[14rem]");
-    expect(read("src/shell/AppShellV2.tsx")).toContain('key === "copilot" || key === "screener" ? "overflow-x-clip"');
+    expect(read("src/shell/AppShellV2.tsx")).toContain('key === "copilot" || layoutKey === "screener" ? "overflow-x-clip"');
   });
 
   it("D3: the footer wraps, so the Matched count stays in the card", () => {

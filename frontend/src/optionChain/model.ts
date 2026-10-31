@@ -189,23 +189,9 @@ export function formatStrike(v: number | null | undefined): string {
   return formatNumber(v, Number.isInteger(v) ? 0 : 2);
 }
 
-/** A count (OI, volume) in the Indian way: 85,000; 12.35 L; 1.24 Cr. */
-export function formatCount(v: number | null | undefined): string {
-  if (typeof v !== "number" || !Number.isFinite(v)) return EMPTY;
-  const abs = Math.abs(v);
-  const sign = v < 0 ? MINUS : "";
-  const trim = (s: string) => s.replace(/\.?0+$/, "");
-  if (abs >= 1e7) return `${sign}${trim(formatNumber(abs / 1e7, 2))} Cr`;
-  if (abs >= 1e5) return `${sign}${trim((abs / 1e5).toFixed(2))} L`;
-  return `${sign}${formatNumber(abs, 0)}`;
-}
-
-/** A change in a count: "+12.35 L", "−4,500", "0". */
-export function formatCountChange(v: number | null | undefined): string {
-  if (typeof v !== "number" || !Number.isFinite(v)) return EMPTY;
-  const text = formatCount(v);
-  return v > 0 ? `+${text}` : text;
-}
+/** A count (OI, volume) and its change: M61 OI-1 keeps ONE formatter app-wide (ui/format.ts); re-exported here for the
+ * chain's callers. */
+export { formatCount, formatCountChange } from "../ui/format";
 
 /** FNO-1: an OI change in percent of the OI before it ("+12.5%", "−4.0%"); "–" when the earlier OI is not known or 0. */
 export function formatOiChangePct(oi: number | null | undefined, change: number | null | undefined): string {

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { expectComboValue } from "./combobox";
 import { mockApi } from "./mockApi";
-import { closeScreenerMore, screenerTool } from "./screenerTools";
+import { closeScreenerMore, openListPicker, screenerTool } from "./screenerTools";
 
 /**
  * Day-one fix 4 (docs/design/DAY_ONE_TRADER_TEST.md finding 8): Find setups in a trader's words. On open the page offers
@@ -195,15 +195,16 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await page.goto("/screener");
         await settle(page);
 
+        // M49 U6: the list and the chart show in words; their pickers open on "Change"
+        await expect(page.getByTestId("hero-list")).toHaveText("NIFTY 50");
+        await expect(page.getByTestId("hero-chart")).toHaveText("Daily");
+        await openListPicker(page);
         await expectComboValue(page.getByTestId("universe-select"), "sys:index-nifty50");
         await expect(page.locator("#screener-tf")).toHaveText("Daily");                 // SCR-FIX D8: the shared picker
-        await expect(page.getByLabel("Scan name")).toHaveAttribute("placeholder", "Untitled scan");
-        const nameBox = await page.getByLabel("Scan name").boundingBox();
-        expect(nameBox && nameBox.width > 250).toBeTruthy();
         await expect(page.getByTestId("pine-open")).toHaveCount(0);
         await expect(page.getByTestId("live-counts")).toHaveCount(0);
         const ready = page.getByTestId("ready-scans");
-        await expect(ready).toContainText("Start with a ready scan");
+        await expect(ready).toContainText("One tap runs it on NIFTY 50.");
         await expect(ready.getByTestId("ready-scan-run")).toHaveCount(3);
         await shot("01-find-setups-on-open");
 
@@ -216,6 +217,10 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
 
         await ready.getByTestId("ready-scan-run").first().click();
         await expect.poll(() => world.runs.length).toBe(1);
+        // M49 U6: the scan's name sits in the Conditions block, which a ready scan opens
+        await expect(page.getByLabel("Scan name")).toHaveAttribute("placeholder", "Untitled scan");
+        const nameBox = await page.getByLabel("Scan name").boundingBox();
+        expect(nameBox && nameBox.width > 250).toBeTruthy();
         await expect(page.getByRole("cell", { name: FIFTY[4], exact: true })).toBeVisible();
         await expect(page.getByRole("cell", { name: FIFTY[0], exact: true })).toHaveCount(0);
         const hidden = page.getByTestId("results-hidden");

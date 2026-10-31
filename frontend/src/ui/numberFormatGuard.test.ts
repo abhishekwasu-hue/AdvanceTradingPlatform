@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
  * to the new count printed by this test. (Only "may not grow" is enforced, so a parallel branch that removes some
  * calls never breaks this test after a merge.)
  */
-const BASELINE = 307;
+const BASELINE = 168;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SRC = join(ROOT, "src");

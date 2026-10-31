@@ -3,6 +3,7 @@ import { ApiError, friendlyError } from "../api/errors";
 import { fnoApi, type PracticeAccount } from "../fno/api";
 import { BTN_SECONDARY } from "./parts";
 import { Details } from "../ui/Details";
+import { formatNumber } from "../ui/format";
 
 /**
  * M45 MA-6 (`ui_v2` + `multi_account`): "Practice accounts" - the user's simulated PAPER accounts, so a multi-account
@@ -69,7 +70,7 @@ export default function PracticeAccountsCard({ api = fnoApi }: { api?: Pick<type
               <span className={`text-t12 ${a.enabled ? "text-up" : "text-warn"}`}>{a.enabled ? "On" : "Off - no new orders"}</span>
             </div>
             <div className="mt-space-1 text-t12 text-fg-muted font-tabular">
-              Capital {a.capital.toLocaleString("en-IN", { maximumFractionDigits: 0 })} · {a.role === "PRIMARY" ? "the lots you enter in the ticket" : `${a.sizing_value} ${SIZING_TEXT[a.sizing_mode]}`}
+              Capital {formatNumber(a.capital, 0)} · {a.role === "PRIMARY" ? "the lots you enter in the ticket" : `${a.sizing_value} ${SIZING_TEXT[a.sizing_mode]}`}
             </div>
             {confirmFor === a.id ? (
               <div className="mt-space-2 flex flex-wrap items-center gap-space-2 text-t12 text-fg">

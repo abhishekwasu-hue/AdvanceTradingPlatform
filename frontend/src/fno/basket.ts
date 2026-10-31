@@ -91,7 +91,7 @@ export class BasketStore {
 
   private set(next: BasketLeg[]): void {
     this.legs = next;
-    try { sessionStorage.setItem(BASKET_KEY, JSON.stringify(next)); } catch { /* storage unavailable: kept in memory */ }
+    try { sessionStorage.setItem(BASKET_KEY, JSON.stringify(next)); } catch { /* intentional: storage unavailable: kept in memory */ }
     this.listeners.forEach((fn) => fn());
   }
 }

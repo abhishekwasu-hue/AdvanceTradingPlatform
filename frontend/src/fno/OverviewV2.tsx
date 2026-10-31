@@ -37,7 +37,7 @@ export function useOverview(symbol: string, exchange: string, reads: Reads = def
     setData({ quote: null, bars: null });
     reads.quotes([{ symbol, exchange }])
       .then((r) => { if (alive) setData((d) => ({ ...d, quote: r.items.find((i) => !i.missing) ?? null })); })
-      .catch(() => { /* no quote: the price is left out */ });
+      .catch(() => { /* intentional: no quote: the price is left out */ });
     reads.candles(symbol, exchange)
       .then((bars) => { if (alive) setData((d) => ({ ...d, bars })); })
       .catch(() => { if (alive) setData((d) => ({ ...d, bars: [] })); });

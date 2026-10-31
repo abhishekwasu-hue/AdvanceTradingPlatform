@@ -63,7 +63,7 @@ export function writeMask(on: boolean, storage: Pick<Storage, "setItem" | "remov
   try {
     if (on) storage?.setItem(MASK_KEY, "1");
     else storage?.removeItem(MASK_KEY);
-  } catch { /* storage unavailable: the mask lasts until the page closes */ }
+  } catch { /* intentional: storage unavailable: the mask lasts until the page closes */ }
 }
 
 function safeStorage(): Storage | null {

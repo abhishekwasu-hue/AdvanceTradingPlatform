@@ -51,7 +51,7 @@ export default function NewsRadarTab() {
       if (id !== latest.current) return;
       setItems(list);
       markNewsSeen(list);
-      api.newsFeedbackMine(list.map((i) => i.id)).then((r) => setVerdicts(r.verdicts)).catch(() => undefined);
+      api.newsFeedbackMine(list.map((i) => i.id)).then((r) => setVerdicts(r.verdicts)).catch(() => undefined);  // intentional: his own verdict marks are optional; the news list is shown
       api.newsFeedbackSummary().then((r) => setTrust(r.trust)).catch(() => setTrust(null));
     } catch (e) { if (id === latest.current) { setError(friendlyError(e, t)); setItems([]); } } finally { if (id === latest.current) setBusy(false); }
   }

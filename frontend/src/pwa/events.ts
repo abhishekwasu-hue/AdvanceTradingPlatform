@@ -58,9 +58,9 @@ export function sendPwaEvent(event: PwaEvent, platform: PwaPlatform = currentPla
       body: JSON.stringify({ event, platform }),
       credentials: "omit",
       keepalive: true,
-    }).catch(() => {});
+    }).catch(() => {});  // intentional: metrics are best effort
   } catch {
-    /* fetch unavailable - metrics are best effort */
+    /* intentional: fetch unavailable - metrics are best effort */
   }
 }
 
@@ -69,13 +69,13 @@ function storageGet(storage: () => Storage, key: string): string | null {
 }
 
 function storageSet(storage: () => Storage, key: string, value: string): void {
-  try { storage().setItem(key, value); } catch { /* storage unavailable */ }
+  try { storage().setItem(key, value); } catch { /* intentional: storage unavailable */ }
 }
 
 export function isStandalone(win: Window = window): boolean {
   try {
     if (win.matchMedia?.("(display-mode: standalone)").matches) return true;
-  } catch { /* no matchMedia */ }
+  } catch { /* intentional: no matchMedia */ }
   return (win.navigator as Navigator & { standalone?: boolean }).standalone === true;   // iOS Safari home-screen app
 }
 
@@ -108,7 +108,7 @@ export function startPwaEvents(win: Window = window, send: (event: PwaEvent) => 
       choice.then((c) => {
         if (c?.outcome === "accepted") send("install_prompt_accepted");
         else if (c?.outcome === "dismissed") send("install_prompt_dismissed");
-      }).catch(() => {});
+      }).catch(() => {});  // intentional: metrics are best effort
     }
   };
   const onInstalled = () => send("installed");

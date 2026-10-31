@@ -19,6 +19,7 @@ import { useFeatures } from "../ui/useFeatures";
 import { maskEmail, orgName, type AdminSection, type ControlsGroup } from "../admin/consoleApi";
 import type { PageProps } from "../routes";
 import { formatDateTimeIST } from "../ui/format";
+import { toast } from "../components/Toast";
 
 const STATUSES = ["active", "suspended"];
 
@@ -81,16 +82,16 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
   function refresh() {
     if (!isAdmin) return;
     api.adminOverview().then(setOverview).catch((e) => setError(errorSentence(e)));
-    api.adminControls().then((c) => { setControls(c); setBrokerList(c.disabled_brokers.join(", ")); setMaintMsg(c.maintenance_message ?? ""); }).catch(() => {});
-    api.adminIncidents().then(setIncidents).catch(() => {});
-    api.adminBetaCohort().then(setCohort).catch(() => {});
-    api.adminFlags().then((f) => { setFlags(f); setFlagTenants(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.tenants.join(", ")]))); }).catch(() => {});
-    api.adminEncryptionStatus().then(setEncryption).catch(() => {});
-    api.adminRiskCeilings().then((c) => { setCeilings(c); setCeilingDraft(Object.fromEntries(Object.entries(c).map(([k, v]) => [k, String(v)]))); }).catch(() => {});
-    api.adminPlans().then(setPlans).catch(() => {});
+    api.adminControls().then((c) => { setControls(c); setBrokerList(c.disabled_brokers.join(", ")); setMaintMsg(c.maintenance_message ?? ""); }).catch((e) => toast.error(errorSentence(e)));
+    api.adminIncidents().then(setIncidents).catch((e) => toast.error(errorSentence(e)));
+    api.adminBetaCohort().then(setCohort).catch((e) => toast.error(errorSentence(e)));
+    api.adminFlags().then((f) => { setFlags(f); setFlagTenants(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.tenants.join(", ")]))); }).catch((e) => toast.error(errorSentence(e)));
+    api.adminEncryptionStatus().then(setEncryption).catch((e) => toast.error(errorSentence(e)));
+    api.adminRiskCeilings().then((c) => { setCeilings(c); setCeilingDraft(Object.fromEntries(Object.entries(c).map(([k, v]) => [k, String(v)]))); }).catch((e) => toast.error(errorSentence(e)));
+    api.adminPlans().then(setPlans).catch((e) => toast.error(errorSentence(e)));
     api.adminTenants(query).then(setTenants).catch((e) => setError(errorSentence(e)));
-    api.adminAuditLogs(selected?.id).then(setLogs).catch(() => {});
-    if (selected) api.adminTenant(selected.id).then(setSelected).catch(() => {});
+    api.adminAuditLogs(selected?.id).then(setLogs).catch((e) => toast.error(errorSentence(e)));
+    if (selected) api.adminTenant(selected.id).then(setSelected).catch((e) => toast.error(errorSentence(e)));
   }
 
   useEffect(refresh, [user, query]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -159,7 +160,7 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
       </Card>}
 
       {/* Owner decision 23 Oct: "Enable trader features" - the v2 console (ui_v2) only, Controls section. */}
-      {section === "controls" && inGroup("features") && <TraderPackCard onChanged={() => { api.adminFlags().then(setFlags).catch(() => {}); refreshFeatures(); }} />}
+      {section === "controls" && inGroup("features") && <TraderPackCard onChanged={() => { api.adminFlags().then(setFlags).catch((e) => toast.error(errorSentence(e))); refreshFeatures(); }} />}
 
       {inGroup("safety") && <Card title="Platform controls">
         <div className="grid lg:grid-cols-2 gap-4 text-xs">
@@ -281,7 +282,7 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
                   <td className="py-1.5 pr-3 font-tabular">{t.members}</td>
                   <td className="py-1.5 pr-3 font-tabular">{t.active_deployments} ({t.live_deployments})</td>
                   <td className="py-1.5 pr-3 font-tabular">{t.open_positions}</td>
-                  <td className="py-1.5 text-right"><button onClick={() => api.adminTenant(t.id).then((d) => { setSelected(d); api.adminAuditLogs(d.id).then(setLogs).catch(() => {}); }).catch((e) => setError(errorSentence(e)))} className="text-brand hover:underline">details</button></td>
+                  <td className="py-1.5 text-right"><button onClick={() => api.adminTenant(t.id).then((d) => { setSelected(d); api.adminAuditLogs(d.id).then(setLogs).catch((e) => toast.error(errorSentence(e))); }).catch((e) => setError(errorSentence(e)))} className="text-brand hover:underline">details</button></td>
                 </tr>
               ))}
             </tbody>
@@ -322,7 +323,7 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
               ))}
             </div>
           </div>
-          <button onClick={() => { setSelected(null); api.adminAuditLogs().then(setLogs).catch(() => {}); }} className="mt-3 text-xs text-fg-muted hover:text-fg">close</button>
+          <button onClick={() => { setSelected(null); api.adminAuditLogs().then(setLogs).catch((e) => toast.error(errorSentence(e))); }} className="mt-3 text-xs text-fg-muted hover:text-fg">close</button>
         </Card>
       )}
 

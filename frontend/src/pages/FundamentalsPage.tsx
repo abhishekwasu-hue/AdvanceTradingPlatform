@@ -218,8 +218,8 @@ export default function FundamentalsPage() {
       ]);
       setGrowth(g); setProfitability(p); setEarningsQuality(eq); setBalanceSheet(bs);
       setCashFlow(cf); setSwot(sw); setRedFlags(rf);
-      try { setScenario(await fundamentalsApi.scenario(symbol)); } catch { /* needs at least one period */ }
-      try { setQuarterly(await fundamentalsApi.quarterly(symbol)); } catch { /* needs quarterly periods */ }
+      try { setScenario(await fundamentalsApi.scenario(symbol)); } catch { /* intentional: needs at least one period */ }
+      try { setQuarterly(await fundamentalsApi.quarterly(symbol)); } catch { /* intentional: needs quarterly periods */ }
     } catch (e) {
       setAnalysisError(errorSentence(e));
     }

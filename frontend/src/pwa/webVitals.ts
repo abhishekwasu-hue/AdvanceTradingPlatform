@@ -33,7 +33,7 @@ export function startWebVitals(win: Window = window, send: (body: Record<string,
       const o = new PO((list) => list.getEntries().forEach(onEntry));
       o.observe({ type, buffered: true, ...extra } as PerformanceObserverInit);
       observers.push(o);
-    } catch { /* this entry type is not supported here */ }
+    } catch { /* intentional: this entry type is not supported here */ }
   };
   watch("largest-contentful-paint", (e) => { v.lcp_ms = e.startTime; });
   watch("layout-shift", (e) => {
@@ -64,7 +64,7 @@ function beacon(body: Record<string, unknown>): void {
     const blob = new Blob([JSON.stringify(body)], { type: "application/json" });
     if (!navigator.sendBeacon?.(ENDPOINT, blob)) {
       void fetch(ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-        credentials: "omit", keepalive: true }).catch(() => {});
+        credentials: "omit", keepalive: true }).catch(() => {});  // intentional: metrics are best effort
     }
-  } catch { /* metrics are best effort */ }
+  } catch { /* intentional: metrics are best effort */ }
 }

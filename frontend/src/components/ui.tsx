@@ -28,7 +28,7 @@ export function CollapsibleCard({ title, subtitle, children, storageKey, default
     const next = !open;
     setOpen(next);
     if (next) setMounted(true);
-    try { localStorage.setItem(key, next ? "1" : "0"); } catch { /* storage unavailable: session only */ }
+    try { localStorage.setItem(key, next ? "1" : "0"); } catch { /* intentional: storage unavailable: session only */ }
   };
   return (
     <div className={`rounded-xl border border-border bg-surface-1 shadow-card ${open ? "p-4" : "px-4 py-2.5"} ${className}`}>

@@ -21,7 +21,7 @@ export default function LegalAcceptanceBanner() {
     setHidden(false);
     if (!user) { if (!loading) clearLater(); return; }       // signed out (not just still loading)
     let live = true;
-    api.legalAcceptance().then((s) => { if (live) setStatus(s); }).catch(() => { /* best effort: never in the way */ });
+    api.legalAcceptance().then((s) => { if (live) setStatus(s); }).catch(() => { /* intentional: best effort: never in the way */ });
     return () => { live = false; };
   }, [user, loading]);
 
@@ -37,7 +37,7 @@ export default function LegalAcceptanceBanner() {
       setStatus(await api.acceptLegal(versions));
     } catch (e) {
       setError(String(e).replace(/^Error:\s*/, ""));
-      api.legalAcceptance().then(setStatus).catch(() => undefined);     // a new version appeared: show it
+      api.legalAcceptance().then(setStatus).catch(() => undefined);     // intentional: a new version appeared: show it
     } finally {
       setBusy(false);
     }

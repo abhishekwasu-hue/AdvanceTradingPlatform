@@ -160,5 +160,5 @@ export function readDishOpen(page: DishPage, fallback: boolean): boolean {
 }
 
 export function writeDishOpen(page: DishPage, open: boolean): void {
-  try { localStorage.setItem(DISH_OPEN_KEY + page, open ? "1" : "0"); } catch { /* storage unavailable: not remembered */ }
+  try { localStorage.setItem(DISH_OPEN_KEY + page, open ? "1" : "0"); } catch { /* intentional: storage unavailable: not remembered */ }
 }

@@ -61,7 +61,7 @@ export async function printResult(node: HTMLElement, title: string): Promise<voi
   copy.style.padding = "0";
   doc.body.appendChild(copy);
   await Promise.all(waits);
-  await Promise.all(Array.from(doc.images).map((img) => (img.complete ? Promise.resolve() : img.decode().catch(() => undefined))));
+  await Promise.all(Array.from(doc.images).map((img) => (img.complete ? Promise.resolve() : img.decode().catch(() => undefined))));  // intentional: an image that cannot be decoded prints without it
   const done = () => setTimeout(() => frame.remove(), 500);
   win.addEventListener("afterprint", done, { once: true });
   win.focus();

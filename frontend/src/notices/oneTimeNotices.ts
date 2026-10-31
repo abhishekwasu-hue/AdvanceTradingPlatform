@@ -34,7 +34,7 @@ export async function dismissNotice(id: string): Promise<void> {
   try {
     await api.noticeSeen(id);
   } catch {
-    /* best effort: it stays hidden in this tab; the server shows it once more next time */
+    /* intentional: best effort: it stays hidden in this tab; the server shows it once more next time */
   }
 }
 

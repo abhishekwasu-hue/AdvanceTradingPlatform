@@ -22,7 +22,7 @@ function readFor(base: string, user: UserId): string | null {
 /** Keeps a per-user value; nothing while signed out (storage blocked: it lasts this visit only). */
 function writeFor(base: string, user: UserId, value: string): void {
   if (user == null) return;
-  try { localStorage.setItem(`${base}:${user}`, value); } catch { /* storage unavailable */ }
+  try { localStorage.setItem(`${base}:${user}`, value); } catch { /* intentional: storage unavailable */ }
 }
 
 export const readLastSymbol = (user: UserId): string | null => readFor(LAST_SYMBOL_KEY, user);

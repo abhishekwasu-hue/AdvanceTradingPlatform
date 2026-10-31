@@ -95,7 +95,7 @@ export class ChartPrefsStore {
 
   private set(next: Partial<ChartPrefsState>): void {
     this.state = { ...this.state, ...next };
-    try { localStorage.setItem(CACHE_PREFIX + this.userKey, JSON.stringify(this.state.prefs)); } catch { /* storage unavailable */ }
+    try { localStorage.setItem(CACHE_PREFIX + this.userKey, JSON.stringify(this.state.prefs)); } catch { /* intentional: storage unavailable */ }
     for (const l of this.listeners) l();
   }
 

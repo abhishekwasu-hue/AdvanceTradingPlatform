@@ -53,7 +53,7 @@ export function CopilotDataProvider({ children }: { children: ReactNode }) {
   }, []);
   const markNewsSeen = useCallback((items?: NewsFeedItem[]) => {
     const latest = Math.max(Date.now(), ...(items ?? []).map((i) => new Date(i.published_at).getTime()));
-    try { localStorage.setItem(NEWS_SEEN_KEY, String(latest)); } catch { /* storage unavailable */ }
+    try { localStorage.setItem(NEWS_SEEN_KEY, String(latest)); } catch { /* intentional: storage unavailable */ }
     setNewHighNews(0);
   }, []);
 

@@ -41,7 +41,7 @@ export function withRecent(list: readonly PickedSymbol[], pick: PickedSymbol): P
 
 export function rememberSymbol(key: string | null, pick: PickedSymbol): void {
   if (!key) return;
-  try { localStorage.setItem(key, JSON.stringify(withRecent(readRecent(key), pick))); } catch { /* storage unavailable */ }
+  try { localStorage.setItem(key, JSON.stringify(withRecent(readRecent(key), pick))); } catch { /* intentional: storage unavailable */ }
 }
 
 /** Which list belongs to the text: "" = the recent symbols (an empty field, or the symbol on screen), else the search

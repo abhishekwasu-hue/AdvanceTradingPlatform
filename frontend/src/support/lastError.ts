@@ -19,7 +19,7 @@ export function rememberServerError(id: string | null | undefined, page?: string
   if (!id || !ID.test(id)) return;
   const where = page ?? (typeof window !== "undefined" ? window.location.pathname : "/");
   last = { id, page: pathOnly(where), at: now.toISOString() };
-  try { sessionStorage.setItem(KEY, JSON.stringify(last)); } catch { /* storage unavailable: memory only */ }
+  try { sessionStorage.setItem(KEY, JSON.stringify(last)); } catch { /* intentional: storage unavailable: memory only */ }
 }
 
 /** The last one, from this tab (it survives a reload of the same tab, never another tab or device). */
@@ -31,11 +31,11 @@ export function lastServerError(): LastServerError | null {
     if (parsed && typeof parsed.id === "string" && ID.test(parsed.id) && typeof parsed.at === "string") {
       last = { id: parsed.id, page: pathOnly(String(parsed.page ?? "/")), at: parsed.at };
     }
-  } catch { /* storage unavailable or malformed: none */ }
+  } catch { /* intentional: storage unavailable or malformed: none */ }
   return last;
 }
 
 export function forgetServerError(): void {
   last = null;
-  try { sessionStorage.removeItem(KEY); } catch { /* storage unavailable */ }
+  try { sessionStorage.removeItem(KEY); } catch { /* intentional: storage unavailable */ }
 }

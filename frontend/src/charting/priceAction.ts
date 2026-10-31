@@ -208,7 +208,7 @@ export function loadToggles(storage: Pick<Storage, "getItem"> | null = safeStora
 }
 
 export function saveToggles(t: Toggles, storage: Pick<Storage, "setItem"> | null = safeStorage()): void {
-  try { storage?.setItem(TOGGLES_KEY, JSON.stringify(t)); } catch { /* private window or blocked storage: not kept */ }
+  try { storage?.setItem(TOGGLES_KEY, JSON.stringify(t)); } catch { /* intentional: private window or blocked storage: not kept */ }
 }
 
 function safeStorage(): Storage | null {

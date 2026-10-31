@@ -140,7 +140,7 @@ export class ToursStore {
   private set(next: Partial<ToursState>): void {
     this.state = { ...this.state, ...next };
     if (this.state.known) {
-      try { localStorage.setItem(CACHE_PREFIX + this.userKey, JSON.stringify(this.state.marks)); } catch { /* storage unavailable */ }
+      try { localStorage.setItem(CACHE_PREFIX + this.userKey, JSON.stringify(this.state.marks)); } catch { /* intentional: storage unavailable */ }
     }
     for (const l of this.listeners) l();
   }

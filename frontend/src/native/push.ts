@@ -63,7 +63,7 @@ export async function phoneToken(timeoutMs = 15_000): Promise<{ token: string } 
   if (status.receive === "prompt" || status.receive === "prompt-with-rationale") status = await PushNotifications.requestPermissions();
   if (status.receive !== "granted") return { refused: true };
   for (const channel of ANDROID_CHANNELS) {
-    try { await PushNotifications.createChannel(channel); } catch { /* older Android: channels do not exist */ }
+    try { await PushNotifications.createChannel(channel); } catch { /* intentional: older Android: channels do not exist */ }
   }
   const handles: PluginListenerHandle[] = [];
   try {
@@ -91,5 +91,5 @@ export async function onNotificationTap(open: (data: unknown) => void): Promise<
 
 export async function stopPhonePush(): Promise<void> {
   if (!phonePushAvailable()) return;
-  try { await PushNotifications.unregister(); } catch { /* nothing registered */ }
+  try { await PushNotifications.unregister(); } catch { /* intentional: nothing registered */ }
 }

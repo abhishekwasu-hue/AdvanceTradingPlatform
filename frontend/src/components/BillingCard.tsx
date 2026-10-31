@@ -7,6 +7,7 @@ import { Card } from "./ui";
 import { PlanLimitsV2, planTileLine } from "./PlanLimitsV2";
 import type { BillingOverview, BillingTransaction, PlanCatalogueEntry } from "../types";
 import { formatDateIST } from "../ui/format";
+import { toast } from "./Toast";
 
 const inr = (v: number, ccy = "INR") => (v === 0 ? "Free" : `${ccy === "INR" ? "₹" : ccy + " "}${v.toLocaleString("en-IN")}`);
 
@@ -25,8 +26,8 @@ export default function BillingCard() {
 
   function refresh() {
     api.billingOverview().then(setOverview).catch((e) => setError(errorSentence(e)));
-    api.billingPlans().then(setPlans).catch(() => {});
-    api.billingTransactions().then(setTxns).catch(() => {});
+    api.billingPlans().then(setPlans).catch((e) => toast.error(errorSentence(e)));
+    api.billingTransactions().then(setTxns).catch((e) => toast.error(errorSentence(e)));
   }
   useEffect(refresh, []);
 

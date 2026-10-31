@@ -4,6 +4,8 @@ import { api } from "../api/client";
 import type { GuideAnswer, GuideConcept } from "../types";
 import { Card, CollapsibleCard } from "./ui";
 import { Details } from "../ui/Details";
+import { errorSentence } from "../api/errors";
+import { toast } from "./Toast";
 
 /**
  * Phase AT: ask the guide. Answers come from the concept library (and, for "what is X doing today",
@@ -26,7 +28,7 @@ export default function GuideChat({ plain = false }: { plain?: boolean }) {
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => { bottom.current?.scrollIntoView({ block: "nearest" }); }, [turns]);
-  useEffect(() => { if (browse && concepts.length === 0) api.aiConcepts("en").then((r) => setConcepts(r.concepts)).catch(() => {}); }, [browse, concepts.length]);
+  useEffect(() => { if (browse && concepts.length === 0) api.aiConcepts("en").then((r) => setConcepts(r.concepts)).catch((e) => toast.error(errorSentence(e))); }, [browse, concepts.length]);
 
   async function ask(q: string) {
     const text = q.trim();

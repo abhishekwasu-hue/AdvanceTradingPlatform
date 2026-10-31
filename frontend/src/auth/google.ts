@@ -82,7 +82,7 @@ export function readGoogleReturn(): GoogleReturn | null {
       window.history.replaceState(window.history.state, "", window.location.pathname + stripGoogleParams(window.location.search) + hash);
     }
   } catch {
-    // no URL API - nothing to read
+    // intentional: no URL API - nothing to read
   }
   return pending;
 }

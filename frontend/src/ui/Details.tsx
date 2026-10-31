@@ -14,7 +14,7 @@ function readOpen(id: string): boolean {
   try { return localStorage.getItem(DETAILS_KEY + id) === "1"; } catch { return false; }
 }
 function writeOpen(id: string, open: boolean): void {
-  try { if (open) localStorage.setItem(DETAILS_KEY + id, "1"); else localStorage.removeItem(DETAILS_KEY + id); } catch { /* storage unavailable */ }
+  try { if (open) localStorage.setItem(DETAILS_KEY + id, "1"); else localStorage.removeItem(DETAILS_KEY + id); } catch { /* intentional: storage unavailable */ }
 }
 
 export function Details({ id, label = "Details", children, className }: {

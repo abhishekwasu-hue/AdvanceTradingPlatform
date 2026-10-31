@@ -58,7 +58,7 @@ export default function ThesisPanel() {
       const list = m.watchlist ?? [];
       setWatchlist(list);
       if (list.length && !list.includes(symbol)) setSymbol(list[0]);
-    }).catch(() => undefined).finally(() => setWatchlistDone(true));
+    }).catch(() => undefined).finally(() => setWatchlistDone(true));  // intentional: no watchlist: the symbol box still works
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const Icon = thesis ? DIR_ICON[thesis.direction] ?? Eye : Eye;

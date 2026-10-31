@@ -3,7 +3,7 @@ import { resendVerification } from "../ui/verifyEmail";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { api, setToken } from "../api/client";
-import { friendlyError } from "../api/errors";
+import { friendlyError, errorSentence } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
 import SignInScreen from "../auth/SignInScreen";
 import { deviceLabel } from "../auth/deviceLabel";
@@ -21,6 +21,7 @@ import { formatDateTimeIST } from "../ui/format";
 import MyDataCardV2 from "../settings/MyDataCardV2";
 import { SkeletonRows } from "../components/primitives";
 import { Details } from "../ui/Details";
+import { toast } from "../components/Toast";
 
 /** The signed-in trader's account: e-mail, two-factor, password, sessions. Signed out, App.tsx shows the sign-in screen
  * before any page; this page shows the same screen should it ever render without a user (UX1). */
@@ -58,13 +59,13 @@ export default function AccountPage() {
     } catch (e) {
       setError(friendlyError(e));
     }
-    api.listSessions().then(setSessions).catch(() => {});
+    api.listSessions().then(setSessions).catch((e) => toast.error(errorSentence(e)));
   }
 
   async function revoke(id: number) {
     setError(null);
     await api.revokeSession(id).catch((e) => setError(friendlyError(e)));
-    api.listSessions().then(setSessions).catch(() => {});
+    api.listSessions().then(setSessions).catch((e) => toast.error(errorSentence(e)));
   }
 
   // An e-mail verification link opened while signed in (`?verify=<token>`): verify, then take the token out of the
@@ -105,7 +106,7 @@ export default function AccountPage() {
             <LogOut size={14} /> Log out
           </button>
           <button
-            onClick={() => api.logoutEverywhere().catch(() => {}).finally(logout)}
+            onClick={() => api.logoutEverywhere().catch((e) => toast.error(errorSentence(e))).finally(logout)}
             className="rounded border border-down/40 hover:bg-down/10 text-down px-4 py-1.5 text-sm transition-colors"
             title="Ends every session of your account on every device"
           >
@@ -138,7 +139,7 @@ export default function AccountPage() {
           <p className="mt-2 text-xs text-fg-muted">Derived from your role; your organisation's owner can deny or grant individual permissions from the Team tab.</p>
         </Card>
       )}
-      <MfaCard status={mfaStatus} onChange={() => api.mfaStatus().then(setMfaStatus).catch(() => {})} />
+      <MfaCard status={mfaStatus} onChange={() => api.mfaStatus().then(setMfaStatus).catch((e) => toast.error(errorSentence(e)))} />
       <Card title="Change password">
         <form
           className="space-y-2"
@@ -151,7 +152,7 @@ export default function AccountPage() {
               setPwMessage("Password changed. Every other session has been logged out.");
               setPwCurrent("");
               setPwNew("");
-              api.listSessions().then(setSessions).catch(() => {});
+              api.listSessions().then(setSessions).catch((e) => toast.error(errorSentence(e)));
             } catch (err) {
               setPwMessage(friendlyError(err));
             }

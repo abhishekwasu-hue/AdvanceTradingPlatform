@@ -48,7 +48,7 @@ export function loadStudyList(storage: Pick<Storage, "getItem"> | null = safe())
 }
 
 export function saveStudyList(list: readonly string[], storage: Pick<Storage, "setItem"> | null = safe()): void {
-  try { storage?.setItem(STORE_KEY, JSON.stringify(list.slice(0, MAX_STUDIES))); } catch { /* blocked storage: not kept */ }
+  try { storage?.setItem(STORE_KEY, JSON.stringify(list.slice(0, MAX_STUDIES))); } catch { /* intentional: blocked storage: not kept */ }
 }
 
 function safe(): Storage | null {

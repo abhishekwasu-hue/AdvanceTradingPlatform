@@ -76,7 +76,7 @@ export function DisciplineCardBodyV2({ card }: { card: DisciplineCard }) {
       const data: ShareData = { title: shown.title, text: shareText(shown) };
       if (navigator.canShare?.({ files: [file] })) data.files = [file];
       await navigator.share(data);
-    } catch { /* he closed the share sheet */ }
+    } catch { /* intentional: he closed the share sheet */ }
   }
   async function onCopy() {
     try { await navigator.clipboard.writeText(shareText(shown)); setNote("Copied."); } catch { setNote("Could not copy on this device."); }

@@ -26,7 +26,7 @@ function newTabId(): string {
 export const TAB_ID = newTabId();
 
 function tellData(event: LiveDataEvent, data: unknown) {
-  dataListeners.forEach((l) => { try { l(event, data); } catch { /* one listener never stops the others */ } });
+  dataListeners.forEach((l) => { try { l(event, data); } catch { /* intentional: one listener never stops the others */ } });
 }
 
 const wanted = () => listeners.size > 0 || dataListeners.size > 0;
@@ -51,11 +51,11 @@ async function loop() {
         const parser = new SseParser();
         for (;;) {
           const { value, done } = await reader.read();
-          if (done || !wanted()) { void reader.cancel().catch(() => undefined); break; }
+          if (done || !wanted()) { void reader.cancel().catch(() => undefined); break; }  // intentional: the stream is already closed
           for (const e of parser.push(value)) {
             if (e.event === "ai_actions" || e.event === "notifications") listeners.forEach((l) => l(e.event as LiveTopic));
             else if (e.event === "ticks" || e.event === "hub" || e.event === "ready" || e.event === "beat") {
-              try { tellData(e.event, JSON.parse(e.data)); } catch { /* a malformed event is skipped */ }
+              try { tellData(e.event, JSON.parse(e.data)); } catch { /* intentional: a malformed event is skipped */ }
             }
           }
         }

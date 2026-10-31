@@ -9,6 +9,7 @@ import { PageHeader } from "../components/primitives";
 import { formatDateIST, formatDateTimeIST } from "../ui/format";
 import { permissionWords, routingHelp, shownPermission } from "../ui/permissionWords";
 import { useLiveHidden } from "../settings/useLiveHidden";
+import { toast } from "../components/Toast";
 
 const INVITABLE: TenantRole[] = ["USER", "STRATEGY_CREATOR", "VIEWER"];
 const ASSIGNABLE: TenantRole[] = ["OWNER", "USER", "STRATEGY_CREATOR", "VIEWER"];
@@ -49,7 +50,7 @@ export default function TeamPage() {
     api.getTenant().then((t) => { setTenant(t); setTenantName(t.name); setAlgoId(t.algo_id ?? ""); }).catch((e) => setError(errorSentence(e)));
     api.listMembers().then(setMembers).catch((e) => setError(errorSentence(e)));
     if (isOwner) api.listInvites().then(setInvites).catch(() => setInvites([]));
-    if (isOwner && catalogue.length === 0) api.scopeCatalogue().then(setCatalogue).catch(() => {});
+    if (isOwner && catalogue.length === 0) api.scopeCatalogue().then(setCatalogue).catch((e) => toast.error(errorSentence(e)));
   }
 
   function toggleScope(scope: string) {
@@ -109,7 +110,7 @@ export default function TeamPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // clipboard unavailable - the link stays visible for manual copy
+      // intentional: clipboard unavailable - the link stays visible for manual copy
     }
   }
 

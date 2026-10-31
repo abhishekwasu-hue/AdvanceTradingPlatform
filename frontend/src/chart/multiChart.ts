@@ -31,7 +31,7 @@ export function readMultiDraft(user: UserId): LayoutV1 | null {
 
 export function saveMultiDraft(user: UserId, layout: LayoutV1): void {
   if (user == null) return;
-  try { localStorage.setItem(`${MULTI_DRAFT_KEY}:${user}`, JSON.stringify(layout)); } catch { /* storage unavailable */ }
+  try { localStorage.setItem(`${MULTI_DRAFT_KEY}:${user}`, JSON.stringify(layout)); } catch { /* intentional: storage unavailable */ }
 }
 
 export function readLastLayout(): string | null {
@@ -42,7 +42,7 @@ export function saveLastLayout(id: number | null): void {
   try {
     if (id === null) localStorage.removeItem(LAST_LAYOUT_KEY);
     else localStorage.setItem(LAST_LAYOUT_KEY, String(id));
-  } catch { /* storage unavailable */ }
+  } catch { /* intentional: storage unavailable */ }
 }
 
 /** A symbol the address asked for (an old workspace link, redirected): `/charts?tab=multi&symbol=&tf=&exchange=`. */
@@ -167,7 +167,7 @@ export class CandlePool {
       let resolve!: (v: CandlesResponse) => void;
       let reject!: (e: unknown) => void;
       const promise = new Promise<CandlesResponse>((res, rej) => { resolve = res; reject = rej; });
-      promise.catch(() => undefined);                    // a job nobody waits for any more fails quietly
+      promise.catch(() => undefined);                    // intentional: a job nobody waits for any more fails quietly
       job = { key, args, waiters: 0, started: false, promise, resolve, reject };
       this.jobs.set(key, job);
       this.queue.push(job);

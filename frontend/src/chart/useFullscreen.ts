@@ -72,7 +72,7 @@ export function useFullscreen(root: RefObject<HTMLElement | null>, busy: () => b
 
   const exit = useCallback(() => {
     setFallback(false);
-    if (nativeOf(root.current)) void document.exitFullscreen().catch(() => undefined);
+    if (nativeOf(root.current)) void document.exitFullscreen().catch(() => undefined);  // intentional: the browser already left full screen
   }, [root]);
 
   const toggle = useCallback(() => { if (onRef.current) exit(); else enter(); }, [enter, exit]);
@@ -90,7 +90,7 @@ export function useFullscreen(root: RefObject<HTMLElement | null>, busy: () => b
   }, [exit, toggle, keys]);
 
   // Leaving the page while full screen: the browser's full screen ends with it.
-  useEffect(() => () => { if (document.fullscreenElement && document.fullscreenElement === root.current) void document.exitFullscreen().catch(() => undefined); }, [root]);
+  useEffect(() => () => { if (document.fullscreenElement && document.fullscreenElement === root.current) void document.exitFullscreen().catch(() => undefined); }, [root]);  // intentional: the browser already left full screen
 
   return { on, fallback, toggle, exit };
 }

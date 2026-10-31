@@ -5,6 +5,8 @@ import { useAuth } from "../auth/AuthContext";
 import type { ChartRunResponse, Deployment, OHLCVBar, StrategyInfo } from "../types";
 import type { ChartMarker, PriceLineSpec } from "../charting/markers";
 import { signClass } from "./ui";
+import { errorSentence } from "../api/errors";
+import { toast } from "./Toast";
 
 /**
  * Phase AO: strategies on the chart. Each inbuilt strategy gets two switches:
@@ -64,7 +66,7 @@ export function useChartStrategies({ enabled, candles, symbol, timeframe, exchan
 
   const sym = (symbol ?? "").trim().toUpperCase();
   const canDeploy = deployable && !!user && !!sym;
-  const refreshDeployments = () => { if (canDeploy) api.listDeployments().then(setDeployments).catch(() => {}); };
+  const refreshDeployments = () => { if (canDeploy) api.listDeployments().then(setDeployments).catch((e) => toast.error(errorSentence(e))); };
   useEffect(() => { if (open) refreshDeployments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [open, canDeploy, sym]);
 
   // Re-run the shown strategies when a new candle arrives (not on every live tick) or the timeframe changes.

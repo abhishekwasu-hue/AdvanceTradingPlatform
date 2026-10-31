@@ -88,7 +88,7 @@ export default function AskCopilotTab() {
   /** The answer's button: the concept library lives on the Coach & Guide page; everything else is a Copilot tab. */
   function openAction(reply: CopilotReply) {
     if (reply.action.tab === "guide") {
-      try { localStorage.setItem("atp_coach_tab", "guide"); } catch { /* storage unavailable */ }
+      try { localStorage.setItem("atp_coach_tab", "guide"); } catch { /* intentional: storage unavailable */ }
       navigate(pathFor("coach"));
       return;
     }

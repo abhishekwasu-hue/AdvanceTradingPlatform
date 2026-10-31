@@ -32,7 +32,7 @@ export function codeFromSearch(search: string): string | null {
 }
 
 export function rememberCode(code: string): void {
-  try { window.localStorage.setItem(REF_STORE, code); } catch { /* storage blocked: the code is simply not kept */ }
+  try { window.localStorage.setItem(REF_STORE, code); } catch { /* intentional: storage blocked: the code is simply not kept */ }
 }
 
 export function rememberedCode(): string | null {
@@ -45,7 +45,7 @@ export function rememberedCode(): string | null {
 }
 
 export function forgetCode(): void {
-  try { window.localStorage.removeItem(REF_STORE); } catch { /* nothing to forget */ }
+  try { window.localStorage.removeItem(REF_STORE); } catch { /* intentional: nothing to forget */ }
 }
 
 /** "3 people joined" in plain words. */

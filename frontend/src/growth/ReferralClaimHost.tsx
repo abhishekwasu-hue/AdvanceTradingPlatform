@@ -10,7 +10,7 @@ export default function ReferralClaimHost() {
   useEffect(() => {
     const code = rememberedCode();
     if (!code) return;
-    referralApi.claim(code).catch(() => undefined).finally(forgetCode);
+    referralApi.claim(code).catch(() => undefined).finally(forgetCode);  // intentional: best effort: a referral claim is never in the way
   }, []);
   return null;
 }

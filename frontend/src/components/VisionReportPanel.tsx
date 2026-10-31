@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { VisionReportsResponse } from "../types";
 import { splitJudgement, visionView } from "./visionReport";
+import { errorSentence } from "../api/errors";
+import { toast } from "./Toast";
 
 /**
  * BYOK-V2: the caller's own Vision report on one proposal (made with the caller's own AI key), or the line that says
@@ -25,7 +27,7 @@ export function VisionReportView({ resp, onChanged }: { resp: VisionReportsRespo
 
   async function remove(id: number) {
     setBusy(true);
-    try { await api.byokDeleteReport(id); onChanged(); } catch { /* the list reload shows the truth */ } finally { setBusy(false); }
+    try { await api.byokDeleteReport(id); onChanged(); } catch (e) { toast.error(errorSentence(e)); } finally { setBusy(false); }
   }
   const deleteButton = (id: number | null) => id == null ? null : (
     <button type="button" className="ml-auto text-xs text-fg-muted hover:text-down hover:underline disabled:opacity-50" disabled={busy}

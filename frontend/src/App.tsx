@@ -73,7 +73,7 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportLoaded, setSupportLoaded] = useState(false);
   useEffect(() => {
-    const load = () => api.systemStatus().then(setStatus).catch(() => {});
+    const load = () => api.systemStatus().then(setStatus).catch(() => {});  // intentional: a polled status read; the next poll a minute later tries again
     load();
     const id = window.setInterval(load, 60_000);
     return () => window.clearInterval(id);

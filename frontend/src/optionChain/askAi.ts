@@ -198,7 +198,7 @@ export async function saveSaved(items: SavedItems, version: number, fetcher: Fet
           return { ok: false, conflict: { items: readItems(detail.current), version: detail.version },
             message: "Your analyses were changed on another device. That list is shown now; try again." };
         }
-      } catch { /* not the prefs conflict shape */ }
+      } catch { /* intentional: not the prefs conflict shape */ }
     }
     return { ok: false, conflict: null, message: "Your analyses were not saved. Check your connection and try again." };
   }

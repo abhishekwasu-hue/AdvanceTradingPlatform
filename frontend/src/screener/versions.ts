@@ -121,14 +121,14 @@ export function readStore(storage: Pick<Storage, "getItem"> | null = safeStorage
 export function writeStore(store: VersionStore, storage: Pick<Storage, "setItem"> | null = safeStorage()): void {
   try {
     storage?.setItem(VERSIONS_KEY, JSON.stringify(store));
-  } catch { /* storage full or blocked: no history, the save itself already happened */ }
+  } catch { /* intentional: storage full or blocked: no history, the save itself already happened */ }
 }
 
 /** Removes the device copy (after the first sync uploaded it). Never throws. */
 export function clearStore(storage: Pick<Storage, "removeItem"> | null = safeStorage()): void {
   try {
     storage?.removeItem(VERSIONS_KEY);
-  } catch { /* blocked storage: nothing to clear */ }
+  } catch { /* intentional: blocked storage: nothing to clear */ }
 }
 
 /** The builder blocks a save keeps with its server version (LAB-18). */

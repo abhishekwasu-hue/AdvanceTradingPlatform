@@ -69,9 +69,9 @@ export function deferredFor(key: string): boolean {
 
 /** Signing out forgets "Later", so the next sign-in asks again. */
 export function clearLater(): void {
-  try { sessionStorage.removeItem(LATER_KEY); } catch { /* storage unavailable */ }
+  try { sessionStorage.removeItem(LATER_KEY); } catch { /* intentional: storage unavailable */ }
 }
 
 export function deferLater(key: string): void {
-  try { sessionStorage.setItem(LATER_KEY, key); } catch { /* storage unavailable: the banner just shows again */ }
+  try { sessionStorage.setItem(LATER_KEY, key); } catch { /* intentional: storage unavailable: the banner just shows again */ }
 }

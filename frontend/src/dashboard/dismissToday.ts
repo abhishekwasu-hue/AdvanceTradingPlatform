@@ -47,7 +47,7 @@ export function useHiddenToday(userKey: number | string | null, nowMs: number): 
   const hide = useCallback((id: string) => {
     const next = withHidden(read(key) ?? raw, id, Date.now());
     setRaw(next);
-    if (key) { try { localStorage.setItem(key, next); } catch { /* storage unavailable: hidden for this visit only */ } }
+    if (key) { try { localStorage.setItem(key, next); } catch { /* intentional: storage unavailable: hidden for this visit only */ } }
   }, [key, raw]);
   return { hidden: hiddenToday(raw, nowMs), hide };
 }

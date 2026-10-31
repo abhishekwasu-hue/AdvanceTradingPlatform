@@ -17,7 +17,7 @@ export default function CoachGuidePage() {
   const [tab, setTab] = useState<"coach" | "guide">(() => {
     try { return localStorage.getItem("atp_coach_tab") === "guide" ? "guide" : "coach"; } catch { return "coach"; }
   });
-  const choose = (t: "coach" | "guide") => { setTab(t); try { localStorage.setItem("atp_coach_tab", t); } catch { /* storage unavailable */ } };
+  const choose = (t: "coach" | "guide") => { setTab(t); try { localStorage.setItem("atp_coach_tab", t); } catch { /* intentional: storage unavailable */ } };
   if (!user) return <Card><p className="text-sm text-fg-muted">Log in to see your trade review.</p></Card>;
   return (
     <div className="space-y-4">

@@ -801,7 +801,8 @@ export interface ScannerRequest {
   indicator_conditions: Condition[];
   structure_filters: StructureFilter[];
   option_filters: OptionFilter[];
-  swing_window: number;
+  /** The trader's own swing window; left out when there is no structure filter (nothing else reads it). */
+  swing_window?: number;
   /** M55 T3: server mode = no candles posted; paste = the posted candles (recorded as "uploaded"). */
   data_mode?: "server" | "paste";
   lookback_days?: number;
@@ -2190,6 +2191,8 @@ export interface DegradationMetrics {
 
 export interface DegradationRow {
   strategy_id: string;
+  /** REV-1 M2: the mode of these trades (the Performance page's own read); absent on the organisation-wide read. */
+  mode?: "PAPER" | "LIVE";
   live: DegradationMetrics;
   recent_20: DegradationMetrics;
   backtest: { run_id: number; win_rate: number | null; expectancy: number | null; profit_factor: number | null; net_pnl: number | null; total_trades: number | null; data_to: string | null } | null;

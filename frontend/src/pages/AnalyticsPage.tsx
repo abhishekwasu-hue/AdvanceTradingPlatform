@@ -7,12 +7,28 @@ import { getToken } from "../api/client";
 import { apiErrorFrom, friendlyError, errorSentence } from "../api/errors";
 import { PageHeader, SkeletonRows } from "../components/primitives";
 import { SelectOrCombobox } from "../ui/Combobox";
+import { useLiveHidden } from "../settings/useLiveHidden";
+import { strategyDisplayName } from "../ui/strategyName";
 import { Details } from "../ui/Details";
 
+/** REV-1 M2: the Tax card's trade choices. In Phase 0 (PAPER only) it opens on PAPER and LIVE / ALL are not offered -
+ * there are no LIVE trades, so a LIVE report would only ever say 0. */
+export function taxModes(liveHidden: boolean): string[] {
+  return liveHidden ? ["PAPER"] : ["LIVE", "PAPER", "ALL"];
+}
+
+/** REV-1 M2: the mode word of a strategy row - PAPER results are never called "live". */
+export function modeWord(mode: string | null | undefined): string {
+  return (mode ?? "PAPER").toUpperCase() === "LIVE" ? "LIVE" : "PAPER";
+}
+
 function TaxReportCard() {
+  const liveHidden = useLiveHidden();
+  const modes = taxModes(liveHidden);
   const [years, setYears] = useState<string[]>([]);
   const [fy, setFy] = useState<string>("");
-  const [mode, setMode] = useState<string>("LIVE");
+  const [chosen, setMode] = useState<string>(modes[0]);
+  const mode = modes.includes(chosen) ? chosen : modes[0];
   const [report, setReport] = useState<TaxReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { api.taxYears().then((y) => { setYears(y.years); setFy((f) => f || y.current); }).catch((e) => setError(errorSentence(e))); }, []);
@@ -33,7 +49,7 @@ function TaxReportCard() {
         <span className="inline-flex items-center gap-1 text-fg-muted"><span aria-hidden>FY</span> <SelectOrCombobox label="Financial year" value={fy} onChange={setFy}
           options={years.map((y) => ({ value: y, label: y }))} nativeClassName="rounded bg-surface-2 border border-border px-1 py-0.5 ml-1" /></span>
         <span className="inline-flex items-center gap-1 text-fg-muted"><span aria-hidden>Trades</span> <SelectOrCombobox label="Trades" value={mode} onChange={setMode}
-          options={["LIVE", "PAPER", "ALL"].map((m) => ({ value: m, label: m }))} nativeClassName="rounded bg-surface-2 border border-border px-1 py-0.5 ml-1" /></span>
+          options={modes.map((m) => ({ value: m, label: m }))} nativeClassName="rounded bg-surface-2 border border-border px-1 py-0.5 ml-1" /></span>
         <button onClick={download} disabled={!report} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 disabled:opacity-50">Download CSV</button>
         {report && <span className="text-fg-muted">{report.trades} closed trades · net {money(report.net_pnl)}</span>}
         {report && <span className="text-fg-muted" title={report.turnover_method_label}>F&amp;O turnover: {report.turnover_method === "ABS_PNL" ? "absolute P&L" : "absolute P&L + option premium sold"}</span>}
@@ -41,6 +57,7 @@ function TaxReportCard() {
       <Details id="analytics.tax-report" className="mt-0 mb-2"><p>Not tax advice. Estimates from your own trades only, to reconcile with your broker&apos;s statement; verify with a chartered accountant.</p></Details>
       {error && <div className="text-xs text-down">{error}</div>}
       {report && (
+        <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="text-fg-muted uppercase text-xs"><tr className="text-left"><th className="py-1 pr-3">Head</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Gross</th><th className="py-1 pr-3">Charges</th><th className="py-1 pr-3">Net</th><th className="py-1 pr-3">Turnover</th><th className="py-1 pr-3">STT/CTT est.</th><th className="py-1 pr-3">Crypto TDS / 30% tax</th></tr></thead>
           <tbody>
@@ -58,13 +75,14 @@ function TaxReportCard() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
       {report && <ul className="mt-2 space-y-0.5 text-xs text-fg-muted list-disc pl-4">{report.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
     </Card>
   );
 }
 
-function GroupTable({ title, rows }: { title: string; rows: GroupStats[] }) {
+function GroupTable({ title, keyLabel, rows, labelOf = (k) => k }: { title: string; keyLabel: string; rows: GroupStats[]; labelOf?: (key: string) => string }) {
   return (
     <Card title={title}>
       {rows.length === 0 ? (
@@ -73,7 +91,7 @@ function GroupTable({ title, rows }: { title: string; rows: GroupStats[] }) {
         <table className="w-full text-xs">
           <thead className="text-fg-muted uppercase text-xs tracking-wide">
             <tr className="text-left">
-              <th className="py-1 pr-3">Key</th>
+              <th className="py-1 pr-3">{keyLabel}</th>
               <th className="py-1 pr-3">Trades</th>
               <th className="py-1 pr-3">Win Rate</th>
               <th className="py-1 pr-3">Net P&amp;L</th>
@@ -82,7 +100,7 @@ function GroupTable({ title, rows }: { title: string; rows: GroupStats[] }) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.key} className="border-t border-border">
-                <td className="py-1 pr-3 font-medium text-fg">{r.key}</td>
+                <td className="py-1 pr-3 font-medium text-fg">{labelOf(r.key)}</td>
                 <td className="py-1 pr-3">{r.trades}</td>
                 <td className="py-1 pr-3">{r.win_rate.toFixed(1)}%</td>
                 <td className={`py-1 pr-3 ${signClass(r.net_pnl)}`}>{r.net_pnl.toFixed(2)}</td>
@@ -103,8 +121,9 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     if (!user) return;
-    api.getAnalyticsSummary().then(setSummary).catch((e) => setError(errorSentence(e)));
-    api.analyticsDegradation().then(setDegradation).catch(() => {});
+    // REV-1 M2: the user's own trades only (the Tax card and the Coach read the same), never the whole organisation's.
+    api.performanceSummary().then(setSummary).catch((e) => setError(errorSentence(e)));
+    api.performanceVsBacktest().then(setDegradation).catch(() => {});
   }, [user]);
 
   if (authLoading) return null;
@@ -112,11 +131,10 @@ export default function AnalyticsPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Analytics" />
+        <PageHeader title="Performance" />
         <Card>
           <p className="text-sm text-fg-muted">
-            Log in from the Account tab to see win rate and P&amp;L broken down by strategy and
-            symbol, computed from your persisted trade history.
+            Sign in to see your win rate and P&amp;L by strategy and symbol, from your own trades.
           </p>
         </Card>
       </div>
@@ -128,13 +146,15 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Analytics" description="Aggregated from your full persisted trade history (Positions/Trade Journal)." />
+      <PageHeader title="Performance" description="From your own trades: every trade you closed, and the ones still open." />
       {degradation && degradation.strategies.length > 0 && (
-        <Card title={`Live vs backtest (${degradation.degraded} degraded, ${degradation.watch} on watch)`}>
-          <table className="w-full text-xs"><thead className="text-fg-muted uppercase text-xs"><tr className="text-left"><th className="py-1 pr-3">Strategy</th><th className="py-1 pr-3">Status</th><th className="py-1 pr-3">Live trades</th><th className="py-1 pr-3">Live win rate</th><th className="py-1 pr-3">Recent-20 win rate</th><th className="py-1 pr-3">Backtest win rate</th><th className="py-1 pr-3">Live expectancy</th><th className="py-1 pr-3">Why</th></tr></thead>
+        <Card title={`Your trades vs backtest (${degradation.degraded} degraded, ${degradation.watch} on watch)`}>
+          <div className="overflow-x-auto">
+          <table className="w-full text-xs"><thead className="text-fg-muted uppercase text-xs"><tr className="text-left"><th className="py-1 pr-3">Strategy</th><th className="py-1 pr-3">Mode</th><th className="py-1 pr-3">Status</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Win rate</th><th className="py-1 pr-3">Last 20 win rate</th><th className="py-1 pr-3">Backtest win rate</th><th className="py-1 pr-3">Expectancy</th><th className="py-1 pr-3">Why</th></tr></thead>
             <tbody>{degradation.strategies.map((r) => (
-              <tr key={r.strategy_id} className="border-t border-border/60">
-                <td className="py-1 pr-3 font-medium">{r.strategy_id}</td>
+              <tr key={`${r.strategy_id}|${r.mode ?? ""}`} className="border-t border-border/60">
+                <td className="py-1 pr-3 font-medium">{strategyDisplayName(r.strategy_id) || "My strategy"}</td>
+                <td className="py-1 pr-3" data-mode>{modeWord(r.mode)}</td>
                 <td className={`py-1 pr-3 font-bold ${r.status === "DEGRADED" ? "text-down" : r.status === "WATCH" ? "text-warn" : r.status === "OK" ? "text-up" : "text-fg-muted"}`}>{r.status.replace("_", " ")}</td>
                 <td className="py-1 pr-3">{r.live.trades}</td>
                 <td className="py-1 pr-3">{r.live.win_rate != null ? `${(r.live.win_rate * 100).toFixed(0)}%` : "-"}</td>
@@ -144,6 +164,7 @@ export default function AnalyticsPage() {
                 <td className="py-1 pr-3 text-fg-muted">{r.reasons.join("; ")}</td>
               </tr>
             ))}</tbody></table>
+          </div>
           <div className="text-xs text-fg-muted mt-2">{degradation.note}</div>
         </Card>
       )}
@@ -160,8 +181,8 @@ export default function AnalyticsPage() {
         <StatTile label="Avg Win / Loss" value={`${summary.avg_win.toFixed(2)} / ${summary.avg_loss.toFixed(2)}`} />
       </div>
 
-      <GroupTable title="By Strategy" rows={summary.by_strategy} />
-      <GroupTable title="By Symbol" rows={summary.by_symbol} />
+      <GroupTable title="By strategy" keyLabel="Strategy" rows={summary.by_strategy} labelOf={(k) => strategyDisplayName(k) || "My strategy"} />
+      <GroupTable title="By symbol" keyLabel="Symbol" rows={summary.by_symbol} />
     </div>
   );
 }

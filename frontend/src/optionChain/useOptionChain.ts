@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import { ApiError } from "../api/errors";
+import { ApiError, serverReason } from "../api/errors";
 import { usePageVisible } from "../utils/usePageVisible";
 import { chooseExpiry, pollEvery } from "./model";
 import type { ChainExpiries, LiveChain } from "./types";
@@ -49,11 +49,21 @@ export function startChainPolling(o: {
   return () => { alive = false; if (timer !== undefined) clearTimeout(timer); };
 }
 
-/** A 409 with `X-Data-Tier` is the bring-your-own-broker plan refusing a live read of this symbol; a plain 409 is no
- * usable broker session; anything else failed. */
+/** REV-1 M2: a tier refusal whose reason is about the user's broker session (none linked, none logged in today), not
+ * about the plan. With byob on, every 409 carries `X-Data-Tier`, so the header alone cannot tell the two apart. */
+const NO_SESSION_REASON = /\blog in\b|no broker linked|account linked|no live session|no valid (session )?token|session has ended/i;
+
+/** A 409 with `X-Data-Tier` is the bring-your-own-broker plan refusing a live read of this symbol - unless its reason is
+ * a missing or lapsed session; a plain 409 is no usable broker session; anything else failed. */
 export function problemOf(e: unknown): ChainProblem {
   if (!(e instanceof ApiError) || e.status !== 409) return "failed";
-  return e.dataTier ? "plan" : "no-session";
+  if (!e.dataTier) return "no-session";
+  return NO_SESSION_REASON.test(e.detail) ? "no-session" : "plan";
+}
+
+/** REV-1 M2: the server's own readable reason for a failed chain read ("" when it sent none). */
+export function problemReasonOf(e: unknown): string {
+  return e instanceof ApiError ? serverReason(e.detail) : "";
 }
 
 export interface OptionChainData {
@@ -64,6 +74,8 @@ export interface OptionChainData {
   /** True until the first chain of this symbol and expiry has answered (or failed). */
   loading: boolean;
   problem: ChainProblem | null;
+  /** REV-1 M2: the server's own reason for `problem` ("" when it sent none a trader can read). */
+  problemReason?: string;
 }
 
 /** FNO-3: `wanted` is the expiry the address carried (the symbol hub's tabs keep it); used for the first list only,
@@ -79,6 +91,7 @@ export function useOptionChain(symbol: string, marketOpen: boolean | null, wante
   const [live, setLive] = useState<LiveChain | null>(null);
   const [loading, setLoading] = useState(true);
   const [problem, setProblem] = useState<ChainProblem | null>(null);
+  const [problemReason, setProblemReason] = useState("");
   const lastRead = useRef(0);
   // A page left open past an expiry: the server refuses the passed date (422) and the list is read again.
   const [listRound, setListRound] = useState(0);
@@ -147,10 +160,11 @@ export function useOptionChain(symbol: string, marketOpen: boolean | null, wante
           return;
         }
         setProblem(problemOf(e));
+        setProblemReason(problemReasonOf(e));
         setLoading(false);
       },
     });
   }, [symbol, expiry, listReady, visible]);
 
-  return { expiries, expiry, setExpiry, live, loading, problem };
+  return { expiries, expiry, setExpiry, live, loading, problem, problemReason };
 }

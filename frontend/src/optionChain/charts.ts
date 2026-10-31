@@ -1,5 +1,5 @@
 import { request } from "../api/client";
-import { MINUS, formatNumber, formatTimeIST } from "../ui/format";
+import { formatCount, formatNumber, formatTimeIST } from "../ui/format";
 import { formatStrike, toneClasses, yTick, type Tone } from "./analyses";
 import { lastCloseText } from "./model";
 
@@ -212,9 +212,7 @@ export function axisTick(v: number, scale: Scale): string {
   const span = scale.max - scale.min;
   if (a < 1e3 || span >= a / 10) return yTick(v);
   if (a < 1e5) return formatNumber(v, span < 10 ? 2 : 0);
-  const sign = v < 0 ? MINUS : "";
-  const x = Math.abs(v);
-  return x >= 1e7 ? `${sign}${(x / 1e7).toFixed(2)}Cr` : `${sign}${(x / 1e5).toFixed(2)}L`;
+  return formatCount(v);                       // M61 OI-1: the app's one count formatter (two decimals in L / Cr)
 }
 
 export { toneClasses, yTick };

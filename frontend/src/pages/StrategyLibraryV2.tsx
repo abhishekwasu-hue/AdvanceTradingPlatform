@@ -2,12 +2,15 @@ import { Check } from "lucide-react";
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { errorSentence } from "../api/errors";
+import { Skeleton } from "../components/primitives";
 import { CARD, LINK_PRIMARY } from "../dashboard/CardV2";
 import type { StrategyInfo } from "../types";
 import { Chip, FilterChip } from "../ui/Chip";
 import { LibraryFold, LibraryMainChips, LibraryMoreSettings, SettingList } from "../ui/LibraryChips";
 import { PageFootnote } from "../ui/PageFootnote";
 import { PageHeader } from "../ui/PageHeader";
+import { RichText } from "../ui/RichText";
+import { stripMarkdown } from "../ui/stripMarkdown";
 import { CATEGORY_LABEL, categoryLabel, firstSentence, libraryCardSettings } from "../ui/strategyLabels";
 
 // UI2-3 (UI v2 §3 M6): the signal generator lives in each strategy's drawer ("Try it on a symbol"), its own chunk.
@@ -124,6 +127,13 @@ export function LibraryView({ strategies, error, inUse, category, query, chosen,
 
       <div className="grid items-start gap-space-6 lg:grid-cols-[minmax(0,1fr)_400px]">
         <div className="grid gap-space-3 lg:grid-cols-2" aria-busy={strategies === null}>
+          {/* M63 I-7: placeholder cards while the list loads (never an empty grid). */}
+          {strategies === null && (
+            <>
+              <Skeleton className="h-40" panel label="Loading strategies" />
+              <Skeleton className="h-40" panel />
+            </>
+          )}
           {shown.map((s) => {
             const rows = libraryCardSettings(s.default_params, s.timeframes);
             const current = picked?.id === s.id;
@@ -141,7 +151,7 @@ export function LibraryView({ strategies, error, inUse, category, query, chosen,
                   </h3>
                   <Tag used={used(s)} category={s.category} />
                 </div>
-                <p className="mb-space-3 mt-space-1 text-t14 text-fg-muted">{firstSentence(s.description)}</p>
+                <p className="mb-space-3 mt-space-1 text-t14 text-fg-muted">{firstSentence(stripMarkdown(s.description))}</p>
                 <LibraryMainChips rows={rows.main} />
                 <div className="lg:hidden">
                   <LibraryMoreSettings more={rows.more} suggested={rows.suggested} />
@@ -169,7 +179,7 @@ export function LibraryView({ strategies, error, inUse, category, query, chosen,
 /** lg: the chosen strategy - its main settings, "More settings", how it reads the chart, and "Try it on a symbol". */
 function Detail({ s, used, onTry }: { s: StrategyInfo; used: boolean; onTry: () => void }) {
   const rows = libraryCardSettings(s.default_params, s.timeframes);
-  const line = firstSentence(s.description);
+  const line = firstSentence(stripMarkdown(s.description));
   return (
     <aside data-library-detail aria-label="Chosen strategy" className={`${CARD} sticky top-space-6 hidden p-space-5 lg:block`}>
       <div className="flex items-start justify-between gap-space-2">
@@ -179,8 +189,8 @@ function Detail({ s, used, onTry }: { s: StrategyInfo; used: boolean; onTry: () 
       <p className="mt-space-1 text-t14 text-fg-muted">{line}</p>
       <Section title="Main settings"><SettingList rows={rows.main} label="Main settings" /></Section>
       <LibraryMoreSettings more={rows.more} suggested={rows.suggested} />
-      {s.description.trim() !== line && (
-        <LibraryFold title="How it reads the chart"><p className="text-t14 text-fg-muted">{s.description}</p></LibraryFold>
+      {stripMarkdown(s.description) !== line && (
+        <LibraryFold title="How it reads the chart"><RichText source={s.description} className="text-t14 text-fg-muted" /></LibraryFold>
       )}
       <div className="mt-space-4"><button type="button" onClick={onTry} className={LINK_PRIMARY}>Try it on a symbol</button></div>
     </aside>

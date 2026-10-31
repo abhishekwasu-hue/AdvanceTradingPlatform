@@ -147,7 +147,11 @@ async def history(underlying: str, day: Optional[date] = Query(default=None, ali
     underlying = _underlying(underlying)
     settings, day, slots, flags = await _day_view(session, user, underlying, day)
     timeline = snapshots.replay(underlying, slots, settings, day)
-    rows = [snapshots.entry_json(e) for _, e in oi_regime.aggregate_history(timeline, interval, lambda e: e.slot_start.astimezone(IST))]
+    # M61 PCR-1: every row says whether it is a session reading (calendar-aware) and whether it is partial.
+    exchange = await _exchange(session, user.tenant_id, underlying)
+    marks = snapshots.session_marks(slots, await family_holidays(session, exchange), exchange)
+    rows = [{**snapshots.entry_json(e), **marks.get(e.slot_start, {})}
+            for _, e in oi_regime.aggregate_history(timeline, interval, lambda e: e.slot_start.astimezone(IST))]
     return {"underlying": underlying, "date": day.isoformat(), "interval": interval, "rows": rows, **flags}
 
 

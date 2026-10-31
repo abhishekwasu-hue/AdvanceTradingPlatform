@@ -5,6 +5,7 @@
  * formats it. Estimates are labelled so (the margin says how it was made, or why only the broker can say).
  */
 import { cx } from "../components/primitives";
+import { formatNumber } from "../ui/format";
 import { money, type Evaluation } from "./model";
 
 function Row({ label, value, tone, hint, sub, testId }: {
@@ -66,24 +67,24 @@ export function MetricsCard({ evaluation: e, stale = false }: { evaluation: Eval
             <Row label="Max profit" value={ext.unbounded_profit ? "Unlimited" : money(ext.max_profit)} tone="up" />
             <Row label="Max loss" value={ext.unbounded_loss ? "Unlimited" : money(ext.max_loss)} tone={ext.unbounded_loss ? "warn" : "down"}
                  hint={ext.unbounded_loss ? "No cap: the loss grows with the price - size it as undefined risk" : undefined} testId="metric-max-loss" />
-            <Row label="Reward : risk" value={rr != null ? `${rr.toFixed(2)} : 1` : ext.unbounded_profit && !ext.unbounded_loss ? "Unlimited" : "–"} />
+            <Row label="Reward : risk" value={rr != null ? `${formatNumber(rr, 2)} : 1` : ext.unbounded_profit && !ext.unbounded_loss ? "Unlimited" : "–"} />
           </>
         ) : (
           <Row label="Max profit / loss" value="see the curve" hint="Legs expire on different dates: there is no single expiry payoff" />
         )}
-        <Row label="Probability of profit" value={`${(e.summary.pop * 100).toFixed(1)}%`} />
+        <Row label="Probability of profit" value={`${formatNumber(e.summary.pop * 100, 1)}%`} />
         <Row label="Margin (estimate)" value={e.margin.value != null ? money(e.margin.value) : "From the broker"} sub={e.margin.basis}
              hint={e.margin.note} testId="metric-margin" />
         <Row label="Theta / day" value={money(g.theta)} tone={g.theta >= 0 ? "up" : "down"} />
-        <Row label="Breakevens" value={e.breakevens?.length ? e.breakevens.map((b) => Math.round(b).toLocaleString("en-IN")).join(" · ") : "–"} />
+        <Row label="Breakevens" value={e.breakevens?.length ? e.breakevens.map((b) => formatNumber(b, 0)).join(" · ") : "–"} />
         <Row label="Cost to open (estimate)" value={money(cost.to_open.total)} testId="metric-cost"
              sub={`${cost.orders} orders at ${money(cost.brokerage_per_order)} each, STT ${money(cost.to_open.stt)}, other charges ${money(cost.to_open.other)}. Open and close: ${money(cost.round_trip)}.`}
              hint={cost.note} />
         <Row label="Probability-weighted P&L" value={money(e.summary.expected_pnl)} tone={e.summary.expected_pnl >= 0 ? "up" : "down"} />
-        <Row label="Expected move (1 sd)" value={`±${Math.round(e.summary.expected_move).toLocaleString("en-IN")}`} />
+        <Row label="Expected move (1 sd)" value={`±${formatNumber(e.summary.expected_move, 0)}`} />
       </dl>
       <dl className="mt-2 grid grid-cols-4 gap-2 rounded-lg bg-surface-2 px-2 py-2 text-center" aria-label="Net Greeks">
-        {([["Delta", g.delta.toFixed(1)], ["Gamma", g.gamma.toFixed(3)], ["Theta", g.theta.toFixed(0)], ["Vega", g.vega.toFixed(0)]] as const).map(([k, v]) => (
+        {([["Delta", formatNumber(g.delta, 1)], ["Gamma", formatNumber(g.gamma, 3)], ["Theta", formatNumber(g.theta, 0)], ["Vega", formatNumber(g.vega, 0)]] as const).map(([k, v]) => (
           <div key={k} className="min-w-0"><dt className="text-xs text-fg-muted">{k}</dt><dd className="truncate font-mono text-xs tabular-nums text-fg">{v}</dd></div>
         ))}
       </dl>

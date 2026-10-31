@@ -1,5 +1,5 @@
 import { request } from "../api/client";
-import { EMPTY, MINUS, formatChange, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
+import { EMPTY, formatChange, formatCount, formatCountChange, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { lastCloseText } from "./model";
 
@@ -16,8 +16,18 @@ export type Tone = "up" | "down" | "brand" | "muted" | "warn";
 export type Cell = string | number | boolean | null;
 
 export interface AnalysisColumn { key: string; label: string; kind: ColumnKind }
-export interface AnalysisTable { title: string; columns: AnalysisColumn[]; rows: Record<string, Cell>[] }
-export interface ChartPoint { x: number | string; y: number | null }
+export interface AnalysisTable {
+  title: string; columns: AnalysisColumn[]; rows: Record<string, Cell>[];
+  /** M61 PCR-3: a definition shown behind the table's (?) (the near-ATM band). */
+  help?: string;
+}
+/** A session phase (M61 PCR-1): only "session" readings are drawn by default. */
+export type ReadingPhase = "session" | "pre_open" | "after_close" | "closed_day";
+export interface ChartPoint {
+  x: number | string; y: number | null;
+  /** M61 PCR-1 / PCR-2 (the PCR path): the reading's phase, partial (drawn hollow) and its near-ATM put / call OI and ATM. */
+  phase?: ReadingPhase; hollow?: boolean; put_oi?: number | null; call_oi?: number | null; atm?: number | null;
+}
 export interface ChartSeries { key: string; label: string; tone: Tone; points: ChartPoint[] }
 export interface AnalysisChart {
   type: "bar" | "line";
@@ -26,6 +36,8 @@ export interface AnalysisChart {
   y_label: string;
   series: ChartSeries[];
   marker: { x: number; label: string } | null;
+  /** M61 PCR-2: times to mark with a dotted line (the ATM strike changed there). */
+  x_marks?: { x: string; label: string }[];
 }
 export interface Analysis {
   key: AnalysisKey;
@@ -157,8 +169,8 @@ export function formatCell(v: Cell | undefined, kind: ColumnKind): string {
   if (!isNum(v)) return EMPTY;
   switch (kind) {
     case "strike": return formatStrike(v);
-    case "oi": return formatNumber(v, 0);
-    case "oi_change": return signed(v, 0);
+    case "oi": return formatCount(v);                 // M61 OI-1: "12.35 L", "1.24 Cr"
+    case "oi_change": return formatCountChange(v);
     case "change": return formatChange(v);
     case "price": return formatPrice(v);
     case "pct": return `${formatNumber(v, 2)}%`;
@@ -231,18 +243,12 @@ export function xLabel(x: number | string, kind: AnalysisChart["x_kind"]): strin
   return kind === "time" ? formatTimeIST(String(x), { suffix: false }) : formatStrike(typeof x === "number" ? x : Number(x));
 }
 
-/** A y-axis tick: compact for large OI figures ("1.2L", "35K"), two decimals for small ones. */
+/** A y-axis tick: M61 OI-1 - from 1,000 up the app's one count formatter ("35,000", "1.25 L", "1.24 Cr"), two decimals
+ * for small figures (a PCR, an IV). */
 export function yTick(v: number): string {
   const a = Math.abs(v);
-  const sign = v < 0 ? MINUS : "";
-  if (a >= 1e7) return `${sign}${trim(a / 1e7)}Cr`;
-  if (a >= 1e5) return `${sign}${trim(a / 1e5)}L`;
-  if (a >= 1e3) return `${sign}${trim(a / 1e3)}K`;
+  if (a >= 1e3) return formatCount(v);
   return formatNumber(v, a >= 100 ? 0 : 2);
-}
-
-function trim(v: number): string {
-  return String(Number(v.toFixed(1)));
 }
 
 /** The class pair (stroke, fill) of a series tone - v2 tokens only. */
@@ -254,4 +260,66 @@ export function toneClasses(tone: Tone): { stroke: string; fill: string; swatch:
     case "muted": return { stroke: "stroke-fg-muted", fill: "fill-fg-muted/60", swatch: "bg-fg-muted" };
     default: return { stroke: "stroke-brand", fill: "fill-brand/70", swatch: "bg-brand/80" };
   }
+}
+
+// ---------------------------------------------------------------- M61 PCR-2 / PCR-3: the PCR path
+
+const PHASE_WORDS: Record<ReadingPhase, string> = { session: "", pre_open: "pre-open", after_close: "after close", closed_day: "market closed" };
+
+/** True when a chart holds a reading outside the session (the "Show pre-open and after-close readings" toggle). */
+export function hasOutside(chart: AnalysisChart): boolean {
+  return chart.series.some((s) => s.points.some((p) => p.phase !== undefined && p.phase !== "session"));
+}
+
+/** M61 PCR-1: the chart as drawn - readings outside the session are left out unless `showOutside`. */
+export function visibleChart(chart: AnalysisChart, showOutside: boolean): AnalysisChart {
+  if (showOutside) return chart;
+  return { ...chart, series: chart.series.map((s) => ({ ...s, points: s.points.filter((p) => p.phase === undefined || p.phase === "session") })) };
+}
+
+/** M61 PCR-2: a point's hover note - "10:05 · Put OI 49.44 L · Call OI 27.49 L · PCR 1.80 · ATM 23,050" (+ partial / phase). */
+export function pointNote(label: string, p: ChartPoint, kind: AnalysisChart["x_kind"]): string {
+  const parts = [`${label} at ${xLabel(p.x, kind)}: ${p.y === null ? EMPTY : yTick(p.y)}`];
+  if (p.put_oi !== undefined || p.call_oi !== undefined) parts.push(`Put OI ${formatCount(p.put_oi)}`, `Call OI ${formatCount(p.call_oi)}`);
+  if (typeof p.atm === "number") parts.push(`ATM ${formatNumber(p.atm, Number.isInteger(p.atm) ? 0 : 2)}`);
+  if (p.hollow) parts.push("partial reading (some strikes missing)");
+  if (p.phase && p.phase !== "session") parts.push(PHASE_WORDS[p.phase]);
+  return parts.join(" · ");
+}
+
+const STEPS_MIN = [1, 2, 5, 10, 15, 30, 60, 120, 240];
+
+/** M61 PCR-2: x-axis ticks for a time line - every N minutes (N the smallest of 1, 2, 5, 10, 15, 30, 60, 120, 240
+ * that keeps at most `maxTicks`), on IST clock multiples of N, so labels never overlap. */
+export function timeTicks(startMs: number, endMs: number, maxTicks = 4): number[] {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return [];
+  if (endMs === startMs) return [startMs];
+  const IST_MS = 330 * 60_000;
+  for (const n of STEPS_MIN) {
+    const step = n * 60_000;
+    const first = Math.ceil((startMs + IST_MS) / step) * step - IST_MS;
+    const out: number[] = [];
+    for (let t = first; t <= endMs; t += step) out.push(t);
+    if (out.length <= maxTicks) return out;
+  }
+  return [startMs, endMs];
+}
+
+/** The x pixel of a time on a time axis from `startMs` to `endMs` (the plot's padded width). */
+export function timePixel(ms: number, startMs: number, endMs: number): number {
+  const { width, padLeft, padRight } = CHART;
+  const inner = width - padLeft - padRight;
+  if (endMs <= startMs) return padLeft + inner / 2;
+  return padLeft + inner * 0.04 + ((ms - startMs) / (endMs - startMs)) * inner * 0.92;
+}
+
+/** M61 PCR-3: the headline in numbers - "Overall PCR 1.60 · Near-ATM PCR 1.03 (11 strikes 22,800–23,300)". */
+export function pcrHeadline(a: Analysis): string | null {
+  const v = a.values as { overall?: number | null; near_atm?: number | null; window?: number[] };
+  if (a.key !== "pcr" || typeof v.overall !== "number") return null;
+  const head = `Overall PCR ${formatNumber(v.overall, 2)}`;
+  const w = Array.isArray(v.window) ? v.window : [];
+  if (typeof v.near_atm !== "number" || !w.length) return head;
+  const k = (x: number) => formatNumber(x, Number.isInteger(x) ? 0 : 2);
+  return `${head} · Near-ATM PCR ${formatNumber(v.near_atm, 2)} (${w.length} ${w.length === 1 ? "strike" : "strikes"} ${k(w[0])}–${k(w[w.length - 1])})`;
 }

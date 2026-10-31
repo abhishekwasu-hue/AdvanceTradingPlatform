@@ -67,7 +67,7 @@ describe("exposure views (N2-4)", () => {
     expect(off).toContain('aria-pressed="false"');
     expect(off).not.toContain("<select");
     const words = text(renderToStaticMarkup(<ExpectedMoveControls on horizon={5} move={MOVE} failed={false} onToggle={() => undefined} onHorizon={() => undefined} />));
-    expect(words).toContain("RELIANCE · close 2,500 on 2026-10-09 · σ 25.2% (hv20) · 5 sessions: ±1 sd 2,422-2,580.5, ±2 sd 2,346.7-2,663.4");
+    expect(words).toContain("RELIANCE · close 2,500.00 on 2026-10-09 · σ 25.2% (hv20) · 5 sessions: ±1 sd 2,422.00-2,580.50, ±2 sd 2,346.70-2,663.40");
     expect(text(renderToStaticMarkup(<ExpectedMoveControls on horizon={5} move={null} failed onToggle={() => undefined} onHorizon={() => undefined} />)))
       .toContain("could not be computed");
   });

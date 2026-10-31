@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { expectComboValue, pickOption } from "./combobox";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
-import { screenerTool } from "./screenerTools";
+import { openListPicker, screenerTool } from "./screenerTools";
 
 /**
  * Owner order (23 Oct) "the scan universe is never empty" (`ui_v2` + `screener_v2`): Find setups opens on NIFTY 50
@@ -92,7 +92,8 @@ async function open(page: Page, theme: "dark" | "light", { universes = true, cop
   });
   await page.goto("/screener");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
-  await expect(page.getByText("Start with a template or add your first condition.")).toBeVisible();
+  await expect(page.getByTestId("start-scan")).toBeVisible();
+  await openListPicker(page);                                                // M49 U6: the pickers open on "Change"
   return runs;
 }
 
@@ -185,7 +186,11 @@ test.describe("The scan universe, 1440", () => {
     });
     await pickOption(page, page.getByTestId("universe-select"), "sys:index-nifty500");
     await addStarter(page);
-    await screenerTool(page, "scan-alert-open");
+    // M49 U6: "Tell me when it matches" is the next step after a run
+    await runButton(page).click();
+    await expect(page.getByTestId("results-matched")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("scan-progress")).toHaveCount(0, { timeout: 15_000 });
+    await page.getByTestId("scan-alert-open").click();
     const dialog = page.getByRole("dialog", { name: "Tell me when it matches" });
     await expect(dialog).toContainText("on NIFTY 500 (50 stocks)");
     await expect(dialog.getByTestId("scan-alert-first")).toHaveText("An alert watches up to 50 stocks, so this one watches the first 50 of the 500 in NIFTY 500.");

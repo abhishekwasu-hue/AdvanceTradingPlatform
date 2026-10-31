@@ -45,6 +45,22 @@ export const TEXT = {
   empty: "Your broker sent no strikes for this expiry.",
 } as const;
 
+/** REV-1 M2: the words for a chain that could not be read - the server's own reason when it sent a readable one (a
+ * lapsed session, a plan limit, a broker failure), else the plain text for the kind of problem. */
+export function problemText(problem: "no-session" | "plan" | "failed", reason: string | null | undefined): string {
+  const fallback = problem === "no-session" ? TEXT.noSession : problem === "plan" ? TEXT.plan : TEXT.loadFailed;
+  return reason?.trim() || fallback;
+}
+
+/** REV-1 M2: a chain kept on screen after a later read failed is marked old - when it is from, and why it is not
+ * updating. A failed read is retried; a lapsed session or a plan limit is not fixed by waiting, so it says so. */
+export function staleText(live: LiveChain, problem: "no-session" | "plan" | "failed", reason: string | null | undefined): string {
+  const when = live.data_as_of ?? live.fetched_at;
+  const head = when ? `These numbers are old (from ${formatDateTimeIST(when)}) and are not updating.` : "These numbers are old and are not updating.";
+  if (problem === "failed") return `${head} ${reason?.trim() || "We could not read the chain again."} We will try again in a moment.`;
+  return `${head} ${problemText(problem, reason)}`;
+}
+
 export type Note = { key: "closed" | "building" | "since"; text: string };
 
 /** B2a: "As of the last session close, 23 Oct 2026, 15:30 IST" - what a closed market's numbers stand on. */
@@ -173,23 +189,9 @@ export function formatStrike(v: number | null | undefined): string {
   return formatNumber(v, Number.isInteger(v) ? 0 : 2);
 }
 
-/** A count (OI, volume) in the Indian way: 85,000; 12.35 L; 1.24 Cr. */
-export function formatCount(v: number | null | undefined): string {
-  if (typeof v !== "number" || !Number.isFinite(v)) return EMPTY;
-  const abs = Math.abs(v);
-  const sign = v < 0 ? MINUS : "";
-  const trim = (s: string) => s.replace(/\.?0+$/, "");
-  if (abs >= 1e7) return `${sign}${trim(formatNumber(abs / 1e7, 2))} Cr`;
-  if (abs >= 1e5) return `${sign}${trim((abs / 1e5).toFixed(2))} L`;
-  return `${sign}${formatNumber(abs, 0)}`;
-}
-
-/** A change in a count: "+12.35 L", "−4,500", "0". */
-export function formatCountChange(v: number | null | undefined): string {
-  if (typeof v !== "number" || !Number.isFinite(v)) return EMPTY;
-  const text = formatCount(v);
-  return v > 0 ? `+${text}` : text;
-}
+/** A count (OI, volume) and its change: M61 OI-1 keeps ONE formatter app-wide (ui/format.ts); re-exported here for the
+ * chain's callers. */
+export { formatCount, formatCountChange } from "../ui/format";
 
 /** FNO-1: an OI change in percent of the OI before it ("+12.5%", "−4.0%"); "–" when the earlier OI is not known or 0. */
 export function formatOiChangePct(oi: number | null | undefined, change: number | null | undefined): string {

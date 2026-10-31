@@ -90,7 +90,7 @@ async function open(page: Page, theme: "dark" | "light", options: MockOptions = 
   });
   await page.goto("/screener");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
-  await expect(page.getByText("Start with a template or add your first condition.")).toBeVisible();
+  await expect(page.getByTestId("start-scan")).toBeVisible();
   return calls;
 }
 
@@ -102,11 +102,11 @@ async function saveScan(page: Page, calls: Calls) {
   await page.getByRole("button", { name: "Momentum" }).click();
   await page.getByLabel("Scan name").fill("My momentum scan");
   await save(page);
-  // SCR-FIX D9: on a phone the Versions button sits in the "More" sheet
-  const phone = await page.getByTestId("screener-more").isVisible();
-  if (phone) await page.getByTestId("screener-more").click();
+  // SCR-FIX D9 / M49 U6: the Versions button sits in the "More tools" sheet (here its only tool, so "More tools" shows
+  // once the saved scan has versions)
+  await page.getByTestId("screener-more").click();
   await expect(page.getByTestId("scan-versions-open")).toHaveText("Versions (3)");
-  if (phone) await closeScreenerMore(page);
+  await closeScreenerMore(page);
 }
 
 test.describe("Scan versions on the server, 1440", () => {
@@ -119,7 +119,7 @@ test.describe("Scan versions on the server, 1440", () => {
     expect(calls.imports[0].body.versions).toEqual(DEVICE[41]);
     await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), KEY)).toBeNull();
     await page.reload();
-    await expect(page.getByText("Start with a template or add your first condition.")).toBeVisible();
+    await expect(page.getByTestId("start-scan")).toBeVisible();
     await page.waitForLoadState("networkidle");
     expect(calls.imports).toHaveLength(1);                             // nothing left to upload
   });
@@ -146,6 +146,7 @@ test.describe("Scan versions on the server, 1440", () => {
     await expect(page.getByText("Version 1 is in the builder. Save to keep it as the newest version.")).toBeVisible();
     expect(calls.saves).toHaveLength(1);                                // opening saved nothing
     await save(page);
+    await page.getByTestId("screener-more").click();                    // M49 U6: Versions sits under "More tools"
     await expect(page.getByTestId("scan-versions-open")).toHaveText("Versions (4)");
     expect(calls.saves[1].method).toBe("PUT");
     expect(calls.saves[1].body.builder).toMatchObject({ texts: ["RSI(14) > 60"] });

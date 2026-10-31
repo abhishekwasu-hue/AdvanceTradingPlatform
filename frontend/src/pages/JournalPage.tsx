@@ -310,7 +310,7 @@ function SettingsTab() {
               value={texts[`w:${c}`] ?? ""} onChange={(ev) => setText(`w:${c}`, ev.target.value)} />
           ))}
         </div>
-        <Details id="journal.score-weights" className="mt-2"><p>Only the proportions matter. The defaults and the reasoning behind each one are in the discipline engine's design note.</p></Details>
+        <Details id="journal.score-weights" className="mt-2"><p>Only the proportions matter: a weight twice another counts twice as much in your score. Each field shows its starting value; &quot;Back to defaults&quot; restores them all.</p></Details>
       </Card>
       <div className="flex gap-2">
         <Button variant="primary" onClick={save}>Save settings</Button>

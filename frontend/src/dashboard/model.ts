@@ -9,6 +9,7 @@ import { EMPTY, formatDateIST, formatLots, formatPrice, formatTimeIST } from "..
 import { LEVELS, VIX_BANDS, vixLevel, type VixLevel } from "../ui/levels";
 import { botDisplayName, strategyDisplayName } from "../ui/strategyName";
 import type { OiBannerResponse } from "../oi/types";
+import { oiRead } from "../oi/format";
 import type {
   AiAction, AnalyticsSummary, Deployment, NotificationEntry, PaperRiskStatus, PortfolioExposure, SystemStatus, TradeRecord,
 } from "../types";
@@ -118,24 +119,17 @@ export function partlyConnected(rows: { needs_login: boolean }[] | null): string
 /** OI underlyings as the option chain names them, mapped to the strip's indices. */
 const OI_UNDERLYING: Record<string, string> = { NIFTY: "NIFTY 50", "NIFTY 50": "NIFTY 50", BANKNIFTY: "NIFTY BANK", "NIFTY BANK": "NIFTY BANK" };
 
-/** The first clause of the OI banner's message: "Put writing rising → avoid shorting calls; ..." -> "Put writing rising". */
-function firstClause(message: string): string {
-  const head = message.split(/\s*(?:→|—|;|\.\s|\s-\s)\s*/)[0] ?? "";
-  return head.trim().replace(/\.$/, "");
-}
-
-/** One OI line per index: "PCR 1.12 · Put writing rising" (§5 M10: the first sentence plus PCR only). */
+/** One OI line per index in neutral words, the option chain's read: "Put OI above call OI (PCR 1.12)" (M61 OI-5 - the
+ * banner's verdict message is not shown); only "PCR 1.12" when the totals are missing. */
 export function oiLines(banners: OiBannerResponse[] | null | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   for (const b of banners ?? []) {
     const key = OI_UNDERLYING[(b.underlying ?? "").toUpperCase()];
     const row = b.banner;
     if (!key || !row) continue;
-    const parts: string[] = [];
-    if (typeof row.pcr === "number" && Number.isFinite(row.pcr)) parts.push(`PCR ${row.pcr.toFixed(2)}`);
-    const clause = row.direction === "NEUTRAL" ? "" : firstClause(row.message ?? "");
-    if (clause && !/insufficient/i.test(clause)) parts.push(clause[0].toUpperCase() + clause.slice(1));
-    if (parts.length) out[key] = parts.join(" · ");
+    const pcr = typeof row.pcr === "number" && Number.isFinite(row.pcr) ? `PCR ${row.pcr.toFixed(2)}` : null;
+    const line = oiRead(row) ?? pcr;
+    if (line) out[key] = line;
   }
   return out;
 }

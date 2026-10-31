@@ -93,7 +93,8 @@ def split(result_json: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Dict[st
     if not isinstance(data, dict):
         return None, {}
     state = data.pop(STATE_KEY, None)
-    return data, state if isinstance(state, dict) else {}
+    data.pop("_pick", None)                       # a hybrid item's pick before its analysis (hybrid.PICK_KEY), not a result
+    return data or None, state if isinstance(state, dict) else {}
 
 
 def _expires(state: Dict[str, Any]) -> Optional[datetime]:

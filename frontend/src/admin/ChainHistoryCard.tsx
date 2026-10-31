@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Panel, Pill } from "./AdminSectionsV2";
 import { ago, consoleApi, type ChainHistoryRow, type ChainHistoryStatus } from "./consoleApi";
 import { SkeletonRows } from "../components/primitives";
+import { formatNumber, formatTimeIST } from "../ui/format";
 
 /**
  * TM 9.4: the admin card of the owner's chain history (Admin › System). What is being recorded, today's chains per
@@ -21,9 +22,9 @@ export function chainHistoryState(s: ChainHistoryStatus): { tone: "ok" | "warn" 
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (n < 1024 * 1024) return `${formatNumber(n / 1024, 1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${formatNumber(n / (1024 * 1024), 1)} MB`;
+  return `${formatNumber(n / (1024 * 1024 * 1024), 2)} GB`;
 }
 
 const hhmm = (iso: string) => iso.slice(11, 16);
@@ -50,9 +51,9 @@ export function ChainHistoryView({ data }: { data: ChainHistoryStatus }) {
       {data.problem && <p className="mt-space-2 text-t14 text-fg" data-chain-history-problem>{data.problem}</p>}
       <dl className="mt-space-3 grid grid-cols-2 gap-space-3 lg:grid-cols-4">
         <Stat icon={Clock} label="Interval" value={`Every ${data.slot_minutes} min`} sub={`${data.expiries_per_underlying} nearest expiries · market hours only`} />
-        <Stat icon={Layers} label="Today" value={`${today.toLocaleString("en-IN")} chains`} sub={formatBytes(bytesToday)} />
-        <Stat icon={History} label="Last snapshot" value={ago(last)} sub={last ? `${new Date(last).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST` : "-"} />
-        <Stat icon={Database} label="Stored" value={`${(data.totals?.chains ?? 0).toLocaleString("en-IN")} chains`}
+        <Stat icon={Layers} label="Today" value={`${formatNumber(today)} chains`} sub={formatBytes(bytesToday)} />
+        <Stat icon={History} label="Last snapshot" value={ago(last)} sub={last ? formatTimeIST(last) : "-"} />
+        <Stat icon={Database} label="Stored" value={`${formatNumber(data.totals?.chains ?? 0)} chains`}
           sub={data.totals ? `${data.totals.days} days · ${formatBytes(data.totals.stored_bytes)}` : "-"} />
       </dl>
       <div className="-mx-space-1 mt-space-4 overflow-x-auto px-space-1">
@@ -62,7 +63,7 @@ export function ChainHistoryView({ data }: { data: ChainHistoryStatus }) {
             {data.underlyings.map((r) => (
               <tr key={r.underlying} data-chain-row={r.underlying} className="border-t border-subtle">
                 <td className={`${TD} font-medium text-fg`}>{r.underlying}</td>
-                <td className={`${TD} font-tabular text-fg`}>{(r.chains_today ?? 0).toLocaleString("en-IN")}</td>
+                <td className={`${TD} font-tabular text-fg`}>{formatNumber(r.chains_today ?? 0)}</td>
                 <td className={`${TD} whitespace-nowrap font-tabular text-fg-muted`}>{r.slots_expected ? `${r.slots_today} / ${r.slots_expected}` : r.slots_today ?? 0}</td>
                 <td className={`${TD} hidden whitespace-nowrap text-fg-muted sm:table-cell`}>{ago(r.last_captured_at)}</td>
                 <td className={`${TD} min-w-32 ${r.missing_slots ? "text-warn" : "text-fg-muted"}`}>{gapText(r)}</td>

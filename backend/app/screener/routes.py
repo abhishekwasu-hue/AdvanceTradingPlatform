@@ -620,7 +620,10 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
 
 
 async def store_first(session: AsyncSession, tenant_id: int) -> bool:
-    """M71 PL-3: the flag `market_store_reads` - scans read the own store first (app/market_store)."""
+    """M71 PL-3: the flag `market_store_reads` - scans read the own store first (app/market_store). No session (a
+    caller without a database, e.g. a broker-only read) reads as OFF: today's broker path, unchanged."""
+    if session is None:
+        return False
     from app.market_store.models import FLAG as STORE_FLAG
     return await flag_enabled(session, STORE_FLAG, tenant_id)
 

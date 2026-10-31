@@ -8,6 +8,7 @@ import type { PageProps } from "../routes";
 import { NotFound } from "../shell/common";
 import { PageTabs } from "../ui/PageTabs";
 import { SubTabs } from "../ui/SubTabs";
+import { Details } from "../ui/Details";
 import { useFeatures } from "../ui/useFeatures";
 import AlertsPanelV2 from "./AlertsPanelV2";
 import GrowthSettingsPanelV2 from "./GrowthSettingsPanelV2";
@@ -51,7 +52,7 @@ export default function AdminConsoleV2(_props: PageProps) {
       <header className="flex flex-wrap items-start justify-between gap-space-3">
         <div className="min-w-0">
           <h1 className="text-t20 font-semibold text-fg">Admin console</h1>
-          <p className="text-t14 text-fg-muted">{current.hint}. Every change is audited on the affected organisation's trail.</p>
+          <Details id="admin.header" className="mt-space-1"><p>{current.hint}. Every change is audited on the affected organisation's trail.</p></Details>
         </div>
         <button type="button" onClick={() => setDiagnosticsOpen(true)} className={BUTTON} data-diagnostics-button>
           <Stethoscope size={16} aria-hidden />Diagnostics
@@ -84,8 +85,8 @@ export default function AdminConsoleV2(_props: PageProps) {
       {section === "compliance" && <CompliancePanelV2 />}
       {section !== "testing" && section !== "support" && section !== "compliance" && <AdminPage section={section} controlsGroup={group} />}
 
-      <Sheet open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} title="Diagnostics"
-        description="What already went wrong, newest first. Search the server logs by the request id for the full story.">
+      <Sheet open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} title="Diagnostics">
+        <Details id="admin.diagnostics" className="mt-0 mb-space-3">What already went wrong, newest first. Search the server logs by the request id for the full story.</Details>
         {diagnosticsOpen && <DiagnosticsBody />}
       </Sheet>
     </div>

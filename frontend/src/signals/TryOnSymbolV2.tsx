@@ -11,6 +11,7 @@ import type { EnrichedSignal, OHLCVBar, StrategyInfo } from "../types";
 import { buildTimeframeData, generateSampleCandles } from "../utils/sampleData";
 import type { SignalFeedItem } from "./feed";
 import { Direction, LevelTiles } from "./SignalPartsV2";
+import { Details } from "../ui/Details";
 
 const FIELD = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-sm text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9 md:text-t14";
 const BUTTON = "inline-flex min-h-11 items-center justify-center rounded-control px-space-4 text-t14 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50 md:min-h-9";
@@ -94,7 +95,7 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
 
   return (
     <div className="space-y-space-4" data-try-on-symbol>
-      <p className="text-t14 text-fg-muted">Run {strategy.name} on one symbol now and see what it would signal, with its levels and reasons.</p>
+      <Details id="signals.try-on-symbol" className="mt-0"><p>Run {strategy.name} on one symbol now and see what it would signal, with its levels and reasons.</p></Details>
       <form onSubmit={generate} className="space-y-space-3">
         <div>
           <label htmlFor={ids.symbol} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>

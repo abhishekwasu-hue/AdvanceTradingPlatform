@@ -4,6 +4,7 @@ import { CardV2, ChipV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2
 import { growthApi } from "./api";
 import { meterFill, trialLine } from "./model";
 import type { PlanMeter, PlanPage } from "./types";
+import { Details } from "../ui/Details";
 
 /**
  * MO4 slice 3 (`ui_v2` + `growth_v2`): the plan page's top card on Settings → Account & plan - his plan in plain words
@@ -56,7 +57,7 @@ export function PlanUsageBodyV2({ data }: { data: PlanPage }) {
             </li>
           ))}
         </ul>
-        <p className="mt-space-3 text-t12 text-fg-muted">Everything runs on paper trading for now. Plans and billing are below.</p>
+        <Details id="growth.plan-includes"><p className="text-t12 text-fg-muted">Everything runs on paper trading for now. Plans and billing are below.</p></Details>
       </div>
     </div>
   );

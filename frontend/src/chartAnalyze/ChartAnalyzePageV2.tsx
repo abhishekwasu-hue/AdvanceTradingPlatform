@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEven
 import { useSearchParams } from "react-router";
 import { friendlyError } from "../api/errors";
 import { Button, Dialog, Skeleton } from "../components/primitives";
+import { Details } from "../ui/Details";
 import { HelpPopover } from "../ui/HelpPopover";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
@@ -398,7 +399,6 @@ export default function ChartAnalyzePageV2() {
               onChange={(e) => { setLink(e.target.value); if (e.target.value) { setFile(null); setPreview(null); } }}
               className="h-11 w-full min-w-0 rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9" />
           </div>
-          <p className="mt-space-1 text-t12 text-fg-muted">TradingView snapshot links and direct image links. A page that needs a login or a live chart cannot be read.</p>
         </div>
 
         <fieldset className="mt-space-4">
@@ -425,10 +425,6 @@ export default function ChartAnalyzePageV2() {
             </p>
           )}
         </div>
-        <p className="mt-space-2 text-t12 text-fg-muted">
-          Your chart is sent to the AI provider that runs the analysis (your own key's provider, or your organisation's). It is stored privately
-          {status ? ` for ${status.retention_days} days` : ""}, and you can delete it at any time.
-        </p>
         <div aria-live="polite" className="mt-space-2 text-t14">
           {phase === "adding" && <p className="text-fg-muted">Checking the image…</p>}
           {phase === "analysing" && <p className="text-fg-muted" data-testid="progress">Reading the chart… this can take up to a minute.</p>}
@@ -440,6 +436,13 @@ export default function ChartAnalyzePageV2() {
             <div><p className="font-semibold">{problem.message}</p>{problem.reason && <p className="text-t12 text-fg-muted">{problem.reason}</p>}</div>
           </div>
         )}
+        <Details id="chart-analyze.add">
+          <p>TradingView snapshot links and direct image links. A page that needs a login or a live chart cannot be read.</p>
+          <p>
+            Your chart is sent to the AI provider that runs the analysis (your own key's provider, or your organisation's). It is stored privately
+            {status ? ` for ${status.retention_days} days` : ""}, and you can delete it at any time.
+          </p>
+        </Details>
       </section>
 
       {current && current.result && (

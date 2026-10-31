@@ -7,6 +7,7 @@ import { basketAsk } from "../fno/basketModel";
 import { basketOn } from "../fno/desk";
 import { moneyText } from "../fno/ticketModel";
 import { EMPTY, formatNumber } from "../ui/format";
+import { Details } from "../ui/Details";
 
 /**
  * Owner fix T1-4 (24 Oct): the spread builder of the Option-seller layout - the sold leg and its hedge as ONE group
@@ -102,13 +103,15 @@ export function SpreadBuilderV2({ underlying, legs, spot, product = null, onOpen
         </p>
       )}
       {problem && <p className="text-t13 text-fg-muted" data-spread="problem">{problem}</p>}
-      <p className="text-t13 text-fg-muted" data-spread="sequence">
-        Placed one after another: the hedge (buy) first, then the sell. On exit the sold leg closes first, then the hedge.
-        If a leg does not go through you are told at once, with "Complete the leg" or "Exit the filled leg".
-      </p>
-      <p className="text-t13 text-fg-muted" data-spread="exits">
-        Next, under &quot;Exits for this strategy&quot;, you can set an overall stop-loss and target for the whole spread (the spot level by default).
-      </p>
+      <Details id="terminal.spread" className="mt-0">
+        <p data-spread="sequence">
+          Placed one after another: the hedge (buy) first, then the sell. On exit the sold leg closes first, then the hedge.
+          If a leg does not go through you are told at once, with "Complete the leg" or "Exit the filled leg".
+        </p>
+        <p data-spread="exits">
+          Next, under &quot;Exits for this strategy&quot;, you can set an overall stop-loss and target for the whole spread (the spot level by default).
+        </p>
+      </Details>
       {onOpen && <OpenButton onOpen={onOpen} label="Review and place" />}
     </div>
   );

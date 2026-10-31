@@ -69,6 +69,63 @@ export function libraryChips(params: Record<string, unknown> | null | undefined)
   return paramChips(Object.fromEntries(Object.entries(params).filter(([k]) => k !== "min_rr")));
 }
 
+/** STRAT-X (owner decision 30 Oct, D2): a built-in's stop and targets are suggested values for the trader's own settings,
+ * never a rule of the strategy - the Library shows them apart, under this note. */
+export const SUGGESTED_KEYS: readonly string[] = ["atr_mult_sl", "target_rr"];
+export const SUGGESTED_NOTE = "Suggested — change in settings";
+
+/** The Library's chips for a built-in, split: its own settings, and the suggested stop / targets (SUGGESTED_KEYS). */
+export function librarySplit(params: Record<string, unknown> | null | undefined): { settings: string[]; suggested: string[] } {
+  const own = Object.fromEntries(Object.entries(params ?? {}).filter(([k]) => k !== "min_rr"));
+  const pick = (want: boolean) => Object.fromEntries(Object.entries(own).filter(([k]) => SUGGESTED_KEYS.includes(k) === want));
+  return { settings: paramChips(pick(false)), suggested: paramChips(pick(true)) };
+}
+
+/** M49 U3 (owner-approved mockup docs/ui/U3_LIBRARY.html): one setting as a label and a value in words. */
+export interface SettingRow { key: string; label: string; value: string }
+
+/** The most settings a Library card shows; the rest sit under "More settings". */
+export const LIBRARY_MAIN_MAX = 3;
+
+const rowsOf = (params: Record<string, unknown>): SettingRow[] =>
+  Object.entries(params).map(([key, v]) => ({ key, label: paramLabel(key), value: paramValue(key, v) }));
+
+/**
+ * U3: a Library card's settings, split. `main` is at most three: the chart (one timeframe: "Chart 5-minute"; two: the
+ * bigger and the smaller chart) and the first of its own settings; `more` is the rest of its own settings; `suggested`
+ * is the built-in's suggested stop / targets (STRAT-X, SUGGESTED_KEYS), counted under "More settings". The `tf` setting
+ * is the chart itself, so it is never listed twice; a minimum R:R is never shown (REV-B2).
+ */
+export function libraryCardSettings(params: Record<string, unknown> | null | undefined, timeframes: readonly string[] = []):
+  { main: SettingRow[]; more: SettingRow[]; suggested: SettingRow[] } {
+  const own = Object.fromEntries(Object.entries(params ?? {}).filter(([k]) => k !== "min_rr"));
+  const tf = typeof own.tf === "string" ? own.tf : null;
+  delete own.tf;
+  const frames = timeframes.length ? timeframes : tf ? [tf] : [];
+  const chart: SettingRow[] = frames.length >= 2
+    ? [{ key: "chart_big", label: "Big chart", value: timeframeWords(frames[frames.length - 1]) },
+       { key: "chart_small", label: "Small chart", value: timeframeWords(frames[0]) }]
+    : frames.length === 1 ? [{ key: "chart", label: "Chart", value: timeframeWords(frames[0]) }] : [];
+  const settings = rowsOf(Object.fromEntries(Object.entries(own).filter(([k]) => !SUGGESTED_KEYS.includes(k))));
+  const suggested = rowsOf(Object.fromEntries(Object.entries(own).filter(([k]) => SUGGESTED_KEYS.includes(k))));
+  const room = Math.max(0, LIBRARY_MAIN_MAX - chart.length);
+  const first = settings.slice(0, room);
+  // The mockup's order: one chart after the settings ("Fast average 9, Slow average 21, Chart 15-minute"); two charts first.
+  const main = (chart.length >= 2 ? [...chart, ...first] : [...first, ...chart]).slice(0, LIBRARY_MAIN_MAX);
+  return { main, more: settings.slice(room), suggested };
+}
+
+/** U3: the Library's category in a word a trader uses (never "Indicator-based" or the engine's value). */
+export const CATEGORY_LABEL: Readonly<Record<string, string>> = { indicator_based: "Indicators", multi_timeframe: "Multi-timeframe" };
+export const categoryLabel = (c: string): string => CATEGORY_LABEL[c] ?? wordsOf(c);
+
+/** U3: the first sentence of a strategy's description - the card's one plain line (the whole text sits in the details). */
+export function firstSentence(text: string): string {
+  const t = text.trim();
+  const m = /^(.+?[.!?])(\s|$)/.exec(t);
+  return m ? m[1] : t;
+}
+
 /** The optimiser's scores (backend/app/backtest/optimizer.py METRICS). */
 export const METRIC_LABEL: Readonly<Record<string, string>> = {
   net_pnl: "Net P&L", expectancy: "Average per trade", profit_factor: "Profit factor", win_rate: "Win %",

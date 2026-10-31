@@ -1,3 +1,4 @@
+import { Details } from "../ui/Details";
 import { useId } from "react";
 import { BUTTON_SECONDARY, FIELD, LABEL } from "../trading/PartsV2";
 import { Combobox } from "../ui/Combobox";
@@ -87,7 +88,7 @@ export function OptimiserFields({ params, rows, onRows, metric, onMetric, onRun,
         </ul>
       )}
       {!ready && <p className="text-t13 text-fg-muted">Run the backtest first: the search uses the same bars.</p>}
-      <p className="text-t13 text-fg-muted">The first 70% of the bars pick the settings; the last 30% check them.</p>
+      <Details id="backtest.optimiser" className="mt-0"><p>The first 70% of the bars pick the settings; the last 30% check them.</p></Details>
     </div>
   );
 }

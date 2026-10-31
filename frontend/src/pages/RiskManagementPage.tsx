@@ -1,6 +1,7 @@
 import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { formatNumber } from "../ui/format";
 import { useAuth } from "../auth/AuthContext";
 import RiskLimitsCard from "../components/RiskLimitsCard";
 import MyLimitsCardV2 from "../settings/MyLimitsCardV2";
@@ -191,10 +192,10 @@ export default function RiskManagementPage() {
                     <span className="font-bold text-sm">{mode}</span>
                     <span className={`font-bold uppercase ${colour}`}>{m.state}{m.state !== "normal" ? ` · size x${m.size_multiplier}` : ""}</span>
                   </div>
-                  <div className="text-fg-muted">Equity {m.equity.toLocaleString()} · peak {m.peak.toLocaleString()} · drawdown <span className={guardian.settings.dd_level_1_pct != null && m.drawdown_pct >= guardian.settings.dd_level_1_pct ? "text-warn" : "text-fg"}>{m.drawdown_pct.toFixed(1)}%</span> over {m.closed_trades} closed trade(s)</div>
-                  <div className="text-fg-muted">Open risk at the stops {m.open_risk_total.toLocaleString()} ({m.open_risk_pct}% of capital{m.portfolio_cap != null ? `, cap ${m.portfolio_cap.toLocaleString()}` : ", no cap set"})</div>
+                  <div className="text-fg-muted">Equity {formatNumber(m.equity, 2, { trim: true })} · peak {formatNumber(m.peak, 2, { trim: true })} · drawdown <span className={guardian.settings.dd_level_1_pct != null && m.drawdown_pct >= guardian.settings.dd_level_1_pct ? "text-warn" : "text-fg"}>{formatNumber(m.drawdown_pct, 1)}%</span> over {m.closed_trades} closed trade(s)</div>
+                  <div className="text-fg-muted">Open risk at the stops {formatNumber(m.open_risk_total, 2, { trim: true })} ({m.open_risk_pct}% of capital{m.portfolio_cap != null ? `, cap ${formatNumber(m.portfolio_cap, 2, { trim: true })}` : ", no cap set"})</div>
                   {Object.keys(m.open_risk_by_bucket).length > 0 && (
-                    <div className="text-fg-muted">By bucket: {Object.entries(m.open_risk_by_bucket).map(([b, v]) => `${b} ${v.toLocaleString()}`).join(" · ")}</div>
+                    <div className="text-fg-muted">By bucket: {Object.entries(m.open_risk_by_bucket).map(([b, v]) => `${b} ${formatNumber(v, 2, { trim: true })}`).join(" · ")}</div>
                   )}
                   {m.cooldowns.length > 0 && (
                     <div className="text-warn">Cool-down: {m.cooldowns.map((c) => `${c.underlying} (${c.minutes_left} min left)`).join(", ")}</div>

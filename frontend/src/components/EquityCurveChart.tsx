@@ -1,3 +1,5 @@
+import { formatNumber } from "../ui/format";
+
 export default function EquityCurveChart({ equity }: { equity: number[] }) {
   if (equity.length < 2) {
     return <div className="text-sm text-fg-muted py-8 text-center">Not enough trades to plot an equity curve.</div>;
@@ -33,7 +35,7 @@ export default function EquityCurveChart({ equity }: { equity: number[] }) {
       <path d={areaPath} fill="url(#equityFill)" stroke="none" />
       <path d={path} fill="none" stroke={lineColor} strokeWidth={2} />
       <text x={padding} y={16} className="fill-fg-muted" fontSize="11">
-        {min.toFixed(0)} – {max.toFixed(0)}
+        {formatNumber(min, 0)} – {formatNumber(max, 0)}
       </text>
     </svg>
   );

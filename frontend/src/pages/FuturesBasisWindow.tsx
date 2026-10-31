@@ -9,6 +9,7 @@ import { errorSentence } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
 import { basisApi, latest, linePaths, pctText, type BasisSeries } from "../charting/futuresBasis";
 import { SkeletonRows } from "../components/primitives";
+import { formatNumber } from "../ui/format";
 
 const W = 360;
 const H = 56;
@@ -17,7 +18,7 @@ const H = 56;
 export function BasisLine({ label, values, days, rolls, unit }: { label: string; values: (number | null)[]; days: string[]; rolls: string[]; unit: "pct" | "price" }) {
   const paths = linePaths(values, W, H);
   const last = values.length ? values[values.length - 1] : null;
-  const text = unit === "pct" ? pctText(last) : last == null ? "n/a" : last.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const text = unit === "pct" ? pctText(last) : last == null ? "n/a" : formatNumber(last, 2, { trim: true });
   const step = days.length > 1 ? W / (days.length - 1) : 0;
   return (
     <figure className="flex flex-col gap-1" data-testid="basis-line">

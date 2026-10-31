@@ -1,5 +1,6 @@
 import type { EnrichedSignal } from "../types";
 import { DirectionBadge, GradeBadge, ProgressBar } from "./ui";
+import { formatNumber } from "../ui/format";
 
 export default function SignalCard({ result }: { result: EnrichedSignal }) {
   const { signal, composite_score, grade, breakdown, confirmations } = result;
@@ -43,7 +44,7 @@ export default function SignalCard({ result }: { result: EnrichedSignal }) {
         <span className="font-semibold">{composite_score}/100</span>
       </div>
       <ProgressBar pct={composite_score} />
-      <div className="text-xs text-fg-muted mt-1 mb-4">Risk/Reward 1:{signal.risk_reward?.toFixed(2) ?? "-"}</div>
+      <div className="text-xs text-fg-muted mt-1 mb-4">Risk/Reward 1:{signal.risk_reward == null ? "-" : formatNumber(signal.risk_reward, 2)}</div>
 
       <div className="text-xs uppercase tracking-wide text-fg-muted mb-2">Why this trade</div>
       <div className="space-y-2 mb-2">
@@ -52,7 +53,7 @@ export default function SignalCard({ result }: { result: EnrichedSignal }) {
             <div className="flex justify-between text-xs mb-0.5">
               <span className="capitalize text-fg-muted">{key.replace(/_/g, " ")}</span>
               <span className="text-fg-muted">
-                {comp.pct.toFixed(0)}% · weight {comp.weight}
+                {formatNumber(comp.pct, 0)}% · weight {comp.weight}
               </span>
             </div>
             <ProgressBar pct={comp.pct} />
@@ -74,7 +75,7 @@ function Field({ label, value, tone }: { label: string; value: number | null; to
   return (
     <div>
       <div className="text-xs uppercase tracking-wide text-fg-muted">{label}</div>
-      <div className={`text-sm font-semibold ${color}`}>{value?.toFixed(2) ?? "-"}</div>
+      <div className={`text-sm font-semibold ${color}`}>{value == null ? "-" : formatNumber(value, 2)}</div>
     </div>
   );
 }

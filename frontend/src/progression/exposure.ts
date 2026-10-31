@@ -2,13 +2,14 @@
 // them for display and for the chart engine (LayerData bands). Facts only.
 import type { LayerData } from "../charting/engine";
 import type { ExpectedMove, ExposureView } from "../types";
+import { formatINR } from "../ui/format";
 
 export const CONE_LAYER_ID = "expected_move";
 const CONE_COLOR = "#2563eb";
 
 /** Rupees with no decimals: "₹1,440". */
 export function rupees0(n: number): string {
-  return `${n < 0 ? "-" : ""}₹${Math.abs(Math.round(n)).toLocaleString("en-IN")}`;
+  return formatINR(n);
 }
 
 /** The pairs to show: those moving together first (strongest |r| first). */

@@ -47,11 +47,15 @@ function roundsToZero(v: number, decimals: number): boolean {
   return Number(Math.abs(v).toFixed(decimals)) === 0;
 }
 
-/** A plain number with Indian grouping: formatNumber(1234567.8, 1) -> "12,34,567.8"; negatives get "−". */
-export function formatNumber(v: Num, decimals = 0): string {
+/** A plain number with Indian grouping: formatNumber(1234567.8, 1) -> "12,34,567.8"; negatives get "−".
+ * `trim` (M63 I-7) makes `decimals` an upper bound and drops trailing zeros - "at most N places", what
+ * `toLocaleString("en-IN", { maximumFractionDigits: N })` showed: formatNumber(24812.5, 2, { trim: true }) -> "24,812.5",
+ * formatNumber(24812, 2, { trim: true }) -> "24,812". */
+export function formatNumber(v: Num, decimals = 0, opts: { trim?: boolean } = {}): string {
   if (!finite(v)) return EMPTY;
   const sign = v < 0 && !roundsToZero(v, decimals) ? MINUS : "";
-  return `${sign}${magnitude(v, decimals)}`;
+  const body = magnitude(v, decimals);
+  return `${sign}${opts.trim ? trimZeros(body) : body}`;
 }
 
 /** Trailing zeros of a decimal off: "2.40" -> "2.4", "3.00" -> "3". */

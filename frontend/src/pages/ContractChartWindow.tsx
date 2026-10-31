@@ -11,6 +11,7 @@ import ProChart from "../components/ProChart";
 import { contractsApi, ivText, legName, toCandles, type ContractSeries, type SeriesLeg } from "../charting/contracts";
 import { basisAvailable, basisUrl } from "../charting/futuresBasis";
 import { SkeletonRows } from "../components/primitives";
+import { formatCount } from "../ui/format";
 
 /** One leg's OI as small bars (the last 60 days), with its last value - numbers from the series, never from pixels. */
 export function OiBars({ leg, days }: { leg: SeriesLeg; days: string[] }) {
@@ -23,7 +24,7 @@ export function OiBars({ leg, days }: { leg: SeriesLeg; days: string[] }) {
       <svg width={n * 4} height={32} role="img" aria-label={`Open interest of ${legName(leg)} over ${n} days, last ${last ?? "n/a"}`}>
         {vals.map((v, i) => (v == null ? null : <rect key={days[days.length - n + i]} x={i * 4} y={32 - (v / max) * 32} width={3} height={(v / max) * 32} fill="rgb(var(--chart-text))" opacity={0.6} />))}
       </svg>
-      <figcaption><span className="text-fg">{legName(leg)}</span> OI {last == null ? "n/a" : last.toLocaleString("en-IN")}
+      <figcaption><span className="text-fg">{legName(leg)}</span> OI {last == null ? "n/a" : formatCount(last)}
         {leg.iv && <> · IV (computed) {ivText(leg.iv[leg.iv.length - 1])}</>}</figcaption>
     </figure>
   );

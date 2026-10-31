@@ -4,6 +4,7 @@
  * `limits_v2`); with the flag off nothing here renders.
  */
 import { Details } from "../ui/Details";
+import { formatNumber } from "../ui/format";
 
 /** Display order and wording. `unit` follows the number; `kind` says how usage compares to the limit. */
 export const PLAN_LIMITS_V2: { key: string; label: string; unit?: string; kind: "count" | "amount" | "max" | "min" | "retention" }[] = [
@@ -20,7 +21,7 @@ export const PLAN_LIMITS_V2: { key: string; label: string; unit?: string; kind: 
 
 export interface PlanLimitRow { key: string; label: string; limit: string; used: string | null; full: boolean }
 
-const num = (v: number, unit?: string) => `${v.toLocaleString("en-IN")}${unit ? ` ${unit}` : ""}`;
+const num = (v: number, unit?: string) => `${formatNumber(v, 3, { trim: true })}${unit ? ` ${unit}` : ""}`;
 
 /** One row per known limit the server sent; usage only for counted limits that some feature counts (non-null). */
 export function planLimitRows(limits: Record<string, number>, usage?: Record<string, number | null> | null): PlanLimitRow[] {

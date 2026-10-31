@@ -22,6 +22,17 @@ describe("UI2-0 format: Indian grouping", () => {
     expect(formatNumber(-1234.5, 1)).not.toContain("-");
   });
 
+  it("trim: at most N places, trailing zeros dropped (M63 I-7)", () => {
+    expect(formatNumber(24812.5, 2, { trim: true })).toBe("24,812.5");
+    expect(formatNumber(24812, 2, { trim: true })).toBe("24,812");
+    expect(formatNumber(1234567.891, 2, { trim: true })).toBe("12,34,567.89");
+    expect(formatNumber(100000.004, 2, { trim: true })).toBe("1,00,000");
+    expect(formatNumber(-1500.1, 3, { trim: true })).toBe(`${MINUS}1,500.1`);
+    expect(formatNumber(-0.001, 2, { trim: true })).toBe("0");
+    expect(formatNumber(1000, 0, { trim: true })).toBe("1,000");
+    expect(formatNumber(null, 2, { trim: true })).toBe(EMPTY);
+  });
+
   it("shows a dash for a missing value, never 0", () => {
     for (const v of [null, undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(formatNumber(v)).toBe(EMPTY);

@@ -12,6 +12,7 @@ import StrikeOiChart from "../components/StrikeOiChart";
 import { getToken } from "../api/client";
 import { chainLinks, contractsAvailable } from "../charting/contracts";
 import { chainReadWords } from "../oi/format";
+import { formatNumber } from "../ui/format";
 
 /** Where "the Broker page" is: its own `/broker` route in both shells (Settings redesign B; was Settings -> Brokers). */
 export const BROKER_PAGE_PATH = "/broker";
@@ -120,7 +121,7 @@ export default function OptionChainPage() {
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {/* M61 OI-5: the analysis' bias as the PCR and OI-change facts it rests on - no verdict word or colour. */}
             <StatTile label="PCR + OI change" value={chainReadWords(analysis.bias)} />
-            <StatTile label="PCR" value={analysis.pcr?.toFixed(2) ?? "-"} />
+            <StatTile label="PCR" value={analysis.pcr == null ? "-" : formatNumber(analysis.pcr, 2)} />
             <StatTile label="Max Pain" value={analysis.max_pain ?? "-"} />
             <StatTile label="ATM Strike" value={analysis.atm_strike ?? "-"} />
             <StatTile label="Total Call / Put OI" value={`${analysis.total_call_oi} / ${analysis.total_put_oi}`} />

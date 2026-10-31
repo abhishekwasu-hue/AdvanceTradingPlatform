@@ -20,6 +20,7 @@ import { Details } from "../ui/Details";
 import { Signed as SignedV2 } from "../ui/Signed";
 import { Sparkline } from "../ui/Sparkline";
 import { useFeatures } from "../ui/useFeatures";
+import { formatDateTimeIST, formatNumber } from "../ui/format";
 import JournalPageV2 from "../journal/JournalPageV2";
 
 const OFF_TEXT = "The discipline score is not turned on for your account yet.";
@@ -30,7 +31,7 @@ export function evidenceText(evidence: unknown): string {
   if (typeof evidence !== "object") return String(evidence);
   return Object.entries(evidence as Record<string, unknown>)
     .filter(([, v]) => v !== null && v !== undefined && typeof v !== "object")
-    .map(([k, v]) => `${k.replace(/_/g, " ")} ${typeof v === "number" ? v.toLocaleString("en-IN") : String(v)}`)
+    .map(([k, v]) => `${k.replace(/_/g, " ")} ${typeof v === "number" ? formatNumber(v, 3, { trim: true }) : String(v)}`)
     .join(" · ");
 }
 
@@ -52,7 +53,7 @@ function ScoreCard({ score }: { score: DisciplineScore }) {
             <div key={c.name}>
               <div className="flex justify-between text-xs">
                 <span className="text-fg">{COMPONENT_LABELS[c.name] ?? c.name}</span>
-                <span className="font-tabular text-fg-muted">{c.points.toFixed(1)} / {c.max_points.toFixed(1)}{c.flagged ? ` · ${c.flagged} flagged` : ""}</span>
+                <span className="font-tabular text-fg-muted">{formatNumber(c.points, 1)} / {formatNumber(c.max_points, 1)}{c.flagged ? ` · ${c.flagged} flagged` : ""}</span>
               </div>
               <div className="mt-1 h-1.5 rounded bg-surface-2" aria-hidden>
                 <div className="h-1.5 rounded bg-brand" style={{ width: `${c.max_points ? (100 * c.points) / c.max_points : 0}%` }} />
@@ -101,7 +102,7 @@ function EntryRow({ e, countUnconfirmed, onDecide, recallOn = false, focusId = n
   return (
     <div ref={rowRef} id={`trade-${e.trade_id}`} className="border-t border-border/60 py-2">
       <button className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-left text-xs" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span className="font-tabular text-fg-muted">{e.entry_time ? new Date(e.entry_time).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "short", timeStyle: "short" }) : "-"}</span>
+        <span className="font-tabular text-fg-muted">{e.entry_time ? formatDateTimeIST(e.entry_time) : "-"}</span>
         <span className="font-semibold text-fg">{e.symbol}</span>
         <Badge tone={e.direction === "LONG" ? "up" : "down"}>{e.direction}</Badge>
         <span className="text-fg-muted">{e.setup}</span>
@@ -130,7 +131,7 @@ function EntryRow({ e, countUnconfirmed, onDecide, recallOn = false, focusId = n
             {e.stop_history.length > 0 && <div className="mt-2 font-semibold text-fg">Stop changes</div>}
             {e.stop_history.map((s, i) => <div key={i}>{s.from} → {s.to} ({s.source})</div>)}
             {e.greeks_entry && <div className="mt-2">Greeks at entry: {Object.entries(e.greeks_entry).map(([k, v]) => `${k} ${v}`).join(" · ")}</div>}
-            {e.chart_entry && <div className="mt-2 text-fg-muted">Chart at entry: {e.chart_entry.symbol} @ {new Date(e.chart_entry.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</div>}
+            {e.chart_entry && <div className="mt-2 text-fg-muted">Chart at entry: {e.chart_entry.symbol} @ {formatDateTimeIST(e.chart_entry.at)}</div>}
             {e.tags.map((t) => <div key={t.id} className="mt-1 text-fg-muted">{tagLabel(t.tag)}{evidenceText(t.evidence) && `: ${evidenceText(t.evidence)}`}</div>)}
           </div>
           {/* AUD-T6 (BR-M3 / BR-R1): his own similar past trades and what the context said vs what happened. */}

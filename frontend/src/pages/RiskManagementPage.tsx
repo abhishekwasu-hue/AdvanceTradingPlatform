@@ -121,7 +121,17 @@ export default function RiskManagementPage() {
   }
 
   if (!config) {
-    return <SkeletonRows rows={2} label="Loading" />;
+    // M63 I-7: the page keeps its heading while loading; a failed read says so instead of loading forever
+    return (
+      <div className="space-y-4">
+        <PageHeader title="Risk Management" />
+        {error ? (
+          <Card><p role="alert" className="text-sm text-down">{error}</p></Card>
+        ) : (
+          <SkeletonRows rows={2} label="Loading your risk limits" />
+        )}
+      </div>
+    );
   }
 
   return (

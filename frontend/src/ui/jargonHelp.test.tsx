@@ -33,6 +33,8 @@ const PAGES: Record<string, GlossaryKey[]> = {
   "src/optionChain/OiTabV2.tsx": ["pcr", "max-pain", "dte", "oi", "atm"],
   "src/components/OiHistoryTable.tsx": ["oi", "pcr"],
   "src/optionChain/ColumnsMenuV2.tsx": ["oi-change", "greeks"],
+  // Part 3.
+  "src/settings/RiskLimitsV2.tsx": ["daily-loss-limit", "cool-down", "reward-risk", "margin", "drawdown"],
 };
 
 const marked = (src: string, key: string) => {

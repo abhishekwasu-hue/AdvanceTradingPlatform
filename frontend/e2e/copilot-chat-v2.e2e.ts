@@ -239,3 +239,61 @@ test.describe("v2 copilot - one Copilot (CU4) and the kept conversation (CU6)", 
     await expectPhoneLayout(page);
   });
 });
+
+// M59 CR-1: the owner's 30 Oct case - the AI wording carries raw Markdown and the 1-hour history is not stored. The card
+// (backend copilot_chat.structure_card on the synthetic eval fixture, 1-hour marked not ready) is the answer; the words
+// sit behind Details, rendered, never as literal `**`. M59_SHOTS=<dir> saves the 390 / 1440 shots for the PR.
+const AI_PROSE = "**Weekly:** sideways.\n**Daily:** up, protected level 24,310.\n**1-hour:** I don't know. Only 0 of the 30 bars needed are stored.";
+const CARDED = {
+  ...F.answers["Read the NIFTY chart"], source: "ai", summary: [AI_PROSE], answer: AI_PROSE,
+  structure_card: {
+    symbol: "NIFTY", price: 24850.5, timeframe: "Daily",
+    timeframes: [
+      { tf: "1w", label: "Weekly", ready: true, trend: "sideways", weak: false, protected: null, last_break: null },
+      { tf: "1d", label: "Daily", ready: true, trend: "up", weak: false, protected: 24310, last_break: { label: "Swing break", price: 24790 } },
+      { tf: "1h", label: "1-hour", ready: false, trend: null, weak: false, protected: null, last_break: null },
+      { tf: "15m", label: "15-minute", ready: true, trend: "up", weak: false, protected: 24730.5, last_break: null },
+    ],
+    areas_above: [{ side: "supply", from: 25080, to: 25160, where: "above", distance: 229.5 }],
+    areas_below: [{ side: "demand", from: 24520, to: 24610, where: "below", distance: 240.5 }],
+    swing_levels: [{ side: "high", price: 25010.5 }, { side: "low", price: 24600.5 }],
+    watch: "Whether the daily protected level holds or breaks on a closed bar, and how the price behaves when it reaches the nearest area.",
+  },
+};
+
+for (const [width, height] of [[390, 844], [1440, 900]] as const) {
+  test.describe(`v2 copilot - M59 CR-1 the chart reading as a card, ${width}`, () => {
+    test.use(width === 390 ? { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width, height } });
+
+    test("table, areas nearby, swing levels, one line; '1-hour: data not ready'; no raw Markdown", async ({ page }) => {
+      await open(page, "light");
+      await page.route(/\/api(?:\/v1)?\/ai\/chat$/, (route) => route.request().method() === "POST" ? route.fulfill({ json: CARDED }) : route.fallback());
+      await page.locator("[data-quick='chart']").click();
+      const answer = page.locator("[data-answer='chart']");
+      const card = answer.locator("[data-structure-card='NIFTY']");
+      await expect(card).toBeVisible();
+      await expect(card.locator("[data-tf='1d']")).toContainText("24,310.00");
+      await expect(card.locator("[data-not-ready='1h']")).toHaveText("1-hour: data not ready");
+      await expect(card.locator("[data-areas='above']")).toContainText("25,080.00 – 25,160.00Supply · 229.50 pts");
+      await expect(card.locator("[data-card-block='watch']")).toContainText("What to watch:");
+      await expect(card).not.toContainText(/\*\*|of the 30|bars needed/);
+      await expect(page.getByText(/\*\*/)).toHaveCount(0);
+      if (width === 390) {
+        await expect(card.locator("[data-card-block='swings']")).toBeHidden();
+        await expect(card.getByRole("button", { name: "Help: Swing levels" })).toBeVisible();
+        await expectPhoneLayout(page);
+      } else {
+        await expect(card.locator("[data-card-block='swings']")).toContainText("Swing high 25,010.50");
+      }
+      const dir = process.env.M59_SHOTS;
+      if (dir) {
+        await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
+        await answer.scrollIntoViewIfNeeded();
+        await answer.screenshot({ path: `${dir}/copilot-chart-card-${width}.png` });
+      }
+      await answer.locator("[data-details='copilot.answer'] summary").click();
+      await expect(answer.locator("[data-summary='folded'] strong").first()).toHaveText("Weekly:");
+      await expect(page.getByText(/\*\*/)).toHaveCount(0);
+    });
+  });
+}

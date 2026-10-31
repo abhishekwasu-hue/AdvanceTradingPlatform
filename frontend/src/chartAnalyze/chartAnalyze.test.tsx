@@ -175,6 +175,12 @@ describe("Analyze a chart: the page behind its flag", () => {
     const html = renderToStaticMarkup(<MemoryRouter><Page /></MemoryRouter>);
     expect(html).toContain("Choose an image");
     expect(html).toContain("Or paste a chart link");
+    // M59 CR-5: one (?) beside the link input - how to take a TradingView snapshot; a pasted screenshot works too
+    expect(html).toContain('aria-label="Help: How to take a TradingView snapshot"');
+    const { SNAPSHOT_HELP } = await import("./ChartAnalyzePageV2");
+    expect(SNAPSHOT_HELP).toContain("Alt+S");
+    expect(SNAPSHOT_HELP).toMatch(/screenshot image pasted/);
+    expect(SNAPSHOT_HELP).not.toMatch(/\b(buy|sell|target|stop)\b/i);
     expect(html).toContain("AI only");
     expect(html).toContain("Advanced analysis (code + AI)");
     expect(html).not.toContain("Coming soon");                                       // M59 CR-4: hybrid is built (behind its flag)
@@ -192,18 +198,23 @@ describe("Analyze a chart: the engine is not installed (A1)", () => {
   it("a user sees one plain line, no upload or link input, no reason and never 'Coming soon'", async () => {
     const EngineUnavailable = await loadUnavailable();
     const html = renderToStaticMarkup(<EngineUnavailable engine={missing} />);
-    expect(html).toContain("Chart analysis is not available right now");
+    // M59 CR-3: the user's plain line, no internal names
+    expect(html).toContain("Chart upload analysis is being switched on");
+    expect(html).toContain('data-audience="user"');
     expect(html).not.toMatch(/Coming soon|not open for your account|Choose an image|paste a chart link|type="file"|<input/i);
-    expect(html).not.toContain("For admins");
-    expect(html).not.toMatch(/private package|ATP_PRIVATE_REF|deploy key/i);
+    expect(html).not.toMatch(/owner action|Owner steps|engine not installed/i);
+    expect(html).not.toMatch(/private package|ATP_PRIVATE_REF|deploy key|atp_private|\.ssh|\.env/i);
   });
 
   it("the admin also sees why and the owner's install steps", async () => {
     const EngineUnavailable = await loadUnavailable();
     const html = renderToStaticMarkup(<EngineUnavailable engine={{ ...missing, reason: "the private package is not installed on this server",
       owner_steps: "The owner adds the host's read-only deploy key and ATP_PRIVATE_REF, then runs the deploy." }} />);
-    expect(html).toContain("Chart analysis is not available right now");
-    expect(html).toContain("For admins: the analysis service is missing");
+    // M59 CR-3: the admin's headline says what it is and that the owner acts
+    expect(html).toContain("Chart analysis engine not installed — owner action");
+    expect(html).toContain('data-audience="admin"');
+    expect(html).toContain("Owner steps");
+    expect(html).not.toContain("Chart upload analysis is being switched on</p>");
     expect(html).toContain("Why: the private package is not installed on this server.");
     expect(html).toContain("ATP_PRIVATE_REF");
     expect(html).not.toMatch(/<input/);

@@ -3,6 +3,7 @@ tool calls on recorded fixtures, the number / advice checks, the safety set, the
 limit, no-key state, AI wording, admin-only diagnostics) and that nothing writes an order or a proposal."""
 import asyncio
 import json
+import re
 
 import pytest
 from sqlalchemy import func, select
@@ -118,6 +119,72 @@ def test_cu3_nearest_area_picks_the_closest_edge_and_says_inside():
     inside = chat.nearest_area(25050.0, bands)
     assert inside["side"] == "supply" and inside["where"] == "inside" and inside["distance"] == 0.0
     assert chat.nearest_area(24700.0, [{"role": "demand", "low": None, "high": 1}]) is None
+
+
+def test_m59_the_chart_answer_carries_a_structure_card_from_the_tools_only():
+    """M59 CR-1: per timeframe trend / weak / protected / last break, areas above and below with points, swing levels,
+    ONE plain line - and the old text fields stay as they were for every other caller."""
+    out, _, _ = _answer("Read the NIFTY chart")
+    card = out.as_dict()["structure_card"]
+    assert [t["label"] for t in card["timeframes"]] == ["Weekly", "Daily", "1-hour", "15-minute"]
+    weekly, daily, hourly, _m15 = card["timeframes"]
+    assert weekly == {"tf": "1w", "label": "Weekly", "ready": True, "trend": "sideways", "weak": False, "protected": None, "last_break": None}
+    assert daily["trend"] == "up" and daily["protected"] == 24310.0 and daily["last_break"] == {"label": "Swing break", "price": 24790.0}
+    assert hourly["trend"] == "down" and hourly["weak"] is True and hourly["last_break"]["label"] == "Break against the trend"
+    assert card["areas_above"] == [{"side": "supply", "from": 25080.0, "to": 25160.0, "where": "above", "distance": 229.5}]
+    assert card["areas_below"] == [{"side": "demand", "from": 24520.0, "to": 24610.0, "where": "below", "distance": 240.5}]
+    assert card["swing_levels"] == [{"side": "high", "price": 25010.5}, {"side": "low", "price": 24600.5}]
+    assert card["watch"] and not findings(card["watch"]) and not re.search(r"\b(buy|sell|target|stop)\b|\d", card["watch"], re.I)
+    assert "**" not in json.dumps(card)
+    # the sentences other callers read are unchanged
+    assert out.summary[0].startswith("NIFTY last closed at 24,850.5") and out.sections[0]["title"] == "Structure per timeframe"
+    assert _answer("Today's market brief")[0].structure_card is None
+
+
+def test_m59_a_short_history_is_data_not_ready_on_the_card_never_a_bar_count():
+    short = json.loads(json.dumps(FIX["default"]))
+    rows = short["get_chart_structure:NIFTY"]["data"]["timeframes"]
+    rows[2].update(short=True, bars=0, needed=30, note="1-hour: data not ready (history is loading)")
+    del rows[3]                                                              # a timeframe the tool did not return at all
+    out = _run(chat.answer("Read the NIFTY chart", runner.recorded_runner(short, [])))
+    card = out.structure_card
+    assert [(t["tf"], t["ready"]) for t in card["timeframes"]] == [("1w", True), ("1d", True), ("1h", False), ("15m", False)]
+    assert card["timeframes"][2] == {"tf": "1h", "label": "1-hour", "ready": False, "trend": None, "weak": False, "protected": None, "last_break": None}
+    assert "bars" not in json.dumps(card) and "30" not in json.dumps(card["timeframes"])
+    # no structure at all, only "not stored yet": every timeframe is "data not ready", no line to watch
+    out, _, _ = _answer("Read the NIFTY chart", "no_data")
+    assert out.structure_card is None or all(not t["ready"] for t in out.structure_card["timeframes"])
+    res = ToolResult(False, None, None, "price_action_layer", error="Daily: data not ready (history is loading)")
+    empty = chat.structure_card("NIFTY", "1d", res, ToolResult(False, None, None, "market_zones", error="no zones"))
+    assert empty is not None and not any(t["ready"] for t in empty["timeframes"]) and empty["watch"] is None
+    assert chat.structure_card("NIFTY", "1d", ToolResult(False, None, None, "x", error="boom"), ToolResult(False, None, None, "y", error="no")) is None
+
+
+COUNT_WORDS = re.compile(r"of the \d+ .*bars|bars needed|\d+ of \d+ bars|only \d+ of", re.I)
+
+
+def test_m59_no_internal_bar_count_reaches_any_user_response():
+    """M59 CR-1: a timeframe without stored history is "<TF>: data not ready" everywhere a user reads - the rule
+    sentences, the table, the card, "How I worked this out", and the FACTS the AI wording is built from."""
+    from app.ai.tools import copilot as copilot_tools
+    layer = {"instrument": "NSE_INDEX:NIFTY50", "tf": "1d", "as_of": "2026-10-23T10:00:00+00:00", "bars": 7, "last_close": 24850.5,
+             "mtf": [{"tf": tf, "direction": "up", "bars": n, "protected": 24000.0, "last_event": None} for tf, n in
+                     (("1w", 2), ("1d", 7), ("1h", 0), ("15m", 400))], "structure_state": {"direction": "up"}}
+    short = json.loads(json.dumps(FIX["default"]))
+    data = copilot_tools.summarise_structure(layer)
+    short["get_chart_structure:NIFTY"] = {"ok": True, "as_of": data["as_of"], "source": "price_action_layer:lake",
+                                          "data": {"symbol": "NIFTY", **data, "official_close": None}}
+    empty = json.loads(json.dumps(FIX["no_data"]))
+    from app.context_panel.service import short_history
+    empty["get_chart_structure:NIFTY"] = {"ok": False, "error": short_history(0, 30, "daily bars", "NSE_INDEX:NIFTY50")}
+    for fixture in (short, empty):
+        for q in ("Read the NIFTY chart", "Today's market brief", "Teach me: what is a demand zone?"):
+            out = _run(chat.answer(q, runner.recorded_runner(fixture, [])))
+            shown = json.dumps(out.as_dict())
+            assert not COUNT_WORDS.search(shown), (q, COUNT_WORDS.search(shown))
+            assert not COUNT_WORDS.search("\n".join(out.lines()))          # the AI wording's FACTS
+    out = _run(chat.answer("Read the NIFTY chart", runner.recorded_runner(short, [])))
+    assert "1-hour: data not ready (history is loading)" in out.sections[0]["lines"]
 
 
 def test_cu2_the_market_line_carries_the_fii_net():

@@ -174,7 +174,7 @@ export function heldKey(strike: number, right: Right): string {
 export function newClientRef(): string {
   try {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  } catch { /* no crypto: fall back */ }
+  } catch { /* intentional: no crypto: fall back */ }
   return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 }
 

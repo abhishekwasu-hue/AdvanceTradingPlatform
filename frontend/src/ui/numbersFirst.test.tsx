@@ -62,7 +62,7 @@ describe("U1 Details: one closed disclosure for the explanations", () => {
   it("the open state is remembered per card; blocked storage is safe", () => {
     expect(detailsSource).toContain("atp_details_open:");
     expect(detailsSource).toMatch(/try \{ return localStorage\.getItem/);
-    expect(detailsSource).toMatch(/catch \{ \/\* storage unavailable \*\/ \}/);
+    expect(detailsSource).toMatch(/catch \{ \/\* intentional: storage unavailable \*\/ \}/);   // M63 I-7: a kept silence says why
   });
 });
 

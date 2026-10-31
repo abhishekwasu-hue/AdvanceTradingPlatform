@@ -190,6 +190,7 @@ class CycleReport:
     byob_sessions: int = 0       # BT1: per-user broker data sessions open (flag byob_data_tier)
     memory_snapshots: int = 0    # Phase AR: market-memory rows written this cycle
     lake_bars: int = 0           # B2: 1-minute bars written to the lake this cycle
+    feed_bars: int = 0           # M71 PL-1b: universe-feed bars written to the data owner's private store this cycle
     login_reminders: int = 0     # D5: pre-open daily-login reminders raised this cycle
     oi_snapshots: int = 0        # OI Banner O2: option-chain OI slots stored this cycle
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
@@ -373,6 +374,12 @@ class TradingWorker:
             from app.market_data import stream as stream_module
             self.lake = LakeRecorder()
             stream_module.tick_listeners.append(self.lake.on_tick)
+        # M71 PL-1b / PL-4: the universe feed (MARKET_FEED_ENABLED, off by default) - the data owner's credential streams
+        # the active universe into closed 1m / 5m / 15m / 60m bars in his own private store, with feed health.
+        self.market_feed = None
+        if app_config.MARKET_FEED_ENABLED:
+            from app.market_data.universe_feed import UniverseFeed
+            self.market_feed = UniverseFeed()
         # Phase T: last balance refresh attempt per broker account (failures throttled too).
         self._last_account_refresh: Dict[int, datetime] = {}
         # Phase AR: last market-memory capture per tenant (UTC).
@@ -463,6 +470,8 @@ class TradingWorker:
         await self.streams.stop_all()
         await self.byob.close_all()
         await self.hub.stop_all()
+        if self.market_feed is not None:
+            await self.market_feed.stop()
         logger.info("Trading worker %s stopped", self.holder_id)
 
     async def startup_check(self) -> Dict[str, object]:
@@ -586,6 +595,12 @@ class TradingWorker:
                         logger.exception("Lake bar write failed")
                         report.errors.append(f"lake: {exc}")
                         await session.rollback()
+                if self.market_feed is not None:
+                    try:      # its own DB sessions: a failure here never rolls back the cycle's session
+                        report.feed_bars = await self.market_feed.cycle(self.session_factory, now, market_open=nse.is_open)
+                    except Exception as exc:  # noqa: BLE001 - the feed must never break trading
+                        logger.exception("Universe feed cycle failed")
+                        report.errors.append(f"market feed: {exc}")
                 # H-1: Redis memory against its cap (every REDIS_MEMORY_CHECK_SECONDS), a WARNING at 70 %.
                 try:
                     async with guarded(session):

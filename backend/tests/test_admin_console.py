@@ -148,6 +148,9 @@ def test_system_section_reports_health_workers_and_the_data_feed():
     assert len(workers["mo3_quiet_worker"]["last_error"]) <= 160          # cut short
     feed = body["data_feed"]
     assert set(feed) >= {"market_open", "market_memory", "instrument_master", "data_quality_24h", "broker_circuits"}
+    market_feed = body["market_feed"]                                      # M71 PL-4: the universe feed's health
+    assert {"state", "connections", "symbols_subscribed", "last_tick_age_seconds", "reconnects_today",
+            "gaps_detected_today", "gaps_filled_today", "gaps_pending"} <= set(market_feed)
 
 
 def _seed_ai_calls(tenant_id: int, user_id: int) -> None:

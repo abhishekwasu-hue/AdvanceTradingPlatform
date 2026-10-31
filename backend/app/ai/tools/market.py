@@ -3,6 +3,9 @@
 All of them read server data only: the organisation's own broker session today (`evidence.server_frame`, the H-C1 a
 path), the market-data lake once part B is merged. Nothing posted by a browser reaches a tool. When there is no
 broker session the tool says so (the fix is on the Broker page) - it never falls back to sample data.
+M71 W2-B (flag `market_store_reads`): candles and the regime read the own store first (`evidence.store_frame`): Daily
+from the NSE files, intraday from the asker's own stored bars plus only the newest ones; what the store does not hold is
+said plainly in `data_gaps`, never filled. Nothing stored -> the broker read exactly as before.
 
 Outputs stay small (the model pays for every token): candles are summarised with the last few bars, the chain is the
 strikes around the ATM plus the totals, the backtest returns its statistics and a sample-size warning, never the trades.
@@ -47,6 +50,23 @@ async def _frame(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, d
     """Server candles through the organisation's broker session (the H-C1 a path) -> (frame, source)."""
     from app.ai import evidence
     return await evidence.server_frame(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days, user=ctx.user)
+
+
+async def _candles(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, days: int) -> Tuple[pd.DataFrame, str, List[str]]:
+    """M71 W2-B: the candles a read tool summarises -> (frame, source, gap lines): the own store first (flag on), else
+    `_frame` exactly as before."""
+    from app.ai import evidence
+    stored = await evidence.store_frame(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days, user=ctx.user,
+                                        now=ctx.now)
+    if stored is not None:
+        return stored.frame, stored.source, stored.gaps
+    df, source = await _frame(ctx, symbol, exchange, timeframe, days)
+    return df, source, []
+
+
+def _with_gaps(data: Dict[str, Any], gaps: List[str]) -> Dict[str, Any]:
+    """The store's plain gap lines (what it does not hold) next to the data - only when there are some."""
+    return {**data, "data_gaps": gaps} if gaps else data
 
 
 async def _backtest_frame(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, days: int) -> Tuple[pd.DataFrame, str, Dict[str, Any]]:
@@ -134,11 +154,11 @@ def summarise_frame(df: pd.DataFrame) -> Dict[str, Any]:
 async def get_candles(ctx: ToolContext, args: _CandleArgs) -> ToolResult:
     """OHLC candles from the organisation's broker session: range, change and the last few bars."""
     try:
-        df, source = await _frame(ctx, args.symbol, args.exchange, args.timeframe, args.days)
+        df, source, gaps = await _candles(ctx, args.symbol, args.exchange, args.timeframe, args.days)
     except HTTPException as exc:
         return _failed("candles", exc)
     summary = summarise_frame(df)
-    return ToolResult(True, {"symbol": args.symbol.upper(), "timeframe": args.timeframe, **summary}, summary["to"], source,
+    return ToolResult(True, _with_gaps({"symbol": args.symbol.upper(), "timeframe": args.timeframe, **summary}, gaps), summary["to"], source,
                       {"first_bar": summary["from"], "last_bar": summary["to"]})
 
 
@@ -207,14 +227,14 @@ async def get_market_regime(ctx: ToolContext, args: _CandleArgs) -> ToolResult:
     """The deterministic regime (trending up/down, ranging, volatile, quiet) on server candles, with its reasons."""
     from app.ai.regime import classify_regime
     try:
-        df, source = await _frame(ctx, args.symbol, args.exchange, args.timeframe, args.days)
+        df, source, gaps = await _candles(ctx, args.symbol, args.exchange, args.timeframe, args.days)
     except HTTPException as exc:
         return _failed("regime", exc)
     regime = classify_regime(df)
     data = {"symbol": args.symbol.upper(), "timeframe": args.timeframe, "regime": regime.kind, "confidence": _r(regime.confidence),
             "adx": _r(regime.adx), "ema_slope_pct": _r(regime.ema_slope_pct), "atr_pct": _r(regime.atr_pct), "atr_ratio": _r(regime.atr_ratio),
             "bars": regime.bars, "reasons": regime.reasons}
-    return ToolResult(True, data, _iso(df.index[-1]), source, {"last_bar": _iso(df.index[-1])})
+    return ToolResult(True, _with_gaps(data, gaps), _iso(df.index[-1]), source, {"last_bar": _iso(df.index[-1])})
 
 
 async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:

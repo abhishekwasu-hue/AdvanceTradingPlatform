@@ -65,6 +65,7 @@ RANK = {name: i for i, name in enumerate(SOURCES)}
 # rejected; expired: nobody decided in time; not_placed: approved or routed but nothing was placed (with why);
 # info: a match or a generated signal - nothing to decide.
 STATUSES = ("waiting", "snoozed", "taken", "skipped", "expired", "not_placed", "info")
+ENGINE_STRATEGY_ID, ENGINE_DISPLAY_NAME = "trade_engine", "Signal engine"   # M66 EN-3a (app/workers/engine_runner.py)
 KIND_LABELS = {"autopilot": "Autopilot", "scan": "Scan", "copilot": "Copilot", "library": "Signal generator"}
 
 
@@ -148,7 +149,10 @@ def _reasons(values: Any) -> List[str]:
 
 
 def strategy_name(strategy_id: str) -> str:
-    """The inbuilt strategy's display name, else the id as stored (a custom strategy, a manual setup)."""
+    """The inbuilt strategy's display name, else the id as stored (a custom strategy, a manual setup). M66 EN-3a: an
+    engine signal shows the engine's plain name, never its id."""
+    if strategy_id == ENGINE_STRATEGY_ID:
+        return ENGINE_DISPLAY_NAME
     try:
         from app.strategy_engine.registry import registry
         return str(registry.get(strategy_id).name)

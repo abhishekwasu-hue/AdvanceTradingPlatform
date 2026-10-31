@@ -142,11 +142,14 @@ test.describe("C13 behaviour", () => {
     await openLearn(page, "light");
     await page.getByRole("group", { name: "Topics" }).getByRole("button", { name: "Risk and your own settings" }).click();
     await expect(page.locator("[data-lesson]")).toHaveCount(3);
-    await page.getByRole("tab", { name: "Words explained" }).click();
+    // M60: Lessons and Words explained are tabs of the shell's Learn row, each at its own address.
+    await page.getByRole("navigation", { name: "Learn" }).getByRole("link", { name: "Words explained" }).click();
+    await expect(page).toHaveURL(/\/learn\/words$/);
     await page.getByPlaceholder("Search the words").fill("open interest");
     await expect(page.locator("[data-term='oi']")).toBeVisible();
     await expect(page.locator("[data-term='stop']")).toHaveCount(0);
-    await page.getByRole("tab", { name: "Lessons" }).click();
+    await page.getByRole("navigation", { name: "Learn" }).getByRole("link", { name: "Lessons" }).click();
+    await expect(page).toHaveURL(/\/learn$/);
     await page.getByPlaceholder("Search the lessons").fill("");
     await page.getByRole("group", { name: "Topics" }).getByRole("button", { name: "All topics" }).click();
     await page.locator("[data-lesson='structure-trend'] button[aria-expanded]").click();

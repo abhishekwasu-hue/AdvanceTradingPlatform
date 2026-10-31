@@ -42,9 +42,10 @@ describe("UX2 fix 4 wiring", () => {
     expect(routesSource).not.toContain("paperbot");
   });
 
-  it("one name: the navigation says Trading bot and still finds it by its old name", () => {
+  it("M60: the navigation says AI Trading Bot, the page keeps its title, and search still finds it by its old names", () => {
     const item = NAV_SECTIONS_V2.flatMap((s) => s.items).find((i) => i.key === "deployments")!;
-    expect([item.label, item.title]).toEqual(["Trading bot", "Trading bot"]);
+    expect([item.label, item.title]).toEqual(["AI Trading Bot", "Trading bot"]);
+    expect(item.keywords).toContain("trading bot");
     expect(item.keywords).toContain("autopilot");
   });
 

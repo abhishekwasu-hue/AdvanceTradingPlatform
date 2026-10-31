@@ -66,6 +66,13 @@ describe("UI2-1 v2 addresses", () => {
     expect(flagOffFallback("/strategies/test")).toBe("/backtest");
     expect(flagOffFallback("/analytics/journal")).toBe("/journal");
     expect(flagOffFallback("/analytics/coach")).toBe("/coach");
+    // M60: every new address goes back to today's address, so no bookmark ends on "This page does not exist".
+    expect(flagOffFallback("/positions/results")).toBe("/analytics");
+    expect(flagOffFallback("/positions/results/journal")).toBe("/journal");
+    expect(flagOffFallback("/settings/broker")).toBe("/broker");
+    expect(flagOffFallback("/learn/news")).toBe("/news-events");
+    expect(flagOffFallback("/learn/ideas")).toBe("/");
+    expect(flagOffFallback("/learn/words")).toBe("/");
     for (const p of ["/", "/settings", "/account", "/scanner", "/charts", "/charts/TCS", "/positions", "/nope"]) expect(flagOffFallback(p), p).toBeNull();
   });
 });
@@ -77,21 +84,31 @@ describe("UI2-1 redirects (only ever asked with ui_v2 on)", () => {
     expect(v2RedirectFor("/options-builder", "?underlying=NIFTY", signedIn)).toBe("/option-chain/plan?underlying=NIFTY");
   });
 
-  it("UX3-9: forwards the merged pages' old addresses to their tabs, keeping the query", () => {
+  it("UX3-9 + M60: forwards the merged pages' old addresses to their tabs, keeping the query", () => {
     const cases: [string, string][] = [
       ["/orders", "/positions/orders"], ["/portfolio", "/positions/money"],
       ["/strategy-builder", "/strategies/build"], ["/backtest", "/strategies/test"],
-      ["/journal", "/analytics/journal"], ["/coach", "/analytics/coach"], ["/journal/coach", "/analytics/coach"],
+      // M60: Performance is My trades › Results, Journal its part; without the AI Copilot the Coach keeps its page.
+      ["/analytics", "/positions/results"], ["/journal", "/positions/results/journal"], ["/analytics/journal", "/positions/results/journal"],
+      ["/coach", "/analytics/coach"], ["/journal/coach", "/analytics/coach"],
+      ["/broker", "/settings/broker"], ["/news-events", "/learn/news"], ["/ideas", "/learn/ideas"],
+      ["/copilot/brief", "/copilot/read"], ["/copilot/review", "/copilot/coach"], ["/copilot/signals", "/signals"],
     ];
     for (const [from, to] of cases) {
       expect(v2RedirectFor(from, "", signedIn), from).toBe(to);
       expect(v2RedirectFor(`${from}/`, "?x=1", { ...signedIn, signedIn: false }), from).toBe(`${to}?x=1`);
     }
     // A tab whose feature is off still opens: it says "Coming soon" there (the flag is read at the new address).
-    expect(v2RedirectFor("/journal", "", { ...signedIn, on: flags("discipline_engine") })).toBe("/analytics/journal");
+    expect(v2RedirectFor("/journal", "", { ...signedIn, on: flags("discipline_engine") })).toBe("/positions/results/journal");
+    // M60 default 3: with the AI Copilot on, the Coach is its tab.
+    for (const from of ["/coach", "/journal/coach", "/analytics/coach"]) {
+      expect(v2RedirectFor(from, "", { ...signedIn, on: flags("ai_copilot") }), from).toBe("/copilot/coach");
+    }
     // The new addresses and the pages that stayed are left alone.
-    for (const p of ["/positions", "/positions/orders", "/positions/money", "/strategies", "/strategies/build", "/strategies/test",
-      "/analytics", "/analytics/journal", "/analytics/coach", "/ideas", "/risk-management", "/team"]) {
+    for (const p of ["/positions", "/positions/orders", "/positions/money", "/positions/results", "/positions/results/journal", "/strategies",
+      "/strategies/build", "/strategies/test", "/analytics/coach", "/learn", "/learn/news", "/learn/ideas", "/learn/words", "/settings/broker",
+      "/copilot", "/copilot/read", "/copilot/coach", "/copilot/analyze", "/copilot/watchtower", "/risk-management", "/team", "/watchlist",
+      "/charts", "/option-chain", "/chart-analyze", "/screener/custom", "/notifications"]) {
       expect(v2RedirectFor(p, "", signedIn), p).toBeNull();
     }
   });

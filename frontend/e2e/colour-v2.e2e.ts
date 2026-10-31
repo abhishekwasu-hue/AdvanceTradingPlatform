@@ -63,7 +63,8 @@ async function labels(page: Page) {
   }));
 }
 
-const BAR: [string, string][] = [["Today", "/"], ["Charts", "/charts"], ["Signals", "/signals"], ["My trades", "/positions"]];
+// M60: the bar is the first four sidebar entries (the Terminal is off here, so Charts and Option chain stand in for it).
+const BAR: [string, string][] = [["Today", "/"], ["Charts", "/charts"], ["Chain", "/option-chain"], ["My trades", "/positions"]];
 
 for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
   test.describe(`colour v2 bottom bar ${size.width}`, () => {
@@ -75,7 +76,7 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
         const bar = page.locator("[data-bottom-nav-v2]");
         await expect(bar.locator("a[aria-current='page']")).toHaveText(active);
         const found = await labels(page);
-        expect(found.map((l) => l.text)).toEqual(["Today", "Charts", "Signals", "My trades", "More"]);
+        expect(found.map((l) => l.text)).toEqual(["Today", "Charts", "Chain", "My trades", "More"]);
         for (const l of found) {
           expect(l.lines, `${l.text} on one line`).toBe(1);
           expect(l.fits, `${l.text} inside its tab`).toBe(true);
@@ -90,7 +91,7 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
 test.describe("colour v2 phone 390 x 844", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
-  for (const [page_, path, active] of [["Signals", "/signals", "Signals"], ["Option chain", "/option-chain", null]] as const) {
+  for (const [page_, path, active] of [["Option chain", "/option-chain", "Chain"], ["Signals", "/signals", null]] as const) {
     test(`CA6 + UX-13 C: on ${page_} every tab shows its section colour; only the tab on screen is on the strong tint`, async ({ page }) => {
       await open(page, path);
       const tabs = await page.locator("[data-bottom-nav-v2] > a, [data-bottom-nav-v2] > button").evaluateAll((els) => {

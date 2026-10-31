@@ -181,11 +181,12 @@ describe("the education guard on what the page shows", () => {
 });
 
 describe("the shell: behind ui_v2 + idea_library", () => {
-  it("/ideas is the Ideas page: Strategies › Ideas (UX3-9)", () => {
+  it("M60: the Ideas page is Learn › Ideas at /learn/ideas; /ideas still opens it (the shell forwards it)", () => {
     expect(shellKeyFromPath(IDEAS_ADDRESS)).toBe("ideas");
     expect(shellKeyFromPath("/ideas/")).toBe("ideas");
-    expect(shellTitle("ideas")).toBe("Strategies");
-    expect(navItemFor("ideas")?.section).toBe("strategies");
+    expect(shellKeyFromPath("/learn/ideas")).toBe("ideas");
+    expect(shellTitle("ideas")).toBe("Learn");
+    expect(navItemFor("ideas")).toMatchObject({ section: "learn", path: "/learn/ideas" });
   });
 
   it("flag off: no navigation entry and the address shows Coming soon", () => {

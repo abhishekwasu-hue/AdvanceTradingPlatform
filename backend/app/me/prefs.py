@@ -41,6 +41,7 @@
   `notices` (TT12-1) holds when a one-time notice was seen (app/me/notices.py), so it never shows twice on any device.
   `option_chain` (B4, UI-H bug lane) holds his own Option chain settings: the PCR zone edges that word "What the chain
   shows" (defaults = the values used before). Display words only.
+  `shell` (M57) holds the app shell's own display choices: whether the sidebar is the full menu or the icon rail.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -486,12 +487,19 @@ class StrategyExitPrefs(_Prefs):
     trail_by: Optional[float] = Field(default=None, gt=0, lt=1e7, allow_inf_nan=False)
 
 
+class ShellPrefs(_Prefs):
+    """`shell` (M57 U7-1, owner 30 Oct): the app shell's own display choices. `sidebar`: the menu from md up, the full menu
+    ("expanded") or a 56 px rail of icons ("rail"); None = never chosen (the frontend then shows the full menu from
+    1024 px and the rail on a tablet). Display only: nothing on the server reads it."""
+    sidebar: Optional[Literal["expanded", "rail"]] = None
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
                                        "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs,
                                        "option_chain": OptionChainPrefs, "terminal": TerminalPrefs,
-                                       "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs}
+                                       "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 

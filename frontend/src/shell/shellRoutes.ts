@@ -1,11 +1,11 @@
 import { pageFromPath } from "../routes";
-import { MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS, V2_ALIASES, WATCHLIST_ADDRESS, V2_RETIRED_ALIASES, needsBrokerGate, routerPath } from "./aliases";
-import { navItemFor, type ShellKey } from "./navModel";
+import { MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS, V2_ALIASES, V2_MOVED, WATCHLIST_ADDRESS, V2_RETIRED_ALIASES, needsBrokerGate, routerPath } from "./aliases";
+import { LEARN_IDEAS_ADDRESS, LEARN_WORDS_ADDRESS, navItemFor, type ShellKey } from "./navModel";
 import { settingsSectionAt } from "../settings/paths";
 import { IDEAS_ADDRESS } from "../ideas/model";
 import { LEARN_ADDRESS } from "../learn/model";
 
-export { V2_ALIASES, V2_RETIRED_ALIASES, flagOffFallback, needsBrokerGate, routerPath } from "./aliases";
+export { V2_ALIASES, V2_MOVED, V2_RETIRED_ALIASES, flagOffFallback, needsBrokerGate, routerPath } from "./aliases";
 
 /**
  * UI2-1 (UI v2 proposal §2 "Standalone and special routes", §12 UI2-1): the v2 shell's addresses. All of this applies
@@ -57,7 +57,8 @@ export function shellKeyFromPath(pathname: string): ShellKey | null {
   if (chartsSymbolFromPath(pathname) !== undefined) return "charts";
   if (clean(pathname) === SETUP_ADDRESS) return "setup";
   if (clean(pathname) === TRADING_DEFAULTS_ADDRESS) return "trading-defaults";
-  if (clean(pathname) === IDEAS_ADDRESS) return "ideas";
+  if (clean(pathname) === IDEAS_ADDRESS || clean(pathname) === LEARN_IDEAS_ADDRESS) return "ideas";
+  if (clean(pathname) === LEARN_WORDS_ADDRESS) return "learn-words";
   if (clean(pathname) === MARKETS_ADDRESS) return "markets";
   if (clean(pathname) === LEARN_ADDRESS) return "learn";
   if (clean(pathname) === TERMINAL_ADDRESS) return "terminal";
@@ -93,6 +94,9 @@ export interface RedirectContext {
 export function v2RedirectFor(pathname: string, search: string, ctx: RedirectContext): string | null {
   const p = clean(pathname);
   const keep = search && search !== "?" ? (search.startsWith("?") ? search : `?${search}`) : "";
+  // M60: a moved page's old address goes to its new home (only while the feature behind that home is on).
+  const moved = V2_MOVED.find((m) => m.from === p && (!m.when || ctx.on(m.when)));
+  if (moved) return `${moved.to}${keep}`;
   const merged = V2_ALIASES.find((a) => a.old === p && a.page !== "account")
     ?? V2_RETIRED_ALIASES.find((a) => a.path === p);
   if (merged) return `${"now" in merged ? merged.now : merged.path}${keep}`;

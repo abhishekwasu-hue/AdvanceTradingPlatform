@@ -38,7 +38,7 @@ describe("AUD-T6 similar setups", () => {
   });
 
   it("links each match to its journal row, and the journal reads the address back", () => {
-    expect(journalLink(recall.matches[0])).toBe("/analytics/journal?week=2026-W40#trade-12");
+    expect(journalLink(recall.matches[0])).toBe("/positions/results/journal?week=2026-W40#trade-12");
     expect(journalTarget("?week=2026-W40", "#trade-12")).toEqual({ week: "2026-W40", tradeId: 12 });
     expect(journalTarget("?week=bad", "#x")).toEqual({ week: null, tradeId: null });
   });
@@ -48,7 +48,7 @@ describe("AUD-T6 similar setups", () => {
     expect(html).toContain('data-recall-match="12"');
     expect(html).toContain("29 Sep 2026");
     expect(html).toContain("+1.20 R, a gain");
-    expect(html).toContain('href="/analytics/journal?week=2026-W40#trade-12"');
+    expect(html).toContain('href="/positions/results/journal?week=2026-W40#trade-12"');
     expect(html).toContain("What the context said vs what happened");
     expect(html).toContain("Pullback into the buyer area");
     expect(html).not.toContain("Buy above");                             // a signal reason with a call word is left out

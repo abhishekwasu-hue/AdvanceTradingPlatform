@@ -8,6 +8,7 @@ import type { FoldedTab } from "../tabs";
 import { TabSkeleton } from "../tabs/shared";
 
 /**
+ * M60 (approved 30 Oct): Read the chart = Market Pulse; Coach = Review + the Guide (today's Coach page, whole).
  * CP-UX CU4 (owner order 30 Oct, `ui_v2`): the older Copilot tabs folded into the one Copilot - Brief = Market Pulse +
  * News Radar, Review = Coach, Signals = Watchtower (its own entry approvals already link to the Signals page). The same
  * tab components as before (nothing rewritten, nothing removed: the seven older tabs keep their addresses under
@@ -17,6 +18,8 @@ const MarketPulse = lazy(() => import("../tabs/MarketPulseTab"));
 const NewsRadar = lazy(() => import("../tabs/NewsRadarTab"));
 const Coach = lazy(() => import("../tabs/CoachTab"));
 const Watchtower = lazy(() => import("../tabs/WatchtowerTab"));
+// M60 default 3: the Coach tab holds today's Coach page whole - the review (Review) and the concept guide.
+const Guide = lazy(() => import("../../components/GuideChat"));
 
 function Part({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -34,6 +37,16 @@ export function FoldedBody({ tab }: { tab: FoldedTab }) {
       <>
         <Part id="copilot-brief-pulse" title={t("v2tabs.briefPulse")}><MarketPulse /></Part>
         <Part id="copilot-brief-news" title={t("v2tabs.briefNews")}><NewsRadar /></Part>
+      </>
+    );
+  }
+  // M60: Read the chart is the market pulse (its news part moved to Learn › News & events).
+  if (tab === "read") return <Part id="copilot-read-pulse" title={t("v2tabs.briefPulse")}><MarketPulse /></Part>;
+  if (tab === "coach") {
+    return (
+      <>
+        <Part id="copilot-coach-review" title={t("v2tabs.review")}><Coach /></Part>
+        <Part id="copilot-coach-guide" title={t("v2tabs.coachGuide")}><Guide plain /></Part>
       </>
     );
   }

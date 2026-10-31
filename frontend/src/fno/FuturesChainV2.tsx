@@ -18,6 +18,7 @@ import {
 import OrderTicketV2 from "./OrderTicketV2";
 import type { TicketTarget } from "./ticketModel";
 import { PaperBadge } from "../ui/PaperBadge";
+import { TermHint } from "../ui/TermHint";
 import { Skeleton } from "../components/primitives";
 
 /**
@@ -200,11 +201,11 @@ export function FuturesChainView({ data, problem, loading, trading, watchlistsOn
             <thead className="border-b border-subtle text-t12 font-semibold uppercase text-fg-muted">
               <tr>
                 <th scope="col" className="px-space-3 py-space-2">Contract</th>
-                <th scope="col" className="px-space-3 py-space-2 text-right">LTP</th>
+                <th scope="col" className="px-space-3 py-space-2 text-right">LTP <TermHint term="ltp" floating align="end" /></th>
                 <th scope="col" className="px-space-3 py-space-2 text-right">Change</th>
-                <th scope="col" className="px-space-3 py-space-2 text-right">OI</th>
+                <th scope="col" className="px-space-3 py-space-2 text-right">OI <TermHint term="oi" floating align="end" /></th>
                 <th scope="col" className="px-space-3 py-space-2 text-right">OI change</th>
-                <th scope="col" className="px-space-3 py-space-2 text-right">Basis vs spot</th>
+                <th scope="col" className="px-space-3 py-space-2 text-right">Basis vs spot <TermHint term="basis" floating align="end" /></th>
                 <th scope="col" className="px-space-3 py-space-2"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
@@ -246,9 +247,9 @@ export function FuturesChainView({ data, problem, loading, trading, watchlistsOn
                 </div>
               </div>
               <dl className="mt-space-2 grid grid-cols-3 gap-space-2 text-t12">
-                <div><dt className="text-fg-muted">OI</dt><dd className="font-tabular text-t13 text-fg">{formatCount(r.oi)}</dd></div>
+                <div><dt className="text-fg-muted">OI {i === 0 && <TermHint term="oi" />}</dt><dd className="font-tabular text-t13 text-fg">{formatCount(r.oi)}</dd></div>
                 <div><dt className="text-fg-muted">OI change</dt><dd className={cx("font-tabular text-t13", tone(r.oi_change))}>{formatCountChange(r.oi_change)}</dd></div>
-                <div><dt className="text-fg-muted">Basis</dt><dd className="font-tabular text-t13"><Signed value={r.basis} pct={r.basis_pct} tick={r.tick_size} stack /></dd></div>
+                <div><dt className="text-fg-muted">Basis {i === 0 && <TermHint term="basis" align="end" />}</dt><dd className="font-tabular text-t13"><Signed value={r.basis} pct={r.basis_pct} tick={r.tick_size} stack /></dd></div>
               </dl>
               <div className="mt-space-2"><RowActions row={r} trading={trading} watchlistsOn={watchlistsOn} timeframe={timeframe} panel={panel} on={on} /></div>
               <RowPanelView row={r} panel={panel} watchlists={watchlists} on={on} />

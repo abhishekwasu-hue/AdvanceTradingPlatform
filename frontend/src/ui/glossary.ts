@@ -12,6 +12,17 @@ export interface GlossaryEntry {
 
 export const GLOSSARY = {
   atm: { term: "ATM", definition: "At the money: the strike price closest to the current price of the index or stock." },
+  atr: { term: "ATR", definition: "Average true range: the average size of one bar's move from high to low over recent bars." },
+  basis: { term: "Basis", definition: "The gap between the price of a future and the price of the index or stock itself." },
+  delta: { term: "Delta", definition: "How much an option's price moves when the index or stock moves by one point." },
+  expectancy: { term: "Expectancy", definition: "The average result per closed trade: wins and losses added together, divided by the number of trades." },
+  gamma: { term: "Gamma", definition: "How much an option's delta changes when the index or stock moves by one point." },
+  kelly: { term: "Kelly reference", definition: "A formula's reading of your past wins and losses: the share of capital per losing trade that grew them fastest. It is not a position size." },
+  "profit-factor": { term: "Profit factor", definition: "Money made on winning trades divided by money lost on losing trades. Above 1 means the wins added up to more." },
+  "r-multiple": { term: "R", definition: "One R is the amount a trade risks from its entry to its stop. A result of 2R is twice that amount." },
+  "risk-of-ruin": { term: "Risk of ruin", definition: "The chance, worked out from your past results, of the account ever falling a set amount below its start." },
+  theta: { term: "Theta", definition: "How much an option's price changes in one day from time passing alone, with everything else the same." },
+  vega: { term: "Vega", definition: "How much an option's price changes when implied volatility moves by one point." },
   "api-key": { term: "API key", definition: "A key your broker gives you so this app can read your account and prices. You create it on your broker's website." },
   "booked-pnl": { term: "Booked P&L", definition: "Profit or loss on trades you have already closed today. It no longer changes with the price." },
   cnc: { term: "CNC", definition: "Cash and carry: a delivery trade in shares that you can hold beyond today." },

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
@@ -17,6 +17,8 @@ const REFRESH_MS = 60_000;
 const every = (ms: number) => () => ms;
 /** Fills shown before "Show all". */
 export const ORDERS_SHOWN = 30;
+/** REV-1 M3: trades read per page; "Show older trades" reads one more page (the poll re-reads only what is shown). */
+export const ORDERS_TRADES_PAGE = 50;
 
 type Filter = "all" | "Entry" | "Exit";
 const FILTERS: readonly { key: Filter; label: string }[] = [
@@ -26,16 +28,24 @@ const FILTERS: readonly { key: Filter; label: string }[] = [
 /**
  * UX-10 My trades wave (UI audit rows "My trades - Orders": H5-H fills table wider than a phone, H4-H browser-locale
  * times, H1-M legacy page): My trades › Orders in the v2 shell. H1 order: title → tiles → the fills as a list (one
- * row per fill, two lines, fits 360 px), IST times. Read-only: the same /trades answer today's page reads.
+ * row per fill, two lines, fits 360 px), IST times. Read-only: the same /trades answer today's page reads, paged
+ * (REV-1 M3): the newest 50 trades, and 50 more on each "Show older trades".
  */
 export default function OrdersV2(_props: PageProps = {}) {
   const { user } = useAuth();
   const signedIn = !!user;
-  const [trades] = usePolled(api.listTrades, every(REFRESH_MS), signedIn);
+  const [pages, setPages] = useState(1);
+  const [page, reloadPage] = usePolled(() => api.listNewestTrades(pages * ORDERS_TRADES_PAGE), every(REFRESH_MS), signedIn);
+  useEffect(() => { if (pages > 1) reloadPage(); }, [pages, reloadPage]);      // the older page now, not at the next poll
+  const loaded = dataOf(page);
+  const trades = useMemo(() => (page.status === "ok" ? { status: "ok" as const, data: page.data.rows } : page), [page]);
+  const more = loaded?.more ?? false;
+  const loadingOlder = more && (loaded?.rows.length ?? 0) < pages * ORDERS_TRADES_PAGE;
   const [filter, setFilter] = useState<Filter>("all");
   const [all, setAll] = useState(false);
   const rows = useMemo(() => orderFillRows(dataOf(trades) ?? []), [trades]);
   const tiles = orderTiles(rows);
+  const count = (n: number) => (more ? `${n}+` : String(n));
   const listed = filter === "all" ? rows : rows.filter((r) => r.kind === filter);
   const shown = all ? listed : listed.slice(0, ORDERS_SHOWN);
   const ok = trades.status === "ok";
@@ -50,10 +60,10 @@ export default function OrdersV2(_props: PageProps = {}) {
       <section aria-label="Summary" data-block="summary">
         {trades.status === "loading" ? <LoadingRowsV2 rows={2} /> : (
           <TilesV2>
-            <TileV2 testId="fills" label="Fills" value={ok ? String(tiles.fills) : EMPTY} />
-            <TileV2 testId="entries" label="Entries" value={ok ? String(tiles.entries) : EMPTY} />
-            <TileV2 testId="exits" label="Exits" value={ok ? String(tiles.exits) : EMPTY} />
-            <TileV2 testId="still-open" label="Still open" value={ok ? String(tiles.open) : EMPTY} />
+            <TileV2 testId="fills" label="Fills" value={ok ? count(tiles.fills) : EMPTY} />
+            <TileV2 testId="entries" label="Entries" value={ok ? count(tiles.entries) : EMPTY} />
+            <TileV2 testId="exits" label="Exits" value={ok ? count(tiles.exits) : EMPTY} />
+            <TileV2 testId="still-open" label="Still open" value={ok ? count(tiles.open) : EMPTY} />
           </TilesV2>
         )}
       </section>
@@ -77,6 +87,12 @@ export default function OrdersV2(_props: PageProps = {}) {
             {listed.length > ORDERS_SHOWN && (
               <button type="button" onClick={() => setAll((a) => !a)} className={`${BUTTON_SECONDARY} mt-space-3 w-full`}>
                 {all ? "Show fewer" : `Show all ${listed.length}`}
+              </button>
+            )}
+            {more && (all || listed.length <= ORDERS_SHOWN) && (
+              <button type="button" data-orders-older onClick={() => { setPages((p) => p + 1); setAll(true); }}
+                disabled={loadingOlder} className={`${BUTTON_SECONDARY} mt-space-3 w-full`}>
+                {loadingOlder ? "Loading older trades..." : "Show older trades"}
               </button>
             )}
           </>

@@ -1,4 +1,4 @@
-import { LayoutPanelTop, RotateCcw, Save } from "lucide-react";
+import { LayoutPanelTop, Minus, Plus, RotateCcw, Save } from "lucide-react";
 import { useConfirm } from "../ui/ConfirmDialog";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
@@ -27,9 +27,9 @@ import { ContextBarV2, useStripFigures } from "./ContextBarV2";
 import { modeChip } from "./statusModel";
 import { defaultTerminalApi, type TerminalApi } from "./api";
 import {
-  CHOOSER_PANEL_IDS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, activeKey, changed, closePanel,
-  isPreset, layoutFor, nameProblem, openPanel, remove, rename, resetToPreset, saveAs, saveOver, switchTo,
-  type Layout, type PanelId, type PanelPlace, type PhoneTab, type TerminalPrefs,
+  CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_HEIGHT, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, activeKey, chainHiddenColumns,
+  changed, closePanel, equalWidths, fitToScreen, isPreset, layoutFor, nameProblem, openPanel, readingOrder, remove, rename, resetToPreset, saveAs,
+  saveOver, sizePanel, switchTo, type Layout, type PanelId, type PanelPlace, type PhoneTab, type SizeResult, type TerminalPrefs,
 } from "./layoutModel";
 import {
   ChartPanelV2, OrderPanelV2, OrdersPanelV2, PlaceholderPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
@@ -43,7 +43,7 @@ import { writePending, type RollAsk } from "../fno/roll";
 import { areasByTrade, chainAreaMarks, useStrikeAreas } from "../fno/strikeArea";
 import { StatusBarV2 } from "./StatusBarV2";
 import { useCombinedExits } from "../fno/CombinedExitV2";
-import { TerminalGridV2 } from "./TerminalGridV2";
+import { TerminalGridV2, screenRows } from "./TerminalGridV2";
 import { readMask, writeMask } from "./statusModel";
 import { Combobox } from "../ui/Combobox";
 
@@ -222,7 +222,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       }
       // TERM-2 step 2: the Option chain page's own chain (summary strip, columns menu, ChainTableV2), not a copy.
       case "chain": return <TerminalChainV2 symbol={underlying} chain={chain} spot={spot} prevClose={strip.prevClose} prefs={columns}
-        onPrefs={(next) => { setColumns(next); writeColumns(next); }} trading={trading} areaMarks={areaMarks.size ? areaMarks : undefined} />;
+        onPrefs={(next) => { setColumns(next); writeColumns(next); }} trading={trading} areaMarks={areaMarks.size ? areaMarks : undefined}
+        hide={place && !narrow ? chainHiddenColumns(place.w) : undefined} />;
       case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} paperBadge={false} />;
       case "positions": {
         const list = <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}
@@ -297,7 +298,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
                 .map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
                 ...(count > 0 ? Object.entries(prefs.layouts).map(([id, l]) => ({ value: id, label: l.name, group: "Your layouts" })) : [])]} />
           </div>
-          {!narrow && <PanelsMenu panels={working.panels} onToggle={(id, on) => setPanels(on ? openPanel(working.panels, id) : closePanel(working.panels, id))} />}
+          {!narrow && <PanelsMenu panels={working.panels} onToggle={(id, on) => setPanels(on ? openPanel(working.panels, id) : closePanel(working.panels, id))}
+            onPanels={setPanels} />}
           <button type="button" className={BUTTON} onClick={save} disabled={L.busy || (!!own && !dirty)} data-terminal="save">
             <Save size={16} aria-hidden />{own ? "Save" : "Save as mine"}
           </button>
@@ -355,7 +357,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
         </div>
       ) : (
         <div data-tour="terminal-panels">
-          <TerminalGridV2 panels={working.panels} onChange={setPanels} onClose={(id) => setPanels(closePanel(working.panels, id))}
+          <TerminalGridV2 panels={working.panels} preset={working.preset} onChange={setPanels} onClose={(id) => setPanels(closePanel(working.panels, id))}
             render={(place) => panel(place.id, place)} title={title} />
         </div>
       )}
@@ -368,22 +370,81 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   );
 }
 
-/** The toolbar's "Panels" menu: every panel with a tick for open (opening one finds it a free place on the grid). */
-function PanelsMenu({ panels, onToggle }: { panels: readonly PanelPlace[]; onToggle: (id: PanelId, on: boolean) => void }) {
+/**
+ * The toolbar's "Panels" menu: every panel with a tick for open (opening one finds it a free place on the grid), and
+ * (M58 T4-3) each open panel's width (columns) and height (rows) with a stepper and its smallest size, "Fit to screen"
+ * and "Equal widths". A change applies at once and is kept with "Save as mine" / "Save" like any other layout change; a
+ * change that cannot be applied says why here.
+ */
+function PanelsMenu({ panels, onToggle, onPanels }: {
+  panels: readonly PanelPlace[]; onToggle: (id: PanelId, on: boolean) => void; onPanels: (panels: PanelPlace[]) => void;
+}) {
   const open = new Set(panels.filter((x) => x.open).map((x) => x.id));
+  const [note, setNote] = useState<string | null>(null);
+  const apply = (r: SizeResult) => {
+    if (r.moved !== 0) onPanels(r.panels);
+    setNote(r.limit?.text ?? null);
+  };
+  const sized = readingOrder(panels).filter((q) => CHOOSER_PANEL_IDS.includes(q.id));
   return (
     <details className="relative" data-terminal="panels">
       <summary className={cx(BUTTON, "cursor-pointer list-none")}><LayoutPanelTop size={16} aria-hidden />Panels</summary>
-      <fieldset className="absolute left-0 z-20 mt-space-1 w-60 space-y-px rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
-        <legend className="sr-only">Show panels</legend>
-        {CHOOSER_PANEL_IDS.map((id) => (
-          <label key={id} className="flex min-h-9 cursor-pointer items-center gap-space-2 rounded-control px-space-2 text-t14 text-fg hover:bg-surface-2">
-            <input type="checkbox" checked={open.has(id)} onChange={(e) => onToggle(id, e.target.checked)} data-panel-toggle={id}
-              disabled={open.has(id) && open.size <= 1} className="h-4 w-4 accent-brand" />
-            {PANELS[id].label}
-          </label>
-        ))}
-      </fieldset>
+      <div className="absolute left-0 z-20 mt-space-1 flex items-start gap-space-3 rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
+        <fieldset className="w-52 shrink-0 space-y-px">
+          <legend className="sr-only">Show panels</legend>
+          {CHOOSER_PANEL_IDS.map((id) => (
+            <label key={id} className="flex min-h-9 cursor-pointer items-center gap-space-2 rounded-control px-space-2 text-t14 text-fg hover:bg-surface-2">
+              <input type="checkbox" checked={open.has(id)} onChange={(e) => onToggle(id, e.target.checked)} data-panel-toggle={id}
+                disabled={open.has(id) && open.size <= 1} className="h-4 w-4 accent-brand" />
+              {PANELS[id].label}
+            </label>
+          ))}
+        </fieldset>
+        <section aria-label="Panel sizes" data-terminal="sizes" className="w-96 shrink-0 space-y-space-2 border-l border-subtle pl-space-3">
+          <p className="text-t13 font-semibold text-fg">Sizes</p>
+          {sized.map((q) => (
+            <div key={q.id} data-size-row={q.id} className="space-y-space-1">
+              <p className="flex items-baseline justify-between gap-space-2 text-t13">
+                <span className="font-medium text-fg">{PANELS[q.id].label}</span>
+                <span className="whitespace-nowrap text-fg-muted" data-size-now={q.id}>{q.w} of {COLUMNS} columns · {q.h} rows</span>
+              </p>
+              <div className="flex flex-wrap items-center gap-space-3">
+                <SizeStepper place={q} dim="w" onSet={(v) => apply(sizePanel(panels, q.id, "w", v))} />
+                <SizeStepper place={q} dim="h" onSet={(v) => apply(sizePanel(panels, q.id, "h", v))} />
+              </div>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-space-2 pt-space-1">
+            <button type="button" className={BUTTON} data-terminal="fit" onClick={() => apply(fitToScreen(panels, screenRows()))}
+              title="The open panels fill the width and the height of the screen">Fit to screen</button>
+            <button type="button" className={BUTTON} data-terminal="equal-widths" onClick={() => apply(equalWidths(panels))}
+              title="Panels side by side share the width equally">Equal widths</button>
+          </div>
+          {note && <p role="status" className="text-t13 text-warn" data-terminal="size-note">{note}</p>}
+        </section>
+      </div>
     </details>
+  );
+}
+
+/** M58 T4-3: one size of one panel - the value, − and +, and its smallest size. */
+function SizeStepper({ place, dim, onSet }: { place: PanelPlace; dim: "w" | "h"; onSet: (value: number) => void }) {
+  const info = PANELS[place.id];
+  const min = dim === "w" ? info.minW : info.minH;
+  const max = dim === "w" ? COLUMNS : MAX_HEIGHT;
+  const value = place[dim];
+  const word = dim === "w" ? "Width" : "Height";
+  const STEP = "inline-flex h-space-8 w-space-8 shrink-0 items-center justify-center rounded-control border border-border bg-surface-1 text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50";
+  return (
+    <div role="group" aria-label={`${info.label} ${word.toLowerCase()}`} className="flex items-center gap-space-1">
+      <span className="w-12 text-t12 text-fg-muted">{word}</span>
+      <button type="button" className={STEP} disabled={value <= min} onClick={() => onSet(value - 1)} data-size-step={`${place.id}:${dim}:-1`}
+        aria-label={`${dim === "w" ? "Narrower" : "Shorter"} ${info.label}`}><Minus size={14} aria-hidden /></button>
+      <span className="w-space-6 text-center font-tabular text-t13 font-semibold text-fg" data-size={`${place.id}:${dim}`}
+        aria-label={`${value} ${dim === "w" ? "columns" : "rows"}`}>{value}</span>
+      <button type="button" className={STEP} disabled={value >= max} onClick={() => onSet(value + 1)} data-size-step={`${place.id}:${dim}:+1`}
+        aria-label={`${dim === "w" ? "Wider" : "Taller"} ${info.label}`}><Plus size={14} aria-hidden /></button>
+      <span className="whitespace-nowrap text-t12 text-fg-muted" data-size-min={`${place.id}:${dim}`}>min {min}</span>
+    </div>
   );
 }

@@ -53,6 +53,11 @@ TOKENS: Dict[str, str] = {
     "pack_bearish_continuation": "read as a bearish continuation for the option structure in your own settings",
     "pack_range_lower_edge": "read as the lower edge of the range for the option structure in your own settings",
     "pack_range_upper_edge": "read as the upper edge of the range for the option structure in your own settings",
+    # A1 pullback to a demand / supply area (idea library T1, M55 T5: the ported level gate)
+    "demand_area_pullback_committed": ("the market pulled back into a demand area on the {timeframe} chart, on the side the Daily"
+                                       " structure allows, and a commitment candle closed back above the area"),
+    "supply_area_pullback_committed": ("the market pulled back into a supply area on the {timeframe} chart, on the side the Daily"
+                                       " structure allows, and a commitment candle closed back below the area"),
     # A5 structure flip retest (idea library T5)
     "resistance_flip_retested": "former resistance on the {timeframe} chart was broken and is being retested from above; rejection formed",
     "support_flip_retested": "former support on the {timeframe} chart was broken and is being retested from below; rejection formed",

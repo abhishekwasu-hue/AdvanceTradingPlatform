@@ -422,7 +422,8 @@ async def _execute_legs(session: AsyncSession, action: AiActionRecord, owner: Us
             session, owner, mode="PAPER", strategy_id=strategy_id, signal=signal, structure=_structure_from(payload["data"], today),
             rules=rules, target_credit_pct=deployment.target_credit_pct, stop_credit_pct=deployment.stop_credit_pct,
             underlying_exit=bool(getattr(deployment, "underlying_breach_exit", None)), idempotency_key=f"approval:{action.id}",
-            broker=None, quote_broker=quotes, deployment_id=deployment.id, origin=ORIGIN_APPROVAL, approval_action_id=action.id)
+            broker=None, quote_broker=quotes, deployment_id=deployment.id, origin=ORIGIN_APPROVAL, approval_action_id=action.id,
+            holding=str(evidence.get("holding") or "INTRADAY"))   # M55 T1: an approved SWING structure is held for days too
         if not result.executed:
             raise ValueError("PAPER order not placed: " + ("; ".join(result.reasons) or "the structure was refused"))
         trade_id = result.trades[0].id if result.trades else None

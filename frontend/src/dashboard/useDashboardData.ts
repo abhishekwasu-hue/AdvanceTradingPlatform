@@ -6,6 +6,7 @@ import type {
 } from "../types";
 import { WIN_RATE_DAYS } from "./model";
 import type { MarketStrip } from "./types";
+import { useLiveEvents } from "../live/useLiveEvents";
 
 /**
  * UI2-2 (UI v2 proposal §5 "Data behind each block", "Refresh"): the dashboard's reads, all existing read-only endpoints
@@ -21,6 +22,10 @@ export type Loadable<T> = { status: "loading" } | { status: "ok"; data: T } | { 
 export const LOADING = { status: "loading" } as const;
 export const REFRESH_MS = 30_000;
 export const OI_REFRESH_MS = 60_000;
+/** REV-1 M3: the 30-day summary changes only when a trade closes: read every 5 min, and at once when the open count changes. */
+export const SUMMARY_REFRESH_MS = 5 * 60_000;
+/** REV-1 M3: the unread alerts arrive on the live stream; the timed read is only a fallback for a dropped stream. */
+export const UNREAD_REFRESH_MS = 2 * 60_000;
 export const STRIP_FALLBACK_MS = 15_000;
 
 /** The data, or null while loading or after a failure. */
@@ -125,9 +130,17 @@ export function useDashboardData(enabled: boolean): DashboardData {
   const [pending, r12] = usePolled(() => api.aiActions("PROPOSED"), every(REFRESH_MS), enabled);
   const [deployments, r6] = usePolled(() => api.listDeployments(), every(REFRESH_MS), enabled);
   const [risk, r7] = usePolled(riskOrNone, every(REFRESH_MS), enabled);
-  const [unread, r8] = usePolled(() => api.listNotifications(true), every(REFRESH_MS), enabled);
+  const [unread, r8] = usePolled(() => api.listNotifications(true), every(UNREAD_REFRESH_MS), enabled);
+  useLiveEvents(["notifications"], () => { if (enabled) r8(); });     // a new alert: read the unread list now
   const [status, r9] = usePolled(api.systemStatus, every(REFRESH_MS), enabled);
-  const [summary, r10] = usePolled(winRateSummary, every(REFRESH_MS), enabled);
+  const [summary, r10] = usePolled(winRateSummary, every(SUMMARY_REFRESH_MS), enabled);
+  const openCount = positions.status === "ok" ? positions.data.length : null;
+  const seenOpen = useRef<number | null>(null);
+  useEffect(() => {                                     // a position opened or closed: the summary may have changed
+    if (openCount === null) return;
+    if (seenOpen.current !== null && seenOpen.current !== openCount) r10();
+    seenOpen.current = openCount;
+  }, [openCount, r10]);
   const reload = useCallback(() => { for (const r of [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r12]) r(); },
     [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r12]);
   return { strip, oi, exposure, positions, actions, pending, deployments, risk, unread, status, summary, reload };

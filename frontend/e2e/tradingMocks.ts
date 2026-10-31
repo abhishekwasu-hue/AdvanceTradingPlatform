@@ -44,7 +44,7 @@ export async function mockTrading(page: Page, { empty = false, positionsFail = f
   const gets: [RegExp, () => unknown][] = [
     [api("/auth/me$"), () => T.me],
     [api("/positions$"), () => (empty ? [] : T.positions)],
-    [api("/trades$"), () => (empty ? [] : T.trades)],
+    [api("/trades(\\?|$)"), () => (empty ? [] : T.trades)],   // REV-1 M3: /trades is read by the page (?limit=)
     [api("/portfolio/exposure"), () => exposure],
     [api("/risk-settings$"), () => ({ ...(T.risk_settings as object), ...riskSettings })],
     [api("/risk-settings/ceilings$"), () => T.ceilings],

@@ -50,7 +50,7 @@ from app.execution.signal_execution import entry_refusals
 from app.execution.tagging import LEG_ENTRY, LEG_EXIT, build_order_tag, client_order_id, new_client_order_id
 from app.instruments.contracts import ContractResolutionError, ContractRules
 from app.instruments.models import ContractSpec
-from app.instruments.spreads import ResolvedStructure, StructureMetrics, structure_metrics
+from app.instruments.spreads import ResolvedStructure, StructureMetrics, can_hold_for_days, structure_metrics
 from app.notifications.service import notify
 from app.observability.metrics import ORDERS
 from app.platform.controls import clamp_config, risk_ceilings
@@ -99,13 +99,16 @@ async def execute_structure(
     rules: ContractRules, target_credit_pct: Optional[float], stop_credit_pct: Optional[float],
     idempotency_key: str, broker: Optional[BrokerInterface] = None, quote_broker: Optional[BrokerInterface] = None,
     deployment_id: Optional[int] = None, risk_config: Optional[RiskConfig] = None, account_id: Optional[int] = None,
-    underlying_exit: bool = False,
+    underlying_exit: bool = False, holding: str = "INTRADAY",
     origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: int | None = None,
 ) -> StructureResult:
     """M55 T2: `origin` / `approval_action_id` as on `execute_signal_for_user` - "approval" with the id of an APPROVED
     entry proposal (app/execution/approval.py::execute_entry) is the only way a structure passes approval-only mode;
     the default is the refusing "automatic"."""
     started = time.perf_counter()
+    # M55 T1: only a defined-risk credit structure is ever held for days (SWING); anything else stays INTRADAY.
+    held = holding == "SWING" and can_hold_for_days(structure.strategy)
+    product = "NRML" if held else "MIS"
     tenant = await session.get(Tenant, user.tenant_id)
     execution_mode = ExecutionMode(mode)
     price_source = quote_broker or broker
@@ -237,7 +240,7 @@ async def execute_structure(
         lots = min(lots, rules.max_lots)
     if execution_mode == ExecutionMode.LIVE:
         try:
-            cap, note = await _live_lot_cap(broker, structure, debit_per_unit=-metrics.net_credit if metrics.debit else None)
+            cap, note = await _live_lot_cap(broker, structure, debit_per_unit=-metrics.net_credit if metrics.debit else None, product=product)
         except ContractExecutionError as exc:
             reasons = notes + [str(exc)]
             await _reject_all(session, orders, reasons)
@@ -245,6 +248,18 @@ async def execute_structure(
         notes.append(note)
         lots = min(lots, cap)
     quantity = lots * lot
+    if held and execution_mode == ExecutionMode.PAPER:
+        # M55 T1: the margin a spread held overnight blocks, checked at entry (LIVE: the broker's margin above, NRML).
+        refusal, note = await _hold_margin_refusal(session, user, structure, premiums, lots)
+        if refusal:
+            reasons = notes + [refusal]
+            await _reject_all(session, orders, reasons)
+            await notify(session, user.tenant_id, NotificationType.RISK_REJECTION, title=f"Structure refused: {structure.underlying_symbol}",
+                         message=refusal, severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=orders[0].id)
+            return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
+        notes.append(note)
+    if held:
+        notes.append("Held for days: kept overnight; exits by your own exit rules; settles at expiry")
     ratios = {leg.contract.tradingsymbol: leg.ratio for leg in structure.legs}
     if structure.max_ratio > 1:
         notes.append(f"{lots} lot(s) x {lot} = {quantity} per 1x leg; ratio legs x{structure.max_ratio} = {quantity * structure.max_ratio}")
@@ -304,7 +319,8 @@ async def execute_structure(
                 practice.mark(leg.contract.tradingsymbol, premiums[leg.contract.tradingsymbol], leg.contract.exchange)
             venue = practice
         run = await place_legs(venue, entry_specs(structure, quantity), strategy_id=strategy_id, tenant=tenant,
-                               band_pct=settings.protection_band_pct, prices=premiums, live=execution_mode == ExecutionMode.LIVE)
+                               band_pct=settings.protection_band_pct, prices=premiums, live=execution_mode == ExecutionMode.LIVE,
+                               product=product)
         notes.extend(run.notes)
         if execution_mode == ExecutionMode.PAPER:
             notes.append("Paper fills at the quoted premiums")
@@ -336,7 +352,8 @@ async def execute_structure(
             if leg_tags.setdefault(leg.contract.tradingsymbol, tag) == tag:
                 order.algo_tag = tag
         await session.commit()
-        placed_ok, failure = await _place_live_legs(broker, structure, quantity, strategy_id, tenant, fills, notes, leg_tags=leg_tags)
+        placed_ok, failure = await _place_live_legs(broker, structure, quantity, strategy_id, tenant, fills, notes,
+                                                    leg_tags=leg_tags, product=product)
         if not placed_ok:
             reasons = notes + [failure]
             await _reject_all(session, orders, reasons, failed=True)
@@ -351,7 +368,7 @@ async def execute_structure(
     trades = await _book_legs(session, user, orders, list(structure.legs), fills, premiums, structure=structure, metrics=metrics,
                               quantity=quantity, lot=lot, group_id=group_id, group_meta=group_meta, signal=signal,
                               strategy_id=strategy_id, mode=mode, broker=broker, deployment_id=deployment_id, account_id=account_id,
-                              stop_credit_pct=stop_credit_pct, notes=notes, started=started)
+                              stop_credit_pct=stop_credit_pct, notes=notes, started=started, holding="SWING" if held else "INTRADAY")
 
     await notify(
         session, user.tenant_id, NotificationType.ENTRY,
@@ -391,7 +408,7 @@ async def _book_legs(
     premiums: Dict[str, float], *, structure: ResolvedStructure, metrics: StructureMetrics, quantity: float, lot: int, group_id: str,
     group_meta: Dict, signal: Signal, strategy_id: str, mode: str, broker: Optional[BrokerInterface], deployment_id: Optional[int],
     account_id: Optional[int], stop_credit_pct: Optional[float], notes: List[str], started: float,
-    quantities: Optional[Dict[str, float]] = None,
+    quantities: Optional[Dict[str, float]] = None, holding: str = "INTRADAY",
 ) -> List[TradeRecord]:
     """Books every leg that has a fill (all of them on the old path; the filled ones of an INCOMPLETE run): its order
     through SUBMITTED -> PENDING -> FILLED -> POSITION_OPEN and one TradeRecord in the group. `quantities`: the filled
@@ -419,7 +436,7 @@ async def _book_legs(
         ORDERS.labels(mode=mode, status="FILLED").inc()
         meta = _leg_meta(leg, structure=structure, lot=lot, signal=signal, group_id=group_id, group_meta=group_meta)
         record = await persist_trade(session, user, trade, mode=mode, broker_order_id=broker_order_id, deployment_id=deployment_id, contract_meta=meta,
-                                     account_id=account_id)
+                                     account_id=account_id, holding=holding)
         order.trade_id = record.id
         order.reasons_json = json.dumps(notes)
         await transition_order(session, order, OrderStatus.POSITION_OPEN, detail=f"Position opened (trade #{record.id}, group {group_id[:8]})")
@@ -508,7 +525,50 @@ def _economics_note(metrics: StructureMetrics, lot: int) -> str:
             f"breakeven {be}; exits: {exits}")
 
 
-async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *, debit_per_unit: Optional[float] = None) -> Tuple[int, str]:
+async def _held_margin_blocked(session: AsyncSession, user: User) -> float:
+    """M55 T1: the margin his other PAPER structures held for days still block - each one's defined max loss (per unit,
+    from its group metadata) x its quantity, as the option backtest's span_like margin counts a defined-risk structure."""
+    from sqlalchemy import select
+    rows = await session.execute(select(TradeRecord.leg_group_id, TradeRecord.group_meta).where(
+        TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.exit_time.is_(None),
+        TradeRecord.mode == ExecutionMode.PAPER.value, TradeRecord.holding == "SWING", TradeRecord.leg_group_id.is_not(None)))
+    blocked: dict[str, float] = {}
+    for group_id, raw in rows:
+        if group_id in blocked:
+            continue
+        try:
+            meta = json.loads(raw or "{}")
+            blocked[group_id] = max(0.0, float(meta.get("max_loss") or 0.0)) * float(meta.get("quantity") or 0.0)
+        except (TypeError, ValueError):
+            blocked[group_id] = 0.0
+    return round(sum(blocked.values()), 2)
+
+
+async def _hold_margin_refusal(session: AsyncSession, user: User, structure: ResolvedStructure, premiums: dict[str, float],
+                               lots: int) -> tuple[str | None, str]:
+    """M55 T1: a PAPER spread held for days blocks its margin overnight, so it is checked at entry: ATP's labelled
+    estimate (`fno_basket.hedge_margin`, the defined max loss) against his practice balance less what his other held
+    spreads block. No broker is built here (Rule 0: execute_structure never obtains a broker itself; LIVE is checked by
+    the broker's own margin in `_live_lot_cap`). (refusal or None, note)."""
+    from app.execution import smart_execution
+    from app.paper import fno_basket
+    builder = [{"direction": "SELL" if leg.role == "SHORT" else "BUY", "option_type": leg.contract.right,
+                "strike": float(leg.contract.strike or 0.0), "premium": float(premiums[leg.contract.tradingsymbol]),
+                "lots": int(lots * leg.ratio), "lot_size": int(structure.lot_size), "expiry": leg.contract.expiry.isoformat(), "iv": None}
+               for leg in structure.legs]
+    estimate = fno_basket.hedge_margin(builder)
+    free = await fno_basket.practice_balance(session, user) - await _held_margin_blocked(session, user)
+    view = smart_execution.margin_view(None, estimate, free, free_source="practice")
+    if view.required is None:
+        return "Not entered: the margin to hold this spread for days could not be worked out, so it is not held", ""
+    if view.free_after is None or view.free_after < 0:
+        return (f"Not entered: not enough margin to hold this spread for days - it needs {view.required:,.0f}, "
+                f"{max(free, 0.0):,.0f} is free in your practice account"), ""
+    return None, f"Margin to hold for days: {view.required:,.0f} ({view.label}); {view.free_after:,.0f} free after"
+
+
+async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *, debit_per_unit: Optional[float] = None,
+                        product: str = "MIS") -> Tuple[int, str]:
     """Lots the account's margin allows: the broker's requirement for one lot of every short
     leg (no spread benefit assumed - conservative) against MARGIN_SAFETY of available margin.
     A structure with no short leg (Phase R long straddle/strangle) blocks exactly its debit, so
@@ -528,7 +588,7 @@ async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *
         probe = BrokerOrderRequest(
             symbol=leg.contract.instrument_key if _is_upstox(broker) and "|" in (leg.contract.instrument_key or "") else leg.contract.tradingsymbol,
             exchange=leg.contract.exchange, transaction_type=OrderSide.SELL, quantity=structure.lot_size * leg.ratio,
-            order_type="MARKET", product="MIS",
+            order_type="MARKET", product=product,
         )
         margin = await broker.get_order_margin(probe)
         if margin is None or margin <= 0:
@@ -553,6 +613,7 @@ def leg_entry_tag(broker: BrokerInterface, tenant: Tenant | None, strategy_id: s
 async def _place_live_legs(
     broker: BrokerInterface, structure: ResolvedStructure, quantity: float, strategy_id: str, tenant: Optional[Tenant],
     fills: Dict[str, Tuple[float, Optional[str]]], notes: List[str], leg_tags: dict[str, str] | None = None,
+    product: str = "MIS",
 ) -> Tuple[bool, str]:
     """Wings first, then shorts - and a short is sent only once every wing's fill is *confirmed* in the broker's
     book (P0.5 / T3), so the account is never short without its protection. A leg that does not fill inside the
@@ -576,14 +637,14 @@ async def _place_live_legs(
             if late_qty > 0:
                 placed.append((leg, late_qty))
                 text += f"; {leg.contract.tradingsymbol} filled {late_qty:g} during the cancel"
-        unwound = await _unwind(broker, placed, quantity, strategy_id, algo_id, max_tag)
+        unwound = await _unwind(broker, placed, quantity, strategy_id, algo_id, max_tag, product=product)
         return False, text + (f"; unwound {unwound} filled leg(s)" if placed else "")
 
     for phase, legs in (("wing", structure.long_legs), ("short", structure.short_legs)):
         for leg in legs:
             request = BrokerOrderRequest(
                 symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange, transaction_type=leg.side,
-                quantity=quantity * leg.ratio, order_type="MARKET", product="MIS",
+                quantity=quantity * leg.ratio, order_type="MARKET", product=product,
                 tag=(leg_tags or {}).get(leg.contract.tradingsymbol)
                 or build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag, broker=broker.name,
                                    client_id=new_client_order_id()),
@@ -609,7 +670,8 @@ async def _place_live_legs(
     return True, ""
 
 
-async def _unwind(broker: BrokerInterface, placed: List, quantity: float, strategy_id: str, algo_id: Optional[str], max_tag: int) -> int:
+async def _unwind(broker: BrokerInterface, placed: List, quantity: float, strategy_id: str, algo_id: Optional[str], max_tag: int,
+                  product: str = "MIS") -> int:
     """Reverses every confirmed fill, shorts first, for exactly the quantity that filled (P0.5 / T3)."""
     done = 0
     ordered = sorted(placed, key=lambda item: 0 if item[0].role == "SHORT" else 1)
@@ -618,7 +680,7 @@ async def _unwind(broker: BrokerInterface, placed: List, quantity: float, strate
             await broker.place_order(BrokerOrderRequest(
                 symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange,
                 transaction_type=OrderSide.SELL if leg.side == OrderSide.BUY else OrderSide.BUY,
-                quantity=filled if filled and filled > 0 else quantity * leg.ratio, order_type="MARKET", product="MIS",
+                quantity=filled if filled and filled > 0 else quantity * leg.ratio, order_type="MARKET", product=product,
                 tag=build_order_tag(strategy_id=strategy_id, leg=LEG_EXIT, algo_id=algo_id, max_length=max_tag, broker=broker.name,
                                     client_id=new_client_order_id()),
             ))

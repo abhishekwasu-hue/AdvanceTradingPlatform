@@ -1,3 +1,4 @@
+import { pauseReasonText } from "../ui/pauseReason";
 import { botWithDefaults, structureLabel, type TradingDefaults } from "../settings/tradingDefaults";
 import type { ContractRules, Deployment, DeploymentCreateRequest, StrategyInfo } from "../types";
 import { strategyDisplayName } from "../ui/strategyName";
@@ -152,12 +153,7 @@ const STATE_TEXT: Record<BotState, string> = { running: "Running", paused: "Paus
 /** "Running", "Paused: 3 losses in a row" - a reason only when it reads as words (never an internal code). */
 export function botStatusText(d: Pick<Deployment, "status" | "pause_reason">): string {
   const state = botState(d);
-  const reason = (d.pause_reason ?? "").trim();
-  if (state === "paused" && reason && /^paused from (the )?(autopilot|trading bot)/i.test(reason)) return "Paused by you";
-  if (state === "paused" && reason && reason.length <= 80 && !/[_{}[\]<>=]|#\d/.test(reason)) {
-    return `Paused: ${reason.charAt(0).toLowerCase()}${reason.slice(1).replace(/\.$/, "")}`;
-  }
-  return STATE_TEXT[state];
+  return (state === "paused" && pauseReasonText(d.pause_reason)) || STATE_TEXT[state];
 }
 
 /** The bot's name: the strategy's Library name, else its id in words. */

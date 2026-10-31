@@ -77,6 +77,7 @@ class BacktestLossStreak:
         self.count = 0
         self.pauses = 0
         self.first_paused_at: Any = None
+        self.last_loss_at: Any = None     # M64: when the newest loss closed (the cool-down in minutes runs from it)
 
     def new_session(self) -> int:
         """The IST day rolled: the next-session choice starts the count again. Returns the count to use."""
@@ -87,6 +88,7 @@ class BacktestLossStreak:
     def closed(self, pnl: Optional[float], when: Any) -> int:
         """One trade closed at `when`. Returns the count to use."""
         self.count = self.count + 1 if is_loss(pnl) else 0
+        self.last_loss_at = when if self.count else None
         if self.count == self.limit:
             self.pauses += 1
             if self.first_paused_at is None:

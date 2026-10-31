@@ -770,7 +770,7 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks,
           const why = p ? basketBlockedBy(p) : null;
           return why && (
             <p className="basis-full text-t13 text-fg" data-basket="blocked-by">
-              {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-basket="change-limits">Change it in My limits</a></>}
+              {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-basket="change-limits">Change limit</a></>}
             </p>
           );
         })()}

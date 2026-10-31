@@ -131,7 +131,7 @@ test.describe("My trading defaults behaviour", () => {
     await expect(main.getByLabel("Trade as")).toHaveAttribute("data-combobox", "");
     await expect(main.getByLabel("Time exit after (minutes)")).toHaveValue("");
     await expect(main.getByLabel("Flat at (HH:MM)")).toHaveValue("");
-    await expect(main.getByRole("link", { name: "Open Risk limits" })).toHaveAttribute("href", "/risk-management");
+    await expect(main.getByRole("link", { name: "Open Risk limits" })).toHaveAttribute("href", "/settings/risk-limits");   // M64 RM-5
     await expect(main.getByText("keeps asking for my Approve")).toHaveCount(0);       // the approval-only flag is off
     for (const word of [/\bLIVE\b/, /\bMode\b/, /Routing/, /deployment/i, /namespace/i]) await expect(main.getByText(word)).toHaveCount(0);
 

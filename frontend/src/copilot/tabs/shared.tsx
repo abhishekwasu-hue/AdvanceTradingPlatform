@@ -2,6 +2,7 @@ import { m } from "framer-motion";
 import type { ReactNode } from "react";
 import { cx } from "../../components/primitives";
 import { STAGGER } from "../components/CopilotMotion";
+import { MINUS, formatNumber } from "../../ui/format";
 
 /** Building blocks shared by the Copilot tabs. */
 
@@ -50,9 +51,12 @@ export function TabIntro({ children }: { children: ReactNode }) {
   return <p className="mb-3 text-sm text-fg-muted">{children}</p>;
 }
 
-export const money = (v: number | null | undefined, digits = 0) =>
-  v == null ? "-" : `${v < 0 ? "-" : ""}₹${Math.abs(v).toLocaleString("en-IN", { maximumFractionDigits: digits })}`;
-export const num = (v: number | null | undefined, d = 2) => (v == null ? "-" : v.toLocaleString("en-IN", { maximumFractionDigits: d }));
+export const money = (v: number | null | undefined, digits = 0) => {
+  if (v == null) return "-";
+  const body = formatNumber(Math.abs(v), digits, { trim: true });
+  return `${v < 0 && /[1-9]/.test(body) ? MINUS : ""}₹${body}`;
+};
+export const num = (v: number | null | undefined, d = 2) => (v == null ? "-" : formatNumber(v, d, { trim: true }));
 
 /** "5 min", "3 h", "2 days". */
 export function ageText(minutes: number): string {

@@ -12,6 +12,7 @@ import MemoryPanel from "./pulse/MemoryPanel";
 import ThesisPanel from "./pulse/ThesisPanel";
 import { ageText, money, Panel, Stagger, StaggerItem, TabSkeleton } from "./shared";
 import { strategyDisplayName } from "../../ui/strategyName";
+import { formatNumber, formatPct } from "../../ui/format";
 
 /**
  * Market Pulse: today's read of the market in one screen - the 3D sentiment gauge, the regime dial, the briefing's
@@ -96,10 +97,10 @@ export default function MarketPulseTab() {
             <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
               {snaps.map((s) => (
                 <span key={s.symbol} className="rounded-lg border border-border bg-surface-2/70 px-2 py-1 text-fg">
-                  {s.symbol} <b className={(s.change_pct ?? 0) > 0 ? "text-up" : (s.change_pct ?? 0) < 0 ? "text-down" : "text-fg"}>{(s.change_pct ?? 0) > 0 ? "+" : ""}{(s.change_pct ?? 0).toFixed(2)}%</b>
+                  {s.symbol} <b className={(s.change_pct ?? 0) > 0 ? "text-up" : (s.change_pct ?? 0) < 0 ? "text-down" : "text-fg"}>{formatPct(s.change_pct ?? 0)}</b>
                 </span>
               ))}
-              {vix != null && <span className="rounded-lg border border-border bg-surface-2/70 px-2 py-1 text-fg">India VIX <b>{vix.toFixed(1)}</b></span>}
+              {vix != null && <span className="rounded-lg border border-border bg-surface-2/70 px-2 py-1 text-fg">India VIX <b>{formatNumber(vix, 1)}</b></span>}
               {brief.global_mood && (
                 <span className="rounded-lg border border-border bg-surface-2/70 px-2 py-1 text-fg">{t("pulse.global")}{" "}
                   <b className={brief.global_mood.label === "POSITIVE" ? "text-up" : brief.global_mood.label === "NEGATIVE" ? "text-down" : "text-fg"}>{t(`pulse.mood.${brief.global_mood.label}`)}</b>

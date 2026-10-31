@@ -1,13 +1,19 @@
 """Per-tenant broker API rate budgets.
 
-Every Indian broker API is rate limited per API key (Upstox: roughly 25 req/s and 250 req/min on
-most endpoints; Kite: 1 req/s on quotes, 3 req/s on historical candles, 10 req/s on orders - Kite Connect's
-published rate-limit table; LD-10 review: quotes were recorded here as 3/s). On a shared
+Every Indian broker API is rate limited per API key; the published figures (and their sources) are in ONE table,
+app/brokers/broker_limits.py (PUBLISHED; docs/design/M71_RATE_LIMITS.md). On a shared
 worker one tenant with forty deployments can burn a broker's whole allowance - and, worse, the
 429s it provokes land on *its own* exit orders. So each tenant's adapter is wrapped in a
 `RateLimitedBroker` that draws from that tenant's own `RateBudget` (a per-second and a per-minute
 token bucket) before every call. Tenants never share a budget: their credentials are their own
 API keys, so their limits are their own too.
+
+M71 PL-2: on top of these in-process buckets, every call also takes a slot in the broker's PUBLISHED windows for the
+credential (app/brokers/broker_limits.py: per second, minute, 30 minutes, hour and day, the safety margin below each,
+shared by every process in Redis), from the DATA pool or the ORDER pool. Orders, exits, stops, changes and cancels use an
+in-process order bucket of their own too (`RateBudget.acquire_order`), so a queue of data calls never holds an order
+back; exits and their reads may use the reserved share and are never refused (ADR-0004). A broker "too many requests"
+answer is retried with exponential back-off and jitter (`broker_limits.backoff_delay`) within a bounded total wait.
 """
 import asyncio
 import contextlib
@@ -17,9 +23,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from app.brokers import broker_limits
 from app.brokers.base import BrokerInterface
 from app.brokers.circuit_breaker import observe_call
-from app.brokers.exceptions import BrokerAPIError
+from app.brokers.exceptions import BrokerAPIError, BrokerBudgetUsed
 from app.brokers.models import BrokerOrderRequest, BrokerOrderResponse
 from app.core import config
 from app.core.enums import OrderSide
@@ -34,10 +41,14 @@ class RateLimits:
 
 # Conservative: about a third of each broker's published allowance, leaving headroom for the
 # tenant's own manual use of the same API key (their broker app, TradingView, ...).
-# Upstox also caps a user at 2,000 standard API requests per 30 minutes, which these buckets do not model; HB2's history
-# reads therefore stop at HISTORY_INTRADAY_MAX_REQUESTS (600) in any rolling 30 minutes (counted from the database).
+# Upstox also caps a user per 30 minutes, which these buckets do not model: M71 PL-2's shared published windows
+# (broker_limits) hold it for every process; HB2's history reads also stop at HISTORY_INTRADAY_MAX_REQUESTS (600) in any
+# rolling 30 minutes (counted from the database).
 BROKER_RATE_LIMITS: Dict[str, RateLimits] = {
-    "upstox": RateLimits(per_second=8.0, burst=10, per_minute=200),
+    # M71 PL-2: Upstox's lower published set (25/s, 250/min, 1,000/30 min - broker_limits.UPSTOX_CONSERVATIVE) less the
+    # 10 % margin is 22/s and 225/min: the worker's 12/s and 150/min plus the API's half (6/s, 75/min) stay inside it;
+    # the 30-minute window is held by the shared published windows (broker_limits).
+    "upstox": RateLimits(per_second=12.0, burst=12, per_minute=150),
     "zerodha": RateLimits(per_second=2.0, burst=3, per_minute=100),
     "shoonya": RateLimits(per_second=3.0, burst=5, per_minute=120),
     # Part 1B: Kotak Neo states 25 requests / s for quotes (SDK docs, quotes.md) and, in a search extract of its FAQ,
@@ -179,6 +190,25 @@ class DailyBudget:
             self.used[kind] = self.used.get(kind, 0) + int(extra)
 
 
+def _count_rate_limited(broker: str, method: str) -> None:
+    """The broker_calls metric's "rate_limited" outcome for a data call, without the circuit breaker."""
+    try:
+        from app.observability.metrics import BROKER_CALLS
+        BROKER_CALLS.labels(broker=(broker or "unknown").lower(), method=method, outcome="rate_limited").inc()
+    except Exception:  # noqa: BLE001 - a metric never fails a call
+        pass
+
+
+def _is_entry(method: str, args: tuple) -> bool:
+    if method != "place_order" or not args:
+        return False
+    from app.platform.phase0_lock import is_entry_order
+    try:
+        return bool(is_entry_order(args[0]))
+    except AttributeError:                          # not an order request (a test double): not an entry
+        return False
+
+
 def _ist_today():
     from datetime import datetime, timedelta, timezone
     return datetime.now(timezone(timedelta(hours=5, minutes=30))).date()
@@ -222,13 +252,22 @@ class _TokenBucket:
 
 
 class RateBudget:
-    """Two buckets (per-second burst + per-minute allowance); `acquire()` waits for both."""
+    """Two buckets (per-second burst + per-minute allowance); `acquire()` waits for both.
 
-    def __init__(self, limits: RateLimits, clock=time.monotonic, sleep=asyncio.sleep, daily: Optional[DailyBudget] = None) -> None:
+    M71 PL-2: order calls (`acquire_order`) have two buckets and a lock of their own (`order_limits`, by default the same
+    figures), so data calls waiting here never delay an order, an exit or a cancel."""
+
+    def __init__(self, limits: RateLimits, clock=time.monotonic, sleep=asyncio.sleep, daily: DailyBudget | None = None,
+                 order_limits: RateLimits | None = None) -> None:
         self.limits = limits
+        self.order_limits = order_limits or limits
         self.daily = daily            # TM-27: a per-day budget by call type (Groww), None for brokers without one
         self._second = _TokenBucket(limits.per_second, limits.burst, clock)
         self._minute = _TokenBucket(limits.per_minute / 60.0, limits.per_minute, clock)
+        self._order_second = _TokenBucket(self.order_limits.per_second, self.order_limits.burst, clock)
+        self._order_minute = _TokenBucket(self.order_limits.per_minute / 60.0, self.order_limits.per_minute, clock)
+        self._order_lock = asyncio.Lock()
+        self.order_calls = 0
         self._lock = asyncio.Lock()
         self._clock = clock
         self._sleep = sleep
@@ -237,16 +276,32 @@ class RateBudget:
         self.spare_calls = 0          # HB2: tokens taken by background readers through `acquire_spare`
 
     async def acquire(self) -> None:
-        async with self._lock:
-            while True:
+        # M71 PL-2 (review): the lock is held only to check and take, never while sleeping, so a call that must wait
+        # (a backfill read) never queues another (an exit's read) behind its sleep.
+        while True:
+            async with self._lock:
                 wait = max(self._second.time_until_token(), self._minute.time_until_token())
                 if wait <= 0:
                     self._second.take()
                     self._minute.take()
                     self.calls += 1
                     return
-                self.waited_seconds += wait
-                await self._sleep(wait)
+            self.waited_seconds += wait
+            await self._sleep(wait)
+
+    async def acquire_order(self) -> None:
+        """A token from the order buckets (orders, exits, stops, changes, cancels): never queued behind data calls."""
+        while True:
+            async with self._order_lock:
+                wait = max(self._order_second.time_until_token(), self._order_minute.time_until_token())
+                if wait <= 0:
+                    self._order_second.take()
+                    self._order_minute.take()
+                    self.calls += 1
+                    self.order_calls += 1
+                    return
+            self.waited_seconds += wait
+            await self._sleep(wait)
 
     def now(self) -> float:
         """This budget's clock (monotonic seconds) - what `acquire_spare`'s deadline is measured in."""
@@ -280,8 +335,15 @@ class RateLimitedBroker(BrokerInterface):
     tenant's budget. Order placement/cancellation is *not* exempt on purpose - an exit order
     that provokes a 429 is worse than one delayed by 200ms."""
 
-    def __init__(self, inner: BrokerInterface, budget: RateBudget, ops=None, tenant_id: Optional[int] = None) -> None:
+    def __init__(self, inner: BrokerInterface, budget: RateBudget, ops=None, tenant_id: int | None = None,
+                 credential_id: int | None = None) -> None:
         self.inner = inner
+        # M71 PL-2: the credential row whose published windows every call joins (broker_limits, shared in Redis); the
+        # adapter carries it when token_lifecycle.build_adapter made it. None: the in-process buckets only.
+        if credential_id is None:
+            found = getattr(inner, "atp_credential_id", None)
+            credential_id = found if isinstance(found, int) and not isinstance(found, bool) else None
+        self.credential_id = credential_id
         self.budget = budget
         self.name = inner.name
         self.history_by_date = bool(getattr(inner, "history_by_date", False))   # LD-10 (shared_candles)
@@ -301,22 +363,63 @@ class RateLimitedBroker(BrokerInterface):
 
     async def _call(self, method: str, *args, **kwargs):
         daily = getattr(self.budget, "daily", None)
+        entry = _is_entry(method, args)
         if daily is not None:
-            from app.platform.phase0_lock import is_entry_order
-            entry = method == "place_order" and bool(args) and is_entry_order(args[0])
             daily.take(method, entry=entry)        # refuses before a token is spent or anything is sent
-        await self.budget.acquire()
-        before = getattr(self.inner, "http_calls", None) if daily is not None else None
+        kind = broker_limits.endpoint_kind(method)
+        pool = broker_limits.pool_of(kind)
+        # ADR-0004: an exit, stop, change or cancel, and the reads an exit depends on, may use the reserved share.
+        priority = (not entry) if pool == broker_limits.ORDER_POOL else (reading_for_exit() or method in ALWAYS_READ_CALLS)
+        before = getattr(self.inner, "http_calls", None)
+        sleep = getattr(self.budget, "_sleep", asyncio.sleep)
+        attempt, waited = 0, 0.0
         try:
-            result = await getattr(self.inner, method)(*args, **kwargs)
-        except Exception as exc:
-            observe_call(self.name, method, exc)
-            raise
+            while True:
+                await self._slot(kind, pool, priority)
+                try:
+                    result = await getattr(self.inner, method)(*args, **kwargs)
+                    break
+                except Exception as exc:
+                    limited = broker_limits.is_rate_limited(exc)
+                    if limited and pool == broker_limits.DATA_POOL:
+                        _count_rate_limited(self.name, method)   # review: a data 429 never opens the order breaker
+                    else:
+                        observe_call(self.name, method, exc)
+                    if not limited or (pool == broker_limits.ORDER_POOL and self.ops is not None):
+                        raise   # Part D2: with the OPS throttle on, its own per-exchange pause handles an order's 429
+                    await broker_limits.COUNTER.add(self.name, pool, kind, rate_limited=True)
+                    # M71 PL-2: a broker "too many requests" is retried after an exponential, jittered pause, within a
+                    # bounded total wait; then one plain message (never the broker's raw text).
+                    delay = broker_limits.backoff_delay(attempt)
+                    bound = (config.BROKER_429_ORDER_MAX_WAIT_SECONDS if pool == broker_limits.ORDER_POOL
+                             else config.BROKER_429_DATA_MAX_WAIT_SECONDS)
+                    if waited + delay > bound:
+                        raise BrokerAPIError(broker_limits.BUSY_MESSAGE, 429) from exc
+                    await sleep(delay)
+                    waited += delay
+                    attempt += 1
         finally:
-            if daily is not None and isinstance(before, int):
-                daily.add(method, int(getattr(self.inner, "http_calls", before)) - before - 1)
+            if isinstance(before, int):
+                extra = int(getattr(self.inner, "http_calls", before)) - before - (attempt + 1)
+                if extra > 0:
+                    await broker_limits.COUNTER.add(self.name, pool, kind, extra)
+                if daily is not None:
+                    daily.add(method, int(getattr(self.inner, "http_calls", before)) - before - 1)
         observe_call(self.name, method, None)
         return result
+
+    async def _slot(self, kind: str, pool: str, priority: bool) -> None:
+        """One broker request's place: the credential's shared published windows (when known), then this process's
+        bucket of the pool (orders apart from data), then the day's count."""
+        if self.credential_id is not None:
+            if not await broker_limits.LIMITER.acquire(self.credential_id, self.name, kind, priority=priority):
+                raise BrokerBudgetUsed(broker_limits.BUSY_MESSAGE, 429)   # never for a priority call; nothing sent
+        acquire_order = getattr(self.budget, "acquire_order", None)
+        if pool == broker_limits.ORDER_POOL and acquire_order is not None:
+            await acquire_order()
+        else:
+            await self.budget.acquire()
+        await broker_limits.COUNTER.add(self.name, pool, kind)
 
     async def authenticate(self): return await self._call("authenticate")
     async def get_profile(self): return await self._call("get_profile")

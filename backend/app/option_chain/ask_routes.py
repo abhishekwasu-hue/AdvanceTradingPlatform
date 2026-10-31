@@ -83,8 +83,11 @@ def _underlying(symbol: str) -> str:
 
 
 def _data(read: ask_adapter.ChainRead, now: datetime) -> Dict[str, Any]:
-    return {"spot": read.spot, "source": read.source, "data_as_of": now.isoformat(), "snapshots": len(read.history),
-            "history_note": read.history_note}
+    out = {"spot": read.spot, "source": read.source, "data_as_of": now.isoformat(), "snapshots": len(read.history),
+           "history_note": read.history_note}
+    if read.snapshot:                           # M71 W2-E: an earlier chain while the broker is busy - its own time and age
+        out.update(data_as_of=read.snapshot["captured_at"], snapshot=read.snapshot)
+    return out
 
 
 def _evaluated(spec: AnalysisSpec, read: ask_adapter.ChainRead, now: datetime) -> Dict[str, Any]:

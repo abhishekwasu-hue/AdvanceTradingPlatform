@@ -1,6 +1,7 @@
 /** N1 F3: the portfolio risk view's types and pure helpers (kept out of the component so they are unit-tested). The
  * server computes every number (backend app/portfolio/risk.py); nothing here places or closes an order. */
 import type { PortfolioT } from "./i18n";
+import { formatNumber } from "../ui/format";
 
 export interface RiskBucket {
   bucket: string; positions: number; gross_notional: number; net_notional: number; open_risk: number; symbols: string[];
@@ -26,7 +27,7 @@ export function isRiskView(x: unknown): x is PortfolioRiskView {
   return !!v && typeof v === "object" && typeof v.positions === "number" && Array.isArray(v.buckets) && typeof v.exposure === "object";
 }
 
-export const money = (v: number): string => v.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+export const money = (v: number): string => formatNumber(v, 0);
 export const signed = (v: number): string => `${v >= 0 ? "+" : "-"}${money(Math.abs(v))}`;
 export const pct = (v: number | null | undefined): string => (v === null || v === undefined ? "-" : `${v}%`);
 

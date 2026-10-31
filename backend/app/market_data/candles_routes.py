@@ -445,24 +445,42 @@ def empty_reason(symbol: str, exchange: str, holidays, now: datetime, before: Op
     return f"No candles yet for {what}. {why}{upto}."
 
 
-@router.post("/candles", dependencies=[Depends(candles_rate_limit)])
-async def candles(body: CandlesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    started = time.monotonic()
+def check_body(body: CandlesBody) -> str | None:
+    """The request's checks (both read paths): the timeframe, the lookback and a week / month request's symbol count.
+    Returns the period ("week" / "month") or None."""
     if body.timeframe not in SUPPORTED_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"timeframe must be one of {', '.join(SUPPORTED_TIMEFRAMES)}")
     period = body.timeframe if body.timeframe in periods.PERIODS else None
     if period is None and body.lookback_days > DAILY_MAX_LOOKBACK_DAYS:
         raise HTTPException(status_code=422, detail=f"lookback_days must be at most {DAILY_MAX_LOOKBACK_DAYS} for {body.timeframe} bars "
                                                     f"(longer only for week and month)")
+    wanted = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
+    if period is not None and len(wanted) > PERIOD_MAX_SYMBOLS:
+        raise HTTPException(status_code=422, detail=f"{body.timeframe} bars: at most {PERIOD_MAX_SYMBOLS} symbols per request "
+                                                    "(each reads years of daily bars)")
+    return period
+
+
+@router.post("/candles", dependencies=[Depends(candles_rate_limit)])
+async def candles(body: CandlesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """M71 W2-A: with the flag `market_store_reads` on, the bars come from the own store first (`candles_store`); off,
+    the broker path below, exactly as before."""
+    from app.market_data import candles_store
+    if await candles_store.store_on(session, user):
+        return await candles_store.serve(body, user, session)
+    return await broker_candles(body, user, session)
+
+
+async def broker_candles(body: CandlesBody, user: User, session: AsyncSession) -> dict:
+    """The broker path: every symbol's bars through the session's broker (shared copies, LD-10)."""
+    started = time.monotonic()
+    period = check_body(body)
     exchange = body.exchange.upper()
     byob = await _byob(session, user)
     ents: Dict[tuple, Entitlement] = {}
     namespace: Optional[str] = None
     live: Optional[Entitlement] = None
     wanted = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
-    if period is not None and len(wanted) > PERIOD_MAX_SYMBOLS:
-        raise HTTPException(status_code=422, detail=f"{body.timeframe} bars: at most {PERIOD_MAX_SYMBOLS} symbols per request "
-                                                    "(each reads years of daily bars)")
     priority = Priority.CHART if len(wanted) == 1 else Priority.SCREENER
     if byob:
         ents = await entitlement.resolve_many(session, user, [(s, exchange) for s in wanted], broker=body.broker,

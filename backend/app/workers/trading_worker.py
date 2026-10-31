@@ -191,6 +191,7 @@ class CycleReport:
     byob_sessions: int = 0       # BT1: per-user broker data sessions open (flag byob_data_tier)
     memory_snapshots: int = 0    # Phase AR: market-memory rows written this cycle
     lake_bars: int = 0           # B2: 1-minute bars written to the lake this cycle
+    feed_bars: int = 0           # M71 PL-1b: universe-feed bars written to the data owner's private store this cycle
     login_reminders: int = 0     # D5: pre-open daily-login reminders raised this cycle
     oi_snapshots: int = 0        # OI Banner O2: option-chain OI slots stored this cycle
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
@@ -201,6 +202,7 @@ class CycleReport:
     intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
     lake_backfill_started: bool = False      # DATA-H: the owner's index-history pass was started this cycle
     chain_history_started: bool = False      # TM 9.4: an owner chain-history slot was started this cycle
+    market_backfill_started: bool = False    # M71 PL-1c: the paced backfill / gap-drain task was started this cycle
 
 
 def _just_closed(now: datetime) -> bool:
@@ -317,6 +319,8 @@ class TradingWorker:
         # BYOK-V3: when the daily-review queue was last checked (every 15 minutes; the queue itself is once per user per day).
         self._last_vision_daily_check: Optional[datetime] = None
         self._then_warm_task: Optional["asyncio.Task[None]"] = None
+        # M66 EN-3a: the signal engine runner (signals only) as one background task per worker, its own session.
+        self._engine_task: Optional[asyncio.Task[None]] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
@@ -337,6 +341,15 @@ class TradingWorker:
         self._last_lake_backfill_day: Optional[date] = None
         self._lake_backfill_task: Optional["asyncio.Task[None]"] = None
         self._lake_backfill_retry_at = 0.0
+        # M71 PL-1c: the paced universe backfill + gap drain - its task, the IST date the backfill last COMPLETED and when
+        # the next gap drain / unfinished backfill may start (monotonic seconds).
+        self._market_backfill_task: asyncio.Task[None] | None = None
+        self._market_backfill_day: date | None = None
+        self._market_gap_at = 0.0
+        self._market_backfill_retry_at = 0.0
+        if app_config.MARKET_BACKFILL_ENABLED:
+            from app.market_lake import backfill as market_backfill
+            market_backfill.register_with_feed()   # PL-1b's gap hook -> this paced queue (a no-op without that module)
         self._intraday_adapters: Dict[Any, Any] = {}   # one owner adapter per IST day, reused by that evening's passes
         # TM 9.4: the owner's chain history - the last slot started, its task, the adapter of the day, the last report.
         self._last_chain_slot: Optional[datetime] = None
@@ -364,6 +377,12 @@ class TradingWorker:
             from app.market_data import stream as stream_module
             self.lake = LakeRecorder()
             stream_module.tick_listeners.append(self.lake.on_tick)
+        # M71 PL-1b / PL-4: the universe feed (MARKET_FEED_ENABLED, off by default) - the data owner's credential streams
+        # the active universe into closed 1m / 5m / 15m / 60m bars in his own private store, with feed health.
+        self.market_feed = None
+        if app_config.MARKET_FEED_ENABLED:
+            from app.market_data.universe_feed import UniverseFeed
+            self.market_feed = UniverseFeed()
         # Phase T: last balance refresh attempt per broker account (failures throttled too).
         self._last_account_refresh: Dict[int, datetime] = {}
         # Phase AR: last market-memory capture per tenant (UTC).
@@ -385,12 +404,16 @@ class TradingWorker:
             self._lake_backfill_task.cancel()        # DATA-H: resumable - a window is written and recorded in one transaction
         if self._intraday_task is not None and not self._intraday_task.done():
             self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
+        if self._market_backfill_task is not None and not self._market_backfill_task.done():
+            self._market_backfill_task.cancel()      # M71 PL-1c: resumable - each request's windows are written in one transaction
         if self._chain_task is not None and not self._chain_task.done():
             self._chain_task.cancel()                # TM 9.4: one slot - a cancelled slot is a gap, the next one runs
         if self._then_warm_task is not None and not self._then_warm_task.done():
             self._then_warm_task.cancel()            # N1 X1: in memory only - the next worker warms again
         if self._vision_task is not None and not self._vision_task.done():
             self._vision_task.cancel()               # BYOK-V2: a claimed row is closed as "interrupted" by the next drain
+        if self._engine_task is not None and not self._engine_task.done():
+            self._engine_task.cancel()               # M66 EN-3a: an unfinished bar is retried within its grace window
         if self._breakout_fitness_task is not None and not self._breakout_fitness_task.done():
             self._breakout_fitness_task.cancel()     # U6 BK5: resumable - stored templates are skipped next time
 
@@ -450,6 +473,8 @@ class TradingWorker:
         await self.streams.stop_all()
         await self.byob.close_all()
         await self.hub.stop_all()
+        if self.market_feed is not None:
+            await self.market_feed.stop()
         logger.info("Trading worker %s stopped", self.holder_id)
 
     async def startup_check(self) -> Dict[str, object]:
@@ -573,6 +598,12 @@ class TradingWorker:
                         logger.exception("Lake bar write failed")
                         report.errors.append(f"lake: {exc}")
                         await session.rollback()
+                if self.market_feed is not None:
+                    try:      # its own DB sessions: a failure here never rolls back the cycle's session
+                        report.feed_bars = await self.market_feed.cycle(self.session_factory, now, market_open=nse.is_open)
+                    except Exception as exc:  # noqa: BLE001 - the feed must never break trading
+                        logger.exception("Universe feed cycle failed")
+                        report.errors.append(f"market feed: {exc}")
                 # H-1: Redis memory against its cap (every REDIS_MEMORY_CHECK_SECONDS), a WARNING at 70 %.
                 try:
                     async with guarded(session):
@@ -609,6 +640,9 @@ class TradingWorker:
                     logger.exception("Scan Then run failed")
                     await session.rollback()
                     report.errors.append(f"scan then: {exc}")
+                # M66 EN-3a (flag trade_engine, owner only): the private signal engine on each closed signal-timeframe bar
+                # (+ a small delay), signals only, into the signals table - a background task with its own session.
+                self._spawn_engine_runner(now)
                 # PW5: snoozed proposals whose time is up are announced once more (in-app, push, Telegram) before the
                 # outbox drain, market open or not - a snooze "until 09:00" must ring at 09:00.
                 try:
@@ -894,6 +928,13 @@ class TradingWorker:
                         logger.exception("Index history pass not started")
                         report.errors.append(f"index history: {exc}")
                         await session.rollback()
+                # M71 PL-1c: the gap queue (any time) and the one-time universe backfill (NSE closed), paced through the
+                # owner session's rate budget; one background task, never per request.
+                try:
+                    report.market_backfill_started = self._maybe_start_market_backfill(now, nse_open=nse.is_open)
+                except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                    logger.exception("Market backfill not started")
+                    report.errors.append(f"market backfill: {exc}")
                 # TM 9.4: the owner's chain history (flag `chain_history`, off by default) - one slot per
                 # CHAIN_HISTORY_SLOT_MINUTES while a venue is open, through the owner's own broker session, drawing from that
                 # session's rate budget only while a reserve stays free for exits. Its own task and sessions; read-only.
@@ -1758,6 +1799,38 @@ class TradingWorker:
         self._lake_backfill_task = asyncio.get_running_loop().create_task(run())
         return True
 
+    def _maybe_start_market_backfill(self, now: datetime, *, nse_open: bool) -> bool:
+        """M71 PL-1c (app/market_lake/backfill.py): one background task that drains the gap queue at most every
+        MARKET_BACKFILL_GAP_EVERY_SECONDS and, while NSE is closed, runs the universe backfill until a pass completes for
+        the IST day (an unfinished pass is retried at most every MARKET_BACKFILL_RETRY_MINUTES). Both draw from this
+        worker's RateBudget of the session (`acquire_spare`, a reserve kept free for exits)."""
+        from app.market_lake import backfill
+
+        if not app_config.MARKET_BACKFILL_ENABLED:
+            return False
+        if self._market_backfill_task is not None and not self._market_backfill_task.done():
+            return False
+        mono = time.monotonic()
+        day = now.astimezone(IST).date()
+        backfill_due = not nse_open and self._market_backfill_day != day and mono >= self._market_backfill_retry_at
+        if mono < self._market_gap_at and not backfill_due:
+            return False
+        self._market_gap_at = mono + app_config.MARKET_BACKFILL_GAP_EVERY_SECONDS
+
+        async def run() -> None:
+            try:
+                await backfill.drain_gaps(self.session_factory, budget_for=self._budget_for)
+                if backfill_due:
+                    self._market_backfill_retry_at = time.monotonic() + app_config.MARKET_BACKFILL_RETRY_MINUTES * 60
+                    result = await backfill.run_backfill(self.session_factory, budget_for=self._budget_for)
+                    if result.complete or result.status in ("not_configured", "disabled"):
+                        self._market_backfill_day = day
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("Market backfill task failed")
+
+        self._market_backfill_task = asyncio.get_running_loop().create_task(run())
+        return True
+
     async def _maybe_start_chain_history(self, session: AsyncSession, now: datetime) -> bool:
         """TM 9.4: starts one chain-history slot as a background task when a new slot is due, the flag is on for the
         owner's tenant and the previous slot's task has finished (a slot still running makes this one a gap, never a
@@ -1851,6 +1924,29 @@ class TradingWorker:
 
         self._breakout_fitness_task = asyncio.get_running_loop().create_task(run())
         return True
+
+    def _spawn_engine_runner(self, now: datetime) -> None:
+        """M66 EN-3a: the signal engine runner (app/workers/engine_runner.py) as a background task with its own session -
+        one at a time per worker; nothing is started while the private engine is not installed. Signals only: it places,
+        blocks or changes no order and no exit (ADR-0004 / ADR-0006)."""
+        from app.engine_provider import loader as trade_engine
+        if trade_engine.load() is None or (self._engine_task is not None and not self._engine_task.done()):
+            return
+
+        async def broker_for(session: AsyncSession, tenant_id: int, user: User, at: datetime) -> Optional[BrokerInterface]:
+            return await self._first_usable_broker(session, tenant_id, at)
+
+        async def run() -> None:
+            from app.workers import engine_runner
+            try:
+                await engine_runner.run_due(self.session_factory, now, broker_for=broker_for)
+            except Exception:  # noqa: BLE001 - signals only; never reaches trading
+                logger.exception("Signal engine runner failed")
+
+        try:
+            self._engine_task = asyncio.get_running_loop().create_task(run())
+        except RuntimeError:
+            self._engine_task = None
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own

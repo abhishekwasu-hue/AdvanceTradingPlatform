@@ -48,6 +48,7 @@ PACK: Tuple[str, ...] = (
     # Data and alerts.
     "history_backfill",
     "chain_history",           # TM 9.4: records only through the owner's own session into his private store (TM-7)
+    "market_store_reads",      # M71 PL-3: scans and backtests read the own store first (fewer broker calls)
     "alerts_stale_guard", "alerts_reliable_outbox", "context_panel", "news_feed",
     "markets_view",            # unfinished in the audit: the page and the summary work on the daily data the pack loads
     "telegram_inbound",
@@ -99,6 +100,7 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "chart_contracts": "Unfinished: needs the nightly download to have run; turn on later",
     "chart_futures_basis": "Unfinished: needs the nightly download to have run; turn on later",
     "terminal": "ON by default for everyone (owner ✅ 25 Oct, T-D1), so the pack does not need it",
+    "trade_engine": "Admin / owner only: needs the private engine package; the owner turns it on for his organisation after parity (M66)",
 }
 
 

@@ -5,7 +5,7 @@ import type { SetupHealthItem } from "../setup/model";
 import { paperOnlyFrom } from "../setup/paperOnly";
 import { pauseReasonDetail } from "../ui/pauseReason";
 import { reasonWords, setupWords } from "../signals/signalText";
-import { EMPTY, formatDateIST, formatLots, formatPrice, formatTimeIST } from "../ui/format";
+import { EMPTY, formatDateIST, formatLots, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
 import { LEVELS, VIX_BANDS, vixLevel, type VixLevel } from "../ui/levels";
 import { botDisplayName, strategyDisplayName } from "../ui/strategyName";
 import type { OiBannerResponse } from "../oi/types";
@@ -127,7 +127,7 @@ export function oiLines(banners: OiBannerResponse[] | null | undefined): Record<
     const key = OI_UNDERLYING[(b.underlying ?? "").toUpperCase()];
     const row = b.banner;
     if (!key || !row) continue;
-    const pcr = typeof row.pcr === "number" && Number.isFinite(row.pcr) ? `PCR ${row.pcr.toFixed(2)}` : null;
+    const pcr = typeof row.pcr === "number" && Number.isFinite(row.pcr) ? `PCR ${formatNumber(row.pcr, 2)}` : null;
     const line = oiRead(row) ?? pcr;
     if (line) out[key] = line;
   }

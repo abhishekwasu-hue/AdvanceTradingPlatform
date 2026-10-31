@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { RiskEvent, RiskLimit, RiskLimitType, RiskScope } from "../types";
 import { Card } from "./ui";
-import { formatDateTimeIST } from "../ui/format";
+import { formatDateTimeIST, formatNumber } from "../ui/format";
 
 const SCOPES: { value: RiskScope; label: string; needsId: string | null }[] = [
   { value: "TENANT", label: "Organisation", needsId: null },
@@ -121,7 +121,7 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
                 <tr key={l.id} className="border-t border-border">
                   <td className="py-1 pr-3 text-fg">{l.scope.toLowerCase()}{l.scope_id ? ` · ${l.scope_id}` : ""}</td>
                   <td className="py-1 pr-3">{TYPES.find((t) => t.value === l.limit_type)?.label ?? l.limit_type}</td>
-                  <td className="py-1 pr-3 font-mono">{l.limit_value.toLocaleString()}</td>
+                  <td className="py-1 pr-3 font-mono">{formatNumber(l.limit_value, 2, { trim: true })}</td>
                   <td className="py-1 pr-3 text-fg-muted">{l.note ?? ""}{!l.enabled ? " (disabled)" : ""}{l.scope === "GLOBAL" ? " (platform)" : ""}</td>
                   <td className="py-1 pr-3 text-right">
                     {canEdit && l.scope !== "GLOBAL" && (

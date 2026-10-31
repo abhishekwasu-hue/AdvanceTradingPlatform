@@ -182,6 +182,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (one order path; PAPER in Phase 0). OFF (the default, until the owner's approval of the screenshots): no navigation
     # entry, the address says "Coming soon" and /api/terminal/* answers 404. Kept out of the trader pack (TT-25).
     "terminal": "Trading Terminal: chart, option chain, order panel, positions, orders and basket on one screen with saved layouts and a status bar (orders through the existing ticket; PAPER in Phase 0)",
+    # M66 EN-1 (app/engine_provider): the signal engine of the private package (atp_private.trade_engine). Admin /
+    # owner only; needs the private engine package on the server - without it the flag answers OFF whatever is stored
+    # (engine_missing_flags). OFF by default, not in the trader pack. EN-1 is the boundary only: no signal path reads this flag
+    # yet to produce signals, and nothing here places, blocks or changes an order (PAPER only).
+    "trade_engine": "Signal engine (admin / owner only): needs the private engine package on the server; PAPER only, places no orders",
     # Master Order 4 slice 3 (app/growth; needs `ui_v2`): the plan page with a usage meter (what the user's plan includes
     # and how much of it he used, from the existing limits and counters), the "my discipline this week" share card (his
     # own discipline facts only: no security names, no prices, no call words) and the admin Business view's activation
@@ -241,6 +246,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # recorded at a fixed interval in market hours through the OWNER's own broker session into the owner's private store,
     # on the worker's rate budget with a reserve kept for exits. OFF: nothing is recorded and the read API answers 404.
     "chain_history": "Owner chain history: option-chain snapshots from the owner's own broker session into the owner's private store (read-only, places no orders)",
+    # M71 PL-3 (owner order M71): every switched feature (the Screener, backtests) reads its bars store-first - Daily /
+    # Weekly from the NSE files with zero broker calls, intraday from the reader's own stored bars plus only the newest
+    # missing bars through his own session (app/market_store). OFF: every feature reads exactly as before.
+    "market_store_reads": "Store-first bars: Daily / Weekly from the NSE files and the newest bars only from your own broker (Screener, backtests)",
     # Z3 / BT2 (beta spec, Phase 0): every automatic entry (deployments, TradingView webhooks, public API signals) becomes
     # an ENTRY proposal (Approve / Reject / Snooze); Approve places a PAPER order at a re-quoted price. Target exits ask
     # "Exit now?"; protective exits (stop, time stop, square-off, kill switch) stay automatic (ADR-0004). OFF: unchanged.
@@ -618,12 +627,22 @@ ENGINE_FLAGS = ("chart_analyze", "chart_analyze_strikes", "chart_analyze_share",
 ENGINE_MISSING_REASON = "The chart analysis engine (private package) is not installed on this server, so users do not see this feature."
 
 
+# M66 EN-1: the signal engine of the private package (app/engine_provider/loader.py); without it `trade_engine` is
+# unavailable whatever its stored state (admin / owner only; OFF by default).
+TRADE_ENGINE_FLAGS = ("trade_engine",)
+TRADE_ENGINE_MISSING_REASON = "The signal engine (private package) is not installed on this server, so this feature is unavailable."
+
+
 def engine_missing_flags() -> Dict[str, str]:
-    """{flag: reason} for each flag whose engine is not installed here (empty when it is)."""
+    """{flag: reason} for each flag whose engine is not installed here (empty when every engine is)."""
     from app.chart_analyze import provider as chart_engine
-    if chart_engine.load() is not None:
-        return {}
-    return {name: ENGINE_MISSING_REASON for name in ENGINE_FLAGS}
+    from app.engine_provider import loader as trade_engine
+    missing: Dict[str, str] = {}
+    if chart_engine.load() is None:
+        missing.update({name: ENGINE_MISSING_REASON for name in ENGINE_FLAGS})
+    if trade_engine.load() is None:
+        missing.update({name: TRADE_ENGINE_MISSING_REASON for name in TRADE_ENGINE_FLAGS})
+    return missing
 
 
 def _entry_enabled(entry: Optional[Dict], tenant_id: Optional[int]) -> bool:

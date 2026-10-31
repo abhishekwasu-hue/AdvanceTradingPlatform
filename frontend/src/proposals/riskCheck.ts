@@ -1,8 +1,9 @@
 // Z5: text for the short strikes' breach chances on a proposal card (numbers from the server's model).
 import type { StrikeBreachBlock } from "../types";
+import { formatNumber } from "../ui/format";
 
 function pct(p: number | null | undefined): string {
-  return p == null ? "-" : `${(p * 100).toFixed(1)}%`;
+  return p == null ? "-" : `${formatNumber(p * 100, 1)}%`;
 }
 
 /** One line per short strike: "Short PE 19700 (3 DTE): 12.3% at expiry, 30.1% touch". */

@@ -1,5 +1,6 @@
 import { Bell, Check, Download, FileDown, Share2, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { formatNumber } from "../ui/format";
 import { Button } from "../components/primitives";
 import { Details } from "../ui/Details";
 import { CANNOT_ALERT, alertCondition } from "./alerts";
@@ -33,7 +34,7 @@ function Section({ title, children, id }: { title: string; children: ReactNode; 
 
 export function price(value: number | null | undefined, approximate: boolean): string {
   if (value == null) return "";
-  const text = value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const text = formatNumber(value, 2, { trim: true });
   return approximate ? `≈ ${text}` : text;
 }
 

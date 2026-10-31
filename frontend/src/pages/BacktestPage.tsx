@@ -19,13 +19,16 @@ import { templatesApi, type StrategyTemplate } from "../strategyTemplates/api";
 import { templateLinkFromSearch, typedSettings, type TemplateLink } from "../strategyTemplates/link";
 import { TEMPLATE_PICK, templateTimeframeFor } from "../backtest/templateTest";
 import { Database } from "lucide-react";
-import { formatDateTimeIST } from "../ui/format";
+import { formatDateTimeIST, formatNumber } from "../ui/format";
 import { OptimiserFields } from "../backtest/OptimiserFields";
 import { AdvancedFold } from "../ui/AdvancedFold";
 import { optimisableParams, type GridRow } from "../backtest/optimiserGrid";
 import { exitRuleWords, metricLabel, paramChips } from "../ui/strategyLabels";
 import { strategyDisplayName } from "../ui/strategyName";
 import { toast } from "../components/Toast";
+
+/** M63 I-7: figures go through the shared formatter (src/ui/format.ts); "-" stays this page's mark for a missing one. */
+const num = (v: number | null | undefined, decimals: number) => (v == null ? "-" : formatNumber(v, decimals));
 
 const INDEX_START_PRICES: Record<string, number> = { NIFTY: 24500, "NIFTY 50": 24500, BANKNIFTY: 52500, "NIFTY BANK": 52500, FINNIFTY: 23500, MIDCPNIFTY: 12500, SENSEX: 80500, BANKEX: 60500 };
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -289,7 +292,7 @@ export default function BacktestPage() {
           position: t.direction === "LONG" ? "aboveBar" : "belowBar",
           color: won ? "up" : "down",
           shape: "circle",
-          text: `Exit ${t.pnl?.toFixed(0) ?? ""}`,
+          text: `Exit ${t.pnl == null ? "" : formatNumber(t.pnl, 0)}`,
         });
       }
     }
@@ -591,13 +594,13 @@ export default function BacktestPage() {
           )}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatTile label="Total Trades" value={result.total_trades} />
-            <StatTile label="Win Rate" value={`${result.win_rate.toFixed(1)}%`} />
-            <StatTile label="Net P&L" value={result.net_pnl.toFixed(2)} tone={signTone(result.net_pnl)} />
-            <StatTile label="Max Drawdown" value={result.max_drawdown.toFixed(2)} tone={result.max_drawdown > 0 ? "down" : "default"} />
-            <StatTile label="Profit Factor" value={result.profit_factor?.toFixed(2) ?? "-"} />
-            <StatTile label="Avg Win" value={result.avg_win.toFixed(2)} tone={signTone(result.avg_win)} />
-            <StatTile label="Avg Loss" value={result.avg_loss.toFixed(2)} tone={signTone(result.avg_loss)} />
-            <StatTile label="Expectancy" value={result.expectancy.toFixed(2)} />
+            <StatTile label="Win Rate" value={`${formatNumber(result.win_rate, 1)}%`} />
+            <StatTile label="Net P&L" value={formatNumber(result.net_pnl, 2)} tone={signTone(result.net_pnl)} />
+            <StatTile label="Max Drawdown" value={formatNumber(result.max_drawdown, 2)} tone={result.max_drawdown > 0 ? "down" : "default"} />
+            <StatTile label="Profit Factor" value={num(result.profit_factor, 2)} />
+            <StatTile label="Avg Win" value={formatNumber(result.avg_win, 2)} tone={signTone(result.avg_win)} />
+            <StatTile label="Avg Loss" value={formatNumber(result.avg_loss, 2)} tone={signTone(result.avg_loss)} />
+            <StatTile label="Expectancy" value={formatNumber(result.expectancy, 2)} />
           </div>
           {result.history?.note && (
             <div data-testid="history-note" role="note" className="rounded border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-fg">
@@ -651,12 +654,12 @@ export default function BacktestPage() {
                     {[...result.options.structures].sort((a, b) => (structureSort === "pnl" ? a.pnl - b.pnl : a.entry_time.localeCompare(b.entry_time))).map((st, i) => (
                       <tr key={i} className="border-t border-border align-top">
                         <td className="py-1 pr-3 text-fg whitespace-nowrap">{st.label}<div className="text-fg-muted">{st.entry_time.slice(0, 16).replace("T", " ")} → {st.exit_time.slice(0, 16).replace("T", " ")}</div></td>
-                        <td className="py-1 pr-3">{st.legs.map((l, j) => <div key={j}>{l.role === "SHORT" ? "sell" : "buy"} {l.ratio > 1 ? `${l.ratio}x ` : ""}{l.strike} {l.right} @ {l.entry_price.toFixed(2)} → {l.exit_price?.toFixed(2) ?? "-"}</div>)}</td>
+                        <td className="py-1 pr-3">{st.legs.map((l, j) => <div key={j}>{l.role === "SHORT" ? "sell" : "buy"} {l.ratio > 1 ? `${l.ratio}x ` : ""}{l.strike} {l.right} @ {formatNumber(l.entry_price, 2)} → {num(l.exit_price, 2)}</div>)}</td>
                         <td className="py-1 pr-3">{st.lots}</td>
-                        <td className="py-1 pr-3">{st.net_credit != null ? (st.net_credit >= 0 ? `credit ${st.net_credit.toFixed(2)}` : `debit ${(-st.net_credit).toFixed(2)}`) : "-"}</td>
-                        <td className="py-1 pr-3">{st.max_loss != null ? st.max_loss.toFixed(2) : "undefined"}</td>
+                        <td className="py-1 pr-3">{st.net_credit != null ? (st.net_credit >= 0 ? `credit ${formatNumber(st.net_credit, 2)}` : `debit ${formatNumber(-st.net_credit, 2)}`) : "-"}</td>
+                        <td className="py-1 pr-3">{st.max_loss != null ? formatNumber(st.max_loss, 2) : "undefined"}</td>
                         <td className="py-1 pr-3">{st.exit_reason}</td>
-                        <td className={`py-1 pr-3 whitespace-nowrap ${signClass(st.pnl, 0)}`}>{st.pnl.toFixed(0)}<div className="text-fg-muted">charges {st.charges.toFixed(0)}</div></td>
+                        <td className={`py-1 pr-3 whitespace-nowrap ${signClass(st.pnl, 0)}`}>{formatNumber(st.pnl, 0)}<div className="text-fg-muted">charges {formatNumber(st.charges, 0)}</div></td>
                       </tr>
                     ))}
                     {result.options.structures.length === 0 && <tr><td colSpan={7} className="py-3 text-center text-fg-muted">No structure was opened.</td></tr>}
@@ -687,7 +690,7 @@ export default function BacktestPage() {
                               <td className="py-0.5 pr-2 text-fg-muted">{r.key}</td>
                               <td className="py-0.5 pr-2 text-fg-muted">{r.trades} trades</td>
                               <td className="py-0.5 pr-2 text-fg-muted">{r.win_rate}% win</td>
-                              <td className={`py-0.5 text-right ${signClass(r.pnl, 0)}`}>{r.pnl.toFixed(0)}</td>
+                              <td className={`py-0.5 text-right ${signClass(r.pnl, 0)}`}>{formatNumber(r.pnl, 0)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -697,7 +700,7 @@ export default function BacktestPage() {
                 ))}
               </div>
               <div className="mt-3 text-xs text-fg-muted">
-                Charges {result.analytics.costs.total_charges.toFixed(0)} ({result.analytics.costs.charges_pct_of_gross ?? "-"}% of gross)
+                Charges {formatNumber(result.analytics.costs.total_charges, 0)} ({result.analytics.costs.charges_pct_of_gross ?? "-"}% of gross)
                 {result.analytics.slippage.avg_per_unit != null ? ` · avg slippage ${result.analytics.slippage.avg_per_unit}/unit` : ""}
                 {result.run_id ? ` · saved as run #${result.run_id}` : ""}
               </div>
@@ -727,10 +730,10 @@ export default function BacktestPage() {
                     return (
                       <tr key={i} className={`border-t border-border/60 ${i === 0 ? "font-semibold" : ""}`}>
                         <td className="py-1 pr-3"><span className="flex flex-wrap gap-1">{paramChips(r.params).map((c) => <span key={c} className="whitespace-nowrap rounded-full border border-border px-2 py-0.5">{c}</span>)}</span></td>
-                        <td className="py-1 pr-3">{typeof ins === "number" ? ins.toFixed(2) : "-"}</td>
-                        <td className="py-1 pr-3">{typeof oos === "number" ? oos.toFixed(2) : "-"}</td>
+                        <td className="py-1 pr-3">{typeof ins === "number" ? formatNumber(ins, 2) : "-"}</td>
+                        <td className="py-1 pr-3">{typeof oos === "number" ? formatNumber(oos, 2) : "-"}</td>
                         <td className="py-1 pr-3">{r.out_of_sample.trades}</td>
-                        <td className={`py-1 pr-3 ${(r.overfit_gap ?? 0) > 0 ? "text-warn" : ""}`}>{r.overfit_gap?.toFixed(2) ?? "-"}</td>
+                        <td className={`py-1 pr-3 ${(r.overfit_gap ?? 0) > 0 ? "text-warn" : ""}`}>{num(r.overfit_gap, 2)}</td>
                         <td className="py-1 pr-3 text-fg-muted">{r.flags.join("; ")}</td>
                       </tr>
                     );
@@ -752,8 +755,8 @@ export default function BacktestPage() {
             </div>
             {monteCarlo && monteCarlo.runs > 0 && monteCarlo.final_pnl && monteCarlo.max_drawdown && (
               <div className="grid sm:grid-cols-4 gap-3 text-xs mb-3">
-                <StatTile label="P&L p5 / p50 / p95" value={`${monteCarlo.final_pnl.p5.toFixed(0)} / ${monteCarlo.final_pnl.p50.toFixed(0)} / ${monteCarlo.final_pnl.p95.toFixed(0)}`} />
-                <StatTile label="Max DD p50 / p95" value={`${monteCarlo.max_drawdown.p50.toFixed(0)} / ${monteCarlo.max_drawdown.p95.toFixed(0)}`} tone="down" />
+                <StatTile label="P&L p5 / p50 / p95" value={`${formatNumber(monteCarlo.final_pnl.p5, 0)} / ${formatNumber(monteCarlo.final_pnl.p50, 0)} / ${formatNumber(monteCarlo.final_pnl.p95, 0)}`} />
+                <StatTile label="Max DD p50 / p95" value={`${formatNumber(monteCarlo.max_drawdown.p50, 0)} / ${formatNumber(monteCarlo.max_drawdown.p95, 0)}`} tone="down" />
                 <StatTile label="P(loss)" value={`${monteCarlo.probability_of_loss_pct}%`} tone={(monteCarlo.probability_of_loss_pct ?? 0) > 30 ? "down" : "up"} />
                 <StatTile label="P(DD > original)" value={`${monteCarlo.probability_dd_exceeds_original_pct}%`} />
               </div>
@@ -769,8 +772,8 @@ export default function BacktestPage() {
                       {walkForward.windows.map((w) => (
                         <tr key={w.window} className="border-t border-border">
                           <td className="py-1 pr-3">{w.window}</td><td className="py-1 pr-3">{w.bars}</td><td className="py-1 pr-3">{w.trades}</td>
-                          <td className={`py-1 pr-3 ${signClass(w.net_pnl, 0)}`}>{w.net_pnl.toFixed(0)}</td>
-                          <td className="py-1 pr-3">{w.win_rate}%</td><td className="py-1 pr-3">{w.max_drawdown.toFixed(0)}</td>
+                          <td className={`py-1 pr-3 ${signClass(w.net_pnl, 0)}`}>{formatNumber(w.net_pnl, 0)}</td>
+                          <td className="py-1 pr-3">{w.win_rate}%</td><td className="py-1 pr-3">{formatNumber(w.max_drawdown, 0)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -800,12 +803,12 @@ export default function BacktestPage() {
                   {result.trades.map((t, i) => (
                     <tr key={i} className="border-t border-border">
                       <td className="py-1 pr-3">{t.direction}{result.options ? <span className="text-fg-muted"> · {t.symbol}</span> : null}</td>
-                      <td className="py-1 pr-3">{t.entry_price.toFixed(2)}</td>
-                      <td className="py-1 pr-3">{t.exit_price?.toFixed(2) ?? "-"}</td>
+                      <td className="py-1 pr-3">{formatNumber(t.entry_price, 2)}</td>
+                      <td className="py-1 pr-3">{num(t.exit_price, 2)}</td>
                       <td className="py-1 pr-3">{t.quantity}</td>
                       <td className="py-1 pr-3">{t.exit_reason ?? "-"}</td>
                       <td className={`py-1 pr-3 ${signClass(t.pnl)}`}>
-                        {t.pnl?.toFixed(2) ?? "-"}
+                        {num(t.pnl, 2)}
                       </td>
                     </tr>
                   ))}
@@ -839,9 +842,9 @@ export default function BacktestPage() {
                     <td className="py-1 pr-3 text-fg-muted">{sourceWords(r.data_source)} · {r.bars} bars · engine v{r.engine_version}</td>
                     <td className="py-1 pr-3 text-fg-muted">{r.exit_rules ? exitRuleWords(r.exit_rules as Record<string, unknown>) : "-"}</td>
                     <td className="py-1 pr-3">{r.total_trades ?? "-"}</td>
-                    <td className={`py-1 pr-3 ${signClass(r.net_pnl, 0)}`}>{r.net_pnl?.toFixed(0) ?? "-"}</td>
+                    <td className={`py-1 pr-3 ${signClass(r.net_pnl, 0)}`}>{num(r.net_pnl, 0)}</td>
                     <td className="py-1 pr-3">{r.win_rate ?? "-"}%</td>
-                    <td className="py-1 pr-3">{r.max_drawdown?.toFixed(0) ?? "-"}</td>
+                    <td className="py-1 pr-3">{num(r.max_drawdown, 0)}</td>
                   </tr>
                 ))}
               </tbody>

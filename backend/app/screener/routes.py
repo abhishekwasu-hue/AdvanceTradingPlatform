@@ -15,7 +15,8 @@ import json
 import logging
 import math
 import time
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
@@ -469,8 +470,12 @@ async def _closed_for_the_day(session: AsyncSession, exchange: str, now: datetim
 async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
                        lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False, *,
                        user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None,
-                       release: bool = False, budget_out: Optional[Dict[str, Any]] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       release: bool = False, budget_out: Optional[Dict[str, Any]] = None,
+                       store: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
+    M71 PL-3 (`store`, the run route under the flag `market_store_reads` - `store_first`): the bars come store-first
+    (`_store_frames`, app/market_store) - a closed-bar screen only; `include_forming` (intrabar alerts) keeps the broker
+    path below. Every other caller (alerts, breakouts, library, ranking, the Copilot tools) keeps it off (M71 wave 2).
     A missing session raises 409 (the fix is on the Broker page); never a fallback to client data.
     `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars).
 
@@ -495,6 +500,9 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     from app.market_data.fanin import Priority
     from app.market_data.service import MarketDataService
     from app.screener.universes import batch_wait_seconds
+    if store and not include_forming:
+        return await _store_frames(session, tenant_id, symbols, exchange, base_tf, lookback, now, user_id=user_id, tier_out=tier_out,
+                                   release=release, budget_out=budget_out)
     now_utc = now or datetime.now(timezone.utc)
     daily_tf = nodes.TF_MINUTES["1d"]
     want = _FETCH[base_tf]
@@ -608,6 +616,134 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         budget_out.update({"broker_calls": int(getattr(adapter, "taken", 0)), "refused": int(getattr(adapter, "refused", 0)),
                            "per_minute": api_limits(record.broker_name).per_minute})
     return universe, problems, f"broker:{record.broker_name}"
+
+
+async def store_first(session: AsyncSession, tenant_id: int) -> bool:
+    """M71 PL-3: the flag `market_store_reads` - scans read the own store first (app/market_store)."""
+    from app.market_store.models import FLAG as STORE_FLAG
+    return await flag_enabled(session, STORE_FLAG, tenant_id)
+
+
+async def _store_rest(session: AsyncSession, tenant_id: int, user: Any, symbols: list[str], exchange: str,
+                      wait_seconds: float | None) -> tuple[Any, set]:
+    """(the reader's OWN session as the newest bars' REST source or None, the symbols it may top up) - M71Q-2: never
+    another member's session (`market_store.sources.from_record`)."""
+    from app.brokers.token_lifecycle import build_adapter
+    from app.market_data import live_access
+    from app.market_data.candles_routes import _pick_record
+    from app.market_data.fanin import Priority
+    from app.market_store import sources
+    if user is None or not symbols:
+        return None, set()
+    try:
+        if await live_access.byob_on(session, tenant_id):
+            own = await live_access.user_source(session, user, [(s, exchange) for s in symbols], priority=Priority.SCREENER)
+            rest = sources.from_record(user, own.record, own.adapter(), wait_seconds)
+            return rest, ({s for s in symbols if own.allows(s, exchange)} if rest is not None else set())
+        record = await _pick_record(session, tenant_id, None, "primary")
+    except HTTPException:
+        return None, set()
+    rest = sources.from_record(user, record, build_adapter(record), wait_seconds) if sources.may_top_up(user, record) else None
+    return rest, (set(symbols) if rest is not None else set())
+
+
+async def _store_frames(session: AsyncSession, tenant_id: int, symbols: list[str], exchange: str, base_tf: str,
+                        lookback: dict[str, int], now: datetime | None, *, user_id: int | None,
+                        tier_out: dict[str, Any] | None, release: bool,
+                        budget_out: dict[str, Any] | None) -> tuple[list[SymbolData], dict[str, str], str]:
+    """M71 PL-3: a closed-bar screen's universe store-first (app/market_store, read order in its reader):
+    - 1d / 1w / 1M on NSE: the NSE daily files only - zero broker calls; a symbol not stored is "not stored yet".
+    - intraday: the reader's own stored one-minute bars built into the screen's timeframe, plus only the newest bars
+      by REST through his own session, paced by the credential's API budget; the daily context (@1d / @1w / @1M) of an
+      NSE screen from the NSE files. A symbol the store holds nothing of, an index whose volume comes from its future
+      (SCR-FIX A7) and another exchange read through the broker path exactly as before (`fetch_frames(store=False)`).
+    Same frames as the broker path (START-stamped, closed bars only), so equal bars give equal matches."""
+    from app.backtest import bar_source
+    from app.market_data import api_budget, index_volume
+    from app.market_data.live_access import load_user
+    from app.market_store import reader as ms
+    from app.screener.universes import batch_wait_seconds
+    now_utc = now or datetime.now(timezone.utc)
+    daily_tf = nodes.TF_MINUTES["1d"]
+    want = _FETCH[base_tf]
+    syms = list(dict.fromkeys(s.strip().upper() for s in symbols if s and s.strip()))
+    universe: list[SymbolData] = []
+    problems: dict[str, str] = {}
+    if want == "day":
+        if not ms.eod_served(exchange):
+            return await fetch_frames(session, tenant_id, syms, exchange, base_tf, lookback, now, user_id=user_id, tier_out=tier_out,
+                                      release=release, budget_out=budget_out, store=False)
+        start = now_utc - timedelta(days=daily_fetch_days(lookback, base_tf))
+        got = await ms.read_many(session, syms, "1d", start, now_utc, purpose="screener", exchange=exchange, now=now_utc,
+                                 release=(lambda: release_connection(session)) if release else None)
+        for s in syms:
+            r = got[s]
+            if not r.served:
+                problems[s] = reasons.Reason(bar_source.not_stored(s), reasons.NOT_STORED)
+                continue
+            frame = r.frame if base_tf == "1d" else resample(r.frame, "1d", base_tf, keep_forming=False, exchange=exchange)
+            universe.append(SymbolData(s, {base_tf: frame}, exchange=exchange))
+        if budget_out is not None:
+            budget_out.update({"broker_calls": 0, "refused": 0, "per_minute": api_budget.api_limits("").per_minute})
+        return universe, problems, bar_source.LAKE_SOURCE
+    user = await load_user(session, user_id)
+    if user is not None and user.tenant_id != tenant_id:
+        user = None                                       # never another organisation's member
+    legacy = [s for s in syms if index_volume.index_underlying(s, exchange) is not None or ms.intraday_key(s, exchange) is None]
+    window = {tf: b for tf, b in lookback.items() if nodes.TF_MINUTES.get(tf, 0) < daily_tf} or {base_tf: 1}
+    start = now_utc - timedelta(days=fetch_days(window, base_tf))
+    stored = {s: await ms.store_intraday(session, s, exchange, base_tf, start, now_utc, user=user, now=now_utc)
+              for s in syms if s not in legacy}
+    legacy += [s for s, got in stored.items() if not got.minutes]
+    served = [s for s in syms if s in stored and stored[s].minutes]
+    daily_window = {tf: b for tf, b in lookback.items() if nodes.TF_MINUTES.get(tf, 0) >= daily_tf}
+    daily: dict[str, Any] = {}
+    if daily_window and served and ms.eod_served(exchange):
+        dstart = now_utc - timedelta(days=daily_fetch_days(daily_window, "1d"))
+        daily = await ms.read_many(session, served, "1d", dstart, now_utc, purpose="screener-context", exchange=exchange, now=now_utc)
+    holidays = await ms.holidays_for(session, exchange)
+    rest, allowed = await _store_rest(session, tenant_id, user, served, exchange, None)
+    if release:
+        await release_connection(session)
+    if rest is not None and budget_out is not None:
+        rest = replace(rest, wait_seconds=batch_wait_seconds(rest.broker, len(served)))
+    budgeted = None if rest is None else ms.paced_adapter(rest)
+    calls = 0
+    topped = False
+    for s in served:
+        mine = rest if s in allowed else None
+        r = await ms.top_up(stored[s], rest=mine, budgeted=budgeted if mine is not None else None, now=now_utc, holidays=holidays)
+        calls += r.rest_calls
+        topped = topped or "+broker:" in r.source
+        if not r.served:
+            problems[s] = reasons.Reason("no closed bars stored for this timeframe", reasons.NO_BARS)
+            continue
+        data = SymbolData(s, {base_tf: r.frame}, exchange=exchange)
+        got_daily = daily.get(s)
+        if got_daily is not None and got_daily.served:
+            data.frames["1d"] = got_daily.frame
+        universe.append(data)
+    source = "lake:intraday" + (f"+broker:{rest.broker}" if topped and rest is not None else "")
+    if legacy:
+        try:
+            more, more_problems, legacy_source = await fetch_frames(session, tenant_id, legacy, exchange, base_tf, lookback, now,
+                                                                    user_id=user_id, tier_out=tier_out, release=False,
+                                                                    budget_out=budget_out, store=False)
+        except HTTPException:
+            if not universe:
+                raise                                     # nothing stored and no session: the broker path's own answer
+            more, more_problems, legacy_source = [], {s: reasons.Reason(ms.CONNECT_FOR_INTRADAY, reasons.NOT_STORED) for s in legacy}, ""
+        universe += more
+        problems.update(more_problems)
+        if legacy_source and not universe[: len(universe) - len(more)]:
+            source = legacy_source
+        elif legacy_source and more:
+            source = f"{source}+{legacy_source}" if legacy_source not in source else source
+    if budget_out is not None:
+        budget_out["broker_calls"] = int(budget_out.get("broker_calls", 0)) + calls
+        budget_out.setdefault("refused", int(getattr(budgeted, "refused", 0)))
+        budget_out.setdefault("per_minute", api_budget.api_limits(rest.broker if rest is not None else "").per_minute)
+    return universe, problems, source
 
 
 async def _today_bar(service: Any, symbol: str, exchange: str, now: datetime) -> Any:
@@ -769,14 +905,15 @@ def screen_and_funnel(ast: Any, validated: Any, universe: List[SymbolData], *, b
 
 async def load_universe(session: AsyncSession, user: User, ast: Any, validated: Any, params: Dict[str, Any], symbols: List[str],
                         exchange: str, base_tf: str, tier: Optional[Dict[str, Any]] = None, *, release: bool = False,
-                        budget: Optional[Dict[str, Any]] = None) -> Tuple[List[SymbolData], Dict[str, str], str, Dict[str, Any]]:
+                        budget: Optional[Dict[str, Any]] = None, store: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str, Dict[str, Any]]:
     """A validated screen's universe on server bars with the data its functions read: (universe, per-symbol fetch
     problems, data source, RankScore's systems). The run route and the N3 S9 Copilot tools share it. `release` (LD-7,
     the run route only - its session has only read so far): fetch_frames gives the pool connection back before the
     broker / lake reads; the Copilot tools keep the agent's shared session as it is."""
     try:
         universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, exchange, base_tf, validated.fetch_lookback,
-                                                                   user_id=user.id, tier_out=tier, release=release, budget_out=budget)
+                                                                   user_id=user.id, tier_out=tier, release=release, budget_out=budget,
+                                                                   store=store)
     except HTTPException as exc:
         # Day-one fix 2: before the day's broker login a Daily screen reads ATP's stored end-of-day history (flag
         # `backtest_stored_history`); anything else keeps the broker path's own answer.
@@ -876,8 +1013,9 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)
     tier: Dict[str, Any] = {}
     budget: Optional[Dict[str, Any]] = {} if body.batch else None
+    store = await store_first(session, user.tenant_id)   # M71 PL-3: the run and its batches read the own store first
     universe, fetch_problems, data_source, systems = await load_universe(session, user, ast, validated, params, symbols, body.exchange,
-                                                                         base_tf, tier, release=True, budget=budget)
+                                                                         base_tf, tier, release=True, budget=budget, store=store)
     await release_connection(session)            # LD-7: reads only so far; no pool connection held while the screen runs
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
     # (RankScore's systems ride the context asyncio.to_thread copies into the worker - N3 S7a)

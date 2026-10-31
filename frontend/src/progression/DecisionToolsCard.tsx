@@ -8,6 +8,7 @@ import ExposureSection from "./ExposureSection";
 import { pct, probability } from "./evidence";
 import { useProgressionT } from "./i18n";
 import { Details, TextOnDemand } from "../ui/numbersFirst";
+import { formatNumber, formatPct } from "../ui/format";
 import { useUiV2 } from "../ui/useFeatures";
 
 /**
@@ -86,7 +87,7 @@ export function RuinResultView({ calc }: { calc: RuinCalc }) {
   const v2 = useUiV2();
   return (
     <div className="space-y-2" data-testid="ruin-result">
-      <p className="text-fg">{t("decision.ruin.expectancy", { r: calc.expectancy_r.toFixed(2) })}</p>
+      <p className="text-fg">{t("decision.ruin.expectancy", { r: formatNumber(calc.expectancy_r, 2) })}</p>
       <p className="text-fg">{t("decision.ruin.kelly", { pct: pct(calc.kelly.fraction), formula: calc.kelly.formula })}</p>
       <div className="overflow-x-auto">
         <table className="w-full text-left tabular-nums" aria-label={t("decision.ruin.tableLabel")}>
@@ -101,7 +102,7 @@ export function RuinResultView({ calc }: { calc: RuinCalc }) {
                 <td className="py-1 pr-2">{r.ruin_status === "certain" ? t("decision.ruin.certain") : probability(r.ruin_probability)}</td>
                 <td className="py-1 pr-2">{r.losses_to_ruin}</td>
                 <td className={`py-1 ${r.growth_per_trade_pct != null && r.growth_per_trade_pct < 0 ? "text-down" : ""}`}>
-                  {r.growth_per_trade_pct == null ? "-" : `${r.growth_per_trade_pct > 0 ? "+" : ""}${r.growth_per_trade_pct.toFixed(3)}%`}
+                  {r.growth_per_trade_pct == null ? "-" : formatPct(r.growth_per_trade_pct, 3)}
                 </td>
               </tr>
             ))}
@@ -175,7 +176,7 @@ export function WhatIfView({ result }: { result: WhatIfResult }) {
   const t = useProgressionT();
   const v2 = useUiV2();
   const g = chartGeometry(result, W, H);
-  const shift = `${result.iv_shift >= 0 ? "+" : ""}${(result.iv_shift * 100).toFixed(1)}`;
+  const shift = `${result.iv_shift >= 0 ? "+" : ""}${formatNumber(result.iv_shift * 100, 1)}`;
   const label = { now: t("decision.whatIf.now"), scenario: t("decision.whatIf.scenario", { days: result.days_forward, shift }),
                   expiry: t("decision.whatIf.expiry", { date: result.expiry ?? "" }) };
   const s = result.at_spot;
@@ -193,11 +194,11 @@ export function WhatIfView({ result }: { result: WhatIfResult }) {
         {g.paths.map((p) => <li key={p.key} data-curve={p.key}>{label[p.key]}</li>)}
       </ul>
       <p className="text-fg tabular-nums">
-        {t("decision.whatIf.atSpot", { spot: result.spot.toLocaleString("en-IN"), now: pnl(s.now), scenario: pnl(s.scenario) })}
+        {t("decision.whatIf.atSpot", { spot: formatNumber(result.spot, 3, { trim: true }), now: pnl(s.now), scenario: pnl(s.scenario) })}
         {s.expiry != null ? t("decision.whatIf.atSpotExpiry", { expiry: pnl(s.expiry) }) : ""}
       </p>
       <p className="text-fg-muted tabular-nums">{t("decision.whatIf.greeks", {
-        delta: result.greeks.delta.toFixed(2), gamma: result.greeks.gamma.toFixed(4), theta: result.greeks.theta.toFixed(2), vega: result.greeks.vega.toFixed(2) })}</p>
+        delta: formatNumber(result.greeks.delta, 2), gamma: formatNumber(result.greeks.gamma, 4), theta: formatNumber(result.greeks.theta, 2), vega: formatNumber(result.greeks.vega, 2) })}</p>
       {result.skipped.map((x) => <p key={x.trade_id} className="text-warn">{t("decision.whatIf.skipped", { symbol: x.symbol, reason: x.reason })}</p>)}
       <TextOnDemand id="mytrades.decision-whatif" on={v2}><p className="text-xs text-fg-muted">{result.note}</p></TextOnDemand>
     </div>

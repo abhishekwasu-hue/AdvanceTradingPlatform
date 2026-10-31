@@ -1,5 +1,6 @@
 /** Z10-e: the staged beta rollout (50 -> 200 -> 500) as the admin console shows it (`GET /api/v1/admin/beta/cohort`).
  * Pure helpers, no React. */
+import { formatDateTimeIST } from "../ui/format";
 
 export interface BetaCohort {
   gate_on: boolean;
@@ -38,7 +39,7 @@ export function capNote(c: BetaCohort): string {
 
 export function stageSourceNote(c: BetaCohort): string {
   if (c.stage_source === "default") return "Stage from the BETA_COHORT_STAGE setting; no stage has been set here yet.";
-  return c.stage_set_at ? `Set here on ${new Date(c.stage_set_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })} IST.` : "Set here.";
+  return c.stage_set_at ? `Set here on ${formatDateTimeIST(new Date(c.stage_set_at))}.` : "Set here.";
 }
 
 /** The stages below the current one (moving down may skip; it never touches existing accounts). */

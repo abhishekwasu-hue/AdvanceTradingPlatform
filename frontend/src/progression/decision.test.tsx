@@ -58,7 +58,7 @@ describe("decision helpers (N2-3)", () => {
 
   it("writes signed rupees", () => {
     expect(pnl(1250.4)).toBe("+₹1,250");
-    expect(pnl(-480)).toBe("-₹480");
+    expect(pnl(-480)).toBe("−₹480");
     expect(pnl(0.2)).toBe("₹0");
   });
 });
@@ -71,7 +71,7 @@ describe("decision views (N2-3)", () => {
     expect(words).toContain("Kelly reference: 20.0% of capital lost on a losing trade");
     expect(words).toContain("2% (your input) 1.73% 10 +0.380%");
     expect(words).toContain("0.5% < 0.01% 40 +0.098%");
-    expect(words).toContain("50% 60.00% 1 -3.420%");
+    expect(words).toContain("50% 60.00% 1 −3.420%");
     expect(html).toContain("text-down");
     expect(html).not.toMatch(/<button/);
   });
@@ -83,7 +83,7 @@ describe("decision views (N2-3)", () => {
     expect(words).toContain("Now (T+0)");
     expect(words).toContain("Scenario: +3 days, IV +2.0");
     expect(words).toContain("At expiry 2026-10-20");
-    expect(words).toContain("At 100: now ₹0 · scenario +₹1,250 · expiry -₹480");
+    expect(words).toContain("At 100: now ₹0 · scenario +₹1,250 · expiry −₹480");
     expect(words).toContain("delta 0.50");
     expect(html).toContain('role="img"');
   });

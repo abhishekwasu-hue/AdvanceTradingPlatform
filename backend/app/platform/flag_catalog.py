@@ -85,6 +85,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "history_backfill": FlagInfo("Nightly NSE end-of-day download", "data", "nothing visible", (), "", "behind_the_scenes"),
     "history_intraday": FlagInfo("Owner's own 1-minute history", "data", "nothing visible", (), "owner broker session", "behind_the_scenes"),
     "chain_history": FlagInfo("Owner's own option-chain history (recorded every minute in market hours)", "data", "Admin › System › Chain history card", (), "owner broker session", "behind_the_scenes"),
+    "market_store_reads": FlagInfo("Scans and backtests read ATP's stored bars first (fewer broker calls)", "data", "nothing visible", (), "", "behind_the_scenes"),
     "approval_only_entries": FlagInfo("Every automatic entry waits for your Approve", "trading", "Signals waiting for you", ("paper_account",), "", "ready"),
     "paper_account": FlagInfo("Your own paper account and progress ladder", "trading", "paper account card, Telegram /status", (), "", "ready"),
     "risk_by_default": FlagInfo("Plan-before-trade ticket, risk-based size, daily loss lockout", "trading", "paper ticket", (), "", "ready"),
@@ -140,6 +141,9 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "terminal": FlagInfo("The Terminal: chart, option chain, order panel, positions and orders on one screen, with saved layouts and a status bar",
                          "trading", "a Terminal entry under Trading", ("ui_v2",),
                          "the data hub for live prices; smart execution for multi-leg orders", "ready"),
+    "trade_engine": FlagInfo("Signal engine from the private package (admin / owner only; places no orders)", "trading",
+                             "nothing yet: the engine's signals and card come in later steps", (),
+                             "the private engine package on the server", "unfinished"),
     "strategy_templates": FlagInfo("Ready strategy templates adopted as paper strategies", "trading", "templates in the trading bot form", ("ui_v2",), "", "unfinished"),
     "screener_rankings": FlagInfo("Rank a universe 0-100", "screens", "rankings", ("screener_v2",), "", "ready"),
     "screener_backtest": FlagInfo("Back-test a screen over time", "screens", "screen backtest", ("screener_v2",), "", "ready"),
@@ -231,6 +235,7 @@ FLAG_GROUP: dict[str, str] = {
     "discipline_engine": "paper",
     "setup_recall": "paper",
     "why_no_trade": "paper",
+    "trade_engine": "paper",
     "cost_meter": "paper",
     "strategy_templates": "paper",
     # Backtests
@@ -315,6 +320,7 @@ FLAG_GROUP: dict[str, str] = {
     "history_backfill": "market_data",
     "history_intraday": "market_data",
     "chain_history": "market_data",
+    "market_store_reads": "market_data",
     "live_push": "market_data",
     "markets_view": "market_data",
     # Look and layout
@@ -351,6 +357,7 @@ FINISH: Dict[str, str] = {
     "chart_futures_basis": "DATA-H / FN7", "help_centre": "P2-6 (early, once the support contact is set)",
     "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",
     "term_roll": "TERM-2 R1", "term_whatif": "TERM-2 R2", "term_strike_area": "TERM-2 R3", "term_margin_pair": "TERM-2 R4",
+    "trade_engine": "M66 (owner only, after parity is green)",
 }
 KEEP_OFF: Dict[str, str] = {
     "chart_analyze_strikes": "strikes next to a setup read close to advice; after P2-5 is on",

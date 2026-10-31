@@ -1,6 +1,7 @@
 // Z3-b: pure helpers for the progression ladder card. The server computes every value and threshold from the user's own
 // PAPER trades; this only turns them into a bar and a line of text. Facts only - no advice wording.
 import type { LadderCriterion } from "../types";
+import { formatNumber } from "../ui/format";
 
 /** 0..1 for the progress bar; null when the criterion is not measured yet. */
 export function criterionProgress(c: LadderCriterion): number | null {
@@ -12,7 +13,7 @@ export function criterionProgress(c: LadderCriterion): number | null {
 }
 
 function num(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+  return formatNumber(n, Number.isInteger(n) ? 0 : 2);
 }
 
 /** "3 of 20", "4.20 (limit 10)", or the server's note when not measured. */
@@ -21,8 +22,8 @@ export function criterionText(c: LadderCriterion): string {
   return c.comparison === "at_least" ? `${num(c.value)} of ${num(c.target)}` : `${num(c.value)} (limit ${num(c.target)})`;
 }
 
-/** Signed money with two decimals, e.g. "+1,234.50" / "-20.00". */
+/** Signed money with two decimals, e.g. "+1,234.50" / "−20.00". */
 export function signedMoney(n: number): string {
-  const s = Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${n > 0 ? "+" : n < 0 ? "-" : ""}${s}`;
+  const s = formatNumber(n, 2);
+  return n > 0 && /[1-9]/.test(s) ? `+${s}` : s;
 }

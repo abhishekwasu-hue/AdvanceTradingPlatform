@@ -21,7 +21,7 @@ import { PageFootnote, Signed } from "../ui/numbersFirst";
 import { OptionCards } from "../ui/OptionCards";
 import { Sparkline } from "../ui/Sparkline";
 import { SubTabs } from "../ui/SubTabs";
-import { formatINR, formatNumber } from "../ui/format";
+import { formatDateTimeIST, formatINR, formatNumber } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
@@ -593,7 +593,7 @@ function ResultStep({ flow, template }: { flow: FlowState; template: StrategyTem
                 {formatINR(sum.maxDd)}{sum.maxDdPct !== null && <span className="block text-t12 text-fg-muted">{formatNumber(sum.maxDdPct, 2)}% from the peak</span>}
               </Stat>
               <Stat label="Trades">{formatNumber(sum.trades)}</Stat>
-              <Stat label="Average R" term="r-multiple">{sum.avgR === null ? <span className="text-t13 text-fg-muted">Needs your stop</span> : <Signed value={sum.avgR} kind="count" decimals={2} format={(v) => `${v.toFixed(2)}R`} />}</Stat>
+              <Stat label="Average R" term="r-multiple">{sum.avgR === null ? <span className="text-t13 text-fg-muted">Needs your stop</span> : <Signed value={sum.avgR} kind="count" decimals={2} format={(v) => `${formatNumber(v, 2)}R`} />}</Stat>
               <Stat label="Equity"><Sparkline values={sum.spark} tone={sum.netPnl > 0 ? "up" : sum.netPnl < 0 ? "down" : "neutral"} width={120} height={32} /></Stat>
             </div>
             {pricesFrom && <p className="mt-space-2 text-t12 text-fg-muted" data-testid="prices-from">{pricesFrom}</p>}
@@ -640,7 +640,7 @@ function TradesList({ result }: { result: BacktestResult }) {
         <tbody>
           {result.trades.slice(-100).reverse().map((t, i) => (
             <tr key={i} className="border-t border-subtle">
-              <td className="py-space-1 pr-space-3 whitespace-nowrap">{new Date(t.entry_time).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+              <td className="py-space-1 pr-space-3 whitespace-nowrap">{formatDateTimeIST(new Date(t.entry_time), { year: false, suffix: false })}</td>
               <td className="pr-space-3">{t.direction === "LONG" ? "Long" : "Short"}</td>
               <td className="hidden pr-space-3 text-right sm:table-cell">{formatNumber(t.entry_price, 2)}</td>
               <td className="hidden pr-space-3 text-right sm:table-cell">{t.exit_price === null ? "Open" : formatNumber(t.exit_price, 2)}</td>

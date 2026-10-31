@@ -1,4 +1,5 @@
 import type { AiAction } from "../types";
+import { formatNumber } from "../ui/format";
 
 /**
  * PW5 snooze helpers (pure). A snooze hides a proposal from the pending list until it wakes; the server cuts it at the
@@ -56,7 +57,7 @@ export function evidenceSummary(evidence: Record<string, unknown> | null | undef
   for (const [key, value] of Object.entries(evidence ?? {})) {
     if (out.length >= max) break;
     const label = key.replace(/_/g, " ");
-    if (typeof value === "number") out.push(`${label}: ${Number.isInteger(value) ? value : value.toFixed(2)}`);
+    if (typeof value === "number") out.push(`${label}: ${formatNumber(value, Number.isInteger(value) ? 0 : 2)}`);
     else if (typeof value === "string" && value.length <= 60) out.push(`${label}: ${value}`);
     else if (Array.isArray(value) && value.length <= 6 && value.every((v) => typeof v === "number")) out.push(`${label}: ${value.join(", ")}`);
   }

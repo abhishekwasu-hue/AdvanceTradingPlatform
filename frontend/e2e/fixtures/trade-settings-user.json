@@ -1,0 +1,260 @@
+{
+ "sections": [
+  {
+   "id": "order_defaults",
+   "title": "Order defaults",
+   "fields": [
+    {
+     "key": "order_defaults.freeze_quantity",
+     "label": "Freeze quantity",
+     "kind": "fact",
+     "help": "An order above the exchange's freeze quantity is split into smaller orders automatically.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.market_protection",
+     "label": "Market order protection",
+     "kind": "fact",
+     "help": "Your broker adds its own price band to a market order sent from an app (a SEBI rule).",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.order_type_support",
+     "label": "Order types your broker takes",
+     "kind": "fact",
+     "help": "Where your broker or the exchange takes no market or SL-M order, a limit or an SL order is sent instead.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "My trading defaults",
+    "path": "/settings/trading-defaults"
+   }
+  },
+  {
+   "id": "position_size",
+   "title": "Position size",
+   "fields": [
+    {
+     "key": "position_size.lot_size",
+     "label": "Lot size",
+     "kind": "fact",
+     "help": "Set by the exchange for each contract. A size is a whole number of lots.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "lot",
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "My trading defaults",
+    "path": "/settings/trading-defaults"
+   }
+  },
+  {
+   "id": "exits",
+   "title": "Exits",
+   "fields": [
+    {
+     "key": "exits.broker_square_off",
+     "label": "Your broker's intraday close",
+     "kind": "fact",
+     "help": "Your broker closes intraday (MIS) positions itself near the market close.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "mis",
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.exits_always_work",
+     "label": "Exits always work",
+     "kind": "fact",
+     "help": "No setting holds back a stop, a target or Exit now.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "My trading defaults",
+    "path": "/settings/trading-defaults"
+   }
+  },
+  {
+   "id": "options",
+   "title": "Options",
+   "fields": [
+    {
+     "key": "options.listed_strikes",
+     "label": "Listed strikes and expiries",
+     "kind": "fact",
+     "help": "The exchange lists the strikes and expiries you can trade.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "strike",
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.physical_settlement",
+     "label": "Delivery at expiry",
+     "kind": "fact",
+     "help": "A stock option held at expiry settles by delivery of the shares (an exchange rule).",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "My trading defaults",
+    "path": "/settings/trading-defaults"
+   }
+  },
+  {
+   "id": "risk_limits",
+   "title": "Risk limits",
+   "fields": [
+    {
+     "key": "risk_limits.broker_exchange_checks",
+     "label": "Broker and exchange checks",
+     "kind": "fact",
+     "help": "Margin available, F&O ban, market open and the broker's own rejections always apply, and so does your kill switch.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "margin",
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "Risk limits",
+    "path": "/settings/risk-limits"
+   }
+  },
+  {
+   "id": "automation",
+   "title": "Automation",
+   "fields": [
+    {
+     "key": "automation.market_hours",
+     "label": "Market hours and holidays",
+     "kind": "fact",
+     "help": "Orders reach the market only while the exchange is open.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "My trading defaults",
+    "path": "/settings/trading-defaults"
+   }
+  },
+  {
+   "id": "paper_account",
+   "title": "Paper account",
+   "fields": [
+    {
+     "key": "paper_account.statutory_charges",
+     "label": "Statutory charges",
+     "kind": "fact",
+     "help": "STT, exchange, stamp duty, GST and the SEBI fee are set by law.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": null
+  }
+ ],
+ "admin": false,
+ "page": "/settings/trade-settings"
+}

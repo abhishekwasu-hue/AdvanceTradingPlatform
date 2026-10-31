@@ -207,6 +207,9 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   // M64 RM-5: the limits themselves live on Settings › Risk limits; /risk-management keeps today's risk status (pauses, events).
   { ...item("settings-risk-limits", "Risk limits", "Risk limits", SETTINGS_PATH["risk-limits"], Shield,
     { keywords: ["risk limits", "limits", "daily loss", "max lots", "max positions", "cool-down", "margin safety", "risk per trade", "reward risk"] }), section: "account" },
+  // M68 PR-0: Settings › Trade settings - every trading choice in one place (each Not set until the trader saves it).
+  { ...item("settings-trade-settings", "Trade settings", "Trade settings", SETTINGS_PATH["trade-settings"], SlidersHorizontal,
+    { keywords: ["trade settings", "order defaults", "product", "order type", "position size", "exits", "square-off", "options", "automation", "paper capital", "charges"] }), section: "account" },
   { ...item("risk-management", "Risk status", "Risk status", "/risk-management", Shield, { keywords: ["risk", "risk management", "risk today", "pause"] }), section: "account" },
   // M60 default 5: the alert channels in Settings › Trading, with the Inbox (Notifications) beside them.
   { ...item("settings-alerts", "Alerts", "Alerts", SETTINGS_PATH.alerts, Bell, { keywords: ["telegram", "alert channels", "email alerts", "sms", "push notifications"] }), section: "account" },
@@ -237,6 +240,7 @@ const NAV_HOME: Partial<Record<ShellKey, ShellKey>> = {
   broker: "settings", "risk-management": "settings", team: "settings", account: "settings", setup: "settings", "trading-defaults": "settings",
   notifications: "settings", "settings-ai": "settings", "settings-alerts": "settings", "settings-appearance": "settings",
   "settings-help": "settings", "settings-advanced": "settings", "settings-risk-limits": "settings",
+  "settings-trade-settings": "settings",
 };
 
 /** The sidebar / bottom bar entry that shows as current for the page on screen. */

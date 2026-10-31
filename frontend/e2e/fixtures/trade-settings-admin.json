@@ -1,0 +1,1789 @@
+{
+ "sections": [
+  {
+   "id": "order_defaults",
+   "title": "Order defaults",
+   "fields": [
+    {
+     "key": "order_defaults.holding",
+     "label": "Holding",
+     "kind": "choice",
+     "help": "Close the position the same day, or carry it forward.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "INTRADAY",
+       "label": "Intraday"
+      },
+      {
+       "value": "SWING",
+       "label": "Carry forward"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.product",
+     "label": "Product",
+     "kind": "choice",
+     "help": "The broker product for a futures or options order.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "MIS",
+       "label": "MIS (intraday)"
+      },
+      {
+       "value": "NRML",
+       "label": "NRML (carry forward)"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "mis",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.order_type",
+     "label": "Order type",
+     "kind": "choice",
+     "help": "How an order is sent to the market.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "MARKET",
+       "label": "Market"
+      },
+      {
+       "value": "LIMIT",
+       "label": "Limit"
+      },
+      {
+       "value": "SL",
+       "label": "SL (stop-limit)"
+      },
+      {
+       "value": "SL-M",
+       "label": "SL-M (stop at market)"
+      },
+      {
+       "value": "PROTECTED_LIMIT",
+       "label": "Limit with price protection"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "sl",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.price_protection_pct",
+     "label": "Price protection",
+     "kind": "number",
+     "help": "A market order is sent as a limit this far past the price.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.stop_limit_band_pct",
+     "label": "Stop-limit gap",
+     "kind": "number",
+     "help": "Where the exchange takes no SL-M order, the limit price sits this far past your trigger price.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": "sl-m",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.trigger_mode",
+     "label": "Trigger on",
+     "kind": "choice",
+     "help": "When a waiting order or a stop counts as reached.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "TOUCH",
+       "label": "When the price touches it"
+      },
+      {
+       "value": "CLOSE",
+       "label": "When a candle closes past it"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.trigger_source",
+     "label": "Trigger price from",
+     "kind": "choice",
+     "help": "Which price a trigger on an option watches.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "PREMIUM",
+       "label": "The option's own price"
+      },
+      {
+       "value": "SPOT",
+       "label": "The index or stock price"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.freeze_quantity",
+     "label": "Freeze quantity",
+     "kind": "fact",
+     "help": "An order above the exchange's freeze quantity is split into smaller orders automatically.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.market_protection",
+     "label": "Market order protection",
+     "kind": "fact",
+     "help": "Your broker adds its own price band to a market order sent from an app (a SEBI rule).",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.order_type_support",
+     "label": "Order types your broker takes",
+     "kind": "fact",
+     "help": "Where your broker or the exchange takes no market or SL-M order, a limit or an SL order is sent instead.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "My trading defaults",
+    "path": "/settings/trading-defaults"
+   }
+  },
+  {
+   "id": "position_size",
+   "title": "Position size",
+   "fields": [
+    {
+     "key": "position_size.mode",
+     "label": "Size by",
+     "kind": "choice",
+     "help": "How the size of a new entry is worked out.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "FIXED_LOTS",
+       "label": "Fixed lots"
+      },
+      {
+       "value": "FIXED_QUANTITY",
+       "label": "Fixed quantity"
+      },
+      {
+       "value": "PCT_CAPITAL",
+       "label": "% of capital"
+      },
+      {
+       "value": "RISK_BASED",
+       "label": "Risk-based (Risk limits)"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "position_size.lots",
+     "label": "Lots",
+     "kind": "whole",
+     "help": "The number of lots for a new entry.",
+     "unit": "lots",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": "lot",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "position_size.quantity",
+     "label": "Quantity",
+     "kind": "whole",
+     "help": "The number of shares or units for a new entry.",
+     "unit": "units",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "position_size.capital_pct",
+     "label": "Share of capital",
+     "kind": "number",
+     "help": "The value of a new entry as a share of your capital.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "position_size.lot_size",
+     "label": "Lot size",
+     "kind": "fact",
+     "help": "Set by the exchange for each contract. A size is a whole number of lots.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "lot",
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "position_size.fanout_mode",
+     "label": "Extra paper accounts: size by",
+     "kind": "choice",
+     "help": "How an extra paper account sizes a copied entry.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "MULTIPLIER",
+       "label": "The main size times a number"
+      },
+      {
+       "value": "FIXED",
+       "label": "Fixed lots"
+      },
+      {
+       "value": "PCT_CAPITAL",
+       "label": "% of its capital"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "position_size.fanout_value",
+     "label": "Extra paper accounts: value",
+     "kind": "number",
+     "help": "The number for the way chosen above.",
+     "unit": "",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "My trading defaults",
+    "path": "/settings/trading-defaults"
+   }
+  },
+  {
+   "id": "exits",
+   "title": "Exits",
+   "fields": [
+    {
+     "key": "exits.stop_loss_kind",
+     "label": "Stop-loss measured in",
+     "kind": "choice",
+     "help": "How your stop-loss distance is counted.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "POINTS",
+       "label": "Points from entry"
+      },
+      {
+       "value": "PCT",
+       "label": "% from entry"
+      },
+      {
+       "value": "RUPEES",
+       "label": "Rupees on the trade"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "stop",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.stop_loss_value",
+     "label": "Stop-loss",
+     "kind": "number",
+     "help": "How far from the entry the trade is closed to limit the loss.",
+     "unit": "",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": true,
+     "term": "stop",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.target_kind",
+     "label": "Target measured in",
+     "kind": "choice",
+     "help": "How your target distance is counted.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "POINTS",
+       "label": "Points from entry"
+      },
+      {
+       "value": "PCT",
+       "label": "% from entry"
+      },
+      {
+       "value": "RUPEES",
+       "label": "Rupees on the trade"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "target",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.target_value",
+     "label": "Target",
+     "kind": "number",
+     "help": "How far from the entry the trade is closed to take the profit.",
+     "unit": "",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": true,
+     "term": "target",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.trailing_kind",
+     "label": "Trailing stop by",
+     "kind": "choice",
+     "help": "How the stop follows the price.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "POINTS",
+       "label": "Points"
+      },
+      {
+       "value": "PCT",
+       "label": "%"
+      },
+      {
+       "value": "ATR",
+       "label": "ATR multiple"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "atr",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.trailing_value",
+     "label": "Trailing stop",
+     "kind": "number",
+     "help": "How far behind the best price the stop follows.",
+     "unit": "",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.break_even_at_r",
+     "label": "Move the stop to entry at",
+     "kind": "number",
+     "help": "Once the trade gains this many R, the stop moves to the entry.",
+     "unit": "R",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": true,
+     "term": "r-multiple",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.time_exit_minutes",
+     "label": "Close after",
+     "kind": "whole",
+     "help": "A position is closed this many minutes after its entry.",
+     "unit": "minutes",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.time_exit_at",
+     "label": "Close at a time",
+     "kind": "time",
+     "help": "A position is closed at this time.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.square_off_time",
+     "label": "Square-off time",
+     "kind": "time",
+     "help": "Intraday positions are closed at this time. Not set: ATP closes nothing by itself.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.incomplete_legs_action",
+     "label": "A multi-leg order fills only in part",
+     "kind": "choice",
+     "help": "What happens to the filled legs when you do not answer in time.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "CLOSE_FILLED",
+       "label": "Close the filled legs"
+      },
+      {
+       "value": "KEEP",
+       "label": "Keep them"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.incomplete_legs_answer_minutes",
+     "label": "Time to answer",
+     "kind": "whole",
+     "help": "Minutes you have to answer before your choice above applies.",
+     "unit": "minutes",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.combined_measure",
+     "label": "Combined exit measured on",
+     "kind": "choice",
+     "help": "What an exit for a whole structure watches.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "MTM_INR",
+       "label": "Profit or loss in rupees"
+      },
+      {
+       "value": "NET_PREMIUM",
+       "label": "Net premium"
+      },
+      {
+       "value": "SPOT",
+       "label": "The index or stock price"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "premium",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.combined_check_mode",
+     "label": "Combined exit checked",
+     "kind": "choice",
+     "help": "When a combined exit counts as reached.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "TOUCH",
+       "label": "When the price touches it"
+      },
+      {
+       "value": "CLOSE",
+       "label": "When a candle closes past it"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.close_if_broker_stop_rejected",
+     "label": "Close a position whose broker stop is refused",
+     "kind": "switch",
+     "help": "On: a position is closed when the broker refuses its stop order.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.broker_square_off",
+     "label": "Your broker's intraday close",
+     "kind": "fact",
+     "help": "Your broker closes intraday (MIS) positions itself near the market close.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "mis",
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.exits_always_work",
+     "label": "Exits always work",
+     "kind": "fact",
+     "help": "No setting holds back a stop, a target or Exit now.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "My trading defaults",
+    "path": "/settings/trading-defaults"
+   }
+  },
+  {
+   "id": "options",
+   "title": "Options",
+   "fields": [
+    {
+     "key": "options.expiry_rule",
+     "label": "Expiry",
+     "kind": "choice",
+     "help": "Which expiry a new option or future trades.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "NEAREST",
+       "label": "Nearest"
+      },
+      {
+       "value": "NEXT",
+       "label": "Next"
+      },
+      {
+       "value": "MONTHLY",
+       "label": "Monthly"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "expiry",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.strike_rule",
+     "label": "Strike",
+     "kind": "choice",
+     "help": "Which strike a new option trades.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "ATM",
+       "label": "At the money (ATM)"
+      },
+      {
+       "value": "ITM",
+       "label": "In the money"
+      },
+      {
+       "value": "OTM",
+       "label": "Out of the money"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "atm",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.strike_offset",
+     "label": "Strikes away from ATM",
+     "kind": "whole",
+     "help": "For in or out of the money: how many strikes away.",
+     "unit": "strikes",
+     "choices": [],
+     "low": 0,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": "strike",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.option_position",
+     "label": "Option side",
+     "kind": "choice",
+     "help": "Whether a new option position is bought or written.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "BUY",
+       "label": "Bought"
+      },
+      {
+       "value": "WRITE",
+       "label": "Written (sold)"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.spread_width",
+     "label": "Spread width",
+     "kind": "whole",
+     "help": "The distance between a spread's legs, in listed strikes.",
+     "unit": "strikes",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.ratio",
+     "label": "Ratio spread",
+     "kind": "whole",
+     "help": "Sold legs for each bought leg in a ratio spread.",
+     "unit": "sold legs",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.custom_legs",
+     "label": "Custom structure legs",
+     "kind": "legs",
+     "help": "The legs a custom structure starts with.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.hedge",
+     "label": "Add a protective bought leg",
+     "kind": "switch",
+     "help": "On: a written option gets a bought leg further out.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.hedge_offset",
+     "label": "Protective leg distance",
+     "kind": "whole",
+     "help": "How many strikes further out the bought leg is.",
+     "unit": "strikes",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.delta_tolerance",
+     "label": "Delta tolerance",
+     "kind": "number",
+     "help": "How far from your target delta a strike may be.",
+     "unit": "",
+     "choices": [],
+     "low": 0.0,
+     "high": 1.0,
+     "low_open": true,
+     "term": "delta",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.strike_search_steps",
+     "label": "Strikes searched",
+     "kind": "whole",
+     "help": "How many strikes either side are looked at for your filter.",
+     "unit": "strikes",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.expiry_day_roll",
+     "label": "On an expiry day, open the next expiry",
+     "kind": "switch",
+     "help": "On: on its expiry day the chain and the builders open the next expiry.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "expiry",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.settlement_warning",
+     "label": "Physical delivery warning",
+     "kind": "switch",
+     "help": "On: you are warned before a stock option near its strike reaches expiry.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.settlement_days_before",
+     "label": "Warn this many days before expiry",
+     "kind": "whole",
+     "help": "When the delivery warning starts.",
+     "unit": "days",
+     "choices": [],
+     "low": 0,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.settlement_band_pct",
+     "label": "Near the strike means within",
+     "kind": "number",
+     "help": "How close to its strike an option counts as near.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.risk_free_rate_pct",
+     "label": "Risk-free rate",
+     "kind": "number",
+     "help": "The interest rate used to work out the Greeks.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": false,
+     "term": "greeks",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.listed_strikes",
+     "label": "Listed strikes and expiries",
+     "kind": "fact",
+     "help": "The exchange lists the strikes and expiries you can trade.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "strike",
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.physical_settlement",
+     "label": "Delivery at expiry",
+     "kind": "fact",
+     "help": "A stock option held at expiry settles by delivery of the shares (an exchange rule).",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "My trading defaults",
+    "path": "/settings/trading-defaults"
+   }
+  },
+  {
+   "id": "risk_limits",
+   "title": "Risk limits",
+   "fields": [
+    {
+     "key": "risk_limits.overnight_short_options",
+     "label": "Hold written straddles and strangles overnight",
+     "kind": "switch",
+     "help": "On: written structures without wings may be carried forward.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.loss_cooldown_pause_mode",
+     "label": "A losses-in-a-row pause ends",
+     "kind": "choice",
+     "help": "When new entries start again after a losses-in-a-row pause with no minutes set.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "next_session",
+       "label": "At the next session"
+      },
+      {
+       "value": "until_resume",
+       "label": "When I resume"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.opposite_positions",
+     "label": "Two bots on opposite sides",
+     "kind": "choice",
+     "help": "Whether two of your bots may hold opposite positions in the same symbol.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "allow",
+       "label": "Allowed"
+      },
+      {
+       "value": "deny",
+       "label": "Not allowed"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.drawdown_cut_pct",
+     "label": "Size cut at the first drawdown step",
+     "kind": "number",
+     "help": "At the first drawdown step the size is cut by this much.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": "drawdown",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.vix_gate",
+     "label": "India VIX check",
+     "kind": "switch",
+     "help": "On: a fast rise or a high level of India VIX pauses or cuts new entries.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "india-vix",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.vix_change_pct",
+     "label": "India VIX rise that pauses entries",
+     "kind": "number",
+     "help": "A rise of this much pauses new long entries.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": "india-vix",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.vix_level",
+     "label": "India VIX level that cuts the size",
+     "kind": "number",
+     "help": "At or above this level the size is cut.",
+     "unit": "points",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": true,
+     "term": "india-vix",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.vix_size_cut_pct",
+     "label": "Size cut at that level",
+     "kind": "number",
+     "help": "How much the size is cut at that level.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.experience_trades",
+     "label": "Experience level: trades",
+     "kind": "whole",
+     "help": "Closed paper trades before the next level opens.",
+     "unit": "trades",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.experience_sessions",
+     "label": "Experience level: sessions",
+     "kind": "whole",
+     "help": "Sessions traded before the next level opens.",
+     "unit": "sessions",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.event_default_action",
+     "label": "A new market event day",
+     "kind": "choice",
+     "help": "What a market event day you add does to new entries.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "PAUSE",
+       "label": "Pause new entries"
+      },
+      {
+       "value": "SIZE_CUT",
+       "label": "Cut the size"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.ceiling_risk_per_trade_pct",
+     "label": "Team ceiling: risk per trade",
+     "kind": "number",
+     "help": "The most any member may set.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "organisation",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.ceiling_daily_loss_pct",
+     "label": "Team ceiling: daily loss",
+     "kind": "number",
+     "help": "The most any member may set.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "organisation",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.ceiling_portfolio_risk_pct",
+     "label": "Team ceiling: risk across positions",
+     "kind": "number",
+     "help": "The most any member may set.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "organisation",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.ceiling_drawdown_pause_pct",
+     "label": "Team ceiling: drawdown pause",
+     "kind": "number",
+     "help": "The most any member may set.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "organisation",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.ceiling_warn_at_pct",
+     "label": "Team ceiling: warn at",
+     "kind": "number",
+     "help": "A notice when a member's use reaches this share of the limit.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "organisation",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "risk_limits.broker_exchange_checks",
+     "label": "Broker and exchange checks",
+     "kind": "fact",
+     "help": "Margin available, F&O ban, market open and the broker's own rejections always apply, and so does your kill switch.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "margin",
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "Risk limits",
+    "path": "/settings/risk-limits"
+   }
+  },
+  {
+   "id": "automation",
+   "title": "Automation",
+   "fields": [
+    {
+     "key": "automation.approval_mode",
+     "label": "New entries",
+     "kind": "choice",
+     "help": "Whether a bot places an entry by itself or asks you first.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "AUTO",
+       "label": "Placed automatically"
+      },
+      {
+       "value": "APPROVAL",
+       "label": "Ask me first"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.approval_entry_minutes",
+     "label": "An entry request waits",
+     "kind": "whole",
+     "help": "Minutes an entry waiting for your answer stays open.",
+     "unit": "minutes",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.approval_exit_minutes",
+     "label": "An exit request waits",
+     "kind": "whole",
+     "help": "Minutes an exit waiting for your answer stays open.",
+     "unit": "minutes",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.requote_drift_pct",
+     "label": "New price after a move of",
+     "kind": "number",
+     "help": "A waiting entry is offered at the new price after this move.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.max_requotes",
+     "label": "New prices offered at most",
+     "kind": "whole",
+     "help": "How many times a waiting entry is offered at a new price.",
+     "unit": "times",
+     "choices": [],
+     "low": 0,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.window_start",
+     "label": "New entries from",
+     "kind": "time",
+     "help": "No new entry before this time. Exits always work.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.window_end",
+     "label": "New entries until",
+     "kind": "time",
+     "help": "No new entry after this time. Exits always work.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.reentry",
+     "label": "Re-enter after an exit",
+     "kind": "switch",
+     "help": "On: a bot may enter again on a new signal after an exit.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.reentry_max",
+     "label": "Re-entries at most",
+     "kind": "whole",
+     "help": "How many times a bot may re-enter.",
+     "unit": "times",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.scan_auto_max",
+     "label": "Scanner entries at most",
+     "kind": "whole",
+     "help": "Paper entries the scanner may place by itself in a day.",
+     "unit": "entries",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.scan_auto_cooldown_minutes",
+     "label": "Scanner wait per symbol",
+     "kind": "whole",
+     "help": "Minutes before the scanner enters the same symbol again.",
+     "unit": "minutes",
+     "choices": [],
+     "low": 0,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.scan_auto_arming_days",
+     "label": "Scanner stays armed for",
+     "kind": "whole",
+     "help": "Days the scanner keeps placing paper entries once armed.",
+     "unit": "days",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.market_hours",
+     "label": "Market hours and holidays",
+     "kind": "fact",
+     "help": "Orders reach the market only while the exchange is open.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": {
+    "label": "My trading defaults",
+    "path": "/settings/trading-defaults"
+   }
+  },
+  {
+   "id": "paper_account",
+   "title": "Paper account",
+   "fields": [
+    {
+     "key": "paper_account.capital",
+     "label": "Starting capital",
+     "kind": "number",
+     "help": "The money your paper account starts with.",
+     "unit": "₹",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": true,
+     "term": "paper",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "paper_account.charges_model",
+     "label": "Charges",
+     "kind": "choice",
+     "help": "What a paper trade pays.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "STATUTORY",
+       "label": "Statutory charges only"
+      },
+      {
+       "value": "STATUTORY_BROKERAGE",
+       "label": "Statutory charges + my brokerage"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "paper_account.brokerage_per_order",
+     "label": "Brokerage per order",
+     "kind": "number",
+     "help": "What your broker charges for one order.",
+     "unit": "₹",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "paper_account.slippage_pct",
+     "label": "Slippage",
+     "kind": "number",
+     "help": "How far from the price a paper fill is counted, each side.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "paper_account.statutory_charges",
+     "label": "Statutory charges",
+     "kind": "fact",
+     "help": "STT, exchange, stamp duty, GST and the SEBI fee are set by law.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": true,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    }
+   ],
+   "today": null
+  }
+ ],
+ "admin": true,
+ "page": "/settings/trade-settings"
+}

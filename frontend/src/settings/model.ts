@@ -14,7 +14,7 @@ import { SETTINGS_PATH } from "./paths";
  * settings.test.tsx); the page is SettingsIndexV2.tsx.
  */
 
-export type RowId = "account" | "team" | "broker" | "ai" | "alerts" | "defaults" | "risk" | "appearance" | "help" | "setup" | "advanced";
+export type RowId = "account" | "team" | "broker" | "ai" | "alerts" | "trade" | "defaults" | "risk" | "appearance" | "help" | "setup" | "advanced";
 
 export interface SettingsRow {
   id: RowId;
@@ -34,6 +34,8 @@ export const SETTINGS_ROWS: readonly SettingsRow[] = [
   { id: "broker", name: "Broker", to: BROKER_PATH, keywords: ["upstox", "zerodha", "connect broker", "renew", "login", "token"] },
   { id: "ai", name: "AI", to: SETTINGS_PATH.ai, tour: "settings-ai", keywords: ["ai key", "api key", "connect ai", "claude", "openai", "gemini", "copilot", "ai limits", "spend"] },
   { id: "alerts", name: "Alerts", to: SETTINGS_PATH.alerts, tour: "settings-alerts", keywords: ["telegram", "notifications", "email", "sms", "whatsapp", "push", "phone"] },
+  // M68 PR-0: Settings › Trade settings - every trading choice in one place, each Not set until saved.
+  { id: "trade", name: "Trade settings", to: SETTINGS_PATH["trade-settings"], keywords: ["trade settings", "order defaults", "product", "order type", "position size", "square-off", "paper capital", "charges"] },
   // Part C: the user's own starting values for new trading bots and chain tickets (a pre-fill, never a rule).
   { id: "defaults", name: "My trading defaults", to: "/settings/trading-defaults", keywords: ["defaults", "lots", "exits", "presets"] },
   // M64 RM-5: one Risk limits page (every check a switch, off by default).

@@ -140,6 +140,16 @@ describe("M63 I-7 part 2: placeholders before the first answer, one line when em
     expect(lines.filter((l) => l.rest.includes("action=")).map((l) => l.text)).toEqual(["Nothing deployed yet."]);
   });
 
+  it("Dashboard: the strategy mix shows placeholder rows and the Strategies tile no 0 counts before the list answers", () => {
+    const html = renderPage(<DashboardPage />);
+    busy(html, "Loading the strategy mix");
+    const tile = textOf(html.split(">Strategies<")[1]?.split("</button>")[0] ?? "");
+    expect(tile).toContain("…");
+    expect(tile).toContain("inbuilt strategies");
+    expect(tile).not.toMatch(/\b0 multi-timeframe/);
+    expect(textOf(html)).not.toMatch(/Multi-timeframe\s*0|Indicator-based\s*0/);
+  });
+
   it("Terminal status bar: placeholder figures while loading (read out, not shown as a text line); the failed line stays", () => {
     const bar = (failed: boolean) => renderToStaticMarkup(<StatusBarV2 status={null} failed={failed} masked={false} onMask={() => {}} />);
     const loading = bar(false);

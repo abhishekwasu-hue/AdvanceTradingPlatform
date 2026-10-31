@@ -100,26 +100,28 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
     record, byob, refusal = await _record(session, user, underlying)
     if record is None:
         return _state(base, "no_broker", refusal or NO_BROKER)
-    from app.market_data import hub as data_hub
-    chain, failure = await _read_chain(record, underlying, expiry, shared=await data_hub.hub_on(session, user.tenant_id))
+    chain, failure, got, when = await read_chain_for(session, user, record, underlying, expiry, now)
     if chain is None:
         return _state(base, "unavailable", failure or UNAVAILABLE)
     base["expiry"] = (chain.expiry or "")[:10] or base["expiry"]
-    # Counted like POST /api/market-data/option-chains: every chain the broker returned, an empty one too.
-    await meter(session, user.tenant_id, "market_data_chains", quantity=1, source="api",
-                metadata={"broker": record.broker_name, "expiry": base["expiry"], "use": "option_chain_analyses"}, commit=True)
+    # Counted like POST /api/market-data/option-chains: every chain the broker returned, an empty one too (M71 W2-E: an
+    # earlier chain shown while the broker is busy is no new read and is not counted).
+    if got is None or not got.stale:
+        await meter(session, user.tenant_id, "market_data_chains", quantity=1, source="api",
+                    metadata={"broker": record.broker_name, "expiry": base["expiry"], "use": "option_chain_analyses"}, commit=True)
     if not chain.rows:
         return _state(base, "no_data", NO_CHAIN)
 
     read = chain                                             # B1: stored as read (below), the spot as the broker sent it
+    cutoff = got.captured_at if got is not None and got.stale and got.captured_at else now
     if byob:                                                 # his own earlier reads are his session
-        history = await _own_history(session, user, underlying, now)
+        history = await _own_history(session, user, underlying, cutoff)
     else:
-        history = await _history(session, user.tenant_id, underlying, now)
+        history = await _history(session, user.tenant_id, underlying, cutoff)
     chain = analyses.clean_spot(chain)                       # a spot of 0 (some brokers' "no price") is missing, not a number
     # B2: the chain's capture time, or the last session close while the market is closed (never the request time); a
     # closed market's missing or strike-rounded spot is the index's last close from our own candles, labelled.
-    when = await as_of.chain_as_of(session, underlying, now)
+    when = when or await as_of.chain_as_of(session, underlying, now)
     spot, spot_source = await as_of.resolve_spot(user, session, underlying, chain, chain.underlying_ltp, when,
                                                  record.broker_name, record.account_label)
     if spot != chain.underlying_ltp:
@@ -135,6 +137,8 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
                            "session": {"snapshots": len(kept), "since": kept[0].at.isoformat() if kept else None, "note": None},
                            "near_atm_strikes": analyses.NEAR_ATM_STRIKES,
                            "analyses": results}
+    if got is not None and got.stale:                        # M71 W2-E: an earlier chain while the broker is busy, with its age
+        out["snapshot"] = got.snapshot(now)
     # MO4 slice 2: "What the chain shows" (app/option_chain/dish.py) from the same six analyses - with `markets_view` on only.
     from app.platform.controls import flag_enabled
     if await flag_enabled(session, DISH_FLAG, user.tenant_id):
@@ -144,9 +148,38 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
         raw = [zones.get(k) for k in ("very_low_below", "low_below", "balanced_max", "high_max")]
         edges = [float(e) for e in raw if isinstance(e, (int, float))]
         out["dish"] = dish.build(results, chain, history, pcr_edges=edges if len(edges) == 4 else None)
-    if byob:                                                 # B1: this read becomes his session snapshot (last: the answer is built)
+    if byob and (got is None or got.captured_at is None):    # B1: this read becomes his session snapshot (last: the answer is built)
         await own_snapshots.record(session, user, record, underlying, read, now)
     return out
+
+
+def failure_text(state: str) -> str:
+    """The plain sentence of a chain read that returned no chain (app/option_chain/chain_reads.py states)."""
+    from app.option_chain import chain_reads
+    return {chain_reads.BUSY: chain_reads.BUSY_MESSAGE, chain_reads.NOT_OFFERED: NOT_OFFERED}.get(state, UNAVAILABLE)
+
+
+async def read_chain_for(session: AsyncSession, user: User, record: BrokerCredentialRecord, underlying: str, expiry: date | None,
+                         now: datetime, *, shared: bool | None = None) -> tuple[OptionChain | None, str | None, Any, as_of.AsOf | None]:
+    """(chain, failure sentence, the store-first read or None, the answer's as-of or None) for the analyses and charts pages.
+    M71 W2-E, flag `market_store_reads` ON: paced, shared per credential, a closed market's recent chain reused, a busy
+    broker answered with the last chain and its capture time (app/option_chain/chain_reads.py). OFF: exactly as before
+    (`shared`: the data hub's copy as the page used it - None = the flag `data_hub`, False = a direct read)."""
+    from app.option_chain import chain_reads
+    if not await chain_reads.store_on(session, user.tenant_id):
+        if shared is None:
+            from app.market_data import hub as data_hub
+            shared = await data_hub.hub_on(session, user.tenant_id)
+        chain, failure = await _read_chain(record, underlying, expiry, shared=shared)
+        return chain, failure, None, None
+    when = await as_of.chain_as_of(session, underlying, now)
+    got = await chain_reads.read(session, user, record, underlying, expiry, now=now, closed_since=when.at if when.closed else None,
+                                 build=candles_routes.build_adapter)
+    if got.chain is None:
+        return None, failure_text(got.state), got, when
+    if got.stale and got.captured_at is not None and got.captured_at < when.at:
+        when = as_of.AsOf(got.captured_at, when.closed)       # the numbers stand on the earlier read: its time, never now
+    return got.chain, None, got, when
 
 
 async def _read_chain(record: BrokerCredentialRecord, underlying: str, expiry: Optional[date], *,

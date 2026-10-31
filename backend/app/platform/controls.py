@@ -246,6 +246,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # recorded at a fixed interval in market hours through the OWNER's own broker session into the owner's private store,
     # on the worker's rate budget with a reserve kept for exits. OFF: nothing is recorded and the read API answers 404.
     "chain_history": "Owner chain history: option-chain snapshots from the owner's own broker session into the owner's private store (read-only, places no orders)",
+    # M71 PL-3 (owner order M71): every switched feature (the Screener, backtests) reads its bars store-first - Daily /
+    # Weekly from the NSE files with zero broker calls, intraday from the reader's own stored bars plus only the newest
+    # missing bars through his own session (app/market_store). OFF: every feature reads exactly as before.
+    "market_store_reads": "Store-first bars: Daily / Weekly from the NSE files and the newest bars only from your own broker (Screener, backtests)",
     # Z3 / BT2 (beta spec, Phase 0): every automatic entry (deployments, TradingView webhooks, public API signals) becomes
     # an ENTRY proposal (Approve / Reject / Snooze); Approve places a PAPER order at a re-quoted price. Target exits ask
     # "Exit now?"; protective exits (stop, time stop, square-off, kill switch) stay automatic (ADR-0004). OFF: unchanged.

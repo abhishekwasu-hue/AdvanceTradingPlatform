@@ -48,6 +48,7 @@ PACK: Tuple[str, ...] = (
     # Data and alerts.
     "history_backfill",
     "chain_history",           # TM 9.4: records only through the owner's own session into his private store (TM-7)
+    "market_store_reads",      # M71 PL-3: scans and backtests read the own store first (fewer broker calls)
     "alerts_stale_guard", "alerts_reliable_outbox", "context_panel", "news_feed",
     "markets_view",            # unfinished in the audit: the page and the summary work on the daily data the pack loads
     "telegram_inbound",

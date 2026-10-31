@@ -90,6 +90,8 @@ test.describe("v2 portfolio 1440 desktop", () => {
 
     const booked = page.locator("[data-block='booked']");
     await expect(booked.getByRole("img")).toHaveAttribute("aria-label", "Booked P&L over 3 closed trades, now +₹973");
+    // PROSE-1: the limits line sits in a closed Details; open it to follow the link.
+    await page.locator("[data-details='portfolio.limits'] summary").click();
     await expect(page.getByRole("link", { name: "Risk limits" })).toHaveAttribute("href", "/risk-management");
   });
 

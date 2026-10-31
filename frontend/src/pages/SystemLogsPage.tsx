@@ -7,6 +7,7 @@ import { Card } from "../components/ui";
 import type { AuditLogEntry, LoginEvent } from "../types";
 import { PageHeader } from "../components/primitives";
 import { formatDateTimeIST } from "../ui/format";
+import { Details } from "../ui/Details";
 
 export default function SystemLogsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -42,11 +43,11 @@ export default function SystemLogsPage() {
       {user.role === "OWNER" && <ExportCard scope="tenant" />}
 
       <Card title={`Login history (${logins.length})`}>
-        <p className="text-xs text-fg-muted mb-2">
+        <Details id="system-logs.login-history" className="mt-0 mb-2"><p>
           Every attempt to log in as you, successful or not. Ten failures in fifteen minutes lock
           the account for fifteen minutes; a login from a device you have not used before raises
           a notification. Something you do not recognise? Log out everywhere and change your password.
-        </p>
+        </p></Details>
         {logins.length === 0 ? (
           <div className="text-sm text-fg-muted py-2">No attempts recorded yet.</div>
         ) : (

@@ -5,6 +5,7 @@ import { CARD, CardV2, LINK_SECONDARY, LoadFailedV2, LoadingRowsV2 } from "../da
 import { growthApi } from "./api";
 import { CARD_H, CARD_W, SHARE_FILE, cardSvg, cleanCard, resolveTokens, shareText } from "./model";
 import type { DisciplineCard } from "./types";
+import { Details } from "../ui/Details";
 
 /**
  * MO4 slice 3 (`ui_v2` + `growth_v2`): "My discipline this week" - a card he can save as an image or share, built from
@@ -83,7 +84,7 @@ export function DisciplineCardBodyV2({ card }: { card: DisciplineCard }) {
 
   return (
     <div>
-      <p className="text-t14 text-fg-muted">Discipline facts from your own paper trading. No stock names, no prices, no advice.</p>
+      <Details id="growth.discipline" className="mt-0"><p className="text-t14 text-fg-muted">Discipline facts from your own paper trading. No stock names, no prices, no advice.</p></Details>
       <div className={`${CARD} mt-space-3 overflow-hidden`} data-share-card>
         {/* The same markup the image is made from; its colours follow the theme. */}
         <div className="w-full [&>svg]:h-auto [&>svg]:w-full" dangerouslySetInnerHTML={{ __html: svg }} />

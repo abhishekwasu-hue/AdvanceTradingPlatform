@@ -39,7 +39,8 @@ async function measure(page: Page) {
       range.setEnd(node, m.index! + m[0].length);
       words.push({ word: m[0], lines: new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))).size });
     }
-    const row = el.parentElement!;
+    // The bar's row (the title sits in a title + (?) group inside it).
+    const row = el.closest("header")!.firstElementChild as HTMLElement;
     const box = el.getBoundingClientRect();
     return { text, words, right: box.right, rowOverflow: row.scrollWidth - row.clientWidth, viewport: window.innerWidth };
   });

@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui";
 import type { MarketHoliday } from "../types";
+import { Details } from "../ui/Details";
 
 /** Phase AD: the exchange holiday calendar the worker treats as closed days. Shared reference
  * data: everyone can read it, only a SUPER_ADMIN edits it. Paste the annual NSE circular as
@@ -51,7 +52,6 @@ export default function HolidaysCard() {
     <Card title="Exchange holidays">
       <div className="flex flex-wrap items-center gap-3 text-xs mb-3">
         <CalendarOff size={14} className="text-fg-muted" />
-        <span className="text-fg-muted">Closed days the worker stays idle on. Shared across every organisation.</span>
         <select value={exchange} onChange={(e) => setExchange(e.target.value)} className="rounded bg-surface-2 border border-border px-2 py-0.5 text-xs text-fg">
           {["NSE", "BSE", "MCX"].map((x) => <option key={x}>{x}</option>)}
         </select>
@@ -60,6 +60,9 @@ export default function HolidaysCard() {
         </select>
         <span className="text-fg-muted ml-auto">{rows.length} holiday{rows.length === 1 ? "" : "s"}</span>
       </div>
+      <Details id="holidays.about" className="mt-0 mb-3">
+        <p>Closed days the worker stays idle on. Shared across every organisation.</p>
+      </Details>
       {error && <div className="text-xs text-down mb-2">{error}</div>}
       {message && <div className="text-xs text-up mb-2">{message}</div>}
       {rows.length === 0 ? (

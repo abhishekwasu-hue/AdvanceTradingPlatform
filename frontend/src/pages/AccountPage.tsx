@@ -20,6 +20,7 @@ import { supportAccess, type SupportAccess } from "../api/viewAs";
 import { formatDateTimeIST } from "../ui/format";
 import MyDataCardV2 from "../settings/MyDataCardV2";
 import { SkeletonRows } from "../components/primitives";
+import { Details } from "../ui/Details";
 
 /** The signed-in trader's account: e-mail, two-factor, password, sessions. Signed out, App.tsx shows the sign-in screen
  * before any page; this page shows the same screen should it ever render without a user (UX1). */
@@ -192,7 +193,7 @@ export default function AccountPage() {
           </button>
         )}
         {sessionsMessage && <div className="mt-2 text-xs text-fg-muted">{sessionsMessage}</div>}
-        <p className="mt-2 text-xs text-fg-muted">For your safety you are asked to sign in again after a while, even on a device you use every day.</p>
+        <Details id="account.sessions" className="mt-2"><p>For your safety you are asked to sign in again after a while, even on a device you use every day.</p></Details>
       </Card>
       <MyDataCardV2 copilot={v2} />
       {v2 && <SupportAccessCard />}
@@ -220,7 +221,7 @@ export function SupportAccessCard() {
   return (
     <Card title="Support access">
       <div data-support-access className="space-y-2 text-xs">
-        <p className="text-fg-muted">ATP support can open a read-only view of your account to help you. Nothing can be changed, placed or downloaded during it, and every view is listed here.</p>
+        <Details id="account.support-access" className="mt-0"><p>ATP support can open a read-only view of your account to help you. Nothing can be changed, placed or downloaded during it, and every view is listed here.</p></Details>
         {views === null ? <SkeletonRows rows={2} label="Loading" /> : views.length === 0 ? (
           <p className="text-fg">Support has never viewed your account.</p>
         ) : (

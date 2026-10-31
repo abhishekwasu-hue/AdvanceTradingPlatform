@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { WebhookTokenResponse } from "../types";
 import { Card } from "./ui";
+import { Details } from "../ui/Details";
 
 /** The TradingView webhook (moved from Settings' broker area to Settings -> Integrations in P2b, unchanged). */
 export default function WebhookCard() {
@@ -42,13 +43,15 @@ export default function WebhookCard() {
 
   return (
     <Card title="TradingView webhook">
-      <p className="text-sm text-fg-muted mb-3">
-        Paste this URL into a TradingView alert's "Webhook URL" field, with a JSON message body
-        of <code className="text-xs">{"{ strategy_id, symbol, direction, entry, stop_loss, target1, target2?, alert_id? }"}</code>.
-        Every alert runs through the same risk engine and kill switches as a manual paper
-        execute. The token in the URL is the only credential protecting it - rotate it if it
-        ever leaks.
-      </p>
+      <Details id="settings.tradingview-webhook" className="mt-0 mb-3">
+        <p className="text-sm text-fg-muted">
+          Paste this URL into a TradingView alert's "Webhook URL" field, with a JSON message body
+          of <code className="text-xs">{"{ strategy_id, symbol, direction, entry, stop_loss, target1, target2?, alert_id? }"}</code>.
+          Every alert runs through the same risk engine and kill switches as a manual paper
+          execute. The token in the URL is the only credential protecting it - rotate it if it
+          ever leaks.
+        </p>
+      </Details>
       {webhook && !webhook.webhook_url && (
         <p className="text-xs text-fg-muted mb-2">
           The URL is stored only as a hash on the server (it is a credential). Press <b>Rotate</b> to get a new

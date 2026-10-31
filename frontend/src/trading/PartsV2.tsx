@@ -5,6 +5,7 @@ import { toneClass } from "../dashboard/CardV2";
 import type { Tone } from "../dashboard/model";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
+import { useHasPageHelpSlot, useRegisterPageSubtitle } from "../shell/pageHelp";
 
 /**
  * UI2-9a (UI v2 proposal §8, §9): the pieces My positions, My portfolio and Risk limits share - the page title with its
@@ -22,13 +23,17 @@ export const BUTTON_PRIMARY = buttonClass({ variant: "primary", size: "v2" });
 export const FIELD = "h-11 w-full min-w-0 rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-50 md:h-9";
 export const LABEL = "mb-space-1 flex items-center gap-space-1 text-t12 font-medium text-fg-muted";
 
-/** The page title and its question. On a phone the top bar already shows the title, so the heading is for readers only. */
+/** The page title and its question. On a phone the top bar already shows the title, so the heading is for readers only.
+ * PROSE-1 (owner 30 Oct): inside the v2 shell the subtitle goes behind the (?) beside the page title in the top bar
+ * (src/shell/pageHelp.tsx), closed by default; outside the shell it shows as before. */
 export function PageTitleV2({ title, subtitle, action }: { title: string; subtitle: string; action?: ReactNode }) {
+  const inShell = useHasPageHelpSlot();
+  useRegisterPageSubtitle(inShell ? subtitle : null);
   return (
     <header className="flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between">
       <div className="min-w-0">
         <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:tracking-tight md:text-fg">{title}</h1>
-        <p data-page-subtitle className="text-t14 text-fg-muted md:mt-space-1">{subtitle}</p>
+        {!inShell && <p data-page-subtitle className="text-t14 text-fg-muted md:mt-space-1">{subtitle}</p>}
       </div>
       {action}
     </header>

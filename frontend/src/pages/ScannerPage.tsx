@@ -27,6 +27,7 @@ import { PageHeader } from "../components/primitives";
 import { WatchlistPicker } from "../screener/WatchlistPicker";
 import { splitSymbols } from "../screener/watchlists";
 import { useFeatures } from "../ui/useFeatures";
+import { Details } from "../ui/Details";
 
 const STRUCTURE_TYPES = Object.keys(STRUCTURE_FILTER_LABELS) as StructureFilterType[];
 const OPTION_TYPES = Object.keys(OPTION_FILTER_LABELS) as OptionFilterType[];
@@ -169,7 +170,7 @@ export default function ScannerPage() {
             {aiBusy ? "Planning…" : "Plan filters with AI"}
           </button>
         </div>
-        <p className="text-xs text-fg-muted mt-2">The AI only translates your words into the filters below (same building blocks as the Strategy Builder); you review them and press Run. Without an AI key (Settings → AI) the built-in parser is used.</p>
+        <Details id="scanner.describe-ai" className="mt-2"><p>The AI only translates your words into the filters below (same building blocks as the Strategy Builder); you review them and press Run. Without an AI key (Settings → AI) the built-in parser is used.</p></Details>
         {aiPlan && (
           <div className="mt-2 text-xs space-y-1">
             <div className="text-fg">{aiPlan.explanation} <span className="text-fg-muted">· {aiPlan.provider}{aiPlan.model ? `/${aiPlan.model}` : ""} · {aiPlan.prompt_version}</span></div>
@@ -256,10 +257,10 @@ export default function ScannerPage() {
       </Card>
 
       <Card title="Option-chain filters">
-        <p className="text-xs text-fg-muted mb-2">
+        <Details id="scanner.option-chain-filters" className="mt-0 mb-2"><p>
           A sample option chain is generated per symbol only when at least one option filter is
           configured. A symbol never fabricates a pass when it has no chain data.
-        </p>
+        </p></Details>
         <div className="space-y-1.5">
           {optionFilters.map((f, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2 rounded border border-border bg-surface-2/40 px-2 py-2">

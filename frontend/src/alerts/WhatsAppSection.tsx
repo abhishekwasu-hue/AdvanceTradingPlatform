@@ -8,6 +8,7 @@ import { MessageCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { AlertChannel, NotificationSeverity } from "../types";
+import { Details } from "../ui/Details";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm";
 const SEVERITIES: NotificationSeverity[] = ["INFO", "WARNING", "CRITICAL"];
@@ -47,10 +48,12 @@ export default function WhatsAppSection({ channel, busy, run, test, status }: Wh
     <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2" data-testid="whatsapp-section">
       <div className="flex items-center gap-2 text-sm font-bold text-fg"><MessageCircle size={14} /> WhatsApp (Business gateway, paid plans)</div>
       <div className="text-xs">{status}</div>
-      <p className="text-xs text-fg-muted">
-        WhatsApp delivers alerts only as a template your provider has approved, to numbers that opted in to messages from
-        your organisation. Placeholders: {"{to} {template} {language} {title} {text} {severity}"}.
-      </p>
+      <Details id="alerts.whatsapp" className="mt-0">
+        <p className="text-xs text-fg-muted">
+          WhatsApp delivers alerts only as a template your provider has approved, to numbers that opted in to messages from
+          your organisation. Placeholders: {"{to} {template} {language} {title} {text} {severity}"}.
+        </p>
+      </Details>
       <input className={input} placeholder="Gateway URL (https)" value={wa.url} onChange={(e) => setWa({ ...wa, url: e.target.value })} />
       <textarea className={`${input} font-mono text-xs`} rows={2} placeholder="Headers, one per line: Name: value (blank = keep stored)"
                 value={wa.headers} onChange={(e) => setWa({ ...wa, headers: e.target.value })} />

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button } from "../components/primitives/Button";
+import { Details } from "../ui/Details";
 import { AnalysisResultView } from "./AskResultV2";
 import {
   MAX_SAVED, OC_ANALYSES_EVENT, QUESTION_MAX, askAi, defaultName, errorSentence, evaluateSpec, loadSaved, newId, saveSaved, shownResult, withAdded,
@@ -139,7 +140,7 @@ export function AskAiView({ symbol, question, onQuestion, onSubmit, busy, respon
       data-oc-ask={response?.state ?? (error ? "error" : "idle")}>
       <div>
         <h2 className="text-t15 font-semibold text-fg">Ask AI</h2>
-        <p className="text-t13 text-fg-muted">Describe the analysis you want in your own words. The AI writes it as an analysis; the numbers come from the chain.</p>
+        <Details id="optionChain.ask-ai" className="mt-space-1"><p>Describe the analysis you want in your own words. The AI writes it as an analysis; the numbers come from the chain.</p></Details>
       </div>
       <form className="flex flex-col gap-space-2 md:flex-row" onSubmit={onSubmit}>
         <label className="sr-only" htmlFor="oc-ask-question">Your analysis request</label>

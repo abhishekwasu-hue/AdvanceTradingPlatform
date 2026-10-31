@@ -4,6 +4,7 @@ import { ApiError, friendlyError } from "../api/errors";
 import type { MultiAccountRegistry, MultiAccountRow } from "../types";
 import { formatDateTimeIST } from "../ui/format";
 import { BTN_SECONDARY } from "./parts";
+import { Details } from "../ui/Details";
 
 /**
  * M45 MA-1b (`ui_v2` + `multi_account`): "Primary and secondary accounts" on the Broker page's Advanced section - the
@@ -71,11 +72,13 @@ export default function MultiAccountCard() {
   return (
     <section aria-labelledby="multi-account-title" className="space-y-space-3" data-testid="multi-account-card">
       <h3 id="multi-account-title" className="text-t14 font-semibold text-fg">Primary and secondary accounts</h3>
-      <p className="text-t12 text-fg-muted">
-        Choose one Primary account and, if you like, Secondary accounts in groups. Only accounts you connected yourself
-        are listed. This only records your choice; it does not place or copy any order. Trading several accounts needs a
-        lawyer's clearance before real-money use.
-      </p>
+      <Details id="broker.multi-account" className="mt-0">
+        <p className="text-t12 text-fg-muted">
+          Choose one Primary account and, if you like, Secondary accounts in groups. Only accounts you connected yourself
+          are listed. This only records your choice; it does not place or copy any order. Trading several accounts needs a
+          lawyer's clearance before real-money use.
+        </p>
+      </Details>
       {blocking.length > 0 && (
         <div role="status" className="rounded-control border border-warn/40 bg-warn/[0.06] p-space-3 text-t12 text-fg">
           You hold open real-money positions with no account recorded ({blocking.map((t) => t.symbol).join(", ")}). Close

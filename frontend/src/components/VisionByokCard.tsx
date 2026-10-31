@@ -8,7 +8,6 @@ import { Card } from "./ui";
 import type { ByokAuditScope, ByokChannels, ByokPrefsInput, ByokProviderName, ByokProviderStatus, ByokStatus } from "../types";
 import { capUsage, formatUsd, keyShapeError, parseCap } from "./visionByok";
 import { formatDateTimeIST } from "../ui/format";
-import { TextOnDemand } from "../ui/numbersFirst";
 import { useUiV2 } from "../ui/useFeatures";
 import { SkeletonRows } from "./primitives";
 
@@ -131,14 +130,14 @@ export default function VisionByokCard() {
   return (
     <Card title={TITLE}>
       {/* UX-11 U1: on the v2 pages the explanation, both notes and the audit scope sit in one closed Details. */}
-      <TextOnDemand id="vision-byok.about" on={v2}>
+      <Details id="vision-byok.about" className="mt-0 mb-2">
       <p className="text-xs text-fg-muted mb-2">
         Vision reviews charts and comments on them using your own AI provider API key. You pay the provider directly; the platform stores your
         key encrypted, never bills you for it and never uses it for anyone else. Vision only comments - it never places, blocks or changes an order.
       </p>
       {v2 && notes}
       {v2 && scopeLine}
-      </TextOnDemand>
+      </Details>
       <div className={`mb-2 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-bold ${status.active ? "border-brand/40 bg-brand/10 text-brand" : "border-border bg-surface-2 text-fg-muted"}`}>
         <Eye size={12} /> {status.vision_line}
       </div>
@@ -225,7 +224,10 @@ export default function VisionByokCard() {
         </div>
         <div className="space-y-2">
           <div className="text-fg-muted">Spend caps (USD, your own key): Vision pauses at a cap.</div>
-          <Details id="vision-byok.caps" className="text-fg-muted"><p>A hard stop: Vision stays paused until the cap resets ({status.spend.resets}).</p></Details>
+          <Details id="vision-byok.caps" className="text-fg-muted">
+            <p>A hard stop: Vision stays paused until the cap resets ({status.spend.resets}).</p>
+            <p>Estimates from the platform's own metering; your provider's bill is the authority.</p>
+          </Details>
           <div className="grid grid-cols-[auto_1fr] items-center gap-2">
             <span>Daily</span>
             <input className={input} inputMode="decimal" aria-label="Daily cap in USD" value={caps.daily} onChange={(e) => setCaps({ ...caps, daily: e.target.value })} />
@@ -241,7 +243,6 @@ export default function VisionByokCard() {
               </div>
             </div>
           ))}
-          <div className="text-xs text-fg-muted">Estimates from the platform's own metering; your provider's bill is the authority.</div>
         </div>
       </div>
       {error && <div className="mt-3 text-sm text-down">{error}</div>}

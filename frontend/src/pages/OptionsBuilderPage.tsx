@@ -290,10 +290,10 @@ export default function OptionsBuilderPage(_props: PageProps) {
               <Button variant="primary" icon={<Layers size={14} />} disabled={!legs.length} onClick={() => setBasketOpen(true)} data-testid="place-basket">Review basket</Button>
               <Button icon={<Save size={14} />} disabled={saved !== "on"} onClick={() => setSaveOpen(true)} data-testid="save-strategy">Save strategy</Button>
             </div>
-            <p className="text-xs leading-snug text-fg-muted">
+            <Details id="optionsBuilder.actions" className="mt-0"><p className="leading-snug">
               This page places no order: the basket shows the order the legs would go in, for review only.
               {saved === "off" && " Saving strategies is not turned on for your organisation yet."}
-            </p>
+            </p></Details>
           </section>
         </div>
 

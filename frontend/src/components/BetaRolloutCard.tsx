@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { capNote, lowerStages, stageSourceNote, usageLine, usedPercent, type BetaCohort } from "../beta/rollout";
 import { Card } from "./ui";
+import { Details } from "../ui/Details";
 
 /** Z10-e: the staged beta rollout in the admin console - the stage (50 -> 200 -> 500), the effective cap
  * min(stage, BETA_COHORT_CAP), how many places are used and the headroom left. Moving up is one stage at a time and
@@ -19,11 +20,13 @@ export default function BetaRolloutCard({ cohort, busy, onSetStage }: {
   return (
     <Card title="Beta rollout">
       <div className="space-y-3 text-xs" data-stage={cohort.stage}>
-        <p className="text-fg-muted">
-          Sign-up through invite codes stops at the effective cap. The cohort grows in stages; move up only when the
-          current stage has run cleanly. Moving down closes sign-up sooner and never touches existing accounts.
-          {!cohort.gate_on && <span className="text-warn"> The beta_cohort_gate flag is off: sign-up is not gated right now.</span>}
-        </p>
+        <Details id="console.beta-rollout" className="mt-0">
+          <p className="text-fg-muted">
+            Sign-up through invite codes stops at the effective cap. The cohort grows in stages; move up only when the
+            current stage has run cleanly. Moving down closes sign-up sooner and never touches existing accounts.
+          </p>
+        </Details>
+        {!cohort.gate_on && <p className="text-warn"> The beta_cohort_gate flag is off: sign-up is not gated right now.</p>}
 
         <ol aria-label="Rollout stages" className="flex flex-wrap items-center gap-2">
           {cohort.stages.map((s) => {

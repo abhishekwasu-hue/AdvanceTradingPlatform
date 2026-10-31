@@ -9,6 +9,7 @@ import { PageHeader, SkeletonRows } from "../components/primitives";
 import { SelectOrCombobox } from "../ui/Combobox";
 import { useLiveHidden } from "../settings/useLiveHidden";
 import { strategyDisplayName } from "../ui/strategyName";
+import { Details } from "../ui/Details";
 
 /** REV-1 M2: the Tax card's trade choices. In Phase 0 (PAPER only) it opens on PAPER and LIVE / ALL are not offered -
  * there are no LIVE trades, so a LIVE report would only ever say 0. */
@@ -53,7 +54,7 @@ function TaxReportCard() {
         {report && <span className="text-fg-muted">{report.trades} closed trades · net {money(report.net_pnl)}</span>}
         {report && <span className="text-fg-muted" title={report.turnover_method_label}>F&amp;O turnover: {report.turnover_method === "ABS_PNL" ? "absolute P&L" : "absolute P&L + option premium sold"}</span>}
       </div>
-      <div className="text-xs text-fg-muted mb-2">Not tax advice. Estimates from your own trades only, to reconcile with your broker&apos;s statement; verify with a chartered accountant.</div>
+      <Details id="analytics.tax-report" className="mt-0 mb-2"><p>Not tax advice. Estimates from your own trades only, to reconcile with your broker&apos;s statement; verify with a chartered accountant.</p></Details>
       {error && <div className="text-xs text-down">{error}</div>}
       {report && (
         <div className="overflow-x-auto">

@@ -4,7 +4,7 @@ batches, candles, order mapping (SL-M -> STOPLOSS_MARKET), order book / position
 margins parsing, option chain assembly, error mapping and logout."""
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import httpx
 import pyotp
@@ -175,7 +175,18 @@ def test_orders_books_positions_margins_and_logout():
     assert broker.access_token is None and any(r.url.path.endswith("/logout") for r in server.requests)
 
 
-def test_option_chain_from_master_and_quotes_and_error_mapping():
+class _BeforeTheFixtureExpiry(date):
+    """The fixture's nearest NIFTY expiry is 2026-10-30; the broker picks the first expiry on or after today, so the
+    test pins today before it (the test must not change with the calendar)."""
+
+    @classmethod
+    def today(cls):
+        return cls(2026, 10, 1)
+
+
+def test_option_chain_from_master_and_quotes_and_error_mapping(monkeypatch):
+    import app.brokers.angel_one as angel_one
+    monkeypatch.setattr(angel_one, "date", _BeforeTheFixtureExpiry)
     server = _Server()
     broker = _broker(server)
     run(broker.authenticate())

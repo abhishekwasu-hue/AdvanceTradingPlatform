@@ -9,6 +9,7 @@ import BrokerUncertainBanner from "../components/BrokerUncertainBanner";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { Card, StatTile } from "../components/ui";
 import { PageHeader } from "../components/primitives";
+import { Details } from "../ui/Details";
 import { FROM_DEFAULTS, formPrefill, stillFromDefaults, useTradingDefaults, type FormPrefill } from "../settings/tradingDefaults";
 import { useFeatures } from "../ui/useFeatures";
 import {
@@ -32,6 +33,8 @@ import {
   CustomLeg,
   DEBIT_STRUCTURES,
   WINGED_STRUCTURES,
+  HOLD_FOR_DAYS_LINE,
+  canHoldForDays,
   PAYOFF_STRUCTURES,
   WIDTH_STRUCTURES,
   MAX_CUSTOM_LEGS,
@@ -129,6 +132,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   const [targetCredit, setTargetCredit] = useState<string>("");
   const [stopCredit, setStopCredit] = useState<string>("");
   const [underlyingExit, setUnderlyingExit] = useState(false);   // DEF-0: off unless the trader turns it on
+  const [holdForDays, setHoldForDays] = useState(false);         // M55 T1: off unless the trader turns it on
   const [showFilters, setShowFilters] = useState(false);
   const [exitTrail, setExitTrail] = useState("");
   const [exitBreakEven, setExitBreakEven] = useState("");
@@ -271,6 +275,9 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
 
   // Phase AS: a daily strategy is a swing deployment - daily candles, held overnight (CNC / NRML).
   const swing = !!selectedStrategy && selectedStrategy.timeframes.length === 1 && selectedStrategy.timeframes[0] === "day";
+  // M55 T1: "Hold for days" is offered for a defined-risk credit structure only (the API refuses it for anything else).
+  const canHold = canHoldForDays(kind, structure);
+  const held = swing || (canHold && holdForDays);
 
   async function submit() {
     setBusy(true);
@@ -279,7 +286,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
     try {
       const created = await api.createDeployment({
         strategy_id: strategyId, symbol, exchange, timeframe: swing ? "day" : timeframe, mode, broker_name: brokerName || null,
-        holding: swing ? "SWING" : "INTRADAY",
+        holding: held ? "SWING" : "INTRADAY",
         broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, oi_gates: oiGates.length ? oiGates : null, ...contractRules(),
         routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
         order_style: orderStyle, market_protection_pct: orderStyle === "PROTECTED_LIMIT" && protectionPct ? Number(protectionPct) : null,
@@ -567,6 +574,14 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
                       <input type="checkbox" checked={underlyingExit} onChange={(e) => setUnderlyingExit(e.target.checked)} />
                       Close when the underlying crosses a short strike or a breakeven ({underlyingExit ? "on" : "off"})
                     </label>
+                    {canHold && !swing && (
+                      <label className="flex items-start gap-2 text-sm" data-field="hold-for-days">
+                        <input type="checkbox" className="mt-1" checked={holdForDays} onChange={(e) => setHoldForDays(e.target.checked)} />
+                        <span>Hold for days
+                          <span className="block text-xs text-fg-muted">{HOLD_FOR_DAYS_LINE}</span>
+                        </span>
+                      </label>
+                    )}
                   </>
                 )}
               </>
@@ -741,7 +756,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
         )}
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
-          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">Regime filter <span className="normal-case font-normal">(optional; a diagnostic only - recorded for review, it never blocks an entry)</span></div>
+          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">Regime filter</div>
           <div className="flex flex-wrap gap-2">
             {REGIME_OPTIONS.map((r) => (
               <button key={r} type="button" onClick={() => toggleRegime(r)} className={`rounded-md border px-2.5 py-1 text-xs font-bold ${regimes.includes(r) ? "border-brand/60 text-brand bg-brand/10" : "border-border text-fg-muted hover:text-fg"}`}>
@@ -749,10 +764,11 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
               </button>
             ))}
           </div>
+          <Details id="deployments.regime-filter" className="mt-space-2"><p>(optional; a diagnostic only - recorded for review, it never blocks an entry)</p></Details>
         </div>
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
-          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">OI gates <span className="normal-case font-normal">(optional; checked before each new entry from the option chain's OI - missing or stale OI data blocks the entry; exits are never gated. Limits come from the Option Chain page's OI settings)</span></div>
+          <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">OI gates</div>
           <div className="flex flex-wrap gap-2">
             {OI_GATE_OPTIONS.map(([g, label]) => (
               <button key={g} type="button" onClick={() => toggleOiGate(g)} title={g}
@@ -761,6 +777,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
               </button>
             ))}
           </div>
+          <Details id="deployments.oi-gates" className="mt-space-2"><p>(optional; checked before each new entry from the option chain's OI - missing or stale OI data blocks the entry; exits are never gated. Limits come from the Option Chain page's OI settings)</p></Details>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-4">

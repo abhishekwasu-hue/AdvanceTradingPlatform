@@ -53,7 +53,7 @@ function cellText(key: ColumnDef["key"], leg: ChainLeg, pct = false): string {
 
 const SHOWN_CLASS = { all: "", desktop: "hidden md:table-cell", none: "hidden" } as const;
 /** M63 I-7: the (?) on a jargon column, on the calls' header only (the first time the term shows; the puts mirror it). */
-const COLUMN_TERMS: Partial<Record<ColumnKey, GlossaryKey>> = { ltp: "ltp", oi: "oi", iv: "iv", delta: "delta", gamma: "gamma", theta: "theta", vega: "vega" };
+const COLUMN_TERMS: Partial<Record<ColumnKey, GlossaryKey>> = { ltp: "ltp", oi: "oi", oi_change: "oi-change", volume: "volume", iv: "iv", delta: "delta", gamma: "gamma", theta: "theta", vega: "vega" };
 
 export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg, held, setup, areaMarks, hide }: {
   live: LiveChain;

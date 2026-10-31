@@ -51,7 +51,8 @@ export function TileV2({ label, hint, value, tone = "neutral", sub, children, te
 }) {
   return (
     <div className="min-w-0 bg-surface-1 p-space-3 md:p-space-4" data-tile={testId}>
-      <div className="flex items-center gap-space-1 text-t13 text-fg-muted">{label}{hint && <TermHint term={hint} />}</div>
+      {/* M63 I-7: floating - the tile grid clips what overflows it (overflow-hidden), so the definition is placed on the screen. */}
+      <div className="flex items-center gap-space-1 text-t13 text-fg-muted">{label}{hint && <TermHint term={hint} floating />}</div>
       <div className={`mt-space-1 font-tabular text-t20 font-semibold ${toneClass(tone)}`}>{value}</div>
       {sub && <div className="mt-px text-t12 text-fg-muted">{sub}</div>}
       {children}

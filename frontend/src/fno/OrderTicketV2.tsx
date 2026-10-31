@@ -9,6 +9,8 @@ import { Details } from "../ui/Details";
 import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { formatPrice } from "../ui/format";
+import type { GlossaryKey } from "../ui/glossary";
+import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
 import { fnoApi, runOnOptions, type FnoApi, type MultiExitResult, type MultiResult, type OrderPreview, type OrderResult, type PracticeAccount, type Side } from "./api";
 import {
@@ -65,9 +67,10 @@ const FIELD = "h-11 w-full rounded-control border border-border bg-surface-2 px-
 const SEG = "flex min-h-11 flex-1 items-center justify-center rounded-control px-space-2 text-t14 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
 function Segmented<T extends string>({ label, value, options, onChange, testId }: {
-  label: string; value: T | null; options: { value: T; label: string; hint?: string }[]; onChange: (v: T) => void; testId: string;
+  label: string; value: T | null; options: { value: T; label: string; hint?: string; term?: GlossaryKey }[]; onChange: (v: T) => void; testId: string;
 }) {
-  return (
+  const terms = options.filter((o): o is typeof o & { term: GlossaryKey } => o.term !== undefined);
+  const group = (
     <div role="radiogroup" aria-label={label} data-ticket={testId} className="flex gap-space-1 rounded-control bg-surface-2 p-space-1">
       {options.map((o) => (
         <button key={o.value} type="button" role="radio" aria-checked={value === o.value} onClick={() => onChange(o.value)} data-option={o.value}
@@ -75,6 +78,16 @@ function Segmented<T extends string>({ label, value, options, onChange, testId }
           {o.label}{o.hint && <span className="ml-space-1 hidden text-t12 font-normal text-fg-muted sm:inline">{o.hint}</span>}
         </button>
       ))}
+    </div>
+  );
+  if (!terms.length) return group;
+  // M63 I-7: the (?) of each trading term among the choices sits on one line under them (a button cannot hold a button).
+  return (
+    <div>
+      {group}
+      <p className="mt-space-1 flex flex-wrap items-center gap-x-space-3 gap-y-space-1 text-t12 text-fg-muted" data-ticket={`${testId}-terms`}>
+        {terms.map((o) => <span key={o.value} className="inline-flex items-center gap-space-1">{o.label}<TermHint term={o.term} /></span>)}
+      </p>
     </div>
   );
 }
@@ -237,7 +250,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
                 <PracticeFrame />
               </div>
               <p className="text-t13 text-fg-muted font-tabular">
-                LTP {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}
+                LTP <TermHint term="ltp" /> {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}
               </p>
             </div>
             <RD.Close aria-label="Close" className="-mr-space-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg">

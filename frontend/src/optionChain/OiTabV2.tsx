@@ -3,7 +3,9 @@ import { api } from "../api/client";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { cx } from "../components/primitives/cx";
 import type { OiBannerResponse, OiHistoryResponse, OiStrikeSeries, OiStrikesResponse } from "../oi/types";
+import type { GlossaryKey } from "../ui/glossary";
 import { HelpPopover } from "../ui/HelpPopover";
+import { TermHint } from "../ui/TermHint";
 import { EMPTY, formatCount, formatNumber, formatTimeIST } from "../ui/format";
 import {
   HISTORY_COLUMNS, OI_POLL_MS, PHONE_PICKABLE, SIDES, changeLine, dataAsOf, dteText, highestOi, historyCell, historyRows,
@@ -135,11 +137,11 @@ export function OiSummaryCard({ banner, strikes, views }: { banner: OiBannerResp
   const highPut = highestOi(strikes, "put");
   const read = oiRead(b);
   const change = changeLine(views);
-  const items: { key: string; label: string; value: string; sub?: string; tone?: string }[] = [
-    { key: "pcr", label: "PCR", value: b?.pcr === null || b?.pcr === undefined ? EMPTY : formatNumber(b.pcr, 2) },
-    { key: "max_pain", label: "Max pain", value: strikeText(b?.max_pain) },
-    { key: "dte", label: "DTE", value: dteText(b?.dte) },
-    { key: "high_call", label: "Highest call OI", value: highCall ? strikeText(highCall.strike) : EMPTY, sub: highCall ? formatCount(highCall.oi) : undefined,
+  const items: { key: string; label: string; term?: GlossaryKey; value: string; sub?: string; tone?: string }[] = [
+    { key: "pcr", label: "PCR", term: "pcr", value: b?.pcr === null || b?.pcr === undefined ? EMPTY : formatNumber(b.pcr, 2) },
+    { key: "max_pain", label: "Max pain", term: "max-pain", value: strikeText(b?.max_pain) },
+    { key: "dte", label: "DTE", term: "dte", value: dteText(b?.dte) },
+    { key: "high_call", label: "Highest call OI", term: "oi", value: highCall ? strikeText(highCall.strike) : EMPTY, sub: highCall ? formatCount(highCall.oi) : undefined,
       tone: SIDES[0].text },
     { key: "high_put", label: "Highest put OI", value: highPut ? strikeText(highPut.strike) : EMPTY, sub: highPut ? formatCount(highPut.oi) : undefined,
       tone: SIDES[1].text },
@@ -149,7 +151,7 @@ export function OiSummaryCard({ banner, strikes, views }: { banner: OiBannerResp
       <dl className="grid grid-cols-2 gap-x-space-4 gap-y-space-2 sm:grid-cols-3 lg:grid-cols-5">
         {items.map((it) => (
           <div key={it.key} className="min-w-0" data-oi-number={it.key}>
-            <dt className="text-t12 text-fg-muted">{it.label}</dt>
+            <dt className="flex items-center gap-space-1 text-t12 text-fg-muted">{it.label}{it.term && <TermHint term={it.term} floating />}</dt>
             <dd className="font-tabular text-t18 font-semibold text-fg">
               {it.value}
               {it.sub && <span className={cx("ml-space-1 text-t13 font-medium", it.tone)}>{it.sub}</span>}
@@ -294,7 +296,7 @@ export function OiByStrike({ series, atm }: { series: readonly OiStrikeSeries[];
         {SIDES.map((s) => (
           <span key={s.key} className="inline-flex items-center gap-space-1"><span aria-hidden className={cx("inline-block h-2 w-3 rounded-sm", s.swatch)} />{s.label}</span>
         ))}
-        {atm !== null && <span>Shaded: ATM {strikeText(atm)}</span>}
+        {atm !== null && <span className="inline-flex items-center gap-space-1">Shaded: ATM <TermHint term="atm" floating /> {strikeText(atm)}</span>}
       </figcaption>
       {pick && <p className="font-tabular text-t13 text-fg" data-oi-strike-note aria-live="polite">{note(pick)}</p>}
     </figure>

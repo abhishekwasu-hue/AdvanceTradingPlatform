@@ -5,6 +5,8 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "rea
 import { request } from "../api/client";
 import { cx } from "../components/primitives/cx";
 import { Details } from "../ui/Details";
+import type { GlossaryKey } from "../ui/glossary";
+import { TermHint } from "../ui/TermHint";
 import type { ChainExpiry, LiveChain } from "../optionChain/types";
 import { PayoffCanvas } from "../optionsBuilder/PayoffCanvas";
 import type { Leg as BuilderLeg } from "../optionsBuilder/model";
@@ -418,10 +420,10 @@ export function chartLegs(legs: readonly BasketLeg[], numbers: BasketNumbers): B
     lot_size: numbers.lot_sizes[i] ?? 1, expiry: l.expiry, iv: typeof l.iv === "number" ? l.iv / 100 : null }));
 }
 
-function Figure({ label, children, sub, testId }: { label: string; children: ReactNode; sub?: string; testId?: string }) {
+function Figure({ label, children, sub, testId, hint }: { label: string; children: ReactNode; sub?: string; testId?: string; hint?: GlossaryKey }) {
   return (
     <div className="flex items-start justify-between gap-space-3 border-t border-subtle py-space-2 first:border-t-0" data-figure={testId}>
-      <dt className="text-t13 text-fg-muted">{label}</dt>
+      <dt className="flex items-center gap-space-1 text-t13 text-fg-muted">{label}{hint && <TermHint term={hint} floating />}</dt>
       <dd className="text-right text-t14 font-tabular text-fg">
         {children}
         {sub && <span className="block max-w-[18rem] text-t12 text-fg-muted">{sub}</span>}
@@ -547,16 +549,16 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
                 <RiskLineV2 line={ext ? riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget) : null} />
                 {checks && <RiskChecksV2 testId="basket" lines={[...checks, marginLine(hedge?.with_hedge.value ?? numbers.margin.value, budget)]} />}
                 <dl className="rounded-control border border-subtle px-space-3">
-                  <Figure label={numbers.net_premium >= 0 ? "Net premium received" : "Net premium paid"} testId="net">{moneyText(Math.abs(numbers.net_premium))}</Figure>
+                  <Figure label={numbers.net_premium >= 0 ? "Net premium received" : "Net premium paid"} testId="net" hint="premium">{moneyText(Math.abs(numbers.net_premium))}</Figure>
                   <Figure label="Max profit" testId="max-profit">{ext ? (ext.unbounded_profit ? "Unlimited" : moneyText(ext.max_profit)) : "See the chart"}</Figure>
                   <Figure label="Max loss" testId="max-loss">{ext ? (ext.unbounded_loss ? "Unlimited" : moneyText(ext.max_loss)) : "See the chart"}</Figure>
-                  <Figure label="Breakevens" testId="breakevens">{numbers.breakevens?.length ? numbers.breakevens.map((b) => formatNumber(Math.round(b), 0)).join(" · ") : "–"}</Figure>
-                  <Figure label="Probability of profit" testId="pop" sub="Model estimate">{`${(numbers.summary.pop * 100).toFixed(1)}%`}</Figure>
+                  <Figure label="Breakevens" testId="breakevens" hint="breakeven">{numbers.breakevens?.length ? numbers.breakevens.map((b) => formatNumber(Math.round(b), 0)).join(" · ") : "–"}</Figure>
+                  <Figure label="Probability of profit" testId="pop" sub="Model estimate" hint="pop">{`${(numbers.summary.pop * 100).toFixed(1)}%`}</Figure>
                   {pair && (
                     // TERM-2 R4: required (the broker's number through his own session, else the labelled estimate) and
                     // available (the Terminal status funds) - re-read on every lot change.
                     <>
-                      <Figure label={pair.estimate ? "Margin required (estimate)" : "Margin required"} testId="margin-required" sub={pair.label}>
+                      <Figure label={pair.estimate ? "Margin required (estimate)" : "Margin required"} testId="margin-required" sub={pair.label} hint="margin">
                         {pair.required !== null ? moneyText(pair.required) : "From your broker"}
                       </Figure>
                       <Figure label="Available" testId="margin-available" sub={pair.available_note}>
@@ -568,7 +570,7 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
                     </>
                   )}
                   {hedge && !pair && (
-                    <Figure label="Margin (estimate)" testId="margin" sub={`${hedge.with_hedge.basis}${hedge.hedged ? " With the hedge legs." : ""}`}>
+                    <Figure label="Margin (estimate)" testId="margin" hint="margin" sub={`${hedge.with_hedge.basis}${hedge.hedged ? " With the hedge legs." : ""}`}>
                       {hedge.with_hedge.value !== null ? moneyText(hedge.with_hedge.value) : "From your broker"}
                     </Figure>
                   )}
@@ -580,8 +582,8 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
                 </dl>
                 {g && (
                   <dl className="grid grid-cols-4 gap-space-2 rounded-control bg-surface-2 px-space-2 py-space-2 text-center" aria-label="The basket's Greeks" data-basket="greeks">
-                    {([["Delta", g.delta.toFixed(1)], ["Gamma", g.gamma.toFixed(3)], ["Theta", g.theta.toFixed(0)], ["Vega", g.vega.toFixed(0)]] as const).map(([k, v]) => (
-                      <div key={k} className="min-w-0"><dt className="text-t12 text-fg-muted">{k}</dt><dd className="truncate font-tabular text-t14 text-fg">{v}</dd></div>
+                    {([["Delta", g.delta.toFixed(1), "delta"], ["Gamma", g.gamma.toFixed(3), "gamma"], ["Theta", g.theta.toFixed(0), "theta"], ["Vega", g.vega.toFixed(0), "vega"]] as const).map(([k, v, term]) => (
+                      <div key={k} className="min-w-0"><dt className="flex items-center justify-center gap-space-1 text-t12 text-fg-muted">{k}<TermHint term={term} floating align={term === "vega" ? "end" : "start"} /></dt><dd className="truncate font-tabular text-t14 text-fg">{v}</dd></div>
                     ))}
                   </dl>
                 )}

@@ -8,7 +8,7 @@ describe("UI2-0 glossary", () => {
   const entries = Object.entries(GLOSSARY);
 
   it("holds the terms the proposal names", () => {
-    for (const key of ["pcr", "max-pain", "vwap", "reward-risk", "lot", "mis", "cnc", "totp", "static-ip"] as const) {
+    for (const key of ["pcr", "max-pain", "vwap", "reward-risk", "lot", "mis", "cnc", "totp", "static-ip", "nrml", "sl", "sl-m", "oi-change", "dte"] as const) {
       expect(glossary(key).definition.length).toBeGreaterThan(0);
     }
   });

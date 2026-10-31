@@ -5,6 +5,7 @@
  */
 import { PAPER_TEXT, PAPER_WORD } from "../ui/paperWords";
 import { formatINR, formatNumber, formatPrice } from "../ui/format";
+import type { GlossaryKey } from "../ui/glossary";
 import type { ContractRight, HeldLeg, OrderAsk, OrderResult, OrderType, Product, Right, Side } from "./api";
 
 /** What the ticket is for: one contract of the chain on screen, with the chain's own prices (the price helper).
@@ -32,16 +33,17 @@ export interface Draft {
   stopLoss: string;
 }
 
-export const ORDER_TYPES: { value: OrderType; label: string }[] = [
-  { value: "MARKET", label: "Market" }, { value: "LIMIT", label: "Limit" }, { value: "SL", label: "SL" }, { value: "SL-M", label: "SL-M" },
+/** M63 I-7: `term` names the glossary entry behind the (?) the ticket shows for a trading term (no effect on the order). */
+export const ORDER_TYPES: { value: OrderType; label: string; term?: GlossaryKey }[] = [
+  { value: "MARKET", label: "Market" }, { value: "LIMIT", label: "Limit" }, { value: "SL", label: "SL", term: "sl" }, { value: "SL-M", label: "SL-M", term: "sl-m" },
 ];
 /** Owner F1 (27 Oct, TT-12): with no product saved in My trading defaults nothing is pre-selected - the user picks MIS
  *  or NRML before Review / Execute (disabled until then, with this one line why). */
 export const PRODUCT_UNSET_TEXT = "Pick MIS or NRML to continue (none saved in your trading defaults).";
 export const PRODUCT_MISSING = "Pick a product: MIS or NRML";
 
-export const PRODUCTS: { value: Product; label: string; hint: string }[] = [
-  { value: "MIS", label: "MIS", hint: "Intraday" }, { value: "NRML", label: "NRML", hint: "Carry forward" },
+export const PRODUCTS: { value: Product; label: string; hint: string; term: GlossaryKey }[] = [
+  { value: "MIS", label: "MIS", hint: "Intraday", term: "mis" }, { value: "NRML", label: "NRML", hint: "Carry forward", term: "nrml" },
 ];
 // UI-28 U1.1 (owner, 28 Oct): the mode is labelled once, as a "PAPER" chip in the header; the sentence is its tooltip only.
 // CT-1 C8: the words live with the one badge (ui/PaperBadge); these names stay for the pieces that import them.

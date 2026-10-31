@@ -647,10 +647,10 @@ function GreeksCardV2({ symbolOf }: { symbolOf: (tradeId: number) => string | un
       {greeks && (
         <div className="mt-space-3 space-y-space-3">
           <TilesV2>
-            <TileV2 label="Net delta" value={formatNumber(greeks.net.net_delta, 2)} />
-            <TileV2 label="Net gamma" value={formatNumber(greeks.net.net_gamma, 4)} />
-            <TileV2 label="Net theta a day" value={formatNumber(greeks.net.net_theta, 2)} />
-            <TileV2 label="Net vega" value={formatNumber(greeks.net.net_vega, 2)} />
+            <TileV2 label="Net delta" hint="delta" value={formatNumber(greeks.net.net_delta, 2)} />
+            <TileV2 label="Net gamma" hint="gamma" value={formatNumber(greeks.net.net_gamma, 4)} />
+            <TileV2 label="Net theta a day" hint="theta" value={formatNumber(greeks.net.net_theta, 2)} />
+            <TileV2 label="Net vega" hint="vega" value={formatNumber(greeks.net.net_vega, 2)} />
           </TilesV2>
           <ul className="divide-y divide-subtle">
             {greeks.legs.map((l) => (

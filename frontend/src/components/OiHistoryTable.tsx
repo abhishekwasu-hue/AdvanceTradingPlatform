@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { directionWords, formatOi, formatSigned, leadWords, slotTime } from "../oi/format";
 import type { OiHistoryResponse } from "../oi/types";
+import { TermHint } from "../ui/TermHint";
 
 const INTERVALS = [5, 10, 15] as const;
 
@@ -33,8 +34,8 @@ export default function OiHistoryTable({ underlying, date }: { underlying: strin
           <table className="w-full text-xs tabular-nums">
             <thead className="text-fg-muted">
               <tr className="text-left">
-                <th className="py-1 pr-3">Time</th><th className="pr-3">Call OI</th><th className="pr-3">Put OI</th><th className="pr-3">Diff</th>
-                <th className="pr-3">Δ Diff</th><th className="pr-3">OI lead</th><th className="pr-3">PCR</th><th>OI read</th>
+                <th className="py-1 pr-3">Time</th><th className="pr-3">Call OI <TermHint term="oi" floating /></th><th className="pr-3">Put OI</th><th className="pr-3">Diff</th>
+                <th className="pr-3">Δ Diff</th><th className="pr-3">OI lead</th><th className="pr-3">PCR <TermHint term="pcr" floating /></th><th>OI read</th>
               </tr>
             </thead>
             <tbody>

@@ -1,5 +1,7 @@
 import { Columns3 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import type { GlossaryKey } from "../ui/glossary";
+import { TermHint } from "../ui/TermHint";
 import type { ColumnPrefs } from "./model";
 
 /**
@@ -12,6 +14,11 @@ const CHOICES: { key: keyof ColumnPrefs; label: string; phoneOnly?: boolean }[] 
   { key: "quotes", label: "Bid and ask" },
   { key: "pct", label: "OI change in %" },
 ];
+/** M63 I-7: the (?) beside a choice that names a trading term. "OI change" is marked on the first row a screen shows it
+ *  in: the phone-only row on a phone, the "in %" row from the md breakpoint (`from: "md"`). */
+const CHOICE_TERMS: Partial<Record<keyof ColumnPrefs, { term: GlossaryKey; from?: "md" }>> = {
+  more: { term: "oi-change" }, greeks: { term: "greeks" }, pct: { term: "oi-change", from: "md" },
+};
 
 export default function ColumnsMenuV2({ prefs, onChange }: { prefs: ColumnPrefs; onChange: (prefs: ColumnPrefs) => void }) {
   const [open, setOpen] = useState(false);
@@ -34,13 +41,19 @@ export default function ColumnsMenuV2({ prefs, onChange }: { prefs: ColumnPrefs;
       {open && (
         <fieldset id={id} className="absolute right-0 top-full z-30 mt-space-1 w-72 max-w-[calc(100vw-2rem)] rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
           <legend className="sr-only">Columns to show</legend>
-          {CHOICES.map((c) => (
-            <label key={c.key} className={`flex min-h-11 cursor-pointer items-center gap-space-3 rounded-control px-space-2 text-t14 text-fg hover:bg-surface-2 ${c.phoneOnly ? "md:hidden" : ""}`}>
-              <input type="checkbox" checked={prefs[c.key] === true} onChange={(e) => onChange({ ...prefs, [c.key]: e.target.checked })}
-                className="h-4 w-4 accent-brand" />
-              {c.label}
-            </label>
-          ))}
+          {CHOICES.map((c) => {
+            const t = CHOICE_TERMS[c.key];
+            return (
+              <div key={c.key} className={`flex items-center gap-space-2 rounded-control pr-space-2 hover:bg-surface-2 ${c.phoneOnly ? "md:hidden" : ""}`}>
+                <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-space-3 px-space-2 text-t14 text-fg">
+                  <input type="checkbox" checked={prefs[c.key] === true} onChange={(e) => onChange({ ...prefs, [c.key]: e.target.checked })}
+                    className="h-4 w-4 accent-brand" />
+                  {c.label}
+                </label>
+                {t && <span className={t.from === "md" ? "hidden md:inline-flex" : "inline-flex"}><TermHint term={t.term} align="end" /></span>}
+              </div>
+            );
+          })}
         </fieldset>
       )}
     </div>

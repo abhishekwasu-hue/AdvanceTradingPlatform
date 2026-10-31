@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { Button, Dialog } from "../components/primitives";
+import { Details } from "../ui/Details";
 import { builderApi } from "./api";
 import { basketUnderlying, contractLabel, money, type Basket, type Leg } from "./model";
 
@@ -28,7 +29,6 @@ export function BasketDialog({ open, onOpenChange, underlying, legs, errorText }
   const n = basket?.orders.length ?? legs.length;
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="Place as basket"
-            description="The legs in the order they would be placed: hedges first, so the margin sees the protection before the short."
             footer={(
               <div className="flex w-full flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
                 {basket && !basket.placeable && <p className="text-xs text-fg-muted sm:mr-auto" data-testid="basket-why-not">{basket.why_not}</p>}
@@ -54,6 +54,7 @@ export function BasketDialog({ open, onOpenChange, underlying, legs, errorText }
           </p>
         </div>
       )}
+      <Details id="optionsBuilder.basket"><p>The legs in the order they would be placed: hedges first, so the margin sees the protection before the short.</p></Details>
     </Dialog>
   );
 }

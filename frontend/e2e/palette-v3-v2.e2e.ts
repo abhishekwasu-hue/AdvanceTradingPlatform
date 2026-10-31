@@ -50,7 +50,8 @@ for (const theme of ["dark", "light"] as const) {
       if (await tint.count()) expect(await tint.evaluate((e) => getComputedStyle(e).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
       await page.goto("/positions");
       await page.waitForLoadState("networkidle");
-      await expect(page.locator("[data-page-subtitle]").first()).toBeAttached();
+      // PROSE-1: the subtitle now sits behind the title's (?) - nothing of it shows until that is opened.
+      await expect(page.locator("header [data-help-button]").first()).toBeVisible();
       for (const p of await page.locator("[data-page-subtitle]").all()) await expect(p).toBeHidden();
     });
   });

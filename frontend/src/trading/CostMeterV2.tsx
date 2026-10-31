@@ -83,9 +83,9 @@ export function CostMeterView({ data }: { data: CostMeter }) {
   if (data.modes.length === 0) return <EmptyStateV2 text="Your charges show here once a trade closes this year." />;
   return (
     <div className="space-y-space-4">
-      <p className="text-t13 text-fg-muted">Charges against your gross P&L, from your own closed trades.</p>
       {data.modes.map((m) => <ModeBlock key={m.mode} {...m} />)}
       <Details id="positions.cost-meter">
+        <p>Charges against your gross P&L, from your own closed trades.</p>
         <p>{`This year runs from ${formatDateIST(data.year_start)} to 31 March (IST); this month from ${formatDateIST(data.month_start)}.`}</p>
         <p>Gross P&L is before charges; net P&L is after them. Paper and live trades are counted apart.</p>
         <p>Charges come from your uploaded contract notes where a trade matched one; otherwise they are ATP's estimate.</p>

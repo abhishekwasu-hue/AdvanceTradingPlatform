@@ -116,7 +116,7 @@ def test_unconfirmed_live_fill_pauses_live_entries_through_signal_execution(monk
             await session.commit()
             result, order = await execute_signal_for_user(session, user, mode="LIVE", strategy_id="ema_rsi_scalper_1m", signal=_signal(),
                                                           broker=_BookBroker(fills=200, status="OPEN", cancel_raises=True),
-                                                          risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0))
+                                                          risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0), holding="INTRADAY", order_style="MARKET")
             await session.refresh(tenant)
             return result, order, tenant.broker_uncertain_since
     result, order, since = _run(go())
@@ -202,7 +202,7 @@ def test_structure_shorts_wait_for_confirmed_wing_fills(monkeypatch):
             structure = await resolve_structure(session, "NIFTY 50", _rules(), OptionStrategy.BULL_PUT_SPREAD, SignalDirection.LONG,
                                                 spread_width=2, spot=SPOT, today=TODAY)
             fills, notes = {}, []
-            ok, failure = await _place_live_legs(broker, structure, structure.lot_size, "s", None, fills, notes)
+            ok, failure = await _place_live_legs(broker, structure, structure.lot_size, "s", None, fills, notes, product="MIS")
             return ok, failure, fills, notes
     broker = _NoWingFill()
     ok, failure, fills, notes = _run(go(broker))
@@ -405,7 +405,7 @@ def test_structure_leg_filled_during_the_cancel_is_unwound_not_orphaned(monkeypa
             structure = await resolve_structure(session, "NIFTY 50", _rules(), OptionStrategy.BULL_PUT_SPREAD, SignalDirection.LONG,
                                                 spread_width=2, spot=SPOT, today=TODAY)
             fills, notes = {}, []
-            return await _place_live_legs(broker, structure, structure.lot_size, "s", None, fills, notes)
+            return await _place_live_legs(broker, structure, structure.lot_size, "s", None, fills, notes, product="MIS")
     broker = _ShortFillsOnCancel()
     ok, failure = _run(go(broker))
     assert not ok and "filled" in failure and "unwound 2 filled leg(s)" in failure

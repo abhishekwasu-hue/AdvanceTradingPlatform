@@ -230,10 +230,12 @@ class DeploymentCreateRequest(ContractRulesRequest):
     # OI Banner O5: opt-in OI entry gates (OI_DIFF, OI_CONFIRM, PCR, IV_CHANGE, SWING_OI, OI_WALL); fail-closed; exits never gated.
     oi_gates: Optional[List[str]] = Field(default=None, max_length=6)
     # Phase AS: SWING positions are held overnight (CNC / NRML) and never squared off at the close.
-    holding: Literal["INTRADAY", "SWING"] = "INTRADAY"
-    # P0.5 / T5: how LIVE entries are sent. MARKET (default) or PROTECTED_LIMIT - a marketable limit
-    # `market_protection_pct` past the signal price (0.5% when omitted). PAPER fills are unaffected.
-    order_style: Literal["MARKET", "PROTECTED_LIMIT"] = "MARKET"
+    # M68 PR-1 (TS1-006 / 010 / 011): no pre-chosen holding, order type or band. Not sent = the user's own Trade settings
+    # (Order defaults), stored on the bot as his choice; Not set there either = the bot keeps it Not set and places no
+    # entry until he sets one ("Needs your setting: ..." on the bot card). P0.5 / T5: MARKET or PROTECTED_LIMIT - a
+    # marketable limit `market_protection_pct` past the signal price.
+    holding: Literal["INTRADAY", "SWING"] | None = None
+    order_style: Literal["MARKET", "PROTECTED_LIMIT"] | None = None
     market_protection_pct: Optional[float] = Field(default=None, ge=0.05, le=5.0)
     # Z3 / BT2: APPROVAL - every entry signal becomes a proposal and only an approved one places a PAPER order. Needs the
     # `approval_only_entries` flag; with the flag on every deployment is approval-only whatever this says.
@@ -293,8 +295,8 @@ class DeploymentResponse(BaseModel):
     regime_filter: Optional[List[str]] = None
     oi_gates: Optional[List[str]] = None
     contract_rules: str = "underlying"
-    holding: str = "INTRADAY"
-    order_style: str = "MARKET"
+    holding: str | None = None            # M68 PR-1: None = Not set (the bot follows his Trade settings)
+    order_style: str | None = None
     market_protection_pct: Optional[float] = None
     entry_mode: str = "AUTO"
     template_exits: Optional[dict] = None
@@ -322,8 +324,8 @@ class DeploymentResponse(BaseModel):
             last_route=getattr(record, "last_route", None), wait_reason=getattr(record, "wait_reason", None),
             regime_filter=parse_filter(record.regime_filter) or None, contract_rules=describe_deployment(record),
             oi_gates=[g for g in (getattr(record, "oi_gates", None) or "").split(",") if g] or None,
-            holding=getattr(record, "holding", None) or "INTRADAY",
-            order_style=getattr(record, "order_style", None) or "MARKET", market_protection_pct=getattr(record, "market_protection_pct", None),
+            holding=getattr(record, "holding", None),
+            order_style=getattr(record, "order_style", None), market_protection_pct=getattr(record, "market_protection_pct", None),
             entry_mode=getattr(record, "entry_mode", None) or "AUTO",
             template_exits=_exits_answer(record),
         )
@@ -339,6 +341,20 @@ def _holds_spread(request: "DeploymentCreateRequest") -> bool:
     """M55 T1: "Hold for days" on a defined-risk credit structure (bull put, bear call, iron condor, iron butterfly)."""
     return (request.holding == "SWING" and request.instrument_kind == InstrumentKind.OPTION
             and can_hold_for_days(request.option_strategy))
+
+
+async def _own_order_defaults(session: AsyncSession, user: User, request: "DeploymentCreateRequest") -> None:
+    """M68 PR-1: a field the form did not send takes the user's OWN Trade settings value (never an ATP one); a field Not
+    set there either stays None on the bot. PROTECTED_LIMIT with no band of his own is asked for (422 at the field)."""
+    from app.execution import order_defaults
+    mine = await order_defaults.load(session, user)
+    request.holding = request.holding or mine.holding                                 # type: ignore[assignment]
+    request.order_style = request.order_style or mine.bot_order_style                 # type: ignore[assignment]
+    if request.order_style == "PROTECTED_LIMIT" and request.market_protection_pct is None:
+        request.market_protection_pct = mine.price_protection_pct
+        if request.market_protection_pct is None:
+            raise HTTPException(status_code=422, detail=[{"loc": ["body", "market_protection_pct"], "type": "needs_setting",
+                                                          "msg": "Enter the price protection % for a limit with price protection"}])
 
 
 def _check_holding(request: "DeploymentCreateRequest", strategy) -> None:
@@ -488,7 +504,17 @@ async def create_deployment(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    _check_holding(request, strategy)
+    sent_holding = request.holding
+    await _own_order_defaults(session, user, request)
+    try:
+        _check_holding(request, strategy)
+    except HTTPException:
+        if sent_holding is not None or request.holding is None:
+            raise
+        # M68 PR-1: his saved holding does not fit this strategy (e.g. Carry forward on intraday candles): the bot keeps
+        # its holding Not set (it says so on its card) rather than refusing a form that did not send one.
+        request.holding = None
+        _check_holding(request, strategy)
     # REV-H3: a seller pack on an option needs the user's own construction (no server-side buy-at-the-money pick)
     pack_problem = packs.contract_problem(request.strategy_id, request.instrument_kind, request.option_strategy, request.option_position)
     if pack_problem:

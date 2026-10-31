@@ -23,7 +23,7 @@ from app.brokers.exceptions import is_clear_rejection
 from app.compliance.algo_id import order_algo_id
 from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
-from app.db.models import Tenant, TradeRecord
+from app.db.models import Tenant, TradeRecord, User
 from app.db.savepoint import guarded
 from app.execution.products import product_for_trade
 from app.execution.tagging import LEG_STOP, build_order_tag, new_client_order_id
@@ -278,11 +278,19 @@ async def _guard_one(session: AsyncSession, tenant: Tenant, broker: BrokerInterf
     previous = trade.sl_order_id
     venue = await venue_for(session, trade)
     trigger = round_stop_trigger(float(trade.stop_loss), side, symbol=trade.symbol, exchange=venue)   # on the tick, away from the market
+    from app.execution import order_defaults
+    try:                       # M68 TS1-014: his own stop-limit gap; a failed read never holds the re-arm back (ADR-0004)
+        owner = await session.get(User, trade.user_id) if getattr(trade, "user_id", None) else None
+        own_band = (await order_defaults.load(session, owner)).stop_limit_band_pct
+    except Exception as exc:  # noqa: BLE001 - logged; the stop is re-armed with the fallback gap
+        logger.warning("Stop guard: could not read the stop-limit gap for trade %s: %s", trade.id, exc)
+        own_band = None
     try:
-        response = await broker.place_stop_loss_order(trade.symbol, venue, side, trade.quantity,
-                                                      trigger_price=trigger,
-                                                      product=product_for_trade(trade) if (getattr(trade, "holding", None) or "INTRADAY") == "SWING" else product,
-                                                      tag=tag)
+        with order_defaults.stop_band(own_band):
+            response = await broker.place_stop_loss_order(
+                trade.symbol, venue, side, trade.quantity, trigger_price=trigger,
+                product=product_for_trade(trade) if (getattr(trade, "holding", None) or "INTRADAY") == "SWING" else product,
+                tag=tag)
     except Exception as exc:  # noqa: BLE001 - alert, keep the software stop, try again next cycle
         counts["failed"] += 1
         logger.error("Stop guard: could not re-arm stop for trade %s: %s", trade.id, exc)

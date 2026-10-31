@@ -28,6 +28,8 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Details } from "../ui/numbersFirst";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
+import { ORDER_TYPE_KEY, PROTECTION_KEY, orderDefaultsOf, useTradeSettings } from "../settings/tradeSettings";
+import { SaveAsDefault } from "../settings/SaveAsDefault";
 import { draftFromState, formSymbol } from "../copilot/strategyDraft";
 import CopilotDraftV2 from "./CopilotDraftV2";
 import {
@@ -41,6 +43,19 @@ import {
   EMPTY_PICK, effectivePick, exitClass, exitNotes, exitProblem, stopOptions, targetOptions, templateExitsBody, type ExitPick, type StopSource,
   type TargetRule,
 } from "../strategyTemplates/exits";
+
+/** M68 PR-1: the entry styles a bot can send (Trade settings > Order defaults > Order type), none pre-selected. */
+const ENTRY_STYLES: ComboOption[] = [
+  { value: "MARKET", label: "Market" }, { value: "PROTECTED_LIMIT", label: "Limit with price protection" },
+];
+const ENTRY_STYLE_MISSING = "Choose how this bot sends its entries.";
+const BAND_MISSING = "Enter the price protection % (0.05 to 5).";
+
+/** The band typed for a limit with price protection, or null when it is not 0.05 to 5. */
+function bandOf(text: string): number | null {
+  const v = Number(text.replace(/,/g, "").trim());
+  return text.trim() !== "" && Number.isFinite(v) && v >= 0.05 && v <= 5 ? v : null;
+}
 
 // The full form (options structures, exits, filters) loads only when "More ways to trade" is opened.
 const MoreWaysToTrade = lazy(() => import("../pages/DeploymentsPage"));
@@ -415,7 +430,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   preselect?: Preselect | null;
 }) {
   const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), timeframe: useId(), stop: useId(),
-    target: useId(), times: useId(), wave: useId(), share: useId(), exitNotes: useId(), construction: useId(), width: useId(), startWhy: useId() };
+    target: useId(), times: useId(), wave: useId(), share: useId(), exitNotes: useId(), construction: useId(), width: useId(), startWhy: useId(),
+    entry: useId(), band: useId() };
   const [useDefaults, setUseDefaults] = useState(true);
   const ready = useMemo(() => (library ?? []).filter((s) => READY.some((r) => r.id === s.id))
     .sort((a, b) => READY.findIndex((r) => r.id === a.id) - READY.findIndex((r) => r.id === b.id)), [library]);
@@ -430,6 +446,11 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   // REV-H3: how the bot trades the option when nothing says it yet (a seller pack with no default): empty until chosen.
   const [construction, setConstruction] = useState<BotConstruction | "">("");
   const [widthText, setWidthText] = useState("");
+  // M68 PR-1 (TS1-010 / 012): how this bot sends its entries - his Trade settings, else asked here (nothing pre-selected).
+  const ownSettings = useTradeSettings(true);
+  const mine = orderDefaultsOf(ownSettings);
+  const [entryStyle, setEntryStyle] = useState<"" | "MARKET" | "PROTECTED_LIMIT">("");
+  const [bandText, setBandText] = useState("");
   const [result, setResult] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [touched, setTouched] = useState(false);
   // Strategy templates step 2: the picked template, its chart timeframe and the server's pre-fill for them (nothing is
@@ -539,8 +560,16 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const exitIssue = exitChoices && exitsNow ? exitProblem(exitsNow, exitChoices) : null;
   const exitsBody = exitChoices && exitsNow ? templateExitsBody(exitsNow, exitChoices, cls) : null;
   const request = exitsBody ? { ...adopted, template_exits: exitsBody } : adopted;
-  const summary = startSummaryParts(symbol, info, request);
-  const startWhy = effectiveId ? constructionProblem(request) : null;
+  const askEntry = !mine.botOrderStyle;                     // his Trade settings has none: the form asks
+  const style = mine.botOrderStyle ?? (entryStyle || null);
+  const askBand = style === "PROTECTED_LIMIT" && mine.protectionPct === undefined;
+  const band = askBand ? bandOf(bandText) : null;
+  const sent = askEntry && style
+    ? { ...request, order_style: style, ...(band !== null ? { market_protection_pct: band } : {}) }
+    : askBand && band !== null ? { ...request, market_protection_pct: band } : request;
+  const summary = startSummaryParts(symbol, info, sent);
+  const entryWhy = askEntry && !style ? ENTRY_STYLE_MISSING : askBand && band === null ? BAND_MISSING : null;
+  const startWhy = (effectiveId ? constructionProblem(sent) : null) ?? (effectiveId ? entryWhy : null);
   const widthLabel = (s: OptionStrategy | undefined) => (s && (WINGED_STRUCTURES.includes(s) || s === "LONG_BUTTERFLY") ? "Wing width" : "Short strike distance");
   const setExit = (patch: Partial<ExitPick>) => { setExitPick((p) => ({ ...(exitsNow ?? p), ...patch })); setResult(null); };
 
@@ -549,7 +578,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     if (problem || !effectiveId || exitIssue || startWhy) return;
     setBusy(true); setResult(null);
     try {
-      await api.createDeployment(request);
+      await api.createDeployment(sent);
       setResult({ kind: "done", text: `Started on paper: ${cleanSymbol(symbol)}. It shows under Your bots and starts checking the market on its next round.` });
       onStarted();
     } catch (e) {
@@ -696,6 +725,28 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             )}
           </div>
         )}
+        {(askEntry || askBand) && (
+          <div className="space-y-space-3 rounded-control border border-subtle p-space-3" data-entry-style>
+            {askEntry && (
+              <div>
+                <label htmlFor={ids.entry} className={LABEL}>How this bot sends its entries</label>
+                <Combobox id={ids.entry} label="How this bot sends its entries" value={entryStyle} className="w-full" placeholder="Choose one"
+                  options={ENTRY_STYLES} dataAttrs={{ "data-entry-input": "style" }}
+                  onChange={(v) => { setEntryStyle(v as "MARKET" | "PROTECTED_LIMIT"); setResult(null); }} />
+                {entryStyle && <SaveAsDefault key={entryStyle} fieldKey={ORDER_TYPE_KEY} value={entryStyle} />}
+              </div>
+            )}
+            {askBand && (
+              <div>
+                <label htmlFor={ids.band} className={LABEL}>Price protection (%)</label>
+                <input id={ids.band} className={FIELD} inputMode="decimal" autoComplete="off" value={bandText} placeholder="0.05 to 5"
+                  aria-invalid={bandText.trim() !== "" && band === null ? true : undefined} data-entry-input="band"
+                  onChange={(e) => { setBandText(e.target.value); setResult(null); }} />
+                {band !== null && <SaveAsDefault fieldKey={PROTECTION_KEY} value={band} />}
+              </div>
+            )}
+          </div>
+        )}
         <div className="space-y-space-2">
           <p className="text-t14 text-fg-muted" data-start-summary>{summary.line}</p>
           {/* UX-11 U1: the one visible line above; the strategy's own sentence and the rest of the summary on demand. */}
@@ -727,7 +778,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             {busy && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}
             Start on paper
           </button>
-          {startWhy && <p id={ids.startWhy} className="text-t13 text-fg-muted" data-start-why>{startWhy}</p>}
+          {startWhy && <p id={ids.startWhy} role="status" className="text-t13 text-fg-muted" data-start-why>{startWhy}</p>}
         </div>
         {result && <NoteV2 kind={result.kind}>{result.text}</NoteV2>}
       </div>

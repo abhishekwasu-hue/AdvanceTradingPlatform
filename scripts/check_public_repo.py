@@ -228,8 +228,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/mytrades_cards_v2.json": "4d0ba8e0bd9fcf0e3117746ad9169e832f209600858c79df807b8ff92a8fa82d",
     "frontend/e2e/fixtures/copilot_chat_v2.json": "d844e9cfe7294dd7a5faf64e21b751ce48b8085739ac8dfd5c7f6bf67d3dc22f",
     # M68 PR-0: Settings > Trade settings - the registry's own replies (backend/app/me/trade_settings.py view(); synthetic)
-    "frontend/e2e/fixtures/trade-settings-user.json": "05aba8ad06851288e68fa5cd69ee1377b535319f4f828f18b49318515257f1cd",
-    "frontend/e2e/fixtures/trade-settings-admin.json": "43856aad1964067539eeb706dfc9613af0f23452fe6320e5027465c7d279cea6",
+    "frontend/e2e/fixtures/trade-settings-user.json": "bac80a6a4e8c8a5d7892767bc9cfeaef8901fa1a175cfbde40e1f04a7612a961",
+    "frontend/e2e/fixtures/trade-settings-admin.json": "a6cc7522c790167e17c44ce834e7c9eca28bcba0468538e1a2b21f89fd401351",
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

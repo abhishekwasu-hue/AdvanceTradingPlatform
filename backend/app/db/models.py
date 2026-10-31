@@ -671,11 +671,13 @@ class StrategyDeploymentRecord(Base):
     # fail-closed on missing/stale data; exits never consult them (ADR-0004). None = no OI gate.
     oi_gates: Mapped[str | None] = mapped_column(String(120), nullable=True)
     # Phase AS: INTRADAY (MIS, squared off at the close) or SWING (CNC / NRML, held overnight).
-    holding: Mapped[str] = mapped_column(String(10), nullable=False, default="INTRADAY", server_default="INTRADAY")
-    # P0.5 / T5: how LIVE entries are sent. MARKET (default, unchanged behaviour) or PROTECTED_LIMIT - a marketable
-    # limit `market_protection_pct` past the signal price (default 0.5%), so a thin book cannot fill a market
-    # order far from the price the strategy sized on. Unfilled remainder is cancelled by the fill check (T1).
-    order_style: Mapped[str] = mapped_column(String(20), nullable=False, default="MARKET", server_default="MARKET")
+    # M68 PR-1 (TS1-007, alembic 8d2f4a6c0e19): no default - NULL = Not set (the bot follows the user's Trade settings, and
+    # places no entry while that is Not set too). Rows made before keep their stored value.
+    holding: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # P0.5 / T5: how entries are sent: MARKET or PROTECTED_LIMIT - a marketable limit `market_protection_pct` past the
+    # signal price, so a thin book cannot fill a market order far from the price the strategy sized on. Unfilled
+    # remainder is cancelled by the fill check (T1). M68 PR-1 (TS1-010): no default - NULL = Not set, as `holding`.
+    order_style: Mapped[str | None] = mapped_column(String(20), nullable=True)
     market_protection_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Z3 / BT2: AUTO (the worker enters on its own, as before) or APPROVAL (every entry signal becomes an ENTRY proposal and
     # only an approved one places a PAPER order - app/execution/approval.py). With the `approval_only_entries` flag on

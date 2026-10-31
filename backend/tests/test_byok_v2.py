@@ -204,7 +204,7 @@ async def _proposal(tenant_id: int, creator_id: int, symbol: str, *, with_trade=
     """A deployment created by `creator_id`, an open trade on it, and one proposal raised through the real monitor path."""
     now = datetime.now(timezone.utc)
     async with _session_factory() as session:
-        dep = StrategyDeploymentRecord(tenant_id=tenant_id, strategy_id="ema_crossover", symbol=symbol, exchange="NSE", timeframe="5min",
+        dep = StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=tenant_id, strategy_id="ema_crossover", symbol=symbol, exchange="NSE", timeframe="5min",
                                        mode="PAPER", status="ACTIVE", created_by=creator_id)
         session.add(dep)
         await session.flush()

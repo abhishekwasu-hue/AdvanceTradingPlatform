@@ -72,7 +72,7 @@ def test_session_family_and_per_exchange_clocks():
 def _mcx_deploy(t, symbol="CRUDEOIL", status="ACTIVE") -> int:
     async def go():
         async with _session_factory() as session:
-            dep = StrategyDeploymentRecord(tenant_id=t["tenant_id"], strategy_id=STRATEGY, symbol=symbol, exchange="MCX", timeframe="1min",
+            dep = StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=t["tenant_id"], strategy_id=STRATEGY, symbol=symbol, exchange="MCX", timeframe="1min",
                                            mode="PAPER", broker_name="upstox", status=status, created_by=t["user_id"])
             session.add(dep)
             await session.commit()

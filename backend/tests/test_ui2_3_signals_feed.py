@@ -86,7 +86,7 @@ def _proposal(t, *, owner=None, status="PROPOSED", symbol="DEMO1", direction="LO
 
 
 def _deployment(t, *, mode="PAPER") -> int:
-    return _add(StrategyDeploymentRecord(tenant_id=t["tenant_id"], strategy_id="demo_strategy", symbol="DEMO2", exchange="NSE",
+    return _add(StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=t["tenant_id"], strategy_id="demo_strategy", symbol="DEMO2", exchange="NSE",
                                          timeframe="5min", mode=mode, status="ACTIVE", created_by=t["user_id"]))[0]
 
 

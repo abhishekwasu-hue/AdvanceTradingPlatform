@@ -56,7 +56,7 @@ def _deployment(tenant_id: int, symbol: str, *, strategy: str = "BULL_PUT_SPREAD
                 position: str = "WRITE", status: str = "ACTIVE", kind: str = "OPTION") -> int:
     async def go():
         async with _session_factory() as session:
-            dep = StrategyDeploymentRecord(tenant_id=tenant_id, strategy_id=f"made-up-{uuid.uuid4().hex[:6]}", symbol=symbol, exchange="NSE",
+            dep = StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=tenant_id, strategy_id=f"made-up-{uuid.uuid4().hex[:6]}", symbol=symbol, exchange="NSE",
                                            timeframe="15min", mode="PAPER", status=status, instrument_kind=kind, option_position=position,
                                            expiry_rule="NEAREST", strike_rule=rule, strike_offset=offset, option_strategy=strategy,
                                            spread_width=width)

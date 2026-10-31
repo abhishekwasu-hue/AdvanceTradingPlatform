@@ -103,7 +103,7 @@ def test_single_leg_order_is_rejected_by_the_hierarchy_with_the_reason_on_the_tr
         async with _session_factory() as session:
             user = await session.get(User, me["id"])
             return await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=_signal(),
-                                                 risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0))
+                                                 risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0), holding="INTRADAY", order_style="MARKET")
     result, order = _run(go())
     # risk 10,000 / 2 per unit = 5,000 shares x 100 = 500,000 order value > 20,000
     assert not result.executed and order.status == "REJECTED" and any("the value of one order" in r and "Ask your admin" in r for r in result.reasons)
@@ -126,7 +126,7 @@ def test_strategy_loss_limit_stops_the_strategy_and_daily_loss_stops_the_tenant(
         async with _session_factory() as session:
             user = await session.get(User, me["id"])
             return await execute_signal_for_user(session, user, mode="PAPER", strategy_id=strategy_id, signal=_signal(),
-                                                 risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=0.1))
+                                                 risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=0.1), holding="INTRADAY", order_style="MARKET")
     result, order = _run(go())
     assert not result.executed and any("one strategy's loss today" in r for r in result.reasons)
 

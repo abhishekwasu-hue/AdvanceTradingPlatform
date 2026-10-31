@@ -137,7 +137,7 @@ def test_usage_numbers_come_from_the_fixtures():
         LlmCallRecord(tenant_id=other["tenant_id"], user_id=other["id"], created_at=this_month, **llm),
         UsageRecord(tenant_id=me["tenant_id"], metric="backtest", quantity=4, period_start=this_month, period_end=this_month + timedelta(days=1)),
         UsageRecord(tenant_id=me["tenant_id"], metric="backtest", quantity=9, period_start=last_month, period_end=last_month + timedelta(days=1)),
-        StrategyDeploymentRecord(tenant_id=me["tenant_id"], strategy_id="orb_15m_5m", symbol="NIFTY 50", mode="PAPER", status="ACTIVE",
+        StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=me["tenant_id"], strategy_id="orb_15m_5m", symbol="NIFTY 50", mode="PAPER", status="ACTIVE",
                                  created_by=me["id"]),
     )
     page = _with_user(me, lambda s, u: growth_plan.plan_page(s, u, now=now))
@@ -168,7 +168,7 @@ def test_usage_numbers_come_from_the_fixtures():
 def test_paper_bots_full_and_near_states_and_the_team_note():
     _, me = _who("mo4g-full@example.com")
     _member("mo4g-full-member@example.com", me["tenant_id"], "USER")
-    _add(*[StrategyDeploymentRecord(tenant_id=me["tenant_id"], strategy_id=f"s{i}", symbol="NIFTY 50", mode="PAPER", status="ACTIVE")
+    _add(*[StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=me["tenant_id"], strategy_id=f"s{i}", symbol="NIFTY 50", mode="PAPER", status="ACTIVE")
            for i in range(2)])
     page = _with_user(me, lambda s, u: growth_plan.plan_page(s, u))
     bots = next(m for m in page["meters"] if m["key"] == "paper_bots")
@@ -301,7 +301,7 @@ def test_activation_funnel_from_fixtures():
             signed = user.created_at if user.created_at.tzinfo else user.created_at.replace(tzinfo=UTC)
             session.add(BrokerCredentialRecord(tenant_id=full["tenant_id"], user_id=full["id"], broker_name="upstox", encrypted_payload="x",
                                                created_at=signed + timedelta(hours=1)))
-            session.add(StrategyDeploymentRecord(tenant_id=full["tenant_id"], strategy_id="orb_15m_5m", symbol="NIFTY 50", mode="PAPER",
+            session.add(StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=full["tenant_id"], strategy_id="orb_15m_5m", symbol="NIFTY 50", mode="PAPER",
                                                  created_by=full["id"], created_at=signed + timedelta(hours=2)))
             trade = TradeRecord(tenant_id=full["tenant_id"], user_id=full["id"], mode="PAPER", symbol="TCS", strategy_id="manual",
                                 direction="LONG", entry_time=signed, entry_price=1.0, quantity=1, stop_loss=0.5)
@@ -309,7 +309,7 @@ def test_activation_funnel_from_fixtures():
             await session.flush()
             session.add(JournalEntryRecord(tenant_id=full["tenant_id"], user_id=full["id"], trade_id=trade.id,
                                            captured_at=signed + timedelta(hours=6)))
-            session.add(StrategyDeploymentRecord(tenant_id=half["tenant_id"], strategy_id="orb_15m_5m", symbol="NIFTY 50", mode="LIVE",
+            session.add(StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=half["tenant_id"], strategy_id="orb_15m_5m", symbol="NIFTY 50", mode="LIVE",
                                                  created_by=half["id"]))                      # LIVE is not a trading bot
             await session.commit()
     run(seed())

@@ -174,12 +174,12 @@ def test_contract_ltp_prefers_instrument_key_on_upstox_then_symbol():
 def test_written_lot_cap_from_margin():
     _load_master()
     pe = _resolve(WRITE)
-    lots, note = _run(written_lot_cap(_FnoBroker(margin_per_lot=60_000, available=200_000), pe))
+    lots, note = _run(written_lot_cap(_FnoBroker(margin_per_lot=60_000, available=200_000), pe, product="MIS"))
     assert lots == 2 and "2 lot" in note                      # 0.8 * 200k / 60k
     with pytest.raises(ContractExecutionError, match="Insufficient margin"):
-        _run(written_lot_cap(_FnoBroker(margin_per_lot=60_000, available=50_000), pe))
+        _run(written_lot_cap(_FnoBroker(margin_per_lot=60_000, available=50_000), pe, product="MIS"))
     with pytest.raises(ContractExecutionError, match="did not report"):
-        _run(written_lot_cap(_FnoBroker(margin_per_lot=None), pe))
+        _run(written_lot_cap(_FnoBroker(margin_per_lot=None), pe, product="MIS"))
 
 
 def _user(email: str) -> User:
@@ -199,8 +199,7 @@ def _execute(user: User, *, mode: str, contract, rules, broker=None, quote_broke
             u = await session.get(User, user.id)
             result, order = await execute_signal_for_user(
                 session, u, mode=mode, strategy_id="ema_rsi_scalper_1m", signal=signal or _signal(), risk_config=risk,
-                broker=broker, quote_broker=quote_broker, contract=contract, rules=rules,
-            )
+                broker=broker, quote_broker=quote_broker, contract=contract, rules=rules, holding="INTRADAY", order_style="MARKET")
             trade = await session.get(TradeRecord, order.trade_id) if order.trade_id else None
             return result, order, trade
     return _run(go())

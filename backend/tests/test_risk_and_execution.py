@@ -132,7 +132,7 @@ def test_risk_manager_rejects_no_trade_signal():
 
 
 def test_order_router_fills_paper_trade():
-    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=legacy(risk_per_trade_pct=1.0))
+    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=legacy(risk_per_trade_pct=1.0), product="MIS", order_style="MARKET")
     state = TradingDayState()
     result = asyncio.run(router.execute(_sample_signal(), state))
     assert result.executed
@@ -143,7 +143,7 @@ def test_order_router_fills_paper_trade():
 
 
 def test_order_router_blocks_live_mode_without_broker_adapter():
-    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=legacy())
+    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=legacy(), product="MIS", order_style="MARKET")
     state = TradingDayState()
     with pytest.raises(LiveTradingNotConfigured):
         asyncio.run(router.execute(_sample_signal(), state))
@@ -182,8 +182,7 @@ class _FakeBroker(BrokerInterface):
 def test_order_router_places_live_order_through_broker():
     broker = _FakeBroker()
     router = OrderRouter(
-        mode=ExecutionMode.LIVE, risk_config=legacy(risk_per_trade_pct=1.0), broker=broker
-    )
+        mode=ExecutionMode.LIVE, risk_config=legacy(risk_per_trade_pct=1.0), broker=broker, product="MIS", order_style="MARKET")
     state = TradingDayState()
     result = asyncio.run(router.execute(_sample_signal(), state))
 
@@ -203,7 +202,7 @@ def test_order_router_places_live_order_through_broker():
 
 def test_order_router_reports_broker_rejection():
     broker = _FakeBroker(order_status="REJECTED")
-    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=legacy(risk_per_trade_pct=1.0), broker=broker)
+    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=legacy(risk_per_trade_pct=1.0), broker=broker, product="MIS", order_style="MARKET")
     state = TradingDayState()
     result = asyncio.run(router.execute(_sample_signal(), state))
 

@@ -169,7 +169,7 @@ def test_suspended_tenant_orders_are_rejected_in_the_pipeline():
             signal = Signal(symbol="RELIANCE", strategy_id=STRATEGY, strategy_name="x", direction=SignalDirection.LONG,
                             timestamp=datetime.now(timezone.utc), entry=100, stop_loss=98, target1=104, risk_reward=2,
                             score=80, grade=SignalGrade.HIGH_QUALITY, reasons=[], timeframe_combo="1min")
-            return await execute_signal_for_user(session, user, mode="PAPER", strategy_id=STRATEGY, signal=signal)
+            return await execute_signal_for_user(session, user, mode="PAPER", strategy_id=STRATEGY, signal=signal, holding="INTRADAY", order_style="MARKET")
     result, order = _run(go())
     assert not result.executed and order.status == "REJECTED"
     assert any("suspended" in r for r in result.reasons)

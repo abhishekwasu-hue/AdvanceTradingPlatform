@@ -8,6 +8,8 @@ import { PaperBadge } from "../ui/PaperBadge";
 import { Details } from "../ui/Details";
 import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
+import { ORDER_TYPE_KEY, PRODUCT_KEY, orderDefaultsOf, useTradeSettings } from "../settings/tradeSettings";
+import { SaveAsDefault } from "../settings/SaveAsDefault";
 import { formatPrice } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
@@ -16,7 +18,7 @@ import { fnoApi, runOnOptions, type FnoApi, type MultiExitResult, type MultiResu
 import {
   MAX_LOTS, ORDER_TYPES, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
   blockedBy, draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
-  PRODUCT_UNSET_TEXT,
+  PRODUCT_UNSET_TEXT, ORDER_TYPE_UNSET_TEXT, firstMissing,
 } from "./ticketModel";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
 import { riskLine, structureOf, ticketPayoffSentence, type RiskBudget, type RiskLine } from "./insights";
@@ -66,12 +68,17 @@ export interface MultiTicket {
 const FIELD = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg font-tabular focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 const SEG = "flex min-h-11 flex-1 items-center justify-center rounded-control px-space-2 text-t14 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
-function Segmented<T extends string>({ label, value, options, onChange, testId }: {
+function Segmented<T extends string>({ label, value, options, onChange, testId, id, asking = false }: {
   label: string; value: T | null; options: { value: T; label: string; hint?: string; term?: GlossaryKey }[]; onChange: (v: T) => void; testId: string;
+  /** M68 TS-3: the group's id (the ticket focuses it when it asks for this field). */
+  id?: string;
+  /** M68 TS-3: the ticket is asking for this field now (Not set): outlined so the eye finds it. */
+  asking?: boolean;
 }) {
   const terms = options.filter((o): o is typeof o & { term: GlossaryKey } => o.term !== undefined);
   const group = (
-    <div role="radiogroup" aria-label={label} data-ticket={testId} className="flex gap-space-1 rounded-control bg-surface-2 p-space-1">
+    <div role="radiogroup" aria-label={label} data-ticket={testId} id={id} data-asking={asking ? "yes" : undefined}
+      className={cx("flex gap-space-1 rounded-control bg-surface-2 p-space-1", asking && "ring-2 ring-brand")}>
       {options.map((o) => (
         <button key={o.value} type="button" role="radio" aria-checked={value === o.value} onClick={() => onChange(o.value)} data-option={o.value}
           className={cx(SEG, value === o.value ? "bg-surface-1 text-fg shadow-card" : "text-fg-muted hover:text-fg")}>
@@ -109,6 +116,8 @@ function Line({ label, children, testId }: { label: string; children: ReactNode;
  */
 export interface OrderTicketState {
   draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string; defaults?: DraftDefaults;
+  /** M68 TS-3: show "Save as my default" next to a field he picks (ui_v2). */
+  saveDefaults?: boolean;
   budget: RiskBudget | null; events: EventRisk | "error" | null; liquidity: RiskLine | null;
   onDraft: (patch: Partial<Draft>) => void; review: (over?: Partial<Draft>) => Promise<void>; place: () => Promise<void>; back: () => void;
   multi?: MultiTicket;
@@ -120,10 +129,15 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
   // Settings part C: the user's own lots / product / order type start a new ticket (v2 only; marked, changeable).
   const features = useFeatures();
   const saved = useTradingDefaults(features.on("ui_v2"));
+  // M68 PR-1: his Trade settings > Order defaults first, then a value he saved earlier in My trading defaults (TS-6).
+  const own = useTradeSettings(features.on("ui_v2"));
   const defaults = useMemo<DraftDefaults | undefined>(() => {
-    const p = ticketPrefill(saved);
+    const mine = orderDefaultsOf(own);
+    const p: DraftDefaults = { ...ticketPrefill(saved) };
+    if (mine.product) p.product = mine.product;
+    if (mine.orderType) p.orderType = mine.orderType;
     return Object.keys(p).length ? p : undefined;
-  }, [saved]);
+  }, [saved, own]);
   const [draft, setDraft] = useState<Draft>(() => newDraft(side, defaults));
   const [step, setStep] = useState<Step>({ kind: "edit" });
   const [busy, setBusy] = useState(false);
@@ -150,6 +164,18 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     setRunOn("ONE");
     ref.current = newClientRef();
   }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults]);
+
+  // M68 TS-3: the ticket ASKS for a field that is Not set - it focuses the first one (order type, then product), and
+  // moves on to the next once he picks it. Review stays off until both are chosen.
+  const asking = step.kind === "edit" ? firstMissing(draft) : null;
+  useEffect(() => {
+    if (!open || !asking) return undefined;
+    const timer = window.setTimeout(() => {
+      const group = document.getElementById(`${idPrefix}-${asking}`);
+      group?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: false });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open, asking, idPrefix]);
 
   // 8b-d: the user's own risk budget, read on the confirm step for its risk line (information only, never a refusal).
   const budget = useRiskBudget(open && step.kind === "review");
@@ -225,7 +251,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
 
   const options = multiOn ? runOnOptions(practice) : [];
   return {
-    draft, step, busy, problem, idPrefix, defaults, budget, events, liquidity, review, place,
+    draft, step, busy, problem, idPrefix, defaults, budget, events, liquidity, review, place, saveDefaults: features.on("ui_v2"),
     multi: options.length ? { options, runOn, setRunOn, exitAll } : undefined,
     onDraft: (patch) => { setDraft((d) => ({ ...d, ...patch })); setProblem(null); },
     back: () => setStep({ kind: "edit" }),
@@ -257,7 +283,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
               <X size={18} aria-hidden />
             </RD.Close>
           </div>
-          <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults}
+          <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults} saveDefaults={t.saveDefaults}
             budget={t.budget} events={t.events} liquidity={t.liquidity}
             onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onReviewWith={(patch) => void t.review(patch)} onBack={t.back} onClose={onClose} multi={t.multi} />
         </RD.Content>
@@ -302,8 +328,10 @@ export function ExitEveryAccount({ busy, accounts, onExit }: { busy: boolean; ac
 }
 
 /** The ticket's fields, the confirm step and the buttons (no state, no hooks). */
-export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onReviewWith, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi }: {
+export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onReviewWith, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi, saveDefaults = false }: {
   target: TicketTarget; draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string;
+  /** M68 TS-3: "Save as my default" next to the order type and the product once he picks one (not when it came from it). */
+  saveDefaults?: boolean;
   /** Settings part C: the user's own ticket defaults, to mark the fields that still show them. */
   defaults?: DraftDefaults;
   /** 8b-d: the user's own risk budget for the risk line (null: the line is left out). */
@@ -323,6 +351,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
   multi?: MultiTicket;
 }) {
   const n = needs(draft.orderType);
+  const asking = step.kind === "edit" ? firstMissing(draft) : null;
   const ids = { lots: `${idPrefix}-lots`, price: `${idPrefix}-price`, trigger: `${idPrefix}-trigger`, stop: `${idPrefix}-stop` };
   const marks = draftFromDefaults(draft, defaults);
   const fromDefaults = [marks.lots && "lots", marks.orderType && "order type", marks.product && "product"].filter(Boolean) as string[];
@@ -353,7 +382,10 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
               </div>
               <p className="mt-space-1 text-t13 text-fg font-tabular" data-ticket="units">{unitsText(draft.lots, target.lotSize)}</p>
             </div>
-            <Segmented label="Order type" testId="order-type" value={draft.orderType} onChange={(v) => onDraft({ orderType: v })} options={ORDER_TYPES} />
+            <Segmented label="Order type" testId="order-type" id={`${idPrefix}-order-type`} asking={asking === "order-type"} value={draft.orderType}
+              onChange={(v) => onDraft({ orderType: v })} options={ORDER_TYPES} />
+            {draft.orderType === null && <p className="text-t12 text-fg-muted" data-ticket="order-type-unset">{ORDER_TYPE_UNSET_TEXT}</p>}
+            {saveDefaults && draft.orderType !== null && !marks.orderType && <SaveAsDefault key={draft.orderType} fieldKey={ORDER_TYPE_KEY} value={draft.orderType} />}
             {draft.product === null && <p className="text-t12 text-fg-muted" data-ticket="product-unset">{PRODUCT_UNSET_TEXT}</p>}
             {(marks.orderType || marks.product) && (
               <p className="text-t12 text-fg-muted" data-from-defaults="type-product">
@@ -386,8 +418,9 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
               </div>
             )}
             {/* UX-9 (ticket LOOK): side, lots, order type and its price stay in view; the product and the position's
-                stop-loss sit under "More options", their current values in its summary line. What is sent is unchanged. */}
-            <details className="group rounded-control border border-subtle" data-ticket="advanced" open={needsStop(problem) || draft.product === null || undefined}>
+                stop-loss sit under "More options", their current values in its summary line. What is sent is unchanged.
+                M68 TS-3: it stays open while it asks for the product, and after he picks one (its "Save as my default"). */}
+            <details className="group rounded-control border border-subtle" data-ticket="advanced" open={needsStop(problem) || draft.product === null || (saveDefaults && !marks.product) || undefined}>
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-space-2 px-space-3 text-t13 font-medium text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand [&::-webkit-details-marker]:hidden">
                 <span className="inline-flex items-center gap-space-1">
                   <ChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />More options
@@ -395,7 +428,9 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                 <span className="min-w-0 truncate font-tabular text-t12 font-normal text-fg-muted" data-ticket="advanced-summary">{advancedSummary(draft)}</span>
               </summary>
               <div className="space-y-space-3 border-t border-subtle px-space-3 py-space-3">
-                <Segmented label="Product" testId="product" value={draft.product} onChange={(v) => onDraft({ product: v })} options={PRODUCTS} />
+                <Segmented label="Product" testId="product" id={`${idPrefix}-product`} asking={asking === "product"} value={draft.product}
+                  onChange={(v) => onDraft({ product: v })} options={PRODUCTS} />
+                {saveDefaults && draft.product !== null && !marks.product && <SaveAsDefault key={draft.product} fieldKey={PRODUCT_KEY} value={draft.product} />}
                 <div>
                   <label htmlFor={ids.stop} className="mb-space-1 block text-t12 font-medium text-fg-muted">
                     Stop-loss for the position {stopHint(draft.side, target.right)}
@@ -439,7 +474,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             ? "fixed inset-x-0 bottom-[calc(4rem+1px+env(safe-area-inset-bottom))] z-10 bg-surface-1 shadow-raised md:sticky md:inset-x-auto md:bottom-0 md:shadow-none md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
             : "pb-[calc(0.75rem+env(safe-area-inset-bottom))]")}>
         {step.kind === "edit" && (
-          <button type="button" onClick={onReview} disabled={busy || draft.product === null} data-ticket="review"
+          <button type="button" onClick={onReview} disabled={busy || asking !== null} data-ticket="review"
             className={cx("min-h-11 flex-1 rounded-control px-space-4 text-t15 font-semibold disabled:opacity-60", sideTone)}>
             {busy ? "Checking…" : `Review ${sideWord(draft.side)} order`}
           </button>

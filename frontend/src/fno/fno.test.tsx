@@ -228,7 +228,7 @@ describe("FNO-1 order ticket", () => {
     expect(!has(slm.els, "data-ticket", "price") && has(slm.els, "data-ticket", "trigger")).toBe(true);
     by(slm.els, "data-helper", "Ask").onClick!();
     expect(slm.on.onDraft).toHaveBeenCalledWith({ trigger: "250.50" });
-    const mis = { product: "MIS" as const };                                   // owner F1: the user picked a product
+    const mis = { product: "MIS" as const, orderType: "MARKET" as const };    // owner F1 / M68: the user picked a product and a type
     expect(draftProblems({ ...newDraft("BUY", mis), orderType: "SL" })).toEqual(["Enter the limit price", "Enter the trigger price"]);
     expect(draftProblems(newDraft("SELL", mis))).toEqual([]);              // DEF-0 D7: only his own setting asks for a stop
     expect(draftProblems(newDraft("BUY", mis))).toEqual([]);

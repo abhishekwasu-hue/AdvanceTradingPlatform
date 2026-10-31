@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { choose, expectChoice } from "./combobox";
+import { choose, expectChoice, pickEntryStyle } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -151,11 +151,13 @@ test.describe("Trading bot behaviour", () => {
     await expect(form(page)).toContainText("Waits for the first 15 minutes' range to break");
     await choose(page, form(page).getByLabel("Pick a symbol"), "NIFTY BANK");
     await expect(form(page)).toContainText("Trades a NIFTY BANK option at the nearest expiry, 1 lot");
+    await pickEntryStyle(page, form(page));
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Started on paper: NIFTY BANK.");
     const post = server.sent.find((c) => c.method === "POST" && c.url === "/deployments");
     expect(post?.body).toEqual({ strategy_id: "orb_15m_5m", symbol: "NIFTY BANK", exchange: "NSE", timeframe: "1min", mode: "PAPER", holding: "INTRADAY",
-      instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1 });
+      instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1,
+      order_style: "MARKET" });                                                         // M68: the entry style he picked
     await expect(bots(page).locator("[data-bot]")).toHaveCount(1);
 
     await choose(page, form(page).getByLabel("Pick a strategy"), "swing_ema_pullback_d");
@@ -163,10 +165,12 @@ test.describe("Trading bot behaviour", () => {
     // CT-1 C6: the one SymbolPicker - an emptied field asks for a symbol; a typed one is kept when the field is left.
     await form(page).getByLabel("Pick a symbol").fill("");
     await form(page).getByLabel("Pick a symbol").press("Tab");                     // leaving the field keeps it empty
+    await pickEntryStyle(page, form(page));
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Pick or type a symbol.");
     await form(page).getByLabel("Pick a symbol").fill("tcs");
     await form(page).getByLabel("Pick a symbol").press("Tab");
+    await pickEntryStyle(page, form(page));
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Started on paper: TCS.");
     expect(server.sent.filter((c) => c.url === "/deployments").at(-1)?.body).toMatchObject({ symbol: "TCS", timeframe: "day", holding: "SWING", instrument_kind: "UNDERLYING", mode: "PAPER" });
@@ -220,6 +224,7 @@ test.describe("Trading bot behaviour", () => {
   test("REV-H1: a refused start shows the server's reason, not 'already runs' for every 409", async ({ page }) => {
     await open(page, { refuseStart: "no_instrument_master" });
     await choose(page, form(page).getByLabel("Pick a symbol"), "NIFTY BANK");
+    await pickEntryStyle(page, form(page));
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("The contracts for this symbol are not loaded yet");
     await expect(form(page)).not.toContainText("already runs");
@@ -233,6 +238,7 @@ test.describe("Trading bot behaviour", () => {
     await expect(more.getByRole("button", { name: "LIVE", exact: true })).toHaveCount(0);
     await expect(more.getByText("Trading worker")).toHaveCount(0);
     await expect(more.getByText(/Deployments \(/)).toHaveCount(0);
+    await pickEntryStyle(page, more);
     await more.getByRole("button", { name: "Start on paper" }).click();
     await expect.poll(() => server.sent.filter((c) => c.method === "POST").length).toBe(1);
     expect((server.sent[0].body as { mode: string }).mode).toBe("PAPER");

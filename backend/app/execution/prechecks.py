@@ -119,7 +119,7 @@ async def validate_instrument(
 
 async def live_margin_cap(
     broker: BrokerInterface, *, symbol: str, exchange: str, side: OrderSide, unit: float,
-    product: str = "MIS", unit_price: Optional[float] = None, exact_cash: bool = False, share: float = MARGIN_SAFETY,
+    product: str, unit_price: float | None = None, exact_cash: bool = False, share: float = MARGIN_SAFETY,
 ) -> Tuple[Optional[float], str]:
     """`(max_quantity, note)` for a LIVE entry. `unit` is one lot (or one share). `max_quantity`
     is None when margin could not be verified without guessing (no calculator and not a bought

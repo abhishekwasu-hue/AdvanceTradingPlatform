@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import AssetClass, SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal
 from app.db.models import InstrumentRecord, Tenant, TradeRecord, User
+from app.execution import order_defaults
 from app.execution.approval import ORIGIN_AUTOMATIC
 from app.instruments import master
 from app.instruments.models import ContractSpec
@@ -77,15 +78,17 @@ class OrderAsk:
     right: str                       # CE | PE | FUT
     side: str                        # BUY | SELL
     lots: int
-    order_type: str = "MARKET"       # MARKET | LIMIT | SL | SL-M
-    product: str = "MIS"             # MIS (intraday) | NRML (carry forward)
+    # M68 PR-1 (TS1-001): no pre-chosen order type or product - the ticket's own value, else his Trade settings
+    # (resolve_ask); Not set = the ticket asks at that field ("Choose ...", `missing`), nothing is placed.
+    order_type: str | None = None  # MARKET | LIMIT | SL | SL-M
+    product: str | None = None     # MIS (intraday) | NRML (carry forward)
     price: Optional[float] = None    # LIMIT and SL: the limit price
     trigger_price: Optional[float] = None   # SL and SL-M
     stop_loss: Optional[float] = None       # the position's stop (premium); DEF-0 D7: the trader's choice on every side
     chain_ltp: Optional[float] = None       # what the chain showed: a preview's price when no live price can be read
     client_ref: Optional[str] = None        # the ticket's own id: a second tap on Place never places twice
     rest_if_waiting: bool = False           # TM-2: a limit / stop the price has not reached waits for it (needs client_ref)
-    trigger_mode: str = "TOUCH"             # TT-7: TOUCH (any print) or CLOSE (a closed candle of his timeframe)
+    trigger_mode: str | None = None      # TT-7: TOUCH (any print) or CLOSE (a closed candle); M68 TS1-015: his own
     timeframe_minutes: Optional[int] = None
 
 
@@ -425,7 +428,10 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     refusals: List[str] = []
     warnings: List[str] = []
     side, right = ask.side.upper(), ask.right.upper()
-    ask.side, ask.right, ask.order_type, ask.product = side, right, ask.order_type.upper(), ask.product.upper()
+    missing = await resolve_ask(session, user, ask)
+    ask.side, ask.right = side, right
+    ask.order_type = ask.order_type.upper() if ask.order_type else None
+    ask.product = ask.product.upper() if ask.product else None
     future = right == FUTURE
     what = "future" if future else "option"
     try:
@@ -456,7 +462,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
 
     fill, fill_note = None, ""
     resting = False
-    if price is not None and not errors:
+    if price is not None and not errors and ask.order_type is not None:      # errors already asks for a missing order type
         fill, fill_note = paper_fill(ask.order_type, side, price, ask.price, ask.trigger_price)
         if fill is None and ask.rest_if_waiting and rest_errors(ask):
             errors.extend(rest_errors(ask))           # it would wait, but cannot be kept as it is
@@ -520,7 +526,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     if contract is not None and basis is not None and not errors and units:
         margin_line = future_margin(basis, units) if future else margin(side, right, float(contract.strike or 0.0), basis, ask.lots,
                                                                           contract.lot_size, contract.expiry)
-    if margin_line is not None and contract is not None and basis is not None and units:
+    if margin_line is not None and contract is not None and basis is not None and units and ask.product is not None:
         margin_line = await _broker_margin(session, user, contract, side, units, ask.product, margin_line)
     charges = None
     if basis is not None and units and not errors:
@@ -547,6 +553,9 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         "resting": resting, "rest_level": rest_level(ask) if resting else None,
         "stop_loss": ask.stop_loss, "margin": margin_line, "max_loss": loss, "charges": charges, "risk": risk,
         "errors": errors, "refusals": refusals, "warnings": warnings, "can_place": can_place,
+        # M68 TS-3: the ticket fields still Not set (neither on the ticket nor in his Trade settings): the ticket asks
+        # for each one at its field, with "Save as my default" next to it.
+        "missing": missing, "trigger_mode": ask.trigger_mode,
         "confirm_label": f"{'Place waiting' if resting else 'Place'} PAPER order: {side.title()} {ask.lots} lot{'s' if ask.lots != 1 else ''} ({units:g} qty)" if can_place and units else None,
         "as_of": now.isoformat(),
     }
@@ -585,7 +594,10 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     try:
         result, order = await execute_signal_for_user(
             session, user, mode=mode, strategy_id=STRATEGY_ID, signal=_signal(contract, ask.side, fill, stop, now, view["fill_note"] or ""),
-            idempotency_key=key, holding="SWING" if ask.product == "NRML" else "INTRADAY", max_quantity=float(view["units"]),
+            # M68 PR-1: the holding follows the product HE picked; the fill price is already set by his own order type
+            # (paper_fill), so the router books it as a market fill at that price.
+            idempotency_key=key, holding=order_defaults.holding_of_product(ask.product), order_style="MARKET",
+            max_quantity=float(view["units"]),
             journal_source="MANUAL", manual_contract_spec=_spec(contract), manual_contract_meta=_meta(contract, ask.side),
             paper_execution=PAPER_EXECUTION, freeze_quantity=freeze, market_protection_pct=band, origin=origin)
     except Exception as exc:  # noqa: BLE001 - shown to the person; the order trail holds what the pipeline recorded
@@ -599,6 +611,20 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     reasons = [plain(r) for r in (result.reasons or [])]
     return {**view, "status": "PLACED" if result.executed else "REFUSED", "reasons": reasons if not result.executed else [],
             "order_id": order.id, "trade_id": order.trade_id, "filled": filled, "mode": order.mode}
+
+
+# M68 TS-3: a ticket field -> its Trade settings key (the ticket's "Save as my default" writes it).
+ASK_SETTINGS = {"product": "order_defaults.product", "order_type": "order_defaults.order_type"}
+
+
+async def resolve_ask(session: AsyncSession, user: User, ask: OrderAsk) -> list[str]:
+    """M68 PR-1 (TS1-001 / 015): fills each ticket field the user left empty from HIS OWN Trade settings (never an ATP
+    value) and returns the fields still Not set - the ticket asks for them (ask_errors says "Choose ..." at that field)."""
+    mine = await order_defaults.load(session, user)
+    ask.product = ask.product or mine.product
+    ask.order_type = ask.order_type or mine.ticket_order_type
+    ask.trigger_mode = ask.trigger_mode or mine.trigger_mode
+    return [name for name in ASK_SETTINGS if getattr(ask, name) is None]
 
 
 def rest_level(ask: OrderAsk) -> float:
@@ -615,7 +641,8 @@ def rest_errors(ask: OrderAsk) -> List[str]:
         errors.append("Only a limit or a stop order can wait for its price.")
     if not ask.client_ref:
         errors.append("A waiting order needs the ticket's reference (refresh the page and try again).")
-    errors.extend(resting_book.trigger_errors(resting_book.Trigger(mode=ask.trigger_mode, timeframe_minutes=ask.timeframe_minutes)))
+    # M68 TS1-015: a waiting order with no trigger of his own (ticket / Trade settings) asks "touch or candle close".
+    errors.extend(resting_book.trigger_errors(resting_book.Trigger(mode=ask.trigger_mode or "", timeframe_minutes=ask.timeframe_minutes)))
     return errors
 
 
@@ -635,7 +662,7 @@ async def _rest(session: AsyncSession, user: User, ask: OrderAsk, contract: Cont
                 now: datetime, origin: str) -> Dict[str, Any]:
     """TM-2: keeps the checked order in the resting book (nothing is sent now)."""
     from app.execution import resting_book
-    assert ask.client_ref is not None
+    assert ask.client_ref is not None and ask.order_type is not None and ask.trigger_mode is not None   # checked by assess
     try:
         row = await resting_book.rest_entry(
             session, user, client_ref=f"fno:{ask.client_ref}", symbol=contract.tradingsymbol, exchange=contract.exchange,

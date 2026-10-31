@@ -16,6 +16,7 @@ TM-10, TM-11 of 23 Oct).
 import asyncio
 import random
 import uuid
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -143,7 +144,7 @@ def _router(freeze, liquidity=None, monkeypatch=None):
             self.liquidity = liquidity
         monkeypatch.setattr(paper_adapter.PaperExecutionAdapter, "__init__", init)
     return OrderRouter(ExecutionMode.PAPER, RiskConfig(capital=100_000_000.0, risk_per_trade_pct=5.0, max_position_size_pct=100.0),
-                       exchange="NFO", product="NRML", paper_execution="adapter", freeze_quantity=freeze)
+                       exchange="NFO", product="NRML", paper_execution="adapter", freeze_quantity=freeze, order_style="MARKET")
 
 
 def _sig(entry=100.0):
@@ -262,7 +263,8 @@ def test_settlement_flags_follow_the_users_settings_not_fixed_numbers():
 
 def test_the_settings_are_the_users_own_prefs_with_bounds():
     d = prefs.defaults(se.NAMESPACE)
-    assert se.SmartSettings.from_prefs(d) == SETTINGS
+    # M68 PR-1 (TS1-013): the protection band has no starting value (Not set) - the rest are the settings' own
+    assert se.SmartSettings.from_prefs(d) == replace(SETTINGS, protection_band_pct=None)
     for bad in ({"settlement_days_before": 31}, {"settlement_band_pct": -1.0}, {"protection_band_pct": 0.0}, {"other": 1}):
         with pytest.raises(Exception):
             prefs.SmartExecutionPrefs.model_validate({**d, **bad})
@@ -529,7 +531,7 @@ def test_where_the_venue_refuses_market_orders_the_router_sends_a_marketable_lim
     monkeypatch.setattr(paper_adapter.PaperExecutionAdapter, "capabilities", BrokerCapabilities(market_orders_allowed=False))
     monkeypatch.setattr(paper_adapter.PaperExecutionAdapter, "place_order", spy)
     router = OrderRouter(ExecutionMode.PAPER, RiskConfig(capital=10_000_000.0, risk_per_trade_pct=5.0), exchange="NFO", product="NRML",
-                         paper_execution="adapter", market_protection_pct=2.0)
+                         paper_execution="adapter", market_protection_pct=2.0, order_style="MARKET")
     out = _run(router.execute(_sig(100.0), TradingDayState(), contract_spec=_spec(), max_quantity=65.0))
     assert seen == [("LIMIT", 102.0)] and out.executed and out.trade.entry_price <= 102.0
 

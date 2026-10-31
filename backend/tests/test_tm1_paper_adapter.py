@@ -156,7 +156,7 @@ def _spec(symbol: str, lot: float) -> ContractSpec:
 
 def _route(paper_execution: str, signal: Signal, spec: ContractSpec, max_quantity):
     router = OrderRouter(ExecutionMode.PAPER, RiskConfig(capital=1_000_000.0, risk_per_trade_pct=1.0), exchange="NFO", product="NRML",
-                         paper_execution=paper_execution)
+                         paper_execution=paper_execution, order_style="MARKET")
     state = TradingDayState()
     result = _run(router.execute(signal, state, contract_spec=spec, max_quantity=max_quantity))
     return result, state
@@ -208,7 +208,7 @@ def test_router_adapter_path_handles_a_partial_fill_as_live_does(monkeypatch):
 
 def test_router_refuses_an_unknown_paper_execution():
     with pytest.raises(ValueError):
-        OrderRouter(ExecutionMode.PAPER, RiskConfig(), paper_execution="other")
+        OrderRouter(ExecutionMode.PAPER, RiskConfig(), paper_execution="other", product="MIS", order_style="MARKET")
 
 
 # --- parity: the whole pipeline (the F&O ticket, the path moved onto the adapter) ---------------------------------------

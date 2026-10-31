@@ -83,6 +83,9 @@ class Plan:
     quantity: Optional[float] = None  # None = the size the cap allows
     override: bool = False
     override_reason: Optional[str] = None
+    # M68 PR-1 (TS1-008): INTRADAY or SWING - the plan's own, else his Trade settings; Not set: the plan is refused with
+    # "Needs your setting: Holding" (ATP does not choose).
+    holding: str | None = None
 
 
 def _round(value: Optional[float], digits: int = 2) -> Optional[float]:
@@ -321,7 +324,9 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
             return await plan_view(session, row)
         result, order = await execute_signal_for_user(
             session, user, mode=by_default.MODE, strategy_id=signal.strategy_id, signal=signal, idempotency_key=f"ticket:{plan_id}",
-            exit_rules=exit_rules, holding="INTRADAY", max_quantity=s["quantity"], risk_cap_amount=cap_amount)
+            # M68 PR-1: the plan is placed at his live price by his own Place (a market entry by what he confirms); the
+            # holding is the plan's, else his Trade settings (None: resolved, or refused, in execute_signal_for_user).
+            exit_rules=exit_rules, holding=plan.holding, order_style="MARKET", max_quantity=s["quantity"], risk_cap_amount=cap_amount)
         row = await session.get(TradePlanRecord, plan_id) or row
         row.order_id, row.trade_id = order.id, order.trade_id
         row.status = "PLACED" if result.executed else "REFUSED"

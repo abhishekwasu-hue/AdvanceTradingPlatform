@@ -204,7 +204,7 @@ def test_support_section_shows_one_persons_status_and_never_a_secret():
             session.add(LoginEventRecord(user_id=me["id"], tenant_id=me["tenant_id"], email="mo3-support-person@example.com", success=False,
                                          reason="bad_password", ip_address="198.51.100.23",
                                          user_agent="Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36"))
-            session.add(StrategyDeploymentRecord(tenant_id=me["tenant_id"], strategy_id="orb_15m_5m", symbol="NIFTY 50", mode="PAPER",
+            session.add(StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=me["tenant_id"], strategy_id="orb_15m_5m", symbol="NIFTY 50", mode="PAPER",
                                                  status="ERROR", last_error="broker said no " * 30, consecutive_failures=4))
             await session.commit()
     _run(seed())

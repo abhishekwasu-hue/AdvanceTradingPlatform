@@ -427,8 +427,13 @@ async def complete_rest(session: AsyncSession, user: User, legs: Sequence[TradeR
         order.quantity = spec.quantity
         orders[spec.key] = order
     await session.commit()
-    run = await place_legs(venue, specs, strategy_id=strategy_id, tenant=tenant, band_pct=settings.protection_band_pct,
-                           prices=prices, live=live)
+    # M68 PR-1: the rest of a structure goes with the product its filled legs were opened with (the position's own record)
+    # and the user's own protection band where the venue takes no market order (Not set: that leg is not sent, and says so).
+    from app.execution import order_defaults
+    from app.execution.products import product_for_trade
+    run = await place_legs(venue, specs, strategy_id=strategy_id, tenant=tenant,
+                           band_pct=(await order_defaults.load(session, user)).price_protection_pct, prices=prices, live=live,
+                           product=product_for_trade(legs[0]))
     if tenant is not None and run.uncertain:
         from app.reconciliation.service import mark_broker_uncertain
         await mark_broker_uncertain(session, tenant, f"completing a structure: {run.uncertain}"[:500], user_id=user.id)

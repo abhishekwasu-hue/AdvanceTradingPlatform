@@ -123,7 +123,7 @@ def test_latest_keeps_one_row_per_day_and_describe_tells_the_story():
 def test_watchlist_defaults_then_profiles_then_deployments():
     _, tenant_id, user_id = _tenant("memory-watch@example.com")
     _run(_add(TraderProfileRecord(tenant_id=tenant_id, user_id=user_id, answers_json=json.dumps({"symbol": "reliance"}), preferences_json="{}"),
-              StrategyDeploymentRecord(tenant_id=tenant_id, strategy_id="macd_ema_trend_5m", symbol="TCS", exchange="NSE", timeframe="1min",
+              StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=tenant_id, strategy_id="macd_ema_trend_5m", symbol="TCS", exchange="NSE", timeframe="1min",
                                        mode="PAPER", status="ACTIVE")))
 
     async def go():

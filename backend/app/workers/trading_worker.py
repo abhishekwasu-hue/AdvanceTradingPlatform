@@ -59,6 +59,7 @@ from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import StrategyDeploymentRecord, Tenant, TradeRecord, User, VisionReportRecord, WorkerHeartbeatRecord
 from app.db.savepoint import guarded
 from app.deployments import why as why_log
+from app.deployments.why import held_back
 from app.execution import approval
 from app.execution.multileg import execute_structure
 from app.execution.ops_throttle import OpsThrottle
@@ -308,6 +309,8 @@ class TradingWorker:
         self._regimes: Dict[int, str] = {}
         # AUD-T3: the reason each deployment's last evaluation ended with (code, bar, detail) - stored after it, never read back
         self._why_notes: Dict[int, tuple] = {}
+        # M68 PR-1: the holding this evaluation uses per bot (the bot's own, else his Trade settings) - never stored on the bot.
+        self._holdings: dict[int, str | None] = {}
         self._regime_wanted: set = set()
         # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
         self._vision_task: Optional["asyncio.Task[None]"] = None
@@ -1966,7 +1969,15 @@ class TradingWorker:
                 self._why(dep, "same_signal", closed_bar, None)
                 await session.commit()
                 return False
-        if (getattr(dep, "holding", None) or "INTRADAY") == "SWING" and (dep.instrument_kind or "UNDERLYING") == "UNDERLYING" \
+        holding, holding_problem = await self._bot_holding(session, dep, user)
+        if holding is None:
+            # M68 PR-1 (TS1-008): ATP does not choose a holding; nothing is placed and the bot card says which setting.
+            dep.last_signal_at = signal_ts
+            dep.last_error = f"Signal at {signal_ts.isoformat()} skipped. {holding_problem}"[:500]
+            self._why(dep, "needs_setting", closed_bar, holding_problem)
+            await session.commit()
+            return False
+        if holding == "SWING" and (dep.instrument_kind or "UNDERLYING") == "UNDERLYING" \
                 and signal.direction == SignalDirection.SHORT:
             # Phase AS: delivery (CNC) cannot be sold short and carried overnight.
             dep.last_signal_at = signal_ts
@@ -2020,7 +2031,7 @@ class TradingWorker:
         if rules.kind == InstrumentKind.OPTION and structure_kind != OptionStrategy.SINGLE:
             # Phase H2: a multi-leg structure - resolved and executed as one position.
             executed = await self._evaluate_structure(session, dep, user, market_data, adapters, now, signal, signal_ts, rules, structure_kind, frames)
-            self._why(dep, "entered" if executed else "risk_setting", closed_bar, None if executed else dep.last_error)
+            self._why(dep, "entered" if executed else held_back(dep.last_error), closed_bar, None if executed else dep.last_error)
             return executed
         if rules.derived:
             # Phase F3: pick the option/future from the master at signal time, off the latest
@@ -2054,14 +2065,14 @@ class TradingWorker:
             session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal,
             idempotency_key=idempotency_key, broker=broker, deployment_id=dep.id,
             contract=contract, rules=rules if contract is not None else None, quote_broker=market_data.broker,
-            account_id=account_id, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
-            order_style=getattr(dep, "order_style", None) or "MARKET", market_protection_pct=getattr(dep, "market_protection_pct", None),
+            account_id=account_id, exit_rules=dep.exit_rules, holding=self._holdings.get(dep.id) or getattr(dep, "holding", None),
+            order_style=getattr(dep, "order_style", None), market_protection_pct=getattr(dep, "market_protection_pct", None),
             exchange=dep.exchange,
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
         dep.consecutive_failures = 0
-        self._why(dep, "entered" if result.executed else "risk_setting", closed_bar, dep.last_error)
+        self._why(dep, "entered" if result.executed else held_back(dep.last_error), closed_bar, dep.last_error)
         # Phase M / V4.14: stamp the regime read at entry on the trade for the journal.
         if result.executed and order.trade_id is not None and dep.id in self._regimes:
             trade = await session.get(TradeRecord, order.trade_id)
@@ -2071,6 +2082,26 @@ class TradingWorker:
         logger.info("Deployment %s signal %s -> executed=%s order=%s%s", dep.id, signal.direction.value, result.executed, order.id,
                     f" provenance={signal.provenance}" if signal.provenance else "")
         return result.executed
+
+    async def _bot_holding(self, session: AsyncSession, dep: StrategyDeploymentRecord, user: User) -> tuple[str | None, str]:
+        """M68 PR-1: the bot's own holding, else the user's Trade settings (Order defaults > Holding). A "Carry forward"
+        setting fits a bot that reads daily candles or holds a defined-risk spread for days (Phase AS / M55 T1 - the
+        checks a bot's own SWING passes when it is created); any other bot needs its own holding. Returns (holding or
+        None, the plain-words reason when None)."""
+        from app.execution import order_defaults
+        from app.instruments.spreads import can_hold_for_days
+        own = getattr(dep, "holding", None)
+        self._holdings.pop(dep.id, None)
+        if own:
+            return own, ""
+        mine = (await order_defaults.load(session, user)).holding
+        if mine is None:
+            return None, order_defaults.needs_setting("holding")
+        if mine == "SWING" and dep.timeframe != "day" and not can_hold_for_days(dep.option_strategy or "SINGLE"):
+            return None, (f"{order_defaults.needs_setting('holding')}: your Carry forward setting does not fit this bot "
+                          f"(it reads {dep.timeframe} candles) - set this bot's own holding")
+        self._holdings[dep.id] = mine
+        return mine, ""
 
     def _why(self, dep: StrategyDeploymentRecord, code: str, bar: Optional[datetime], detail: Optional[str]) -> None:
         """AUD-T3: note why this evaluation ended (stored by `_store_why` once it is done; never read by the worker)."""
@@ -2113,7 +2144,8 @@ class TradingWorker:
         try:
             row = await approval.propose_entry(session, dep.tenant_id, signal=signal, strategy_id=dep.strategy_id, source="deployment",
                                                idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", deployment=dep,
-                                               requested_mode=dep.mode, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
+                                               requested_mode=dep.mode, exit_rules=dep.exit_rules,
+                                               holding=self._holdings.get(dep.id) or getattr(dep, "holding", None),
                                                user_id=user_id, now=now, exchange=dep.exchange or "NSE",   # the resolved deployment user
                                                structure=structure)
         except approval.EntriesPaused as exc:          # Z3-b: the deployment creator paused their PAPER entries
@@ -2192,7 +2224,8 @@ class TradingWorker:
             target_credit_pct=dep.target_credit_pct, stop_credit_pct=dep.stop_credit_pct,
             underlying_exit=bool(getattr(dep, "underlying_breach_exit", None)),
             idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", broker=broker, quote_broker=market_data.broker,
-            deployment_id=dep.id, account_id=account_id, holding=getattr(dep, "holding", None) or "INTRADAY",   # M55 T1
+            deployment_id=dep.id, account_id=account_id,
+            holding=self._holdings.get(dep.id) or getattr(dep, "holding", None),   # M55 T1
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]

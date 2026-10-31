@@ -25,7 +25,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -51,7 +51,7 @@
      "low_open": false,
      "term": "mis",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -89,7 +89,7 @@
      "low_open": false,
      "term": "sl",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -106,7 +106,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -123,7 +123,7 @@
      "low_open": true,
      "term": "sl-m",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -149,7 +149,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -175,7 +175,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false

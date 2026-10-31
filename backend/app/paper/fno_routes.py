@@ -108,8 +108,9 @@ class OrderBody(BaseModel):
     right: Literal["CE", "PE", "FUT"]
     side: Literal["BUY", "SELL"]
     lots: int = Field(ge=1, le=fno_ticket.MAX_LOTS)
-    order_type: Literal["MARKET", "LIMIT", "SL", "SL-M"] = "MARKET"
-    product: Literal["MIS", "NRML"] = "MIS"
+    # M68 PR-1 (TS1-002): not sent = his Trade settings; Not set there either = the ticket asks ("Choose ..." + `missing`).
+    order_type: Literal["MARKET", "LIMIT", "SL", "SL-M"] | None = None
+    product: Literal["MIS", "NRML"] | None = None
     price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     trigger_price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
@@ -117,7 +118,7 @@ class OrderBody(BaseModel):
     client_ref: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9-]{8,64}$")
     # TM-2: "wait for my price" - a limit / stop the price has not reached rests in the resting book (needs client_ref).
     rest_if_waiting: bool = False
-    trigger_mode: Literal["TOUCH", "CLOSE"] = "TOUCH"
+    trigger_mode: Literal["TOUCH", "CLOSE"] | None = None          # M68 TS1-015: his own (a waiting order asks)
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
 
     @model_validator(mode="after")
@@ -187,10 +188,11 @@ class ArmExitBody(BaseModel):
     kind: Literal["STOP", "TARGET"]
     order_type: Literal["SL-M", "LIMIT", "MARKET"]
     level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)     # the premium level (PREMIUM)
-    trigger_source: Literal["PREMIUM", "SPOT"] = "PREMIUM"
+    # M68 TS1-015: not sent = his Trade settings (Order defaults > Trigger on / Trigger price from).
+    trigger_source: Literal["PREMIUM", "SPOT"] | None = None
     spot_level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     spot_side: Optional[Literal["ABOVE", "BELOW"]] = None
-    trigger_mode: Literal["TOUCH", "CLOSE"] = "TOUCH"
+    trigger_mode: Literal["TOUCH", "CLOSE"] | None = None
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
     client_ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
 
@@ -216,8 +218,13 @@ async def arm_exit(body: ArmExitBody, user: User = Depends(require_trader), sess
         raise HTTPException(status_code=404, detail="Not found")
     if trade.user_id != user.id:
         raise HTTPException(status_code=403, detail="This is not your position")
-    trigger = resting_book.Trigger(source=body.trigger_source, mode=body.trigger_mode, timeframe_minutes=body.timeframe_minutes,
-                                   spot_level=body.spot_level, spot_side=body.spot_side)
+    # M68 PR-1: his own trigger (the request's, else his Trade settings). Exits are never blocked (ADR-0004): with neither,
+    # the exit watches the position's own price and fires when it is touched - the exit fact of that position.
+    from app.execution import order_defaults
+    mine = await order_defaults.load(session, user)
+    trigger = resting_book.Trigger(source=body.trigger_source or mine.trigger_source or resting_book.PREMIUM,
+                                   mode=body.trigger_mode or mine.trigger_mode or resting_book.TOUCH,
+                                   timeframe_minutes=body.timeframe_minutes, spot_level=body.spot_level, spot_side=body.spot_side)
     try:
         row = await resting_book.arm_exit(session, user, trade, client_ref=f"exit:{body.client_ref}", kind=body.kind,
                                           order_type=body.order_type, level=body.level or 0.0, trigger=trigger)
@@ -446,7 +453,7 @@ class BasketBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     legs: List[BasketLeg] = Field(min_length=1, max_length=fno_basket.MAX_LEGS)
     spot: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
-    product: Literal["MIS", "NRML"] = "MIS"
+    product: Literal["MIS", "NRML"] | None = None        # M68 TS1-001: not sent = his Trade settings, else the basket asks
 
     def asks(self) -> List[fno_basket.LegAsk]:
         legs = [leg.ask() for leg in self.legs]
@@ -490,8 +497,9 @@ async def basket_evaluate(body: EvaluateBody, user: User = Depends(get_current_u
     from app.paper import fno_term
     if body.with_open and await fno_term.enabled(session, user.tenant_id, fno_term.WHATIF_FLAG):
         out["whatif"] = await fno_term.whatif(session, user, legs, body.spot)
-    if body.margin_pair and await fno_term.enabled(session, user.tenant_id, fno_term.MARGIN_PAIR_FLAG):
-        out["margin_pair"] = await fno_term.margin_pair(session, user, legs, out, body.product)
+    product = await _basket_product(session, user, body.product)
+    if body.margin_pair and product is not None and await fno_term.enabled(session, user.tenant_id, fno_term.MARGIN_PAIR_FLAG):
+        out["margin_pair"] = await fno_term.margin_pair(session, user, legs, out, product)    # M68: never a guessed MIS margin
     return out
 
 
@@ -517,6 +525,15 @@ async def roll_preview(body: RollBody, user: User = Depends(require_trader), ses
     return await fno_term.roll_preview(session, user, body.trade_ids, price_lookup=lookup, spot=body.spot)
 
 
+async def _basket_product(session: AsyncSession, user: User, product: str | None) -> str | None:
+    """M68 PR-1: the basket's product - the one he picked, else his Trade settings; None = Not set (each leg then says
+    "Choose MIS (intraday) or NRML (carry forward)" and nothing is placed)."""
+    if product is not None:
+        return product
+    from app.execution import order_defaults
+    return (await order_defaults.load(session, user)).product
+
+
 @router.get("/basket/settings")
 async def basket_settings(underlying: str = Query(pattern=SYMBOL), user: User = Depends(get_current_user),
                           session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
@@ -529,7 +546,8 @@ async def basket_preview(body: BasketBody, user: User = Depends(require_trader),
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
-    view = await fno_basket.preview(session, user, body.asks(), product=body.product, spot=body.spot, price_lookup=lookup, origin=MANUAL)
+    view = await fno_basket.preview(session, user, body.asks(), product=await _basket_product(session, user, body.product), spot=body.spot,
+                                    price_lookup=lookup, origin=MANUAL)
     await session.commit()
     return view
 
@@ -546,8 +564,8 @@ async def basket_execute(body: ExecuteBody, user: User = Depends(require_trader)
         kind, spec = body.exits.trailing.as_tuple() if body.exits.trailing is not None else ("NONE", None)
         exits = StrategyExitAsk(measure=body.exits.measure, sl_value=body.exits.sl_value,
                                 target_value=body.exits.target_value, trail_kind=kind, trail=spec)
-    return await fno_basket.execute(session, user, body.asks(), product=body.product, basket_ref=body.basket_ref, price_lookup=lookup,
-                                    origin=MANUAL, exits=exits)
+    return await fno_basket.execute(session, user, body.asks(), product=await _basket_product(session, user, body.product),
+                                    basket_ref=body.basket_ref, price_lookup=lookup, origin=MANUAL, exits=exits)
 
 
 class CloseFilledBody(BaseModel):

@@ -131,9 +131,9 @@ class _MarginBroker:
 def test_margin_safety_share_of_available_margin():
     contract = type("C", (), {"instrument_key": "", "tradingsymbol": "NIFTY CE", "exchange": "NFO", "lot_size": LOT})()
     assert RiskConfig().margin_share() == 1.0 and RiskConfig(margin_safety_pct=80.0).margin_share() == 0.8
-    lots, _ = _run(written_lot_cap(_MarginBroker(), contract, RiskConfig().margin_share()))          # off: all 50,000 -> 5 lots
+    lots, _ = _run(written_lot_cap(_MarginBroker(), contract, RiskConfig().margin_share(), product="MIS"))          # off: all 50,000 -> 5 lots
     assert lots == 5
-    lots, _ = _run(written_lot_cap(_MarginBroker(), contract, RiskConfig(margin_safety_pct=80.0).margin_share()))   # 40,000 -> 4
+    lots, _ = _run(written_lot_cap(_MarginBroker(), contract, RiskConfig(margin_safety_pct=80.0).margin_share(), product="MIS"))   # 40,000 -> 4
     assert lots == 4
 
 
@@ -221,7 +221,7 @@ def _entry(t: dict, key: str, lots: float = 1):
         async with _session_factory() as session:
             user = await session.get(User, t["user_id"])
             result, order = await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=live_signal(),
-                                                          idempotency_key=key, max_quantity=lots)
+                                                          idempotency_key=key, max_quantity=lots, holding="INTRADAY", order_style="MARKET")
             trade = await session.get(TradeRecord, order.trade_id) if order.trade_id else None
             return result, order, trade
     return _run(go())

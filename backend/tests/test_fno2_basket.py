@@ -122,7 +122,7 @@ def _orders(tenant_id):
 
 def test_basket_routes_are_off_without_ui_v2_and_the_paper_account():
     t = _tenant(f"fno2-off-{uuid.uuid4().hex[:6]}@example.com")
-    body = {"legs": [_leg(_expiry(), 30000.0, "CE", "BUY", 100.0)], "spot": SPOT}
+    body = {"legs": [_leg(_expiry(), 30000.0, "CE", "BUY", 100.0)], "spot": SPOT, "product": "MIS"}
     for flags in ((), ("ui_v2",)):
         for name in flags:
             _flag(name, t["tenant_id"])
@@ -211,9 +211,9 @@ def test_the_confirm_step_checks_every_leg_hedges_first_with_the_totals(condor):
 def test_no_room_for_every_leg_places_nothing(condor):
     expiry, base, legs = condor
     t = _org_tenant("room", max_open=3)
-    view = _post(t, "preview", {"legs": _condor_legs(expiry, legs), "spot": base})
+    view = _post(t, "preview", {"legs": _condor_legs(expiry, legs), "spot": base, "product": "MIS"})
     assert not view["can_execute"] and "opens 4 positions" in view["refusals"][0] and "limit of 3 open positions" in view["refusals"][0]
-    out = _post(t, "execute", {"legs": _condor_legs(expiry, legs), "basket_ref": uuid.uuid4().hex})
+    out = _post(t, "execute", {"legs": _condor_legs(expiry, legs), "basket_ref": uuid.uuid4().hex, "product": "MIS"})
     assert out["status"] == "REFUSED" and out["placed"] == 0 and "Nothing was placed" in out["next_steps"][0]
     assert _orders(t["tenant_id"]) == []
 
@@ -265,7 +265,7 @@ def test_a_partial_fill_is_shown_per_leg_and_never_retried(condor, monkeypatch):
                     "filled": None}
         return await real(session, user, ask, **kw)
     monkeypatch.setattr(fno_ticket, "place", flaky)
-    out = _post(t, "execute", {"legs": _condor_legs(expiry, legs), "basket_ref": uuid.uuid4().hex})
+    out = _post(t, "execute", {"legs": _condor_legs(expiry, legs), "basket_ref": uuid.uuid4().hex, "product": "MIS"})
     assert out["status"] == "PARTIAL" and out["placed"] == 3
     assert [r["status"] for r in out["legs"]] == ["PLACED", "PLACED", "PLACED", "REFUSED"]
     assert out["legs"][3]["reasons"] == ["Max open positions reached (3)"]
@@ -283,7 +283,7 @@ def test_a_sold_leg_is_never_placed_after_its_hedge_failed(condor, monkeypatch):
         calls.append(ask.side)
         return {"status": "FAILED", "reasons": ["Not placed: TimeoutError"], "label": "x", "order_id": None, "trade_id": None, "filled": None}
     monkeypatch.setattr(fno_ticket, "place", no_hedge)
-    out = _post(t, "execute", {"legs": _condor_legs(expiry, legs), "basket_ref": uuid.uuid4().hex})
+    out = _post(t, "execute", {"legs": _condor_legs(expiry, legs), "basket_ref": uuid.uuid4().hex, "product": "MIS"})
     assert out["status"] == "REFUSED" and out["placed"] == 0
     assert calls == ["BUY", "BUY"]                                              # the shorts were never sent
     assert [r["status"] for r in out["legs"]] == ["FAILED", "FAILED", "NOT_PLACED", "NOT_PLACED"]
@@ -296,10 +296,10 @@ def test_a_sold_leg_without_a_stop_refuses_the_whole_basket(condor):
     body = _condor_legs(expiry, legs)
     body[0].pop("stop_loss")
     # DEF-0: a stop on a sold leg is required only by the user's own my_limits setting (no built-in rule).
-    view = _post(t, "preview", {"legs": body, "spot": base})
+    view = _post(t, "preview", {"legs": body, "spot": base, "product": "MIS"})
     assert not any("stop-loss on a sold option" in e for r in view["legs"] for e in r["errors"]), view["legs"]
     assert client.put("/api/me/prefs/my_limits", headers=t["headers"], json={"stop_required_on_sold": True}).status_code == 200
-    out = _post(t, "execute", {"legs": body, "basket_ref": uuid.uuid4().hex})
+    out = _post(t, "execute", {"legs": body, "basket_ref": uuid.uuid4().hex, "product": "MIS"})
     assert out["status"] == "REFUSED" and any("Your setting asks for a stop-loss on a sold option" in r for r in out["reasons"]), out
     assert _orders(t["tenant_id"]) == []
 
@@ -371,7 +371,7 @@ def test_ready_strategy_settings_are_the_users_own_else_a_neutral_default():
 
     async def deploy(user_id, symbol, width, lots, stop, sid):
         async with _session_factory() as session:
-            session.add(StrategyDeploymentRecord(tenant_id=t["tenant_id"], strategy_id=sid, symbol=symbol, mode="PAPER", instrument_kind="OPTION",
+            session.add(StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=t["tenant_id"], strategy_id=sid, symbol=symbol, mode="PAPER", instrument_kind="OPTION",
                                                  option_position="WRITE", option_strategy="BULL_PUT_SPREAD", spread_width=width, max_lots=lots,
                                                  premium_stop_pct=stop, status="PAUSED", created_by=user_id))
             await session.commit()

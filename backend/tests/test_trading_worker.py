@@ -132,7 +132,7 @@ def _tenant(email: str, *, token_status="VALID", with_credentials=True) -> Dict:
 def _deploy(t: Dict, *, mode="PAPER", symbol="RELIANCE", status="ACTIVE", broker_name="upstox", strategy_id=STRATEGY) -> int:
     async def go():
         async with _session_factory() as session:
-            dep = StrategyDeploymentRecord(
+            dep = StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", 
                 tenant_id=t["tenant_id"], strategy_id=strategy_id, symbol=symbol, exchange="NSE", timeframe="1min",
                 mode=mode, broker_name=broker_name, status=status, created_by=t["user_id"],
             )

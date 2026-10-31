@@ -140,16 +140,14 @@ def test_execute_signal_for_user_replays_instead_of_reprocessing_on_race():
             user = await session.get(User, user_id)
             first_result, first_order = await execute_signal_for_user(
                 session, user, mode="PAPER", strategy_id="race_strategy", signal=_signal(),
-                idempotency_key="execute-race-key",
-            )
+                idempotency_key="execute-race-key", holding="INTRADAY", order_style="MARKET")
             assert first_result.executed is True
 
         async with _session_factory() as session:
             user = await session.get(User, user_id)
             second_result, second_order = await execute_signal_for_user(
                 session, user, mode="PAPER", strategy_id="race_strategy", signal=_signal(),
-                idempotency_key="execute-race-key",
-            )
+                idempotency_key="execute-race-key", holding="INTRADAY", order_style="MARKET")
 
         assert second_order.id == first_order.id
         assert second_result.executed == first_result.executed

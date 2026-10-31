@@ -243,7 +243,9 @@ async def paper_execute(
     # console's try-it-without-an-account flow. Always starts with clean risk-engine state since
     # there is no history to derive it from.
     risk_config = request.risk_config or _default_risk_config
-    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=risk_config)
+    # M68 PR-1: the anonymous demo has no account, so no Trade settings; it places and stores nothing - its simulated fill
+    # is shown at the signal's own price as a market fill (allow-list: a demo, not an order).
+    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=risk_config, product="MIS", order_style="MARKET")
     try:
         result = await router.execute(signal, TradingDayState())
     except LiveTradingNotConfigured as exc:

@@ -175,7 +175,7 @@ def _broker(tenant_id: int, user_id: int, verified: bool = True) -> BrokerCreden
 
 
 def _deployment(tenant_id: int, user_id: int, mode: str) -> StrategyDeploymentRecord:
-    return StrategyDeploymentRecord(tenant_id=tenant_id, created_by=user_id, strategy_id="orb_15m_5m", symbol=f"S{uuid.uuid4().hex[:6]}", mode=mode)
+    return StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=tenant_id, created_by=user_id, strategy_id="orb_15m_5m", symbol=f"S{uuid.uuid4().hex[:6]}", mode=mode)
 
 
 def _channel(tenant_id: int, **kw) -> AlertChannelRecord:

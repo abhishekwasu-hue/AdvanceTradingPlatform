@@ -139,7 +139,7 @@ def _enter(user_id, symbol="RELIANCE", direction=SignalDirection.LONG, entry=100
             user = await session.get(User, user_id)
             sig = _sig(entry=entry, stop=stop, target=target, direction=direction, symbol=symbol)
             result, order = await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=sig,
-                                                          idempotency_key=f"z5d:{uuid.uuid4().hex}")
+                                                          idempotency_key=f"z5d:{uuid.uuid4().hex}", holding="INTRADAY", order_style="MARKET")
             return result.executed, json.loads(order.reasons_json or "[]"), (result.trade.quantity if result.trade else None)
     return _run(go())
 

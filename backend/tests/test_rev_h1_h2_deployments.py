@@ -114,7 +114,7 @@ def test_the_index_refuses_two_bots_that_are_not_stopped():
     tenant_id = _me(headers)["tenant_id"]
 
     def row(status: str) -> StrategyDeploymentRecord:
-        return StrategyDeploymentRecord(tenant_id=tenant_id, strategy_id=STRATEGY, symbol="INFY", exchange="NSE", timeframe="1min",
+        return StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=tenant_id, strategy_id=STRATEGY, symbol="INFY", exchange="NSE", timeframe="1min",
                                         mode="PAPER", broker_name="upstox", status=status, instrument_kind="UNDERLYING")
 
     async def go():

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { choose } from "./combobox";
+import { choose, pickEntryStyle } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -25,7 +25,8 @@ const SOME = { ...EMPTY, instrument_kind: "OPTION", option_strategy: "SINGLE", o
   max_lots: 2, exit_rules: { trailing_stop_pct: 1.5, break_even_at_r: null, time_exit_minutes: null, time_exit_at: null },
   ticket: { lots: 2, product: "NRML", order_type: "LIMIT" } };
 const TODAY_BODY = { strategy_id: "orb_15m_5m", symbol: "NIFTY BANK", exchange: "NSE", timeframe: "1min", mode: "PAPER", holding: "INTRADAY",
-  instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1 };
+  instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1,
+  order_style: "MARKET" };                       // M68 PR-1: the entry style the user picks on the form (none pre-selected)
 
 const LIMITS_OFF = { liquidity: { on: false, max_spread_pct: null, min_oi: null } };
 const LIMITS_ON = { liquidity: { on: true, max_spread_pct: 2.5, min_oi: 5000 } };
@@ -195,6 +196,7 @@ test.describe("My trading defaults behaviour", () => {
     await expect(startCard(page).locator("[data-defaults]")).toHaveCount(0);
     await choose(page, startCard(page).getByLabel("Pick a symbol"), "NIFTY BANK");
     await expect(startCard(page)).toContainText("Trades a NIFTY BANK option at the nearest expiry, 1 lot");
+    await pickEntryStyle(page, startCard(page));
     await startCard(page).getByRole("button", { name: "Start on paper" }).click();
     await expect.poll(() => posts(server).length).toBe(1);
     expect(posts(server)[0].raw).toBe(JSON.stringify(TODAY_BODY));
@@ -207,6 +209,7 @@ test.describe("My trading defaults behaviour", () => {
     await expect(card.locator("[data-defaults-line]")).toContainText("From your defaults: strike 1 step out of the money, next expiry, 2 lots, trailing stop 1.5%.");
     await expect(card).toContainText("Trades a NIFTY BANK option at the next expiry, 2 lots");
     await expect(card.getByRole("link", { name: "Change my defaults" })).toHaveAttribute("href", "/settings/trading-defaults");
+    await pickEntryStyle(page, card);
     await card.getByRole("button", { name: "Start on paper" }).click();
     await expect.poll(() => posts(server).length).toBe(1);
     expect(JSON.parse(posts(server)[0].raw ?? "{}")).toEqual({ ...TODAY_BODY, expiry_rule: "NEXT", max_lots: 2, strike_rule: "OTM", strike_offset: 1,
@@ -214,6 +217,7 @@ test.describe("My trading defaults behaviour", () => {
 
     await card.getByLabel("Use my defaults for this bot").uncheck();
     await expect(card).toContainText("Starts with the usual settings instead.");
+    await pickEntryStyle(page, card);
     await card.getByRole("button", { name: "Start on paper" }).click();
     await expect.poll(() => posts(server).length).toBe(2);
     expect(posts(server)[1].raw).toBe(JSON.stringify(TODAY_BODY));
@@ -231,6 +235,7 @@ test.describe("My trading defaults behaviour", () => {
     await expect(lots).toHaveValue("2");
     await lots.fill("3");
     await expect(more.locator("label", { hasText: "Max lots" }).locator("[data-from-defaults]")).toHaveCount(0);
+    await pickEntryStyle(page, more);
     await more.getByRole("button", { name: "Start on paper" }).click();
     await expect.poll(() => posts(server).length).toBe(1);
     const body = JSON.parse(posts(server)[0].raw ?? "{}") as Record<string, unknown>;

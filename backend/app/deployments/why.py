@@ -28,6 +28,9 @@ CODES: dict[str, str] = {
     "opposite_position": "Another of your bots holds the other direction on this symbol",
     "exit_read": "The open trade closed on this bar's exit reading",
     "risk_setting": "Your risk settings held the entry back",
+    # M68 PR-1: a setting the entry needs is Not set (e.g. Holding, Order type) - ATP does not choose one; the detail
+    # names the field and where to set it (Settings › Trade settings).
+    "needs_setting": "Needs your setting in Trade settings - nothing was placed",
     "oi_gate": "Your OI checks held the entry back",
     "entry_cutoff": "Past your last time for new entries",
     "swing_short": "A short cannot be carried overnight in cash shares",
@@ -38,6 +41,13 @@ CODES: dict[str, str] = {
     "outside_hours": "The market was closed",
     "not_evaluated": "The bot was not run on this bar",
 }
+
+
+def held_back(detail: str | None) -> str:
+    """The code of an entry that was not placed: "needs_setting" when a setting it needs is Not set (M68), else
+    "risk_setting"."""
+    from app.execution.order_defaults import NEEDS_PREFIX
+    return "needs_setting" if detail and NEEDS_PREFIX in detail else "risk_setting"
 
 
 def _utc(value: Optional[datetime]) -> Optional[datetime]:

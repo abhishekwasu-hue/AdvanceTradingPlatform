@@ -26,7 +26,7 @@ export interface TicketTarget {
 export interface Draft {
   side: Side;
   lots: number;
-  orderType: OrderType;
+  orderType: OrderType | null;  // M68 PR-1: null until the user picks one or saved his own (never a platform default)
   product: Product | null;      // null until the user picks one (owner F1 / TT-12: never a platform default)
   price: string;
   trigger: string;
@@ -39,8 +39,20 @@ export const ORDER_TYPES: { value: OrderType; label: string; term?: GlossaryKey 
 ];
 /** Owner F1 (27 Oct, TT-12): with no product saved in My trading defaults nothing is pre-selected - the user picks MIS
  *  or NRML before Review / Execute (disabled until then, with this one line why). */
-export const PRODUCT_UNSET_TEXT = "Pick MIS or NRML to continue (none saved in your trading defaults).";
+export const PRODUCT_UNSET_TEXT = "Pick MIS or NRML to continue (none saved in your Trade settings).";
 export const PRODUCT_MISSING = "Pick a product: MIS or NRML";
+/** M68 PR-1 (TS1-003): no order type is pre-selected either - the ticket asks for it, with "Save as my default". */
+export const ORDER_TYPE_UNSET_TEXT = "Pick how the order is sent: Market, Limit, SL or SL-M.";
+export const ORDER_TYPE_MISSING = "Pick an order type: Market, Limit, SL or SL-M";
+/** The ticket fields a new user is asked for, in the order the ticket asks them (each with "Save as my default"). */
+export type AskField = "order-type" | "product";
+
+/** The first field still Not set (focused by the ticket), or null when both are chosen. */
+export function firstMissing(d: Pick<Draft, "orderType" | "product">): AskField | null {
+  if (d.orderType === null) return "order-type";
+  if (d.product === null) return "product";
+  return null;
+}
 
 export const PRODUCTS: { value: Product; label: string; hint: string; term: GlossaryKey }[] = [
   { value: "MIS", label: "MIS", hint: "Intraday", term: "mis" }, { value: "NRML", label: "NRML", hint: "Carry forward", term: "nrml" },
@@ -57,7 +69,7 @@ export interface DraftDefaults { lots?: number; product?: Product; orderType?: O
 /** A fresh ticket. With the user's defaults (src/settings/tradingDefaults.ts ticketPrefill) those values start it - the side
  * never comes from a default - and nothing else changes: no defaults gives today's draft exactly. */
 export function newDraft(side: Side, defaults?: DraftDefaults): Draft {
-  const draft: Draft = { side, lots: 1, orderType: "MARKET", product: null, price: "", trigger: "", stopLoss: "" };
+  const draft: Draft = { side, lots: 1, orderType: null, product: null, price: "", trigger: "", stopLoss: "" };
   if (!defaults) return draft;
   if (defaults.lots !== undefined) draft.lots = clampLots(defaults.lots);
   if (defaults.orderType !== undefined) draft.orderType = defaults.orderType;
@@ -91,7 +103,7 @@ export function clampLots(value: number): number {
 }
 
 /** The price fields an order type needs: Limit a limit price, SL both, SL-M the trigger only, Market none. */
-export function needs(orderType: OrderType): { price: boolean; trigger: boolean } {
+export function needs(orderType: OrderType | null): { price: boolean; trigger: boolean } {
   return { price: orderType === "LIMIT" || orderType === "SL", trigger: orderType === "SL" || orderType === "SL-M" };
 }
 
@@ -109,6 +121,7 @@ export function stopHint(_side: Side, _right: ContractRight = "CE"): string {
 /** What is missing before the ticket can be reviewed (the server checks everything else). */
 export function draftProblems(d: Draft, _right: ContractRight = "CE"): string[] {
   const out: string[] = [];
+  if (d.orderType === null) out.push(ORDER_TYPE_MISSING);
   if (d.product === null) out.push(PRODUCT_MISSING);
   const n = needs(d.orderType);
   if (n.price && num(d.price) === null) out.push("Enter the limit price");
@@ -121,7 +134,8 @@ export function askOf(target: TicketTarget, d: Draft, clientRef: string): OrderA
   const n = needs(d.orderType);
   return {
     underlying: target.underlying, expiry: target.expiry, strike: target.right === "FUT" ? null : target.strike, right: target.right, side: d.side,
-    lots: clampLots(d.lots), order_type: d.orderType, product: d.product as Product,       // draftProblems refuses a missing product first
+    // draftProblems asks for a missing order type / product first; the server asks again if one is still missing.
+    lots: clampLots(d.lots), order_type: d.orderType as OrderType, product: d.product as Product,
     price: n.price ? num(d.price) : null, trigger_price: n.trigger ? num(d.trigger) : null, stop_loss: num(d.stopLoss),
     chain_ltp: target.ltp && target.ltp > 0 ? target.ltp : null, client_ref: clientRef,
   };

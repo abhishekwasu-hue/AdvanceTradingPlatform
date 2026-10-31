@@ -5,6 +5,182 @@
    "title": "Order defaults",
    "fields": [
     {
+     "key": "order_defaults.holding",
+     "label": "Holding",
+     "kind": "choice",
+     "help": "Close the position the same day, or carry it forward.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "INTRADAY",
+       "label": "Intraday"
+      },
+      {
+       "value": "SWING",
+       "label": "Carry forward"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.product",
+     "label": "Product",
+     "kind": "choice",
+     "help": "The broker product for a futures or options order.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "MIS",
+       "label": "MIS (intraday)"
+      },
+      {
+       "value": "NRML",
+       "label": "NRML (carry forward)"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "mis",
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.order_type",
+     "label": "Order type",
+     "kind": "choice",
+     "help": "How an order is sent to the market.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "MARKET",
+       "label": "Market"
+      },
+      {
+       "value": "LIMIT",
+       "label": "Limit"
+      },
+      {
+       "value": "SL",
+       "label": "SL (stop-limit)"
+      },
+      {
+       "value": "SL-M",
+       "label": "SL-M (stop at market)"
+      },
+      {
+       "value": "PROTECTED_LIMIT",
+       "label": "Limit with price protection"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "sl",
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.price_protection_pct",
+     "label": "Price protection",
+     "kind": "number",
+     "help": "A market order is sent as a limit this far past the price.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.stop_limit_band_pct",
+     "label": "Stop-limit gap",
+     "kind": "number",
+     "help": "Where the exchange takes no SL-M order, the limit price sits this far past your trigger price.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": "sl-m",
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.trigger_mode",
+     "label": "Trigger on",
+     "kind": "choice",
+     "help": "When a waiting order or a stop counts as reached.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "TOUCH",
+       "label": "When the price touches it"
+      },
+      {
+       "value": "CLOSE",
+       "label": "When a candle closes past it"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "order_defaults.trigger_source",
+     "label": "Trigger price from",
+     "kind": "choice",
+     "help": "Which price a trigger on an option watches.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "PREMIUM",
+       "label": "The option's own price"
+      },
+      {
+       "value": "SPOT",
+       "label": "The index or stock price"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
      "key": "order_defaults.freeze_quantity",
      "label": "Freeze quantity",
      "kind": "fact",

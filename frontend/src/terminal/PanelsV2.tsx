@@ -264,7 +264,7 @@ export function OrderPanelV2({ ticket, state: t, onClear, paperBadge = true }: {
         </div>
         <p className="text-t13 font-tabular text-fg-muted">LTP {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}</p>
       </div>
-      <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults}
+      <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults} saveDefaults={t.saveDefaults}
         budget={t.budget} events={t.events} liquidity={t.liquidity} keysHint={false} stickyActions
         onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onReviewWith={(patch) => void t.review(patch)} onBack={t.back} onClose={onClear} />
     </div>

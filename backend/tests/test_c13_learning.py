@@ -277,7 +277,7 @@ def test_a_step_already_taken_is_skipped_and_never_sent(outbox):
     _on(me, "onboarding_emails")
     _add(BrokerCredentialRecord(tenant_id=me["tenant_id"], user_id=me["id"], broker_name="upstox", encrypted_payload="x",
                                 created_at=SIGNED + timedelta(minutes=30)),
-         StrategyDeploymentRecord(tenant_id=me["tenant_id"], strategy_id="orb_15m_5m", symbol="TEST", mode="PAPER",
+         StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=me["tenant_id"], strategy_id="orb_15m_5m", symbol="TEST", mode="PAPER",
                                   created_by=me["id"], created_at=SIGNED + timedelta(hours=1)))
     _send(SIGNED + timedelta(hours=3))
     _send(SIGNED + timedelta(hours=50))
@@ -426,7 +426,7 @@ def test_growth_funnel_counts_in_order_with_active_week_one():
         _add(BrokerCredentialRecord(tenant_id=who["tenant_id"], user_id=who["id"], broker_name="upstox", encrypted_payload="x",
                                     created_at=ten_days + timedelta(hours=1)))
     for who in (full, idle, skip):
-        _add(StrategyDeploymentRecord(tenant_id=who["tenant_id"], strategy_id="orb_15m_5m", symbol="TEST", mode="PAPER",
+        _add(StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=who["tenant_id"], strategy_id="orb_15m_5m", symbol="TEST", mode="PAPER",
                                       created_by=who["id"], created_at=ten_days + timedelta(hours=2)))
     _add(LoginEventRecord(user_id=full["id"], tenant_id=full["tenant_id"], email=full["email"], success=True,
                           created_at=ten_days + timedelta(days=3)),

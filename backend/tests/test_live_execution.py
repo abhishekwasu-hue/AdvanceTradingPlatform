@@ -80,6 +80,8 @@ class _LiveBroker(BrokerInterface):
 
 
 def _router(broker, **kwargs) -> OrderRouter:
+    kwargs.setdefault("product", "MIS")
+    kwargs.setdefault("order_style", "MARKET")
     router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=legacy(risk_per_trade_pct=1.0), broker=broker, **kwargs)
     router.fill_poll_delay_seconds = 0  # keep the retry path fast in tests
     return router
@@ -238,8 +240,7 @@ def test_paper_mode_is_unchanged_by_broker_argument():
         async with _session_factory() as session:
             u = await session.get(User, user.id)
             result, order = await execute_signal_for_user(
-                session, u, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=_signal(), broker=_LiveBroker(),
-            )
+                session, u, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=_signal(), broker=_LiveBroker(), holding="INTRADAY", order_style="MARKET")
             return result, order, await session.get(TradeRecord, order.trade_id)
 
     result, order, trade = asyncio.run(go())

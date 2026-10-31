@@ -196,8 +196,8 @@ describe("FNO-3 futures chain: each row's actions", () => {
     const ask = askOf(target, { ...newDraft("BUY", { product: "NRML" }), stopLoss: "24500" }, "ref-12345678");
     expect(ask).toMatchObject({ underlying: "NIFTY", expiry: "2026-10-27", right: "FUT", strike: null, stop_loss: 24500 });
     // DEF-0 D7: no stop is forced on any side - only the trader's own setting asks for one (the server says so)
-    expect(draftProblems(newDraft("BUY", { product: "NRML" }), "FUT")).toEqual([]);
-    expect(draftProblems(newDraft("BUY", { product: "NRML" }))).toEqual([]);
+    expect(draftProblems(newDraft("BUY", { product: "NRML", orderType: "MARKET" }), "FUT")).toEqual([]);
+    expect(draftProblems(newDraft("BUY", { product: "NRML", orderType: "MARKET" }))).toEqual([]);
     expect(stopHint("BUY", "FUT")).toBe("(optional)");
   });
 

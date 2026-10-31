@@ -82,7 +82,7 @@ class LegsRun:
 
 
 async def place_legs(broker: BrokerInterface, specs: Sequence[LegSpec], *, strategy_id: str, tenant: Any,
-                     band_pct: float, prices: Dict[str, float], live: bool, product: str = "MIS") -> LegsRun:
+                     band_pct: float | None, prices: dict[str, float], live: bool, product: str) -> LegsRun:
     """Places `specs` through `broker` with the engine: hedges first, no sold leg before every hedge is confirmed filled
     in full, the first leg that does not fill stops the run. Nothing is retried or undone here."""
     from app.execution.router import OrderRouter
@@ -98,7 +98,11 @@ async def place_legs(broker: BrokerInterface, specs: Sequence[LegSpec], *, strat
     async def place(index: int, seq: int):
         spec = specs[index]
         what = f"{spec.side} {spec.key}"
-        order_type, limit = smart_execution.order_type_for(market_ok, spec.side, float(prices.get(spec.key) or 0.0), band_pct)
+        if not market_ok and band_pct is None:      # M68 TS1-013: the venue takes no market order; the band is his own
+            from app.execution.order_defaults import needs_setting
+            return _stop(failure, f"{what}: {needs_setting('price_protection_pct')} - not sent")
+        order_type, limit = smart_execution.order_type_for(market_ok, spec.side, float(prices.get(spec.key) or 0.0),
+                                                           band_pct or 0.0)
         if order_type == "LIMIT" and not prices.get(spec.key):
             return _stop(failure, f"{what}: no price for the protected limit order - not sent")
         request = BrokerOrderRequest(

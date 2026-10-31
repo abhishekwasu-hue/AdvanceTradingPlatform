@@ -116,7 +116,7 @@ def test_per_user_trading_disable_refuses_entries_but_keeps_reads():
         from app.execution.signal_execution import execute_signal_for_user
         async with _session_factory() as session:
             user = await session.get(User, me["id"])
-            result, order = await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=_signal())
+            result, order = await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=_signal(), holding="INTRADAY", order_style="MARKET")
             return result.reasons, order.status
     reasons, status = _run(try_entry())
     assert status == "REJECTED" and any("Trading disabled for this user" in r for r in reasons)

@@ -82,7 +82,7 @@ def test_a_deployment_entry_is_still_held_for_approval(monkeypatch):
         async with _session_factory() as session:
             result, order = await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=_sig(),
                                                           idempotency_key=f"tt2:{uuid.uuid4().hex}", deployment_id=dep_id,
-                                                          origin=approval.ORIGIN_MANUAL, journal_source="MANUAL")
+                                                          origin=approval.ORIGIN_MANUAL, journal_source="MANUAL", holding="INTRADAY", order_style="MARKET")
             return result.executed, order.status, json.loads(order.reasons_json)
     executed, status, reasons = _run(go())
     assert not executed and status == "REJECTED" and "Approval-only mode" in reasons[0]
@@ -148,7 +148,7 @@ def test_the_paper_lock_still_applies_to_a_manual_order(setup, monkeypatch):
                              timestamp=datetime.now(timezone.utc), entry=100.0, stop_loss=70.0, grade=SignalGrade.VALID)
                 result, order = await execute_signal_for_user(session, await session.get(User, user.id), mode="LIVE", strategy_id="manual_fno",
                                                               signal=sig, broker=broker, idempotency_key=f"tt2-live:{uuid.uuid4().hex}",
-                                                              origin=approval.ORIGIN_MANUAL, journal_source="MANUAL")
+                                                              origin=approval.ORIGIN_MANUAL, journal_source="MANUAL", holding="INTRADAY", order_style="MARKET")
                 return result.executed, order.status, json.loads(order.reasons_json or "[]")
         executed, status, reasons = _run(live())
         assert not executed and status == "REJECTED" and any(phase0_lock.ENTRY_REASON in r for r in reasons)

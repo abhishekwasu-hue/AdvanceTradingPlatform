@@ -209,7 +209,7 @@ class SavedBasketLeg(_Prefs):
 class SavedBasket(_Prefs):
     name: str = Field(pattern=BASKET_NAME, max_length=40)
     underlying: str = Field(pattern=BASKET_SYMBOL)
-    product: Literal["MIS", "NRML"] = "MIS"
+    product: Literal["MIS", "NRML"] | None = None      # M68 TS1-004: none until he picks one; loads with the product empty
     legs: List[SavedBasketLeg] = Field(min_length=1, max_length=MAX_BASKET_LEGS)
     saved_at: MarkTime = Field(default=None)
 
@@ -351,8 +351,10 @@ class SmartExecutionPrefs(_Prefs):
     settlement_band_pct: float = Field(default=2.0, ge=0, le=20, allow_inf_nan=False,
                                        description="an option this close to its strike (% of the strike) counts as near the money")
     settlement_telegram: bool = True
-    protection_band_pct: float = Field(default=0.5, ge=0.05, le=5, allow_inf_nan=False,
-                                       description="a marketable limit this far past the price, where market orders are not allowed")
+    # M68 PR-1 (TS1-013): no starting value - Not set until he saves one. Its home is now Settings > Trade settings >
+    # Order defaults > Price protection (app/execution/order_defaults.py reads that first, then a value stored here).
+    protection_band_pct: float | None = Field(default=None, ge=0.05, le=5, allow_inf_nan=False,
+                                                 description="a marketable limit this far past the price, where market orders are not allowed")
     # SE-7 (owner, 23 Oct): when a multi-leg order stops half way (INCOMPLETE) and he has not answered within
     # `answer_minutes`, ATP applies his own choice: close the filled legs (an exit, never blocked) or keep them.
     on_no_answer: Literal["close_filled", "keep"] = "close_filled"

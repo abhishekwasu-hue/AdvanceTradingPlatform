@@ -12,6 +12,7 @@ import { PageHeader } from "../components/primitives";
 import { Details } from "../ui/Details";
 import { FROM_DEFAULTS, formPrefill, stillFromDefaults, useTradingDefaults, type FormPrefill } from "../settings/tradingDefaults";
 import { useFeatures } from "../ui/useFeatures";
+import { orderDefaultsOf, useTradeSettings } from "../settings/tradeSettings";
 import {
   BASE_TIMEFRAMES,
   type BrokerAccount,
@@ -104,9 +105,15 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   // Phase T: rule-based account choice at signal time.
   const [routingPolicy, setRoutingPolicy] = useState<RoutingPolicy | "">("");
   const [acrossBrokers, setAcrossBrokers] = useState(false);
-  // P0.5 / T5: LIVE entry style. MARKET is unchanged behaviour; PROTECTED_LIMIT caps the fill at a band past the signal price.
-  const [orderStyle, setOrderStyle] = useState<"MARKET" | "PROTECTED_LIMIT">("MARKET");
-  const [protectionPct, setProtectionPct] = useState("0.5");
+  // P0.5 / T5: the entry style - MARKET, or PROTECTED_LIMIT (the fill capped at a band past the signal price).
+  // M68 PR-1 (TS1-012): nothing pre-selected - his own Trade settings (Order defaults) when saved, else he picks here.
+  const own = orderDefaultsOf(useTradeSettings(true));
+  const [orderStyle, setOrderStyle] = useState<"" | "MARKET" | "PROTECTED_LIMIT">("");
+  const [protectionPct, setProtectionPct] = useState("");
+  const style = orderStyle || own.botOrderStyle || "";
+  const band = protectionPct.trim() !== "" ? Number(protectionPct) : own.protectionPct ?? null;
+  const entryMissing = !style ? "Choose how entries are sent (Entry: market or protected limit)."
+    : style === "PROTECTED_LIMIT" && (band === null || !Number.isFinite(band)) ? "Enter the protected limit's band %." : null;
   const [confirmLive, setConfirmLive] = useState(false);
   const [liveTyped, setLiveTyped] = useState("");
   // Phase F2: what to trade when the strategy signals on the symbol.
@@ -290,7 +297,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
         holding: held ? "SWING" : "INTRADAY",
         broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, oi_gates: oiGates.length ? oiGates : null, ...contractRules(),
         routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
-        order_style: orderStyle, market_protection_pct: orderStyle === "PROTECTED_LIMIT" && protectionPct ? Number(protectionPct) : null,
+        order_style: style || undefined, market_protection_pct: style === "PROTECTED_LIMIT" ? band : null,
         ...(paperOnly && approvalAllowed && approval ? { entry_mode: "APPROVAL" as const } : {}),
       });
       setMessage(paperOnly ? `Started on paper: ${created.symbol}. See it under Your bots.`
@@ -308,6 +315,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   }
 
   function handleCreate() {
+    if (entryMissing) { setError(entryMissing); document.getElementById("deploy-entry-style")?.focus(); return; }
     if (mode === "LIVE") {
       setConfirmLive(true);
       return;
@@ -468,20 +476,26 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
                 <input type="checkbox" checked={acrossBrokers} onChange={(e) => setAcrossBrokers(e.target.checked)} /> across brokers
               </label>
             )}
-            <span className="text-fg-muted ml-2">Entry</span>
-            <select className="rounded bg-surface-2 border border-border px-2 py-1 text-xs" value={orderStyle} onChange={(e) => setOrderStyle(e.target.value as "MARKET" | "PROTECTED_LIMIT")}
-              title="MARKET: fills at whatever the book offers. Protected limit: a marketable limit a small band past the signal price; an unfilled remainder is cancelled.">
-              <option value="MARKET">market</option>
-              <option value="PROTECTED_LIMIT">protected limit</option>
-            </select>
-            {orderStyle === "PROTECTED_LIMIT" && (
-              <label className="flex items-center gap-1 text-fg-muted">
-                band
-                <input className="w-14 rounded bg-surface-2 border border-border px-1 py-0.5 text-xs" value={protectionPct} onChange={(e) => setProtectionPct(e.target.value)} inputMode="decimal" /> %
-              </label>
-            )}
           </div>
         )}
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs" data-deploy="entry-style">
+          <label htmlFor="deploy-entry-style" className="text-fg-muted">Entry</label>
+          <select id="deploy-entry-style" className="rounded bg-surface-2 border border-border px-2 py-1 text-xs" value={style}
+            onChange={(e) => setOrderStyle(e.target.value as "" | "MARKET" | "PROTECTED_LIMIT")} aria-invalid={!style || undefined}
+            title="MARKET: fills at whatever the book offers. Protected limit: a marketable limit a small band past the signal price; an unfilled remainder is cancelled.">
+            <option value="">Not set - choose</option>
+            <option value="MARKET">market</option>
+            <option value="PROTECTED_LIMIT">protected limit</option>
+          </select>
+          {!orderStyle && own.botOrderStyle && <span className="text-brand">{FROM_DEFAULTS}</span>}
+          {style === "PROTECTED_LIMIT" && (
+            <label className="flex items-center gap-1 text-fg-muted">
+              band
+              <input className="w-14 rounded bg-surface-2 border border-border px-1 py-0.5 text-xs" value={protectionPct}
+                placeholder={own.protectionPct !== undefined ? String(own.protectionPct) : "Not set"} onChange={(e) => setProtectionPct(e.target.value)} inputMode="decimal" /> %
+            </label>
+          )}
+        </div>
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
           <div className="grid sm:grid-cols-6 gap-3 items-end">

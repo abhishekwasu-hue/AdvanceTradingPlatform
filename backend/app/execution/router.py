@@ -71,10 +71,17 @@ class ExecutionResult:
 
 _FILLED_STATUSES = {"COMPLETE", "FILLED", "TRADED", "EXECUTED"}
 _REJECTED_STATUSES = {"REJECTED", "CANCELLED", "CANCELED", "EXPIRED", "LAPSED"}
+# M68 PR-1 (TS1-011): NOT a default for an entry any more - an entry's protection band is the user's own (his bot's or his
+# Trade settings, app/execution/order_defaults.py); with none, an entry that needs one is not placed. The value stays as
+# the broker adapters' exit-only fallback (app/execution/marketable_limit.py DEFAULT_PROTECTION_PCT, ADR-0004).
 DEFAULT_MARKET_PROTECTION_PCT = 0.5
 ORDER_STYLES = ("MARKET", "PROTECTED_LIMIT")
 PAPER_EXECUTIONS = ("direct", "adapter")
 _TICK = 0.05
+
+
+class _BandNotSet(Exception):
+    """An entry needs a marketable limit and the user saved no price protection (M68 PR-1)."""
 
 
 def protected_limit_price(reference: float, side: OrderSide, protection_pct: float) -> float:
@@ -121,8 +128,8 @@ class OrderRouter:
 
     def __init__(
         self, mode: ExecutionMode, risk_config: RiskConfig, broker: Optional[BrokerInterface] = None,
-        exchange: str = "NSE", product: str = "MIS", place_protective_stop: bool = True,
-        algo_id: Optional[str] = None, order_style: str = "MARKET", market_protection_pct: Optional[float] = None,
+        exchange: str = "NSE", product: str | None = None, place_protective_stop: bool = True,
+        algo_id: str | None = None, order_style: str | None = None, market_protection_pct: float | None = None,
         is_option: Optional[bool] = None, paper_execution: str = "direct", freeze_quantity: Optional[int] = None,
         order_ref: int | None = None,
     ) -> None:
@@ -142,11 +149,13 @@ class OrderRouter:
         # order above it goes as several orders of whole lots below it. None = not known / not asked: one order.
         self.freeze_quantity = freeze_quantity
         self.algo_id = algo_id
-        # P0.5 / T5: MARKET (default) or PROTECTED_LIMIT - a marketable limit `market_protection_pct` past the
-        # signal price. P0.5 / T2: `is_option` tells the stop which order type the broker accepts (None = infer
+        # P0.5 / T5: MARKET or PROTECTED_LIMIT - a marketable limit `market_protection_pct` past the signal price.
+        # M68 PR-1 (TS1-009 / 010 / 011): the product, the style and the band are the caller's (the user's own values,
+        # app/execution/order_defaults.py); None = Not set, and an entry that needs it is not placed (no MIS / MARKET /
+        # 0.5 % chosen here). P0.5 / T2: `is_option` tells the stop which order type the broker accepts (None = infer
         # from the symbol).
-        self.order_style = (order_style or "MARKET").upper()
-        self.market_protection_pct = market_protection_pct if market_protection_pct is not None else DEFAULT_MARKET_PROTECTION_PCT
+        self.order_style = order_style.upper() if order_style else None
+        self.market_protection_pct = market_protection_pct
         self.is_option = is_option
         self.risk_manager = RiskManager(risk_config)
         self.paper_broker = PaperBroker()
@@ -207,6 +216,25 @@ class OrderRouter:
         practice = bool(getattr(venue, "paper", False))
         max_tag = getattr(self.broker, "max_tag_length", None) or 20
 
+        # M68 PR-1: the user's own product / order type / band, checked before the broker is asked anything.
+        from app.execution import order_defaults
+        if self.product is None:
+            return ExecutionResult(executed=False, reasons=notes + [order_defaults.needs_setting("holding")])
+        if self.order_style is None:
+            return ExecutionResult(executed=False, reasons=notes + [order_defaults.needs_setting("order_type")])
+        band = self.market_protection_pct
+        needs_band = order_defaults.needs_setting("price_protection_pct")
+
+        def limit_for(side: OrderSide) -> float:
+            if band is None:
+                raise _BandNotSet
+            return protected_limit_price(signal.entry, side, band)
+
+        venue_caps = getattr(venue, "capabilities", None)
+        if band is None and (self.order_style == "PROTECTED_LIMIT"
+                             or (venue_caps is not None and not venue_caps.market_orders_allowed)):
+            return ExecutionResult(executed=False, reasons=notes + [needs_band])
+
         # Phase G2: the broker's circuit breaker (app/brokers/circuit_breaker.py). Open means the
         # broker has been failing across the platform: no new entry, said so on the trail. A
         # business decision, so REJECTED - the broker was never asked.
@@ -214,7 +242,6 @@ class OrderRouter:
         if not breaker.allow_submission():
             return ExecutionResult(executed=False, reasons=notes + [breaker.refusal_reason()])
         records_own_calls = not getattr(venue, "records_circuit", False)
-
         order_request = BrokerOrderRequest(
             symbol=signal.symbol,
             exchange=self.exchange,
@@ -225,15 +252,17 @@ class OrderRouter:
             tag=entry_tag,
             intent=ORDER_INTENT_ENTRY,
         )
-        if self.order_style == "PROTECTED_LIMIT":
-            limit = protected_limit_price(signal.entry, order_request.transaction_type, self.market_protection_pct)
+        if self.order_style == "PROTECTED_LIMIT" and band is not None:
+            limit = protected_limit_price(signal.entry, order_request.transaction_type, band)
             order_request = order_request.model_copy(update={"order_type": "LIMIT", "price": limit})
-            notes.append(f"Protected limit entry at {limit} ({self.market_protection_pct:g}% past {signal.entry})")
+            notes.append(f"Protected limit entry at {limit} ({band:g}% past {signal.entry})")
         # Part D3: the broker's order-type policy for algo entries (rule-set data; the default changes nothing). The paper
         # venue practising for a broker (`venue`) follows that broker's policy, the plain paper venue the default one.
-        policed, policy_note = apply_entry_policy(
-            order_request, getattr(venue, "venue", None) or venue.name,
-            lambda: protected_limit_price(signal.entry, order_request.transaction_type, self.market_protection_pct))
+        try:
+            policed, policy_note = apply_entry_policy(
+                order_request, getattr(venue, "venue", None) or venue.name, lambda: limit_for(order_request.transaction_type))
+        except _BandNotSet:
+            return ExecutionResult(executed=False, reasons=notes + [needs_band])
         if policed is None:
             return ExecutionResult(executed=False, reasons=notes + [policy_note])
         order_request = policed
@@ -244,7 +273,9 @@ class OrderRouter:
             # TM-3: where the venue takes no market order, a marketable limit the protection band past the checked price
             # (one price rule for every path: app/execution/smart_execution.order_type_for).
             from app.execution.smart_execution import order_type_for
-            order_type, limit = order_type_for(False, order_request.transaction_type.value, signal.entry, self.market_protection_pct)
+            if band is None:      # the broker takes no market order (a fact): the entry needs his own band (TS1-013)
+                return ExecutionResult(executed=False, reasons=notes + [needs_band])
+            order_type, limit = order_type_for(False, order_request.transaction_type.value, signal.entry, band)
             order_request = order_request.model_copy(update={"order_type": order_type, "price": limit})
 
         # Part 7 smart execution: above the exchange's freeze quantity the order goes as several orders of whole lots

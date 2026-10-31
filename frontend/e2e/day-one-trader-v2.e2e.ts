@@ -2,7 +2,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockCharts } from "./chartsMocks";
-import { choose, expectChoice, expectComboValue } from "./combobox";
+import { choose, expectChoice, expectComboValue, pickEntryStyle } from "./combobox";
 import { mockApi } from "./mockApi";
 import { PRE_MARKET } from "../src/rhythm/fixtures";
 import { openListPicker, screenerTool } from "./screenerTools";
@@ -467,6 +467,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await expect(form.locator("[data-defaults-line]")).toContainText("each entry waits for your Approve");
         await form.scrollIntoViewIfNeeded();
         await shot("07a-adopt-on-paper");
+        await pickEntryStyle(page, form);
         await form.getByRole("button", { name: "Start on paper" }).click();
         await expect(form).toContainText("Started on paper: RELIANCE.");
         const started = world.posts.find((p) => p.url === "/deployments")?.body as Record<string, unknown>;

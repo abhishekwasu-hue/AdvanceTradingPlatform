@@ -105,8 +105,7 @@ def _execute(user: User, broker, *, signal=None, mode="LIVE", contract=None, rul
             u = await session.get(User, user.id)
             result, order = await execute_signal_for_user(
                 session, u, mode=mode, strategy_id="ema_rsi_scalper_1m", signal=signal or _signal(), risk_config=RISK,
-                broker=broker, quote_broker=broker, contract=contract, rules=rules,
-            )
+                broker=broker, quote_broker=broker, contract=contract, rules=rules, holding="INTRADAY", order_style="MARKET")
             trade = await session.get(TradeRecord, order.trade_id) if order.trade_id else None
             events = [e.to_status for e in (await session.scalars(
                 select(OrderEventRecord).where(OrderEventRecord.order_id == order.id).order_by(OrderEventRecord.id))).all()]
@@ -186,33 +185,33 @@ def test_expired_contract_refused_in_every_mode_and_today_noted():
 # --- live_margin_cap -----------------------------------------------------------------------------
 
 def test_margin_cap_from_calculator_and_refusals():
-    cap, note = _run(live_margin_cap(_Broker(per_share=500.0, available=10_000.0), symbol="RELIANCE", exchange="NSE",
+    cap, note = _run(live_margin_cap(_Broker(per_share=500.0, available=10_000.0), product="MIS", symbol="RELIANCE", exchange="NSE",
                                      side=OrderSide.BUY, unit=1.0))
     assert cap == 16 and "broker margin calculator" in note   # 0.8 * 10,000 / 500
 
     # Lots: the cap is a whole number of lots.
-    cap, _ = _run(live_margin_cap(_Broker(per_share=100.0, available=100_000.0), symbol="X", exchange="NFO", side=OrderSide.BUY, unit=75.0))
+    cap, _ = _run(live_margin_cap(_Broker(per_share=100.0, available=100_000.0), product="MIS", symbol="X", exchange="NFO", side=OrderSide.BUY, unit=75.0))
     assert cap == 750   # 80,000 / 7,500 per lot = 10 lots
 
     with pytest.raises(PreCheckRefusal, match="Insufficient margin"):
-        _run(live_margin_cap(_Broker(per_share=500.0, available=300.0), symbol="RELIANCE", exchange="NSE", side=OrderSide.BUY, unit=1.0))
+        _run(live_margin_cap(_Broker(per_share=500.0, available=300.0), product="MIS", symbol="RELIANCE", exchange="NSE", side=OrderSide.BUY, unit=1.0))
     with pytest.raises(PreCheckRefusal, match="Could not read available margin"):
-        _run(live_margin_cap(_Broker(per_share=500.0, available=None), symbol="RELIANCE", exchange="NSE", side=OrderSide.BUY, unit=1.0))
+        _run(live_margin_cap(_Broker(per_share=500.0, available=None), product="MIS", symbol="RELIANCE", exchange="NSE", side=OrderSide.BUY, unit=1.0))
 
 
 def test_margin_unknown_is_noted_not_guessed_except_bought_option_premium():
     # No calculator, equity: not verifiable -> no cap, broker enforces (as before Phase Q).
-    cap, note = _run(live_margin_cap(_Broker(per_share=None), symbol="RELIANCE", exchange="NSE", side=OrderSide.BUY, unit=1.0, unit_price=100.0))
+    cap, note = _run(live_margin_cap(_Broker(per_share=None), product="MIS", symbol="RELIANCE", exchange="NSE", side=OrderSide.BUY, unit=1.0, unit_price=100.0))
     assert cap is None and "not verifiable" in note
     # Calculator errors count as unknown too - never a refusal on their own.
-    cap, note = _run(live_margin_cap(_Broker(per_share=None, calculator_raises=True), symbol="RELIANCE", exchange="NSE", side=OrderSide.BUY, unit=1.0))
+    cap, note = _run(live_margin_cap(_Broker(per_share=None, calculator_raises=True), product="MIS", symbol="RELIANCE", exchange="NSE", side=OrderSide.BUY, unit=1.0))
     assert cap is None and "not verifiable" in note
     # Bought option: premium x lot is the exact cash, so it is checked and capped.
-    cap, note = _run(live_margin_cap(_Broker(per_share=None, available=30_000.0), symbol="NIFTY CE", exchange="NFO", side=OrderSide.BUY,
+    cap, note = _run(live_margin_cap(_Broker(per_share=None, available=30_000.0), product="MIS", symbol="NIFTY CE", exchange="NFO", side=OrderSide.BUY,
                                      unit=75.0, unit_price=120.0, exact_cash=True))
     assert cap == 150 and "premium x lot" in note   # 24,000 / 9,000 per lot = 2 lots
     with pytest.raises(PreCheckRefusal, match="Insufficient margin"):
-        _run(live_margin_cap(_Broker(per_share=None, available=5_000.0), symbol="NIFTY CE", exchange="NFO", side=OrderSide.BUY,
+        _run(live_margin_cap(_Broker(per_share=None, available=5_000.0), product="MIS", symbol="NIFTY CE", exchange="NFO", side=OrderSide.BUY,
                              unit=75.0, unit_price=120.0, exact_cash=True))
 
 

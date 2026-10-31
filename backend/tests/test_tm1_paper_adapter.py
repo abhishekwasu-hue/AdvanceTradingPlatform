@@ -27,6 +27,7 @@ from app.execution import india_costs
 from app.execution.paper_adapter import PaperExecutionAdapter
 from app.execution.paper_broker import PaperBroker
 from app.execution.router import OrderRouter
+from app.execution.tagging import client_order_id
 from app.instruments.models import ContractSpec
 from app.paper import fno_ticket
 from app.risk_engine.risk_manager import TradingDayState
@@ -221,7 +222,9 @@ def _snapshot(tenant_id: int):
                 events = list(await session.scalars(select(OrderEventRecord).where(OrderEventRecord.order_id == o.id).order_by(OrderEventRecord.id)))
                 trade = await session.get(TradeRecord, o.trade_id) if o.trade_id else None
                 out.append({
-                    "order": (o.mode, o.strategy_id, o.status, o.quantity, o.algo_tag, json.loads(o.reasons_json or "[]")),
+                    # M55 S4: the tag's client order id is derived from the row id, which differs per path by design.
+                    "order": (o.mode, o.strategy_id, o.status, o.quantity,
+                              (o.algo_tag or "").replace(client_order_id("E", o.id), "<id>"), json.loads(o.reasons_json or "[]")),
                     # the trade's own id differs between two organisations; everything else on the trail must match
                     "trail": [(e.from_status, e.to_status, (e.detail or "").replace(f"#{o.trade_id}", "#<trade>")) for e in events],
                     "trade": None if trade is None else (trade.mode, trade.direction, trade.entry_price, trade.quantity, trade.stop_loss,

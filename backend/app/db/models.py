@@ -617,6 +617,14 @@ class StrategyDeploymentRecord(Base):
     last_signal_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # M55 S7: why the bot is waiting right now, in plain words for its card ("Waiting: market closed"); written with
+    # last_evaluated_at on every pass, also the early skips. NULL = it was evaluated normally.
+    wait_reason: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    # M55 S7: market-data read failures in a row (code errors keep using consecutive_failures). After
+    # DEPLOYMENT_DATA_FAILURES_BEFORE_WAIT of them the bot is "waiting for data" (still ACTIVE, never PAUSED) from
+    # waiting_for_data_since; the first cycle that reads data again clears both by itself.
+    data_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    waiting_for_data_since: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Phase F2: what to trade when the strategy signals on `symbol`. UNDERLYING keeps the original
     # behaviour; OPTION/FUTURE resolve a contract from the instrument master at signal time using
     # the rules below (app/instruments/contracts.py).
@@ -686,6 +694,23 @@ class StrategyDeploymentRecord(Base):
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class RuntimeCounterRecord(Base):
+    """M55 S4: the worker's per-position counters and alert cool-downs (app/trading/stop_state.py), kept here so a restart
+    (or a Redis flush) does not reset them: how many immediate exits a position has had, the stop re-arm rejections in a
+    row, the checks an earlier exit has been waiting, and when each CRITICAL alert last went out. One row per
+    (`name`, `key`): `name` the counter table, `key` the position (or leg group) id, `value` its JSON value (an alert time
+    is wall-clock UTC seconds)."""
+
+    __tablename__ = "runtime_counters"
+    __table_args__ = (UniqueConstraint("name", "key", name="uq_runtime_counter_name_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(40), nullable=False)
+    key: Mapped[str] = mapped_column(String(80), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False, default="null")
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 
 class WorkerHeartbeatRecord(Base):

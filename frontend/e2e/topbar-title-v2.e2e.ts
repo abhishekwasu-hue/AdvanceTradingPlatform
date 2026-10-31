@@ -12,7 +12,7 @@ const setup = JSON.parse(readFileSync(new URL("./fixtures/setup_v2.json", import
 
 const FEATURES = { ...(F.features as Record<string, boolean>), colour_v2: true };
 
-async function open(page: Page, path: string) {
+async function open(page: Page, path: string, features: Record<string, boolean> = FEATURES) {
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
   await page.addInitScript(() => {
     try {
@@ -21,11 +21,13 @@ async function open(page: Page, path: string) {
     } catch { /* storage unavailable */ }
   });
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-  await mockApi(page, { features: FEATURES, brokers: F.token_status as unknown[] });
+  await mockApi(page, { features, brokers: F.token_status as unknown[] });
   await mockDashboard(page, { state: "connected", me: true });
   await page.route(/\/api\/v1\/strategies$/, (r) => r.fulfill({ json: setup.strategies }));
   await page.goto(path);
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; }" });
+  // Colour v2 and the v2 top bar come with the v2 shell (`ui_v2`); the v1 page check (ui_v2 off) has neither.
+  if (features.ui_v2 === false) return;
   await expect(page.locator("html[data-colour='v2']")).toHaveCount(1);
   await expect(page.locator("[data-topbar-title]")).not.toHaveText("");
 }
@@ -66,18 +68,24 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
   });
 }
 
-/** The number of lines a text node's words take (the tops of its line boxes). */
+/**
+ * The number of lines an element's text takes: its line boxes grouped by their top. A box within half a line of the
+ * previous line's top is on the same line (a filter chip's "All" and its count "4" are separate boxes a pixel or two
+ * apart); a wrapped word starts a full line lower.
+ */
 async function lines(page: Page, selector: string) {
   return page.locator(selector).evaluateAll((els) => els.map((el) => {
     const range = document.createRange();
     range.selectNodeContents(el);
-    const tops = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top)));
-    return { text: el.textContent ?? "", lines: tops.size, overflow: el.scrollWidth - el.clientWidth };
+    const rects = [...range.getClientRects()].filter((r) => r.width > 0).sort((a, b) => a.top - b.top);
+    const tops: number[] = [];
+    for (const r of rects) if (!tops.length || r.top - tops[tops.length - 1] > r.height / 2) tops.push(r.top);
+    return { text: el.textContent ?? "", lines: tops.length, overflow: el.scrollWidth - el.clientWidth };
   }));
 }
 
 // REV-S5: on a 375 px phone the page title stays whole on one line ("Paper / bot", "Find / setups" wrapped), and the
-// Library's category chip does not wrap ("MULTI- / TIMEFRAME").
+// Library's category chips do not wrap ("MULTI- / TIMEFRAME"), on the v2 card page and on the v1 page.
 test.describe("REV-S5 phone title and category chip 375", () => {
   test.use({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
   for (const path of ["/deployments", "/screener", "/strategies"]) {
@@ -89,8 +97,24 @@ test.describe("REV-S5 phone title and category chip 375", () => {
       expect(m.rowOverflow, "nothing in the bar runs past the edge").toBeLessThanOrEqual(0);
     });
   }
+  // M49 U3: with `ui_v2` on the Library is the v2 card page - its category / "You use it" chips and the category filters
+  // stay whole on one line; with `ui_v2` off the v1 page's category chip does too.
   test("REV-S5: the Library's category chips do not wrap", async ({ page }) => {
     await open(page, "/strategies");
+    await expect(page.locator("[data-page='strategy-library-v2']")).toBeVisible();
+    await expect(page.locator("[data-library-card] [data-chip]").first()).toBeVisible();
+    const chips = await lines(page, "[data-library-card] [data-chip='category'], [data-library-card] [data-chip='in-use']");
+    expect(chips.map((c) => c.text)).toContain("Multi-timeframe");
+    const filters = await lines(page, "[data-page='strategy-library-v2'] button[aria-pressed]:not([data-library-pick])");
+    expect(filters.map((c) => c.text.replace(/\s*\d+$/, ""))).toEqual(expect.arrayContaining(["All", "Indicators", "Multi-timeframe"]));
+    for (const c of [...chips, ...filters]) {
+      expect(c.lines, `"${c.text}" on one line`).toBe(1);
+      expect(c.overflow, `"${c.text}" fits its chip`).toBeLessThanOrEqual(0);
+    }
+  });
+  test("REV-S5: the v1 Library's category chips do not wrap (ui_v2 off)", async ({ page }) => {
+    await open(page, "/strategies", { ...FEATURES, ui_v2: false });
+    await expect(page.locator("[data-page='strategy-library-v2']")).toHaveCount(0);
     await expect(page.locator("[data-chip='strategy-category']").first()).toBeVisible();
     const chips = await lines(page, "[data-chip='strategy-category']");
     expect(chips.map((c) => c.text)).toContain("Multi-timeframe");

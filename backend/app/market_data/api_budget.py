@@ -36,6 +36,13 @@ same symbol on many screens - can never spend the broker allowance the trading w
 - **One broker call per symbol.** A quote is cached in Redis for QUOTE_CACHE_SECONDS per (credential, exchange, symbol),
   and one request at a time fetches it (a short lock); the others wait for its result. Every user and tab on the same
   credential shares that one call; a BYOK member's own credential has its own entries.
+- **M71 PL-2: the published windows too.** In Redis, every token also takes a slot in the credential's PUBLISHED
+  broker windows (app/brokers/broker_limits.py: the safety margin below each, the exits' reserve left free), in the same
+  keys the trading worker counts in - one script, so API and worker together stay inside the broker's limits. A full
+  one-second window is waited for like the bucket; a full longer window refuses at once. Redis down: this module's own
+  per-process share only (as before). A broker 429 is retried with back-off and jitter inside the request's allowance
+  (BudgetedAdapter); `budgeted_data_adapter` is the one factory data readers build their adapter with. Every granted
+  token is counted per day (broker_limits.COUNTER).
 Nothing here places an order.
 """
 import asyncio
@@ -56,9 +63,17 @@ API_BURST = 2                     # LD-10: history tokens the bucket may hold (a
 # The brokers' published per-second limits on historical-candle calls (from their API documentation as recorded in the
 # repository: Kite 3/s on historical candles, Dhan 5/s on its Data APIs, Upstox about 25/s on standard APIs). A broker
 # missing here gets no burst.
-PUBLISHED_HISTORY_PER_SECOND: Dict[str, int] = {"zerodha": 3, "dhan": 5, "upstox": 25}
+# M71 PL-2: read from the one published table (app/brokers/broker_limits.py), no figure of its own.
+def _history_per_second(broker: str) -> int | None:
+    from app.brokers.broker_limits import SECOND, spec_for
+    limits = [n for b in spec_for(broker).buckets_for("history") for s, n in b.windows if s == SECOND]
+    return min(limits) if limits else None
+
+
+PUBLISHED_HISTORY_PER_SECOND: Dict[str, int] = {
+    name: n for name in ("zerodha", "dhan", "upstox") if (n := _history_per_second(name)) is not None}
 HISTORY_CALLS = frozenset({"get_historical_data", "get_intraday_candles"})
-UPSTOX_API_PER_30MIN = 500        # of Upstox's 2,000 standard requests per 30 minutes per user
+UPSTOX_API_PER_30MIN = 500        # of Upstox's 1,000 (lower published set) standard requests per 30 minutes per user
 TOKEN_WAIT_SECONDS = 2.0
 RETRY_EVERY_SECONDS = 0.2
 QUOTE_CACHE_SECONDS = 4
@@ -113,9 +128,10 @@ def api_limits(broker: str) -> ApiLimits:
 _TAKE_LUA = (
     "local t = redis.call('time'); local now = tonumber(t[1]) + tonumber(t[2]) / 1000000; "
     "local rate = tonumber(ARGV[1]); local cap = tonumber(ARGV[2]); "
-    "for i = #KEYS, 2, -1 do local w = tonumber(ARGV[2 * i - 1]); "
+    "local soon = 0; for i = #KEYS, 2, -1 do local w = tonumber(ARGV[2 * i - 1]); "
     "redis.call('zremrangebyscore', KEYS[i], '-inf', now - w); "
-    "if redis.call('zcard', KEYS[i]) + 1 > tonumber(ARGV[2 * i]) then return -i end end; "
+    "if redis.call('zcard', KEYS[i]) + 1 > tonumber(ARGV[2 * i]) then if w <= 1 then soon = 1 else return -i end end end; "
+    "if soon == 1 then return -1 end; "
     "local b = redis.call('hmget', KEYS[1], 'tokens', 'ts'); "
     "local tokens = tonumber(b[1]); local ts = tonumber(b[2]); "
     "if tokens == nil or ts == nil then tokens = cap; ts = now end; "
@@ -183,14 +199,21 @@ def _local_take(record_id: int, limits: ApiLimits, kind: str = "quote") -> int:
     return 1
 
 
-async def _redis_take(record_id: int, limits: ApiLimits, kind: str = "quote") -> Optional[int]:
+async def _redis_take(record_id: int, limits: ApiLimits, kind: str = "quote", broker: str | None = None) -> int | None:
     from app.cache.client import _get_client
     windows = limits.windows()
+    keys = [_bucket_key(record_id), *_keys(record_id, windows)]
+    if broker is not None:
+        # M71 PL-2: the credential's PUBLISHED windows (broker_limits), the very keys the trading worker counts in, so
+        # worker and API together stay inside what the broker allows; a full one-second window is waitable (-1).
+        from app.brokers.broker_limits import shared_windows
+        for key, seconds, allowed in shared_windows(record_id, broker, "history" if kind == "history" else "quote"):
+            keys.append(key)
+            windows = [*windows, (seconds, allowed)]
     args: List[Any] = [limits.per_second, limits.capacity]
     for seconds, limit in windows:
         args += [seconds, limit]
     args += [uuid.uuid4().hex, limits.reserve(kind)]
-    keys = [_bucket_key(record_id), *_keys(record_id, windows)]
     try:
         client: Any = _get_client()                       # redis-py types eval as sync-or-async
         return int(await client.eval(_TAKE_LUA, len(keys), *keys, *args))
@@ -203,11 +226,15 @@ async def _attempt(record_id: int, broker: str, kind: str = "quote") -> int:
     room. `kind` "history" may use the burst; anything else ("quote") may not."""
     from app.core.rate_limit import redis_backed
     limits = api_limits(broker)
+    verdict: int | None = None
     if redis_backed():
-        verdict = await _redis_take(record_id, limits, kind)
-        if verdict is not None:
-            return verdict
-    return _local_take(record_id, limits, kind)
+        verdict = await _redis_take(record_id, limits, kind, broker)
+    if verdict is None:
+        verdict = _local_take(record_id, limits, kind)
+    if verdict == 1:
+        from app.brokers.broker_limits import COUNTER, DATA_POOL
+        await COUNTER.add(broker, DATA_POOL, "history" if kind == "history" else "quote", purpose=_PURPOSE.get())
+    return verdict
 
 
 async def try_take(record_id: int, broker: str, kind: str = "quote") -> bool:
@@ -327,6 +354,8 @@ class WouldWait(BudgetUsed):
 
 
 _NO_WAIT: "contextvars.ContextVar[bool]" = contextvars.ContextVar("api_budget_no_wait", default=False)
+# M71 PL-2: the label a budgeted call is counted under as well ("screener", "chart", "copilot", ...; broker_limits.COUNTER).
+_PURPOSE: "contextvars.ContextVar[str | None]" = contextvars.ContextVar("api_budget_purpose", default=None)
 
 
 @contextlib.contextmanager
@@ -354,10 +383,12 @@ class BudgetedAdapter:
     BudgetUsed without reaching the broker, and after the first refusal the next ones do not wait (the rest of a screen
     run is marked at once)."""
 
-    def __init__(self, inner: Any, record_id: int, broker: str, wait_seconds: Optional[float] = None) -> None:
+    def __init__(self, inner: Any, record_id: int, broker: str, wait_seconds: float | None = None,
+                 purpose: str | None = None) -> None:
         self._inner = inner
         self._record_id = record_id
         self._broker = broker
+        self._purpose = purpose
         self._deadline = time.monotonic() + (CANDLE_WAIT_SECONDS if wait_seconds is None else wait_seconds)
         self.refused = 0
         self.taken = 0
@@ -370,23 +401,72 @@ class BudgetedAdapter:
         kind = "history" if name in HISTORY_CALLS else "quote"     # LD-10 review: the burst is for candle calls only
 
         async def call(*args: Any, **kwargs: Any) -> Any:
-            if _NO_WAIT.get() and not self.refused:
-                verdict = await _attempt(self._record_id, self._broker, kind)
-                _observe_wait(kind, 0.0)
-                if verdict == -1:
-                    raise WouldWait("no token this instant - fetched outside the shared fill")
-                if verdict != 1:
-                    self.refused += 1
-                    raise BudgetUsed("broker rate budget used - try again shortly")
-                self.taken += 1
-                return await attr(*args, **kwargs)
-            wait = 0.0 if self.refused else max(0.0, self._deadline - time.monotonic())
-            started = time.monotonic()
-            granted = await take(self._record_id, self._broker, wait, kind)
-            _observe_wait(kind, time.monotonic() - started)
-            if not granted:
+            token = _PURPOSE.set(self._purpose or _PURPOSE.get())
+            try:
+                return await self._with_backoff(name, kind, attr, args, kwargs)
+            finally:
+                _PURPOSE.reset(token)
+        return call
+
+    async def _with_backoff(self, name: str, kind: str, attr: Any, args: Any, kwargs: Any) -> Any:
+        """M71 PL-2: a broker "too many requests" answer is retried after an exponential, jittered pause (each retry takes
+        a token again) while this request's time allowance lasts; then BudgetUsed - the caller's plain "budget used"
+        (never the broker's raw error)."""
+        from app.brokers import broker_limits
+        attempt = 0
+        while True:
+            try:
+                return await self._one(name, kind, attr, args, kwargs)
+            except BudgetUsed:
+                raise
+            except Exception as exc:
+                if not broker_limits.is_rate_limited(exc):
+                    raise
+                await broker_limits.COUNTER.add(self._broker, broker_limits.DATA_POOL,
+                                                "history" if kind == "history" else "quote", rate_limited=True)
+                delay = broker_limits.backoff_delay(attempt)
+                left = min(self._deadline - time.monotonic(), _config_429_data_wait())
+                if _NO_WAIT.get() or delay > left:
+                    raise BudgetUsed("broker rate budget used - try again shortly") from exc
+                await asyncio.sleep(delay)
+                attempt += 1
+
+    async def _one(self, name: str, kind: str, attr: Any, args: Any, kwargs: Any) -> Any:
+        if _NO_WAIT.get() and not self.refused:
+            verdict = await _attempt(self._record_id, self._broker, kind)
+            _observe_wait(kind, 0.0)
+            if verdict == -1:
+                raise WouldWait("no token this instant - fetched outside the shared fill")
+            if verdict != 1:
                 self.refused += 1
                 raise BudgetUsed("broker rate budget used - try again shortly")
             self.taken += 1
             return await attr(*args, **kwargs)
-        return call
+        wait = 0.0 if self.refused else max(0.0, self._deadline - time.monotonic())
+        started = time.monotonic()
+        granted = await take(self._record_id, self._broker, wait, kind)
+        _observe_wait(kind, time.monotonic() - started)
+        if not granted:
+            self.refused += 1
+            raise BudgetUsed("broker rate budget used - try again shortly")
+        self.taken += 1
+        return await attr(*args, **kwargs)
+
+
+def _config_429_data_wait() -> float:
+    from app.core import config
+    return float(config.BROKER_429_DATA_MAX_WAIT_SECONDS)
+
+
+def budgeted_data_adapter(record: Any, purpose: str, *, wait_seconds: float | None = None,
+                          adapter: Any = None) -> "BudgetedAdapter":
+    """M71 PL-2 (review W2-0): THE factory every data reader (Screener, charts, Copilot, alerts, AI evidence, backfills)
+    builds its broker adapter with, for one credential row: `token_lifecycle.build_adapter(record)` (or `adapter`, an
+    adapter already built for that row) wrapped so every data call takes a token from the credential's API share and its
+    PUBLISHED windows (shared with the trading worker in Redis), waits for a slot within `wait_seconds`
+    (CANDLE_WAIT_SECONDS), retries a broker 429 with back-off and is counted per day under `purpose`. Data only: an
+    order or account call passes through unbudgeted here (orders go through the worker's RateLimitedBroker)."""
+    if adapter is None:
+        from app.brokers.token_lifecycle import build_adapter
+        adapter = build_adapter(record)
+    return BudgetedAdapter(adapter, int(record.id), str(record.broker_name), wait_seconds, purpose=purpose)

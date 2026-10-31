@@ -104,8 +104,8 @@ def _use_redis(monkeypatch, fake: Optional[FakeRedis]):
 
 def test_the_api_share_per_broker_and_its_upstox_30_minute_window():
     up = api_budget.api_limits("upstox")
-    assert (up.per_second, up.per_minute, up.per_30min) == (4, 100, 500)            # half of 8/s and of 200/min, 500 of 2,000 per 30 min
-    assert [w for w, _ in up.windows()] == [60, 1800] and up.capacity == 4           # the per-second rate is the bucket
+    assert (up.per_second, up.per_minute, up.per_30min) == (6, 75, 500)             # M71 PL-2: half of 12/s and of 150/min, 500 of 1,000 per 30 min
+    assert [w for w, _ in up.windows()] == [60, 1800] and up.capacity == 6           # the per-second rate is the bucket
     for broker in ("zerodha", "dhan"):
         limits = api_budget.api_limits(broker)
         assert (limits.per_second, limits.per_minute, limits.per_30min) == (1, 50, None)
@@ -203,7 +203,7 @@ def test_tokens_are_counted_in_redis_per_credential_by_every_process(monkeypatch
     assert run(api_budget.try_take(41, "upstox")) is False                          # the shared minute window is full
     assert run(api_budget.try_take(42, "upstox")) is True                           # another member's own credential (BYOK)
     keys, argv = fake.evals[0]
-    assert keys == ("ab:{41}:tb", "ab:{41}:60", "ab:{41}:1800") and argv[:6] == (100, 100, 60, 3, 1800, 10)   # one hash slot
+    assert keys[:3] == ("ab:{41}:tb", "ab:{41}:60", "ab:{41}:1800") and argv[:6] == (100, 100, 60, 3, 1800, 10)   # one hash slot
     assert len(fake.zsets["ab:{41}:60"]) == 3                                      # the refused call counted nowhere
 
     _use_redis(monkeypatch, None)                                                  # Redis unreachable: the local window limits

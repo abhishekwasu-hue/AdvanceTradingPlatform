@@ -46,3 +46,40 @@ def shared_client(base_url: str, timeout: float, pool: str = DATA_POOL) -> httpx
     if client is None or client.is_closed:
         client = per_loop[key] = httpx.AsyncClient(base_url=base_url, timeout=timeout, cookies=no_cookies())
     return client
+
+
+# --- M71 PL-2: every HTTP request a broker client sends is counted (calls per day, by broker / pool / endpoint kind) ------
+def http_kind(method: str, path: str) -> str:
+    """The endpoint kind of one broker HTTP request, from its method and path (broker_limits.KINDS)."""
+    p = (path or "").lower()
+    if any(word in p for word in ("historical", "candle", "chart")):
+        return "history"
+    if "order" in p and (method or "GET").upper() != "GET":
+        return "orders"
+    if any(word in p for word in ("quote", "ltp", "option", "market-feed", "marketfeed")):
+        return "quote"
+    return "account"
+
+
+def count_requests(client: httpx.AsyncClient, broker: str) -> httpx.AsyncClient:
+    """Hook `client` so every request it sends, and every 429 it gets back, is counted for `broker` per IST day
+    (broker_limits.HTTP_COUNTER). Once per client (a shared client is hooked once). Never fails a request."""
+    if not isinstance(client, httpx.AsyncClient) or getattr(client, "_atp_counted", False):
+        return client
+    from app.brokers import broker_limits
+    name = (broker or "unknown").lower()
+
+    async def on_request(request: httpx.Request) -> None:
+        kind = http_kind(request.method, request.url.path)
+        await broker_limits.HTTP_COUNTER.add(name, broker_limits.pool_of(kind), kind)
+
+    async def on_response(response: httpx.Response) -> None:
+        if response.status_code == 429:
+            kind = http_kind(response.request.method, response.request.url.path)
+            await broker_limits.HTTP_COUNTER.add(name, broker_limits.pool_of(kind), kind, rate_limited=True)
+
+    hooks = dict(client.event_hooks)
+    client.event_hooks = {"request": [*hooks.get("request", []), on_request],
+                          "response": [*hooks.get("response", []), on_response]}
+    client._atp_counted = True  # type: ignore[attr-defined]
+    return client

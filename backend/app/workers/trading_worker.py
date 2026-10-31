@@ -1909,7 +1909,10 @@ class TradingWorker:
         if not template_exits.is_default and hasattr(strategy, "use_exits"):
             strategy.use_exits(template_exits)
         try:
-            frames = await _history_source(market_data, strategy).get_frames(dep.symbol, dep.exchange, dep.timeframe, strategy.timeframes)
+            # M71 W2-D (flag market_store_reads): store-first through the member's own session and the DATA budget; off: as before
+            from app.workers import strategy_bars
+            frames = await strategy_bars.frames(session, user, _history_source(market_data, strategy), dep.symbol, dep.exchange,
+                                                dep.timeframe, strategy.timeframes, now=now)
         except _CODE_ERRORS:
             raise
         except Exception as exc:  # noqa: BLE001 - M55 S7: a data problem, counted apart from code errors (_record_failure)

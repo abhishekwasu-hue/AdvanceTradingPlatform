@@ -60,6 +60,7 @@ AMW_FLAG = "screenql_amw_functions"            # AMW-3: rules using an AMW-3 fun
 WAVES_FLAG = "screener_waves"                  # Wave templates W1: rules using a wave count function pause too
 # (and a confirmation status, RsiDivergence or SwingLabel never fires intrabar: amw_functions.intrabar_calls)
 EVIDENCE_FLAG = "evidence_charts"              # U8 EV1/EV2: evidence packs stored with fired alert events
+STORE_FLAG = "market_store_reads"              # M71 W2-D: rules read the own store first (app/market_store)
 RETRY_SECONDS = 60
 TIME_BUDGET_SECONDS = 10.0                     # per worker cycle; rules left over are simply still due next cycle
 MAX_SYMBOLS = 50
@@ -204,12 +205,17 @@ def _values(frame: pd.DataFrame) -> Dict[str, Any]:
 
 
 async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbols: List[str], bar: datetime, lookback: Dict[str, int],
-                            fetch: Fetch, cache: CycleCache, forming: bool = False, per_user: bool = False) -> Tuple[List[SymbolData], Dict[str, str]]:
+                            fetch: Fetch, cache: CycleCache, forming: bool = False, per_user: bool = False,
+                            store: bool = False) -> Tuple[List[SymbolData], Dict[str, str]]:
     """The symbols whose bars reach `bar` (closed, or forming for an intrabar rule), fetching only what the cycle cache
-    does not already hold. `per_user` (BT1b): fetched through the rule creator's own session, cached per user."""
+    does not already hold. `per_user` (BT1b): fetched through the rule creator's own session, cached per user. `store`
+    (M71 W2-D, flag `market_store_reads`): store-first as the rule creator (his own stored bars and session, M71Q-2),
+    cached per user."""
     exchange, tf = rule.exchange or "NSE", rule.base_tf
-    owner = rule.created_by if per_user else None
-    extra: Dict[str, Any] = {"user_id": owner} if per_user else {}
+    owner = rule.created_by if per_user or store else None
+    extra: Dict[str, Any] = {"user_id": owner} if per_user or store else {}
+    if store:
+        extra["store"] = True
     key = lambda sym: (rule.tenant_id, owner, exchange, tf, bar, sym, forming)  # noqa: E731
     def covers(have: Dict[str, int]) -> bool:
         return all(have.get(t, 0) >= bars for t, bars in lookback.items())
@@ -269,10 +275,11 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
                         breakouts_enabled: bool = False, zones_enabled: bool = False, per_user: bool = False,
                         vectorized: bool = False, evidence_enabled: bool = False,
                         breakout_extra_flags: Optional[Dict[str, bool]] = None, amw_enabled: bool = False,
-                        waves_enabled: bool = False) -> Tuple[str, int]:
+                        waves_enabled: bool = False, store_reads: bool = False) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error. `vectorized`
     (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time. Every flag
-    argument defaults to OFF (BK3 review L7): `run_due` passes each organisation's own flags; a direct caller opts in."""
+    argument defaults to OFF (BK3 review L7): `run_due` passes each organisation's own flags; a direct caller opts in.
+    `store_reads` (M71 W2-D, flag `market_store_reads`): the rule's bars come store-first (`server_fetch(store=True)`)."""
     from app.alerts.engine import record_event
     now = _utc(now)
     intrabar = rule.fire_on == "intrabar"
@@ -352,7 +359,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             rule.last_problem = clock
             return "unsupported", 0
         current, problems = await _current_universe(session, rule, symbols, bar, validated.fetch_lookback, fetch, cache, forming=intrabar,
-                                                    per_user=per_user)
+                                                    per_user=per_user, store=store_reads)
         if current and await staleness.guard_on(session, rule.tenant_id, cache.stale_guard):
             fresh, stale = _fresh_only(current, rule.base_tf, now, holidays)
             cache.suppressed_symbols += len(current) - len(fresh)
@@ -364,7 +371,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             rule.last_problem = f"waiting for the {'forming' if intrabar else 'closed'} bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
             return "waiting", 0
         frames = {d.symbol: d.frames[rule.base_tf] for d in current}
-        result_key = (rule.tenant_id, rule.created_by if per_user else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar,
+        result_key = (rule.tenant_id, rule.created_by if per_user or store_reads else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar,
                       tuple(frames), json.dumps(params, sort_keys=True, default=str), intrabar, rule.exchange or "NSE")
         if result_key in cache.results:
             cache.reused_results += 1
@@ -428,6 +435,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
     vectorized_on: Dict[int, bool] = {}
     evidence_on: Dict[int, bool] = {}
+    store_on: dict[int, bool] = {}           # M71 W2-D: market_store_reads per organisation
     started = time_module.monotonic()
     for rule in rules:
         if rule.expires_at is not None and _utc(rule.expires_at) <= now:
@@ -458,13 +466,15 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             vectorized_on[rule.tenant_id] = await flag_enabled(session, VECTOR_FLAG, rule.tenant_id)
         if rule.tenant_id not in evidence_on:
             evidence_on[rule.tenant_id] = await flag_enabled(session, EVIDENCE_FLAG, rule.tenant_id)
+        if rule.tenant_id not in store_on:
+            store_on[rule.tenant_id] = await flag_enabled(session, STORE_FLAG, rule.tenant_id)
         state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache,
                                            intrabar_enabled=intrabar_on.get(rule.tenant_id, False),
                                            breakouts_enabled=breakouts_on[rule.tenant_id], zones_enabled=zones_on[rule.tenant_id],
                                            breakout_extra_flags=extra_on[rule.tenant_id], amw_enabled=amw_on[rule.tenant_id],
                                            waves_enabled=waves_on[rule.tenant_id],
                                            per_user=per_user[rule.tenant_id], vectorized=vectorized_on[rule.tenant_id],
-                                           evidence_enabled=evidence_on[rule.tenant_id])
+                                           evidence_enabled=evidence_on[rule.tenant_id], store_reads=store_on[rule.tenant_id])
         out.evaluated += state == "done"
         out.waiting += state == "waiting"
         out.fired += fired
@@ -475,23 +485,58 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
 
 
 async def server_fetch(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
-                       lookback: Dict[str, int], forming: bool = False, user_id: Optional[int] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       lookback: Dict[str, int], forming: bool = False, user_id: int | None = None,
+                       store: bool = False) -> tuple[list[SymbolData], dict[str, str], str]:
     """Server bars via the organisation's broker session (S1d `fetch_frames`). For a daily rule, today's bar is built
     from today's 15-minute bars (after the close; during the session for an intrabar rule, `forming`), since a
-    broker's daily history starts at yesterday."""
+    broker's daily history starts at yesterday.
+
+    M71 W2-D (`store`, flag `market_store_reads`): a bar-close rule reads store-first (`fetch_frames(store=True)`,
+    app/market_store): Daily from the NSE files (zero broker calls; a session the files already hold is not rebuilt
+    from 15-minute bars), intraday from the rule creator's own stored bars plus only the newest ones through his own
+    session. Every broker call left (the top-ups, a symbol the store does not hold, an intrabar rule's forming bar) is
+    paced by the credential's DATA budget (`api_budget.BudgetedAdapter`, `budget_out`), never the worker's order / exit
+    budget, and takes a token only if one is there now (`api_budget.no_wait`): the worker's loop never waits on a data
+    read; a refused symbol is a plain problem and the rule waits for the next cycle."""
+    if not store:
+        return await _server_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, forming, user_id, False)
+    from app.market_data import api_budget
+    with api_budget.no_wait():
+        return await _server_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, forming, user_id, True)
+
+
+def _has_session(daily: pd.DataFrame | None, day: date) -> bool:
+    return daily is not None and len(daily) > 0 and daily.index[-1].astimezone(IST).date() >= day
+
+
+async def _server_fetch(session: AsyncSession, tenant_id: int, symbols: list[str], exchange: str, base_tf: str,
+                        lookback: dict[str, int], forming: bool, user_id: int | None,
+                        store: bool) -> tuple[list[SymbolData], dict[str, str], str]:
     from app.screener.routes import fetch_frames
-    universe, problems, source = await fetch_frames(session, tenant_id, symbols, exchange, base_tf, lookback, include_forming=forming, user_id=user_id)
+
+    def paced() -> dict[str, Any]:            # store mode: store-first, every broker call left on the DATA budget
+        return {"store": True, "budget_out": {}} if store else {}
+    universe, problems, source = await fetch_frames(session, tenant_id, symbols, exchange, base_tf, lookback, include_forming=forming, user_id=user_id,
+                                                    **paced())
     if base_tf != "1d" or not universe:
         return universe, problems, source
-    intraday, intraday_problems, _s = await fetch_frames(session, tenant_id, [d.symbol for d in universe], exchange, "15m", {"15m": 30},
-                                                         include_forming=forming, user_id=user_id)
+    now_ist = datetime.now(timezone.utc).astimezone(IST)
+    today = now_ist.date()
+    # M71 W2-D: a closed session the NSE files already hold is the exchange's own bar - kept, not rebuilt; and before the
+    # day's close (or on a day without a session) a bar-close rule's today bar cannot be complete (`with_today`
+    # complete_only) - no 15-minute read for it
+    session_over = is_trading_day(today) and now_ist.time() >= MARKET_CLOSE
+    need = [d for d in universe if not (store and not forming and (not session_over or _has_session(d.frames.get("1d"), today)))]
+    if not need:
+        return universe, problems, source
+    intraday, intraday_problems, _s = await fetch_frames(session, tenant_id, [d.symbol for d in need], exchange, "15m", {"15m": 30},
+                                                         include_forming=forming, user_id=user_id, **paced())
     # SCR-FIX A2: a symbol whose 15-minute bars could not be read has no today's bar - said, never dropped (the rule's
     # problem line names it instead of deciding silently on yesterday's bar)
     for symbol, why in intraday_problems.items():
         problems.setdefault(symbol, f"today's bar could not be read: {why}")
-    today = datetime.now(timezone.utc).astimezone(IST).date()
     by_symbol = {d.symbol: d.frames.get("15m") for d in intraday}
-    for data in universe:
+    for data in need:
         data.frames["1d"] = with_today(data.frames["1d"], by_symbol.get(data.symbol), today, complete_only=not forming)
     return universe, problems, source
 

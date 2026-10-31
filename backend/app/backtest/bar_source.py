@@ -245,6 +245,44 @@ async def lake_frame(session: AsyncSession, symbol: str, timeframe: str, lookbac
     return weekly(df) if kind == "week" else df
 
 
+STORE_TOPUP_WORDS = " and your broker for the newest bars"
+
+
+async def from_store(session: AsyncSession, tenant_id: int, symbol: str, exchange: str, timeframe: str, lookback_days: int, *,
+                     user: Any = None, broker: Optional[str] = None, now: Optional[datetime] = None) -> BacktestBars | None:
+    """M71 PL-3 (flag `market_store_reads`): the backtest's bars from the own store (app/market_store.read_bars), or None
+    when the store holds none of the window (the caller then keeps its order of sources).
+    - Daily / Weekly on NSE: the NSE daily files over the broker path's window (`window`), zero broker calls.
+    - Intraday: the reader's own stored one-minute bars built into the timeframe, plus only the newest bars through
+      his own session (M71Q-2; never another member's bars or session)."""
+    from app.market_store import read_bars
+    from app.market_store.models import UnknownInterval, canonical
+    from app.market_store.sources import own_rest
+    end = now or datetime.now(UTC)
+    kind = timeframe_kind(timeframe)
+    if kind is not None:
+        if (exchange or "NSE").strip().upper() != "NSE":
+            return None
+        first, _last = window(lookback_days, now)
+        start = datetime.combine(first, datetime.min.time(), IST).astimezone(UTC)
+        got = await read_bars(session, symbol, "1d" if kind == "day" else "1w", start, end, purpose="backtest", exchange="NSE", now=now)
+        return BacktestBars(got.frame, LAKE_SOURCE, "stored", STORED_WORDS) if got.served else None
+    try:
+        name = canonical(timeframe)
+    except UnknownInterval:
+        return None
+    if user is None or getattr(user, "tenant_id", None) != tenant_id:
+        return None
+    rest = await own_rest(session, user, symbol.strip().upper(), (exchange or "NSE").strip().upper(), broker=broker)
+    got = await read_bars(session, symbol, name, end - timedelta(days=max(1, int(lookback_days))), end, user=user, purpose="backtest",
+                          exchange=(exchange or "NSE").strip().upper(), rest=rest, now=now)
+    if not got.served:
+        return None
+    topped = "+broker:" in got.source
+    return BacktestBars(got.frame, got.source, "stored", STORED_INTRADAY_WORDS + (STORE_TOPUP_WORDS if topped else ""),
+                        " ".join(got.gap_lines()) or None)
+
+
 async def resolve(session: AsyncSession, tenant_id: int, symbol: str, exchange: str, timeframe: str, *, lookback_days: int = 30,
                   user: Any = None, broker: Optional[str] = None, now: Optional[datetime] = None,
                   broker_fetch: Callable[[], Awaitable[tuple[pd.DataFrame, str]]] | None = None,
@@ -256,7 +294,12 @@ async def resolve(session: AsyncSession, tenant_id: int, symbol: str, exchange: 
     a backfilled index reads the stored index history (else the broker's 30 days, with the reason when the data tier
     is on); every other caller keeps its broker read exactly as before."""
     from app.ai import evidence
+    from app.market_store.models import FLAG as STORE_FLAG
     from app.platform.controls import flag_enabled
+    if session is not None and await flag_enabled(session, STORE_FLAG, tenant_id):
+        stored_first = await from_store(session, tenant_id, symbol, exchange, timeframe, lookback_days, user=user, broker=broker, now=now)
+        if stored_first is not None:
+            return stored_first                    # M71 PL-3: the own store first; nothing stored -> the order below
     note: str | None = None
     if stored_beyond_broker and stored_intraday_tf(timeframe) and lookback_days > BROKER_INTRADAY_DAYS and stored_intraday_key(symbol, exchange):
         # M55 T4: beyond the broker's 30 days - the stored index history for the whole window, when it may be read
@@ -299,5 +342,5 @@ def frame_bars(df: pd.DataFrame) -> List[Dict[str, Any]]:
              "volume": float(r.volume)} for ts, r in df.iterrows()]
 
 
-__all__ = ["FLAG", "LAKE_SOURCE", "STORED_INTRADAY_SOURCE", "stored_intraday_tf", "stored_intraday_key", "stored_intraday_frame", "STORED_WORDS", "INTRADAY_NEEDS_BROKER", "BacktestBars", "resolve", "lake_frame", "to_frame",
+__all__ = ["FLAG", "LAKE_SOURCE", "from_store", "STORED_INTRADAY_SOURCE", "stored_intraday_tf", "stored_intraday_key", "stored_intraday_frame", "STORED_WORDS", "INTRADAY_NEEDS_BROKER", "BacktestBars", "resolve", "lake_frame", "to_frame",
            "weekly", "window", "timeframe_kind", "not_stored", "broker_words", "frame_bars"]

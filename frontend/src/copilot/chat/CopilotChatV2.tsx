@@ -392,13 +392,13 @@ export function CopilotChatV2() {
       const done = await chartAnalyzeApi.analyze(item.id);
       if (done.status !== "done" || !done.result) { show({ status: "failed", message: done.error ?? t("chat.chartFailed") }); return; }
       let imageSrc: string | null = null;
-      try { imageSrc = URL.createObjectURL(await chartAnalyzeApi.image(done.id)); images.current.push(imageSrc); } catch { /* the reading shows without the picture */ }
+      try { imageSrc = URL.createObjectURL(await chartAnalyzeApi.image(done.id)); images.current.push(imageSrc); } catch { /* intentional: the reading shows without the picture */ }
       show({ status: "done", item: done, imageSrc });
       // ATP's own structure card for the picture's symbol: the rule answer only (wording=false) - no AI call here; the
       // AI words come only when the user taps "Explain in words" (an ordinary question of his own)
       const question = readingQuestion(done);
       if (question) {
-        const answer = await chatApi.askRules(question).catch(() => null);
+        const answer = await chatApi.askRules(question).catch(() => null);   // intentional: the optional structure card is skipped; the reading above already shows
         if (answer) setTurns((all) => settled(all, id, answer, null));
       }
     } catch (e) {

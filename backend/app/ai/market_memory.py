@@ -8,7 +8,10 @@ for each tenant that uses the Copilot, through the tenant's own broker session, 
   strategy interview does (`interview.analyse_market`: today's move and VWAP, regime on 5-minute
   and the higher timeframe, market structure, nearest support / resistance, volatility, bias).
 * **Market cues** - India VIX (fear gauge) and the main indices' day change, from daily candles.
-  These come from the broker the tenant already has.
+  These come from the broker the tenant already has; with the flag `market_store_reads` (M71 W2-B) the NSE ones come
+  from the NSE daily files ATP stores (zero broker calls), a cue not stored there from the broker as before. The
+  symbol snapshots keep the tenant's broker read: they are shared in the organisation, and the store's intraday bars
+  are per reader (M71Q-2), never one member's bars for everyone.
 * **Global cues** - US index futures and indices, Asia, Brent crude, gold, the dollar, USD/INR and
   the US 10-year yield from free public sources (`global_cues`), delayed and background only. They
   are also read before the open (08:00-09:15 IST), when the overnight mood matters most, and need
@@ -81,6 +84,13 @@ def _df(bars: Sequence[OHLCVBar]) -> pd.DataFrame:
     return df
 
 
+def _frame_bars(df: pd.DataFrame) -> List[OHLCVBar]:
+    """A stored Daily frame -> bars stamped at 00:00 India time (the broker's daily stamp, so `date` reads the trade date)."""
+    idx = df.index.tz_convert(IST) if df.index.tz is not None else df.index.tz_localize("UTC").tz_convert(IST)
+    return [OHLCVBar(timestamp=ts.to_pydatetime(), open=float(r.open), high=float(r.high), low=float(r.low), close=float(r.close),
+                     volume=float(r.volume)) for ts, r in zip(idx, df.itertuples(index=False))]
+
+
 def symbol_snapshot(tenant_id: int, symbol: str, exchange: str, bars_1min: Sequence[OHLCVBar], source: str,
                     now: datetime) -> Optional[MarketSnapshotRecord]:
     """The market read of one symbol from 1-minute bars (resampled to 5 minutes); None when there
@@ -149,10 +159,20 @@ async def capture(session: AsyncSession, tenant_id: int, market_data_factory, br
             logger.info("Market memory: %s failed for tenant %s: %s", symbol, tenant_id, exc)
             report["errors"].append(f"{symbol}: {type(exc).__name__}: {exc}"[:200])
     if include_cues:
-        daily = market_data_factory(broker, lookback_days=DAILY_LOOKBACK_DAYS)
+        from app.ai import evidence
+        store = await evidence.store_on(session, tenant_id)
+        daily = None
         for symbol, exchange in CUES:
             try:
-                row = cue_snapshot(tenant_id, symbol, exchange, await daily.get_candles(symbol, exchange, "day", now=now), source, now)
+                bars, cue_source = None, source
+                stored = await evidence.store_frame(session, tenant_id, symbol, exchange, "day", lookback_days=DAILY_LOOKBACK_DAYS,
+                                                    now=now, checked=True) if store else None
+                if stored is not None:                       # M71 W2-B: the NSE daily files, no broker call
+                    bars, cue_source = _frame_bars(stored.frame), stored.source
+                if bars is None:
+                    daily = daily or market_data_factory(broker, lookback_days=DAILY_LOOKBACK_DAYS)
+                    bars = await daily.get_candles(symbol, exchange, "day", now=now)
+                row = cue_snapshot(tenant_id, symbol, exchange, bars, cue_source, now)
                 if row is not None:
                     session.add(row)
                     report["cues"] += 1

@@ -7,6 +7,7 @@
  */
 import type { DrawingV1 } from "./drawings";
 import type { LayerBand, LayerData, LayerLabel, LayerSegment } from "./engine";
+import { formatNumber } from "../ui/format";
 
 /** Pane coordinates for one paint: `x` maps an anchor time (epoch seconds), `y` a price; null = cannot place it. */
 export interface Converters {
@@ -87,8 +88,8 @@ export function positionStats(d: DrawingV1): PositionStats | null {
   return { entry, stop, target, risk, reward, rr: problem ? null : reward / risk, problem };
 }
 
-const fmt = (v: number) => (Math.abs(v) >= 1000 ? v.toFixed(1) : v.toFixed(2));
-const pct = (v: number, base: number) => `${v >= 0 ? "+" : ""}${((v / base) * 100).toFixed(2)}%`;
+const fmt = (v: number) => formatNumber(v, Math.abs(v) >= 1000 ? 1 : 2);
+const pct = (v: number, base: number) => `${v >= 0 ? "+" : ""}${formatNumber((v / base) * 100, 2)}%`;
 
 /** A segment through two points, extended to the pane's left and/or right edge. */
 export function extendSegment(x1: number, y1: number, x2: number, y2: number, width: number, extend: "none" | "left" | "right" | "both") {
@@ -192,7 +193,7 @@ export function shapes(d: DrawingV1, c: Converters): Shape[] {
       const [x, yEntry, yStop, yTarget] = [xs[0], ys[0], ys[1], ys[2]] as number[];
       const w = Math.max(0, c.width - x);                       // no end time in drawing/1: the box runs to the edge
       const box = (ya: number, yb: number, tint: string): Shape => ({ type: "rect", x, y: Math.min(ya, yb), w, h: Math.abs(yb - ya), fill: withAlpha(tint, 0.18) });
-      const headline = stats.problem ?? `R:R ${(stats.rr as number).toFixed(2)}`;
+      const headline = stats.problem ?? `R:R ${formatNumber(stats.rr, 2)}`;
       return [
         box(yEntry, yTarget, PROFIT), box(yEntry, yStop, LOSS), seg(x, yEntry, x + w, yEntry, { width: 1 }),
         label(x + 4, yTarget, `Target ${fmt(stats.target)} (${pct(stats.target - stats.entry, stats.entry)})`, "left", yTarget < yEntry ? "top" : "bottom", PROFIT),

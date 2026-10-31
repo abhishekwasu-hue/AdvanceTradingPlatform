@@ -47,11 +47,15 @@ function roundsToZero(v: number, decimals: number): boolean {
   return Number(Math.abs(v).toFixed(decimals)) === 0;
 }
 
-/** A plain number with Indian grouping: formatNumber(1234567.8, 1) -> "12,34,567.8"; negatives get "−". */
-export function formatNumber(v: Num, decimals = 0): string {
+/** A plain number with Indian grouping: formatNumber(1234567.8, 1) -> "12,34,567.8"; negatives get "−".
+ * `trim` (M63 I-7) makes `decimals` an upper bound and drops trailing zeros - "at most N places", what
+ * `toLocaleString("en-IN", { maximumFractionDigits: N })` showed: formatNumber(24812.5, 2, { trim: true }) -> "24,812.5",
+ * formatNumber(24812, 2, { trim: true }) -> "24,812". */
+export function formatNumber(v: Num, decimals = 0, opts: { trim?: boolean } = {}): string {
   if (!finite(v)) return EMPTY;
   const sign = v < 0 && !roundsToZero(v, decimals) ? MINUS : "";
-  return `${sign}${magnitude(v, decimals)}`;
+  const body = magnitude(v, decimals);
+  return `${sign}${opts.trim ? trimZeros(body) : body}`;
 }
 
 /** Trailing zeros of a decimal off: "2.40" -> "2.4", "3.00" -> "3". */
@@ -212,19 +216,20 @@ export function formatTimeIST(v: When, opts: { seconds?: boolean; suffix?: boole
   return opts.suffix === false ? time : `${time} IST`;
 }
 
-/** "8 Oct 2026" in IST; `weekday` gives "Thu 8 Oct 2026". */
-export function formatDateIST(v: When, opts: { weekday?: boolean } = {}): string {
+/** "8 Oct 2026" in IST; `weekday` gives "Thu 8 Oct 2026"; `year: false` gives "8 Oct" (a recent stamp, a chart label). */
+export function formatDateIST(v: When, opts: { weekday?: boolean; year?: boolean } = {}): string {
   const ms = instant(v);
   if (!Number.isFinite(ms)) return EMPTY;
   const p = istParts(ms);
-  return `${opts.weekday ? `${WEEKDAYS[p.wd]} ` : ""}${p.day} ${MONTHS[p.mo]} ${p.y}`;
+  return `${opts.weekday ? `${WEEKDAYS[p.wd]} ` : ""}${p.day} ${MONTHS[p.mo]}${opts.year === false ? "" : ` ${p.y}`}`;
 }
 
-/** "8 Oct 2026, 10:42 IST". */
-export function formatDateTimeIST(v: When, opts: { seconds?: boolean } = {}): string {
+/** "8 Oct 2026, 10:42 IST". M63 I-7: `year: false` gives "8 Oct, 10:42 IST"; `suffix: false` drops " IST" where the
+ * screen already says it (a chart's as-of label: "8 Oct, 10:42"). */
+export function formatDateTimeIST(v: When, opts: { seconds?: boolean; year?: boolean; suffix?: boolean } = {}): string {
   const ms = instant(v);
   if (!Number.isFinite(ms)) return EMPTY;
-  return `${formatDateIST(ms)}, ${formatTimeIST(ms, opts)}`;
+  return `${formatDateIST(ms, { year: opts.year })}, ${formatTimeIST(ms, { seconds: opts.seconds, suffix: opts.suffix })}`;
 }
 
 // --- Compact Indian units (UI-H Wave 0, H4) -------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import { request } from "../../api/client";
+import { formatDateTimeIST, formatNumber } from "../../ui/format";
 import type { AnalysisChart, AnalysisTable } from "../../optionChain/analyses";
 import type { StrategyDraft } from "../strategyDraft";
 import type { MarketStrip, StripIndex } from "../../dashboard/types";
@@ -227,7 +228,7 @@ export function stampText(iso: string | null): string | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
-  return `${d.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })} IST`;
+  return formatDateTimeIST(d, { year: false });
 }
 
 /** UI-28 U2.4 (owner, 28 Oct): a "Label: value" line of an answer as a row - the label left, the value right, a signed
@@ -266,7 +267,7 @@ export function areaText(area: NonNullable<AnswerHeadline["area"]>, price: (v: n
 /** CU3: how far the price is from that area: "inside", or "229.5 (0.92%) above" / "below" (where the area sits). */
 export function distanceText(area: NonNullable<AnswerHeadline["area"]>, price: (v: number) => string): string {
   if (area.where === "inside") return "Price is inside";
-  const pct = area.distance_pct === null ? "" : ` (${area.distance_pct.toFixed(2)}%)`;
+  const pct = area.distance_pct === null ? "" : ` (${formatNumber(area.distance_pct, 2)}%)`;
   return `${price(area.distance)}${pct} ${area.where}`;
 }
 

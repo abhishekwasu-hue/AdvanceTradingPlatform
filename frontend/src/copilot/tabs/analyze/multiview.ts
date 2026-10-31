@@ -1,4 +1,5 @@
 import type { MultiView, MultiViewAnalysis, MultiViewSummary } from "../../../types";
+import { formatNumber } from "../../../ui/format";
 
 /** H-C4 helpers: the summary's sections in reading order, a view's scalar facts as label / value rows, its headlines. */
 
@@ -28,7 +29,7 @@ export function factLabel(key: string): string {
 export function factRows(view: MultiView): [string, string][] {
   return Object.entries(view.facts ?? {})
     .filter(([, v]) => v !== null && v !== undefined && v !== "" && (typeof v === "number" || typeof v === "string" || typeof v === "boolean"))
-    .map(([k, v]) => [factLabel(k), typeof v === "number" ? v.toLocaleString("en-IN", { maximumFractionDigits: 4 }) : String(v)]);
+    .map(([k, v]) => [factLabel(k), typeof v === "number" ? formatNumber(v, 4, { trim: true }) : String(v)]);
 }
 
 export interface Headline { headline: string; source: string | null; published_at: string | null; severity: number | null; verified: boolean }

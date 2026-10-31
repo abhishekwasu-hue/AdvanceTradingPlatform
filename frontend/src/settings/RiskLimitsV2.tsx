@@ -4,6 +4,8 @@ import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2 } from "../trading/PartsV2";
 import { Combobox } from "../ui/Combobox";
 import { Details } from "../ui/Details";
+import type { GlossaryKey } from "../ui/glossary";
+import { TermHint } from "../ui/TermHint";
 import { SWITCHES_OFF, SWITCH_FIELDS, loadSwitches, saveSwitches, type MyLimitSwitches } from "./myLimits";
 import {
   bodyOf, draftOf, loadRiskLimits, onCount, saveRiskLimits, valueWords, type PausePick, type RiskLimitCheck, type RiskLimitsDraft,
@@ -119,6 +121,16 @@ export default function RiskLimitsV2({ load = loadRiskLimits, save = saveRiskLim
   );
 }
 
+/** M63 I-7 (?) on jargon: the checks whose name is a trading term carry the glossary's help mark. */
+const CHECK_TERMS: Record<string, { term: GlossaryKey }> = {
+  daily_loss: { term: "daily-loss-limit" },
+  loss_cooldown: { term: "cool-down" },
+  stop_cooldown: { term: "cool-down" },
+  min_reward_risk: { term: "reward-risk" },
+  margin_safety: { term: "margin" },
+  drawdown: { term: "drawdown" },
+};
+
 const PAUSE_OPTIONS = [{ value: "next_session", label: "At the next session" }, { value: "until_resume", label: "When I resume" }] as const;
 
 function Switch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
@@ -145,7 +157,7 @@ function CheckRow({ check, draft, onChange, paper, pause, onPause }: {
     <li id={check.id} className="scroll-mt-20 py-space-3" data-check={check.id} data-on={d.enabled ? "on" : "off"}>
       <div className="flex items-center justify-between gap-space-3">
         <div className="min-w-0">
-          <p className="text-t14 font-medium text-fg">{check.label}</p>
+          <p className="text-t14 font-medium text-fg">{check.label}{CHECK_TERMS[check.id] && <> <TermHint term={CHECK_TERMS[check.id].term} /></>}</p>
           {!d.enabled && check.saved && shown && <p className="text-t12 text-fg-muted">Saved: {shown}</p>}
         </div>
         <Switch on={d.enabled} label={check.label} onChange={(on) => onChange(check.id, { enabled: on })} />

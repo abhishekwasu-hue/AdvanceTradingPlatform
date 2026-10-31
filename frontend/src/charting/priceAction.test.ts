@@ -112,7 +112,7 @@ describe("replay as of each bar (CH3)", () => {
   it("the replay bar shows its position and the as-of time; off it offers Replay", () => {
     const on = renderToStaticMarkup(createElement(ReplayBar, { state: { active: true, index: 4, playing: false, start: null }, count: 10,
                                                               at: "2026-03-02T04:00:00.000Z", onChange: () => {} }));
-    expect(on).toContain("bar 5 / 10 · layers as of 02 Mar, 09:30 IST");
+    expect(on).toContain("bar 5 / 10 · layers as of 2 Mar, 09:30 IST");
     expect(on).toContain("Exit replay");
     expect(renderToStaticMarkup(createElement(ReplayBar, { state: REPLAY_OFF, count: 10, at: null, onChange: () => {} }))).toContain(">Replay<");
   });

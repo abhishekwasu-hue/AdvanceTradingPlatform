@@ -1,6 +1,7 @@
 // BYOK-V1: pure helpers for the "Vision with your own AI key" card. The server validates the key again (and is the
 // authority); this only gives the user an early, specific message. Messages never contain the key itself.
 import type { ByokProviderName } from "../types";
+import { formatNumber } from "../ui/format";
 
 export const BYOK_PROVIDERS: ByokProviderName[] = ["anthropic", "openai", "gemini"];
 
@@ -38,8 +39,8 @@ export function keyShapeError(provider: ByokProviderName, raw: string): string |
 /** USD with enough precision for tiny test-call costs ($0.0004) and plain cents for larger amounts. */
 export function formatUsd(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "$0.00";
-  if (value < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(2)}`;
+  if (value < 0.01) return `$${formatNumber(value, 4)}`;
+  return `$${formatNumber(value, 2)}`;
 }
 
 export interface CapUsage { pct: number; reached: boolean; label: string }

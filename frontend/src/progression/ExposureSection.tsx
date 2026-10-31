@@ -6,6 +6,7 @@ import { rupees0, strongestPairs } from "./exposure";
 import { useProgressionT } from "./i18n";
 import { TextOnDemand } from "../ui/numbersFirst";
 import { useUiV2 } from "../ui/useFeatures";
+import { formatNumber } from "../ui/format";
 
 /**
  * N2-4 (flag `decision_tools`): the caller's own open positions by underlying and sector, beta to the NIFTY 50 and the
@@ -69,7 +70,7 @@ export function ExposureViewPanel({ view }: { view: ExposureView }) {
                   {rupees0(u.risk_at_stop)}
                   {u.legs_without_stop.length > 0 && <span className="ml-1 text-warn">({t("decision.exposure.noStop", { count: u.legs_without_stop.length })})</span>}
                 </td>
-                <td className="py-1">{u.beta == null ? t("decision.exposure.noBeta") : u.beta.toFixed(2)}</td>
+                <td className="py-1">{u.beta == null ? t("decision.exposure.noBeta") : formatNumber(u.beta, 2)}</td>
               </tr>
             ))}
           </tbody>
@@ -82,7 +83,7 @@ export function ExposureViewPanel({ view }: { view: ExposureView }) {
         <div>
           <p className="text-fg">{t("decision.exposure.together", { threshold: view.move_together_threshold, days: view.lookback_days })}</p>
           <ul className="space-y-0.5 text-fg">
-            {pairs.map((p) => <li key={`${p.a}|${p.b}`}>{t("decision.exposure.pair", { a: p.a, b: p.b, r: (p.r ?? 0).toFixed(2), days: p.days })}</li>)}
+            {pairs.map((p) => <li key={`${p.a}|${p.b}`}>{t("decision.exposure.pair", { a: p.a, b: p.b, r: formatNumber(p.r ?? 0, 2), days: p.days })}</li>)}
           </ul>
         </div>
       ) : <p className="text-fg-muted">{t("decision.exposure.togetherNone", { threshold: view.move_together_threshold })}</p>}

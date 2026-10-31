@@ -6,7 +6,7 @@ import { Card, DirectionBadge } from "../components/ui";
 import type { TradeRecord } from "../types";
 import { Badge, PageHeader, SkeletonRows, Table } from "../components/primitives";
 import { EmptyStateV2 } from "../dashboard/CardV2";
-import { formatDateTimeIST } from "../ui/format";
+import { formatDateTimeIST, formatNumber } from "../ui/format";
 
 interface OrderRow {
   key: string;
@@ -85,7 +85,7 @@ export default function OrdersPage() {
             { key: "symbol", header: "Symbol", cell: (o) => <span className="font-medium">{o.symbol}</span> },
             { key: "direction", header: "Direction", cell: (o) => <DirectionBadge direction={o.direction as "LONG" | "SHORT"} /> },
             { key: "strategy", header: "Strategy", cell: (o) => <span className="text-fg-muted">{o.strategy_id}</span> },
-            { key: "price", header: "Price", numeric: true, cell: (o) => o.price.toFixed(2) },
+            { key: "price", header: "Price", numeric: true, cell: (o) => formatNumber(o.price, 2) },
             { key: "qty", header: "Qty", numeric: true, cell: (o) => o.quantity },
             { key: "reason", header: "Reason", cell: (o) => <span className="text-fg-muted">{o.reason}</span> },
           ]}

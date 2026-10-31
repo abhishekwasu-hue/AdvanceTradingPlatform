@@ -8,6 +8,7 @@ import { friendlyError } from "../aiTask";
 import TiltCard from "../components/TiltCard";
 import { useCopilotT } from "../i18n";
 import { Panel, Stagger, StaggerItem } from "./shared";
+import { formatNumber } from "../../ui/format";
 
 /**
  * Coach & Scorecard: the trader's own behaviour (the trade coach: flags, per-trade review, breakdowns) and the
@@ -54,7 +55,7 @@ export default function CoachTab() {
         <Stagger className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StaggerItem><Stat label={t("coach.hitRate")} value={hitRate != null ? `${Math.round(hitRate * 100)}%` : "-"} hint={t("coach.hitRateHint")} /></StaggerItem>
           <StaggerItem><Stat label={t("coach.scored")} value={String(report?.scored ?? sb?.scored ?? 0)} hint={t("coach.scoredHint", { hits: report?.hits ?? sb?.hits ?? 0, misses: report?.misses ?? sb?.misses ?? 0, flat: report?.flat ?? sb?.flat ?? 0 })} /></StaggerItem>
-          <StaggerItem><Stat label={t("coach.avgShadow")} value={report?.avg_shadow != null ? `×${report.avg_shadow.toFixed(2)}` : "-"} hint={t("coach.avgShadowHint")} /></StaggerItem>
+          <StaggerItem><Stat label={t("coach.avgShadow")} value={report?.avg_shadow != null ? `×${formatNumber(report.avg_shadow, 2)}` : "-"} hint={t("coach.avgShadowHint")} /></StaggerItem>
           <StaggerItem><Stat label={t("coach.pending")} value={String(report?.pending ?? 0)} hint={t("coach.pendingHint")} /></StaggerItem>
         </Stagger>
         {report?.lines && report.lines.length > 0 && <ul className="mt-3 list-disc space-y-0.5 pl-5 text-xs text-fg-muted">{report.lines.map((l) => <li key={l}>{l}</li>)}</ul>}
@@ -75,7 +76,7 @@ export default function CoachTab() {
                     <td className="py-1.5 text-fg-muted">{i.day}</td>
                     <td className="text-fg">{i.symbol}</td>
                     <td className={i.direction === "BULLISH" ? "text-up" : i.direction === "BEARISH" ? "text-down" : "text-fg"}>{t(`thesis.dir.${i.direction}`, { defaultValue: i.direction })}</td>
-                    <td className="text-right font-tabular text-fg">×{i.shadow_multiplier.toFixed(2)}</td>
+                    <td className="text-right font-tabular text-fg">×{formatNumber(i.shadow_multiplier, 2)}</td>
                     <td className="pl-6">
                       {i.score == null ? <span className="text-fg-muted">{t("coach.outcome.pending")}</span> : (
                         <><Badge tone={OUTCOME_TONE[resultOf(i.score)]}>{t(`coach.outcome.${resultOf(i.score)}`)}</Badge>

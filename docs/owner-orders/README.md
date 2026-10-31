@@ -65,6 +65,8 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Trading journal made working (30 Oct) | ATP_ORDER_M62.md | M62 | not started |
 | - | Feature inventory: production truth + build / hide / merge (30 Oct) | ATP_ORDER_M63.md | M63 | Phase 0 |
 | - | Order-time risk checks (30 Oct) | ATP_ORDER_M64.md | M64 | not started |
+| - | Engine takeover: Trade engine inside ATP (31 Oct) | ATP_ORDER_M66.md | M66 | in progress |
+| - | Universal trade settings: no pre-chosen trading defaults (31 Oct) | ATP_ORDER_M68.md | M68 | in progress |
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

@@ -41,7 +41,7 @@ import {
   ROUTING_POLICIES,
   type RoutingPolicy,
 } from "../types";
-import { formatDateTimeIST } from "../ui/format";
+import { formatDateTimeIST, formatNumber } from "../ui/format";
 import { toast } from "../components/Toast";
 
 // Index symbols have no cash leg: picking one switches the form to options (server rejects UNDERLYING on an index).
@@ -68,7 +68,7 @@ function ModeBadge({ mode }: { mode: ExecutionMode }) {
 }
 
 function ist(iso: string): string {
-  return `${new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })} IST`;
+  return formatDateTimeIST(new Date(iso), { seconds: true });
 }
 
 function ago(iso: string | null): string {
@@ -708,7 +708,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
                             {st.metrics.net_credit >= 0 ? "credit" : "debit"} <span className="text-up">{Math.abs(st.metrics.net_credit)}</span>/unit · max loss{" "}
                             {st.metrics.max_loss === null || st.metrics.max_loss === undefined
                               ? <span className="text-down">UNDEFINED (sized off the stop, {st.metrics.risk_per_unit}/unit)</span>
-                              : <><span className="text-down">{st.metrics.max_loss}</span>/unit ({(st.metrics.max_loss * st.lot_size).toLocaleString()}/lot)</>}
+                              : <><span className="text-down">{st.metrics.max_loss}</span>/unit ({formatNumber(st.metrics.max_loss * st.lot_size, 3, { trim: true })}/lot)</>}
                             {st.metrics.max_profit !== null && st.metrics.max_profit !== undefined ? <> · max profit {st.metrics.max_profit}/unit</> : null}
                             · breakeven {st.metrics.breakevens.join(" / ")}
                             {st.metrics.pnl_stop !== undefined

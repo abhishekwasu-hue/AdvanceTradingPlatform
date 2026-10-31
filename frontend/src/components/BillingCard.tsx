@@ -6,10 +6,10 @@ import { useAuth } from "../auth/AuthContext";
 import { Card } from "./ui";
 import { PlanLimitsV2, planTileLine } from "./PlanLimitsV2";
 import type { BillingOverview, BillingTransaction, PlanCatalogueEntry } from "../types";
-import { formatDateIST } from "../ui/format";
+import { formatDateIST, formatNumber } from "../ui/format";
 import { toast } from "./Toast";
 
-const inr = (v: number, ccy = "INR") => (v === 0 ? "Free" : `${ccy === "INR" ? "₹" : ccy + " "}${v.toLocaleString("en-IN")}`);
+const inr = (v: number, ccy = "INR") => (v === 0 ? "Free" : `${ccy === "INR" ? "₹" : ccy + " "}${formatNumber(v, 3, { trim: true })}`);
 
 /** Phase K1: the organisation's plan, subscription state, usage and invoices. Payment is
  * recorded by the operator (manual provider) or a gateway webhook - never typed here. */

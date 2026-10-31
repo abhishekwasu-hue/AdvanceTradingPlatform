@@ -4,6 +4,7 @@ import { fundamentalsApi } from "../api/fundamentalsClient";
 import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile, Disclaimer, signClass, signTone } from "../components/ui";
 import { PageHeader, SkeletonRows } from "../components/primitives";
+import { formatNumber, formatPct } from "../ui/format";
 import { DCF_FIELDS, EMPTY_DCF, dcfAssumptionsFrom, numberOrNull, type DcfInputs } from "./fundamentalsInputs";
 import {
   defaultCalendarEvent,
@@ -54,6 +55,10 @@ function toneForRisk(risk?: string) {
   if (risk === "High" || risk === "Extreme") return "down" as const;
   return "default" as const;
 }
+
+/** M63 I-7: figures go through the shared formatter (src/ui/format.ts); "-" stays this page's mark for a missing one. */
+const num = (v: number | null | undefined, decimals: number) => (v == null ? "-" : formatNumber(v, decimals));
+const pct = (v: number | null | undefined, decimals: number) => (v == null ? "-" : `${formatNumber(v, decimals)}%`);
 
 function toneForNumber(n?: number | null) {
   return signTone(n, 1);
@@ -586,9 +591,9 @@ export default function FundamentalsPage() {
               {growth && (
                 <Card title="Growth">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    <StatTile label="YoY Growth" value={growth.yoy_growth_pct != null ? `${growth.yoy_growth_pct.toFixed(1)}%` : "-"} tone={toneForNumber(growth.yoy_growth_pct)} />
-                    <StatTile label="3Y CAGR" value={growth.cagr_3y_pct != null ? `${growth.cagr_3y_pct.toFixed(1)}%` : "-"} tone={toneForNumber(growth.cagr_3y_pct)} />
-                    <StatTile label="5Y CAGR" value={growth.cagr_5y_pct != null ? `${growth.cagr_5y_pct.toFixed(1)}%` : "-"} tone={toneForNumber(growth.cagr_5y_pct)} />
+                    <StatTile label="YoY Growth" value={pct(growth.yoy_growth_pct, 1)} tone={toneForNumber(growth.yoy_growth_pct)} />
+                    <StatTile label="3Y CAGR" value={pct(growth.cagr_3y_pct, 1)} tone={toneForNumber(growth.cagr_3y_pct)} />
+                    <StatTile label="5Y CAGR" value={pct(growth.cagr_5y_pct, 1)} tone={toneForNumber(growth.cagr_5y_pct)} />
                   </div>
                   <div className="mt-2 text-xs text-fg-muted">{growth.note}</div>
                 </Card>
@@ -597,10 +602,10 @@ export default function FundamentalsPage() {
               {profitability && (
                 <Card title="Profitability">
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <StatTile label="EBITDA Margin" value={profitability.ebitda_margin_pct != null ? `${profitability.ebitda_margin_pct.toFixed(1)}%` : "-"} />
-                    <StatTile label="Net Margin" value={profitability.net_margin_pct != null ? `${profitability.net_margin_pct.toFixed(1)}%` : "-"} />
-                    <StatTile label="ROE" value={profitability.roe_pct != null ? `${profitability.roe_pct.toFixed(1)}%` : "-"} />
-                    <StatTile label="ROCE" value={profitability.roce_pct != null ? `${profitability.roce_pct.toFixed(1)}%` : "-"} />
+                    <StatTile label="EBITDA Margin" value={pct(profitability.ebitda_margin_pct, 1)} />
+                    <StatTile label="Net Margin" value={pct(profitability.net_margin_pct, 1)} />
+                    <StatTile label="ROE" value={pct(profitability.roe_pct, 1)} />
+                    <StatTile label="ROCE" value={pct(profitability.roce_pct, 1)} />
                   </div>
                   <div className="mt-2 text-xs text-fg-muted">Margin trend: <span className="text-fg">{profitability.margin_trend}</span> — {profitability.revenue_vs_margin_note}</div>
                 </Card>
@@ -609,7 +614,7 @@ export default function FundamentalsPage() {
               {earningsQuality && (
                 <Card title="Earnings Quality">
                   <div className="text-sm">Label: <span className="text-fg font-medium">{earningsQuality.label}</span></div>
-                  {earningsQuality.cfo_to_pat_ratio != null && <div className="text-xs text-fg-muted mt-1">CFO/PAT: {earningsQuality.cfo_to_pat_ratio.toFixed(2)}</div>}
+                  {earningsQuality.cfo_to_pat_ratio != null && <div className="text-xs text-fg-muted mt-1">CFO/PAT: {formatNumber(earningsQuality.cfo_to_pat_ratio, 2)}</div>}
                   {earningsQuality.warnings.map((w, i) => <div key={i} className="text-xs text-warn mt-1">⚠ {w}</div>)}
                 </Card>
               )}
@@ -623,9 +628,9 @@ export default function FundamentalsPage() {
                     <tbody>
                       {quarterly.comparisons.map((c) => (
                         <tr key={c.metric} className="border-t border-border">
-                          <td className="py-1 pr-3">{c.metric}</td><td className="py-1 pr-3">{c.current.toFixed(1)}</td>
-                          <td className="py-1 pr-3">{c.qoq_change_pct != null ? `${c.qoq_change_pct.toFixed(1)}%` : "-"}</td>
-                          <td className="py-1 pr-3">{c.yoy_change_pct != null ? `${c.yoy_change_pct.toFixed(1)}%` : "-"}</td>
+                          <td className="py-1 pr-3">{c.metric}</td><td className="py-1 pr-3">{formatNumber(c.current, 1)}</td>
+                          <td className="py-1 pr-3">{pct(c.qoq_change_pct, 1)}</td>
+                          <td className="py-1 pr-3">{pct(c.yoy_change_pct, 1)}</td>
                           <td className="py-1 pr-3">{c.direction}</td>
                         </tr>
                       ))}
@@ -639,8 +644,8 @@ export default function FundamentalsPage() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <StatTile label="Debt Risk" value={balanceSheet.debt_risk} tone={toneForRisk(balanceSheet.debt_risk)} />
                     <StatTile label="Liquidity Risk" value={balanceSheet.liquidity_risk} tone={toneForRisk(balanceSheet.liquidity_risk)} />
-                    <StatTile label="Net Debt/EBITDA" value={balanceSheet.net_debt_to_ebitda?.toFixed(2) ?? "-"} />
-                    <StatTile label="Current Ratio" value={balanceSheet.current_ratio?.toFixed(2) ?? "-"} />
+                    <StatTile label="Net Debt/EBITDA" value={num(balanceSheet.net_debt_to_ebitda, 2)} />
+                    <StatTile label="Current Ratio" value={num(balanceSheet.current_ratio, 2)} />
                   </div>
                   {balanceSheet.notes.map((n, i) => <div key={i} className="text-xs text-fg-muted mt-1">{n}</div>)}
                 </Card>
@@ -649,9 +654,9 @@ export default function FundamentalsPage() {
               {cashFlow && (
                 <Card title="Cash Flow">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    <StatTile label="CFO" value={cashFlow.cfo?.toFixed(1) ?? "-"} />
-                    <StatTile label="FCF" value={cashFlow.fcf?.toFixed(1) ?? "-"} tone={toneForNumber(cashFlow.fcf)} />
-                    <StatTile label="FCF Yield" value={cashFlow.fcf_yield_pct != null ? `${cashFlow.fcf_yield_pct.toFixed(1)}%` : "-"} />
+                    <StatTile label="CFO" value={num(cashFlow.cfo, 1)} />
+                    <StatTile label="FCF" value={num(cashFlow.fcf, 1)} tone={toneForNumber(cashFlow.fcf)} />
+                    <StatTile label="FCF Yield" value={pct(cashFlow.fcf_yield_pct, 1)} />
                   </div>
                   {cashFlow.warning && <div className="mt-2 text-xs text-warn">⚠ {cashFlow.warning}</div>}
                 </Card>
@@ -667,8 +672,8 @@ export default function FundamentalsPage() {
                       {[scenario.bull, scenario.base, scenario.bear].map((s) => (
                         <tr key={s.scenario} className="border-t border-border">
                           <td className="py-1 pr-3 font-medium text-fg">{s.scenario}</td>
-                          <td className="py-1 pr-3">{s.revenue.toFixed(0)}</td><td className="py-1 pr-3">{s.ebitda.toFixed(0)}</td>
-                          <td className="py-1 pr-3">{s.pat.toFixed(0)}</td><td className="py-1 pr-3">{s.eps ?? "-"}</td>
+                          <td className="py-1 pr-3">{formatNumber(s.revenue, 0)}</td><td className="py-1 pr-3">{formatNumber(s.ebitda, 0)}</td>
+                          <td className="py-1 pr-3">{formatNumber(s.pat, 0)}</td><td className="py-1 pr-3">{s.eps ?? "-"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -694,9 +699,9 @@ export default function FundamentalsPage() {
                 {valuation && (
                   <>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <StatTile label="P/E" value={valuation.pe?.toFixed(1) ?? "-"} />
-                      <StatTile label="EV/EBITDA" value={valuation.ev_ebitda?.toFixed(1) ?? "-"} />
-                      <StatTile label="P/B" value={valuation.pb?.toFixed(1) ?? "-"} />
+                      <StatTile label="P/E" value={num(valuation.pe, 1)} />
+                      <StatTile label="EV/EBITDA" value={num(valuation.ev_ebitda, 1)} />
+                      <StatTile label="P/B" value={num(valuation.pb, 1)} />
                       <StatTile label="Classification" value={valuation.classification} />
                     </div>
                     {valuation.notes.map((n, i) => <div key={i} className="text-xs text-fg-muted mt-1">{n}</div>)}
@@ -721,8 +726,8 @@ export default function FundamentalsPage() {
                     <StatTile label="Bull" value={`₹${dcf.bull.intrinsic_value_per_share}`} tone="up" />
                     {dcf.upside_pct != null && (
                       <div className="col-span-3 text-xs text-fg-muted mt-1">
-                        Upside vs current price: <span className={signClass(dcf.upside_pct, 1)}>{dcf.upside_pct.toFixed(1)}%</span>
-                        {dcf.margin_of_safety_pct != null && ` · Margin of safety: ${dcf.margin_of_safety_pct.toFixed(1)}%`}
+                        Upside vs current price: <span className={signClass(dcf.upside_pct, 1)}>{formatNumber(dcf.upside_pct, 1)}%</span>
+                        {dcf.margin_of_safety_pct != null && ` · Margin of safety: ${formatNumber(dcf.margin_of_safety_pct, 1)}%`}
                       </div>
                     )}
                   </div>
@@ -958,8 +963,8 @@ export default function FundamentalsPage() {
                     <div>Results Date: <span className="text-fg">{postEarnings.results_event_date}</span></div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       <StatTile label="Verdict" value={postEarnings.verdict} tone={postEarnings.verdict === "Bullish" ? "up" : postEarnings.verdict === "Bearish" ? "down" : "default"} />
-                      <StatTile label="Revenue Surprise" value={`${postEarnings.revenue_surprise_pct >= 0 ? "+" : ""}${postEarnings.revenue_surprise_pct.toFixed(1)}%`} tone={toneForNumber(postEarnings.revenue_surprise_pct)} />
-                      <StatTile label="PAT Surprise" value={`${postEarnings.pat_surprise_pct >= 0 ? "+" : ""}${postEarnings.pat_surprise_pct.toFixed(1)}%`} tone={toneForNumber(postEarnings.pat_surprise_pct)} />
+                      <StatTile label="Revenue Surprise" value={formatPct(postEarnings.revenue_surprise_pct, 1)} tone={toneForNumber(postEarnings.revenue_surprise_pct)} />
+                      <StatTile label="PAT Surprise" value={formatPct(postEarnings.pat_surprise_pct, 1)} tone={toneForNumber(postEarnings.pat_surprise_pct)} />
                     </div>
                     <div className="text-xs text-fg-muted">
                       Actual revenue {postEarnings.revenue_actual} vs. own-trend expected {postEarnings.revenue_expected_trend} · Actual PAT {postEarnings.pat_actual} vs. expected {postEarnings.pat_expected_trend}
@@ -986,11 +991,11 @@ export default function FundamentalsPage() {
                       <tr key={p.symbol} className={`border-t border-border ${p.symbol === symbol ? "bg-surface-2" : ""}`}>
                         <td className="py-1 pr-3 font-medium text-fg">{p.symbol}</td>
                         <td className="py-1 pr-3">{p.name}</td>
-                        <td className="py-1 pr-3">{p.revenue_yoy_growth_pct != null ? `${p.revenue_yoy_growth_pct.toFixed(1)}%` : "-"}</td>
-                        <td className="py-1 pr-3">{p.ebitda_margin_pct != null ? `${p.ebitda_margin_pct.toFixed(1)}%` : "-"}</td>
-                        <td className="py-1 pr-3">{p.roe_pct != null ? `${p.roe_pct.toFixed(1)}%` : "-"}</td>
-                        <td className="py-1 pr-3">{p.roce_pct != null ? `${p.roce_pct.toFixed(1)}%` : "-"}</td>
-                        <td className="py-1 pr-3">{p.debt_to_equity != null ? p.debt_to_equity.toFixed(2) : "-"}</td>
+                        <td className="py-1 pr-3">{pct(p.revenue_yoy_growth_pct, 1)}</td>
+                        <td className="py-1 pr-3">{pct(p.ebitda_margin_pct, 1)}</td>
+                        <td className="py-1 pr-3">{pct(p.roe_pct, 1)}</td>
+                        <td className="py-1 pr-3">{pct(p.roce_pct, 1)}</td>
+                        <td className="py-1 pr-3">{num(p.debt_to_equity, 2)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1092,7 +1097,7 @@ export default function FundamentalsPage() {
               <Card title="Event Impact Score">
                 {eventImpact ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    <StatTile label="Score (-100..+100)" value={eventImpact.score.toFixed(0)} tone={toneForNumber(eventImpact.score)} />
+                    <StatTile label="Score (-100..+100)" value={formatNumber(eventImpact.score, 0)} tone={toneForNumber(eventImpact.score)} />
                     <StatTile label="Bias" value={eventImpact.bias} tone={eventImpact.bias === "Bullish" ? "up" : eventImpact.bias === "Bearish" ? "down" : "default"} />
                     <StatTile label="Events Considered" value={String(eventImpact.events_considered)} />
                   </div>
@@ -1123,7 +1128,7 @@ export default function FundamentalsPage() {
                       {finalReport.alerts.length === 0 ? <div className="text-xs text-fg-muted">None</div> : finalReport.alerts.map((a, i) => <div key={i} className="text-xs text-warn">[{a.severity}] {a.message}</div>)}
                     </div>
                     {finalReport.event_impact && (
-                      <div className="text-xs">Event Impact: <span className="text-fg">{finalReport.event_impact.score.toFixed(0)} ({finalReport.event_impact.bias})</span></div>
+                      <div className="text-xs">Event Impact: <span className="text-fg">{formatNumber(finalReport.event_impact.score, 0)} ({finalReport.event_impact.bias})</span></div>
                     )}
                     <div className="text-xs text-fg-muted italic">{finalReport.generated_note}</div>
                   </div>

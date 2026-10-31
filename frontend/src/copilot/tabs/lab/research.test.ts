@@ -37,7 +37,7 @@ describe("research studies panel logic", () => {
     expect(prob(undefined)).toBe("n/a");
     expect(prob(Number.NaN)).toBe("n/a");
     expect(metricLine({ trades: 12, win_rate: 41.666, profit_factor: null, max_drawdown: 1520.5, net_pnl: -300, extra: 9 }))
-      .toBe("trades 12 · win % 41.67 · max DD 1520.50 · net -300");
+      .toBe("trades 12 · win % 41.67 · max DD 1,520.50 · net −300");
     expect(metricLine({})).toBe("");
   });
 });

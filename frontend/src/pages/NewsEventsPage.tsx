@@ -16,7 +16,7 @@ import {
   type NewsTrust,
   type NewsVerdict,
 } from "../types";
-import { formatDateTimeIST } from "../ui/format";
+import { formatDateTimeIST, formatNumber } from "../ui/format";
 import { stripMarkdown, stripMarkdownLine } from "../ui/stripMarkdown";
 import { SelectOrCombobox } from "../ui/Combobox";
 
@@ -169,7 +169,7 @@ export default function NewsEventsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title={<>News & Events</>} description={<>Structured, cited entries for RBI policy decisions, the Union Budget, government policy changes, corporate news, and other market-moving events. Entries a person adds must cite a source.{trust && <span className="ml-1 text-fg-muted">News trust: <b>{trust.trust.toFixed(2)}</b> ({trust.ratings} verdict{trust.ratings === 1 ? "" : "s"}{trust.applied ? ", applied to the thesis" : `, ${trust.note}`}).</span>} Items marked <span className="rounded border border-warn/50 bg-warn/10 px-1 text-warn">unverified feed</span> come from a publisher's own public feed (RBI, SEBI, ...): headline and link only, never checked by the platform - read the source before acting.</>} />
+      <PageHeader title={<>News & Events</>} description={<>Structured, cited entries for RBI policy decisions, the Union Budget, government policy changes, corporate news, and other market-moving events. Entries a person adds must cite a source.{trust && <span className="ml-1 text-fg-muted">News trust: <b>{formatNumber(trust.trust, 2)}</b> ({trust.ratings} verdict{trust.ratings === 1 ? "" : "s"}{trust.applied ? ", applied to the thesis" : `, ${trust.note}`}).</span>} Items marked <span className="rounded border border-warn/50 bg-warn/10 px-1 text-warn">unverified feed</span> come from a publisher's own public feed (RBI, SEBI, ...): headline and link only, never checked by the platform - read the source before acting.</>} />
 
       <FeedSourcesCard isAdmin={!!user && user.role === "SUPER_ADMIN"} />
 

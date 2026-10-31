@@ -4,9 +4,11 @@
  * "Place as basket" and "Save strategy" on the right, adjustments and compare (a later release) at the bottom; on a
  * phone the payoff comes first and the legs follow.
  *
- * Research only: nothing here places an order ("Place as basket" shows the hedge-first basket; placing it in PAPER
- * comes with the plan-before-trade ticket). The instrument's numbers (spot, strike step, lot size, template width)
- * are the trader's inputs - nothing is defaulted to one instrument. Template premiums are the model's until real ones
+ * Research only: nothing here places an order ("Review basket" shows the hedge-first basket; placing it in
+ * PAPER comes with the plan-before-trade ticket). The instrument's numbers (spot, strike step, lot size, template width)
+ * are the trader's inputs - nothing is defaulted to one instrument. REV-1 M2 (CLAUDE.md §3): the lots are the trader's
+ * own (pre-filled from Settings > My trading defaults > Chain order ticket > Lots when set, else typed), and a blank
+ * template width stays blank - no platform width. Template premiums are the model's until real ones
  * are typed, and are marked so.
  */
 import { Details } from "../ui/Details";
@@ -29,6 +31,8 @@ import { SaveDialog, savedAvailability, type SavedState } from "../optionsBuilde
 import { TemplateGallery } from "../optionsBuilder/TemplateGallery";
 import { takeHandoff } from "../fno/basketModel";
 import { useMediaQuery } from "../utils/useMediaQuery";
+import { ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
+import { useFeatures } from "../ui/useFeatures";
 
 /** Desktop layout (legs left, numbers right) from Tailwind's lg breakpoint. */
 const WIDE_QUERY = "(min-width: 1024px)";
@@ -60,6 +64,12 @@ function nonNegative(text: string): number | null {
 
 const str = (v: number | null | undefined) => (v == null ? "" : String(v));
 
+/** REV-1 M2: lots as typed - a whole number from 1 to 500 (the settings' own range), else null (nothing is assumed). */
+export function lotsOf(text: string): number | null {
+  const n = Number(text.trim());
+  return text.trim() !== "" && Number.isInteger(n) && n >= 1 && n <= 500 ? n : null;
+}
+
 export default function OptionsBuilderPage(_props: PageProps) {
   const toast = useToast();
   const [catalog, setCatalog] = useState<{ families: Record<string, string[]>; templates: Record<string, TemplateInfo> } | null>(null);
@@ -68,6 +78,8 @@ export default function OptionsBuilderPage(_props: PageProps) {
   const [stepText, setStepText] = useState("");
   const [lotText, setLotText] = useState("");
   const [widthText, setWidthText] = useState("");
+  const [lotsText, setLotsText] = useState("");
+  const lotsTouched = useRef(false);
   const [ivText, setIvText] = useState("");
   const [nearExpiry, setNearExpiry] = useState("");
   const [nextExpiry, setNextExpiry] = useState("");
@@ -92,9 +104,17 @@ export default function OptionsBuilderPage(_props: PageProps) {
   const spot = positive(spotText);
   const step = positive(stepText);
   const lotSize = positive(lotText);
-  const width = positive(widthText) ?? (step ? 2 * step : null);
+  const width = positive(widthText);                          // REV-1 M2: blank stays blank - no default width
+  const lots = lotsOf(lotsText);
   const iv = positive(ivText);
-  const ready = spot != null && step != null && lotSize != null && width != null && iv != null && !!nearExpiry;
+  const ready = spot != null && step != null && lotSize != null && width != null && lots != null && iv != null && !!nearExpiry;
+  // REV-1 M2: the trader's own lots (My trading defaults > Chain order ticket), once, unless already typed.
+  const defaults = useTradingDefaults(useFeatures().on("ui_v2"));
+  const savedLots = ticketPrefill(defaults).lots;
+  useEffect(() => {
+    if (savedLots !== undefined && !lotsTouched.current) setLotsText(String(savedLots));
+  }, [savedLots]);
+  const typeLots = (v: string) => { lotsTouched.current = true; setLotsText(v); };
   const nearest = legs.length ? legs.map((l) => l.expiry).sort()[0] : nearExpiry;
   const maxDays = nearest ? daysBetween(asOf, nearest) : 0;
 
@@ -155,10 +175,10 @@ export default function OptionsBuilderPage(_props: PageProps) {
   const fresh = spot != null && isCurrent(legs, evaluated, { spot, daysForward, ivShift }) && evaluated?.params?.brokerage === brokerage;
 
   const pick = async (name: string) => {
-    if (!ready || spot == null || step == null || lotSize == null || width == null || iv == null) return;
+    if (!ready || spot == null || step == null || lotSize == null || width == null || lots == null || iv == null) return;
     try {
       const t = await builderApi.template({
-        name, atm_strike: snapStrike(spot, step), width, near_expiry: nearExpiry, next_expiry: nextExpiry || null, lots: 1,
+        name, atm_strike: snapStrike(spot, step), width, near_expiry: nearExpiry, next_expiry: nextExpiry || null, lots,
         lot_size: lotSize, spot, iv: iv / 100, as_of: asOf,
       });
       setLegs(hedgeFirst(t.legs.map((l) => {
@@ -172,11 +192,11 @@ export default function OptionsBuilderPage(_props: PageProps) {
   };
 
   const addLeg = () => {
-    if (spot == null || step == null || lotSize == null || !nearExpiry) {
-      toast.error("Fill in the spot, strike step, lot size and expiry first.");
+    if (spot == null || step == null || lotSize == null || lots == null || !nearExpiry) {
+      toast.error("Fill in the spot, strike step, lot size, lots and expiry first.");
       return;
     }
-    setLegs((all) => [...all, { id: legId(), direction: "BUY", option_type: "CE", strike: snapStrike(spot, step), premium: 0, lots: 1, lot_size: lotSize,
+    setLegs((all) => [...all, { id: legId(), direction: "BUY", option_type: "CE", strike: snapStrike(spot, step), premium: 0, lots, lot_size: lotSize,
       expiry: nearExpiry, iv: iv != null ? iv / 100 : null, premium_source: "manual" }]);
   };
 
@@ -206,18 +226,19 @@ export default function OptionsBuilderPage(_props: PageProps) {
   return (
     <div className="space-y-4">
       {/* UX-11b C5: one line; the model note on demand. */}
-      <PageHeader title="Options Builder" description="Build a strategy and see its payoff." />
+      <PageHeader title="Plan an options trade" description="Build a strategy and see its payoff." />
       <Details id="options-builder.about" label="About these numbers" className="mt-0">
         <p>See the payoff today and at expiry, and read the numbers before you trade. Model estimates for research, not advice.</p>
       </Details>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]" style={{ gridTemplateAreas: builderAreas(wide, legs.length > 0) }} data-testid="builder-grid">
-        <section aria-label="Instrument" style={{ gridArea: "inst" }} className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-surface-1 p-4 sm:grid-cols-4 xl:grid-cols-9">
+        <section aria-label="Instrument" style={{ gridArea: "inst" }} className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-surface-1 p-4 sm:grid-cols-4 xl:grid-cols-10">
           {field("Underlying", underlying, setUnderlying, { inputMode: "text", placeholder: "e.g. NIFTY" })}
           {field("Spot", spotText, setSpotText, { "data-testid": "spot" })}
-          {field("Strike step", stepText, setStepText, { hint: "from the instrument master" })}
-          {field("Lot size", lotText, setLotText, { hint: "from the instrument master" })}
-          {field("Template width", widthText, setWidthText, { placeholder: step ? `${2 * step}` : "points", hint: "default: 2 strike steps" })}
+          {field("Strike step", stepText, setStepText, { hint: "points between strikes" })}
+          {field("Lot size", lotText, setLotText, { hint: "units in one lot" })}
+          {field("Lots", lotsText, typeLots, { inputMode: "numeric", hint: savedLots !== undefined ? "from your trading defaults" : "1 to 500, per leg" })}
+          {field("Template width", widthText, setWidthText, { placeholder: "points", hint: "points between template strikes" })}
           {field("Base IV %", ivText, setIvText, { hint: "prices template legs" })}
           <Input label="Near expiry" type="date" value={nearExpiry} onChange={(e) => setNearExpiry(e.target.value)} />
           <Input label="Next expiry" type="date" value={nextExpiry} onChange={(e) => setNextExpiry(e.target.value)} hint="calendars, diagonals" />
@@ -228,7 +249,7 @@ export default function OptionsBuilderPage(_props: PageProps) {
           {catalog && (
             <TemplateGallery families={catalog.families} templates={catalog.templates} onPick={(n) => void pick(n)} disabled={!ready} />
           )}
-          {!ready && <p className="text-xs text-fg-muted">Fill in the spot, strike step, lot size, base IV and near expiry to build from a template.</p>}
+          {!ready && <p className="text-xs text-fg-muted">Fill in the spot, strike step, lot size, lots, template width, base IV and near expiry to build from a template.</p>}
         </div>
 
         <section aria-label="Payoff" aria-busy={!!evaluation && !fresh} style={{ gridArea: "pay" }} className="min-w-0 rounded-xl border border-border bg-surface-1 p-3 sm:p-4">
@@ -266,11 +287,11 @@ export default function OptionsBuilderPage(_props: PageProps) {
           <MetricsCard evaluation={evaluation} stale={!!evaluation && !fresh} />
           <section aria-label="Actions" className="space-y-2 rounded-xl border border-border bg-surface-1 p-4">
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="primary" icon={<Layers size={14} />} disabled={!legs.length} onClick={() => setBasketOpen(true)} data-testid="place-basket">Place as basket</Button>
+              <Button variant="primary" icon={<Layers size={14} />} disabled={!legs.length} onClick={() => setBasketOpen(true)} data-testid="place-basket">Review basket</Button>
               <Button icon={<Save size={14} />} disabled={saved !== "on"} onClick={() => setSaveOpen(true)} data-testid="save-strategy">Save strategy</Button>
             </div>
             <Details id="optionsBuilder.actions" className="mt-0"><p className="leading-snug">
-              Placing goes to PAPER with the plan-before-trade ticket; this page places no order.
+              This page places no order: the basket shows the order the legs would go in, for review only.
               {saved === "off" && " Saving strategies is not turned on for your organisation yet."}
             </p></Details>
           </section>

@@ -196,16 +196,16 @@ def test_pcr_overall_and_near_atm_windows():
     assert out["values"]["atm"] == 170 and out["values"]["window"] == list(range(120, 230, 10))
     now_rows = out["tables"][0]["rows"]
     assert now_rows[0] == {"scope": "Overall (15 strikes)", "put_oi": 510, "call_oi": 150, "pcr": 3.4}
-    assert now_rows[1] == {"scope": "Near ATM: the 11 strikes from 120 to 220 around ATM 170", "put_oi": 110, "call_oi": 110, "pcr": 1.0}
-    assert out["sentences"][:2] == [
-        "Overall PCR is 3.40: put OI 510 against call OI 150 across 15 strikes.",
-        "Near the money (the 11 strikes from 120 to 220 around ATM 170) PCR is 1.00, so put OI and call OI are equal there.",
-    ]
+    assert now_rows[1] == {"scope": "Near ATM (11 strikes 120-220)", "put_oi": 110, "call_oi": 110, "pcr": 1.0}
+    # M61 PCR-3: the headline is numbers only; the near-ATM definition sits behind the Now table's (?)
+    assert out["sentences"][0] == "Overall PCR 3.40 | Near-ATM PCR 1.00 (11 strikes 120-220)"
+    assert out["tables"][0]["help"] == ("Near ATM: the ATM strike (the listed strike nearest the spot) and the 5 listed strikes on each "
+                                        "side of it - here 11 strikes from 120 to 220 around ATM 170.")
     # At the low end: ATM 100, window 100..150 -> puts 100 + 100 + 4 x 10 = 240, calls 60 -> 4.00; the label says the real window
     low = A.pcr(chain(rows, 101.0), [], NOW)
     assert low["values"]["near_atm"] == 4.0
-    assert low["tables"][0]["rows"][1]["scope"] == "Near ATM: the 6 strikes from 100 to 150 around ATM 100"
-    assert low["sentences"][1] == "Near the money (the 6 strikes from 100 to 150 around ATM 100) PCR is 4.00, so put OI is larger than call OI there."
+    assert low["tables"][0]["rows"][1]["scope"] == "Near ATM (6 strikes 100-150)"
+    assert low["sentences"][0] == "Overall PCR 3.40 | Near-ATM PCR 4.00 (6 strikes 100-150)"
 
 
 def test_pcr_path_through_the_session():
@@ -213,7 +213,8 @@ def test_pcr_path_through_the_session():
     # 09:20: 135 / 160 = 0.84375; 10:00: (50+45+60+10+3) / (15+30+35+50+40) = 168 / 170 = 0.98824
     assert [p["pcr"] for p in out["tables"][1]["rows"]] == [0.84, 0.99]
     assert [p["atm"] for p in out["tables"][1]["rows"]] == [120, 120]
-    assert out["sentences"][2] == "Since 09:20 IST the near-ATM PCR moved from 0.84 to 0.99."
+    assert out["sentences"][1] == "Since 09:20 IST the near-ATM PCR moved from 0.84 to 0.99."
+    assert [r["note"] for r in out["tables"][1]["rows"]] == ["", ""]                    # both are full session readings
     assert [p["y"] for p in out["chart"]["series"][0]["points"]] == [0.84, 0.99]
     assert A.pcr(chain([row(100, 0, 5)], 100.0), [], NOW)["state"] == "no_data"      # no call OI: no ratio
 

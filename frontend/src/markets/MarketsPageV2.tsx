@@ -1,6 +1,6 @@
 import { ArrowLeft, ChartCandlestick, ChevronRight, RefreshCw } from "lucide-react";
 import { Details } from "../ui/Details";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { CARD, LINK_SECONDARY } from "../dashboard/CardV2";
 import { cx } from "../components/primitives/cx";
@@ -35,19 +35,40 @@ const VIEWS: readonly { key: View; label: string }[] = [
   { key: "indices", label: "Indices" },
 ];
 
-export type Load<T> = { status: "loading" } | { status: "error" } | { status: "ok"; data: T };
+/** `retrying`: the page reads again on its own (REV-1 M2: the error text promises it only while that is true). */
+export type Load<T> = { status: "loading" } | { status: "error"; retrying?: boolean } | { status: "ok"; data: T };
+
+/** REV-1 M2: a failed read is read again on its own after these waits; after the last one only "Try again" reads. */
+export const AUTO_RETRY_MS: readonly number[] = [15_000, 30_000, 60_000];
+
+/** The words for a failed read: the page's promise to try again only while it really will. */
+export function failedText(what: string, retrying: boolean | undefined): string {
+  return retrying ? `We could not load ${what}. We will try again in a moment.` : `We could not load ${what}. Tap Try again.`;
+}
 
 function useLoad<T>(load: () => Promise<T>, key: string): [Load<T>, () => void] {
   const [state, setState] = useState<Load<T>>({ status: "loading" });
   const [nonce, setNonce] = useState(0);
+  const tries = useRef({ key, auto: 0 });
   useEffect(() => {
     let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (tries.current.key !== key) tries.current = { key, auto: 0 };
     setState({ status: "loading" });
-    load().then((data) => { if (live) setState({ status: "ok", data }); }, () => { if (live) setState({ status: "error" }); });
-    return () => { live = false; };
-    // `key` names what `load` reads; `nonce` is "Try again".
+    load().then((data) => {
+      if (!live) return;
+      tries.current.auto = 0;
+      setState({ status: "ok", data });
+    }, () => {
+      if (!live) return;
+      const wait = AUTO_RETRY_MS[tries.current.auto];
+      setState({ status: "error", retrying: wait !== undefined });
+      if (wait !== undefined) timer = setTimeout(() => { tries.current.auto += 1; setNonce((n) => n + 1); }, wait);
+    });
+    return () => { live = false; if (timer !== undefined) clearTimeout(timer); };
+    // `key` names what `load` reads; `nonce` is "Try again" or an automatic retry.
   }, [key, nonce]);
-  return [state, useCallback(() => setNonce((n) => n + 1), [])];
+  return [state, useCallback(() => { tries.current.auto = 0; setNonce((n) => n + 1); }, [])];
 }
 
 /** UI-H Wave 0 (H2, W0-2): the shared SubTabs, a toggle group - a choice inside the content (Day / Week / Month). */
@@ -277,7 +298,7 @@ export function ListDetailView({ state, view, period, onBack, onRetry }: {
     </button>
   );
   if (state.status === "loading") return <div className="space-y-space-3">{back}<Loading /></div>;
-  if (state.status === "error") return <div className="space-y-space-3">{back}<Message text="We could not load these stocks. We will try again in a moment." onRetry={onRetry} /></div>;
+  if (state.status === "error") return <div className="space-y-space-3">{back}<Message text={failedText("these stocks", state.retrying)} onRetry={onRetry} /></div>;
   const d = state.data;
   const s = d.summary;
   const bench = d.benchmark.name;
@@ -422,7 +443,7 @@ export default function MarketsPageV2(_props: PageProps) {
 /** The overview for a read already in hand (pure): the dish, the board and the source line, or a plain state. */
 export function MarketsBody({ state, view, period, onRetry }: { state: Load<MarketsOverview>; view: View; period: Period; onRetry: () => void }) {
   if (state.status === "loading") return <Loading />;
-  if (state.status === "error") return <Message text="We could not load the market view. We will try again in a moment." onRetry={onRetry} />;
+  if (state.status === "error") return <Message text={failedText("the market view", state.retrying)} onRetry={onRetry} />;
   if (state.data.state !== "ok") return <Message text={state.data.message ?? UNKNOWN} />;
   return (
     <>

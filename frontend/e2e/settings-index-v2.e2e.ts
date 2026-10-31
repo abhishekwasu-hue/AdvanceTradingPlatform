@@ -91,7 +91,7 @@ test.describe("settings index behaviour", () => {
     await expect(rows).toHaveText([/Account & plan/, /Team/, /Broker/, /AI/, /Alerts/, /My trading defaults/, /Risk limits/, /Appearance/, /Help & tips/, /Set up your account/]);
     // UX3-9: Team and Risk limits left the sidebar; Settings opens them.
     await expect(row(page, "team").locator("a")).toHaveAttribute("href", "/team");
-    await expect(row(page, "risk").locator("a")).toHaveAttribute("href", "/risk-management");
+    await expect(row(page, "risk").locator("a")).toHaveAttribute("href", "/settings/risk-limits");     // M64 RM-5: the one Risk limits page
     await expect(row(page, "broker").locator("[data-chip]")).toHaveText("Connected (Upstox)");
     await expect(row(page, "broker").locator("a")).toHaveAttribute("href", "/broker");
     await expect(row(page, "alerts").locator("[data-chip]")).toHaveText("Telegram connected");
@@ -229,7 +229,8 @@ test.describe("settings index behaviour", () => {
 });
 
 // REV-1 M3 (review: the header avatar was cut at 375 px and the page scrolled sideways): with colour v2 and the price
-// dot on, the top bar's title steps down and, when even that does not fit, is cut - the avatar always stays on screen.
+// dot on, the top bar's title steps down, wraps between words, and when even that does not fit takes its own line under
+// the buttons (REV-S5 / M57: never cut) - the avatar always stays on screen.
 for (const width of [375, 320]) {
   test.describe(`settings header at ${width} px`, () => {
     test.use({ viewport: { width, height: 780 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });

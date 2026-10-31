@@ -1,8 +1,9 @@
 """Analyze a chart - test doubles. Everything here is made up: a synthetic chart drawn in code (no real chart, no real
 data) and a fake analysis engine whose "method" is a placeholder (the real one lives only in the private package).
 
-`FakeProvider` implements the public `AnalysisProvider` interface: its instructions are a fixed placeholder string, and
-it parses the reply as JSON in the output contract's shape. `answer(kind)` builds three made-up answers - a formed
+`FakeProvider` implements the public `AnalysisProvider` interface AND the optional hybrid entry point (`HybridProvider`,
+M59 CR-4): its instructions are a fixed placeholder string, and it parses the reply as JSON in the output contract's
+shape. `ImageOnlyFakeProvider` has no hybrid entry point (an engine that serves the code-only hybrid result). `answer(kind)` builds three made-up answers - a formed
 setup, a forming setup and no setup - in image pixel space for a `WIDTH` x `HEIGHT` image.
 """
 import io
@@ -79,6 +80,31 @@ def answer(kind: str = "formed") -> Dict[str, Any]:
 
 
 class FakeProvider:
+    name = "fake-engine"
+    version = "0.0-test"
+    method_version = "test-hash"
+
+    def image_only_instructions(self, *, width: int, height: int) -> Instructions:
+        return Instructions(system=PLACEHOLDER, user=f"image {width}x{height}", prompt_version="fake-v1")
+
+    def parse_image_only(self, reply: str, *, width: int, height: int) -> Dict[str, Any]:
+        return json.loads(reply)
+
+    # M59 CR-4: the optional hybrid entry point. It records the facts it was handed (tests check they are generic).
+    def hybrid_instructions(self, *, width: int, height: int, facts: Dict[str, Any]) -> Instructions:
+        self.facts_seen = facts
+        return Instructions(system=PLACEHOLDER, user=f"hybrid {width}x{height} {facts.get('symbol')} {facts.get('timeframe')}",
+                            prompt_version="fake-hybrid-v1")
+
+    def parse_hybrid(self, reply: str, *, facts: Dict[str, Any]) -> Dict[str, Any]:
+        out = json.loads(reply)
+        out.setdefault("version", "0.0-test-hybrid")
+        out.setdefault("method_version", "test-hybrid-hash")
+        return out
+
+
+class ImageOnlyFakeProvider:
+    """An engine without the hybrid entry point."""
     name = "fake-engine"
     version = "0.0-test"
     method_version = "test-hash"

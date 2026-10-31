@@ -10,9 +10,10 @@ Rules (spec section 2):
   and snooze / mute-today hold an alert back (logged with the reason, not sent);
 * the venue being closed suppresses evaluation altogether (the worker only evaluates in session).
 
-Messages state activity and bias, never "buy / sell / target / recommended" (SCREENER_SPEC section 6) - checked by a
-test. Severity maps onto the existing routing floors (`severity_reaches`): INFO for ordinary changes, WARNING for an
-extreme PCR band and for the collector going stale.
+Messages state the OI activity in neutral words (oi_words.py: never "buy / sell / target / recommended", never
+"bullish / bearish / overbought / oversold" - SCREENER_SPEC section 6, owner order M61 OI-5) - checked by a test; the
+webhook payload and the alert log keep the engine's internal values. Severity maps onto the existing routing floors
+(`severity_reaches`): INFO for ordinary changes, WARNING for an extreme PCR band and for the collector going stale.
 """
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import NotificationRecord, OIAlertLogRecord, OIBannerStateRecord
 from app.notifications.service import notify
-from app.option_chain import oi_regime, snapshots
+from app.option_chain import oi_regime, oi_words, snapshots
 from app.option_chain.oi_regime import BannerState, Direction, OIAlertSettings, PcrBand
 from app.option_chain.snapshots import IST
 
@@ -115,10 +116,13 @@ def _fmt(value: Optional[float]) -> str:
 def render(underlying: str, event: AlertEvent, state: BannerState, slot: datetime, data_as_of: datetime) -> Dict:
     """Title (the short form for SMS / push), message (the spec's template) and the versioned webhook payload."""
     stamp = slot.astimezone(IST).strftime("%d %b %H:%M IST")
-    old = event.old_state or "—"
-    title = f"{underlying} OI: {event.alert_type.replace('_', ' ').lower()} {old} → {event.new_state}"[:200]
-    message = (f"{underlying} OI banner: {old} → {event.new_state}. {state.message}. Put: {state.put_class.value}. "
-               f"Call: {state.call_class.value}. PCR {_fmt(state.pcr)} ({state.pcr_label}). Max pain {_fmt(state.max_pain)}. "
+    # M61 follow-up: the user reads neutral words (oi_words.py); the payload below keeps the engine's internal values.
+    old_words = oi_words.alert_state_words(event.alert_type, event.old_state)
+    new_words = oi_words.alert_state_words(event.alert_type, event.new_state)
+    title = f"{underlying} OI: {event.alert_type.replace('_', ' ').lower()} {old_words} → {new_words}"[:200]
+    message = (f"{underlying} OI: {old_words} → {new_words}. {oi_words.oi_read(state.diff, state.pcr)}. "
+               f"Put: {oi_words.class_words(state.put_class)}. Call: {oi_words.class_words(state.call_class)}. "
+               f"{oi_words.pcr_band_words(state.pcr_band)}. Max pain {_fmt(state.max_pain)}. "
                f"DTE {state.dte if state.dte is not None else '—'}. Data as of {stamp}.")
     payload = {
         "schema": SCHEMA, "underlying": underlying, "alert_type": event.alert_type, "old_state": event.old_state, "new_state": event.new_state,
@@ -335,18 +339,20 @@ async def send_digests(session: AsyncSession, now: datetime) -> int:
             .order_by(OIBannerStateRecord.slot_start)))
         if not rows:
             continue
-        changes, last = [], None
+        changes, words, last = [], [], None
         for r in rows:
             if r.direction != last:
                 slot = r.slot_start if r.slot_start.tzinfo else r.slot_start.replace(tzinfo=timezone.utc)
-                changes.append(f"{slot.astimezone(IST).strftime('%H:%M')} {r.direction}")
+                hhmm = slot.astimezone(IST).strftime('%H:%M')
+                changes.append(f"{hhmm} {r.direction}")                       # metadata: the engine's internal values
+                words.append(f"{hhmm} {oi_words.direction_words(r.direction)}")  # the message: neutral words
                 last = r.direction
         if not await _log(session, tenant_id=tenant_id, underlying=underlying, alert_type="DIGEST", old_state=None, new_state=day.isoformat(),
                           slot_start=since, dedupe_key=key, status="SENT", created_at=now):
             continue
         final = rows[-1]
-        message = (f"{underlying} OI banner, {day.strftime('%d %b')}: " + " → ".join(changes[-20:]) +
-                   f". Last: {final.message} PCR band {final.pcr_band or '—'}, max pain {_fmt(final.max_pain)}.")
+        message = (f"{underlying} OI, {day.strftime('%d %b')}: " + " → ".join(words[-20:]) +
+                   f". Last: {oi_words.pcr_band_words(final.pcr_band)}, max pain {_fmt(final.max_pain)}.")
         await notify(session, tenant_id, NotificationType.OI_BANNER, f"{underlying} OI banner: day digest", message,
                      metadata_json=json.dumps({"schema": SCHEMA, "underlying": underlying, "alert_type": "DIGEST", "date": day.isoformat(),
                                                "timeline": changes}))

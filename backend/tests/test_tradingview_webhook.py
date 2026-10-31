@@ -79,7 +79,7 @@ def test_webhook_respects_risk_engine_rejection():
     assert response.status_code == 200
     body = response.json()
     assert body["executed"] is False
-    assert any("Max trades per day" in r for r in body["reasons"])
+    assert any("new entries today; your limit is" in r for r in body["reasons"])
 
     notifications = client.get("/api/notifications", headers=headers).json()
     assert any(n["event_type"] == "RISK_REJECTION" for n in notifications)

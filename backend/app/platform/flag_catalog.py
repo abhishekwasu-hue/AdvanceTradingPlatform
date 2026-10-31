@@ -149,6 +149,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "chart_analyze": FlagInfo("Analyze a chart: an educational reading of an uploaded chart image or link", "charts", "Analyze a chart page and its Charts button", (), "an AI key with image support", "unfinished"),
     "chart_analyze_strikes": FlagInfo("Analyze a chart: the option strikes your own options bots would use at the setup", "charts", "a strikes block on the Analyze a chart result", ("chart_analyze",), "an options trading bot", "unfinished"),
     "chart_analyze_share": FlagInfo("Analyze a chart: share a structure-only copy of an analysis with your organisation", "charts", "a Share button on the Analyze a chart result", ("chart_analyze",), "", "unfinished"),
+    "chart_analyze_hybrid": FlagInfo("Analyze a chart: advanced analysis - ATP's own structure reading of the symbol and timeframe you pick, drawn beside your chart", "charts", "an Advanced analysis choice on the Analyze a chart page", ("chart_analyze", "chart_price_action"), "stored candles for the symbol; areas of interest need the market zones", "unfinished"),
     "chart_studies": FlagInfo("Screen formulas drawn on the chart", "screens", "a chart layer", ("screener_v2",), "", "ready"),
     "chart_price_action": FlagInfo("Swings, legs and trend drawn on the chart", "charts", "a chart layer", (), "", "ready"),
     "ai_multiview": FlagInfo("Technical, options, news and macro views of a symbol", "ai", "a Copilot view", ("ai_copilot",), "", "ready"),
@@ -242,6 +243,7 @@ FLAG_GROUP: dict[str, str] = {
     "chart_analyze": "charts",
     "chart_analyze_strikes": "charts",
     "chart_analyze_share": "charts",
+    "chart_analyze_hybrid": "charts",
     "chart_price_action": "charts",
     "chart_trades_layer": "charts",
     "chart_contracts": "charts",
@@ -353,6 +355,7 @@ FINISH: Dict[str, str] = {
 KEEP_OFF: Dict[str, str] = {
     "chart_analyze_strikes": "strikes next to a setup read close to advice; after P2-5 is on",
     "chart_analyze_share": "download only, no share link (CPV-6)",
+    "chart_analyze_hybrid": "until the owner's ✅ (M59 CR-4)",
     "market_thesis": "needs market memory; per-symbol scenarios sit close to advice",
     "ai_research": "AI cost per draft; after FN5",
     "support_bot": "answers from help pages that are not complete; after P2-6",

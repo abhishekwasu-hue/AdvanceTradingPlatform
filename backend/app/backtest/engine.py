@@ -183,6 +183,7 @@ def run_backtest(
                 state.daily_pnl += closed.pnl
                 state.open_positions = max(0, state.open_positions - 1)
                 state.consecutive_losses = streak.closed(closed.pnl, current_time)
+                state.last_loss_at = streak.last_loss_at
                 open_trade = None
 
         if open_trade is None and pending is None:
@@ -191,6 +192,7 @@ def run_backtest(
             # REV-S1: as the worker, the signal is still read after the venue's cut-off, but an INTRADAY one is not entered
             entries_allowed = no_new_after is None or close_ist.time() < no_new_after
             if signal.is_tradeable and entries_allowed:
+                state.as_of = current_time       # M64: the cool-down in minutes, as live (parity)
                 decision = risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)
                 if decision.approved and deferred:
                     # the order reaches the market `delay` after this bar closed: the bar trading then (or the next one

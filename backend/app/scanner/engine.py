@@ -4,6 +4,7 @@ import pandas as pd
 
 from app.brokers.models import OptionChain
 from app.core.models import bars_to_dataframe
+from app.option_chain import oi_words
 from app.option_chain.analysis import analyze_option_chain
 from app.option_chain.models import OptionChainBias
 from app.price_action.candlestick_patterns import detect_patterns_at
@@ -110,7 +111,7 @@ def _check_option_filter(filter_: OptionFilter, chain: Optional[OptionChain]) ->
     if filter_.filter_type in (OptionFilterType.BIAS_BULLISH, OptionFilterType.BIAS_BEARISH):
         wanted = OptionChainBias.BULLISH if filter_.filter_type == OptionFilterType.BIAS_BULLISH else OptionChainBias.BEARISH
         if analysis.bias == wanted:
-            return True, f"Option chain bias: {analysis.bias.value}"
+            return True, f"Option chain: {oi_words.chain_read_words(analysis.bias)} (PCR {analysis.pcr:.2f})"  # M61 OI-5: neutral words
         return False, None
 
     if filter_.filter_type == OptionFilterType.NEAR_MAX_PAIN:

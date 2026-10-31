@@ -245,7 +245,7 @@ test.describe("v2 shell 1440 desktop", () => {
     await expect(bar.getByText("Searching…")).toHaveCount(0);
     await expect(bar.getByRole("option").first()).toHaveText(/Risk limits/);
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(/\/risk-management$/);
+    await expect(page).toHaveURL(/\/settings\/risk-limits$/);                   // M64 RM-5: Risk limits is the Settings page now
     await expect(bar).toBeHidden();
     // The top bar's search box opens it too; a page whose feature is off is not offered.
     await page.getByRole("button", { name: /^Search \(/ }).click();

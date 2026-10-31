@@ -324,6 +324,7 @@ def run_option_backtest(
         state.daily_pnl += pnl
         state.open_positions = max(0, state.open_positions - 1)
         state.consecutive_losses = streak.closed(pnl, when)
+        state.last_loss_at = streak.last_loss_at
         if reason.startswith("Expiry"):
             settlements += 1
         structures.append({
@@ -591,7 +592,9 @@ def _size_lots(risk_manager: RiskManager, state: TradingDayState, signal: Signal
     spec = ContractSpec(symbol=underlying_symbol, exchange="NFO", asset_class=AssetClass.INDEX_OPTION, description="option backtest",
                         lot_size=float(lot), tick_size=0.05)
     sizing = signal.model_copy(update={"symbol": underlying_symbol, "direction": direction, "entry": basis,
-                                       "stop_loss": round(basis + risk_per_unit, 2) if direction == SignalDirection.SHORT else round(basis - risk_per_unit, 2),
+                                       # M64: a short with no stop (no limit to its loss) is the "no stop" 0, as live
+                                       "stop_loss": ((round(basis + risk_per_unit, 2) if risk_per_unit > 0 else 0.0)
+                                                     if direction == SignalDirection.SHORT else round(basis - risk_per_unit, 2)),
                                        "target1": None, "target2": None, "risk_reward": signal.risk_reward if keep_rr else None})
     # DEF-0: with no risk per trade set the size is the trader's max lots (else one lot), as live
     decision = risk_manager.validate_and_size(sizing, state, contract_spec=spec, requested_quantity=float(max_lots * lot) if max_lots else None)
@@ -661,9 +664,8 @@ def _open_single(signal: Signal, rules: ContractRules, config: OptionBacktestCon
     level = (round(fill * (1 - pct), 2) if bought else round(fill * (1 + pct), 2)) if pct is not None else None
     max_lots = config.max_lots if config.max_lots else None
     per_unit = round(fill * pct, 2) if pct is not None else (fill if bought else 0.0)
-    if per_unit <= 0 and risk_manager.config.risk_amount() is not None:
-        # DEF-0 D7: as live - a written option with no stop has no limit to its loss; a risk per trade cannot size it
-        raise _Skip("No stop-loss is set, so your risk per trade cannot size this short position")
+    # M64 RM-2: as live - a written option with no stop has no limit to its loss; risk-based sizing falls back to the
+    # trader's own lots (RiskManager's warning), never a refusal.
     lots = _size_lots(risk_manager, state, signal, basis=fill, risk_per_unit=per_unit, lot=lot,
                       underlying_symbol=underlying, max_lots=max_lots, direction=trade_direction, keep_rr=True)
     quantity = lots * lot

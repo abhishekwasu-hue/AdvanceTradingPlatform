@@ -167,7 +167,7 @@ describe("Analyze a chart: the page behind its flag", () => {
     vi.doUnmock("../ui/useFeatures");
   });
 
-  it("with the flag on: upload, link, the two modes (Hybrid coming soon) and Analyze; no order button", async () => {
+  it("with the flag on: upload, link, the two modes (AI only / Advanced analysis) and Analyze; no order button", async () => {
     vi.resetModules();
     vi.doMock("../ui/useFeatures", () => ({ useFeatures: () => ({ loaded: true, on: (f: string) => f === "chart_analyze" }) }));
     vi.doMock("../ui/PageIntro", () => ({ PageIntro: () => null }));
@@ -175,8 +175,9 @@ describe("Analyze a chart: the page behind its flag", () => {
     const html = renderToStaticMarkup(<MemoryRouter><Page /></MemoryRouter>);
     expect(html).toContain("Choose an image");
     expect(html).toContain("Or paste a chart link");
-    expect(html).toContain("Image only");
-    expect(html).toContain("Coming soon");
+    expect(html).toContain("AI only");
+    expect(html).toContain("Advanced analysis (code + AI)");
+    expect(html).not.toContain("Coming soon");                                       // M59 CR-4: hybrid is built (behind its flag)
     expect(html).toMatch(/<button[^>]*>Analyze<\/button>/);
     expect(html).not.toMatch(/\b(Buy|Sell|Place order)\b/);
     vi.doUnmock("../ui/useFeatures");

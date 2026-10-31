@@ -69,6 +69,27 @@ export interface ConsoleSystem {
     data_quality_24h: Record<string, number>;
     broker_circuits: { broker: string; state: string; failures_in_window: number; calls_in_window: number }[];
   };
+  /** M71 PL-4: the universe market-data feed's health (backend/app/market_data/feed_health.py `snapshot()`). Absent on
+   * a server from before M71. */
+  market_feed?: MarketFeed;
+}
+
+/** One WebSocket connection of the universe feed. State: connecting | live | reconnecting | renew_needed. */
+export interface MarketFeedConnection {
+  id: string; broker: string; state: string; symbols: number; last_tick_at: string | null;
+  last_tick_age_seconds: number | null; reconnects_today: number;
+}
+/** A missing span found after a reconnect. Status: pending | requested | filled | failed. */
+export interface MarketFeedGap { symbol: string; interval: string; start: string | null; end: string | null; status: string; detected_at: string | null }
+/** State: off | no_session | live | reconnecting | closed | error. Counters `*_today` restart each IST day. */
+export interface MarketFeed {
+  enabled: boolean; credential: string; state: string; broker: string | null; note: string; day: string | null;
+  connections: MarketFeedConnection[];
+  symbols_subscribed: number; symbols_wanted: number; symbols_over_limit: number; symbols_held_back: number;
+  per_connection_cap: number | null; max_connections: number | null; universe_at: string | null;
+  last_tick_age_seconds: number | null; reconnects_today: number;
+  gaps_detected_today: number; gaps_filled_today: number; gaps_pending: number; pending_gaps: MarketFeedGap[];
+  bars_written_today: number; late_ticks_today: number; stock_bars_without_volume: number; updated_at: string | null;
 }
 
 export interface ConsoleUser {

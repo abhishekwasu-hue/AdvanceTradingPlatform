@@ -179,15 +179,15 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
     if (!universeV2) return undefined;
     let alive = true;
     universesApi.list().then((u) => { if (alive) setUniverses(isUniverses(u) ? u : null); })
-      .catch(() => undefined).finally(() => { if (alive) setUniversesDone(true); });
+      .catch((e) => { if (alive) toast.error(errorText(e)); }).finally(() => { if (alive) setUniversesDone(true); });
     return () => { alive = false; };
-  }, [universeV2]);
+  }, [universeV2, toast]);
   useEffect(() => {
     if (!universeV2 || !watchlistsOn) return undefined;
     let alive = true;
-    watchlistsApi.list().then((l) => { if (alive) setMyLists(isWatchlists(l) ? l : null); }).catch(() => undefined);
+    watchlistsApi.list().then((l) => { if (alive) setMyLists(isWatchlists(l) ? l : null); }).catch((e) => { if (alive) toast.error(errorText(e)); });
     return () => { alive = false; };
-  }, [universeV2, watchlistsOn]);
+  }, [universeV2, watchlistsOn, toast]);
   const builtinDefault = universesDone && !serverHasDefault(universes);
   const chosenKey = choice.startsWith("sys:") ? choice.slice(4) : null;
   const needsList = !!chosenKey && !(chosenKey === DEFAULT_KEY && builtinDefault);
@@ -209,6 +209,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
     syncDeviceHistory(store, screenerApi).then(({ left }) => {
       if (Object.keys(left).length) writeStore(left);
       else clearStore();
+    // intentional: what the server did not take stays on this device for the next load
     }).catch(() => undefined).finally(() => { if (alive) setSynced(true); });
     return () => { alive = false; };
   }, [ideaOn]);
@@ -362,7 +363,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
         }
         setProblems(byStage);
         setOtherProblem(other);
-      }).catch(() => undefined)                        // a failed check is not a problem in the scan; Run reports errors
+      }).catch(() => undefined)                        // intentional: a failed check is not a problem in the scan; Run reports errors
         .finally(() => { if (seq === validateSeq.current) { setValidating(false); setCheckedText(text); } });
     }, VALIDATE_DELAY_MS);
     return () => window.clearTimeout(timer);
@@ -385,7 +386,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
     const timer = window.setTimeout(() => {
       setPreviewBusy(true);
       screenerApi.preview(text, scanTf, symbols).then((res) => setPreview({ res, stamp }))
-        .catch(() => undefined)                        // a live count is a convenience; Run reports errors
+        .catch(() => undefined)                        // intentional: a live count is a convenience; Run reports errors
         .finally(() => setPreviewBusy(false));
     }, PREVIEW_DELAY_MS);
     return () => window.clearTimeout(timer);

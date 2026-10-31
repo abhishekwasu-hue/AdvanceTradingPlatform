@@ -96,7 +96,7 @@ export function readableDetail(body: string): string {
       }
     }
   } catch {
-    /* not JSON */
+    /* intentional: not JSON */
   }
   return "";
 }
@@ -134,7 +134,7 @@ export function reasonSentence(code: string | null | undefined): string | null {
  * 502/504 page) get a generic sentence plus the request id, which is what support needs to find the log line. */
 export async function apiErrorFrom(response: Response): Promise<ApiError> {
   let body = "";
-  try { body = (await response.text()).trim(); } catch { /* body unreadable */ }
+  try { body = (await response.text()).trim(); } catch { /* intentional: body unreadable */ }
   const status = response.status;
   const requestId = response.headers.get("x-request-id");
   const detail = readableDetail(body);

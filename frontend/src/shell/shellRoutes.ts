@@ -27,7 +27,7 @@ export function chartsSymbolFromPath(pathname: string): string | null | undefine
   if (!m) return undefined;
   if (!m[1]) return null;
   let raw = m[1];
-  try { raw = decodeURIComponent(raw); } catch { /* a malformed escape: use it as written */ }
+  try { raw = decodeURIComponent(raw); } catch { /* intentional: a malformed escape: use it as written */ }
   const symbol = raw.trim().toUpperCase();
   return symbol || null;
 }

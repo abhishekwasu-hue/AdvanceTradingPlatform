@@ -118,7 +118,7 @@ export function readColumns(): ColumnPrefs {
 }
 
 export function writeColumns(prefs: ColumnPrefs): void {
-  try { localStorage.setItem(COLUMNS_KEY, JSON.stringify(prefs)); } catch { /* storage unavailable */ }
+  try { localStorage.setItem(COLUMNS_KEY, JSON.stringify(prefs)); } catch { /* intentional: storage unavailable */ }
 }
 
 export interface ColumnDef {

@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "../components/primitives";
 import { Combobox } from "../ui/Combobox";
+import { formatNumber } from "../ui/format";
 import { screenerApi } from "./api";
 import { ETF_SORTS, etfQuery, inrShort, pct, SORT_LABEL, type EtfResponse, type EtfSort } from "./etf";
 
@@ -65,7 +66,7 @@ export function EtfPanel({ initial = null, load = screenerApi.etf }: EtfPanelPro
                   <th scope="row" className="py-1 pr-2 text-left"><span className="font-mono font-semibold text-fg">{r.symbol}</span>
                     <div className="text-t12 font-normal text-fg-muted">{r.name}</div></th>
                   <td className="py-1 pr-2 text-fg-muted">{r.underlying ?? "–"}</td>
-                  <td className="py-1 pr-2 font-mono text-fg">{r.close?.toFixed(2) ?? "–"}<div className="text-t12 text-fg-muted">{r.session ?? ""}</div></td>
+                  <td className="py-1 pr-2 font-mono text-fg">{formatNumber(r.close, 2)}<div className="text-t12 text-fg-muted">{r.session ?? ""}</div></td>
                   <td className="py-1 pr-2 font-mono text-fg">{inrShort(r.traded_value)}</td>
                   <td className="py-1 pr-2 font-mono text-fg">{pct(r.change_pct)}</td>
                   <td className="py-1 pr-2 font-mono text-fg">{pct(r.index_change_pct)}</td>

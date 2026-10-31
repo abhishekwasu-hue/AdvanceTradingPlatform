@@ -6,6 +6,7 @@ import type { MarketMemory } from "../../../types";
 import { friendlyError } from "../../aiTask";
 import { useCopilotT } from "../../i18n";
 import { Panel } from "../shared";
+import { formatNumber, formatPct } from "../../../ui/format";
 
 /**
  * The market memory the Copilot reads from (the worker's read every 15 minutes): each watched symbol's direction,
@@ -43,7 +44,7 @@ export default function MemoryPanel() {
   const placeholder = changes.length >= 2 && new Set(changes).size === 1;
   const hide = stale || placeholder;
   const tone = (v: number | null | undefined) => ((v ?? 0) > 0 ? "text-up" : (v ?? 0) < 0 ? "text-down" : "text-fg");
-  const sign = (v: number | null | undefined, d = 2) => `${(v ?? 0) > 0 ? "+" : ""}${(v ?? 0).toFixed(d)}%`;
+  const sign = (v: number | null | undefined, d = 2) => formatPct(v ?? 0, d);
 
   return (
     <Panel title={t("memory.title")} icon={<Brain size={15} />} testId="pulse-memory" busy={busy || (memory === null && error === null)}
@@ -71,7 +72,7 @@ export default function MemoryPanel() {
               {memory.symbols.map((s) => (
                 <tr key={s.symbol} className="border-t border-border/60">
                   <td className="py-1.5 font-semibold text-fg">{s.symbol}</td>
-                  <td className="font-tabular text-fg">{hide ? "-" : s.last_price?.toLocaleString("en-IN") ?? "-"}</td>
+                  <td className="font-tabular text-fg">{hide || s.last_price == null ? "-" : formatNumber(s.last_price, 3, { trim: true })}</td>
                   <td className={`font-tabular ${hide ? "text-fg-muted" : tone(s.change_pct)}`}>{hide ? "-" : sign(s.change_pct)}</td>
                   <td className={s.bias === "BULLISH" ? "text-up" : s.bias === "BEARISH" ? "text-down" : "text-fg"}>{t(`memory.bias.${s.bias ?? "NEUTRAL"}`)}</td>
                   <td className="text-fg-muted">{(s.regime ?? "-").replace(/_/g, " ").toLowerCase()} / {(s.higher_regime ?? "-").replace(/_/g, " ").toLowerCase()}</td>
@@ -88,7 +89,7 @@ export default function MemoryPanel() {
           <div className="flex flex-wrap gap-1.5 text-xs">
             {Object.entries(memory.sentiment.components).map(([key, c]) => (
               <span key={key} className={`rounded-md border px-1.5 py-0.5 ${c.score == null ? "border-border text-fg-muted line-through" : "border-border text-fg"}`}>
-                {t(`memory.component.${key}`, { defaultValue: key })} {c.score == null ? "-" : `${c.score > 0 ? "+" : ""}${c.score.toFixed(0)}`}{c.score != null && <span className="text-fg-muted"> ×{c.weight.toFixed(2)}</span>}
+                {t(`memory.component.${key}`, { defaultValue: key })} {c.score == null ? "-" : `${c.score > 0 ? "+" : ""}${formatNumber(c.score, 0)}`}{c.score != null && <span className="text-fg-muted"> ×{formatNumber(c.weight, 2)}</span>}
               </span>
             ))}
           </div>

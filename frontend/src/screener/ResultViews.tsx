@@ -20,12 +20,13 @@ import { evidenceApi, visibleDrawables, type EvidencePack } from "./evidence";
 import { ResultBoard, type ResultBoardProps } from "./ResultBoard";
 import { SubTabs } from "../ui/SubTabs";
 import { Details } from "../ui/Details";
+import { formatNumber } from "../ui/format";
 
 /** SCR-FIX C5: the heatmap's labels in viewBox units - the 380-wide box is drawn about 1:1 on a phone, so 12 reads as
  * about 12 px there (it was 9: about 8 px on a phone). A tile too small for its symbol shows none (its name is in its label). */
 const HEAT_FONT = 12;
 
-const pct = (v: number | null) => (v == null ? "n/a" : `${v >= 0 ? "+" : ""}${v.toFixed(2)} %`);
+const pct = (v: number | null) => (v == null ? "n/a" : `${v >= 0 ? "+" : ""}${formatNumber(v, 2)} %`);
 
 export function HeatmapView({ results, context, width = 380, height = 300 }: { results: RunResult[]; context: ContextRow[]; width?: number; height?: number }) {
   const shown = useMemo(() => heatmapResults(results, context), [results, context]);

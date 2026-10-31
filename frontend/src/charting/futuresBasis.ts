@@ -6,6 +6,7 @@
  * only - no signal, no order here.
  */
 import { ApiError, request } from "../api/client";
+import { formatNumber } from "../ui/format";
 
 export interface MonthSeries { expiry: (string | null)[]; close: (number | null)[]; oi: (number | null)[] }
 export interface BasisSeries {
@@ -29,9 +30,9 @@ export function basisUrl(underlying: string): string {
   return `/?${new URLSearchParams({ basis: underlying.trim().toUpperCase() }).toString()}`;
 }
 
-/** "1.25 %", "-0.40 %", "n/a". */
+/** "1.25 %", "−0.40 %", "n/a". */
 export function pctText(v: number | null | undefined, digits = 2): string {
-  return v == null || !Number.isFinite(v) ? "n/a" : `${v.toFixed(digits)} %`;
+  return v == null || !Number.isFinite(v) ? "n/a" : `${formatNumber(v, digits)} %`;
 }
 
 /** The last day's reading, from the series (never computed here). */

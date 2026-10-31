@@ -9,6 +9,7 @@ import { useProgressionT } from "./i18n";
 import { KeyValueTable, Signed, TextOnDemand } from "../ui/numbersFirst";
 import { loadSwitches } from "../settings/myLimits";
 import { useUiV2 } from "../ui/useFeatures";
+import { formatNumber } from "../ui/format";
 
 /**
  * N2-2 (flag `experience_levels`): the caller's experience level from their own PAPER record, the gates it opens
@@ -81,7 +82,7 @@ export function ExperiencePanel({ status, canTrade, onOptOut, error }: {
             { label: "Closed PAPER trades", value: r.closed_trades, testId: "trades" },
             { label: "Largest drawdown", hint: "drawdown", value: <Signed value={-Math.abs(r.max_drawdown_pct)} kind="pct" />, testId: "drawdown" },
           ]} />
-        ) : <p className="text-fg">{t("experience.record", { trades: r.closed_trades, sessions: r.sessions, dd: r.max_drawdown_pct.toFixed(2) })}</p>}
+        ) : <p className="text-fg">{t("experience.record", { trades: r.closed_trades, sessions: r.sessions, dd: formatNumber(r.max_drawdown_pct, 2) })}</p>}
         {next ? (
           <div data-testid="experience-next">
             <p className="text-fg-muted">{t("experience.next", { level: next.label, opens: next.opens.join(", ").toLowerCase() })}</p>
@@ -137,7 +138,7 @@ export function ExperiencePanel({ status, canTrade, onOptOut, error }: {
 
         <TextOnDemand id="mytrades.experience" on={v2}>
           {v2 && <p>{t("experience.intro")}</p>}
-          {v2 && <p>{t("experience.record", { trades: r.closed_trades, sessions: r.sessions, dd: r.max_drawdown_pct.toFixed(2) })}</p>}
+          {v2 && <p>{t("experience.record", { trades: r.closed_trades, sessions: r.sessions, dd: formatNumber(r.max_drawdown_pct, 2) })}</p>}
           <p className="text-fg-muted" data-testid="experience-counts">
             {t("experience.counts", { today: status.opt_outs.today, week: status.opt_outs.last_7_days, total: status.opt_outs.total })}
           </p>

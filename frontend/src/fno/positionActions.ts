@@ -9,7 +9,7 @@
  */
 import { friendlyError, request } from "../api/client";
 import type { TradeRecord } from "../types";
-import { formatPrice, formatSignedINR } from "../ui/format";
+import { formatNumber, formatPrice, formatSignedINR } from "../ui/format";
 import { isFnoPosition } from "./contracts";
 
 export interface ClosedPart { trade_id: number; symbol: string; lots: number; closed: boolean; exit_price: number | null; pnl: number | null }
@@ -183,9 +183,9 @@ export function waitingLine(o: WaitingOrder): string {
 
 /** The quantity of a waiting order, for its Details. Pure. */
 export function waitingQuantity(o: WaitingOrder): string {
-  const qty = o.quantity % 1 ? o.quantity.toFixed(2) : String(o.quantity);
+  const qty = formatNumber(o.quantity, o.quantity % 1 ? 2 : 0);
   const per = o.lots ? o.quantity / o.lots : null;
-  return `Quantity: ${qty} units${per && o.lots ? ` (${lotWord(o.lots)} of ${per % 1 ? per.toFixed(2) : per})` : ""}.`;
+  return `Quantity: ${qty} units${per && o.lots ? ` (${lotWord(o.lots)} of ${formatNumber(per, per % 1 ? 2 : 0)})` : ""}.`;
 }
 
 /** What Modify asks for: an entry its price (and trigger for a stop order) and lots; an exit its level only. Pure. */

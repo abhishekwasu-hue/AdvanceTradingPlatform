@@ -10,7 +10,7 @@ describe("ladder evidence helpers (N2-1)", () => {
     expect(pct(null)).toBe("-");
     expect(rupees(1234.5)).toBe("₹1,234.50");
     expect(rupees(80, true)).toBe("+₹80.00");
-    expect(rupees(-20, true)).toBe("-₹20.00");
+    expect(rupees(-20, true)).toBe("−₹20.00");
     expect(rupees(0, true)).toBe("₹0.00");
     expect(ratio(2)).toBe("2.00");
     expect(ratio(undefined)).toBe("-");
@@ -25,7 +25,7 @@ describe("ladder evidence helpers (N2-1)", () => {
   it("writes the Kelly and ruin lines from the server's status", () => {
     expect(kellyLine(OK, t)).toBe("40.0% of capital lost on a losing trade maximises the long-run growth of these past outcomes (f = (p·b − q) / (b·(p + q))).");
     expect(ruinLine(OK, t)).toBe("At most 0.04% chance of ever falling 10% (₹1,000.00) below your starting capital.");
-    expect(kellyLine(LOSING, t)).toBe("Below zero (-125.0%): these past outcomes lost money on average.");
+    expect(kellyLine(LOSING, t)).toBe("Below zero (−125.0%): these past outcomes lost money on average.");
     expect(ruinLine(LOSING, t)).toContain("Certain in this model");
     const noLoss: LadderEvidence = { ...OK, kelly: { ...OK.kelly!, fraction: null, status: "no_losses" }, ruin: { ...OK.ruin!, probability: null, status: "no_losses" } };
     expect(kellyLine(noLoss, t)).toBe("Not defined: no losing trade yet.");

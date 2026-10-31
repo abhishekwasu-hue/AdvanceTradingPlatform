@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatDateTimeIST } from "../ui/format";
 import { ApiError } from "../api/client";
 import type { LightweightEngine } from "../charting/lightweight";
 import { Details } from "../ui/Details";
@@ -37,7 +38,7 @@ export function useReadChart(engine: LightweightEngine | null, instrument: strin
 function asOfText(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  return Number.isNaN(d.getTime()) ? "" : formatDateTimeIST(d, { year: false, suffix: false });
 }
 
 export function ReadChartBody({ read }: { read: ReadChart }) {

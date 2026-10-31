@@ -18,6 +18,7 @@ import { useCostEstimate } from "../cost";
 import { useCopilotT, useSecondary } from "../i18n";
 import { copilotPath } from "../tabs";
 import { Panel, Stagger, StaggerItem } from "./shared";
+import { formatINR, formatNumber } from "../../ui/format";
 import { useUiV2 } from "../../ui/useFeatures";
 import { Details } from "../../ui/Details";
 
@@ -264,7 +265,7 @@ function IdeaBuilderInterview() {
         {offerProfile && start.profile && step === 0 && (
           <div className="rounded-xl border border-ai/30 bg-ai/5 p-3 text-sm text-fg">
             <History size={15} className="mr-1 inline text-ai" />
-            {t("idea.welcomeBack", { capital: Number(start.profile.answers.capital ?? 0).toLocaleString("en-IN"), style: String(start.profile.answers.style ?? ""), symbol: String(start.profile.answers.symbol ?? "") })}
+            {t("idea.welcomeBack", { capital: formatNumber(Number(start.profile.answers.capital ?? 0), 3, { trim: true }), style: String(start.profile.answers.style ?? ""), symbol: String(start.profile.answers.symbol ?? "") })}
             <div className="mt-2 flex flex-wrap gap-2">
               <Button size="sm" variant="primary" onClick={applyProfile}><span className="text-left leading-tight">{t("idea.yesUse")}</span></Button>
               <Button size="sm" onClick={() => setOfferProfile(false)}><span className="text-left leading-tight">{t("idea.noAsk")}</span></Button>
@@ -288,11 +289,11 @@ function IdeaBuilderInterview() {
               {current.kind === "number" && (
                 <div className="flex flex-wrap items-center gap-1.5">
                   {CAPITAL_CHIPS.map((c) => (
-                    <button key={c} onClick={() => answer(String(c), `₹${c.toLocaleString("en-IN")}`)} className="rounded-full border border-border px-3 py-1.5 text-sm font-medium text-fg hover:border-ai/60 hover:bg-ai/10">₹{c.toLocaleString("en-IN")}</button>
+                    <button key={c} onClick={() => answer(String(c), formatINR(c))} className="rounded-full border border-border px-3 py-1.5 text-sm font-medium text-fg hover:border-ai/60 hover:bg-ai/10">{formatINR(c)}</button>
                   ))}
                   <input value={custom} onChange={(e) => setCustom(e.target.value.replace(/[^\d]/g, ""))} aria-label={t("idea.otherAmount")}
                          placeholder={t("idea.otherAmount")} className={`${fieldClass} w-40`} />
-                  <Button size="sm" variant="primary" disabled={Number(custom) < 5000} onClick={() => answer(custom, `₹${Number(custom).toLocaleString("en-IN")}`)}>{t("idea.ok")}</Button>
+                  <Button size="sm" variant="primary" disabled={Number(custom) < 5000} onClick={() => answer(custom, formatINR(Number(custom)))}>{t("idea.ok")}</Button>
                 </div>
               )}
               {current.kind === "symbol" && (
@@ -453,7 +454,7 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button size="sm" icon={<ShieldCheck size={13} />} disabled={busy} onClick={() => {
-          const cap = plan.risk_config.capital != null ? `₹${Math.round(plan.risk_config.capital).toLocaleString("en-IN")}` : "-";
+          const cap = plan.risk_config.capital != null ? formatINR(plan.risk_config.capital) : "-";
           if (!window.confirm(t("idea.confirmRisk", { capital: cap }))) return;
           void act(async () => { await api.updateRiskSettings(plan.risk_config); return t("idea.riskApplied"); });
         }}><span className="text-left leading-tight">{t("idea.applyRisk")}</span></Button>
@@ -461,7 +462,7 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
           <>
             <label className="flex items-center gap-1.5 text-xs text-fg">
               <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--ai))]" checked={acceptRisk} onChange={(e) => setAcceptRisk(e.target.checked)} />
-              <span>{t("idea.acceptLoss", { amount: perTrade != null ? perTrade.toLocaleString("en-IN") : "-" })}</span>
+              <span>{t("idea.acceptLoss", { amount: perTrade != null ? formatNumber(perTrade, 0) : "-" })}</span>
             </label>
             <Button size="sm" variant="primary" icon={<Rocket size={13} />} disabled={busy || !acceptRisk}
                     onClick={() => void act(async () => t("idea.deployed", { id: (await api.aiInterviewDeploy(plan.candidate_id!, acceptRisk)).deployment.id }))}>

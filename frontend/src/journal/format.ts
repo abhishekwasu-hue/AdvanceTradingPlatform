@@ -1,4 +1,5 @@
 /** Z6: pure helpers for the Journal page - labels, week arithmetic, number formats. Descriptive words only. */
+import { formatINR, formatNumber } from "../ui/format";
 
 export const TAG_LABELS: Record<string, string> = {
   revenge_trade: "Revenge trade",
@@ -72,12 +73,11 @@ export function shiftWeek(label: string, offset: number): string {
 
 export function money(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "-";
-  const sign = value < 0 ? "-" : "";
-  return `${sign}₹${Math.abs(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return formatINR(value, { paise: true });
 }
 
 export function rText(value: number | null | undefined): string {
-  return value == null || !Number.isFinite(value) ? "-" : `${value > 0 ? "+" : ""}${value.toFixed(2)}R`;
+  return value == null || !Number.isFinite(value) ? "-" : `${value > 0 ? "+" : ""}${formatNumber(value, 2)}R`;
 }
 
 export function minutesText(value: number | null | undefined): string {

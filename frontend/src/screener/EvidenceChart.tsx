@@ -15,7 +15,7 @@ import { useChartPrefs } from "../chart/useChartPrefs";
 import type { LightweightEngine } from "../charting/lightweight";
 import { buttonClass, cx } from "../components/primitives";
 import { chartTabPath } from "../shell/shellRoutes";
-import { formatCount } from "../ui/format";
+import { formatCount, formatNumber } from "../ui/format";
 import {
   barTimeText, chartSummary, chartTimeframe, drawableColor, evidenceChartLayers, evidenceGeometry, matchedBar, packCandles, priceText,
   type EvidenceDrawable, type EvidencePack,
@@ -69,8 +69,8 @@ export function EvidenceChart({ pack, drawables, width = 720, height = 360, high
           <path d={`M${g.matchedX - 5} ${g.priceBottom + 1}L${g.matchedX + 5} ${g.priceBottom + 1}L${g.matchedX} ${g.priceBottom - 6}Z`} fill="rgb(var(--fg))" />
         </g>
       )}
-      <text x={g.right + 4} y={g.priceTop + 10} fontSize={11} fill="rgb(var(--chart-text))">{g.hi.toFixed(2)}</text>
-      <text x={g.right + 4} y={g.priceBottom} fontSize={11} fill="rgb(var(--chart-text))">{g.lo.toFixed(2)}</text>
+      <text x={g.right + 4} y={g.priceTop + 10} fontSize={11} fill="rgb(var(--chart-text))">{formatNumber(g.hi, 2)}</text>
+      <text x={g.right + 4} y={g.priceBottom} fontSize={11} fill="rgb(var(--chart-text))">{formatNumber(g.lo, 2)}</text>
       {g.sub && (
         <g data-testid="evidence-sub-pane">
           <line x1={g.left} x2={g.right} y1={g.sub.bottom} y2={g.sub.bottom} stroke="rgb(var(--border))" />

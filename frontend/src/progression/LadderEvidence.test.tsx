@@ -34,8 +34,8 @@ describe("LadderEvidence (N2-1)", () => {
 
   it("states a losing record plainly", () => {
     const words = text(renderToStaticMarkup(<LadderEvidence evidence={LOSING} />));
-    expect(words).toContain("Expectancy per trade -₹125.00");
-    expect(words).toContain("Below zero (-125.0%): these past outcomes lost money on average.");
+    expect(words).toContain("Expectancy per trade −₹125.00");
+    expect(words).toContain("Below zero (−125.0%): these past outcomes lost money on average.");
     expect(words).toContain("Certain in this model: with these outcomes a fall of 50% (₹5,000.00) below the start comes sooner or later.");
   });
 });

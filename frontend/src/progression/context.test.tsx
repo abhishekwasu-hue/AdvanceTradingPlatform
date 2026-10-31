@@ -31,9 +31,9 @@ describe("context helpers (N2-5)", () => {
   it("writes each tile's lines from the server's values", () => {
     expect(tileLines("regime", PANEL.tiles.regime, t)).toEqual(["NIFTY 50 25,010.5: daily uptrend, weekly range", "Last swings: HL 24,800 (2026-10-03), HH 25,100 (2026-10-08)"]);
     expect(tileLines("breadth", PANEL.tiles.breadth, t)).toEqual(["1200 advanced · 800 declined · 50 unchanged of 2050 shares", "Advance / decline ratio 1.50"]);
-    expect(tileLines("vix", PANEL.tiles.vix, t)).toEqual(["13.20 (-2.50% on the day)", "1-year rank 22.4 · percentile 30.1 (252 sessions)", "Live reading 13.60 (+1.10%)"]);
+    expect(tileLines("vix", PANEL.tiles.vix, t)).toEqual(["13.20 (−2.50% on the day)", "1-year rank 22.4 · percentile 30.1 (252 sessions)", "Live reading 13.60 (+1.10%)"]);
     expect(tileLines("fii_dii", PANEL.tiles.fii_dii, t)).toEqual([]);
-    expect(tileLines("global", PANEL.tiles.global, t)).toEqual(["S&P 500 futures: 5,800.25 (+0.40%)", "Brent crude: 82.1 (-1.20%)", "2 markets did not answer"]);
+    expect(tileLines("global", PANEL.tiles.global, t)).toEqual(["S&P 500 futures: 5,800.25 (+0.40%)", "Brent crude: 82.1 (−1.20%)", "2 markets did not answer"]);
     expect(tileLines("events", PANEL.tiles.events, t)).toEqual(["Today:", "2026-10-12 10:00 RBI_POLICY (all): Policy", "Rest of this week:",
                                                               "2026-10-16  RESULTS (RELIANCE): Results · your organisation"]);
     expect(tileLines("events", { ...PANEL.tiles.events, today: [], this_week: [] }, t)).toEqual(["No market event in the calendar for the rest of this week."]);

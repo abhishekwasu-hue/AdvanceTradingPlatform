@@ -1,6 +1,7 @@
 // N2-3: pure helpers for the decision tools card - inputs to request bodies, the what-if chart geometry, and the
 // prefill from the user's own figures (N2-1). The server computes every number; this only shapes them.
 import type { LadderEvidence, WhatIfResult } from "../types";
+import { formatSignedINR } from "../ui/format";
 
 export interface RuinInputs { winRatePct: string; payoff: string; riskPct: string; ruinPct: string }
 
@@ -47,8 +48,7 @@ export function chartGeometry(r: WhatIfResult, w: number, h: number): ChartGeome
   return { paths, zeroY: yMin <= 0 && yMax >= 0 ? sy(0) : null, spotX: sx(r.spot), yMin, yMax };
 }
 
-/** Signed rupees without decimals for the chart and the at-spot line: "+₹1,250", "-₹480", "₹0". */
+/** Signed rupees without decimals for the chart and the at-spot line: "+₹1,250", "−₹480", "₹0". */
 export function pnl(n: number): string {
-  const s = `₹${Math.abs(Math.round(n)).toLocaleString("en-IN")}`;
-  return Math.round(n) > 0 ? `+${s}` : Math.round(n) < 0 ? `-${s}` : s;
+  return formatSignedINR(n);
 }

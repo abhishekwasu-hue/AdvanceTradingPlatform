@@ -1,6 +1,8 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
+import { errorSentence } from "../api/errors";
+import { toast } from "../components/Toast";
 import { useAuth } from "../auth/AuthContext";
 import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import type { PageProps } from "../routes";
@@ -119,8 +121,8 @@ export default function RiskV2(_props: PageProps = {}) {
   const [resuming, setResuming] = useState(false);
 
   function refreshGuardian() {
-    api.guardianStatus().then(setGuardian).catch(() => {});
-    api.lossStreak().then(setStreak).catch(() => {});
+    api.guardianStatus().then(setGuardian).catch((e) => toast.error(errorSentence(e)));
+    api.lossStreak().then(setStreak).catch((e) => toast.error(errorSentence(e)));
     setEventsNonce((n) => n + 1);
   }
 
@@ -132,6 +134,7 @@ export default function RiskV2(_props: PageProps = {}) {
       setNotice({ kind: "done", text: "Resumed. New entries are allowed again; only losses from now on count towards your limit." });
     } catch (err) {
       setNotice({ kind: "warn", text: failedText("New entries were not resumed.", err) });
+      // intentional: the note above already says the resume failed; this only re-reads the pause, the last answer stays
       api.lossStreak().then(setStreak).catch(() => {});
     } finally {
       setResuming(false);
@@ -141,8 +144,8 @@ export default function RiskV2(_props: PageProps = {}) {
   useEffect(() => {
     if (!user) return;
     api.getRiskSettings().then((c) => { setConfig(c); setDrafts(draftsOf(c)); setPauseDraft(c.loss_streak_pause ?? "next_session"); }).catch(() => setLoadFailed(true));
-    api.riskCeilings().then(setCeilings).catch(() => {});
-    paperRiskOrNone().then(setPaper).catch(() => {});
+    api.riskCeilings().then(setCeilings).catch((e) => toast.error(errorSentence(e)));
+    paperRiskOrNone().then(setPaper).catch((e) => toast.error(errorSentence(e)));
     refreshGuardian();
   }, [user]);
 

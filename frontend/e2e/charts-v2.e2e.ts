@@ -74,6 +74,26 @@ async function open(page: Page, theme: "dark" | "light", setup: Setup = {}): Pro
   return calls;
 }
 
+/** The first read a mounted chart page sends: the Chart tab's bars, or the Multi-chart tab's saved layouts. */
+const CANDLES_READ = { method: "POST", path: /\/market-data\/candles$/ };
+const LAYOUTS_READ = { method: "GET", path: /\/charts\/layouts$/ };
+type Read = typeof CANDLES_READ;
+/** Resolves once the page has sent `read` and its answer came. Call it before the navigation that causes the read. */
+function answered(page: Page, read: Read) {
+  return page.waitForResponse((r) => r.request().method() === read.method && read.path.test(new URL(r.url()).pathname));
+}
+
+/**
+ * A reload boots the whole app again (sign-in, flags, the shell and its reads, the page's own chunk) before the page
+ * mounts. open() waits for the first load; a bare reload did not, so the 5 s checks after it raced the boot under CI
+ * load. The page sends its own first read only once it is mounted: that answer is the readiness signal.
+ */
+async function reloadMounted(page: Page, read: Read) {
+  const mounted = answered(page, read);
+  await page.reload();
+  await mounted;
+}
+
 /** The chart is drawn: the library's canvas is there and the bars came. */
 async function chartReady(page: Page) {
   await expect(page.locator("[data-page='charts-v2'] .tv-lightweight-charts canvas").first()).toBeVisible();
@@ -262,7 +282,7 @@ test.describe("v2 Charts 1440 desktop", () => {
     expect(calls.prefsPuts[0]).toMatchObject({ version: "1", body: { theme: "dark", grid: false, indicators: { volume: true, rsi: true } } });
     // Not this browser's copy: the server's answer decides after the reload.
     await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith("atp_chart_prefs:")) localStorage.removeItem(k); });
-    await page.reload();
+    await reloadMounted(page, CANDLES_READ);
     await chartReady(page);
     await expect(page.locator("[data-chart-theme]")).toHaveAttribute("data-chart-theme", "dark");
     await expect(page.locator("html")).not.toHaveAttribute("data-theme", "dark");          // the app stays light
@@ -322,7 +342,7 @@ test.describe("v2 Charts 1440 desktop", () => {
     await page.getByRole("button", { name: "Chart settings" }).click();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Chart settings" })).toBeFocused();
-    await page.reload();
+    await reloadMounted(page, CANDLES_READ);
     await chartReady(page);
     await page.getByRole("button", { name: /^Indicators/ }).click();
     await expect(page.getByRole("switch", { name: "Volume" })).toHaveAttribute("aria-checked", "false");
@@ -591,7 +611,7 @@ test.describe("v2 Charts 1440: watchlist and drawing rail (UI2-4c)", () => {
     await page.getByRole("button", { name: "Hide watchlist" }).click();
     await expect(page.locator("[data-watchlist]")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Watchlist" })).toHaveAttribute("aria-pressed", "false");
-    await page.reload();
+    await reloadMounted(page, CANDLES_READ);
     await chartReady(page);
     await expect(page.locator("[data-watchlist]")).toHaveCount(0);
     await page.getByRole("button", { name: "Watchlist" }).click();
@@ -649,7 +669,7 @@ test.describe("v2 Charts 1440: watchlist and drawing rail (UI2-4c)", () => {
     await rail.getByRole("button", { name: "Hide all drawings" }).click();
     await expect(rail.getByRole("button", { name: "Hide all drawings" })).toHaveAttribute("aria-pressed", "true");
     await expect(rail.getByRole("button", { name: "Trend line" })).toBeDisabled();
-    await page.reload();
+    await reloadMounted(page, CANDLES_READ);
     await chartReady(page);
     await expect(rail.getByRole("button", { name: "Hide all drawings" })).toHaveAttribute("aria-pressed", "true");
     await rail.getByRole("button", { name: "Hide all drawings" }).click();
@@ -734,7 +754,7 @@ test.describe("v2 Charts 1440: system watchlists (WL1)", () => {
     await chooser(page).click();
     await page.getByRole("button", { name: /^Sectors/ }).click();
     await page.getByRole("button", { name: /^IT/ }).click();
-    await page.reload();
+    await reloadMounted(page, CANDLES_READ);
     await chartReady(page);
     await expect(chooser(page)).toContainText("IT (2)");
   });
@@ -807,8 +827,11 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
   });
 
   test("a saved layout: Save sends a PUT with its version, and it is read back after a reload", async ({ page }) => {
+    // The layout used last replaces the first two charts once the list is read (networkidle can come before the tab mounts).
+    const listed = answered(page, LAYOUTS_READ);
     const calls = await open(page, "light", { path: "/charts?tab=multi", storage: { atp_workspace_last: "7" },
       layouts: [{ id: 7, name: "Morning", layout: layoutOf([["NIFTY 50", "5min", "A"], ["NIFTY 50", "60min", "A"], ["NIFTY BANK", "day", null], ["NIFTY BANK", "week", null]], { A: { symbol: true, interval: false, crosshair: true } }) }] });
+    await listed;
     await cellsReady(page, 4);
     await expectComboValue(page.getByLabel("Saved layouts"), "7");
     expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5 min", "Chart 2: NIFTY 50 1 hour", "Chart 3: NIFTY BANK Daily", "Chart 4: NIFTY BANK Weekly"]);
@@ -821,7 +844,7 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     expect((calls.layoutWrites[0].body?.layout as { cells: { chart_type: string }[] }).cells.map((c) => c.chart_type)).toEqual(["candles", "bars"]);
     // Read back from the server: this browser's draft is cleared first.
     await page.evaluate((k) => localStorage.removeItem(k), DRAFT);
-    await page.reload();
+    await reloadMounted(page, LAYOUTS_READ);
     await cellsReady(page, 2);
     await expectComboValue(page.getByLabel("Saved layouts"), "7");
     await expectComboValue(page.getByLabel("Chart type of chart 2"), "bars");

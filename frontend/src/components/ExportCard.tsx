@@ -3,6 +3,7 @@ import { Download } from "lucide-react";
 import { useState } from "react";
 import { api, type ExportDataset } from "../api/client";
 import { Card } from "../components/ui";
+import { Details } from "../ui/Details";
 
 const DATASETS: { id: ExportDataset; label: string; hint: string }[] = [
   { id: "audit-logs", label: "Audit trail", hint: "hash-chained; includes prev_hash/hash and the chain verdict" },
@@ -40,11 +41,13 @@ export default function ExportCard({ scope, tenantId }: { scope: "tenant" | "pla
 
   return (
     <Card title={scope === "platform" ? (tenantId ? `Export records: tenant #${tenantId}` : "Export platform records") : "Export records (compliance)"}>
-      <p className="text-xs text-fg-muted mb-3">
-        Downloads a CSV or JSON file of {scope === "platform" ? "platform-wide" : "your organisation's"} records for the date range
-        (inclusive, UTC). Each file carries its SHA-256 and a manifest; the export itself is written to the audit trail.
-        Keep these for the regulatory retention period (SEBI: five years for order and trade records).
-      </p>
+      <Details id="settings.export" className="mt-0 mb-3">
+        <p className="text-xs text-fg-muted">
+          Downloads a CSV or JSON file of {scope === "platform" ? "platform-wide" : "your organisation's"} records for the date range
+          (inclusive, UTC). Each file carries its SHA-256 and a manifest; the export itself is written to the audit trail.
+          Keep these for the regulatory retention period (SEBI: five years for order and trade records).
+        </p>
+      </Details>
       <div className="flex flex-wrap items-end gap-3 mb-3 text-xs">
         <label className="block">From<input type="date" className="mt-1 block rounded bg-surface-2 border border-border px-2 py-1 text-sm" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label className="block">To<input type="date" className="mt-1 block rounded bg-surface-2 border border-border px-2 py-1 text-sm" value={to} onChange={(e) => setTo(e.target.value)} /></label>

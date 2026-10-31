@@ -5,6 +5,7 @@ import { BYOK_CHANGED_EVENT } from "../aiKeys/detect";
 import { AI_CONNECTION_CHANGED_EVENT } from "../aiKeys/connect";
 import { CARD } from "../dashboard/CardV2";
 import type { ByokAuditScope, ByokChannels, ByokPrefsInput, ByokStatus } from "../types";
+import { Details } from "../ui/Details";
 
 /**
  * Settings redesign B (owner question from Part A, provisional default): with one key for every AI feature
@@ -53,7 +54,7 @@ export default function VisionReviewSwitchesV2() {
   const v3Off = status.scope != null && !status.scope.v3_enabled;
   return (
     <div className={`${CARD} space-y-space-3 p-space-4 md:p-space-5`} data-vision-switches>
-      <p className="text-t14 text-fg-muted">Vision looks at charts in the background with your AI key and writes a short comment. It never places, blocks or changes an order.</p>
+      <Details id="settings.vision-switches" className="mt-0"><p className="text-t14 text-fg-muted">Vision looks at charts in the background with your AI key and writes a short comment. It never places, blocks or changes an order.</p></Details>
       <label className={ROW}>
         <input type="checkbox" className={BOX} checked={status.enabled} disabled={busy} onChange={(e) => void save({ enabled: e.target.checked })} />
         Background chart reviews on

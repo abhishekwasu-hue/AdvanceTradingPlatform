@@ -80,9 +80,9 @@ export function BrokerStepV2({ done, onSkip, intro }: StepProps & { onSkip: () =
   }
   return (
     <div className="space-y-space-3">
-      <p className="text-t14 text-fg">Connect the broker account you trade with. Prices and your positions then come from it.</p>
-      {/* UX-11 U1: the wizard's intro and the paper-first note on demand, word for word. */}
-      <Details id="setup.broker">
+      {/* UX-11 U1 / PROSE-1: the step's line, the wizard's intro and the paper-first note on demand, word for word. */}
+      <Details id="setup.broker" className="mt-0">
+        <p className="text-t14 text-fg">Connect the broker account you trade with. Prices and your positions then come from it.</p>
         {intro}
         <p className={P}>Want to practise first? Trade on paper: no order reaches your broker. You can connect a broker at any time.</p>
       </Details>
@@ -227,10 +227,10 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
 
   return (
     <form className="space-y-space-4" noValidate onSubmit={(e) => { e.preventDefault(); void save(); }} data-own-limits>
-      <div className="space-y-space-1">
+      <Details id="setup.limits" className="mt-0">
         <p className="text-t14 text-fg">Fill in your own limits. No number is filled in: leave a box empty for no limit.</p>
         <p className={P}>Your limits only stop new paper trades. Closing a trade always works.</p>
-      </div>
+      </Details>
       {withCapital && (
         <div className="max-w-xs">
           <NumberField field="capital" prefix="₹" value={form.capital} error={shown("capital")} onChange={set("capital")} onBlur={blur("capital")} />
@@ -346,7 +346,8 @@ export function StrategyStepV2({ onChanged }: StepProps) {
   });
   return (
     <div className="space-y-space-3">
-      <p className="flex flex-wrap items-center gap-space-2 text-t14 text-fg"><PaperBadge />Pick one to try. Start a trading bot opens the form where you set it up yourself; it trades with paper money only.</p>
+      <PaperBadge />
+      <Details id="setup.strategy" className="mt-0"><p className="text-t14 text-fg">Pick one to try. Start a trading bot opens the form where you set it up yourself; it trades with paper money only.</p></Details>
       {!source && <p className={P}>Testing uses your broker&apos;s prices. Connect your broker to test a strategy first.</p>}
       {source?.stored && <p className={P}>{STORED_HISTORY_NOTE}</p>}
       <ul className="space-y-space-3">
@@ -440,7 +441,7 @@ export function AlertsStepV2({ onChanged }: StepProps) {
   if (!channels) return <Skeleton className="h-40" label="Loading" />;
   return (
     <div className="space-y-space-3">
-      <p className="text-t14 text-fg">Pick where alerts reach you when the app is closed: a lost broker login, a daily loss limit, a trade waiting for your approval.</p>
+      <Details id="setup.alerts" className="mt-0"><p className="text-t14 text-fg">Pick where alerts reach you when the app is closed: a lost broker login, a daily loss limit, a trade waiting for your approval.</p></Details>
       <ul className="space-y-space-3">
         {CHANNELS.map(({ type, name, icon: Icon, missing }) => {
           const c = channels.find((x) => x.channel_type === type);

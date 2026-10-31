@@ -7,8 +7,6 @@ import { useAuth } from "../auth/AuthContext";
 import { Card } from "./ui";
 import type { AiProviderConfig, AiProviderName } from "../types";
 import { formatDateIST, formatDateTimeIST } from "../ui/format";
-import { TextOnDemand } from "../ui/numbersFirst";
-import { useUiV2 } from "../ui/useFeatures";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
 
@@ -16,7 +14,6 @@ const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-x
  * encrypted and never shown again - the same rule as broker credentials. */
 export default function AiProviderCard() {
   const { user } = useAuth();
-  const v2 = useUiV2();
   const [config, setConfig] = useState<AiProviderConfig | null>(null);
   const [form, setForm] = useState({ provider: "rule_based" as AiProviderName, model: "", api_key: "", enabled: true, data_consent: false });
   const [error, setError] = useState<string | null>(null);
@@ -43,8 +40,8 @@ export default function AiProviderCard() {
 
   return (
     <Card title="AI provider">
-      {/* UX-11 U1: on the v2 pages the explanation is one closed Details; the legacy pages show it as before. */}
-      <TextOnDemand id="ai-provider.about" on={v2}>
+      {/* UX-11 U1 / PROSE-1: the explanation is one closed Details. */}
+      <Details id="ai-provider.about">
       <p className="text-xs text-fg-muted mb-3">
         Powers the AI Copilot's strategy drafts, its written answers and the wording of monitoring proposals. Claude (Anthropic) is the
         default provider: paste an Anthropic API key from console.anthropic.com. Without a key (or on the Free plan) everything falls back to the
@@ -53,7 +50,7 @@ export default function AiProviderCard() {
         trades, market data and news headlines - never broker credentials, API keys or passwords. Nothing it produces can trade before
         you backtest and approve it, and it gives no investment advice.
       </p>
-      </TextOnDemand>
+      </Details>
       {config && (
         <div className="text-xs mb-3 flex flex-wrap gap-3">
           <span className="inline-flex items-center gap-1 rounded-md border border-brand/40 bg-brand/10 px-2 py-0.5 font-bold text-brand"><Sparkles size={12} /> {config.provider} · {config.model || config.models?.strong || config.default_models[config.provider]}</span>

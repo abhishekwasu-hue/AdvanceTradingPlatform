@@ -486,6 +486,8 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await card.getByRole("button", { name: "See its settings" }).click();
         const confirm = page.locator("[data-day-one='confirm']");
         await expect(confirm.getByText("What broke", { exact: true })).toBeVisible();
+        // PROSE-1: the terms sit in a closed Details; open it to read them.
+        await confirm.locator("[data-details='day-one.terms'] summary").click();
         await expect(confirm.getByText("Paper money only. Nothing is placed: each setup waits for you.")).toBeVisible();
         await shot("08b-signals-settings");
         await confirm.getByRole("button", { name: "Adopt on paper and read my list" }).click();

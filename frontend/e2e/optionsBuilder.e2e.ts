@@ -127,6 +127,8 @@ test("Place as basket shows the hedge-first basket; placing waits for the PAPER 
 test("Save strategy says it is not turned on while its flag is off", async ({ page }) => {
   await builder(page);
   await expect(page.getByTestId("save-strategy")).toBeDisabled();
+  // PROSE-1: the explanation sits in the actions card's closed Details; open it to read.
+  await page.locator("[data-details='optionsBuilder.actions'] summary").click();
   await expect(page.getByText("Saving strategies is not turned on for your organisation yet.")).toBeVisible();
 });
 

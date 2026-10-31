@@ -6,6 +6,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Card } from "./ui";
 import type { ApiKey } from "../types";
 import { formatDateIST, formatDateTimeIST } from "../ui/format";
+import { Details } from "../ui/Details";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
 
@@ -38,11 +39,13 @@ export default function ApiKeysCard() {
 
   return (
     <Card title="Public API keys">
-      <p className="text-xs text-fg-muted mb-3">
-        Keys reach only <code>/api/public/v1/*</code> (never the console endpoints), only within their scopes, and are metered against
-        the plan's daily allowance. The developer reference is at <code>GET /api/public/v1/docs</code>. Send the key as the
-        <code> X-API-Key</code> header. A key is shown once - store it in your own secret manager.
-      </p>
+      <Details id="settings.api-keys" className="mt-0 mb-3">
+        <p className="text-xs text-fg-muted">
+          Keys reach only <code>/api/public/v1/*</code> (never the console endpoints), only within their scopes, and are metered against
+          the plan's daily allowance. The developer reference is at <code>GET /api/public/v1/docs</code>. Send the key as the
+          <code> X-API-Key</code> header. A key is shown once - store it in your own secret manager.
+        </p>
+      </Details>
 
       {fresh?.key && (
         <div className="mb-3 rounded-lg border border-up/40 bg-up/5 p-3 text-xs">

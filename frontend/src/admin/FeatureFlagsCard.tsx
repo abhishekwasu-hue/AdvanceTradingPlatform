@@ -44,11 +44,11 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
   return (
     <Card title="Feature flags">
       <p className="mb-3 text-xs text-fg-muted" data-flag-summary>
-        {all.filter((f) => f.on).length} of {all.length} switches on, in {flags ? groupFlags(flags).length : 0} categories. Open a
-        category to change a switch; Details under each switch says what it does.
+        {all.filter((f) => f.on).length} of {all.length} switches on, in {flags ? groupFlags(flags).length : 0} categories.
       </p>
       <details className="mb-3 text-xs text-fg-muted">
         <summary className="cursor-pointer">How flags work</summary>
+        <p className="mt-1">Open a category to change a switch; Details under each switch says what it does.</p>
         <p className="mt-1">
           Turning a flag off with an organisation allow-list keeps it on for those organisations only (staged rollouts,
           beta access). Exits and PAPER trading are never behind a flag. A trader never sees a flag name: a page that is

@@ -98,7 +98,10 @@ async function expectFlowTargets(page: Page) {
     for (const el of Array.from(root.querySelectorAll("button, a[href], input:not([type=radio]), textarea, label:has(input[type=radio])"))) {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0 || el.closest("[data-page-footnote]")) continue;
-      if (r.height < 44) small.push(`${Math.round(r.height)}px ${(el.textContent ?? "").trim().slice(0, 40)}`);
+      // M63 I-7: the touch area includes an absolute ::after ring (the (?) help mark, TermHint), measured as in e2e/phoneLayout.ts.
+      const after = getComputedStyle(el, "::after");
+      const height = r.height + (after.content !== "none" && after.position === "absolute" ? -2 * Math.min(0, parseFloat(after.top) || 0) : 0);
+      if (height < 44) small.push(`${Math.round(height)}px ${(el.textContent ?? "").trim().slice(0, 40)}`);
     }
     return { small, scroll: document.documentElement.scrollWidth, width: window.innerWidth };
   });

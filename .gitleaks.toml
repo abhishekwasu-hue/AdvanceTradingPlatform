@@ -24,4 +24,7 @@ regexes = [
   '''^eyJhbGciOiJSUzI1NiJ9\.eyJzdWIiOiJGQUtFIn0\.FAKEFAKEsig(nature)?$''',
   # Z11 deploy-bundle test (backend/tests/test_z11_deploy_bundle.py at 04b9bb2): stand-ins for .env values
   '''^SENTINEL-(pg-7c1d9e|jwt-55aa01|r2-secret-22bb)$''',
+  # scripts/check_public_repo.py: the sha256 pin of the fake AI key-format fixture (key_formats.json), read as an API key
+  # by the generic rule whatever line the pin sits on
+  '''^aeddf3fe84caf4396f3104d7d05ca09b04e263351bb9bf043113134110f2e8f1$''',
 ]

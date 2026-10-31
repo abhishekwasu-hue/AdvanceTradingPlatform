@@ -2,6 +2,8 @@ import type { LadderCriterion, LadderEvidence as Evidence } from "../types";
 import { disciplineWeeksNote, kellyLine, pct, ratio, rupees, ruinLine, shortWeek } from "./evidence";
 import { useProgressionT } from "./i18n";
 import { Details, KeyValueTable, ProgressStat } from "../ui/numbersFirst";
+import type { GlossaryKey } from "../ui/glossary";
+import { TermHint } from "../ui/TermHint";
 import { useUiV2 } from "../ui/useFeatures";
 
 /**
@@ -46,10 +48,10 @@ export default function LadderEvidence({ evidence }: { evidence: Evidence }) {
   );
 }
 
-function Figure({ label, value, tone, title }: { label: string; value: string; tone?: "up" | "down"; title?: string }) {
+function Figure({ label, value, tone, title, hint }: { label: string; value: string; tone?: "up" | "down"; title?: string; hint?: GlossaryKey }) {
   return (
     <div title={title}>
-      <dt className="text-fg-muted">{label}</dt>
+      <dt className="flex items-center gap-1 text-fg-muted">{label}{hint && <TermHint term={hint} floating />}</dt>
       <dd className={`font-medium tabular-nums ${tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-fg"}`}>{value}</dd>
     </div>
   );
@@ -93,15 +95,15 @@ function LadderEvidenceV2({ evidence: ev }: { evidence: Evidence }) {
       ) : (
         <>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
-            <Figure label={t("evidence.winRate")} value={pct(ev.win_rate)} />
-            <Figure label={t("evidence.expectancy")} value={rupees(ev.expectancy, true)}
+            <Figure label={t("evidence.winRate")} hint="win-rate" value={pct(ev.win_rate)} />
+            <Figure label={t("evidence.expectancy")} hint="expectancy" value={rupees(ev.expectancy, true)}
                     tone={ev.expectancy == null ? undefined : ev.expectancy > 0 ? "up" : ev.expectancy < 0 ? "down" : undefined} />
-            <Figure label={t("evidence.profitFactor")} value={ev.profit_factor == null ? t("evidence.noLoss") : ratio(ev.profit_factor)} />
+            <Figure label={t("evidence.profitFactor")} hint="profit-factor" value={ev.profit_factor == null ? t("evidence.noLoss") : ratio(ev.profit_factor)} />
             <Figure label={t("evidence.payoffRatio")} value={ratio(ev.payoff_ratio)}
                     title={t("evidence.avgWinLoss", { win: rupees(ev.avg_win), loss: rupees(ev.avg_loss) })} />
           </dl>
-          <div data-testid="evidence-kelly"><KeyValueTable caption={t("evidence.kelly.label")} rows={[{ label: t("evidence.kelly.label"), value: kellyLine(ev, t) }]} /></div>
-          <div data-testid="evidence-ruin"><KeyValueTable caption={t("evidence.ruin.label")} rows={[{ label: t("evidence.ruin.label"), value: ruinLine(ev, t) }]} /></div>
+          <div data-testid="evidence-kelly"><KeyValueTable caption={t("evidence.kelly.label")} rows={[{ label: t("evidence.kelly.label"), hint: "kelly", value: kellyLine(ev, t) }]} /></div>
+          <div data-testid="evidence-ruin"><KeyValueTable caption={t("evidence.ruin.label")} rows={[{ label: t("evidence.ruin.label"), hint: "risk-of-ruin", value: ruinLine(ev, t) }]} /></div>
         </>
       )}
       <Details id="mytrades.your-figures">

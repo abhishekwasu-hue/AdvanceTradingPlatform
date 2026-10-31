@@ -28,7 +28,7 @@ export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
         <EmptyStateV2 text="All positions are closed." action={{ label: "Find setups", to: "/screener" }} />
       ) : (
         <ul className="divide-y divide-subtle">
-          {data.rows.map((p) => {
+          {data.rows.map((p, i) => {
             const tone = toneClass(signTone(p.pnl));
             return (
               <li key={p.id} className="flex min-h-12 items-center gap-space-3 py-space-3 first:pt-0 last:pb-0">
@@ -40,7 +40,7 @@ export function OpenPositionsV2({ data }: { data: Rows<PositionRow> }) {
                   <p className="mt-px text-t13 text-fg-muted">{p.detail}</p>
                 </div>
                 <div className="hidden w-28 text-right sm:block">
-                  <div className="text-t12 text-fg-muted">LTP</div>
+                  <div className="flex items-center justify-end gap-space-1 text-t12 text-fg-muted">LTP{i === 0 && <TermHint term="ltp" align="end" />}</div>
                   <div className="font-tabular text-t15 font-medium text-fg">{formatPrice(p.ltp)}</div>
                 </div>
                 <div className="w-28 shrink-0 text-right">

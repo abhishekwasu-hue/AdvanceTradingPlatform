@@ -52,7 +52,7 @@ describe("Your figures", () => {
     expect(text(few)).toMatch(/\d+ of \d+ closed trades/);
     const ok = v2(<LadderEvidence evidence={OK} />);
     expect(ok).toContain("<details");
-    expect(outside(ok)).not.toMatch(/<p/);
+    expect(outside(ok)).not.toMatch(/<p[\s>]/);                       // a paragraph (not the (?) icon's <path>)
   });
 
   it("flag off: as before", () => {

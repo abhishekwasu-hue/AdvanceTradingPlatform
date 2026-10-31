@@ -14,6 +14,7 @@ import { fnoApi, type FnoApi, type FnoContract, type HeldLeg, type Right, type S
 import { MAX_LEGS, basket as defaultBasket, type BasketStore } from "./basket";
 import { heldPnl, heldText } from "./ticketModel";
 import { PaperBadge } from "../ui/PaperBadge";
+import { TermHint } from "../ui/TermHint";
 
 /**
  * FNO-1 (owner order section 3): tap a strike's call or put on the chain -> this sheet.
@@ -199,7 +200,7 @@ export function ActionSheetBody({ target, contract, contractProblem, held, panel
   const toggle = (p: Exclude<Panel, null>) => () => on.onPanel(panel === p ? null : p);
   return (
     <div data-action-body>
-      <p className="text-t13 text-fg-muted font-tabular">LTP {formatPrice(leg.ltp)} · Bid {formatPrice(leg.bid)} · Ask {formatPrice(leg.ask)}</p>
+      <p className="text-t13 text-fg-muted font-tabular">LTP <TermHint term="ltp" /> {formatPrice(leg.ltp)} · Bid {formatPrice(leg.bid)} · Ask {formatPrice(leg.ask)}</p>
       <p className="mt-space-1"><PaperBadge /></p>
 
       {mine.length > 0 && (

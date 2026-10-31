@@ -124,7 +124,7 @@ test.describe("Option chain v2 at 1440", () => {
     await expectComboValue(page.getByLabel("Expiry", { exact: true }), "2026-11-03");
     await expectAtmCentred(page);
     // Desktop columns: OI, OI change, Volume, IV, LTP on each side, the strike in the centre; Greeks and bid / ask off.
-    const heads = await page.locator("[data-chain-scroll] thead th").evaluateAll((els) => els.filter((e) => (e as HTMLElement).offsetParent !== null).map((e) => e.textContent));
+    const heads = await page.locator("[data-chain-scroll] thead th").evaluateAll((els) => els.filter((e) => (e as HTMLElement).offsetParent !== null).map((e) => e.textContent?.trim()));   // M63 I-7: a (?) mark may follow a jargon label
     expect(heads).toEqual(["Call OI", "Call OI change", "Call Volume", "Call IV", "Call LTP", "Strike", "Put LTP", "Put IV", "Put Volume", "Put OI change", "Put OI"]);
     await expect(page.locator("[data-max-oi='call']")).toHaveCount(1);
     await expect(page.locator("[data-max-oi='put']")).toHaveCount(1);
@@ -189,7 +189,7 @@ test.describe("Option chain v2 at 390", () => {
     await open(page, "dark");
     await chainReady(page);
     await expectPhoneLayout(page);
-    const heads = await page.locator("[data-chain-scroll] thead th").evaluateAll((els) => els.filter((e) => (e as HTMLElement).offsetParent !== null).map((e) => e.textContent));
+    const heads = await page.locator("[data-chain-scroll] thead th").evaluateAll((els) => els.filter((e) => (e as HTMLElement).offsetParent !== null).map((e) => e.textContent?.trim()));   // M63 I-7: a (?) mark may follow a jargon label
     expect(heads).toEqual(["Call OI", "Call LTP", "Strike", "Put LTP", "Put OI"]);
     // The strike column sits in the middle of the screen.
     const strike = await page.locator("[data-chain-scroll] thead th", { hasText: "Strike" }).boundingBox();
@@ -207,7 +207,8 @@ test.describe("Option chain v2 at 390", () => {
     const sheet = page.locator("[data-row-details]");
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole("heading")).toContainText("NIFTY 24,500");
-    for (const label of ["LTP", "OI change", "IV", "Bid", "Delta", "Vega"]) await expect(sheet.getByRole("rowheader", { name: label, exact: true })).toBeVisible();
+    // M63 I-7: a jargon row header also holds its (?) mark, so its name may end in "What is …?".
+    for (const label of ["LTP", "OI change", "IV", "Bid", "Delta", "Vega"]) await expect(sheet.getByRole("rowheader", { name: new RegExp(`^${label}(?: What is ${label}\\?)?$`) })).toBeVisible();
     await sheet.getByRole("button", { name: "Close" }).tap();
     await expect(sheet).toHaveCount(0);
   });

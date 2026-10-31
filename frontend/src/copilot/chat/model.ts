@@ -2,6 +2,7 @@ import { request } from "../../api/client";
 import type { AnalysisChart, AnalysisTable } from "../../optionChain/analyses";
 import type { StrategyDraft } from "../strategyDraft";
 import type { MarketStrip, StripIndex } from "../../dashboard/types";
+import type { AnalysisItem, AnalyzeStatus } from "../../chartAnalyze/types";
 
 /**
  * Item 5 (owner's handover, the AI Copilot as a trader's brain), first slice: the chat-first Copilot page's data and its
@@ -32,6 +33,18 @@ export interface AnswerHeadline {
   symbol: string; price: number | null; price_label: string; as_of: string | null; trend: "up" | "down" | "sideways" | null; timeframe: string;
   area: { side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number; distance_pct: number | null } | null;
   chart: { symbol: string; exchange: string; timeframe: string } | null;
+}
+/** M59 CR-1: one stored area beside the price on the structure card (distance in points to its near edge, 0 inside). */
+export interface CardArea { side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number }
+/** M59 CR-1: one timeframe row of the structure card; `ready` false = that timeframe's history is not stored yet. */
+export interface CardTimeframe {
+  tf: string; label: string; ready: boolean; trend: "up" | "down" | "sideways" | null; weak: boolean; protected: number | null;
+  last_break: { label: string; price: number } | null;
+}
+/** M59 CR-1: the chart reader's structure answer as data (backend copilot_chat.structure_card) - the card draws it. */
+export interface StructureCard {
+  symbol: string; price: number | null; timeframe: string; timeframes: CardTimeframe[];
+  areas_above: CardArea[]; areas_below: CardArea[]; swing_levels: { side: "high" | "low" | null; price: number }[]; watch: string | null;
 }
 export interface ChatHome {
   top_line: string; ai: AiState; market_line: MarketLine; disclaimer: string; jobs: ChatJob[]; starters: string[];
@@ -70,12 +83,52 @@ export interface ChatAnswer {
   usage?: { calls: number; tokens_input: number; tokens_output: number; cost_inr: number } | null;
   /** CU3: the headline number row (the chart reader today; null or absent elsewhere). */
   headline?: AnswerHeadline | null;
+  /** M59 CR-1: the chart reader's structure card (absent on older stored turns and on other jobs). */
+  structure_card?: StructureCard | null;
 }
 /** Job 6 added: the trader's own settings, a promise of returns, someone else's strategy. */
 export type RefusalKind = "order" | "advice" | "tip" | "settings" | "promise" | "copy";
 
 /** One turn of the conversation on the page (CU6: kept by the server across reloads, the newest `keep`). */
-export interface Turn { id: number; question: string; answer: ChatAnswer | null; error: string | null }
+export interface Turn {
+  id: number; question: string; answer: ChatAnswer | null; error: string | null;
+  /** M59 CR-2: a chart the user attached (upload or TradingView snapshot link) and its analysis, shown in this turn. */
+  chart?: ChartTurnState | null;
+}
+
+/** M59 CR-2: what the user attached in the Ask box - a chart image (picked or pasted) or a snapshot link. */
+export type ChartSource = { kind: "file"; file: Blob; name: string } | { kind: "link"; link: string };
+/** M59 CR-2: the attached chart's state in its thread turn (the same chart_analyze pipeline as the Analyze a chart page). */
+export type ChartTurnState =
+  | { status: "working"; step: "adding" | "analysing" }
+  | { status: "done"; item: AnalysisItem; imageSrc: string | null }
+  | { status: "failed"; message: string }
+  | { status: "unavailable"; engine: AnalyzeStatus["engine"] };
+
+/** M59 CR-2: the turn's question line for an attached chart. */
+export function chartQuestion(source: ChartSource): string {
+  if (source.kind === "file") return "Analyze my chart";
+  return /tradingview\.com\//i.test(source.link) ? "Analyze my TradingView snapshot" : "Analyze the chart at this link";
+}
+
+/** M59 CR-2: the Copilot question for ATP's own structure reading (the CR-1 card) of the symbol the picture shows -
+ * "Read the NIFTY chart" - or null when the picture's symbol was not read (or is not a plain ticker). The exchange
+ * prefix ("NSE:") is dropped; the Copilot reads its own stored data, never prices from the picture. */
+export function readingQuestion(item: Pick<AnalysisItem, "result">): string | null {
+  const raw = (item.result?.recognised.symbol ?? "").trim().toUpperCase().replace(/^[A-Z]+:/, "");
+  if (!raw || raw.length > 30 || !/^[A-Z0-9][A-Z0-9 &.-]*$/.test(raw)) return null;
+  return `Read the ${raw} chart`;
+}
+
+/** M59 CR-2: a pasted text that is a TradingView snapshot link (the Ask box offers it as a chart, not a question). */
+export function isSnapshotLink(text: string): boolean {
+  return /^https:\/\/(www\.)?tradingview\.com\/x\/[A-Za-z0-9]+\/?$/i.test(text.trim());
+}
+
+/** M59 CR-2: puts the attached chart's new state on its turn. */
+export function withChart(turns: readonly Turn[], id: number, chart: ChartTurnState): Turn[] {
+  return turns.map((t) => (t.id === id ? { ...t, chart } : t));
+}
 
 /** Where an answer's action goes: the draft rides along in the navigation state for the Trading bot page's review card. */
 export function actionState(answer: Pick<ChatAnswer, "draft">): { copilotDraft: StrategyDraft } | undefined {
@@ -85,6 +138,8 @@ export function actionState(answer: Pick<ChatAnswer, "draft">): { copilotDraft: 
 export const chatApi = {
   home: () => request<ChatHome>("/ai/chat/home"),
   ask: (message: string) => request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message }) }),
+  /** M59 CR-2: the rule answer only (its structure card), never the AI wording - no metered AI call the user did not ask for. */
+  askRules: (message: string) => request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message, wording: false }) }),
   /** CU6: the person's own conversation, oldest turn first. */
   history: () => request<ChatHistory>("/ai/chat/history"),
   /** CU6: Settings → My data, "Delete my Copilot conversation". */
@@ -222,6 +277,40 @@ export function headlineLevels(h: AnswerHeadline | null | undefined): { price: n
   return [{ price: h.area.to, title: "Area top", tone }, { price: h.area.from, title: "Area bottom", tone }];
 }
 
+/** M59 CR-1: a timeframe whose history is not stored yet - "1-hour: data not ready", never a bar count. */
+export function notReadyText(row: Pick<CardTimeframe, "label">): string {
+  return `${row.label}: data not ready`;
+}
+
+/** M59 CR-1: the trend chip's word - "▲ Up", "▼ Down · weak", "Sideways", "No clear trend". */
+export function cardTrendText(row: Pick<CardTimeframe, "trend" | "weak">): string {
+  const word = row.trend === "up" ? "▲ Up" : row.trend === "down" ? "▼ Down" : row.trend === "sideways" ? "Sideways" : "No clear trend";
+  return row.weak && row.trend ? `${word} · weak` : word;
+}
+
+/** M59 CR-1: one area line - "Supply 25,080.00 – 25,160.00 · 229.50 pts" ("price inside" at 0). */
+export function cardAreaText(area: CardArea, num: (v: number) => string): string {
+  const side = area.side ? `${area.side[0].toUpperCase()}${area.side.slice(1)} ` : "";
+  const gap = area.where === "inside" ? "price inside" : `${num(area.distance)} pts`;
+  return `${side}${num(area.from)} – ${num(area.to)} · ${gap}`;
+}
+
+/** M59 CR-1: an area's second line on the card - "Supply · 229.50 pts" / "Demand · price inside". */
+export function areaNote(area: CardArea, num: (v: number) => string = String): string {
+  const side = area.side ? `${area.side[0].toUpperCase()}${area.side.slice(1)} · ` : "";
+  return `${side}${area.where === "inside" ? "price inside" : `${num(area.distance)} pts`}`;
+}
+
+/** M59 CR-1: a swing level chip - "Swing high 25,010.50" / "Swing low 24,600.50". */
+export function swingText(level: StructureCard["swing_levels"][number], num: (v: number) => string): string {
+  return `${level.side === "high" ? "Swing high" : level.side === "low" ? "Swing low" : "Swing level"} ${num(level.price)}`;
+}
+
+/** M59 CR-1: true when a text still carries Markdown marks the page would otherwise print raw (`**`, `__`, "# ", "- "). */
+export function hasRawMarkdown(text: string): boolean {
+  return /\*\*|__|^#{1,3}\s|^\s*[-*]\s/m.test(text);
+}
+
 /** CU3 (strategy result card): the sections that stay on the card; every other one is theory and folds into Details. */
 export const STRATEGY_SHOWN: ReadonlySet<string> = new Set(["Values you decide", "Your draft on past data", "Is it enough to judge?"]);
 
@@ -244,9 +333,9 @@ export interface AnswerParts {
  *   stay; the theory (how I read your words, not supported yet, how I build it...) folds.
  * - Any other answer: its sections and tables are the answer and stay.
  */
-export function answerParts(answer: Pick<ChatAnswer, "job" | "sections" | "blocks" | "draft" | "headline">): AnswerParts {
+export function answerParts(answer: Pick<ChatAnswer, "job" | "sections" | "blocks" | "draft" | "headline" | "structure_card">): AnswerParts {
   const all = answer.sections;
-  if (answer.headline) return { rules: [], settings: [], shown: [], folded: [...all], blocksShown: [], blocksFolded: [...answer.blocks] };
+  if (answer.headline || answer.structure_card) return { rules: [], settings: [], shown: [], folded: [...all], blocksShown: [], blocksFolded: [...answer.blocks] };
   if (answer.job === "strategy" && answer.draft) {
     const ruleTexts = new Set((answer.draft.rules ?? []).map((r) => r.text));
     const ruleSections = all.filter((s) => s.lines.length > 0 && s.lines.every((l) => ruleTexts.has(l)));

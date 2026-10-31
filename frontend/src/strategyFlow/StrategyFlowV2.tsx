@@ -22,6 +22,8 @@ import { OptionCards } from "../ui/OptionCards";
 import { Sparkline } from "../ui/Sparkline";
 import { SubTabs } from "../ui/SubTabs";
 import { formatINR, formatNumber } from "../ui/format";
+import type { GlossaryKey } from "../ui/glossary";
+import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
 import {
   BLOCK_PRESETS, EXPIRIES, FLOW_TIMEFRAMES, INDICATORS, INDICATOR_LABEL, NEEDS_MULTIPLIER, NEEDS_PERIOD, OPERATORS, OPERATOR_WORDS, SOON_BLOCKS,
@@ -381,7 +383,7 @@ function OperandFields({ op, onChange, legend, allowValue, baseTimeframe }: {
           )}
           {NEEDS_MULTIPLIER.has(op.indicator) && (
             <div className="w-28">
-              <label htmlFor={ids.mult} className={LABEL}>{op.indicator === "SUPERTREND" ? "ATR multiple" : "Std. deviations"}</label>
+              <div className="mb-space-1 flex items-center gap-space-1"><label htmlFor={ids.mult} className={LABEL_IN_ROW}>{op.indicator === "SUPERTREND" ? "ATR multiple" : "Std. deviations"}</label>{op.indicator === "SUPERTREND" && <TermHint term="atr" />}</div>
               <input id={ids.mult} inputMode="decimal" className={FIELD} value={numText(op.multiplier)} onChange={(e) => onChange({ ...op, multiplier: numOf(e.target.value) })} />
             </div>
           )}
@@ -422,13 +424,17 @@ function BlockEditor({ block, baseTimeframe, onDone, onRemove }: { block: FlowBl
   );
 }
 
+/** M63 I-7: a label with its (?) beside it - the row keeps the label's bottom gap. */
+const LABEL_IN_ROW = LABEL.replace("mb-space-1 ", "");
+
 // --- Step 4 ---------------------------------------------------------------------------------------------------------
 
-function NumberBox({ label, value, onChange, placeholder = "Off", hint }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; hint?: string }) {
+function NumberBox({ label, value, onChange, placeholder = "Off", hint, term }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; hint?: string; term?: GlossaryKey }) {
   const id = useId();
   return (
     <div>
-      <label htmlFor={id} className={LABEL}>{label}</label>
+      {term ? <div className="mb-space-1 flex items-center gap-space-1"><label htmlFor={id} className={LABEL_IN_ROW}>{label}</label><TermHint term={term} /></div>
+        : <label htmlFor={id} className={LABEL}>{label}</label>}
       <input id={id} inputMode="decimal" className={FIELD} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
       {hint && <p className="mt-space-1 text-t12 text-fg-muted">{hint}</p>}
     </div>
@@ -445,10 +451,10 @@ function ExitStep({ flow, setFlow }: { flow: FlowState; setFlow: SetFlow }) {
       {flow.engine === "custom" && (
         <CardV2 title="Exits: your own values" testId="flow-exits">
           <div className="grid grid-cols-2 gap-space-3 md:grid-cols-4">
-            <NumberBox label="Stop (x ATR)" value={ex.stop} onChange={(stop) => setEx({ stop })} />
-            <NumberBox label="Target 1 (R)" value={ex.target1} onChange={(target1) => setEx({ target1 })} />
+            <NumberBox label="Stop (x ATR)" term="atr" value={ex.stop} onChange={(stop) => setEx({ stop })} />
+            <NumberBox label="Target 1 (R)" term="r-multiple" value={ex.target1} onChange={(target1) => setEx({ target1 })} />
             <NumberBox label="Target 2 (R)" value={ex.target2} onChange={(target2) => setEx({ target2 })} />
-            <NumberBox label="Minimum R:R" value={ex.minRr} onChange={(minRr) => setEx({ minRr })} />
+            <NumberBox label="Minimum R:R" term="reward-risk" value={ex.minRr} onChange={(minRr) => setEx({ minRr })} />
           </div>
           <p className="mt-space-2 text-t12 text-fg-muted" data-testid="sb-exits-own">A blank box is off: no stop-loss, no target, no minimum R:R.</p>
           {/* SB-UX SU7: the ATR length behind the stop is an Advanced choice (closed). */}
@@ -582,12 +588,12 @@ function ResultStep({ flow, template }: { flow: FlowState; template: StrategyTem
           <CardV2 title="Result on past prices" testId="flow-result">
             <div className="grid grid-cols-2 gap-space-3 md:grid-cols-3 lg:grid-cols-6" data-result-numbers>
               <Stat label="Net P&L"><Signed value={sum.netPnl} kind="money" /></Stat>
-              <Stat label="Win rate">{formatNumber(sum.winRate, 1)}%</Stat>
-              <Stat label="Max drawdown">
+              <Stat label="Win rate" term="win-rate">{formatNumber(sum.winRate, 1)}%</Stat>
+              <Stat label="Max drawdown" term="drawdown">
                 {formatINR(sum.maxDd)}{sum.maxDdPct !== null && <span className="block text-t12 text-fg-muted">{formatNumber(sum.maxDdPct, 2)}% from the peak</span>}
               </Stat>
               <Stat label="Trades">{formatNumber(sum.trades)}</Stat>
-              <Stat label="Average R">{sum.avgR === null ? <span className="text-t13 text-fg-muted">Needs your stop</span> : <Signed value={sum.avgR} kind="count" decimals={2} format={(v) => `${v.toFixed(2)}R`} />}</Stat>
+              <Stat label="Average R" term="r-multiple">{sum.avgR === null ? <span className="text-t13 text-fg-muted">Needs your stop</span> : <Signed value={sum.avgR} kind="count" decimals={2} format={(v) => `${v.toFixed(2)}R`} />}</Stat>
               <Stat label="Equity"><Sparkline values={sum.spark} tone={sum.netPnl > 0 ? "up" : sum.netPnl < 0 ? "down" : "neutral"} width={120} height={32} /></Stat>
             </div>
             {pricesFrom && <p className="mt-space-2 text-t12 text-fg-muted" data-testid="prices-from">{pricesFrom}</p>}
@@ -615,10 +621,10 @@ function ResultStep({ flow, template }: { flow: FlowState; template: StrategyTem
   );
 }
 
-function Stat({ label, children }: { label: string; children: React.ReactNode }) {
+function Stat({ label, children, term }: { label: string; children: React.ReactNode; term?: GlossaryKey }) {
   return (
     <div className="rounded-control bg-surface-2 px-space-3 py-space-2">
-      <div className="text-t12 font-medium text-fg-muted">{label}</div>
+      <div className="flex items-center gap-space-1 text-t12 font-medium text-fg-muted">{label}{term && <TermHint term={term} floating />}</div>
       <div className="mt-space-1 text-t15 font-semibold tabular-nums text-fg">{children}</div>
     </div>
   );
@@ -649,11 +655,11 @@ function TradesList({ result }: { result: BacktestResult }) {
 
 function Analytics({ result }: { result: BacktestResult }) {
   const a = result.analytics;
-  const rows: [string, React.ReactNode][] = [
-    ["Profit factor", result.profit_factor === null ? "–" : formatNumber(result.profit_factor, 2)],
+  const rows: [string, React.ReactNode, GlossaryKey?][] = [
+    ["Profit factor", result.profit_factor === null ? "–" : formatNumber(result.profit_factor, 2), "profit-factor"],
     ["Average win", <Signed key="w" value={result.avg_win} kind="money" />],
     ["Average loss", <Signed key="l" value={result.avg_loss} kind="money" />],
-    ["Per trade (expectancy)", <Signed key="e" value={result.expectancy} kind="money" />],
+    ["Per trade (expectancy)", <Signed key="e" value={result.expectancy} kind="money" />, "expectancy"],
   ];
   if (a) {
     rows.push(["Charges", formatINR(a.costs.total_charges)]);
@@ -662,9 +668,9 @@ function Analytics({ result }: { result: BacktestResult }) {
   }
   return (
     <dl className="grid grid-cols-1 gap-x-space-4 sm:grid-cols-2">
-      {rows.map(([k, v]) => (
+      {rows.map(([k, v, term]) => (
         <div key={k} className="flex min-h-11 items-center justify-between border-b border-subtle text-t13 md:min-h-9">
-          <dt className="text-fg-muted">{k}</dt><dd className="font-medium tabular-nums text-fg">{v}</dd>
+          <dt className="flex items-center gap-space-1 text-fg-muted">{k}{term && <TermHint term={term} />}</dt><dd className="font-medium tabular-nums text-fg">{v}</dd>
         </div>
       ))}
     </dl>

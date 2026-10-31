@@ -27,8 +27,8 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
 
 from app.engine_provider.contract import Bar, ContractViolation, EarlyClose, EngineRequest, EngineResult, Frame, MarketCalendar
 from app.market_data.calendar import EXCHANGE_SESSIONS, IST, ExchangeSession, session_family
@@ -50,7 +50,7 @@ GAP_KINDS = (MISSING_SOURCE, MISSING_BARS, INCOMPLETE_BARS, MISSING_FUTURES_VOLU
 
 def _ist(ts: datetime) -> datetime:
     """Any datetime in India time; a naive one is UTC (what ATP's stores hold)."""
-    return (ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)).astimezone(IST)
+    return (ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)).astimezone(IST)
 
 
 def is_index_key(key: str) -> bool:
@@ -84,7 +84,7 @@ def session_open(cal: MarketCalendar, day: date) -> datetime:
     return datetime.combine(day, cal.regular_open, tzinfo=IST)
 
 
-def session_close(cal: MarketCalendar, day: date, closes: Optional[Mapping[date, time]] = None) -> datetime:
+def session_close(cal: MarketCalendar, day: date, closes: Mapping[date, time] | None = None) -> datetime:
     """The day's close: its early close when the calendar lists one, else the regular close."""
     at = (closes if closes is not None else _closes(cal)).get(day, cal.regular_close)
     return datetime.combine(day, at, tzinfo=IST)
@@ -105,8 +105,8 @@ class RawBar:
     high: float
     low: float
     close: float
-    volume: Optional[float]
-    closing_auction: Optional[bool] = None
+    volume: float | None
+    closing_auction: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -169,7 +169,7 @@ def from_broker_bars(bars: Sequence[Any], timeframe: str, cal: MarketCalendar, *
     return SourceBars(source, timeframe, tuple(out))
 
 
-def _auction(start: datetime, timeframe: str, cal: MarketCalendar, flagged: bool) -> Optional[bool]:
+def _auction(start: datetime, timeframe: str, cal: MarketCalendar, flagged: bool) -> bool | None:
     """Intraday: True when the bar starts at or after its day's close (the closing-auction stretch) or ATP flagged it;
     else False. Daily: None (a Daily bar carries `extended_session` instead)."""
     if timeframe == DAILY:
@@ -239,14 +239,14 @@ class FuturesContract:
     symbol: str
     expiry: date
     bars: tuple[RawBar, ...]
-    valid_from: Optional[date] = None
+    valid_from: date | None = None
 
     def near_month_on(self, day: date) -> bool:
         first = self.valid_from or self.expiry.replace(day=1)
         return first <= day <= self.expiry
 
 
-def _contract_for(day: date, contracts: Sequence[FuturesContract]) -> Optional[FuturesContract]:
+def _contract_for(day: date, contracts: Sequence[FuturesContract]) -> FuturesContract | None:
     """The near-month contract of `day` among those handed in: the first expiry on or after the day, and only when that
     day is provably inside its near-month stretch."""
     for c in sorted(contracts, key=lambda c: (c.expiry, c.symbol)):
@@ -255,13 +255,13 @@ def _contract_for(day: date, contracts: Sequence[FuturesContract]) -> Optional[F
     return None
 
 
-def futures_volume(bars: Sequence[Bar], contracts: Sequence[FuturesContract]) -> tuple[tuple[Optional[float], ...], tuple[tuple[datetime, str], ...]]:
+def futures_volume(bars: Sequence[Bar], contracts: Sequence[FuturesContract]) -> tuple[tuple[float | None, ...], tuple[tuple[datetime, str], ...]]:
     """Per index bar the near-month future's volume over exactly the bar's span: the sum of the future's bars inside
     [start, end) when they cover the whole span and each has a volume, else None. Returns (volumes, misses) where a
     miss is (bar START, reason in plain words). A bar marked closing_auction has no futures counterpart (the futures
     market has no closing-auction stretch): None, and not a miss."""
     by_contract: dict[str, list[RawBar]] = {c.symbol: sorted(c.bars, key=lambda b: b.start) for c in contracts}
-    out: list[Optional[float]] = []
+    out: list[float | None] = []
     misses: list[tuple[datetime, str]] = []
     for bar in bars:
         if bar.closing_auction:
@@ -298,8 +298,8 @@ class DataGap:
     timeframe: str
     kind: str
     count: int
-    first: Optional[datetime] = None
-    last: Optional[datetime] = None
+    first: datetime | None = None
+    last: datetime | None = None
     detail: str = ""
 
     @property
@@ -413,10 +413,10 @@ class SymbolData:
     """
     symbol: str
     exchange: str
-    minutes: Optional[SourceBars] = None
+    minutes: SourceBars | None = None
     minutes_by_timeframe: Mapping[str, SourceBars] = field(default_factory=dict)
     native: Mapping[str, SourceBars] = field(default_factory=dict)
-    daily: Optional[SourceBars] = None
+    daily: SourceBars | None = None
     extended_days: frozenset[date] = frozenset()
     futures: tuple[FuturesContract, ...] = ()
     futures_expected: bool = False
@@ -426,7 +426,7 @@ class SymbolData:
 @dataclass(frozen=True)
 class BuiltFrame:
     frame: Frame
-    source: Optional[str]
+    source: str | None
     gaps: tuple[DataGap, ...]
 
 
@@ -434,16 +434,16 @@ class BuiltFrame:
 class Built:
     """`request` is None when the signal timeframe has no closed bar (then nothing can be read); `gaps` lists every gap,
     in a fixed order (symbol, timeframe order asked, kind order, first bar)."""
-    request: Optional[EngineRequest]
+    request: EngineRequest | None
     gaps: tuple[DataGap, ...]
-    sources: Mapping[str, Optional[str]]
+    sources: Mapping[str, str | None]
 
     @property
     def data_problems(self) -> tuple[str, ...]:
         return problem_tokens(self.gaps)
 
 
-def _to_bars(raw: Iterable[RawBar], as_of: datetime, extended: Optional[Mapping[date, Optional[bool]]] = None) -> tuple[list[Bar], int, list[datetime]]:
+def _to_bars(raw: Iterable[RawBar], as_of: datetime, extended: Mapping[date, bool | None] | None = None) -> tuple[list[Bar], int, list[datetime]]:
     """RawBars closed by `as_of` -> contract Bars; (bars, how many broke the bar rules, their STARTs)."""
     out: list[Bar] = []
     bad: list[datetime] = []
@@ -459,7 +459,7 @@ def _to_bars(raw: Iterable[RawBar], as_of: datetime, extended: Optional[Mapping[
     return out, len(bad), bad
 
 
-def extended_marks(daily: SourceBars, minutes: Optional[SourceBars], flagged: Iterable[date], cal: MarketCalendar) -> dict[date, Optional[bool]]:
+def extended_marks(daily: SourceBars, minutes: SourceBars | None, flagged: Iterable[date], cal: MarketCalendar) -> dict[date, bool | None]:
     """Per Daily bar's day: True when ATP flagged it (DH3), else - when that day's continuous 1-minute bars are all
     there - whether the Daily high is above / low below their extremes; else None (ATP cannot tell)."""
     flagged_days = set(flagged)
@@ -468,7 +468,7 @@ def extended_marks(daily: SourceBars, minutes: Optional[SourceBars], flagged: It
     for m in (minutes.bars if minutes is not None else ()):
         if not m.closing_auction and m.start < session_close(cal, m.start.date(), closes):
             by_day.setdefault(m.start.date(), []).append(m)
-    out: dict[date, Optional[bool]] = {}
+    out: dict[date, bool | None] = {}
     for d in daily.bars:
         day = d.start.date()
         if day in flagged_days:
@@ -483,14 +483,14 @@ def extended_marks(daily: SourceBars, minutes: Optional[SourceBars], flagged: It
     return out
 
 
-def _minutes(data: SymbolData, timeframe: str) -> Optional[SourceBars]:
+def _minutes(data: SymbolData, timeframe: str) -> SourceBars | None:
     for base in (data.minutes_by_timeframe.get(timeframe), data.minutes):
         if base is not None and base.bars:
             return base
     return None
 
 
-def _longest_minutes(data: SymbolData) -> Optional[SourceBars]:
+def _longest_minutes(data: SymbolData) -> SourceBars | None:
     """The 1-minute source holding the most bars (the Daily marks' check); a tie keeps `minutes`."""
     found = [b for b in (data.minutes, *(data.minutes_by_timeframe[k] for k in sorted(data.minutes_by_timeframe))) if b is not None]
     return max(found, key=lambda b: len(b.bars)) if found else None
@@ -501,9 +501,9 @@ def build_frame(data: SymbolData, timeframe: str, start: datetime, as_of: dateti
     """One timeframe's Frame for `data` with closed bars in (start, as_of], and its gaps."""
     sym = data.symbol
     gaps: list[DataGap] = []
-    source: Optional[str] = None
+    source: str | None = None
     raw: tuple[RawBar, ...] = ()
-    extended: Optional[dict[date, Optional[bool]]] = None
+    extended: dict[date, bool | None] | None = None
     if timeframe in data.native and data.native[timeframe].bars:
         source, raw = data.native[timeframe].source, data.native[timeframe].bars
     elif timeframe == DAILY and data.daily is not None and data.daily.bars:
@@ -526,7 +526,7 @@ def build_frame(data: SymbolData, timeframe: str, start: datetime, as_of: dateti
         if bad:
             gaps += _grouped(sym, timeframe, INVALID_BARS, bad, {}, [r.start for r in raw])
         gaps += missing_bars(sym, timeframe, bars, start, as_of, cal)
-    fut: Optional[tuple[Optional[float], ...]] = None
+    fut: tuple[float | None, ...] | None = None
     if data.futures_expected and timeframe in futures_timeframes:
         fut, misses = futures_volume(bars, data.futures)
         if not data.futures and bars:
@@ -537,7 +537,7 @@ def build_frame(data: SymbolData, timeframe: str, start: datetime, as_of: dateti
 
 
 def build_request(data: SymbolData, timeframes: Sequence[str], signal_timeframe: str, now: datetime,
-                  starts: Mapping[str, datetime], cal: MarketCalendar, settings: Optional[Mapping[str, Any]] = None,
+                  starts: Mapping[str, datetime], cal: MarketCalendar, settings: Mapping[str, Any] | None = None,
                   futures_timeframes: Sequence[str] = ("5m",)) -> Built:
     """The EngineRequest for one symbol at `now`: `as_of` is the END of the signal timeframe's last bar closed by
     `now`, and every frame holds only bars closed by that `as_of` (none after it). starts: {timeframe: the window's

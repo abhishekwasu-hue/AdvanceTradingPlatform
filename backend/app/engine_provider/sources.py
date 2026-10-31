@@ -19,8 +19,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +39,7 @@ DH3_EXTENDED = ("auction_high", "auction_low")
 
 
 def _utc(ts: datetime) -> datetime:
-    return (ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+    return (ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)).astimezone(UTC)
 
 
 async def load_calendar(session: AsyncSession, exchange: str, first: date, last: date,
@@ -61,7 +61,7 @@ def _row_limit(timeframe: str, start: datetime, end: datetime) -> int:
 
 
 async def lake_bars(session: AsyncSession, key: str, timeframe: str, start: datetime, end: datetime, cal: MarketCalendar, *,
-                    scope: Any = None) -> tuple[Optional[F.SourceBars], frozenset[date], list[str]]:
+                    scope: Any = None) -> tuple[F.SourceBars | None, frozenset[date], list[str]]:
     """The lake's own bars of `timeframe` ("1m", "15m", "1h", "1d") with END in (start, end] from ONE source, as stored,
     with the DH3 marks: (bars or None, the Daily days flagged auction-extended, notes in plain words)."""
     from app.charts import price_action_layer as pal
@@ -93,7 +93,7 @@ async def lake_bars(session: AsyncSession, key: str, timeframe: str, start: date
 
 
 async def broker_bars(broker: Any, symbol: str, exchange: str, timeframe: str, start: datetime, end: datetime,
-                      cal: MarketCalendar, *, own_volume: bool = True, source: str = BROKER) -> tuple[Optional[F.SourceBars], list[str]]:
+                      cal: MarketCalendar, *, own_volume: bool = True, source: str = BROKER) -> tuple[F.SourceBars | None, list[str]]:
     """The user's broker's 1-minute ("1m") or Daily ("1d") bars of [start, end], plus the running day's intraday bars
     where the broker serves them separately. A failed call is a note, never an exception."""
     interval = "day" if timeframe == F.DAILY else "1min"
@@ -130,7 +130,7 @@ async def futures_contracts(session: AsyncSession, broker: Any, index_symbol: st
 
 
 async def collect(session: AsyncSession, *, key: str, exchange: str, timeframes: Sequence[str], starts: Mapping[str, datetime],
-                  now: datetime, cal: MarketCalendar, scope: Any = None, broker: Any = None, broker_symbol: Optional[str] = None,
+                  now: datetime, cal: MarketCalendar, scope: Any = None, broker: Any = None, broker_symbol: str | None = None,
                   lake_timeframes: Sequence[str] = LAKE_TIMEFRAMES) -> tuple[F.SymbolData, list[str]]:
     """Everything ATP has for one symbol: the user's broker 1-minute bars (1m / 5m / ... timeframes), the stored
     history's 1-minute bars for `lake_timeframes` (15m / 1h; the broker's when the store has none), the Daily bars
@@ -177,7 +177,7 @@ class ProbeItem:
     """One symbol to probe: ATP's lake key, its exchange and the broker's name of it (e.g. "NIFTY 50")."""
     key: str
     exchange: str
-    broker_symbol: Optional[str] = None
+    broker_symbol: str | None = None
 
 
 CALENDAR_NOTE = ("The market calendar holds holidays only; early closes are not recorded, so a day that closed early "

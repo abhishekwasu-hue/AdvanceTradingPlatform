@@ -83,22 +83,28 @@ describe("UI2-1 More sheet", () => {
     <MemoryRouter><MoreSheetContent ctx={ctx} current="dashboard" query={query} onQuery={noop} onPick={noop} /></MemoryRouter>,
   );
 
-  it("shows every other page grouped by section, with a search box", () => {
+  it("shows every other page grouped by section, with a search box (M60: under the sidebar's section titles)", () => {
     const html = render("");
     expect(html).toContain('type="search"');
     expect(html).toContain("Search pages");
-    for (const s of ["Markets", "Trading", "Insights", "Account"]) expect(html).toContain(`>${s}</h3>`);
-    expect(html).not.toContain(">Admin</h3>");                          // the platform operator's group only
-    expect(html).toContain('href="/option-chain"');
+    for (const s of ["Find", "Build", "Learn &amp; AI", "Account"]) expect(html).toContain(`>${s}</h3>`);
+    expect(html).not.toContain(">Trade</h3>");                          // its four entries are all on the bar
+    expect(html).toContain('href="/signals"');
     expect(html).toContain('href="/strategies"');
-    expect(html).not.toContain('href="/system-logs"');                  // UX3-9: found by search, not listed
-    for (const inBar of ['href="/"', 'href="/charts"', 'href="/signals"', 'href="/positions"']) expect(html).not.toContain(inBar);
+    expect(html).toContain('href="/settings"');
+    expect(html).not.toContain('href="/system-logs"');                  // found by search, not listed
+    for (const inBar of ['href="/"', 'href="/charts"', 'href="/option-chain"', 'href="/positions"']) expect(html).not.toContain(inBar);
     expect(html).not.toContain('href="/admin"');
-    expect(html).not.toContain('href="/journal"');                       // flag off
-    expect(html.match(/min-h-11/g)?.length).toBeGreaterThanOrEqual(7);   // every tile is a 44 px target
-    // P2b: Broker is the first tile, above the sections.
-    expect(html.indexOf('href="/broker"')).toBeGreaterThan(-1);
-    expect(html.indexOf('href="/broker"')).toBeLessThan(html.indexOf(">Markets</h3>"));
+    expect(html).not.toContain('href="/broker"');                       // M60: Broker accounts live in Settings
+    expect(html.match(/min-h-11/g)?.length).toBeGreaterThanOrEqual(5);   // every tile is a 44 px target
+  });
+
+  it("M57 U7-2: from the top bar's menu button the sheet lists every section, the bar's entries too", () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter><MoreSheetContent ctx={trader} current="dashboard" query="" onQuery={noop} onPick={noop} all /></MemoryRouter>,
+    );
+    expect(html).toContain(">Trade</h3>");
+    for (const p of ['href="/"', 'href="/charts"', 'href="/option-chain"', 'href="/positions"', 'href="/signals"', 'href="/settings"']) expect(html).toContain(p);
   });
 
   it("searches every visible page, the bar's included, and says when nothing matches", () => {
@@ -109,7 +115,7 @@ describe("UI2-1 More sheet", () => {
     expect(logs.kind === "matches" && logs.items.map((i) => i.label)).toEqual(["Activity log"]);
     const html = render("screener", { ...trader, on: flags("screener_v2") });       // UX1: Find setups needs screener_v2
     expect(html).toContain('href="/screener"');
-    expect(html).toContain("Markets");                                  // the section as a caption
+    expect(html).toContain("Find");                                     // the section as a caption
     expect(render("nothing-like-this")).toContain("No page matches &quot;nothing-like-this&quot;.");
   });
 });
@@ -123,20 +129,24 @@ describe("UI2-1 sidebar", () => {
   );
   const hrefs = (html: string) => [...html.matchAll(/<a [^>]*href="([^"]*)"/g)].map((m) => m[1]);
 
-  it("UX3-9: one flat list in task order, Today first and Broker above Settings (day-one fix 9) - no section headings, nothing folds", () => {
+  it("M60: five sections with short titles, entries in task order; nothing folds away", () => {
     const html = sidebar(trader, "positions");
     expect(html).not.toContain("aria-expanded");
+    expect([...html.matchAll(/<h2 [^>]*>([^<]+)<\/h2>/g)].map((m) => m[1])).toEqual(["Trade", "Find", "Build", "Learn &amp; AI", "Account"]);
     expect(hrefs(html)).toEqual([
-      "/", "/", "/charts", "/option-chain", "/signals", "/deployments", "/positions", "/analytics", "/strategies",
-      "/news-events", "/broker", "/settings", "/settings/account",
+      "/", "/", "/charts", "/option-chain", "/positions", "/signals", "/strategies", "/deployments", "/learn/news", "/settings",
+      "/settings/account",
     ]);                                                                   // logo, the entries, the account footer
     expect(html).toMatch(/aria-current="page"[^>]*href="\/positions"|href="\/positions"[^>]*aria-current="page"/);
+    expect(html).toContain(">AI Trading Bot<");
     expect(html).toContain(">AW<");
     expect(html).not.toContain("Owner");                                 // members not known: no role label
     expect(html).toContain(">Paper<");
     expect(html).not.toContain("PAPER MODE");
     expect(html).not.toContain("data-broker-dot");                       // no status known: no dot
     expect(html).not.toContain("data-nav-admin");
+    expect(html).toContain('data-sidebar-mode="expanded"');
+    expect(html).toContain("w-60");
   });
 
   it("user-friendly pass item 3: the role under the name only when the organisation has more than one member", () => {
@@ -152,38 +162,63 @@ describe("UI2-1 sidebar", () => {
     expect(withMembers(3)).toContain(">Owner<");
   });
 
-  it("UX3-9: 13 entries with every feature on; the Admin console set apart for the platform operator", () => {
+  it("M60: 11 entries with every feature on; Admin at the end of Account for the platform operator only", () => {
     const all = { on: () => true, role: "SUPER_ADMIN" };
     const html = sidebar(all, "dashboard");
     const entries = hrefs(html).slice(1, -1);
     expect(entries).toEqual([
-      "/", "/charts", "/watchlist", "/option-chain", "/markets", "/screener",   // P1-8: Watchlist (flag `watchlists`)
-      "/terminal", "/signals", "/deployments", "/positions",   // Terminal T1 (flag `terminal`)
-      "/analytics", "/strategies", "/copilot", "/news-events", "/learn", "/broker", "/settings", "/admin",   // C13: Learn (flag `learn`)
+      "/", "/terminal", "/positions", "/screener", "/signals", "/markets", "/strategies", "/deployments", "/copilot", "/learn",
+      "/settings", "/admin",
     ]);
     expect(html.indexOf("data-nav-admin")).toBeLessThan(html.indexOf('href="/admin"'));
+    expect(html.indexOf(">Account</h2>")).toBeLessThan(html.indexOf('href="/admin"'));
+    expect(sidebar({ on: () => true, role: "OWNER" }, "dashboard")).not.toContain('href="/admin"');
   });
 
-  it("UX3-9: a merged page's tab and a Settings sub-page light up their entry", () => {
-    const current = (key: Parameters<typeof SidebarV2View>[0]["current"]) =>
-      /<a [^>]*aria-current="page"[^>]*href="([^"]*)"|<a [^>]*href="([^"]*)"[^>]*aria-current="page"/.exec(sidebar(trader, key))?.slice(1).find(Boolean);
-    expect(current("orders")).toBe("/positions");
-    expect(current("portfolio")).toBe("/positions");
-    expect(current("backtest")).toBe("/strategies");
-    expect(current("strategy-builder")).toBe("/strategies");
-    expect(current("coach")).toBe("/analytics");
-    expect(current("risk-management")).toBe("/settings");
-    expect(current("settings-ai")).toBe("/settings");
+  it("M60: a page lights up its home entry - a tab, a part of the Terminal, a Settings page", () => {
+    const current = (ctx: NavContext, key: Parameters<typeof SidebarV2View>[0]["current"]) =>
+      [...sidebar(ctx, key).matchAll(/<a [^>]*aria-current="page"[^>]*href="([^"]*)"|<a [^>]*href="([^"]*)"[^>]*aria-current="page"/g)]
+        .map((m) => m[1] ?? m[2]);
+    expect(current(trader, "orders")).toEqual(["/positions"]);
+    expect(current(trader, "analytics")).toEqual(["/positions"]);
+    expect(current(trader, "backtest")).toEqual(["/strategies"]);
+    expect(current(trader, "risk-management")).toEqual(["/settings"]);
+    expect(current(trader, "broker")).toEqual(["/settings"]);
+    expect(current(trader, "charts")).toEqual(["/charts"]);                     // a stand-in while the Terminal is off
+    expect(current({ on: flags("terminal"), role: "OWNER" }, "charts")).toEqual(["/terminal"]);
+    expect(current({ on: flags("ai_copilot"), role: "OWNER" }, "chart-analyze")).toEqual(["/copilot"]);
   });
 
-  it("P2b: the Broker entry carries the status dot (red only for 'not working')", () => {
+  it("M57 U7-1: the rail - 56 px of icons, each named by a tooltip and for screen readers; section titles read out", () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <SidebarV2View sections={visibleSections(trader)} current="positions" user={user} accountPath="/settings/account" mode="rail" dot="needs_login" />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('data-sidebar-mode="rail"');
+    expect(html).toContain("w-14");
+    expect(html).not.toContain("w-60");
+    for (const s of visibleSections(trader)) {
+      for (const i of s.items) {
+        expect(html, i.label).toMatch(new RegExp(`title="${i.label.replace("&", "&amp;")}"`));
+        expect(html, i.label).toContain(`<span class="sr-only">${i.label.replace("&", "&amp;")}</span>`);
+      }
+    }
+    expect(html).toMatch(/<h2 [^>]*class="sr-only"[^>]*>Trade<\/h2>/);
+    expect(html).toMatch(/href="\/settings"[^]*?data-broker-dot="needs_login"/);  // the dot stays on the rail
+    expect(html).toContain('aria-label="Account, abhi.wasu@example.com"');
+    expect(html).not.toContain(">Paper<");
+  });
+
+  it("P2b + M60: the Settings entry carries the broker's status dot (red only for 'not working')", () => {
     const at = (dot: "connected" | "needs_login" | "not_working") => renderToStaticMarkup(
       <MemoryRouter>
         <SidebarV2View sections={visibleSections(trader)} current="dashboard" dot={dot}
           user={{ id: 1, email: "abhi.wasu@example.com", tenant_id: 1, role: "OWNER" }} accountPath="/settings/account" />
       </MemoryRouter>,
     );
-    expect(at("connected")).toMatch(/href="\/broker"[^]*?data-broker-dot="connected"[^>]*bg-up/);
+    // M60: the dot sits on the Settings row (Broker accounts live in Settings).
+    expect(at("connected")).toMatch(/href="\/settings"[^]*?data-broker-dot="connected"[^>]*bg-up/);
     expect(at("needs_login")).toMatch(/data-broker-dot="needs_login"[^>]*bg-warn/);
     expect(at("not_working")).toMatch(/data-broker-dot="not_working"[^>]*bg-down/);
     expect(at("needs_login")).toContain(", needs login");                // the words, for screen readers
@@ -262,7 +297,7 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
   });
 
   it("UX1: a page whose flag is off says 'Coming soon' at its address - no flag name, no gate, no page", () => {
-    for (const path of ["/screener", "/analytics/journal", "/marketplace"]) {
+    for (const path of ["/screener", "/positions/results/journal", "/marketplace"]) {
       const html = render(path, { ui_v2: true });
       expect(html, path).toContain('data-state="coming-soon"');
       expect(html, path).toContain("Coming soon");
@@ -272,25 +307,35 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
     expect(render("/charts", { ui_v2: true })).not.toContain('data-state="coming-soon"');
   });
 
-  it("does not gate Settings, Orders, Journal, Account or Team", () => {
-    for (const path of ["/settings", "/positions/orders", "/analytics/journal", "/analytics/coach", "/strategies/build", "/strategies",
-      "/analytics", "/settings/account", "/team", "/notifications", "/risk-management"]) {
+  it("does not gate Settings, Orders, Results, Journal, Account or Team", () => {
+    for (const path of ["/settings", "/positions/orders", "/positions/results", "/positions/results/journal", "/analytics/coach",
+      "/copilot/coach", "/strategies/build", "/strategies", "/settings/account", "/settings/broker", "/team", "/notifications",
+      "/risk-management", "/learn/news"]) {
       const html = render(path);
       expect(html, path).not.toContain("data-broker-gate");
-      expect(html, path).toContain("Loading page");
     }
   });
 
-  it("UX3-9: a merged page shows its tabs, the current one marked, each at its own address", () => {
+  it("UX3-9 + M60: a merged page shows its tabs (at most four), the current one marked, each at its own address", () => {
     const html = render("/positions/orders");
     expect(html).toContain('data-page-tabs="my-trades"');
-    expect(html).toMatch(/<nav aria-label="My trades"[^>]*>.*href="\/positions".*>Positions<.*href="\/positions\/orders".*>Orders<.*href="\/positions\/money".*>Money</s);
+    expect(html).toMatch(/<nav aria-label="My trades"[^>]*>.*href="\/positions".*>Positions<.*href="\/positions\/orders".*>Orders<.*href="\/positions\/money".*>Money<.*href="\/positions\/results".*>Results</s);
     expect(html).toMatch(/aria-current="page"[^>]*data-page-tab="orders"/);
     const strategies = render("/strategies/test", { ui_v2: true, idea_library: true });
-    expect(strategies).toMatch(/>Library<.*>Ideas<.*>Build<.*>Test</s);
-    expect(render("/strategies/test", { ui_v2: true })).not.toContain(">Ideas<");      // a tab whose feature is off is left out
-    expect(render("/analytics", { ui_v2: true })).toMatch(/data-page-tabs="performance".*>Results<.*>Coach</s);
-    expect(render("/analytics", { ui_v2: true })).not.toContain('data-page-tab="journal"');
+    expect(strategies).toMatch(/>Library<.*>Build<.*>Test</s);
+    expect(strategies).not.toContain(">Ideas<");                                       // M60: Ideas is a Learn tab
+    // Default 2: Results holds Summary · Journal as a second row; the Results tab is marked on both.
+    const journal = render("/positions/results/journal");
+    expect(journal).toMatch(/aria-current="page"[^>]*data-page-tab="analytics"/);
+    expect(journal).toMatch(/data-page-parts="analytics".*>Summary<.*>Journal</s);
+    expect(journal).toMatch(/aria-current="page"[^>]*data-page-part="journal"/);
+    expect(render("/positions/results", { ui_v2: true })).not.toContain('data-page-part="journal"');   // its feature off
+    // Settings: Account & broker · Trading · AI · App, with the pages of the tab on screen as parts.
+    const broker = render("/settings/broker");
+    expect(broker).toMatch(/data-page-tabs="settings".*>Account &amp; broker<.*>Trading<.*>AI<.*>App</s);
+    expect(broker).toMatch(/aria-current="page"[^>]*data-page-part="broker"/);
+    expect(render("/notifications")).toMatch(/data-page-parts="trading-defaults".*>Alerts<.*>Inbox</s);
+    expect(render("/learn/news", { ui_v2: true, learn: true, idea_library: true })).toMatch(/data-page-tabs="learn".*>Lessons<.*>Words explained<.*>Ideas<.*>News &amp; events</s);
     expect(render("/signals")).not.toContain("data-page-tabs");
   });
 
@@ -301,6 +346,11 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
     expect(html).toContain("Search, e.g. reliance or nifty 22700 ce");   // UX-2: symbols first
     expect(html).not.toMatch(/aria-label="[^"]*[Ss]ymbol[^"]*"/);       // the Symbol fields keep their name to themselves
     expect(html).toContain("Skip to content");
-    expect(html).toMatch(/>Today<.*>Charts<.*>Signals<.*>My trades<.*>More</s);
+    expect(html).toMatch(/>Today<.*>Charts<.*>Chain<.*>My trades<.*>More</s);
+    // M57: the menu button left of the title - hides the sidebar from md up, opens the menu sheet on a phone.
+    expect(html).toMatch(/data-menu-toggle="(expanded|rail)"[^>]*aria-label="(Hide|Show) menu"|aria-label="(Hide|Show) menu"[^>]*data-menu-toggle/);
+    expect(html).toContain('aria-keyshortcuts="["');
+    expect(html).toMatch(/data-menu-sheet[^>]*|aria-label="Show menu"[^>]*data-menu-sheet/);
+    expect(html.indexOf("data-menu-toggle")).toBeLessThan(html.indexOf("data-topbar-title"));
   });
 });

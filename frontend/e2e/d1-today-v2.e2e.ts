@@ -199,7 +199,9 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
           const nav = page.getByRole("navigation", { name: "Pages" }).getByRole("link");
           await expect(nav.first()).toHaveText("Today");
           const names = await nav.allInnerTexts();
-          expect(names.indexOf("Broker")).toBe(names.indexOf("Settings") - 1);
+          // M60: Broker accounts live in Settings, the last user entry (its dot sits there).
+          expect(names[names.length - 1]).toBe("Settings");
+          expect(names).not.toContain("Broker");
         }
         await shot("01-today");
         await block.getByRole("link", { name: "Watch a list on Signals" }).click();

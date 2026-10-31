@@ -54,10 +54,12 @@ const chooser = (page: Page) => page.getByRole("button", { name: /^Choose a list
 test.describe("Watchlist page 1440 desktop", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("the sidebar entry opens the page with the Charts panel; a row opens its chart", async ({ page }) => {
+  test("M60: search opens the page (no sidebar entry until the Terminal has its Watchlist panel); a row opens its chart", async ({ page }) => {
     const calls = await open(page, { path: "/", systemLists: SYSTEM });
-    const nav = page.getByRole("navigation", { name: "Pages" });
-    await nav.getByRole("link", { name: "Watchlist" }).click();
+    await expect(page.getByRole("navigation", { name: "Pages" }).getByRole("link", { name: "Watchlist" })).toHaveCount(0);
+    await page.keyboard.press("Control+k");
+    await page.keyboard.type("watchlist");
+    await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/watchlist$/);
     await expect(page.getByRole("heading", { level: 1, name: "Watchlist" })).toBeVisible();
     await expect(chooser(page)).toContainText("Indices (3)");
@@ -89,13 +91,14 @@ test.describe("Watchlist page 1440 desktop", () => {
 test.describe("Watchlist page 390 phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-  test("UI-28 U3.5: four tabs and More; Watchlist opens from the More sheet and a row opens its chart", async ({ page }) => {
+  test("M60: four tabs and More; Watchlist opens from the More sheet's search and a row opens its chart", async ({ page }) => {
     await open(page, { path: "/", systemLists: SYSTEM });
     const bar = page.locator("[data-bottom-nav-v2]");
-    await expect(bar.getByRole("link")).toHaveText(["Today", "Charts", "Signals", "My trades"]);
+    await expect(bar.getByRole("link")).toHaveText(["Today", "Charts", "Chain", "My trades"]);
     await bar.getByRole("button", { name: /^More pages/ }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
-    await page.getByRole("dialog").getByRole("link", { name: "Watchlist" }).click();
+    await page.getByRole("dialog").getByRole("searchbox", { name: "Search pages" }).fill("watchlist");
+    await page.getByRole("dialog").getByRole("link", { name: /Watchlist/ }).click();
     await expect(page).toHaveURL(/\/watchlist$/);
     await expect(rows(page)).toHaveText([/NIFTY 50/, /NIFTY BANK/, /SENSEX/]);
     await expectPhoneLayout(page);
@@ -105,7 +108,7 @@ test.describe("Watchlist page 390 phone", () => {
 
   test("with `watchlists` off the bar is as before", async ({ page }) => {
     await open(page, { watch: false, path: "/" });
-    await expect(page.locator("[data-bottom-nav-v2]").getByRole("link")).toHaveText(["Today", "Charts", "Signals", "My trades"]);
+    await expect(page.locator("[data-bottom-nav-v2]").getByRole("link")).toHaveText(["Today", "Charts", "Chain", "My trades"]);
   });
 });
 

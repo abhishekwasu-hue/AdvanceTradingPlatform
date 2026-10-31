@@ -44,14 +44,15 @@ describe("the shell wiring", () => {
     expect(PAGE_COMPONENTS_V2.watchlist).toBeTruthy();
     expect(shellSource).toMatch(/<Route path=\{WATCHLIST_ADDRESS\} caseSensitive element=\{<WatchlistPage onNavigate=\{go\} \/>\} \/>/);
     expect(shellSource).toMatch(/<BottomNavV2 [^>]*ctx=\{ctx\}/);
-    expect(navEntryFor("watchlist")).toBe("watchlist");
+    // M60: the page stays at /watchlist (no Terminal Watchlist panel yet) and lights up the Terminal, its future home.
+    expect(navEntryFor("watchlist")).toBe("terminal");
     expect(tourIdFor("watchlist")).toBeNull();
     expect(USER_PAGE_ROOTS).toContain("watchlist");             // the plain-words guard reads this page
   });
 
-  it("the desktop sidebar and search list it only while the flag is on", () => {
+  it("search lists it only while the flag is on (M60: a part of the Terminal, no sidebar entry of its own)", () => {
     const item = navItemFor("watchlist")!;
-    expect(item).toMatchObject({ label: "Watchlist", path: "/watchlist", section: "markets" });
+    expect(item).toMatchObject({ label: "Watchlist", path: "/watchlist", section: "trade" });
     expect(isItemVisible(item, { on: flags("watchlists"), role: "OWNER" })).toBe(true);
     expect(isItemVisible(item, { on: flags(), role: "OWNER" })).toBe(false);
     expect(searchPages("my lists", { on: flags("watchlists"), role: "OWNER" })[0]?.key).toBe("watchlist");

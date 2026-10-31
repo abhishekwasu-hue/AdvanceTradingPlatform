@@ -8,7 +8,7 @@ import { MORE_SHEET_ID } from "./BottomNavV2";
 import { useReturnFocus } from "./returnFocus";
 import { StatusDot } from "../broker/marks";
 import type { BrokerDot } from "../broker/brokerState";
-import { moreSheetPinned, moreSheetSections, navDotFor, navEntryFor, searchPages, sectionTitle, type NavContext, type NavItemV2, type NavSectionV2, type SectionId, type ShellKey } from "./navModel";
+import { isCurrentEntry, moreSheetPinned, moreSheetSections, navDotFor, searchPages, sectionTitle, type NavContext, type NavItemV2, type NavSectionV2, type SectionId, type ShellKey } from "./navModel";
 import StatusLink from "../status/StatusLink";
 import { navIconClass } from "./navTone";
 import { SectionChip } from "../ui/SectionChip";
@@ -19,6 +19,8 @@ import { useColourV2 } from "../ui/colourV2";
  * UI2-1 (UI v2 proposal §4, mockup nav-bottom-mobile "More opens a sheet"): the phone's More sheet. A search box, then
  * every sidebar entry that is not in the bottom bar, grouped (Markets first, Admin last; the sidebar shows the same
  * entries as one flat list).
+ * M57 U7-2: the top bar's menu button opens the same sheet with every section (`all`), so every page is reachable from
+ * the top bar too; More lists the entries that are not on the bottom bar.
  * Typing searches every page the trader may see, today's names included ("Screener" finds Find setups). Tiles are
  * 44 px tall at least. Below the pages: install the app (always says why when it cannot), help, feedback and the theme.
  */
@@ -29,22 +31,24 @@ export interface MoreSheetContentProps {
   query: string;
   onQuery: (q: string) => void;
   onPick: () => void;
-  /** P2b: the broker's status dot on the Broker tile. */
+  /** The broker's status dot on the Settings tile (M60). */
   dot?: BrokerDot | null;
+  /** M57 U7-2: every section (the top bar's menu button), not only what the bottom bar leaves out. */
+  all?: boolean;
 }
 
 /** What the sheet lists for a query: the sections when empty, else the matches (each with its section's name). */
-export function moreSheetResults(ctx: NavContext, query: string):
+export function moreSheetResults(ctx: NavContext, query: string, all = false):
   | { kind: "sections"; sections: NavSectionV2[] }
   | { kind: "matches"; items: (NavItemV2 & { section: SectionId })[] } {
-  if (!query.trim()) return { kind: "sections", sections: moreSheetSections(ctx) };
+  if (!query.trim()) return { kind: "sections", sections: moreSheetSections(ctx, all) };
   return { kind: "matches", items: searchPages(query, ctx) };
 }
 
 function Tile({ item, current, onPick, caption, dot = null }: { item: NavItemV2; current: ShellKey | null; onPick: () => void; caption?: string; dot?: BrokerDot | null }) {
   const Icon = item.icon;
   // UX3-9: a Settings sub-page lights up Settings, a merged page's tab its entry (navEntryFor).
-  const active = current === item.key || navEntryFor(current) === item.key;
+  const active = isCurrentEntry(item.key, current);
   const colour = useColourV2();
   return (
     <Link to={item.path} onClick={onPick} aria-current={active ? "page" : undefined}
@@ -53,7 +57,8 @@ function Tile({ item, current, onPick, caption, dot = null }: { item: NavItemV2;
       }`}>
       {colour && sectionTintOf(item.key) ? <SectionChip navKey={item.key} icon={Icon} iconSize={18} /> : <Icon size={18} aria-hidden className={`shrink-0 ${active ? "text-brand" : navIconClass(item.key, colour)}`} />}
       <span className="min-w-0">
-        <span className="block truncate">{item.label}</span>
+        {/* The name is never cut: a long one ("Sectors & indices") wraps between words inside its 44 px tile. */}
+        <span className="block leading-tight">{item.label}</span>
         {caption && <span className="block truncate text-t12 font-normal text-fg-muted">{caption}</span>}
       </span>
       {dot && <StatusDot dot={dot} announce className="ml-auto" />}
@@ -62,9 +67,9 @@ function Tile({ item, current, onPick, caption, dot = null }: { item: NavItemV2;
 }
 
 /** The sheet's lists - no dialog, so tests render it directly. */
-export function MoreSheetContent({ ctx, current, query, onQuery, onPick, dot = null }: MoreSheetContentProps) {
+export function MoreSheetContent({ ctx, current, query, onQuery, onPick, dot = null, all = false }: MoreSheetContentProps) {
   const searchId = useId();
-  const results = useMemo(() => moreSheetResults(ctx, query), [ctx, query]);
+  const results = useMemo(() => moreSheetResults(ctx, query, all), [ctx, query, all]);
   const pinned = useMemo(() => moreSheetPinned(ctx), [ctx]);
   return (
     <div className="space-y-space-3">
@@ -84,7 +89,7 @@ export function MoreSheetContent({ ctx, current, query, onQuery, onPick, dot = n
         <section key={section.id} aria-label={section.title}>
           <h3 className="mb-space-2 text-t12 font-semibold text-fg-muted">{section.title}</h3>
           <div className="grid grid-cols-2 gap-space-2">
-            {section.items.map((item) => <Tile key={item.key} item={item} current={current} onPick={onPick} />)}
+            {section.items.map((item) => <Tile key={item.key} item={item} current={current} onPick={onPick} dot={navDotFor(item.key, dot)} />)}
           </div>
         </section>
       )) : results.items.length > 0 ? (
@@ -136,9 +141,11 @@ export interface MoreSheetV2Props {
   onHelp?: () => void;
   onFeedback?: () => void;
   dot?: BrokerDot | null;
+  /** M57 U7-2: opened from the top bar's menu button - every section. */
+  all?: boolean;
 }
 
-export default function MoreSheetV2({ open, onOpenChange, ctx, current, onHelp, onFeedback, dot = null }: MoreSheetV2Props) {
+export default function MoreSheetV2({ open, onOpenChange, ctx, current, onHelp, onFeedback, dot = null, all = false }: MoreSheetV2Props) {
   const [query, setQuery] = useState("");
   const panel = useRef<HTMLDivElement>(null);
   // Closed by a choice or a route change too: the search starts empty next time.
@@ -162,13 +169,13 @@ export default function MoreSheetV2({ open, onOpenChange, ctx, current, onHelp, 
             <span aria-hidden className="mx-auto h-1 w-10 rounded-pill bg-border" />
           </div>
           <div className="flex items-center justify-between px-space-4 pb-space-2">
-            <RD.Title className="text-t15 font-semibold text-fg">All pages</RD.Title>
+            <RD.Title className="text-t15 font-semibold text-fg">{all ? "Menu" : "All pages"}</RD.Title>
             <RD.Close aria-label="Close" className="-mr-space-2 flex h-11 w-11 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg">
               <X size={18} aria-hidden />
             </RD.Close>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-space-4 pb-space-4">
-            <MoreSheetContent ctx={ctx} current={current} query={query} onQuery={setQuery} onPick={close} dot={dot} />
+            <MoreSheetContent ctx={ctx} current={current} query={query} onQuery={setQuery} onPick={close} dot={dot} all={all} />
             {!query.trim() && (
               <section aria-label="App" className="mt-space-4 space-y-space-2">
                 <h3 className="text-t12 font-semibold text-fg-muted">App</h3>

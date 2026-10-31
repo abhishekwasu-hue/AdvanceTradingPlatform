@@ -7,6 +7,7 @@
  */
 import { request } from "../api/client";
 import { GLOSSARY, type GlossaryKey } from "../ui/glossary";
+import { formatNumber } from "../ui/format";
 
 export const TRADE_SETTINGS_PATH = "/settings/trade-settings";
 export const NOT_SET = "Not set";
@@ -81,7 +82,7 @@ export function valueWords(f: TradeField): string {
   if (f.kind === "switch") return v === true ? "On" : "Off";
   if (f.kind === "choice") return f.choices.find((c) => c.value === v)?.label ?? NOT_SET;
   if (f.kind === "legs") return Array.isArray(v) ? `${v.length} ${v.length === 1 ? "leg" : "legs"}` : NOT_SET;
-  if (typeof v === "number") return f.unit === "₹" ? `₹${v.toLocaleString("en-IN")}` : `${v}${f.unit ? (f.unit === "%" ? "%" : ` ${f.unit}`) : ""}`;
+  if (typeof v === "number") return f.unit === "₹" ? `₹${formatNumber(v, 3, { trim: true })}` : `${v}${f.unit ? (f.unit === "%" ? "%" : ` ${f.unit}`) : ""}`;
   return String(v);
 }
 

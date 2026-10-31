@@ -25,6 +25,8 @@ from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixture
 from tests.test_o2_oi_snapshots import T0, UND, _chain, _collect
 from tests.test_phase_l_ai import _owner
 
+VERDICT = re.compile(r"\b(bullish|bearish|overbought|oversold|mildly)\b", re.I)
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -96,13 +98,20 @@ def test_render_follows_the_template_and_never_words_an_order():
     state = _banner_state()
     event = oi_alerts.AlertEvent("DIRECTION_CHANGE", "BULLISH", "MIXED", NotificationSeverity.INFO)
     r = oi_alerts.render(UND, event, state, T0, T0 + timedelta(seconds=12))
-    assert r["message"].startswith(f"{UND} OI banner: BULLISH → MIXED. ") and "Put: " in r["message"] and "PCR 2 (" in r["message"]
+    assert r["message"].startswith(f"{UND} OI: Put premium down / call premium up → Put and call readings differ. ")
+    assert "Put: " in r["message"] and "(PCR 2.00)" in r["message"]
     assert "Max pain 24,500" in r["message"] and "DTE 16" in r["message"] and r["message"].endswith("Data as of 10 Mar 09:20 IST.")
     assert r["payload"]["schema"] == "oi_banner.v1" and r["payload"]["data_timestamps"]["slot"].startswith("2026-03-10T03:50")
     assert set(r["payload"]) >= {"underlying", "alert_type", "old_state", "new_state", "snapshot", "data_timestamps"}
     for kind in oi_regime.ALERT_TYPES:
         text = json.dumps(oi_alerts.render(UND, oi_alerts.AlertEvent(kind, "A", "B", NotificationSeverity.INFO), state, T0, T0))
         assert not re.search(r"\b(buy|sell|target|recommended)\b", text, re.I)
+    # M61 OI-5: the text a user reads (title, message) never carries the engine's verdict labels, for any state.
+    states = ["BULLISH", "BEARISH", "MIXED", "NEUTRAL", "BULLISH Strong", "BEARISH Weakening", *[b.value for b in oi_regime.PcrBand]]
+    for kind in ("DIRECTION_CHANGE", "STABLE_FLIP", "STRENGTH_CHANGE", "PCR_BAND"):   # the types whose states are labels
+        for old_state, new_state in zip(states, states[1:] + states[:1]):
+            r = oi_alerts.render(UND, oi_alerts.AlertEvent(kind, old_state, new_state, NotificationSeverity.INFO), state, T0, T0)
+            assert not VERDICT.search(r["title"] + " " + r["message"]), (kind, r["title"], r["message"])
 
 
 def _enable(headers, **alerts):
@@ -131,7 +140,7 @@ def test_a_change_notifies_once_and_a_repeat_of_the_slot_does_not():
     assert _run(_evaluate(me["tenant_id"], T0 + timedelta(minutes=5, seconds=30))) == ["SENT"]
     assert _run(_evaluate(me["tenant_id"], T0 + timedelta(minutes=6))) == []                # same slot again
     notes = _run(_notes(me["tenant_id"]))
-    assert len(notes) == 1 and notes[0].event_type == "OI_BANNER" and "NEUTRAL → BULLISH" in notes[0].title
+    assert len(notes) == 1 and notes[0].event_type == "OI_BANNER" and "No clear OI change → Put premium down / call premium up" in notes[0].title
     payload = json.loads(notes[0].metadata_json)
     assert payload["alert_type"] == "DIRECTION_CHANGE" and payload["snapshot"]["direction"] == "BULLISH"
     other_headers, other = _owner("o4-change-off@example.com")                               # alerts off: nothing

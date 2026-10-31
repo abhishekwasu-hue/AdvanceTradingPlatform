@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, Disclaimer } from "../components/ui";
-import { PageHeader } from "../components/primitives";
+import { PageHeader, SkeletonRows } from "../components/primitives";
+import { EmptyStateV2 } from "../dashboard/CardV2";
 import { Details } from "../ui/Details";
 import { INDICATOR_LABEL, timeframeWords } from "../ui/strategyLabels";
 import {
@@ -186,7 +187,8 @@ export default function StrategyBuilderPage() {
  * plain-words parser card gives way to one link into the flow, whose words box uses the one parser (sb.build). */
 export function StrategyBuilderFull({ onOpenFlow }: { onOpenFlow?: () => void } = {}) {
   const { user, loading: authLoading } = useAuth();
-  const [saved, setSaved] = useState<CustomStrategyResponse[]>([]);
+  // M63 I-7: null until the first answer - placeholder rows, never "None yet" before the read.
+  const [saved, setSaved] = useState<CustomStrategyResponse[] | null>(null);
   const [config, setConfig] = useState<CustomStrategyConfig>(defaultCustomStrategyConfig());
   const [targets, setTargets] = useState<[string, string]>(["", ""]);
   const [saving, setSaving] = useState(false);
@@ -198,7 +200,7 @@ export function StrategyBuilderFull({ onOpenFlow }: { onOpenFlow?: () => void } 
   const [parseResult, setParseResult] = useState<ParseStrategyResult | null>(null);
 
   function refresh() {
-    api.listCustomStrategies().then(setSaved).catch((e) => setError(errorSentence(e)));
+    api.listCustomStrategies().then(setSaved).catch((e) => { setSaved((s) => s ?? []); setError(errorSentence(e)); });
   }
 
   useEffect(() => {
@@ -343,24 +345,8 @@ export function StrategyBuilderFull({ onOpenFlow }: { onOpenFlow?: () => void } 
       </Card>
       )}
 
-      <Card title={`Your saved strategies (${saved.length})`}>
-        {saved.length === 0 ? (
-          <div className="text-sm text-fg-muted py-2">None yet - build one below.</div>
-        ) : (
-          <div className="space-y-1.5">
-            {saved.map((s) => (
-              <div key={s.id} className="flex items-center justify-between rounded border border-border px-3 py-2 text-sm">
-                <div>
-                  <span className="font-medium text-fg">{s.config.name}</span>{" "}
-                  <span className="text-fg-muted text-xs">({timeframeWords(s.config.timeframe)})</span>
-                </div>
-                <button onClick={() => handleDelete(s.id)} className="text-xs text-down hover:underline">
-                  Delete
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+      <Card title={saved ? `Your saved strategies (${saved.length})` : "Your saved strategies"}>
+        <SavedStrategyRows saved={saved} onDelete={handleDelete} />
       </Card>
 
       <Card title="Build a new strategy">
@@ -468,6 +454,27 @@ export function StrategyBuilderFull({ onOpenFlow }: { onOpenFlow?: () => void } 
           )}
         </div>
       </Card>
+    </div>
+  );
+}
+
+/** M63 I-7: the saved strategies - placeholder rows while they load, one line when there is none. */
+export function SavedStrategyRows({ saved, onDelete }: { saved: CustomStrategyResponse[] | null; onDelete: (id: number) => void }) {
+  if (saved === null) return <SkeletonRows rows={2} label="Loading your saved strategies" />;
+  if (saved.length === 0) return <EmptyStateV2 text="None yet - build one below." />;
+  return (
+    <div className="space-y-1.5">
+      {saved.map((s) => (
+        <div key={s.id} className="flex items-center justify-between rounded border border-border px-3 py-2 text-sm">
+          <div>
+            <span className="font-medium text-fg">{s.config.name}</span>{" "}
+            <span className="text-fg-muted text-xs">({timeframeWords(s.config.timeframe)})</span>
+          </div>
+          <button onClick={() => onDelete(s.id)} className="text-xs text-down hover:underline">
+            Delete
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

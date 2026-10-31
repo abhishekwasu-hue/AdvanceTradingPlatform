@@ -60,6 +60,29 @@ function trimZeros(s: string): string {
 }
 
 /**
+ * M61 OI-1: THE formatter for every OI / volume figure in the app (chain table, OI history, chips, tooltips, chart axes,
+ * the PCR tables): under 1 lakh in Indian grouping ("99,999"), from 1 lakh "12.35 L", from 1 crore "1.24 Cr"; trailing
+ * zeros dropped ("12.3 L", "1 Cr"); negatives with "−". The unit follows the true value, so 99,99,999 is "99.99 L",
+ * never "100 L". A missing value is "–".
+ */
+export function formatCount(v: Num): string {
+  if (!finite(v)) return EMPTY;
+  const abs = Math.abs(v);
+  const whole = Math.round(abs);
+  const sign = v < 0 && whole !== 0 ? MINUS : "";
+  if (abs >= 1e7) return `${sign}${trimZeros(magnitude(abs / 1e7, 2))} Cr`;
+  if (abs >= 1e5) return `${sign}${trimZeros(Math.min(Number((abs / 1e5).toFixed(2)), 99.99).toFixed(2))} L`;
+  return `${sign}${magnitude(whole, 0)}`;
+}
+
+/** M61 OI-1: a change in a count, always signed: "+21.6 L", "−4,500", "0" (a true zero, or one that rounds to 0). */
+export function formatCountChange(v: Num): string {
+  if (!finite(v)) return EMPTY;
+  const text = formatCount(v);
+  return v > 0 && Math.round(v) !== 0 ? `+${text}` : text;
+}
+
+/**
  * The money rule (owner's user-friendly pass, 23 Oct): one formatter, two precisions.
  * - Summaries, cards, tiles and sentences show WHOLE rupees with Indian grouping: formatINR(123456.4) -> "₹1,23,456".
  * - Paise only where they matter - order tickets, fills and the P&L detail of a closed trade - and only when the caller

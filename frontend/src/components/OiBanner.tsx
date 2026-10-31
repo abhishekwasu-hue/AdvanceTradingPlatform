@@ -4,20 +4,18 @@ import { bannerLines, isLateChip } from "../oi/format";
 import type { OiBannerResponse } from "../oi/types";
 import { Skeleton } from "./primitives";
 
-/** OI Banner (O3): the presentational banner. The direction colours its left border; the lines are the headline,
- *  "Put: … · Call: …", "PCR … — band", then chips (DTE, max pain, last update / market closed, data time). Read-only. */
+/** OI Banner (O3): the presentational banner. M61 OI-5: numbers and neutral words only, no direction colour - the
+ *  lines are the read ("Put OI above call OI (PCR 1.04)"), each side's OI and premium move, the two totals, then chips
+ *  (DTE, max pain, last update / market closed, data time). Read-only. */
 export function OiBannerView({ data, compact = false }: { data: OiBannerResponse; compact?: boolean }) {
   const lines = bannerLines(data);
   return (
-    <div className={`rounded-lg border border-border border-l-4 ${lines.tone.border} bg-surface-2 ${compact ? "px-3 py-2" : "px-4 py-3"}`}
-         role="status" aria-label={`${data.underlying} OI banner: ${lines.tone.label}`}>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-xs font-semibold text-fg-muted">{data.underlying} · OI</span>
-        <span className={`text-xs font-bold uppercase ${lines.tone.text}`}>{lines.tone.label}</span>
-      </div>
-      <div className={`mt-1 font-semibold ${compact ? "text-sm" : "text-base"} ${lines.tone.text}`}>{lines.headline}</div>
+    <div className={`rounded-lg border border-border bg-surface-2 ${compact ? "px-3 py-2" : "px-4 py-3"}`}
+         role="status" aria-label={`${data.underlying} OI summary`}>
+      <div className="text-xs font-semibold text-fg-muted">{data.underlying} · OI</div>
+      <div className={`mt-1 font-semibold tabular-nums text-fg ${compact ? "text-sm" : "text-base"}`}>{lines.headline}</div>
       {lines.classes && <div className="mt-1 text-xs text-fg">{lines.classes}</div>}
-      {lines.pcr && <div className="mt-0.5 text-xs text-fg-muted">{lines.pcr}</div>}
+      {lines.totals && <div className="mt-0.5 text-xs tabular-nums text-fg-muted">{lines.totals}</div>}
       {lines.chips.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {lines.chips.map((c) => (

@@ -6,6 +6,7 @@
  * Numbers that belong to an instrument (strike step, lot size, the template width) always come from the trader's
  * inputs (the instrument master), never from defaults here.
  */
+import { formatINR } from "../ui/format";
 
 export type Direction = "BUY" | "SELL";
 export type OptionKind = "CE" | "PE" | "FUT";
@@ -161,9 +162,8 @@ export function thumbnailShape(t: TemplateInfo, points = 41): number[] | null {
 }
 
 export function money(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(v)) return "–";
-  const s = Math.abs(v) >= 100 ? Math.round(Math.abs(v)).toLocaleString("en-IN") : Math.abs(v).toFixed(2);
-  return `${v < 0 ? "−" : ""}₹${s}`;
+  // M63 I-7: through the app's one formatter - whole rupees from ₹100, paise below (a premium of ₹12.50).
+  return formatINR(v, { paise: v != null && Math.abs(v) < 100 });
 }
 
 /** Days from `from` to `to` (YYYY-MM-DD), never negative. */

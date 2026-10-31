@@ -144,13 +144,16 @@ async def _data_feed(session: AsyncSession, now: datetime) -> Dict[str, Any]:
 
 @router.get("/system")
 async def system(session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    """Health (database, migrations, cache, the Phase 0 posture), every worker's heartbeat and the data feed."""
+    """Health (database, migrations, cache, the Phase 0 posture), every worker's heartbeat, the data feed and (M66 EN-1)
+    the private package's signal engine: installed or not, name / version / tag / interface, or why not and what the
+    owner does. Admin-only (this router); never on the public /api/system/status."""
+    from app.engine_provider import loader as trade_engine
     from app.observability.routes import deep_health
 
     now = datetime.now(timezone.utc)
     health = await deep_health(Response(), session)
     return {"checked_at": now.isoformat(), "health": health, "workers": await _workers(session, now),
-            "data_feed": await _data_feed(session, now)}
+            "data_feed": await _data_feed(session, now), "trade_engine": trade_engine.describe(admin=True)}
 
 
 # --- Users & business ------------------------------------------------------------------------------------------------

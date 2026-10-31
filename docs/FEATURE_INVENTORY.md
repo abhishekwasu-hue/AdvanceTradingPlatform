@@ -29,6 +29,7 @@ Facts from the code that the tables rely on:
   `scan_auto_paper`, `live_trading`, `phase0_paper_only`. Whether it was applied on production is part of the owner's check.
 - `vision_byok_v3` is removed from view (flag_catalog REMOVED_FROM_VIEW): it cannot be turned on.
 - Analyze a chart needs the private engine package; without it the three `chart_analyze*` flags answer OFF for users.
+- The signal engine (M66, `trade_engine`, OFF) needs the private engine package too; without it the flag answers OFF.
 - Vendor settings are empty by default: Razorpay, VAPID (browser push), FCM (phone push), platform SMTP, the ATP
   Telegram bot token, CAPTCHA, the history import object store; with no AI key the AI answers from built-in rules.
 - No sample market data: market data comes only from the user's own logged-in broker session.
@@ -59,6 +60,7 @@ Facts from the code that the tables rely on:
 | db | Models, session | - | - | INTERNAL | - |
 | decision_tools | Ruin calculator, what-if, exposure, expected move | `/api/decision` | `decision_tools` | EMPTY-BY-DEFAULT (404 while off) | unknown until the owner's check |
 | deployments | PAPER / LIVE deployments, why-no-trade | `/api/deployments` | `live_trading`; `phase0_paper_only` (ON) | WORKS (PAPER; LIVE locked) | unknown until the owner's check |
+| engine_provider | M66 EN-1: the generic boundary to the private package's signal engine (typed interface, loader, state on the admin System view `/api/admin/console/system` and in `atp.sh health`); no route of its own, no method content | - | `trade_engine` (OFF; admin / owner only; unavailable without the private engine package) | INTERNAL (boundary only; no signal path reads it yet) | unknown until the owner's check |
 | execution | Order state machine, paper broker, smart / multi-leg, incomplete structures | `/api/trading/incomplete` | `execution_core`, `smart_execution`, `approval_only_entries` (+ `ui_v2`) | PARTIAL; paper practice chain raises NotImplemented | STUB (paper practice chain); rest: unknown until the owner's check |
 | expiry_checklist | Expiry-day ITM / OTM, settlement view | `/api/fno` | `ui_v2` + `expiry_checklist` | EMPTY-BY-DEFAULT | unknown until the owner's check |
 | exports | CSV / JSON exports of audit, orders, trades | routes `/api/exports/{dataset}`, `/api/admin/exports/{dataset}` (no router prefix) | - | WORKS | unknown until the owner's check |
@@ -266,6 +268,7 @@ their v2 address (section 4).
 |---|---|---|---|
 | Analyze a chart: hybrid mode | chart_analyze | STUB (409 "coming soon") | build (M59) |
 | Analyze a chart: engine | chart_analyze | 503 when the private package is absent | the private package on the server |
+| Signal engine (M66) | engine_provider | boundary only (EN-1); unavailable when the private package is absent | the private package on the server; EN-2..EN-7 |
 | Legal pages | legal | STUB (open placeholders in terms and privacy) | lawyer text |
 | Help centre / support bot | support | STUB per the flag catalog (help pages not complete) | write the pages or hide |
 | Terminal Bots and Payoff panels | terminal | HIDDEN (never in the Panels menu) | build (T2 / T3) |

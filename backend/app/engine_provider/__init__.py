@@ -9,6 +9,9 @@ the private package (`atp_private.trade_engine`), installed on the host only. Th
   and an evidence list, and the card's fields as token ids). Neutral names only; no method content.
 - `loader`: imports `atp_private.trade_engine` once per process and calls its `get_provider()`. Absent or broken =
   the feature is unavailable, with a plain reason for the admin and `deploy/atp.sh health`; ATP never crashes on it.
+- `frames` / `sources` (EN-2): the engine's input frames built from ATP's own bars (closed bars only, India time, the
+  near-month future's live volume beside an index, closing-auction marks, the calendar) and every gap in them, listed
+  in plain words and as data-problem tokens - never filled or substituted. `sources.probe` is the admin's gap list.
 
 Nothing here places, blocks or changes an order (ADR-0004 / ADR-0006); PAPER only in Phase 0. Behind the
 `trade_engine` flag (OFF by default; admin / owner only).

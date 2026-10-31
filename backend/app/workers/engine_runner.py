@@ -28,6 +28,15 @@ private engine is installed (`loader.load()` is not None; otherwise a no-op, nev
    target or ratio is stored on the row. The internal references (model, entry zone, invalidation, evidence) stay in
    the dedupe row, which no user surface reads.
 
+M71 W2-C (data budget and own store):
+- The broker the worker hands in (`broker_for`) is read through the DATA pool (`data_pool` / `DataPoolBroker`): every
+  history call takes a token only while DATA_RESERVE of the session's budget stays free for the trading worker, and
+  never waits while holding the budget's lock (`RateBudget.acquire_spare`, as the history backfill and the chain
+  recorder do) - never the exits' own `acquire()` at full priority. A data call that gets no token in time is a gap of
+  this bar (retried on a later cycle), and its outcome never reaches the order circuit breaker.
+- Flag `market_store_reads` ON: the 1-minute bars come through ATP's own store (`sources.StoreRead`; the signals'
+  user's own rows, the newest bars through his own broker session only - M71Q-2). OFF: exactly the broker path.
+
 PAPER only: nothing here places, blocks or changes an order or an exit (ADR-0004); the AI is never involved
 (ADR-0006). No new table and no migration: `signal_history`, `runtime_counters` and `platform_controls` exist.
 """
@@ -37,6 +46,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -80,6 +90,21 @@ LIMITS: dict[str, tuple[float, float]] = {"delay_seconds": (0, 600), "grace_seco
                                           "intraday_days": (1, 3650), "daily_days": (1, 3650), "read_timeout_seconds": (1, 600)}
 SIGNAL_TIMEFRAMES = (*F.MINUTES, F.DAILY)
 
+
+def _env_float(name: str, default: float, low: float, high: float) -> float:
+    try:
+        value = float(os.environ.get(name, "") or default)
+    except ValueError:
+        value = default
+    return min(high, max(low, value))
+
+
+# M71 W2-C: the data pool (operational settings). The share of the session's per-second and per-minute budget the
+# runner's history reads always leave free for the trading worker (orders, exits), and how long one read may wait.
+DATA_RESERVE = _env_float("ENGINE_DATA_RESERVE", 0.5, 0.0, 0.95)
+DATA_WAIT_SECONDS = _env_float("ENGINE_DATA_WAIT_SECONDS", 20.0, 0.0, 600.0)
+DATA_CALLS = frozenset({"get_historical_data", "get_intraday_candles"})
+
 # Run statuses (admin view).
 SIGNAL = "signal"
 NO_SIGNAL = "no_signal"
@@ -91,6 +116,77 @@ DIRECTION_OF_SIDE = {"buyer": SignalDirection.LONG, "seller": SignalDirection.SH
 
 BrokerFor = Callable[[AsyncSession, int, User, datetime], Awaitable[Any]]
 Collect = Callable[..., Awaitable[tuple[F.SymbolData, list[str]]]]
+
+
+# --- the data pool (M71 W2-C) ---------------------------------------------------------------------------------------------
+
+class DataBudgetUsed(Exception):
+    """No data token in time: the read was not sent (a gap of this bar, read again on a later cycle)."""
+
+
+class DataPoolBroker:
+    """The worker's broker session for the runner's history reads, drawn from the DATA pool of the session's budget.
+
+    Only the data reads the engine adapter makes (`DATA_CALLS`) are exposed; each takes its token through
+    `RateBudget.acquire_spare(reserve)` - only while `reserve` of both buckets stays free for the trading worker, never
+    waiting under the budget's lock - so an exit's `acquire()` is never queued behind an engine read (review finding 4).
+    A broker with per-day caps (Groww) still counts the read in its day budget first (never the exits' reserve). The
+    calls are not reported to the order circuit breaker: a data refusal never stops trading (review finding 5)."""
+
+    def __init__(self, inner: Any, budget: Any, *, reserve: float | None = None, wait_seconds: float | None = None) -> None:
+        self.inner = inner
+        self.budget = budget
+        self.name = getattr(inner, "name", "")
+        self.reserve = DATA_RESERVE if reserve is None else reserve
+        self.wait_seconds = DATA_WAIT_SECONDS if wait_seconds is None else wait_seconds
+        self.taken = 0
+        self.refused = 0
+
+    def __getattr__(self, name: str) -> Any:
+        if name not in DATA_CALLS:
+            raise AttributeError(name)
+        attr = getattr(self.inner, name)              # AttributeError when the broker has no such endpoint
+
+        async def call(*args: Any, **kwargs: Any) -> Any:
+            daily = getattr(self.budget, "daily", None)
+            if daily is not None:
+                daily.take(name)                         # a data read: refused before the day's reserve, never sent
+            if not await self.budget.acquire_spare(self.reserve, deadline=self.budget.now() + self.wait_seconds):
+                self.refused += 1
+                raise DataBudgetUsed("the broker's data budget is in use by trading; read again on the next bar")
+            self.taken += 1
+            return await attr(*args, **kwargs)
+        return call
+
+
+def data_pool(broker: Any) -> Any:
+    """The runner's broker on the data pool: a worker session (`rate_budget.RateLimitedBroker`: the adapter `inner` on
+    the session's `budget`) is unwrapped onto that budget's spare tokens; None stays None; any other object (already a
+    data adapter) is used as it is. Duck-typed: the runner imports nothing of the broker / order layer."""
+    inner, budget = getattr(broker, "inner", None), getattr(broker, "budget", None)
+    if inner is not None and callable(getattr(budget, "acquire_spare", None)) and not isinstance(broker, DataPoolBroker):
+        return DataPoolBroker(inner, budget)
+    return broker
+
+
+async def store_read(session: AsyncSession, user: User, watch: Watch) -> S.StoreRead:
+    """M71 W2-C: the store read of one symbol - the signals' user's own rows, the newest bars through his OWN broker
+    session only (`market_store.sources.own_rest`, M71Q-2; None = the newest bars are a gap)."""
+    from app.market_store.sources import own_rest
+    rest = None
+    if watch.broker_symbol:
+        try:
+            rest = await own_rest(session, user, watch.broker_symbol, watch.exchange)
+        except Exception as exc:  # noqa: BLE001 - no own session = the newest bars are a gap, never a crash
+            logger.info("Signal engine: no own session for %s (%s)", watch.shown, exc.__class__.__name__)
+    return S.StoreRead(user=user, rest=rest)
+
+
+async def store_on(session: AsyncSession, tenant_id: int) -> bool:
+    """M71 W2-C: the flag `market_store_reads` (OFF = the broker path exactly as before)."""
+    from app.market_store.models import FLAG as STORE_FLAG
+    from app.platform.controls import flag_enabled
+    return bool(await flag_enabled(session, STORE_FLAG, tenant_id))
 
 
 # --- settings ------------------------------------------------------------------------------------------------------------
@@ -392,7 +488,7 @@ async def _emit(session: AsyncSession, cfg: RunnerSettings, watch: Watch, user: 
 
 
 async def _attempt(session: AsyncSession, cfg: RunnerSettings, watch: Watch, engine: TradeEngineProvider, user: User, broker: Any,
-                   due: datetime, now: datetime, cal: Any, collect: Collect) -> Outcome:
+                   due: datetime, now: datetime, cal: Any, collect: Collect, store: bool = False) -> Outcome:
     tf = cfg.signal_timeframe
     timeframes = list(dict.fromkeys([tf, *engine.timeframes]))
     if tf not in engine.timeframes:
@@ -400,8 +496,9 @@ async def _attempt(session: AsyncSession, cfg: RunnerSettings, watch: Watch, eng
     starts = window_starts(cal, timeframes, due, cfg)
     from app.market_lake import own_bars
     scope = await own_bars.scope_for(session, user, watch.key)
+    extra: dict[str, Any] = {"store": await store_read(session, user, watch)} if store else {}
     data, notes = await collect(session, key=watch.key, exchange=watch.exchange, timeframes=timeframes, starts=starts, now=now,
-                                cal=cal, scope=scope, broker=broker, broker_symbol=watch.broker_symbol)
+                                cal=cal, scope=scope, broker=broker, broker_symbol=watch.broker_symbol, **extra)
     # `now` = the due bar's END: every frame holds only bars closed by then (no look-ahead), and a bar the source has not
     # delivered yet is a gap of the signal frame, not a quietly older read.
     built = F.build_request(data, timeframes, tf, due, starts, cal, settings=cfg.engine_settings)
@@ -446,7 +543,7 @@ def _record(due: datetime, now: datetime, attempt: int, outcome: Outcome, final:
 
 
 async def run_symbol(session: AsyncSession, cfg: RunnerSettings, watch: Watch, engine: TradeEngineProvider, user: User, broker: Any,
-                     now: datetime, *, collect: Collect = S.collect, holder: str | None = None) -> SymbolRun:
+                     now: datetime, *, collect: Collect = S.collect, holder: str | None = None, store: bool = False) -> SymbolRun:
     """One symbol on this cycle: read the due bar when it has not been read (or is being retried). Commits."""
     tf = cfg.signal_timeframe
     first = (now.astimezone(F.IST) - timedelta(days=max(cfg.daily_days, cfg.intraday_days) + DUE_LOOKBACK_DAYS + 7)).date()
@@ -483,7 +580,7 @@ async def run_symbol(session: AsyncSession, cfg: RunnerSettings, watch: Watch, e
     try:
         attempt = attempts + 1
         try:
-            outcome = await _attempt(session, cfg, watch, engine, user, broker, due, now, cal, collect)
+            outcome = await _attempt(session, cfg, watch, engine, user, broker, due, now, cal, collect, store)
         except Exception as exc:  # noqa: BLE001 - a data read that fails is retried within the grace window
             await session.rollback()
             await session.refresh(user)
@@ -533,14 +630,16 @@ async def run_due(session_factory: Any, now: datetime | None = None, *, broker_f
             broker = None
             if broker_for is not None:
                 try:
-                    broker = await broker_for(session, tenant_id, user, now)
+                    broker = data_pool(await broker_for(session, tenant_id, user, now))   # M71 W2-C: the data pool
                 except Exception as exc:  # noqa: BLE001 - no broker = the broker's frames are gaps, never a crash
                     await session.rollback()
                     await session.refresh(user)
                     report.problems.append(f"organisation {tenant_id}: broker not available ({exc.__class__.__name__})")
+            store = await store_on(session, tenant_id)
             for watch in cfg.symbols:
                 try:
-                    status = await run_symbol(session, cfg, watch, engine, user, broker, now, collect=collect, holder=holder)
+                    status = await run_symbol(session, cfg, watch, engine, user, broker, now, collect=collect, holder=holder,
+                                              store=store)
                 except Exception as exc:  # noqa: BLE001 - one symbol's problem stays on it
                     await session.rollback()
                     await session.refresh(user)
@@ -558,4 +657,5 @@ async def run_due(session_factory: Any, now: datetime | None = None, *, broker_f
 
 __all__ = ["FLAG", "STRATEGY_ID", "DISPLAY_NAME", "SETTINGS_KEY", "STATE", "DEDUPE", "DEFAULTS", "Watch", "RunnerSettings",
            "SettingsProblem", "parse_settings", "save_settings", "due_bar", "bar_end", "window_starts", "state_key", "dedupe_key",
-           "run_records", "internal_signal", "lock_name", "card_line", "Outcome", "SymbolRun", "RunReport", "run_symbol", "run_due"]
+           "run_records", "internal_signal", "lock_name", "card_line", "Outcome", "SymbolRun", "RunReport", "run_symbol", "run_due",
+           "DATA_RESERVE", "DATA_WAIT_SECONDS", "DataBudgetUsed", "DataPoolBroker", "data_pool", "store_read", "store_on"]

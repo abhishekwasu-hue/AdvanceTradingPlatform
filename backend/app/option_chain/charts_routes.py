@@ -29,7 +29,7 @@ from app.db.models import User
 from app.db.session import get_session
 from app.market_data import candles_routes
 from app.option_chain import analyses, as_of, charts, own_snapshots, snapshots
-from app.option_chain.analyses_routes import NO_BROKER, NO_CHAIN, UNAVAILABLE, _read_chain, _record, _require_flag
+from app.option_chain.analyses_routes import NO_BROKER, NO_CHAIN, UNAVAILABLE, _record, _require_flag, read_chain_for
 from app.option_chain.snapshots import IST
 
 router = APIRouter(prefix="/api/option-chain", tags=["option-chain"])
@@ -83,12 +83,14 @@ async def option_chain_charts(symbol: str = Query(..., min_length=1, max_length=
     record, byob, refusal = await _record(session, user, underlying)
     if record is None:
         return _state(base, "no_broker", refusal or NO_BROKER)
-    chain, failure = await _read_chain(record, underlying, expiry)
+    # M71 W2-E (flag `market_store_reads`): paced, shared, store-first; OFF = the direct read as before (no data hub here).
+    chain, failure, got, when = await read_chain_for(session, user, record, underlying, expiry, now, shared=False)
     if chain is None:
         return _state(base, "unavailable", failure or UNAVAILABLE)
     base["expiry"] = (chain.expiry or "")[:10] or base["expiry"]
-    await meter(session, user.tenant_id, "market_data_chains", quantity=1, source="api",
-                metadata={"broker": record.broker_name, "expiry": base["expiry"], "use": "option_chain_charts"}, commit=True)
+    if got is None or not got.stale:                    # an earlier chain shown while the broker is busy is no new read
+        await meter(session, user.tenant_id, "market_data_chains", quantity=1, source="api",
+                    metadata={"broker": record.broker_name, "expiry": base["expiry"], "use": "option_chain_charts"}, commit=True)
     if not chain.rows:
         return _state(base, "no_data", NO_CHAIN)
 
@@ -104,12 +106,14 @@ async def option_chain_charts(symbol: str = Query(..., min_length=1, max_length=
                           settings=settings, collect_span=config.OI_BANNER_COLLECT_SPAN)
     spot = analyses.clean_spot(chain).underlying_ltp
     # B2a: the chain's capture time, or the last session close while the market is closed (never the request time).
-    when = await as_of.chain_as_of(session, underlying, now)
+    when = when or await as_of.chain_as_of(session, underlying, now)
     spot, spot_source = await as_of.resolve_spot(user, session, underlying, chain, spot, when, record.broker_name, record.account_label)
     out = {**base, "state": "ok", "message": None, "spot": spot, "spot_source": spot_source, "data_as_of": when.at.isoformat(),
            "market_closed": when.closed,
            "source": {"broker": record.broker_name, "account_label": record.account_label}, **body}
-    if byob:                                    # B1: this read becomes his session snapshot (last: the answer is built)
+    if got is not None and got.stale:                   # M71 W2-E: an earlier chain while the broker is busy, with its age
+        out["snapshot"] = got.snapshot(now)
+    if byob and (got is None or got.captured_at is None):                                    # B1: this read becomes his session snapshot (last: the answer is built)
         await own_snapshots.record(session, user, record, underlying, chain, now)
     return out
 

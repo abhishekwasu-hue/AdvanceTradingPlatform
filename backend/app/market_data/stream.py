@@ -61,6 +61,8 @@ class Tick:
     ltp: float
     exchange_ts: Optional[datetime]   # the exchange's last-trade time when the feed carries one
     received_at: datetime
+    # M71 PL-1b: the day's cumulative traded volume when the feed carries it (Upstox `full` mode `vtt`), else None.
+    volume_total: int | None = None
 
     @property
     def best_ts(self) -> datetime:
@@ -209,6 +211,7 @@ def _ltpc(buf: bytes) -> Dict[str, Any]:
 def _feed_ltpc(buf: bytes) -> Optional[Dict[str, Any]]:
     """Feed { oneof: LTPC ltpc = 1; FullFeed fullFeed = 2; FirstLevelWithGreeks firstLevelWithGreeks = 3; }
     FullFeed { oneof: MarketFullFeed marketFF = 1; IndexFullFeed indexFF = 2; } - both start with LTPC ltpc = 1.
+    MarketFullFeed { ...; int64 vtt = 6; ... } - the day's traded volume, returned as "vtt" (M71 PL-1b bar volume).
     FirstLevelWithGreeks { LTPC ltpc = 1; ... }"""
     for number, wtype, value in protobuf_fields(buf):
         if wtype != 2:
@@ -218,9 +221,17 @@ def _feed_ltpc(buf: bytes) -> Optional[Dict[str, Any]]:
         if number == 2:
             for n2, w2, v2 in protobuf_fields(value):
                 if w2 == 2 and n2 in (1, 2):
+                    found: dict[str, Any] | None = None
+                    vtt: int | None = None
                     for n3, w3, v3 in protobuf_fields(v2):
-                        if n3 == 1 and w3 == 2:
-                            return _ltpc(v3)
+                        if n3 == 1 and w3 == 2 and found is None:
+                            found = _ltpc(v3)
+                        elif n2 == 1 and n3 == 6 and w3 == 0:
+                            vtt = _signed64(v3)
+                    if found is not None:
+                        if vtt is not None and vtt >= 0:
+                            found["vtt"] = vtt
+                        return found
         if number == 3:
             for n2, w2, v2 in protobuf_fields(value):
                 if n2 == 1 and w2 == 2:
@@ -285,7 +296,10 @@ def encode_upstox_v3(feeds: Dict[str, Dict[str, Any]], *, current_ts_ms: Optiona
         if "cp" in ltpc:
             inner += _pb_field(4, 1, struct.pack("<d", float(ltpc["cp"])))
         if full:
-            feed = _pb_field(2, 2, _pb_field(1, 2, _pb_field(1, 2, bytes(inner))))
+            market = _pb_field(1, 2, bytes(inner))
+            if "vtt" in ltpc:
+                market += _pb_field(6, 0, _varint(int(ltpc["vtt"])))
+            feed = _pb_field(2, 2, _pb_field(1, 2, market))
         else:
             feed = _pb_field(1, 2, bytes(inner))
         entry = _pb_field(1, 2, key.encode()) + _pb_field(2, 2, feed)
@@ -400,6 +414,10 @@ class TickStream:
         # BT1: a user's own (bring-your-own-broker) stream does not feed the platform-wide listeners (the lake recorder):
         # data fetched under one user's entitlement is never pooled.
         self.notify_listeners = True
+        # M71 PL-1b: this stream's own listeners (the universe feed's bar builder) - told about every tick of THIS stream
+        # only, whatever `notify_listeners` says; the platform-wide `tick_listeners` never see a stream that opts out.
+        self.listeners: list[Callable[[Tick], None]] = []
+        self._volumes: dict[str, int] = {}                  # wire key -> cumulative volume decoded with the last frame
         self._wanted: Dict[str, Tuple[str, str]] = {}     # wire key -> (symbol, exchange)
         self._pending: Set[str] = set()                     # wire keys not yet sent to this connection
         self._pending_unsub: Set[str] = set()
@@ -559,11 +577,17 @@ class TickStream:
             if target is None or ltp is None or ltp <= 0:
                 continue
             symbol, exchange = target
-            tick = Tick(broker=self.name, exchange=exchange, symbol=symbol, ltp=float(ltp), exchange_ts=exchange_ts, received_at=now)
+            tick = Tick(broker=self.name, exchange=exchange, symbol=symbol, ltp=float(ltp), exchange_ts=exchange_ts, received_at=now,
+                        volume_total=self._volumes.pop(key, None))
             await self.cache.put(tick)
             if self.notify_listeners:
                 for listener in tick_listeners:
                     listener(tick)
+            for own in self.listeners:
+                try:
+                    own(tick)
+                except Exception:  # noqa: BLE001 - a listener never breaks the stream
+                    logger.exception("%s stream: tick listener failed", self.name)
             self.ticks += 1
             self.last_tick_at = now
             TICKS_RECEIVED.labels(broker=self.name).inc()
@@ -602,9 +626,11 @@ class UpstoxTickStream(TickStream):
     AUTHORIZE_URL = "https://api.upstox.com/v3/feed/market-data-feed/authorize"
     MODE = "ltpc"
 
-    def __init__(self, adapter, **kw) -> None:
+    def __init__(self, adapter, *, mode: str | None = None, **kw) -> None:
         super().__init__(**kw)
         self.adapter = adapter
+        # M71 PL-1b: the universe feed may ask for "full" (carries the day's volume); every other stream keeps LTPC.
+        self.mode = mode if mode in ("ltpc", "full") else self.MODE
 
     async def connect_url(self) -> str:
         data = await self.adapter._request("GET", self.AUTHORIZE_URL)
@@ -619,7 +645,7 @@ class UpstoxTickStream(TickStream):
 
     def subscribe_frames(self, keys: Iterable[str]) -> List[Any]:
         return [json.dumps({"guid": uuid.uuid4().hex[:16], "method": "sub",
-                            "data": {"mode": self.MODE, "instrumentKeys": list(keys)}}).encode()]
+                            "data": {"mode": self.mode, "instrumentKeys": list(keys)}}).encode()]
 
     def unsubscribe_frames(self, keys: Iterable[str]) -> List[Any]:
         return [json.dumps({"guid": uuid.uuid4().hex[:16], "method": "unsub",
@@ -630,6 +656,8 @@ class UpstoxTickStream(TickStream):
             return []
         out = []
         for key, ltpc in decode_upstox_v3(bytes(frame)).items():
+            if ltpc.get("vtt") is not None:
+                self._volumes[key] = int(ltpc["vtt"])
             out.append((key, float(ltpc["ltp"]), _epoch_to_dt(ltpc.get("ltt"), millis=True)))
         return out
 
@@ -709,10 +737,20 @@ def stream_for(adapter) -> Optional[TickStream]:
 class StreamManager:
     """The worker's streams: one task per broker session key, resubscribed every cycle."""
 
-    def __init__(self, factory: Callable[[Any], Optional[TickStream]] = stream_for) -> None:
+    def __init__(self, factory: Callable[[Any], Optional[TickStream]] = stream_for,
+                 on_created: Callable[[str, TickStream], None] | None = None) -> None:
         self.factory = factory
+        # M71 PL-1b: told about every stream this manager (re)creates, before it runs (the universe feed wires its bar
+        # recorder and its reconnect / gap hooks there).
+        self.on_created = on_created
         self._streams: Dict[str, TickStream] = {}
         self._tasks: Dict[str, asyncio.Task] = {}
+
+    def get(self, key: str) -> TickStream | None:
+        return self._streams.get(key)
+
+    def keys(self) -> list[str]:
+        return list(self._streams)
 
     async def ensure(self, key: str, adapter, symbols: Iterable[Tuple[str, str]]) -> Optional[TickStream]:
         stream = self._streams.get(key)
@@ -721,6 +759,8 @@ class StreamManager:
             stream = self.factory(adapter)
             if stream is None:
                 return None
+            if self.on_created is not None:
+                self.on_created(key, stream)
             self._streams[key] = stream
             self._tasks[key] = asyncio.create_task(stream.run(), name=f"tick-stream:{key}")
         await stream.set_symbols(symbols)

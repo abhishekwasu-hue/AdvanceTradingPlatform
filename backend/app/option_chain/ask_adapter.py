@@ -131,6 +131,7 @@ class ChainRead:
     history: List[HistoryPoint] = field(default_factory=list)
     history_note: Optional[str] = None
     source: Optional[Dict[str, str]] = None
+    snapshot: dict[str, Any] | None = None           # M71 W2-E: an earlier chain shown while the broker is busy (its age)
 
 
 async def _record(session: AsyncSession, user: User, underlying: str) -> Tuple[Any, bool, Optional[str]]:
@@ -171,7 +172,21 @@ async def read(session: AsyncSession, user: User, underlying: str, expiry: Optio
     if record is None:
         base.state, base.message = "no_broker", refusal or NO_BROKER
         return base
-    chain = await _read_chain(record, underlying, expiry)
+    from app.option_chain import chain_reads
+    got: chain_reads.ChainGot | None = None
+    if await chain_reads.store_on(session, user.tenant_id):  # M71 W2-E: paced, shared per credential, busy -> the last chain
+        from app.market_data import candles_routes
+        from app.option_chain.as_of import chain_as_of
+        when = await chain_as_of(session, underlying, now)
+        got = await chain_reads.read(session, user, record, underlying, expiry, now=now,
+                                     closed_since=when.at if when.closed else None, build=candles_routes.build_adapter)
+        chain = got.chain
+        if chain is None:
+            base.state = "unavailable"
+            base.message = chain_reads.BUSY_MESSAGE if got.state == chain_reads.BUSY else UNAVAILABLE
+            return base
+    else:
+        chain = await _read_chain(record, underlying, expiry)
     if chain is None:
         base.state, base.message = "unavailable", UNAVAILABLE
         return base
@@ -179,19 +194,25 @@ async def read(session: AsyncSession, user: User, underlying: str, expiry: Optio
     if not chain.rows:
         base.state, base.message = "no_data", NO_CHAIN
         return base
-    await meter(session, user.tenant_id, "market_data_chains", quantity=1, source="api",
-                metadata={"broker": record.broker_name, "expiry": base.expiry, "use": "option_chain_ask"}, commit=True)
+    stale = got is not None and got.stale
+    if stale:
+        base.snapshot = got.snapshot(now) if got is not None else None
+    else:                                       # an earlier chain shown while the broker is busy is no new read
+        await meter(session, user.tenant_id, "market_data_chains", quantity=1, source="api",
+                    metadata={"broker": record.broker_name, "expiry": base.expiry, "use": "option_chain_ask"}, commit=True)
+    cutoff = got.captured_at if stale and got is not None and got.captured_at else now
     base.spot = _finite(chain.underlying_ltp)
     base.rows = flat_rows(view_rows_for(chain))
     base.source = {"broker": str(record.broker_name), "account_label": str(record.account_label)}
     if byob:                                    # B1: his own earlier reads are his session; this read is stored as his
         from app.option_chain import own_snapshots
         stored = await own_snapshots.day(session, user, underlying, now.astimezone(IST).date())
-        base.history = history_points(own_snapshots.as_slots(stored), base.expiry, now)
-        await own_snapshots.record(session, user, record, underlying, chain, now)
+        base.history = history_points(own_snapshots.as_slots(stored), base.expiry, cutoff)
+        if got is None or got.captured_at is None:          # an earlier chain was stored when it was read
+            await own_snapshots.record(session, user, record, underlying, chain, now)
     else:
         slots = await snapshots.day_chains(session, underlying, now.astimezone(IST).date(), tenant_id=user.tenant_id)
-        base.history = history_points(slots, base.expiry, now)
+        base.history = history_points(slots, base.expiry, cutoff)
     return base
 
 

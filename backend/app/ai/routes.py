@@ -1040,7 +1040,11 @@ class StrategistParseBody(BaseModel):
 
 
 async def _strategist_frames(session: AsyncSession, user: User, body: StrategistBody):
-    """1-minute candles (and daily ones from the broker) for the study."""
+    """1-minute candles (and daily ones from the broker) for the study.
+
+    M71 W2-B (flag `market_store_reads`): the own store first - the 1-minute bars from the asker's own stored bars plus
+    only the newest ones through his own session, the daily ones from the NSE files (zero broker calls); a frame the
+    store holds nothing of is read from the broker exactly as before."""
     if body.candles:
         return interview.frame_from_candles(body.candles[-6000:]), None, "candles"
     from app.brokers.token_lifecycle import build_adapter
@@ -1048,34 +1052,54 @@ async def _strategist_frames(session: AsyncSession, user: User, body: Strategist
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
     symbol, exchange = body.symbol.strip().upper(), body.exchange.strip().upper()
+    stored = stored_day = None
+    if await evidence.store_on(session, user.tenant_id):
+        stored = await evidence.store_frame(session, user.tenant_id, symbol, exchange, "1min", lookback_days=12, user=user,
+                                            broker=body.broker, checked=True)
+        stored_day = await evidence.store_frame(session, user.tenant_id, symbol, exchange, "day", lookback_days=400, user=user,
+                                                checked=True)
+    if stored is not None:
+        stored.frame.attrs["data_gaps"] = list(stored.gaps)            # what the store does not hold, said plainly
+    if stored is not None and stored_day is not None:
+        return stored.frame, stored_day.frame, stored.source          # the store holds both: no broker session needed
     namespace = None
-    if await live_access.byob_on(session, user.tenant_id):
-        # BT1b: the user's own confirmed session, cached for that session only.
-        own = await live_access.user_source(session, user, [(symbol, exchange)], broker=body.broker)
-        if not own.allows(symbol, exchange):
-            raise live_access.LiveDataRefused(own.reason(symbol, exchange))
-        record, namespace = own.record, own.namespace
-    else:
-        record = await _pick_record(session, user.tenant_id, body.broker, "primary")
+    try:
+        if await live_access.byob_on(session, user.tenant_id):
+            # BT1b: the user's own confirmed session, cached for that session only.
+            own = await live_access.user_source(session, user, [(symbol, exchange)], broker=body.broker)
+            if not own.allows(symbol, exchange):
+                raise live_access.LiveDataRefused(own.reason(symbol, exchange))
+            record, namespace = own.record, own.namespace
+        else:
+            record = await _pick_record(session, user.tenant_id, body.broker, "primary")
+    except HTTPException:
+        if stored is None:
+            raise
+        return stored.frame, None, stored.source       # M71 W2-B: the stored 1-minute bars; daily bars only add context
     adapter = build_adapter(record)
-    try:
-        bars = await MarketDataService(adapter, lookback_days=12, cache_namespace=namespace).get_candles(symbol, exchange, "1min")
-    except Exception as exc:  # noqa: BLE001 - say what the broker said
-        raise HTTPException(status_code=502, detail=f"Could not fetch {symbol} candles from {record.broker_name}: {type(exc).__name__}: {exc}"[:300]) from exc
-    if not bars:
-        raise HTTPException(status_code=422, detail=f"{record.broker_name} returned no candles for {symbol}")
-    day = None
-    try:
-        day_bars = await MarketDataService(adapter, lookback_days=400, cache_namespace=namespace).get_candles(symbol, exchange, "day")
-        day = bars_to_dataframe(day_bars) if day_bars else None
-        if day is not None and day.index.tz is None:
-            day.index = day.index.tz_localize("UTC")
-    except Exception:  # noqa: BLE001 - daily bars only add the daily trend and previous-day levels
-        day = None
-    df = bars_to_dataframe(bars)
-    if df.index.tz is None:
-        df.index = df.index.tz_localize("UTC")
-    return df, day, f"broker:{record.broker_name}"
+    if stored is not None:
+        df, source = stored.frame, stored.source
+    else:
+        try:
+            bars = await MarketDataService(adapter, lookback_days=12, cache_namespace=namespace).get_candles(symbol, exchange, "1min")
+        except Exception as exc:  # noqa: BLE001 - say what the broker said
+            raise HTTPException(status_code=502, detail=f"Could not fetch {symbol} candles from {record.broker_name}: {type(exc).__name__}: {exc}"[:300]) from exc
+        if not bars:
+            raise HTTPException(status_code=422, detail=f"{record.broker_name} returned no candles for {symbol}")
+        df = bars_to_dataframe(bars)
+        if df.index.tz is None:
+            df.index = df.index.tz_localize("UTC")
+        source = f"broker:{record.broker_name}"
+    day = stored_day.frame if stored_day is not None else None
+    if day is None:
+        try:
+            day_bars = await MarketDataService(adapter, lookback_days=400, cache_namespace=namespace).get_candles(symbol, exchange, "day")
+            day = bars_to_dataframe(day_bars) if day_bars else None
+            if day is not None and day.index.tz is None:
+                day.index = day.index.tz_localize("UTC")
+        except Exception:  # noqa: BLE001 - daily bars only add the daily trend and previous-day levels
+            day = None
+    return df, day, source
 
 
 @router.post("/strategist/parse")
@@ -1101,6 +1125,8 @@ async def strategist_study(body: StrategistBody, user: User = Depends(require_ai
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     out["data_source"] = source
+    if df.attrs.get("data_gaps"):
+        out["data_gaps"] = df.attrs["data_gaps"]                     # M71 W2-B: the store's plain gap lines
     out["request_parsed"] = parsed
     return out
 
@@ -1127,7 +1153,7 @@ async def strategist_build(body: StrategistBody, user: User = Depends(require_ai
         await ai_resolve.mark_used(session, user.tenant_id, provider, error=None)
         await session.commit()
     result = await run_in_threadpool(strategist.build, df, study, body.language, style=body.style, direction=body.direction, risk=cfg,
-                                     real_data=str(source).startswith("broker"),
+                                     real_data=evidence.is_server(source) and source != "candles",   # M71 W2-B: stored bars are real data too
                                      extra_configs=extra)
     # P0.8 / A3: the validated candidates are held on the server; "adopt" takes a candidate id, never a config.
     now = datetime.now(timezone.utc)
@@ -1141,8 +1167,8 @@ async def strategist_build(body: StrategistBody, user: User = Depends(require_ai
         await session.flush()
         plan["candidate_id"] = row.id
     await session.commit()
-    return {"study": study, **result, "data_source": source, "ai_candidates": len(extra), "provider": provider.name, "request_parsed": parsed,
-            "language": body.language}
+    return {"study": study, **result, "data_source": source, **({"data_gaps": df.attrs["data_gaps"]} if df.attrs.get("data_gaps") else {}),
+            "ai_candidates": len(extra), "provider": provider.name, "request_parsed": parsed, "language": body.language}
 
 
 class AdoptBody(BaseModel):

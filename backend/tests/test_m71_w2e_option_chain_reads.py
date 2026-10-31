@@ -98,9 +98,9 @@ def test_flag_on_paces_the_call_and_a_second_refresh_in_the_window_makes_no_brok
     taken = []
     real_take = api_budget.take
 
-    async def spy_take(record_id, broker_name, wait_seconds=None, kind="quote"):
+    async def spy_take(record_id, broker_name, wait_seconds=None, kind="quote", windows=False):
         taken.append((record_id, kind))
-        return await real_take(record_id, broker_name, wait_seconds, kind)
+        return await real_take(record_id, broker_name, wait_seconds, kind, windows=windows)
     monkeypatch.setattr(api_budget, "take", spy_take)
     headers, me = _owner("on", store=True)
     first, second = _refresh(headers, name)
@@ -353,7 +353,7 @@ def test_the_recorder_slot_uses_the_data_pool_and_no_token_is_a_gap(monkeypatch)
     monkeypatch.setattr(master, "INDEX_SYMBOLS", {})
     grants = [True, False]
 
-    async def take(record_id, broker_name, wait_seconds=None, kind="quote"):
+    async def take(record_id, broker_name, wait_seconds=None, kind="quote", windows=False):
         return grants.pop(0)
     monkeypatch.setattr(api_budget, "take", take)
     report = run(chain_recorder.record_slot(_session_factory, budget_for=lambda t, k: Budget(),

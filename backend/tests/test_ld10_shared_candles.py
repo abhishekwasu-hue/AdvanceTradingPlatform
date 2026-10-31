@@ -328,11 +328,12 @@ def test_bucket_in_the_shared_script_bursts_and_refills(monkeypatch):
     api_budget.reset()
     got = [run(api_budget.try_take(82, "dhan", "history")) for _ in range(3)]
     keys, argv = fake.evals[0]
-    assert got == [True, True, False] and keys == ("ab:{82}:tb", "ab:{82}:60") and argv[:4] == (1, 2, 60, 50) and argv[-1] == 0
+    assert got == [True, True, False] and keys[:2] == ("ab:{82}:tb", "ab:{82}:60") and argv[:4] == (1, 2, 60, 50) and argv[-1] == 0
     time.sleep(1.05)
     assert run(api_budget.try_take(82, "dhan")) is False                    # a quote must leave the burst: 1 token is not 2
     assert [run(api_budget.try_take(82, "dhan", "history")), run(api_budget.try_take(82, "dhan", "history"))] == [True, False]
     assert fake.evals[-3][1][-1] == 1                                       # the quote's reserve went to the script
+    assert all(k.startswith("bl:{82}:") for k in keys[2:])                  # M71 PL-2: the published windows, same slot
     api_budget.reset()
 
 

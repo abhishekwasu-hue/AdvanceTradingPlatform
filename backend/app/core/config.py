@@ -1031,3 +1031,24 @@ STOP_GUARD_MAX_EXIT_ATTEMPTS = _bounded_int("STOP_GUARD_MAX_EXIT_ATTEMPTS", 3, 1
 # - BROKER_DAILY_ORDER_EXIT_RESERVE_SHARE: of the per-day order cap, this share is kept for exits (entries stop before it).
 BROKER_DAILY_CAP_SHARE = _bounded_float("BROKER_DAILY_CAP_SHARE", 0.9, 0.1, 1.0)
 BROKER_DAILY_ORDER_EXIT_RESERVE_SHARE = _bounded_float("BROKER_DAILY_ORDER_EXIT_RESERVE_SHARE", 0.1, 0.0, 0.5)
+# M71 PL-2 (operational settings, not trading values; app/brokers/broker_limits.py):
+# - BROKER_BUDGET_SAFETY_MARGIN: ATP stays this share below every published broker limit (all windows).
+# - BROKER_ORDER_EXIT_RESERVE_SHARE: of every order-pool window, this share is kept for exits, stops, changes and cancels.
+# - BROKER_DATA_PRIORITY_RESERVE_SHARE: of every data-pool window, this share is kept for an exit's own reads.
+# - BROKER_DATA_MAX_WAIT_SECONDS: a data call waits at most this long for a slot, then gets a plain "busy" error.
+# - BROKER_EXIT_MAX_WAIT_SECONDS: an exit waits at most this long for the next slot, then is sent (never refused).
+# - BROKER_429_*: back-off after a broker "too many requests" (exponential, with jitter) and its total wait per call.
+# - BROKER_UPSTOX_LIMIT_SET: "conservative" (default, the lower published figures) or "r33" (the owner's research).
+BROKER_BUDGET_SAFETY_MARGIN = _bounded_float("BROKER_BUDGET_SAFETY_MARGIN", 0.10, 0.0, 0.5)
+BROKER_ORDER_EXIT_RESERVE_SHARE = _bounded_float("BROKER_ORDER_EXIT_RESERVE_SHARE", 0.2, 0.0, 0.5)
+BROKER_DATA_PRIORITY_RESERVE_SHARE = _bounded_float("BROKER_DATA_PRIORITY_RESERVE_SHARE", 0.1, 0.0, 0.5)
+BROKER_DATA_MAX_WAIT_SECONDS = _bounded_float("BROKER_DATA_MAX_WAIT_SECONDS", 30.0, 0.0, 600.0)
+# - BROKER_DATA_CALL_WAIT_SECONDS: an API data read (chart, screen, Copilot) waits at most this long for its next slot
+#   (also when a minute or 30-minute window is full), within its request's own allowance, before a plain "busy" gap.
+BROKER_DATA_CALL_WAIT_SECONDS = _bounded_float("BROKER_DATA_CALL_WAIT_SECONDS", 20.0, 0.0, 300.0)
+BROKER_EXIT_MAX_WAIT_SECONDS = _bounded_float("BROKER_EXIT_MAX_WAIT_SECONDS", 2.0, 0.0, 60.0)
+BROKER_429_BASE_SECONDS = _bounded_float("BROKER_429_BASE_SECONDS", 0.5, 0.05, 10.0)
+BROKER_429_CAP_SECONDS = _bounded_float("BROKER_429_CAP_SECONDS", 8.0, 0.1, 120.0)
+BROKER_429_DATA_MAX_WAIT_SECONDS = _bounded_float("BROKER_429_DATA_MAX_WAIT_SECONDS", 20.0, 0.0, 600.0)
+BROKER_429_ORDER_MAX_WAIT_SECONDS = _bounded_float("BROKER_429_ORDER_MAX_WAIT_SECONDS", 60.0, 0.0, 600.0)
+BROKER_UPSTOX_LIMIT_SET = (os.environ.get("BROKER_UPSTOX_LIMIT_SET") or "conservative").strip().lower()

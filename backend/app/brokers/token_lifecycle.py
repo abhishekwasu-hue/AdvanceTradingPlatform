@@ -14,6 +14,7 @@ the token it holds is still good before it fires a live order. This module is th
   callback (which arrives unauthenticated from the browser) to the tenant that started it; for
   Zerodha and Fyers (UI2-5) also a single-use nonce whose hash waits on the credential row.
 """
+import contextlib
 import hashlib
 import hmac
 import json
@@ -147,7 +148,15 @@ def build_adapter(record: BrokerCredentialRecord, client: Optional[httpx.AsyncCl
     adapter = get_broker_adapter(record.broker_name, load_credentials(record), client)
     from app.brokers.upstox_analytics import attach_refusal_hook
     attach_refusal_hook(adapter, record)   # Upstox analytics token: a refusal re-probes this row (this tenant's) only
-    return wrap_contract_symbols(adapter)
+    from app.brokers.shared_http import count_requests
+    for attr in ("_client", "_order_client"):         # M71 PL-2: every HTTP request counted per day (broker_limits)
+        count_requests(getattr(adapter, attr, None), record.broker_name)  # type: ignore[arg-type]
+    wrapped = wrap_contract_symbols(adapter)
+    if isinstance(getattr(record, "id", None), int):
+        # M71 PL-2: the credential whose published broker windows a RateLimitedBroker around it shares (broker_limits).
+        with contextlib.suppress(AttributeError):
+            wrapped.atp_credential_id = record.id   # type: ignore[attr-defined]
+    return wrapped
 
 
 async def get_credential_record(

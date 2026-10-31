@@ -10,6 +10,10 @@ import { SelectOrCombobox } from "../ui/Combobox";
 import { useLiveHidden } from "../settings/useLiveHidden";
 import { strategyDisplayName } from "../ui/strategyName";
 import { Details } from "../ui/Details";
+import { formatNumber } from "../ui/format";
+
+/** M63 I-7: figures go through the shared formatter (src/ui/format.ts); "-" stays this page's mark for a missing one. */
+const num = (v: number | null | undefined, decimals: number) => (v == null ? "-" : formatNumber(v, decimals));
 
 /** REV-1 M2: the Tax card's trade choices. In Phase 0 (PAPER only) it opens on PAPER and LIVE / ALL are not offered -
  * there are no LIVE trades, so a LIVE report would only ever say 0. */
@@ -33,7 +37,7 @@ function TaxReportCard() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { api.taxYears().then((y) => { setYears(y.years); setFy((f) => f || y.current); }).catch((e) => setError(errorSentence(e))); }, []);
   useEffect(() => { if (fy) api.taxReport(fy, mode).then(setReport).catch((e) => setError(errorSentence(e))); }, [fy, mode]);
-  const money = (v: number) => v.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  const money = (v: number) => formatNumber(v, 0);
   async function download() {
     setError(null);
     let res: Response;
@@ -102,8 +106,8 @@ function GroupTable({ title, keyLabel, rows, labelOf = (k) => k }: { title: stri
               <tr key={r.key} className="border-t border-border">
                 <td className="py-1 pr-3 font-medium text-fg">{labelOf(r.key)}</td>
                 <td className="py-1 pr-3">{r.trades}</td>
-                <td className="py-1 pr-3">{r.win_rate.toFixed(1)}%</td>
-                <td className={`py-1 pr-3 ${signClass(r.net_pnl)}`}>{r.net_pnl.toFixed(2)}</td>
+                <td className="py-1 pr-3">{formatNumber(r.win_rate, 1)}%</td>
+                <td className={`py-1 pr-3 ${signClass(r.net_pnl)}`}>{formatNumber(r.net_pnl, 2)}</td>
               </tr>
             ))}
           </tbody>
@@ -157,10 +161,10 @@ export default function AnalyticsPage() {
                 <td className="py-1 pr-3" data-mode>{modeWord(r.mode)}</td>
                 <td className={`py-1 pr-3 font-bold ${r.status === "DEGRADED" ? "text-down" : r.status === "WATCH" ? "text-warn" : r.status === "OK" ? "text-up" : "text-fg-muted"}`}>{r.status.replace("_", " ")}</td>
                 <td className="py-1 pr-3">{r.live.trades}</td>
-                <td className="py-1 pr-3">{r.live.win_rate != null ? `${(r.live.win_rate * 100).toFixed(0)}%` : "-"}</td>
-                <td className="py-1 pr-3">{r.recent_20.win_rate != null ? `${(r.recent_20.win_rate * 100).toFixed(0)}%` : "-"}</td>
-                <td className="py-1 pr-3">{r.backtest?.win_rate != null ? `${(r.backtest.win_rate * 100).toFixed(0)}%` : "-"}</td>
-                <td className={`py-1 pr-3 ${signClass(r.live.expectancy, 1)}`}>{r.live.expectancy?.toFixed(1) ?? "-"}</td>
+                <td className="py-1 pr-3">{r.live.win_rate != null ? `${formatNumber(r.live.win_rate * 100, 0)}%` : "-"}</td>
+                <td className="py-1 pr-3">{r.recent_20.win_rate != null ? `${formatNumber(r.recent_20.win_rate * 100, 0)}%` : "-"}</td>
+                <td className="py-1 pr-3">{r.backtest?.win_rate != null ? `${formatNumber(r.backtest.win_rate * 100, 0)}%` : "-"}</td>
+                <td className={`py-1 pr-3 ${signClass(r.live.expectancy, 1)}`}>{num(r.live.expectancy, 1)}</td>
                 <td className="py-1 pr-3 text-fg-muted">{r.reasons.join("; ")}</td>
               </tr>
             ))}</tbody></table>
@@ -173,12 +177,12 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatTile label="Total Trades" value={summary.total_trades} />
         <StatTile label="Closed / Open" value={`${summary.closed_trades} / ${summary.open_trades}`} />
-        <StatTile label="Win Rate" value={`${summary.win_rate.toFixed(1)}%`} />
-        <StatTile label="Net P&L" value={summary.net_pnl.toFixed(2)} tone={signTone(summary.net_pnl)} />
-        <StatTile label="Gross Profit" value={summary.gross_profit.toFixed(2)} tone={signTone(summary.gross_profit)} />
-        <StatTile label="Gross Loss" value={summary.gross_loss.toFixed(2)} tone={summary.gross_loss !== 0 ? "down" : "default"} />
-        <StatTile label="Profit Factor" value={summary.profit_factor?.toFixed(2) ?? "-"} />
-        <StatTile label="Avg Win / Loss" value={`${summary.avg_win.toFixed(2)} / ${summary.avg_loss.toFixed(2)}`} />
+        <StatTile label="Win Rate" value={`${formatNumber(summary.win_rate, 1)}%`} />
+        <StatTile label="Net P&L" value={formatNumber(summary.net_pnl, 2)} tone={signTone(summary.net_pnl)} />
+        <StatTile label="Gross Profit" value={formatNumber(summary.gross_profit, 2)} tone={signTone(summary.gross_profit)} />
+        <StatTile label="Gross Loss" value={formatNumber(summary.gross_loss, 2)} tone={summary.gross_loss !== 0 ? "down" : "default"} />
+        <StatTile label="Profit Factor" value={num(summary.profit_factor, 2)} />
+        <StatTile label="Avg Win / Loss" value={`${formatNumber(summary.avg_win, 2)} / ${formatNumber(summary.avg_loss, 2)}`} />
       </div>
 
       <GroupTable title="By strategy" keyLabel="Strategy" rows={summary.by_strategy} labelOf={(k) => strategyDisplayName(k) || "My strategy"} />

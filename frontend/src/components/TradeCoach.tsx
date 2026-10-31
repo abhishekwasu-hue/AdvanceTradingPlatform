@@ -4,12 +4,13 @@ import { api } from "../api/client";
 import type { CoachGroup, CoachReview } from "../types";
 import { Card, signClass } from "./ui";
 import { strategyDisplayName } from "../ui/strategyName";
+import { formatINR } from "../ui/format";
 
 /**
  * Phase AV: the trade coach - your journal read like a mentor would: the numbers, where the money
  * is made and lost, and the habits to fix (revenge trades, overtrading, broken loss limits...).
  */
-const money = (v: number | undefined | null) => (v == null ? "-" : `${v < 0 ? "-" : ""}₹${Math.abs(v).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`);
+const money = (v: number | undefined | null) => (v == null ? "-" : formatINR(v));
 const SEV: Record<string, { cls: string; label: string }> = {
   high: { cls: "border-l-down bg-down/[0.06]", label: "Important" },
   medium: { cls: "border-l-warn bg-warn/[0.05]", label: "Watch" },

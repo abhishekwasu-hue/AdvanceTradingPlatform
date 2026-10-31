@@ -7,6 +7,7 @@ import type { ChartMarker, PriceLineSpec } from "../charting/markers";
 import { signClass } from "./ui";
 import { errorSentence } from "../api/errors";
 import { toast } from "./Toast";
+import { formatNumber, formatSignedINR } from "../ui/format";
 
 /**
  * Phase AO: strategies on the chart. Each inbuilt strategy gets two switches:
@@ -173,8 +174,8 @@ export function useChartStrategies({ enabled, candles, symbol, timeframe, exchan
                   {on && r && !("error" in r) && r.compatible && !r.last_signal && r.reason && <span className="block text-warn">{r.reason}</span>}
                   {on && r && !("error" in r) && r.compatible && r.last_signal && (
                     <span className="block text-fg-muted">
-                      {r.total_trades} trades · win {r.win_rate.toFixed(0)}% ·{" "}
-                      <b className={signClass(r.net_pnl, 0)}>{Math.round(r.net_pnl) > 0 ? "+" : ""}₹{Math.round(r.net_pnl).toLocaleString("en-IN")}</b>
+                      {r.total_trades} trades · win {formatNumber(r.win_rate, 0)}% ·{" "}
+                      <b className={signClass(r.net_pnl, 0)}>{formatSignedINR(r.net_pnl)}</b>
                       {r.last_signal && r.last_signal.direction !== "NO_TRADE" && <span className="text-fg-muted"> · now {r.last_signal.direction} @ {r.last_signal.entry}</span>}
                     </span>
                   )}

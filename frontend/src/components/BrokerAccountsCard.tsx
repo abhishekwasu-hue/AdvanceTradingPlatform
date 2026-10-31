@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { BrokerAccount, SmokeReport } from "../types";
 import { Card } from "./ui";
-import { formatDateTimeIST, formatTimeIST } from "../ui/format";
+import { formatDateTimeIST, formatNumber, formatTimeIST } from "../ui/format";
 import { Details } from "../ui/Details";
 
 /**
@@ -49,7 +49,7 @@ export default function BrokerAccountsCard({ refreshKey = 0 }: { refreshKey?: nu
     }
   }
 
-  const money = (v: number | null) => (v == null ? "-" : v.toLocaleString("en-IN", { maximumFractionDigits: 0 }));
+  const money = (v: number | null) => (v == null ? "-" : formatNumber(v, 0));
 
   return (
     <Card title={`Broker accounts (${accounts.length})`}>

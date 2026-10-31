@@ -12,7 +12,10 @@ import { Card, DirectionBadge, StatTile, signClass } from "../components/ui";
 import type { PositionGreeks, TradeRecord } from "../types";
 import { PageHeader, SkeletonRows } from "../components/primitives";
 import { useFeatures } from "../ui/useFeatures";
-import { formatTimeIST } from "../ui/format";
+import { formatNumber, formatTimeIST } from "../ui/format";
+
+/** M63 I-7: figures go through the shared formatter (src/ui/format.ts); "-" stays this page's mark for a missing one. */
+const num = (v: number | null | undefined, decimals: number) => (v == null ? "-" : formatNumber(v, decimals));
 
 // N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
@@ -70,7 +73,7 @@ export default function PositionsPage() {
       setMarkMessages((m) => ({
         ...m,
         [tradeId]: result.closed
-          ? `Closed: ${result.exit_reason} @ ${result.exit_price} (P&L ${result.pnl?.toFixed(2)})`
+          ? `Closed: ${result.exit_reason} @ ${result.exit_price} (P&L ${formatNumber(result.pnl, 2)})`
           : "Price doesn't hit SL/target yet - still open.",
       }));
       if (result.closed) refresh();
@@ -87,7 +90,7 @@ export default function PositionsPage() {
     try {
       const result = await api.exitNow(tradeId);
       const first = result.closed[0];
-      setMarkMessages((m) => ({ ...m, [tradeId]: `Closed: ${first?.exit_reason} @ ${first?.exit_price} (P&L ${first?.pnl?.toFixed(2)})` }));
+      setMarkMessages((m) => ({ ...m, [tradeId]: `Closed: ${first?.exit_reason} @ ${first?.exit_price} (P&L ${formatNumber(first?.pnl, 2)})` }));
       refresh();
     } catch (e) {
       setMarkMessages((m) => ({ ...m, [tradeId]: errorSentence(e) }));
@@ -157,7 +160,7 @@ export default function PositionsPage() {
                       <tr key={l.trade_id} className="border-t border-border">
                         <td className="py-1 pr-3 text-fg">{l.symbol}{l.leg_role ? <span className="text-fg-muted"> · {l.leg_role.toLowerCase()}</span> : null}</td>
                         <td className="py-1 pr-3">{l.quantity}</td><td className="py-1 pr-3">{l.premium}</td>
-                        <td className="py-1 pr-3">{(l.implied_volatility * 100).toFixed(1)}%</td>
+                        <td className="py-1 pr-3">{formatNumber(l.implied_volatility * 100, 1)}%</td>
                         <td className="py-1 pr-3">{l.delta}</td><td className="py-1 pr-3">{l.gamma}</td><td className="py-1 pr-3">{l.theta}</td><td className="py-1 pr-3">{l.vega}</td>
                         <td className="py-1 pr-3 font-semibold">{l.position_delta}</td>
                       </tr>
@@ -190,16 +193,16 @@ export default function PositionsPage() {
                     </span>
                   )}
                   <span className="text-fg-muted text-xs">{p.strategy_id}</span>
-                  <span className="text-xs text-fg-muted">Entry {p.entry_price.toFixed(2)} × {p.quantity}</span>
+                  <span className="text-xs text-fg-muted">Entry {formatNumber(p.entry_price, 2)} × {p.quantity}</span>
                   {p.instrument_kind && p.instrument_kind !== "UNDERLYING" && p.underlying_symbol ? (
                     <span className="text-xs text-fg-muted">
-                      on {p.underlying_direction} {p.underlying_symbol}: SL {p.underlying_stop_loss?.toFixed(2) ?? "-"} / T1 {p.underlying_target1?.toFixed(2) ?? "-"}
-                      {p.instrument_kind === "OPTION" ? ` · premium ${p.option_position === "WRITE" ? "ceiling" : "floor"} ${p.stop_loss.toFixed(2)}` : ` · stop ${p.stop_loss.toFixed(2)}`}
+                      on {p.underlying_direction} {p.underlying_symbol}: SL {num(p.underlying_stop_loss, 2)} / T1 {num(p.underlying_target1, 2)}
+                      {p.instrument_kind === "OPTION" ? ` · premium ${p.option_position === "WRITE" ? "ceiling" : "floor"} ${formatNumber(p.stop_loss, 2)}` : ` · stop ${formatNumber(p.stop_loss, 2)}`}
                     </span>
                   ) : (
                     <>
-                      <span className="text-xs text-down">SL {p.stop_loss.toFixed(2)}</span>
-                      <span className="text-xs text-up">T1 {p.target1?.toFixed(2) ?? "-"}</span>
+                      <span className="text-xs text-down">SL {formatNumber(p.stop_loss, 2)}</span>
+                      <span className="text-xs text-up">T1 {num(p.target1, 2)}</span>
                     </>
                   )}
                 </div>
@@ -277,16 +280,16 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
               <td className="py-1 pr-3">
                 <DirectionBadge direction={r.direction as "LONG" | "SHORT"} />
               </td>
-              <td className="py-1 pr-3">{r.entry_price.toFixed(2)}</td>
+              <td className="py-1 pr-3">{formatNumber(r.entry_price, 2)}</td>
               <td className="py-1 pr-3">{r.quantity}</td>
-              <td className="py-1 pr-3 text-down">{r.stop_loss.toFixed(2)}</td>
-              <td className="py-1 pr-3 text-up">{r.target1?.toFixed(2) ?? (r.underlying_target1 != null ? `${r.underlying_target1.toFixed(2)} (${r.underlying_symbol})` : "-")}</td>
-              <td className="py-1 pr-3">{r.exit_price?.toFixed(2) ?? "-"}</td>
+              <td className="py-1 pr-3 text-down">{formatNumber(r.stop_loss, 2)}</td>
+              <td className="py-1 pr-3 text-up">{r.target1 != null ? formatNumber(r.target1, 2) : (r.underlying_target1 != null ? `${formatNumber(r.underlying_target1, 2)} (${r.underlying_symbol})` : "-")}</td>
+              <td className="py-1 pr-3">{num(r.exit_price, 2)}</td>
               <td className={`py-1 pr-3 ${signClass(r.pnl)}`}>
-                {r.pnl?.toFixed(2) ?? "-"}
+                {num(r.pnl, 2)}
               </td>
               <td className="py-1 pr-3 text-fg-muted" title={r.charges_source === "CONTRACT_NOTE" ? "Broker's actual charges from an uploaded contract note" : "Platform estimate (NSE cost model)"}>
-                {r.charges.toFixed(2)} <span className={`text-xs uppercase ${r.charges_source === "CONTRACT_NOTE" ? "font-semibold text-fg" : "text-fg-muted"}`}>{r.charges_source === "CONTRACT_NOTE" ? "actual" : "est."}</span>
+                {formatNumber(r.charges, 2)} <span className={`text-xs uppercase ${r.charges_source === "CONTRACT_NOTE" ? "font-semibold text-fg" : "text-fg-muted"}`}>{r.charges_source === "CONTRACT_NOTE" ? "actual" : "est."}</span>
               </td>
               <td className="py-1 pr-3 text-fg-muted">
                 {r.regime_at_entry && <div className="text-xs uppercase">{r.regime_at_entry.replace("_", " ").toLowerCase()}</div>}

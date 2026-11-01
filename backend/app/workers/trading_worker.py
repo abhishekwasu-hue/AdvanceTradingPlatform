@@ -2284,7 +2284,7 @@ class TradingWorker:
         if rules.kind == InstrumentKind.OPTION and structure_kind != OptionStrategy.SINGLE:
             try:
                 structure = await resolve_structure(
-                    session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
+                    session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width,
                     spot=spot, today=today, chain_provider=chains, custom_legs=parse_custom_legs(getattr(dep, "custom_legs", None)),
                 )
             except (ContractResolutionError, ValueError) as exc:
@@ -2314,7 +2314,7 @@ class TradingWorker:
         spot = float(base["close"].iloc[-1]) if len(base) else None
         try:
             structure = await resolve_structure(
-                session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
+                session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width,
                 spot=spot, today=now.astimezone(IST).date(), chain_provider=_chain_provider(market_data.broker, self._cycle_chains),
                 custom_legs=parse_custom_legs(getattr(dep, "custom_legs", None)),
             )

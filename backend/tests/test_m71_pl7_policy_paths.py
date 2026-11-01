@@ -269,7 +269,7 @@ def test_migration_allows_missing_volume_adds_the_windows_table_and_goes_down():
     spec = importlib.util.spec_from_file_location("m71_pl7_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module.down_revision == "8d2f4a6c0e19" and module.ROLLBACK_SAFE is False
+    assert module.down_revision == "6b9d1f3a5c27" and module.ROLLBACK_SAFE is False
     engine = sa.create_engine("sqlite://")
     with engine.begin() as conn:
         conn.execute(sa.text("CREATE TABLE tenants (id INTEGER PRIMARY KEY, name VARCHAR(255))"))

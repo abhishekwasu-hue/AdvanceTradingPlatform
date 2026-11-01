@@ -11,7 +11,7 @@ Downgrade drops `data_use_windows` and restores NOT NULL on the volume column, w
 previous release's readers need a number), so the previous release reads every row.
 
 Revision ID: c5e7a9b1d3f6
-Revises: 8d2f4a6c0e19
+Revises: 6b9d1f3a5c27
 Create Date: 2026-11-01 12:00:00
 """
 from collections.abc import Sequence
@@ -21,7 +21,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c5e7a9b1d3f6'
-down_revision: str | Sequence[str] | None = '8d2f4a6c0e19'
+down_revision: str | Sequence[str] | None = '6b9d1f3a5c27'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 ROLLBACK_SAFE = False    # Z11: md_tenant_candles.volume may hold NULL once the seed import has run - the previous release's private-store readers expect a number; a code-only rollback past it is refused, use --restore-db (or this downgrade)

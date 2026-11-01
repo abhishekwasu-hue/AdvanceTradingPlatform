@@ -1,6 +1,6 @@
 import { BookOpen, Crosshair, Info, ShoppingBasket, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { cx } from "../components/primitives/cx";
 import { formatDateIST, formatNumber } from "../ui/format";
 import { useFeatures } from "../ui/useFeatures";
@@ -185,13 +185,13 @@ export function SetupChainLinkV2({ item }: { item: { id: string; symbol: string;
   if (!href) return null;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-space-4">
-      <Link to={href} data-setup-link className="inline-flex min-h-11 items-center gap-space-1 text-t14 font-semibold text-brand hover:underline">
+      <InPlaceLink to={href} data-setup-link className="inline-flex min-h-11 items-center gap-space-1 text-t14 font-semibold text-brand hover:underline">
         <Crosshair size={16} aria-hidden className="shrink-0" /> Your strikes on the chain
-      </Link>
+      </InPlaceLink>
       {trade && (
-        <Link to={trade} data-setup-trade-link className="inline-flex min-h-11 items-center gap-space-1 text-t14 font-semibold text-brand hover:underline">
+        <InPlaceLink to={trade} data-setup-trade-link className="inline-flex min-h-11 items-center gap-space-1 text-t14 font-semibold text-brand hover:underline">
           <ShoppingBasket size={16} aria-hidden className="shrink-0" /> Trade this setup
-        </Link>
+        </InPlaceLink>
       )}
     </span>
   );

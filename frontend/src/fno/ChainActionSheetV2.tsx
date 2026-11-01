@@ -2,7 +2,7 @@ import { errorSentence } from "../api/errors";
 import * as RD from "@radix-ui/react-dialog";
 import { Bell, ChartCandlestick, ListPlus, ShoppingBasket, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { request } from "../api/client";
 import { applyEdit, watchlistsV2Api, type WatchlistV2 } from "../chart/watchlistsV2";
 import { cx } from "../components/primitives/cx";
@@ -241,9 +241,9 @@ export function ActionSheetBody({ target, contract, contractProblem, held, panel
             <button type="button" className={CHIP} onClick={() => on.onBasket("SELL")} data-action="basket-sell">Sell leg, 1 lot</button>
           </Inline>
         )}
-        <Link to={chartLink(target, contract)} className={ROW} data-action="chart" onClick={on.onChart}>
+        <InPlaceLink to={chartLink(target, contract)} className={ROW} data-action="chart" onClick={on.onChart}>
           <ChartCandlestick size={18} aria-hidden className="text-fg-muted" />Chart of this strike
-        </Link>
+        </InPlaceLink>
         {watchlistsOn && (
           <>
             <button type="button" className={ROW} onClick={toggle("watchlist")} disabled={!contract} aria-expanded={panel === "watchlist"} data-action="watchlist">

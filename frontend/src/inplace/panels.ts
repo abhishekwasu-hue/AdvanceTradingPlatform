@@ -2,13 +2,15 @@ import { BROKER_PATH } from "../broker/paths";
 import { SETTINGS_PATH } from "../settings/paths";
 import { chartTabPath, chartsSymbolFromPath } from "../shell/shellRoutes";
 import { copilotToolPath, signalsPanelPath } from "./copilotPaths";
+import { OPTION_CHAIN_KEYS, futuresPanelPath, optionChainPanelPath } from "./fnoPaths";
 import { createRegistry, type PanelEntry, type PanelParams } from "./registry";
 
 /**
  * NAV-1 (docs/design/M75_NO_NAVIGATION.md section 4.1): the first three in-place panels - a chart, the broker and the
  * AI key. Each reuses the existing component; it loads in its own chunk the first time the panel opens. The area PRs
  * (NAV-2..8) add their entries here. NAV-2: the Copilot, Analyze a chart, Strategies › Build, News & events, Signals.
- * NAV-3: the Trading bot page.
+ * NAV-3: the Trading bot page. NAV-4: the Option chain, the symbol hub's Futures tab, Plan an options trade and Risk
+ * limits.
  */
 
 const clean = (pathname: string) => pathname.replace(/\/+$/, "") || "/";
@@ -147,7 +149,64 @@ export const BOTS_PANEL: PanelEntry = {
   load: () => import("./panels/BotsPanel"),
 };
 
+// ---- NAV-4: Option chain (F&O) ------------------------------------------------------------------------------------
+
+/** The Option chain (`/option-chain?underlying=NIFTY&...`): a signal's strikes, the futures chain's basket badge
+ * (`basket=open`), "Trade this setup" (`trade=1`) and a position's Adjust open it over the tab they are on. */
+export const OPTION_CHAIN_PANEL: PanelEntry = {
+  kind: "option-chain",
+  keys: OPTION_CHAIN_KEYS,
+  title: (p) => (p.underlying ? `Option chain · ${p.underlying}` : "Option chain"),
+  presentation: "side-wide",
+  match: ({ pathname, search }) => (clean(pathname) === "/option-chain"
+    ? only(Object.fromEntries(OPTION_CHAIN_KEYS.map((k) => [k, search.get(k)?.trim()]))) : null),
+  href: (p) => optionChainPanelPath(p),
+  load: () => import("./panels/OptionChainPanel"),
+};
+
+/** The symbol hub's Futures tab (`/charts/<symbol>?hub=futures`, a future position's Adjust). Listed before the chart
+ * panel, which answers for the same path without `hub`. */
+export const FUTURES_PANEL: PanelEntry = {
+  kind: "futures",
+  keys: ["symbol", "tf", "exchange", "expiry"],
+  title: (p) => (p.symbol ? `Futures · ${p.symbol}` : "Futures"),
+  presentation: "side-wide",
+  match: ({ pathname, search }) => {
+    const symbol = chartsSymbolFromPath(pathname);
+    if (!symbol || search.get("hub") !== "futures") return null;
+    return only({ symbol, tf: search.get("tf"), exchange: search.get("exchange")?.trim().toUpperCase(), expiry: search.get("expiry")?.trim() });
+  },
+  href: (p) => futuresPanelPath(p),
+  load: () => import("./panels/FuturesPanel"),
+};
+
+/** Plan an options trade (the Options Builder, `/option-chain/plan`, the old `/options-builder`) while `options_builder`
+ * is on: the basket's "Open in Options Builder" opens it beside the basket. */
+export const OPTIONS_PLAN_PANEL: PanelEntry = {
+  kind: "options-plan",
+  keys: [],
+  title: () => "Plan an options trade",
+  presentation: "side-wide",
+  match: ({ pathname }) => (["/option-chain/plan", "/options-builder"].includes(clean(pathname)) ? {} : null),
+  href: () => "/option-chain/plan",
+  enabled: (on) => on("options_builder"),
+  load: () => import("./panels/OptionsPlanPanel"),
+};
+
+/** The trader's own Risk limits (`/settings/risk-limits`, the old `/risk-management`): the ticket's and the basket's
+ * "Change limit". */
+export const RISK_LIMITS_PANEL: PanelEntry = {
+  kind: "risk-limits",
+  keys: [],
+  title: () => "Risk limits",
+  presentation: "side",
+  match: ({ pathname }) => (["/settings/risk-limits", "/risk-management"].includes(clean(pathname)) ? {} : null),
+  href: () => "/settings/risk-limits",
+  load: () => import("./panels/RiskLimitsPanel"),
+};
+
 export const DEFAULT_PANELS: readonly PanelEntry[] = [
-  CHART_PANEL, BROKER_PANEL, AI_KEY_PANEL, COPILOT_PANEL, ANALYZE_PANEL, STRATEGY_BUILD_PANEL, NEWS_PANEL, SIGNALS_PANEL, BOTS_PANEL,
+  FUTURES_PANEL, CHART_PANEL, BROKER_PANEL, AI_KEY_PANEL, COPILOT_PANEL, ANALYZE_PANEL, STRATEGY_BUILD_PANEL, NEWS_PANEL, SIGNALS_PANEL, BOTS_PANEL,
+  OPTION_CHAIN_PANEL, OPTIONS_PLAN_PANEL, RISK_LIMITS_PANEL,
 ];
 export const DEFAULT_REGISTRY = createRegistry(DEFAULT_PANELS);

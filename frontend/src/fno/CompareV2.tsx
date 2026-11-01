@@ -1,7 +1,7 @@
 import * as RD from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { watchlistsV2Api, type QuotesReply, type WatchItem } from "../chart/watchlistsV2";
 import { cx } from "../components/primitives/cx";
 import type { ChainRow } from "../optionChain/types";
@@ -324,7 +324,7 @@ export function ChangeEditor({ legs, closed, added, adjust, onToggle }: {
             ))}
           </ul>
         )}
-        {adjust && <Link to={adjust} className="inline-flex min-h-11 items-center text-t14 font-semibold text-brand hover:underline" data-change-chain>Open the chain</Link>}
+        {adjust && <InPlaceLink to={adjust} className="inline-flex min-h-11 items-center text-t14 font-semibold text-brand hover:underline" data-change-chain>Open the chain</InPlaceLink>}
       </div>
     </section>
   );

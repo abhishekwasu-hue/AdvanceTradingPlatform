@@ -21,6 +21,7 @@ import {
   PRODUCT_UNSET_TEXT, ORDER_TYPE_UNSET_TEXT, firstMissing,
 } from "./ticketModel";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { riskLine, structureOf, ticketPayoffSentence, type RiskBudget, type RiskLine } from "./insights";
 import type { ChainRow } from "../optionChain/types";
 import { eventLine, legLiquidity, liquidityLine, marginLine, type EventRisk } from "./riskParts";
@@ -490,7 +491,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
               const why = blockedBy(step.preview);
               return why && (
                 <p className="basis-full text-t13 text-fg" data-ticket="blocked-by">
-                  {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-ticket="change-limits">Change limit</a></>}
+                  {why.text}{why.link && <> <InPlaceLink to={why.link} className="font-medium text-brand underline" data-ticket="change-limits">Change limit</InPlaceLink></>}
                 </p>
               );
             })()}

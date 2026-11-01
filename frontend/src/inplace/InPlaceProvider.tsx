@@ -1,4 +1,4 @@
-import { Suspense, createContext, lazy, useContext, useLayoutEffect, useMemo, useRef, type ComponentType, type LazyExoticComponent, type ReactNode } from "react";
+import { Suspense, createContext, lazy, useCallback, useContext, useLayoutEffect, useMemo, useRef, type ComponentType, type LazyExoticComponent, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Dialog, Sheet } from "../components/primitives/Dialog";
 import { SkeletonRows } from "../components/primitives/Feedback";
@@ -148,4 +148,17 @@ export function useInPlace(): InPlaceApi {
     replace: () => undefined,
   }), [navigate]);
   return ctx ?? fallback;
+}
+
+/**
+ * NAV-4: `open(path)` for a part that may be drawn outside any router (the basket panel in its own tests): the host's
+ * open when the v2 shell's host is there (a panel in place, or the router's navigation as today), else the page load
+ * the button did before.
+ */
+export function useInPlaceOpen(): (path: string) => void {
+  const ctx = useContext(InPlaceContext);
+  return useCallback((path: string) => {
+    if (ctx) ctx.open(path);
+    else window.location.assign(path);
+  }, [ctx]);
 }

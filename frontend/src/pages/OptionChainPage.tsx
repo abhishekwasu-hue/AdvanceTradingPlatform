@@ -13,6 +13,7 @@ import { getToken } from "../api/client";
 import { chainLinks, contractsAvailable } from "../charting/contracts";
 import { chainReadWords } from "../oi/format";
 import { formatNumber } from "../ui/format";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 
 /** Where "the Broker page" is: its own `/broker` route in both shells (Settings redesign B; was Settings -> Brokers). */
 export const BROKER_PAGE_PATH = "/broker";
@@ -100,7 +101,7 @@ export default function OptionChainPage() {
       {error && (
         <p className="text-sm text-fg-muted" role="status">
           {error.text}
-          {error.connect && <> <a href={BROKER_PAGE_PATH} className="text-brand underline">Broker page</a>.</>}
+          {error.connect && <> <InPlaceLink to={BROKER_PAGE_PATH} className="text-brand underline">Broker page</InPlaceLink>.</>}
         </p>
       )}
 
@@ -170,10 +171,10 @@ export default function OptionChainPage() {
                       <td className="py-1 pr-3">{s.call_oi ?? "-"}</td>
                       <td className="py-1 pr-3">{s.call_activity}</td>
                       <td className="py-1 pr-3">{s.call_moneyness}
-                        {links && <a href={links.ce} target="_blank" rel="noopener" className="ml-1 text-brand underline" aria-label={`Chart of the ${s.strike} call`}>chart</a>}</td>
+                        {links && <InPlaceLink to={links.ce} newTabOtherwise rel="noopener" className="ml-1 text-brand underline" aria-label={`Chart of the ${s.strike} call`}>chart</InPlaceLink>}</td>
                       <td className="py-1 pr-3 text-center font-semibold">{s.strike}</td>
                       <td className="py-1 pr-3">{s.put_moneyness}
-                        {links && <a href={links.pe} target="_blank" rel="noopener" className="ml-1 text-brand underline" aria-label={`Chart of the ${s.strike} put`}>chart</a>}</td>
+                        {links && <InPlaceLink to={links.pe} newTabOtherwise rel="noopener" className="ml-1 text-brand underline" aria-label={`Chart of the ${s.strike} put`}>chart</InPlaceLink>}</td>
                       <td className="py-1 pr-3">{s.put_activity}</td>
                       <td className="py-1 pr-3">{s.put_oi ?? "-"}</td>
                     </tr>

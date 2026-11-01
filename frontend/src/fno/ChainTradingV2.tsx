@@ -1,6 +1,7 @@
 import { Crosshair, ShoppingBasket } from "lucide-react";
 import { useConfirm } from "../ui/ConfirmDialog";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { UNSAFE_LocationContext } from "react-router";
 import { api } from "../api/client";
 import { cx } from "../components/primitives/cx";
 import { formatNumber } from "../ui/format";
@@ -83,7 +84,12 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
   const [recentre, setRecentre] = useState(0);
   const [round, setRound] = useState(0);
   // FNO-3: the futures chain's basket badge links here with `?basket=open`, so the legs it added open at once.
-  const [basketOpen, setBasketOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("basket") === "open");
+  // M75 NAV-4: read from the router's address when there is one (the Option chain in an in-place panel has its own).
+  const routerSearch = useContext(UNSAFE_LocationContext)?.location?.search;
+  const [basketOpen, setBasketOpen] = useState(() => {
+    const search = routerSearch ?? (typeof window !== "undefined" ? window.location.search : "");
+    return new URLSearchParams(search).get("basket") === "open";
+  });
   const legs = useBasket();
   // 8b-b: the signal the open ticket / basket was pre-filled from (null: opened by hand, nothing is noted).
   const [origin, setOrigin] = useState<string | null>(null);

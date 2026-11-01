@@ -86,7 +86,8 @@ export function ViewToggle({ view, onView, className }: { view: ChainView; onVie
 
 export default function OptionChainPageV2(_props: PageProps) {
   const [params, setParams] = useSearchParams();
-  const [symbol, setSymbol] = useState(() => initialSymbol(typeof window === "undefined" ? "" : window.location.search));
+  // M75 NAV-4: the page's own address (the router's), so the same page in an in-place panel reads the panel's address.
+  const [symbol, setSymbol] = useState(() => initialSymbol(params.toString()));
   const [carried] = useState(() => readCarry(params));
   // 8b-a: opened from one of the user's own signals (`?signal=action:12`): his settings' strikes are marked.
   const [signal, setSignal] = useState<string | null>(() => {

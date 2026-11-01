@@ -29,9 +29,10 @@ from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session, release_connection
 from app.market_data import api_budget, entitlement
 from app.market_data.calendar import family_holidays, market_session_status
-from app.market_data.candles_routes import _byob, _pick_record, _tier_c
+from app.market_data.candles_routes import _byob, _tier_c
 from app.market_data.entitlement import Entitlement
 from app.market_data.fanin import Priority
+from app.market_data.reader_credential import credential_for_reader
 from app.option_chain import chain_view, futures_chain
 from app.option_chain.routes import _holiday_family, _symbol, _v2_only
 
@@ -122,7 +123,7 @@ async def futures(underlying: str, user: User = Depends(get_current_user), sessi
         refused = {(e, s): (ent.reason or "EOD data only for this symbol") for (s, e), ent in ents.items() if not ent.live}
         wanted = [p for p in pairs if p not in refused]
     else:
-        record = await _pick_record(session, user.tenant_id, None, "primary")
+        record = await credential_for_reader(session, user.tenant_id, user.id)   # M71Q-2: his own only
         refused, wanted = {}, pairs
     status = await market_session_status(session, now, spot_exchange)
     await release_connection(session)       # the broker calls below can take seconds; no pool connection is held

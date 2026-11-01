@@ -233,7 +233,8 @@ test.describe("Strategy templates behaviour", () => {
     await expectChoice(exits.getByLabel("Take profit"), "NONE");
     await expectChoiceLabels(page, exits.getByLabel("Take profit"), 
       ["No fixed target", "At a multiple of my risk", "When the template says the idea has ended"]);
-    // NIFTY 50 trades its option: the stop may be the template's level or only the premium stop
+    // NIFTY 50 (he picks it - M68 PR-8) trades its option: the stop may be the template's level or only the premium stop
+    await pickNifty(page);
     await expectChoiceLabels(page, exits.getByLabel("Stop"), 
       ["Where the idea is wrong", "Only my premium stop"]);
     await expect(exits).toContainText("Your premium stop always stays as a safety net.");

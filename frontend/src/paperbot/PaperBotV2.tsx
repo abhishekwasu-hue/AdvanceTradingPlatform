@@ -511,14 +511,14 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     setResult(null);
   }, [preselect]);
 
-  // The first ready-made strategy, with the symbol it is shown with.
+  // The first ready-made strategy (M68 PR-8: without a symbol).
   useEffect(() => {
     // (a template from the link, picked in this same commit, wins: the effect above already set it)
     if (strategyId || !library?.length || urlTemplateApplied.current) return;
     const first = ready[0] ?? library[0];
     setStrategyId(first.id);
-    const r = READY.find((x) => x.id === first.id);
-    if (r) setSymbolChoice(r.symbol);
+    // M68 PR-8 (TS1-098): the first strategy no longer brings its shown symbol along - no symbol is pre-selected (a
+    // strategy he picks himself still offers its usual symbol, visibly, in the field below).
   }, [library, ready, strategyId]);
 
   if (library === null) return <CardV2 title="Start a trading bot"><LoadingRowsV2 rows={3} /></CardV2>;

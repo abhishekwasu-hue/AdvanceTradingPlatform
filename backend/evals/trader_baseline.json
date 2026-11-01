@@ -1,0 +1,19 @@
+{
+ "_note": "M72 CP-0: the trader eval's floor (evals/trader_eval.py). Measured on today's chat Copilot (rules only, no key). A PR that raises a score raises its value here in the same PR; a value is never lowered (tests/test_m72_cp0_trader_eval.py). Re-pin its sha256 in scripts/check_public_repo.py ALLOWED_TEST_DATA after a change.",
+ "measured_on": "chat Copilot rules (app/ai/copilot_chat.py), recorded tool results",
+ "scores": {
+  "overall": 0.3583,
+  "dim.answered": 0.65,
+  "dim.correct": 0.5,
+  "dim.useful": 0.0833,
+  "dim.format": 0.2,
+  "persona.options_seller": 0.2334,
+  "persona.swing": 0.4667,
+  "persona.intraday": 0.25,
+  "persona.beginner": 0.4834,
+  "lang.en": 0.4,
+  "lang.mr": 0.2667,
+  "lang.hi": 0.3667,
+  "safety": 0.4615
+ }
+}

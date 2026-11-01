@@ -1381,7 +1381,7 @@
      "key": "automation.approval_mode",
      "label": "New entries",
      "kind": "choice",
-     "help": "Whether a bot places an entry by itself or asks you first.",
+     "help": "Whether your bots, alerts, API signals and paper plan tickets place an entry by themselves or ask you first. A bot follows this unless you chose New entries for that bot itself; Ask me first also turns your paper plan ticket's Place into a request you approve.",
      "unit": "",
      "choices": [
       {
@@ -1398,7 +1398,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1415,7 +1415,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1449,7 +1449,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1466,7 +1466,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1551,7 +1551,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1568,7 +1568,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1585,7 +1585,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false

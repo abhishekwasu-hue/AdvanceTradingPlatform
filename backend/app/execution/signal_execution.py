@@ -176,7 +176,7 @@ async def execute_signal_for_user(
         manual = origin == approval_gate.ORIGIN_MANUAL and deployment_id is None and journal_source == "MANUAL"
         gate_origin = origin if origin != approval_gate.ORIGIN_MANUAL or manual else approval_gate.ORIGIN_AUTOMATIC
         gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id, origin=gate_origin,
-                                                approval_action_id=approval_action_id)
+                                                approval_action_id=approval_action_id, user_id=user.id)
         if gate:
             kill_switch_reasons.insert(0, gate)
         fo_notes: list = []

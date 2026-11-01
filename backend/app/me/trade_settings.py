@@ -91,6 +91,7 @@ class SettingField:
     today: str = ""                                  # where the value lives today (for the PR that moves it)
     wired: bool = False
     scope: Literal["user", "organisation"] = "user"
+    flag: str | None = None                       # M68 PR-6: shown / saved only while this feature flag is on for him
 
     @property
     def key(self) -> str:
@@ -281,27 +282,31 @@ FIELDS: tuple[SettingField, ...] = (
        5, 95, term="margin"),
 
     # --- Automation (PR-6) -----------------------------------------------------------------------------------------------
-    _f(A, "approval_mode", "New entries", "choice", "Whether a bot places an entry by itself or asks you first.", 6, 60, 61,
-       choices=(("AUTO", "Placed automatically"), ("APPROVAL", "Ask me first")), today="trading_defaults.entry_mode; bot entry_mode"),
+    _f(A, "approval_mode", "New entries", "choice",
+       "Whether your bots, alerts, API signals and paper plan tickets place an entry by themselves or ask you first. "
+       "A bot follows this unless you chose New entries for that bot itself; Ask me first also turns your paper plan "
+       "ticket's Place into a request you approve.", 6, 60, 61,
+       choices=(("AUTO", "Placed automatically"), ("APPROVAL", "Ask me first")), today="trading_defaults.entry_mode; bot entry_mode",
+       wired=True),
     _f(A, "approval_entry_minutes", "An entry request waits", "whole", "Minutes an entry waiting for your answer stays open.", 6, 62,
-       **_count("minutes"), today="operator setting (15 minutes)"),
+       **_count("minutes"), today="operator setting (15 minutes)", wired=True),
     _f(A, "approval_exit_minutes", "An exit request waits", "whole", "Minutes an exit waiting for your answer stays open.", 6, 62,
        **_count("minutes"), today="operator setting (30 minutes)"),
     _f(A, "requote_drift_pct", "New price after a move of", "number", "A waiting entry is offered at the new price after this move.",
-       6, 62, **_pct(), today="APPROVAL_REQUOTE_MAX_DRIFT_PCT"),
+       6, 62, **_pct(), today="APPROVAL_REQUOTE_MAX_DRIFT_PCT", wired=True),
     _f(A, "max_requotes", "New prices offered at most", "whole", "How many times a waiting entry is offered at a new price.", 6, 62,
-       **_count("times", 0), today="APPROVAL_MAX_REQUOTES"),
+       **_count("times", 0), today="APPROVAL_MAX_REQUOTES", wired=True),
     _f(A, "window_start", "New entries from", "time", "No new entry before this time. Exits always work.", 6, 26, 28),
     _f(A, "window_end", "New entries until", "time", "No new entry after this time. Exits always work.", 6, 26, 28,
        today="fixed 15:00 (MCX 23:00, CDS 16:30) for intraday bots"),
     _f(A, "reentry", "Re-enter after an exit", "switch", "On: a bot may enter again on a new signal after an exit.", 6),
     _f(A, "reentry_max", "Re-entries at most", "whole", "How many times a bot may re-enter.", 6, **_count("times")),
     _f(A, "scan_auto_max", "Scanner entries at most", "whole", "Paper entries the scanner may place by itself in a day.", 6, 63,
-       **_count("entries"), today="SCAN_AUTO_PAPER_MAX_PER_DAY"),
+       **_count("entries"), today="SCAN_AUTO_PAPER_MAX_PER_DAY", wired=True, flag="scan_auto_paper"),
     _f(A, "scan_auto_cooldown_minutes", "Scanner wait per symbol", "whole", "Minutes before the scanner enters the same symbol again.",
-       6, 63, **_count("minutes", 0), today="operator setting (30 minutes)"),
+       6, 63, **_count("minutes", 0), today="operator setting (30 minutes)", wired=True, flag="scan_auto_paper"),
     _f(A, "scan_auto_arming_days", "Scanner stays armed for", "whole", "Days the scanner keeps placing paper entries once armed.",
-       6, 63, **_count("days"), today="operator setting (7 days)"),
+       6, 63, **_count("days"), today="operator setting (7 days)", wired=True, flag="scan_auto_paper"),
     _f(A, "market_hours", "Market hours and holidays", "fact", "Orders reach the market only while the exchange is open.", 6, 84),
 
     # --- Paper account (PR-7) --------------------------------------------------------------------------------------------
@@ -402,19 +407,33 @@ def is_admin(user: User) -> bool:
     return user.role == UserRole.SUPER_ADMIN.value
 
 
-def visible(f: SettingField, admin: bool) -> bool:
-    """A user sees a fact and a wired field; an unwired field (nothing reads it yet) only a platform admin, under Advanced."""
+def visible(f: SettingField, admin: bool, off: frozenset[str] = frozenset()) -> bool:
+    """A user sees a fact and a wired field; an unwired field (nothing reads it yet) only a platform admin, under Advanced.
+    A field of a feature that is off for him (`off`: flag names, M68 PR-6) is not shown to a user at all."""
+    if f.flag is not None and f.flag in off and not admin:
+        return False
     return f.fact or f.wired or admin
 
 
-def view(values: dict[str, Any], admin: bool, ceilings: dict[str, float] | None = None) -> dict[str, Any]:
+async def flags_off(session: AsyncSession, tenant_id: int) -> frozenset[str]:
+    """The feature flags of the registry's fields that are off for this organisation."""
+    from app.platform.controls import flag_enabled
+    off: set[str] = set()
+    for name in {f.flag for f in FIELDS if f.flag is not None}:
+        if not await flag_enabled(session, name, tenant_id):
+            off.add(name)
+    return frozenset(off)
+
+
+def view(values: dict[str, Any], admin: bool, ceilings: dict[str, float] | None = None,
+         off: frozenset[str] = frozenset()) -> dict[str, Any]:
     """`ceilings`: the organisation's ceilings in force (app/platform/controls.risk_ceilings) - an organisation-scope field
-    shows its ceiling read-only (null = no ceiling) and is never one the user saved."""
+    shows its ceiling read-only (null = no ceiling) and is never one the user saved. `off`: the flags off for him (PR-6)."""
     sections = []
     for s in SECTIONS:
         fields = []
         for f in FIELDS:
-            if f.section != s.id or not visible(f, admin):
+            if f.section != s.id or not visible(f, admin, off):
                 continue
             org = f.scope == "organisation"
             value = (ceilings or {}).get(CEILING_OF.get(f.key, "")) if org else values.get(f.key)
@@ -451,7 +470,7 @@ class TradeSettingsSave(BaseModel):
     values: dict[str, Any]
 
 
-def _changes(body: TradeSettingsSave, admin: bool) -> dict[str, Any]:
+def _changes(body: TradeSettingsSave, admin: bool, off: frozenset[str] = frozenset()) -> dict[str, Any]:
     """The fields sent, each checked against the registry; any problem refuses the whole save (422, nothing stored)."""
     problems: list[dict[str, Any]] = []
     for key, v in body.values.items():
@@ -462,7 +481,7 @@ def _changes(body: TradeSettingsSave, admin: bool) -> dict[str, Any]:
             problems.append({"loc": ["values", key], "msg": "set by the exchange or the broker, not a setting"})
         elif f.scope != "user":
             problems.append({"loc": ["values", key], "msg": "set by your admin for the organisation"})
-        elif not visible(f, admin):
+        elif not visible(f, admin, off):
             problems.append({"loc": ["values", key], "msg": "not available yet"})
         elif (why := problem(f, v)) is not None:
             problems.append({"loc": ["values", key], "msg": f"{f.label} {why}"})
@@ -486,7 +505,7 @@ async def _read(user: User, session: AsyncSession) -> tuple[dict[str, Any], int]
 async def get_trade_settings(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """The caller's own Trade settings: every section and field, its value or null ("Not set") and whether he saved it."""
     values, _version = await _read(user, session)
-    return view(values, is_admin(user), await _ceilings(user, session))
+    return view(values, is_admin(user), await _ceilings(user, session), await flags_off(session, user.tenant_id))
 
 
 @router.put("/trade-settings")
@@ -495,7 +514,8 @@ async def put_trade_settings(body: TradeSettingsSave, user: User = Depends(get_c
     """Saves only the fields sent (null: back to "Not set"); every other field stays exactly as it was."""
     from app.me import prefs
     admin = is_admin(user)
-    changes = _changes(body, admin)
+    off = await flags_off(session, user.tenant_id)
+    changes = _changes(body, admin, off)
     for attempt in (1, 2, 3):                                  # another device saved in between: merge onto its value
         values, version = await _read(user, session)
         for key, v in changes.items():
@@ -505,7 +525,7 @@ async def put_trade_settings(body: TradeSettingsSave, user: User = Depends(get_c
                 values[key] = float(v) if BY_KEY[key].kind == "number" else v
         try:
             await prefs.save(NAMESPACE, json.dumps({"values": values}).encode(), version, user, session)
-            return view(values, admin, await _ceilings(user, session))
+            return view(values, admin, await _ceilings(user, session), off)
         except HTTPException as exc:
             if exc.status_code != 409 or attempt == 3:
                 raise

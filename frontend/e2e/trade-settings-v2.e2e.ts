@@ -56,8 +56,11 @@ test.describe("Settings › Trade settings 1440", () => {
     await expect(sectionAt(page, "risk_limits").locator("[data-input]")).toHaveCount(8);
     await expect(sectionAt(page, "risk_limits").locator("[data-readonly]")).toHaveCount(5);
     await expect(sectionAt(page, "risk_limits").getByText("No ceiling")).toHaveCount(5);
-    await expect(page.locator("[data-input]")).toHaveCount(15);
-    await expect(page.locator("[data-save]")).toHaveCount(2);
+    // M68 PR-6: Automation is wired too - its seven controls (the fixture's trader has the scanner's Auto PAPER on), Not set
+    await expect(sectionAt(page, "automation").locator("[data-input]")).toHaveCount(7);
+    await expect(sectionAt(page, "automation").locator("[data-field] [data-value]")).toHaveText(Array(7).fill("Not set"));
+    await expect(page.locator("[data-input]")).toHaveCount(22);
+    await expect(page.locator("[data-save]")).toHaveCount(3);                      // one Save per wired section (Order defaults, Risk limits, Automation)
     await expect(page.getByText("Advanced (admin)")).toHaveCount(0);
     await expect(sectionAt(page, "risk_limits").getByRole("link", { name: "Risk limits" })).toHaveAttribute("href", "/settings/risk-limits");
     await expect(page).toHaveScreenshot("trade-settings-v2-1440-light.png", SHOT);

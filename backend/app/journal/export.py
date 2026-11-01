@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.journal.stats import IST
+from app.study.numfmt import format_inr, format_number
 
 CSV_COLUMNS = ("date_ist", "source", "mode", "symbol", "direction", "setup", "timeframe", "entry_price", "exit_price", "quantity",
                "charges", "net_pnl", "r_multiple", "outcome", "exit_reason", "detector_tags", "own_tags", "images", "notes")
@@ -52,29 +53,14 @@ def to_csv(rows: Sequence[dict[str, Any]]) -> bytes:
 # --- numbers as the PDF shows them ------------------------------------------------------------------------------------
 
 def indian(value: float | None, decimals: int = 2) -> str:
-    """Indian digit grouping (12,34,567.80); a missing value is "-"."""
-    if value is None:
-        return "-"
-    text = f"{abs(value):.{decimals}f}"
-    whole, _, frac = text.partition(".")
-    if len(whole) > 3:
-        head, tail = whole[:-3], whole[-3:]
-        pairs: list[str] = []
-        while len(head) > 2:
-            pairs.insert(0, head[-2:])
-            head = head[:-2]
-        whole = ",".join(([head] if head else []) + pairs + [tail])
-    sign = "-" if value < 0 and float(text) != 0 else ""
-    return f"{sign}{whole}" + (f".{frac}" if frac else "")
+    """Indian digit grouping (12,34,567.80); a missing value is "-". A thin wrapper over app.study.numfmt (M77 SX-1):
+    the same output as before, byte for byte (hyphen-minus, Python's own rounding)."""
+    return format_number(value, decimals, minus="-", missing="-", rounding="half_even", finite_only=False)
 
 
 def rupees(value: float | None, *, signed: bool = False) -> str:
-    if value is None:
-        return "-"
-    body = f"Rs {indian(abs(value))}"
-    if value < 0 and round(value, 2) != 0:
-        return f"-{body}"
-    return f"+{body}" if signed and round(value, 2) > 0 else body
+    return format_inr(value, signed=signed, decimals=2, symbol="Rs ", minus="-", missing="-", rounding="half_even",
+                      finite_only=False)
 
 
 # --- a minimal PDF (text only, standard fonts) ------------------------------------------------------------------------

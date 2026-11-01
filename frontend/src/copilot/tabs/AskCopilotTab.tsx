@@ -1,6 +1,6 @@
 import { ArrowRight, Bot, Send, ShieldAlert, Square, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useInPlace } from "../../inplace/InPlaceProvider";
 import { api } from "../../api/client";
 import { pathFor } from "../../routes";
 import { Badge, Button, fieldClass } from "../../components/primitives";
@@ -42,7 +42,7 @@ const WORD_MS = 22;
 
 export default function AskCopilotTab() {
   const t = useCopilotT();
-  const navigate = useNavigate();
+  const inPlace = useInPlace();
   const reduced = useReducedMotion();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [text, setText] = useState("");
@@ -89,10 +89,10 @@ export default function AskCopilotTab() {
   function openAction(reply: CopilotReply) {
     if (reply.action.tab === "guide") {
       try { localStorage.setItem("atp_coach_tab", "guide"); } catch { /* intentional: storage unavailable */ }
-      navigate(pathFor("coach"));
+      inPlace.open(pathFor("coach"));
       return;
     }
-    navigate(copilotPath(tabForAction(reply.action.tab)), reply.prompt ? { state: { prompt: reply.prompt } } : undefined);
+    inPlace.open(copilotPath(tabForAction(reply.action.tab)), reply.prompt ? { state: { prompt: reply.prompt } } : undefined);
   }
 
   return (

@@ -135,7 +135,7 @@ export function bandsLayer(bands: readonly ZoneBand[], asOf?: string | null, fal
   const out: LayerBand[] = bands.map((b) => {
     const st = STATE_STYLE[b.state] ?? STATE_STYLE.tested;
     const label = `${b.label} · ${b.touch_text}${fallback ? ` · ${FALLBACK_TAG}` : ""}`;
-    return { low: b.low, high: b.high, color: ZONE_COLORS[b.role], opacity: st.opacity, style: st.style, label };
+    return { low: b.low, high: b.high, role: b.role, color: ZONE_COLORS[b.role], opacity: st.opacity, style: st.style, label };
   });
   return { asOf: asOf ?? undefined, bands: out };
 }

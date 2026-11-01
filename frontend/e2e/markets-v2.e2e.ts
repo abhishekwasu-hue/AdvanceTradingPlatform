@@ -115,6 +115,20 @@ test.describe("v2 markets 390: a sector's stocks", () => {
     await expect(page.locator("[data-member='THETA']")).toBeVisible();
     await expectPhoneLayout(page);
   });
+
+  test("M75 NAV-3: a stock opens its chart in a bottom sheet; Back returns to the same list", async ({ page }) => {
+    await openMarkets(page, "light", "/markets?list=sector-it");
+    await page.locator("[data-member='THETA'] a").click();
+    const chart = page.locator("[data-inplace-panel='chart']");
+    await expect(chart.locator("[data-embedded-chart='THETA']")).toBeVisible();
+    await expect(chart).toHaveAttribute("data-inplace-shape", "bottom");
+    expect(new URL(page.url()).pathname).toBe("/markets");
+    await expectPhoneLayout(page);
+    await page.goBack();
+    await expect(chart).toHaveCount(0);
+    await expect(page).toHaveURL(/\/markets\?list=sector-it$/);
+    await expect(page.locator("[data-member='THETA']")).toBeVisible();
+  });
 });
 
 test.describe("v2 markets 1440", () => {
@@ -152,8 +166,29 @@ test.describe("v2 markets 1440", () => {
     await page.getByRole("button", { name: "All sectors" }).click();
     await expect(page.locator("[data-heatmap]")).toBeVisible();
     await page.locator("[data-tile='IT']").click();
+    // M75 NAV-3: a stock opens its chart in place; the path stays and closing returns to the same stocks list.
     await page.locator("[data-member='THETA'] a").click();
-    await expect(page).toHaveURL(/\/charts\/THETA$/);
+    const chart = page.locator("[data-inplace-panel='chart']");
+    await expect(chart.locator("[data-embedded-chart='THETA']")).toBeVisible();
+    await expect(chart).toHaveAttribute("data-inplace-shape", "right");
+    expect(new URL(page.url()).pathname).toBe("/markets");
+    expect(new URL(page.url()).searchParams.get("list")).toBe("sector-it");
+    await page.keyboard.press("Escape");
+    await expect(chart).toHaveCount(0);
+    await expect(page).toHaveURL(/\/markets\?view=sectors&period=day&list=sector-it$/);
+    await expect(page.locator("[data-member='THETA']")).toBeVisible();
+  });
+
+  test("M75 NAV-3: an index tile without a stocks list opens its chart in place; closing keeps the view", async ({ page }) => {
+    await openMarkets(page, "light", "/markets?view=indices&period=week");
+    await page.locator("[data-tile='SENSEX']").click();
+    const chart = page.locator("[data-inplace-panel='chart']");
+    await expect(chart.locator("[data-embedded-chart='SENSEX']")).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/markets");
+    await page.keyboard.press("Escape");
+    await expect(chart).toHaveCount(0);
+    await expect(page).toHaveURL(/\/markets\?view=indices&period=week$/);
+    await expect(page.locator("[data-family='BSE']")).toContainText("SENSEX");
   });
 
   test("the period and the view are in the address", async ({ page }) => {

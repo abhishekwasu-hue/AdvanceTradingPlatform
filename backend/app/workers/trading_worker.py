@@ -60,7 +60,7 @@ from app.db.models import StrategyDeploymentRecord, Tenant, TradeRecord, User, V
 from app.db.savepoint import guarded
 from app.deployments import why as why_log
 from app.deployments.why import held_back
-from app.execution import approval
+from app.execution import approval, automation
 from app.execution.multileg import execute_structure
 from app.execution.ops_throttle import OpsThrottle
 from app.execution.signal_execution import execute_signal_for_user
@@ -2118,11 +2118,20 @@ class TradingWorker:
                     return False
 
         # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; nothing is placed until a person approves.
-        if await approval.required(session, dep.tenant_id, dep):
+        # M68 PR-6 (TS1-060): the bot's own entry mode, else its owner's Trade settings (Automation > New entries).
+        if await approval.required(session, dep.tenant_id, dep, user.id):
             proposed = await self._propose_entry(session, dep, signal, signal_ts, now, user.id, market_data=market_data, frames=frames)
             waiting = (dep.last_error or "").startswith("Waiting for approval")
-            self._why(dep, "proposed" if waiting else "risk_setting", closed_bar, None if waiting else dep.last_error)
+            self._why(dep, "proposed" if waiting else held_back(dep.last_error), closed_bar, None if waiting else dep.last_error)
             return proposed
+        if await automation.entry_mode(session, dep, user.id) is None:
+            # M68 PR-6: ATP does not choose between placing by itself and asking first; nothing is placed, the card says which.
+            mode_problem = automation.needs_setting("approval_mode")
+            dep.last_signal_at = signal_ts
+            dep.last_error = f"Signal at {signal_ts.isoformat()} skipped. {mode_problem}"[:500]
+            self._why(dep, "needs_setting", closed_bar, mode_problem)
+            await session.commit()
+            return False
 
         contract = None
         rules = ContractRules.from_deployment(dep)

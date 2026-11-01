@@ -72,10 +72,16 @@ def test_registry_seven_sections_and_every_audit_user_row():
         assert any(f.section == s.id and not f.fact for f in ts.FIELDS), s.id
 
 
+# M68 PR-6: Automation fields nothing reads yet - exit requests are off since M55 S2, the trading window is TS1-026 / 028
+# (PR-3) and re-entry has no TS-1 row (no pre-chosen value in the code).
+PR6_NOT_WIRED = {"automation.approval_exit_minutes", "automation.window_start", "automation.window_end", "automation.reentry",
+                 "automation.reentry_max"}
+
+
 def test_registry_fields_are_well_formed_and_wired_by_their_pr():
     for f in ts.FIELDS:
         assert f.label and f.help and f.label[0].isupper(), f.key
-        assert f.wired is (f.pr in (1, 5) and not f.fact), f.key    # PR-1 Order defaults, PR-5 Risk limits; later PRs the rest
+        assert f.wired is (f.pr in (1, 5, 6) and not f.fact and f.key not in PR6_NOT_WIRED), f.key   # PR-1 / PR-5 / PR-6 wired; later PRs the rest
         assert 1 <= f.pr <= 7, f.key
         if f.kind == "choice":
             assert len(f.choices) >= 2 and len({c for c, _ in f.choices}) == len(f.choices), f.key
@@ -100,8 +106,8 @@ def test_the_namespace_is_read_by_one_order_path_reader():
     """M68 PR-1: order paths read the Trade settings only through app/execution/order_defaults.py (one reader); M68 PR-5:
     the Risk limits section through app/risk_engine/own_risk.py (one reader)."""
     out = subprocess.run(["grep", "-rlE", "--include=*.py", r"trade_settings|TradeSettings", "app"], cwd=BACKEND, capture_output=True, text=True).stdout
-    assert sorted(out.split()) == ["app/execution/order_defaults.py", "app/main.py", "app/me/prefs.py", "app/me/trade_settings.py",
-                                   "app/risk_engine/own_risk.py"]
+    assert sorted(out.split()) == ["app/execution/automation.py", "app/execution/order_defaults.py", "app/main.py", "app/me/prefs.py",
+                                   "app/me/trade_settings.py", "app/risk_engine/own_risk.py"]   # PR-5: + Risk limits; PR-6: + Automation
 
 
 def test_value_checks():
@@ -143,9 +149,10 @@ def test_a_new_user_sees_not_set_and_no_dead_control():
     assert body["admin"] is False and body["page"] == "/settings/trade-settings"
     assert [s["id"] for s in body["sections"]] == list(ts.SECTION_IDS)
     fields = _fields(body)
-    # PR-1 / PR-5: the Order defaults and Risk limits controls are wired; every other control is not yet (only facts show)
-    assert fields and all(f["fact"] or f["key"].startswith(("order_defaults.", "risk_limits.")) for f in fields.values())
-    assert {k for k, f in fields.items() if not f["fact"]} == {f.key for f in ts.FIELDS if f.wired}
+    # PR-1 / PR-5 / PR-6: the Order defaults, Risk limits and Automation controls are wired; every other control is not yet
+    assert fields and all(f["fact"] or f["key"].startswith(("order_defaults.", "risk_limits.", "automation.")) for f in fields.values())
+    # M68 PR-6: a field of a feature that is off for him (the scanner's Auto PAPER, flag scan_auto_paper) is not shown
+    assert {k for k, f in fields.items() if not f["fact"]} == {f.key for f in ts.FIELDS if f.wired and f.flag is None}
     assert all(f["value"] is None and f["saved"] is False for f in fields.values())
     risk = next(s for s in body["sections"] if s["id"] == "risk_limits")
     assert risk["today"] == {"label": "Risk limits", "path": "/settings/risk-limits"}

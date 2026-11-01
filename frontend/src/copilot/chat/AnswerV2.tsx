@@ -1,6 +1,6 @@
 import { CircleHelp, History, LineChart, ListChecks, Sparkles } from "lucide-react";
 import { lazy, Suspense } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../../inplace/InPlaceLink";
 import { chartTabPath } from "../../shell/shellRoutes";
 import { isTimeframe } from "../../chart/timeframes";
 import { Details } from "../../ui/Details";
@@ -9,7 +9,7 @@ import { AnalysisTableView, MiniChart } from "../../optionChain/AnalysisTabsV2";
 import { useCopilotT } from "../i18n";
 import { cx } from "../../components/primitives/cx";
 import {
-  actionState, answerParts, answerRow, areaText, distanceText, headlineLevels, notSetUpLine, stampText, toolsUsedLine, workedLine,
+  actionState, answerParts, answerRow, areaText, distanceText, headlineAreas, notSetUpLine, stampText, toolsUsedLine, workedLine,
   type AnswerBlock, type AnswerHeadline, type ChatAnswer,
 } from "./model";
 import CostChip from "../components/CostChip";
@@ -122,7 +122,7 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
         <div data-mini-chart={chart.symbol}>
           <Suspense fallback={<div aria-busy="true" className="h-48 rounded-panel border border-subtle" />}>
             <EmbeddedChartV2 symbol={chart.symbol} exchange={chart.exchange} timeframe={isTimeframe(chart.timeframe) ? chart.timeframe : "day"}
-              levels={headlineLevels(h)} openLink={false} className="h-48" />
+              areas={headlineAreas(h)} openLink={false} className="h-48" />
           </Suspense>
         </div>
       )}
@@ -147,13 +147,13 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
       {(answer.action || chart || (answer.followup && onAsk)) && (
         <div className="flex flex-col gap-space-2 sm:flex-row sm:flex-wrap" data-actions>
           {answer.action ? (
-            <Link to={answer.action.to} state={actionState(answer)} data-action={answer.draft ? "draft" : "page"} className={PRIMARY}>
+            <InPlaceLink to={answer.action.to} state={actionState(answer)} data-action={answer.draft ? "draft" : "page"} className={PRIMARY}>
               {answer.action.label}
-            </Link>
+            </InPlaceLink>
           ) : chart ? (
-            <Link to={chartTabPath(chart.symbol, chart.exchange, chart.timeframe)} data-action="chart" className={PRIMARY}>
+            <InPlaceLink to={chartTabPath(chart.symbol, chart.exchange, chart.timeframe)} data-action="chart" className={PRIMARY}>
               <LineChart size={16} aria-hidden />{t("chat.openChart")}
-            </Link>
+            </InPlaceLink>
           ) : null}
           {answer.followup && onAsk && (
             <button type="button" onClick={() => onAsk(answer.followup!.question)} data-followup className={SECONDARY}>

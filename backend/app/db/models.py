@@ -682,7 +682,9 @@ class StrategyDeploymentRecord(Base):
     # Z3 / BT2: AUTO (the worker enters on its own, as before) or APPROVAL (every entry signal becomes an ENTRY proposal and
     # only an approved one places a PAPER order - app/execution/approval.py). With the `approval_only_entries` flag on
     # every deployment of the organisation is approval-only whatever this says; APPROVAL never reverts to AUTO by itself.
-    entry_mode: Mapped[str] = mapped_column(String(10), nullable=False, default="AUTO", server_default="AUTO")
+    # M68 PR-6 (TS1-060, alembic 6b9d1f3a5c27): no default - NULL = Not set (the bot follows its owner's Trade settings >
+    # Automation > New entries, and places no entry while that is Not set too). Rows made before keep their stored value.
+    entry_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Strategy templates section 5 ("exits as settings", app/strategy_templates/exits.py): the user's own stop / target
     # choice for a template deployment. NULL everywhere = exactly the behaviour before (the template's invalidation as the
     # stop, no target; a structure's credit levels), so every existing row is unchanged. stop_source: TEMPLATE_INVALIDATION

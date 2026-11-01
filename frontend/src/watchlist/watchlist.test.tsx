@@ -68,7 +68,7 @@ describe("the page reuses the Charts panel as it is", () => {
     expect(pageSource).toContain('import { WatchlistPanel } from "../chart/WatchlistPanel"');
     expect(pageSource).toMatch(/listId=\{view\.watchlist_id\}/);
     expect(pageSource).toMatch(/systemKey=\{view\.watchlist_system\}/);
-    expect(pageSource).toMatch(/navigate\(chartTabPath\(item\.symbol, item\.exchange\)\)/);
+    expect(pageSource).toMatch(/inPlace\.open\(chartTabPath\(item\.symbol, item\.exchange\)\)/);   // M75 NAV-3: in place
     expect(pageSource).toMatch(/liveTicks=\{features\.on\("data_hub"\)\}/);
     // Only the list choice is written back, onto a fresh read of the Charts view (Charts' other settings stay).
     expect(pageSource).toMatch(/\{ \.\.\.readView\(userId\), \.\.\.patch \}/);

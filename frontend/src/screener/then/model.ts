@@ -33,7 +33,7 @@ export type GateOverrides = Record<string, GateValue>;
 export interface SymbolStatus { code: string; lines: string[]; trend?: string | null; bar?: string | null; tries?: number }
 
 /** N1 X2: the template's Auto PAPER state - all three switches must be on for a setup to be placed (N1-3). */
-export interface AutoPaperState { available: boolean; armed: boolean; why: string; today: number; max_per_day: number; armed_at?: string | null }
+export interface AutoPaperState { available: boolean; armed: boolean; why: string; today: number; max_per_day: number | null; armed_at?: string | null }
 
 export interface ThenTemplate {
   rule_id: number; configured: boolean; enabled: boolean; mode: string; confirm_tf: string; gate: GateOverrides;

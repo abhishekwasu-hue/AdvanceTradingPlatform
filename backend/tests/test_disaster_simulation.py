@@ -80,7 +80,7 @@ def test_order_router_survives_a_broker_exception_mid_placement():
     router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker, product="MIS", order_style="MARKET")
     state = TradingDayState()
 
-    result = asyncio.run(router.execute(_sample_signal(), state))
+    result = asyncio.run(router.execute(_sample_signal(), state, max_quantity=1))   # M68 PR-2: the trader's own size
 
     assert result.executed is False
     assert result.system_failure is True
@@ -99,7 +99,7 @@ def test_order_router_survives_a_broker_timeout_mid_placement():
     router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker, product="MIS", order_style="MARKET")
     state = TradingDayState()
 
-    result = asyncio.run(router.execute(_sample_signal(), state))
+    result = asyncio.run(router.execute(_sample_signal(), state, max_quantity=1))   # M68 PR-2: the trader's own size
 
     assert result.executed is False
     assert result.system_failure is True

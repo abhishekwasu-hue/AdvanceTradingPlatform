@@ -41,6 +41,7 @@ from app.instruments.contracts import (
 from app.instruments.spreads import (
     MAX_CUSTOM_LEGS,
     MAX_LEG_RATIO,
+    UNDEFINED_RISK,
     CustomLeg,
     can_hold_for_days,
     custom_legs_json,
@@ -345,10 +346,11 @@ def _exits_answer(record: StrategyDeploymentRecord) -> Optional[dict]:
     return None if choice.is_default else {k: v for k, v in choice.columns().items() if v is not None}
 
 
-def _holds_spread(request: "DeploymentCreateRequest") -> bool:
-    """M55 T1: "Hold for days" on a defined-risk credit structure (bull put, bear call, iron condor, iron butterfly)."""
+def _holds_spread(request: "DeploymentCreateRequest", written_overnight: bool = False) -> bool:
+    """M55 T1: "Hold for days" on a defined-risk credit structure (bull put, bear call, iron condor, iron butterfly);
+    M68 PR-5 (TS1-041): also a written straddle / strangle when the user switched that on (`written_overnight`)."""
     return (request.holding == "SWING" and request.instrument_kind == InstrumentKind.OPTION
-            and can_hold_for_days(request.option_strategy))
+            and can_hold_for_days(request.option_strategy, written_overnight=written_overnight))
 
 
 async def _with_entry_modes(session: AsyncSession, tenant_id: int, records: list, out: list) -> list:
@@ -381,10 +383,10 @@ async def _own_order_defaults(session: AsyncSession, user: User, request: "Deplo
                                                           "msg": "Enter the price protection % for a limit with price protection"}])
 
 
-def _check_holding(request: "DeploymentCreateRequest", strategy) -> None:
+def _check_holding(request: "DeploymentCreateRequest", strategy, written_overnight: bool = False) -> None:
     """Phase AS: what a swing (overnight) deployment may and may not be."""
     daily = list(getattr(strategy, "timeframes", [])) == ["day"]
-    if _holds_spread(request):
+    if _holds_spread(request, written_overnight):
         # M55 T1: a defined-risk credit structure held for days - entries on the user's own timeframe (intraday or daily).
         if daily and request.timeframe != "day":
             raise HTTPException(status_code=400, detail=f"{strategy.name} trades daily candles: set timeframe to 'day'")
@@ -392,6 +394,10 @@ def _check_holding(request: "DeploymentCreateRequest", strategy) -> None:
             raise HTTPException(status_code=400, detail=f"{strategy.name} reads intraday candles: pick an intraday timeframe")
         return
     if request.holding == "SWING":
+        if request.instrument_kind == InstrumentKind.OPTION and request.option_strategy in UNDEFINED_RISK:
+            from app.risk_engine import own_risk
+            raise HTTPException(status_code=400, detail="A written straddle or strangle is held overnight only with your own setting on - "
+                                f"{own_risk.needs_setting('overnight_short_options')}")
         if request.option_strategy != OptionStrategy.SINGLE:
             raise HTTPException(status_code=400, detail="Swing (overnight) holding is for single positions; multi-leg structures stay intraday")
         if request.option_position == OptionPosition.WRITE:
@@ -530,15 +536,17 @@ async def create_deployment(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     sent_holding = request.holding
     await _own_order_defaults(session, user, request)
+    from app.risk_engine import own_risk
+    written_overnight = (await own_risk.for_user(session, user)).overnight_short_options     # M68 PR-5 (TS1-041)
     try:
-        _check_holding(request, strategy)
+        _check_holding(request, strategy, written_overnight)
     except HTTPException:
         if sent_holding is not None or request.holding is None:
             raise
         # M68 PR-1: his saved holding does not fit this strategy (e.g. Carry forward on intraday candles): the bot keeps
         # its holding Not set (it says so on its card) rather than refusing a form that did not send one.
         request.holding = None
-        _check_holding(request, strategy)
+        _check_holding(request, strategy, written_overnight)
     # REV-H3: a seller pack on an option needs the user's own construction (no server-side buy-at-the-money pick)
     pack_problem = packs.contract_problem(request.strategy_id, request.instrument_kind, request.option_strategy, request.option_position)
     if pack_problem:

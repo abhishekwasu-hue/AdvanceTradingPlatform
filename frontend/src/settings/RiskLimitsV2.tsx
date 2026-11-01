@@ -8,8 +8,8 @@ import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import { SWITCHES_OFF, SWITCH_FIELDS, loadSwitches, saveSwitches, type MyLimitSwitches } from "./myLimits";
 import {
-  bodyOf, draftOf, loadRiskLimits, onCount, saveRiskLimits, valueWords, type PausePick, type RiskLimitCheck, type RiskLimitsDraft,
-  type RiskLimitsView,
+  bodyOf, draftOf, loadRiskLimits, onCount, saveRiskLimits, valueWords, type OppositePick, type PausePick, type RiskLimitCheck,
+  type RiskLimitsDraft, type RiskLimitsView,
 } from "./riskLimits";
 
 /**
@@ -101,6 +101,16 @@ export default function RiskLimitsV2({ load = loadRiskLimits, save = saveRiskLim
               <Details id={`risk-limits.${f.key}`} label="What it does" className="mt-space-1"><p>{f.help}</p></Details>
             </li>
           ))}
+          {/* M68 PR-5 (TS1-052, owner decision D3): Not set = allowed; only his own "Not allowed" holds a bot's entry back */}
+          <li id="opposite_positions" className="scroll-mt-20 py-space-3" data-check="opposite_positions">
+            <label htmlFor="risk-limits-opposite" className={LABEL}>Two bots on opposite sides of one symbol</label>
+            <Combobox id="risk-limits-opposite" label="Two bots on opposite sides of one symbol" value={draft.opposite} className="w-full sm:max-w-xs"
+              onChange={(v) => { setDraft({ ...draft, opposite: v as OppositePick | "" }); setNote(null); }} options={OPPOSITE_OPTIONS}
+              dataAttrs={{ "data-field": "opposite" }} />
+            <Details id="risk-limits.opposite_positions" label="What it does" className="mt-space-1">
+              <p>Not allowed: a bot does not enter against an open position another of your bots holds on the same symbol. Not set: allowed. Exits always work.</p>
+            </Details>
+          </li>
         </ul>
         <div className="mt-space-3">
           <label htmlFor="risk-limits-capital" className={LABEL}>Account basis for the % limits (₹)</label>
@@ -131,7 +141,10 @@ const CHECK_TERMS: Record<string, { term: GlossaryKey }> = {
   drawdown: { term: "drawdown" },
 };
 
-const PAUSE_OPTIONS = [{ value: "next_session", label: "At the next session" }, { value: "until_resume", label: "When I resume" }] as const;
+// M68 PR-5 (TS1-051): no pre-picked choice - "Not set" until the trader picks one (asked when the check needs it).
+const PAUSE_OPTIONS = [{ value: "", label: "Not set" }, { value: "next_session", label: "At the next session" },
+  { value: "until_resume", label: "When I resume" }] as const;
+const OPPOSITE_OPTIONS = [{ value: "", label: "Not set (allowed)" }, { value: "allow", label: "Allowed" }, { value: "deny", label: "Not allowed" }] as const;
 
 function Switch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
   return (
@@ -147,7 +160,7 @@ function Switch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) 
 
 function CheckRow({ check, draft, onChange, paper, pause, onPause }: {
   check: RiskLimitCheck; draft: RiskLimitsDraft; onChange: (id: string, patch: Partial<RiskLimitsDraft["checks"][string]>) => void;
-  paper?: Record<string, number>; pause?: PausePick; onPause?: (p: PausePick) => void;
+  paper?: Record<string, number>; pause?: PausePick | ""; onPause?: (p: PausePick | "") => void;
 }) {
   const id = useId();
   const d = draft.checks[check.id];
@@ -175,8 +188,8 @@ function CheckRow({ check, draft, onChange, paper, pause, onPause }: {
         {check.id === "loss_cooldown" && onPause && minutes.trim() === "" && (
           <div className="min-w-0">
             <label htmlFor={`${id}-pause`} className={LABEL}>With no minutes, the pause ends</label>
-            <Combobox id={`${id}-pause`} label="With no minutes, the pause ends" value={pause ?? "next_session"} className="w-full"
-              onChange={(v) => onPause(v as PausePick)} options={PAUSE_OPTIONS} dataAttrs={{ "data-field": "pause" }} />
+            <Combobox id={`${id}-pause`} label="With no minutes, the pause ends" value={pause ?? ""} className="w-full"
+              onChange={(v) => onPause(v as PausePick | "")} options={PAUSE_OPTIONS} dataAttrs={{ "data-field": "pause" }} />
           </div>
         )}
       </div>}

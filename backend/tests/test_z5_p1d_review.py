@@ -24,6 +24,7 @@ from app.db.models import MarketSnapshotRecord, PaperAccountRecord, RiskLockoutR
 from app.execution import approval
 from app.market_data.calendar import IST
 from app.risk_engine import by_default, guardian, vix_gate
+from tests.def0_legacy import own_vix
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import _deploy, _FakeBroker, _get, _worker
 from tests.test_z3_approval_entries import _flag_for as _approval_flag
@@ -93,6 +94,7 @@ def test_the_worker_captures_a_live_vix_reading_and_the_gate_acts_on_it(monkeypa
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
     _flag(vix_gate.FLAG, t["tenant_id"])
+    own_vix(client, t["headers"])                     # M68 PR-5: the user's own India VIX check
     worker = _worker(monkeypatch, _VixBroker(vix=14.0, prev_close=13.0))            # +7.7% against yesterday's close
     _run(worker.run_cycle(now=VIX_NOW.astimezone(UTC)))
 
@@ -108,8 +110,12 @@ def test_the_worker_captures_a_live_vix_reading_and_the_gate_acts_on_it(monkeypa
 
     async def verdicts():
         async with _session_factory() as session:
-            long = await vix_gate.check(session, t["tenant_id"], symbol="NIFTY 50", direction="LONG", now=VIX_NOW.astimezone(UTC))
-            short = await vix_gate.check(session, t["tenant_id"], symbol="NIFTY", direction="SHORT", now=VIX_NOW.astimezone(UTC))
+            long = await vix_gate.check(session, t["tenant_id"], symbol="NIFTY 50", direction="LONG", now=VIX_NOW.astimezone(UTC),
+                                        user_id=t["user_id"])
+            short = await vix_gate.check(session, t["tenant_id"], symbol="NIFTY", direction="SHORT", now=VIX_NOW.astimezone(UTC),
+                                         user_id=t["user_id"])
+            nobody = await vix_gate.check(session, t["tenant_id"], symbol="NIFTY 50", direction="LONG", now=VIX_NOW.astimezone(UTC))
+            assert nobody.state == "off" and nobody.reasons == []      # Not set (no user's own check): nothing paused
             return long, short
     long, short = _run(verdicts())
     assert long.state == "spike" and long.reasons and short.reasons == []
@@ -121,6 +127,7 @@ def test_the_worker_captures_a_live_vix_reading_and_the_gate_acts_on_it(monkeypa
 def test_a_failed_capture_is_stored_and_after_the_grace_it_pauses_bullish_entries_only(monkeypatch):
     t = _tenant_t("vix-fail")
     _flag(vix_gate.FLAG, t["tenant_id"])
+    own_vix(client, t["headers"])
 
     class _Down:
         async def get_ltp(self, *a, **k):
@@ -134,9 +141,9 @@ def test_a_failed_capture_is_stored_and_after_the_grace_it_pauses_bullish_entrie
             at = (VIX_NOW.replace(hour=9, minute=21)).astimezone(UTC)
             await vix_gate.capture(session, t["tenant_id"], _Down(), now=at)
             readings = await vix_gate.readings_today(session, t["tenant_id"], VIX_NOW.astimezone(UTC))
-            before = await vix_gate.check(session, t["tenant_id"], symbol="NIFTY", direction="LONG", now=VIX_NOW.replace(hour=9, minute=19).astimezone(UTC))
-            after = await vix_gate.check(session, t["tenant_id"], symbol="NIFTY", direction="LONG", now=VIX_NOW.astimezone(UTC))
-            bear = await vix_gate.check(session, t["tenant_id"], symbol="NIFTY", direction="SHORT", now=VIX_NOW.astimezone(UTC))
+            before = await vix_gate.check(session, t["tenant_id"], symbol="NIFTY", direction="LONG", now=VIX_NOW.replace(hour=9, minute=19).astimezone(UTC), user_id=t["user_id"])
+            after = await vix_gate.check(session, t["tenant_id"], symbol="NIFTY", direction="LONG", now=VIX_NOW.astimezone(UTC), user_id=t["user_id"])
+            bear = await vix_gate.check(session, t["tenant_id"], symbol="NIFTY", direction="SHORT", now=VIX_NOW.astimezone(UTC), user_id=t["user_id"])
             return readings, before, after, bear
     readings, before, after, bear = _run(go())
     assert readings[0]["last"] is None and "feed down" in readings[0]["error"]
@@ -210,6 +217,7 @@ def test_exit_now_and_stop_survive_every_entry_check_raising(monkeypatch):
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
     _flag(vix_gate.FLAG, t["tenant_id"])
+    own_vix(client, t["headers"])
     _vix_clock(monkeypatch)
     _vix(t, 30.0, 20.0)
     _closed(t, -25_000.0)

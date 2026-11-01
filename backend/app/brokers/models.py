@@ -1,3 +1,4 @@
+import math
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -41,6 +42,15 @@ class BrokerProfile(BaseModel):
     email: Optional[str] = None
 
 
+def lot_or_none(value: Any) -> Optional[float]:
+    """M68 PR-2 (TS1-088): a broker dump's lot size as a positive number, or None when it gives none (blank, 0, junk)."""
+    try:
+        lot = float(value) if value not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        return None
+    return lot if math.isfinite(lot) and lot > 0 else None
+
+
 class Instrument(BaseModel):
     instrument_token: str
     exchange: str
@@ -48,7 +58,9 @@ class Instrument(BaseModel):
     name: Optional[str] = None
     segment: Optional[str] = None
     instrument_type: Optional[str] = None
-    lot_size: float = 1
+    # M68 PR-2 (TS1-088): the broker's own lot size; None when its dump gives none - never assumed to be 1 (the instrument
+    # master leaves a future / option without one out; a cash share's lot of one is a fact it fills in itself).
+    lot_size: Optional[float] = None
     tick_size: float = 0.05
     expiry: Optional[str] = None
     strike: Optional[float] = None

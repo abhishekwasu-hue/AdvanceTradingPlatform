@@ -9,6 +9,7 @@
   or a platform admin) and is checked here too.
 """
 import json
+import math
 from typing import Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -730,75 +731,118 @@ async def require_flag(session: AsyncSession, name: str, tenant_id: Optional[int
 
 
 # --- Phase V1: risk ceilings ----------------------------------------------------------------------
-# The Risk Guardian spec keeps every default admin-configurable *with hard ceilings*: a tenant may
-# set its own risk per trade, daily loss, portfolio risk and drawdown pause level, but never above
-# these, and never a stop cool-down shorter than the minimum. Enforced at the settings API and,
-# belt and braces, clamped at runtime on every entry.
+# A ceiling is the most a member may set for one of his risk limits (and, for the stop cool-down, the least). M68 PR-5
+# (TS1-048, owner decision D2, provisional default M68Q-2): there is NO ceiling unless a platform admin sets one - for
+# every organisation, or for one team (organisation). The old built-in ceilings (2 % / 5 % / 10 % / 25 %) are gone.
+# `warn_at_pct` (TS1-059): an admin's limit of the risk hierarchy warns when its use reaches this % of the limit (a
+# notice only, never a block); not set = no warning notice. Enforced at the settings API and, belt and braces, clamped
+# at runtime on every entry - only where a ceiling is set.
 KEY_RISK_CEILINGS = "risk_ceilings"
-RISK_CEILINGS_DEFAULT: Dict[str, float] = {
-    "risk_per_trade_pct": 2.0,        # spec R2: hard ceiling 2%
-    "max_daily_loss_pct": 5.0,        # spec R5 default 2%; the ceiling leaves room for a wider tenant setting
-    "max_portfolio_risk_pct": 10.0,   # spec R4 default 6%
-    "dd_level_2_pct": 25.0,           # the pause level cannot be pushed beyond a quarter of the peak
-    "min_stop_cooldown_minutes": 0.0, # spec R10: an operator may force a minimum cool-down
-}
 CEILING_MAX_KEYS = ("risk_per_trade_pct", "max_daily_loss_pct", "max_portfolio_risk_pct", "dd_level_2_pct")
+CEILING_KEYS = (*CEILING_MAX_KEYS, "min_stop_cooldown_minutes", "warn_at_pct")
+# A row saved before M68 held EVERY key (a save wrote the merged dict, built-ins included), so it cannot tell an admin's
+# value from a built-in one: a stored value equal to the old built-in reads as not set (the TT12-1 rule). A save from
+# now on stores only what the admin set, marked `m68`, and is read exactly.
+LEGACY_RISK_CEILINGS: dict[str, float] = {"risk_per_trade_pct": 2.0, "max_daily_loss_pct": 5.0, "max_portfolio_risk_pct": 10.0,
+                                          "dd_level_2_pct": 25.0, "min_stop_cooldown_minutes": 0.0}
 
 
-async def risk_ceilings(session: AsyncSession) -> Dict[str, float]:
-    stored = await _get(session, KEY_RISK_CEILINGS)
-    out = dict(RISK_CEILINGS_DEFAULT)
-    for key in out:
-        if key in stored:
-            try:
-                out[key] = float(stored[key])
-            except (TypeError, ValueError):
-                continue
+def _ceiling_key(tenant_id: int | None) -> str:
+    return KEY_RISK_CEILINGS if tenant_id is None else f"{KEY_RISK_CEILINGS}:tenant:{int(tenant_id)}"
+
+
+def _ceiling_values(stored: dict) -> dict[str, float]:
+    """The ceilings an admin set in one stored row (only the set ones; a value that is not a positive number is dropped)."""
+    own = stored.get("m68") is True
+    raw = stored.get("values") if own else stored
+    out: dict[str, float] = {}
+    for key in CEILING_KEYS:
+        if not isinstance(raw, dict) or key not in raw:
+            continue
+        try:
+            value = float(raw[key])
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(value) or value <= 0 or (key == "warn_at_pct" and value > 100):
+            continue
+        if not own and LEGACY_RISK_CEILINGS.get(key) == value:
+            continue                                   # a built-in written by a pre-M68 save, not the admin's own value
+        out[key] = value
     return out
 
 
-async def set_risk_ceilings(session: AsyncSession, user: User, values: Dict[str, float]) -> Dict[str, float]:
-    current = await risk_ceilings(session)
+async def admin_risk_ceilings(session: AsyncSession, tenant_id: int | None = None) -> dict[str, float | None]:
+    """What a platform admin set at one scope (every organisation, or one team): every key, None = not set."""
+    values = _ceiling_values(await _get(session, _ceiling_key(tenant_id)))
+    return {key: values.get(key) for key in CEILING_KEYS}
+
+
+async def risk_ceilings(session: AsyncSession, tenant_id: int | None = None) -> dict[str, float]:
+    """The ceilings in force for `tenant_id`'s members: only the set ones (an empty dict = no ceiling at all). With a
+    platform-wide and a team value for the same key the stricter applies (the smaller top, the longer cool-down, the
+    earlier warning)."""
+    out = _ceiling_values(await _get(session, KEY_RISK_CEILINGS))
+    if tenant_id is not None:
+        for key, value in _ceiling_values(await _get(session, _ceiling_key(tenant_id))).items():
+            if key not in out:
+                out[key] = value
+            else:
+                out[key] = max(out[key], value) if key == "min_stop_cooldown_minutes" else min(out[key], value)
+    return out
+
+
+async def set_risk_ceilings(session: AsyncSession, user: User, values: dict[str, float | None],
+                            tenant_id: int | None = None) -> dict[str, float | None]:
+    """A platform admin sets (a number) or clears (None) ceilings for every organisation or for one team. Keys not sent
+    keep their value. Returns that scope's ceilings, every key (None = not set)."""
+    current = {k: v for k, v in (await admin_risk_ceilings(session, tenant_id)).items() if v is not None}
     for key, value in values.items():
-        if key not in RISK_CEILINGS_DEFAULT:
-            raise ValueError(f"Unknown risk ceiling '{key}' - known: {sorted(RISK_CEILINGS_DEFAULT)}")
+        if key not in CEILING_KEYS:
+            raise ValueError(f"Unknown risk ceiling '{key}' - known: {sorted(CEILING_KEYS)}")
+        if value is None:
+            current.pop(key, None)
+            continue
         number = float(value)
-        if number < 0 or (key in CEILING_MAX_KEYS and number <= 0):
-            raise ValueError(f"{key} must be a positive number")
+        if not math.isfinite(number) or number <= 0:
+            raise ValueError(f"{key} must be a positive number, or empty for no ceiling")
+        if key in (*CEILING_MAX_KEYS, "warn_at_pct") and number > 100:
+            raise ValueError(f"{key} must be at most 100")
         current[key] = number
-    await _set(session, KEY_RISK_CEILINGS, current, user)
-    await write_audit_log(session, None, user.id, "risk_ceilings_set", ", ".join(f"{k}={v:g}" for k, v in sorted(current.items())))
+    await _set(session, _ceiling_key(tenant_id), {"m68": True, "values": current}, user)
+    await write_audit_log(session, tenant_id, user.id, "risk_ceilings_set",
+                          (f"team {tenant_id}: " if tenant_id is not None else "all: ")
+                          + (", ".join(f"{k}={v:g}" for k, v in sorted(current.items())) or "none"))
     await session.commit()
-    return current
+    return await admin_risk_ceilings(session, tenant_id)
 
 
 def ceiling_violations(cfg, ceilings: Dict[str, float]) -> List[str]:
-    """Why a tenant's RiskConfig may not be saved as given."""
+    """Why a tenant's RiskConfig may not be saved as given (only against a ceiling that is set)."""
     errors: List[str] = []
     for key in CEILING_MAX_KEYS:
         value = float(getattr(cfg, key, 0.0) or 0.0)
-        if value > ceilings[key]:
-            errors.append(f"{key} {value:g} exceeds the platform ceiling {ceilings[key]:g}")
+        if key in ceilings and value > ceilings[key]:
+            errors.append(f"{key} {value:g} exceeds the ceiling your admin set ({ceilings[key]:g})")
     minimum = ceilings.get("min_stop_cooldown_minutes", 0.0)
-    if float(getattr(cfg, "stop_cooldown_minutes", 0) or 0) < minimum:
-        errors.append(f"stop_cooldown_minutes must be at least {minimum:g}")
+    if minimum and float(getattr(cfg, "stop_cooldown_minutes", 0) or 0) < minimum:
+        errors.append(f"stop_cooldown_minutes must be at least {minimum:g} (set by your admin)")
     return errors
 
 
 def clamp_config(cfg, ceilings: Dict[str, float]):
-    """(config within the ceilings, notes saying what was clamped). Runtime safety net for
-    settings saved before a ceiling was lowered."""
+    """(config within the ceilings, notes saying what was clamped). Runtime safety net for settings saved before an admin
+    set or lowered a ceiling; with no ceiling set (the default) the config is returned unchanged."""
     updates = {}
     notes: List[str] = []
     for key in CEILING_MAX_KEYS:
         value = float(getattr(cfg, key, 0.0) or 0.0)
-        if value > ceilings[key]:
+        if key in ceilings and value > ceilings[key]:
             updates[key] = ceilings[key]
-            notes.append(f"{key} {value:g} capped at the platform ceiling {ceilings[key]:g}")
+            notes.append(f"{key} {value:g} capped at the ceiling your admin set ({ceilings[key]:g})")
     minimum = ceilings.get("min_stop_cooldown_minutes", 0.0)
-    if float(getattr(cfg, "stop_cooldown_minutes", 0) or 0) < minimum:
+    if minimum and float(getattr(cfg, "stop_cooldown_minutes", 0) or 0) < minimum:
         updates["stop_cooldown_minutes"] = int(minimum)
-        notes.append(f"stop_cooldown_minutes raised to the platform minimum {minimum:g}")
+        notes.append(f"stop_cooldown_minutes raised to the minimum your admin set ({minimum:g})")
     return (cfg.model_copy(update=updates) if updates else cfg), notes
 
 

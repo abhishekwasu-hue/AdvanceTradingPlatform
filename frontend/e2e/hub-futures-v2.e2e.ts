@@ -185,8 +185,13 @@ test.describe("Symbol hub v2 flows", () => {
     const ticket = page.locator("[data-order-ticket]");
     await expect(ticket.getByRole("heading")).toHaveText("NIFTY 27 OCT FUT");
     await expect(ticket.locator("[data-practice-frame]")).toContainText("PAPER");
+    // M68 PR-2: no lots are pre-filled - the ticket asks for them first (the lots field, focused)
+    await expect(ticket.locator("[data-ticket='units']")).toHaveText("Lot size 75");
+    await expect(ticket.locator("[data-ticket='lots']")).toBeFocused();
+    await ticket.locator("[data-ticket='lots']").fill("1");
     await expect(ticket.locator("[data-ticket='units']")).toHaveText("1 lot = 75 qty (lot size 75)");
     // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+    if (await ticket.locator("[data-ticket='lots']").inputValue() === "") await ticket.locator("[data-ticket='lots']").fill("1");   // M68 PR-2: lots asked first
     if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").click();
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
     // DEF-0 D7: no stop is forced on a future - the trader adds his own (M68 TS-3: "More options" stays open after the
@@ -207,7 +212,8 @@ test.describe("Symbol hub v2 flows", () => {
     await expect(badge).toHaveAttribute("aria-label", "Open the basket: 0 legs");
     await near.locator("[data-action='basket']").click();
     await page.locator("[data-action='basket-sell']:visible").click();
-    await expect(page.locator("[data-futures-note='done']")).toHaveText("Added to the basket: Sell 1 lot of NIFTY 27 OCT FUT.");
+    // M68 PR-2 (TS1-022): no lots of his own saved - the leg is added empty and the basket asks for its lots
+    await expect(page.locator("[data-futures-note='done']")).toHaveText("Added to the basket: Sell NIFTY 27 OCT FUT. Enter its lots in the basket.");
     await expect(badge).toHaveAttribute("aria-label", "Open the basket: 1 leg");
     await expect(badge).toHaveAttribute("href", "/option-chain?underlying=NIFTY&basket=open&tf=15min");
 

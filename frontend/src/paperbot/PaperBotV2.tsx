@@ -28,8 +28,8 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Details } from "../ui/numbersFirst";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
-import { APPROVAL_MODE_KEY, ENTRY_MODE_CHOICES, ORDER_TYPE_KEY, PROTECTION_KEY, approvalModeOf, orderDefaultsOf, useTradeSettings,
-  type EntryModeChoice } from "../settings/tradeSettings";
+import { APPROVAL_MODE_KEY, ENTRY_MODE_CHOICES, LOTS_KEY, ORDER_TYPE_KEY, POSITION_SIZE_WHERE, PROTECTION_KEY, approvalModeOf, orderDefaultsOf,
+  sizesItself, useTradeSettings, type EntryModeChoice } from "../settings/tradeSettings";
 import { SaveAsDefault } from "../settings/SaveAsDefault";
 import { draftFromState, formSymbol } from "../copilot/strategyDraft";
 import CopilotDraftV2 from "./CopilotDraftV2";
@@ -62,6 +62,13 @@ const ENTRY_STYLE_MISSING = "Choose how this bot sends its entries.";
 const MODE_OPTIONS: ComboOption[] = ENTRY_MODE_CHOICES.map((c) => ({ value: c.value, label: c.label }));
 const MODE_MISSING = "Choose whether this bot places entries by itself or asks you first.";
 const BAND_MISSING = "Enter the price protection % (0.05 to 5).";
+// M68 PR-2 (TS1-019): a bot's size is the trader's own - the form asks when neither the bot nor his Trade settings has one.
+const LOTS_MISSING = "Enter how many lots this bot trades (1 to 500).";
+const SHARES_MISSING = "Enter how many shares this bot trades on each entry (1 to 500).";
+const lotsOf = (text: string): number | null => {
+  const v = Number(text.trim());
+  return text.trim() !== "" && Number.isInteger(v) && v >= 1 && v <= 500 ? v : null;
+};
 
 /** The band typed for a limit with price protection, or null when it is not 0.05 to 5. */
 function bandOf(text: string): number | null {
@@ -444,7 +451,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
 }) {
   const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), timeframe: useId(), stop: useId(),
     target: useId(), times: useId(), wave: useId(), share: useId(), exitNotes: useId(), construction: useId(), width: useId(), startWhy: useId(),
-    entry: useId(), band: useId(), mode: useId() };
+    entry: useId(), band: useId(), lots: useId(), mode: useId() };
   const [useDefaults, setUseDefaults] = useState(true);
   const ready = useMemo(() => (library ?? []).filter((s) => READY.some((r) => r.id === s.id))
     .sort((a, b) => READY.findIndex((r) => r.id === a.id) - READY.findIndex((r) => r.id === b.id)), [library]);
@@ -464,6 +471,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const mine = orderDefaultsOf(ownSettings);
   const [entryStyle, setEntryStyle] = useState<"" | "MARKET" | "PROTECTED_LIMIT">("");
   const [bandText, setBandText] = useState("");
+  const [lotsText, setLotsText] = useState("");
   // M68 PR-6 (TS1-060): whether this bot places entries by itself or asks first - his Trade settings, else asked here.
   const ownMode = approvalModeOf(ownSettings);
   const [entryModePick, setEntryModePick] = useState<"" | EntryModeChoice>("");
@@ -583,13 +591,18 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const sent = askEntry && style
     ? { ...request, order_style: style, ...(band !== null ? { market_protection_pct: band } : {}) }
     : askBand && band !== null ? { ...request, market_protection_pct: band } : request;
+  // M68 PR-2 (TS1-019): no size of the bot's own (an idea's or a tested one) and none in his Trade settings: the form asks.
+  const askLots = !sent.max_lots && !sizesItself(ownSettings);
+  const botLots = askLots ? lotsOf(lotsText) : null;
+  const sized = botLots !== null ? { ...sent, max_lots: botLots } : sent;
+  const stockBot = !sized.instrument_kind || sized.instrument_kind === "UNDERLYING";
   // his "Ask me first" saved as a default (My trading defaults) already sets entry_mode on the request; else his choice here
   const askMode = !ownMode && !sent.entry_mode;
-  const sentWithMode = askMode && entryModePick ? { ...sent, entry_mode: entryModePick } : sent;
+  const sentWithMode = askMode && entryModePick ? { ...sized, entry_mode: entryModePick } : sized;
   const summary = startSummaryParts(symbol, info, sentWithMode);
   const entryWhy = askEntry && !style ? ENTRY_STYLE_MISSING : askBand && band === null ? BAND_MISSING
-    : askMode && !entryModePick ? MODE_MISSING : null;
-  const startWhy = (effectiveId ? constructionProblem(sent) : null) ?? (effectiveId ? entryWhy : null);
+    : askLots && botLots === null ? (stockBot ? SHARES_MISSING : LOTS_MISSING) : askMode && !entryModePick ? MODE_MISSING : null;
+  const startWhy = (effectiveId ? constructionProblem(sentWithMode) : null) ?? (effectiveId ? entryWhy : null);
   const widthLabel = (s: OptionStrategy | undefined) => (s && (WINGED_STRUCTURES.includes(s) || s === "LONG_BUTTERFLY") ? "Wing width" : "Short strike distance");
   const setExit = (patch: Partial<ExitPick>) => { setExitPick((p) => ({ ...(exitsNow ?? p), ...patch })); setResult(null); };
 
@@ -745,6 +758,15 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             )}
           </div>
         )}
+        {askLots && (
+          <div className="space-y-space-1 rounded-control border border-subtle p-space-3" data-bot-lots>
+            <label htmlFor={ids.lots} className={LABEL}>{stockBot ? "Shares for each entry" : "Lots for this bot"}</label>
+            <input id={ids.lots} className={FIELD} inputMode="numeric" autoComplete="off" value={lotsText} placeholder="1 to 500"
+              aria-invalid={lotsText.trim() !== "" && botLots === null ? true : undefined} data-bot-lots-input title={`Or save your size once in ${POSITION_SIZE_WHERE}`}
+              onChange={(e) => { setLotsText(e.target.value); setResult(null); }} />
+            {botLots !== null && <SaveAsDefault key={botLots} fieldKey={LOTS_KEY} value={botLots} />}
+          </div>
+        )}
         {askMode && (
           <div className="space-y-space-3 rounded-control border border-subtle p-space-3" data-entry-mode>
             <div>
@@ -803,7 +825,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
           {/* UI-28 U7.4: the exact contract each signal side would trade now, before anything starts. */}
           {notTaken && <p className="text-t13 text-fg-muted" data-defaults-not-taken>{notTaken}</p>}
           {/* REV-H3: no preview of a contract nobody chose yet (the preview would fill in a side). */}
-          {effectiveId && !startWhy && <ContractPreviewV2 request={request} />}
+          {effectiveId && !startWhy && <ContractPreviewV2 request={sized} />}
           <button type="button" className={`${BUTTON_PRIMARY} w-full sm:w-auto`} disabled={busy || !effectiveId || !!startWhy} aria-busy={busy || undefined}
             aria-describedby={startWhy ? ids.startWhy : undefined} onClick={() => void start()}>
             {busy && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}

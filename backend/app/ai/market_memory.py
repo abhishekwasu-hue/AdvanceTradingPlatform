@@ -246,7 +246,7 @@ async def latest(session: AsyncSession, tenant_id: int, *, now: Optional[datetim
             "sentiment": (sentiment or {}).get("payload") if sentiment else None}
 
 
-async def last_read(session: AsyncSession, tenant_id: int) -> List[dict]:
+async def last_read(session: AsyncSession, tenant_id: int) -> list[dict]:
     """M82 R2: the newest stored symbol read of each symbol taken on the newest read's IST day, at any age. `latest()`
     keeps only the last 3 days, so after a long weekend a stored read would look like none; this one never does."""
     rows = list(await session.scalars(select(MarketSnapshotRecord).where(
@@ -256,7 +256,7 @@ async def last_read(session: AsyncSession, tenant_id: int) -> List[dict]:
     if not rows:
         return []
     day = _utc(rows[0].captured_at).astimezone(IST).date()
-    out: Dict[str, dict] = {}
+    out: dict[str, dict] = {}
     for r in rows:
         if _utc(r.captured_at).astimezone(IST).date() != day:
             break

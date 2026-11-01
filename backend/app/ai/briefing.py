@@ -282,7 +282,7 @@ async def read_now_state(session: AsyncSession, user: User) -> dict:
     return {"enabled": True, "broker": "ok", "reason": None}
 
 
-def _worker_ran(beats: List[WorkerHeartbeatRecord], start: datetime, end: datetime) -> bool:
+def _worker_ran(beats: list[WorkerHeartbeatRecord], start: datetime, end: datetime) -> bool:
     """The trading worker was alive inside [start, end]: started before its end and seen after its start."""
     for b in beats:
         if b.worker_name != "trading_worker" or b.last_seen_at is None:
@@ -293,8 +293,8 @@ def _worker_ran(beats: List[WorkerHeartbeatRecord], start: datetime, end: dateti
     return False
 
 
-async def read_state(session: AsyncSession, user: User, now: datetime, is_open: bool, holidays, symbols: List[dict],
-                     beats: List[WorkerHeartbeatRecord], read_now: dict) -> dict:
+async def read_state(session: AsyncSession, user: User, now: datetime, is_open: bool, holidays, symbols: list[dict],
+                     beats: list[WorkerHeartbeatRecord], read_now: dict) -> dict:
     """M82 R2 / R3: which market read the card shows and, when there is none, the one reason why.
     state: today / last_session / older / none; label: "Today", "Last session, Fri 30 Oct", "Last read, Wed 28 Oct"."""
     now_ist = now.astimezone(IST)

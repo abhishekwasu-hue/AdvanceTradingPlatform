@@ -45,8 +45,8 @@ async def exposure(live_prices: bool = Query(default=True), mine: bool = Query(d
     # DEF-0 / M68 PR-7: the organisation's own capital, else his own paper capital - never a built-in figure; Not set: 0
     # (no share of capital is shown, portfolio/engine.py).
     from app.paper import paper_settings
-    own = await paper_settings.capital_of(session, user)
-    capital = float(risk.capital) if risk is not None and risk.capital is not None else float(own or 0.0)
+    own_capital = await paper_settings.capital_of(session, user)
+    capital = float(risk.capital) if risk is not None and risk.capital is not None else float(own_capital or 0.0)
     prices: Dict[str, float] = {}
     marks: Dict[str, Tuple[float, datetime]] = {}
     price_source = "entry"

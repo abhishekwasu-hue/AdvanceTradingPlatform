@@ -75,7 +75,8 @@ def refusals(positions: List[R.Position], buckets: Dict[str, str], candidate: Ca
         return []
     out: List[str] = []
     if capital <= 0:
-        return [f"Portfolio caps: the capital basis is {capital:,.0f}, so the caps cannot be checked - no new entry"]
+        return [f"Portfolio caps: the capital basis is {capital:,.0f}, so the caps cannot be checked - no new entry"
+                + (" (your paper starting capital is not set: Settings › Trade settings › Paper account)" if capital == 0 else "")]
     if limits.max_open_positions > 0 and len(positions) >= limits.max_open_positions:
         out.append(f"Portfolio caps: {len(positions)} open positions already (your limit is {limits.max_open_positions})")
     size = sized(candidate, risk_cap_amount)
@@ -147,7 +148,8 @@ async def book_inputs(session: AsyncSession, user: User, now: Optional[datetime]
     for p in positions:
         p.underlying = await risk_data.resolve_underlying(session, p.underlying, p.underlying) or p.underlying
     buckets = {u: await risk_data.bucket_of(session, u, day) for u in sorted({p.underlying for p in positions})}
-    capital = await by_default.capital_basis(session, user, now)
+    # M68 PR-7: Not set (None) is a basis of 0 here - the caps fail closed as before, and the refusal names the setting.
+    capital = await by_default.capital_basis(session, user, now) or 0.0
     limits = Limits(float(settings.max_sector_pct), float(settings.max_correlated_risk_pct), int(settings.max_open_positions))
     return BookInputs(positions, buckets, capital, await largest_risk_amount(session, user, capital, settings), limits)
 

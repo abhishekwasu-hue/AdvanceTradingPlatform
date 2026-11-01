@@ -328,6 +328,9 @@ test.describe("v2 terminal 1440", () => {
     const builder = page.locator("[data-panel='basket'] [data-basket-panel][data-embedded]");
     await expect(builder.locator("[data-basket-body]")).toBeVisible();
     await expect(builder.locator("[data-basket='legs'] > li")).toHaveCount(2);
+    // M68 PR-2 (TS1-022): no lots of his own saved - each added leg asks for its lots; the numbers follow once entered
+    await expect(builder.locator("[data-basket='problems']")).toContainText("Leg 1: enter its lots.");
+    for (const i of [0, 1]) await builder.locator("[data-leg-lots]").nth(i).fill("1");
     for (const f of ["net", "max-loss", "breakevens", "margin"]) await expect(builder.locator(`[data-figure='${f}']`)).toBeVisible();
     await expect(page.locator("[data-panel='basket'] [data-practice-frame]")).toHaveCount(0);     // one PAPER badge per screen
     const alert = page.locator("[data-terminal='incomplete'] [data-incomplete-action]");
@@ -347,6 +350,7 @@ test.describe("v2 terminal 1440", () => {
     await expect(order.locator("[data-practice-frame]")).toHaveCount(0);            // TERM-2 step 5: the one PAPER badge is in the bar
     await expect(page.locator("[data-terminal='mode']")).toHaveText("PAPER");
     // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+    if (await order.locator("[data-ticket='lots']").inputValue() === "") await order.locator("[data-ticket='lots']").fill("1");   // M68 PR-2: lots asked first
     if (await order.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await order.locator("[data-ticket='order-type'] [data-option='MARKET']").click();
     await order.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
     await order.locator("[data-ticket='review']").click();

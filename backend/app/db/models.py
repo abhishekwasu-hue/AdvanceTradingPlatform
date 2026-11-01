@@ -1720,6 +1720,25 @@ class EmailVerificationRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
+class UserIdentityRecord(Base):
+    """M73 SL-2: a sign-in provider account linked to an ATP account (alembic c4e8a2f6b913). `provider` is the registry
+    id ("google", "facebook"; M74 "broker:<name>"), `subject` the provider's stable account id. One provider account
+    belongs to one ATP account, and an ATP account links each provider once. No provider token is stored."""
+
+    __tablename__ = "user_identities"
+    __table_args__ = (
+        UniqueConstraint("provider", "subject", name="uq_user_identities_provider_subject"),
+        UniqueConstraint("user_id", "provider", name="uq_user_identities_user_provider"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    email_at_link: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class PlatformControlRecord(Base):
     """Phase M / V4.13: platform-wide operator switches as key -> JSON value: `maintenance_mode`
     ({"on": bool, "message": str}), `disabled_brokers` ({"names": [..]}). Read on every entry."""

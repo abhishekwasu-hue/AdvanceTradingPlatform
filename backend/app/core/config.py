@@ -723,6 +723,25 @@ BROKER_OAUTH_REDIRECT_BASE_URL = os.environ.get("BROKER_OAUTH_REDIRECT_BASE_URL"
 # registered at Google is PUBLIC_BASE_URL + "/api/auth/google/callback". The secret is never returned or logged.
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+# M73 SL-1: Facebook Login (OAuth 2.0 + Graph /me). Both empty (the default) = no Facebook button and the
+# /api/auth/facebook/* routes answer 404. The Valid OAuth Redirect URI at Meta is PUBLIC_BASE_URL + "/api/auth/facebook/
+# callback". The secret is never returned or logged. FACEBOOK_GRAPH_VERSION pins the Graph API version the calls use.
+FACEBOOK_APP_ID = os.environ.get("FACEBOOK_APP_ID", "").strip()
+FACEBOOK_APP_SECRET = os.environ.get("FACEBOOK_APP_SECRET", "").strip()
+FACEBOOK_GRAPH_VERSION = os.environ.get("FACEBOOK_GRAPH_VERSION", "v21.0").strip() or "v21.0"
+# M74: "Continue with your broker" sign-in through ATP's OWN platform app at each broker (docs/design/M74_BROKER_SIGNIN.md).
+# Per broker (upstox, zerodha, fyers): the platform app's key and secret, and APPROVED=1 once the broker has approved the
+# app for other clients - only the owner knows that. All three set = the broker is offered on the sign-in page; any one
+# empty = it is not shown at all. The redirect URL registered on the app is PUBLIC_BASE_URL + /api/auth/broker/<id>/callback.
+# The secrets are never returned, logged or written to a tenant's broker row.
+BROKER_SIGNIN_APPS = {
+    broker: {
+        "api_key": os.environ.get(f"BROKER_SIGNIN_{broker.upper()}_API_KEY", "").strip(),
+        "api_secret": os.environ.get(f"BROKER_SIGNIN_{broker.upper()}_API_SECRET", "").strip(),
+        "approved": os.environ.get(f"BROKER_SIGNIN_{broker.upper()}_APPROVED", "").strip().lower() in ("1", "true", "yes"),
+    }
+    for broker in ("upstox", "zerodha", "fyers")
+}
 # PW5: the Zerodha Kite Publisher api_key for "Trade in your broker app" basket links (docs/BROKER_DATA_TERMS.md). A
 # public per-app identifier that sits in the page's HTML form, not a secret - but never committed with a value. Empty =
 # no Zerodha link. Only read when the `broker_app_links` flag is on (off by default). ATP places no order with it.
@@ -885,10 +904,9 @@ PAPER_EVIDENCE_MIN_TRADES = _bounded_int("PAPER_EVIDENCE_MIN_TRADES", 20, 2, 10_
 PAPER_EVIDENCE_RUIN_PCT = _bounded_float("PAPER_EVIDENCE_RUIN_PCT", 50.0, 1.0, 100.0)
 # N2-2 (P1 §1.4, flag `experience_levels`): experience levels from the user's own PAPER record gate complexity. Beginner
 # until the PAPER ladder's count criteria are met (sessions, closed trades, drawdown above); Intermediate opens futures;
-# Advanced (EXPERIENCE_ADVANCED_MIN_TRADES closed trades over EXPERIENCE_ADVANCED_MIN_SESSIONS sessions, drawdown within
-# the ladder's limit) opens naked short options. A logged opt-out with a reason lifts one gate for one IST day.
-EXPERIENCE_ADVANCED_MIN_TRADES = _bounded_int("EXPERIENCE_ADVANCED_MIN_TRADES", 100, 1, 100_000)
-EXPERIENCE_ADVANCED_MIN_SESSIONS = _bounded_int("EXPERIENCE_ADVANCED_MIN_SESSIONS", 60, 1, 10_000)
+# Advanced (the user's OWN closed trades / sessions, Settings > Trade settings > Risk limits - M68 PR-5 TS1-057, the old
+# 100 / 60 are gone; drawdown within the ladder's limit) opens naked short options. A logged opt-out with a reason lifts
+# one gate for one IST day; the reason's least length is a record rule (the opt-out is logged), not a trading value.
 EXPERIENCE_OPT_OUT_MIN_REASON_CHARS = _bounded_int("EXPERIENCE_OPT_OUT_MIN_REASON_CHARS", 15, 1, 300)
 
 # Z3 (review V2): "Exit now" without a live quote may book at the monitor's last price for the position only when that
@@ -939,16 +957,12 @@ RISK_DEFAULT_DAILY_LOSS_PCT = _bounded_float("RISK_DEFAULT_DAILY_LOSS_PCT", 2.0,
 RISK_DEFAULT_MAX_TRADES_PER_DAY = _bounded_int("RISK_DEFAULT_MAX_TRADES_PER_DAY", 10, 0, 500)
 RISK_DEFAULT_MIN_RR = _bounded_float("RISK_DEFAULT_MIN_RR", 1.5, 0.0, 10.0)
 
-# Z5 (Trade port, `check_vix_spike_halt.py` + `trading_engine.check_vix_spike_halt`): the India VIX gate (flag `vix_gate`,
-# off by default). It reads the organisation's India VIX readings of the day (market memory, captured through its own
-# broker session). VIX_GATE_SPIKE_PCT: a reading today at or above this % change against the previous close pauses new
-# BULLISH (long) entries on VIX_GATE_UNDERLYINGS for the rest of the IST day, PAPER and LIVE alike (the Trade rule;
-# bearish entries and other symbols are not touched). VIX_GATE_HIGH_LEVEL: the latest reading today at or above this
-# level cuts the risk per trade of every new entry on those underlyings by VIX_GATE_SIZE_CUT_PCT % (0 level = off).
-# A reading older than VIX_GATE_MAX_AGE_MINUTES is not used for the level. Exits are never gated (ADR-0004).
-VIX_GATE_SPIKE_PCT = _bounded_float("VIX_GATE_SPIKE_PCT", 5.0, 0.5, 100.0)
-VIX_GATE_HIGH_LEVEL = _bounded_float("VIX_GATE_HIGH_LEVEL", 20.0, 0.0, 200.0)
-VIX_GATE_SIZE_CUT_PCT = _bounded_float("VIX_GATE_SIZE_CUT_PCT", 50.0, 0.0, 100.0)
+# Z5 (Trade port, `check_vix_spike_halt.py` + `trading_engine.check_vix_spike_halt`): the India VIX gate. Flag `vix_gate`
+# (off by default): India VIX readings of the day are captured for the organisation (market memory, through its own broker
+# session). M68 PR-5 (TS1-056): the check itself is each user's own switch and numbers (Settings > Trade settings > Risk
+# limits: the rise that pauses new long entries on VIX_GATE_UNDERLYINGS, the level and its size cut) - the operator's
+# VIX_GATE_SPIKE_PCT / HIGH_LEVEL / SIZE_CUT_PCT (5 % / 20 / 50 %) are gone. A reading older than VIX_GATE_MAX_AGE_MINUTES
+# is not used for the level. Exits are never gated (ADR-0004).
 VIX_GATE_MAX_AGE_MINUTES = _bounded_int("VIX_GATE_MAX_AGE_MINUTES", 45, 1, 24 * 60)
 # VIX_GATE_CHECK_AT: the gate is open before this IST time (Trade's 09:20 check, five minutes after the open); readings
 # are captured from then on every VIX_GATE_CAPTURE_MINUTES while NSE is open. After VIX_GATE_GRACE_MINUTES more, on a

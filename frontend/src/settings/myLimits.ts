@@ -4,12 +4,14 @@
  * the two switches are the `my_limits` preferences the server reads (experience levels, a stop on a sold option).
  */
 import { request } from "../api/client";
+import { errorSentence } from "../api/errors";
 import type { RiskConfig } from "../types";
 
 export type LimitKey = "capital" | "risk_per_trade_pct" | "max_daily_loss_pct" | "max_trades_per_day" | "max_open_positions"
-  | "max_consecutive_losses" | "max_portfolio_risk_pct" | "stop_cooldown_minutes" | "dd_level_1_pct" | "dd_level_2_pct" | "event_size_cut_pct";
+  | "max_consecutive_losses" | "max_portfolio_risk_pct" | "stop_cooldown_minutes" | "dd_level_1_pct" | "dd_cut_pct" | "dd_level_2_pct"
+  | "event_size_cut_pct";
 
-export interface LimitField { key: LimitKey; label: string; unit: string; help: string; whole?: boolean }
+export interface LimitField { key: LimitKey; label: string; unit: string; help: string; whole?: boolean; max?: number }
 
 export const LIMIT_FIELDS: readonly LimitField[] = [
   { key: "capital", label: "My capital", unit: "₹", whole: true,
@@ -25,7 +27,11 @@ export const LIMIT_FIELDS: readonly LimitField[] = [
     help: "The loss if every open stop is hit, plus the new trade, stays under this." },
   { key: "stop_cooldown_minutes", label: "Pause after a stop-out", unit: "minutes", whole: true,
     help: "No new entry in the same symbol for this long after a stop." },
-  { key: "dd_level_1_pct", label: "Halve size at drawdown", unit: "% below peak", help: "This far below your equity peak, the risk per trade is halved." },
+  { key: "dd_level_1_pct", label: "Cut size at drawdown", unit: "% below peak",
+    help: "This far below your equity peak, the risk per trade is cut by your % (Cut the size by)." },
+  // M68 PR-5 (TS1-054): the first drawdown step's cut is the trader's own; the server asks for it once that step is set.
+  { key: "dd_cut_pct", label: "Cut the size by", unit: "% at that drawdown", max: 100,
+    help: "How much the drawdown step above cuts the risk per trade. Needed when that step is set." },
   { key: "dd_level_2_pct", label: "Pause at drawdown", unit: "% below peak", help: "This far below your equity peak, new entries pause." },
   { key: "event_size_cut_pct", label: "Event-day size cut", unit: "%", help: "On a market event marked as a size cut, the risk per trade is cut by this." },
 ];
@@ -63,9 +69,16 @@ export function configOf(text: LimitsText, base: Partial<RiskConfig> | null | un
     const v = Number(raw);
     if (!Number.isFinite(v) || v <= 0) return { config: null, problem: `${f.label}: enter a number above 0, or leave it blank for no limit.` };
     if (f.whole && !Number.isInteger(v)) return { config: null, problem: `${f.label}: enter a whole number.` };
+    if (f.max !== undefined && v > f.max) return { config: null, problem: `${f.label}: enter at most ${f.max}, or leave it blank.` };
     config[f.key] = v;
   }
   return { config, problem: null };
+}
+
+/** M68 PR-5: what the card shows inline when a save is refused - the server's own reason (e.g. the drawdown step needs
+ * its cut %), never a blank line. */
+export function saveFailedText(e: unknown): string {
+  return errorSentence(e) || "Could not save. Try again.";
 }
 
 export function countSet(config: Partial<RiskConfig> | null | undefined): number {

@@ -130,6 +130,17 @@ export function SystemPanels() {
         )}
       </Panel>
       <FeedStatusCard feed={data.market_feed} marketOpen={feed.market_open} />
+      {data.sign_in_providers && (
+        <Panel title="Sign-in providers" id="sign-in-providers" note="A provider is live when its credentials are in the server settings; only live ones show a button.">
+          <ul className="flex flex-wrap gap-space-2">
+            {data.sign_in_providers.map((p) => (
+              <li key={p.id} data-sign-in-provider={p.id} className="flex items-center gap-space-2 rounded-control border border-subtle px-space-3 py-space-2 text-t14 text-fg">
+                {p.label}<Pill tone={p.live ? "ok" : "off"}>{p.live ? "live" : "not set"}</Pill>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
     </>
   );
 }

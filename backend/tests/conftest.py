@@ -13,13 +13,36 @@ test module shares. A module that switches `news_feed` on, or seeds a global RBI
 not decide what the next module sees: both are reset after every module. So are positions a module left open - the
 worker's exits sweep covers every open position, with or without a deployment.
 """
+import asyncio
 import os
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.pool import Pool
 
 os.environ["GLOBAL_CUES_ENABLED"] = "false"
 
 from app.brokers.circuit_breaker import reset_all
+
+
+@event.listens_for(Pool, "checkout")
+def _connection_lock_of_this_event_loop(dbapi_connection, connection_record, connection_proxy):
+    """The in-memory test databases (SQLite `:memory:` on a StaticPool, e.g. tests/test_auth_api.py) keep ONE connection
+    for the whole run, while every test runs its own event loop (`asyncio.run`). SQLAlchemy's async adapter guards the
+    connection with an asyncio.Lock that binds itself to the loop of the first two queries that overlap; an overlap in
+    any later loop then raised "bound to a different event loop", the connection was invalidated and the pool opened a
+    fresh, EMPTY database - every later test failed with "no such table". A free lock bound to another loop is replaced
+    when the connection is checked out in this one (tests/test_shared_test_db_event_loops.py)."""
+    mutex = getattr(dbapi_connection, "_execute_mutex", None)
+    bound = getattr(mutex, "_loop", None)
+    if bound is None or mutex.locked():
+        return
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    if bound is not running:
+        dbapi_connection._execute_mutex = asyncio.Lock()
 
 
 @pytest.fixture(autouse=True)
@@ -66,6 +89,57 @@ def _saved_order_defaults(request):
         return replace(saved, **{k: v for k, v in vars(own).items() if v is not None})
     with pytest.MonkeyPatch.context() as own:      # its own patch: a test's monkeypatch.undo() leaves it in place
         own.setattr(order_defaults, "load", _load)
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _saved_option_defaults(request):
+    """M68 PR-4: ATP pre-chooses no expiry, strike, distance, side, width, ratio, delta tolerance, strike window,
+    expiry-day roll or delivery warning - each comes from the user's own Trade settings > Options
+    (app/instruments/option_defaults.py). The tests written before M68 run as a user who SAVED the values they were
+    written against (nearest expiry, ATM, 1 strike away, bought, width 2, ratio 1:2, tolerance 0.10, 5 strikes searched,
+    the next expiry on an expiry day, the delivery warning on at 4 days / 2 %, the builder's 70 % / 2 strikes); a value he really saved still wins. Tests of
+    the M68 behaviour itself (Not set => ask / skip) carry the marker `real_option_defaults`."""
+    if request.node.get_closest_marker("real_option_defaults"):
+        yield
+        return
+    from dataclasses import replace
+
+    from app.instruments import option_defaults
+    real = option_defaults.load
+    saved = option_defaults.OptionDefaults(expiry_rule="NEAREST", strike_rule="ATM", strike_offset=1, option_position="BUY",
+                                           spread_width=2, ratio=2, delta_tolerance=0.10, strike_search_steps=5,
+                                           expiry_day_roll=True, settlement_warning=True, settlement_days_before=4,
+                                           settlement_band_pct=2.0, builder_pop_pct=70.0, builder_strikes_otm=2)
+
+    async def _load(session, user):
+        own = await real(session, user)
+        return replace(saved, **{k: v for k, v in vars(own).items() if v is not None})
+    with pytest.MonkeyPatch.context() as own:      # its own patch: a test's monkeypatch.undo() leaves it in place
+        own.setattr(option_defaults, "load", _load)
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _saved_position_size(request):
+    """M68 PR-2: ATP pre-chooses no size - a new entry is sized from the order's / the bot's own size, else the user's
+    Trade settings > Position size (app/execution/position_size.py); nothing of his own and no risk per trade = nothing is
+    placed. The tests written before M68 run as a user whose Position size is one lot when nothing else sizes the entry
+    (the value they were written against); a size the order, the bot or he himself set still wins. Tests of the M68
+    behaviour itself carry the marker `real_position_size` (tests/test_m68_position_size.py)."""
+    if request.node.get_closest_marker("real_position_size"):
+        yield
+        return
+    from app.execution import position_size
+    real = position_size.quantity_for
+
+    def _quantity_for(ps, *, unit, entry, capital, risk_set):
+        got = real(ps, unit=unit, entry=entry, capital=capital, risk_set=risk_set)
+        if got == (None, position_size.NEEDS_LOTS_TEXT):
+            return float(unit) if unit and unit > 0 else position_size.CASH_UNIT, None
+        return got
+    with pytest.MonkeyPatch.context() as own:
+        own.setattr(position_size, "quantity_for", _quantity_for)
         yield
 
 

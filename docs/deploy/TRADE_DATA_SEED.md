@@ -31,13 +31,12 @@ on `deploy`; it runs only when the owner runs the command.
 ```sh
 su - atp -c 'test -f ~/.ssh/trade_data_ro || ssh-keygen -t ed25519 -N "" -C atp-trade-data-ro -f ~/.ssh/trade_data_ro; cat ~/.ssh/trade_data_ro.pub'
 # add the printed key on GitHub (step 1), then:
-su - atp -c 'cd /opt/atp && /opt/atp/deploy/atp.sh env-set ATP_TRADE_DATA_REF=main 2>/dev/null || true'
-su - atp -c "grep -q '^ATP_TRADE_DATA_REPO=' /opt/atp/.env || printf 'ATP_TRADE_DATA_REPO=git@github.com:<owner>/<private-data-repo>.git\n' >> /opt/atp/.env"
+su - atp -c '/opt/atp/deploy/atp.sh env-set ATP_TRADE_DATA_REPO=git@github.com:<owner>/<private-data-repo>.git ATP_TRADE_DATA_REF=main'
 su - atp -c "nohup sh -c '/opt/atp/deploy/atp.sh import-trade-data --check && /opt/atp/deploy/atp.sh import-trade-data' > /tmp/atp-seed.log 2>&1 &"
 tail -n 15 /tmp/atp-seed.log
 ```
 
-`env-set` accepts only its allow-listed keys; when `ATP_TRADE_DATA_REF` is not on that list the default `main` applies.
+`env-set` checks both values (an ssh address of GitHub; a branch or tag name) and keeps every other line of `.env`.
 A re-run is safe: a file already imported with the same sha256 is skipped; a changed file is read again (identical bars
 skipped, a changed bar stored as the next version).
 

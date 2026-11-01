@@ -204,7 +204,8 @@ def answer_problem(text: str, *, numbers: Set[str], trusted_text: str, direction
         return f"words that read as advice or a promise ({', '.join(bad[:5])})"
     bad = indic_safety.answer_terms(text)                    # M72 PR-1a: the same in Marathi / Hindi (Devanagari, romanised)
     if bad:
-        return f"words that read as advice or a promise ({', '.join(bad[:5])})"
+        # the reason the output filter gives for its own (romanised Hinglish) list - one contract for callers and logs
+        return f"advice/guarantee words: {', '.join(bad[:5])}"
     return None
 
 

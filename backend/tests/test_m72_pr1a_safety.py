@@ -361,9 +361,9 @@ ANSWER = ["What is a buy signal in price action?", "Explain what a stop-loss ord
                                   "NIFTY call ghya.", "order laga diya"])
 def test_answer_check_refuses_marathi_hindi_buy_sell_order_words(text):
     problem = grounding.answer_problem(text, numbers=set(), trusted_text="NIFTY BANKNIFTY RELIANCE", direction_text="ranging")
-    assert problem and problem.startswith("words that read as advice or a promise")
+    assert problem and problem.startswith("advice/guarantee words: ")          # the output filter's reason contract
     ok, why = copilot.grounded(text, ["NIFTY BANKNIFTY RELIANCE ranging"], "")
-    assert not ok and why.startswith("words that read as advice")
+    assert not ok and why.startswith("advice/guarantee words: ")
 
 
 def test_the_marathi_hindi_lists_live_in_one_place():

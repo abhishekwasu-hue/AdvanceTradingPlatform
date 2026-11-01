@@ -50,7 +50,7 @@ SQUARE_OFF = (15, 15)
 # M68 PR-8 (TS1-075): the draft bot's exits are SUGGESTED, never sent on their own: the candidate shows them, and only a
 # trader who ticks "Use the suggested exits" sends them with his bot. The simulation's own assumptions (above) are shown
 # on the card as what the test assumed, never applied to a bot.
-SUGGESTED_EXITS: Dict[str, Any] = {"holding": "INTRADAY", "exit_rules": {"time_exit_at": "15:10", "break_even_at_r": 1.0}}
+SUGGESTED_EXITS: dict[str, Any] = {"holding": "INTRADAY", "exit_rules": {"time_exit_at": "15:10", "break_even_at_r": 1.0}}
 
 
 def suggested_exits() -> dict:
@@ -58,7 +58,7 @@ def suggested_exits() -> dict:
     return {"holding": SUGGESTED_EXITS["holding"], "exit_rules": dict(SUGGESTED_EXITS["exit_rules"])}
 
 
-def simulation_assumptions() -> List[str]:
+def simulation_assumptions() -> list[str]:
     """What the simulation assumed, in words - shown with the evidence, never applied to a bot."""
     return [f"At most {MAX_TRADES_PER_DAY} trades a day", f"No new entry after {LAST_ENTRY[0]:02d}:{LAST_ENTRY[1]:02d}",
             f"Open trades closed at {SQUARE_OFF[0]:02d}:{SQUARE_OFF[1]:02d}", f"Costs and slippage {COST_PCT:g} % of the price per round trip"]
@@ -389,7 +389,7 @@ def _is_grammar_word(word: str) -> bool:
     return word in TICKER_STOP_WORDS or any(p.search(low) for p, _ in STYLE_WORDS) or any(p.search(low) for p, _ in DIRECTION_REQUEST_WORDS)
 
 
-def parse_request(text: str, *, default_symbol: Optional[str] = None) -> dict:
+def parse_request(text: str, *, default_symbol: str | None = None) -> dict:
     """A plain-words request - `banknifty long only scalping`, `RELIANCE intraday both sides` - into the strategist's
     inputs. Returns what was matched so the UI can show it; anything not said keeps the default (symbol as given - none
     when none was given, M68 PR-8 - intraday, direction decided by the market). ATP is English only: the words are English, and `language` is always

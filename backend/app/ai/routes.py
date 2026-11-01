@@ -1046,7 +1046,7 @@ class StrategistBody(BaseModel):
             raise HTTPException(status_code=422, detail="Needs your setting: the symbol to study")
         return effective, parsed
 
-    def _resolved(self) -> Tuple["StrategistBody", Optional[dict]]:
+    def _resolved(self) -> tuple["StrategistBody", dict | None]:
         if not (self.request or "").strip():
             return self.model_copy(update={"language": AI_LANGUAGE}), None
         parsed = strategist.parse_request(self.request, default_symbol=self.symbol)

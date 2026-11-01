@@ -154,8 +154,8 @@ class SuggestBody(BaseModel):
     atm_strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     direction: Optional[Literal["BULLISH", "BEARISH"]] = None
     # M68 PR-8 (TS1-081): no pre-chosen chance of profit or strike distance - a rule that reads one asks for it.
-    pop_threshold_pct: Optional[float] = Field(default=None, ge=0, le=100)
-    strikes_otm: Optional[int] = Field(default=None, ge=0, le=50)
+    pop_threshold_pct: float | None = Field(default=None, ge=0, le=100)
+    strikes_otm: int | None = Field(default=None, ge=0, le=50)
     itm_depth_points: float = Field(default=0.0, ge=0, lt=MAX_PRICE, allow_inf_nan=False)
     hedge_enabled: bool = False
     as_of: Optional[Union[datetime, date]] = None

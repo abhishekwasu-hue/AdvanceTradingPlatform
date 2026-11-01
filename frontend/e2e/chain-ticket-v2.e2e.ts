@@ -45,9 +45,10 @@ function preview(body: Record<string, unknown>) {
 
 interface Seen { posts: MockCalls["posts"]; held: number }
 
-/** F1 / M68 PR-1: with no product and no order type saved nothing is pre-selected; pick Market (when no type is picked
- * yet) and NRML so Review can be tapped. */
+/** F1 / M68 PR-1 / PR-2: with no lots, product and order type saved nothing is pre-filled; enter 1 lot (when none is
+ * entered yet), pick Market (when no type is picked yet) and NRML so Review can be tapped. */
 async function pickProduct(ticket: Locator): Promise<void> {
+  if (await ticket.locator("[data-ticket='lots']").inputValue() === "") await ticket.locator("[data-ticket='lots']").fill("1");
   if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) {
     await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").click();
   }
@@ -150,7 +151,7 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
         await sheet.locator("[data-action='buy']").click();
         const ticket = page.locator("[data-order-ticket]");
         await expect(ticket).toBeVisible();
-        await expect(ticket.locator("[data-ticket='units']")).toHaveText("1 lot = 75 qty (lot size 75)");
+        await expect(ticket.locator("[data-ticket='units']")).toHaveText("Lot size 75");      // M68 PR-2: lots asked first
         await expect(ticket).toHaveScreenshot(`order-ticket-v2-${width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
       });
     }
@@ -170,6 +171,8 @@ test.describe("Chain ticket v2 flows", () => {
     await sheet.locator("[data-action='buy']").tap();
     const ticket = page.locator("[data-order-ticket]");
     await expect(ticket.locator("[data-practice-frame]")).toContainText("PAPER");
+    await ticket.locator("[data-ticket='lots-more']").tap();                                    // M68 PR-2: from empty to 1
+    await expect(ticket.locator("[data-ticket='units']")).toHaveText("1 lot = 75 qty (lot size 75)");
     await ticket.locator("[data-ticket='lots-more']").tap();
     await expect(ticket.locator("[data-ticket='units']")).toHaveText("2 lots = 150 qty (lot size 75)");
     await ticket.getByRole("radio", { name: "Limit" }).tap();
@@ -235,7 +238,7 @@ test.describe("Chain ticket v2 flows", () => {
     const sheet = page.locator("[data-chain-actions]");
     await sheet.locator("[data-action='basket']").tap();
     await sheet.locator("[data-action='basket-sell']").tap();
-    await expect(sheet.locator("[data-action-note='done']")).toHaveText("Added to the basket: Sell 1 lot of NIFTY 03 NOV 24500 CE.");
+    await expect(sheet.locator("[data-action-note='done']")).toHaveText("Added to the basket: Sell NIFTY 03 NOV 24500 CE. Enter its lots in the basket.");   // M68 PR-2
     await expect(badge).toHaveAttribute("aria-label", "Basket: 1 leg");
     await sheet.locator("[data-action='watchlist']").tap();
     await sheet.locator("[data-watchlist='3']").tap();
@@ -368,19 +371,30 @@ test.describe("Chain ticket v2 multi-account (M45 MA-6)", () => {
   });
 });
 
-/** M68 PR-1 (TS-3): a new user (nothing saved) - the ticket pre-selects no order type and no product; it asks for each one,
- * focused and outlined, with "Save as my default"; only then is ONE PAPER order placed. Baselines (NEW):
+/** M68 PR-1 / PR-2 (TS-3, TS-7): a new user (nothing saved) - the ticket pre-fills no lots, no order type and no product;
+ * it asks for each one, focused, with "Save as my default"; only then is ONE PAPER order placed. Baselines (NEW):
  * `order-ticket-asks-v2-<width>-light.png` at 1440 and 390. */
 for (const [width, height] of [[1440, 900], [390, 844]] as const) {
   test.describe(`M68 ticket asks at ${width}`, () => {
     test.use(width === 390 ? { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width, height } });
 
-    test("a new user places a PAPER order only after choosing the order type and the product", async ({ page }) => {
+    test("a new user places a PAPER order only after choosing the lots, the order type and the product", async ({ page }) => {
       const saves: Record<string, unknown>[] = [];
       const seen = await open(page, "light", { tradeSettings: saves });
       await callCell(page).click();
       await page.locator("[data-chain-actions] [data-action='buy']").click();
       const ticket = page.locator("[data-order-ticket]");
+      // M68 PR-2 (TS1-020): the lots are asked first - empty and focused, nothing pre-filled
+      const lots = ticket.locator("[data-ticket='lots']");
+      await expect(lots).toHaveValue("");
+      await expect(lots).toBeFocused();
+      await expect(ticket.locator("[data-ticket='lots-unset']")).toHaveText("Enter the lots (none saved in your Trade settings).");
+      await expect(ticket.locator("[data-ticket='review']")).toBeDisabled();
+      if (width === 390) await expectPhoneLayout(page);
+      await expect(ticket).toHaveScreenshot(`order-ticket-asks-lots-v2-${width}-light.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+      await lots.fill("1");
+      await ticket.locator("[data-save-default='position_size.lots'] input").check();
+      await expect(ticket.locator("[data-save-default='position_size.lots'] [data-save-default-note]")).toHaveText("Saved");
       const type = ticket.locator("[data-ticket='order-type']");
       await expect(type).toHaveAttribute("data-asking", "yes");
       await expect(type.locator("[data-option='MARKET']")).toBeFocused();
@@ -399,7 +413,7 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
       await product.locator("[data-option='NRML']").click();
       await ticket.locator("[data-save-default='order_defaults.product'] input").check();
       await expect(ticket.locator("[data-save-default='order_defaults.product'] [data-save-default-note]")).toHaveText("Saved");
-      expect(saves).toEqual([{ "order_defaults.product": "NRML" }]);
+      expect(saves).toEqual([{ "position_size.lots": 1 }, { "order_defaults.product": "NRML" }]);
       await ticket.locator("[data-ticket='review']").click();
       await ticket.locator("[data-ticket='place']").click();
       await expect(ticket.locator("[data-ticket='result']")).toContainText("Placed in practice mode");

@@ -1065,7 +1065,8 @@ class RiskSettingsRecord(Base):
     dd_level_1_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     dd_level_2_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     event_size_cut_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
-    lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # M68 PR-2 (TS1-018): the organisation's cash unit only when saved; NULL = Not set (one share, a fact). No default.
+    lot_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # CP6-15 (app/risk_engine/loss_streak.py): when the losses-in-a-row pause ends ("next_session" / "until_resume"), and
     # the last "Resume after losses in a row" (only losses closed after it count under "until_resume").
     loss_streak_pause: Mapped[str] = mapped_column(String(16), nullable=False, default="next_session", server_default="next_session")
@@ -2744,8 +2745,10 @@ class PaperSubAccountRecord(Base):
     role: Mapped[str | None] = mapped_column(String(10), nullable=True)
     group_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
-    sizing_mode: Mapped[str] = mapped_column(String(12), nullable=False, default="MULTIPLIER", server_default="MULTIPLIER")
-    sizing_value: Mapped[float] = mapped_column(Float, nullable=False, default=1.0, server_default="1")
+    # M68 PR-2 (TS1-024): the account's own sizing only when the user set it; NULL = Not set - his Trade settings >
+    # Position size > Extra paper accounts, else the account is skipped with "Needs your setting" (never MULTIPLIER x 1).
+    sizing_mode: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    sizing_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 

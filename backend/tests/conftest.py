@@ -70,6 +70,29 @@ def _saved_order_defaults(request):
 
 
 @pytest.fixture(autouse=True)
+def _saved_position_size(request):
+    """M68 PR-2: ATP pre-chooses no size - a new entry is sized from the order's / the bot's own size, else the user's
+    Trade settings > Position size (app/execution/position_size.py); nothing of his own and no risk per trade = nothing is
+    placed. The tests written before M68 run as a user whose Position size is one lot when nothing else sizes the entry
+    (the value they were written against); a size the order, the bot or he himself set still wins. Tests of the M68
+    behaviour itself carry the marker `real_position_size` (tests/test_m68_position_size.py)."""
+    if request.node.get_closest_marker("real_position_size"):
+        yield
+        return
+    from app.execution import position_size
+    real = position_size.quantity_for
+
+    def _quantity_for(ps, *, unit, entry, capital, risk_set):
+        got = real(ps, unit=unit, entry=entry, capital=capital, risk_set=risk_set)
+        if got == (None, position_size.NEEDS_LOTS_TEXT):
+            return float(unit) if unit and unit > 0 else position_size.CASH_UNIT, None
+        return got
+    with pytest.MonkeyPatch.context() as own:
+        own.setattr(position_size, "quantity_for", _quantity_for)
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _no_broker_margin_call(monkeypatch):
     """DEF-0 D8: the order ticket asks the user's own broker for its margin. Tests never call a broker: the read answers
     "no answer"; tests/test_def0_ui.py stubs an answer to show the estimate."""

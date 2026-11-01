@@ -90,8 +90,15 @@ const SHAPES: Record<StrategyName, Shape[]> = {
 export function readyStrategy(name: StrategyName, inp: StrategyInputs): { legs: NewLeg[]; problem: string | null } {
   const step = strikeStep(inp.rows);
   if (step === null) return { legs: [], problem: "The chain has too few strikes for a ready strategy." };
-  const width = Math.max(1, Math.round(inp.settings.width_steps)) * step;
-  const lots = Math.max(1, Math.round(inp.settings.lots));
+  // M68 PR-2 (TS1-023): his own width and lots only - a spread with no width of his own asks for it, and the legs start
+  // with empty lots when none is saved (the basket asks at each leg); nothing is pre-chosen.
+  const ownWidth = inp.settings.width_steps;
+  if ((ownWidth === null || !(ownWidth >= 1)) && SHAPES[name].some((s) => s.offset !== 0)) {
+    return { legs: [], problem: `${NEEDS_PREFIX}Spread width (Settings › Trade settings › Options) - or add the legs from the chain yourself.` };
+  }
+  const width = Math.max(1, Math.round(ownWidth ?? 1)) * step;
+  const ownLots = inp.settings.lots;
+  const lots = ownLots !== null && ownLots >= 1 ? Math.round(ownLots) : null;
   const legs: NewLeg[] = [];
   for (const s of SHAPES[name]) {
     const source = s.next ? inp.next : { expiry: inp.expiry, rows: inp.rows };
@@ -113,7 +120,8 @@ export function readyStrategy(name: StrategyName, inp: StrategyInputs): { legs: 
 export const needsStop = (l: Pick<NewLeg, "side" | "right">): boolean => l.right === "FUT" || l.side === "SELL";
 
 export function legAsk(l: NewLeg): BasketLegAsk {
-  return { underlying: l.underlying, expiry: l.expiry, strike: l.right === "FUT" ? null : l.strike, right: l.right, side: l.side, lots: l.lots,
+  // basketProblems asks for a leg's missing lots first; the server asks again if one is still missing (never a 1).
+  return { underlying: l.underlying, expiry: l.expiry, strike: l.right === "FUT" ? null : l.strike, right: l.right, side: l.side, lots: l.lots as number,
     price: typeof l.price === "number" && l.price > 0 ? l.price : null,
     stop_loss: needsStop(l) && typeof l.stopLoss === "number" && l.stopLoss > 0 ? l.stopLoss : null,
     iv: typeof l.iv === "number" && l.iv > 0 && l.iv < 500 ? l.iv / 100 : null };
@@ -125,11 +133,19 @@ export function basketAsk(legs: readonly NewLeg[], spot: number | null, product:
   return { legs: legs.map(legAsk), spot: spot && spot > 0 ? spot : null, ...(product ? { product } : {}) };
 }
 
+export const NEEDS_PREFIX = "Needs your setting: ";
+
+/** M68 PR-2 (TS1-022): each leg whose lots are still empty, in the words the basket shows ("Leg 2: enter its lots."). */
+export function lotsProblems(legs: readonly Pick<NewLeg, "lots">[]): string[] {
+  return legs.flatMap((l, i) => (l.lots === null ? [`Leg ${i + 1}: enter its lots.`] : []));
+}
+
 /** What is missing before the basket can go to the confirm step (the server checks everything else). */
 export function basketProblems(legs: readonly NewLeg[]): string[] {
   const out: string[] = [];
   if (!legs.length) out.push("Add a leg first.");
   if (new Set(legs.map((l) => l.underlying)).size > 1) out.push("A basket holds one underlying. Remove the legs of the other.");
+  out.push(...lotsProblems(legs));
   // DEF-0 D7 (owner, 28 Oct): a leg's stop is the trader's choice - only his own setting asks for one (the server says so)
   return out;
 }
@@ -216,7 +232,7 @@ export function nameProblem(name: string): string | null {
 export function savedOf(legs: readonly NewLeg[], name: string, product: Product | null, now = new Date()): SavedBasket {
   return {
     name: name.trim(), underlying: legs[0]?.underlying ?? "", product, saved_at: now.toISOString(),
-    legs: legs.map((l) => ({ expiry: l.expiry, strike: l.right === "FUT" ? null : l.strike, right: l.right, side: l.side, lots: l.lots,
+    legs: legs.map((l) => ({ expiry: l.expiry, strike: l.right === "FUT" ? null : l.strike, right: l.right, side: l.side, lots: l.lots as number,
       ...(typeof l.price === "number" && l.price > 0 ? { price: l.price } : {}),
       ...(needsStop(l) && typeof l.stopLoss === "number" && l.stopLoss > 0 ? { stop_loss: l.stopLoss } : {}) })),
   };
@@ -280,12 +296,12 @@ export interface BuilderHandoff {
 
 /** The basket as the Options Builder reads it once on opening (every leg needs its price and lot size). */
 export function builderHandoff(legs: readonly NewLeg[], lotSizes: readonly (number | null)[], spot: number, step: number | null): BuilderHandoff | null {
-  if (!legs.length || legs.some((l, i) => !(typeof l.price === "number" && l.price > 0) || !lotSizes[i])) return null;
+  if (!legs.length || legs.some((l, i) => !(typeof l.price === "number" && l.price > 0) || !lotSizes[i] || l.lots === null)) return null;
   const expiries = [...new Set(legs.map((l) => l.expiry))].sort();
   return {
     underlying: legs[0].underlying, spot, step, lot_size: lotSizes[0] as number, near_expiry: expiries[0], next_expiry: expiries[1] ?? null,
     // A future has no strike: the builder takes its entry price as the reference (its payoff is linear).
-    legs: legs.map((l, i) => ({ direction: l.side, option_type: l.right, strike: l.right === "FUT" ? l.price as number : l.strike, premium: l.price as number, lots: l.lots,
+    legs: legs.map((l, i) => ({ direction: l.side, option_type: l.right, strike: l.right === "FUT" ? l.price as number : l.strike, premium: l.price as number, lots: l.lots as number,
       lot_size: lotSizes[i] as number, expiry: l.expiry, iv: typeof l.iv === "number" && l.iv > 0 ? l.iv / 100 : null })),
   };
 }

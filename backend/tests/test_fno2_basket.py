@@ -362,11 +362,12 @@ def test_the_most_a_user_can_save_fits_the_size_cap():
 
 # --- the user's own settings for the ready strategies ---------------------------------------------------------------------
 
-def test_ready_strategy_settings_are_the_users_own_else_a_neutral_default():
+def test_ready_strategy_settings_are_the_users_own_else_not_set():
+    # M68 PR-2 (TS1-023): no neutral width 2 / one lot any more - nothing of his own reads Not set (null), said so.
     t = _org_tenant("set")
     out = client.get("/api/paper/fno/basket/settings", headers=t["headers"], params={"underlying": "NIFTY"}).json()
-    assert out["source"] is None and out["width_steps"] == fno_basket.NEUTRAL_WIDTH_STEPS and out["lots"] == 1
-    assert "neutral start" in out["note"] and "Edit any leg" in out["note"]
+    assert out["source"] is None and out["width_steps"] is None and out["lots"] is None
+    assert out["note"].startswith("Nothing is set for you") and "Edit any leg" in out["note"]
     member = _member(t)
 
     async def deploy(user_id, symbol, width, lots, stop, sid):
@@ -383,6 +384,11 @@ def test_ready_strategy_settings_are_the_users_own_else_a_neutral_default():
     assert out["source"] == "mine on NIFTY 50" and out["width_steps"] == 4 and out["lots"] == 2 and out["stop_pct"] == 60.0
     out = client.get("/api/paper/fno/basket/settings", headers=t["headers"], params={"underlying": "FINNIFTY"}).json()
     assert out["source"] is not None                                          # their latest options settings when none on it
+    # his Trade settings win over a bot's (Position size > Lots; Options > Spread width once that field is his to save)
+    saved = client.put("/api/me/trade-settings", headers=t["headers"], json={"values": {"position_size.lots": 3}})
+    assert saved.status_code == 200, saved.text
+    out = client.get("/api/paper/fno/basket/settings", headers=t["headers"], params={"underlying": "NIFTY"}).json()
+    assert out["lots"] == 3 and out["width_steps"] == 4 and out["note"].startswith("From your Trade settings")
 
 
 def test_broker_link_says_why_not_without_the_flag(condor):

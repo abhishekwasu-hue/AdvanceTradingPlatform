@@ -150,8 +150,11 @@ test.describe("Trading bot behaviour", () => {
     await expectChoice(form(page).getByLabel("Pick a strategy"), "orb_15m_5m");
     await expect(form(page)).toContainText("Waits for the first 15 minutes' range to break");
     await choose(page, form(page).getByLabel("Pick a symbol"), "NIFTY BANK");
-    await expect(form(page)).toContainText("Trades a NIFTY BANK option at the nearest expiry, 1 lot");
+    // M68 PR-2: no lots chosen for him - the form asks; with his 1 lot entered the summary says so
+    await expect(form(page)).toContainText("Trades a NIFTY BANK option at the nearest expiry, your Position size");
+    await expect(form(page).locator("[data-bot-lots]")).toContainText("Lots for this bot");
     await pickEntryStyle(page, form(page));
+    await expect(form(page)).toContainText("Trades a NIFTY BANK option at the nearest expiry, 1 lot");
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Started on paper: NIFTY BANK.");
     const post = server.sent.find((c) => c.method === "POST" && c.url === "/deployments");

@@ -42,7 +42,7 @@ from app.core import config as app_config
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal
 from app.db.models import AiActionRecord, InstrumentRecord, Tenant, TradePlanRecord, TradeRecord, User
-from app.execution import approval
+from app.execution import approval, position_size
 from app.instruments.registry import get_contract_spec
 from app.market_data.calendar import to_ist
 from app.risk_engine import by_default
@@ -102,6 +102,8 @@ async def _org_config(session: AsyncSession, tenant_id: int, capital: Optional[f
 
 
 CASH_TYPES = ("EQ", "INDEX")
+# M68 PR-2 (TS-3): the ticket asks for the size when nothing of his own gives one.
+QUANTITY_ASK = "Needs your setting: Quantity - enter it here, or set your size in Settings › Trade settings › Position size"
 CASH_EXCHANGES = ("NSE", "BSE")
 
 
@@ -170,13 +172,23 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     override_base = min(user_cap * app_config.RISK_OVERRIDE_MAX_MULTIPLE, org_cap)
     override_cap = round(override_base * multiplier, 2) if math.isfinite(override_base) else math.inf
 
-    lot = float(cfg.lot_size or 1)            # cash underlyings only (checked above): the organisation's unit
+    # cash underlyings only (checked above): the organisation's own saved unit, else one share (a fact, TS1-018)
+    lot = float(cfg.lot_size or position_size.CASH_UNIT)
+    size_why: str | None = None
     if math.isfinite(cap):
         suggested = by_default.size(plan.entry, plan.stop_loss, cap, lot)
-    else:                                     # DEF-0: no cap set anywhere - one lot is the start, the trader sizes it
+    else:
+        # DEF-0 / M68 PR-2 (TS1-017): no cap set anywhere - his own Position size sizes it; none = the ticket asks for the
+        # quantity (before M68: one lot was the start).
         one = by_default.size(plan.entry, plan.stop_loss, 0.0, lot)   # its risk per lot only (no cap: no whole-lot count)
-        suggested = {**one, "lots": 1, "quantity": lot, "risk_amount": one["risk_per_lot"]}
+        own, size_why = position_size.quantity_for(await position_size.load(session, user), unit=lot, entry=plan.entry,
+                                                   capital=basis, risk_set=False)
+        own = float(own or 0.0)
+        suggested = {**one, "lots": int(round(own / lot)) if lot else 0, "quantity": own,
+                     "risk_amount": round(own * one["risk_per_unit"], 2)}
     quantity = float(plan.quantity) if plan.quantity is not None else float(suggested["quantity"])
+    if plan.quantity is None and size_why is not None:
+        errors.append(QUANTITY_ASK if size_why == position_size.NEEDS_LOTS_TEXT else size_why)
     per_unit = abs(float(plan.entry) - float(plan.stop_loss))
     risk_amount = round(quantity * per_unit, 2)
     rr = by_default.reward_risk(plan.entry, plan.stop_loss, plan.target)

@@ -270,7 +270,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -287,7 +287,7 @@
      "low_open": false,
      "term": "lot",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -304,7 +304,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -321,7 +321,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -368,7 +368,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -385,7 +385,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false

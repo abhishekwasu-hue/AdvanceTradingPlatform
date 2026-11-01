@@ -21,7 +21,7 @@ import {
 } from "./api";
 import { basket as defaultBasket, useBasket, type BasketLeg, type BasketStore, type NewLeg } from "./basket";
 import {
-  MAX_SAVED, STATUS_WORD, STRATEGIES, STRATEGY_TEXT, basketAsk, basketProblems, builderHandoff, legLabel, legsOf, loadBaskets, nameProblem,
+  MAX_SAVED, STATUS_WORD, STRATEGIES, STRATEGY_TEXT, basketAsk, basketProblems, builderHandoff, legLabel, legsOf, loadBaskets, lotsProblems, nameProblem,
   needsStop, newSavedId, payoffSentence, readyStrategy, remainingLegs, resultHeadline, saveBaskets, savedOf, stopFor, strikeStep, writeHandoff,
   type SavedState, type StrategyName,
 } from "./basketModel";
@@ -177,6 +177,8 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     if (!spot) { setNumbers(null); setProblems(["The price of the underlying is not known yet: the numbers appear once the chain loads."]); return undefined; }
     const other = legs.find((l) => l.underlying !== chain.symbol);
     if (other) { setNumbers(null); setProblems([`These legs are on ${other.underlying}: open its option chain to see the numbers.`]); return undefined; }
+    const unsized = lotsProblems(legs);                         // M68 PR-2: the numbers wait for every leg's own lots
+    if (unsized.length) { setNumbers(null); setProblems(unsized); return undefined; }
     const timer = window.setTimeout(() => {
       api.evaluate({ ...basketAsk(legs.map(strip), spot, product), ...(whatifOn ? { with_open: true } : {}), ...(pairOn ? { margin_pair: true } : {}) }).then((out) => {
         if (n !== seq.current) return;
@@ -275,6 +277,8 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   }
 
   async function save() {
+    const unsized = lotsProblems(legs);
+    if (unsized.length) { setNote({ tone: "warn", text: unsized[0] }); return; }
     const bad = nameProblem(saveName);
     if (bad || !saved) { setNote({ tone: "warn", text: bad ?? "Your saved baskets are still loading." }); return; }
     if (Object.keys(saved.items).length >= MAX_SAVED) { setNote({ tone: "warn", text: `You can keep ${MAX_SAVED} baskets. Delete one first.` }); return; }
@@ -306,6 +310,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
 
   async function brokerApp() {
     try {
+      if (lotsProblems(legs).length) { setNote({ tone: "warn", text: lotsProblems(legs)[0] }); return; }
       const link = await api.brokerLink(basketAsk(legs.map(strip), spot, product));
       const form = link.available ? kiteFnoBasketLink(link.orders, link.publisher_api_key) : null;
       if (!form) { setNote({ tone: "warn", text: link.available ? "This basket cannot be pre-filled in your broker app." : link.why }); return; }
@@ -416,7 +421,7 @@ export interface BodyHandlers {
 
 /** The builder's legs for the payoff chart (needs the lot sizes from the server's answer). */
 export function chartLegs(legs: readonly BasketLeg[], numbers: BasketNumbers): BuilderLeg[] {
-  return legs.map((l, i) => ({ id: l.id, direction: l.side, option_type: l.right, strike: l.right === "FUT" ? l.price ?? 0 : l.strike, premium: l.price ?? 0, lots: l.lots,
+  return legs.map((l, i) => ({ id: l.id, direction: l.side, option_type: l.right, strike: l.right === "FUT" ? l.price ?? 0 : l.strike, premium: l.price ?? 0, lots: l.lots ?? 0,
     lot_size: numbers.lot_sizes[i] ?? 1, expiry: l.expiry, iv: typeof l.iv === "number" ? l.iv / 100 : null }));
 }
 
@@ -667,7 +672,7 @@ function LegRow({ leg: l, n, lotSize, idPrefix, on }: { leg: BasketLeg; n: numbe
       <span className="min-w-0">
         <span className="block truncate text-t14 font-semibold text-fg" data-leg-label>{legLabel(l)}</span>
         <span className="block text-t12 text-fg-muted font-tabular">
-          {lotSize ? `${formatNumber(l.lots * lotSize, 0)} qty` : `${l.lots} lot${l.lots === 1 ? "" : "s"}`}{l.price ? ` · ${formatPrice(l.price)}` : ""}
+          {l.lots === null ? "Lots not entered" : lotSize ? `${formatNumber(l.lots * lotSize, 0)} qty` : `${l.lots} lot${l.lots === 1 ? "" : "s"}`}{l.price ? ` · ${formatPrice(l.price)}` : ""}
         </span>
       </span>
       <button type="button" onClick={() => on.onRemove(l.id)} aria-label={`Remove leg ${n}`} data-leg-remove
@@ -676,10 +681,14 @@ function LegRow({ leg: l, n, lotSize, idPrefix, on }: { leg: BasketLeg; n: numbe
       </button>
       <div className="col-span-3 grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] items-end gap-space-2">
         <div className="flex items-center gap-space-1" aria-label={`Lots of leg ${n}`}>
-          <button type="button" aria-label={`One lot less on leg ${n}`} disabled={l.lots <= 1} onClick={() => on.onLeg(l.id, { lots: Math.max(1, l.lots - 1) })}
+          <button type="button" aria-label={`One lot less on leg ${n}`} disabled={l.lots === null || l.lots <= 1} onClick={() => l.lots !== null && on.onLeg(l.id, { lots: Math.max(1, l.lots - 1) })}
             className="flex h-11 w-11 items-center justify-center rounded-control border border-border text-fg disabled:opacity-40" data-leg-less><Minus size={14} aria-hidden /></button>
-          <span className="w-8 text-center text-t14 font-tabular text-fg" data-leg-lots>{l.lots}</span>
-          <button type="button" aria-label={`One lot more on leg ${n}`} disabled={l.lots >= 500} onClick={() => on.onLeg(l.id, { lots: Math.min(500, l.lots + 1) })}
+          {/* M68 PR-2 (TS1-022): an empty leg asks for its lots here - never a pre-chosen 1. */}
+          <input aria-label={`Lots of leg ${n}`} inputMode="numeric" value={l.lots ?? ""} placeholder="Lots" data-leg-lots
+            aria-invalid={l.lots === null ? true : undefined}
+            onChange={(e) => { const v = Math.round(Number(e.target.value)); on.onLeg(l.id, { lots: e.target.value.trim() === "" || !Number.isFinite(v) ? null : Math.min(500, Math.max(1, v)) }); }}
+            className="h-11 w-12 rounded-control border border-border bg-surface-2 text-center text-t14 font-tabular text-fg focus:border-brand focus:outline-none" />
+          <button type="button" aria-label={`One lot more on leg ${n}`} disabled={l.lots !== null && l.lots >= 500} onClick={() => on.onLeg(l.id, { lots: Math.min(500, (l.lots ?? 0) + 1) })}
             className="flex h-11 w-11 items-center justify-center rounded-control border border-border text-fg disabled:opacity-40" data-leg-more><Plus size={14} aria-hidden /></button>
         </div>
         <label className="min-w-0 text-t12 text-fg-muted">

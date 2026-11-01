@@ -273,6 +273,7 @@ for (const size of SIZES) {
         await page.locator("[data-setup-item='8'] [data-setup='trade']").click();
         const ticket = page.locator("[data-order-ticket]");
         // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+        if (await ticket.locator("[data-ticket='lots']").inputValue() === "") await ticket.locator("[data-ticket='lots']").fill("1");   // M68 PR-2: lots asked first
         if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").click();
         await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
         await ticket.locator("[data-ticket='review']").click();
@@ -320,6 +321,7 @@ test.describe("8b slice 4 flows", () => {
     await page.locator("[data-setup-item='8'] [data-setup='trade']").tap();
     const ticket = page.locator("[data-order-ticket]");
     // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+    if (await ticket.locator("[data-ticket='lots']").inputValue() === "") await ticket.locator("[data-ticket='lots']").fill("1");   // M68 PR-2: lots asked first
     if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").tap();
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1: no product saved - pick one before Review
     await ticket.locator("[data-ticket='review']").tap();
@@ -338,6 +340,7 @@ test.describe("8b slice 4 flows", () => {
     await page.locator("[data-setup-item='8'] [data-setup='trade']").tap();
     const ticket = page.locator("[data-order-ticket]");
     // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+    if (await ticket.locator("[data-ticket='lots']").inputValue() === "") await ticket.locator("[data-ticket='lots']").fill("1");   // M68 PR-2: lots asked first
     if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").tap();
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1
     await ticket.locator("[data-ticket='review']").tap();
@@ -357,6 +360,7 @@ test.describe("8b slice 4 flows", () => {
     await page.locator("[data-setup-item='8'] [data-setup='trade']").tap();
     const ticket = page.locator("[data-order-ticket]");
     // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+    if (await ticket.locator("[data-ticket='lots']").inputValue() === "") await ticket.locator("[data-ticket='lots']").fill("1");   // M68 PR-2: lots asked first
     if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").tap();
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1
     await ticket.locator("[data-ticket='review']").tap();
@@ -368,6 +372,7 @@ test.describe("8b slice 4 flows", () => {
     await page.locator("[data-setup-item='8'] [data-setup='trade']").tap();
     const ticket = page.locator("[data-order-ticket]");
     // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+    if (await ticket.locator("[data-ticket='lots']").inputValue() === "") await ticket.locator("[data-ticket='lots']").fill("1");   // M68 PR-2: lots asked first
     if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").tap();
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1
     await ticket.locator("[data-ticket='review']").tap();

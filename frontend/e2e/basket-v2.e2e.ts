@@ -108,8 +108,9 @@ async function open(page: Page, theme: "light" | "dark", opts: { partial?: boole
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname.endsWith("/settings")) {
+      // M68 PR-2 (TS1-023): no neutral start any more - this user saved his own width and lots (Trade settings)
       return route.fulfill({ json: { source: null, width_steps: 2, lots: 1, stop_pct: 50,
-        note: "You have no options settings yet, so a neutral start is used: wings 2 strikes apart, 1 lot, a sold leg's stop-loss 50% above its price. Edit any leg." } });
+        note: "From your Trade settings: wings 2 strikes apart, 1 lot, a sold leg's stop-loss 50% above its price. Edit any leg." } });
     }
     const body = request.postDataJSON() as { legs: Leg[] };
     seen.posts.push({ url: url.pathname, method: request.method(), body });
@@ -211,14 +212,14 @@ test.describe("Basket panel v2 flows", () => {
     await expectPhoneLayout(page);
     const panel = await bullPut(page);
     await expect(panel.locator("[data-practice-frame]")).toContainText("PAPER");
-    await expect(panel.locator("[data-basket='settings-note']")).toContainText("neutral start");
+    await expect(panel.locator("[data-basket='settings-note']")).toContainText("From your Trade settings");
     await expect(panel.locator("[data-leg='1'] [data-leg-label]")).toHaveText("NIFTY 03 NOV 24300 PE");
     await expect(panel.locator("[data-leg='2'] [data-leg-label]")).toHaveText("NIFTY 03 NOV 24500 PE");
     await expect(panel.locator("[data-leg='2'] [data-leg-stop]")).toHaveValue("255");
     await expect(panel.locator("[data-figure='max-loss']")).toContainText("−₹11,400.00");
     await expect(panel.locator("[data-figure='breakevens']")).toContainText("24,452");
     await panel.locator("[data-leg='1'] [data-leg-more]").tap();
-    await expect(panel.locator("[data-leg='1'] [data-leg-lots]")).toHaveText("2");
+    await expect(panel.locator("[data-leg='1'] [data-leg-lots]")).toHaveValue("2");       // M68 PR-2: an input (asks when empty)
     await expect.poll(() => (seen.posts.filter((p) => p.url.endsWith("/basket/evaluate")).at(-1)?.body as { legs: Leg[] } | undefined)?.legs[0].lots).toBe(2);
     expect(seen.posts.filter((p) => /\/basket\/(preview|execute)$/.test(p.url))).toEqual([]);          // nothing checked or placed yet
 

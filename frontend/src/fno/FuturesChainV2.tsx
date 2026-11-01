@@ -8,6 +8,7 @@ import { formatCount, formatCountChange } from "../optionChain/model";
 import { chartTabPath } from "../shell/shellRoutes";
 import { EMPTY, formatChange, formatPct, formatPrice, formatTimeIST } from "../ui/format";
 import { useFeatures } from "../ui/useFeatures";
+import { savedLots, useTradeSettings } from "../settings/tradeSettings";
 import { usePageVisible } from "../utils/usePageVisible";
 import type { Side } from "./api";
 import { basket as defaultBasket, useBasket, type BasketStore } from "./basket";
@@ -303,9 +304,11 @@ export function FuturesChainView({ data, problem, loading, trading, watchlistsOn
 }
 
 /** The basket's words for an added future. */
-export function addFutureToBasket(store: BasketStore, row: FutureRow, side: Side): Note {
-  const ok = store.add(futureLeg(row, side));
-  return ok ? { tone: "done", text: `Added to the basket: ${side === "BUY" ? "Buy" : "Sell"} 1 lot of ${row.label}.` }
+export function addFutureToBasket(store: BasketStore, row: FutureRow, side: Side, lots: number | null = null): Note {
+  // M68 PR-2 (TS1-022): his saved lots, else an empty leg the basket asks about (never a pre-chosen 1)
+  const ok = store.add(futureLeg(row, side, lots));
+  const size = lots === null ? "" : ` ${lots} lot${lots === 1 ? "" : "s"} of`;
+  return ok ? { tone: "done", text: `Added to the basket: ${side === "BUY" ? "Buy" : "Sell"}${size} ${row.label}.${lots === null ? " Enter its lots in the basket." : ""}` }
     : { tone: "warn", text: "The basket is full (20 legs). Remove a leg first." };
 }
 
@@ -313,6 +316,7 @@ export default function FuturesChainV2({ symbol, timeframe, api, lists = watchli
   symbol: string; timeframe: string | null; api?: Pick<HubApi, "futures">; lists?: Lists; basketStore?: BasketStore;
 }) {
   const features = useFeatures();
+  const ownLots = savedLots(useTradeSettings(features.on("ui_v2")));      // M68 PR-2: a new leg's lots are his own
   const trading = features.on("paper_account");
   const watchlistsOn = features.on("watchlists");
   const { data, problem, loading } = useFuturesChain(symbol, api);
@@ -329,7 +333,7 @@ export default function FuturesChainV2({ symbol, timeframe, api, lists = watchli
       setNote(null);
       if (p?.kind === "watchlist" && watchlists === null) lists.list().then(setWatchlists).catch((e: unknown) => setNote({ tone: "warn", text: errorSentence(e) }));
     },
-    onBasket: (row, side) => done(addFutureToBasket(basketStore, row, side)),
+    onBasket: (row, side) => done(addFutureToBasket(basketStore, row, side, ownLots)),
     onWatchlist: (row, list) => { void watchlistAdd(lists, futureContract(row), list).then(done); },
   };
   return (

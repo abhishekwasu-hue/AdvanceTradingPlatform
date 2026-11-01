@@ -345,6 +345,7 @@ test.describe("v2 terminal 1440", () => {
     await expect(order.locator("[data-practice-frame]")).toHaveCount(0);            // TERM-2 step 5: the one PAPER badge is in the bar
     await expect(page.locator("[data-terminal='mode']")).toHaveText("PAPER");
     // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+    if (await order.locator("[data-ticket='lots']").inputValue() === "") await order.locator("[data-ticket='lots']").fill("1");   // M68 PR-2: lots asked first
     if (await order.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await order.locator("[data-ticket='order-type'] [data-option='MARKET']").click();
     await order.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
     await order.locator("[data-ticket='review']").click();

@@ -170,9 +170,10 @@ export function futureTarget(row: FutureRow): TicketTarget {
     ltp: row.ltp, bid: row.bid, ask: row.ask };
 }
 
-/** The basket leg of a future: one lot, strike 0 (a future has none), the price on screen. */
-export function futureLeg(row: FutureRow, side: Side): Omit<BasketLeg, "id"> {
-  return { underlying: row.underlying, expiry: row.expiry, strike: 0, right: "FUT", side, lots: 1, price: row.ltp, label: row.label };
+/** The basket leg of a future: his saved lots (M68 PR-2, TS1-022: else empty - the basket asks), strike 0 (a future has
+ * none), the price on screen. */
+export function futureLeg(row: FutureRow, side: Side, lots: number | null = null): Omit<BasketLeg, "id"> {
+  return { underlying: row.underlying, expiry: row.expiry, strike: 0, right: "FUT", side, lots, price: row.ltp, label: row.label };
 }
 
 /** A future as the contract the watchlist helper takes. */

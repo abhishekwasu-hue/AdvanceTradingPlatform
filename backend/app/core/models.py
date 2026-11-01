@@ -120,7 +120,9 @@ class RiskConfig(BaseModel):
     # TT12-4 (owner, 24 Oct): no built-in minimum reward:risk - 0 = not set (no minimum), on LIVE, paper and both
     # backtest engines alike. Only a value the organisation sets itself filters entries (never exits, ADR-0004).
     min_risk_reward: float = 0.0
-    lot_size: int = 1
+    # M68 PR-2 (TS1-018): the organisation's own unit for a cash symbol, only when it saved one; None = Not set - a cash
+    # share trades in single shares (a fact, app/risk_engine/risk_manager.CASH_UNIT). It is a unit, never a size.
+    lot_size: int | None = None
     # Phase V1 (Risk Guardian): the rules the engine keeps whatever built the strategy - each off until set (DEF-0).
     max_portfolio_risk_pct: Optional[float] = None    # R4: loss if every open stop hits + this trade, % of capital
     stop_cooldown_minutes: Optional[int] = None       # R10: no re-entry in an underlying this long after a stop-out

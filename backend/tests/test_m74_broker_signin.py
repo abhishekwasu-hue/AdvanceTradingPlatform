@@ -484,3 +484,11 @@ def test_failed_exchange_says_failed_without_the_brokers_text(brokers):
     brokers["upstox"].exchange_status = 400
     loc = _broker_login("upstox")
     assert loc["query"] == {"social_error": "failed", "provider": "broker:upstox"}
+
+
+def test_admin_health_shows_each_broker_and_whether_it_is_live(apps):
+    from app.admin.console import sign_in_providers
+    apps(upstox=True, zerodha=False)
+    rows = [r for r in sign_in_providers() if r["kind"] == "broker"]
+    assert [(r["id"], r["live"]) for r in rows] == [("broker:upstox", True), ("broker:zerodha", False), ("broker:fyers", False)]
+    assert PLATFORM_KEY not in str(rows) and PLATFORM_SECRET not in str(rows)

@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
@@ -282,9 +283,14 @@ def named_symbol(message: str, exclude: frozenset[str] = frozenset()) -> str | N
     return None
 
 
-def symbol_in(message: str, default: str = DEFAULT_SYMBOL) -> str:
-    """The symbol the message names (`named_symbol`), else `default`."""
-    return named_symbol(message) or default
+# M72 PR-3 (CP-3): the symbol of the page the question was asked from ("Ask AI about this"), set by the chat route for one
+# request; a question that names no symbol is about it (else NIFTY, said in the answer).
+CONTEXT_SYMBOL: ContextVar[str | None] = ContextVar("copilot_context_symbol", default=None)
+
+
+def symbol_in(message: str, default: str | None = None) -> str:
+    """The symbol the message names (`named_symbol`), else `default`, else the asking page's symbol, else NIFTY."""
+    return named_symbol(message) or default or CONTEXT_SYMBOL.get() or DEFAULT_SYMBOL
 
 
 def exchange_of(symbol: str) -> str:
@@ -2044,7 +2050,8 @@ def symbol_line(answer: Answer, text: str) -> str | None:
 
 def _name_symbols(answer: Answer, message: str) -> None:
     answer.symbols = symbols_read(answer)
-    answer.symbol_default = (answer.job in SYMBOL_JOBS and named_symbol(message) is None and answer.symbols == [DEFAULT_SYMBOL])
+    answer.symbol_default = (answer.job in SYMBOL_JOBS and named_symbol(message) is None and answer.symbols == [DEFAULT_SYMBOL]
+                             and CONTEXT_SYMBOL.get() is None)
     line = symbol_line(answer, "\n".join(answer.summary))
     if line:
         answer.summary.append(line)

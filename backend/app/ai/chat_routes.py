@@ -22,9 +22,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import chat_history, platform_key
+from app.ai import ask_context, chat_history, platform_key
 from app.ai import copilot_chat as chat
 from app.ai import resolve as ai_resolve
+from app.ai.ask_context import ChatContext
 from app.ai.compliance_terms import require_ai_acknowledged
 from app.ai.rate_limit import ai_rate_limit
 from app.ai.tools import ToolContext, ToolResult, run_tool
@@ -43,6 +44,9 @@ class ChatBody(BaseModel):
     # M59 CR-2: false = the rule answer only, no AI wording (no metered AI call) - the Copilot's chart attach asks this
     # way after an analysis; the AI words come only when the user taps "Explain in words" (a normal question).
     wording: bool = True
+    # M72 PR-3 (CP-3): where the question was asked from - page, symbol, timeframe, one object by kind + id. The server
+    # re-reads the object for this user (404 when it is not his); no number about it comes from the client.
+    context: ChatContext | None = None
 
 
 async def _flags(session: AsyncSession, user: User) -> None:
@@ -153,7 +157,8 @@ AGENT_FLAG = "copilot_agent"
 AGENT_FALLBACK_NOTE = "The AI could not answer this one, so this answer uses ATP's own sentences."
 
 
-async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, user_id: int, question: str) -> tuple[dict[str, Any] | None, str]:
+async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, user_id: int, question: str,
+                        context: dict[str, Any] | None = None) -> tuple[dict[str, Any] | None, str]:
     """M72 PR-1c (CP-1, F22): the planner first. (the answer in the chat's shape, "") when the AI answered and its answer
     passed the checks; (None, why) otherwise - the caller then answers from ATP's rules. Never an order (ADR-0006)."""
     from app.ai import agent, grounding
@@ -163,7 +168,8 @@ async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, us
         return None, "the user could not be read"
     stamp(provider, agent.PROMPT_VERSION)
     try:
-        ans = await agent.run_agent(provider, ToolContext(session, tenant_id, user), question, limits=await agent.admin_limits(session))
+        ans = await agent.run_agent(provider, ToolContext(session, tenant_id, user), question, limits=await agent.admin_limits(session),
+                                    context=context)
     except Exception as exc:  # noqa: BLE001 - the planner never breaks the chat: the rules answer instead
         await session.rollback()
         return None, f"planner error ({exc.__class__.__name__})"
@@ -189,6 +195,18 @@ async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, us
 async def chat_ask(body: ChatBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flags(session, user)
     tenant_id, user_id, admin = int(user.tenant_id), int(user.id), user.role == UserRole.SUPER_ADMIN.value   # read before any tool runs
+    context = await ask_context.resolve(session, tenant_id, user_id, body.context)      # 404: an object that is not his
+    token = chat.CONTEXT_SYMBOL.set(ask_context.symbol_of(context))
+    try:
+        result = await _chat_ask(body, session, tenant_id, user_id, admin, context)
+    finally:
+        chat.CONTEXT_SYMBOL.reset(token)
+    if context:
+        result["context"] = {"symbol": context.get("symbol"), "kind": (context.get("object") or {}).get("kind")}
+    return result
+
+
+async def _chat_ask(body: ChatBody, session: AsyncSession, tenant_id: int, user_id: int, admin: bool, context: dict[str, Any] | None) -> dict[str, Any]:
     provider = await _provider(session, tenant_id, user_id)
     ai_state = _ai_state(provider, await ai_resolve.one_key_on(session, tenant_id))
     agent_tried, agent_why = False, ""
@@ -196,7 +214,7 @@ async def chat_ask(body: ChatBody, user: User = Depends(require_ai_acknowledged)
             and await flag_enabled(session, AGENT_FLAG, tenant_id)):
         # M72 PR-1c: the AI planner first; ATP's rules only when the AI is down or its answer fails the checks (F22).
         agent_tried = True
-        planned, agent_why = await _agent_answer(session, provider, tenant_id, user_id, body.message)
+        planned, agent_why = await _agent_answer(session, provider, tenant_id, user_id, body.message, context)
         if planned is not None:
             from app.ai import metering
             run_info = planned.pop("agent")                  # the run's audit id: admin diagnostics only, never the user's view

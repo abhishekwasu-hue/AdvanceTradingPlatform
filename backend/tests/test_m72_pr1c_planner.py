@@ -306,9 +306,9 @@ def test_admin_sets_the_planner_limits_inside_their_bounds(planner_on, monkeypat
     seen = {}
     real = agent.run_agent
 
-    async def spy(provider, ctx, question, *, lang="en", limits=None):
+    async def spy(provider, ctx, question, *, lang="en", limits=None, **kw):       # M72 PR-3 added `context`
         seen["limits"] = limits
-        return await real(provider, ctx, question, lang=lang, limits=limits)
+        return await real(provider, ctx, question, lang=lang, limits=limits, **kw)
     monkeypatch.setattr(agent, "run_agent", spy)
     _provider(monkeypatch, Scripted([_answer("No figures were needed for this.")]))
     client.post("/api/ai/chat", headers=headers, json={"message": "What can you read for me?"})

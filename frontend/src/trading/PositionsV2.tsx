@@ -1,4 +1,5 @@
 import { ExitAllV2, exitableRows, type ExitAllHooks } from "./ExitAllV2";
+import { AskAiAbout } from "../copilot/AskAiAbout";
 import { ArrowDownRight, ArrowUpRight, ChartCandlestick, Layers, Plus, RefreshCcw, SlidersHorizontal } from "lucide-react";
 import { Suspense, lazy, useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
@@ -602,6 +603,8 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
         <Link to={chartsPath(row.chartSymbol)} className={BUTTON_SECONDARY}>
           <ChartCandlestick size={16} aria-hidden />Chart
         </Link>
+        {/* M72 PR-3: the Copilot beside the page, about this position (the server re-reads it; information only) */}
+        <AskAiAbout ctx={{ symbol: position.symbol, object: { kind: "trade", id: position.id }, page: "positions" }} />
         {own && actions.fno?.alertsOn && actions.canTrade && <StructureAlertV2 legs={own} />}
         {actions.exitNowOn && position.mode === "LIVE" && <span className="text-t12 text-fg-muted">Close a live position in your broker&apos;s app.</span>}
       </div>

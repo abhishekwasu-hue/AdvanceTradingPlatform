@@ -2,6 +2,7 @@ import { request } from "../../api/client";
 import { formatDateTimeIST, formatNumber } from "../../ui/format";
 import type { AnalysisChart, AnalysisTable } from "../../optionChain/analyses";
 import type { StrategyDraft } from "../strategyDraft";
+import type { AskContext } from "../askContext";
 import type { MarketStrip, StripIndex } from "../../dashboard/types";
 import type { AnalysisItem, AnalyzeStatus } from "../../chartAnalyze/types";
 import type { LayerBand } from "../../charting/engine";
@@ -162,7 +163,9 @@ export function actionState(answer: Pick<ChatAnswer, "draft">): { copilotDraft: 
 
 export const chatApi = {
   home: () => request<ChatHome>("/ai/chat/home"),
-  ask: (message: string) => request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message }) }),
+  /** M72 PR-3: `context` - where the question was asked from (ids and words only; the server re-reads the object). */
+  ask: (message: string, context?: AskContext | null) =>
+    request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify(context ? { message, context } : { message }) }),
   /** M59 CR-2: the rule answer only (its structure card), never the AI wording - no metered AI call the user did not ask for. */
   askRules: (message: string) => request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message, wording: false }) }),
   /** CU6: the person's own conversation, oldest turn first. */

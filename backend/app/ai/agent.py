@@ -245,7 +245,10 @@ def _verify(answer: Parsed, allowed: set, by_call: Dict[str, set], from_question
     return None, shown
 
 
-async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str = "en", limits: Optional[AgentLimits] = None) -> AgentAnswer:
+async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str = "en", limits: Optional[AgentLimits] = None,
+                    context: dict[str, Any] | None = None) -> AgentAnswer:
+    """`context` (M72 PR-3): what the page asked from, as the SERVER read it for this user (`app.ai.ask_context.resolve`);
+    the model gets it as data and its numbers count as read (call id "context")."""
     limits = limits or AgentLimits()
     started = time.monotonic()
     # M72 PR-1a: the same refusals as the Copilot chat (one list: `copilot_chat.refusal_kind`) - an order, an exit to block,
@@ -269,7 +272,11 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
                          created_at=datetime.now(timezone.utc))
     ctx.session.add(run)
     await ctx.session.flush()
-    messages: List[Dict[str, Any]] = [{"role": "user", "content": question}]
+    first = question
+    if context:
+        from app.ai.ask_context import planner_note
+        first = planner_note(context) + question
+    messages: List[Dict[str, Any]] = [{"role": "user", "content": first}]
     calls: List[Dict[str, Any]] = []
     from_question = set(grounding.allowed_from_text(question))
     from_tools: set = set()
@@ -280,6 +287,14 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
     call_texts: dict[str, str] = {}                 # M72 F5: tool call id -> its data as text (the symbols it names)
     result_data: dict[str, Any] = {}                # M72 PR-2: tool call id -> its result data (the cards are drawn from it)
     first_party: set = set()                        # M72 F5: the calls whose data may support a direction (not news)
+    if context:
+        # M72 PR-3: the server-read context is first-party data of this request, like a tool result
+        found = grounding.numbers_in_values(context)
+        allowed |= found
+        from_tools |= found
+        by_call["context"] = found
+        call_texts["context"] = json.dumps(context, default=str, ensure_ascii=False)
+        first_party.add("context")
     final_text: Optional[str] = None
     final: Optional[Parsed] = None
     stopped = "steps"

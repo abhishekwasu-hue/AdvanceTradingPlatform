@@ -157,6 +157,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/admin/view-sessions"): "admin",
     ("GET", "/api/admin/view-sessions/{view_id}"): "admin",
     ("POST", "/api/admin/view-sessions/{view_id}/end"): "admin",
+    ("POST", "/api/ui/ticket-metrics"): "self: M76 MP-0 one order ticket's report - closed labels and counts into /metrics, nothing stored (rate limited)",
     ("GET", "/api/view-session"): "member",
     ("POST", "/api/view-session/end"): S_END_VIEW,
     ("GET", "/api/me/support-access"): M_OWN_SUPPORT_ACCESS,

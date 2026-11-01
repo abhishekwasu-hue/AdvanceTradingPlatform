@@ -31,6 +31,7 @@ import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
 import { riskLine, structureOf, type RiskBudget, type RiskLine } from "./insights";
 import { eventLine, legLiquidity, liquidityLine, marginLine } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
+import { TicketClock, basketSurfaces } from "./ticketMetrics";
 import { IncompleteV2, SmartConfirmV2 } from "./SmartExecutionV2";
 import { ExitSentenceV2, StrategyExitsV2 } from "./StrategyExitsV2";
 import {
@@ -157,6 +158,24 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
       l.label ?? `${formatNumber(l.strike, 0)} ${l.right}`)), true, limits) : null,
   ], [events, lastExpiry, legs, live?.expiry, chain.symbol, rows, limits]);
 
+  // M76 MP-0: one report per basket ticket - the warning surfaces shown at Place and the time to Place (never awaited).
+  const metrics = useRef<TicketClock | null>(null);
+  metrics.current ??= new TicketClock("basket");
+  useEffect(() => {
+    if (!open) return undefined;
+    metrics.current?.opened();
+    return () => metrics.current?.closed();
+  }, [open]);
+  const shown = useMemo(() => (step.kind === "confirm" && step.preview ? basketSurfaces(step.preview, confirmRiskLines(step.preview, budget, checks)) : null),
+    [step, budget, checks]);
+  useEffect(() => { metrics.current?.shown(shown); }, [shown]);
+  // The panel stays open after a placed basket (the Terminal embeds it): leaving the result starts the next ticket.
+  const lastKind = useRef(step.kind);
+  useEffect(() => {
+    if (lastKind.current === "done" && step.kind !== "done") metrics.current?.opened();
+    lastKind.current = step.kind;
+  }, [step.kind]);
+
   useEffect(() => {
     if (!open) return undefined;
     setStep({ kind: "edit" });
@@ -221,8 +240,10 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     ref.current = newClientRef();
     setStep({ kind: "confirm", preview: null, legs: sending, remaining });
     setBusy(true);
+    metrics.current?.reviewStarted();
     try {
       const preview = await api.preview(basketAsk(sending, sending.every((l) => l.underlying === chain.symbol) ? spot : null, product));
+      metrics.current?.reviewed();
       setStep({ kind: "confirm", preview, legs: sending, remaining });
     } catch (e) {
       setStep({ kind: "edit" });
@@ -234,6 +255,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
 
   async function execute() {
     if (step.kind !== "confirm" || product === null) return;
+    if (shown) metrics.current?.placed(shown);   // the moment Place is pressed; never awaited
     setBusy(true);
     try {
       // SX3: the strategy exit goes with the first run only (the remaining legs keep their own stops).
@@ -699,6 +721,14 @@ function LegRow({ leg: l, n, lotSize, idPrefix, on }: { leg: BasketLeg; n: numbe
   );
 }
 
+/** The "Before you place" lines of the basket's confirm step (M76 MP-0: also what the basket's report counts). */
+export function confirmRiskLines(p: BasketPreview, budget?: RiskBudget | null, checks?: readonly (RiskLine | null)[]): (RiskLine | null)[] {
+  const ext = p.totals?.extremes ?? null;
+  const hedge = p.totals?.margin.hedge ?? null;
+  return [ext ? riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget) : null,
+    ...(checks ?? []), checks ? marginLine(hedge?.with_hedge.value, budget) : null];
+}
+
 /** The confirm step: every leg as it would be placed (hedge legs first), the total margin and max loss (no state). */
 export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks, exitWords: exitLine }: {
   preview: BasketPreview | null; busy: boolean; onBack: () => void; onPlace: () => void;
@@ -754,8 +784,7 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks,
               <Figure label="Max loss" testId="total-max-loss">{ext ? (ext.unbounded_loss ? "Unlimited" : moneyText(ext.max_loss)) : "See the chart"}</Figure>
               {p.totals && <Figure label="Charges to open (estimate)" testId="total-charges">{moneyText(p.totals.costs)}</Figure>}
             </dl>
-            <RiskChecksV2 testId="basket-confirm" lines={[ext ? riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget) : null,
-              ...(checks ?? []), checks ? marginLine(hedge?.with_hedge.value, budget) : null]} />
+            <RiskChecksV2 testId="basket-confirm" lines={confirmRiskLines(p, budget, checks)} />
             {p.totals_errors.length > 0 && <p className="text-t13 text-fg-muted">{p.totals_errors[0]}</p>}
             {p.refusals.length > 0 && (
               <ul role="alert" className="space-y-space-1 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-basket="confirm-refusals">

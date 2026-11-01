@@ -114,6 +114,7 @@ from app.observability.ops_routes import router as ops_alerts_router
 from app.observability.routes import router as observability_router
 from app.observability.status_history import router as status_sessions_router
 from app.observability.status_page import router as public_status_router
+from app.observability.ticket_routes import router as ticket_metrics_router
 from app.option_chain.analyses_routes import router as oc_analyses_router
 from app.option_chain.analyze_routes import router as option_chain_analyze_router
 from app.option_chain.ask_routes import router as oc_ask_router
@@ -459,6 +460,7 @@ app.include_router(live_router)  # PW4: live updates across Telegram, push and o
 app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, cohort and feedback (SUPER_ADMIN)
 app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)
 app.include_router(feedback_router)        # PW6: "Send feedback"
+app.include_router(ticket_metrics_router)  # M76 MP-0: one order ticket's report (counters only)
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
 app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and position what-if (flag decision_tools)
 app.include_router(system_watchlists_router)  # WL1: read-only system lists (indices, index stocks, sectors, F&O); before /{id}

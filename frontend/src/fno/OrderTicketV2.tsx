@@ -26,6 +26,7 @@ import type { ChainRow } from "../optionChain/types";
 import { eventLine, legLiquidity, liquidityLine, marginLine, type EventRisk } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
 import RiskBlockV2 from "../risk/RiskBlockV2";
+import { TicketClock, ticketSurfaces } from "./ticketMetrics";
 import { Combobox } from "../ui/Combobox";
 
 /**
@@ -155,6 +156,10 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     return () => { live = false; };
   }, [open, multiOn, api]);
 
+  // M76 MP-0: one report per ticket - the warning surfaces shown at Place and the time from opening to Place (never awaited).
+  const metrics = useRef<TicketClock | null>(null);
+  metrics.current ??= new TicketClock("ticket");
+
   // A new target or side starts a fresh ticket (and a fresh id, so a second order is never mistaken for the first).
   useEffect(() => {
     if (!open) return;
@@ -163,6 +168,8 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     setProblem(null);
     setRunOn("ONE");
     ref.current = newClientRef();
+    metrics.current?.opened();
+    return () => metrics.current?.closed();   // the ticket ended (closed, or a new target) after a Review without Place
   }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults]);
 
   // M68 TS-3: the ticket ASKS for a field that is Not set - it focuses the first one (order type, then product), and
@@ -188,6 +195,10 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     if (!chainRows || target.right === "FUT" || target.strike === null) return liquidityLine([], false, limits);
     return liquidityLine([legLiquidity(chainRows, target.strike, target.right, target.label ?? "This strike")], true, limits);
   }, [chainRows, target, limits]);
+  // M76 MP-0: what the Review step shows now (the same lines `Review` renders), kept for the ticket's one report.
+  const shown = useMemo(() => (step.kind === "review" ? ticketSurfaces(step.preview, reviewRiskLines(step.preview, budget, events, liquidity)) : null),
+    [step, budget, events, liquidity]);
+  useEffect(() => { metrics.current?.shown(shown); }, [shown]);
 
   // Desktop shortcuts: B = Buy, S = Sell while the ticket is being filled in (never while typing in a field).
   useEffect(() => {
@@ -207,8 +218,11 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     const missing = draftProblems(d, target?.right);
     if (!target || missing.length) { setProblem(missing[0] ?? null); return; }
     setBusy(true);
+    metrics.current?.reviewStarted();
     try {
-      setStep({ kind: "review", preview: await api.preview(askOf(target, d, ref.current)) });
+      const preview = await api.preview(askOf(target, d, ref.current));
+      metrics.current?.reviewed();
+      setStep({ kind: "review", preview });
     } catch (e) {
       setProblem(errorSentence(e));
     } finally {
@@ -218,6 +232,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
 
   async function place() {
     if (!target) return;
+    if (shown) metrics.current?.placed(shown);   // the moment Place is pressed; never awaited
     setBusy(true);
     try {
       if (runOn !== "ONE" && api.placeMulti) {
@@ -519,6 +534,11 @@ export function samePriceNote(note: string): boolean {
   return /^Fills at the live price [\d,.]+\.?$/.test(note.trim());
 }
 
+/** The "Before you place" lines of the confirm step (M76 MP-0: also what the ticket's report counts). */
+export function reviewRiskLines(p: OrderPreview, budget?: RiskBudget | null, events?: EventRisk | "error" | null, liquidity?: RiskLine | null): (RiskLine | null)[] {
+  return [riskLine(p.max_loss?.value, false, budget), eventLine(events ?? null, p.contract?.expiry), liquidity ?? null, marginLine(p.margin?.value, budget)];
+}
+
 /** The confirm step: every figure from the server, before anything is placed. 8b: the payoff in plain words, the risk
  * line (the max loss beside the user's own limits, information only: `can_place` alone decides the button) and Explain. */
 export function Review({ preview: p, budget, events, liquidity }: {
@@ -564,8 +584,7 @@ export function Review({ preview: p, budget, events, liquidity }: {
       {payoff && (
         <Details id="ticket.payoff-words" label="In plain words" className="mt-0"><p data-ticket="plain-words">{payoff}</p></Details>
       )}
-      <RiskChecksV2 testId="ticket" lines={[riskLine(p.max_loss?.value, false, budget), eventLine(events ?? null, p.contract?.expiry), liquidity ?? null,
-        marginLine(p.margin?.value, budget)]} />
+      <RiskChecksV2 testId="ticket" lines={reviewRiskLines(p, budget, events, liquidity)} />
       {problems.length > 0 && (
         <ul role="alert" className="space-y-space-1 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-ticket="refusals">
           {problems.map((r) => <li key={r}>{r}</li>)}

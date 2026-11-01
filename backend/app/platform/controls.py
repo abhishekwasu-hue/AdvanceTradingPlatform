@@ -150,6 +150,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # calc tools - and answers from ATP's rules when the AI is down or its answer fails the checks. OFF: exactly today's
     # chat (rules first, AI wording). Read tools and guarded proposals only; never an order (ADR-0006).
     "copilot_agent": "Copilot planner: the AI reads your own data with read-only tools before answering; ATP's rules answer when the AI is down",
+    # M72 PR-7 (CP-7; needs `ui_v2`; app/ai/watch.py): the Copilot watch - short information cards about the user's OWN
+    # positions, short strikes and watchlists, each type opt-in with his own number (Settings > Alerts), in the app and on
+    # his own Telegram; each card has "Ask why". No proposal, nothing closed or blocked (ADR-0004, ADR-0006). OFF: nothing
+    # is evaluated or sent and /api/copilot-watch/* answers 404.
+    "copilot_watch": "Copilot watch: opt-in cards when your own positions, short strikes or watchlists change, with Ask why",
     "ai_platform_key": "Platform AI key: AI answers without a key of the user's own, inside the plan's AI budget and the per-user daily cap set in Admin",
     # AUD-T7 (owner audit 28 Oct; app/trading/cost_meter.py; needs `ui_v2`): the cost-of-trading meter on My trades - the
     # user's own closed trades' charges against the gross P&L, this financial year and this month, PAPER and LIVE apart,

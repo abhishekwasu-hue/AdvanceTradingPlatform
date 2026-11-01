@@ -446,6 +446,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/studies"): "member: M77 SX-2 - the caller's own saved studies only (user_id and tenant)",
     ("GET", "/api/studies/{study_id}"): "member: M77 SX-2 - one of the caller's own studies; another member's reads as not found",
     ("GET", "/api/studies/{study_id}/json"): "member: M77 SX-2 - the caller's own study as a JSON file; another member's reads as not found",
+    ("GET", "/api/studies/{study_id}/pdf"): "member: M77 SX-3 - the caller's own study as a PDF; another member's reads as not found",
     ("DELETE", "/api/studies/{study_id}"): S_OWN_STUDIES,
     ("GET", "/api/charts/read"): "member: the caller's organisation's stored zones and his own private bars only (else the shared lake); read-only (AUD-T5)",
     ("POST", "/api/screener/board/context"): S_COMPUTE,          # U5 D3a: reference data + shared closes for the caller's symbols; stores nothing

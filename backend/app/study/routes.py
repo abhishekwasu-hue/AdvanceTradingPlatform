@@ -7,11 +7,13 @@ places, changes or blocks an order.
 * `GET    /api/studies`            - My studies: his own, newest first; search by symbol and IST date range.
 * `GET    /api/studies/{id}`       - one of his studies with its snapshot.
 * `GET    /api/studies/{id}/json`  - the snapshot as a JSON file (same study = same bytes).
+* `GET    /api/studies/{id}/pdf`   - the study as an A4 PDF (SX-3), rebuilt from the snapshot (same study = same bytes).
 * `DELETE /api/studies/{id}`       - deletes one of his studies.
 Self-scoped: the caller's own rows inside his organisation; another member's study is "not found".
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime
 from typing import Any, Literal
 
@@ -30,9 +32,12 @@ from app.db.session import get_session
 from app.study import snapshot as S
 from app.study import store
 from app.study.numfmt import format_number
+from app.study.pdf import PdfTooLarge, study_pdf
 
 FLAG = "study_export"
 router = APIRouter(prefix="/api/studies", tags=["studies"])
+pdf_rate_limited = user_rate_limit("study_pdf", config.STUDY_PDF_PER_MINUTE, 60.0,
+                                   "You downloaded several study PDFs just now - wait a minute, then try again.")
 rate_limited = user_rate_limit("study_save", config.STUDY_SAVES_PER_MINUTE, 60.0,
                                "You saved several studies just now - wait a minute, then save again.")
 Timeframe = Literal["1m", "3m", "5m", "15m", "30m", "1h", "1d"]
@@ -152,6 +157,22 @@ async def download_json(study_id: int, user: User = Depends(get_current_user), s
     row = await store.get_own(session, user.tenant_id, user.id, study_id)
     return Response(store.export_bytes(row), media_type="application/json",
                     headers={"Content-Disposition": f'attachment; filename="{store.file_name(row, "json")}"'})
+
+
+@router.get("/{study_id}/pdf", dependencies=[Depends(pdf_rate_limited)])
+async def download_pdf(study_id: int, cvd: bool = False, user: User = Depends(get_current_user),
+                       session: AsyncSession = Depends(get_session)) -> Response:
+    """M77 SX-3: the study as an A4 PDF, rebuilt from the stored snapshot (same study = same bytes). `cvd`: his
+    colour-vision setting (stored in his browser), so the seller / buyer colours match his screen."""
+    await _flags(session, user)
+    row = await store.get_own(session, user.tenant_id, user.id, study_id)
+    snap, name = store.snapshot_of(row), store.file_name(row, "pdf")
+    await session.close()                                                # the build runs in a worker thread
+    try:
+        data = await asyncio.to_thread(study_pdf, snap, cvd=cvd)
+    except PdfTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from None
+    return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @router.delete("/{study_id}")

@@ -50,6 +50,8 @@ const EXCLUDED_FILES: Record<string, string> = {
   "src/settings/model.ts": "NAV - the Settings tab's own menu (one row per section)",
   "src/shell/common.tsx": "NAV - the 'page not found' screen's way home (no tab is being worked in)",
   "src/ui/ComingSoon.tsx": "NAV - a 'coming soon' placeholder's way home (no tab is being worked in)",
+  "src/inplace/InPlaceProvider.tsx": "INPLACE - the in-place host itself (NAV-1): it writes `?panel=` on the SAME path and Back closes; it navigates (as today) only for an address no panel is registered for, with a dev warning",
+  "src/inplace/InPlaceLink.tsx": "INPLACE - the in-place link (NAV-1): the real address for a long-press / new tab; a plain click opens the panel registered for it (an area PR registers the panel when it switches a site to it)",
 };
 
 /**

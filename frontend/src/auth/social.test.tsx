@@ -5,7 +5,7 @@ import { OrUseEmail, ProviderButton, SignInOptionsList } from "./SocialButtons";
 import { parseSocialReturn, providersFrom, signInV2From, socialErrorMessage, socialStartUrl, stripSocialParams, type SignInProvider } from "./social";
 import { linkTokenFrom } from "./SignInScreen";
 import { ApiError } from "../api/errors";
-import { canUnlink } from "../settings/SignInMethodsCardV2";
+import { canUnlink, validIdentities } from "../settings/SignInMethodsCardV2";
 
 const GOOGLE: SignInProvider = { id: "google", label: "Google", kind: "oidc", start: "/auth/google/start" };
 const FACEBOOK: SignInProvider = { id: "facebook", label: "Facebook", kind: "oauth2", start: "/auth/facebook/start" };
@@ -102,6 +102,12 @@ describe("M73: the return from a provider", () => {
 });
 
 describe("M73 SL-2: Settings › Account", () => {
+  it("an unexpected answer (an older server, an error page) shows no card", () => {
+    expect(validIdentities({ detail: "Not found" })).toBe(false);
+    expect(validIdentities(null)).toBe(false);
+    expect(validIdentities({ has_password: true, identities: [], available: [] })).toBe(true);
+  });
+
   it("the last way to sign in cannot be unlinked", () => {
     const one = { provider: "google", label: "Google", email: null, linked_at: null };
     expect(canUnlink({ has_password: false, identities: [one], available: [] })).toBe(false);

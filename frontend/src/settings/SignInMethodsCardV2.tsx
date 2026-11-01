@@ -13,6 +13,13 @@ import { formatDateIST } from "../ui/format";
  * Unlink. The last way to sign in cannot be unlinked (the server refuses it; the button is not offered either). Linking
  * goes through the provider and comes back here (?social=linked).
  */
+/** Pure: the /auth/identities answer has the expected shape. */
+export function validIdentities(answer: unknown): answer is SignInIdentities {
+  if (!answer || typeof answer !== "object") return false;
+  const a = answer as Partial<SignInIdentities>;
+  return typeof a.has_password === "boolean" && Array.isArray(a.identities) && Array.isArray(a.available);
+}
+
 export function canUnlink(state: SignInIdentities): boolean {
   return state.has_password || state.identities.length > 1;
 }
@@ -33,9 +40,13 @@ export default function SignInMethodsCardV2() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [, setLoadError] = useState<string | null>(null);     // kept for debugging; the card stays hidden on a failed read
 
   function load() {
-    api.signInIdentities().then(setState).catch((e) => setError(errorSentence(e)));
+    // A server without the endpoint (or any unexpected answer) shows no card rather than an error on the Account page.
+    api.signInIdentities()
+      .then((answer) => setState(validIdentities(answer) ? answer : null))
+      .catch((e) => { setState(null); setLoadError(errorSentence(e)); });
   }
 
   useEffect(() => {
@@ -72,7 +83,7 @@ export default function SignInMethodsCardV2() {
     }
   }
 
-  if (!state) return error ? <Card title="Ways to sign in"><p role="alert" className="text-t12 text-down">{error}</p></Card> : null;
+  if (!state) return null;
   const unlinkable = canUnlink(state);
   return (
     <Card title="Ways to sign in">

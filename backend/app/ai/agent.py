@@ -25,7 +25,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.ai import grounding, output_filter
@@ -174,7 +174,7 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
     if kind is not None:
         refused_run = AgentRunRecord(tenant_id=ctx.tenant_id, user_id=ctx.user.id, question_sha256=_sha(question), prompt_version=PROMPT_VERSION,
                                      model=str(getattr(provider, "model", "") or ""), limits_json=json.dumps(limits.__dict__), outcome="refused",
-                                     steps=0, tool_calls=0, created_at=datetime.now(timezone.utc), finished_at=datetime.now(timezone.utc))
+                                     steps=0, tool_calls=0, created_at=datetime.now(UTC), finished_at=datetime.now(UTC))
         ctx.session.add(refused_run)
         await ctx.session.commit()
         return AgentAnswer(REFUSALS[kind], "refused", "refused", refused_run.id, refused=kind)

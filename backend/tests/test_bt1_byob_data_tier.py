@@ -376,8 +376,10 @@ def test_teammates_credential_is_not_the_users_session(monkeypatch):
     member_headers = _headers(member["access_token"])
     _route_brokers(monkeypatch, {owner["tenant_id"]: _PriceBroker(50.0)})
 
-    _flag(False)    # flag off: the tenant's credential serves every member exactly as before
-    assert client.get("/api/market-data/ltp?symbol=RELIANCE", headers=member_headers).status_code == 200
+    _flag(False)    # flag off (M71Q-2): a teammate's credential is never read for this member either - plain 409
+    off = client.get("/api/market-data/ltp?symbol=RELIANCE", headers=member_headers)
+    assert off.status_code == 409 and "linked by a teammate" in off.json()["detail"]
+    assert client.get("/api/market-data/ltp?symbol=RELIANCE", headers=owner_headers).status_code == 200   # the owner's own
     _flag(False, [owner["tenant_id"]])
     res = client.get("/api/market-data/ltp?symbol=RELIANCE", headers=member_headers)
     assert res.status_code == 409 and "linked by a teammate is theirs" in res.json()["detail"]

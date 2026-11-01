@@ -3,11 +3,15 @@ import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { cx } from "./cx";
 
-interface Base { open: boolean; onOpenChange: (open: boolean) => void; title: ReactNode; description?: ReactNode; children?: ReactNode; footer?: ReactNode; wide?: boolean }
+interface Base {
+  open: boolean; onOpenChange: (open: boolean) => void; title: ReactNode; description?: ReactNode; children?: ReactNode; footer?: ReactNode; wide?: boolean;
+  /** M75 NAV-1: where focus goes on close (the in-place host puts it back on the button that opened the panel). */
+  onCloseAutoFocus?: (e: Event) => void;
+}
 
-function Shell({ side, open, onOpenChange, title, description, children, footer, wide = false }: Base & { side?: "right" | "bottom" }) {
+function Shell({ side, open, onOpenChange, title, description, children, footer, wide = false, onCloseAutoFocus }: Base & { side?: "right" | "bottom" }) {
   const panel = side === "right"
-    ? "inset-y-0 right-0 h-full w-full max-w-md border-l"
+    ? `inset-y-0 right-0 h-full w-full ${wide ? "max-w-3xl" : "max-w-md"} border-l`   // wide: a workspace side panel (M75 NAV-1)
     : side === "bottom"
       ? "inset-x-0 bottom-0 max-h-[85vh] w-full rounded-t-xl border-t"
       : wide   // a workspace sheet (U9 gallery): most of the screen, scrolling inside
@@ -17,7 +21,7 @@ function Shell({ side, open, onOpenChange, title, description, children, footer,
     <RD.Root open={open} onOpenChange={onOpenChange}>
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-40 bg-black/50" />
-        <RD.Content className={cx("fixed z-50 flex flex-col border-border bg-surface-1 text-fg shadow-card focus:outline-none", panel)}>
+        <RD.Content onCloseAutoFocus={onCloseAutoFocus} className={cx("fixed z-50 flex flex-col border-border bg-surface-1 text-fg shadow-card focus:outline-none", panel)}>
           <div className="flex items-start gap-3 border-b border-border px-5 py-4">
             <div className="min-w-0 flex-1">
               <RD.Title className="text-base font-semibold text-fg">{title}</RD.Title>

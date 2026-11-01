@@ -199,7 +199,7 @@ describe("UI2-3 M7: the Watchtower links to Signals", () => {
   it("only while ui_v2 is on, and keeps every non-entry proposal and other members' entries", () => {
     expect(watchtowerSource).toContain("watchtowerSplit(allPending, v2, me)");
     expect(watchtowerSource).toContain("watchtowerSplit(snoozedAll, v2, me).others");
-    expect(watchtowerSource).toMatch(/\{v2 && \(\s*<Link to=\{signalsLinkFor\(entries\)\}/);
+    expect(watchtowerSource).toMatch(/\{v2 && \(\s*<InPlaceLink to=\{signalsLinkFor\(entries\)\}/);
     expect(copilotPageSource).toContain("watchtowerSplit(allPending, useUiV2(), me).others");     // the tab badge agrees
   });
 });

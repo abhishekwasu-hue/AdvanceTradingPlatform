@@ -1,6 +1,6 @@
 import { ExternalLink, Radar, RefreshCw, Search, ThumbsDown, ThumbsUp, Waves } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../../inplace/InPlaceLink";
 import { api } from "../../api/client";
 import { Badge, Button, EmptyState, fieldClass, Select, type Tone } from "../../components/primitives";
 import { pathFor } from "../../routes";
@@ -92,7 +92,7 @@ export default function NewsRadarTab() {
       {error && <p className="text-sm text-down" role="alert">{error}</p>}
       {items == null ? <div className="copilot-skeleton copilot-shimmer h-40" aria-busy="true" /> : off ? (
         <EmptyState icon={<Radar size={22} />} title={t("news.offTitle")} body={t("news.offBody")}
-                    action={<Link to={pathFor("news-events")} className="text-sm font-semibold text-brand hover:underline">{t("news.offCta")}</Link>} />
+                    action={<InPlaceLink to={pathFor("news-events")} className="text-sm font-semibold text-brand hover:underline">{t("news.offCta")}</InPlaceLink>} />
       ) : shown.length === 0 ? (
         <EmptyState icon={<Radar size={22} />} title={t("news.emptyTitle")} body={t("news.emptyBody")} />
       ) : (

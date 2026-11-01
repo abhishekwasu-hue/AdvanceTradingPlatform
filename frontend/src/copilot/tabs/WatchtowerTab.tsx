@@ -1,6 +1,6 @@
 import { AlarmClock, Bell, CheckCircle2, ChevronRight, Clock, MessageCircle, Satellite, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../../inplace/InPlaceLink";
 import { api } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { Badge, EmptyState, type Tone } from "../../components/primitives";
@@ -77,12 +77,12 @@ export default function WatchtowerTab() {
         <p className="mb-3 text-xs text-fg-muted">{t("watch.intro")}</p>
         {message && <p className="mb-3 rounded-lg border border-ai/30 bg-ai/5 px-3 py-2 text-xs text-fg" role="status">{message}</p>}
         {v2 && (
-          <Link to={signalsLinkFor(entries)} data-testid="watch-signals-link"
+          <InPlaceLink to={signalsLinkFor(entries)} data-testid="watch-signals-link"
             className="mb-3 flex min-h-[44px] items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-fg hover:bg-surface-3">
             <Zap size={15} aria-hidden className="shrink-0 text-brand" />
             <span className="min-w-0 flex-1">{t("watch.signalsNote", { count: entries.length })}</span>
             <span className="inline-flex shrink-0 items-center font-semibold text-brand">{t("watch.signalsLink")}<ChevronRight size={15} aria-hidden /></span>
-          </Link>
+          </InPlaceLink>
         )}
         {pending.length === 0 ? (
           <EmptyState icon={<CheckCircle2 size={22} />} title={t("watch.emptyTitle")} body={t("watch.emptyBody")} />

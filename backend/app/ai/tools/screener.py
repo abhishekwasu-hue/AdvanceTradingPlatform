@@ -276,7 +276,11 @@ async def run_screen(ctx: ToolContext, args: _Run) -> ToolResult:
                     "not_evaluated": dict(list(out["not_evaluated"].items())[:20]), "notes": out["notes"], "data": out["data"],
                     "disclaimer": out["disclaimer"]}
             return ToolResult(True, data, out["date"], "screen_history", {"bars_closed_by": out["date"]})
+        from app.ai.tools.market import teammate_refusal
         from app.screener.routes import RunBody
+        refused = await teammate_refusal(ctx, "screener_run")         # M72 PR-1a (M71Q-2): never a teammate's credential
+        if refused is not None:
+            return refused
         out = await _stored_run(ctx, RunBody(source=args.text, base_tf=args.base_tf, params=dict(args.params), symbols=args.symbols,
                                              exchange=args.exchange))
     except HTTPException as exc:
@@ -338,7 +342,8 @@ async def explain_results(ctx: ToolContext, args: _Explain) -> ToolResult:
     """Why each symbol passed or not: every stage's pass / fail and every condition's own numbers on its last closed bar."""
     import asyncio
 
-    off = await _screener_on(ctx) or await _may_run(ctx, "screen_evidence")
+    from app.ai.tools.market import teammate_refusal
+    off = await _screener_on(ctx) or await _may_run(ctx, "screen_evidence") or await teammate_refusal(ctx, "screen_evidence")
     if off:
         return off
     from app.screener import evidence

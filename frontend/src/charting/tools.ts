@@ -124,7 +124,7 @@ function insidePolygon(px: number, py: number, pts: readonly [number, number][])
 /** Pixels from a point to a shape: 0 inside a filled area. A label counts as a box around its text. */
 export function distanceToShape(s: Shape, x: number, y: number): number {
   if (s.type === "segment") return segmentDistance(x, y, s.x1, s.y1, s.x2, s.y2);
-  if (s.type === "rect") {
+  if (s.type === "rect" || s.type === "chip") {
     const dx = Math.max(s.x - x, 0, x - (s.x + s.w));
     const dy = Math.max(s.y - y, 0, y - (s.y + s.h));
     return Math.hypot(dx, dy);

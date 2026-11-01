@@ -13,6 +13,8 @@ export interface RiskLimitField {
   key: string; label: string; unit: string; min: number; max: number; whole: boolean; optional: boolean; value: number | null;
   /** The platform ceiling (an admin setting) when it is below the field's own top; null: none. */
   ceiling?: number | null;
+  /** M68 PR-5: the value must be ABOVE `min` (a positive number), not at least it. */
+  min_open?: boolean;
 }
 
 export interface RiskLimitCheck {
@@ -20,11 +22,15 @@ export interface RiskLimitCheck {
 }
 
 export type PausePick = "next_session" | "until_resume";
+/** M68 PR-5 (TS1-052): may two of your bots hold opposite positions on one symbol? Not set = allowed. */
+export type OppositePick = "allow" | "deny";
 
 export interface RiskLimitsView {
   checks: RiskLimitCheck[];
   capital: number | null;
-  loss_streak_pause: PausePick;
+  /** M68 PR-5 (TS1-051 / 052): null = Not set (ATP pre-picks neither). */
+  loss_streak_pause: PausePick | null;
+  opposite_positions?: OppositePick | null;
   on: number;
   exits: string;
   /** The PAPER ticket's own values of the same checks (saved there before), {check: {field: value}}. */
@@ -42,7 +48,8 @@ export interface RiskBlock {
 export interface RiskLimitsDraft {
   checks: Record<string, { enabled: boolean; values: Record<string, string> }>;
   capital: string;
-  pause: PausePick;
+  pause: PausePick | "";
+  opposite: OppositePick | "";
 }
 
 const text = (v: number | null | undefined): string => (typeof v === "number" && Number.isFinite(v) ? String(v) : "");
@@ -50,7 +57,9 @@ const text = (v: number | null | undefined): string => (typeof v === "number" &&
 export function draftOf(view: RiskLimitsView): RiskLimitsDraft {
   const checks: RiskLimitsDraft["checks"] = {};
   for (const c of view.checks) checks[c.id] = { enabled: c.enabled, values: Object.fromEntries(c.fields.map((f) => [f.key, text(f.value)])) };
-  return { checks, capital: text(view.capital), pause: view.loss_streak_pause === "until_resume" ? "until_resume" : "next_session" };
+  const pause = view.loss_streak_pause === "until_resume" || view.loss_streak_pause === "next_session" ? view.loss_streak_pause : "";
+  const opposite = view.opposite_positions === "allow" || view.opposite_positions === "deny" ? view.opposite_positions : "";
+  return { checks, capital: text(view.capital), pause, opposite };
 }
 
 const number = (raw: string): number | null => {
@@ -74,7 +83,10 @@ export function bodyOf(view: RiskLimitsView, draft: RiskLimitsDraft): { body: Re
       if (v !== null && typeof f.ceiling === "number" && v > f.ceiling) {
         return { body: null, problem: `${c.label}: the most allowed is ${f.ceiling} (your admin's ceiling). Ask your admin to change it.` };
       }
-      if (v !== null && (v < f.min || v > f.max)) return { body: null, problem: `${c.label}: ${f.label.toLowerCase()} must be between ${f.min} and ${f.max}.` };
+      if (v !== null && (v < f.min || (f.min_open && v <= f.min) || v > f.max)) {
+        return { body: null, problem: `${c.label}: ${f.label.toLowerCase()} must be ${f.min_open ? "more than" : "at least"} ${f.min}`
+          + (f.max < 1e9 ? ` and at most ${f.max}.` : ".") };
+      }
       if (v !== null && f.whole && !Number.isInteger(v)) return { body: null, problem: `${c.label}: enter a whole number.` };
       values[f.key] = v;
       if (v !== f.value) changed = true;
@@ -84,19 +96,29 @@ export function bodyOf(view: RiskLimitsView, draft: RiskLimitsDraft): { body: Re
     }
     if (changed) checks[c.id] = { enabled: d.enabled, values };
   }
-  // the halve-size step cannot be further below the peak than the pause step (the server checks it too)
+  // the cut-size step cannot be further below the peak than the pause step (the server checks it too)
   const dd = draft.checks.drawdown;
   if (dd?.enabled) {
     const half = number(dd.values.dd_level_1_pct ?? ""), pause = number(dd.values.dd_level_2_pct ?? "");
     if (half !== null && pause !== null && !Number.isNaN(half) && !Number.isNaN(pause) && pause > 0 && half > pause) {
-      return { body: null, problem: `Drawdown steps: halve the size at a drawdown no larger than the one that pauses new entries (${pause}%).` };
+      return { body: null, problem: `Drawdown steps: cut the size at a drawdown no larger than the one that pauses new entries (${pause}%).` };
     }
+    // M68 PR-5 (TS1-054): the first step cuts the size by the trader's own % (no built-in half)
+    if (half !== null && !Number.isNaN(half) && "dd_cut_pct" in dd.values && number(dd.values.dd_cut_pct ?? "") === null) {
+      return { body: null, problem: "Drawdown steps: enter how much the first step cuts the size." };
+    }
+  }
+  // M68 PR-5 (TS1-051): with no minutes, when the pause ends is the trader's own choice (asked, never pre-picked)
+  const cool = draft.checks.loss_cooldown;
+  if (cool?.enabled && number(cool.values.max_consecutive_losses ?? "") !== null && number(cool.values.loss_cooldown_minutes ?? "") === null
+      && draft.pause === "") {
+    return { body: null, problem: "Cool-down after losses in a row: with no minutes set, pick when the pause ends." };
   }
   const capital = number(draft.capital);
   if (capital !== null && (Number.isNaN(capital) || capital <= 0)) {
     return { body: null, problem: "Account basis: enter an amount above 0, or leave it empty to use your paper balance." };
   }
-  return { body: { checks, capital, loss_streak_pause: draft.pause }, problem: null };
+  return { body: { checks, capital, loss_streak_pause: draft.pause || null, opposite_positions: draft.opposite || null }, problem: null };
 }
 
 /** "3 of 12 on" - the summary line. */

@@ -127,9 +127,12 @@ class RiskConfig(BaseModel):
     dd_level_1_pct: Optional[float] = None            # P2: this far below the equity peak, risk per trade is halved
     dd_level_2_pct: Optional[float] = None            # P3: this far below, new entries pause until reviewed
     event_size_cut_pct: Optional[float] = None        # M8: size cut on an event day flagged SIZE_CUT
+    # M68 PR-5 (TS1-054): how much the first drawdown step (`dd_level_1_pct`) cuts the size, % - None = not set: no cut.
+    dd_cut_pct: float | None = None
     # CP6-15: when the losses-in-a-row pause ends - at the next Indian trading session, or when the trader resumes
-    # (app/risk_engine/loss_streak.py). Only used once `max_consecutive_losses` is set.
-    loss_streak_pause: Literal["next_session", "until_resume"] = "next_session"
+    # (app/risk_engine/loss_streak.py). Only used once `max_consecutive_losses` is set. M68 PR-5 (TS1-051): None = Not set
+    # (the Risk limits page asks for it when the check is switched on with no minutes).
+    loss_streak_pause: Literal["next_session", "until_resume"] | None = None
     # M64 (owner, 30 Oct; app/risk_engine/risk_limits.py): Settings > Risk limits. Each is off (None) until the trader
     # switches its check on. `max_lots_per_order`: a typed size above it is refused with the smaller size offered.
     # `daily_loss_rupees`: the daily loss limit in rupees (with the % one, the smaller applies). `risk_per_trade_rupees`:
@@ -145,8 +148,9 @@ class RiskConfig(BaseModel):
     # when the trader switched "Market event days" on - off by default, like every other check.
     event_rules: bool = False
     # M55 S6 (A11, owner order M55): may two of the organisation's bots hold opposite positions on one symbol? "deny"
-    # (the default) skips a NEW automated entry against an open position of another bot; exits are never affected.
-    opposite_positions: Literal["allow", "deny"] = "deny"
+    # skips a NEW automated entry against an open position of another bot; exits are never affected. M68 PR-5 (TS1-052,
+    # owner decision D3, provisional M68Q-3): None = Not set = allowed - only a saved "deny" holds an entry back.
+    opposite_positions: Literal["allow", "deny"] | None = None
 
     def with_capital(self, balance: Optional[float]) -> "RiskConfig":
         """DEF-0 D1: the trader's own capital when set, else `balance` (the PAPER account balance) - never a built-in

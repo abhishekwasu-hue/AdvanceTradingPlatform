@@ -190,7 +190,7 @@ async def _room(session: AsyncSession, user: User, count: int) -> Optional[str]:
     # The same limits the pipeline counts against (organisation, clamped, the user's own cap); each leg's own checks,
     # the guardian's among them, run per leg in `fno_ticket.assess`.
     cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
-    cfg, _ = clamp_config(cfg, await risk_ceilings(session))
+    cfg, _ = clamp_config(cfg, await risk_ceilings(session, user.tenant_id))
     if await by_default.enabled(session, user.tenant_id):
         cfg, _ = await by_default.apply_user_cap(session, user, cfg)
     if cfg.max_open_positions is None and cfg.max_trades_per_day is None:

@@ -32,8 +32,9 @@ from app.risk_engine.risk_manager import nonfinite_levels
 logger = logging.getLogger(__name__)
 
 # M64 (owner, 30 Oct): margin safety is the trader's own switch on Settings > Risk limits (RiskConfig.margin_share(), off =
-# the whole available margin). This old share stays only as the callers' default when no config is passed.
-MARGIN_SAFETY = 0.8
+# the whole available margin). M68 PR-5 (TS1-055): a caller that passes no config plans against the whole available margin
+# too (the broker's own margin check is the fact that stays) - the old 80 % share is gone; the name stays for imports.
+MARGIN_SAFETY = 1.0
 DEFAULT_WRITE_MAX_LOTS = 1   # kept for imports; DEF-0: no longer a cap - a written option's size is the trader's own
 
 

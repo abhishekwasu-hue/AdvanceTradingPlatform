@@ -242,42 +242,41 @@ FIELDS: tuple[SettingField, ...] = (
     _f(OP, "physical_settlement", "Delivery at expiry", "fact",
        "A stock option held at expiry settles by delivery of the shares (an exchange rule).", 4, 45),
 
-    # --- Risk limits (PR-5). The order-time checks themselves stay on Settings > Risk limits (M64, one store). -----------
+    # --- Risk limits (PR-5). The order-time checks themselves stay on Settings > Risk limits (M64, one store): the
+    # losses-in-a-row pause end (TS1-051), two bots on opposite sides (TS1-052) and the first drawdown step's cut (TS1-054)
+    # live there too (risk_settings), see ON_RISK_LIMITS_PAGE. Read by app/risk_engine/own_risk.py. ------------------------
     _f(R, "overnight_short_options", "Hold written straddles and strangles overnight", "switch",
-       "On: written structures without wings may be carried forward.", 5, 41),
-    _f(R, "loss_cooldown_pause_mode", "A losses-in-a-row pause ends", "choice",
-       "When new entries start again after a losses-in-a-row pause with no minutes set.", 5, 51,
-       choices=(("next_session", "At the next session"), ("until_resume", "When I resume")),
-       today="risk_settings.loss_streak_pause"),
-    _f(R, "opposite_positions", "Two bots on opposite sides", "choice",
-       "Whether two of your bots may hold opposite positions in the same symbol.", 5, 52,
-       choices=(("allow", "Allowed"), ("deny", "Not allowed")), today="risk_settings.opposite_positions"),
-    _f(R, "drawdown_cut_pct", "Size cut at the first drawdown step", "number",
-       "At the first drawdown step the size is cut by this much.", 5, 54, **_pct(), term="drawdown",
-       today="fixed 50 % (DRAWDOWN_CUT_MULTIPLIER)"),
-    _f(R, "vix_gate", "India VIX check", "switch", "On: a fast rise or a high level of India VIX pauses or cuts new entries.", 5, 56,
-       term="india-vix", today="admin flag + operator settings"),
+       "On: a bot that carries forward may also hold a written straddle or strangle (no wings) for days.", 5, 41,
+       today="defined-risk spreads only", wired=True),
+    _f(R, "vix_gate", "India VIX check", "switch",
+       "On: a fast rise of India VIX pauses new long entries on NIFTY, BANKNIFTY and SENSEX for the day (also when it "
+       "cannot be read after the check time); a high level cuts their size. Uses your values below.", 5, 56,
+       term="india-vix", today="admin flag + operator settings", wired=True),
     _f(R, "vix_change_pct", "India VIX rise that pauses entries", "number", "A rise of this much pauses new long entries.", 5, 56,
-       **_pct(), term="india-vix"),
+       **_pct(), term="india-vix", wired=True),
     _f(R, "vix_level", "India VIX level that cuts the size", "number", "At or above this level the size is cut.", 5, 56,
-       **_pos("points"), term="india-vix"),
-    _f(R, "vix_size_cut_pct", "Size cut at that level", "number", "How much the size is cut at that level.", 5, 56, **_pct()),
-    _f(R, "experience_trades", "Experience level: trades", "whole", "Closed paper trades before the next level opens.", 5, 57,
-       **_count("trades")),
-    _f(R, "experience_sessions", "Experience level: sessions", "whole", "Sessions traded before the next level opens.", 5, 57,
-       **_count("sessions")),
-    _f(R, "event_default_action", "A new market event day", "choice", "What a market event day you add does to new entries.", 5, 58,
-       choices=(("PAUSE", "Pause new entries"), ("SIZE_CUT", "Cut the size")), today="market event action SIZE_CUT"),
+       **_pos("points"), term="india-vix", wired=True),
+    _f(R, "vix_size_cut_pct", "Size cut at that level", "number", "How much the size is cut at that level.", 5, 56, **_pct(),
+       wired=True),
+    _f(R, "experience_trades", "Experience level: trades", "whole",
+       "With \"Limit me by my experience level\" on: closed paper trades before naked short options open.", 5, 57,
+       **_count("trades"), today="100 trades (operator setting)", wired=True),
+    _f(R, "experience_sessions", "Experience level: sessions", "whole",
+       "With \"Limit me by my experience level\" on: sessions with a paper trade before naked short options open.", 5, 57,
+       **_count("sessions"), today="60 sessions (operator setting)", wired=True),
+    _f(R, "event_default_action", "A new market event day", "choice",
+       "What a market event day you add does to new entries; the form starts from it.", 5, 58,
+       choices=(("BLOCK", "Pause new entries"), ("SIZE_CUT", "Cut the size")), today="market event action SIZE_CUT", wired=True),
     _f(R, "ceiling_risk_per_trade_pct", "Team ceiling: risk per trade", "number", "The most any member may set.", 5, 48,
-       **_pct(), scope="organisation", today="platform ceiling 2 %"),
+       **_pct(), scope="organisation", wired=True, today="platform ceiling 2 %"),
     _f(R, "ceiling_daily_loss_pct", "Team ceiling: daily loss", "number", "The most any member may set.", 5, 48, **_pct(),
-       scope="organisation", today="platform ceiling 5 %"),
+       scope="organisation", wired=True, today="platform ceiling 5 %"),
     _f(R, "ceiling_portfolio_risk_pct", "Team ceiling: risk across positions", "number", "The most any member may set.", 5, 48,
-       **_pct(), scope="organisation", today="platform ceiling 10 %"),
+       **_pct(), scope="organisation", wired=True, today="platform ceiling 10 %"),
     _f(R, "ceiling_drawdown_pause_pct", "Team ceiling: drawdown pause", "number", "The most any member may set.", 5, 48, **_pct(),
-       scope="organisation", today="platform ceiling 25 %"),
+       scope="organisation", wired=True, today="platform ceiling 25 %"),
     _f(R, "ceiling_warn_at_pct", "Team ceiling: warn at", "number", "A notice when a member's use reaches this share of the limit.",
-       5, 59, **_pct(), scope="organisation", today="fixed 80 %"),
+       5, 59, **_pct(), scope="organisation", wired=True, today="fixed 80 %"),
     _f(R, "broker_exchange_checks", "Broker and exchange checks", "fact",
        "Margin available, F&O ban, market open and the broker's own rejections always apply, and so does your kill switch.",
        5, 95, term="margin"),
@@ -324,7 +323,14 @@ FIELDS: tuple[SettingField, ...] = (
 )
 # TS1-049 / 050 / 053 ("Risk limits.*", one store): the M64 order-time checks, each its own switch, stay on Settings > Risk
 # limits (app/risk_engine/risk_limits.py CHECKS) - the Risk limits section links there instead of declaring them twice.
-ON_RISK_LIMITS_PAGE: tuple[str, ...] = ("TS1-049", "TS1-050", "TS1-053")
+ON_RISK_LIMITS_PAGE: tuple[str, ...] = ("TS1-049", "TS1-050", "TS1-051", "TS1-052", "TS1-053", "TS1-054")
+# The organisation-scope ceilings (TS1-048 / 059) are set by a platform admin (app/platform/controls.py); a member sees
+# them here read-only. field key -> the ceiling's key there.
+CEILING_OF: dict[str, str] = {"risk_limits.ceiling_risk_per_trade_pct": "risk_per_trade_pct",
+                              "risk_limits.ceiling_daily_loss_pct": "max_daily_loss_pct",
+                              "risk_limits.ceiling_portfolio_risk_pct": "max_portfolio_risk_pct",
+                              "risk_limits.ceiling_drawdown_pause_pct": "dd_level_2_pct",
+                              "risk_limits.ceiling_warn_at_pct": "warn_at_pct"}
 BY_KEY: dict[str, SettingField] = {f.key: f for f in FIELDS}
 assert len(BY_KEY) == len(FIELDS), "a Trade settings key is declared twice"
 assert all(f.section in SECTION_IDS for f in FIELDS)
@@ -419,18 +425,23 @@ async def flags_off(session: AsyncSession, tenant_id: int) -> frozenset[str]:
     return frozenset(off)
 
 
-def view(values: dict[str, Any], admin: bool, off: frozenset[str] = frozenset()) -> dict[str, Any]:
+def view(values: dict[str, Any], admin: bool, ceilings: dict[str, float] | None = None,
+         off: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """`ceilings`: the organisation's ceilings in force (app/platform/controls.risk_ceilings) - an organisation-scope field
+    shows its ceiling read-only (null = no ceiling) and is never one the user saved. `off`: the flags off for him (PR-6)."""
     sections = []
     for s in SECTIONS:
         fields = []
         for f in FIELDS:
             if f.section != s.id or not visible(f, admin, off):
                 continue
-            value = values.get(f.key)
+            org = f.scope == "organisation"
+            value = (ceilings or {}).get(CEILING_OF.get(f.key, "")) if org else values.get(f.key)
             fields.append({"key": f.key, "label": f.label, "kind": f.kind, "help": f.help, "unit": f.unit,
                            "choices": [{"value": c, "label": label} for c, label in f.choices],
                            "low": f.low, "high": f.high, "low_open": f.low_open, "term": f.term, "fact": f.fact,
-                           "wired": f.wired, "scope": f.scope, "value": value, "saved": f.key in values})
+                           "wired": f.wired, "scope": f.scope, "value": value,
+                           "saved": (value is not None) if org else f.key in values})
         sections.append({"id": s.id, "title": s.title, "fields": fields,
                          "today": {"label": s.today[0], "path": s.today[1]} if s.today else None})
     return {"sections": sections, "admin": admin, "page": PAGE_PATH}
@@ -479,6 +490,11 @@ def _changes(body: TradeSettingsSave, admin: bool, off: frozenset[str] = frozens
     return dict(body.values)
 
 
+async def _ceilings(user: User, session: AsyncSession) -> dict[str, float]:
+    from app.platform.controls import risk_ceilings
+    return await risk_ceilings(session, user.tenant_id)
+
+
 async def _read(user: User, session: AsyncSession) -> tuple[dict[str, Any], int]:
     from app.me import prefs  # prefs imports this module for its namespace
     value, version = await prefs.read_one(NAMESPACE, user, session)
@@ -489,7 +505,7 @@ async def _read(user: User, session: AsyncSession) -> tuple[dict[str, Any], int]
 async def get_trade_settings(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """The caller's own Trade settings: every section and field, its value or null ("Not set") and whether he saved it."""
     values, _version = await _read(user, session)
-    return view(values, is_admin(user), await flags_off(session, user.tenant_id))
+    return view(values, is_admin(user), await _ceilings(user, session), await flags_off(session, user.tenant_id))
 
 
 @router.put("/trade-settings")
@@ -509,7 +525,7 @@ async def put_trade_settings(body: TradeSettingsSave, user: User = Depends(get_c
                 values[key] = float(v) if BY_KEY[key].kind == "number" else v
         try:
             await prefs.save(NAMESPACE, json.dumps({"values": values}).encode(), version, user, session)
-            return view(values, admin, off)
+            return view(values, admin, await _ceilings(user, session), off)
         except HTTPException as exc:
             if exc.status_code != 409 or attempt == 3:
                 raise
@@ -517,4 +533,4 @@ async def put_trade_settings(body: TradeSettingsSave, user: User = Depends(get_c
 
 
 __all__ = ["router", "FIELDS", "BY_KEY", "SECTIONS", "SECTION_IDS", "SettingField", "Section", "check_stored", "NAMESPACE",
-           "PAGE_PATH", "ON_RISK_LIMITS_PAGE", "clean", "problem", "storable", "view", "visible", "is_admin"]
+           "PAGE_PATH", "ON_RISK_LIMITS_PAGE", "CEILING_OF", "clean", "problem", "storable", "view", "visible", "is_admin"]

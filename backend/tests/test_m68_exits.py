@@ -361,3 +361,78 @@ def test_an_incomplete_order_with_no_rule_still_closes_on_his_tap_and_nothing_ha
     out = _run(tap())
     assert out["state"] == inc.CLOSED, out
     assert _get(legs[0]).exit_time is not None and _get(legs[0]).exit_price == 80.0
+
+
+# --- Review HIGH (ADR-0004): a technical bound on the time exit, and a time rule that can never block stop / target ------
+
+def test_time_exit_minutes_has_a_technical_bound_only():
+    from app.backtest.routes import ExitRulesBody
+    from app.deployments.routes import ExitRulesRequest
+    from app.me.prefs import ExitDefaults
+    for model in (ExitRulesRequest, ExitDefaults, ExitRulesBody):
+        assert model(time_exit_minutes=10_000_000).time_exit_minutes == 10_000_000
+        for bad in (10_000_001, 10**13):
+            with pytest.raises(ValueError):
+                model(time_exit_minutes=bad)
+
+
+def test_api_refuses_a_time_exit_above_the_bound_with_422():
+    from tests.test_deployments_api import _auth, _create
+    from tests.test_exit_rules_and_backtest_depth import _candles
+    headers = _auth(f"m68x-bound-{uuid.uuid4().hex[:6]}@example.com")
+    assert _create(headers, exit_rules={"time_exit_minutes": 10**13}).status_code == 422
+    body = {"strategy_id": "ema_rsi_scalper_1m", "symbol": "nifty", "base_timeframe": "1min", "candles": _candles(),
+            "exit_rules": {"time_exit_minutes": 10**13}, "data_source": "sample"}
+    assert client.post("/api/backtest", headers=headers, json=body).status_code == 422
+    prefs = client.put("/api/me/prefs/trading_defaults", headers=headers, json={"exit_rules": {"time_exit_minutes": 10**13}})
+    assert prefs.status_code == 422, prefs.text
+
+
+def test_a_time_rule_that_cannot_be_computed_is_skipped_never_raised():
+    from app.trading.exit_rules import ExitRules, apply_exit_rules
+    now = datetime.now(UTC)
+    for rules in (ExitRules(time_exit_minutes=10**13), ExitRules(time_exit_minutes="x"), ExitRules(time_exit_at=12)):
+        update = apply_exit_rules(rules, direction="LONG", entry_price=100.0, initial_stop=95.0, current_stop=95.0, best_price=None,
+                                  high=101.0, low=101.0, entry_time=now - timedelta(minutes=30), now=now)
+        assert update.time_exit_reason is None and update.stop_loss == 95.0 and update.best_price == 101.0
+
+
+def test_a_stored_huge_time_exit_still_lets_stop_and_target_fire():
+    from app.trading.position_monitor import monitor_open_positions
+    u = _user("hugetime")
+    huge = '{"time_exit_minutes": 10000000000000}'               # stored directly: the API would refuse it
+    stop, target = _trade(u, symbol="SBIN", exit_rules=huge), _trade(u, symbol="ITC", exit_rules=huge)
+    prices = {"SBIN": 94.0, "ITC": 111.0}
+
+    async def lookup(symbol, exchange="NSE"):
+        return prices[symbol]
+
+    async def go():
+        async with _session_factory() as session:
+            return await monitor_open_positions(session, u["tenant_id"], lookup, user_id=u["id"], families={"NSE"})
+    outcomes = _run(go())
+    assert sum(1 for o in outcomes if o.closed) == 2, [o.warnings for o in outcomes]
+    assert _get(stop).exit_reason == "Stop Loss" and _get(target).exit_time is not None
+
+
+# --- Review MEDIUM: the user's own entry / square-off times enter the backtest fingerprint --------------------------------
+
+def test_backtest_fingerprint_includes_the_cutoffs_only_when_set(monkeypatch):
+    from app.backtest import routes as bt
+    from app.core.models import RiskConfig, bars_to_dataframe
+    from app.strategy_engine.indicator_strategies import EmaRsiScalper
+    from tests.test_exit_rules_and_backtest_depth import _candles
+    seen = []
+    real = bt.fingerprint
+    monkeypatch.setattr(bt, "fingerprint", lambda *a, **kw: seen.append(kw) or real(*a, **kw))
+    body = bt.BacktestBody(strategy_id="ema_rsi_scalper_1m", symbol="nifty", base_timeframe="1min", candles=_candles())
+    df = bars_to_dataframe(body.candles)
+    risk = RiskConfig(capital=100_000, risk_per_trade_pct=1.0)
+
+    def run(cutoffs):
+        return bt.BacktestRunner(body, risk, cutoffs=cutoffs).run(EmaRsiScalper(tf="1min"), df).reproducibility["config_hash"]
+    none, again = run((None, None, None)), run((None, None, None))
+    assert none == again and "cutoffs" not in seen[0]                     # nothing set: the same kwargs (and hash) as before
+    set_a, set_b = run((None, time(14, 30), time(15, 0))), run((None, time(14, 30), time(15, 10)))
+    assert seen[2]["cutoffs"] == [None, "14:30:00", "15:00:00"]
+    assert len({none, set_a, set_b}) == 3

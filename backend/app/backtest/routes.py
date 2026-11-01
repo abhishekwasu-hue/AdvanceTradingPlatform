@@ -47,7 +47,8 @@ router = APIRouter(tags=["backtest"])
 class ExitRulesBody(BaseModel):
     trailing_stop_pct: float | None = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
     break_even_at_r: float | None = Field(default=None, gt=0, allow_inf_nan=False)
-    time_exit_minutes: int | None = Field(default=None, ge=1)
+    # Technical bound, not a trading cap (~19 years): keeps the time arithmetic safe; any holding period a user sets fits.
+    time_exit_minutes: int | None = Field(default=None, ge=1, le=10_000_000)
     time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
     def to_rules(self) -> ExitRules:
@@ -267,7 +268,9 @@ class BacktestRunner:
             **({} if self.models.is_default else {"execution_models": self.models.describe()}),
             # section 5: likewise only a chosen template exit enters it
             **({"template_exits": self.body.template_exits.model_dump()} if self.body.template_exits is not None
-               and not self.body.template_exits.to_exits().is_default else {}))
+               and not self.body.template_exits.to_exits().is_default else {}),
+            # the user's own entry / square-off times enter it only when one is set, so runs without them keep their hash
+            **({"cutoffs": [t.isoformat() if t else None for t in self.cutoffs]} if any(self.cutoffs) else {}))
         return result
 
 

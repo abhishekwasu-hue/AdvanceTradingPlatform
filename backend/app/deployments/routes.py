@@ -101,7 +101,8 @@ class ExitRulesRequest(BaseModel):
     ceiling - a real number of the right sign; a trail under 100 % (at 100 % a stop would sit at zero)."""
     trailing_stop_pct: float | None = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
     break_even_at_r: float | None = Field(default=None, gt=0, allow_inf_nan=False)
-    time_exit_minutes: int | None = Field(default=None, ge=1)
+    # Technical bound, not a trading cap (~19 years): keeps the time arithmetic safe; any holding period a user sets fits.
+    time_exit_minutes: int | None = Field(default=None, ge=1, le=10_000_000)
     time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
     def to_rules(self) -> ExitRules:

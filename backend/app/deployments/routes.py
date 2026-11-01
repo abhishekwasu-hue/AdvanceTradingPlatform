@@ -765,12 +765,20 @@ async def _own_adapter(session: AsyncSession, user: Optional[User], symbol: str,
     return own.adapter() if own.allows(symbol, exchange) else None
 
 
+def _reader_records(tenant_id: int, user: Optional[User]):
+    """M71Q-2: a preview's price read uses only credentials the previewing user linked himself (no user: as before)."""
+    query = select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)
+    if user is not None:
+        query = query.where(BrokerCredentialRecord.user_id == user.id)
+    return query
+
+
 async def _usable_adapter(session: AsyncSession, tenant_id: int, user: Optional[User] = None, symbol: Optional[str] = None):
     from app.market_data import live_access
     if await live_access.byob_on(session, tenant_id):
         underlying = instrument_master.underlying_of(symbol or "")
         return await _own_adapter(session, user, underlying or (symbol or ""), "NFO")
-    stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)))
+    stored = list(await session.scalars(_reader_records(tenant_id, user)))   # M71Q-2: the previewing user's own
     usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
     return build_adapter(usable[0]) if usable else None
 
@@ -789,7 +797,7 @@ async def _spot_from_broker(session: AsyncSession, tenant_id: int, symbol: str, 
         if adapter is None:
             return None
     else:
-        stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)))
+        stored = list(await session.scalars(_reader_records(tenant_id, user)))   # M71Q-2: the previewing user's own
         usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
         if not usable:
             return None

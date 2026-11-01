@@ -219,6 +219,7 @@ const SEG = "min-h-11 rounded-control px-space-3 text-t13 font-semibold";
 
 export const COMPARE_NOTE = "Nothing here places or changes an order: make any change yourself with Exit now, the order ticket or the basket.";
 
+export const COMPARE_NEEDS_SETTINGS = "Your settings are not loaded yet, so this ready strategy is not built.";
 export const COMPARE_NEEDS_LOTS = "Every leg needs its lots to compare: enter them in the basket, or save your lots in Settings › Trade settings › Position size.";
 const legWords = (side: "BUY" | "SELL", lots: number) => `${side === "BUY" ? "Long" : "Short"} ${formatNumber(lots, 0)} lot${lots === 1 ? "" : "s"}`;
 
@@ -347,7 +348,9 @@ export function compareChoices({ underlying, legs, saved, rows, expiry, around, 
   if (legs.length) out.push({ key: "basket", name: "Your basket", legs: [...legs], problem: noLots(legs) });
   if (expiry && around !== null && rows.length) {
     for (const name of STRATEGIES.filter((s): s is Exclude<StrategyName, "Calendar"> => s !== "Calendar")) {
-      const built = readyStrategy(name, { underlying, expiry, rows, around, settings: settings ?? { width_steps: 2, lots: 1, stop_pct: 50 } });
+      // M68 PR-2 (TS1-023): no stand-in values while his settings are not read - the column says so
+      if (settings === null) { out.push({ key: `ready:${name}`, name, legs: [], problem: COMPARE_NEEDS_SETTINGS }); continue; }
+      const built = readyStrategy(name, { underlying, expiry, rows, around, settings });
       out.push({ key: `ready:${name}`, name, legs: built.legs, problem: built.problem ?? noLots(built.legs) });
     }
   }

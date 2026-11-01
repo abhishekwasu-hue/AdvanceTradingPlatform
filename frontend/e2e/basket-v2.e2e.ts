@@ -207,6 +207,24 @@ for (const [width, height] of [[1440, 900], [390, 844], [360, 800]] as const) {
 test.describe("Basket panel v2 flows", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
+  test("M68 PR-2 (TS1-023): when his settings cannot be read, no ready strategy is built from stand-in values; Retry reads them", async ({ page }) => {
+    await open(page, "light");
+    let fail = true;
+    // registered after open(): the latest route wins, so the settings read fails until Retry
+    await page.route(/\/api(?:\/v1)?\/paper\/fno\/basket\/settings/, (route) => (fail
+      ? route.fulfill({ status: 500, json: { detail: "down" } })
+      : route.fulfill({ json: { source: null, width_steps: 2, lots: 1, stop_pct: 50, note: "From your Trade settings: wings 2 strikes apart, 1 lot." } })));
+    await page.locator("[data-strip='basket']").click();
+    const panel = page.locator("[data-basket-panel]");
+    await expect(panel.locator("[data-basket='settings-note']")).toHaveText(/Could not load your settings\./);
+    await expect(panel.locator("[data-strategy='Bull put spread']")).toBeDisabled();
+    await expect(panel.locator("[data-leg]")).toHaveCount(0);
+    fail = false;
+    await panel.locator("[data-basket='settings-retry']").click();
+    await expect(panel.locator("[data-basket='settings-note']")).toContainText("From your Trade settings");
+    await expect(panel.locator("[data-strategy='Bull put spread']")).toBeEnabled();
+  });
+
   test("a ready strategy from the chain -> edit a leg -> confirm (total margin, max loss) -> PAPER, hedge first -> a partial fill shown per leg", async ({ page }) => {
     const seen = await open(page, "light", { partial: true });
     await expectPhoneLayout(page);

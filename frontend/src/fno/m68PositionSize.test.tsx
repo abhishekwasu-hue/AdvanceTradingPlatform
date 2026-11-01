@@ -8,6 +8,9 @@ import { futureLeg } from "./hubModel";
 import { LOTS_KEY, positionSizeOf, savedLots, sizesItself, type TradeField, type TradeSettingsView } from "../settings/tradeSettings";
 import type { ChainRow } from "../optionChain/types";
 import sheetSource from "./PositionActionsV2.tsx?raw";
+import { BasketBody, SETTINGS_FAILED, SETTINGS_LOADING } from "./BasketPanelV2";
+import { COMPARE_NEEDS_SETTINGS, compareChoices } from "./CompareV2";
+import type { BasketSettings } from "./api";
 
 /** M68 PR-2 (TS1-019 .. 023): no lots are pre-chosen - the ticket asks for them (focused, with "Save as my default"), a
  *  basket leg starts empty unless he saved his lots, a ready strategy uses only his own width and lots. */
@@ -100,5 +103,39 @@ describe("M68 PR-2 (TS1-021): Exit part starts empty", () => {
     expect(sheetSource).toContain("useState<number | null>(null)");
     expect(sheetSource).toContain('disabled={busy || (ask.kind === "part" && lots === null)}');
     expect(sheetSource).not.toMatch(/useState\(1\)/);
+  });
+});
+
+describe("M68 PR-2 (TS1-023): ready strategies wait for his own settings", () => {
+  const rows = [24400, 24450, 24500, 24550, 24600].map((strike) => ({ strike, call: { ltp: 100, iv: 14 }, put: { ltp: 90, iv: 15 } })) as unknown as ChainRow[];
+  const on = new Proxy({}, { get: () => () => undefined }) as never;
+  const panel = (settings: BasketSettings | null, settingsFailed = false) => renderToStaticMarkup(
+    <BasketBody legs={[]} numbers={null} problems={[]} settings={settings} settingsFailed={settingsFailed} rows={rows} pick={24500} atm={24500}
+      spot={24480} product={null} note={null} tool={null} saved={null} saveName="" idPrefix="b" on={on} />);
+  const disabledReady = (html: string) => (html.match(/<button[^>]*data-strategy="[^"]+"[^>]*>/g) ?? []).every((b) => b.includes('disabled=""'));
+
+  it("while loading: every ready strategy is off and the panel says it is loading", () => {
+    const html = panel(null);
+    expect(disabledReady(html)).toBe(true);
+    expect(html).toContain(SETTINGS_LOADING);
+    expect(html).toContain('data-settings="loading"');
+    expect(html).not.toContain('data-basket="settings-retry"');
+  });
+
+  it("when the read failed: off, said plainly, with Retry; loaded: the buttons work and his own note shows", () => {
+    const failed = panel(null, true);
+    expect(disabledReady(failed)).toBe(true);
+    expect(failed).toContain(SETTINGS_FAILED);
+    expect(failed).toContain('data-basket="settings-retry"');
+    const loaded = panel({ source: null, width_steps: null, lots: null, stop_pct: null, note: "Nothing is set for you." });
+    expect((loaded.match(/<button[^>]*data-strategy="[^"]+"[^>]*>/g) ?? []).some((b) => b.includes('disabled=""'))).toBe(false);
+    expect(loaded).toContain("Nothing is set for you.");
+  });
+
+  it("compare builds no ready strategy from stand-in values while his settings are not read", () => {
+    const choices = compareChoices({ underlying: "NIFTY", legs: [], saved: null, rows, expiry: "2026-12-31", around: 24500, settings: null });
+    const ready = choices.filter((c) => c.key.startsWith("ready:"));
+    expect(ready.length).toBeGreaterThan(0);
+    expect(ready.every((c) => c.legs.length === 0 && c.problem === COMPARE_NEEDS_SETTINGS)).toBe(true);
   });
 });

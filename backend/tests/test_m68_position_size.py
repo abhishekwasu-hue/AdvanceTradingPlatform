@@ -409,3 +409,13 @@ def test_upstox_dump_with_no_lot_size_is_left_out_of_the_master():
     got = _run(broker._download_instruments("NSE"))
     assert _no_lot_rows(got) == [("NIFTY X CE", None), ("NIFTY Y CE", 75.0)]
     assert [(r.tradingsymbol, r.lot_size) for r in master.parse_broker_instruments("upstox", got)] == [("NIFTY Y CE", 75)]
+
+
+def test_kotak_neo_scrip_row_with_no_lot_size_is_left_out_of_the_master():
+    from app.brokers.kotak_neo import instrument_from_row
+    base = {"pSymbol": "1", "pTrdSymbol": "NIFTY26DEC24500CE", "pSymbolName": "NIFTY", "pOptionType": "CE", "dStrikePrice": "2450000",
+            "dTickSize": "5", "pExpiryDate": ""}
+    none = instrument_from_row({**base, "lLotSize": ""}, "nse_fo")
+    own = instrument_from_row({**base, "pSymbol": "2", "pTrdSymbol": "NIFTY26DEC24600CE", "lLotSize": "75"}, "nse_fo")
+    assert none is not None and none.lot_size is None and own is not None and own.lot_size == 75.0
+    assert [(r.tradingsymbol, r.lot_size) for r in master.parse_broker_instruments("kotak_neo", [none, own])] == [(own.tradingsymbol, 75)]

@@ -120,6 +120,9 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   const [payoffView, setPayoffView] = useState<PayoffView>("combined");
   const [problems, setProblems] = useState<string[]>([]);
   const [settings, setSettings] = useState<BasketSettings | null>(null);
+  // M68 PR-2 (TS1-023): while his settings load, or when the read failed, no ready strategy is built (no stand-in values)
+  const [settingsFailed, setSettingsFailed] = useState(false);
+  const [settingsTry, setSettingsTry] = useState(0);
   const [around, setAround] = useState<number | null>(null);
   const [step, setStep] = useState<PanelStep>({ kind: "edit" });
   const [busy, setBusy] = useState(false);
@@ -162,9 +165,12 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     setStep({ kind: "edit" });
     setNote(null);
     let alive = true;
-    api.settings(chain.symbol).then((s) => { if (alive) setSettings(s); }).catch(() => { if (alive) setSettings(null); });
+    setSettings(null);
+    setSettingsFailed(false);
+    api.settings(chain.symbol).then((s) => { if (alive) setSettings(s); })
+      .catch(() => { if (alive) { setSettings(null); setSettingsFailed(true); } });
     return () => { alive = false; };
-  }, [open, chain.symbol, api]);
+  }, [open, chain.symbol, api, settingsTry]);
 
   const numbersOut = useRef(onNumbers);
   numbersOut.current = onNumbers;
@@ -198,8 +204,8 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
         try { next = { expiry: later, rows: (await chain.loadChain(later)).rows }; } catch { next = null; }
       }
     }
-    const s = settings ?? { width_steps: 2, lots: 1, stop_pct: 50 };
-    const built = readyStrategy(name, { underlying: chain.symbol, expiry: live.expiry, rows, around: pick, settings: s, next });
+    if (settings === null) { setNote({ tone: "warn", text: settingsFailed ? SETTINGS_FAILED : SETTINGS_LOADING }); return; }   // M68 PR-2
+    const built = readyStrategy(name, { underlying: chain.symbol, expiry: live.expiry, rows, around: pick, settings, next });
     if (built.problem) { setNote({ tone: "warn", text: built.problem }); return; }
     store.replace(built.legs);
     setNote({ tone: "done", text: `${name} around ${formatNumber(pick, 0)}: ${built.legs.length} legs. Edit any leg before you execute.` });
@@ -325,6 +331,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     onLeg: (id, patch) => store.update(id, patch),
     onRemove: (id) => store.remove(id),
     onReady: (name) => { void ready(name); },
+    onRetrySettings: () => setSettingsTry((n) => n + 1),
     onAround: setAround,
     onProduct: setProduct,
     onStrike: moveStrike,
@@ -343,7 +350,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   const steps = (
     <>
           {step.kind === "edit" && (
-            <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} rows={rows} pick={pick} atm={atm} spot={spot}
+            <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} settingsFailed={settingsFailed} rows={rows} pick={pick} atm={atm} spot={spot}
               product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks}
               whatif={whatifOn ? { view: payoffView, onView: setPayoffView } : undefined}
               exits={(
@@ -404,6 +411,8 @@ export interface BodyHandlers {
   onLeg: (id: string, patch: Partial<NewLeg>) => void;
   onRemove: (id: string) => void;
   onReady: (name: StrategyName) => void;
+  /** M68 PR-2: read his settings again after a failed read. */
+  onRetrySettings?: () => void;
   onAround: (strike: number) => void;
   onProduct: (p: Product) => void;
   onStrike: (id: string, strike: number) => void;
@@ -437,6 +446,10 @@ function Figure({ label, children, sub, testId, hint }: { label: string; childre
   );
 }
 
+/** M68 PR-2 (TS1-023): the ready strategies wait for his own settings - never a stand-in width, lots or stop. */
+export const SETTINGS_LOADING = "Loading your settings…";
+export const SETTINGS_FAILED = "Could not load your settings.";
+
 /** The panel's edit view: ready strategies, the legs, the numbers and the tools (no state, no hooks). */
 /** TERM-2 R2: the payoff drawn - the basket with his open positions on the same underlying + expiry, or the basket alone. */
 export type PayoffView = "combined" | "basket";
@@ -447,8 +460,10 @@ export function whatIfLegs(legs: readonly BasketLeg[], numbers: BasketNumbers): 
   return w && w.ok ? [...w.open_legs, ...chartLegs(legs, numbers)] : chartLegs(legs, numbers);
 }
 
-export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks, exits, whatif }: {
+export function BasketBody({ legs, numbers, problems, settings, settingsFailed = false, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks, exits, whatif }: {
   legs: readonly BasketLeg[]; numbers: BasketNumbers | null; problems: string[]; settings: BasketSettings | null; rows: LiveChain["rows"];
+  /** M68 PR-2: his settings could not be read (null settings and false: still loading). */
+  settingsFailed?: boolean;
   pick: number | null; atm: number | null; spot: number | null; product: Product | null; note: Note; tool: Tool; saved: SavedState | null;
   saveName: string; idPrefix: string; on: BodyHandlers;
   /** 8b-d: the user's own risk budget for the risk line (null: the line is left out). */
@@ -485,14 +500,22 @@ export function BasketBody({ legs, numbers, problems, settings, rows, pick, atm,
           </div>
           <div className="-mx-space-4 flex gap-space-2 overflow-x-auto px-space-4 pb-space-1">
             {STRATEGIES.map((name) => (
-              <button key={name} type="button" className={CHIP} disabled={!rows.length} title={STRATEGY_TEXT[name]} onClick={() => on.onReady(name)} data-strategy={name}>
+              <button key={name} type="button" className={CHIP} disabled={!rows.length || settings === null} title={STRATEGY_TEXT[name]} onClick={() => on.onReady(name)} data-strategy={name}>
                 {name}
               </button>
             ))}
           </div>
-          <p className="text-t12 text-fg-muted" data-basket="settings-note">
-            {settings?.note ?? "Legs are built from the chain's prices around the strike you pick; edit any leg."}
-          </p>
+          {settings === null ? (
+            <p className="text-t12 text-fg-muted" data-basket="settings-note" data-settings={settingsFailed ? "failed" : "loading"} role="status">
+              {settingsFailed ? SETTINGS_FAILED : SETTINGS_LOADING}
+              {settingsFailed && on.onRetrySettings && (
+                <button type="button" className="ml-space-2 min-h-11 font-medium text-brand hover:underline md:min-h-0" onClick={on.onRetrySettings}
+                  data-basket="settings-retry">Retry</button>
+              )}
+            </p>
+          ) : (
+            <p className="text-t12 text-fg-muted" data-basket="settings-note">{settings.note}</p>
+          )}
         </section>
 
         {note && (

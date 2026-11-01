@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectChoice } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
@@ -106,6 +106,31 @@ async function pressTest(page: Page) {
 }
 
 const SHOT = { animations: "disabled" as const, maxDiffPixelRatio: 0.02, timeout: 15_000 };
+
+/**
+ * M75 NAV-3: the draft card sits in the Trading bot panel, whose body scrolls; the card is taller than that body at every
+ * size, so one element screenshot would show its lower part blank (clipped by the scroll area, not by the layout - a
+ * trader scrolls to it). It is checked as the trader sees it: the card's start, then its end (both inside the panel's
+ * visible body), and nothing of it may run past the panel's sides.
+ */
+async function draftShots(page: Page, card: Locator, name: string) {
+  const visible = () => card.evaluate((el) => {
+    let box: HTMLElement | null = el.parentElement;
+    while (box && getComputedStyle(box).overflowY !== "auto") box = box.parentElement;
+    const c = el.getBoundingClientRect();
+    const b = (box ?? document.documentElement).getBoundingClientRect();
+    const top = Math.max(c.top, b.top);
+    const bottom = Math.min(c.bottom, b.bottom);
+    return { x: Math.round(c.left), y: Math.round(top), width: Math.round(c.width), height: Math.round(bottom - top), inside: c.left >= b.left && c.right <= b.right + 0.5 };
+  });
+  for (const [block, suffix] of [["start", ""], ["end", "-end"]] as const) {
+    await card.evaluate((el, at) => el.scrollIntoView({ block: at }), block);
+    const { inside, ...clip } = await visible();
+    expect(inside).toBe(true);                                           // no part of the card past the panel's sides
+    await expect(page).toHaveScreenshot(`${name}${suffix}.png`, { ...SHOT, clip });
+  }
+  expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+}
 const SIZES = [
   { name: "360", width: 360, height: 780, mobile: true }, { name: "390", width: 390, height: 844, mobile: true },
   { name: "1440", width: 1440, height: 900, mobile: false },
@@ -121,7 +146,7 @@ for (const size of SIZES) {
         const answer = await askIdea(page);
         await expect(answer).toHaveScreenshot(`copilot-builder-v2-answer-${size.name}-${theme}.png`, SHOT);
         const card = await toPaperBot(page);
-        await expect(card).toHaveScreenshot(`copilot-builder-v2-draft-${size.name}-${theme}.png`, SHOT);
+        await draftShots(page, card, `copilot-builder-v2-draft-${size.name}-${theme}`);
       });
     }
 

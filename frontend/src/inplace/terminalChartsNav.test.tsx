@@ -131,7 +131,7 @@ describe("NAV-3: as before where no panel shows it", () => {
 
   it("the Trading bot panel's full route resolves back to the same panel (its href is the real address)", () => {
     expect(DEFAULT_REGISTRY.resolve(DEFAULT_REGISTRY.get("bots")!.href({}))).toEqual({ kind: "bots", params: {} });
-    expect(DEFAULT_REGISTRY.get("bots")!.presentation).toBe("drawer");
+    expect(DEFAULT_REGISTRY.get("bots")!.presentation).toBe("side-wide");   // the page's own form needs the width
   });
 });
 

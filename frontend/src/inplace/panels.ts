@@ -135,12 +135,13 @@ export const SIGNALS_PANEL: PanelEntry = {
 // ---- NAV-3: Terminal / charts ------------------------------------------------------------------------------------
 
 /** The Trading bot page (`/deployments`): start a bot, your bots as cards. A Copilot draft handed over with the address
- * opens in it as on the page (its own location carries the state). */
+ * opens in it as on the page (its own location carries the state). A wide side panel, not a drawer: the page lays its
+ * form out by the screen's width, and in a drawer's 448 px at 1440 its "Discard the draft" button ran past the edge. */
 export const BOTS_PANEL: PanelEntry = {
   kind: "bots",
   keys: [],
   title: () => "Trading bot",
-  presentation: "drawer",
+  presentation: "side-wide",
   match: ({ pathname }) => (clean(pathname) === "/deployments" ? {} : null),
   href: () => "/deployments",
   load: () => import("./panels/BotsPanel"),

@@ -193,11 +193,12 @@ describe("FNO-3 futures chain: each row's actions", () => {
     expect(h.onTrade.mock.calls.map(([r, s]) => [r.tradingsymbol, s])).toEqual([["NIFTY26OCTFUT", "BUY"], ["NIFTY26OCTFUT", "SELL"]]);
     const target = futureTarget(row());
     expect(target).toMatchObject({ right: "FUT", strike: null, lotSize: 75, label: "NIFTY 27 OCT FUT", ltp: 24612.5 });
-    const ask = askOf(target, { ...newDraft("BUY", { product: "NRML" }), stopLoss: "24500" }, "ref-12345678");
+    const ask = askOf(target, { ...newDraft("BUY", { product: "NRML", lots: 1 }), stopLoss: "24500" }, "ref-12345678");
     expect(ask).toMatchObject({ underlying: "NIFTY", expiry: "2026-10-27", right: "FUT", strike: null, stop_loss: 24500 });
     // DEF-0 D7: no stop is forced on any side - only the trader's own setting asks for one (the server says so)
-    expect(draftProblems(newDraft("BUY", { product: "NRML", orderType: "MARKET" }), "FUT")).toEqual([]);
-    expect(draftProblems(newDraft("BUY", { product: "NRML", orderType: "MARKET" }))).toEqual([]);
+    expect(draftProblems(newDraft("BUY", { product: "NRML", orderType: "MARKET", lots: 1 }), "FUT")).toEqual([]);
+    expect(draftProblems(newDraft("BUY", { product: "NRML", orderType: "MARKET", lots: 1 }))).toEqual([]);
+    expect(draftProblems(newDraft("BUY", { product: "NRML", orderType: "MARKET" }))).toEqual(["Enter the lots"]);   // M68 PR-2: asked
     expect(stopHint("BUY", "FUT")).toBe("(optional)");
   });
 
@@ -220,7 +221,9 @@ describe("FNO-3 futures chain: each row's actions", () => {
     expect(open.on.onBasket.mock.calls.map(([r, s]) => [r.tradingsymbol, s])).toEqual([["NIFTY26OCTFUT", "BUY"], ["NIFTY26OCTFUT", "SELL"]]);
 
     const store = new BasketStore([]);
-    expect(addFutureToBasket(store, row(), "SELL")).toEqual({ tone: "done", text: "Added to the basket: Sell 1 lot of NIFTY 27 OCT FUT." });
+    expect(addFutureToBasket(store, row(), "SELL", 1)).toEqual({ tone: "done", text: "Added to the basket: Sell 1 lot of NIFTY 27 OCT FUT." });
+    // M68 PR-2 (TS1-022): no lots of his own - an empty leg the basket asks about
+    expect(futureLeg(row(), "BUY").lots).toBeNull();
     expect(store.snapshot()[0]).toMatchObject({ underlying: "NIFTY", expiry: "2026-10-27", right: "FUT", strike: 0, side: "SELL", lots: 1, price: 24612.5 });
     expect(futureLeg(row(), "BUY")).toMatchObject({ right: "FUT", strike: 0 });
   });
@@ -241,7 +244,7 @@ describe("FNO-3 futures chain: each row's actions", () => {
 });
 
 describe("FNO-3 futures in the basket (FNO-2 panel)", () => {
-  const fut = { ...futureLeg(row(), "BUY"), stopLoss: null, iv: null };
+  const fut = { ...futureLeg(row(), "BUY", 1), stopLoss: null, iv: null };
   const call = { underlying: "NIFTY", expiry: "2026-10-27", strike: 24800, right: "CE" as const, side: "SELL" as const, lots: 1, price: 90, label: null, stopLoss: 135, iv: 14 };
 
   it("the badge opens the basket panel on the option chain page, with the leg count", () => {

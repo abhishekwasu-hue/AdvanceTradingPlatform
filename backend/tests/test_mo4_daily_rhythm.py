@@ -175,7 +175,7 @@ def test_pre_market_brief_from_the_users_own_data():
     _add(*_memory(who, morning - timedelta(hours=15)),
          MarketEventRecord(tenant_id=who["tenant_id"], event_date=DAY, kind="RBI_POLICY", action="BLOCK", start_time="10:00", end_time="10:30",
                            description="Policy announcement"),
-         MarketEventRecord(tenant_id=who["tenant_id"], event_date=DAY, kind="OTHER", description="Buy the dip day"),   # advice: dropped
+         MarketEventRecord(tenant_id=who["tenant_id"], event_date=DAY, kind="OTHER", action="SIZE_CUT", description="Buy the dip day"),   # advice: dropped
          _signal(who, "MO4INFY", _at(DAY - timedelta(days=1), 11), ["Price is 2.5% above VWAP", "The pullback reached a buyer area"]),
          _signal(who, "MO4TCS", _at(DAY - timedelta(days=1), 12), ["Breakout above 3,400"], direction="SHORT"),
          _trade(who, "MO4NEAR", entry=100.0, stop=90.0, mark=91.5),
@@ -240,7 +240,7 @@ def test_closing_wrap_with_market_moves_and_the_users_day(monkeypatch):
     monkeypatch.setattr(build, "_closes", closes)
     monkeypatch.setattr(build, "_tile", tile)
     _add(_trade(who, "MO4WIN", entry=100.0, stop=95.0, mark=104.0, exit_at=_at(DAY, 14), pnl=400.0),
-         MarketEventRecord(tenant_id=who["tenant_id"], event_date=date(2031, 6, 13), kind="EXPIRY", underlying="NIFTY", description="Weekly expiry"))
+         MarketEventRecord(tenant_id=who["tenant_id"], event_date=date(2031, 6, 13), kind="EXPIRY", underlying="NIFTY", action="SIZE_CUT", description="Weekly expiry"))
     brief = _build(who, "closing", evening)
     by_id = {s["id"]: s for s in brief["sections"]}
     market = by_id["market"]["lines"]
@@ -301,7 +301,7 @@ def test_weekly_review(monkeypatch):
     _add(*_memory(who, _at(date(2031, 6, 13), 15, 20)),
          _trade(who, "MO4W1", entry=100.0, stop=95.0, mark=104.0, exit_at=_at(DAY, 14), pnl=400.0),
          _trade(who, "MO4W2", entry=100.0, stop=95.0, mark=96.0, exit_at=_at(date(2031, 6, 13), 11), pnl=-150.0, at=_at(date(2031, 6, 13), 10)),
-         MarketEventRecord(tenant_id=who["tenant_id"], event_date=date(2031, 6, 18), kind="FED", description="FOMC decision"))
+         MarketEventRecord(tenant_id=who["tenant_id"], event_date=date(2031, 6, 18), kind="FED", action="SIZE_CUT", description="FOMC decision"))
     brief = _build(who, "weekly", saturday)
     assert brief["subtitle"] == "Week of Mon 09 Jun"
     by_id = {s["id"]: s for s in brief["sections"]}

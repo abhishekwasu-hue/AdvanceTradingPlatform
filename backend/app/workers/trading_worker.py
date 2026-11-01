@@ -2218,7 +2218,9 @@ class TradingWorker:
         mine = (await order_defaults.load(session, user)).holding
         if mine is None:
             return None, order_defaults.needs_setting("holding")
-        if mine == "SWING" and dep.timeframe != "day" and not can_hold_for_days(dep.option_strategy or "SINGLE"):
+        from app.risk_engine import own_risk
+        written = (await own_risk.for_user(session, user)).overnight_short_options if mine == "SWING" else False   # TS1-041
+        if mine == "SWING" and dep.timeframe != "day" and not can_hold_for_days(dep.option_strategy or "SINGLE", written_overnight=written):
             return None, (f"{order_defaults.needs_setting('holding')}: your Carry forward setting does not fit this bot "
                           f"(it reads {dep.timeframe} candles) - set this bot's own holding")
         self._holdings[dep.id] = mine
@@ -2609,17 +2611,19 @@ class TradingWorker:
 
     async def _opposite_position(self, session: AsyncSession, dep: StrategyDeploymentRecord, direction: Any) -> Optional[str]:
         """M55 S6 (A11): the plain reason a NEW automated entry is held back, or None. Under the organisation's
-        `opposite_positions` setting "deny" (the default, owner order M55; risk_settings) an entry is skipped while another
+        `opposite_positions` setting "deny" (owner order M55; risk_settings) an entry is skipped while another
         of its bots holds an open position in the same mode on the same underlying in the other direction. Same direction:
-        unchanged. A position with no known direction (a neutral structure) never counts. Reads only - exits never come here."""
-        from app.core.models import OPPOSITE_ALLOW
+        unchanged. A position with no known direction (a neutral structure) never counts. Reads only - exits never come here.
+        M68 PR-5 (TS1-052, owner decision D3 / M68Q-3): only a SAVED "deny" holds an entry back; Not set (NULL, no row) and
+        "allow" never do."""
+        from app.core.models import OPPOSITE_DENY
         from app.db.models import RiskSettingsRecord
         from app.portfolio.risk import BEARISH, BULLISH, direction_of, underlying_of_trade
         wanted = {"LONG": BULLISH, "SHORT": BEARISH}.get(str(getattr(direction, "value", direction) or "").upper())
         if wanted is None:
             return None
         setting = await session.scalar(select(RiskSettingsRecord.opposite_positions).where(RiskSettingsRecord.tenant_id == dep.tenant_id))
-        if setting == OPPOSITE_ALLOW:          # anything else - no row saved yet included - is the default "deny"
+        if setting != OPPOSITE_DENY:           # Not set (NULL / no row yet) or "allow": two bots may hold opposite sides
             return None
         underlying = master.underlying_of(dep.symbol)
         others = await session.scalars(select(TradeRecord).where(

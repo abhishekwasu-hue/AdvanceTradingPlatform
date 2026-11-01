@@ -58,8 +58,9 @@ def _set(t, value):
 
 
 def test_the_setting_defaults_to_deny_and_a_save_without_it_keeps_the_choice():
+    # M68 PR-5 (TS1-052, owner decision D3 / M68Q-3): Not set (None) until the trader saves one - no built-in "deny"
     t = _tenant("m55s6-setting@example.com")
-    assert client.get("/api/risk-settings", headers=t["headers"]).json()["opposite_positions"] == "deny"
+    assert client.get("/api/risk-settings", headers=t["headers"]).json()["opposite_positions"] is None
     _set(t, "allow")
     # An older page saves the other settings without the field: the stored choice stays.
     assert client.put("/api/risk-settings", headers=t["headers"], json={"max_trades_per_day": 5}).json()["opposite_positions"] == "allow"
@@ -75,6 +76,7 @@ def test_the_setting_defaults_to_deny_and_a_save_without_it_keeps_the_choice():
 
 def test_an_opposite_entry_on_a_symbol_another_bot_holds_is_skipped_under_deny(monkeypatch):
     t, a, b, _, worker = _first_bot_long(monkeypatch, "m55s6-deny@example.com")
+    _set(t, "deny")                            # M68 PR-5: only a saved "deny" holds the entry back
     _force(monkeypatch, lambda: _signal(SignalDirection.SHORT, ts=NEW_BAR))
     report = _run(worker.run_cycle(now=LATER))
     assert report.signals_executed == 0
@@ -96,6 +98,7 @@ def test_the_same_opposite_entry_is_taken_under_allow(monkeypatch):
 
 def test_a_same_direction_entry_from_another_bot_is_unchanged_under_deny(monkeypatch):
     t, a, b, _, worker = _first_bot_long(monkeypatch, "m55s6-same@example.com")
+    _set(t, "deny")                            # M68 PR-5: the organisation's own saved "deny"
     _force(monkeypatch, lambda: _signal(SignalDirection.LONG, ts=NEW_BAR))
     report = _run(worker.run_cycle(now=LATER))
     assert report.signals_executed == 1
@@ -115,6 +118,7 @@ def test_an_opposite_position_on_another_symbol_never_counts(monkeypatch):
 
 def test_exits_are_unchanged_under_deny(monkeypatch):
     t, a, b, broker, worker = _first_bot_long(monkeypatch, "m55s6-exit@example.com")
+    _set(t, "deny")                            # M68 PR-5: the organisation's own saved "deny"
     broker.ltp = 97.0                                              # bot A's position reaches its own stop level
     _force(monkeypatch, lambda: _signal(SignalDirection.SHORT, ts=NEW_BAR))
     report = _run(worker.run_cycle(now=LATER))

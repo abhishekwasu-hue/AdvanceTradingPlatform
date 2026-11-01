@@ -10,7 +10,7 @@ import riskSource from "./RiskV2.tsx?raw";
 const NOT_SET: RiskConfig = {
   capital: null, risk_per_trade_pct: null, max_daily_loss_pct: null, max_trades_per_day: null, max_open_positions: null,
   max_consecutive_losses: null, min_risk_reward: 0, lot_size: 1, max_portfolio_risk_pct: null, stop_cooldown_minutes: null,
-  dd_level_1_pct: null, dd_level_2_pct: null, event_size_cut_pct: null, loss_streak_pause: "next_session",
+  dd_level_1_pct: null, dd_cut_pct: null, dd_level_2_pct: null, event_size_cut_pct: null, loss_streak_pause: "next_session",
 };
 
 describe("the draft of a limit and what it saves", () => {

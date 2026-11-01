@@ -70,6 +70,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Permanent fix for broker API limits (31 Oct) | ATP_ORDER_M71.md | M71 | in progress |
 | - | AI Copilot rebuild - trader-friendly, grounded agent (1 Nov) | ATP_ORDER_M72.md | M72 | not started |
 | - | Sign-in page: Google + Facebook login (1 Nov) | ATP_ORDER_M73.md | M73 | not started |
+| - | "Continue with your broker" sign-in (1 Nov) | ATP_ORDER_M74.md | M74 | not started |
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

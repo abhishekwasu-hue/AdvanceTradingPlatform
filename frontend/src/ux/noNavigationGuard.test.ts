@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
  * the new count printed by this test (the test also fails when the count is lower, so the ratchet never goes slack).
  * `M75_NAV_DUMP=<file>` writes the current list as JSON (used to build the inventory table in the design doc).
  */
-const BASELINE = 73;
+const BASELINE = 63;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SRC = join(ROOT, "src");
@@ -77,7 +77,7 @@ const EXCLUDED_SITES: { file: string; text?: RegExp; line?: RegExp; reason: stri
   { file: "src/shell/askAiEntry.tsx", text: /^\{ id: "(?:analyze|copilot)",/, reason: "INPLACE - an Ask AI sheet row: the sheet opens it with <InPlaceLink> (NAV-2), in place" },
   { file: "src/chart/EmbeddedChartV2.tsx", text: /^\{ id: "open",/, reason: "INPLACE - a chart toolbar item: ChartToolbar draws it with <InPlaceLink> (NAV-3), the chart opens in place" },
   { file: "src/chart/ChartsPageV2.tsx", text: /^\{ id: "analyze",/, reason: "INPLACE - a chart toolbar item: ChartToolbar draws it with <InPlaceLink> (NAV-3), Analyze a chart opens in place" },
-  { file: "*", text: /^more=\{\{[^}]*\binPlace: true\b/, reason: "INPLACE - a card's \"more\" link with `inPlace`: CardV2 draws it with <InPlaceLink> (NAV-4), the facility opens in place" },
+  { file: "*", text: /^(?:more|action)=\{\{[^}]*\binPlace: true\b/, reason: "INPLACE - a card's \"more\" link or an empty state's action with `inPlace`: CardV2 / EmptyStateV2 draw it with <InPlaceLink> (NAV-4, NAV-5b), the facility opens in place" },
   { file: "src/admin/ViewAsBanner.tsx", text: /./, reason: "AUTH - admin 'view as' start / stop switches the signed-in identity" },
   { file: "src/broker/BrokerPromptHost.tsx", line: /if \(!onBrokerPage\) navigate\(BROKER_PATH\)/, reason: "AUTH - the first sign-in step of a new account (not a click)" },
   { file: "src/pages/ChartWindow.tsx", text: /location\.replace\(chartWindowRedirect/, reason: "REDIRECT - an old address forwarded on load (not a click)" },

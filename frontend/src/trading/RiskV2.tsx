@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { api } from "../api/client";
 import { errorSentence } from "../api/errors";
 import { toast } from "../components/Toast";
@@ -305,8 +306,8 @@ export function RiskLimitsLinkV2() {
   return (
     <CardV2 title="Your limits" testId="risk-limits-link" tour="risk-limits-link">
       <p className="text-t13 text-fg-muted">Each check is a switch, off by default.</p>
-      <Link to={RISK_LIMITS_PATH} className={`${BUTTON_SECONDARY} mt-space-3 inline-flex w-full items-center justify-center sm:w-auto`}
-        data-testid="open-risk-limits">Open Settings › Risk limits</Link>
+      <InPlaceLink to={RISK_LIMITS_PATH} className={`${BUTTON_SECONDARY} mt-space-3 inline-flex w-full items-center justify-center sm:w-auto`}
+        data-testid="open-risk-limits">Open Settings › Risk limits</InPlaceLink>
     </CardV2>
   );
 }
@@ -337,9 +338,9 @@ function OwnPaperLimitsV2({ paper }: { paper: PaperRiskStatus }) {
           })}
         </dl>
         <div className="flex flex-col gap-space-2 sm:flex-row sm:items-center">
-          <Link to={SETUP_PATH} className={`${BUTTON_SECONDARY} w-full sm:w-auto`} data-testid="own-limits-change">
+          <InPlaceLink to={SETUP_PATH} className={`${BUTTON_SECONDARY} w-full sm:w-auto`} data-testid="own-limits-change">
             {none ? "Set your limits" : "Change your limits"}
-          </Link>
+          </InPlaceLink>
         </div>
         {/* UX-11 U1: the second line on demand, word for word. */}
         <Details id="risk.paper-limits">

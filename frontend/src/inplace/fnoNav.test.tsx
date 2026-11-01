@@ -147,7 +147,7 @@ describe("NAV-4: each panel's own address is the full route (deep links unchange
 
   it("the old addresses answer for the same panels", () => {
     expect(DEFAULT_REGISTRY.resolve("/options-builder")).toEqual({ kind: "options-plan", params: {} });
-    expect(DEFAULT_REGISTRY.resolve("/risk-management")).toEqual({ kind: "risk-limits", params: {} });
+    expect(DEFAULT_REGISTRY.resolve("/risk-management")).toEqual({ kind: "risk", params: {} });   // NAV-5b: the Risk status page
     expect(optionChainPanelPath({})).toBe("/option-chain");
   });
 

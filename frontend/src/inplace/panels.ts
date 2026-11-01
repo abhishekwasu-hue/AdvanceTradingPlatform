@@ -12,7 +12,7 @@ import { createRegistry, type PanelEntry, type PanelParams, type Presentation } 
  * NAV-3: the Trading bot page. NAV-4: the Option chain, the symbol hub's Futures tab, Plan an options trade and Risk
  * limits. NAV-5a: Find setups, Strategies › Test, the journal, My positions, Trading defaults, Settings › Alerts (pages
  * shown whole by PagePanel, their search carried as one parameter); the Copilot's Watchtower proposal; the Trading bot's
- * template pre-fill.
+ * template pre-fill. NAV-5b: Orders and Set-up.
  */
 
 const clean = (pathname: string) => pathname.replace(/\/+$/, "") || "/";
@@ -219,14 +219,14 @@ export const OPTIONS_PLAN_PANEL: PanelEntry = {
   load: () => import("./panels/OptionsPlanPanel"),
 };
 
-/** The trader's own Risk limits (`/settings/risk-limits`, the old `/risk-management`): the ticket's and the basket's
- * "Change limit". */
+/** The trader's own Risk limits (`/settings/risk-limits`): the ticket's and the basket's "Change limit". (NAV-5b:
+ * `/risk-management` is the Risk status page, its own panel below, not this one.) */
 export const RISK_LIMITS_PANEL: PanelEntry = {
   kind: "risk-limits",
   keys: [],
   title: () => "Risk limits",
   presentation: "side",
-  match: ({ pathname }) => (["/settings/risk-limits", "/risk-management"].includes(clean(pathname)) ? {} : null),
+  match: ({ pathname }) => (clean(pathname) === "/settings/risk-limits" ? {} : null),
   href: () => "/settings/risk-limits",
   load: () => import("./panels/RiskLimitsPanel"),
 };
@@ -247,9 +247,19 @@ export const DEFAULTS_PANEL = pagePanel({ kind: "trading-defaults", title: "My t
 /** Settings › Alerts: a scan alert's "set up delivery". */
 export const ALERTS_PANEL = pagePanel({ kind: "alerts", title: "Alerts", presentation: "side", paths: ["/settings/alerts"] });
 
+// ---- NAV-5b: Positions, orders, portfolio, risk -------------------------------------------------------------------
+
+/** My trades › Orders (`/positions/orders`): the closed trades' "Orders". */
+export const ORDERS_PANEL = pagePanel({ kind: "orders", title: "Orders", presentation: "side-wide", paths: ["/positions/orders", "/orders"] });
+/** Risk status (`/risk-management`: pauses, events, its own "Open Settings › Risk limits"): My money's "Risk limits". */
+export const RISK_STATUS_PANEL = pagePanel({ kind: "risk", title: "Risk status", presentation: "side-wide", paths: ["/risk-management"] });
+/** Settings › Set-up (`/settings/setup`): Risk's "change my set-up answers". */
+export const SETUP_PANEL = pagePanel({ kind: "setup", title: "Set-up", presentation: "side-wide", paths: ["/settings/setup"] });
+
 export const DEFAULT_PANELS: readonly PanelEntry[] = [
   FUTURES_PANEL, CHART_PANEL, BROKER_PANEL, AI_KEY_PANEL, COPILOT_PANEL, ANALYZE_PANEL, STRATEGY_BUILD_PANEL, NEWS_PANEL, SIGNALS_PANEL, BOTS_PANEL,
   OPTION_CHAIN_PANEL, OPTIONS_PLAN_PANEL, RISK_LIMITS_PANEL,
   SCREENER_PANEL, TEST_PANEL, JOURNAL_PANEL, POSITIONS_PANEL, DEFAULTS_PANEL, ALERTS_PANEL,
+  ORDERS_PANEL, RISK_STATUS_PANEL, SETUP_PANEL,
 ];
 export const DEFAULT_REGISTRY = createRegistry(DEFAULT_PANELS);

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { CardV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2, toneClass } from "../dashboard/CardV2";
@@ -76,7 +76,7 @@ export default function PortfolioV2(_props: PageProps = {}) {
 
       <CardV2 title="Where your money is" count={rows.length} testId="allocation" tour="portfolio-allocation">
         {firstLoad ? <LoadingRowsV2 /> : allocationFailed ? <LoadFailedV2 what="where your money is" /> : rows.length === 0 ? (
-          <EmptyStateV2 text="All cash. Open positions show here with their share of your capital." action={{ label: "Find setups", to: "/screener" }} />
+          <EmptyStateV2 text="All cash. Open positions show here with their share of your capital." action={{ label: "Find setups", to: "/screener", inPlace: true }} />
         ) : (
           <>
             {exp?.price_source === "entry" && (
@@ -102,7 +102,7 @@ export default function PortfolioV2(_props: PageProps = {}) {
       <Details id="portfolio.limits" className="mt-0">
         <p>
           Limits on total exposure and on how much sits in one symbol are set on{" "}
-          <Link to="/risk-management" className="font-medium text-brand hover:underline">Risk limits</Link>.
+          <InPlaceLink to="/risk-management" className="font-medium text-brand hover:underline">Risk limits</InPlaceLink>.
         </p>
       </Details>
       {/* UX-11 U5: the page's one footer line. */}

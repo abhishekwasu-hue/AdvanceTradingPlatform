@@ -62,7 +62,7 @@ class GroupExitAsk:
     target_value: Optional[float] = None
     spot_symbol: Optional[str] = None
     spot_exchange: Optional[str] = None
-    check_mode: Optional[str] = None             # M68 PR-3 (TS1-031): the ask's own, else his setting (resolve_check_mode)
+    check_mode: str | None = None                # M68 PR-3 (TS1-031): the ask's own, else his setting (resolve_check_mode)
     timeframe_minutes: Optional[int] = None
     scope: str = "SELECTED"
     origin: str = "CX"
@@ -77,7 +77,7 @@ CHECK_NEEDED = ("Needs your setting: Combined exit checked - choose when the spo
                 "closed candle), here or in Settings › Trade settings › Exits")
 
 
-def resolve_check_mode(ask: GroupExitAsk, saved: Optional[str]) -> GroupExitAsk:
+def resolve_check_mode(ask: GroupExitAsk, saved: str | None) -> GroupExitAsk:
     """M68 PR-3 (TS1-031): the check the ask names, else the user's own Trade settings > Exits > Combined exit checked. A
     ₹ or net-premium exit is checked on every price - the only check those measures have (a closed candle works on the
     spot level only), so it is not a choice there. A spot exit with neither stays None and `ask_errors` asks for it."""

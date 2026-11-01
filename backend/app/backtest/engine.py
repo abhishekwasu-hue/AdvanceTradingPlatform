@@ -36,7 +36,7 @@ def run_backtest(
     exit_rules: Optional[ExitRules] = None,
     models: Optional[ModelSet] = None,
     session_rules: bool = True,
-    cutoffs: tuple[Optional[dtime], Optional[dtime], Optional[dtime]] = (None, None, None),
+    cutoffs: tuple[dtime | None, dtime | None, dtime | None] = (None, None, None),
 ) -> BacktestResult:
     """Event-driven backtest over historical OHLCV bars.
 

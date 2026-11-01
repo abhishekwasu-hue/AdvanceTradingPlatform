@@ -3,7 +3,7 @@ live resolver, the synthetic expiry calendar, Black-Scholes and snapshot pricers
 backtest engine (structures, single legs, expiry settlement, sizing refusals), the chain
 recorder and retention, and the API dispatch."""
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import numpy as np
 import pytest
@@ -235,11 +235,16 @@ def test_single_options_mirror_the_live_exits_and_expiry_settles_at_intrinsic():
     st = result.options["structures"][0]
     assert st["legs"][0]["exit_price"] + st["legs"][1]["exit_price"] == pytest.approx(abs(24510 - 24500), abs=1.0)   # intrinsic only
     assert trade.pnl > 0
-    # Intraday square-off at 15:15 closes what is still open.
+    # The user's own intraday square-off (M68 PR-3: 15:15 saved by him) closes what is still open.
     cfg = OptionBacktestConfig(option_strategy=OptionStrategy.IRON_CONDOR, implied_volatility=0.14, strike_offset=3, spread_width=2, expiry_rule=ExpiryRule.NEXT,
-                               target_credit_pct=50, stop_credit_pct=100)  # DEF-0: the old built-in levels set explicitly
+                               target_credit_pct=50, stop_credit_pct=100,  # DEF-0: the old built-in levels set explicitly
+                               entries_until=time(15, 0), square_off_at=time(15, 15))
     result = run_option_backtest(_OneShot(), flat, "NIFTY 50", "1min", RISK, cfg)
     assert result.trades and result.trades[0].exit_reason.startswith("Square-off")
+    # M68 PR-3 (D1): nothing saved - no square-off by ATP.
+    cfg.square_off_at = cfg.entries_until = None
+    result = run_option_backtest(_OneShot(), flat, "NIFTY 50", "1min", RISK, cfg)
+    assert result.trades and not result.trades[0].exit_reason.startswith("Square-off")
 
 
 def test_snapshot_pricing_and_custom_legs_in_the_engine():
@@ -317,7 +322,7 @@ def test_backtest_endpoints_dispatch_option_runs_and_record_them():
     out = res.json()
     assert out["options"]["pricing_model"] == "synthetic" and out["options"]["structure"] == "BULL_PUT_SPREAD" and out["run_id"]
     run = client.get(f"/api/backtests/{out['run_id']}", headers=headers).json()
-    assert run["engine_version"] == ENGINE_VERSION == "9-options"
+    assert run["engine_version"] == ENGINE_VERSION == "10-options"           # M68 PR-3 bumped it
     assert run["params"]["_options"]["option_strategy"] == "BULL_PUT_SPREAD" and "structures" not in run["metrics"]["options"]
     # Snapshot pricing with nothing recorded and no fallback is a plain 400; with the fallback it runs.
     strict = {**body, "options": {**body["options"], "pricing": "snapshots", "allow_synthetic_fallback": False}}

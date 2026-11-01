@@ -114,9 +114,9 @@ class OptionBacktestConfig:
     # close (it exits by its own rules or settles at expiry); the entry cut-off stays, as in the worker. Ignored otherwise.
     hold_for_days: bool = False
     # M68 PR-3 (TS1-027): the user's own new-entry window and Square-off time, as the worker reads them (None = Not set).
-    entries_from: Optional[time] = None
-    entries_until: Optional[time] = None
-    square_off_at: Optional[time] = None
+    entries_from: time | None = None
+    entries_until: time | None = None
+    square_off_at: time | None = None
     # Strategy templates section 5: a single option's stop source - None / TEMPLATE_INVALIDATION (the strategy's stop on
     # the underlying, as before) or PREMIUM_PCT (only the premium floor / ceiling; no underlying-level stop).
     stop_source: Optional[str] = None

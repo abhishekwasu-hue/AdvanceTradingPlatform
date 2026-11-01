@@ -137,13 +137,14 @@ def test_an_approved_ticket_whose_time_stop_has_passed_is_not_placed(monkeypatch
             async def lookup(symbol, exchange="NSE"):
                 return 100.0
             done = await approval.execute_entry(session, action, user, price_lookup=lookup,
-                                                now=datetime(2026, 10, 9, 10, 58, tzinfo=IST).astimezone(UTC))
+                                                now=datetime(2026, 10, 9, 11, 0, tzinfo=IST).astimezone(UTC))   # M68 PR-3: not later than now
             plan = await session.get(TradePlanRecord, out["id"])
             return done.status, done.result, plan.status
     status, result, plan_status = _run(approve_late())
     assert status == "FAILED" and "time stop 11:00" in result and plan_status == "FAILED"
     early = {"ticket": {"plan_id": 1}, "exit_rules": json.dumps({"time_exit_at": "11:00"})}
     assert approval.ticket_time_stop_passed(early, datetime(2026, 10, 9, 10, 40, tzinfo=IST)) is None
+    assert approval.ticket_time_stop_passed(early, datetime(2026, 10, 9, 10, 58, tzinfo=IST)) is None   # M68 PR-3: no 5-minute lead
     assert approval.ticket_time_stop_passed({"exit_rules": json.dumps({"time_exit_at": "09:30"})}, datetime(2026, 10, 9, 10, 40, tzinfo=IST)) is None
 
 

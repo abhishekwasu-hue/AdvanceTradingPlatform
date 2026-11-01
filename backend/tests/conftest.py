@@ -96,11 +96,18 @@ def _saved_exit_settings(request):
 
     async def _load(session, user=None, *, tenant_id=None, user_id=None):
         own = await real(session, user, tenant_id=tenant_id, user_id=user_id)
-        saved = _SavedBeforeM68(incomplete_legs_action=exit_settings.CLOSE_FILLED, incomplete_legs_answer_minutes=5,
-                                combined_check_mode="TOUCH")
+        saved = _SavedBeforeM68(combined_check_mode="TOUCH")
         return replace(saved, **{k: v for k, v in vars(own).items() if v is not None})
+
+    from app.execution import smart_execution
+    real_prefs = smart_execution.SmartSettings.from_prefs.__func__
+
+    def _from_prefs(cls, values):          # the incomplete-order rule he "saved" in the older store (a saved value wins)
+        mine = real_prefs(cls, values)
+        return replace(mine, on_no_answer=mine.on_no_answer or exit_settings.CLOSE_FILLED, answer_minutes=mine.answer_minutes or 5)
     with pytest.MonkeyPatch.context() as own:      # its own patch: a test's monkeypatch.undo() leaves it in place
         own.setattr(exit_settings, "load", _load)
+        own.setattr(smart_execution.SmartSettings, "from_prefs", classmethod(_from_prefs))
         yield
 
 

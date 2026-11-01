@@ -45,9 +45,9 @@ router = APIRouter(tags=["backtest"])
 
 
 class ExitRulesBody(BaseModel):
-    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
-    break_even_at_r: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
-    time_exit_minutes: Optional[int] = Field(default=None, ge=1)
+    trailing_stop_pct: float | None = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
+    break_even_at_r: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    time_exit_minutes: int | None = Field(default=None, ge=1)
     time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
     def to_rules(self) -> ExitRules:
@@ -169,13 +169,16 @@ async def _models_allowed(session: AsyncSession, models: ModelSet, tenant_id: Op
                                                     f"these models are not enabled for this organisation (flag {MODELS_FLAG})")
 
 
-async def user_cutoffs(session: AsyncSession, user: Optional[User], exchange: Optional[str] = None) -> tuple:
+async def user_cutoffs(session: AsyncSession, user: User | None, exchange: str | None = None, symbol: str | None = None) -> tuple:
     """M68 PR-3 (TS1-027, parity scan = backtest = live): the user's own (new entries from, new entries until, square-off
-    time) for the venue, exactly as the worker reads them; (None, None, None) for no user or Not set."""
+    time) for the venue, exactly as the worker reads them; (None, None, None) for no user or Not set. The venue is the
+    symbol's own where the registry knows it (as the engine's clock), else `exchange`."""
     from app.execution import exit_settings
+    from app.instruments.registry import get_contract_spec
     from app.market_data.calendar import session_family
     own = await exit_settings.load(session, user)
-    family = session_family(exchange)
+    spec = get_contract_spec(symbol) if symbol else None
+    family = session_family(spec.exchange if spec is not None else exchange)
     return own.entries_from(family), own.entries_until(family), own.square_off_at(family)
 
 
@@ -210,8 +213,8 @@ class BacktestRunner:
 
     @classmethod
     async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None,
-                    user: Optional[User] = None) -> "BacktestRunner":
-        cutoffs = await user_cutoffs(session, user, body.exchange)
+                    user: User | None = None) -> "BacktestRunner":
+        cutoffs = await user_cutoffs(session, user, body.exchange, body.symbol)
         if body.options is None:
             runner = cls(body, risk, cutoffs=cutoffs)
             await _models_allowed(session, runner.models, tenant_id)

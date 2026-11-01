@@ -27,7 +27,7 @@ import hashlib
 import importlib.util
 import json
 import uuid
-from datetime import timedelta
+from datetime import time, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -78,9 +78,11 @@ def _hash(result) -> str:
 
 # DEF-0: the old built-in exit levels (bought premium floor 30%, credit target 50% / stop 100%, the short-strike breach exit)
 # set explicitly, so the runs (and the pins below) are the same as before.
-SINGLE = OptionBacktestConfig(implied_volatility=0.14, premium_stop_pct=30.0)
+# M68 PR-3 (D1): the pins were recorded with the then built-in 15:00 cut-off / 15:15 square-off - set explicitly too.
+_OLD_TIMES = {"entries_until": time(15, 0), "square_off_at": time(15, 15)}
+SINGLE = OptionBacktestConfig(implied_volatility=0.14, premium_stop_pct=30.0, **_OLD_TIMES)
 SPREAD = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2,
-                              target_credit_pct=50, stop_credit_pct=100, underlying_breach_exit=True)
+                              target_credit_pct=50, stop_credit_pct=100, underlying_breach_exit=True, **_OLD_TIMES)
 
 
 def _option_config(base: OptionBacktestConfig, **changes) -> OptionBacktestConfig:

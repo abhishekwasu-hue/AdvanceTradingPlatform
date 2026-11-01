@@ -134,7 +134,7 @@ def test_each_user_has_their_own_defaults():
 
 
 def test_a_stored_value_a_newer_release_wrote_still_reads():
-    raw = json.dumps({"max_lots": 2, "stop_source": "swing", "exit_rules": {"trailing_stop_pct": 99}})
+    raw = json.dumps({"max_lots": 2, "stop_source": "swing", "exit_rules": {"trailing_stop_pct": 100}})   # M68 PR-3: 99 is valid now
     # the unknown key is dropped, the bad exit value takes its default (empty), the lots are kept
     assert prefs.stored_value(NS, raw) == {**EMPTY, "max_lots": 2, "exit_rules": {"trailing_stop_pct": None, "break_even_at_r": None,
                                                                                   "time_exit_minutes": None, "time_exit_at": None}}

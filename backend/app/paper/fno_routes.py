@@ -278,7 +278,7 @@ class GroupExitBody(BaseModel):
     target_value: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     spot_symbol: Optional[str] = Field(default=None, pattern=SYMBOL)
     spot_exchange: Optional[Literal["NSE", "BSE"]] = None
-    check_mode: Optional[Literal["TOUCH", "CLOSE"]] = None     # M68 PR-3 (TS1-031): None = his setting, else asked
+    check_mode: Literal["TOUCH", "CLOSE"] | None = None     # M68 PR-3 (TS1-031): None = his setting, else asked
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
     basket_ref: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9:_-]{1,64}$")
     client_ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")

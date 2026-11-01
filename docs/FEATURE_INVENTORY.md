@@ -41,7 +41,7 @@ Facts from the code that the tables rely on:
 |---|---|---|---|---|---|
 | accounts | Multi-broker account registry, fan-out plan | `/api/accounts` | `ui_v2` + `multi_account` | PARTIAL | unknown until the owner's check |
 | admin | Platform admin console, bootstrap, view-as | `/api/admin`, `/api/admin/console`, `/api/admin/view-sessions` | `growth_v2` (console cards only) | WORKS | unknown until the owner's check |
-| ai | Copilot chat, strategist, own AI keys, research, vision | `/api/ai`, `/api/ai/byok`, `/api/ai/platform` (M72 PR-1b), `/api/copilot-watch` (M72 PR-7) | `ai_copilot` (ON); `ai_one_key`, `ai_agent`, `ai_research`; `ai_platform_key`, `copilot_watch` (OFF) | PARTIAL (no key: rule-based answers) | unknown until the owner's check |
+| ai | Copilot chat, strategist, own AI keys, research, vision | `/api/ai`, `/api/ai/byok`, `/api/ai/platform` (M72 PR-1b), `/api/copilot-watch` (M72 PR-7), `/api/copilot-memory` (M72 PR-11) | `ai_copilot` (ON); `ai_one_key`, `ai_agent`, `ai_research`; `ai_platform_key`, `copilot_watch`, `copilot_memory` (OFF) | PARTIAL (no key: rule-based answers) | unknown until the owner's check |
 | alerts | Alert rules, channels, webhooks, push, outbox | `/api/alerts`, `/api/alert-channels`, `/api/alert-webhooks`, `/api/admin/alerts` | `alert_webhooks`, `alerts_reliable_outbox`, `mobile_push`, `screener_intrabar` | PARTIAL (browser push needs VAPID) | unknown until the owner's check |
 | audit | Hash-chained audit log | - | - | INTERNAL | - |
 | auth | Sign-in, sessions, two-factor, Google + Facebook sign-in (M73: linking, Settings › Account ways to sign in), lockout | `/api/auth` | `self_signup` (ON); `beta_cohort_gate` | WORKS | unknown until the owner's check |

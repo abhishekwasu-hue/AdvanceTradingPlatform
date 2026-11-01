@@ -694,6 +694,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # M72 PR-7: the caller's own Copilot watch choices (own prefs; whether Telegram reaches the caller's own chat).
     ("GET", "/api/copilot-watch/settings"): "member: the caller's own Copilot watch choices and whether Telegram reaches the caller's own chat",
     ("PUT", "/api/copilot-watch/settings"): S_OWN_PREFS,
+    # M72 PR-11: what the Copilot remembers about the caller (own prefs) and suggestions from the caller's own rows.
+    ("GET", "/api/copilot-memory"): "member: the caller's own Copilot memory and suggestions from the caller's own watchlists, trades and questions",
+    ("PUT", "/api/copilot-memory"): S_OWN_PREFS,
+    ("DELETE", "/api/copilot-memory"): "self: deletes the caller's own Copilot memory (works whatever the flags)",
     ("GET", "/api/news-events"): P_NEWS_EVENTS,
     ("POST", "/api/news-events"): "trader",
     ("DELETE", "/api/news-events/{event_id}"): "trader",

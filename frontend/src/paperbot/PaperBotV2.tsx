@@ -12,7 +12,7 @@ import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import type { PageProps } from "../routes";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2, PageTitleV2, StateChipV2 } from "../trading/PartsV2";
-import type { CustomStrategyResponse, Deployment, PortfolioExposure, StrategyInfo, TradeRecord } from "../types";
+import type { CustomStrategyResponse, Deployment, ExpiryRule, PortfolioExposure, StrategyInfo, StrikeRule, TradeRecord } from "../types";
 import { BotWhyV2 } from "./BotWhyV2";
 import ReportCardV2 from "./ReportCardV2";
 import { BotPositionsV2, botPositions } from "./BotPositionsV2";
@@ -30,6 +30,7 @@ import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
 import { APPROVAL_MODE_KEY, ENTRY_MODE_CHOICES, LOTS_KEY, ORDER_TYPE_KEY, POSITION_SIZE_WHERE, PROTECTION_KEY, approvalModeOf, orderDefaultsOf,
   sizesItself, useTradeSettings, type EntryModeChoice } from "../settings/tradeSettings";
+import { NEEDS, RULE_STRIKE_STRUCTURES, optionDefaultsOf, withOwnOptions } from "../settings/optionDefaults";
 import { SaveAsDefault } from "../settings/SaveAsDefault";
 import { draftFromState, formSymbol } from "../copilot/strategyDraft";
 import CopilotDraftV2 from "./CopilotDraftV2";
@@ -58,6 +59,9 @@ const ENTRY_STYLES: ComboOption[] = [
   { value: "MARKET", label: "Market" }, { value: "PROTECTED_LIMIT", label: "Limit with price protection" },
 ];
 const ENTRY_STYLE_MISSING = "Choose how this bot sends its entries.";
+// M68 PR-4: nothing pre-chosen - his own Trade settings › Options, else he picks here.
+const EXPIRY_CHOICES = [{ value: "NEAREST", label: "Nearest" }, { value: "NEXT", label: "Next" }, { value: "MONTHLY", label: "Monthly" }];
+const STRIKE_CHOICES = [{ value: "ATM", label: "At the money (ATM)" }, { value: "ITM", label: "In the money" }, { value: "OTM", label: "Out of the money" }];
 /** M68 PR-6 (TS1-060): "New entries" - none pre-selected (Trade settings > Automation). */
 const MODE_OPTIONS: ComboOption[] = ENTRY_MODE_CHOICES.map((c) => ({ value: c.value, label: c.label }));
 const MODE_MISSING = "Choose whether this bot places entries by itself or asks you first.";
@@ -451,7 +455,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
 }) {
   const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), timeframe: useId(), stop: useId(),
     target: useId(), times: useId(), wave: useId(), share: useId(), exitNotes: useId(), construction: useId(), width: useId(), startWhy: useId(),
-    entry: useId(), band: useId(), lots: useId(), mode: useId() };
+    entry: useId(), band: useId(), expiry: useId(), strike: useId(), offset: useId(), lots: useId(), mode: useId() };
   const [useDefaults, setUseDefaults] = useState(true);
   const ready = useMemo(() => (library ?? []).filter((s) => READY.some((r) => r.id === s.id))
     .sort((a, b) => READY.findIndex((r) => r.id === a.id) - READY.findIndex((r) => r.id === b.id)), [library]);
@@ -470,6 +474,10 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const ownSettings = useTradeSettings(true);
   const mine = orderDefaultsOf(ownSettings);
   const [entryStyle, setEntryStyle] = useState<"" | "MARKET" | "PROTECTED_LIMIT">("");
+  // M68 PR-4 (TS1-019 / 037): the expiry and the strike a one-tap option bot needs, asked here while his Trade settings has none
+  const [expiryPick, setExpiryPick] = useState<"" | ExpiryRule>("");
+  const [strikePick, setStrikePick] = useState<"" | StrikeRule>("");
+  const [offsetText, setOffsetText] = useState("");
   const [bandText, setBandText] = useState("");
   const [lotsText, setLotsText] = useState("");
   // M68 PR-6 (TS1-060): whether this bot places entries by itself or asks first - his Trade settings, else asked here.
@@ -559,7 +567,9 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const line = picked ? picked.idea
     : strategyLine(strategyId, info) || (custom.some((c) => c.strategy_id === strategyId) ? "Your own strategy from Build a strategy." : "");
   const offered = paperBotRequestWithDefaults(effectiveId, symbol, info, defaults, approvalAllowed).applied;
-  const built = paperBotRequestWithDefaults(effectiveId, symbol, info, defaults, approvalAllowed, useDefaults).request;
+  // M68 PR-4 (TS1-019 / 037): his own Trade settings › Options fill a side / expiry / strike the request does not name.
+  const built = withOwnOptions(paperBotRequestWithDefaults(effectiveId, symbol, info, defaults, approvalAllowed, useDefaults).request,
+    optionDefaultsOf(ownSettings));
   // SB-UX SU6: the contract the strategy builder tested replaces the form's own while that strategy stays picked.
   const testedContract = preselect && preselect.strategyId === strategyId ? preselect.contract ?? null : null;
   // REV-H3: a request that names no side and no structure asks for them here (nothing is pre-chosen); a structure with
@@ -588,9 +598,20 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const style = mine.botOrderStyle ?? (entryStyle || null);
   const askBand = style === "PROTECTED_LIMIT" && mine.protectionPct === undefined;
   const band = askBand ? bandOf(bandText) : null;
-  const sent = askEntry && style
+  const styled = askEntry && style
     ? { ...request, order_style: style, ...(band !== null ? { market_protection_pct: band } : {}) }
     : askBand && band !== null ? { ...request, market_protection_pct: band } : request;
+  const derived = styled.instrument_kind === "OPTION" || styled.instrument_kind === "FUTURE";
+  const askExpiry = derived && !styled.expiry_rule;
+  const askStrike = styled.instrument_kind === "OPTION" && RULE_STRIKE_STRUCTURES.includes(styled.option_strategy ?? "SINGLE") && !styled.strike_rule;
+  const offsetPick = /^\d{1,6}$/.test(offsetText.trim()) && Number(offsetText) >= 1 ? Number(offsetText) : null;
+  const sent = {
+    ...styled,
+    ...(askExpiry && expiryPick ? { expiry_rule: expiryPick } : {}),
+    ...(askStrike && strikePick ? { strike_rule: strikePick, strike_offset: strikePick === "ATM" ? 0 : offsetPick ?? 0 } : {}),
+  };
+  const optionWhy = askExpiry && !expiryPick ? `${NEEDS}Expiry.` : askStrike && !strikePick ? `${NEEDS}Strike.`
+    : askStrike && strikePick !== "ATM" && offsetPick === null ? `${NEEDS}Strikes away from ATM.` : null;
   // M68 PR-2 (TS1-019): no size of the bot's own (an idea's or a tested one) and none in his Trade settings: the form asks.
   const askLots = !sent.max_lots && !sizesItself(ownSettings);
   const botLots = askLots ? lotsOf(lotsText) : null;
@@ -602,7 +623,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const summary = startSummaryParts(symbol, info, sentWithMode);
   const entryWhy = askEntry && !style ? ENTRY_STYLE_MISSING : askBand && band === null ? BAND_MISSING
     : askLots && botLots === null ? (stockBot ? SHARES_MISSING : LOTS_MISSING) : askMode && !entryModePick ? MODE_MISSING : null;
-  const startWhy = (effectiveId ? constructionProblem(sentWithMode) : null) ?? (effectiveId ? entryWhy : null);
+  const startWhy = (effectiveId ? constructionProblem(sentWithMode) : null) ?? (effectiveId ? optionWhy ?? entryWhy : null);
   const widthLabel = (s: OptionStrategy | undefined) => (s && (WINGED_STRUCTURES.includes(s) || s === "LONG_BUTTERFLY") ? "Wing width" : "Short strike distance");
   const setExit = (patch: Partial<ExitPick>) => { setExitPick((p) => ({ ...(exitsNow ?? p), ...patch })); setResult(null); };
 
@@ -743,17 +764,50 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
                 <Combobox id={ids.construction} label="How this bot trades the option" value={pickedConstruction} className="w-full"
                   placeholder="Choose one" options={choices}
                   onChange={(v) => { setConstruction(v as BotConstruction); setResult(null); }} />
-                <p className="mt-space-1 text-t13 text-fg-muted">
-                  {swing ? SWING_CONSTRUCTION_NOTE : "The strategy only gives the side. Nothing is chosen for you."}
-                </p>
+                {(pickedConstruction === "BUY" || pickedConstruction === "WRITE") && (
+                  <SaveAsDefault key={pickedConstruction} fieldKey="options.option_position" value={pickedConstruction} />
+                )}
+                {/* M68 PR-4: every index bot asks this now - the note goes on demand (one visible line per card) */}
+                <Details id="paperbot.construction" className="mt-space-1">
+                  <p>{swing ? SWING_CONSTRUCTION_NOTE : "The strategy only gives the side. Nothing is chosen for you."}</p>
+                </Details>
               </div>
             )}
             {askWidth && (
               <div>
                 <label htmlFor={ids.width} className={LABEL}>{widthLabel(withConstruction(built, pickedConstruction, null).option_strategy)} (strike steps)</label>
-                <input id={ids.width} className={FIELD} inputMode="numeric" autoComplete="off" value={widthText} placeholder="1 to 20"
+                <input id={ids.width} className={FIELD} inputMode="numeric" autoComplete="off" value={widthText} placeholder="Not set"
                   aria-invalid={widthText.trim() !== "" && widthOf(widthText) === null ? true : undefined}
                   onChange={(e) => { setWidthText(e.target.value); setResult(null); }} />
+              </div>
+            )}
+          </div>
+        )}
+        {(askExpiry || askStrike) && (
+          <div className="space-y-space-3 rounded-control border border-subtle p-space-3" data-option-choice>
+            {askExpiry && (
+              <div>
+                <label htmlFor={ids.expiry} className={LABEL}>Expiry</label>
+                <Combobox id={ids.expiry} label="Expiry" value={expiryPick} className="w-full" placeholder="Choose one" options={EXPIRY_CHOICES}
+                  dataAttrs={{ "data-option-input": "expiry" }} onChange={(v) => { setExpiryPick(v as ExpiryRule); setResult(null); }} />
+                {expiryPick && <SaveAsDefault key={expiryPick} fieldKey="options.expiry_rule" value={expiryPick} />}
+              </div>
+            )}
+            {askStrike && (
+              <div>
+                <label htmlFor={ids.strike} className={LABEL}>Strike</label>
+                <Combobox id={ids.strike} label="Strike" value={strikePick} className="w-full" placeholder="Choose one" options={STRIKE_CHOICES}
+                  dataAttrs={{ "data-option-input": "strike" }} onChange={(v) => { setStrikePick(v as StrikeRule); setResult(null); }} />
+                {strikePick && <SaveAsDefault key={strikePick} fieldKey="options.strike_rule" value={strikePick} />}
+                {(strikePick === "ITM" || strikePick === "OTM") && (
+                  <div className="mt-space-2">
+                    <label htmlFor={ids.offset} className={LABEL}>Strikes away from ATM</label>
+                    <input id={ids.offset} className={FIELD} inputMode="numeric" autoComplete="off" value={offsetText} placeholder="Not set"
+                      aria-invalid={offsetText.trim() !== "" && offsetPick === null ? true : undefined} data-option-input="offset"
+                      onChange={(e) => { setOffsetText(e.target.value); setResult(null); }} />
+                    {offsetPick !== null && <SaveAsDefault fieldKey="options.strike_offset" value={offsetPick} />}
+                  </div>
+                )}
               </div>
             )}
           </div>

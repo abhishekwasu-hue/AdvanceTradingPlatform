@@ -80,8 +80,8 @@ async def for_user(session: AsyncSession, user: User, now: Optional[datetime] = 
     flags = smart_execution.settlement_flags(holdings, spots, to_ist(now).date(), settings)
     unpriced = sorted({h.underlying for h in holdings if h.underlying not in spots and h.right != "FUT"})
     return {"warnings": flags, "unpriced": unpriced,
-            "settings": {"days_before": settings.settlement_days_before, "band_pct": settings.settlement_band_pct,
-                         "telegram": settings.settlement_telegram},
+            "settings": {"on": settings.settlement_warning, "days_before": settings.settlement_days_before,
+                         "band_pct": settings.settlement_band_pct, "telegram": settings.settlement_telegram},
             "note": "Stock F&O held into expiry settles by delivery. Close or roll before expiry if you do not want delivery. "
                     "Information only: nothing is closed for you.",
             "as_of": now.isoformat()}

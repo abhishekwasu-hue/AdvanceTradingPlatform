@@ -9,6 +9,7 @@ import SignInScreen from "../auth/SignInScreen";
 import { deviceLabel } from "../auth/deviceLabel";
 import { type MfaStatus, type SessionInfo } from "../types";
 import MfaCard from "../components/MfaCard";
+import SignInMethodsCardV2 from "../settings/SignInMethodsCardV2";
 import { Card } from "../components/ui";
 import { isAdminViewer } from "../ui/ComingSoon";
 import { ErrorState } from "../ui/ErrorState";
@@ -139,6 +140,7 @@ export default function AccountPage() {
           <p className="mt-2 text-xs text-fg-muted">Derived from your role; your organisation's owner can deny or grant individual permissions from the Team tab.</p>
         </Card>
       )}
+      {v2 && <SignInMethodsCardV2 />}{/* M73 SL-2: link / unlink Google, Facebook (ui_v2) */}
       <MfaCard status={mfaStatus} onChange={() => api.mfaStatus().then(setMfaStatus).catch((e) => toast.error(errorSentence(e)))} />
       <Card title="Change password">
         <form

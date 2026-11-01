@@ -207,7 +207,10 @@ def test_the_tools_read_only_the_traders_own_rows():
         (weekly,) = _tools(me["id"], ("get_weekly_review", {}))
     finally:
         _run(_flag("discipline_engine", False))
-    assert weekly.ok and weekly.data["weeks_read"] == 4 and weekly.data["lines"] and weekly.data["totals"]["trades"] >= 1
+    # A trade belongs to the IST week of its entry: in the first hours of an IST Monday the seeded trades fall in the
+    # previous week, so count the review's current week together with its history weeks.
+    read = weekly.data["totals"]["trades"] + sum(h["trades"] for h in weekly.data["history"])
+    assert weekly.ok and weekly.data["weeks_read"] == 4 and weekly.data["lines"] and read >= 1
     (empty,) = _tools(other["id"], ("get_my_positions", {}))
     assert empty.ok and empty.data["count"] == 0                                              # never the teammate's rows
 

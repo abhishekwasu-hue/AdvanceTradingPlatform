@@ -50,6 +50,30 @@ def _register(email: str) -> None:
         _register_new(email)
 
 
+def _subject(email: str) -> str:
+    """The fake Google's stable account id for an address (one Google account per e-mail)."""
+    return "sub-" + email.strip().lower()
+
+
+def _link_google(email: str, subject: str = "") -> None:
+    """M73 SL-2: the account has linked this Google account (Settings › Account, or a confirmed link) - only then does
+    a Google sign-in sign it in directly."""
+    from app.db.models import UserIdentityRecord
+    subject = subject or _subject(email)
+
+    async def go():
+        async with _session_factory() as session:
+            user = await session.scalar(select(User).where(User.email == email))
+            old = await session.scalar(select(UserIdentityRecord).where(UserIdentityRecord.provider == "google",
+                                                                        UserIdentityRecord.subject == subject))
+            if old is not None:
+                await session.delete(old)
+                await session.flush()
+            session.add(UserIdentityRecord(user_id=user.id, provider="google", subject=subject, email_at_link=email))
+            await session.commit()
+    _run(go())
+
+
 class FakeGoogle:
     """Google's token endpoint and key set. `claims` overrides the ID token's claims; `sign_with` its key."""
 
@@ -64,7 +88,7 @@ class FakeGoogle:
 
     def id_token(self, email: str) -> str:
         now = int(time.time())
-        claims = {"iss": "https://accounts.google.com", "aud": CLIENT_ID, "azp": CLIENT_ID, "sub": "1234567890",
+        claims = {"iss": "https://accounts.google.com", "aud": CLIENT_ID, "azp": CLIENT_ID, "sub": _subject(email),
                   "email": email, "email_verified": True, "iat": now, "exp": now + 3600, "nonce": self.nonce}
         claims.update(self.claims)
         claims = {k: v for k, v in claims.items() if v is not None}
@@ -118,8 +142,11 @@ def _flags(monkeypatch, **values: bool) -> None:
     async def legal_enabled(session, tenant_id=None):
         return values.get("legal_pages", False)
 
-    monkeypatch.setattr(google_routes, "flag_enabled", flag_enabled)
-    monkeypatch.setattr(google_routes, "legal_enabled", legal_enabled)
+    from app.auth import routes as auth_routes
+    from app.auth import social_routes
+    for module in (social_routes, auth_routes):
+        monkeypatch.setattr(module, "flag_enabled", flag_enabled)
+        monkeypatch.setattr(module, "legal_enabled", legal_enabled)
 
 
 def _start() -> tuple:
@@ -187,8 +214,8 @@ def _sessions(user_id: int) -> list:
 def test_providers_false_and_routes_404_without_credentials(monkeypatch):
     monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_ID", "")
     monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_SECRET", "")
-    assert client.get("/api/auth/providers").json() == {"google": False}
-    assert client.get("/api/v1/auth/providers").json() == {"google": False}
+    assert client.get("/api/auth/providers").json()["google"] is False
+    assert client.get("/api/v1/auth/providers").json()["google"] is False
     assert client.get("/api/auth/google/start", follow_redirects=False).status_code == 404
     assert client.get("/api/auth/google/callback?state=x&code=y", follow_redirects=False).status_code == 404
 
@@ -196,21 +223,21 @@ def test_providers_false_and_routes_404_without_credentials(monkeypatch):
 def test_providers_false_with_only_one_credential(monkeypatch):
     monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_ID", CLIENT_ID)
     monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_SECRET", "")
-    assert client.get("/api/auth/providers").json() == {"google": False}
+    assert client.get("/api/auth/providers").json()["google"] is False
     monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_ID", "")
     monkeypatch.setattr(config, "GOOGLE_OAUTH_CLIENT_SECRET", CLIENT_SECRET)
-    assert client.get("/api/auth/providers").json() == {"google": False}
+    assert client.get("/api/auth/providers").json()["google"] is False
 
 
 def test_providers_false_in_production_without_public_base_url(monkeypatch, configured):
     monkeypatch.setattr(config, "PUBLIC_BASE_URL", "")
     monkeypatch.setattr(config, "ENVIRONMENT", "production")
-    assert client.get("/api/auth/providers").json() == {"google": False}
+    assert client.get("/api/auth/providers").json()["google"] is False
 
 
 def test_providers_true_with_both_credentials(configured):
     body = client.get("/api/auth/providers").json()
-    assert body == {"google": True}
+    assert body["google"] is True and [p["id"] for p in body["providers"]] == ["google"]
     assert CLIENT_SECRET not in json.dumps(body) and CLIENT_ID not in json.dumps(body)
 
 
@@ -266,14 +293,14 @@ def test_callback_state_mismatch_is_refused(configured, fake):
     response = _callback(fake, "gs-state@example.com", state="not-the-state-we-issued")
     assert response.status_code == 302
     loc = _location(response)
-    assert loc["origin"] == PUBLIC and loc["path"] == "/account" and loc["query"] == {"google_error": "expired"}
+    assert loc["origin"] == PUBLIC and loc["path"] == "/account" and loc["query"] == {"social_error": "expired", "provider": "google"}
     assert fake.token_requests == []                           # the code is never exchanged
     assert "atp_refresh" not in response.headers.get("set-cookie", "")
 
 
 def test_callback_without_the_flow_cookie_is_refused(configured, fake):
     response = _callback(fake, "gs-state@example.com", cookie=None)
-    assert _location(response)["query"] == {"google_error": "expired"}
+    assert _location(response)["query"] == {"social_error": "expired", "provider": "google"}
     assert fake.token_requests == []
 
 
@@ -281,14 +308,14 @@ def test_callback_cancelled_at_google(configured, fake):
     _, cookie, params = _start()
     response = client.get("/api/auth/google/callback", params={"error": "access_denied", "state": params["state"][0]},
                           headers={"cookie": f"{google.FLOW_COOKIE}={cookie}"}, follow_redirects=False)
-    assert _location(response)["query"] == {"google_error": "cancelled"}
+    assert _location(response)["query"] == {"social_error": "cancelled", "provider": "google"}
 
 
 def test_callback_token_exchange_failure(configured, fake):
     _register("gs-exchange@example.com")
     fake.token_status = 400
     response = _callback(fake, "gs-exchange@example.com")
-    assert _location(response)["query"] == {"google_error": "failed"}
+    assert _location(response)["query"] == {"social_error": "failed", "provider": "google"}
 
 
 def test_token_exchange_sends_secret_verifier_and_redirect(configured, fake):
@@ -313,7 +340,7 @@ def test_callback_bad_id_token_is_refused(configured, fake, claims):
     before = len(_events("gs-bad-token@example.com"))
     fake.claims = claims
     response = _callback(fake, "gs-bad-token@example.com")
-    assert _location(response)["query"] == {"google_error": "failed"}
+    assert _location(response)["query"] == {"social_error": "failed", "provider": "google"}
     assert "atp_refresh" not in response.headers.get("set-cookie", "")
     assert len(_events("gs-bad-token@example.com")) == before
 
@@ -322,14 +349,14 @@ def test_callback_id_token_signed_by_another_key_is_refused(configured, fake):
     _register("gs-forged@example.com")
     fake.sign_with = _OTHER_KEY
     response = _callback(fake, "gs-forged@example.com")
-    assert _location(response)["query"] == {"google_error": "failed"}
+    assert _location(response)["query"] == {"social_error": "failed", "provider": "google"}
 
 
 def test_callback_unverified_email_is_refused(configured, fake):
     _register("gs-unverified@example.com")
     fake.claims = {"email_verified": False}
     response = _callback(fake, "gs-unverified@example.com")
-    assert _location(response)["query"] == {"google_error": "unverified"}
+    assert _location(response)["query"] == {"social_error": "unverified", "provider": "google"}
     assert not any(e.success for e in _events("gs-unverified@example.com") if e.reason == "google")
 
 
@@ -337,7 +364,7 @@ def test_callback_inactive_user_is_refused(configured, fake):
     _register("gs-inactive@example.com")
     _set_user("gs-inactive@example.com", is_active=False)
     response = _callback(fake, "gs-inactive@example.com")
-    assert _location(response)["query"] == {"google_error": "inactive"}
+    assert _location(response)["query"] == {"social_error": "inactive", "provider": "google"}
     assert _events("gs-inactive@example.com")[-1].reason == "inactive"
     assert "atp_refresh" not in response.headers.get("set-cookie", "")
 
@@ -345,7 +372,7 @@ def test_callback_inactive_user_is_refused(configured, fake):
 def test_unknown_email_with_self_signup_off_is_refused_with_the_message(configured, fake, monkeypatch):
     _flags(monkeypatch, self_signup=False)
     response = _callback(fake, "gs-stranger@example.com")
-    assert _location(response)["query"] == {"google_error": "no_account"}
+    assert _location(response)["query"] == {"social_error": "no_account", "provider": "google"}
     assert _user("gs-stranger@example.com") is None                     # no account was created
     event = _events("gs-stranger@example.com")[-1]
     assert event.success is False and event.reason == "google_no_account"
@@ -356,12 +383,13 @@ def test_unknown_email_with_self_signup_off_is_refused_with_the_message(configur
 
 def test_existing_user_is_signed_in_like_the_password_login(configured, fake):
     _register("gs-ok@example.com")
+    _link_google("gs-ok@example.com")
     user = _user("gs-ok@example.com")
     before = len(_sessions(user.id))
     response = _callback(fake, "GS-OK@example.com")                     # Google's casing does not matter
     assert response.status_code == 302
     loc = _location(response)
-    assert loc["origin"] == PUBLIC and loc["path"] == "/" and loc["query"] == {"google": "ok"} and loc["fragment"] == ""
+    assert loc["origin"] == PUBLIC and loc["path"] == "/" and loc["query"] == {"social": "ok", "provider": "google"} and loc["fragment"] == ""
     cookies = response.headers.get_list("set-cookie")
     refresh = next(c for c in cookies if c.startswith("atp_refresh="))
     assert "httponly" in refresh.lower() and "samesite=strict" in refresh.lower() and "path=/api" in refresh.lower()
@@ -386,24 +414,26 @@ def test_existing_user_is_signed_in_like_the_password_login(configured, fake):
 
 def test_the_same_flow_cannot_be_used_twice(configured, fake):
     _register("gs-replay@example.com")
+    _link_google("gs-replay@example.com")
     _, cookie, params = _start()
     fake.state["email"] = "gs-replay@example.com"  # type: ignore[attr-defined]
     fake.nonce = params["nonce"][0]
     query = {"state": params["state"][0], "code": AUTH_CODE}
     first = client.get("/api/auth/google/callback", params=query, headers={"cookie": f"{google.FLOW_COOKIE}={cookie}"},
                        follow_redirects=False)
-    assert _location(first)["query"] == {"google": "ok"}
+    assert _location(first)["query"] == {"social": "ok", "provider": "google"}
     # The browser drops the cookie; a replay of the callback URL without it is refused before any exchange.
     client.cookies.clear()
     exchanges = len(fake.token_requests)
     second = client.get("/api/auth/google/callback", params=query, follow_redirects=False)
-    assert _location(second)["query"] == {"google_error": "expired"}
+    assert _location(second)["query"] == {"social_error": "expired", "provider": "google"}
     assert len(fake.token_requests) == exchanges
 
 
 def test_mfa_user_goes_to_the_mfa_step(configured, fake):
     from app.auth import mfa
     _register("gs-mfa@example.com")
+    _link_google("gs-mfa@example.com")
     user = _user("gs-mfa@example.com")
     secret = mfa.generate_secret()
 
@@ -417,8 +447,8 @@ def test_mfa_user_goes_to_the_mfa_step(configured, fake):
     before = len(_sessions(user.id))
     response = _callback(fake, "gs-mfa@example.com")
     loc = _location(response)
-    assert loc["path"] == "/account" and loc["query"] == {"google": "mfa"}
-    assert loc["fragment"].startswith("google_mfa=")
+    assert loc["path"] == "/account" and loc["query"] == {"social": "mfa", "provider": "google"}
+    assert loc["fragment"].startswith("social_mfa=")
     assert not any(c.startswith("atp_refresh=") for c in response.headers.get_list("set-cookie"))
     assert len(_sessions(user.id)) == before                         # no session before the code
     challenge = loc["fragment"].split("=", 1)[1]
@@ -432,18 +462,20 @@ def test_mfa_user_goes_to_the_mfa_step(configured, fake):
 def test_self_signup_on_creates_an_organisation_for_a_new_email(configured, fake, monkeypatch):
     _flags(monkeypatch, self_signup=True)
     response = _callback(fake, "gs-new@example.com")
-    assert _location(response)["query"] == {"google": "new"}
+    assert _location(response)["query"] == {"social": "new", "provider": "google"}
     user = _user("gs-new@example.com")
     assert user is not None and user.role == "OWNER" and user.email_verified_at is not None
     assert any(c.startswith("atp_refresh=") for c in response.headers.get_list("set-cookie"))
 
 
 @pytest.mark.parametrize("flag", ["beta_cohort_gate", "legal_pages"])
-def test_self_signup_that_needs_the_form_is_sent_to_the_form(configured, fake, monkeypatch, flag):
+def test_self_signup_that_needs_the_form_gets_the_finish_step(configured, fake, monkeypatch, flag):
+    """M73 SL-3 (was: sent to the form): what only a form collects is asked on the pending "finish" step."""
     _flags(monkeypatch, self_signup=True, **{flag: True})
     email = f"gs-form-{flag}@example.com".replace("_", "-")
     response = _callback(fake, email)
-    assert _location(response)["query"] == {"google_error": "signup_form"}
+    loc = _location(response)
+    assert loc["query"] == {"social": "complete", "provider": "google"} and loc["fragment"].startswith("social_pending=")
     assert _user(email) is None
 
 

@@ -9,14 +9,16 @@ Ported from the Trade repo `check_vix_spike_halt.py` (`run_vix_spike_check`, `up
   else the organisation's first usable broker session. The trading worker captures one per organisation with the flag
   on, from `VIX_GATE_CHECK_AT` (09:20 IST, five minutes after the open) every `VIX_GATE_CAPTURE_MINUTES` while NSE is
   open. A failed read is stored too, with its reason and no price.
-* **Spike pause (Trade parity).** A valid reading today whose change is at or above `VIX_GATE_SPIKE_PCT` (5, ">=")
+* **M68 PR-5 (TS1-056).** The check is each user's OWN switch with his own numbers (Settings > Trade settings > Risk
+  limits, app/risk_engine/own_risk.py): Not set = nothing is paused or cut. The flag only makes the readings exist.
+* **Spike pause (Trade parity).** A valid reading today whose change is at or above his own rise % (">=")
   pauses new **bullish** entries on `VIX_GATE_UNDERLYINGS` (NIFTY, BANKNIFTY, SENSEX - one India VIX for all three) for
   the rest of the IST day, PAPER and LIVE alike. Bearish entries and every other symbol are not touched.
 * **Timing (Trade parity).** Before `VIX_GATE_CHECK_AT` the gate is open (Trade's check has not run). After it plus
   `VIX_GATE_GRACE_MINUTES`, on a weekday, no valid reading today counts as a spike (Trade's fail-safe: a VIX it could
   not read halts the day). In between, with no reading yet, it is open with a note.
-* **High level size cut (ATP addition).** The latest fresh valid reading at or above `VIX_GATE_HIGH_LEVEL` (20) cuts the
-  risk per trade of new entries on those underlyings by `VIX_GATE_SIZE_CUT_PCT` % (50). A 100% cut refuses the entry.
+* **High level size cut (ATP addition).** The latest fresh valid reading at or above his own level cuts the risk per
+  trade of new entries on those underlyings by his own size cut %. A 100% cut refuses the entry.
 
 * **Store-first (M71 W2-D, flag `market_store_reads`).** The previous close comes from the own store's Daily (the NSE
   files, zero broker calls) when it holds the last completed session before today; else from the broker's daily
@@ -92,11 +94,12 @@ def check_time() -> time:
 
 
 def evaluate(readings: Sequence[Dict[str, Any]], *, symbol: str, direction: Optional[str], now: datetime,
-             spike_pct: float, high_level: float, size_cut_pct: float, max_age_minutes: int, underlyings: Sequence[str],
+             spike_pct: float | None, high_level: float, size_cut_pct: float, max_age_minutes: int, underlyings: Sequence[str],
              check_at: Optional[time] = None, grace_minutes: int = 10, reveal: bool = True) -> VixVerdict:
     """The verdict for one new entry from the day's India VIX readings (each {last, prev_close, captured_at, error}). Pure.
     `reveal` False (BT1b: the reading came through another member's own broker session): the same verdict, worded
-    without India VIX's values or the read error."""
+    without India VIX's values or the read error. M68 PR-5: `spike_pct` None = the spike pause (and its no-reading
+    fail-safe) is off; `high_level` 0 or `size_cut_pct` 0 = the size cut is off."""
     if not in_scope(symbol, underlyings):
         return VixVerdict(state="out_of_scope")
     at = check_at or check_time()
@@ -108,6 +111,8 @@ def evaluate(readings: Sequence[Dict[str, Any]], *, symbol: str, direction: Opti
     valid = [r for r in readings if _valid(r)]
     verdict = VixVerdict(state="normal")
     moved: Optional[str] = None
+    if not valid and spike_pct is None:
+        return VixVerdict(notes=["India VIX gate: no valid India VIX reading yet today"], state="waiting")
     if not valid:
         if ist < start + timedelta(minutes=grace_minutes) or ist.weekday() >= 5:
             return VixVerdict(notes=["India VIX gate: no valid India VIX reading yet today - open for now"], state="waiting")
@@ -115,7 +120,7 @@ def evaluate(readings: Sequence[Dict[str, Any]], *, symbol: str, direction: Opti
         verdict.state = "no_reading"
         moved = f"unknown (India VIX could not be read: {why})" if reveal else "unknown (no valid India VIX reading today)"
     else:
-        for r in valid:
+        for r in (valid if spike_pct is not None else []):
             halted, pct = spike_decision(r.get("last"), r.get("prev_close"), spike_pct)
             if halted:
                 verdict.state = "spike"
@@ -346,9 +351,11 @@ async def readings_today(session: AsyncSession, tenant_id: int, now: Optional[da
     return out
 
 
-def _evaluate(readings: Sequence[Dict[str, Any]], symbol: str, direction: Optional[str], now: datetime, reveal: bool = True) -> VixVerdict:
-    return evaluate(readings, symbol=symbol, direction=direction, now=now, spike_pct=app_config.VIX_GATE_SPIKE_PCT,
-                    high_level=app_config.VIX_GATE_HIGH_LEVEL, size_cut_pct=app_config.VIX_GATE_SIZE_CUT_PCT,
+def _evaluate(readings: Sequence[Dict[str, Any]], symbol: str, direction: Optional[str], now: datetime, reveal: bool = True,
+              own: Any = None) -> VixVerdict:
+    """M68 PR-5 (TS1-056): the user's own numbers (app/risk_engine/own_risk.OwnRisk); a number Not set = that part off."""
+    return evaluate(readings, symbol=symbol, direction=direction, now=now, spike_pct=getattr(own, "vix_change_pct", None),
+                    high_level=float(getattr(own, "vix_level", None) or 0.0), size_cut_pct=float(getattr(own, "vix_size_cut_pct", None) or 0.0),
                     max_age_minutes=app_config.VIX_GATE_MAX_AGE_MINUTES, underlyings=app_config.VIX_GATE_UNDERLYINGS,
                     grace_minutes=app_config.VIX_GATE_GRACE_MINUTES, reveal=reveal)
 
@@ -365,34 +372,49 @@ async def may_see_values(session: AsyncSession, tenant_id: int, readings: Sequen
     return viewer_id is not None and readers == {viewer_id}
 
 
+OFF_NOTE = "India VIX check: India VIX readings are not available for your organisation, so your check is not applied"
+
+
+async def _own(session: AsyncSession, tenant_id: int, user_id: int | None) -> Any:
+    from app.risk_engine import own_risk
+    return await own_risk.load(session, tenant_id, user_id)
+
+
 async def check(session: AsyncSession, tenant_id: int, *, symbol: str, direction: Optional[str], now: Optional[datetime] = None,
-                user_id: Optional[int] = None) -> VixVerdict:
-    """The gate's verdict for a new entry, or an empty one while the flag is off. The verdict is the organisation's;
-    its wording carries India VIX's values only for `user_id` when `may_see_values` allows it."""
-    if not await enabled(session, tenant_id):
+                user_id: Optional[int] = None, owner_id: int | None = None) -> VixVerdict:
+    """The gate's verdict for `user_id`'s new entry. M68 PR-5 (TS1-056): only when he switched his own India VIX check on
+    (Settings > Trade settings > Risk limits), with his own numbers; Not set = an empty verdict (nothing paused or cut).
+    The readings are the organisation's (flag `vix_gate` = India VIX is captured for it); without them his check is not
+    applied and the verdict says so. The wording carries India VIX's values only for `user_id` when `may_see_values`
+    allows it; `owner_id` (default `user_id`) is whose check it is (an order trail's wording has no `user_id`)."""
+    own = await _own(session, tenant_id, owner_id if owner_id is not None else user_id)
+    if not own.vix_gate:
         return VixVerdict()
+    if not await enabled(session, tenant_id):
+        return VixVerdict(notes=[OFF_NOTE])
     now = now or _now()
     if not in_scope(symbol, app_config.VIX_GATE_UNDERLYINGS):
         return VixVerdict(state="out_of_scope")
     readings = await readings_today(session, tenant_id, now)
-    return _evaluate(readings, symbol, direction, now, reveal=await may_see_values(session, tenant_id, readings, user_id))
+    return _evaluate(readings, symbol, direction, now, reveal=await may_see_values(session, tenant_id, readings, user_id), own=own)
 
 
 async def status(session: AsyncSession, tenant_id: int, now: Optional[datetime] = None, viewer_id: Optional[int] = None) -> Dict[str, Any]:
     """What the gate sees today, for the ticket's status strip. India VIX's raw values only for a viewer allowed to see
     them (`may_see_values`); everyone else gets the state and the reason."""
     now = now or _now()
-    on = await enabled(session, tenant_id)
+    own = await _own(session, tenant_id, viewer_id)
+    on = own.vix_gate and await enabled(session, tenant_id)          # M68 PR-5: his own switch, and readings to check
     readings = await readings_today(session, tenant_id, now) if on else []
     reveal = await may_see_values(session, tenant_id, readings, viewer_id) if on else True
     probe = _evaluate(readings, app_config.VIX_GATE_UNDERLYINGS[0] if app_config.VIX_GATE_UNDERLYINGS else "NIFTY", "LONG", now,
-                      reveal=reveal) if on else VixVerdict()
+                      reveal=reveal, own=own) if on else VixVerdict(notes=[OFF_NOTE] if own.vix_gate else [])
     latest = readings[-1] if readings and reveal else None
     return {"enabled": on, "state": probe.state, "underlyings": list(app_config.VIX_GATE_UNDERLYINGS),
             "latest": {"last": latest["last"], "prev_close": latest["prev_close"], "change_pct": latest["change_pct"], "error": latest["error"],
                        "captured_at": latest["captured_at"].isoformat()} if latest else None,
             "bullish_paused": probe.state in ("spike", "no_reading"), "size_multiplier": probe.size_multiplier,
-            "settings": {"spike_pct": app_config.VIX_GATE_SPIKE_PCT, "high_level": app_config.VIX_GATE_HIGH_LEVEL,
-                         "size_cut_pct": app_config.VIX_GATE_SIZE_CUT_PCT, "max_age_minutes": app_config.VIX_GATE_MAX_AGE_MINUTES,
+            "settings": {"spike_pct": own.vix_change_pct, "high_level": own.vix_level,
+                         "size_cut_pct": own.vix_size_cut_pct, "max_age_minutes": app_config.VIX_GATE_MAX_AGE_MINUTES,
                          "check_at": app_config.VIX_GATE_CHECK_AT, "grace_minutes": app_config.VIX_GATE_GRACE_MINUTES},
             "messages": probe.reasons + probe.notes}

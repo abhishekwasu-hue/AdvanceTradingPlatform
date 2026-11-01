@@ -48,7 +48,9 @@ class TradingDisableBody(BaseModel):
 
 
 class RiskCeilingsBody(BaseModel):
-    values: Dict[str, float] = Field(default_factory=dict, max_length=10)
+    # M68 PR-5 (TS1-048): a number sets a ceiling, null clears it (no ceiling); `tenant_id` = one team, empty = every team.
+    values: Dict[str, float | None] = Field(default_factory=dict, max_length=10)
+    tenant_id: int | None = None
 
 
 # LD-7: every open page polls the public status (7 queries: two controls, five holiday lists), and the answer is the same
@@ -100,15 +102,20 @@ async def put_brokers(body: BrokersBody, user: User = Depends(require_role()), s
 
 
 @admin_router.get("/risk-ceilings")
-async def get_risk_ceilings(session: AsyncSession = Depends(get_session)) -> dict:
-    """Phase V1: the hard ceilings every tenant's risk settings stay under."""
-    return await controls.risk_ceilings(session)
+async def get_risk_ceilings(tenant_id: int | None = None, session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase V1 / M68 PR-5: the ceilings a platform admin set for every organisation (no `tenant_id`) or for one team -
+    every key, null = no ceiling (the default: none)."""
+    return await controls.admin_risk_ceilings(session, tenant_id)
 
 
 @admin_router.put("/risk-ceilings")
 async def put_risk_ceilings(body: RiskCeilingsBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    if body.tenant_id is not None:
+        from app.db.models import Tenant
+        if await session.get(Tenant, body.tenant_id) is None:
+            raise HTTPException(status_code=404, detail="No such organisation")
     try:
-        return await controls.set_risk_ceilings(session, user, body.values)
+        return await controls.set_risk_ceilings(session, user, body.values, body.tenant_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

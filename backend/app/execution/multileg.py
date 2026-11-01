@@ -111,8 +111,11 @@ async def execute_structure(
     # M68 PR-1 (TS1-008): the holding is the bot's / proposal's, else the user's Trade settings; Not set = refused below.
     from app.execution import order_defaults
     holding = holding or (await order_defaults.load(session, user)).holding
-    # M55 T1: only a defined-risk credit structure is ever held for days (SWING); anything else stays INTRADAY.
-    held = holding == "SWING" and can_hold_for_days(structure.strategy)
+    # M55 T1: only a defined-risk credit structure is held for days (SWING); M68 PR-5 (TS1-041): a written straddle /
+    # strangle too when the user switched that on. Anything else stays INTRADAY.
+    from app.risk_engine import own_risk
+    written = (await own_risk.for_user(session, user)).overnight_short_options if holding == "SWING" else False
+    held = holding == "SWING" and can_hold_for_days(structure.strategy, written_overnight=written)
     product = "NRML" if held else "MIS"
     tenant = await session.get(Tenant, user.tenant_id)
     execution_mode = ExecutionMode(mode)
@@ -195,7 +198,7 @@ async def execute_structure(
         if cfg.capital is None:
             cfg = cfg.with_capital(await capital_basis(session, user))
     # Phase V1: ceilings, then the guardian's entry rules (cool-down, drawdown ladder, events).
-    cfg, guardian_notes = clamp_config(cfg, await risk_ceilings(session))
+    cfg, guardian_notes = clamp_config(cfg, await risk_ceilings(session, user.tenant_id))
     state = await build_trading_day_state(session, user)
     daily_amount = cfg.daily_loss_amount()
     daily_limit = -daily_amount if daily_amount is not None else -math.inf
@@ -206,7 +209,7 @@ async def execute_structure(
         guardian_notes.extend(cap_notes)
     guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=structure.underlying_symbol, cfg=cfg,
                               # no user_id: stored and notified org-wide - number-free VIX wording (BT1b)
-                              direction=signal.direction.value) if state.daily_pnl > daily_limit else GuardianVerdict()
+                              direction=signal.direction.value, owner_id=user.id) if state.daily_pnl > daily_limit else GuardianVerdict()
     if guard.reasons:
         await _reject_all(session, orders, guard.reasons)
         await notify(session, user.tenant_id, NotificationType.RISK_REJECTION, title=f"Structure refused by the risk guardian: {structure.underlying_symbol}",

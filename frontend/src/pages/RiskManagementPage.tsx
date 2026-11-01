@@ -44,7 +44,7 @@ export default function RiskManagementPage() {
   const [evDate, setEvDate] = useState(new Date().toISOString().slice(0, 10));
   const [evUnderlying, setEvUnderlying] = useState("");
   const [evKind, setEvKind] = useState("OTHER");
-  const [evAction, setEvAction] = useState<"BLOCK" | "SIZE_CUT">("SIZE_CUT");
+  const [evAction, setEvAction] = useState<"BLOCK" | "SIZE_CUT" | "">("");   // M68 PR-5 (TS1-058): asked, never pre-picked
   const [evCut, setEvCut] = useState("");
   const [evStart, setEvStart] = useState("");
   const [evEnd, setEvEnd] = useState("");
@@ -64,6 +64,7 @@ export default function RiskManagementPage() {
 
   async function addEvent() {
     setError(null);
+    if (!evAction) { setError("Choose what the event day does, then add it."); return; }
     try {
       await api.createMarketEvent({
         event_date: evDate, underlying: evUnderlying || null, kind: evKind, action: evAction,
@@ -230,7 +231,8 @@ export default function RiskManagementPage() {
           <select className="rounded bg-surface-2 border border-border px-2 py-1" value={evKind} onChange={(e) => setEvKind(e.target.value)}>
             {EVENT_KINDS.map((k) => <option key={k} value={k}>{k.replace(/_/g, " ")}</option>)}
           </select>
-          <select className="rounded bg-surface-2 border border-border px-2 py-1" value={evAction} onChange={(e) => setEvAction(e.target.value as "BLOCK" | "SIZE_CUT")}>
+          <select className="rounded bg-surface-2 border border-border px-2 py-1" value={evAction} onChange={(e) => setEvAction(e.target.value as "BLOCK" | "SIZE_CUT" | "")}>
+            <option value="">Not set</option>
             <option value="SIZE_CUT">Size cut</option>
             <option value="BLOCK">Block entries</option>
           </select>

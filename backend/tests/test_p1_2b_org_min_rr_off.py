@@ -89,7 +89,9 @@ def _live(cfg: RiskConfig) -> List[bool]:
 
 def test_no_built_in_minimum():
     assert RiskConfig().min_risk_reward == 0.0
-    assert RiskSettingsRecord.__table__.c.min_risk_reward.default.arg == 0.0
+    # M68 PR-5 (TS1-053): the column is NULL = not set (no 0 sentinel default any more)
+    column = RiskSettingsRecord.__table__.c.min_risk_reward
+    assert column.nullable and (column.default is None or column.default.arg is None) and column.server_default is None
 
 
 def test_regression_no_engine_filters_by_reward_risk_when_nothing_is_set():
@@ -171,7 +173,8 @@ def test_the_api_starts_unset_keeps_an_own_value_and_reads_an_old_row_as_unset()
     assert _live(_tenant_cfg(me["tenant_id"])) == [True] * len(ATTEMPTS)
     assert client.put("/api/risk-settings", headers=me["headers"], json={**body, "min_risk_reward": 0}).json()["min_risk_reward"] == 0.0
     assert client.put("/api/risk-settings", headers=me["headers"], json={**body, "min_risk_reward": -1}).status_code == 400
-    assert client.put("/api/risk-settings", headers=me["headers"], json={**body, "min_risk_reward": 11}).status_code == 400
+    # M68 PR-5 (TS1-050): no ATP top on his own minimum (was 10)
+    assert client.put("/api/risk-settings", headers=me["headers"], json={**body, "min_risk_reward": 11}).json()["min_risk_reward"] == 11
 
 
 def test_exits_never_pass_through_the_minimum():

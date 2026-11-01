@@ -73,6 +73,16 @@ export function orderDefaultsOf(view: TradeSettingsView | null | undefined): Ord
   return out;
 }
 
+// ---------------------------------------------------------------- M68 PR-5: Risk limits for the forms
+
+export const EVENT_ACTION_KEY = "risk_limits.event_default_action";
+
+/** TS1-058: the trader's own saved starting choice for a market event day he adds (none: the form asks). */
+export function eventActionOf(view: TradeSettingsView | null | undefined): "BLOCK" | "SIZE_CUT" | undefined {
+  const f = view?.sections.flatMap((s) => s.fields).find((x) => x.key === EVENT_ACTION_KEY && x.saved);
+  return f?.value === "BLOCK" || f?.value === "SIZE_CUT" ? f.value : undefined;
+}
+
 let cached: Promise<TradeSettingsView | null> | null = null;
 
 /** Test hook: forget the cached read. */

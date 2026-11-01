@@ -333,7 +333,7 @@ def test_reviewer_poc_a_sign_up_renamed_to_look_like_a_load_test_org_is_refused(
     async def plant():
         async with api._session_factory() as s:
             u = await s.scalar(select(User).where(User.email == email))
-            s.add(MarketEventRecord(tenant_id=None, event_date=date(2026, 10, 20), kind="OTHER", description="GLOBAL event H1", created_by=u.id))
+            s.add(MarketEventRecord(tenant_id=None, event_date=date(2026, 10, 20), kind="OTHER", action="SIZE_CUT", description="GLOBAL event H1", created_by=u.id))
             await s.commit()
             return (await s.scalar(select(Tenant).where(Tenant.name == loadtest_org.tenant_name(stamp)))).id
     tid = _run(plant())
@@ -423,7 +423,7 @@ def test_platform_wide_and_other_tenant_rows_survive_the_cleanup(db):
     async def plant():
         async with api._session_factory() as s:
             other = await s.scalar(select(User).where(User.email == "h2.bystander@example.org"))
-            s.add(MarketEventRecord(tenant_id=None, event_date=date(2026, 10, 20), kind="OTHER", description="GLOBAL event H2", created_by=lt_user))
+            s.add(MarketEventRecord(tenant_id=None, event_date=date(2026, 10, 20), kind="OTHER", action="SIZE_CUT", description="GLOBAL event H2", created_by=lt_user))
             s.add(PlatformControlRecord(key="loadtest_h2_probe", value_json="{}", updated_by=lt_user))
             strat = CustomStrategyRecord(tenant_id=other.tenant_id, user_id=other.id, name="h2", config_json="{}")
             s.add(strat)

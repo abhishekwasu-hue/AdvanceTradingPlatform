@@ -35,7 +35,10 @@ const CEILING_LABELS: Record<string, string> = {
   max_portfolio_risk_pct: "Most open risk at once (% of capital)",
   dd_level_2_pct: "Pause after a fall from the peak of (%)",
   min_stop_cooldown_minutes: "Least wait after a stop-out (minutes)",
+  warn_at_pct: "Notice at this share of a team limit (%)",
 };
+/** M68 PR-5: the draft of a ceilings reply - an empty field is "no ceiling". */
+const ceilingText = (c: RiskCeilings) => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v == null ? "" : String(v)]));
 
 export default function AdminPage({ section, controlsGroup }: PageProps & { section?: AdminSection; controlsGroup?: ControlsGroup } = {}) {
   const show = (s: AdminSection) => !section || section === s;
@@ -70,6 +73,7 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
   const [encryption, setEncryption] = useState<EncryptionStatus | null>(null);
   const [ceilings, setCeilings] = useState<RiskCeilings | null>(null);
   const [ceilingDraft, setCeilingDraft] = useState<Record<string, string>>({});
+  const [ceilingTeam, setCeilingTeam] = useState("");      // M68 PR-5: empty = every organisation, else one team's id
   const [incTitle, setIncTitle] = useState("");
   const [incNote, setIncNote] = useState("");   // A2: the public status page's one sentence
   const [incSeverity, setIncSeverity] = useState("WARNING");
@@ -87,7 +91,7 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
     api.adminBetaCohort().then(setCohort).catch((e) => toast.error(errorSentence(e)));
     api.adminFlags().then((f) => { setFlags(f); setFlagTenants(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.tenants.join(", ")]))); }).catch((e) => toast.error(errorSentence(e)));
     api.adminEncryptionStatus().then(setEncryption).catch((e) => toast.error(errorSentence(e)));
-    api.adminRiskCeilings().then((c) => { setCeilings(c); setCeilingDraft(Object.fromEntries(Object.entries(c).map(([k, v]) => [k, String(v)]))); }).catch((e) => toast.error(errorSentence(e)));
+    api.adminRiskCeilings().then((c) => { setCeilings(c); setCeilingDraft(ceilingText(c)); }).catch((e) => toast.error(errorSentence(e)));
     api.adminPlans().then(setPlans).catch((e) => toast.error(errorSentence(e)));
     api.adminTenants(query).then(setTenants).catch((e) => setError(errorSentence(e)));
     api.adminAuditLogs(selected?.id).then(setLogs).catch((e) => toast.error(errorSentence(e)));
@@ -187,16 +191,25 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
         onSetStage={(stage, reason) => void act(`Beta cohort moved to stage ${stage}.`, () => api.adminSetBetaStage(stage, reason).then(setCohort))} />}
 
       {inGroup("limits") && <Card title="Risk ceilings (Risk Guardian)">
-        <p className="text-xs text-fg-muted mb-3">Hard limits every tenant's risk settings stay under: a tenant cannot save a value above a ceiling, and the engine clamps older settings at runtime. Risk per trade 2% is the spec's hard ceiling; the minimum cool-down forces every tenant to wait at least this long after a stop-out.</p>
+        <p className="text-xs text-fg-muted mb-3">No ceiling is set unless you set one here (M68). A ceiling is the most a member may set for that limit; the engine also clamps older settings at runtime. Leave a field empty for no ceiling. Set them for every organisation, or for one team by its id.</p>
+        <div className="mb-3 max-w-xs">
+          <label htmlFor="ceiling-team" className="block text-xs text-fg-muted mb-0.5">Team (organisation id; empty = every organisation)</label>
+          <input id="ceiling-team" inputMode="numeric" className="w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs" value={ceilingTeam}
+            onChange={(e) => setCeilingTeam(e.target.value)}
+            onBlur={() => { const team = ceilingTeam.trim() ? Number(ceilingTeam) : null; if (team === null || Number.isInteger(team)) api.adminRiskCeilings(team).then((c) => { setCeilings(c); setCeilingDraft(ceilingText(c)); }).catch((e) => toast.error(errorSentence(e))); }} />
+        </div>
         <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
           {ceilings && Object.keys(ceilings).map((key) => (
             <div key={key}>
               <label className={`block text-xs text-fg-muted mb-0.5 ${section && CEILING_LABELS[key] ? "" : "font-mono"}`}>{(section && CEILING_LABELS[key]) || key}</label>
-              <input type="number" step="0.1" min={0} className="w-full rounded bg-surface-2 border border-border px-2 py-1" value={ceilingDraft[key] ?? ""} onChange={(e) => setCeilingDraft({ ...ceilingDraft, [key]: e.target.value })} />
+              <input type="number" step="0.1" min={0} placeholder="No ceiling" className="w-full rounded bg-surface-2 border border-border px-2 py-1" value={ceilingDraft[key] ?? ""} onChange={(e) => setCeilingDraft({ ...ceilingDraft, [key]: e.target.value })} />
             </div>
           ))}
         </div>
-        <button disabled={busy || !ceilings} onClick={() => act("Risk ceilings saved.", () => api.adminSetRiskCeilings(Object.fromEntries(Object.entries(ceilingDraft).map(([k, v]) => [k, Number(v)]))).then(setCeilings))} className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save ceilings</button>
+        <button disabled={busy || !ceilings} onClick={() => act("Risk ceilings saved.", () => api.adminSetRiskCeilings(
+          Object.fromEntries(Object.entries(ceilingDraft).map(([k, v]) => [k, v.trim() === "" ? null : Number(v)])),
+          ceilingTeam.trim() ? Number(ceilingTeam) : null).then((c) => { setCeilings(c); setCeilingDraft(ceilingText(c)); }))}
+          className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save ceilings</button>
       </Card>}
 
       {inGroup("flags") && <FeatureFlagsCard flags={flags} tenants={flagTenants} busy={busy}

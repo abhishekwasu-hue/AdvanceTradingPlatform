@@ -70,6 +70,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "ai_agent": FlagInfo("Copilot reads your positions and news before answering", "ai", "better answers", ("ai_copilot",), "an AI key", "ready"),
     "ai_research": FlagInfo("AI drafts are back-tested and scored automatically", "ai", "research loop", ("ai_copilot",), "an AI key", "unfinished"),
     "ai_one_key": FlagInfo("Connect AI in one paste: one key for every AI feature", "ai", "Connect AI panel on Copilot and Settings › AI", ("ui_v2",), "", "ready"),
+    "copilot_languages": FlagInfo("The Copilot answers in Marathi or Hindi when the user picks it; voice input in the Copilot box", "ai", "an answer-language and a voice choice on Settings › AI; a microphone in the Copilot box", ("ai_copilot", "ui_v2"), "an AI with tool use (a key)", "unfinished"),
     "copilot_ticket": FlagInfo("The Copilot prepares an order ticket from what you typed; you review and place it yourself", "ai", "a 'Prepare the order ticket' card under a Copilot answer that names a contract", ("ai_copilot", "ui_v2"), "", "decision"),
     "copilot_watch": FlagInfo("Copilot watch: short cards when your own positions, strikes or watchlists change", "ai", "a Copilot watch card on Settings › Alerts; cards with Ask why in Notifications", ("ui_v2",), "the user's own numbers per alert type", "unfinished"),
     "copilot_agent": FlagInfo("The Copilot chat reads your own data with the AI before answering", "ai", "AI answers built from your orders, settings, journal and watchlists", ("ai_copilot", "ui_v2"), "an AI with tool use (a key)", "unfinished"),
@@ -306,6 +307,7 @@ FLAG_GROUP: dict[str, str] = {
     "copilot_agent": "ai",
     "copilot_watch": "ai",
     "copilot_ticket": "ai",
+    "copilot_languages": "ai",
     "vision_byok": "ai",
     "vision_byok_v3": "ai",
     "signal_language_v2": "ai",
@@ -367,6 +369,7 @@ FINISH: Dict[str, str] = {
     "term_roll": "TERM-2 R1", "term_whatif": "TERM-2 R2", "term_strike_area": "TERM-2 R3", "term_margin_pair": "TERM-2 R4",
     "trade_engine": "M66 (owner only, after parity is green)",
     "copilot_agent": "M72 PR-2 (the answer format with cards)",
+    "copilot_languages": "M72 PR-10 (Marathi / Hindi answers with their filters; the owner turns it on)",
     "copilot_watch": "M72 PR-7 (each user turns on his own alert types with his own numbers)",
     "ai_platform_key": "M72 PR-1b (owner's organisation only until each plan's budget and the daily cap are set)",
 }

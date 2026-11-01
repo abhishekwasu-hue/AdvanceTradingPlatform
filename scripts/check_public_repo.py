@@ -197,6 +197,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/trader_baseline.json": "98638992ae9740203b295a1ec8d07f8fca0ec54b23c727c0ab1d9110e7b2c13c",
     "frontend/e2e/fixtures/copilot_tools_v2.json": "37c00546e26cc0cab4b2af0c38ae6041a630d57790be87397fa186502f3e4502",
     # hand-written API replies for the Playwright tests
+    "frontend/e2e/fixtures/m72_pr10_marathi.json": "f5da1c80779b7b6f1d2244a4113a47a7e4a04f2ab46e2a3b4d84e75f58819e2b",   # M72 PR-10: made-up Marathi words for the capture-only e2e
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",
     "frontend/e2e/fixtures/actions.json": "49e8cbfacbd96f95bc73a90691ae343bd487140c7ba30b5954031a1a2d96e547",
     "frontend/e2e/fixtures/actions_proposed.json": "7ab4b210c637af15cc426efabca6f83fb94a5ff0b86879d1dd539019d99f91c9",

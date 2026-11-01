@@ -164,6 +164,7 @@ def screen(text: str, lang: str = "en", *, where: str = "ai") -> Screened:
     return out
 
 
+DIGITS_REASON = "numbers must stay in the digits 0-9 exactly as the data has them (a Devanagari digit was used)"
 NOT_ENGLISH_REASON = "not in plain English: the reply used another script, a combining mark or a hidden character and was withheld"
 
 
@@ -176,9 +177,25 @@ def retry_hint(blocked: List[str]) -> str:
             "of profit, guarantees or recommendations - describe conditions and risks neutrally.")
 
 
-def check(text: str, lang: str = "en", *, where: str = "ai") -> Tuple[bool, Optional[str], str]:
-    """(ok, text to show or None, why) - the shape the narrate loops use."""
+def check(text: str, lang: str = "en", *, where: str = "ai", answer_language: bool = False) -> Tuple[bool, Optional[str], str]:
+    """(ok, text to show or None, why) - the shape the narrate loops use. `answer_language` (M72 PR-10): only the Copilot
+    planner passes it, with the user's own Marathi / Hindi choice (flag copilot_languages); every other caller and every
+    other `lang` stays English only."""
     from app.ai.call_detect import SCRIPT_LABEL
+    if answer_language and lang in ("mr", "hi"):
+        # M72 PR-10 (CP-10): a Copilot answer in Marathi / Hindi - digits stay as in the data (a Devanagari digit is refused);
+        # the English / romanised advice words and calls are read with the Devanagari taken out; any other script, hidden
+        # character or mark is still withheld. The Marathi / Hindi advice phrases: grounding.answer_problem (indic_safety).
+        from app.ai.languages import has_devanagari_digit, without_devanagari
+        if has_devanagari_digit(text):
+            return False, None, DIGITS_REASON
+        rest = screen(without_devanagari(text), "en", where=where)
+        if SCRIPT_LABEL in rest.blocked:
+            return False, None, NOT_ENGLISH_REASON
+        if not rest.ok:
+            return False, None, f"advice/guarantee words: {', '.join(rest.blocked[:5])}"
+        shown = text if not rest.framed else f"{text.rstrip()}\n\n{framing(lang)}"
+        return True, shown, "framed" if rest.framed else "ok"
     s = screen(text, lang, where=where)
     if SCRIPT_LABEL in s.blocked:
         return False, None, NOT_ENGLISH_REASON                  # English only: a neutral reason, never the words

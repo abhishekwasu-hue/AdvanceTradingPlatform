@@ -520,6 +520,14 @@ class AiUsagePrefs(_Prefs):
     daily_cap_inr: float | None = Field(default=None, gt=0, lt=1e7, allow_inf_nan=False)
 
 
+class AiPrefs(_Prefs):
+    """`ai` (M72 PR-10, CP-10, M72Q-2): the language the Copilot planner ANSWERS in (English / Marathi / Hindi; the
+    interface stays English) and whether the Copilot shows the browser's speech input (off by default). Read only while
+    the flag `copilot_languages` is on (app/ai/languages.py); no order path, worker or risk check imports it."""
+    language: Literal["en", "mr", "hi"] = "en"
+    voice: bool = False
+
+
 WATCH_PCT = Field(default=None, gt=0, le=100, allow_inf_nan=False)
 
 
@@ -564,7 +572,7 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "option_chain": OptionChainPrefs, "terminal": TerminalPrefs,
                                        "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs,
                                        "trade_settings": TradeSettingsPrefs, "ai_usage": AiUsagePrefs,
-                                       "copilot_watch": CopilotWatchPrefs}
+                                       "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 

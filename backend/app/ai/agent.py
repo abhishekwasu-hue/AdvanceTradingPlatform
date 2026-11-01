@@ -285,10 +285,10 @@ def _verify(answer: Parsed, allowed: set, by_call: Dict[str, set], from_question
         if problem:
             return f"the headline: {problem}", None
     for extra in [c["statement"] for c in answer.claims] + answer.disclaimers + ([answer.headline] if answer.headline else []):
-        passed, _, reason = output_filter.check(extra, lang, where="agent")
+        passed, _, reason = output_filter.check(extra, lang, where="agent", answer_language=True)
         if not passed:
             return reason or "advisory wording", None
-    passed, shown, reason = output_filter.check(answer.text, lang, where="agent")
+    passed, shown, reason = output_filter.check(answer.text, lang, where="agent", answer_language=True)
     if not passed:
         return reason or "advisory wording", None
     return None, shown
@@ -311,12 +311,15 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
         ctx.session.add(refused_run)
         await ctx.session.commit()
         return AgentAnswer(REFUSALS[kind], "refused", "refused", refused_run.id, refused=kind)
-    system = SYSTEM          # English only, whatever `lang` the caller passes
-    allowed_proposals = await available(ctx, proposals.allowed_for(question))      # N3 S9: flagged tools only while on
+    # M72 PR-10 (CP-10): English unless the caller passes the user's own answer language (Copilot chat, flag copilot_languages)
+    from app.ai.languages import system_for
+    system = system_for(SYSTEM, lang)
+    prompt_version = PROMPT_VERSION if system == SYSTEM else version_of("agent", system)
+    allowed_proposals = await available(ctx, proposals.allowed_for(question, lang))      # N3 S9: flagged tools only while on
     tools = specs(await available(ctx, names("read", agent=True)) + allowed_proposals)
     kinds = {n: t.kind for n, t in registry().items()}
     rules_only = {n for n, t in registry().items() if not t.agent}      # CP6-2: never run for the model, even when it names one
-    run = AgentRunRecord(tenant_id=ctx.tenant_id, user_id=ctx.user.id, question_sha256=_sha(question), prompt_version=PROMPT_VERSION,
+    run = AgentRunRecord(tenant_id=ctx.tenant_id, user_id=ctx.user.id, question_sha256=_sha(question), prompt_version=prompt_version,
                          model=str(getattr(provider, "model", "") or ""), limits_json=json.dumps(limits.__dict__), outcome="running",
                          created_at=datetime.now(timezone.utc))
     ctx.session.add(run)

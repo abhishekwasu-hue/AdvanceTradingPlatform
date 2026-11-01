@@ -100,6 +100,35 @@ export interface ChatAnswer {
   headline_line?: string | null;
   /** M72 PR-2 (CP-2): fixed follow-up actions - open the symbol a tool read, or ask the next question when tapped. */
   chips?: AnswerChip[];
+  /** M72 PR-6 (CP-5): editable drafts the planner made - checked, run or approved only by the user's tap. */
+  drafts?: AnswerDraft[];
+}
+/** M72 PR-6: a screen draft (its $parameters empty unless the user stated them) or a proposed alert awaiting approval. */
+export type AnswerDraft =
+  | { kind: "screen"; text: string; base_tf: string; params: { name: string; value: number | string | boolean | null }[]; stages: string[]; problems: string[]; ok: boolean }
+  | { kind: "alert"; status: "proposed"; proposal_id: number | null };
+
+/** M72 PR-6: a $parameter's name in plain words ("rsi_level" -> "Rsi level"). */
+export function paramLabel(name: string): string {
+  const words = name.replace(/_/g, " ").trim();
+  return words ? words[0].toUpperCase() + words.slice(1) : name;
+}
+
+/** M72 PR-6: the symbols the user typed (comma / space separated, upper case, at most 50, no repeats). */
+export function draftSymbols(text: string): string[] {
+  const out = text.split(/[\s,]+/).map((s) => s.trim().toUpperCase()).filter((s) => /^[A-Z0-9][A-Z0-9&.-]{0,29}$/.test(s));
+  return [...new Set(out)].slice(0, 50);
+}
+
+/** M72 PR-6: the parameter values ready to send - null while any is empty or not a number (the Run button waits). */
+export function draftParams(values: Record<string, string>, names: string[]): Record<string, number> | null {
+  const out: Record<string, number> = {};
+  for (const n of names) {
+    const v = (values[n] ?? "").trim();
+    if (!v || !Number.isFinite(Number(v))) return null;
+    out[n] = Number(v);
+  }
+  return out;
 }
 /** M72 PR-2: one follow-up chip; the words are the server's fixed ones. */
 export type AnswerChip =

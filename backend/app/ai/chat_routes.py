@@ -186,6 +186,7 @@ async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, us
                         blocks=[{k: v for k, v in c.items() if k != "call"} for c in ans.cards]).as_dict()
     shape.update(source="ai", answer=ans.text, claims=ans.claims, disclaimers=ans.disclaimers, proposals=ans.proposals, chips=ans.chips,
                  headline_line=ans.headline or None, headline=ans.chart_headline, structure_card=ans.structure_card,
+                 drafts=ans.drafts,
                  numbers=ans.numbers or grounding.provenance(ans.text, set(), grounding.allowed_from_text(question)),
                  agent={"run_id": ans.run_id, "stopped": ans.stopped, "contract": ans.contract})
     return shape, ""

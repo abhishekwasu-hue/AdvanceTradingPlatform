@@ -573,7 +573,8 @@ export type NotificationEventType =
   | "MARKETPLACE"
   | "EOD_SUMMARY"
   | "NEWS_ALERT"
-  | "THESIS_REPORT";
+  | "THESIS_REPORT"
+  | "COPILOT_WATCH";
 
 export type NotificationSeverity = "INFO" | "WARNING" | "CRITICAL" | "EMERGENCY";
 
@@ -594,6 +595,8 @@ export interface NotificationEntry {
   related_order_id: number | null;
   read: boolean;
   created_at: string;
+  /** M72 PR-7: a Copilot watch card's "Ask why" context (his own object by kind and id; never a number). */
+  ask?: { symbol?: string; object?: { kind: "position" | "signal"; id: number } } | null;
 }
 
 export interface SignalHistoryEntry {

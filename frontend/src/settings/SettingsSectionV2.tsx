@@ -14,6 +14,7 @@ import PhonePushV2 from "../alerts/PhonePushV2";
 import SignedWebhooksV2 from "../alerts/SignedWebhooksV2";
 import { isNativeApp } from "../native/platform";
 import RhythmTelegramV2 from "../rhythm/RhythmTelegramV2";
+import CopilotWatchV2 from "../copilot/watch/CopilotWatchV2";
 import ConnectAiPanelV2 from "../aiKeys/ConnectAiPanelV2";
 import PlatformAiUsageV2 from "../aiKeys/PlatformAiUsageV2";
 import KeyGuidesV2 from "../aiKeys/KeyGuidesV2";
@@ -101,6 +102,8 @@ export function AiSection() {
 
 function AlertsSection() {
   const rhythm = useFeatures().on("daily_rhythm");
+  // M72 PR-7: the Copilot watch - opt-in cards about his own positions, strikes and watchlists, each with his own number.
+  const watch = useFeatures().on("copilot_watch");
   // B8: inside the Android app, with mobile_push on, the phone's own notifications come first.
   const mobilePush = useFeatures().on("mobile_push");
   const phone = isNativeApp() && mobilePush;
@@ -121,6 +124,11 @@ function AlertsSection() {
       {rhythm && (
         <div id="daily-briefs" className="scroll-mt-20">
           <Card title="Daily briefs on Telegram"><RhythmTelegramV2 key={telegramChanged} /></Card>
+        </div>
+      )}
+      {watch && (
+        <div id="copilot-watch" className="scroll-mt-20">
+          <Card title="Copilot watch"><CopilotWatchV2 key={telegramChanged} /></Card>
         </div>
       )}
       <Fold id="channels" title="More ways to get alerts" line="Email, app notifications, SMS and others">

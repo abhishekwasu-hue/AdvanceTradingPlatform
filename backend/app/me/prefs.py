@@ -520,13 +520,51 @@ class AiUsagePrefs(_Prefs):
     daily_cap_inr: float | None = Field(default=None, gt=0, lt=1e7, allow_inf_nan=False)
 
 
+WATCH_PCT = Field(default=None, gt=0, le=100, allow_inf_nan=False)
+
+
+class CopilotWatchPrefs(_Prefs):
+    """`copilot_watch` (M72 PR-7, CP-7): the user's own opt-in Copilot watch. Every type is OFF until he turns it on, and a
+    type with a number needs HIS number (None = Not set; ATP chooses none, M68). Read by app/ai/watch.py only, to decide
+    which short information cards to raise for HIS own positions, strikes and watchlists; no order path, worker trading
+    step or risk check imports it, nothing is closed or blocked (ADR-0004, ADR-0006).
+    - near_levels: an open position whose mark has this % (or less) of the room left to his own invalidation or profit level;
+    - strike_distance: a short option whose underlying is within this % of the strike;
+    - greeks_jump: IV at his strike moved by this many IV points, or delta by this much, between two stored chain readings
+      (delta needs his own risk-free rate, Trade settings > Options);
+    - oi_shift: open interest at his strike changed by this % between two stored chain readings;
+    - watchlist_signal: a new setup from his strategies or scans on a symbol in his own watchlists (no number);
+    - telegram: also to his own Telegram chat (off by default; in the app either way)."""
+    telegram: bool = False
+    near_levels: bool = False
+    near_levels_room_left_pct: float | None = WATCH_PCT
+    strike_distance: bool = False
+    strike_distance_pct: float | None = WATCH_PCT
+    greeks_jump: bool = False
+    iv_jump_points: float | None = WATCH_PCT
+    delta_jump: float | None = Field(default=None, gt=0, le=1, allow_inf_nan=False)
+    oi_shift: bool = False
+    oi_shift_pct: float | None = Field(default=None, gt=0, le=10_000, allow_inf_nan=False)
+    watchlist_signal: bool = False
+
+    @model_validator(mode="after")
+    def _numbers_first(self) -> CopilotWatchPrefs:
+        need = {"near_levels": self.near_levels_room_left_pct is not None, "strike_distance": self.strike_distance_pct is not None,
+                "greeks_jump": self.iv_jump_points is not None or self.delta_jump is not None, "oi_shift": self.oi_shift_pct is not None}
+        for kind, has_number in need.items():
+            if getattr(self, kind) and not has_number:
+                raise ValueError(f"{kind}: set your own number first")
+        return self
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
                                        "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs,
                                        "option_chain": OptionChainPrefs, "terminal": TerminalPrefs,
                                        "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs,
-                                       "trade_settings": TradeSettingsPrefs, "ai_usage": AiUsagePrefs}
+                                       "trade_settings": TradeSettingsPrefs, "ai_usage": AiUsagePrefs,
+                                       "copilot_watch": CopilotWatchPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 

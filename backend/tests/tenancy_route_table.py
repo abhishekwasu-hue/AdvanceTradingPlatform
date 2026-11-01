@@ -661,6 +661,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/rhythm/today"): "member: the caller's own digest (own trades, signals and journal; the organisation's market reads)",
     ("GET", "/api/rhythm/settings"): "member: the caller's own daily-rhythm choice and whether Telegram reaches the caller's own chat",
     ("PUT", "/api/rhythm/settings"): S_OWN_PREFS,
+    # M72 PR-7: the caller's own Copilot watch choices (own prefs; whether Telegram reaches the caller's own chat).
+    ("GET", "/api/copilot-watch/settings"): "member: the caller's own Copilot watch choices and whether Telegram reaches the caller's own chat",
+    ("PUT", "/api/copilot-watch/settings"): S_OWN_PREFS,
     ("GET", "/api/news-events"): P_NEWS_EVENTS,
     ("POST", "/api/news-events"): "trader",
     ("DELETE", "/api/news-events/{event_id}"): "trader",

@@ -217,7 +217,7 @@ def structure_gates(legs: Iterable[Any]) -> List[str]:
     return gates
 
 
-def derive_level(closed: int, sessions: int, max_drawdown_pct: float | None) -> Tuple[str, List[Dict[str, Any]]]:
+def derive_level(closed: int, sessions: int, max_drawdown_pct: float | None) -> tuple[str, list[dict[str, Any]]]:
     """(level, the criteria of each level above Beginner with their values) from a PAPER record."""
     dd_limit = app_config.PAPER_LADDER_MAX_DRAWDOWN_PCT
 

@@ -289,7 +289,7 @@ def vda_rates(day) -> Dict[str, float]:
     return {"tds": _at(VDA_TDS, day), "tax": _at(VDA_TAX, day)}
 
 
-def leg_cost(day, side: str, price: float, qty: float, segment: str = "OPTION", brokerage_per_order: float = 0.0) -> Dict[str, float]:
+def leg_cost(day, side: str, price: float, qty: float, segment: str = "OPTION", brokerage_per_order: float = 0.0) -> dict[str, float]:
     """Total cost (Rs) of one executed order - slippage excluded (it is in the fill). side: "buy" | "sell"."""
     if side not in ("buy", "sell"):
         raise ValueError("side must be buy or sell")
@@ -306,7 +306,7 @@ def leg_cost(day, side: str, price: float, qty: float, segment: str = "OPTION", 
 
 
 def round_trip(entry_day, exit_day, entry_price: float, exit_price: float, qty: float, segment: str, *, sold_first: bool = False,
-               settled: bool = False, brokerage_per_order: float = 0.0) -> Dict[str, float]:
+               settled: bool = False, brokerage_per_order: float = 0.0) -> dict[str, float]:
     """Open + close. `sold_first`: the position was opened with a sell (written option / short). `settled`: it ended by
     expiry settlement - no closing order (exercise STT is `exercise_cost`)."""
     open_side, close_side = ("sell", "buy") if sold_first else ("buy", "sell")
@@ -317,7 +317,7 @@ def round_trip(entry_day, exit_day, entry_price: float, exit_price: float, qty: 
     return {k: a[k] + b[k] for k in a}
 
 
-def spread_cost(day, short_px: float, long_px: float, qty: float, opening: bool = True, brokerage_per_order: float = 0.0) -> Dict[str, float]:
+def spread_cost(day, short_px: float, long_px: float, qty: float, opening: bool = True, brokerage_per_order: float = 0.0) -> dict[str, float]:
     """A two-leg option spread opened (short sell + long buy) or closed (short buy + long sell)."""
     if opening:
         a, b = leg_cost(day, "sell", short_px, qty, "OPTION", brokerage_per_order), leg_cost(day, "buy", long_px, qty, "OPTION", brokerage_per_order)

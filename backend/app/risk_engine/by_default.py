@@ -300,7 +300,7 @@ def effective_settings(settings: RiskSettings, ceilings: Dict[str, float]) -> Tu
 
 # --- pure rules --------------------------------------------------------------------------------------------------------
 
-def risk_cap(capital_basis: Optional[float], settings: RiskSettings) -> Dict[str, Any]:
+def risk_cap(capital_basis: float | None, settings: RiskSettings) -> dict[str, Any]:
     """The user's cap per trade: the stricter of the % of capital and the rupee amount; either 0 = not set. Neither set
     (TT-12): no cap of his own - `amount` None (the organisation's risk per trade still sizes the entry).
     M68 PR-7: `capital_basis` None (his starting capital is Not set) - a % cap cannot be measured (`needs_capital`; a new
@@ -387,7 +387,7 @@ def cost_line(*, direction: str, entry: float, stop: float, target: float, quant
     }
 
 
-def daily_loss_breached(capital_basis: Optional[float], settings: RiskSettings, closed_pnls_in_order: Sequence[float], open_marks: float) -> Dict[str, Any]:
+def daily_loss_breached(capital_basis: float | None, settings: RiskSettings, closed_pnls_in_order: Sequence[float], open_marks: float) -> dict[str, Any]:
     """Whether the day's PAPER P&L reached the limit at any point seen: after any close (in close order), or now with the
     open marks. Pure. M68 PR-7: `capital_basis` None (Not set) - the % limit cannot be measured (limit 0; a new entry waits
     for the capital, `entry_refusals`)."""
@@ -420,7 +420,7 @@ async def user_settings(session: AsyncSession, user: User, now: Optional[datetim
     return settings_on(row.risk_settings_json if row is not None else None, to_ist(now).date())
 
 
-async def capital_basis(session: AsyncSession, user: User, now: Optional[datetime] = None) -> Optional[float]:
+async def capital_basis(session: AsyncSession, user: User, now: datetime | None = None) -> float | None:
     """The PAPER starting capital plus the realised net P&L of this user's PAPER trades closed before today (IST).
     M68 PR-7 (TS1-065): his own capital (the account's, else his saved Trade settings value); None = Not set - never a
     capital ATP chose."""

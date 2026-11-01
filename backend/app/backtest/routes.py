@@ -175,7 +175,7 @@ class BacktestRunner:
     endpoint (plain, Monte Carlo, walk-forward) dispatches the same way. Built once per request:
     the option pricer (recorded quotes for the candle span, the holiday calendar) is loaded here."""
 
-    def __init__(self, body: BacktestBody, risk: RiskConfig, pricer=None, holidays=(), charges: Optional[PaperCharges] = None) -> None:
+    def __init__(self, body: BacktestBody, risk: RiskConfig, pricer=None, holidays=(), charges: PaperCharges | None = None) -> None:
         self.body = body
         self.risk = risk
         # M68 PR-7 (TS1-069): the trader's own paper charges (None: statutory charges only) - backtest = paper (parity).
@@ -198,11 +198,11 @@ class BacktestRunner:
             raise HTTPException(status_code=422, detail="execution_models: the pricing model applies to option backtests only")
 
     @classmethod
-    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None,
-                    user: Optional[User] = None) -> "BacktestRunner":
+    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: int | None = None,
+                    user: User | None = None) -> "BacktestRunner":
         """M68 PR-7 (TS1-066): with `user`, the run starts from HIS capital (his own `risk.capital`, else his paper
         account's / saved Trade settings value; Not set: none) and pays his paper charges - as his paper fills do."""
-        charges: Optional[PaperCharges] = None
+        charges: PaperCharges | None = None
         if user is not None:
             from app.paper import paper_settings
             risk, charges = await paper_settings.backtest_inputs(session, user, risk)

@@ -78,7 +78,7 @@ def _part(result: BacktestResult, df: pd.DataFrame, capital: float) -> Dict[str,
 
 
 def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: RiskConfig, *,
-                holdout: Any = None, min_trades: Optional[int] = None, charges: Any = None) -> Dict[str, Any]:
+                holdout: Any = None, min_trades: int | None = None, charges: Any = None) -> dict[str, Any]:
     """The draft `config` (a `CustomStrategyConfig`) on `df` (server candles at `base_tf`) through ATP's backtest engine.
     `holdout`: the sealed holdout boundary (None reads the operator's `BACKTEST_HOLDOUT_START`). M68 PR-7 (TS1-066):
     `risk.capital` is the trader's own (the caller resolves it; None: the shares of capital are left out) and `charges`

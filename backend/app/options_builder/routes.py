@@ -89,7 +89,7 @@ class EvaluateBody(BaseModel):
     points: int = Field(default=201, ge=21, le=MAX_POINTS)
     rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
     # M68 PR-7 (TS1-071): the trader's own; omitted -> his Trade settings > Paper account brokerage, else none (no ₹20).
-    brokerage_per_order: Optional[float] = Field(default=None, ge=0, le=1000, allow_inf_nan=False, description="for the cost line; the trader's own")
+    brokerage_per_order: float | None = Field(default=None, ge=0, le=1000, allow_inf_nan=False, description="for the cost line; the trader's own")
     # Z5 (Trade port, strike_breach_model): the underlying's completed daily bars, oldest first, up to the session before
     # `as_of` - with them the answer carries each short strike's breach chance. `structure`: the daily market structure
     # (+1 up, -1 down, 0 unknown); `holidays`: exchange holidays between now and the expiry (sessions are counted).
@@ -222,7 +222,7 @@ async def build_template(body: TemplateBody) -> Dict[str, Any]:
     return {"name": body.name, "legs": legs, "priced_by_model": priced}
 
 
-async def _own_brokerage(session: AsyncSession, user: User) -> Optional[float]:
+async def _own_brokerage(session: AsyncSession, user: User) -> float | None:
     """M68 PR-7 (TS1-071): his Settings > Trade settings > Paper account brokerage per order, only when he chose
     "Statutory charges + my brokerage" (the rule of app/execution/paper_charges.py `charges_from`, read here from the
     stored prefs so this research package imports no order layer); None = Not set."""
@@ -248,7 +248,7 @@ async def _own_brokerage(session: AsyncSession, user: User) -> Optional[float]:
 
 @router.post("/evaluate", dependencies=[Depends(compute_rate_limit)])
 async def evaluate(body: EvaluateBody, user: User = Depends(get_current_user),
-                   session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+                   session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     words = None
     if body.brokerage_per_order is None:          # M68 PR-7: his own saved brokerage (Not set: statutory charges only)
         own = await _own_brokerage(session, user)

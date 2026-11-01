@@ -34,7 +34,7 @@ def run_backtest(
     exit_rules: Optional[ExitRules] = None,
     models: Optional[ModelSet] = None,
     session_rules: bool = True,
-    charges: Optional[PaperCharges] = None,
+    charges: PaperCharges | None = None,
 ) -> BacktestResult:
     """Event-driven backtest over historical OHLCV bars.
 

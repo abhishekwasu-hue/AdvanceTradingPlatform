@@ -5,7 +5,7 @@ the books and account reads, symbol mapping to ATP's instrument master, the feed
 PAPER parity. No network, no real account, no secret: fake tokens are built at run time."""
 import asyncio
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -441,7 +441,7 @@ def test_paper_practising_for_kotak_neo_takes_the_same_path_as_live():
     assert paper.capabilities.market_orders_allowed is False and paper.capabilities.stop_market is False
     # The broker's stated API brokerage (Rs 0 on Trade Free) - only the statutory charges remain.
     # M68 PR-7: a plain paper account pays the trader's own brokerage (here a ₹20 he saved; ATP sets none)
-    plain = PaperExecutionAdapter(PaperCharges(brokerage_per_order=20.0).broker(), clock=lambda: datetime(2026, 10, 23, 5, 0, tzinfo=timezone.utc))
+    plain = PaperExecutionAdapter(PaperCharges(brokerage_per_order=20.0).broker(), clock=lambda: datetime(2026, 10, 23, 5, 0, tzinfo=UTC))
     plain.mark("RELIANCE", 3001.0)
     plain_response = run(plain.place_order(order))
     assert plain_response.raw["charges"] - response.raw["charges"] > 15                     # his Rs 20 + GST is gone

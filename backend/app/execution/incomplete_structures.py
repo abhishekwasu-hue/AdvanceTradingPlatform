@@ -7,8 +7,9 @@ no migration):
     state         INCOMPLETE (waiting for his answer) -> COMPLETING (he chose "Complete the rest") -> COMPLETING_SENT
                   (the worker claimed it and sends the rest) -> COMPLETED; or -> CLOSING ("Close the filled legs", by his
                   tap or by his rule) -> CLOSED; or -> KEPT (his rule says keep, or he tapped Keep them)
-    deadline      the moment his own rule applies: `answer_minutes` after the failure (prefs `smart_execution`)
-    on_no_answer  "close_filled" (the default) or "keep" - his own setting, as it was when the order stopped
+    deadline      the moment his own rule applies: `answer_minutes` after the failure (his Trade settings > Exits, else the
+                  older prefs `smart_execution`); None = his rule is Not set (M68 PR-3, TS1-030): no timer at all
+    on_no_answer  "close_filled" or "keep" - his own setting, as it was when the order stopped; None = Not set
     pending       the legs (and part-fill remainders) still to place, with what booking them needs
 
 His choices (the routes in incomplete_routes.py, the trading worker):
@@ -68,10 +69,24 @@ def clock_text(when: datetime) -> str:
     return when.astimezone(IST).strftime("%H:%M")
 
 
-def rule_text(on_no_answer: str, deadline: datetime) -> str:
+NO_RULE = ("Nothing happens by itself: the filled legs stay open until you answer. To choose what happens when you do not "
+           "answer, set it in Settings › Trade settings › Exits.")
+
+
+def rule_text(on_no_answer: Optional[str], deadline: Optional[datetime]) -> str:
+    if on_no_answer is None or deadline is None:
+        return NO_RULE                     # M68 PR-3 (TS1-030): his rule is Not set - no timer
     if on_no_answer == KEEP:
         return f"If you do not answer by {clock_text(deadline)}, the filled legs stay open (your setting)."
     return f"If you do not answer by {clock_text(deadline)}, the filled legs are closed, sold legs first (your setting)."
+
+
+def _rule(settings: Any, now: datetime) -> tuple[Optional[datetime], Optional[str], Optional[int]]:
+    """(deadline, choice, minutes) of his own "if I do not answer" rule; all None when it is Not set (M68 PR-3: no timer)."""
+    choice, minutes = getattr(settings, "on_no_answer", None), getattr(settings, "answer_minutes", None)
+    if choice not in (CLOSE_FILLED, KEEP) or minutes is None:
+        return None, None, None
+    return now + timedelta(minutes=int(minutes)), choice, int(minutes)
 
 
 def new_block(*, user_id: int, mode: str, strategy_id: str, deployment_id: Optional[int], account_id: Optional[int],
@@ -80,9 +95,8 @@ def new_block(*, user_id: int, mode: str, strategy_id: str, deployment_id: Optio
               total: int = 0, round_no: int = 1, now: Optional[datetime] = None) -> Dict[str, Any]:
     """The `incomplete` block an INCOMPLETE group carries. The deadline and the choice are his own settings now."""
     now = now or datetime.now(timezone.utc)
-    deadline = now + timedelta(minutes=int(settings.answer_minutes))
-    choice = CLOSE_FILLED if settings.on_no_answer != KEEP else KEEP
-    return {"state": INCOMPLETE, "since": _iso(now), "deadline": _iso(deadline), "answer_minutes": int(settings.answer_minutes),
+    deadline, choice, minutes = _rule(settings, now)
+    return {"state": INCOMPLETE, "since": _iso(now), "deadline": _iso(deadline) if deadline else None, "answer_minutes": minutes,
             "on_no_answer": choice, "user_id": user_id, "mode": mode, "strategy_id": strategy_id, "deployment_id": deployment_id,
             "account_id": account_id, "idempotency_key": idempotency_key, "round": round_no,
             "pending": [p.as_dict() for p in pending], "leg_meta": leg_meta, "premiums": premiums, "debit": debit,
@@ -205,7 +219,7 @@ def _item(legs: Sequence[TradeRecord], block: Dict[str, Any], now: datetime) -> 
     return {"group_id": legs[0].leg_group_id, "underlying": _name(legs), "strategy": (legs[0].option_strategy or "").replace("_", " ").lower(),
             "mode": block.get("mode"), "state": state, "message": block.get("message"), "failure": block.get("failure"),
             "deadline": block.get("deadline"), "seconds_left": seconds if state == INCOMPLETE else None,
-            "on_no_answer": block.get("on_no_answer"), "rule": rule_text(block.get("on_no_answer") or CLOSE_FILLED, deadline) if deadline else None,
+            "on_no_answer": block.get("on_no_answer"), "rule": rule_text(block.get("on_no_answer"), deadline),
             "filled": [_leg_row(t) for t in legs if t.exit_time is None], "pending": pending, "actions": actions}
 
 
@@ -369,12 +383,11 @@ async def complete_rest(session: AsyncSession, user: User, legs: Sequence[TradeR
     settings = await smart_execution.settings_for(session, user)
 
     async def back(why: str) -> Dict[str, Any]:
-        deadline = now + timedelta(minutes=int(settings.answer_minutes))
-        choice = CLOSE_FILLED if settings.on_no_answer != KEEP else KEEP
+        deadline, choice, minutes = _rule(settings, now)
         message = f"Not completed: {why}. Complete the rest, or close the filled legs. " + rule_text(choice, deadline)
         current = await _group(session, user.tenant_id, legs[0].leg_group_id or "", open_only=True)
-        await _transition(session, current, [COMPLETING_SENT], {"state": INCOMPLETE, "deadline": _iso(deadline), "on_no_answer": choice,
-                                                                "answer_minutes": int(settings.answer_minutes), "message": message,
+        await _transition(session, current, [COMPLETING_SENT], {"state": INCOMPLETE, "deadline": _iso(deadline) if deadline else None,
+                                                                "on_no_answer": choice, "answer_minutes": minutes, "message": message,
                                                                 "failure": why}, note=f"not completed: {why}")
         await _say(session, current, user.id, f"Incomplete order: {_name(current)}", message, live=live, audit_event="structure_incomplete")
         return {"state": INCOMPLETE, "message": message}

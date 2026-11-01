@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from datetime import time as dtime
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import String, and_, cast, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -183,28 +183,35 @@ async def entries_today_by_rule(session: AsyncSession, tenant_id: int, now: date
 
 WHY_CLOSED = "The {venue} session is not open now - a proposal instead"
 WHY_LATE = "After the last entry time ({cutoff} IST) - a proposal instead (exits run as usual)"
+WHY_EARLY = "Before your first entry time ({start} IST) - a proposal instead (exits run as usual)"
 WHY_VENUE = "Auto PAPER places NSE / BSE equity and F&O setups only in Phase 0 ({exchange} is not one) - a proposal instead"
 VENUES = frozenset({"NSE", "BSE", "NFO", "BFO"})      # review of X2 (L4, provisional X2-10): MCX and other venues -> proposals
 
 
-async def window_reason(session: AsyncSession, now: datetime, exchange: str = "NSE") -> Optional[str]:
-    """Review of X2 (M2): Auto PAPER places only while the session is open and before the last entry time - the
-    earliest of the venue's no-new-entries time, the intraday square-off and SCAN_AUTO_PAPER_LAST_ENTRY (session calendar
-    with holidays)."""
-    from app.market_data.calendar import intraday_cutoffs, market_session_status, session_family, to_ist
+async def window_reason(session: AsyncSession, now: datetime, exchange: str = "NSE", owner: Any = None) -> Optional[str]:
+    """Review of X2 (M2): Auto PAPER places only while the session is open (session calendar with holidays) and inside the
+    template owner's own window. M68 PR-3 (TS1-028, D1): the last entry time is the earliest of HIS Automation > New
+    entries until, his Exits > Square-off time and the operator's SCAN_AUTO_PAPER_LAST_ENTRY - no venue cut-off of ATP's
+    own; before his New entries from: a proposal too. Not set: only the session."""
+    from app.execution import exit_settings
+    from app.market_data.calendar import market_session_status, session_family, to_ist
     if (exchange or "NSE").upper() not in VENUES:
         return WHY_VENUE.format(exchange=(exchange or "?").upper())
     status = await market_session_status(session, now, exchange)
     if not status.is_open:
         return WHY_CLOSED.format(venue=session_family(exchange))
-    no_new, square_off = intraday_cutoffs(exchange)
+    family = session_family(exchange)
+    own = await exit_settings.load(session, owner)
+    start = own.entries_from(family)
+    if start is not None and not exit_settings.in_window(start, None, to_ist(now).time()):
+        return WHY_EARLY.format(start=start.strftime("%H:%M"))
     configured = (app_config.SCAN_AUTO_PAPER_LAST_ENTRY or "").strip()
-    limits = [t for t in (no_new, square_off) if t is not None]
+    limits = [t for t in (own.entries_until(family), own.square_off_at(family)) if t is not None]
     if configured:
         try:
             hh, mm = (int(x) for x in configured.split(":"))
             limits.append(dtime(hh, mm))
-        except ValueError:                       # a malformed setting never widens the window: the venue's own times stand
+        except ValueError:                       # a malformed operator setting is ignored (his own times stand)
             pass
     if limits:
         cutoff = min(limits)

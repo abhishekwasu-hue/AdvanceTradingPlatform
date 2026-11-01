@@ -843,7 +843,7 @@ class GroupExitRecord(Base):
     target_value: Mapped[float | None] = mapped_column(Price, nullable=True)
     target_side: Mapped[str | None] = mapped_column(String(6), nullable=True)
     basis_value: Mapped[float | None] = mapped_column(Price, nullable=True)
-    check_mode: Mapped[str] = mapped_column(String(6), nullable=False, default="TOUCH")     # TOUCH | CLOSE
+    check_mode: Mapped[str] = mapped_column(String(6), nullable=False)     # TOUCH | CLOSE - the ask's own (M68 PR-3: no ORM default)
     timeframe_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     trail_kind: Mapped[str] = mapped_column(String(12), nullable=False, default="NONE")
     trail_json: Mapped[str | None] = mapped_column(Text, nullable=True)

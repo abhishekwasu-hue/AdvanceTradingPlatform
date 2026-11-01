@@ -70,6 +70,41 @@ def _saved_order_defaults(request):
 
 
 @pytest.fixture(autouse=True)
+def _saved_exit_settings(request):
+    """M68 PR-3 (D1): ATP squares off nothing, has no entry cut-off and no incomplete-order timer of its own - each comes
+    from the user's own Trade settings > Exits / Automation (app/execution/exit_settings.py). The tests written before
+    M68 run as a user who SAVED the values they were written against: square-off at the venue's old time (NSE 15:15, MCX
+    23:15, CDS 16:45), no new entries from the venue's old cut-off (15:00 / 23:00 / 16:30), "close the filled legs" after
+    5 minutes and a combined exit checked on every price; a value he really saved still wins. Tests of the M68 behaviour
+    itself carry the marker `real_exit_settings` and read the real, empty settings (tests/test_m68_exits.py)."""
+    if request.node.get_closest_marker("real_exit_settings"):
+        yield
+        return
+    from dataclasses import replace
+
+    from app.execution import exit_settings
+    from app.market_data.calendar import intraday_cutoffs
+
+    class _SavedBeforeM68(exit_settings.ExitSettings):
+        def square_off_at(self, family):
+            return self.square_off_time or intraday_cutoffs(family)[1]
+
+        def entries_until(self, family):
+            return self.window_end or intraday_cutoffs(family)[0]
+
+    real = exit_settings.load
+
+    async def _load(session, user=None, *, tenant_id=None, user_id=None):
+        own = await real(session, user, tenant_id=tenant_id, user_id=user_id)
+        saved = _SavedBeforeM68(incomplete_legs_action=exit_settings.CLOSE_FILLED, incomplete_legs_answer_minutes=5,
+                                combined_check_mode="TOUCH")
+        return replace(saved, **{k: v for k, v in vars(own).items() if v is not None})
+    with pytest.MonkeyPatch.context() as own:      # its own patch: a test's monkeypatch.undo() leaves it in place
+        own.setattr(exit_settings, "load", _load)
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _no_broker_margin_call(monkeypatch):
     """DEF-0 D8: the order ticket asks the user's own broker for its margin. Tests never call a broker: the read answers
     "no answer"; tests/test_def0_ui.py stubs an answer to show the estimate."""

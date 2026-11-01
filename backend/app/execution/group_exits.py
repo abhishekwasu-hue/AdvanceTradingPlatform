@@ -62,7 +62,7 @@ class GroupExitAsk:
     target_value: Optional[float] = None
     spot_symbol: Optional[str] = None
     spot_exchange: Optional[str] = None
-    check_mode: str = TOUCH
+    check_mode: Optional[str] = None             # M68 PR-3 (TS1-031): the ask's own, else his setting (resolve_check_mode)
     timeframe_minutes: Optional[int] = None
     scope: str = "SELECTED"
     origin: str = "CX"
@@ -71,6 +71,19 @@ class GroupExitAsk:
     trail: Optional[Dict[str, float]] = None     # LOCK {after, lock}; TRAIL {step, by}; LOCK_TRAIL {after, lock, step, by};
     #                                               BREAK_EVEN {after} - the user's numbers
     errors: List[str] = field(default_factory=list)
+
+
+CHECK_NEEDED = ("Needs your setting: Combined exit checked - choose when the spot level counts as reached (every price, or a "
+                "closed candle), here or in Settings › Trade settings › Exits")
+
+
+def resolve_check_mode(ask: GroupExitAsk, saved: Optional[str]) -> GroupExitAsk:
+    """M68 PR-3 (TS1-031): the check the ask names, else the user's own Trade settings > Exits > Combined exit checked. A
+    ₹ or net-premium exit is checked on every price - the only check those measures have (a closed candle works on the
+    spot level only), so it is not a choice there. A spot exit with neither stays None and `ask_errors` asks for it."""
+    if ask.check_mode is None:
+        ask.check_mode = TOUCH if ask.measure != SPOT else saved
+    return ask
 
 
 def _now(now: Optional[datetime]) -> datetime:
@@ -552,7 +565,9 @@ def ask_errors(ask: GroupExitAsk, trades: Sequence[TradeRecord]) -> List[str]:
         errors.append("Choose the underlying whose spot level the exit watches")
     if ask.measure in (SPOT, NET_PREMIUM) and len({(t.underlying_symbol or "") for t in trades}) > 1:
         errors.append("A spot or net-premium exit needs positions on one underlying; use the ₹ profit / loss for a mix")
-    if ask.check_mode not in (TOUCH, CLOSE):
+    if ask.check_mode is None and ask.measure == SPOT:
+        errors.append(CHECK_NEEDED)
+    elif ask.check_mode not in (TOUCH, CLOSE):
         errors.append("Check on every price or on a closed candle")
     if ask.check_mode == CLOSE:
         if ask.measure != SPOT:
@@ -587,6 +602,9 @@ async def create(session: AsyncSession, user: User, ask: GroupExitAsk, *, now_va
     if existing is not None:
         return existing
     trades = await own_open_trades(session, user, ask.trade_ids)
+    if ask.check_mode is None:                     # M68 PR-3 (TS1-031): the ask's own, else his own setting, else asked
+        from app.execution import exit_settings
+        resolve_check_mode(ask, (await exit_settings.load(session, user)).combined_check_mode)
     errors = ask_errors(ask, trades)
     if ask.measure in (SPOT, NET_PREMIUM) and now_value is None and not errors:
         errors.append("No live price for the group right now - try again in a moment")

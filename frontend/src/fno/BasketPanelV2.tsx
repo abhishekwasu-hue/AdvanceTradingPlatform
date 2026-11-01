@@ -22,7 +22,7 @@ import {
 import { basket as defaultBasket, useBasket, type BasketLeg, type BasketStore, type NewLeg } from "./basket";
 import {
   MAX_SAVED, STATUS_WORD, STRATEGIES, STRATEGY_TEXT, basketAsk, basketProblems, builderHandoff, legLabel, legsOf, loadBaskets, nameProblem,
-  needsStop, newSavedId, payoffSentence, readyStrategy, remainingLegs, resultHeadline, saveBaskets, savedOf, stopFor, strikeStep, writeHandoff,
+  needsStop, newSavedId, payoffSentence, readyStrategy, remainingLegs, SETTINGS_NOT_LOADED, resultHeadline, saveBaskets, savedOf, stopFor, strikeStep, writeHandoff,
   type SavedState, type StrategyName,
 } from "./basketModel";
 import { PracticeFrame } from "./OrderTicketV2";
@@ -196,8 +196,9 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
         try { next = { expiry: later, rows: (await chain.loadChain(later)).rows }; } catch { next = null; }
       }
     }
-    const s = settings ?? { width_steps: 2, lots: 1, stop_pct: 50 };
-    const built = readyStrategy(name, { underlying: chain.symbol, expiry: live.expiry, rows, around: pick, settings: s, next });
+    // M68 PR-3 (TS1-029): no hidden width / lots / 50 % sold-leg stop when his settings did not load - say so, build nothing.
+    if (!settings) { setNote({ tone: "warn", text: SETTINGS_NOT_LOADED }); return; }
+    const built = readyStrategy(name, { underlying: chain.symbol, expiry: live.expiry, rows, around: pick, settings, next });
     if (built.problem) { setNote({ tone: "warn", text: built.problem }); return; }
     store.replace(built.legs);
     setNote({ tone: "done", text: `${name} around ${formatNumber(pick, 0)}: ${built.legs.length} legs. Edit any leg before you execute.` });

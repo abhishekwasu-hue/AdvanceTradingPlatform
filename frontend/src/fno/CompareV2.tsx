@@ -8,7 +8,7 @@ import type { ChainRow } from "../optionChain/types";
 import { formatNumber, formatPrice } from "../ui/format";
 import { basketApi, type BasketApi, type BasketAsk, type BasketEvaluation, type BasketSettings, type Product } from "./api";
 import { basket as defaultBasket, useBasket, type BasketStore, type NewLeg } from "./basket";
-import { STRATEGIES, basketAsk, legAsk, legLabel, payoffSentence, readyStrategy, type SavedState, type StrategyName } from "./basketModel";
+import { STRATEGIES, basketAsk, legAsk, legLabel, payoffSentence, readyStrategy, SETTINGS_NOT_LOADED, type SavedState, type StrategyName } from "./basketModel";
 import { PracticeFrame } from "./OrderTicketV2";
 import {
   changeSide, heldAsks, heldPayoff, levelText, netPremium, oneExpiry, outcome, pnlAt, priceGrid, sentenceInput, type PayoffLeg, type PosLeg,
@@ -344,7 +344,9 @@ export function compareChoices({ underlying, legs, saved, rows, expiry, around, 
   if (legs.length) out.push({ key: "basket", name: "Your basket", legs: [...legs], problem: null });
   if (expiry && around !== null && rows.length) {
     for (const name of STRATEGIES.filter((s): s is Exclude<StrategyName, "Calendar"> => s !== "Calendar")) {
-      const built = readyStrategy(name, { underlying, expiry, rows, around, settings: settings ?? { width_steps: 2, lots: 1, stop_pct: 50 } });
+      // M68 PR-3 (TS1-029): his settings did not load - no hidden width / lots / 50 % stop; the column says why it is empty.
+      if (!settings) { out.push({ key: `ready:${name}`, name, legs: [], problem: SETTINGS_NOT_LOADED }); continue; }
+      const built = readyStrategy(name, { underlying, expiry, rows, around, settings });
       out.push({ key: `ready:${name}`, name, legs: built.legs, problem: built.problem });
     }
   }

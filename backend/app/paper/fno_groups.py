@@ -159,16 +159,17 @@ def _check(user: User, trade: Optional[TradeRecord]) -> TradeRecord:
 
 
 async def _prices(session: AsyncSession, user: User, legs: Sequence[TradeRecord]) -> Tuple[Dict[int, float], str]:
-    """Every leg's exit price, or ValueError before anything closes (a group never closes half on a missing quote)."""
+    """Every leg's exit price. M68 PR-3 (TS1-097, ADR-0004): never refused for a missing quote - a leg with no live or
+    recent price closes at its older price, else its entry price, and the label says so (approval.exit_now_price)."""
     from app.ai.worker_bridge import price_lookup_for_user
-    from app.execution.approval import exit_price
+    from app.execution.approval import exit_now_price, source_words
     lookup = await price_lookup_for_user(session, user)
     prices: Dict[int, float] = {}
-    sources = set()
+    sources: List[str] = []
     for leg in legs:
-        prices[leg.id], source = await exit_price(session, leg, lookup)
-        sources.add(source)
-    return prices, ("live price" if sources == {"live price"} else "last seen price")
+        prices[leg.id], source = await exit_now_price(session, leg, lookup)
+        sources.append(source)
+    return prices, source_words(sources)
 
 
 def _row(trade: TradeRecord, outcome: Any) -> Dict[str, Any]:
@@ -202,8 +203,8 @@ async def exit_leg(session: AsyncSession, user: User, trade_id: int, *, confirm:
 
 async def exit_group(session: AsyncSession, user: User, trade_id: int) -> Dict[str, Any]:
     """"Exit the whole group": every open leg of this leg's basket, the sold legs first, then the hedges (`close_group`;
-    a LIVE short that does not close keeps its hedges open). Priced before anything closes: one leg without a price closes
-    nothing and says so."""
+    a LIVE short that does not close keeps its hedges open). Priced before anything closes; a leg without a live or recent
+    price is priced at its older / entry price (M68 PR-3, TS1-097: never refused for a price)."""
     from app.audit.log import write_audit_log
     from app.trading.position_monitor import close_group
     trade = _check(user, await session.get(TradeRecord, trade_id))

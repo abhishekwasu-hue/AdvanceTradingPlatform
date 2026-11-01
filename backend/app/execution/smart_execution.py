@@ -46,22 +46,36 @@ class SmartSettings:
     settlement_telegram: bool
     protection_band_pct: float | None           # M68 PR-1: None = Not set (order_defaults reads Trade settings first)
     # SE-7: what happens to the filled legs of an incomplete multi-leg order he has not answered within `answer_minutes`.
-    on_no_answer: str = "close_filled"
-    answer_minutes: int = 5
+    # M68 PR-3 (TS1-030): None = Not set - no timer: the legs stay and the notice waits for his answer.
+    on_no_answer: str | None = None
+    answer_minutes: int | None = None
+
+    @property
+    def has_rule(self) -> bool:
+        """His "if I do not answer" rule is complete (both the choice and the minutes are his own)."""
+        return self.on_no_answer is not None and self.answer_minutes is not None
 
     @classmethod
     def from_prefs(cls, values: Dict[str, Any]) -> "SmartSettings":
         return cls(settlement_days_before=int(values["settlement_days_before"]), settlement_band_pct=float(values["settlement_band_pct"]),
                    settlement_telegram=bool(values["settlement_telegram"]), protection_band_pct=(None if values.get("protection_band_pct") is None
                                                                        else float(values["protection_band_pct"])),
-                   on_no_answer=str(values.get("on_no_answer", cls.on_no_answer)),
-                   answer_minutes=int(values.get("answer_minutes", cls.answer_minutes)))
+                   on_no_answer=values.get("on_no_answer") if values.get("on_no_answer") in ("close_filled", "keep") else None,
+                   answer_minutes=None if values.get("answer_minutes") is None else int(values["answer_minutes"]))
 
 
 async def settings_for(session: Any, user: Any) -> SmartSettings:
+    """His own settings. M68 PR-3 (TS1-030): the incomplete-order rule from Settings > Trade settings > Exits first, then a
+    value he saved here earlier (TS-6); Not set = no timer."""
+    from dataclasses import replace
+
+    from app.execution import exit_settings
     from app.me import prefs
     values, _ = await prefs.read_one(NAMESPACE, user, session)
-    return SmartSettings.from_prefs(values)
+    mine = SmartSettings.from_prefs(values)
+    own = await exit_settings.load(session, user)
+    return replace(mine, on_no_answer=own.incomplete_legs_action or mine.on_no_answer,
+                   answer_minutes=own.incomplete_legs_answer_minutes or mine.answer_minutes)
 
 
 # --- sequencing ----------------------------------------------------------------------------------------------------

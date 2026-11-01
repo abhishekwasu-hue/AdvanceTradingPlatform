@@ -260,9 +260,9 @@ class ToursPrefs(_Prefs):
 # kept equal by a test. Every field is None by default: an empty namespace pre-fills nothing.
 class ExitDefaults(_Prefs):
     """The user's own exit settings (ExitRules). The time exits are available but empty unless the user sets them (SR-10)."""
-    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, le=50, allow_inf_nan=False)
-    break_even_at_r: Optional[float] = Field(default=None, gt=0, le=10, allow_inf_nan=False)
-    time_exit_minutes: Optional[int] = Field(default=None, ge=1, le=375)
+    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
+    break_even_at_r: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+    time_exit_minutes: Optional[int] = Field(default=None, ge=1)
     time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
@@ -357,8 +357,10 @@ class SmartExecutionPrefs(_Prefs):
                                                  description="a marketable limit this far past the price, where market orders are not allowed")
     # SE-7 (owner, 23 Oct): when a multi-leg order stops half way (INCOMPLETE) and he has not answered within
     # `answer_minutes`, ATP applies his own choice: close the filled legs (an exit, never blocked) or keep them.
-    on_no_answer: Literal["close_filled", "keep"] = "close_filled"
-    answer_minutes: int = Field(default=5, ge=1, le=120, description="minutes to answer an incomplete multi-leg order before the choice applies")
+    # M68 PR-3 (TS1-030): no starting value - Not set = no timer (the legs stay, the notice waits for his answer). Its home
+    # is now Settings > Trade settings > Exits (app/execution/smart_execution.settings_for reads that first).
+    on_no_answer: Literal["close_filled", "keep"] | None = None
+    answer_minutes: int | None = Field(default=None, ge=1, le=120, description="minutes to answer an incomplete multi-leg order before the choice applies")
 
 
 # Trading Terminal T1 (TT-16, TT-17): the user's own layouts. The grid is ATP's own: 12 columns, rows of one fixed height.

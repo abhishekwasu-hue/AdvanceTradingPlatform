@@ -109,6 +109,8 @@ export const TICKET_PRODUCTS: { value: TicketProduct; label: string }[] = [
 
 const oneOf = <T extends string>(v: unknown, allowed: readonly { value: T }[]): T | null =>
   typeof v === "string" && allowed.some((a) => a.value === v) ? (v as T) : null;
+/** M68 PR-3 (TS1-034): a field with no natural top (break-even R, time exit minutes) - any finite number. */
+const NO_TOP = 1e9;
 const numIn = (v: unknown, lo: number, hi: number, { int = false, above = false } = {}): number | null => {
   if (typeof v !== "number" || !Number.isFinite(v)) return null;
   if (int && !Number.isInteger(v)) return null;
@@ -123,9 +125,9 @@ export function readDefaults(raw: unknown): TradingDefaults {
   const e = (r.exit_rules && typeof r.exit_rules === "object" ? r.exit_rules : null) as Record<string, unknown> | null;
   const t = (r.ticket && typeof r.ticket === "object" ? r.ticket : null) as Record<string, unknown> | null;
   const exits: ExitDefaults | null = e ? {
-    trailing_stop_pct: numIn(e.trailing_stop_pct, 0, 50, { above: true }),
-    break_even_at_r: numIn(e.break_even_at_r, 0, 10, { above: true }),
-    time_exit_minutes: numIn(e.time_exit_minutes, 1, 375, { int: true }),
+    trailing_stop_pct: numIn(e.trailing_stop_pct, 0, 99.99, { above: true }),
+    break_even_at_r: numIn(e.break_even_at_r, 0, NO_TOP, { above: true }),
+    time_exit_minutes: numIn(e.time_exit_minutes, 1, NO_TOP, { int: true }),
     time_exit_at: typeof e.time_exit_at === "string" && TIME.test(e.time_exit_at) ? e.time_exit_at : null,
   } : null;
   const ticket: TicketDefaults | null = t ? {
@@ -530,9 +532,9 @@ export const NUMBER_RULES: Record<string, NumRule> = {
   spread_width: { label: "Width", lo: 1, hi: 20, int: true },
   target_credit_pct: { label: "Target", lo: 5, hi: 95 },
   stop_credit_pct: { label: "Stop", lo: 10, hi: 500 },
-  trailing_stop_pct: { label: "Trailing stop", lo: 0, hi: 50, above: true },
-  break_even_at_r: { label: "Break-even at R", lo: 0, hi: 10, above: true },
-  time_exit_minutes: { label: "Time exit", lo: 1, hi: 375, int: true },
+  trailing_stop_pct: { label: "Trailing stop", lo: 0, hi: 99.99, above: true },   // M68 PR-3: no ATP cap (TS1-034)
+  break_even_at_r: { label: "Break-even at R", lo: 0, hi: NO_TOP, above: true },
+  time_exit_minutes: { label: "Time exit", lo: 1, hi: NO_TOP, int: true },
   ticket_lots: { label: "Ticket lots", lo: 1, hi: 500, int: true },
 };
 
@@ -543,7 +545,8 @@ function parseNum(key: keyof typeof NUMBER_RULES, raw: string, problems: string[
   const v = Number(t);
   const ok = Number.isFinite(v) && (!rule.int || Number.isInteger(v)) && (rule.above ? v > rule.lo : v >= rule.lo) && v <= rule.hi;
   if (!ok) {
-    problems.push(`${rule.label}: ${rule.int ? "a whole number" : "a number"} ${rule.above ? "above" : "from"} ${rule.lo} ${rule.above ? "up to" : "to"} ${rule.hi}.`);
+    const top = rule.hi >= NO_TOP ? "" : ` ${rule.above ? "up to" : "to"} ${rule.hi}`;      // M68 PR-3: no ATP top -> none said
+    problems.push(`${rule.label}: ${rule.int ? "a whole number" : "a number"} ${rule.above ? "above" : "from"} ${rule.lo}${top}.`);
     return null;
   }
   return v;

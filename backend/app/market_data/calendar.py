@@ -30,9 +30,12 @@ MARKET_CLOSE = time(15, 30)
 @dataclass(frozen=True)
 class ExchangeSession:
     """Phase O2 / section 57-61: regular hours of one exchange family, all in IST. `always_open`
-    covers 24x7 venues (crypto). `no_new_entries_after` / `square_off_at` are the worker's intraday
+    covers 24x7 venues (crypto). `no_new_entries_after` / `square_off_at` were the worker's intraday
     cut-offs for that venue (NSE: 15:00 / 15:15; MCX: 23:00 / 23:15; CDS: 16:30 / 16:45, provisional;
-    crypto: never). `also_closed_on`: other holiday calendars whose days close this family too."""
+    crypto: never). M68 PR-3 (D1): no longer an intraday rule - the worker and the backtests read the user's own
+    Square-off time / entry window (app/execution/exit_settings.py); `square_off_at` is kept only as the moment a held
+    spread is settled on its expiry day (M55 T1), `no_new_entries_after` for the breakout screener's session length.
+    `also_closed_on`: other holiday calendars whose days close this family too."""
 
     name: str
     open: time

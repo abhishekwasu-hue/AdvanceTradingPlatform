@@ -97,10 +97,11 @@ class StrikeFiltersRequest(BaseModel):
 
 
 class ExitRulesRequest(BaseModel):
-    """Phase J1: dynamic exits applied by the position monitor (and the backtest engine)."""
-    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, le=50)
-    break_even_at_r: Optional[float] = Field(default=None, gt=0, le=10)
-    time_exit_minutes: Optional[int] = Field(default=None, ge=1, le=375)
+    """Phase J1: dynamic exits applied by the position monitor (and the backtest engine). M68 PR-3 (TS1-034): no ATP
+    ceiling - a real number of the right sign; a trail under 100 % (at 100 % a stop would sit at zero)."""
+    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
+    break_even_at_r: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+    time_exit_minutes: Optional[int] = Field(default=None, ge=1)
     time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
     def to_rules(self) -> ExitRules:

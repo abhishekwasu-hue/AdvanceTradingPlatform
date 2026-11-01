@@ -45,9 +45,9 @@ router = APIRouter(tags=["backtest"])
 
 
 class ExitRulesBody(BaseModel):
-    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, le=50)
-    break_even_at_r: Optional[float] = Field(default=None, gt=0, le=10)
-    time_exit_minutes: Optional[int] = Field(default=None, ge=1, le=375)
+    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
+    break_even_at_r: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
+    time_exit_minutes: Optional[int] = Field(default=None, ge=1)
     time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
     def to_rules(self) -> ExitRules:
@@ -169,16 +169,30 @@ async def _models_allowed(session: AsyncSession, models: ModelSet, tenant_id: Op
                                                     f"these models are not enabled for this organisation (flag {MODELS_FLAG})")
 
 
+async def user_cutoffs(session: AsyncSession, user: Optional[User], exchange: Optional[str] = None) -> tuple:
+    """M68 PR-3 (TS1-027, parity scan = backtest = live): the user's own (new entries from, new entries until, square-off
+    time) for the venue, exactly as the worker reads them; (None, None, None) for no user or Not set."""
+    from app.execution import exit_settings
+    from app.market_data.calendar import session_family
+    own = await exit_settings.load(session, user)
+    family = session_family(exchange)
+    return own.entries_from(family), own.entries_until(family), own.square_off_at(family)
+
+
 class BacktestRunner:
     """Phase W: one object that runs `body` as an underlying or an option backtest, so every
     endpoint (plain, Monte Carlo, walk-forward) dispatches the same way. Built once per request:
     the option pricer (recorded quotes for the candle span, the holiday calendar) is loaded here."""
 
-    def __init__(self, body: BacktestBody, risk: RiskConfig, pricer=None, holidays=()) -> None:
+    def __init__(self, body: BacktestBody, risk: RiskConfig, pricer=None, holidays=(), cutoffs=(None, None, None)) -> None:
         self.body = body
         self.risk = risk
+        # M68 PR-3 (TS1-027, D1): the user's own (new entries from, until, square-off time); Not set = none (as live).
+        self.cutoffs = cutoffs
         self.rules = body.exit_rules.to_rules() if body.exit_rules else None
         self.config = body.options.to_config(holidays) if body.options is not None else None
+        if self.config is not None:
+            self.config.entries_from, self.config.entries_until, self.config.square_off_at = cutoffs
         if self.config is not None and body.template_exits is not None:
             self.config.stop_source = body.template_exits.stop_source        # section 5: PREMIUM_PCT on a single option
         self.pricer = pricer
@@ -195,9 +209,11 @@ class BacktestRunner:
             raise HTTPException(status_code=422, detail="execution_models: the pricing model applies to option backtests only")
 
     @classmethod
-    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None) -> "BacktestRunner":
+    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None,
+                    user: Optional[User] = None) -> "BacktestRunner":
+        cutoffs = await user_cutoffs(session, user, body.exchange)
         if body.options is None:
-            runner = cls(body, risk)
+            runner = cls(body, risk, cutoffs=cutoffs)
             await _models_allowed(session, runner.models, tenant_id)
             return runner
         await _models_allowed(session, cls(body, risk).models, tenant_id)       # N7 C2c: the option engine's models too
@@ -224,12 +240,12 @@ class BacktestRunner:
                         "allow the synthetic fallback or upload rows") if byob else (
                         f"No recorded option-chain quotes for {underlying} in the candle span; allow the synthetic fallback or upload rows"))
             pricer = SnapshotPricer(rows, max_age_minutes=opts.snapshot_max_age_minutes, fallback=fallback)
-        return cls(body, risk, pricer=pricer, holidays=holidays)
+        return cls(body, risk, pricer=pricer, holidays=holidays, cutoffs=cutoffs)
 
     def run(self, strategy, df) -> BacktestResult:
         if self.config is None:
             result = run_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, exit_rules=self.rules,
-                                  models=self.models)
+                                  models=self.models, cutoffs=self.cutoffs)
         else:
             try:
                 result = run_option_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, self.config,
@@ -359,7 +375,7 @@ async def backtest_monte_carlo(
     await fill_candles(session, user, body)                                     # M55 T3: server-side candles
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
-    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
+    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id, user=user)
     result = await run_in_threadpool(runner.run, strategy, bars_to_dataframe(body.candles))        # P0.1 / S3
     result.data_source = body.data_source
     from app.core import config as app_config
@@ -376,7 +392,7 @@ async def backtest_walk_forward(
     await fill_candles(session, user, body)                                     # M55 T3: server-side candles
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
-    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
+    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id, user=user)
     return await run_in_threadpool(walk_forward, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, risk, folds=folds,
                                    # N7 C2b: chosen execution models apply to every window (never silently dropped)
                                    runner=runner.run if body.options is not None or not runner.models.is_default else None)

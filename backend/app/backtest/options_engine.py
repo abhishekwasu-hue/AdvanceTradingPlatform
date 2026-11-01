@@ -52,6 +52,7 @@ from app.core import config as app_config
 from app.core.enums import AssetClass, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, OrderSide, SignalDirection, StrikeRule
 from app.core.models import BacktestResult, RiskConfig, Signal, Trade
 from app.core.resampling import resample_ohlc
+from app.execution.exit_settings import in_window
 from app.execution.paper_broker import PaperBroker
 from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.instruments import expiry_data
@@ -76,10 +77,9 @@ from app.trading.trigger_rules import ABOVE, BELOW, closed_beyond
 
 logger = logging.getLogger(__name__)
 
-ENGINE_VERSION = "9-options"   # P1-2b: a single contract keeps the signal's reward:risk, so an organisation's own minimum filters it as live does (8: CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (7: realism 1: closed HTF bars only (6: NIFTY expiries from NSE data too; 5: BANKNIFTY from NSE data; 4: P0.6 dated lots))
-NO_NEW_ENTRIES_AFTER = time(15, 0)    # the worker's cut-off for intraday deployments
-SQUARE_OFF_AT = time(15, 15)
-SETTLEMENT_FROM = time(15, 15)        # a bar at/after this on expiry day settles the structure
+ENGINE_VERSION = "10-options"   # M68 PR-3 (D1): the user's own entry window and square-off time, none by default (9: P1-2b: a single contract keeps the signal's reward:risk, so an organisation's own minimum filters it as live does (8: CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (7: realism 1: closed HTF bars only (6: NIFTY expiries from NSE data too; 5: BANKNIFTY from NSE data; 4: P0.6 dated lots))
+# M68 PR-3 (TS1-027, D1): no ATP entry cut-off or square-off - OptionBacktestConfig carries the user's own (Not set: none).
+SETTLEMENT_FROM = time(15, 15)        # a bar at/after this on expiry day settles the structure (the expiry, a fact)
 
 
 @dataclass
@@ -113,6 +113,10 @@ class OptionBacktestConfig:
     # M55 T1: the deployment's "Hold for days" (holding SWING) on a defined-risk credit structure - no square-off at the
     # close (it exits by its own rules or settles at expiry); the entry cut-off stays, as in the worker. Ignored otherwise.
     hold_for_days: bool = False
+    # M68 PR-3 (TS1-027): the user's own new-entry window and Square-off time, as the worker reads them (None = Not set).
+    entries_from: Optional[time] = None
+    entries_until: Optional[time] = None
+    square_off_at: Optional[time] = None
     # Strategy templates section 5: a single option's stop source - None / TEMPLATE_INVALIDATION (the strategy's stop on
     # the underlying, as before) or PREMIUM_PCT (only the premium floor / ceiling; no underlying-level stop).
     stop_source: Optional[str] = None
@@ -422,8 +426,9 @@ def run_option_backtest(
                     reason = f"Time exit ({time_rules.time_exit_minutes}m in trade)"
                 if reason is None and exit_at is not None and at_ist.time() >= exit_at:
                     reason = f"Time exit (flat at {time_rules.time_exit_at} IST)"
-                if reason is None and config.intraday and not is_daily and not held_for_days and at_ist.time() >= SQUARE_OFF_AT:
-                    reason = f"Square-off ({SQUARE_OFF_AT.strftime('%H:%M')} IST)"
+                if (reason is None and config.intraday and not is_daily and not held_for_days and config.square_off_at is not None
+                        and at_ist.time() >= config.square_off_at):
+                    reason = f"Square-off ({config.square_off_at.strftime('%H:%M')} IST)"
                 # 4. The structure's own value at the close.
                 prices = leg_prices(pos, exit_spot, at, settle=settle)
                 if reason is None:
@@ -453,7 +458,7 @@ def run_option_backtest(
                 skipped[f"open position not repriced: {exc}"] += 1
 
         if open_pos is None:
-            if config.intraday and not is_daily and at_ist.time() >= NO_NEW_ENTRIES_AFTER:
+            if config.intraday and not is_daily and not in_window(config.entries_from, config.entries_until, at_ist.time()):
                 continue
             window = cursor.at(decision_time(ts, primary_tf))   # only bars that had closed (no forming HTF bar)
             signal = strategy.analyze(window, symbol)

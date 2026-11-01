@@ -47,6 +47,12 @@ def _fields(body: dict) -> dict:
     return {f["key"]: f for s in body["sections"] for f in s["fields"]}
 
 
+# M68 PR-3: the Exits fields an exit path reads now (app/execution/exit_settings.py), and the entry window (TS1-026 / 028).
+PR3_WIRED = frozenset({"exits.square_off_time", "exits.incomplete_legs_action", "exits.incomplete_legs_answer_minutes",
+                       "exits.combined_measure", "exits.combined_check_mode", "exits.close_if_broker_stop_rejected",
+                       "automation.window_start", "automation.window_end"})
+
+
 @pytest.fixture
 def wired(monkeypatch):
     """Marks a few fields wired, as their PR will, so a USER can see and save them."""
@@ -75,7 +81,7 @@ def test_registry_seven_sections_and_every_audit_user_row():
 def test_registry_fields_are_well_formed_and_wired_by_their_pr():
     for f in ts.FIELDS:
         assert f.label and f.help and f.label[0].isupper(), f.key
-        assert f.wired is (f.pr == 1 and not f.fact), f.key         # PR-1 wires Order defaults; later PRs the rest
+        assert f.wired is ((f.pr == 1 and not f.fact) or f.key in PR3_WIRED), f.key   # PR-1 Order defaults, PR-3 Exits; later PRs the rest
         assert 1 <= f.pr <= 7, f.key
         if f.kind == "choice":
             assert len(f.choices) >= 2 and len({c for c, _ in f.choices}) == len(f.choices), f.key
@@ -97,9 +103,11 @@ def test_glossary_keys_exist_in_the_frontend_glossary():
 
 
 def test_the_namespace_is_read_by_one_order_path_reader():
-    """M68 PR-1: order paths read the Trade settings only through app/execution/order_defaults.py (one reader)."""
+    """M68 PR-1: order paths read the Trade settings only through app/execution/order_defaults.py (one reader); M68 PR-3:
+    exit paths through app/execution/exit_settings.py (one reader for the Exits section)."""
     out = subprocess.run(["grep", "-rlE", "--include=*.py", r"trade_settings|TradeSettings", "app"], cwd=BACKEND, capture_output=True, text=True).stdout
-    assert sorted(out.split()) == ["app/execution/order_defaults.py", "app/main.py", "app/me/prefs.py", "app/me/trade_settings.py"]
+    assert sorted(out.split()) == ["app/execution/exit_settings.py", "app/execution/order_defaults.py", "app/main.py", "app/me/prefs.py",
+                                   "app/me/trade_settings.py"]
 
 
 def test_value_checks():
@@ -142,7 +150,7 @@ def test_a_new_user_sees_not_set_and_no_dead_control():
     assert [s["id"] for s in body["sections"]] == list(ts.SECTION_IDS)
     fields = _fields(body)
     # PR-1: the Order defaults controls are wired; every other control is not yet (only facts show)
-    assert fields and all(f["fact"] or f["key"].startswith("order_defaults.") for f in fields.values())
+    assert fields and all(f["fact"] or f["key"].startswith("order_defaults.") or f["key"] in PR3_WIRED for f in fields.values())
     assert {k for k, f in fields.items() if not f["fact"]} == {f.key for f in ts.FIELDS if f.wired}
     assert all(f["value"] is None and f["saved"] is False for f in fields.values())
     risk = next(s for s in body["sections"] if s["id"] == "risk_limits")

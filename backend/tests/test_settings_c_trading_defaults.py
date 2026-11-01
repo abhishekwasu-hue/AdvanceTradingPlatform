@@ -62,9 +62,9 @@ def test_round_trip_and_replace():
     {"stop_credit_pct": 501},
     {"entry_mode": "AUTO_LIVE"},
     {"exit_rules": {"trailing_stop_pct": 0}},
-    {"exit_rules": {"trailing_stop_pct": 51}},
-    {"exit_rules": {"break_even_at_r": 11}},
-    {"exit_rules": {"time_exit_minutes": 376}},
+    {"exit_rules": {"trailing_stop_pct": 100}},              # M68 PR-3: no 50 % cap; 100 % = a stop at zero
+    {"exit_rules": {"break_even_at_r": 0}},                 # M68 PR-3: no 10 R cap; more than zero
+    {"exit_rules": {"time_exit_minutes": 0}},               # M68 PR-3: no 375-minute cap; at least 1
     {"exit_rules": {"time_exit_at": "25:00"}},
     {"exit_rules": {"stop_source": "swing"}},           # not an ExitRules field (review R7)
     {"ticket": {"lots": 0}},

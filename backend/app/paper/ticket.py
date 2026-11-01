@@ -31,7 +31,7 @@ import logging
 import math
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from sqlalchemy import select
@@ -141,9 +141,10 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     if plan.time_stop and (not TIME_STOP.match(plan.time_stop) or not SESSION_OPEN < plan.time_stop <= SESSION_CLOSE):
         errors.append(f"Time stop must be a time between {SESSION_OPEN} and {SESSION_CLOSE} IST (HH:MM)")
     elif plan.time_stop:
-        earliest = (to_ist(asked_at or wall_clock()) + timedelta(minutes=app_config.TICKET_TIME_STOP_MIN_LEAD_MINUTES)).strftime("%H:%M")
+        earliest = to_ist(asked_at or wall_clock()).strftime("%H:%M")       # M68 PR-3 (TS1-033): later than now; no ATP lead
         if plan.time_stop <= earliest:
-            errors.append(f"Time stop {plan.time_stop} IST is already past (it must be after {earliest} IST): the position would close at once")
+            errors.append(f"Time stop {plan.time_stop} IST is already past (it must be later than now, {earliest} IST): the position "
+                          "would close at once")
     if not await is_cash_underlying(session, symbol):
         errors.append("The PAPER ticket covers NSE/BSE cash underlyings in Phase 0 (no futures, options, commodities or crypto)")
 

@@ -6,6 +6,7 @@ import type { MarketStrip, StripIndex } from "../../dashboard/types";
 import type { AnalysisItem, AnalyzeStatus } from "../../chartAnalyze/types";
 import type { LayerBand } from "../../charting/engine";
 import { ZONE_COLORS } from "../../charting/marketZones";
+import { areaLabelText } from "../../charting/geometry";
 
 /**
  * Item 5 (owner's handover, the AI Copilot as a trader's brain), first slice: the chat-first Copilot page's data and its
@@ -34,7 +35,9 @@ export interface MarketLine {
  * the nearest stored area with its distance, and the chart the card draws (the Charts page's symbol and timeframe). */
 export interface AnswerHeadline {
   symbol: string; price: number | null; price_label: string; as_of: string | null; trend: "up" | "down" | "sideways" | null; timeframe: string;
-  area: { side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number; distance_pct: number | null } | null;
+  area: { side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number; distance_pct: number | null;
+          /** M78 (F3): the area's own timeframe and state, when the server sends them. */
+          timeframe?: string | null; state?: string | null } | null;
   chart: { symbol: string; exchange: string; timeframe: string } | null;
 }
 /** M59 CR-1: one stored area beside the price on the structure card (distance in points to its near edge, 0 inside). */
@@ -274,13 +277,14 @@ export function distanceText(area: NonNullable<AnswerHeadline["area"]>, price: (
 }
 
 /** CU3 + M75 W-1 (W2): the chart answer's nearest area for the mini chart - ONE filled band (buyer / seller colour from
- * the chart tokens via its role), labelled "Seller area" / "Buyer area" (the owner's words, M75 CW-2) inside or beside it; never two dashed price
+ * the chart tokens via its role), labelled like every band layer (M78 F3: "Seller area · 1d · fresh", the parts the
+ * data has) inside or beside it; never two dashed price
  * lines with "Area top" / "Area bottom" titles over the price axis. */
 export function headlineAreas(h: AnswerHeadline | null | undefined): LayerBand[] {
   const a = h?.area;
   if (!a || !Number.isFinite(a.from) || !Number.isFinite(a.to)) return [];
   const role = a.side ?? "neutral";
-  const label = a.side === "supply" ? "Seller area" : a.side === "demand" ? "Buyer area" : "Area";
+  const label = areaLabelText({ role: a.side, timeframe: a.timeframe, state: a.state });   // M78 (F3): the one band-label text
   return [{ low: Math.min(a.from, a.to), high: Math.max(a.from, a.to), role, color: a.side ? ZONE_COLORS[a.side] : undefined, opacity: 0.18,
             style: "solid", label }];
 }

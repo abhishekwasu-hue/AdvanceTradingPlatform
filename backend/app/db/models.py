@@ -1059,7 +1059,7 @@ class RiskSettingsRecord(Base):
     max_consecutive_losses: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # TT12-4: 0 = not set (no minimum). A row from before then holding the old built-in 1.2 reads as not set
     # (app/risk_engine/routes.py org_min_rr_read); no migration.
-    # M68 PR-5 (TS1-053): NULL = not set (alembic 3c5e7a9b1d24 turned the old 0 sentinel into NULL; a 0 still reads as not set).
+    # M68 PR-5 (TS1-053): NULL = not set (alembic aaa362c38a32 turned the old 0 sentinel into NULL; a 0 still reads as not set).
     min_risk_reward: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
     # Phase V1: Risk Guardian rules (see app/risk_engine/guardian.py) - each NULL = not set (DEF-0).
     max_portfolio_risk_pct: Mapped[float | None] = mapped_column(Float, nullable=True)

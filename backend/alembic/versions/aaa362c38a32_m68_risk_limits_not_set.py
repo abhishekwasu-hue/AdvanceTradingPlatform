@@ -12,7 +12,7 @@ TS-6: every existing row KEEPS its stored pause / opposite-positions value (an o
 only rows made from now on may be NULL. Downgrade fills the NULLs with the old defaults and restores the NOT NULL
 columns, drops `dd_cut_pct`.
 
-Revision ID: 3c5e7a9b1d24
+Revision ID: aaa362c38a32
 Revises: 8d2f4a6c0e19
 Create Date: 2026-11-01 10:00:00
 """
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = '3c5e7a9b1d24'
+revision: str = 'aaa362c38a32'
 down_revision: str | Sequence[str] | None = '8d2f4a6c0e19'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

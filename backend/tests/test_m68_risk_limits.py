@@ -30,7 +30,7 @@ from app.risk_engine.routes import _stored_config
 from tests.test_auth_api import _register, _session_factory, client
 
 BACKEND = Path(__file__).resolve().parents[1]
-MIGRATION = BACKEND / "alembic" / "versions" / "3c5e7a9b1d24_m68_risk_limits_not_set.py"
+MIGRATION = BACKEND / "alembic" / "versions" / "aaa362c38a32_m68_risk_limits_not_set.py"
 
 
 def _run(coro):
@@ -61,7 +61,7 @@ def test_migration_keeps_saved_values_and_is_rollback_safe_with_a_reason():
     spec = importlib.util.spec_from_file_location("m68_pr5_migration", MIGRATION)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module.revision == "3c5e7a9b1d24" and module.ROLLBACK_SAFE is True and module.ROLLBACK_SAFE_REASON
+    assert module.revision == "aaa362c38a32" and module.ROLLBACK_SAFE is True and module.ROLLBACK_SAFE_REASON
     assert not [p for p in lint() if p.startswith(MIGRATION.name)]
     source = MIGRATION.read_text(encoding="utf-8")
     # TS-6: no saved pause / opposite-positions value is rewritten on the way up; only the 0 sentinel and the new cut

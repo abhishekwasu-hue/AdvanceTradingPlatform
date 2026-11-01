@@ -211,8 +211,11 @@ async def calc_option_what_if(ctx: ToolContext, args: _WhatIf) -> ToolResult:
         greeks = model.net_greeks(legs, args.price, today, r=r)
     except ValueError as exc:
         return ToolResult(False, None, None, "calc", error=str(exc)[:200])
-    data = {"price_now": args.price, "pnl_now": _r(now_pnl), "scenario": {"price": _r(moved), "iv_change_pct": args.iv_change_pct,
-            "days_forward": args.days_forward}, "pnl_in_scenario": _r(then_pnl), "pnl_change": _r(then_pnl - now_pnl),
+    shown_now, shown_then = _r(now_pnl), _r(then_pnl)
+    # the change is the difference of the two SHOWN figures, so the three numbers on the card always add up
+    change = _r(shown_then - shown_now) if shown_now is not None and shown_then is not None else None
+    data = {"price_now": args.price, "pnl_now": shown_now, "scenario": {"price": _r(moved), "iv_change_pct": args.iv_change_pct,
+            "days_forward": args.days_forward}, "pnl_in_scenario": shown_then, "pnl_change": change,
             "net_greeks_now": {k: _r(v, 4) for k, v in greeks.items()}, "risk_free_rate_pct": float(rate),
             "note": "Black-Scholes estimate with his own rate; a model, not a forecast."}
     return ToolResult(True, data, _iso(ctx.now), "calc", {"computed_at": _iso(ctx.now)})

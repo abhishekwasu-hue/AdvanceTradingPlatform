@@ -241,6 +241,6 @@ test.describe("My trading defaults behaviour", () => {
     const body = JSON.parse(posts(server)[0].raw ?? "{}") as Record<string, unknown>;
     expect(body).toMatchObject({ mode: "PAPER", instrument_kind: "OPTION", expiry_rule: "NEXT", strike_rule: "OTM", strike_offset: 1, max_lots: 3,
       exit_rules: { trailing_stop_pct: 1.5 } });
-    expect(body).not.toHaveProperty("entry_mode");
+    expect(body).toHaveProperty("entry_mode", "AUTO");      // M68 PR-6: what he picked on the form ("Placed automatically"), not a default
   });
 });

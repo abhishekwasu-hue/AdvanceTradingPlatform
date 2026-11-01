@@ -5,7 +5,7 @@ exported with its data problems; another day and another organisation are left o
 from datetime import datetime, timedelta
 
 from tests import test_m66_en3a_runner as T
-from tests.test_m66_en3a_runner import D1, KEY, M, FakeCollect, FakeEngine, R, _due, _fresh, _org, _run, _session_factory, at  # noqa: F401
+from tests.test_m66_en3a_runner import D1, KEY, FakeCollect, FakeEngine, M, R, _due, _fresh, _org, _run, _session_factory, at  # noqa: F401
 
 
 def _export(tenant_id, day):

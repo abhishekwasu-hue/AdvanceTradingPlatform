@@ -172,8 +172,14 @@ async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, us
     worked = [chat.Step(c["name"], chat.TOOL_NAMES.get(c["name"], "Data"), bool(c.get("ok")), c.get("as_of"), None, [],
                         None if c.get("ok") else chat.plain_reason(c.get("error"), c["name"]), dict(c.get("arguments") or {}))
               for c in ans.tool_calls]
-    shape = chat.Answer(job="agent", title="Answer", summary=[ans.text], worked=worked, notes=list(ans.disclaimers)).as_dict()
-    shape.update(source="ai", answer=ans.text, claims=ans.claims, disclaimers=ans.disclaimers, proposals=ans.proposals,
+    # M72 PR-2 (CP-2, F7): the checked headline first, then the short lines; the cards are tables code drew from the tool
+    # results the model named (never a model-written table); the chips are fixed follow-up actions.
+    lines = [x.strip() for x in ans.text.splitlines() if x.strip()]
+    summary = [ans.headline, *lines] if ans.headline else lines or [ans.text]
+    shape = chat.Answer(job="agent", title="Answer", summary=summary, worked=worked, notes=list(ans.disclaimers),
+                        blocks=[{k: v for k, v in c.items() if k != "call"} for c in ans.cards]).as_dict()
+    shape.update(source="ai", answer=ans.text, claims=ans.claims, disclaimers=ans.disclaimers, proposals=ans.proposals, chips=ans.chips,
+                 headline_line=ans.headline or None,
                  numbers=ans.numbers or grounding.provenance(ans.text, set(), grounding.allowed_from_text(question)),
                  agent={"run_id": ans.run_id, "stopped": ans.stopped, "contract": ans.contract})
     return shape, ""

@@ -3,6 +3,7 @@ import { errorSentence } from "../api/errors";
 import { parseRupees, platformAiApi, type PlatformLimits } from "../aiKeys/platformAiApi";
 import { Card } from "../components/ui";
 import { Badge, Button, Input } from "../components/primitives";
+import { Details } from "../ui/Details";
 
 /**
  * M72 PR-1b (M72Q-1): Admin › Controls › Limits. The owner's numbers for the platform AI key: each plan's monthly budget
@@ -48,7 +49,9 @@ export function AiPlatformLimitsView({ limits, busy, onSave }: {
           <Input label="Daily cap per user (₹)" type="number" inputMode="decimal" min={0} placeholder="Not set" value={cap}
             onChange={(e) => setCap(e.target.value)} error={parsedCap === undefined ? "A number, 0 or more" : undefined} data-user-cap />
         </div>
-        <p className="text-t12 text-fg-muted">Not set = answers from ATP's rules. A user's own key, or his organisation's, is used first.</p>
+        <Details id="admin.aiPlatformLimits" label="What Not set means" className="mt-0">
+          <p className="text-t12 text-fg-muted">Not set = answers from ATP's rules. A user's own key, or his organisation's, is used first.</p>
+        </Details>
         <Button size="v2" variant="primary" disabled={busy || invalid} onClick={save} data-save-ai-platform>Save AI limits</Button>
       </div>
     </Card>

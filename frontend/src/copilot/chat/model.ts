@@ -7,6 +7,8 @@ import type { AnalysisItem, AnalyzeStatus } from "../../chartAnalyze/types";
 import type { LayerBand } from "../../charting/engine";
 import { ZONE_COLORS } from "../../charting/marketZones";
 import { areaLabelText } from "../../charting/geometry";
+import { chartTabPath } from "../../shell/shellRoutes";
+import { TERMINAL_ADDRESS } from "../../shell/aliases";
 
 /**
  * Item 5 (owner's handover, the AI Copilot as a trader's brain), first slice: the chat-first Copilot page's data and its
@@ -93,6 +95,21 @@ export interface ChatAnswer {
   headline?: AnswerHeadline | null;
   /** M59 CR-1: the chart reader's structure card (absent on older stored turns and on other jobs). */
   structure_card?: StructureCard | null;
+  /** M72 PR-2 (CP-2): the AI planner's checked one-line headline (it is also `summary[0]`). */
+  headline_line?: string | null;
+  /** M72 PR-2 (CP-2): fixed follow-up actions - open the symbol a tool read, or ask the next question when tapped. */
+  chips?: AnswerChip[];
+}
+/** M72 PR-2: one follow-up chip; the words are the server's fixed ones. */
+export type AnswerChip =
+  | { kind: "chart" | "terminal"; label: string; symbol: string }
+  | { kind: "ask"; label: string; question: string };
+
+/** M72 PR-2: where an "open" chip goes, inside the app (the Chart tab, or the Terminal with that symbol). */
+export function chipPath(chip: AnswerChip): string | null {
+  if (chip.kind === "chart") return chartTabPath(chip.symbol);
+  if (chip.kind === "terminal") return `${TERMINAL_ADDRESS}?symbol=${encodeURIComponent(chip.symbol.trim().toUpperCase())}`;
+  return null;
 }
 /** Job 6 added: the trader's own settings, a promise of returns, someone else's strategy. */
 export type RefusalKind = "order" | "advice" | "tip" | "settings" | "promise" | "copy";

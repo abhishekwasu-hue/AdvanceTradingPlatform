@@ -227,6 +227,10 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
   // M72 PR-1b: the platform AI key's limits (Controls › Limits) - every number Not set, a key on the server.
   await page.route(A("/admin/controls/ai-platform$"), ok({ plan_budget_inr: { free: null, pro: null, business: null }, user_daily_cap_inr: null,
     key_configured: true, provider: "anthropic", plans: [{ id: "free", name: "Free" }, { id: "pro", name: "Pro" }, { id: "business", name: "Business" }] }));
+  // M72 PR-2: the Copilot planner's limits (Controls › Limits) - the defaults, inside their bounds.
+  await page.route(A("/admin/controls/copilot-agent-limits$"), ok({ limits: { max_steps: 6, max_tool_calls: 12, max_seconds: 60, max_tokens_per_step: 4000 },
+    defaults: { max_steps: 6, max_tool_calls: 12, max_seconds: 60, max_tokens_per_step: 4000 },
+    bounds: { max_steps: { low: 1, high: 12 }, max_tool_calls: { low: 1, high: 30 }, max_seconds: { low: 5, high: 180 }, max_tokens_per_step: { low: 500, high: 16000 } } }));
   await page.route(A("/admin/incidents(\\?.*)?$"), ok([]));
   await page.route(A("/admin/beta/cohort$"), ok({ gate_on: false, cap: 50, used: 3, remaining: 47, stage: 50, stages: [10, 50, 200], next_stage: 200, env_cap: 500, capped_by_env: false, headroom: 47 }));
   await page.route(A("/admin/plans$"), ok([{ id: "free", name: "Free", description: "", limits: {} }, { id: "pro", name: "Pro", description: "", limits: {} }]));

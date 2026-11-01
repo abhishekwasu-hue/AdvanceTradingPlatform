@@ -228,7 +228,10 @@ def planner_responder(provider: CountingProvider, limits: Any, runs: dict[str, C
             # so the planner itself scores as no answer here.
             return trader_eval.Candidate(text="", headline="", fallback=True, tools=seen)
         lines = [x for x in ans.text.splitlines() if x.strip()]
-        return trader_eval.Candidate(text=ans.text, headline=lines[0] if lines else "", followups=[], tools=seen, computed_text="\n".join(computed))
+        head = ans.headline or (lines[0] if lines else "")
+        shown = "\n".join([ans.headline, ans.text]) if ans.headline else ans.text
+        chips = [c["label"] for c in ans.chips]
+        return trader_eval.Candidate(text=shown, headline=head, followups=chips, tools=seen, computed_text="\n".join(computed))
     return respond
 
 

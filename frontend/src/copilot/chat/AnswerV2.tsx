@@ -9,8 +9,8 @@ import { AnalysisTableView, MiniChart } from "../../optionChain/AnalysisTabsV2";
 import { useCopilotT } from "../i18n";
 import { cx } from "../../components/primitives/cx";
 import {
-  actionState, answerParts, answerRow, areaText, distanceText, headlineAreas, notSetUpLine, stampText, toolsUsedLine, workedLine,
-  type AnswerBlock, type AnswerHeadline, type ChatAnswer,
+  actionState, answerParts, answerRow, areaText, chipPath, distanceText, headlineAreas, notSetUpLine, stampText, toolsUsedLine, workedLine,
+  type AnswerBlock, type AnswerChip, type AnswerHeadline, type ChatAnswer,
 } from "./model";
 import CostChip from "../components/CostChip";
 import { RichText } from "./RichText";
@@ -20,6 +20,7 @@ import { StructureCardV2 } from "./StructureCardV2";
 const PRIMARY = "inline-flex min-h-11 w-full items-center justify-center py-space-2 text-center gap-space-2 rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto";
 const SECONDARY = "inline-flex min-h-11 w-full items-center justify-center gap-space-2 rounded-control border border-brand px-space-5 py-space-2 text-t14 font-semibold text-brand transition-colors duration-fast hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto";
 const CHIP = "inline-flex min-h-9 items-center rounded-pill border border-border bg-surface-2 px-space-3 py-space-1 text-t13 text-fg";
+const CHIP_ACTION = "inline-flex min-h-11 items-center gap-space-1 rounded-pill border border-border px-space-3 text-t13 font-medium text-fg transition-colors duration-fast hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9";
 const TREND_TONE = { up: "bg-up-tint text-up", down: "bg-down-tint text-down", sideways: "bg-surface-2 text-fg" } as const;
 const TREND_WORD = { up: "▲ Up", down: "▼ Down", sideways: "Sideways" } as const;
 
@@ -60,6 +61,27 @@ function Blocks({ blocks }: { blocks: AnswerBlock[] }) {
       {b.type === "chart" ? <MiniChart chart={b.chart} title={b.title} /> : <AnalysisTableView table={b.table} />}
     </div>
   ))}</>;
+}
+
+/** M72 PR-2 (CP-2): the planner's follow-up chips - "Show on chart" / "Open in Terminal" open in place; the others ask
+ * their next question only when tapped. */
+function Chips({ chips, onAsk }: { chips: AnswerChip[]; onAsk?: (q: string) => void }) {
+  const shown = chips.filter((c) => c.kind !== "ask" || onAsk);
+  if (shown.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-space-2" data-chips>
+      {shown.map((c) => {
+        const to = chipPath(c);
+        return to ? (
+          <InPlaceLink key={c.label} to={to} data-chip={c.kind} className={CHIP_ACTION}>
+            {c.kind === "chart" && <LineChart size={14} aria-hidden />}{c.label}
+          </InPlaceLink>
+        ) : c.kind === "ask" ? (
+          <button key={c.label} type="button" onClick={() => onAsk?.(c.question)} data-chip="ask" className={CHIP_ACTION}>{c.label}</button>
+        ) : null;
+      })}
+    </div>
+  );
 }
 
 /** CU3: the headline number row - price, trend chip, nearest area from - to, distance - before any sentence. */
@@ -115,7 +137,9 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
       {h && <HeadlineRow h={h} />}
       {card ? <StructureCardV2 card={card} /> : (
         <div className="space-y-space-1" data-summary>
-          {answer.summary.map((line, i) => <RichText key={i} source={line} />)}
+          {answer.summary.map((line, i) => i === 0 && answer.headline_line
+            ? <p key={i} className="text-t15 font-semibold text-fg" data-headline-line>{line}</p>
+            : <RichText key={i} source={line} />)}
         </div>
       )}
       {chart && (
@@ -162,6 +186,7 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
           )}
         </div>
       )}
+      {answer.chips && answer.chips.length > 0 && <Chips chips={answer.chips} onAsk={onAsk} />}
       {answer.starters.length > 0 && onAsk && (
         <div className="flex flex-wrap gap-space-2">
           {answer.starters.map((s) => (

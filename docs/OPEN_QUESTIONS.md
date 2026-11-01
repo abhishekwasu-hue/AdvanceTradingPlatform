@@ -458,6 +458,13 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | M75Q-4 | CW-2 lists area states ALIVE / FALSE BREAK / BEYOND_NOT_BROKEN / BROKEN / DEAD; ATP's zones have fresh / tested / flipped / invalidated and the analysis contract fresh / tested / broken / flipped; CW-6 "candle closing with rejection" has no defined reader in ATP's plan path. | Show only states that have a public phrase from their own source (engine tokens via a public phrase table when `trade_engine` is on; ATP's four states otherwise) - never map one set onto the other; "rejection" = the engine's commitment reading when on, else ATP's ported level gate commitment candle (N1 L1); the candle timeframe is the user's choice (no 15M preset). | `price_action/zones/lifecycle.py:40-45`, `chart_analyze/contract.py:57`, `price_action/level_gate/gate.py` | open (owner) |
 | M75Q-5 | CW-1 "opening a chart automatically starts the AI analysis": a model call on every chart open costs money and needs a key (M72Q-1) and a per-user cap (M72 F2). | On open the code reading always starts (free, instant); the AI card runs automatically once per symbol / timeframe / last closed bar, cached and reused by every later open, inside the plan budget and his daily cap; when the cap or key is missing the code card shows with one line saying the AI part is off. | `chart_analyze/hybrid.py`, `ai/metering.py` | open (owner) |
 
+## M75 rule 1: no click-navigation (M75N, 1 Nov)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| M75N-1 | Today "View all" / "Find setups" shortcuts are tab shortcuts: convert them too? | Yes: the list opens in a side panel on Today; tabs are reached from the navigation. | docs/design/M75_NO_NAVIGATION.md | open |
+| M75N-2 | Phone Back with an in-place panel open. | Back closes the panel (one history entry per open, same path), the tab stays. | same | open |
+| M75N-3 | Classic UI sites (`App.tsx`, `src/pages/*`, 10). | Converted in the same area PRs while the classic shell is reachable; the guard counts them until then. | same | open |
 ## M76: Copilot workspace mistake-proofing review (1 Nov, docs/design/M76_REVIEW.md)
 
 | # | Question | Provisional default | Where | Status |

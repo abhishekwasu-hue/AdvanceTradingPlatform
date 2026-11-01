@@ -171,6 +171,22 @@ def _finite(x: float) -> Optional[float]:
     return None if x is None or math.isinf(x) or math.isnan(x) else float(x)
 
 
+def _rate(body: Any) -> float:
+    """The rate this request's model uses: the one resolved for it (his own, the request's or the platform's, M68 PR-4)."""
+    if body.rate is None:
+        from app.core.config import RISK_FREE_RATE
+        return RISK_FREE_RATE
+    return float(body.rate)
+
+
+def _needs(value: Any, field: str, name: str) -> Any:
+    """M68 PR-4 (TS1-103): a selector number the request and his Trade settings both left Not set is asked for (422)."""
+    if value is None:
+        from app.option_chain import chain_view
+        raise HTTPException(status_code=422, detail=[chain_view.options_field_error((field,), name)])
+    return value
+
+
 def _legs(body: EvaluateBody, as_of: Union[date, datetime]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for leg in body.legs:
@@ -180,7 +196,7 @@ def _legs(body: EvaluateBody, as_of: Union[date, datetime]) -> List[Dict[str, An
             if leg.premium <= 0:
                 raise HTTPException(status_code=422, detail=f"{leg.option_type} {leg.strike:g}: give an IV or a premium to solve it from")
             try:
-                d = leg_with_model_greeks(d, underlying_price=body.spot, expiry=leg.expiry, as_of=as_of, risk_free_rate=body.rate)
+                d = leg_with_model_greeks(d, underlying_price=body.spot, expiry=leg.expiry, as_of=as_of, risk_free_rate=_rate(body))
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=f"{leg.option_type} {leg.strike:g}: {exc}") from exc
             d["iv_source"] = "solved from the premium"
@@ -221,7 +237,7 @@ async def build_template(body: TemplateBody, user: User = Depends(get_current_us
             leg["iv"] = None if leg["option_type"] == "FUT" else body.iv
             when: Union[date, datetime] = body.as_of or datetime.now().astimezone()
             try:
-                leg["premium"] = round(model.leg_theoretical({**leg, "premium": 0.0}, body.spot, when, r=body.rate), 2)
+                leg["premium"] = round(model.leg_theoretical({**leg, "premium": 0.0}, body.spot, when, r=_rate(body)), 2)
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=f"{leg['option_type']} {leg['strike']:g}: {exc}") from exc
             leg["premium_source"] = "model"
@@ -354,18 +370,21 @@ def _suggest(body: SuggestBody) -> Dict[str, Any]:
     direction = body.direction or ""
     result: Optional[Dict[str, Any]]
     if body.rule == "credit_spread":
-        result = selectors.select_credit_spread(raw, direction, body.hedge_width_points, body.pop_threshold_pct)
+        result = selectors.select_credit_spread(raw, direction, body.hedge_width_points, _needs(body.pop_threshold_pct, "pop_threshold_pct", "builder_pop_pct"))
     else:
         if atm is None:
             raise HTTPException(status_code=422, detail="give atm_strike, or a chain with its underlying price")
         at: float = atm
         if body.rule == "iron_condor":
-            result = selectors.select_iron_condor(raw, at, body.step, body.hedge_width_points, body.pop_threshold_pct)
+            result = selectors.select_iron_condor(raw, at, body.step, body.hedge_width_points,
+                                                 _needs(body.pop_threshold_pct, "pop_threshold_pct", "builder_pop_pct"))
         elif body.rule == "iron_butterfly":
-            result = selectors.select_iron_butterfly(raw, at, body.hedge_width_points, body.pop_threshold_pct)
+            result = selectors.select_iron_butterfly(raw, at, body.hedge_width_points,
+                                                    _needs(body.pop_threshold_pct, "pop_threshold_pct", "builder_pop_pct"))
         elif body.rule == "credit_spread_fixed":
             result = selectors.select_credit_spread_fixed_strikes(raw, direction, at, hedge_width_points=body.hedge_width_points,
-                                                                  step=body.step, strikes_otm=body.strikes_otm)
+                                                                  step=body.step,
+                                                                  strikes_otm=_needs(body.strikes_otm, "strikes_otm", "builder_strikes_otm"))
         elif body.rule == "credit_spread_itm":
             result = selectors.select_credit_spread_itm(raw, direction, at, itm_depth_points=body.itm_depth_points,
                                                         hedge_width_points=body.hedge_width_points, step=body.step)

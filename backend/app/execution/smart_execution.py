@@ -312,7 +312,10 @@ def settlement_flags(holdings: Sequence[Holding], spots: Dict[str, float], today
         else:
             if spot is None or h.strike is None:
                 continue
-            state = moneyness(h.right, float(h.strike), float(spot), settings.settlement_band_pct)
+            band = settings.settlement_band_pct
+            if band is None:
+                continue
+            state = moneyness(h.right, float(h.strike), float(spot), band)
             if state is None:
                 continue
             value = round(float(h.strike) * h.quantity, 2)

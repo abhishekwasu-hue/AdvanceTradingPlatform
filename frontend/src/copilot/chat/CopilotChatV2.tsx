@@ -1,5 +1,6 @@
 import { SETTINGS_PATH } from "../../settings/paths";
-import { KeyRound, Paperclip, SendHorizontal, Sparkles } from "lucide-react";
+import { askContextLabel, type AskContext } from "../askContext";
+import { KeyRound, Paperclip, SendHorizontal, Sparkles, X } from "lucide-react";
 import { IndexCell } from "../../dashboard/MarketStripV2";
 import { vixBand } from "../../dashboard/model";
 import type { MarketStrip } from "../../dashboard/types";
@@ -74,6 +75,8 @@ export interface ChatViewProps {
   onKeyOpen?: (open: boolean) => void;
   /** M59 CR-2: a chart in the Ask box (upload / TradingView snapshot link); left out: no attach button. */
   onAttach?: (source: ChartSource) => void;
+  /** M72 PR-3 (CP-3): what the next question is about ("Ask AI about this"), with a way to drop it. */
+  about?: ReactNode;
 }
 
 export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, onAttach }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk" | "onAttach"> & { placeholder?: string }) {
@@ -153,7 +156,7 @@ export function NumbersStrip({ strip, home, nowMs }: { strip: Loadable<MarketStr
   );
 }
 
-export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach }: ChatViewProps) {
+export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about }: ChatViewProps) {
   const t = useCopilotT();
   const line = marketLineText(home);
   const chips = home ? quickChips(home.jobs) : [];
@@ -207,6 +210,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
         </nav>
       )}
 
+      {about}
       {placement === "inline" && composer}
 
       {!empty && (
@@ -312,8 +316,29 @@ function usePlacement(): "bottom" | "inline" {
 const readNumbers = () => api.marketStrip({ sensex: true });
 
 /** The page's state: the home read once, the kept conversation (CU6), then each question as one turn. */
-export function CopilotChatV2() {
+/** M72 PR-3: the "About NIFTY · 15min" chip above the questions, with its remove button. */
+export function AboutChip({ ctx, onClear }: { ctx: AskContext; onClear: () => void }) {
   const t = useCopilotT();
+  return (
+    <p className="flex min-w-0 items-center gap-space-2 text-t13" data-ask-context={ctx.object?.kind ?? "symbol"}>
+      <span className="text-fg-muted">{t("chat.about")}</span>
+      <span className="inline-flex min-h-9 min-w-0 items-center gap-space-1 rounded-pill border border-border bg-surface-2 pl-space-3 pr-space-1 text-fg">
+        <span className="truncate font-medium">{askContextLabel(ctx)}</span>
+        <button type="button" onClick={onClear} aria-label={t("chat.aboutClear")} title={t("chat.aboutClear")} data-ask-context-clear
+          className="inline-flex size-9 shrink-0 items-center justify-center rounded-pill text-fg-muted hover:bg-surface-1 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+          <X size={14} aria-hidden />
+        </button>
+      </span>
+    </p>
+  );
+}
+
+export function CopilotChatV2({ context = null }: { context?: AskContext | null }) {
+  const t = useCopilotT();
+  // M72 PR-3 (F8): the context the page was opened with rides on every question until the user drops it
+  const contextKey = JSON.stringify(context);
+  const [about, setAbout] = useState<AskContext | null>(context);
+  useEffect(() => setAbout(JSON.parse(contextKey) as AskContext | null), [contextKey]);
   const [home, setHome] = useState<ChatHome | null>(null);
   const [homeError, setHomeError] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -379,7 +404,7 @@ export function CopilotChatV2() {
     setDraft("");
     setBusy(true);
     try {
-      const answer: ChatAnswer = await chatApi.ask(question);
+      const answer: ChatAnswer = await chatApi.ask(question, about);
       setTurns((all) => settled(all, id, answer, null));
     } catch (e) {
       setTurns((all) => settled(all, id, null, friendlyError(e, t) || t("chat.failed")));
@@ -427,7 +452,8 @@ export function CopilotChatV2() {
       <PageIntro id="copilot-chat" title={t("chat.introTitle")} lines={[t("chat.intro1"), t("chat.intro2")]} />
       <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={placement} onDraft={setDraft} onAsk={(q) => void ask(q)}
         strip={strip} keyOpen={keyOpen} onKeyOpen={setKeyOpen} onAttach={canAttach ? (source) => void attachChart(source) : undefined}
-        connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined} />
+        connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined}
+        about={about ? <AboutChip ctx={about} onClear={() => setAbout(null)} /> : undefined} />
     </>
   );
 }
@@ -438,9 +464,9 @@ function Waiting() {
   return <p className="text-t20 font-semibold text-fg md:text-t24">{t("chat.topLine")}</p>;
 }
 
-export default function CopilotChatGate() {
+export default function CopilotChatGate({ context = null }: { context?: AskContext | null }) {
   const t = useCopilotT();
   const { user } = useAuth();
   if (!user) return <p className="text-t14 text-fg-muted">{t("shell.signIn")}</p>;
-  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 /></FirstUseModal>;
+  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 context={context} /></FirstUseModal>;
 }

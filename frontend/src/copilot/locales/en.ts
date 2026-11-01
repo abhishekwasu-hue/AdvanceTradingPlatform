@@ -106,6 +106,8 @@ export const COPILOT_EN = {
     fiiNet: "FII net",
     quick: "Quick questions",
     aiOn: "AI on",
+    about: "About",
+    aboutClear: "Ask without this context",
     aiOff: "AI off",
     // CP-UX CU5: the no-key state, said once (the server's own line comes first).
     aiOffLine: "AI is off — answers are from rules",

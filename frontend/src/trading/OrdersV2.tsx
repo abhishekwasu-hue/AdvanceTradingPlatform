@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { AskAiAbout } from "../copilot/AskAiAbout";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
@@ -115,6 +116,8 @@ export function OrderRowV2({ row }: { row: OrderFillRow }) {
         {colour ? <DirectionChip side={row.side === "Long" ? "long" : "short"} />
           : <span className={`text-t13 font-medium ${row.side === "Long" ? "text-up" : "text-down"}`}>{row.side}</span>}
         {row.mode === "Live" && <LiveBadge />}
+        {/* M72 PR-3: the Copilot beside the page, about this trade */}
+        <span className="ml-auto"><AskAiAbout ctx={{ symbol: row.symbol, object: { kind: "trade", id: row.tradeId }, page: "orders" }} /></span>
       </div>
       <p className="mt-px font-tabular text-t13 text-fg-muted">{row.size} · at {row.price} · {row.when}</p>
       {(row.reason || row.strategy) && (

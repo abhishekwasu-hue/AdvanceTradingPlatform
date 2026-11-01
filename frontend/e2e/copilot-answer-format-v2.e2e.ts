@@ -67,3 +67,34 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
     });
   });
 }
+
+// M72 PR-3 (CP-3): "Ask AI about this" - the context in the address rides on the question as ids and words only.
+test.describe("Copilot context", () => {
+  test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  test("the About chip shows the context, the question carries it, and it can be dropped", async ({ page }) => {
+    const bodies: unknown[] = [];
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await mockApi(page, { features: { ui_v2: true, ai_copilot: true, copilot_agent: true }, brokers: [] });
+    await mockCopilotNumbers(page);
+    const home = { ...F.home, ai: { ready: true, title: null, line: null, settings: "/settings/ai", reason: null } };
+    await page.route(/\/api(?:\/v1)?\/ai\/chat(\/home|\/history)?$/, async (route) => {
+      const request = route.request();
+      if (request.url().endsWith("/history")) return route.fulfill({ json: { turns: [], keep: 20 } });
+      if (request.method() === "GET") return route.fulfill({ json: home });
+      bodies.push(request.postDataJSON());
+      return route.fulfill({ json: PLANNED });
+    });
+    await page.goto("/copilot?symbol=DDDSTOCK&ctx=trade:7&from=orders");
+    await expect(page.locator("[data-ask-context='trade']")).toContainText("Your trade · DDDSTOCK");
+    await page.locator("#copilot-question").fill("How did this go?");
+    await page.locator("#copilot-question").press("Enter");
+    await expect(page.locator("[data-answer='agent']")).toBeVisible({ timeout: 15_000 });
+    expect(bodies[0]).toEqual({ message: "How did this go?", context: { symbol: "DDDSTOCK", object: { kind: "trade", id: 7 }, page: "orders" } });
+    await page.locator("[data-ask-context-clear]").click();
+    await expect(page.locator("[data-ask-context]")).toHaveCount(0);
+    await page.locator("#copilot-question").fill("And now?");
+    await page.locator("#copilot-question").press("Enter");
+    await expect(page.locator("[data-answer='agent']")).toHaveCount(2);
+    expect(bodies[1]).toEqual({ message: "And now?" });
+  });
+});

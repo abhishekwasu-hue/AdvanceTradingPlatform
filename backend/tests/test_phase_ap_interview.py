@@ -3,6 +3,8 @@ import math
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+import pytest
+from fastapi import HTTPException
 
 from app.ai import interview as iv
 from app.deployments.routes import DeploymentCreateRequest
@@ -103,7 +105,12 @@ def test_plan_in_marathi_with_a_deployable_paper_setup():
     assert any("मत" in w for w in plan["warnings"])                           # bearish view vs a bullish market
     dep = plan["deployment"]
     assert dep["mode"] == "PAPER" and dep["regime_filter"] == ["TRENDING_UP", "TRENDING_DOWN"]
-    DeploymentCreateRequest(**dep).normalised()                               # the create API accepts it as is
+    # M68 PR-4 (TS1-035): the draft names no strike - the create API takes the user's own (Trade settings) or asks for it
+    if "strike_rule" not in dep:
+        with pytest.raises(HTTPException) as asked:
+            DeploymentCreateRequest(**dep).normalised()
+        assert asked.value.status_code == 422 and asked.value.detail[0]["type"] == "needs_setting"
+    DeploymentCreateRequest(**{"strike_rule": "ATM", **dep}).normalised()      # with his strike the create API accepts it
     # DEF-0 D2 / SB-UX SU4: no capital and no risk answered - none is pre-filled
     assert plan["risk_config"]["risk_per_trade_pct"] is None and plan["risk_config"]["max_daily_loss_pct"] is None
     assert plan["risk_config"]["capital"] is None and "Capital not given" in plan["ai_prompt"] and "no risk per trade set" in plan["ai_prompt"]

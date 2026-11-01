@@ -197,18 +197,29 @@ async def futures_contracts(session: AsyncSession, broker: Any, index_symbol: st
 
 async def collect(session: AsyncSession, *, key: str, exchange: str, timeframes: Sequence[str], starts: Mapping[str, datetime],
                   now: datetime, cal: MarketCalendar, scope: Any = None, broker: Any = None, broker_symbol: str | None = None,
-                  lake_timeframes: Sequence[str] = LAKE_TIMEFRAMES, store: StoreRead | None = None) -> tuple[F.SymbolData, list[str]]:
+                  lake_timeframes: Sequence[str] = LAKE_TIMEFRAMES, store: StoreRead | None = None,
+                  required: Mapping[str, datetime] | None = None) -> tuple[F.SymbolData, list[str]]:
     """Everything ATP has for one symbol: the user's broker 1-minute bars (1m / 5m / ... timeframes), the stored
     history's 1-minute bars for `lake_timeframes` (15m / 1h; the broker's when the store has none), the Daily bars
     (stored history first, else the broker's), the DH3 marks and, for an index, the near-month future's live bars.
     `store` (M71 W2-C, flag `market_store_reads`): the broker's 1-minute bars and the future's come through the own
-    store first (`store_bars`); None = exactly the broker path."""
+    store first (`store_bars`); None = exactly the broker path.
+    required (M79, runner setting `history_days`): {timeframe: the start of the window whose gaps block}, for a frame
+    whose `starts` reaches back into the stored history. The broker is never asked for that history (only from the
+    required start); a stored-history timeframe reads its bars before today's session open once a day
+    (`history_bars`, rebuilt to the timeframe) and the 1-minute bars from that open."""
     notes: list[str] = []
     tried: list[str] = []
     own_volume = not F.is_index_key(key)
     intraday = [tf for tf in timeframes if tf in F.MINUTES]
-    first = min((starts[tf] for tf in intraday), default=now)
-    lake_first = min((starts[tf] for tf in intraday if tf in lake_timeframes), default=None)
+    need = dict(required or {})
+    first = min((max(starts[tf], need.get(tf, starts[tf])) for tf in intraday), default=now)
+    hist_tfs = [tf for tf in intraday if tf in lake_timeframes and tf in need and need[tf] > starts[tf]]
+    cut = last_open(cal, now) if hist_tfs else None
+    if cut is None or any(starts[tf] >= cut for tf in hist_tfs):
+        hist_tfs, cut = [], None
+    lake_first = min(([cut] if cut is not None else []) + [starts[tf] for tf in intraday if tf in lake_timeframes and tf not in hist_tfs],
+                     default=None)
     minutes = None
     if store is not None and broker_symbol and intraday:
         tried.append(STORE_TRIED)
@@ -221,6 +232,7 @@ async def collect(session: AsyncSession, *, key: str, exchange: str, timeframes:
         minutes, more = await broker_bars(broker, broker_symbol, exchange, "1m", first, now, cal, own_volume=own_volume)
         notes += more
     by_tf: dict[str, F.SourceBars] = {}
+    history: dict[str, F.HistoryBars] = {}
     if lake_first is not None:
         lake_min, _, more = await lake_bars(session, key, "1m", lake_first, now, cal, scope=scope)
         tried.append("stored history (1-minute)")
@@ -229,21 +241,64 @@ async def collect(session: AsyncSession, *, key: str, exchange: str, timeframes:
             by_tf = {tf: lake_min for tf in intraday if tf in lake_timeframes}
             if minutes is None:
                 minutes = lake_min
+    if cut is not None:
+        for tf in hist_tfs:
+            got, more = await history_bars(session, key, tf, starts[tf], cut, cal, scope=scope)
+            notes += more
+            if got is not None:
+                history[tf] = got
     daily, extended = None, frozenset[date]()
     if F.DAILY in timeframes:
         tried.append("stored history (Daily)")
         daily, extended, more = await lake_bars(session, key, F.DAILY, starts[F.DAILY], now, cal, scope=scope)
         notes += more
         if daily is None and broker is not None and broker_symbol:
-            daily, more = await broker_bars(broker, broker_symbol, exchange, F.DAILY, starts[F.DAILY], now, cal, own_volume=own_volume)
+            daily, more = await broker_bars(broker, broker_symbol, exchange, F.DAILY, max(starts[F.DAILY], need.get(F.DAILY, starts[F.DAILY])),
+                                            now, cal, own_volume=own_volume)
             notes += more
     expected, contracts = False, tuple[F.FuturesContract, ...]()
     if not own_volume and broker_symbol:
         expected, contracts, more = await futures_contracts(session, broker, broker_symbol, exchange, first, now, cal, store=store)
         notes += more
     data = F.SymbolData(symbol=key, exchange=exchange, minutes=minutes, minutes_by_timeframe=by_tf, daily=daily,
-                        extended_days=extended, futures=contracts, futures_expected=expected, sources_tried=tuple(tried))
+                        extended_days=extended, futures=contracts, futures_expected=expected, sources_tried=tuple(tried),
+                        history=history)
     return data, notes
+
+
+# --- the stored history, read once a day (M79) ------------------------------------------------------------------------
+
+def last_open(cal: MarketCalendar, now: datetime) -> datetime | None:
+    """The open of the newest session that opened by `now` (the stored history's daily cut); None when the calendar
+    has none in the look-back."""
+    day = now.astimezone(F.IST).date()
+    for _ in range(31):                     # a month back at most (operational look-back)
+        if F.is_session_day(cal, day) and F.session_open(cal, day) <= now:
+            return F.session_open(cal, day)
+        day -= timedelta(days=1)
+    return None
+
+
+HISTORY_CACHE_SIZE = 32                     # (symbol, timeframe, scope, start, cut) entries kept; only today's cut
+_HISTORY: dict[tuple[Any, ...], tuple[F.HistoryBars | None, list[str]]] = {}
+
+
+async def history_bars(session: AsyncSession, key: str, timeframe: str, start: datetime, cut: datetime, cal: MarketCalendar, *,
+                       scope: Any = None) -> tuple[F.HistoryBars | None, list[str]]:
+    """The stored 1-minute history of `key` in [start, cut) rebuilt to `timeframe` (`frames.history_of`), kept in this
+    process until the cut moves: closed days do not change, so the long history is read once a day, not every cycle
+    (as Trade's live feed keeps its prior-day history). None when the store holds nothing of it."""
+    ident = (key, timeframe, scope, _utc(start), _utc(cut))
+    if ident in _HISTORY:
+        return _HISTORY[ident]
+    for old in [k for k in _HISTORY if k[4] != ident[4]]:
+        _HISTORY.pop(old, None)
+    raw, _, notes = await lake_bars(session, key, "1m", start, cut, cal, scope=scope)
+    got = None if raw is None or not raw.bars else F.history_of(raw, timeframe, cut, cal)
+    while len(_HISTORY) >= HISTORY_CACHE_SIZE:
+        _HISTORY.pop(next(iter(_HISTORY)))
+    _HISTORY[ident] = (got, list(notes))
+    return got, list(notes)
 
 
 @dataclass(frozen=True)
@@ -280,4 +335,5 @@ async def probe(session: AsyncSession, items: Sequence[ProbeItem], *, timeframes
 
 
 __all__ = ["LAKE_TIMEFRAMES", "ProbeItem", "CALENDAR_NOTE", "StoreRead", "load_calendar", "lake_bars", "broker_bars", "store_bars",
+           "history_bars", "last_open",
            "futures_contracts", "collect", "probe"]

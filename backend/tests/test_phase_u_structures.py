@@ -104,8 +104,9 @@ def test_custom_legs_resolve_validate_and_describe():
         parse_custom_legs([{"right": "CE", "role": "SHORT"}])
     with pytest.raises(ValueError, match="same contract"):
         parse_custom_legs([{"right": "CE", "role": "SHORT"}, {"right": "CE", "role": "LONG", "strike_rule": "ATM"}])
-    with pytest.raises(ValueError, match="ratio"):
-        parse_custom_legs([{"right": "CE", "role": "SHORT", "ratio": 9}, {"right": "PE", "role": "SHORT"}])
+    with pytest.raises(ValueError, match="ratio"):                         # M68 PR-4 (TS1-047): no ATP ceiling, 1 or more
+        parse_custom_legs([{"right": "CE", "role": "SHORT", "ratio": -1}, {"right": "PE", "role": "SHORT"}])
+    assert parse_custom_legs([{"right": "CE", "role": "SHORT", "ratio": 9}, {"right": "PE", "role": "SHORT"}])[0].ratio == 9
     with pytest.raises(ContractResolutionError, match="has no legs"):
         _resolve_custom([])
     # OTM with offset 0 is ATM: two legs that resolve to one contract are refused at resolution.
@@ -211,7 +212,8 @@ def test_deployment_api_custom_legs_and_preview(monkeypatch):
     _load_master()
     headers = _auth("u-api@example.com")
     _store_broker(headers, token_status="VALID")
-    legs = [{"right": "PE", "role": "SHORT"}, {"right": "PE", "role": "LONG", "strike_rule": "OTM", "strike_offset": 2},
+    # M68 PR-4 (TS1-038): each leg names its own strike (the API no longer reads a missing one as ATM)
+    legs = [{"right": "PE", "role": "SHORT", "strike_rule": "ATM"}, {"right": "PE", "role": "LONG", "strike_rule": "OTM", "strike_offset": 2},
             {"right": "CE", "role": "SHORT", "strike_rule": "OTM", "strike_offset": 2}]
     assert _create(headers, symbol="NIFTY 50", instrument_kind="OPTION", option_strategy="CUSTOM").status_code == 400
     bad = _create(headers, symbol="NIFTY 50", instrument_kind="OPTION", option_strategy="CUSTOM", custom_legs=legs[:1])

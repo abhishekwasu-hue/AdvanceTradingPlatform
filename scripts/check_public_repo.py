@@ -114,7 +114,7 @@ PRIVATE_FIXTURES_RESOLVER = "backend/tests/private_fixtures.py"
 ALLOWED_TEST_DATA: Dict[str, str] = {
     # M55 Q1: the moved and scanner routes (paths, dependencies, schema hashes) - generated from the code, no data;
     # re-pin after regenerating it (tests/route_table_snapshot.py)
-    "backend/tests/fixtures/route_table.json": "b82f68b37df3186f6f9f517fa7849b43d043324829373ae38eb0cf7af372b374",
+    "backend/tests/fixtures/route_table.json": "212a77e8abb18c021cb39ec3016e039013cb05e7093dbfcbcfe89ea01845283b",
     # F&O 8b slice 3: UI screenshots of the auto journal card on made-up trades (e2e/fno8b-slice3-v2.e2e.ts); re-pin
     # after regenerating them
     "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-dark.png": "445f6eaf5030c874e09efb555e77238bea985e6f0a840b55913d29383c6dd3fc",
@@ -236,8 +236,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/mytrades_cards_v2.json": "4d0ba8e0bd9fcf0e3117746ad9169e832f209600858c79df807b8ff92a8fa82d",
     "frontend/e2e/fixtures/copilot_chat_v2.json": "d844e9cfe7294dd7a5faf64e21b751ce48b8085739ac8dfd5c7f6bf67d3dc22f",
     # M68 PR-0: Settings > Trade settings - the registry's own replies (backend/app/me/trade_settings.py view(); synthetic)
-    "frontend/e2e/fixtures/trade-settings-user.json": "2ca9ce7b736369d59831b84ba4bfc88959933d5a83dbe2ee78b5eb6e31a62900",
-    "frontend/e2e/fixtures/trade-settings-admin.json": "b7454b5e2d6b7981bbef7d83f73ec845d2c1b78fef36ccdbf3d3f1f835b5fb62",
+    "frontend/e2e/fixtures/trade-settings-user.json": "e690416834a5947bf999442cb26dc0c0a2d85b2aa3b20e2218ecb881f7c821af",
+    "frontend/e2e/fixtures/trade-settings-admin.json": "335ba12f0bea7e8e12a29f0ccd1a18ee0cb716793f8a961e931a0dee7167353b",
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

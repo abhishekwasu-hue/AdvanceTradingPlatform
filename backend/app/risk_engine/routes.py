@@ -267,7 +267,7 @@ async def put_risk_limits(body: dict, user: User = Depends(require_trader), sess
     if problems:
         raise HTTPException(status_code=422, detail=problems[0])
     if record is None:
-        record = RiskSettingsRecord(tenant_id=user.tenant_id, updated_by=user.id, lot_size=1)
+        record = RiskSettingsRecord(tenant_id=user.tenant_id, updated_by=user.id)   # M68 TS1-018: no cash unit pre-set
         session.add(record)
     record.updated_by = user.id
     for key, value in values.items():

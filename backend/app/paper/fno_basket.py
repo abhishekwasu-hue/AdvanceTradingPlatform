@@ -39,8 +39,8 @@ from app.paper import fno_ticket
 logger = logging.getLogger(__name__)
 
 MAX_LEGS = 12                       # the Options Builder's limit for one strategy
-NEUTRAL_WIDTH_STEPS = 2             # a neutral starting width the user edits (no setting of their own)
-NEUTRAL_LOTS = 1
+# M68 PR-2 (TS1-023): no neutral width or lots any more - his Trade settings first, else his options bot's; neither = Not set
+# (null): a ready strategy's legs start with empty lots (the panel asks at each leg) and a spread asks for its width.
 # DEF-0 D3 (owner, 28 Oct): no built-in stop for a sold leg - the trader's own premium stop, else none (he sets each leg)
 
 
@@ -147,9 +147,14 @@ async def evaluate(session: AsyncSession, legs: Sequence[LegAsk], spot: float, *
 
 # --- the user's own settings for the ready strategies ----------------------------------------------------------------
 
-async def settings(session: AsyncSession, user: User, underlying: str) -> Dict[str, Any]:
-    """Spread width (in strike steps), lots and a sold leg's stop (% above its price) from the user's own options
-    deployment - on this underlying first, else their latest one; a neutral default otherwise, said so."""
+async def settings(session: AsyncSession, user: User, underlying: str) -> dict[str, Any]:
+    """Spread width (in strike steps), lots and a sold leg's stop (% above its price) for the ready strategies: lots and
+    width from his Trade settings (Position size > Lots, Options > Spread width), else his own options deployment's - on
+    this underlying first, else his latest one. M68 PR-2: none = Not set (null), said so - nothing is pre-chosen."""
+    from app.execution import position_size
+    mine = await position_size.saved(session, user)
+    own_lots = (await position_size.load(session, user)).lots
+    own_width = mine.get("options.spread_width")
     name = master.underlying_of(underlying)
     rows = list(await session.scalars(select(StrategyDeploymentRecord).where(
         StrategyDeploymentRecord.tenant_id == user.tenant_id, StrategyDeploymentRecord.instrument_kind == "OPTION",
@@ -157,17 +162,23 @@ async def settings(session: AsyncSession, user: User, underlying: str) -> Dict[s
         .order_by(StrategyDeploymentRecord.updated_at.desc(), StrategyDeploymentRecord.id.desc()).limit(50)))
     rows.sort(key=lambda d: (master.underlying_of(d.symbol) != name, d.status != "ACTIVE"))    # stable: newest first within
     dep = rows[0] if rows else None
-    if dep is None:
-        return {"source": None, "width_steps": NEUTRAL_WIDTH_STEPS, "lots": NEUTRAL_LOTS, "stop_pct": None,
-                "note": (f"You have no options settings yet, so a neutral start is used: wings {NEUTRAL_WIDTH_STEPS} strikes apart, "
-                         f"{NEUTRAL_LOTS} lot, no stop-loss on a sold leg until you set one. Edit any leg.")}
-    width = int(dep.spread_width or NEUTRAL_WIDTH_STEPS)
-    lots = int(dep.max_lots or NEUTRAL_LOTS)
-    stop = float(dep.premium_stop_pct) if dep.premium_stop_pct is not None else None
-    where = f"{dep.strategy_id} on {dep.symbol}"
-    stop_text = f"a sold leg's stop-loss {stop:g}% above its price" if stop is not None else "no stop-loss on a sold leg until you set one"
-    return {"source": where, "width_steps": width, "lots": lots, "stop_pct": stop,
-            "note": f"From your settings ({where}): wings {width} strikes apart, {lots} lot{'s' if lots != 1 else ''}, {stop_text}. Edit any leg."}
+    where = f"{dep.strategy_id} on {dep.symbol}" if dep is not None else None
+    bot = f"your bot {where}" if where else None
+    # M68 PR-2: each value names where it came from (a stop % from a bot is never presented as a Trade setting)
+    lots, lots_from = ((own_lots, "your Trade settings" if mine.get("position_size.lots") else "your trading defaults") if own_lots
+                       else (int(dep.max_lots), bot) if dep is not None and dep.max_lots else (None, None))
+    width, width_from = ((int(own_width), "your Trade settings") if own_width
+                         else (int(dep.spread_width), bot) if dep is not None and dep.spread_width else (None, None))
+    stop, stop_from = ((float(dep.premium_stop_pct), bot) if dep is not None and dep.premium_stop_pct is not None else (None, None))
+    parts = [f"wings {width} strikes apart ({width_from})" if width else "no spread width set (a spread asks for it)",
+             f"{lots} lot{'s' if lots != 1 else ''} ({lots_from})" if lots else "no lots set (enter them at each leg)",
+             f"a sold leg's stop-loss {stop:g}% above its price ({stop_from})" if stop is not None else "no stop-loss on a sold leg until you set one"]
+    used_bot = bot is not None and bot in (lots_from, width_from, stop_from)
+    head = "Nothing is set for you: " if not (lots or width or stop is not None) else ""
+    note = f"{head}{', '.join(parts)}. Edit any leg. Set your own in {position_size.WHERE}."
+    return {"source": where if used_bot else None, "width_steps": width, "lots": lots, "stop_pct": stop,
+            "sources": {"lots": lots_from, "width_steps": width_from, "stop_pct": stop_from},
+            "note": note[0].upper() + note[1:]}
 
 
 # --- the confirm step and Execute basket ----------------------------------------------------------------------------

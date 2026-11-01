@@ -242,6 +242,91 @@
    "title": "Position size",
    "fields": [
     {
+     "key": "position_size.mode",
+     "label": "Size by",
+     "kind": "choice",
+     "help": "How the size of a new entry is worked out.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "FIXED_LOTS",
+       "label": "Fixed lots"
+      },
+      {
+       "value": "FIXED_QUANTITY",
+       "label": "Fixed quantity"
+      },
+      {
+       "value": "PCT_CAPITAL",
+       "label": "% of capital"
+      },
+      {
+       "value": "RISK_BASED",
+       "label": "Risk-based (Risk limits)"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "position_size.lots",
+     "label": "Lots",
+     "kind": "whole",
+     "help": "The number of lots for a new entry.",
+     "unit": "lots",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": "lot",
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "position_size.quantity",
+     "label": "Quantity",
+     "kind": "whole",
+     "help": "The number of shares or units for a new entry.",
+     "unit": "units",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "position_size.capital_pct",
+     "label": "Share of capital",
+     "kind": "number",
+     "help": "The value of a new entry as a share of your capital.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
      "key": "position_size.lot_size",
      "label": "Lot size",
      "kind": "fact",
@@ -254,6 +339,53 @@
      "term": "lot",
      "fact": true,
      "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "position_size.fanout_mode",
+     "label": "Extra paper accounts: size by",
+     "kind": "choice",
+     "help": "How an extra paper account sizes a copied entry.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "MULTIPLIER",
+       "label": "The main size times a number"
+      },
+      {
+       "value": "FIXED",
+       "label": "Fixed lots"
+      },
+      {
+       "value": "PCT_CAPITAL",
+       "label": "% of its capital"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "position_size.fanout_value",
+     "label": "Extra paper accounts: value",
+     "kind": "number",
+     "help": "The number for the way chosen above.",
+     "unit": "",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false

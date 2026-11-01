@@ -73,6 +73,47 @@ export function orderDefaultsOf(view: TradeSettingsView | null | undefined): Ord
   return out;
 }
 
+// ---------------------------------------------------------------- M68 PR-2: Position size for the ticket and the forms
+
+export const LOTS_KEY = "position_size.lots";
+export const QUANTITY_KEY = "position_size.quantity";
+export const SIZE_MODE_KEY = "position_size.mode";
+export const POSITION_SIZE_WHERE = "Settings › Trade settings › Position size";
+
+export interface PositionSize {
+  mode?: "FIXED_LOTS" | "FIXED_QUANTITY" | "PCT_CAPITAL" | "RISK_BASED";
+  lots?: number;
+  quantity?: number;
+}
+
+/** The trader's own saved Position size (only what he saved; ATP never fills a size in). */
+export function positionSizeOf(view: TradeSettingsView | null | undefined): PositionSize {
+  const out: PositionSize = {};
+  const v = (key: string) => view?.sections.flatMap((s) => s.fields).find((f) => f.key === key && f.saved)?.value;
+  const whole = (x: unknown) => (typeof x === "number" && Number.isInteger(x) && x >= 1 ? x : undefined);
+  const mode = v(SIZE_MODE_KEY);
+  if (mode === "FIXED_LOTS" || mode === "FIXED_QUANTITY" || mode === "PCT_CAPITAL" || mode === "RISK_BASED") out.mode = mode;
+  const lots = whole(v(LOTS_KEY));
+  if (lots !== undefined) out.lots = lots;
+  const quantity = whole(v(QUANTITY_KEY));
+  if (quantity !== undefined) out.quantity = quantity;
+  return out;
+}
+
+/** The lots a new ticket, leg or bot starts with: his own saved lots (Fixed lots, or lots with no mode), else none. */
+export function savedLots(view: TradeSettingsView | null | undefined): number | null {
+  const own = positionSizeOf(view);
+  return own.lots !== undefined && (own.mode === undefined || own.mode === "FIXED_LOTS") ? own.lots : null;
+}
+
+/** Whether his Position size sizes a bot's entry by itself (the bot form then needs no lots of its own). */
+export function sizesItself(view: TradeSettingsView | null | undefined): boolean {
+  const own = positionSizeOf(view);
+  if (own.mode === "FIXED_QUANTITY") return own.quantity !== undefined;
+  if (own.mode === "PCT_CAPITAL" || own.mode === "RISK_BASED") return true;     // the server says if a value is missing
+  return own.lots !== undefined;
+}
+
 // ---------------------------------------------------------------- M68 PR-5: Risk limits for the forms
 
 export const EVENT_ACTION_KEY = "risk_limits.event_default_action";

@@ -16,6 +16,8 @@ import { areaLabelText } from "../../charting/geometry";
  */
 
 export type JobId = "brief" | "chart" | "trade_check" | "positions" | "review" | "strategy" | "option_chain" | "teacher" | "screen" | "views";
+/** M72 PR-1c: an answer the AI planner wrote from the user's own data (`copilot_agent`); not a "What I can do" job. */
+export type AnswerJob = JobId | "agent";
 
 export interface ChatJob {
   id: JobId; number: number; title: string; line: string; starter: string; built: boolean;
@@ -72,7 +74,7 @@ export type AnswerBlock =
   | { type: "table"; table: AnalysisTable }
   | { type: "chart"; title: string; chart: AnalysisChart };
 export interface ChatAnswer {
-  job: JobId | "refuse" | "help"; job_number: number | null; title: string;
+  job: AnswerJob | "refuse" | "help"; job_number: number | null; title: string;
   summary: string[]; answer: string; sections: { title: string; lines: string[] }[]; blocks: AnswerBlock[]; unknowns: string[];
   worked: WorkedStep[]; action: { label: string; to: string } | null; refused: RefusalKind | null; starters: string[];
   concepts: { id: string; title: string }[]; notes: string[]; disclaimer: string; source: "rules" | "ai"; tool_calls: string[];

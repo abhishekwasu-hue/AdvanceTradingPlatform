@@ -13,7 +13,8 @@ import { READ_LAYER_ID, readChartApi, readLayer, readSummary, type ReadChart } f
  */
 export type ReadState = { status: "idle" | "loading" | "failed" | "off" } | { status: "ready"; read: ReadChart };
 
-export function useReadChart(engine: LightweightEngine | null, instrument: string, tf: string | null, on: boolean): ReadState {
+/** M75 W-2: `attempt` (a counter the host raises on "Try again") reads the same chart again. */
+export function useReadChart(engine: LightweightEngine | null, instrument: string, tf: string | null, on: boolean, attempt = 0): ReadState {
   const [state, setState] = useState<ReadState>({ status: "idle" });
   useEffect(() => {
     if (!on || !tf || !instrument) { setState({ status: "idle" }); return undefined; }
@@ -24,7 +25,7 @@ export function useReadChart(engine: LightweightEngine | null, instrument: strin
       (e: unknown) => { if (live) setState({ status: e instanceof ApiError && e.status === 404 ? "off" : "failed" }); },
     );
     return () => { live = false; };
-  }, [instrument, tf, on]);
+  }, [instrument, tf, on, attempt]);
 
   const read = state.status === "ready" ? state.read : null;
   useEffect(() => {

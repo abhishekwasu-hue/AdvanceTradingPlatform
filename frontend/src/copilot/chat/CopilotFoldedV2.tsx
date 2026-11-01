@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { useAuth } from "../../auth/AuthContext";
+import { useFeatures } from "../../ui/useFeatures";
 import CopilotMotion from "../components/CopilotMotion";
 import FirstUseModal from "../components/FirstUseModal";
 import { CopilotDataProvider } from "../data";
@@ -20,6 +21,8 @@ const Coach = lazy(() => import("../tabs/CoachTab"));
 const Watchtower = lazy(() => import("../tabs/WatchtowerTab"));
 // M60 default 3: the Coach tab holds today's Coach page whole - the review (Review) and the concept guide.
 const Guide = lazy(() => import("../../components/GuideChat"));
+// M75 W-2: the chart workspace (its own chunk, read only while `copilot_workspace` is on).
+const ChartWorkspace = lazy(() => import("../workspace/ChartWorkspaceV2"));
 
 function Part({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -32,6 +35,7 @@ function Part({ id, title, children }: { id: string; title: string; children: Re
 
 export function FoldedBody({ tab }: { tab: FoldedTab }) {
   const t = useCopilotT();
+  const workspace = useFeatures().on("copilot_workspace");
   if (tab === "brief") {
     return (
       <>
@@ -40,8 +44,16 @@ export function FoldedBody({ tab }: { tab: FoldedTab }) {
       </>
     );
   }
-  // M60: Read the chart is the market pulse (its news part moved to Learn › News & events).
-  if (tab === "read") return <Part id="copilot-read-pulse" title={t("v2tabs.briefPulse")}><MarketPulse /></Part>;
+  // M60: Read the chart is the market pulse (its news part moved to Learn › News & events). M75 W-2: with
+  // `copilot_workspace` the chart workspace opens first in the same tab (its name); Market Pulse stays under it.
+  if (tab === "read") {
+    return (
+      <>
+        {workspace && <Suspense fallback={<TabSkeleton />}><ChartWorkspace /></Suspense>}
+        <Part id="copilot-read-pulse" title={t("v2tabs.briefPulse")}><MarketPulse /></Part>
+      </>
+    );
+  }
   if (tab === "coach") {
     return (
       <>

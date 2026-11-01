@@ -85,11 +85,13 @@ export const OPTION_INDEX_ROWS: readonly PickedSymbol[] = OPTIONABLE.filter((r) 
 
 interface InstrumentRow { tradingsymbol: string; exchange: string; name: string | null; instrument_type: string }
 
-/** Indices first, then shares; futures and options are not charts of their own here. */
-export async function searchSymbols(q: string): Promise<PickedSymbol[]> {
-  const one = (type: string) => request<InstrumentRow[]>(`/instrument-master/search?q=${encodeURIComponent(q)}&type=${type}&limit=8`).catch(() => []);
-  const [indices, shares] = await Promise.all([one("INDEX"), one("EQ")]);
-  return [...indices, ...shares].map((r) => ({ symbol: r.tradingsymbol.toUpperCase(), exchange: r.exchange.toUpperCase(), name: r.name }));
+/** Indices first, then shares; futures and options are not charts of their own here - except with `contracts` (M75
+ * W-2: the Copilot's chart workspace opts in), where a few futures and option contracts follow. */
+export async function searchSymbols(q: string, contracts = false): Promise<PickedSymbol[]> {
+  const one = (type: string, limit = 8) => request<InstrumentRow[]>(`/instrument-master/search?q=${encodeURIComponent(q)}&type=${type}&limit=${limit}`).catch(() => []);
+  const [indices, shares, futures, calls, puts] = await Promise.all([one("INDEX"), one("EQ"),
+    ...(contracts ? [one("FUT", 4), one("CE", 4), one("PE", 4)] : [Promise.resolve([]), Promise.resolve([]), Promise.resolve([])])]);
+  return [...indices, ...shares, ...futures, ...calls, ...puts].map((r) => ({ symbol: r.tradingsymbol.toUpperCase(), exchange: r.exchange.toUpperCase(), name: r.name }));
 }
 
 export function SymbolPicker({ value, exchange, onPick, storageKey, label = "Symbol", className = "min-w-0 flex-1 sm:w-56 sm:flex-none",
@@ -133,7 +135,7 @@ export function SymbolPicker({ value, exchange, onPick, storageKey, label = "Sym
     if (optionable) { setRows(searchOptionable(listKey)); setRowsFor(listKey); setActive(0); return undefined; }   // no server call
     let live = true;
     const t = window.setTimeout(() => {
-      void searchSymbols(listKey).then((r) => { if (live) { setRows(r); setRowsFor(listKey); setActive(0); } });
+      void searchSymbols(listKey, universe === "with-contracts").then((r) => { if (live) { setRows(r); setRowsFor(listKey); setActive(0); } });
     }, 250);
     return () => { live = false; window.clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the suggestions are read when the list opens

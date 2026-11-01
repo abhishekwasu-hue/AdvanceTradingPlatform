@@ -552,6 +552,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # ported Daily trend fold and the ported level gate's commitment candle), unchanged, as of the last closed bar.
     # Read-only, the user's own chart only. OFF: GET /api/charts/read answers 404 and the button is hidden.
     "read_chart": "Read this chart: the areas, their state, the pullback state and the commitment candle as of the last closed bar",
+    # M75 W-2 (owner order M75 CW-1; docs/design/M75_REVIEW.md; needs `ui_v2`): the chart workspace in the Copilot's
+    # "Read the chart" tab - any symbol or futures / option contract and timeframe, the chart full width on a phone,
+    # and the chart's reading (the existing read service, `read_chart`) starting by itself when a chart opens. Read-only;
+    # nothing places an order. OFF: the tab shows Market Pulse as before.
+    "copilot_workspace": "Copilot chart workspace: a chart with its reading inside the Copilot's Read the chart tab",
     # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
     # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.

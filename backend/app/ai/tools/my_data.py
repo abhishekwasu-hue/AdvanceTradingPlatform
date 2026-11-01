@@ -115,7 +115,10 @@ async def get_my_trade_settings(ctx: ToolContext, args: _Settings) -> ToolResult
     from app.me import prefs, trade_settings
     value, _version = await prefs.read_one(trade_settings.NAMESPACE, ctx.user, ctx.session)
     values = trade_settings.clean(value.get("values"))
-    shown = trade_settings.view(values, False, await trade_settings.flags_off(ctx.session, ctx.tenant_id))
+    from app.platform.controls import risk_ceilings
+    # As the Settings page shows them (trade_settings.read): an organisation-scope field shows the ceiling in force.
+    shown = trade_settings.view(values, False, await risk_ceilings(ctx.session, ctx.tenant_id),
+                                off=await trade_settings.flags_off(ctx.session, ctx.tenant_id))
     sections = []
     for s in shown["sections"]:
         if args.section and s["id"] != args.section:

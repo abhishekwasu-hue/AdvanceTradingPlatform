@@ -55,7 +55,7 @@ PACK: Tuple[str, ...] = (
     "data_hub",                # TM Part 1 (unfinished in the catalog): one live stream per broker connection, live prices,
                                # the reconnecting / renew notice - works end to end today; OFF = everything as before
     # Paper account, risk and journal (the restrictive tools too: they only ever hold back a new paper entry).
-    "paper_account", "approval_only_entries", "risk_by_default", "ladder_evidence", "experience_levels",
+    "paper_account", "risk_by_default", "ladder_evidence", "experience_levels",
     "portfolio_risk", "portfolio_risk_caps", "vix_gate", "discipline_engine", "decision_tools",
     "options_builder", "options_builder_saved", "backtest_optimizer", "backtest_models",
     "smart_execution",         # TM Part 7: hedge-first sequencing, incomplete state, slicing, margin, delivery warning
@@ -79,6 +79,8 @@ PACK: Tuple[str, ...] = (
 
 # Every other flag, with the reason it is left out (shown in the PR; the forbidden and "decision" ones are computed).
 EXCLUDED_REASONS: Dict[str, str] = {
+    # M68 PR-6 (TS1-061): whether entries wait for an Approve is each user's own choice (Trade settings > Automation).
+    "approval_only_entries": "Each trader chooses for himself in Trade settings (Automation > New entries); an admin control for a team",
     "public_status_page": "A public page for visitors, not a trader feature",
     "growth_v2": "Plans, usage and activation: a business feature, not a trading one (unfinished)",
     "alert_webhooks": "For people who run their own tools; turned on after the owner's ✅ (AUD-G2.5)",

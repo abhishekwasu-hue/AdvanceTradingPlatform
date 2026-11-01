@@ -175,7 +175,7 @@ describe("wiring", () => {
     expect(pagesV2).toContain('"strategy-builder": lazy(() => import("../strategyFlow/StrategyFlowV2"))');
     expect(pageSource).toContain("StrategyBuilderFull");
     expect(builderSource).toContain("data-open-flow");
-    expect(ideaSource).toContain('navigate("/strategies/build"');
+    expect(ideaSource).toContain('inPlace.open("/strategies/build"');   // M75 NAV-2: in place over the Copilot
     expect(pageSource).toContain("api.draftStrategy");
     expect(pageSource).not.toMatch(/<select/);
   });

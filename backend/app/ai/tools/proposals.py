@@ -27,7 +27,7 @@ import re
 from typing import Dict, List, Literal, Optional, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.ai.tools import Tool, ToolContext, ToolResult, register
 from app.core.models import RiskConfig
@@ -99,8 +99,11 @@ class _RiskProposal(_ProposalArgs):
 
 
 async def _deployment(ctx: ToolContext, deployment_id: int) -> Optional[StrategyDeploymentRecord]:
+    """M72 PR-1a (review F3): only a deployment the asker started himself (or one nobody is named on, as the F&O pages
+    read them) - a teammate's bot is "not found", its name and symbol never reach this member's Copilot."""
     return await ctx.session.scalar(select(StrategyDeploymentRecord).where(
-        StrategyDeploymentRecord.id == deployment_id, StrategyDeploymentRecord.tenant_id == ctx.tenant_id))
+        StrategyDeploymentRecord.id == deployment_id, StrategyDeploymentRecord.tenant_id == ctx.tenant_id,
+        or_(StrategyDeploymentRecord.created_by == ctx.user.id, StrategyDeploymentRecord.created_by.is_(None))))
 
 
 async def _raise(ctx: ToolContext, deployment_id: Optional[int], action: str, rule: str, sentence: str, args: _ProposalArgs, evidence: Dict) -> ToolResult:

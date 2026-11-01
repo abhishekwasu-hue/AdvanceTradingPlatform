@@ -67,8 +67,17 @@ test.describe("Watchlist page 1440 desktop", () => {
     await expect(page.locator("[data-ready-made]")).toHaveCount(0);
     await expect(page.getByText(/sample/i)).toHaveCount(0);
     expect(calls.systemCalls).toContain("GET indices");
+    // M75 NAV-3: the row opens its chart in place (a side panel); the path stays, closing returns to the list as it was.
     await rows(page).filter({ hasText: "SENSEX" }).getByRole("button", { name: /^SENSEX/ }).click();
-    await expect(page).toHaveURL(/\/charts\/SENSEX\?exchange=BSE$/);
+    const chart = page.locator("[data-inplace-panel='chart']");
+    await expect(chart).toHaveAttribute("data-inplace-shape", "right");
+    await expect(chart.locator("[data-embedded-chart='SENSEX']")).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/watchlist");
+    expect(new URL(page.url()).searchParams.getAll("panel")).toEqual(["chart:SENSEX::BSE"]);
+    await page.keyboard.press("Escape");
+    await expect(chart).toHaveCount(0);
+    await expect(page).toHaveURL(/\/watchlist$/);
+    await expect(rows(page)).toHaveText([/NIFTY 50/, /NIFTY BANK/, /SENSEX/]);
   });
 
   test("before the daily list update: one honest line and the panel's own empty state, never sample rows", async ({ page }) => {
@@ -102,8 +111,17 @@ test.describe("Watchlist page 390 phone", () => {
     await expect(page).toHaveURL(/\/watchlist$/);
     await expect(rows(page)).toHaveText([/NIFTY 50/, /NIFTY BANK/, /SENSEX/]);
     await expectPhoneLayout(page);
+    // M75 NAV-3: the chart opens in place (a bottom sheet); Back closes it and the list is as it was.
     await rows(page).filter({ hasText: "NIFTY BANK" }).getByRole("button", { name: /^NIFTY BANK/ }).click();
-    await expect(page).toHaveURL(/\/charts\/NIFTY%20BANK$/);
+    const chart = page.locator("[data-inplace-panel='chart']");
+    await expect(chart).toHaveAttribute("data-inplace-shape", "bottom");
+    await expect(chart.locator("[data-embedded-chart='NIFTY BANK']")).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/watchlist");
+    await expectPhoneLayout(page);
+    await page.goBack();
+    await expect(chart).toHaveCount(0);
+    await expect(page).toHaveURL(/\/watchlist$/);
+    await expect(rows(page)).toHaveText([/NIFTY 50/, /NIFTY BANK/, /SENSEX/]);
   });
 
   test("with `watchlists` off the bar is as before", async ({ page }) => {

@@ -308,7 +308,8 @@ export function setupTrade(item: SetupItem, underlying: string, expiry: string |
     const price = pos(q.ltp);
     const side = sideOf(leg);
     const stopLoss = side === "SELL" && typeof item.stop_pct === "number" && item.stop_pct > 0 ? stopFor(price, item.stop_pct) : null;
-    return { underlying, expiry, strike: leg.strike, right: leg.right, side, lots: (lots ?? 1) * Math.max(1, leg.ratio), price, label: null,
+    // M68 PR-2 (TS1-022): no lots of his own -> the leg starts empty (Not set) and the basket asks; never a hidden 1 lot
+    return { underlying, expiry, strike: leg.strike, right: leg.right, side, lots: lots === null ? null : lots * Math.max(1, leg.ratio), price, label: null,
       iv: q.iv ?? null, stopLoss };
   });
   return { kind: "basket", legs, lotsFromSettings: lots !== null, stopsToSet: legs.filter((l) => l.side === "SELL" && !l.stopLoss).length };
@@ -318,7 +319,7 @@ export function setupTrade(item: SetupItem, underlying: string, expiry: string |
 export function setupTradeNote(t: SetupTrade): string | null {
   if (t.kind === "ticket") return "Opens the order ticket with this strike. Lots start from your own ticket defaults.";
   if (t.kind !== "basket") return null;
-  const lots = t.lotsFromSettings ? "Lots from your settings." : "Your settings have no lots set, so each leg starts at 1 lot.";
+  const lots = t.lotsFromSettings ? "Lots from your settings." : "Your settings have no lots set: enter each leg's lots in the basket.";
   const stops = t.stopsToSet ? ` Set the exit level of ${t.stopsToSet === 1 ? "the short leg" : `the ${t.stopsToSet} short legs`} in the basket.` : "";
   return `Opens the basket with these legs. ${lots}${stops}`;
 }

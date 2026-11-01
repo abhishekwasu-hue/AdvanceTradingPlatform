@@ -131,7 +131,7 @@ async def largest_risk_amount(session: AsyncSession, user: User, capital: float,
     from app.risk_engine import by_default
     from app.risk_engine.routes import get_tenant_risk_config
     user_cap = float(by_default.risk_cap(capital, settings).get("amount") or 0.0)
-    cfg, _ = clamp_config(await get_tenant_risk_config(user.tenant_id, session) or RiskConfig(), await risk_ceilings(session))
+    cfg, _ = clamp_config(await get_tenant_risk_config(user.tenant_id, session) or RiskConfig(), await risk_ceilings(session, user.tenant_id))
     org_cap = float(cfg.with_capital(capital).risk_amount() or 0.0)      # DEF-0: none set = 0 (no organisation cap)
     return max(user_cap, org_cap)
 

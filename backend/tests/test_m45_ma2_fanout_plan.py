@@ -58,10 +58,15 @@ def test_sizing_modes_round_down_and_skip_under_one_lot():
     assert reasons[3] == "under one lot after rounding down" and reasons[4].startswith("switched off")
 
 
-def test_default_sizing_is_multiplier_one_and_pct_needs_capital_and_margin():
+def test_no_sizing_of_his_own_skips_a_secondary_and_pct_needs_capital_and_margin():
+    # M68 PR-2 (TS1-024): no MULTIPLIER x 1 is chosen for him - the Primary takes the order's own lots, a Secondary with no
+    # sizing of the user's own is skipped with the setting it needs (before M68: every account MULTIPLIER x 1).
     route = fp.resolve(fp.ENTRY, ALL, matrix={fp.ENTRY: (fp.PRIMARY, "Family", "HUF")})
     plan = fp.size(route, {}, primary_lots=2, lot_size=50)
-    assert [(leg.account_id, leg.lots) for leg in plan.legs] == [(1, 2), (2, 2), (3, 2)]
+    assert [(leg.account_id, leg.lots) for leg in plan.legs] == [(1, 2)]
+    assert {s.account_id: s.reason for s in plan.skipped if s.account_id in (2, 3)} == {2: fp.NEEDS_SIZING, 3: fp.NEEDS_SIZING}
+    own = fp.size(route, {2: fp.Sizing(fp.MULTIPLIER, 1), 3: fp.Sizing(fp.MULTIPLIER, 1)}, primary_lots=2, lot_size=50)
+    assert [(leg.account_id, leg.lots) for leg in own.legs] == [(1, 2), (2, 2), (3, 2)]
     lots, reason = fp.lots_for(fp.Account(id=9, role=fp.SECONDARY), fp.Sizing(fp.PCT_CAPITAL, 5), primary_lots=1, margin_per_lot=1000)
     assert lots == 0 and reason == "no capital known for this account"
     lots, reason = fp.lots_for(S_FAM, fp.Sizing(fp.PCT_CAPITAL, 5), primary_lots=1, margin_per_lot=None)

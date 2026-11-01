@@ -47,9 +47,11 @@ def _r(x: Any, nd: int = 2) -> Optional[float]:
 
 
 async def _frame(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, days: int) -> Tuple[pd.DataFrame, str]:
-    """Server candles through the organisation's broker session (the H-C1 a path) -> (frame, source)."""
+    """Server candles through the asker's own broker session (the H-C1 a path) -> (frame, source). M72 PR-1a (M71Q-2):
+    with `byob_data_tier` off too, only a credential he linked himself - never a teammate's (`own_only`)."""
     from app.ai import evidence
-    return await evidence.server_frame(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days, user=ctx.user)
+    return await evidence.server_frame(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days, user=ctx.user,
+                                       own_only=True)
 
 
 async def _candles(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, days: int) -> Tuple[pd.DataFrame, str, List[str]]:
@@ -80,7 +82,8 @@ async def _backtest_frame(ctx: ToolContext, symbol: str, exchange: str, timefram
 
 async def _broker(ctx: ToolContext, symbol: str, exchange: str) -> Tuple[Any, str]:
     """The broker session a quote / chain is read through. BT1b (flag `byob_data_tier`): only the asking user's own
-    session at a confirmed broker, for a symbol inside its budget; otherwise 409 (the tool reports the reason)."""
+    session at a confirmed broker, for a symbol inside its budget; otherwise 409 (the tool reports the reason).
+    M72 PR-1a (M71Q-2): with the flag off, only a credential the asker linked himself - never a teammate's (409)."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
@@ -90,8 +93,30 @@ async def _broker(ctx: ToolContext, symbol: str, exchange: str) -> Tuple[Any, st
         if not own.allows(symbol, exchange):
             raise live_access.LiveDataRefused(own.reason(symbol, exchange))
         return own.adapter(), own.source
-    record = await _pick_record(ctx.session, ctx.tenant_id, None, "primary")
+    if getattr(ctx.user, "tenant_id", None) != ctx.tenant_id:
+        raise live_access.LiveDataRefused(live_access.NO_USER)
+    record = await _pick_record(ctx.session, ctx.tenant_id, None, "primary", user_id=int(ctx.user.id))
     return build_adapter(record), f"broker:{record.broker_name}"
+
+
+async def teammate_refusal(ctx: ToolContext, source: str) -> ToolResult | None:
+    """M72 PR-1a (M71Q-2) for the tools that wrap a page's own read (the chain analyses, the screener run): with
+    `byob_data_tier` off such a read goes through the organisation's first usable credential. When that credential
+    was linked by a teammate, the tool does not run for this member (one person's broker data is never shown to
+    another); his own, or no credential at all, and the tool runs exactly as before. Flag on: the page's own path
+    already reads only his own session."""
+    from app.market_data import live_access
+    from app.market_data.candles_routes import TEAMMATE_BROKER, _pick_record
+    if await live_access.byob_on(ctx.session, ctx.tenant_id):
+        return None
+    try:
+        record = await _pick_record(ctx.session, ctx.tenant_id, None, "primary")
+    except HTTPException:
+        return None                                   # no usable session: the tool reports that itself
+    owner = getattr(record, "user_id", None)          # NOT NULL on every stored credential
+    if (owner is None or owner == getattr(ctx.user, "id", None)) and getattr(ctx.user, "tenant_id", None) == ctx.tenant_id:
+        return None
+    return ToolResult(False, None, None, source, error=TEAMMATE_BROKER)
 
 
 async def _hub_connection(ctx: ToolContext) -> Any:
@@ -311,4 +336,4 @@ for _tool in (
 ):
     register(_tool)
 
-__all__ = ["get_candles", "get_quote", "get_option_chain", "get_market_regime", "run_backtest", "backtest_draft", "summarise_frame", "summarise_chain"]
+__all__ = ["teammate_refusal", "get_candles", "get_quote", "get_option_chain", "get_market_regime", "run_backtest", "backtest_draft", "summarise_frame", "summarise_chain"]

@@ -64,6 +64,7 @@ from app.market_data.entitlement import DataTier, Entitlement
 from app.market_data.fanin import FLAG as BYOB_FLAG
 from app.market_data.fanin import Priority
 from app.market_data.freshness import quote_is_stale
+from app.market_data.reader_credential import credential_for_reader
 from app.market_data.service import CHUNK_LIMIT, MarketDataService, build_frames, merge_bars
 from app.market_data.stream import TickCache, tick_cache
 from app.platform.controls import flag_enabled
@@ -502,7 +503,7 @@ async def broker_candles(body: CandlesBody, user: User, session: AsyncSession) -
             raise _tier_c(ents)
         record, namespace = live.record, live.session.namespace
     else:
-        record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
+        record = await credential_for_reader(session, user.tenant_id, user.id, body.broker, body.account_label)   # M71Q-2
 
     warnings: List[str] = []
     daily = body.timeframe in DAILY_TIMEFRAMES
@@ -697,10 +698,10 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
             # BT1b: no broker timestamp = age unknown = stale, in the body as on the badge.
             body["stale"], body["stale_reason"] = True, body["data_tier"]["stale_reason"]
         return body
-    record = await _pick_record(session, user.tenant_id, broker, account_label)
+    record = await credential_for_reader(session, user.tenant_id, user.id, broker, account_label)   # M71Q-2: his own only
     # TM Part 1 (flag data_hub): the organisation's own hub stream (registered for this symbol), never the shared keys.
     from app.market_data import hub as data_hub
-    own = await data_hub.org_feed(session, user.tenant_id, record.broker_name, [(symbol, exchange)])
+    own = await data_hub.org_feed(session, user.tenant_id, record.broker_name, [(symbol, exchange)], reader_id=user.id)
     return await _ltp_body(record, own if own is not None else tick_cache, symbol, exchange, now)
 
 
@@ -797,7 +798,7 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
             raise _tier_c(ents)
         record = live.record
     else:
-        record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
+        record = await credential_for_reader(session, user.tenant_id, user.id, body.broker, body.account_label)   # M71Q-2
     adapter = build_adapter(record)
     from app.market_data import hub as data_hub
     hub_chains = await data_hub.hub_on(session, user.tenant_id)

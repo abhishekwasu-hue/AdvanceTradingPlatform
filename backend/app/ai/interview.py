@@ -547,10 +547,10 @@ _EXPIRY_WORDS = {"NEAREST": "Nearest", "NEXT": "Next", "MONTHLY": "Monthly"}
 _STRIKE_WORDS = {"ATM": "At the money", "ITM": "In the money", "OTM": "Out of the money"}
 
 
-def suggested_contract(contract: Dict) -> List[Dict]:
+def suggested_contract(contract: dict) -> list[dict]:
     """The plan's own contract picks as {key, label, value}: expiry, strike, structure, width, credit levels. Empty when
     the plan picked none (the stock itself)."""
-    out: List[Dict] = []
+    out: list[dict] = []
     if contract.get("option_strategy"):
         out.append({"key": "option_strategy", "label": "Structure", "value": str(contract["option_strategy"]).replace("_", " ").capitalize()})
     if contract.get("expiry_rule"):
@@ -568,7 +568,7 @@ def suggested_contract(contract: Dict) -> List[Dict]:
     return out
 
 
-def suggested_text(items: List[Dict]) -> str:
+def suggested_text(items: list[dict]) -> str:
     return "; ".join(f"{i['label']} {i['value']}" for i in items)
 
 

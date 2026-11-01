@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 
 
-def rr_warning(rr: Optional[float], own_min: Optional[float]) -> str:
+def rr_warning(rr: float | None, own_min: float | None) -> str:
     """The note under a /paper reply: the reward:risk below his own minimum (a number > 0 he set), else nothing."""
     if rr is None or own_min is None or own_min <= 0 or rr >= own_min:
         return ""

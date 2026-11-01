@@ -207,6 +207,21 @@ def test_job7_option_chain_explains_and_checks_size_against_the_users_own_risk()
     assert "Name a size" in "\n".join(unsized.lines()) and not any(s.tool == "calc:premium_at_risk" for s in unsized.worked)
 
 
+
+def test_job7_an_unknown_lot_size_is_said_and_never_assumed_to_be_1():
+    """M68: no pre-chosen trading values - without his own lot size the premium at risk is not priced with a lot of 1."""
+    import copy
+    fixture = copy.deepcopy(runner.copilot_fixtures()["default"])
+    fixture["get_risk_limits"]["data"].pop("lot_size")
+    out = _run(chat.answer("Can I take 2 lots of NIFTY options?", runner.recorded_runner(fixture, [])))
+    text = "\n".join(out.lines())
+    assert "2 lots: lot size not known" in text and "premium at risk" not in text
+    assert [s.tool for s in out.worked if s.tool.startswith("calc:")] == ["calc:risk_budget"]
+    zero = ToolResult(True, {"capital": 200000.0, "risk_per_trade_pct": 1.0, "lot_size": 0}, None, "risk_settings")
+    answer = chat.Answer(job="option_chain", title="Option chain")
+    chat._size_check(answer, zero, {"call": 120.5, "put": 110.0}, 2)
+    assert "2 lots: lot size not known" in "\n".join(answer.lines()) and not any(s.tool == "calc:premium_at_risk" for s in answer.worked)
+
 def test_job8_teacher_explains_on_the_users_own_chart():
     out, called, _ = _answer("Teach me: what is a demand zone?")
     assert out.concepts[0]["id"] == "demand_supply" and called == ["get_market_zones", "get_chart_structure"]

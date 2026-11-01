@@ -95,6 +95,9 @@ async def verify(session: AsyncSession, token: str) -> User:
         raise HTTPException(status_code=400, detail="This account is no longer active")
     record.used_at = _utcnow()
     if user.email_verified_at is None:
+        # M73 review 1: the inbox owner proved himself - providers linked while the address was unverified are removed.
+        from app.auth import social
+        await social.drop_identities_linked_unverified(session, user, "email verified")
         user.email_verified_at = _utcnow()
     return user
 

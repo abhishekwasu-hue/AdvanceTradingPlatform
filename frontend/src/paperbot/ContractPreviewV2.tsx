@@ -23,13 +23,15 @@ export function rulesOf(request: DeploymentCreateRequest): ContractRules {
 }
 
 /** "NIFTY 24500 CE · 3 Nov · 1 lot (75)" from the server's resolved contract. Pure. */
-export function contractText(c: ResolvedContract, lots: number): string {
+export function contractText(c: ResolvedContract, lots: number | null): string {
   const what = c.kind === "OPTION" && c.strike != null && c.right ? `${c.underlying} ${c.strike} ${c.right}` : c.tradingsymbol;
   const day = formatDateIST(c.expiry).replace(/ \d{4}$/, "");
+  // M68 PR-2: no lots of the bot's own - its size comes from his Position size (lot size shown, never a guessed 1 lot)
+  if (lots === null) return `${what} · ${day} · lot size ${c.lot_size} · size from your Position size`;
   return `${what} · ${day} · ${lots} lot${lots === 1 ? "" : "s"} (${lots * c.lot_size})`;
 }
 
-export function previewRows(p: ContractPreview, lots: number): { side: "LONG" | "SHORT"; text: string }[] {
+export function previewRows(p: ContractPreview, lots: number | null): { side: "LONG" | "SHORT"; text: string }[] {
   return (["LONG", "SHORT"] as const).flatMap((side) => {
     const c = p.contracts?.[side];
     return c && !("error" in c) ? [{ side, text: contractText(c, lots) }] : [];
@@ -48,7 +50,7 @@ export default function ContractPreviewV2({ request }: { request: DeploymentCrea
     setBusy(true); setProblem(null);
     try {
       const p = await api.previewContract({ ...rulesOf(request), symbol: request.symbol });
-      const out = previewRows(p, request.max_lots ?? 1);
+      const out = previewRows(p, request.max_lots ?? null);
       setState({ key, rows: out });
       if (!out.length) setProblem("No contract matches these settings just now.");
     } catch (e) {

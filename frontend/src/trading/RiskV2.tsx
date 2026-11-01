@@ -48,7 +48,9 @@ const LIMIT_FIELDS: FieldSpec[] = [
 const GUARDIAN_FIELDS: FieldSpec[] = [
   { key: "max_portfolio_risk_pct", label: "Risk across open positions", unit: "% of capital", hint: "risk-at-stops", step: "0.5", ceiling: "max_portfolio_risk_pct", optional: true, help: "What every open stop and the new trade could lose together. Index positions count as one group." },
   { key: "stop_cooldown_minutes", label: "Cool-down after a stop-out", unit: "minutes", hint: "cool-down", minimum: "min_stop_cooldown_minutes", optional: true, blank: " Leave it blank for no wait.", help: "After a stop, new entries in the same index or stock wait this long." },
-  { key: "dd_level_1_pct", label: "Halve the size at a drawdown of", unit: "%", hint: "drawdown", step: "0.5", optional: true, blank: " Leave it blank to keep it off.", help: "This far below your equity peak, the risk per trade is halved." },
+  { key: "dd_level_1_pct", label: "Cut the size at a drawdown of", unit: "%", hint: "drawdown", step: "0.5", optional: true, blank: " Leave it blank to keep it off.", help: "This far below your equity peak, the risk per trade is cut by the % below." },
+  // M68 PR-5 (TS1-054): the cut is the trader's own (no built-in half); needed when the step above is set
+  { key: "dd_cut_pct", label: "Cut the size by", unit: "%", step: "5", optional: true, blank: " Needed when the step above is set.", help: "How much the first drawdown step cuts the risk per trade." },
   { key: "dd_level_2_pct", label: "Pause new entries at a drawdown of", unit: "%", step: "0.5", ceiling: "dd_level_2_pct", optional: true, blank: " Leave it blank to keep it off.", help: "This far below the peak, new entries pause until your equity recovers." },
   { key: "event_size_cut_pct", label: "Size cut on event days", unit: "%", step: "5", optional: true, blank: " Leave it blank for no cut.", help: "Used by a market event that cuts the size and names no cut of its own." },
 ];
@@ -60,7 +62,7 @@ type Drafts = Partial<Record<keyof RiskConfig, string>>;
 export const draftsOf = (c: RiskConfig): Drafts => Object.fromEntries(ALL_FIELDS.map((f) => [f.key, limitDraft(c[f.key] as number | null)])) as Drafts;
 
 /** REV-H5: the limits as saved - each blank optional field "Not set" (null), every other the number typed. */
-export function configFromDrafts(config: RiskConfig, drafts: Drafts, pause: LossStreakPause): RiskConfig {
+export function configFromDrafts(config: RiskConfig, drafts: Drafts, pause: LossStreakPause | null): RiskConfig {
   const next: RiskConfig = { ...config, loss_streak_pause: pause };
   for (const f of ALL_FIELDS) (next as unknown as Record<string, number | null>)[f.key] = limitValue(drafts[f.key] ?? "", !!f.optional);
   return next;
@@ -77,8 +79,8 @@ export function draftProblems(drafts: Drafts, ceilings: RiskCeilings | null): Pa
 }
 
 function fieldProblemOf(f: FieldSpec, drafts: Drafts, ceilings: RiskCeilings | null): string | null {
-  const ceiling = f.ceiling && ceilings ? ceilings[f.ceiling] : undefined;
-  const minimum = f.minimum && ceilings ? ceilings[f.minimum] : undefined;
+  const ceiling = (f.ceiling && ceilings ? ceilings[f.ceiling] : undefined) ?? undefined;
+  const minimum = (f.minimum && ceilings ? ceilings[f.minimum] : undefined) ?? undefined;
   return fieldProblem(drafts[f.key] ?? "", ceiling, minimum, !!f.optional)
     ?? (f.key === "dd_level_1_pct" ? drawdownOrderProblem(drafts.dd_level_1_pct ?? "", drafts.dd_level_2_pct ?? "") : null);
 }
@@ -116,7 +118,8 @@ export default function RiskV2(_props: PageProps = {}) {
   const [notice, setNotice] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [eventsNonce, setEventsNonce] = useState(0);
   // CP6-15: when the losses-in-a-row pause ends, and the pause as the risk engine counts it now
-  const [pauseDraft, setPauseDraft] = useState<LossStreakPause>("next_session");
+  // M68 PR-5 (TS1-051): Not set (null) until the trader picks one - no pre-picked "next session"
+  const [pauseDraft, setPauseDraft] = useState<LossStreakPause | null>(null);
   const [streak, setStreak] = useState<LossStreakStatus | null>(null);
   const [resuming, setResuming] = useState(false);
 
@@ -143,14 +146,14 @@ export default function RiskV2(_props: PageProps = {}) {
 
   useEffect(() => {
     if (!user) return;
-    api.getRiskSettings().then((c) => { setConfig(c); setDrafts(draftsOf(c)); setPauseDraft(c.loss_streak_pause ?? "next_session"); }).catch(() => setLoadFailed(true));
+    api.getRiskSettings().then((c) => { setConfig(c); setDrafts(draftsOf(c)); setPauseDraft(c.loss_streak_pause ?? null); }).catch(() => setLoadFailed(true));
     api.riskCeilings().then(setCeilings).catch((e) => toast.error(errorSentence(e)));
     paperRiskOrNone().then(setPaper).catch((e) => toast.error(errorSentence(e)));
     refreshGuardian();
   }, [user]);
 
-  const ceilingOf = (f: FieldSpec) => (f.ceiling && ceilings ? ceilings[f.ceiling] : undefined);
-  const minimumOf = (f: FieldSpec) => (f.minimum && ceilings ? ceilings[f.minimum] : undefined);
+  const ceilingOf = (f: FieldSpec) => (f.ceiling && ceilings ? ceilings[f.ceiling] : undefined) ?? undefined;
+  const minimumOf = (f: FieldSpec) => (f.minimum && ceilings ? ceilings[f.minimum] : undefined) ?? undefined;
   const problemOf = (f: FieldSpec) => fieldProblemOf(f, drafts, ceilings);
 
   async function save(e: FormEvent) {
@@ -168,7 +171,7 @@ export default function RiskV2(_props: PageProps = {}) {
       const saved = await api.updateRiskSettings(next);
       setConfig(saved);
       setDrafts(draftsOf(saved));
-      setPauseDraft(saved.loss_streak_pause ?? "next_session");
+      setPauseDraft(saved.loss_streak_pause ?? null);
       setNotice({ kind: "done", text: `Saved. ${entries.charAt(0).toUpperCase()}${entries.slice(1)} now uses these limits and guardian rules.` });
       refreshGuardian();
     } catch (err) {
@@ -351,7 +354,7 @@ function OwnPaperLimitsV2({ paper }: { paper: PaperRiskStatus }) {
 }
 
 /** CP6-15: "After the losses-in-a-row limit" - when the pause ends. Saved with the other limits by "Save limits". */
-function PauseChoice({ value, onChange, resumedText }: { value: LossStreakPause; onChange: (v: LossStreakPause) => void; resumedText: string | null }) {
+function PauseChoice({ value, onChange, resumedText }: { value: LossStreakPause | null; onChange: (v: LossStreakPause) => void; resumedText: string | null }) {
   const name = useId();
   return (
     <fieldset className="mt-space-5" data-field="loss_streak_pause">

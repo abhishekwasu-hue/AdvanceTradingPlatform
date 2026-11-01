@@ -175,7 +175,7 @@ def test_written_lot_cap_from_margin():
     _load_master()
     pe = _resolve(WRITE)
     lots, note = _run(written_lot_cap(_FnoBroker(margin_per_lot=60_000, available=200_000), pe, product="MIS"))
-    assert lots == 2 and "2 lot" in note                      # 0.8 * 200k / 60k
+    assert lots == 3 and "3 lot" in note                      # M68 PR-5 (TS1-055): the whole 200k / 60k (no 80 % share)
     with pytest.raises(ContractExecutionError, match="Insufficient margin"):
         _run(written_lot_cap(_FnoBroker(margin_per_lot=60_000, available=50_000), pe, product="MIS"))
     with pytest.raises(ContractExecutionError, match="did not report"):

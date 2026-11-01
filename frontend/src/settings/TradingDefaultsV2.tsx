@@ -171,7 +171,7 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
             </Field>
           )}
           {options && (form.strike_rule === "ITM" || form.strike_rule === "OTM") && (
-            <Field id={id("offset")} label="Strike steps from the money" hint="1 to 10. Empty means 1.">
+            <Field id={id("offset")} label="Strike steps from the money" hint="1 or more. Empty: Not set (the form asks).">
               <NumberBox id={id("offset")} value={form.strike_offset} onChange={(v) => set("strike_offset", v)} />
             </Field>
           )}
@@ -181,7 +181,7 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
             </Field>
           )}
           {kind !== "UNDERLYING" && (
-            <Field id={id("lots")} label="Lots for a new bot" hint="1 to 500. Your risk limits still apply.">
+            <Field id={id("lots")} label="Lots for a new bot" hint="1 or more. Your risk limits still apply.">
               <NumberBox id={id("lots")} value={form.max_lots} onChange={(v) => set("max_lots", v)} />
             </Field>
           )}
@@ -191,7 +191,7 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
             </Field>
           )}
           {options && structure && WIDTH_STRUCTURES.includes(structure) && (
-            <Field id={id("width")} label={widthLabel} hint="1 to 20.">
+            <Field id={id("width")} label={widthLabel} hint="1 or more.">
               <NumberBox id={id("width")} value={form.spread_width} onChange={(v) => set("spread_width", v)} />
             </Field>
           )}
@@ -239,7 +239,7 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
 
       <CardV2 title="Chain order ticket" testId="ticket">
         <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-3">
-          <Field id={id("tlots")} label="Lots" hint="1 to 500.">
+          <Field id={id("tlots")} label="Lots" hint="1 or more.">
             <NumberBox id={id("tlots")} value={form.ticket_lots} onChange={(v) => set("ticket_lots", v)} />
           </Field>
           <Field id={id("product")} label="Product">

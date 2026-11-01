@@ -280,7 +280,11 @@ def _rate(rows: Sequence[CaseScore], dim: str) -> float:
 
 def group(rows: Sequence[CaseScore]) -> Dict[str, Any]:
     rates = {d: _rate(rows, d) for d in DIMENSIONS}
-    return {"n": len(rows), **rates, "score": round(sum(rates.values()) / len(DIMENSIONS), 4)}
+    # The score comes from the raw counts and is rounded once: averaging the already-rounded rates could land on a
+    # rounding edge (e.g. 0.48335) and round differently from one machine to another.
+    hits = sum(1 for r in rows for d in DIMENSIONS if getattr(r, d))
+    score = round(hits / (len(rows) * len(DIMENSIONS)), 4) if rows else 0.0
+    return {"n": len(rows), **rates, "score": score}
 
 
 def run(responder: Optional[Responder] = None) -> Dict[str, Any]:

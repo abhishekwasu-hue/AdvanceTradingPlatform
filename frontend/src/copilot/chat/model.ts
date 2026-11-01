@@ -2,11 +2,14 @@ import { request } from "../../api/client";
 import { formatDateTimeIST, formatNumber } from "../../ui/format";
 import type { AnalysisChart, AnalysisTable } from "../../optionChain/analyses";
 import type { StrategyDraft } from "../strategyDraft";
+import type { AskContext } from "../askContext";
 import type { MarketStrip, StripIndex } from "../../dashboard/types";
 import type { AnalysisItem, AnalyzeStatus } from "../../chartAnalyze/types";
 import type { LayerBand } from "../../charting/engine";
 import { ZONE_COLORS } from "../../charting/marketZones";
 import { areaLabelText } from "../../charting/geometry";
+import { chartTabPath } from "../../shell/shellRoutes";
+import { TERMINAL_ADDRESS } from "../../shell/aliases";
 
 /**
  * Item 5 (owner's handover, the AI Copilot as a trader's brain), first slice: the chat-first Copilot page's data and its
@@ -16,6 +19,8 @@ import { areaLabelText } from "../../charting/geometry";
  */
 
 export type JobId = "brief" | "chart" | "trade_check" | "positions" | "review" | "strategy" | "option_chain" | "teacher" | "screen" | "views";
+/** M72 PR-1c: an answer the AI planner wrote from the user's own data (`copilot_agent`); not a "What I can do" job. */
+export type AnswerJob = JobId | "agent";
 
 export interface ChatJob {
   id: JobId; number: number; title: string; line: string; starter: string; built: boolean;
@@ -72,7 +77,7 @@ export type AnswerBlock =
   | { type: "table"; table: AnalysisTable }
   | { type: "chart"; title: string; chart: AnalysisChart };
 export interface ChatAnswer {
-  job: JobId | "refuse" | "help"; job_number: number | null; title: string;
+  job: AnswerJob | "refuse" | "help"; job_number: number | null; title: string;
   summary: string[]; answer: string; sections: { title: string; lines: string[] }[]; blocks: AnswerBlock[]; unknowns: string[];
   worked: WorkedStep[]; action: { label: string; to: string } | null; refused: RefusalKind | null; starters: string[];
   concepts: { id: string; title: string }[]; notes: string[]; disclaimer: string; source: "rules" | "ai"; tool_calls: string[];
@@ -91,6 +96,50 @@ export interface ChatAnswer {
   headline?: AnswerHeadline | null;
   /** M59 CR-1: the chart reader's structure card (absent on older stored turns and on other jobs). */
   structure_card?: StructureCard | null;
+  /** M72 PR-2 (CP-2): the AI planner's checked one-line headline (it is also `summary[0]`). */
+  headline_line?: string | null;
+  /** M72 PR-2 (CP-2): fixed follow-up actions - open the symbol a tool read, or ask the next question when tapped. */
+  chips?: AnswerChip[];
+  /** M72 PR-6 (CP-5): editable drafts the planner made - checked, run or approved only by the user's tap. */
+  drafts?: AnswerDraft[];
+}
+/** M72 PR-6: a screen draft (its $parameters empty unless the user stated them) or a proposed alert awaiting approval. */
+export type AnswerDraft =
+  | { kind: "screen"; text: string; base_tf: string; params: { name: string; value: number | string | boolean | null }[]; stages: string[]; problems: string[]; ok: boolean }
+  | { kind: "alert"; status: "proposed"; proposal_id: number | null };
+
+/** M72 PR-6: a $parameter's name in plain words ("rsi_level" -> "Rsi level"). */
+export function paramLabel(name: string): string {
+  const words = name.replace(/_/g, " ").trim();
+  return words ? words[0].toUpperCase() + words.slice(1) : name;
+}
+
+/** M72 PR-6: the symbols the user typed (comma / space separated, upper case, at most 50, no repeats). */
+export function draftSymbols(text: string): string[] {
+  const out = text.split(/[\s,]+/).map((s) => s.trim().toUpperCase()).filter((s) => /^[A-Z0-9][A-Z0-9&.-]{0,29}$/.test(s));
+  return [...new Set(out)].slice(0, 50);
+}
+
+/** M72 PR-6: the parameter values ready to send - null while any is empty or not a number (the Run button waits). */
+export function draftParams(values: Record<string, string>, names: string[]): Record<string, number> | null {
+  const out: Record<string, number> = {};
+  for (const n of names) {
+    const v = (values[n] ?? "").trim();
+    if (!v || !Number.isFinite(Number(v))) return null;
+    out[n] = Number(v);
+  }
+  return out;
+}
+/** M72 PR-2: one follow-up chip; the words are the server's fixed ones. */
+export type AnswerChip =
+  | { kind: "chart" | "terminal"; label: string; symbol: string }
+  | { kind: "ask"; label: string; question: string };
+
+/** M72 PR-2: where an "open" chip goes, inside the app (the Chart tab, or the Terminal with that symbol). */
+export function chipPath(chip: AnswerChip): string | null {
+  if (chip.kind === "chart") return chartTabPath(chip.symbol);
+  if (chip.kind === "terminal") return `${TERMINAL_ADDRESS}?symbol=${encodeURIComponent(chip.symbol.trim().toUpperCase())}`;
+  return null;
 }
 /** Job 6 added: the trader's own settings, a promise of returns, someone else's strategy. */
 export type RefusalKind = "order" | "advice" | "tip" | "settings" | "promise" | "copy";
@@ -107,7 +156,7 @@ export type ChartSource = { kind: "file"; file: Blob; name: string } | { kind: "
 /** M59 CR-2: the attached chart's state in its thread turn (the same chart_analyze pipeline as the Analyze a chart page). */
 export type ChartTurnState =
   | { status: "working"; step: "adding" | "analysing" }
-  | { status: "done"; item: AnalysisItem; imageSrc: string | null }
+  | { status: "done"; item: AnalysisItem; imageSrc: string | null; readingSrc?: string | null }
   | { status: "failed"; message: string }
   | { status: "unavailable"; engine: AnalyzeStatus["engine"] };
 
@@ -143,7 +192,9 @@ export function actionState(answer: Pick<ChatAnswer, "draft">): { copilotDraft: 
 
 export const chatApi = {
   home: () => request<ChatHome>("/ai/chat/home"),
-  ask: (message: string) => request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message }) }),
+  /** M72 PR-3: `context` - where the question was asked from (ids and words only; the server re-reads the object). */
+  ask: (message: string, context?: AskContext | null) =>
+    request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify(context ? { message, context } : { message }) }),
   /** M59 CR-2: the rule answer only (its structure card), never the AI wording - no metered AI call the user did not ask for. */
   askRules: (message: string) => request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message, wording: false }) }),
   /** CU6: the person's own conversation, oldest turn first. */
@@ -369,4 +420,18 @@ export const NUMBERS_INDICES: readonly { key: string; label: string }[] = [
 
 export function numbersCells(strip: MarketStrip | null): { key: string; label: string; index: StripIndex | null }[] {
   return NUMBERS_INDICES.map(({ key, label }) => ({ key, label, index: strip?.indices.find((i) => i.key === key) ?? null }));
+}
+
+/** M72 PR-5 (CP-4): the hybrid timeframes (backend chart_analyze/hybrid.TIMEFRAMES) by the words a page's context uses. */
+const HYBRID_TF: Record<string, "5m" | "15m" | "1h" | "1d"> = {
+  "5m": "5m", "5min": "5m", "15m": "15m", "15min": "15m", "1h": "1h", "60m": "1h", "60min": "1h", "1d": "1d", day: "1d", d: "1d",
+};
+/**
+ * M72 PR-5 (CP-4): the symbol and timeframe an attached chart is read on in "Advanced analysis" - only the ones the
+ * user's own Ask-AI context carries (the page he asked from), never guessed from the picture; null = AI only.
+ */
+export function hybridPick(context: { symbol?: string; timeframe?: string } | null | undefined): { symbol: string; timeframe: "5m" | "15m" | "1h" | "1d" } | null {
+  const symbol = context?.symbol?.trim().toUpperCase();
+  const tf = HYBRID_TF[(context?.timeframe ?? "").trim().toLowerCase()];
+  return symbol && tf ? { symbol, timeframe: tf } : null;
 }

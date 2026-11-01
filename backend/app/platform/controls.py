@@ -140,6 +140,38 @@ FEATURE_FLAGS: Dict[str, str] = {
     # user's own key, else the organisation's, else the rules / `ai_not_connected`). OFF: every AI call and page behaves
     # exactly as before and /api/ai/byok/connect* answers 404. Background jobs stay on the organisation's key. No orders.
     "ai_one_key": "One AI key for every AI feature: the Connect AI panel and the user's own key first for Copilot, chart analysis and the other AI tools",
+    # M72 PR-1b (M72Q-1; needs `ui_v2`; app/ai/platform_key.py): the operator's platform AI key, kept on the host and never in
+    # the repository, answers a user-started AI call when neither the user's own key nor the organisation's own key is
+    # there - inside the plan's monthly platform budget and the per-user daily cap the owner sets in Admin (ATP chooses
+    # no number: either Not set = the rules answer). A cap reached is a hard stop, then the rules. OFF: exactly today's
+    # providers. Owner default: ON for the owner's organisation only (allow-list). The AI never places, blocks or changes orders.
+    # M72 PR-1c (CP-1; needs `ai_copilot` + `ui_v2`; app/ai/chat_routes.py, app/ai/agent.py): the Copilot chat asks the AI
+    # planner first when an AI with tool use is ready - it reads the user's own data with typed read tools and computes with
+    # calc tools - and answers from ATP's rules when the AI is down or its answer fails the checks. OFF: exactly today's
+    # chat (rules first, AI wording). Read tools and guarded proposals only; never an order (ADR-0006).
+    "copilot_agent": "Copilot planner: the AI reads your own data with read-only tools before answering; ATP's rules answer when the AI is down",
+    # M72 PR-7 (CP-7; needs `ui_v2`; app/ai/watch.py): the Copilot watch - short information cards about the user's OWN
+    # positions, short strikes and watchlists, each type opt-in with his own number (Settings > Alerts), in the app and on
+    # his own Telegram; each card has "Ask why". No proposal, nothing closed or blocked (ADR-0004, ADR-0006). OFF: nothing
+    # is evaluated or sent and /api/copilot-watch/* answers 404.
+    # M72 PR-9 (CP-9, M72Q-4; needs `ai_copilot` + `ui_v2`; frontend src/copilot/ticket): under a Copilot answer to a
+    # message that names a contract, a card that PREPARES the one order ticket with only what the user typed (contract,
+    # side, lots, limit price, stop-loss; his saved Trade settings as the ticket applies them); he reviews and presses
+    # Place himself. The server is unchanged (the ticket's own preview / place routes). OFF: no card. The owner's order
+    # says default ON; it ships OFF until he turns it on.
+    # M72 PR-10 (CP-10, M72Q-2; needs `ai_copilot` + `ui_v2`; app/ai/languages.py): the Copilot planner answers in the
+    # user's own language (English / Marathi / Hindi, his Settings > AI choice; numbers and symbols unchanged, the Marathi /
+    # Hindi advice and order phrases refused) and the Copilot shows the browser's speech input when he turns it on. The
+    # interface, the rule answers and every other AI surface stay English; the strategy interview is untouched. OFF: English only.
+    # M72 PR-11 (CP-11; needs `ai_copilot` + `ui_v2`; app/ai/memory.py): what the Copilot remembers about the user - his
+    # instruments, timeframes and style, saved by him in Settings > AI (ATP suggests from his own lists, trades and
+    # questions) - given to the planner for his own questions only; deleted with "Delete my Copilot conversation". Never
+    # read across users, by an order path or a bot. OFF: nothing is read and /api/copilot-memory answers 404.
+    "copilot_memory": "Copilot memory: the instruments, timeframes and style you save, used for your own questions",
+    "copilot_languages": "Copilot answers in Marathi or Hindi (the user's choice) and voice input in the Copilot box",
+    "copilot_ticket": "Copilot ticket preparation: the order ticket opens filled with only what you typed; you review and place it yourself",
+    "copilot_watch": "Copilot watch: opt-in cards when your own positions, short strikes or watchlists change, with Ask why",
+    "ai_platform_key": "Platform AI key: AI answers without a key of the user's own, inside the plan's AI budget and the per-user daily cap set in Admin",
     # AUD-T7 (owner audit 28 Oct; app/trading/cost_meter.py; needs `ui_v2`): the cost-of-trading meter on My trades - the
     # user's own closed trades' charges against the gross P&L, this financial year and this month, PAPER and LIVE apart,
     # contract-note charges first. Read-only. OFF: GET /api/trades/cost-meter answers 404 and the card is hidden.

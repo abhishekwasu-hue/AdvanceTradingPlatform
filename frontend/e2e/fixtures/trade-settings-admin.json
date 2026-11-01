@@ -270,7 +270,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -287,7 +287,7 @@
      "low_open": false,
      "term": "lot",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -304,7 +304,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -321,7 +321,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -368,7 +368,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -385,7 +385,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1226,7 +1226,7 @@
      "key": "risk_limits.overnight_short_options",
      "label": "Hold written straddles and strangles overnight",
      "kind": "switch",
-     "help": "On: written structures without wings may be carried forward.",
+     "help": "On: a bot that carries forward may also hold a written straddle or strangle (no wings) for days.",
      "unit": "",
      "choices": [],
      "low": null,
@@ -1234,76 +1234,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
-     "scope": "user",
-     "value": null,
-     "saved": false
-    },
-    {
-     "key": "risk_limits.loss_cooldown_pause_mode",
-     "label": "A losses-in-a-row pause ends",
-     "kind": "choice",
-     "help": "When new entries start again after a losses-in-a-row pause with no minutes set.",
-     "unit": "",
-     "choices": [
-      {
-       "value": "next_session",
-       "label": "At the next session"
-      },
-      {
-       "value": "until_resume",
-       "label": "When I resume"
-      }
-     ],
-     "low": null,
-     "high": null,
-     "low_open": false,
-     "term": null,
-     "fact": false,
-     "wired": false,
-     "scope": "user",
-     "value": null,
-     "saved": false
-    },
-    {
-     "key": "risk_limits.opposite_positions",
-     "label": "Two bots on opposite sides",
-     "kind": "choice",
-     "help": "Whether two of your bots may hold opposite positions in the same symbol.",
-     "unit": "",
-     "choices": [
-      {
-       "value": "allow",
-       "label": "Allowed"
-      },
-      {
-       "value": "deny",
-       "label": "Not allowed"
-      }
-     ],
-     "low": null,
-     "high": null,
-     "low_open": false,
-     "term": null,
-     "fact": false,
-     "wired": false,
-     "scope": "user",
-     "value": null,
-     "saved": false
-    },
-    {
-     "key": "risk_limits.drawdown_cut_pct",
-     "label": "Size cut at the first drawdown step",
-     "kind": "number",
-     "help": "At the first drawdown step the size is cut by this much.",
-     "unit": "%",
-     "choices": [],
-     "low": 0.0,
-     "high": 100.0,
-     "low_open": true,
-     "term": "drawdown",
-     "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1312,7 +1243,7 @@
      "key": "risk_limits.vix_gate",
      "label": "India VIX check",
      "kind": "switch",
-     "help": "On: a fast rise or a high level of India VIX pauses or cuts new entries.",
+     "help": "On: a fast rise of India VIX pauses new long entries on NIFTY, BANKNIFTY and SENSEX for the day (also when it cannot be read after the check time); a high level cuts their size. Uses your values below.",
      "unit": "",
      "choices": [],
      "low": null,
@@ -1320,7 +1251,7 @@
      "low_open": false,
      "term": "india-vix",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1337,7 +1268,7 @@
      "low_open": true,
      "term": "india-vix",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1354,7 +1285,7 @@
      "low_open": true,
      "term": "india-vix",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1371,7 +1302,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1380,7 +1311,7 @@
      "key": "risk_limits.experience_trades",
      "label": "Experience level: trades",
      "kind": "whole",
-     "help": "Closed paper trades before the next level opens.",
+     "help": "With \"Limit me by my experience level\" on: closed paper trades before naked short options open.",
      "unit": "trades",
      "choices": [],
      "low": 1,
@@ -1388,7 +1319,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1397,7 +1328,7 @@
      "key": "risk_limits.experience_sessions",
      "label": "Experience level: sessions",
      "kind": "whole",
-     "help": "Sessions traded before the next level opens.",
+     "help": "With \"Limit me by my experience level\" on: sessions with a paper trade before naked short options open.",
      "unit": "sessions",
      "choices": [],
      "low": 1,
@@ -1405,7 +1336,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1414,11 +1345,11 @@
      "key": "risk_limits.event_default_action",
      "label": "A new market event day",
      "kind": "choice",
-     "help": "What a market event day you add does to new entries.",
+     "help": "What a market event day you add does to new entries; the form starts from it.",
      "unit": "",
      "choices": [
       {
-       "value": "PAUSE",
+       "value": "BLOCK",
        "label": "Pause new entries"
       },
       {
@@ -1431,7 +1362,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1448,7 +1379,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "organisation",
      "value": null,
      "saved": false
@@ -1465,7 +1396,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "organisation",
      "value": null,
      "saved": false
@@ -1482,7 +1413,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "organisation",
      "value": null,
      "saved": false
@@ -1499,7 +1430,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "organisation",
      "value": null,
      "saved": false
@@ -1516,7 +1447,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "organisation",
      "value": null,
      "saved": false
@@ -1552,7 +1483,7 @@
      "key": "automation.approval_mode",
      "label": "New entries",
      "kind": "choice",
-     "help": "Whether a bot places an entry by itself or asks you first.",
+     "help": "Whether your bots, alerts, API signals and paper plan tickets place an entry by themselves or ask you first. A bot follows this unless you chose New entries for that bot itself; Ask me first also turns your paper plan ticket's Place into a request you approve.",
      "unit": "",
      "choices": [
       {
@@ -1569,7 +1500,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1586,7 +1517,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1620,7 +1551,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1637,7 +1568,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1722,7 +1653,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1739,7 +1670,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1756,7 +1687,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false

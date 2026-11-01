@@ -1,6 +1,8 @@
 /** SCR-FIX PR B (frontend): B1 unread counted apart with one action, B4 one count source, B5 operator / negation
  * carried into the verify rows, B6 no replay controls when replay is not available. */
-import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactElement } from "react";
+import { renderToStaticMarkup as renderBare } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api/errors";
 import type { RunResult } from "./api";
@@ -11,6 +13,8 @@ import { MatchedFoot } from "./FunnelCanvas";
 import { countLine, nothingRead, tally, unreadReason, unreadRows } from "./readCounts";
 import { UnreadNote } from "./UnreadNote";
 import { mergeRuns } from "./universe";
+/** M75 NAV-3: the evidence's "Open in Charts" is an in-place link, always inside the app's router. */
+const renderToStaticMarkup = (el: ReactElement) => renderBare(<MemoryRouter>{el}</MemoryRouter>);
 
 const pack = sample as unknown as EvidencePack;
 const login = "Your broker login has ended. Log in again to read the bars.";

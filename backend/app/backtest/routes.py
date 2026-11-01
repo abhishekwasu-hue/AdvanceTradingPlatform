@@ -98,6 +98,8 @@ class OptionBacktestBody(BaseModel):
     option_chain: Optional[List[OptionChainSnapshotRow]] = Field(default=None, max_length=500_000)
     intraday: bool = True
     hold_for_days: bool = False       # M55 T1: a credit structure held for days (no square-off at the close)
+    # M68 PR-5 (TS1-041): the user's own "Hold written straddles and strangles overnight" (Risk limits), as the bot reads it
+    hold_written_overnight: bool = False
 
     def to_config(self, holidays=()) -> OptionBacktestConfig:
         # Read after `own_options`: every choice the structure uses is the user's own; a field it does not use (the
@@ -113,6 +115,7 @@ class OptionBacktestBody(BaseModel):
             lot_size=self.lot_size, strike_step=self.strike_step, expiry_weekday=self.expiry_weekday, weekly_expiry=self.weekly_expiry,
             holidays=set(holidays), implied_volatility=self.implied_volatility, realised_vol_window=self.realised_vol_window,
             intraday=self.intraday, hold_for_days=self.hold_for_days,
+            hold_written_overnight=self.hold_written_overnight,
         )
 
 

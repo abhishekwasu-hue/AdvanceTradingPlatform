@@ -172,12 +172,12 @@ describe("FNO-2 basket: ready strategies from the chain on screen", () => {
     expect(stopFor(null, 50)).toBeNull();
   });
 
-  it("the panel names where the settings came from, or that a neutral start is used", () => {
+  it("the panel names where the settings came from, or that they are still loading (M68 PR-2: no neutral start)", () => {
     const own = body([], { settings: { source: "mine on NIFTY", width_steps: 4, lots: 2, stop_pct: 60, note: "From your settings (mine on NIFTY): wings 4 strikes apart." } });
     expect(text(own.html)).toContain("From your settings (mine on NIFTY)");
     by(own.els, "data-strategy", "Iron condor").onClick!();
     expect(own.on.onReady).toHaveBeenCalledWith("Iron condor");
-    expect(text(body([]).html)).toContain("edit any leg");
+    expect(text(body([]).html)).toContain("Loading your settings");                 // settings not read yet: nothing built
   });
 });
 

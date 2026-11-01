@@ -45,6 +45,7 @@ from app.brokers.models import (
     OptionChain,
     OptionChainRow,
     Quote,
+    lot_or_none,
 )
 from app.brokers.shared_http import ORDER_POOL, shared_client
 from app.brokers.timestamps import parse_broker_timestamp
@@ -266,10 +267,7 @@ class DhanBroker(BrokerInterface):
             except (TypeError, ValueError):
                 strike = 0.0
             option_type = str(row.get("SEM_OPTION_TYPE") or "").upper()
-            try:
-                lot = float(row.get("SEM_LOT_UNITS") or 1)
-            except (TypeError, ValueError):
-                lot = 1.0
+            lot = lot_or_none(row.get("SEM_LOT_UNITS"))      # M68 TS1-088: none given = None, never 1
             try:
                 tick = float(row.get("SEM_TICK_SIZE") or 0.05)
             except (TypeError, ValueError):
@@ -278,7 +276,7 @@ class DhanBroker(BrokerInterface):
             name = str(row.get("SM_SYMBOL_NAME") or row.get("SEM_CUSTOM_SYMBOL") or symbol).strip().upper()
             underlying = name.split(" ")[0].split("-")[0] if kind.startswith(("OPT", "FUT")) else name
             out.append(Instrument(instrument_token=str(row.get("SEM_SMST_SECURITY_ID") or "").strip(), exchange=exchange, tradingsymbol=symbol, name=underlying or None,
-                                  segment=segment, instrument_type=instrument_type, lot_size=lot or 1.0, tick_size=tick or 0.05,
+                                  segment=segment, instrument_type=instrument_type, lot_size=lot, tick_size=tick or 0.05,
                                   expiry=expiry.date().isoformat() if expiry and kind != "EQUITY" and kind != "INDEX" else None, strike=strike if strike > 0 else None))
             self._symbol_map[(exchange, symbol)] = (segment, str(row.get("SEM_SMST_SECURITY_ID") or "").strip(), INSTRUMENT_KIND.get(kind, kind or "EQUITY"), row)
         self._instruments_cache[exchange] = (time.monotonic(), out)

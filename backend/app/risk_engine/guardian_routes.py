@@ -26,7 +26,8 @@ class MarketEventBody(BaseModel):
     start_time: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
     end_time: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
     kind: str = Field(default="OTHER", max_length=30)
-    action: str = Field(default="SIZE_CUT", pattern="^(BLOCK|SIZE_CUT|block|size_cut)$")
+    # M68 PR-5 (TS1-058): no pre-chosen action - the form asks (it starts from the user's own saved default, if any).
+    action: str = Field(pattern="^(BLOCK|SIZE_CUT|block|size_cut)$")
     size_cut_pct: Optional[float] = Field(default=None, ge=0, le=100)
     description: str = Field(default="", max_length=200)
     global_event: bool = Field(default=False, description="platform-wide (SUPER_ADMIN only)")
@@ -34,7 +35,7 @@ class MarketEventBody(BaseModel):
 
 async def _effective_config(session: AsyncSession, tenant_id: int) -> RiskConfig:
     cfg = await get_tenant_risk_config(tenant_id, session) or RiskConfig()
-    cfg, _ = controls.clamp_config(cfg, await controls.risk_ceilings(session))
+    cfg, _ = controls.clamp_config(cfg, await controls.risk_ceilings(session, tenant_id))
     return cfg
 
 
@@ -47,7 +48,7 @@ async def guardian_status(user: User = Depends(get_current_user), session: Async
         from app.risk_engine.by_default import capital_basis
         cfg = cfg.with_capital(await capital_basis(session, user))
     result = await guardian.status(session, user.tenant_id, cfg)
-    result["ceilings"] = await controls.risk_ceilings(session)
+    result["ceilings"] = await controls.risk_ceilings(session, user.tenant_id)
     return result
 
 

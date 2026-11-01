@@ -245,7 +245,8 @@ export function botWithDefaults<T extends DeploymentCreateRequest>(base: T, d: T
       for (const k of ["option_position", "strike_rule", "strike_offset", "premium_stop_pct"] as const) delete out[k];
       out.instrument_kind = "FUTURE";
       out.expiry_rule = d.expiry_rule ?? base.expiry_rule ?? "NEAREST";
-      out.max_lots = d.max_lots ?? base.max_lots ?? 1;
+      const lots = d.max_lots ?? base.max_lots;          // M68 PR-2: his own lots only (none: the form asks)
+      if (lots) out.max_lots = lots; else delete out.max_lots;
       applied.push("futures");
       changed = true;
     } else {

@@ -66,10 +66,10 @@ describe("UX2 fix 4 wiring", () => {
 });
 
 describe("UX2 fix 4 model", () => {
-  it("an index trades its option (side, expiry and strike his own - M68 PR-4), one lot; a stock trades its shares", () => {
+  it("an index trades its option (side, expiry and strike his own - M68 PR-4; no lots chosen for him - M68 PR-2); a stock trades its shares", () => {
     expect(paperBotRequest("orb_15m_5m", " nifty 50 ", intraday)).toEqual({
       strategy_id: "orb_15m_5m", symbol: "NIFTY 50", exchange: "NSE", timeframe: "1min", mode: "PAPER", holding: "INTRADAY",
-      instrument_kind: "OPTION", max_lots: 1,
+      instrument_kind: "OPTION",
     });
     expect(paperBotRequest("swing_ema_pullback_d", "RELIANCE", daily)).toEqual({
       strategy_id: "swing_ema_pullback_d", symbol: "RELIANCE", exchange: "NSE", timeframe: "day", mode: "PAPER", holding: "SWING",
@@ -101,10 +101,12 @@ describe("UX2 fix 4 model", () => {
   });
 
   it("the start summary says what is traded, how long it is held, and paper only", () => {
-    expect(startSummary("NIFTY 50", intraday)).toBe("Trades a NIFTY 50 option at the expiry in your Trade settings, 1 lot, closed before the market closes. Paper money only; your risk limits apply.");
+    expect(startSummary("NIFTY 50", intraday)).toBe("Trades a NIFTY 50 option at the expiry in your Trade settings, your Position size, closed before the market closes. Paper money only; your risk limits apply.");
+    expect(startSummary("NIFTY 50", intraday, { ...paperBotRequest("orb_15m_5m", "NIFTY 50", intraday), max_lots: 2 }))
+      .toBe("Trades a NIFTY 50 option at the expiry in your Trade settings, 2 lots, closed before the market closes. Paper money only; your risk limits apply.");
     expect(startSummary("RELIANCE", daily)).toBe("Trades RELIANCE shares, held for days. Paper money only; your risk limits apply.");
     // UX-11 U1: one visible line, the rest on demand - the same words, none dropped.
-    expect(startSummaryParts("NIFTY 50", intraday)).toEqual({ line: "Trades a NIFTY 50 option at the expiry in your Trade settings, 1 lot.",
+    expect(startSummaryParts("NIFTY 50", intraday)).toEqual({ line: "Trades a NIFTY 50 option at the expiry in your Trade settings, your Position size.",
       more: "Closed before the market closes. Paper money only; your risk limits apply." });
     expect(startSummaryParts("RELIANCE", daily).line).toBe("Trades RELIANCE shares.");
   });

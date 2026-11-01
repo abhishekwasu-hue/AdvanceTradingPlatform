@@ -169,7 +169,8 @@ test.describe("Strategy templates behaviour", () => {
     await expect(form(page)).toContainText("Started on paper: RELIANCE.");
     const post = server.sent.find((c) => c.url === "/deployments");
     expect(post?.body).toEqual({ strategy_id: "template:B1:1:1d:both:,,,,,,", symbol: "RELIANCE", exchange: "NSE", timeframe: "day",
-      mode: "PAPER", holding: "SWING", instrument_kind: "UNDERLYING", order_style: "MARKET" });          // M68: his pick
+      mode: "PAPER", holding: "SWING", instrument_kind: "UNDERLYING", order_style: "MARKET", max_lots: 1,
+      entry_mode: "AUTO" });   // M68: his picks (PR-2: his shares)
   });
 
   test("REV-H3: a seller pack on an index starts with nothing chosen; Start waits, with the reason, until the user chooses", async ({ page }) => {
@@ -189,7 +190,7 @@ test.describe("Strategy templates behaviour", () => {
     await pickOptionChoices(page, form(page));
     // M68 PR-1: nothing pre-selects how entries are sent either - Start says so until he picks it
     await expect(form(page).locator("[data-start-why]")).toHaveText("Choose how this bot sends its entries.");
-    await pickEntryStyle(page, form(page));
+    await pickEntryStyle(page, form(page));       // M68 PR-6: picks "New entries" too (asked the same way)
     await expect(form(page).locator("[data-start-why]")).toHaveCount(0);
     await start.click();
     await expect(form(page)).toContainText("Started on paper: NIFTY 50.");

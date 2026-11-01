@@ -9,7 +9,7 @@ Downgrade drops ratio_shorts and restores the NOT NULL width with its old server
 only there, so the previous release reads every row.
 
 Revision ID: c4e8a2f6b0d3
-Revises: 8d2f4a6c0e19
+Revises: b4e6f8a0c2d5
 Create Date: 2026-11-01 10:00:00
 """
 from collections.abc import Sequence
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c4e8a2f6b0d3'
-down_revision: str | Sequence[str] | None = '8d2f4a6c0e19'
+down_revision: str | Sequence[str] | None = 'b4e6f8a0c2d5'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 ROLLBACK_SAFE = True

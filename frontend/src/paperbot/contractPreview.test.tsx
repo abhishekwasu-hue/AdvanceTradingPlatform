@@ -11,6 +11,7 @@ describe("UI-28 U7.4: the contract a trading bot would trade", () => {
   it("reads the server's resolved contract as one line", () => {
     expect(contractText(ce, 1)).toBe("NIFTY 24500 CE · 3 Nov · 1 lot (75)");
     expect(contractText(pe, 2)).toBe("NIFTY 24500 PE · 3 Nov · 2 lots (150)");
+    expect(contractText(ce, null)).toBe("NIFTY 24500 CE · 3 Nov · lot size 75 · size from your Position size");   // M68 PR-2
   });
   it("one row per signal side the server could resolve; an error side is left out", () => {
     const p = { symbol: "NIFTY", kind: "OPTION", contracts: { LONG: ce, SHORT: { error: "no strike" } } } as ContractPreview;
@@ -18,7 +19,7 @@ describe("UI-28 U7.4: the contract a trading bot would trade", () => {
   });
   it("sends only the bot's contract rules (the same request Start on paper sends)", () => {
     const req = paperBotRequest("orb_15m_5m", "NIFTY", null);
-    expect(rulesOf(req)).toEqual({ instrument_kind: "OPTION", max_lots: 1 });       // M68 PR-4: no pre-chosen side, expiry or strike
+    expect(rulesOf(req)).toEqual({ instrument_kind: "OPTION" });       // M68 PR-4: no pre-chosen side, expiry or strike; PR-2: no lots
   });
   it("offers the preview for an option bot, never for a cash symbol", () => {
     expect(renderToStaticMarkup(<ContractPreviewV2 request={paperBotRequest("orb_15m_5m", "NIFTY", null)} />)).toContain("See the contract it would trade");

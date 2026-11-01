@@ -385,7 +385,7 @@ async def _effective_config(session: AsyncSession, user: User, direction: str, u
     from app.risk_engine.guardian import apply_multiplier, guard_entry
     from app.risk_engine.routes import user_risk_config
     cfg = await user_risk_config(session, user)          # DEF-0: limits not set are off; capital = own, else PAPER balance
-    cfg, notes = clamp_config(cfg, await risk_ceilings(session))
+    cfg, notes = clamp_config(cfg, await risk_ceilings(session, user.tenant_id))
     if await by_default.enabled(session, user.tenant_id):
         cfg, cap_notes = await by_default.apply_user_cap(session, user, cfg)
         notes = list(notes) + list(cap_notes)
@@ -482,7 +482,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
 
     tenant = await session.get(Tenant, user.tenant_id)
     refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, MODE, STRATEGY_ID, user=user, reserve=False))
-    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=None)
+    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=None, user_id=user.id)
     if gate:
         refusals.append(plain(gate))
     direction = SignalDirection.LONG if side == "BUY" else SignalDirection.SHORT

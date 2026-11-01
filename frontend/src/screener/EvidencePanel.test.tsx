@@ -1,10 +1,14 @@
-import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactElement } from "react";
+import { renderToStaticMarkup as renderBare } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { EvidenceChart } from "./EvidenceChart";
 import { EvidenceView, type ReplayControls } from "./EvidencePanel";
 import { ResultBoard } from "./ResultBoard";
 import sample from "./evidenceSample.json";
 import { visibleDrawables, type EvidenceContext, type EvidencePack } from "./evidence";
+/** M75 NAV-3: the evidence's "Open in Charts" is an in-place link, always inside the app's router. */
+const renderToStaticMarkup = (el: ReactElement) => renderBare(<MemoryRouter>{el}</MemoryRouter>);
 
 const pack = sample as unknown as EvidencePack;
 const none = new Set<string>();

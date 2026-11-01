@@ -266,7 +266,7 @@ def test_migration_keeps_every_stored_width_and_goes_down():
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     module = _migration()
-    assert module.down_revision == "8d2f4a6c0e19" and module.ROLLBACK_SAFE is True and module.ROLLBACK_SAFE_REASON
+    assert module.down_revision == "b4e6f8a0c2d5" and module.ROLLBACK_SAFE is True and module.ROLLBACK_SAFE_REASON
     engine = sa.create_engine("sqlite://")
     with engine.begin() as conn:
         conn.execute(sa.text("CREATE TABLE strategy_deployments (id INTEGER PRIMARY KEY, option_strategy VARCHAR(20) NOT NULL DEFAULT 'SINGLE', "

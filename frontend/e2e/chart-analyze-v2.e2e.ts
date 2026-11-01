@@ -370,8 +370,9 @@ test.describe("Analyze a chart: the flow", () => {
     await expect(page.getByRole("toolbar", { name: "Chart controls" }).getByRole("link", { name: "Analyze a chart" })).toHaveCount(0);
     await page.locator("[data-ask-ai-open]").click();
     await page.getByRole("dialog").getByRole("link", { name: /Analyze a chart image/ }).click();
-    await expect(page).toHaveURL(/\/chart-analyze$/);
-    await expect(page.getByTestId("chart-analyze-page")).toBeVisible();
+    // M75 NAV-2: the analysis opens in place over the Charts page (the path stays).
+    await expect(page).toHaveURL(/\/charts\?panel=analyze$/);
+    await expect(page.locator("[data-inplace-panel='analyze']").getByTestId("chart-analyze-page")).toBeVisible();
   });
 
   test("share: the owner makes an organisation-only link, copies it and stops it; the dialog says what is left out", async ({ page }) => {

@@ -91,7 +91,7 @@ describe("identity: empty defaults change nothing (byte-identical bodies)", () =
   it("the full form and the ticket", () => {
     expect(formPrefill(null, true)).toEqual({});
     expect(formPrefill(EMPTY_DEFAULTS, true)).toEqual({});
-    expect(newDraft("BUY", undefined)).toEqual({ side: "BUY", lots: 1, orderType: null, product: null, price: "", trigger: "", stopLoss: "" });   // owner F1 / M68 PR-1: no product or order type pre-selected
+    expect(newDraft("BUY", undefined)).toEqual({ side: "BUY", lots: null, orderType: null, product: null, price: "", trigger: "", stopLoss: "" });   // owner F1 / M68 PR-1 / PR-2: no product, order type or lots pre-selected
     expect(JSON.stringify(newDraft("SELL", Object.keys(ticketPrefill(EMPTY_DEFAULTS)).length ? ticketPrefill(EMPTY_DEFAULTS) : undefined)))
       .toBe(JSON.stringify(newDraft("SELL")));
     expect(ticketPrefill(EMPTY_DEFAULTS)).toEqual({});
@@ -184,8 +184,8 @@ describe("never pre-filled, and the approval gate", () => {
     expect(formPrefill(approval, false)).toEqual({});
     expect(formPrefill(approval, true)).toEqual({ approval: true });
     expect(formPrefill(d({ entry_mode: "AUTO" }), true)).toEqual({});
-    // the full form sends it only on the paper-only form, with the flag on and the box ticked
-    expect(code(oldPageSource)).toContain('...(paperOnly && approvalAllowed && approval ? { entry_mode: "APPROVAL" as const } : {})');
+    // M68 PR-6: the full form sends "New entries" only when he picked it for this bot; else the bot follows his Trade settings
+    expect(code(oldPageSource)).toContain("...(entryMode ? { entry_mode: entryMode } : {})");
   });
 });
 

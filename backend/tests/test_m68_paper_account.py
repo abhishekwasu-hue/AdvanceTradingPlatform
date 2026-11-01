@@ -305,7 +305,7 @@ def test_migration_keeps_every_capital_marks_his_own_and_goes_down():
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     module = _migration()
-    assert module.down_revision == "6b9d1f3a5c27" and module.ROLLBACK_SAFE is False
+    assert module.down_revision == "c5e7a9b1d3f6" and module.ROLLBACK_SAFE is False
     engine = sa.create_engine("sqlite://")
     with engine.begin() as conn:
         conn.execute(sa.text("CREATE TABLE paper_accounts (id INTEGER PRIMARY KEY, user_id INTEGER, starting_capital NUMERIC(18, 2) NOT NULL)"))

@@ -645,7 +645,10 @@ class StrategyDeploymentRecord(Base):
     # credit-based exit levels for spreads (take profit at target_credit_pct of the credit
     # captured; stop when the loss reaches stop_credit_pct of the credit).
     option_strategy: Mapped[str] = mapped_column(String(20), nullable=False, default="SINGLE")
-    spread_width: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    # M68 PR-4 (TS1-036, alembic c4e8a2f6b0d3): no default - NULL = Not set (a structure that takes a width asks for it).
+    spread_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # M68 PR-4 (TS1-042): a ratio spread's own sold legs per bought leg (the user's choice; NULL for every other structure).
+    ratio_shorts: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     stop_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     # DEF-0 PR 4: close the structure when the underlying breaches a short strike / crosses a breakeven - only when the
@@ -900,7 +903,8 @@ class MarketEventRecord(Base):
     start_time: Mapped[str | None] = mapped_column(String(5), nullable=True)   # "HH:MM" IST
     end_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
     kind: Mapped[str] = mapped_column(String(30), nullable=False, default="OTHER")
-    action: Mapped[str] = mapped_column(String(10), nullable=False, default="SIZE_CUT")
+    # M68 PR-5 (TS1-058): no pre-chosen action - the one adding the event picks BLOCK or SIZE_CUT (the route requires it).
+    action: Mapped[str] = mapped_column(String(10), nullable=False)
     size_cut_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     description: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -1060,17 +1064,22 @@ class RiskSettingsRecord(Base):
     max_consecutive_losses: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # TT12-4: 0 = not set (no minimum). A row from before then holding the old built-in 1.2 reads as not set
     # (app/risk_engine/routes.py org_min_rr_read); no migration.
-    min_risk_reward: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # M68 PR-5 (TS1-053): NULL = not set (alembic aaa362c38a32 turned the old 0 sentinel into NULL; a 0 still reads as not set).
+    min_risk_reward: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
     # Phase V1: Risk Guardian rules (see app/risk_engine/guardian.py) - each NULL = not set (DEF-0).
     max_portfolio_risk_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     stop_cooldown_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     dd_level_1_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     dd_level_2_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     event_size_cut_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
-    lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # M68 PR-5 (TS1-054): how much the first drawdown step cuts the size, % (NULL = not set: no cut). Was a fixed 50 %.
+    dd_cut_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # M68 PR-2 (TS1-018): the organisation's cash unit only when saved; NULL = Not set (one share, a fact). No default.
+    lot_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # CP6-15 (app/risk_engine/loss_streak.py): when the losses-in-a-row pause ends ("next_session" / "until_resume"), and
     # the last "Resume after losses in a row" (only losses closed after it count under "until_resume").
-    loss_streak_pause: Mapped[str] = mapped_column(String(16), nullable=False, default="next_session", server_default="next_session")
+    # M68 PR-5 (TS1-051): NULL = Not set (asked when the check is switched on with no minutes); a saved value is kept.
+    loss_streak_pause: Mapped[str | None] = mapped_column(String(16), nullable=True)
     loss_streak_resumed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # M64 (owner, 30 Oct; app/risk_engine/risk_limits.py): Settings > Risk limits. New values (NULL = not set) and, per
     # check, whether it is switched on and whether the trader saved it himself: {"enabled": [...], "saved": [...]}.
@@ -1081,9 +1090,10 @@ class RiskSettingsRecord(Base):
     loss_cooldown_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     margin_safety_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     limits_switches_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # M55 S6 (A11, owner order M55): "allow" / "deny" opposite positions of two bots on one symbol; default deny
-    # (app/workers/trading_worker.py::_opposite_position - new automated entries only, never an exit).
-    opposite_positions: Mapped[str] = mapped_column(String(8), nullable=False, default="deny", server_default="deny")
+    # M55 S6 (A11, owner order M55): "allow" / "deny" opposite positions of two bots on one symbol
+    # (app/workers/trading_worker.py::_opposite_position - new automated entries only, never an exit). M68 PR-5 (TS1-052,
+    # D3): NULL = Not set = allowed; an organisation's saved "deny" is kept.
+    opposite_positions: Mapped[str | None] = mapped_column(String(8), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 
@@ -2746,8 +2756,10 @@ class PaperSubAccountRecord(Base):
     role: Mapped[str | None] = mapped_column(String(10), nullable=True)
     group_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
-    sizing_mode: Mapped[str] = mapped_column(String(12), nullable=False, default="MULTIPLIER", server_default="MULTIPLIER")
-    sizing_value: Mapped[float] = mapped_column(Float, nullable=False, default=1.0, server_default="1")
+    # M68 PR-2 (TS1-024): the account's own sizing only when the user set it; NULL = Not set - his Trade settings >
+    # Position size > Extra paper accounts, else the account is skipped with "Needs your setting" (never MULTIPLIER x 1).
+    sizing_mode: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    sizing_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
@@ -2999,7 +3011,9 @@ class MdTenantCandleRecord(Base):
     high: Mapped[float] = mapped_column(Price, nullable=False)
     low: Mapped[float] = mapped_column(Price, nullable=False)
     close: Mapped[float] = mapped_column(Price, nullable=False)
-    volume: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    # M71 PL-7: NULL = the source had no volume for this bar (a seeded file without a volume column, F&O volume withheld
+    # while its unit is unsettled) - missing stays missing, never 0. Every other writer stores the broker's number.
+    volume: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     oi: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
@@ -3283,6 +3297,30 @@ class LakeBackfillWindowRecord(Base):
     bars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class DataUseWindowRecord(Base):
+    """M71 PL-7b: one data-use window of a tenant's private research data, loaded at import from the private data's own
+    policy (never written in public code). Kinds: sealed (the final holdout: never searched), contaminated (the logic was
+    designed on it: regression only), in_sample, validation. `scope` = the underlying the window applies to ("*" = all).
+    `end_date` NULL = open-ended ("onward"). Calibration / research / optimisation paths refuse sealed and contaminated
+    rows (app.market_lake.data_use); charts, live reading, backtests shown to the user and screeners display them."""
+
+    __tablename__ = "data_use_windows"
+    __table_args__ = (UniqueConstraint("tenant_id", "kind", "scope", "start_date", name="uq_data_use_window"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    scope: Mapped[str] = mapped_column(String(40), nullable=False, default="*")
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    label: Mapped[str | None] = mapped_column(String(60), nullable=True)           # the policy's own name of the window
+    use_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    policy_source: Mapped[str | None] = mapped_column(String(200), nullable=True)  # the policy file it came from
+    policy_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 

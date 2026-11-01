@@ -91,8 +91,8 @@ async def _backtest(strategy: Any, df: pd.DataFrame, symbol: str, timeframe: str
 
 
 async def run_study(session: AsyncSession, *, tenant_id: int, user_id: Optional[int], spec: StudyInput, frame: pd.DataFrame,
-                    risk: Any, propose: Propose, holdout_boundary: Any = None, study_id: Optional[str] = None,
-                    charges: Any = None) -> Dict[str, Any]:
+                    risk: Any, propose: Propose, holdout_boundary: Any = None, study_id: str | None = None,
+                    charges: Any = None, use_windows: Any = ()) -> dict[str, Any]:
     """Runs one study on `frame` (server bars, oldest first). Returns {study_id, report}. Commits the ledger as it goes,
     so a crash mid-study still leaves every trial tried. M68 PR-7 (TS1-066): `risk.capital` is the trader's own (the
     caller resolves it and refuses the study while it is Not set: daily returns are a share of it); `charges` his paper
@@ -103,7 +103,7 @@ async def run_study(session: AsyncSession, *, tenant_id: int, user_id: Optional[
     if frame.empty:
         raise ValueError("no bars to research on")
     max_drafts = max(1, min(spec.max_drafts, MAX_DRAFTS))
-    start, cut, end = research.split_window(frame.index, OOS_FRACTION, holdout_boundary)        # HoldoutError before any work
+    start, cut, end = research.split_window(frame.index, OOS_FRACTION, holdout_boundary, use_windows)        # HoldoutError before any work
     is_df, oos_df = frame[frame.index < cut], frame[frame.index >= cut]
     is_days, oos_days = research.trading_days(is_df.index), research.trading_days(oos_df.index)
     study_id = study_id or str(uuid.uuid4())

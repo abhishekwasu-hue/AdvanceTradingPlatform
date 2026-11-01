@@ -73,7 +73,8 @@ def test_runtime_context_reflects_the_account_state():
     assert ctx["allowed_instruments"].startswith("NIFTY 50 (requested); ")
     assert "last 4 closed trades (PAPER): 1 won, 3 lost, net -200, 3 stopped out; the last 3 in a row lost" == ctx["recent_trade_summary"]
     assert ctx["event_calendar"] == [f"{_ist_today()} EXPIRY (INDEX): size cut 50.0% - weekly expiry"]
-    assert ctx["drawdown_mode"] == "PAPER" and ctx["current_drawdown_pct"] > 0 and ctx["ceiling_risk_per_trade_pct"] == 2.0
+    # M68 PR-5 (TS1-048): no ceiling unless an admin set one
+    assert ctx["drawdown_mode"] == "PAPER" and ctx["current_drawdown_pct"] > 0 and ctx["ceiling_risk_per_trade_pct"] is None
     assert ctx["cooldown_minutes"] is None and ctx["max_portfolio_risk_pct"] is None        # DEF-0: not set, no built-in rule
     assert risk_profile_for(1.0) == "moderate" and risk_profile_for(1.5) == "aggressive"
 

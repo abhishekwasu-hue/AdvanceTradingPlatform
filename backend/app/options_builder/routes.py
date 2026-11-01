@@ -30,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.brokers.models import OptionChain
-from app.core.config import RISK_FREE_RATE
 from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
@@ -87,7 +86,9 @@ class EvaluateBody(BaseModel):
     iv_shift: float = Field(default=0.0, ge=-0.5, le=1.0)
     range_pct: float = Field(default=10.0, gt=0, le=60)
     points: int = Field(default=201, ge=21, le=MAX_POINTS)
-    rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
+    # M68 PR-4 (TS1-102): None = the user's own rate (Trade settings > Options > Risk-free rate), else the platform's; the
+    # answer says which rate was used (`rate`, `rate_source`).
+    rate: float | None = Field(default=None, ge=-0.05, le=0.3)
     # M68 PR-7 (TS1-071): the trader's own; omitted -> his Trade settings > Paper account brokerage, else none (no ₹20).
     brokerage_per_order: float | None = Field(default=None, ge=0, le=1000, allow_inf_nan=False, description="for the cost line; the trader's own")
     # Z5 (Trade port, strike_breach_model): the underlying's completed daily bars, oldest first, up to the session before
@@ -121,7 +122,9 @@ class TemplateBody(BaseModel):
     spot: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     iv: Optional[float] = Field(default=None, gt=0, lt=5)
     as_of: Optional[Union[datetime, date]] = None
-    rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
+    # M68 PR-4 (TS1-102): None = the user's own rate (Trade settings > Options > Risk-free rate), else the platform's; the
+    # answer says which rate was used (`rate`, `rate_source`).
+    rate: float | None = Field(default=None, ge=-0.05, le=0.3)
 
     @field_validator("as_of", mode="before")
     @classmethod
@@ -150,8 +153,10 @@ class SuggestBody(BaseModel):
     hedge_width_points: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     atm_strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     direction: Optional[Literal["BULLISH", "BEARISH"]] = None
-    pop_threshold_pct: float = Field(default=70.0, ge=0, le=100)
-    strikes_otm: int = Field(default=2, ge=0, le=50)
+    # M68 PR-4 (TS1-103): no pre-chosen POP threshold or distance - the request's own, else the user's Trade settings >
+    # Options; Not set = a 422 at the field for a rule that reads it.
+    pop_threshold_pct: float | None = Field(default=None, ge=0, le=100)
+    strikes_otm: int | None = Field(default=None, ge=0)
     itm_depth_points: float = Field(default=0.0, ge=0, lt=MAX_PRICE, allow_inf_nan=False)
     hedge_enabled: bool = False
     as_of: Optional[Union[datetime, date]] = None
@@ -167,6 +172,22 @@ def _finite(x: float) -> Optional[float]:
     return None if x is None or math.isinf(x) or math.isnan(x) else float(x)
 
 
+def _rate(body: Any) -> float:
+    """The rate this request's model uses: the one resolved for it (his own, the request's or the platform's, M68 PR-4)."""
+    if body.rate is None:
+        from app.core.config import RISK_FREE_RATE
+        return RISK_FREE_RATE
+    return float(body.rate)
+
+
+def _needs(value: Any, field: str, name: str) -> Any:
+    """M68 PR-4 (TS1-103): a selector number the request and his Trade settings both left Not set is asked for (422)."""
+    if value is None:
+        from app.option_chain import chain_view
+        raise HTTPException(status_code=422, detail=[chain_view.options_field_error((field,), name)])
+    return value
+
+
 def _legs(body: EvaluateBody, as_of: Union[date, datetime]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for leg in body.legs:
@@ -176,7 +197,7 @@ def _legs(body: EvaluateBody, as_of: Union[date, datetime]) -> List[Dict[str, An
             if leg.premium <= 0:
                 raise HTTPException(status_code=422, detail=f"{leg.option_type} {leg.strike:g}: give an IV or a premium to solve it from")
             try:
-                d = leg_with_model_greeks(d, underlying_price=body.spot, expiry=leg.expiry, as_of=as_of, risk_free_rate=body.rate)
+                d = leg_with_model_greeks(d, underlying_price=body.spot, expiry=leg.expiry, as_of=as_of, risk_free_rate=_rate(body))
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=f"{leg.option_type} {leg.strike:g}: {exc}") from exc
             d["iv_source"] = "solved from the premium"
@@ -195,7 +216,9 @@ async def get_catalog() -> Dict[str, Any]:
 
 
 @router.post("/template", dependencies=[Depends(compute_rate_limit)])
-async def build_template(body: TemplateBody) -> Dict[str, Any]:
+async def build_template(body: TemplateBody, user: User = Depends(get_current_user),
+                         session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    rate_source = await _own_rate(session, user, body)
     if body.name not in catalog.CATALOG:
         raise HTTPException(status_code=404, detail=f"no template named {body.name!r}")
     legs = catalog.build_template(body.name, body.atm_strike, body.width, body.near_expiry.isoformat(),
@@ -215,11 +238,11 @@ async def build_template(body: TemplateBody) -> Dict[str, Any]:
             leg["iv"] = None if leg["option_type"] == "FUT" else body.iv
             when: Union[date, datetime] = body.as_of or datetime.now().astimezone()
             try:
-                leg["premium"] = round(model.leg_theoretical({**leg, "premium": 0.0}, body.spot, when, r=body.rate), 2)
+                leg["premium"] = round(model.leg_theoretical({**leg, "premium": 0.0}, body.spot, when, r=_rate(body)), 2)
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=f"{leg['option_type']} {leg['strike']:g}: {exc}") from exc
             leg["premium_source"] = "model"
-    return {"name": body.name, "legs": legs, "priced_by_model": priced}
+    return {"name": body.name, "legs": legs, "priced_by_model": priced, "rate": body.rate, "rate_source": rate_source}
 
 
 async def _own_brokerage(session: AsyncSession, user: User) -> float | None:
@@ -249,6 +272,7 @@ async def _own_brokerage(session: AsyncSession, user: User) -> float | None:
 @router.post("/evaluate", dependencies=[Depends(compute_rate_limit)])
 async def evaluate(body: EvaluateBody, user: User = Depends(get_current_user),
                    session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    rate_source = await _own_rate(session, user, body)                          # M68 PR-4: sets body.rate
     words = None
     if body.brokerage_per_order is None:          # M68 PR-7: his own saved brokerage (Not set: statutory charges only)
         own = await _own_brokerage(session, user)
@@ -256,10 +280,23 @@ async def evaluate(body: EvaluateBody, user: User = Depends(get_current_user),
         words = f"Statutory charges + your brokerage ₹{own:g} per order" if own is not None else "Statutory charges only: no brokerage"
     out = await run_in_threadpool(_evaluate, body)
     out["costs"]["charges_words"] = words or f"Statutory charges + brokerage ₹{body.brokerage_per_order:g} per order"
-    return out
+    return {**out, "rate": body.rate, "rate_source": rate_source}
+
+
+async def _own_rate(session: AsyncSession, user: User, body: Any) -> str:
+    """M68 PR-4 (TS1-102): the rate the Greeks use - the request's, else his own, else the platform's (labelled)."""
+    if body.rate is not None:
+        return "request"
+    from app.option_chain import chain_view
+    own = await chain_view.options_settings(session, user)
+    body.rate = chain_view.rate_of(own)
+    return "yours" if own.risk_free_rate is not None else "platform"
 
 
 def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
+    if body.rate is None:                   # a caller that read no user (M68 PR-4): the platform's labelled model input
+        from app.core.config import RISK_FREE_RATE
+        body.rate = RISK_FREE_RATE
     as_of: Union[date, datetime] = body.as_of or datetime.now().astimezone()
     legs = _legs(body, as_of)
     prices = build_default_price_range(body.spot, num_points=body.points, range_pct=body.range_pct)
@@ -325,9 +362,23 @@ async def basket(body: BasketBody) -> Dict[str, Any]:
 
 
 @router.post("/suggest", dependencies=[Depends(compute_rate_limit)])
-async def suggest(body: SuggestBody) -> Dict[str, Any]:
+async def suggest(body: SuggestBody, user: User = Depends(get_current_user),
+                  session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """A ported selector rule on the chain; the rule and its numbers come back with the result so the page can show
     them. None when the chain cannot give a complete structure - never a partial one."""
+    from app.option_chain import chain_view
+    own = await chain_view.options_settings(session, user)  # M68 PR-4 (TS1-103): his own numbers, never ATP's
+    if body.pop_threshold_pct is None:
+        body.pop_threshold_pct = own.builder_pop_pct
+    if body.strikes_otm is None:
+        body.strikes_otm = own.builder_strikes_otm
+    problems = []
+    if body.rule in ("iron_condor", "iron_butterfly", "credit_spread") and body.pop_threshold_pct is None:
+        problems.append(chain_view.options_field_error(("pop_threshold_pct",), "builder_pop_pct"))
+    if body.rule == "credit_spread_fixed" and body.strikes_otm is None:
+        problems.append(chain_view.options_field_error(("strikes_otm",), "builder_strikes_otm"))
+    if problems:
+        raise HTTPException(status_code=422, detail=problems)
     spot = body.chain.underlying_ltp
     if len(body.chain.rows) > MAX_CHAIN_ROWS:
         raise HTTPException(status_code=422, detail=f"the chain has {len(body.chain.rows)} strikes; at most {MAX_CHAIN_ROWS} are read")
@@ -351,18 +402,21 @@ def _suggest(body: SuggestBody) -> Dict[str, Any]:
     direction = body.direction or ""
     result: Optional[Dict[str, Any]]
     if body.rule == "credit_spread":
-        result = selectors.select_credit_spread(raw, direction, body.hedge_width_points, body.pop_threshold_pct)
+        result = selectors.select_credit_spread(raw, direction, body.hedge_width_points, _needs(body.pop_threshold_pct, "pop_threshold_pct", "builder_pop_pct"))
     else:
         if atm is None:
             raise HTTPException(status_code=422, detail="give atm_strike, or a chain with its underlying price")
         at: float = atm
         if body.rule == "iron_condor":
-            result = selectors.select_iron_condor(raw, at, body.step, body.hedge_width_points, body.pop_threshold_pct)
+            result = selectors.select_iron_condor(raw, at, body.step, body.hedge_width_points,
+                                                 _needs(body.pop_threshold_pct, "pop_threshold_pct", "builder_pop_pct"))
         elif body.rule == "iron_butterfly":
-            result = selectors.select_iron_butterfly(raw, at, body.hedge_width_points, body.pop_threshold_pct)
+            result = selectors.select_iron_butterfly(raw, at, body.hedge_width_points,
+                                                    _needs(body.pop_threshold_pct, "pop_threshold_pct", "builder_pop_pct"))
         elif body.rule == "credit_spread_fixed":
             result = selectors.select_credit_spread_fixed_strikes(raw, direction, at, hedge_width_points=body.hedge_width_points,
-                                                                  step=body.step, strikes_otm=body.strikes_otm)
+                                                                  step=body.step,
+                                                                  strikes_otm=_needs(body.strikes_otm, "strikes_otm", "builder_strikes_otm"))
         elif body.rule == "credit_spread_itm":
             result = selectors.select_credit_spread_itm(raw, direction, at, itm_depth_points=body.itm_depth_points,
                                                         hedge_width_points=body.hedge_width_points, step=body.step)

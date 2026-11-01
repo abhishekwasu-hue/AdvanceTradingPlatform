@@ -920,9 +920,11 @@ export const api = {
   },
   createMarketEvent: (body: MarketEventRequest) => request<MarketEvent>("/risk-guardian/events", { method: "POST", body: JSON.stringify(body) }),
   deleteMarketEvent: (id: number) => request<void>(`/risk-guardian/events/${id}`, { method: "DELETE" }),
-  adminRiskCeilings: () => request<RiskCeilings>("/admin/controls/risk-ceilings"),
-  adminSetRiskCeilings: (values: Record<string, number>) =>
-    request<RiskCeilings>("/admin/controls/risk-ceilings", { method: "PUT", body: JSON.stringify({ values }) }),
+  // M68 PR-5 (TS1-048): every key, null = no ceiling; `tenantId` = one team (organisation), none = every organisation
+  adminRiskCeilings: (tenantId?: number | null) =>
+    request<RiskCeilings>(`/admin/controls/risk-ceilings${tenantId != null ? `?tenant_id=${tenantId}` : ""}`),
+  adminSetRiskCeilings: (values: Record<string, number | null>, tenantId?: number | null) =>
+    request<RiskCeilings>("/admin/controls/risk-ceilings", { method: "PUT", body: JSON.stringify({ values, tenant_id: tenantId ?? null }) }),
   // ---- Phase N: scopes, email verification, feature flags, encryption status
   scopeCatalogue: () => request<ScopeCatalogueEntry[]>("/auth/scopes"),
   memberScopes: (memberId: number) => request<MemberScopes>(`/team/members/${memberId}/scopes`),

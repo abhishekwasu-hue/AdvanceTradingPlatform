@@ -25,7 +25,7 @@ export interface TicketTarget {
 
 export interface Draft {
   side: Side;
-  lots: number;
+  lots: number | null;          // M68 PR-2 (TS1-020): null until the user enters lots or saved his own (never a platform 1)
   orderType: OrderType | null;  // M68 PR-1: null until the user picks one or saved his own (never a platform default)
   product: Product | null;      // null until the user picks one (owner F1 / TT-12: never a platform default)
   price: string;
@@ -44,11 +44,15 @@ export const PRODUCT_MISSING = "Pick a product: MIS or NRML";
 /** M68 PR-1 (TS1-003): no order type is pre-selected either - the ticket asks for it, with "Save as my default". */
 export const ORDER_TYPE_UNSET_TEXT = "Pick how the order is sent: Market, Limit, SL or SL-M.";
 export const ORDER_TYPE_MISSING = "Pick an order type: Market, Limit, SL or SL-M";
+/** M68 PR-2 (TS1-020): no lots are pre-filled either - the ticket asks for them, with "Save as my default". */
+export const LOTS_UNSET_TEXT = "Enter the lots (none saved in your Trade settings).";
+export const LOTS_MISSING = "Enter the lots";
 /** The ticket fields a new user is asked for, in the order the ticket asks them (each with "Save as my default"). */
-export type AskField = "order-type" | "product";
+export type AskField = "lots" | "order-type" | "product";
 
-/** The first field still Not set (focused by the ticket), or null when both are chosen. */
-export function firstMissing(d: Pick<Draft, "orderType" | "product">): AskField | null {
+/** The first field still Not set (focused by the ticket), or null when all are chosen. */
+export function firstMissing(d: Pick<Draft, "orderType" | "product"> & { lots?: number | null }): AskField | null {
+  if (d.lots === null) return "lots";
   if (d.orderType === null) return "order-type";
   if (d.product === null) return "product";
   return null;
@@ -61,7 +65,6 @@ export const PRODUCTS: { value: Product; label: string; hint: string; term: Glos
 // CT-1 C8: the words live with the one badge (ui/PaperBadge); these names stay for the pieces that import them.
 export const PRACTICE_TITLE = PAPER_WORD;
 export const PRACTICE_TEXT = PAPER_TEXT;
-export const MAX_LOTS = 500;
 
 /** Settings part C: the lots / product / order type the user's own defaults start a ticket with (only the ones set). */
 export interface DraftDefaults { lots?: number; product?: Product; orderType?: OrderType }
@@ -69,7 +72,7 @@ export interface DraftDefaults { lots?: number; product?: Product; orderType?: O
 /** A fresh ticket. With the user's defaults (src/settings/tradingDefaults.ts ticketPrefill) those values start it - the side
  * never comes from a default - and nothing else changes: no defaults gives today's draft exactly. */
 export function newDraft(side: Side, defaults?: DraftDefaults): Draft {
-  const draft: Draft = { side, lots: 1, orderType: null, product: null, price: "", trigger: "", stopLoss: "" };
+  const draft: Draft = { side, lots: null, orderType: null, product: null, price: "", trigger: "", stopLoss: "" };
   if (!defaults) return draft;
   if (defaults.lots !== undefined) draft.lots = clampLots(defaults.lots);
   if (defaults.orderType !== undefined) draft.orderType = defaults.orderType;
@@ -87,11 +90,12 @@ export function draftFromDefaults(d: Draft, defaults?: DraftDefaults): { lots: b
 }
 
 /** Units = lots x the instrument master's lot size; null while the lot size is not known. */
-export function unitsOf(lots: number, lotSize: number | null | undefined): number | null {
-  return typeof lotSize === "number" && lotSize > 0 && Number.isFinite(lots) ? lots * lotSize : null;
+export function unitsOf(lots: number | null, lotSize: number | null | undefined): number | null {
+  return typeof lotSize === "number" && lotSize > 0 && lots !== null && Number.isFinite(lots) ? lots * lotSize : null;
 }
 
-export function unitsText(lots: number, lotSize: number | null | undefined): string {
+export function unitsText(lots: number | null, lotSize: number | null | undefined): string {
+  if (lots === null) return typeof lotSize === "number" && lotSize > 0 ? `Lot size ${formatNumber(lotSize, 0)}` : "";
   const units = unitsOf(lots, lotSize);
   if (units === null) return `${lots} lot${lots === 1 ? "" : "s"}`;
   return `${lots} lot${lots === 1 ? "" : "s"} = ${formatNumber(units, 0)} qty (lot size ${formatNumber(lotSize ?? 0, 0)})`;
@@ -99,7 +103,7 @@ export function unitsText(lots: number, lotSize: number | null | undefined): str
 
 export function clampLots(value: number): number {
   if (!Number.isFinite(value)) return 1;
-  return Math.min(MAX_LOTS, Math.max(1, Math.round(value)));
+  return Math.max(1, Math.round(value));       // M68 PR-4 (TS1-046): no ATP ceiling; the freeze quantity splits a large order
 }
 
 /** The price fields an order type needs: Limit a limit price, SL both, SL-M the trigger only, Market none. */
@@ -121,6 +125,7 @@ export function stopHint(_side: Side, _right: ContractRight = "CE"): string {
 /** What is missing before the ticket can be reviewed (the server checks everything else). */
 export function draftProblems(d: Draft, _right: ContractRight = "CE"): string[] {
   const out: string[] = [];
+  if (d.lots === null) out.push(LOTS_MISSING);
   if (d.orderType === null) out.push(ORDER_TYPE_MISSING);
   if (d.product === null) out.push(PRODUCT_MISSING);
   const n = needs(d.orderType);
@@ -134,8 +139,8 @@ export function askOf(target: TicketTarget, d: Draft, clientRef: string): OrderA
   const n = needs(d.orderType);
   return {
     underlying: target.underlying, expiry: target.expiry, strike: target.right === "FUT" ? null : target.strike, right: target.right, side: d.side,
-    // draftProblems asks for a missing order type / product first; the server asks again if one is still missing.
-    lots: clampLots(d.lots), order_type: d.orderType as OrderType, product: d.product as Product,
+    // draftProblems asks for missing lots / order type / product first; the server asks again if one is still missing.
+    lots: (d.lots === null ? d.lots : clampLots(d.lots)) as number, order_type: d.orderType as OrderType, product: d.product as Product,
     price: n.price ? num(d.price) : null, trigger_price: n.trigger ? num(d.trigger) : null, stop_loss: num(d.stopLoss),
     chain_ltp: target.ltp && target.ltp > 0 ? target.ltp : null, client_ref: clientRef,
   };
@@ -144,9 +149,11 @@ export function askOf(target: TicketTarget, d: Draft, clientRef: string): OrderA
 /** Desktop shortcuts: B = Buy, S = Sell - never while typing in a field, never with a modifier key. */
 export function shortcutSide(e: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey">, target: EventTarget | null): Side | null {
   if (e.ctrlKey || e.metaKey || e.altKey) return null;
-  const el = target as { tagName?: string; isContentEditable?: boolean } | null;
+  const el = target as { tagName?: string; isContentEditable?: boolean; getAttribute?: (name: string) => string | null } | null;
   const tag = (el?.tagName ?? "").toUpperCase();
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return null;
+  // M68 PR-2: the lots field (focused when the ticket asks for it) takes digits only - B / S still choose the side there
+  const lotsField = typeof el?.getAttribute === "function" && el.getAttribute("data-ticket") === "lots";
+  if (!lotsField && tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return null;
   const k = e.key.toLowerCase();
   return k === "b" ? "BUY" : k === "s" ? "SELL" : null;
 }

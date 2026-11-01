@@ -23,7 +23,7 @@ from app.backtest import chain_recorder
 from app.backtest.engine import ENGINE_VERSION, run_backtest
 from app.backtest.models import ModelError, ModelSet
 from app.backtest.optimizer import MAX_COMBOS, optimize
-from app.backtest.options import OptionChainSnapshotRow, SnapshotPricer, SyntheticPricer, VolatilityModel, underlying_name
+from app.backtest.options import OptionChainSnapshotRow, SnapshotPricer, StoredEodPricer, SyntheticPricer, VolatilityModel, underlying_name
 from app.backtest.options_engine import ENGINE_VERSION as OPTIONS_ENGINE_VERSION
 from app.backtest.options_engine import OptionBacktestConfig, OptionBacktestError, run_option_backtest
 from app.backtest.repro import config_hash, fingerprint
@@ -36,7 +36,7 @@ from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BacktestRunRecord, User
 from app.db.session import get_session
 from app.execution.paper_charges import STATUTORY_ONLY, PaperCharges
-from app.instruments.spreads import MAX_CUSTOM_LEGS, MAX_LEG_RATIO, CustomLeg
+from app.instruments.spreads import MAX_CUSTOM_LEGS, CustomLeg
 from app.market_data.calendar import load_holidays
 from app.strategy_templates import exits as exit_settings
 from app.strategy_templates.exits import TemplateExitsBody
@@ -58,26 +58,30 @@ class ExitRulesBody(BaseModel):
 class CustomLegBody(BaseModel):
     right: str = Field(pattern="^(CE|PE|ce|pe)$")
     role: str = Field(pattern="^(SHORT|LONG|short|long)$")
-    strike_rule: StrikeRule = StrikeRule.ATM
-    strike_offset: int = Field(default=0, ge=0, le=20)
-    ratio: int = Field(default=1, ge=1, le=MAX_LEG_RATIO)
+    # M68 PR-4 (TS1-038 / 047): each leg names its own strike (no ATM pre-pick); no ATP ceiling on its distance or ratio.
+    strike_rule: StrikeRule
+    strike_offset: int = Field(default=0, ge=0)
+    ratio: int = Field(default=1, ge=1)
 
 
 class OptionBacktestBody(BaseModel):
     """Phase W: trade the signals as options. The deployment fields (structure, expiry/strike
     rules, width, exit percentages, custom legs, max lots) plus the simulation's own knobs."""
     option_strategy: OptionStrategy = OptionStrategy.SINGLE
-    option_position: OptionPosition = OptionPosition.BUY
-    expiry_rule: ExpiryRule = ExpiryRule.NEAREST
-    strike_rule: StrikeRule = StrikeRule.ATM
-    strike_offset: int = Field(default=0, ge=0, le=10)
-    spread_width: int = Field(default=2, ge=1, le=20)
+    # M68 PR-4 (TS1-039 / 042 / 047): no pre-chosen side, expiry, strike, distance, width or ratio and no ATP ceiling on
+    # them - not sent = the user's own Trade settings > Options (`own_options`), Not set there either = a 422 at the field.
+    option_position: OptionPosition | None = None
+    expiry_rule: ExpiryRule | None = None
+    strike_rule: StrikeRule | None = None
+    strike_offset: int | None = Field(default=None, ge=0)
+    spread_width: int | None = Field(default=None, ge=1)
+    ratio_shorts: int | None = Field(default=None, ge=1)
     target_credit_pct: Optional[float] = Field(default=None, ge=5, le=95)
     stop_credit_pct: Optional[float] = Field(default=None, ge=10, le=500)
     underlying_breach_exit: bool = False
     premium_stop_pct: Optional[float] = Field(default=None, ge=5, le=95)
     custom_legs: Optional[List[CustomLegBody]] = Field(default=None, max_length=MAX_CUSTOM_LEGS)
-    max_lots: Optional[int] = Field(default=None, ge=1, le=500)
+    max_lots: int | None = Field(default=None, ge=1)               # M68 PR-4 (TS1-046): no ATP ceiling
     # Conventions: None = the exchange's current one for the underlying.
     lot_size: Optional[int] = Field(default=None, ge=1, le=10000)
     strike_step: Optional[float] = Field(default=None, gt=0)
@@ -88,24 +92,78 @@ class OptionBacktestBody(BaseModel):
     pricing: str = Field(default="synthetic", pattern=r"^(synthetic|snapshots|uploaded)$")
     implied_volatility: Optional[float] = Field(default=None, gt=0.01, le=3.0, description="fraction: 0.14 = 14%; None = realised vol")
     realised_vol_window: int = Field(default=20, ge=5, le=500)
-    risk_free_rate: float = Field(default=0.07, ge=0, le=0.25)
+    # M68 PR-4 (TS1-100): None = the user's own rate (Trade settings > Options > Risk-free rate), else the platform's.
+    risk_free_rate: float | None = Field(default=None, ge=0, le=1)
     snapshot_max_age_minutes: int = Field(default=15, ge=1, le=1440)
     allow_synthetic_fallback: bool = True
     option_chain: Optional[List[OptionChainSnapshotRow]] = Field(default=None, max_length=500_000)
     intraday: bool = True
     hold_for_days: bool = False       # M55 T1: a credit structure held for days (no square-off at the close)
+    # M68 PR-5 (TS1-041): the user's own "Hold written straddles and strangles overnight" (Risk limits), as the bot reads it
+    hold_written_overnight: bool = False
 
     def to_config(self, holidays=()) -> OptionBacktestConfig:
+        # Read after `own_options`: every choice the structure uses is the user's own; a field it does not use (the
+        # strike rule of a straddle, the side of a spread) is not passed and nothing builds from it.
+        chosen = {k: v for k, v in (("option_position", self.option_position), ("expiry_rule", self.expiry_rule),
+                                    ("strike_rule", self.strike_rule), ("spread_width", self.spread_width),
+                                    ("risk_free_rate", self.risk_free_rate)) if v is not None}
         return OptionBacktestConfig(
-            option_strategy=self.option_strategy, option_position=self.option_position, expiry_rule=self.expiry_rule,
-            strike_rule=self.strike_rule, strike_offset=self.strike_offset, spread_width=self.spread_width,
+            option_strategy=self.option_strategy, strike_offset=self.strike_offset or 0, ratio_shorts=self.ratio_shorts, **chosen,
             target_credit_pct=self.target_credit_pct, stop_credit_pct=self.stop_credit_pct, premium_stop_pct=self.premium_stop_pct,
             underlying_breach_exit=self.underlying_breach_exit,
             custom_legs=[CustomLeg.from_dict(leg.model_dump()) for leg in (self.custom_legs or [])], max_lots=self.max_lots,
             lot_size=self.lot_size, strike_step=self.strike_step, expiry_weekday=self.expiry_weekday, weekly_expiry=self.weekly_expiry,
             holidays=set(holidays), implied_volatility=self.implied_volatility, realised_vol_window=self.realised_vol_window,
-            risk_free_rate=self.risk_free_rate, intraday=self.intraday, hold_for_days=self.hold_for_days,
+            intraday=self.intraday, hold_for_days=self.hold_for_days,
+            hold_written_overnight=self.hold_written_overnight,
         )
+
+
+async def own_options(session: AsyncSession, user: User | None, opts: OptionBacktestBody) -> None:
+    """M68 PR-4 (TS1-039): a field the backtest form did not send takes the user's OWN Trade settings > Options value;
+    Not set there either = a 422 at the field ("Needs your setting: ..."), as the bot form (app/deployments/routes.py)."""
+    from app.instruments import option_defaults
+    from app.instruments.contracts import RULE_STRIKE_STRUCTURES
+    from app.instruments.spreads import RATIO_SPREADS, WIDTH_STRUCTURES
+    mine = await option_defaults.load(session, user)
+    structure = opts.option_strategy
+    single, rule_strike = structure == OptionStrategy.SINGLE, structure.value in RULE_STRIKE_STRUCTURES
+    if opts.expiry_rule is None and mine.expiry_rule:
+        opts.expiry_rule = ExpiryRule(mine.expiry_rule)
+    if single and opts.option_position is None and mine.option_position:
+        opts.option_position = OptionPosition(mine.option_position)
+    if rule_strike and opts.strike_rule is None and mine.strike_rule:
+        opts.strike_rule = StrikeRule(mine.strike_rule)
+    away = rule_strike and opts.strike_rule in (StrikeRule.ITM, StrikeRule.OTM)
+    otm_offset = structure in (OptionStrategy.IRON_CONDOR, OptionStrategy.SHORT_STRANGLE, OptionStrategy.LONG_STRANGLE)
+    if (away or otm_offset) and not opts.strike_offset and mine.strike_offset:
+        opts.strike_offset = mine.strike_offset
+    if structure in WIDTH_STRUCTURES and opts.spread_width is None:
+        opts.spread_width = mine.spread_width
+    if structure in RATIO_SPREADS and opts.ratio_shorts is None:
+        opts.ratio_shorts = mine.ratio
+    if opts.risk_free_rate is None:
+        opts.risk_free_rate = option_defaults.risk_free_rate(mine)
+    problems = []
+    need = lambda field, name: problems.append({"loc": ["body", "options", field], "type": "needs_setting",  # noqa: E731
+                                                "msg": option_defaults.needs_setting(name)})
+    if opts.expiry_rule is None:
+        need("expiry_rule", "expiry_rule")
+    if single and opts.option_position is None:
+        need("option_position", "option_position")
+    if rule_strike and opts.strike_rule is None:
+        need("strike_rule", "strike_rule")
+    elif (away or otm_offset) and not opts.strike_offset:
+        need("strike_offset", "strike_offset")
+    if opts.strike_rule == StrikeRule.ATM and rule_strike and opts.strike_offset:
+        raise HTTPException(status_code=400, detail="strike_offset only applies to ITM/OTM strikes")
+    if structure in WIDTH_STRUCTURES and opts.spread_width is None:
+        need("spread_width", "spread_width")
+    if structure in RATIO_SPREADS and opts.ratio_shorts is None:
+        need("ratio_shorts", "ratio")
+    if problems:
+        raise HTTPException(status_code=422, detail=problems)
 
 
 class BacktestBody(DataChoice):
@@ -185,6 +243,7 @@ class BacktestRunner:
         if self.config is not None and body.template_exits is not None:
             self.config.stop_source = body.template_exits.stop_source        # section 5: PREMIUM_PCT on a single option
         self.pricer = pricer
+        self.pricing_note: str | None = None      # M71 PL-7: why recorded end-of-day premiums were not used
         try:
             self.models = ModelSet(**(body.execution_models or {}))
             self.models.built()                       # N7 C2b: a bad model parameter is a 422 here, not a 500 mid-run
@@ -206,6 +265,8 @@ class BacktestRunner:
         if user is not None:
             from app.paper import paper_settings
             risk, charges = await paper_settings.backtest_inputs(session, user, risk)
+        if body.options is not None:
+            await own_options(session, user, body.options)                   # M68 PR-4: his own Options, else asked
         if body.options is None:
             runner = cls(body, risk, charges=charges)
             await _models_allowed(session, runner.models, tenant_id)
@@ -214,6 +275,16 @@ class BacktestRunner:
         opts = body.options
         holidays = await load_holidays(session)
         pricer = None
+        # M71 PL-7 (owner order): on DAILY (or longer) bars the tenant's RECORDED end-of-day premiums (seeded NSE F&O
+        # bhavcopy closes) price a leg at its bar's session close first; the model prices only legs with none, and the
+        # result counts both. Intraday bars are priced by the model (an end-of-day close is no intraday premium).
+        eod: list[OptionChainSnapshotRow] = []
+        note: str | None = None
+        if opts.pricing in ("synthetic", "snapshots") and tenant_id is not None and body.candles:
+            eod, note = await _recorded_eod(session, tenant_id, body)
+        if opts.pricing == "synthetic" and eod:
+            pricer = StoredEodPricer(eod, fallback=SyntheticPricer(VolatilityModel(fixed_iv=opts.implied_volatility,
+                                                                                    window=opts.realised_vol_window), opts.risk_free_rate))
         if opts.pricing != "synthetic":
             fallback = SyntheticPricer(VolatilityModel(fixed_iv=opts.implied_volatility, window=opts.realised_vol_window), opts.risk_free_rate) \
                 if opts.allow_synthetic_fallback else None
@@ -228,13 +299,17 @@ class BacktestRunner:
                 # BT1b: recorded chains came through other organisations' broker sessions - not used with byob_data_tier on.
                 byob = tenant_id is not None and await live_access.byob_on(session, tenant_id)
                 rows = [] if byob else await chain_recorder.load_rows(session, underlying, start, end, tenant_id=tenant_id)
+                if eod:                    # recorded intraday quotes first, then the recorded day's close, then the model
+                    fallback = StoredEodPricer(eod, fallback=fallback)  # type: ignore[assignment]
                 if not rows and fallback is None:
                     raise HTTPException(status_code=400, detail=(
                         "Recorded option-chain quotes are not used while the bring-your-own-broker data tier is on; "
                         "allow the synthetic fallback or upload rows") if byob else (
                         f"No recorded option-chain quotes for {underlying} in the candle span; allow the synthetic fallback or upload rows"))
             pricer = SnapshotPricer(rows, max_age_minutes=opts.snapshot_max_age_minutes, fallback=fallback)
-        return cls(body, risk, pricer=pricer, holidays=holidays, charges=charges)
+        runner = cls(body, risk, pricer=pricer, holidays=holidays, charges=charges)
+        runner.pricing_note = note
+        return runner
 
     def run(self, strategy, df) -> BacktestResult:
         if self.config is None:
@@ -248,6 +323,8 @@ class BacktestRunner:
                 raise HTTPException(status_code=422, detail=f"execution_models: {exc}") from exc
             except OptionBacktestError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if self.pricing_note and result.options is not None:
+            result.options["pricing_note"] = self.pricing_note          # M71 PL-7: model-priced, and why
         # Realism C4: what produced this result, as hashes (recorded with the run).
         result.reproducibility = fingerprint(
             result, df, engine_version=self.body.engine_version, strategy_id=self.body.strategy_id, params=getattr(strategy, "params", None),
@@ -268,6 +345,41 @@ class BacktestRunner:
 def data_version_of_chain(rows) -> str:
     """Uploaded option quotes are data too: hashed into the config so a different chain is a different run."""
     return config_hash(rows=[r.model_dump(mode="json") for r in rows])
+
+
+async def _recorded_eod(session: AsyncSession, tenant_id: int, body: "BacktestBody") -> tuple:
+    """(rows, note): the recorded end-of-day premiums for a daily-or-longer option backtest - only strikes near the
+    candles' range and expiries the span can trade; ([], plain note) when the bars are intraday or the span holds more
+    than the reader takes (the run is then priced by the model, never refused)."""
+    from datetime import timedelta
+
+    from app.backtest.options import daily_or_longer
+    from app.market_lake import seed_store
+    underlying = underlying_name(body.symbol)[0]
+    start, end = _span(body.candles)
+    if not daily_or_longer(body.base_timeframe):
+        if await seed_store.has_premiums(session, tenant_id, underlying, start, end):
+            return [], ("Recorded end-of-day premiums price daily bars only; these intraday bars were priced by the model.")
+        return [], None
+    lo = min(float(c.low) for c in body.candles) * (1 - seed_store.STRIKE_BAND)
+    hi = max(float(c.high) for c in body.candles) * (1 + seed_store.STRIKE_BAND)
+    try:
+        rows = await seed_store.option_premiums(session, tenant_id, underlying, start, end + timedelta(days=1),
+                                                strikes=(lo, hi), expiry_until=end + timedelta(days=seed_store.EXPIRY_HORIZON_DAYS))
+    except ValueError:
+        return [], ("The span holds more recorded end-of-day premiums than one run reads; this run was priced by the model - "
+                    "choose a shorter span to use them.")
+    return rows, None
+
+
+async def _refused_windows(session: AsyncSession, tenant_id: int | None, symbol: str) -> list:
+    """M71 PL-7b: the tenant's sealed / contaminated windows for `symbol`; a symbol the policy cannot read -> 400."""
+    from app.backtest.data_policy import HoldoutError
+    from app.market_lake import data_use
+    try:
+        return await data_use.windows_for(session, tenant_id, symbol, refused_only=True)
+    except HoldoutError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _span(candles: List[OHLCVBar]):
@@ -392,11 +504,22 @@ async def backtest_walk_forward(
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
     runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id, user=user)
-    return await run_in_threadpool(walk_forward, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, runner.risk, folds=folds,
-                                   # N7 C2b: chosen execution models apply to every window (never silently dropped); M68 PR-7:
-                                   # so do his own paper charges
-                                   runner=runner.run if body.options is not None or not runner.models.is_default
-                                   or runner.charges != STATUTORY_ONLY else None)
+    # M71 PL-7b: walk-forward is a calibration check - the tenant's sealed / contaminated rows are left out first
+    from app.backtest import data_policy
+    windows = await _refused_windows(session, user.tenant_id, body.symbol)
+    frame = bars_to_dataframe(body.candles)
+    allowed = data_policy.filter_allowed(frame, None, windows)
+    dropped = int(len(frame) - len(allowed))
+    if dropped and allowed.empty:
+        raise HTTPException(status_code=400, detail=data_policy.windows_reason(windows, dropped))
+    result = await run_in_threadpool(walk_forward, strategy, allowed, body.symbol, body.base_timeframe, runner.risk, folds=folds,
+                                     # N7 C2b: chosen execution models apply to every window (never silently dropped); M68
+                                     # PR-7: so do his own paper charges
+                                     runner=runner.run if body.options is not None or not runner.models.is_default
+                                     or runner.charges != STATUTORY_ONLY else None)
+    if dropped:
+        result = {**result, "data_policy": {"bars_left_out": dropped, "reason": data_policy.windows_reason(windows, dropped)}}
+    return result
 
 
 # --- Phase W: recorded option-chain quotes -------------------------------------------------
@@ -464,9 +587,10 @@ async def backtest_optimize(body: OptimizeBody, user: User = Depends(get_current
     await fill_candles(session, user, body)                                     # M55 T3: server-side candles
     strategy = await _strategy(BacktestBody(strategy_id=body.strategy_id, symbol=body.symbol, base_timeframe=body.base_timeframe,
                                             candles=body.candles, risk_config=body.risk_config), user, session)
+    windows = await _refused_windows(session, user.tenant_id, body.symbol)   # M71 PL-7b
     try:
         return await run_in_threadpool(optimize, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe,
                                        body.risk_config or RiskConfig(), body.param_grid, metric=body.metric, split=body.split,
-                                       holdout_start=body.holdout_start)
+                                       holdout_start=body.holdout_start, use_windows=windows)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

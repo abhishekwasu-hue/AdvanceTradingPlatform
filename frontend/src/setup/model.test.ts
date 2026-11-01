@@ -106,17 +106,18 @@ describe("UI2-7 risk limits (TT-12: nothing filled in for him)", () => {
     const ok = { capital: "1,00,000", riskPerTradePct: "1", dailyLossPct: "3", maxTradesPerDay: "10", minRr: "1.5" };
     expect(riskErrors(ok)).toEqual({});
     expect(riskErrors({ capital: "1,00,000", riskPerTradePct: "", dailyLossPct: "", maxTradesPerDay: "", minRr: "" })).toEqual({});
-    const bad = riskErrors({ capital: "0", riskPerTradePct: "9", dailyLossPct: "x", maxTradesPerDay: "2.5", minRr: "11" });
+    const bad = riskErrors({ capital: "0", riskPerTradePct: "101", dailyLossPct: "x", maxTradesPerDay: "2.5", minRr: "-1" });
     expect(bad.capital).toBe("Starting capital must be more than ₹0.");
     // M68 PR-7 (TS1-068): no ATP floor or ceiling - any amount above 0
     expect(riskErrors({ ...ok, capital: "5000" }).capital).toBeUndefined();
     expect(riskErrors({ ...ok, capital: "5,00,00,00,000" }).capital).toBeUndefined();
     expect(riskErrors({ ...ok, capital: "" }, { capital: false })).toEqual({});                // no field, nothing to check
     expect(riskErrors({ ...ok, capital: "" }).capital).toBeUndefined();               // M68 PR-7: Not set, nothing is sent
-    expect(bad.riskPerTradePct).toBe("Risk per trade must be between 0.05 and 5.");
+    expect(bad.riskPerTradePct).toBe("Risk per trade must be more than 0 and at most 100.");   // M68 PR-5: no ATP cap (was 5)
+    expect(riskErrors({ ...ok, riskPerTradePct: "9", minRr: "11" })).toEqual({});
     expect(bad.dailyLossPct).toBe("Enter a number for daily loss limit.");
     expect(bad.maxTradesPerDay).toBe("Enter a whole number for trades a day.");
-    expect(bad.minRr).toBe("Lowest reward to risk must be between 0 and 10.");
+    expect(bad.minRr).toBe("Lowest reward to risk must be at least 0.");
   });
 
   it("an empty box is sent as null (not set); Settings says 'Off' unless he set it (UI-28 U1.10)", () => {
@@ -142,7 +143,11 @@ describe("UI2-7 strategy step: PAPER only", () => {
       expect(JSON.stringify(body)).not.toMatch(/LIVE/);
     }
     expect(paperDeployment(SUGGESTIONS[1])).toMatchObject({ timeframe: "day", holding: "SWING", instrument_kind: "UNDERLYING" });
-    expect(paperDeployment(SUGGESTIONS[2])).toMatchObject({ instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM" });
+    expect(paperDeployment(SUGGESTIONS[2])).toEqual(expect.objectContaining({ instrument_kind: "OPTION" }));
+    // M68 PR-4 (TS1-040): no pre-chosen side, expiry or strike
+    expect(paperDeployment(SUGGESTIONS[2])).not.toHaveProperty("option_position");
+    expect(paperDeployment(SUGGESTIONS[2])).not.toHaveProperty("expiry_rule");
+    expect(paperDeployment(SUGGESTIONS[2])).not.toHaveProperty("strike_rule");
   });
 
   it("REV-1 M2 (D3): Start a trading bot opens the form with nothing pre-chosen; no Buys wording", () => {

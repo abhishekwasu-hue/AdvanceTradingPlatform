@@ -78,7 +78,7 @@ def _part(result: BacktestResult, df: pd.DataFrame, capital: float) -> Dict[str,
 
 
 def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: RiskConfig, *,
-                holdout: Any = None, min_trades: int | None = None, charges: Any = None) -> dict[str, Any]:
+                holdout: Any = None, min_trades: int | None = None, charges: Any = None, use_windows: Any = ()) -> dict[str, Any]:
     """The draft `config` (a `CustomStrategyConfig`) on `df` (server candles at `base_tf`) through ATP's backtest engine.
     `holdout`: the sealed holdout boundary (None reads the operator's `BACKTEST_HOLDOUT_START`). M68 PR-7 (TS1-066):
     `risk.capital` is the trader's own (the caller resolves it; None: the shares of capital are left out) and `charges`
@@ -95,6 +95,11 @@ def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: 
     if boundary is not None:
         kept = data_policy.filter_allowed(df, boundary)
         sealed, df = int(len(df) - len(kept)), kept
+    # M71 PL-7b: the draft test feeds the Copilot's search for a strategy - the tenant's sealed / contaminated rows never
+    kept = data_policy.filter_allowed(df, None, use_windows)
+    policy_left_out, df = int(len(df) - len(kept)), kept
+    if df.empty and policy_left_out:
+        raise data_policy.HoldoutError(data_policy.windows_reason(use_windows, policy_left_out) or "no bars left")
     strategy = DeclarativeStrategy(DRAFT_ID, config)
     from app.execution.paper_charges import STATUTORY_ONLY
     charges = charges or STATUTORY_ONLY
@@ -107,6 +112,9 @@ def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: 
         "costs_included": f"{charges.words}; statutory rates of each trade's own date",
         "tuned_on_this_data": False, "tries": 1, "note": "Past simulated results on this window only; not a forecast.",
     }
+    if use_windows:                       # M71 PL-7b: only a tenant with a data policy sees these (the shape is unchanged)
+        out.update({"data_policy_bars_left_out": policy_left_out, "data_policy": data_policy.windows_reason(use_windows, policy_left_out)})
+
     min_hist = strategy.min_history()[strategy.timeframes[0]]
     if len(df) <= min_hist:
         out.update(sample="no_data", whole=None, earlier=None, later=None, walk_forward=None, deflated=None)

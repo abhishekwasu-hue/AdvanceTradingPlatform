@@ -321,7 +321,14 @@ async def backtest_draft(ctx: ToolContext, args: _DraftBacktestArgs) -> ToolResu
         return _failed("backtest", exc)
     from app.paper import paper_settings  # M68 PR-7 (TS1-066): his capital and paper charges (parity)
     risk, charges = await paper_settings.backtest_inputs(ctx.session, ctx.user, await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig())
-    data = await asyncio.to_thread(dbt.honest_test, config, df, args.symbol, fetch_tf, risk, charges=charges)    # CPU-bound: off the event loop
+    from app.backtest.data_policy import HoldoutError
+    from app.market_lake import data_use
+    try:
+        windows = await data_use.windows_for(ctx.session, ctx.tenant_id, args.symbol, refused_only=True)   # M71 PL-7b
+        data = await asyncio.to_thread(dbt.honest_test, config, df, args.symbol, fetch_tf, risk, charges=charges,
+                                       use_windows=windows)  # CPU-bound: off the event loop
+    except HoldoutError as exc:
+        return ToolResult(False, None, None, "backtest", error=str(exc)[:300])
     data["exchange"] = args.exchange
     data["prices"], data["prices_line"] = prices["words"], prices["line"]
     return ToolResult(True, data, _iso(df.index[-1]), source, {"first_bar": _iso(df.index[0]), "last_bar": _iso(df.index[-1])})

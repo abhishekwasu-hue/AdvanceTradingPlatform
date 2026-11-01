@@ -39,6 +39,7 @@ def pack_org():
     return client, org, body["deployment"]
 
 
+@pytest.mark.real_option_defaults          # M68 PR-4: a user with no saved Option side (his saved side would be his own choice)
 def test_a_pack_on_an_index_option_with_no_side_is_refused_and_nothing_is_created(pack_org):
     client, org, deployment = pack_org
     before = client.get("/api/deployments", headers=org["headers"]).json()

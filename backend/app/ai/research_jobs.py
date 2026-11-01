@@ -121,7 +121,9 @@ async def run_next(session: AsyncSession, *, now: Optional[Clock] = None) -> Opt
             await _finish(session, row, "failed", clock(), "The research loop needs an AI provider (Settings > AI).")
             return sid
         frame, source, _prices = await market._backtest_frame(ToolContext(session, tid, user), spec.symbol, spec.exchange, spec.timeframe, days)
-        frame = filter_allowed(frame, holdout_start())                # the sealed holdout is cut off, never searched
+        from app.market_lake import data_use
+        windows = await data_use.windows_for(session, tid, spec.symbol, refused_only=True)   # M71 PL-7b: the tenant's own policy
+        frame = filter_allowed(frame, holdout_start(), windows)       # the sealed holdout is cut off, never searched
         if len(frame) < 50:
             await _finish(session, row, "failed", clock(), f"Only {len(frame)} bars before the sealed holdout; a study needs at least 50.",
                           data_source=source)
@@ -142,7 +144,7 @@ async def run_next(session: AsyncSession, *, now: Optional[Clock] = None) -> Opt
             return await inner(idea, history)
 
         await research_loop.run_study(session, tenant_id=tid, user_id=uid, spec=spec, frame=frame, risk=risk, propose=propose, study_id=sid,
-                                      charges=charges)
+                                      charges=charges, use_windows=windows)
         await _finish(session, row, "done", clock(), data_source=source, usage_json=json.dumps(metering.spent_by(provider), default=str))
     except research_loop.HoldoutError as exc:
         await session.rollback()

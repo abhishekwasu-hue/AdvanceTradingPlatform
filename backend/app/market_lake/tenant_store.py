@@ -86,6 +86,13 @@ async def rows_as_of(session: AsyncSession, tenant_id: int, instrument_key: str,
     return [best[ts][1] for ts in sorted(best)]
 
 
+def _volume_sum(group: Sequence[LakeBar]) -> int | None:
+    """The bucket's volume: the sum, or None when any of its bars has no volume (M71 PL-7: never a partial sum)."""
+    if any(b.volume is None for b in group):
+        return None
+    return sum(int(b.volume or 0) for b in group)
+
+
 def resample(bars: Sequence[LakeBar], minutes: int, *, exchange: str = "NSE") -> List[LakeBar]:
     """1-minute bars (END labels) -> `minutes` bars aligned to the session open, END labels, last bucket capped at the
     close. Open = first, high = max, low = min, close = last, volume = sum, oi = last known. Only bars that exist are
@@ -109,7 +116,7 @@ def resample(bars: Sequence[LakeBar], minutes: int, *, exchange: str = "NSE") ->
     for end, group in sorted(buckets.items()):
         oi = next((b.oi for b in reversed(group) if b.oi is not None), None)
         out.append(LakeBar(group[0].instrument_key, tf, end, group[0].open, max(b.high for b in group), min(b.low for b in group),
-                           group[-1].close, sum(int(b.volume) for b in group), oi))
+                           group[-1].close, _volume_sum(group), oi))
     return out
 
 
@@ -132,7 +139,7 @@ async def candles(session: AsyncSession, tenant_id: Optional[int], instrument_ke
     rows = await rows_as_of(session, tenant, instrument_key, BASE_TIMEFRAME, raw_start, end, as_of=as_of, sources=sources,
                             reader_user_id=reader_user_id)
     base = [LakeBar(r.instrument_key, r.timeframe, _utc(r.ts), float(r.open), float(r.high), float(r.low), float(r.close),
-                    int(r.volume), r.oi) for r in rows]
+                    None if r.volume is None else int(r.volume), r.oi) for r in rows]
     bars = [b for b in resample(base, minutes, exchange=exchange) if start < _utc(b.ts) <= end]
     if not adjusted or kind.upper() not in adjust_mod.EQUITY_KINDS:
         return bars

@@ -370,7 +370,7 @@ async def _options(session: AsyncSession, user: User, answers: interview.Intervi
                    body: InterviewPlanBody) -> dict:
     from app.platform.controls import risk_ceilings
     df, data_source = await _df_for(session, user, body)
-    ceilings = await risk_ceilings(session)
+    ceilings = await risk_ceilings(session, user.tenant_id)
     memory = await market_memory.latest(session, user.tenant_id)   # Phase AR: background for the plan
     # The evidence step walks strategies bar by bar (seconds of CPU): off the event loop.
     result = await run_in_threadpool(advisor.build_options, answers, prefs, df, body.base_timeframe, ceilings=ceilings,

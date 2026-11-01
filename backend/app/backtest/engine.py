@@ -78,7 +78,8 @@ def run_backtest(
     # else his paper account's - app/paper/paper_settings.py capital_of); none set: the run starts from 0 and every figure
     # measured as a share of the capital is left out - never a capital ATP chose.
     capital = float(risk_config.capital or 0.0)
-    risk_manager = RiskManager(risk_config)
+    # M68 PR-2 (M68Q-PR2-1): a test on past prices places nothing; with no size of the trader's own it still tests one lot
+    risk_manager = RiskManager(risk_config, one_lot_if_unsized=True)
     state = TradingDayState()
     streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
     contract_spec = get_contract_spec(symbol)

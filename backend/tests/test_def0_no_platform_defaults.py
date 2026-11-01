@@ -49,8 +49,10 @@ def test_no_limit_set_means_no_gate_and_the_traders_own_size():
     state = TradingDayState(trades_today=500, daily_pnl=-10_000_000.0, consecutive_losses=50, open_positions=99)
     decision = RiskManager(RiskConfig()).validate_and_size(_signal(), state, requested_quantity=40)
     assert decision.approved and decision.quantity == 40
-    one_lot = RiskManager(RiskConfig()).validate_and_size(_signal(), TradingDayState())
-    assert one_lot.approved and one_lot.quantity == 1
+    # M68 PR-2 (TS1-017): no size of his own and no risk per trade - nothing is placed (before M68: one lot)
+    unsized = RiskManager(RiskConfig()).validate_and_size(_signal(), TradingDayState())
+    assert not unsized.approved and unsized.reasons[0].startswith("Needs your setting: Lots")
+    assert RiskManager(RiskConfig(), one_lot_if_unsized=True).validate_and_size(_signal(), TradingDayState()).quantity == 1   # a backtest
 
 
 @pytest.mark.parametrize("field, value, state, words", [
@@ -59,14 +61,14 @@ def test_no_limit_set_means_no_gate_and_the_traders_own_size():
     ("max_consecutive_losses", 4, TradingDayState(consecutive_losses=4), "4 losses in a row (your limit is 4)"),
 ])
 def test_each_limit_applies_once_the_trader_sets_it(field, value, state, words):
-    decision = RiskManager(RiskConfig(**{field: value})).validate_and_size(_signal(), state)
+    decision = RiskManager(RiskConfig(**{field: value})).validate_and_size(_signal(), state, requested_quantity=1)
     assert not decision.approved and any(words in r for r in decision.reasons)
 
 
 def test_the_daily_loss_limit_and_the_risk_per_trade_apply_on_the_capital_they_read():
     cfg = RiskConfig(max_daily_loss_pct=2.0).with_capital(1_000_000.0)              # 20,000 a day on the PAPER balance
     assert not RiskManager(cfg).validate_and_size(_signal(), TradingDayState(daily_pnl=-20_000.0)).approved
-    assert RiskManager(cfg).validate_and_size(_signal(), TradingDayState(daily_pnl=-19_000.0)).approved
+    assert RiskManager(cfg).validate_and_size(_signal(), TradingDayState(daily_pnl=-19_000.0), requested_quantity=1).approved
     sized = RiskManager(RiskConfig(risk_per_trade_pct=0.5).with_capital(1_000_000.0)).validate_and_size(_signal(), TradingDayState())
     assert sized.approved and sized.quantity == 1000                                   # 5,000 / 5 per share
 

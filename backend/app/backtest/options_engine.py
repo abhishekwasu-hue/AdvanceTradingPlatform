@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Sequence, Set
 import pandas as pd
 
 from app.backtest.analytics import build_analytics
-from app.backtest.models import ModelError, ModelSet
+from app.backtest.models import ModelError, ModelSet, option_structure_margin
 from app.backtest.options import (
     Black76Pricer,
     ExpiryCalendar,
@@ -43,6 +43,7 @@ from app.backtest.options import (
     default_lot_size,
     default_strike_step,
     lot_size_for,
+    pricing_counts,
     strike_ladder,
     to_utc,
     underlying_name,
@@ -92,6 +93,7 @@ class OptionBacktestConfig:
     strike_rule: StrikeRule = StrikeRule.ATM
     strike_offset: int = 0
     spread_width: int = 2
+    ratio_shorts: int | None = None                         # M68 PR-4 (TS1-042): a ratio spread's own sold legs
     target_credit_pct: Optional[float] = None
     stop_credit_pct: Optional[float] = None
     underlying_breach_exit: bool = False                      # DEF-0: the trader's own underlying-level exit (off by default)
@@ -113,6 +115,8 @@ class OptionBacktestConfig:
     # M55 T1: the deployment's "Hold for days" (holding SWING) on a defined-risk credit structure - no square-off at the
     # close (it exits by its own rules or settles at expiry); the entry cut-off stays, as in the worker. Ignored otherwise.
     hold_for_days: bool = False
+    # M68 PR-5 (TS1-041): the user's own switch - a written straddle / strangle may be held for days too (as the bot).
+    hold_written_overnight: bool = False
     # Strategy templates section 5: a single option's stop source - None / TEMPLATE_INVALIDATION (the strategy's stop on
     # the underlying, as before) or PREMIUM_PCT (only the premium floor / ceiling; no underlying-level stop).
     stop_source: Optional[str] = None
@@ -125,7 +129,8 @@ class OptionBacktestConfig:
         position = self.option_position if self.is_single else OptionPosition.WRITE
         stop_pct = self.premium_stop_pct          # DEF-0 D3: None = no premium stop
         return ContractRules(kind=InstrumentKind.OPTION, position=position, expiry_rule=self.expiry_rule, strike_rule=self.strike_rule,
-                             strike_offset=self.strike_offset, premium_stop_pct=stop_pct, max_lots=self.max_lots)
+                             strike_offset=self.strike_offset, premium_stop_pct=stop_pct, max_lots=self.max_lots,
+                             ratio_shorts=self.ratio_shorts)
 
 
 @dataclass
@@ -247,7 +252,8 @@ def run_option_backtest(
         pricer.fallback.vol = vol
     calendar = ExpiryCalendar.for_underlying(underlying, config.holidays, weekday=config.expiry_weekday, weekly=config.weekly_expiry)
     rules = config.rules()
-    held_for_days = config.hold_for_days and can_hold_for_days(config.option_strategy)   # M55 T1: credit structures only
+    held_for_days = config.hold_for_days and can_hold_for_days(config.option_strategy,     # M55 T1 / M68 PR-5 (TS1-041)
+                                                               written_overnight=config.hold_written_overnight)
     if config.option_strategy == OptionStrategy.CUSTOM and not config.custom_legs:
         raise OptionBacktestError("CUSTOM structure has no legs")
 
@@ -269,12 +275,17 @@ def run_option_backtest(
         if not isinstance(pricer, SnapshotPricer):
             raise ModelError("black76 prices strikes missing from a recorded or uploaded chain; this run has no chain (synthetic pricing)")
         b76 = Black76Pricer(pricer.rows, vol, config.risk_free_rate, **{"max_age_minutes": pricer.max_age_minutes, **models.pricing_params()})
-        pricer.fallback = b76  # type: ignore[assignment]
+        # M71 PL-7: black76 comes AFTER every recorded step (recorded quotes -> recorded end-of-day -> black76)
+        last: SnapshotPricer = pricer
+        while isinstance(last.fallback, SnapshotPricer):
+            last = last.fallback
+        last.fallback = b76  # type: ignore[assignment]
     # DEF-0 / M68 PR-7 (TS1-066): a backtest's starting equity is the trader's own capital (the caller passes his capital,
     # else his paper account's - app/paper/paper_settings.py capital_of); none set: the run starts from 0 and every figure
     # measured as a share of the capital is left out - never a capital ATP chose.
     capital = float(risk_config.capital or 0.0)
-    risk_manager = RiskManager(risk_config)
+    # M68 PR-2 (M68Q-PR2-1): a test on past prices places nothing; with no size of the trader's own it still tests one lot
+    risk_manager = RiskManager(risk_config, one_lot_if_unsized=True)
     state = TradingDayState()
     streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
     time_rules = exit_rules if exit_rules is not None and exit_rules.active else None
@@ -355,13 +366,10 @@ def run_option_backtest(
     def margin_required(pos: _Open, spot: float) -> float:
         """N7 C2c: span_like on a structure - its defined maximum loss, or the short legs' underlying notional x the
         short-option %; bought options are paid for (no extra margin)."""
-        shorts = [leg for leg in pos.legs if leg.role == "SHORT"]
-        if not shorts:
-            return margin.required("OPTION_LONG", 0.0)
         max_loss = pos.meta.get("max_loss")
-        if not pos.single and max_loss is not None:
-            return margin.required("OPTION_DEFINED", 0.0, max_loss=float(max_loss) * pos.quantity)
-        return margin.required("OPTION_SHORT", spot * sum(leg.quantity for leg in shorts))
+        defined = float(max_loss) * pos.quantity if not pos.single and max_loss is not None else None
+        return option_structure_margin(margin, spot=spot, short_quantity=sum(leg.quantity for leg in pos.legs if leg.role == "SHORT"),
+                                       max_loss=defined)
 
     def unrealised(pos: _Open, prices: Dict[int, float]) -> float:
         return sum((leg.entry_price - prices[i] if leg.role == "SHORT" else prices[i] - leg.entry_price) * leg.quantity
@@ -537,10 +545,12 @@ def run_option_backtest(
         "signals_skipped": dict(skipped), "structures": structures,
         "disclaimer": ("Synthetic premiums (Black-Scholes) approximate what the market would have quoted; they carry no smile, "
                        "no bid/ask and no liquidity. Use this to study structure mechanics, not to claim an edge.")
-        if pricer.name == "synthetic" else "Premiums from recorded chain quotes; legs without a fresh quote were priced synthetically if a fallback was allowed.",
+        if pricer.name == "synthetic" else _recorded_disclaimer(pricer),
     }
     if isinstance(pricer, SnapshotPricer):
-        options.update({"snapshot_hits": pricer.hits, "synthetic_fallbacks": pricer.fallbacks, "snapshot_contracts": pricer.contracts})
+        counts = pricing_counts(pricer)
+        options.update({"snapshot_hits": pricer.hits, "synthetic_fallbacks": counts["model_prices"], "snapshot_contracts": pricer.contracts,
+                        **counts})
     if b76 is not None:
         # N7 C2c: every model price flagged - the count, the contracts, and per leg whether any of its prices was a model's
         priced = {f"{int(k[1])} {k[2]} {k[0]}" for k in b76.priced}
@@ -561,6 +571,19 @@ def run_option_backtest(
                                                   "model_prices": b76.count if b76 is not None else 0},
         loss_streak=streak.report(),
     )
+
+
+def _recorded_disclaimer(pricer: OptionPricer) -> str:
+    """M71 PL-7: what priced the legs - recorded quotes, recorded end-of-day closes, the model - each counted."""
+    c = pricing_counts(pricer)
+    parts = []
+    if c["recorded_quote_hits"]:
+        parts.append(f"{c['recorded_quote_hits']} from recorded chain quotes")
+    if c["recorded_eod_hits"]:
+        parts.append(f"{c['recorded_eod_hits']} from your recorded end-of-day premiums (the bar's session close)")
+    if c["model_prices"]:
+        parts.append(f"{c['model_prices']} priced by the model (no recorded premium)")
+    return "Leg prices: " + ("; ".join(parts) if parts else "none needed") + "."
 
 
 class _Skip(Exception):

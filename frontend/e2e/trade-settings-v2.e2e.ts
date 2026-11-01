@@ -49,17 +49,24 @@ test.describe("Settings › Trade settings 1440", () => {
     await open(page, fixture("user"));
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Trade settings");
     await expect(page.locator("[data-section]")).toHaveCount(7);
-    // M68 PR-1: Order defaults is wired - its seven controls, every one Not set. PR-7: so is Paper account (capital,
-    // charges, brokerage, slippage - every one Not set: no ₹10,00,000, no ₹20, no 0.02 %); PR-6: so is Automation; no other section has a control yet.
+    // M68 PR-1 / PR-2: Order defaults and Position size are wired - their 7 and 6 controls, every one Not set. M68 PR-5: Risk
+    // limits too - eight controls Not set, and the team ceilings read-only ("No ceiling"). PR-7: so is Paper account (capital,
+    // charges, brokerage, slippage - every one Not set: no ₹10,00,000, no ₹20, no 0.02 %).
     await expect(sectionAt(page, "order_defaults").locator("[data-input]")).toHaveCount(7);
     await expect(sectionAt(page, "order_defaults").locator("[data-field] [data-value]")).toHaveText(Array(7).fill("Not set"));
     await expect(sectionAt(page, "paper_account").locator("[data-input]")).toHaveCount(4);
     await expect(sectionAt(page, "paper_account").locator("[data-field] [data-value]")).toHaveText(Array(4).fill("Not set"));
+    await expect(sectionAt(page, "position_size").locator("[data-input]")).toHaveCount(6);
+    // M68 PR-4: Options is wired too - its 15 controls (the custom legs are saved from the bot form, shown as information)
+    await expect(sectionAt(page, "options").locator("[data-input]")).toHaveCount(15);
+    await expect(sectionAt(page, "risk_limits").locator("[data-input]")).toHaveCount(8);
+    await expect(sectionAt(page, "risk_limits").locator("[data-readonly]")).toHaveCount(5);
+    await expect(sectionAt(page, "risk_limits").getByText("No ceiling")).toHaveCount(5);
     // M68 PR-6: Automation is wired too - its seven controls (the fixture's trader has the scanner's Auto PAPER on), Not set
     await expect(sectionAt(page, "automation").locator("[data-input]")).toHaveCount(7);
     await expect(sectionAt(page, "automation").locator("[data-field] [data-value]")).toHaveText(Array(7).fill("Not set"));
-    await expect(page.locator("[data-input]")).toHaveCount(18);
-    await expect(page.locator("[data-save]")).toHaveCount(3);                      // one Save per wired section (Order defaults, Automation, Paper account)
+    await expect(page.locator("[data-input]")).toHaveCount(47);
+    await expect(page.locator("[data-save]")).toHaveCount(6);                      // one Save per wired section
     await expect(page.getByText("Advanced (admin)")).toHaveCount(0);
     await expect(sectionAt(page, "risk_limits").getByRole("link", { name: "Risk limits" })).toHaveAttribute("href", "/settings/risk-limits");
     await expect(page).toHaveScreenshot("trade-settings-v2-1440-light.png", SHOT);
@@ -67,9 +74,11 @@ test.describe("Settings › Trade settings 1440", () => {
 
   test("a platform admin sees every field Not set under Advanced", async ({ page }) => {
     await open(page, fixture("admin"), "SUPER_ADMIN");
-    // M68 PR-1: Order defaults is wired (no Advanced part left there); Position size is the next section still to wire.
+    // M68 PR-1 / PR-2: Order defaults and Position size are wired (no Advanced part left there); Exits is the next section
+    // still to wire.
     await expect(sectionAt(page, "order_defaults").locator("summary", { hasText: "Advanced (admin)" })).toHaveCount(0);
-    const od = sectionAt(page, "position_size");
+    await expect(sectionAt(page, "position_size").locator("summary", { hasText: "Advanced (admin)" })).toHaveCount(0);
+    const od = sectionAt(page, "exits");
     await od.locator("summary", { hasText: "Advanced (admin)" }).click();
     await od.locator("summary", { hasText: "Set by the exchange or your broker" }).click();
     await expect(od.locator("[data-field] [data-value]").first()).toHaveText("Not set");

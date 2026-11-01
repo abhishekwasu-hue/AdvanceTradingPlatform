@@ -84,7 +84,8 @@ export interface OrderPreview {
   stop_loss: number | null;
   margin: MoneyLine | null;
   max_loss: MoneyLine | null;
-  charges: { total: number; estimated: boolean } | null;
+  /** M68 PR-7: `words` - his own paper charges in plain words (Not set: statutory charges only). */
+  charges: { total: number; estimated: boolean; words?: string } | null;
   /** M64 RM-3: `blocks` - each Risk limits refusal as a block message (sentence, link, the smaller size offered). */
   risk: { risk_per_trade?: number; allowed_lots?: number; blocks?: RiskBlock[] };
   errors: string[];

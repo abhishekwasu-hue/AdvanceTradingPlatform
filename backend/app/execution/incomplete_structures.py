@@ -355,7 +355,6 @@ async def complete_rest(session: AsyncSession, user: User, legs: Sequence[TradeR
     from app.execution.multileg_smart import LegSpec, place_legs
     from app.execution.order_persistence import create_order, transition_order
     from app.execution.paper_adapter import PaperExecutionAdapter
-    from app.execution.paper_broker import PaperBroker
     from app.execution.signal_execution import entry_refusals
     from app.trading.persistence import persist_trade
     now = now or datetime.now(timezone.utc)
@@ -401,7 +400,8 @@ async def complete_rest(session: AsyncSession, user: User, legs: Sequence[TradeR
             logger.info("Complete the rest: no price for %s (%s)", spec.key, type(exc).__name__)
     venue = broker
     if not live:
-        practice = PaperExecutionAdapter(PaperBroker())
+        from app.paper import paper_settings  # M68 PR-7: his own paper brokerage / slippage
+        practice = PaperExecutionAdapter((await paper_settings.charges_for(session, user)).broker())
         for key, price in prices.items():
             practice.mark(key, price)
         venue = practice

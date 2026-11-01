@@ -93,6 +93,26 @@ def _saved_order_defaults(request):
 
 
 @pytest.fixture(autouse=True)
+def _saved_paper_capital(request):
+    """M68 PR-7: ATP pre-chooses no paper starting capital - a new paper account starts with the user's own Trade settings
+    > Paper account > Starting capital, else Not set (app/paper/paper_settings.py). The tests written before M68 run as a
+    user who SAVED the capital they were written against (the former platform start value, 10,00,000); a value he really
+    saved still wins. Tests of the M68 behaviour itself carry the marker `real_paper_account` (tests/test_m68_paper_account.py)."""
+    if request.node.get_closest_marker("real_paper_account"):
+        yield
+        return
+    from app.paper import paper_settings
+    real = paper_settings.saved_capital
+
+    async def _saved(session, user):
+        own = await real(session, user)
+        return own if own is not None else 1_000_000.0
+    with pytest.MonkeyPatch.context() as own:      # its own patch: a test's monkeypatch.undo() leaves it in place
+        own.setattr(paper_settings, "saved_capital", _saved)
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _saved_option_defaults(request):
     """M68 PR-4: ATP pre-chooses no expiry, strike, distance, side, width, ratio, delta tolerance, strike window,
     expiry-day roll or delivery warning - each comes from the user's own Trade settings > Options

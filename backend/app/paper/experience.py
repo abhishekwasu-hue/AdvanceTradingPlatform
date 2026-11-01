@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import write_audit_log
 from app.core import config as app_config
 from app.core.enums import InstrumentKind, OrderSide
-from app.db.models import ExperienceOptOutRecord, PaperAccountRecord, User
+from app.db.models import ExperienceOptOutRecord, User
 from app.market_data.calendar import IST
 
 FLAG = "experience_levels"
@@ -217,11 +217,11 @@ def structure_gates(legs: Iterable[Any]) -> List[str]:
     return gates
 
 
-def derive_level(closed: int, sessions: int, max_drawdown_pct: float, *, advanced_trades: int | None = None,
+def derive_level(closed: int, sessions: int, max_drawdown_pct: float | None, *, advanced_trades: int | None = None,
                  advanced_sessions: int | None = None) -> tuple[str, list[dict[str, Any]]]:
     """(level, the criteria of each level above Beginner with their values) from a PAPER record. M68 PR-5 (TS1-057): the
     Advanced level's trades / sessions are the user's own (`advanced_*`); Not set = a target of None, never met (the
-    refusal then names the setting)."""
+    refusal then names the setting). M68 PR-7: no capital of his own = no drawdown (None)."""
     dd_limit = app_config.PAPER_LADDER_MAX_DRAWDOWN_PCT
 
     def own(target: int | None) -> dict[str, str]:
@@ -234,7 +234,7 @@ def derive_level(closed: int, sessions: int, max_drawdown_pct: float, *, advance
             {"key": "sessions", "label": "Sessions with a PAPER trade", "value": sessions, "target": min_sessions, "comparison": "at_least",
              "met": min_sessions is not None and sessions >= min_sessions, **own(min_sessions)},
             {"key": "max_drawdown_pct", "label": "Largest drawdown, % of peak equity", "value": max_drawdown_pct, "target": dd_limit,
-             "comparison": "at_most", "met": closed > 0 and max_drawdown_pct <= dd_limit},
+             "comparison": "at_most", "met": closed > 0 and max_drawdown_pct is not None and max_drawdown_pct <= dd_limit},
         ]
     steps = [(INTERMEDIATE, criteria(app_config.PAPER_LADDER_MIN_TRADES, app_config.PAPER_LADDER_MIN_SESSIONS)),
              (ADVANCED, criteria(advanced_trades, advanced_sessions))]
@@ -292,9 +292,12 @@ async def record(session: AsyncSession, user: User) -> Dict[str, Any]:
     trades = [t for t in await service._paper_trades(session, user) if service._counted(t)]
     closed = sorted((t for t in trades if t.exit_time is not None), key=lambda t: (service._utc(t.exit_time or t.entry_time), t.id))
     sessions = {service._utc(t.entry_time).astimezone(IST).date() for t in trades if t.entry_time is not None}
-    account = await session.scalar(select(PaperAccountRecord).where(PaperAccountRecord.tenant_id == user.tenant_id,
-                                                                    PaperAccountRecord.user_id == user.id))
-    starting = float(account.starting_capital) if account is not None else float(app_config.PAPER_STARTING_CAPITAL)
+    # M68 PR-7 (TS1-065): measured from his own capital (his account's, else his saved Trade settings value); Not set ->
+    # the drawdown % is not measured (None, not met).
+    from app.paper import paper_settings
+    starting = await paper_settings.capital_of(session, user)
+    if starting is None:
+        return {"closed_trades": len(closed), "sessions": len(sessions), "max_drawdown_pct": None}
     dd = service.equity_drawdown(starting, [float(t.pnl or 0.0) for t in closed])
     return {"closed_trades": len(closed), "sessions": len(sessions), "max_drawdown_pct": float(dd["max_drawdown_pct"])}
 

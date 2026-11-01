@@ -275,7 +275,7 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
     from app.ai.compliance import WEAK_EVIDENCE_MIN_TRADES
     from app.backtest.engine import run_backtest as engine
     from app.custom_strategies.resolver import resolve_strategy
-    from app.risk_engine.routes import get_tenant_risk_config, user_risk_config
+    from app.risk_engine.routes import user_risk_config
     try:
         strategy = await resolve_strategy(args.strategy_id, ctx.user, ctx.session)
     except (KeyError, PermissionError) as exc:
@@ -284,16 +284,17 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
         df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, args.timeframe, args.days)
     except HTTPException as exc:
         return _failed("backtest", exc)
-    # M72 PR-4 (F12, DEF-0): the organisation's saved limits with the capital they name, else this user's own PAPER
-    # account balance - never the built-in starting figure (`user_risk_config`, the rule every order path uses)
-    from app.risk_engine import by_default
-    saved = await get_tenant_risk_config(ctx.tenant_id, ctx.session)
-    if (saved is None or saved.capital is None) and await by_default._account(ctx.session, ctx.user) is None:
-        # M68Q-4: no saved capital and no paper account of his yet - the capital is Not set: ask, never assume one
+    from app.paper import paper_settings
+    # DEF-0 / M68 PR-7 (TS1-066): the organisation's capital, else his own paper capital (Not set: none - never a value
+    # ATP chose), and his paper charges (Not set: statutory charges only)
+    # M72 PR-4 (F12): the organisation's saved limits with the capital they name, else his own PAPER account balance
+    # (`user_risk_config`, the rule every order path uses); PR-7 then keeps his own capital first and adds his charges
+    risk, charges = await paper_settings.backtest_inputs(ctx.session, ctx.user, await user_risk_config(ctx.session, ctx.user))
+    if risk.capital is None:
+        # M72 PR-4 / M68Q-4: no capital of his anywhere - the capital is Not set: ask, never assume one
         return ToolResult(False, None, None, "backtest", error="his capital is Not set (no saved capital and no paper account yet); ask him for "
                                                                "the capital to test with, never assume one")
-    risk = await user_risk_config(ctx.session, ctx.user)
-    result = await asyncio.to_thread(engine, strategy, df, args.symbol.upper(), args.timeframe, risk)    # CPU-bound: off the event loop
+    result = await asyncio.to_thread(engine, strategy, df, args.symbol.upper(), args.timeframe, risk, charges=charges)    # CPU-bound: off the event loop
     data = {"strategy_id": args.strategy_id, "symbol": args.symbol.upper(), "timeframe": args.timeframe, "from": _iso(df.index[0]), "to": _iso(df.index[-1]),
             "trades": result.total_trades, "win_rate": _r(result.win_rate), "net_pnl": _r(result.net_pnl), "profit_factor": _r(result.profit_factor),
             "max_drawdown": _r(result.max_drawdown), "expectancy": _r(result.expectancy), "capital": _r(risk.capital),
@@ -331,12 +332,14 @@ async def backtest_draft(ctx: ToolContext, args: _DraftBacktestArgs) -> ToolResu
         df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, fetch_tf, dbt.TEST_DAYS)
     except HTTPException as exc:
         return _failed("backtest", exc)
-    risk = await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()
+    from app.paper import paper_settings  # M68 PR-7 (TS1-066): his capital and paper charges (parity)
+    risk, charges = await paper_settings.backtest_inputs(ctx.session, ctx.user, await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig())
     from app.backtest.data_policy import HoldoutError
     from app.market_lake import data_use
     try:
         windows = await data_use.windows_for(ctx.session, ctx.tenant_id, args.symbol, refused_only=True)   # M71 PL-7b
-        data = await asyncio.to_thread(dbt.honest_test, config, df, args.symbol, fetch_tf, risk, use_windows=windows)  # CPU-bound
+        data = await asyncio.to_thread(dbt.honest_test, config, df, args.symbol, fetch_tf, risk, charges=charges,
+                                       use_windows=windows)  # CPU-bound: off the event loop
     except HoldoutError as exc:
         return ToolResult(False, None, None, "backtest", error=str(exc)[:300])
     data["exchange"] = args.exchange

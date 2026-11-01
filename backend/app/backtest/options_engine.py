@@ -49,11 +49,11 @@ from app.backtest.options import (
     underlying_name,
 )
 from app.backtest.windows import WindowCursor, decision_time
-from app.core import config as app_config
 from app.core.enums import AssetClass, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, OrderSide, SignalDirection, StrikeRule
 from app.core.models import BacktestResult, RiskConfig, Signal, Trade
 from app.core.resampling import resample_ohlc
 from app.execution.paper_broker import PaperBroker
+from app.execution.paper_charges import STATUTORY_ONLY, PaperCharges
 from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.instruments import expiry_data
 from app.instruments.contracts import (
@@ -223,7 +223,9 @@ def run_option_backtest(
     exit_rules: Optional[ExitRules] = None,
     pricer: Optional[OptionPricer] = None,
     models: Optional[ModelSet] = None,
+    charges: Optional[PaperCharges] = None,
 ) -> BacktestResult:
+    """`charges` (M68 PR-7): the trader's own paper charges (None = statutory charges only); see app.backtest.engine."""
     frames: Dict[str, pd.DataFrame] = {}
     for tf in strategy.timeframes:
         frames[tf] = base_df if tf == base_tf else resample_ohlc(base_df, tf)
@@ -261,7 +263,7 @@ def run_option_backtest(
     models = models or ModelSet()
     if models.fill != "touch" or models.latency != "zero" or models.slippage == "volume_share":
         raise ModelError("fill / latency models and volume_share slippage apply to single-leg backtests only")
-    broker = PaperBroker()
+    broker = (charges or STATUTORY_ONLY).broker()
     if not models.is_default:
         broker.slippage_model = models.slippage_model(broker.slippage_pct)
     margin = models.margin_model()
@@ -278,8 +280,9 @@ def run_option_backtest(
         while isinstance(last.fallback, SnapshotPricer):
             last = last.fallback
         last.fallback = b76  # type: ignore[assignment]
-    # DEF-0: a backtest's starting equity is the trader's own capital, else the PAPER account's starting balance.
-    risk_config = risk_config.with_capital(app_config.PAPER_STARTING_CAPITAL)
+    # DEF-0 / M68 PR-7 (TS1-066): a backtest's starting equity is the trader's own capital (the caller passes his capital,
+    # else his paper account's - app/paper/paper_settings.py capital_of); none set: the run starts from 0 and every figure
+    # measured as a share of the capital is left out - never a capital ATP chose.
     capital = float(risk_config.capital or 0.0)
     # M68 PR-2 (M68Q-PR2-1): a test on past prices places nothing; with no size of the trader's own it still tests one lot
     risk_manager = RiskManager(risk_config, one_lot_if_unsized=True)

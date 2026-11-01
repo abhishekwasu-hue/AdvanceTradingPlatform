@@ -225,8 +225,14 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     complete = all(ticks.values()) and all(auto.values())
     if not complete:
         warnings.append("Checklist not complete: you may still place the trade; it is counted as a discipline miss")
+    # M68 PR-7 (TS1-069): the cost line with HIS paper charges (Not set: statutory charges only, labelled so).
+    from app.paper import paper_settings
+    charges = await paper_settings.charges_for(session, user)
     costs = by_default.cost_line(direction=direction, entry=plan.entry, stop=plan.stop_loss, target=plan.target, quantity=quantity,
-                                 day=to_ist(now).date()) if quantity > 0 and not errors else None
+                                 day=to_ist(now).date(), slippage_pct=charges.slippage_pct,
+                                 brokerage_per_order=charges.brokerage_per_order) if quantity > 0 and not errors else None
+    if costs is not None:
+        costs["charges_words"] = charges.words
     side = "BUY" if direction == "LONG" else "SELL"
     can_place = not errors and not refusals and quantity > 0
     return {
@@ -238,7 +244,7 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
                    "size_multiplier": round(multiplier, 4), "cap": _finite(cap), "override_cap": _finite(override_cap), "lot_size": lot, "risk_per_unit": round(per_unit, 4),
                    "suggested_quantity": suggested["quantity"], "suggested_lots": suggested["lots"], "quantity": quantity,
                    "lots": round(quantity / lot, 4) if lot else None, "risk_amount": risk_amount,
-                   "risk_pct_of_capital": round(risk_amount / basis * 100.0, 3) if basis > 0 else None,
+                   "risk_pct_of_capital": round(risk_amount / basis * 100.0, 3) if basis is not None and basis > 0 else None,
                    "gauge": round(risk_amount / cap, 4) if math.isfinite(cap) and cap > 0 else None, "within_cap": within, "override": bool(plan.override),
                    "gauge_zone": "ok" if within else ("override" if risk_amount <= override_cap + 0.005 and base_cap >= user_cap else "over")},
         "checklist": [{"key": k, "label": v, "checked": ticks[k], "auto": False} for k, v in CHECKLIST.items()]

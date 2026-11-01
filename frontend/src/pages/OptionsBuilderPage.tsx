@@ -33,10 +33,12 @@ import { takeHandoff } from "../fno/basketModel";
 import { useMediaQuery } from "../utils/useMediaQuery";
 import { ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { useFeatures } from "../ui/useFeatures";
+import { paperChargesOf, useTradeSettings } from "../settings/tradeSettings";
 
 /** Desktop layout (legs left, numbers right) from Tailwind's lg breakpoint. */
 const WIDE_QUERY = "(min-width: 1024px)";
-const DEFAULT_BROKERAGE = "20";
+// M68 PR-7 (TS1-071): no ₹20 of ATP's - the field starts from his own Trade settings brokerage, else empty (the server
+// then uses his saved one, else none: statutory charges only, and says so on the cost line).
 const MAX_BROKERAGE = 1000;                                 // the API's limit on brokerage_per_order
 
 const EVALUATE_DELAY_MS = 200;
@@ -92,14 +94,21 @@ export default function OptionsBuilderPage(_props: PageProps) {
   const [dragging, setDragging] = useState(false);
   const frozenRange = useRef<number | null>(null);          // the x-range held while a strike is dragged
   const [retry, setRetry] = useState(0);
-  const [brokerageText, setBrokerageText] = useState(DEFAULT_BROKERAGE);
+  const [brokerageText, setBrokerageText] = useState("");
+  const brokerageTouched = useRef(false);
+  const ownSettings = useTradeSettings(useFeatures().on("ui_v2"));
+  useEffect(() => {
+    const own = paperChargesOf(ownSettings).brokeragePerOrder;
+    if (own !== undefined && !brokerageTouched.current) setBrokerageText(String(own));
+  }, [ownSettings]);
   const [basketOpen, setBasketOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saved, setSaved] = useState<SavedState>("unknown");
   const wide = useMediaQuery(WIDE_QUERY);
   const phone = useMediaQuery("(max-width: 767px)");
   const asOf = useMemo(todayIst, []);
-  const brokerage = Math.min(nonNegative(brokerageText) ?? Number(DEFAULT_BROKERAGE), MAX_BROKERAGE);   // the API caps it
+  const typed = brokerageText.trim() === "" ? null : nonNegative(brokerageText);
+  const brokerage = typed === null ? undefined : Math.min(typed, MAX_BROKERAGE);   // the API caps it; empty: his own setting
 
   const spot = positive(spotText);
   const step = positive(stepText);
@@ -242,7 +251,8 @@ export default function OptionsBuilderPage(_props: PageProps) {
           {field("Base IV %", ivText, setIvText, { hint: "prices template legs" })}
           <Input label="Near expiry" type="date" value={nearExpiry} onChange={(e) => setNearExpiry(e.target.value)} />
           <Input label="Next expiry" type="date" value={nextExpiry} onChange={(e) => setNextExpiry(e.target.value)} hint="calendars, diagonals" />
-          {field("Brokerage / order", brokerageText, setBrokerageText, { hint: "₹, for the cost line", "data-testid": "brokerage" })}
+          {field("Brokerage / order", brokerageText, (v: string) => { brokerageTouched.current = true; setBrokerageText(v); },
+            { hint: "₹, for the cost line", placeholder: "Not set", "data-testid": "brokerage" })}
         </section>
 
         <div style={{ gridArea: "tmpl" }} className="min-w-0 space-y-2">

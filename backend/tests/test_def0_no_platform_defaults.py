@@ -126,7 +126,8 @@ def test_no_built_in_capital_in_the_ai_and_portfolio_paths():
 
 
 def test_paper_starting_capital_is_the_fallback_not_100000():
-    assert app_config.PAPER_STARTING_CAPITAL != 100_000.0
+    # M68 PR-7 (TS1-064): no platform start value at all any more - the user's own capital, else Not set
+    assert not hasattr(app_config, "PAPER_STARTING_CAPITAL")
 
 
 # --- D10: the migration ----------------------------------------------------------------------------------------------------

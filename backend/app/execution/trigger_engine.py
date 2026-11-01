@@ -393,7 +393,9 @@ async def _paper_fill(session: AsyncSession, row: PaperRestingOrderRecord, fire_
     from app.brokers.models import BrokerOrderRequest
     from app.core.enums import OrderSide
     from app.execution.paper_adapter import PaperExecutionAdapter
-    adapter = PaperExecutionAdapter(book=durable_book(session, row))
+    from app.paper import paper_settings  # M68 PR-7: the order owner's own slippage (Not set: none)
+    own = await paper_settings.charges_of_ids(session, row.tenant_id, row.user_id)
+    adapter = PaperExecutionAdapter(own.broker(), book=durable_book(session, row))
     adapter.mark(row.symbol, price, row.exchange)
     request = BrokerOrderRequest(symbol=row.symbol, exchange=row.exchange, transaction_type=OrderSide(row.side),
                                  quantity=float(row.quantity), order_type=fire_type, price=row.price if fire_type == "LIMIT" else None,

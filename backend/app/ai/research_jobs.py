@@ -128,7 +128,14 @@ async def run_next(session: AsyncSession, *, now: Optional[Clock] = None) -> Opt
             await _finish(session, row, "failed", clock(), f"Only {len(frame)} bars before the sealed holdout; a study needs at least 50.",
                           data_source=source)
             return sid
-        risk = await get_tenant_risk_config(tid, session) or RiskConfig()
+        from app.paper import paper_settings
+        # M68 PR-7 (TS1-066): the organisation's capital, else his own paper capital (Not set: the study waits for it),
+        # and his paper charges - the same as his paper fills (parity).
+        risk, charges = await paper_settings.backtest_inputs(session, user, await get_tenant_risk_config(tid, session) or RiskConfig())
+        if risk.capital is None:
+            await _finish(session, row, "failed", clock(), f"{paper_settings.needs_capital()}: a study measures daily returns as a share of it.",
+                          data_source=source)
+            return sid
         inner = research_loop.llm_proposer(provider)
 
         async def propose(idea: str, history: Any) -> Any:           # each draft is a heartbeat: the study is alive
@@ -137,7 +144,7 @@ async def run_next(session: AsyncSession, *, now: Optional[Clock] = None) -> Opt
             return await inner(idea, history)
 
         await research_loop.run_study(session, tenant_id=tid, user_id=uid, spec=spec, frame=frame, risk=risk, propose=propose, study_id=sid,
-                                    use_windows=windows)
+                                      charges=charges, use_windows=windows)
         await _finish(session, row, "done", clock(), data_source=source, usage_json=json.dumps(metering.spent_by(provider), default=str))
     except research_loop.HoldoutError as exc:
         await session.rollback()

@@ -36,7 +36,7 @@ import functools
 import json
 import math
 from contextvars import ContextVar
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, ParamSpec, Sequence, Set, Tuple, TypeVar
 
@@ -310,9 +310,13 @@ def effective_settings(settings: RiskSettings, ceilings: Dict[str, float]) -> Tu
 
 # --- pure rules --------------------------------------------------------------------------------------------------------
 
-def risk_cap(capital_basis: float, settings: RiskSettings) -> Dict[str, Any]:
+def risk_cap(capital_basis: float | None, settings: RiskSettings) -> dict[str, Any]:
     """The user's cap per trade: the stricter of the % of capital and the rupee amount; either 0 = not set. Neither set
-    (TT-12): no cap of his own - `amount` None (the organisation's risk per trade still sizes the entry)."""
+    (TT-12): no cap of his own - `amount` None (the organisation's risk per trade still sizes the entry).
+    M68 PR-7: `capital_basis` None (his starting capital is Not set) - a % cap cannot be measured (`needs_capital`; a new
+    entry waits for the capital, `entry_refusals`)."""
+    if capital_basis is None:
+        return {**risk_cap(0.0, replace(settings, risk_per_trade_pct=0.0)), "needs_capital": settings.risk_per_trade_pct > 0}
     by_pct = max(0.0, float(capital_basis)) * settings.risk_per_trade_pct / 100.0 if settings.risk_per_trade_pct > 0 else None
     amount = settings.risk_per_trade_amount if settings.risk_per_trade_amount > 0 else None
     if amount is not None and (by_pct is None or amount < by_pct):
@@ -393,10 +397,11 @@ def cost_line(*, direction: str, entry: float, stop: float, target: float, quant
     }
 
 
-def daily_loss_breached(capital_basis: float, settings: RiskSettings, closed_pnls_in_order: Sequence[float], open_marks: float) -> Dict[str, Any]:
+def daily_loss_breached(capital_basis: float | None, settings: RiskSettings, closed_pnls_in_order: Sequence[float], open_marks: float) -> dict[str, Any]:
     """Whether the day's PAPER P&L reached the limit at any point seen: after any close (in close order), or now with the
-    open marks. Pure."""
-    limit = max(0.0, float(capital_basis)) * settings.daily_loss_pct / 100.0
+    open marks. Pure. M68 PR-7: `capital_basis` None (Not set) - the % limit cannot be measured (limit 0; a new entry waits
+    for the capital, `entry_refusals`)."""
+    limit = max(0.0, float(capital_basis or 0.0)) * settings.daily_loss_pct / 100.0
     running, worst = 0.0, 0.0
     for pnl in closed_pnls_in_order:
         running += float(pnl or 0.0)
@@ -425,10 +430,14 @@ async def user_settings(session: AsyncSession, user: User, now: Optional[datetim
     return settings_on(row.risk_settings_json if row is not None else None, to_ist(now).date())
 
 
-async def capital_basis(session: AsyncSession, user: User, now: Optional[datetime] = None) -> float:
-    """The PAPER starting capital plus the realised net P&L of this user's PAPER trades closed before today (IST)."""
-    row = await _account(session, user)
-    starting = float(row.starting_capital) if row is not None else float(app_config.PAPER_STARTING_CAPITAL)
+async def capital_basis(session: AsyncSession, user: User, now: datetime | None = None) -> float | None:
+    """The PAPER starting capital plus the realised net P&L of this user's PAPER trades closed before today (IST).
+    M68 PR-7 (TS1-065): his own capital (the account's, else his saved Trade settings value); None = Not set - never a
+    capital ATP chose."""
+    from app.paper import paper_settings
+    starting = await paper_settings.capital_of(session, user)
+    if starting is None:
+        return None
     before = await session.scalar(select(func.coalesce(func.sum(TradeRecord.pnl), 0.0)).where(
         TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.mode == MODE,
         TradeRecord.exit_time.is_not(None), TradeRecord.exit_time < trading_day_start(now)))
@@ -520,6 +529,9 @@ async def entry_refusals(session: AsyncSession, user: User, now: Optional[dateti
     if locked:
         reasons.append(locked["reason"])
     settings = await user_settings(session, user, now)
+    if (settings.risk_per_trade_pct > 0 or settings.daily_loss_pct > 0) and await capital_basis(session, user, now) is None:
+        from app.paper import paper_settings  # M68 PR-7: a % of a capital he has not set cannot be measured
+        reasons.append(paper_settings.needs_capital())
     if settings.max_trades_per_day > 0:
         if reserve and not reasons:
             refused = await reserve_entry(session, user, settings.max_trades_per_day, now)

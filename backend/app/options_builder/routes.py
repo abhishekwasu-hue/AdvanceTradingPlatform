@@ -89,7 +89,8 @@ class EvaluateBody(BaseModel):
     # M68 PR-4 (TS1-102): None = the user's own rate (Trade settings > Options > Risk-free rate), else the platform's; the
     # answer says which rate was used (`rate`, `rate_source`).
     rate: float | None = Field(default=None, ge=-0.05, le=0.3)
-    brokerage_per_order: float = Field(default=20.0, ge=0, le=1000, allow_inf_nan=False, description="for the cost line; the trader's own")
+    # M68 PR-7 (TS1-071): the trader's own; omitted -> his Trade settings > Paper account brokerage, else none (no ₹20).
+    brokerage_per_order: float | None = Field(default=None, ge=0, le=1000, allow_inf_nan=False, description="for the cost line; the trader's own")
     # Z5 (Trade port, strike_breach_model): the underlying's completed daily bars, oldest first, up to the session before
     # `as_of` - with them the answer carries each short strike's breach chance. `structure`: the daily market structure
     # (+1 up, -1 down, 0 unknown); `holidays`: exchange holidays between now and the expiry (sessions are counted).
@@ -244,11 +245,42 @@ async def build_template(body: TemplateBody, user: User = Depends(get_current_us
     return {"name": body.name, "legs": legs, "priced_by_model": priced, "rate": body.rate, "rate_source": rate_source}
 
 
+async def _own_brokerage(session: AsyncSession, user: User) -> float | None:
+    """M68 PR-7 (TS1-071): his Settings > Trade settings > Paper account brokerage per order, only when he chose
+    "Statutory charges + my brokerage" (the rule of app/execution/paper_charges.py `charges_from`, read here from the
+    stored prefs so this research package imports no order layer); None = Not set."""
+    import json
+
+    from sqlalchemy import select
+
+    from app.db.models import UserPrefsRecord
+    raw = await session.scalar(select(UserPrefsRecord.value_json).where(
+        UserPrefsRecord.tenant_id == user.tenant_id, UserPrefsRecord.user_id == user.id, UserPrefsRecord.namespace == "trade_settings"))
+    try:
+        values = (json.loads(raw or "{}") or {}).get("values") or {}
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if not isinstance(values, dict):
+        return None
+    brokerage = values.get("paper_account.brokerage_per_order")
+    if values.get("paper_account.charges_model") != "STATUTORY_BROKERAGE" or isinstance(brokerage, bool) \
+            or not isinstance(brokerage, (int, float)) or not math.isfinite(brokerage) or not 0 <= brokerage <= 1000:
+        return None
+    return float(brokerage)
+
+
 @router.post("/evaluate", dependencies=[Depends(compute_rate_limit)])
 async def evaluate(body: EvaluateBody, user: User = Depends(get_current_user),
-                   session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    rate_source = await _own_rate(session, user, body)
-    return {**await run_in_threadpool(_evaluate, body), "rate": body.rate, "rate_source": rate_source}
+                   session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    rate_source = await _own_rate(session, user, body)                          # M68 PR-4: sets body.rate
+    words = None
+    if body.brokerage_per_order is None:          # M68 PR-7: his own saved brokerage (Not set: statutory charges only)
+        own = await _own_brokerage(session, user)
+        body = body.model_copy(update={"brokerage_per_order": own or 0.0})
+        words = f"Statutory charges + your brokerage ₹{own:g} per order" if own is not None else "Statutory charges only: no brokerage"
+    out = await run_in_threadpool(_evaluate, body)
+    out["costs"]["charges_words"] = words or f"Statutory charges + brokerage ₹{body.brokerage_per_order:g} per order"
+    return {**out, "rate": body.rate, "rate_source": rate_source}
 
 
 async def _own_rate(session: AsyncSession, user: User, body: Any) -> str:
@@ -285,7 +317,7 @@ def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
         "single_expiry": single, "disclaimer": DISCLAIMER,
         "net_premium": round(metrics.net_premium(legs), 2),
         "costs": metrics.costs(legs, as_of.astimezone(IST).date() if isinstance(as_of, datetime) else as_of,
-                               brokerage_per_order=body.brokerage_per_order),
+                               brokerage_per_order=float(body.brokerage_per_order or 0.0)),
         "strike_breach": _strike_breach(body, legs, as_of),
     }
     if single:

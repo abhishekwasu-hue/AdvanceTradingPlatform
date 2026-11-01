@@ -83,8 +83,8 @@ PR6_NOT_WIRED = {"automation.approval_exit_minutes", "automation.window_start", 
 def test_registry_fields_are_well_formed_and_wired_by_their_pr():
     for f in ts.FIELDS:
         assert f.label and f.help and f.label[0].isupper(), f.key
-        # PR-1 / 2 / 5 / 6 wired; PR-4 Options (all but the hedge and the strike finder, which nothing reads yet); later PRs the rest
-        assert f.wired is (f.pr in (1, 2, 4, 5, 6) and not f.fact and f.key not in PR4_NOT_WIRED | PR6_NOT_WIRED), f.key
+        # PR-1 / 2 / 5 / 6 / 7 wired; PR-4 Options (all but the hedge and the strike finder, which nothing reads yet); later PRs the rest
+        assert f.wired is (f.pr in (1, 2, 4, 5, 6, 7) and not f.fact and f.key not in PR4_NOT_WIRED | PR6_NOT_WIRED), f.key
         assert 1 <= f.pr <= 7, f.key
         if f.kind == "choice":
             assert len(f.choices) >= 2 and len({c for c, _ in f.choices}) == len(f.choices), f.key
@@ -108,7 +108,8 @@ def test_glossary_keys_exist_in_the_frontend_glossary():
 def test_the_namespace_is_read_by_one_order_path_reader():
     """M68 PR-1 / PR-2 / PR-4: order paths read the Trade settings only through app/execution/order_defaults.py,
     position_size.py and app/instruments/option_defaults.py (one reader per section); M68 PR-5: the Risk limits section
-    through app/risk_engine/own_risk.py."""
+    through app/risk_engine/own_risk.py; PR-7: the Paper account section through app/paper/paper_settings.py (one reader
+    for the capital and the charges)."""
     out = subprocess.run(["grep", "-rlE", "--include=*.py", r"trade_settings|TradeSettings", "app"], cwd=BACKEND, capture_output=True, text=True).stdout
     # M72 PR-1c / PR-4 / PR-7: the Copilot's read-only readers - app/ai/tools/my_data.py reads his settings to show them,
     # app/ai/copilot_chat.py only names that tool, app/ai/tools/options_kit.py reads his saved Options values and
@@ -117,7 +118,8 @@ def test_the_namespace_is_read_by_one_order_path_reader():
     assert sorted(out.split()) == ["app/ai/copilot_chat.py", "app/ai/tools/my_data.py", "app/ai/tools/options_kit.py", "app/ai/watch.py",
                                    "app/execution/automation.py", "app/execution/order_defaults.py", "app/execution/position_size.py",
                                    "app/instruments/option_defaults.py", "app/main.py", "app/me/prefs.py", "app/me/trade_settings.py",
-                                   "app/risk_engine/own_risk.py"]   # PR-2 / PR-4 / PR-5 / PR-6: one reader each
+                                   "app/options_builder/routes.py", "app/paper/paper_settings.py",
+                                   "app/risk_engine/own_risk.py"]   # PR-2 / PR-4 / PR-5 / PR-6 / PR-7: one reader each
 
 
 def test_value_checks():
@@ -159,8 +161,9 @@ def test_a_new_user_sees_not_set_and_no_dead_control():
     assert body["admin"] is False and body["page"] == "/settings/trade-settings"
     assert [s["id"] for s in body["sections"]] == list(ts.SECTION_IDS)
     fields = _fields(body)
-    # PR-1 / 2 / 4 / 5 / 6: Order defaults, Position size, Options, Risk limits and Automation are wired; the rest not yet
-    assert fields and all(f["fact"] or f["key"].split(".")[0] in ("order_defaults", "position_size", "options", "risk_limits", "automation")
+    # PR-1 / 2 / 4 / 5 / 6 / 7: Order defaults, Position size, Options, Risk limits, Automation and Paper account are wired
+    assert fields and all(f["fact"] or f["key"].split(".")[0] in ("order_defaults", "position_size", "options", "risk_limits", "automation",
+                                                                  "paper_account")
                           for f in fields.values())
     # M68 PR-6: a field of a feature that is off for him (the scanner's Auto PAPER, flag scan_auto_paper) is not shown
     assert {k for k, f in fields.items() if not f["fact"]} == {f.key for f in ts.FIELDS if f.wired and f.flag is None}

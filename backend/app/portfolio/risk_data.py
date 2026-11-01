@@ -169,6 +169,8 @@ async def risk_view(session: AsyncSession, user: User, now: Optional[datetime] =
     buckets = {u: await bucket_of(session, u, day) for u in underlyings}
     betas = {u: await beta_of(session, u, day) for u in underlyings}
     capital = await by_default.capital_basis(session, user, now)
-    out = R.view(positions, buckets, betas, capital)
+    out = R.view(positions, buckets, betas, capital or 0.0)       # M68 PR-7: Not set -> no percentages (view leaves them out)
+    if capital is None:
+        out["capital"] = None
     out.update(as_of=str(day), mode=MODE, capital_source="PAPER account: starting capital + realised P&L before today")
     return out

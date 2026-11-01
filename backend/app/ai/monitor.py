@@ -26,7 +26,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.core import config as app_config
 from app.core.enums import NotificationSeverity, NotificationType
 from app.core.json_finite import dumps as finite_dumps
 from app.db.models import AiActionRecord, BacktestRunRecord, StrategyDeploymentRecord, TradeRecord, User
@@ -81,8 +80,9 @@ async def observe(session: AsyncSession, tenant_id: int, deployments: List[Strat
                   regime_lookup: Optional[Callable[[StrategyDeploymentRecord], Optional[str]]] = None) -> List[Proposal]:
     """Pure observation over persisted state; returns the proposals worth raising."""
     risk = await get_tenant_risk_config(tenant_id, session)
-    # DEF-0: the organisation's own capital, else the PAPER account's starting balance - never a built-in 100,000.
-    capital = float(risk.capital) if risk is not None and risk.capital is not None else float(app_config.PAPER_STARTING_CAPITAL)
+    # DEF-0 / M68 PR-7 (TS1-065): the organisation's own capital - never a built-in figure; not set: no day-drawdown %
+    # proposal (a share of a capital nobody chose is not measured).
+    capital = float(risk.capital) if risk is not None and risk.capital is not None else 0.0
     day_start = now.astimezone(IST).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     proposals: List[Proposal] = []
     for dep in deployments:

@@ -291,7 +291,9 @@ def screens(flow: Flow) -> str:
 # M68 (owner order): the users' own Order defaults (Settings > Trade settings), saved before their first PAPER ticket.
 ORDER_DEFAULTS = {"order_defaults.holding": "INTRADAY", "order_defaults.product": "MIS", "order_defaults.order_type": "MARKET",
                   # M68 PR-2 (TS1-019): no pre-chosen size either - his own Position size (one share a ticket here)
-                  "position_size.mode": "FIXED_QUANTITY", "position_size.quantity": 1}
+                  "position_size.mode": "FIXED_QUANTITY", "position_size.quantity": 1,
+                  # M68 PR-7 (TS1-064): no pre-chosen paper capital - his own starting capital (the old start value here)
+                  "paper_account.capital": 1_000_000}
 
 def proposals(flow: Flow) -> str:
     out = []

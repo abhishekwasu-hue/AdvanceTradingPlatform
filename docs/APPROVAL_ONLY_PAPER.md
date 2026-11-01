@@ -119,9 +119,11 @@ to "that user's own Telegram". A team member's practice results are not the owne
 
 **The account** (`GET /api/paper/account`):
 
-- **Starting capital.** `PAPER_STARTING_CAPITAL`, default 10 lakh. The user can change it within 10,000 to 10 crore
-  with `PUT /api/paper/account` **only before the first PAPER trade** (review M7; 409 afterwards) - it is what the
-  balance, the drawdown and the ladder are measured from.
+- **Starting capital.** The user's own (M68 PR-7): his Settings › Trade settings › Paper account value, else Not set -
+  the first paper order asks for it (with "Save as my default"); no platform start value, no floor or ceiling (any
+  amount above 0). He can change it with `PUT /api/paper/account` **only before the first PAPER trade** (review M7; 409
+  afterwards) - it is what the balance, the drawdown and the ladder are measured from. Accounts made before M68 keep
+  their stored capital.
 - **Balance** = start + net realised P&L. **Equity** = balance + the marked P&L of open positions.
 - **Realised P&L** comes as gross, charges and net. Charges are ATP's dated India cost model on each trade (a contract
   note replaces the estimate).

@@ -24,7 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import prompt_versions, research
 from app.backtest.data_policy import HoldoutError
-from app.core import config as app_config
 
 MAX_DRAFTS = 8                       # H-9 provisional
 OOS_FRACTION = 0.3                   # H-9 provisional
@@ -86,16 +85,21 @@ def _warmup_bars(strategy: Any) -> int:
         return 0
 
 
-async def _backtest(strategy: Any, df: pd.DataFrame, symbol: str, timeframe: str, risk: Any) -> Any:
+async def _backtest(strategy: Any, df: pd.DataFrame, symbol: str, timeframe: str, risk: Any, charges: Any = None) -> Any:
     from app.backtest.engine import run_backtest
-    return await asyncio.to_thread(run_backtest, strategy, df, symbol, timeframe, risk)      # CPU-bound: off the event loop
+    return await asyncio.to_thread(lambda: run_backtest(strategy, df, symbol, timeframe, risk, charges=charges))      # CPU-bound: off the event loop
 
 
 async def run_study(session: AsyncSession, *, tenant_id: int, user_id: Optional[int], spec: StudyInput, frame: pd.DataFrame,
                     risk: Any, propose: Propose, holdout_boundary: Any = None, study_id: str | None = None,
-                    use_windows: Any = ()) -> dict[str, Any]:
+                    charges: Any = None, use_windows: Any = ()) -> dict[str, Any]:
     """Runs one study on `frame` (server bars, oldest first). Returns {study_id, report}. Commits the ledger as it goes,
-    so a crash mid-study still leaves every trial tried."""
+    so a crash mid-study still leaves every trial tried. M68 PR-7 (TS1-066): `risk.capital` is the trader's own (the
+    caller resolves it and refuses the study while it is Not set: daily returns are a share of it); `charges` his paper
+    charges (None: statutory charges only)."""
+    if not risk.capital or risk.capital <= 0:
+        from app.paper import paper_settings
+        raise ValueError(paper_settings.needs_capital())
     if frame.empty:
         raise ValueError("no bars to research on")
     max_drafts = max(1, min(spec.max_drafts, MAX_DRAFTS))
@@ -128,14 +132,14 @@ async def run_study(session: AsyncSession, *, tenant_id: int, user_id: Optional[
             await session.commit()
             continue
         try:
-            result = await _backtest(strategy, is_df, spec.symbol, spec.timeframe, risk)
+            result = await _backtest(strategy, is_df, spec.symbol, spec.timeframe, risk, charges)
         except Exception as exc:  # noqa: BLE001 - an engine failure is a trial too
             row = await trial(dsl=draft, status="error", reason=f"{type(exc).__name__}: {exc}"[:300])
             history.append({"seq": row.seq, "status": "error", "reason": row.reason})
             await session.commit()
             continue
         metrics = _metrics(result)
-        returns = research.daily_returns(result.trades, float(risk.with_capital(app_config.PAPER_STARTING_CAPITAL).capital or 0.0), is_days)
+        returns = research.daily_returns(result.trades, float(risk.capital), is_days)
         row = await trial(dsl=draft, status="ok", metrics=metrics, returns=returns, data_from=start.to_pydatetime(),
                           data_to=cut.to_pydatetime())
         drafts[row.seq] = draft
@@ -152,9 +156,9 @@ async def run_study(session: AsyncSession, *, tenant_id: int, user_id: Optional[
         # cut count. Reading earlier bars to compute indicators is not leakage; trading on them would be.
         warm = is_df.iloc[-_warmup_bars(strategy):] if _warmup_bars(strategy) else is_df.iloc[:0]
         try:
-            oos = await _backtest(strategy, pd.concat([warm, oos_df]), spec.symbol, spec.timeframe, risk)
+            oos = await _backtest(strategy, pd.concat([warm, oos_df]), spec.symbol, spec.timeframe, risk, charges)
             oos_trades = oos_trades_only(oos.trades, cut)
-            oos_returns = research.daily_returns(oos_trades, float(risk.with_capital(app_config.PAPER_STARTING_CAPITAL).capital or 0.0), oos_days)
+            oos_returns = research.daily_returns(oos_trades, float(risk.capital), oos_days)
             check: Dict[str, Any] = {"chosen_seq": chosen["seq"], "from": cut.isoformat(), "to": end.isoformat(), "warmup_bars": len(warm),
                                      "metrics": _trade_metrics(oos_trades),
                                      "sharpe_daily": round(research.sharpe(oos_returns), 4) if oos_returns else None}

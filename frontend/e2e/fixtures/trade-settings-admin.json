@@ -1723,7 +1723,7 @@
      "key": "paper_account.capital",
      "label": "Starting capital",
      "kind": "number",
-     "help": "The money your paper account starts with.",
+     "help": "The money a new paper account starts with. Not set: your first paper order asks.",
      "unit": "₹",
      "choices": [],
      "low": 0.0,
@@ -1731,7 +1731,7 @@
      "low_open": true,
      "term": "paper",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1740,7 +1740,7 @@
      "key": "paper_account.charges_model",
      "label": "Charges",
      "kind": "choice",
-     "help": "What a paper trade pays.",
+     "help": "What a paper trade pays. Not set: statutory charges only, no brokerage.",
      "unit": "",
      "choices": [
       {
@@ -1757,7 +1757,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1766,7 +1766,7 @@
      "key": "paper_account.brokerage_per_order",
      "label": "Brokerage per order",
      "kind": "number",
-     "help": "What your broker charges for one order.",
+     "help": "What your broker charges for one order; used when Charges is \"Statutory charges + my brokerage\".",
      "unit": "₹",
      "choices": [],
      "low": 0.0,
@@ -1774,7 +1774,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1783,7 +1783,7 @@
      "key": "paper_account.slippage_pct",
      "label": "Slippage",
      "kind": "number",
-     "help": "How far from the price a paper fill is counted, each side.",
+     "help": "How far from the price a paper fill is counted, each side. Not set: none.",
      "unit": "%",
      "choices": [],
      "low": 0.0,
@@ -1791,7 +1791,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false

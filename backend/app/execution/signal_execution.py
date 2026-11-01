@@ -26,6 +26,7 @@ from app.instruments.registry import get_contract_spec
 from app.kill_switch.checks import active_kill_switch_reasons
 from app.notifications.service import notify
 from app.observability.metrics import ORDER_ENTRY_LATENCY, ORDERS
+from app.paper import paper_settings
 from app.plans.limits import live_allowed_for, tenant_is_active
 from app.platform.controls import clamp_config, risk_ceilings
 from app.platform.controls import entry_blocks as platform_entry_blocks
@@ -54,12 +55,16 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
         paused = await paused_reason(session, user.id)
         if paused:
             reasons.append(paused)
+        # M68 PR-7 (TS1-064, D4): a new PAPER entry waits for HIS starting capital (the first paper order asks for it).
+        needs = await paper_settings.capital_refusal(session, user)
+        if needs:
+            reasons.append(needs)
         # Z5 / P1-d (flag risk_by_default): the user's daily loss lockout and entries-per-day limit - new PAPER entries
         # only; exits never come here (ADR-0004).
         from app.risk_engine import by_default
         if await by_default.enabled(session, user.tenant_id):
             # `reserve`: the order pipelines take the day's entry slot atomically (given back if the entry is not placed).
-            reasons.extend(await by_default.entry_refusals(session, user, reserve=reserve and not reasons))
+            reasons.extend(r for r in await by_default.entry_refusals(session, user, reserve=reserve and not reasons) if r not in reasons)
     if tenant is not None and not tenant_is_active(tenant):
         reasons.append(f"Organisation is {tenant.status}: no new orders")
     if mode == ExecutionMode.LIVE.value and not await live_allowed_for(session, tenant):
@@ -413,6 +418,8 @@ async def execute_signal_for_user(
             place_protective_stop=not (plan is not None and plan.meta.get("instrument_kind") == "OPTION"
                                        and plan.meta.get("premium_stop_pct") is None),
             order_ref=order.id,
+            # M68 PR-7 (TS1-069): a PAPER fill pays his own brokerage / slippage (Not set: statutory charges only).
+            paper_charges=await paper_settings.charges_for(session, user) if execution_mode == ExecutionMode.PAPER else None,
         )
         # M55 S4: the tag (with this row's client order id) is on the row before anything is sent, so the start-up order
         # sweeper (app/execution/order_sweeper.py) can find the order in the broker's book by it after a crash.

@@ -423,3 +423,55 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
     });
   });
 }
+
+/** M68 PR-7 (D4, TS-3): his paper account has no starting capital yet - ATP pre-fills none. The confirm step ASKS for it,
+ * focused, with "Save as my default"; once saved the order is checked again and ONE PAPER order is placed. Baselines (NEW):
+ * `order-ticket-capital-v2-<width>-light.png` at 1440 and 390. */
+const NEEDS_CAPITAL = "Needs your setting: Starting capital (Settings › Trade settings › Paper account)";
+for (const [width, height] of [[1440, 900], [390, 844]] as const) {
+  test.describe(`M68 ticket asks for the paper capital at ${width}`, () => {
+    test.use(width === 390 ? { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width, height } });
+
+    test("the first paper order asks for the starting capital, then places", async ({ page }) => {
+      const saves: Record<string, unknown>[] = [];
+      const seen = await open(page, "light", { tradeSettings: saves });
+      let capital: number | null = null;
+      const capitalPuts: unknown[] = [];
+      await page.route(/\/api(?:\/v1)?\/paper\/account$/, async (route) => {
+        if (route.request().method() !== "PUT") return route.fallback();
+        const body = route.request().postDataJSON() as { starting_capital: number };
+        capitalPuts.push(body);
+        capital = body.starting_capital;
+        return route.fulfill({ json: { starting_capital: capital, balance: capital, capital_saved: true, capital_needed: false } });
+      });
+      await page.route(/\/api(?:\/v1)?\/paper\/fno\/order\/preview$/, async (route) => {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        seen.posts.push({ url: "/api/paper/fno/order/preview", method: "POST", body });
+        const p = preview(body);
+        return route.fulfill({ json: capital === null ? { ...p, refusals: [NEEDS_CAPITAL], can_place: false } : p });
+      });
+      await callCell(page).click();
+      await page.locator("[data-chain-actions] [data-action='buy']").click();
+      const ticket = page.locator("[data-order-ticket]");
+      await pickProduct(ticket);
+      await ticket.locator("[data-ticket='review']").click();
+      await expect(ticket.locator("[data-ticket='refusals']")).toContainText("Needs your setting: Starting capital");
+      const ask = ticket.locator("[data-capital-ask]");
+      await expect(ask.locator("[data-capital-field]")).toBeFocused();
+      await expect(ask.locator("[data-capital-field]")).toHaveValue("");                        // nothing pre-filled
+      await expect(ticket.locator("[data-ticket='place']")).toBeDisabled();
+      await ask.locator("[data-capital-field]").fill("250000");
+      await ask.locator("[data-save-default='paper_account.capital'] input").check();
+      if (width === 390) await expectPhoneLayout(page);
+      await expect(ticket).toHaveScreenshot(`order-ticket-capital-v2-${width}-light.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+      await ask.locator("[data-capital-save]").click();
+      await expect(ticket.locator("[data-capital-ask]")).toHaveCount(0);
+      expect(capitalPuts).toEqual([{ starting_capital: 250000 }]);
+      expect(saves).toContainEqual({ "paper_account.capital": 250000 });
+      await expect(ticket.locator("[data-ticket='place']")).toBeEnabled();
+      await ticket.locator("[data-ticket='place']").click();
+      await expect(ticket.locator("[data-ticket='result']")).toContainText("Placed in practice mode");
+      expect(seen.posts.filter((p) => p.url.endsWith("/paper/fno/order"))).toHaveLength(1);
+    });
+  });
+}

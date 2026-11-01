@@ -19,7 +19,7 @@ Deterministic; the copilot route can hand it to an AI provider to narrate. Educa
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from sqlalchemy import select
@@ -29,8 +29,8 @@ from app.ai import global_cues, market_memory
 from app.ai.interview import FAMILY_TEXT, PROFILES, regime_fit
 from app.brokers.token_lifecycle import token_is_usable
 from app.core.models import RiskConfig
-from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User, WorkerHeartbeatRecord
-from app.market_data.calendar import IST, load_holidays, session_status
+from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, TraderProfileRecord, User, WorkerHeartbeatRecord
+from app.market_data.calendar import EXCHANGE_SESSIONS, IST, last_session_close, load_holidays, session_family, session_status
 from app.risk_engine import guardian
 
 WORKER_STALE_MINUTES = 5
@@ -124,7 +124,7 @@ HIGH_VIX_LINE_V2 = "India VIX is in its high-fear band: gaps are more likely; yo
 
 def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], events: List[dict], *,
               cfg: Optional[RiskConfig] = None, cfg_saved: bool = False, freshness: Optional[dict] = None,
-              signal_v2: bool = False) -> dict:
+              signal_v2: bool = False, read_label: Optional[str] = None) -> dict:
     kind = dt["kind"]
     # P0.8-D: the day described by the data - never "buy the pullbacks", "sell the rallies" or "stay out".
     headlines = {
@@ -132,7 +132,8 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
         "TREND_DOWN": "A trending-down day on the data: lower highs and lower lows; trend-family templates' filters are open, reversal ones mostly closed.",
         "RANGE": "A sideways day on the data: trend-family templates fit it poorly; range and reversion templates' filters are open.",
         "VOLATILE": "A volatile day on the data: wide swings and gaps, so ATR-based stops are wider and position sizes come out smaller.",
-        "UNKNOWN": "No market read yet - press \"Read now\" in Market memory (needs a broker session), or wait for the worker after 09:15.",
+        # M82 R3: never "needs a broker session" here - the brief replaces this with the exact reason (`read_state`).
+        "UNKNOWN": "No market read stored yet.",
     }
     if signal_v2:
         headlines["VOLATILE"] = VOLATILE_HEADLINE_V2
@@ -161,7 +162,9 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
             lines.append(f"Event today: {what} - position size is cut automatically.")
     lines.append(risk_line(lang, cfg or RiskConfig(), cfg_saved))
     headline = headlines[kind]
-    if hidden and kind != "UNKNOWN" and freshness and freshness.get("age_minutes") is not None:
+    if read_label:                       # M82 R2: a stored read of an earlier session, named by its session date
+        headline = f"{read_label}: " + headline
+    elif hidden and kind != "UNKNOWN" and freshness and freshness.get("age_minutes") is not None:
         hours = freshness["age_minutes"] / 60.0
         ago = f"{hours:.0f} h" if hours >= 1 else f"{freshness['age_minutes']:.0f} min"
         headline = f"Last market read ({ago} ago, not today's): " + headline
@@ -233,6 +236,104 @@ def _why(lang: str, dep: StrategyDeploymentRecord, now: datetime, market_open: b
             "last_evaluated_at": last_eval.isoformat() if last_eval else None, "last_signal_at": last_sig.isoformat() if last_sig else None, "why": lines}
 
 
+def day_label(day: date) -> str:
+    """"Fri 30 Oct" - a session date as the card shows it."""
+    return f"{day:%a} {day.day} {day:%b}"
+
+
+# M82 R3: the one reason line when no market read is stored (exactly one of these).
+REASON_NONE_EVER = "none_ever"
+REASON_BROKER = "broker_expired"
+REASON_WORKER = "worker_missed"
+BROKER_TEXT = {
+    "expired": "Your broker session has expired - reconnect it to read the market.",
+    "none": "No broker is connected - connect your broker on the Broker page to read the market.",
+    "teammate": "The broker in your organisation was linked by a teammate - link your own broker to read the market.",
+    "shared": "Market memory is shared in your organisation, so it is not read through your own broker session.",
+    "role": "Your role cannot start a market read.",
+}
+
+
+async def read_now_state(session: AsyncSession, user: User) -> dict:
+    """M82 R4: whether "Read now" (POST /api/ai/market-memory/refresh) can read the market for this user, the same checks
+    the endpoint makes: a trading role, not the bring-your-own-broker tier, and the user's OWN usable broker session
+    (`credential_for_reader`, never a teammate's). `broker`: ok / expired / none / teammate / shared / role."""
+    from fastapi import HTTPException
+
+    from app.auth.dependencies import TRADING_ROLES
+    from app.market_data import live_access
+    from app.market_data.reader_credential import credential_for_reader
+    if user.role not in TRADING_ROLES:
+        return {"enabled": False, "broker": "role", "reason": BROKER_TEXT["role"]}
+    if await live_access.byob_on(session, user.tenant_id):
+        return {"enabled": False, "broker": "shared", "reason": BROKER_TEXT["shared"]}
+    try:
+        await credential_for_reader(session, user.tenant_id, user.id)
+    except HTTPException:
+        own = list(await session.scalars(select(BrokerCredentialRecord).where(
+            BrokerCredentialRecord.tenant_id == user.tenant_id, BrokerCredentialRecord.user_id == user.id)
+            .order_by(BrokerCredentialRecord.id)))
+        if own:
+            return {"enabled": False, "broker": "expired", "reason": BROKER_TEXT["expired"],
+                    "reconnect": {"broker": own[0].broker_name, "account_label": own[0].account_label or "primary"}}
+        anyone = await session.scalar(select(BrokerCredentialRecord.id).where(BrokerCredentialRecord.tenant_id == user.tenant_id).limit(1))
+        kind = "teammate" if anyone is not None else "none"
+        return {"enabled": False, "broker": kind, "reason": BROKER_TEXT[kind]}
+    return {"enabled": True, "broker": "ok", "reason": None}
+
+
+def _worker_ran(beats: List[WorkerHeartbeatRecord], start: datetime, end: datetime) -> bool:
+    """The trading worker was alive inside [start, end]: started before its end and seen after its start."""
+    for b in beats:
+        if b.worker_name != "trading_worker" or b.last_seen_at is None:
+            continue
+        started, seen = _utc(b.started_at), _utc(b.last_seen_at)
+        if seen is not None and seen >= start and (started is None or started <= end):
+            return True
+    return False
+
+
+async def read_state(session: AsyncSession, user: User, now: datetime, is_open: bool, holidays, symbols: List[dict],
+                     beats: List[WorkerHeartbeatRecord], read_now: dict) -> dict:
+    """M82 R2 / R3: which market read the card shows and, when there is none, the one reason why.
+    state: today / last_session / older / none; label: "Today", "Last session, Fri 30 Oct", "Last read, Wed 28 Oct"."""
+    now_ist = now.astimezone(IST)
+    spec = EXCHANGE_SESSIONS[session_family("NSE")]
+    if is_open:
+        session_day = now_ist.date()
+        window = (datetime.combine(session_day, spec.open, tzinfo=IST), now)
+    else:
+        close = last_session_close(now, holidays, "NSE")
+        session_day = close.date() if close else now_ist.date()
+        # the worker also takes the day's final read in the hour after the close
+        window = (datetime.combine(session_day, spec.open, tzinfo=IST), (close or now) + timedelta(hours=1))
+    stamps = [datetime.fromisoformat(str(s["captured_at"])) for s in symbols if s.get("captured_at")]
+    out: dict = {"session_date": session_day.isoformat(), "session_label": day_label(session_day), "read_now": read_now}
+    if stamps:
+        read_day = max(stamps).astimezone(IST).date()
+        if is_open and read_day == session_day:
+            state, label = "today", "Today"
+        elif read_day == session_day:
+            state, label = "last_session", f"Last session, {day_label(read_day)}"
+        else:
+            state, label = "older", f"Last read, {day_label(read_day)}"
+        return {**out, "state": state, "label": label, "read_date": read_day.isoformat(), "reason": None, "reason_text": None}
+    if read_now.get("broker") in ("expired", "none", "teammate"):
+        reason, text = REASON_BROKER, BROKER_TEXT[read_now["broker"]]
+    else:
+        profiled = await session.scalar(select(TraderProfileRecord.id).where(TraderProfileRecord.tenant_id == user.tenant_id).limit(1))
+        if profiled is None or not _worker_ran(beats, *window):
+            reason = REASON_WORKER
+            text = (f"The automatic market read did not run {'today' if is_open else 'on the last session'} "
+                    f"({day_label(session_day)}).")
+        else:
+            reason, text = REASON_NONE_EVER, "No market read stored yet."
+    if read_now.get("enabled"):
+        text += " Press Read now."
+    return {**out, "state": "none", "label": None, "read_date": None, "reason": reason, "reason_text": f"No market read: {text}"
+            if reason != REASON_NONE_EVER else text}
+
+
 async def build(session: AsyncSession, user: User, lang: str = "en", now: Optional[datetime] = None) -> dict:
     from app.ai import advisor
     from app.risk_engine.routes import get_tenant_risk_config
@@ -240,6 +341,9 @@ async def build(session: AsyncSession, user: User, lang: str = "en", now: Option
     now = now or datetime.now(timezone.utc)
     now_ist = now.astimezone(IST)
     memory = await market_memory.latest(session, user.tenant_id, now=now)
+    if not memory.get("symbols"):
+        # M82 R2: a stored read older than `latest()`'s 3-day window is still the last read - never "no read".
+        memory = {**memory, "symbols": await market_memory.last_read(session, user.tenant_id)}
     saved, _ = await advisor.load_profile(session, user)
     experience = (saved or {}).get("experience")
     cfg_saved = await get_tenant_risk_config(user.tenant_id, session)
@@ -251,10 +355,20 @@ async def build(session: AsyncSession, user: User, lang: str = "en", now: Option
 
     dt = day_type(memory)
     freshness = data_freshness(memory, now, status.is_open)
+    beats = list(await session.scalars(select(WorkerHeartbeatRecord)))
+    read = await read_state(session, user, now, status.is_open, holidays, memory.get("symbols", []), beats,
+                            await read_now_state(session, user))
     from app.platform.controls import flag_enabled
     from app.signals.language import FLAG as SIGNAL_LANGUAGE_FLAG
     plan = game_plan(lang, dt, memory, experience, events, cfg=cfg, cfg_saved=cfg_saved is not None, freshness=freshness,
-                     signal_v2=await flag_enabled(session, SIGNAL_LANGUAGE_FLAG, user.tenant_id))
+                     signal_v2=await flag_enabled(session, SIGNAL_LANGUAGE_FLAG, user.tenant_id),
+                     read_label=read["label"] if read["state"] in ("last_session", "older") else None)
+    if read["state"] == "none":
+        plan["headline"] = read["reason_text"]
+    elif dt["kind"] == "UNKNOWN":
+        # a read is stored, but its candles were too few to name the day's character
+        plan["headline"] = ((f"{read['label']}: " if read["state"] != "today" else "")
+                            + "The stored read has too few candles to name the day's character.")
     mood = global_cues.mood(memory.get("globals", []), now) if memory.get("globals") else None
     from app.ai import sentiment as sentiment_mod  # Phase BC
     sentiment_read = memory.get("sentiment")
@@ -267,7 +381,6 @@ async def build(session: AsyncSession, user: User, lang: str = "en", now: Option
 
     creds = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
     broker_ok = any(token_is_usable(c, now) for c in creds)
-    beats = list(await session.scalars(select(WorkerHeartbeatRecord)))
     worker_seen = max((_utc(b.last_seen_at) for b in beats if b.last_seen_at), default=None)
     worker_ok = worker_seen is not None and now - worker_seen <= timedelta(minutes=WORKER_STALE_MINUTES)
     budget_mode = "LIVE" if day["LIVE"]["active"] else "PAPER"
@@ -295,7 +408,7 @@ async def build(session: AsyncSession, user: User, lang: str = "en", now: Option
                     "holidays_next_7_days": [d.isoformat() for d in upcoming]},
         "day_type": dt, "plan": plan, "global_mood": mood, "sentiment": sentiment_read, "sentiment_view": sentiment_lines, "market_updated_at": memory.get("updated_at"),
         "market": {"symbols": memory.get("symbols", [])[:4], "cues": memory.get("cues", []), "globals": memory.get("globals", [])},
-        "market_data": freshness,
+        "market_data": freshness, "read": read,
         "events": events, "you": day, "deployments": deployments, "checklist": checklist,
     }
 

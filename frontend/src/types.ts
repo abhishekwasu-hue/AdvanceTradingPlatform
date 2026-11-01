@@ -2448,6 +2448,24 @@ export interface MarketMemory {
   sentiment_view?: string[];
 }
 
+/** M82 R2-R4: the read the Today's read card shows and whether "Read now" can run. */
+export interface BriefReadNow {
+  enabled: boolean;
+  broker: "ok" | "expired" | "none" | "teammate" | "shared" | "role";
+  reason: string | null;
+  reconnect?: { broker: string; account_label: string };
+}
+export interface BriefRead {
+  state: "today" | "last_session" | "older" | "none";
+  label: string | null;
+  read_date: string | null;
+  session_date: string;
+  session_label: string;
+  reason: "none_ever" | "broker_expired" | "worker_missed" | null;
+  reason_text: string | null;
+  read_now: BriefReadNow;
+}
+
 /** Phase BD-lite: the market thesis of one symbol (shadow overlay only). */
 export interface ThesisFactor { factor: string; weight: number; available: boolean; direction: -1 | 0 | 1; strength: number; value: unknown }
 export interface ThesisScenario { trigger?: number; /** P0.8-D: indices only, unless the operator's thesis_stock_targets flag is on */ target?: number; invalidation?: number; low?: number; high?: number; text: string }
@@ -2521,6 +2539,8 @@ export interface DailyBrief {
   market_updated_at: string | null;
   /** P0.10: how old the market figures are; `figures_shown` false = none, stale, or a placeholder (every symbol the same). */
   market_data?: { state: "fresh" | "stale" | "suspect" | "none"; updated_at: string | null; age_minutes: number | null; figures_shown: boolean };
+  /** M82: which market read the card shows (its session date) or, with none, the one reason why; and "Read now". */
+  read?: BriefRead;
   market: { symbols: MemorySnapshot[]; cues: MemorySnapshot[]; globals: MemorySnapshot[] };
   events: { kind: string; action: string; description: string; start_time: string | null; end_time: string | null }[];
   you: { PAPER: BriefDay; LIVE: BriefDay };

@@ -139,7 +139,7 @@ async def capture(session: AsyncSession, tenant_id: int, market_data_factory, br
     failing symbol never stops the others. Returns {"symbols": n, "cues": n, "globals": n, "errors": [...]}."""
     now = now or datetime.now(timezone.utc)
     source = getattr(broker, "name", "broker")
-    report = {"symbols": 0, "cues": 0, "globals": 0, "errors": []}
+    report: dict = {"symbols": 0, "cues": 0, "globals": 0, "errors": []}
     if include_global:
         try:
             got = await capture_global(session, tenant_id, now=now, commit=False)
@@ -151,10 +151,13 @@ async def capture(session: AsyncSession, tenant_id: int, market_data_factory, br
     for symbol in symbols if symbols is not None else await watchlist(session, tenant_id):
         exchange = exchange_for(symbol)
         try:
-            row = symbol_snapshot(tenant_id, symbol, exchange, await intraday.get_candles(symbol, exchange, "1min", now=now), source, now)
+            bars = await intraday.get_candles(symbol, exchange, "1min", now=now)
+            row = symbol_snapshot(tenant_id, symbol, exchange, bars, source, now)
             if row is not None:
                 session.add(row)
                 report["symbols"] += 1
+            else:                       # M83 A1: never a silent empty read - say why nothing was stored
+                report["errors"].append(f"{symbol}: the broker returned too few candles to read ({len(bars or [])} one-minute bars)")
         except Exception as exc:  # noqa: BLE001 - one symbol's failure must not lose the rest
             logger.info("Market memory: %s failed for tenant %s: %s", symbol, tenant_id, exc)
             report["errors"].append(f"{symbol}: {type(exc).__name__}: {exc}"[:200])
@@ -241,6 +244,24 @@ async def latest(session: AsyncSession, tenant_id: int, *, now: Optional[datetim
             "globals": sorted(globals_.values(), key=lambda g: order.get(g["symbol"], 99)),
             "history": {k: sorted(v.values(), key=lambda d: d["date"]) for k, v in history.items()}, "updated_at": newest,
             "sentiment": (sentiment or {}).get("payload") if sentiment else None}
+
+
+async def last_read(session: AsyncSession, tenant_id: int) -> List[dict]:
+    """M82 R2: the newest stored symbol read of each symbol taken on the newest read's IST day, at any age. `latest()`
+    keeps only the last 3 days, so after a long weekend a stored read would look like none; this one never does."""
+    rows = list(await session.scalars(select(MarketSnapshotRecord).where(
+        MarketSnapshotRecord.tenant_id == tenant_id,
+        or_(MarketSnapshotRecord.kind == "SYMBOL", MarketSnapshotRecord.kind.is_(None)))
+        .order_by(MarketSnapshotRecord.captured_at.desc()).limit(MAX_WATCH * 4)))
+    if not rows:
+        return []
+    day = _utc(rows[0].captured_at).astimezone(IST).date()
+    out: Dict[str, dict] = {}
+    for r in rows:
+        if _utc(r.captured_at).astimezone(IST).date() != day:
+            break
+        out.setdefault(r.symbol, _row(r))
+    return list(out.values())
 
 
 # UX-11b: one band table for the India VIX level chip (backend and frontend/src/ui/levels.ts use the same edges as

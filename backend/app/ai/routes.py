@@ -2,6 +2,7 @@
 regime classifier and the monitoring agent's action queue. Every mutating call is a human's."""
 import copy
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional, Tuple
 
@@ -48,6 +49,7 @@ from app.platform.controls import flag_enabled, require_flag
 from app.risk_engine.routes import get_tenant_risk_config
 from app.strategy_engine.declarative import DeclarativeStrategy
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ai", tags=["ai"], dependencies=[Depends(ai_rate_limit)])      # H-C1 b
 
 
@@ -567,6 +569,11 @@ async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(re
         except Exception as exc:  # noqa: BLE001
             await session.rollback()
             report["errors"] = list(report.get("errors", [])) + [f"sentiment: {type(exc).__name__}: {exc}"[:200]]
+    if report.get("errors") or not report.get("symbols"):
+        # M83 A1: a read that stored no symbol is never silent - the reasons go back to the panel (`report.errors`)
+        # and into the log, for the owner check (`Market memory read now:` lines; no tokens, broker messages only).
+        logger.warning("Market memory read now: tenant %s stored %s symbols, %s cues, %s global; errors: %s", user.tenant_id,
+                       report.get("symbols", 0), report.get("cues", 0), report.get("globals", 0), "; ".join(report.get("errors", []))[:600])
     out = await market_memory.latest(session, user.tenant_id)
     out["report"] = report
     return _with_global(out, AI_LANGUAGE)

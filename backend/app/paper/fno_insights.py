@@ -58,7 +58,7 @@ async def risk_budget(session: AsyncSession, user: User) -> Dict[str, Any]:
     # DEF-0: the trader's own limits only - a limit not set is None (the line says "not set"); the capital is his own,
     # else his PAPER balance.
     cfg = await user_risk_config(session, user)
-    cfg, _ = clamp_config(cfg, await risk_ceilings(session))
+    cfg, _ = clamp_config(cfg, await risk_ceilings(session, user.tenant_id))
     if await by_default.enabled(session, user.tenant_id):
         cfg, _ = await by_default.apply_user_cap(session, user, cfg)
     per_trade, daily = cfg.risk_amount(), cfg.daily_loss_amount()

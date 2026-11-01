@@ -108,7 +108,7 @@ def test_risk_settings_shared_within_tenant_not_across():
     updated = client.put("/api/risk-settings", headers=headers1, json={
         "capital": 250_000.0, "risk_per_trade_pct": 1.0, "max_daily_loss_pct": 5.0,
         "max_trades_per_day": 10, "max_open_positions": 5, "max_consecutive_losses": 3,
-        "min_risk_reward": 1.5, "lot_size": 1,
+        "min_risk_reward": 1.5, "lot_size": 1, "loss_streak_pause": "next_session",     # M68 PR-5: the pause end is his own
     })
     assert updated.status_code == 200, updated.text
 

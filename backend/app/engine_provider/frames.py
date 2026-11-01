@@ -423,7 +423,7 @@ class SymbolData:
     futures: tuple[FuturesContract, ...] = ()
     futures_expected: bool = False
     sources_tried: tuple[str, ...] = ()
-    history: Mapping[str, "HistoryBars"] = field(default_factory=dict)
+    history: Mapping[str, HistoryBars] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

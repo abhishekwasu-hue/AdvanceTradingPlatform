@@ -14,8 +14,9 @@ export interface SocialPendingInfo {
   provider: string;
   label: string;
   email: string | null;
-  mfa?: boolean;
-  has_password?: boolean;
+  /** null: not said (an address that was typed, not proven) - the code field is offered as optional. */
+  mfa?: boolean | null;
+  has_password?: boolean | null;
   intent?: string;
   needs_email?: boolean;
   legal?: boolean;

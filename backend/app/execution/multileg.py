@@ -239,6 +239,8 @@ async def execute_structure(
         if why is not None:
             reasons = list(structure.notes) + guardian_notes + [why]
             await _reject_all(session, orders, reasons)
+            await notify(session, user.tenant_id, NotificationType.REJECTION, title=f"Structure not placed: {structure.underlying_symbol}",
+                         message=why, severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=orders[0].id)
             return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
     decision = RiskManager(cfg).validate_and_size(sizing_signal, state, contract_spec=spec, requested_quantity=own)
     notes = list(structure.notes) + [_economics_note(metrics, lot)] + guardian_notes + list(decision.warnings)
@@ -253,8 +255,10 @@ async def execute_structure(
                            f"({cfg.risk_amount() or 0:,.0f}). Change limit: Settings > Risk limits"]
         await _reject_all(session, orders, reasons)
         return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
-    if rules.max_lots:
-        lots = min(lots, rules.max_lots)
+    if own is not None:
+        # M68 PR-2: the trader's own size (the bot's lots or his Position size) is the ceiling of a risk-based size too,
+        # as on the single-leg path (app/execution/router.py OrderRouter.execute)
+        lots = min(lots, int(own // lot))
     if execution_mode == ExecutionMode.LIVE:
         try:
             cap, note = await _live_lot_cap(broker, structure, debit_per_unit=-metrics.net_credit if metrics.debit else None,

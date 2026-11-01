@@ -294,3 +294,118 @@ def test_no_order_row_of_a_refused_entry_carries_a_trade():
         async with _session_factory() as session:
             return list(await session.scalars(select(OrderRecord).where(OrderRecord.tenant_id == t["tenant_id"])))
     assert all(o.trade_id is None for o in _run(go()))
+
+
+# --- multi-leg structures (TS1-017): no size = refused and said; his size is the ceiling of a risk-based size ---------------
+
+def _structure(t: dict, risk: RiskConfig, key: str):
+    from app.core.enums import OptionStrategy
+    from app.execution.multileg import execute_structure
+    from app.instruments.spreads import resolve_structure
+    from tests.test_contract_rules import TODAY, _load_master
+    from tests.test_multileg import SPOT, _OptionBroker, _rules
+    from tests.test_trading_worker import _signal as worker_signal
+    _load_master()
+
+    async def go():
+        async with _session_factory() as session:
+            user = await session.get(User, t["user_id"])
+            structure = await resolve_structure(session, "NIFTY 50", _rules(), OptionStrategy.BULL_PUT_SPREAD, SignalDirection.LONG,
+                                                spread_width=2, spot=SPOT, today=TODAY)
+            return await execute_structure(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=worker_signal(),
+                                           structure=structure, rules=_rules(), target_credit_pct=None, stop_credit_pct=None,
+                                           idempotency_key=key, quote_broker=_OptionBroker(), risk_config=risk, holding="INTRADAY")
+    return _run(go())
+
+
+@pytest.mark.usefixtures("no_open_positions_from_earlier_tests", "owner_switched_live_on")
+def test_a_structure_with_no_size_is_refused_with_the_setting_it_needs_and_a_notice():
+    t = _tenant_t("m68ps-ml-none")
+    result = _structure(t, RiskConfig(), f"m68ps-ml-{uuid.uuid4().hex}")
+    assert result.executed is False and result.reasons[-1] == NEEDS
+    assert all(o.status == "REJECTED" for o in result.orders)
+
+    async def notes():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(NotificationRecord).where(
+                NotificationRecord.tenant_id == t["tenant_id"], NotificationRecord.message == NEEDS)))
+    assert len(_run(notes())) == 1
+
+
+@pytest.mark.usefixtures("no_open_positions_from_earlier_tests", "owner_switched_live_on")
+def test_his_fixed_lots_cap_a_risk_based_structure_size():
+    from tests.master_fixture import NIFTY_LOT
+    t = _tenant_t("m68ps-ml-cap")
+    _save(t, mode="FIXED_LOTS", lots=1)
+    # risk 10,000 / max loss per lot 4,500 -> 2 lots by risk; his own 1 lot is the ceiling (as on the single-leg path)
+    result = _structure(t, RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0), f"m68ps-ml-{uuid.uuid4().hex}")
+    assert result.executed, result.reasons
+
+    async def legs():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == t["tenant_id"])))
+    rows = _run(legs())
+    assert len(rows) == 2 and all(float(r.quantity) == NIFTY_LOT for r in rows)
+
+
+# --- the adapters' instrument dumps (TS1-088): a derivative with no lot size never becomes one lot -------------------------
+
+def _no_lot_rows(instruments) -> list[tuple[str, float | None]]:
+    return [(i.tradingsymbol, i.lot_size) for i in instruments]
+
+
+def test_zerodha_dump_with_no_lot_size_is_left_out_of_the_master(caplog):
+    import httpx
+
+    from app.brokers.models import BrokerCredentials
+    from app.brokers.zerodha import ZerodhaBroker
+    from tests.test_brokers import _mock_client
+    csv_text = ("instrument_token,exchange,tradingsymbol,name,segment,instrument_type,lot_size,tick_size,expiry,strike\n"
+                "1,NFO,NIFTY24DEC22000CE,NIFTY,NFO-OPT,CE,,0.05,2024-12-26,22000\n"
+                "2,NFO,NIFTY24DEC22100CE,NIFTY,NFO-OPT,CE,50,0.05,2024-12-26,22100\n"
+                "3,NSE,RELIANCE,RELIANCE,NSE,EQ,,0.05,,0\n")
+    broker = ZerodhaBroker(BrokerCredentials(api_key="k", access_token="t"),
+                           client=_mock_client(lambda r: httpx.Response(200, text=csv_text), ZerodhaBroker.BASE_URL))
+    got = _run(broker.get_instruments("NFO"))
+    assert _no_lot_rows(got) == [("NIFTY24DEC22000CE", None), ("NIFTY24DEC22100CE", 50.0), ("RELIANCE", None)]
+    with caplog.at_level("WARNING"):
+        rows = master.parse_broker_instruments("zerodha", got)
+    assert [(r.tradingsymbol, r.lot_size) for r in rows] == [("NIFTY24DEC22100CE", 50), ("RELIANCE", 1)]
+    assert "1 futures / options rows had no lot size" in caplog.text
+
+
+def test_shoonya_dump_with_no_lot_size_is_left_out_of_the_master():
+    from app.brokers.models import BrokerCredentials
+    from app.brokers.shoonya import ShoonyaBroker
+    broker = ShoonyaBroker(BrokerCredentials(client_id="FA12345", api_secret="pw", api_key="k", access_token="t"))
+
+    async def post(path, body):
+        return {"values": [{"token": "1", "exch": "NFO", "tsym": "NIFTY26DECFUT", "instname": "FUTIDX", "ls": ""},
+                           {"token": "2", "exch": "NFO", "tsym": "NIFTY26JANFUT", "instname": "FUTIDX", "ls": "75"}]}
+    broker._post = post
+    got = _run(broker.get_instruments("NFO"))
+    assert _no_lot_rows(got) == [("NIFTY26DECFUT", None), ("NIFTY26JANFUT", 75.0)]
+    from app.brokers.models import Instrument
+    fut = [Instrument(**{**i.model_dump(), "instrument_type": "FUT"}) for i in got]
+    assert [(r.tradingsymbol, r.lot_size) for r in master.parse_broker_instruments("shoonya", fut)] == [("NIFTY26JANFUT", 75)]
+
+
+def test_upstox_dump_with_no_lot_size_is_left_out_of_the_master():
+    import gzip
+
+    import httpx
+
+    from app.brokers.models import BrokerCredentials
+    from app.brokers.upstox import UpstoxBroker
+    from tests.test_brokers import _mock_client
+    dump = gzip.compress(json.dumps([
+        {"instrument_key": "NSE_FO|1", "exchange": "NSE", "trading_symbol": "NIFTY X CE", "segment": "NSE_FO", "instrument_type": "CE",
+         "strike_price": 24500},
+        {"instrument_key": "NSE_FO|2", "exchange": "NSE", "trading_symbol": "NIFTY Y CE", "segment": "NSE_FO", "instrument_type": "CE",
+         "strike_price": 24600, "lot_size": 75},
+    ]).encode())
+    broker = UpstoxBroker(BrokerCredentials(api_key="k", access_token="t"),
+                          client=_mock_client(lambda r: httpx.Response(200, content=dump), UpstoxBroker.BASE_URL))
+    got = _run(broker._download_instruments("NSE"))
+    assert _no_lot_rows(got) == [("NIFTY X CE", None), ("NIFTY Y CE", 75.0)]
+    assert [(r.tradingsymbol, r.lot_size) for r in master.parse_broker_instruments("upstox", got)] == [("NIFTY Y CE", 75)]

@@ -19,3 +19,16 @@ describe("PAPER-NR practice balance below zero", () => {
     expect(renderToStaticMarkup(<PaperBalanceTile balance={-5} v2={false} />)).not.toContain("below zero");
   });
 });
+
+describe("StatTile value size (owner rule D.3: nothing cut off at 390)", () => {
+  it("steps a long value down below sm only, and always allows a wrap", async () => {
+    const { StatTile, statValueSize } = await import("./ui");
+    expect(statValueSize("3 / 3")).toBe("text-2xl");
+    expect(statValueSize("12,900.00")).toBe("text-xl sm:text-2xl");
+    expect(statValueSize("−12,900.00")).toBe("text-lg sm:text-2xl");
+    expect(statValueSize("−1,23,45,678.90")).toBe("text-base sm:text-2xl");
+    const html = renderToStaticMarkup(<StatTile label="Equity" value="−12,900.00" />);
+    expect(html).toContain("text-lg sm:text-2xl");
+    expect(html).toContain("[overflow-wrap:anywhere]");
+  });
+});

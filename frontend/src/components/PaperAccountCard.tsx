@@ -23,7 +23,7 @@ const BELOW_ZERO = "below zero - practice only";
 export function PaperBalanceTile({ balance, v2 }: { balance: number; v2: boolean }) {
   const below = v2 && balance < 0;
   return (
-    <StatTile label="Balance" tone={below ? "down" : "default"} value={below
+    <StatTile label="Balance" tone={below ? "down" : "default"} valueText={formatNumber(balance, 2)} value={below
       ? <span className="flex flex-col"><span>{formatNumber(balance, 2)}</span>
           <span className="text-t12 font-semibold text-down" data-testid="paper-below-zero">{BELOW_ZERO}</span></span>
       : formatNumber(balance, 2)} />

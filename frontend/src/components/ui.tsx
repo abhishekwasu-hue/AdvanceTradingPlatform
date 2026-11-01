@@ -56,11 +56,23 @@ export function signClass(value: number | null | undefined, decimals = 2): strin
   return tone === "up" ? "text-up" : tone === "down" ? "text-down" : "";
 }
 
+/** PAPER-NR / owner rule D.3 (phone layout: nothing cut off): the value's size step by its length, below the sm
+ * breakpoint only (a two-column phone grid); sm and up keep the full 2xl. Every step is a font-size token. */
+export function statValueSize(text: string | null): string {
+  const n = text === null ? 0 : text.length;
+  if (n >= 14) return "text-base sm:text-2xl";
+  if (n >= 10) return "text-lg sm:text-2xl";
+  if (n >= 8) return "text-xl sm:text-2xl";
+  return "text-2xl";
+}
+
 export function StatTile({
-  label, value, tone = "default", icon: Icon, accentClass,
+  label, value, valueText, tone = "default", icon: Icon, accentClass,
 }: {
   label: string;
   value: ReactNode;
+  /** The value as plain text, for its size step when `value` is not a string or number itself. */
+  valueText?: string;
   tone?: "default" | "up" | "down";
   icon?: LucideIcon;
   /** Deprecated (P1.3: colour only for meaning) - accepted for old call sites and ignored; a tile is neutral unless
@@ -70,13 +82,15 @@ export function StatTile({
   void accentClass;
   const toneClass = tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-fg";
   const iconToneClass = tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-fg-muted";
+  const text = valueText ?? (typeof value === "string" || typeof value === "number" ? String(value) : null);
   return (
-    <div className="rounded-xl border border-border bg-surface-1 shadow-card px-4 py-3">
+    <div className="min-w-0 rounded-xl border border-border bg-surface-1 shadow-card px-4 py-3">
       <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-fg-muted">
         {Icon && <Icon size={12} className={iconToneClass} />}
         {label}
       </div>
-      <div className={`font-tabular text-2xl font-extrabold mt-0.5 ${toneClass}`}>{value}</div>
+      {/* Never cut off: a length step, then a wrap (anywhere) as the last resort for a value longer still. */}
+      <div className={`font-tabular ${statValueSize(text)} font-extrabold mt-0.5 [overflow-wrap:anywhere] ${toneClass}`}>{value}</div>
     </div>
   );
 }

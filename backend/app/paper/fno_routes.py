@@ -491,7 +491,8 @@ async def basket_evaluate(body: EvaluateBody, user: User = Depends(get_current_u
     if body.spot is None:
         raise HTTPException(status_code=422, detail="The underlying's price (spot) is needed for the payoff.")
     legs = body.asks()
-    out = await fno_basket.evaluate(session, legs, body.spot)
+    from app.option_chain.chain_view import risk_free_rate_for
+    out = await fno_basket.evaluate(session, legs, body.spot, rate=await risk_free_rate_for(session, user))   # M68 PR-4 (TS1-102)
     if not out.get("ok") or not (body.with_open or body.margin_pair):
         return out
     from app.paper import fno_term

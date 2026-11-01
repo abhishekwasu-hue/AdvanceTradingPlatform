@@ -330,6 +330,23 @@ async def next_on_expiry_day(session: AsyncSession, user: Any) -> bool:
     return (await option_defaults.load(session, user)).expiry_day_roll is True
 
 
+async def options_settings(session: AsyncSession, user: Any) -> Any:
+    """M68 PR-4: the user's own Settings > Trade settings > Options (app/instruments/option_defaults.py), for the option
+    pages that may not import the instruments layer themselves (the options builder, research only)."""
+    from app.instruments import option_defaults
+    return await option_defaults.load(session, user)
+
+
+def options_field_error(loc: tuple[str, ...], name: str) -> dict[str, Any]:
+    from app.instruments import option_defaults
+    return option_defaults.field_error(loc, name)
+
+
+def rate_of(own: Any) -> float:
+    from app.instruments import option_defaults
+    return option_defaults.risk_free_rate(own)
+
+
 async def risk_free_rate_for(session: AsyncSession, user: Any) -> float:
     """M68 PR-4 (TS1-100): the rate this user's Greeks use - his own, else the platform's model input."""
     from app.instruments import option_defaults

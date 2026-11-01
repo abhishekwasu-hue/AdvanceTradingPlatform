@@ -239,13 +239,16 @@ async def _own_rate(session: AsyncSession, user: User, body: Any) -> str:
     """M68 PR-4 (TS1-102): the rate the Greeks use - the request's, else his own, else the platform's (labelled)."""
     if body.rate is not None:
         return "request"
-    from app.instruments import option_defaults
-    own = await option_defaults.load(session, user)
-    body.rate = option_defaults.risk_free_rate(own)
+    from app.option_chain import chain_view
+    own = await chain_view.options_settings(session, user)
+    body.rate = chain_view.rate_of(own)
     return "yours" if own.risk_free_rate is not None else "platform"
 
 
 def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
+    if body.rate is None:                   # a caller that read no user (M68 PR-4): the platform's labelled model input
+        from app.core.config import RISK_FREE_RATE
+        body.rate = RISK_FREE_RATE
     as_of: Union[date, datetime] = body.as_of or datetime.now().astimezone()
     legs = _legs(body, as_of)
     prices = build_default_price_range(body.spot, num_points=body.points, range_pct=body.range_pct)
@@ -315,17 +318,17 @@ async def suggest(body: SuggestBody, user: User = Depends(get_current_user),
                   session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """A ported selector rule on the chain; the rule and its numbers come back with the result so the page can show
     them. None when the chain cannot give a complete structure - never a partial one."""
-    from app.instruments import option_defaults
-    own = await option_defaults.load(session, user)        # M68 PR-4 (TS1-103): his own numbers, never ATP's
+    from app.option_chain import chain_view
+    own = await chain_view.options_settings(session, user)  # M68 PR-4 (TS1-103): his own numbers, never ATP's
     if body.pop_threshold_pct is None:
         body.pop_threshold_pct = own.builder_pop_pct
     if body.strikes_otm is None:
         body.strikes_otm = own.builder_strikes_otm
     problems = []
     if body.rule in ("iron_condor", "iron_butterfly", "credit_spread") and body.pop_threshold_pct is None:
-        problems.append(option_defaults.field_error(("pop_threshold_pct",), "builder_pop_pct"))
+        problems.append(chain_view.options_field_error(("pop_threshold_pct",), "builder_pop_pct"))
     if body.rule == "credit_spread_fixed" and body.strikes_otm is None:
-        problems.append(option_defaults.field_error(("strikes_otm",), "builder_strikes_otm"))
+        problems.append(chain_view.options_field_error(("strikes_otm",), "builder_strikes_otm"))
     if problems:
         raise HTTPException(status_code=422, detail=problems)
     spot = body.chain.underlying_ltp

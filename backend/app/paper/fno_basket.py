@@ -114,14 +114,15 @@ def range_pct(spot: float, builder_legs: Sequence[Dict[str, Any]], low: float = 
     return float(min(60.0, max(low, -(-(far * 100 * 1.25 + 2) // 1))))
 
 
-def _compute(builder_legs: List[Dict[str, Any]], spot: float, as_of: Optional[datetime]) -> Dict[str, Any]:
+def _compute(builder_legs: List[Dict[str, Any]], spot: float, as_of: Optional[datetime], rate: float | None = None) -> Dict[str, Any]:
     from app.options_builder.routes import EvaluateBody, _evaluate
     body = EvaluateBody.model_validate({"legs": builder_legs, "spot": spot, "as_of": as_of, "range_pct": range_pct(spot, builder_legs),
-                                        "points": 241})
+                                        "points": 241, "rate": rate})
     return _evaluate(body)
 
 
-async def evaluate(session: AsyncSession, legs: Sequence[LegAsk], spot: float, *, as_of: Optional[datetime] = None) -> Dict[str, Any]:
+async def evaluate(session: AsyncSession, legs: Sequence[LegAsk], spot: float, *, as_of: Optional[datetime] = None,
+                   rate: float | None = None) -> Dict[str, Any]:
     """The basket's numbers at the planning prices. Every leg needs a price (the chain's, or the user's own)."""
     contracts, errors = await _contracts(session, legs)
     missing = [label(leg) for leg in legs if leg.price is None or leg.price <= 0]
@@ -131,7 +132,7 @@ async def evaluate(session: AsyncSession, legs: Sequence[LegAsk], spot: float, *
         return {"ok": False, "errors": errors}
     builder_legs = [_builder_leg(leg, c.lot_size, float(leg.price or 0)) for leg, c in zip(legs, contracts) if c is not None]
     try:
-        out = await run_in_threadpool(_compute, builder_legs, spot, as_of)
+        out = await run_in_threadpool(_compute, builder_legs, spot, as_of, rate)   # M68 PR-4: the user's own rate
     except (HTTPException, ValidationError, ValueError) as exc:     # the engine's own plain reason (an IV it cannot solve)
         detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
         logger.info("FNO basket numbers not computed: %s", detail)

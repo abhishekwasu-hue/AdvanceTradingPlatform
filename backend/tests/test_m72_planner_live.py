@@ -117,3 +117,22 @@ def test_json_report(capsys):
     assert planner_live.main(["--dry-run", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["eval"]["overall"]["n"] == 60 and "total_inr" in data and len(data["runs"]) > 60
+
+
+def test_calc_tools_run_for_real_in_the_eval():
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from app.ai.tools import ToolContext
+    from evals import runner
+    seen = []
+    tool = planner_live._recorded_tool(runner.recorded_runner({}), seen)
+    ctx = ToolContext(planner_live._NoWriteSession(), 1, SimpleNamespace(id=1, tenant_id=1), datetime.now(UTC))
+
+    async def go():
+        return (await tool("calc_sum", {"values": [1.5, 2.5]}, ctx),
+                await tool("calc_option_payoff", {"legs": [{"right": "CE", "side": "SELL", "strike": 25100, "premium": 40, "quantity": 75}]}, ctx),
+                await tool("get_my_orders", {}, ctx))
+    total, payoff, orders = planner_live.asyncio.run(go())
+    assert total.ok and total.data["sum"] == 4.0 and payoff.ok and payoff.data["net_premium"] == 3000
+    assert not orders.ok and orders.error == "no recorded result" and seen == ["calc_sum", "calc_option_payoff"]

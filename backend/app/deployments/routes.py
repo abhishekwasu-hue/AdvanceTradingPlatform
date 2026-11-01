@@ -237,9 +237,12 @@ class DeploymentCreateRequest(ContractRulesRequest):
     holding: Literal["INTRADAY", "SWING"] | None = None
     order_style: Literal["MARKET", "PROTECTED_LIMIT"] | None = None
     market_protection_pct: Optional[float] = Field(default=None, ge=0.05, le=5.0)
-    # Z3 / BT2: APPROVAL - every entry signal becomes a proposal and only an approved one places a PAPER order. Needs the
-    # `approval_only_entries` flag; with the flag on every deployment is approval-only whatever this says.
-    entry_mode: Literal["AUTO", "APPROVAL"] = "AUTO"
+    # Z3 / BT2: APPROVAL - every entry signal becomes a proposal and only an approved one places a PAPER order; with the
+    # organisation's `approval_only_entries` flag on every deployment is approval-only whatever this says.
+    # M68 PR-6 (TS1-060 / 061): no pre-chosen mode and no flag needed - it is his own choice for THIS bot. Not sent = the
+    # bot follows his Trade settings (Automation > New entries) at each entry; Not set there either = it places no entry
+    # until he chooses ("Needs your setting: New entries" on the bot card).
+    entry_mode: Literal["AUTO", "APPROVAL"] | None = None
     # Strategy templates section 5: a template's exit choice (where the stop comes from, when to take profit); omitted =
     # as before (the template's own level as the stop, no target; a spread's credit levels).
     template_exits: Optional[TemplateExitsBody] = None
@@ -298,7 +301,12 @@ class DeploymentResponse(BaseModel):
     holding: str | None = None            # M68 PR-1: None = Not set (the bot follows his Trade settings)
     order_style: str | None = None
     market_protection_pct: Optional[float] = None
-    entry_mode: str = "AUTO"
+    entry_mode: str | None = None          # M68 PR-6: the bot's own choice; None = it follows his Trade settings
+    # M68 PR-6 (review): the mode in effect now (the organisation's approval flag, else the bot's own, else its owner's
+    # Trade settings > Automation > New entries; None = Not set anywhere - the bot places nothing) and whether it follows
+    # the Trade settings. Filled by the routes (`_with_entry_modes`).
+    entry_mode_in_effect: str | None = None
+    entry_mode_follows_settings: bool = False
     template_exits: Optional[dict] = None
 
     @classmethod
@@ -326,7 +334,7 @@ class DeploymentResponse(BaseModel):
             oi_gates=[g for g in (getattr(record, "oi_gates", None) or "").split(",") if g] or None,
             holding=getattr(record, "holding", None),
             order_style=getattr(record, "order_style", None), market_protection_pct=getattr(record, "market_protection_pct", None),
-            entry_mode=getattr(record, "entry_mode", None) or "AUTO",
+            entry_mode=getattr(record, "entry_mode", None),
             template_exits=_exits_answer(record),
         )
 
@@ -341,6 +349,22 @@ def _holds_spread(request: "DeploymentCreateRequest") -> bool:
     """M55 T1: "Hold for days" on a defined-risk credit structure (bull put, bear call, iron condor, iron butterfly)."""
     return (request.holding == "SWING" and request.instrument_kind == InstrumentKind.OPTION
             and can_hold_for_days(request.option_strategy))
+
+
+async def _with_entry_modes(session: AsyncSession, tenant_id: int, records: list, out: list) -> list:
+    """M68 PR-6 (review): each bot's entry mode in effect and whether it follows its owner's Trade settings (one read per
+    owner). Reads only."""
+    from app.execution import approval, automation
+    flag = await approval.flag_on(session, tenant_id)
+    modes: dict[int | None, str | None] = {}
+    for record, response in zip(records, out):
+        own = getattr(record, "entry_mode", None)
+        owner = getattr(record, "created_by", None)
+        if own is None and owner not in modes:
+            modes[owner] = (await automation.load_for(session, owner)).approval_mode
+        response.entry_mode_follows_settings = own is None
+        response.entry_mode_in_effect = "APPROVAL" if flag else (own if own is not None else modes.get(owner))
+    return out
 
 
 async def _own_order_defaults(session: AsyncSession, user: User, request: "DeploymentCreateRequest") -> None:
@@ -527,10 +551,8 @@ async def create_deployment(
         template_exits = exit_settings.checked(strategy, request.template_exits, request.instrument_kind, request.option_strategy)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"problems": exc.args[0]}) from exc
-    if request.entry_mode == "APPROVAL":
-        from app.execution import approval
-        if not await approval.flag_on(session, user.tenant_id):
-            raise HTTPException(status_code=400, detail="Approval-only entries are not enabled on this platform (flag approval_only_entries)")
+    # M68 PR-6 (TS1-060, review): a bot stores an entry mode ONLY when he picked one in this bot's form. Not sent = the bot
+    # follows his Trade settings > Automation > New entries at each entry (NULL); with that Not set too it places nothing.
 
     # Phase AS: a swing deployment reads daily candles (checked by _check_holding); the intraday
     # base-timeframe rules below are for everything else.
@@ -651,7 +673,7 @@ async def create_deployment(
     await session.commit()
     await session.refresh(record)
     logger.info("Deployment %s created: %s %s %s", record.id, record.strategy_id, record.symbol, record.mode)
-    return DeploymentResponse.from_record(record)
+    return (await _with_entry_modes(session, user.tenant_id, [record], [DeploymentResponse.from_record(record)]))[0]
 
 
 @router.post("/preview-contract")
@@ -798,7 +820,8 @@ async def list_deployments(
         query = query.where(StrategyDeploymentRecord.status != DeploymentStatus.STOPPED.value)
     rows = await session.scalars(query.order_by(StrategyDeploymentRecord.created_at.desc()))
     counts = await _open_position_counts(session, user.tenant_id)
-    return [DeploymentResponse.from_record(r, counts.get(r.id, 0)) for r in rows]
+    rows = list(rows)
+    return await _with_entry_modes(session, user.tenant_id, rows, [DeploymentResponse.from_record(r, counts.get(r.id, 0)) for r in rows])
 
 
 @router.get("/{deployment_id}", response_model=DeploymentResponse)
@@ -807,7 +830,7 @@ async def get_deployment(
 ) -> DeploymentResponse:
     record = await _get_owned_or_404(deployment_id, user, session)
     counts = await _open_position_counts(session, user.tenant_id)
-    return DeploymentResponse.from_record(record, counts.get(record.id, 0))
+    return (await _with_entry_modes(session, user.tenant_id, [record], [DeploymentResponse.from_record(record, counts.get(record.id, 0))]))[0]
 
 
 @router.get("/{deployment_id}/why")

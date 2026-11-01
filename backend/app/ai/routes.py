@@ -840,6 +840,13 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
     rules otherwise. Read-only. The answer is in English whatever language the message is written in (the owner's ruling:
     only the strategy interview is trilingual)."""
     lang = AI_LANGUAGE
+    from app.ai.copilot_chat import REFUSALS, refusal_kind
+    kind = refusal_kind(message)
+    if kind is not None:
+        # M72 PR-1a: the same refusals as the Copilot chat and the agent (an order, an exit to block, another person's
+        # data, advice / a tip / a promise - English, Marathi, Hindi); nothing is read and no model is called.
+        return {"intent": "guide", "language": lang, "action": copilot.action_for(lang, "guide"), "source": "rules",
+                "answer": REFUSALS[kind], "refused": kind}
     name = copilot.intent(message)
     out: dict = {"intent": name, "language": lang, "action": copilot.action_for(lang, name), "source": "rules"}
     if name == "guide":
@@ -905,6 +912,7 @@ async def agent_ask(body: AgentAskBody, user: User = Depends(require_ai_acknowle
     return {"answer": answer.text, "source": answer.source, "language": lang, "note": answer.note, "numbers": answer.numbers,
             "proposals": answer.proposals,                                   # PROPOSED - decided under AI Copilot, never auto-run
             "claims": answer.claims, "disclaimers": answer.disclaimers,      # each claim cites a tool call id below
+            "refused": answer.refused,                                       # M72 PR-1a: the chat's refusal kind (no model call)
             "agent": {"used": True, "run_id": answer.run_id, "stopped": answer.stopped, "contract": answer.contract,
                       "tools": [{k: c[k] for k in ("id", "name", "ok", "as_of", "duration_ms")} for c in answer.tool_calls]},
             "usage": metering.spent_by(provider)}

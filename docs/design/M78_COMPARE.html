@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M78 band label legibility</title>
+<!-- M78 (W1-F1..F5, follow-up of M75 W-1): before = the production build of #847 (9ca2305e), after = this branch.
+     Captured with Playwright (e2e/m78-capture-v2.e2e.ts, capture-only) on the made-up bars of e2e/chartsMocks.ts. -->
+<style>
+:root { color-scheme: light; --bg: 247 248 250; --fg: 15 23 42; --muted: 91 100 117; --line: 227 230 235; --up: 10 125 85; --down: 210 44 61; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; } }
+:root[data-theme="dark"] { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; }
+body { margin: 0; padding: 16px; background: rgb(var(--bg)); color: rgb(var(--fg)); font: 14px/1.45 system-ui, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 24px 0 8px; }
+p, li { color: rgb(var(--muted)); }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgb(var(--line)); vertical-align: top; }
+.bad { color: rgb(var(--down)); font-weight: 600; } .good { color: rgb(var(--up)); font-weight: 600; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pair.wide { grid-template-columns: 1fr; }
+figure { margin: 0; } figcaption { font-size: 12px; color: rgb(var(--muted)); margin-bottom: 4px; }
+img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-radius: 6px; display: block; }
+@media (max-width: 640px) { .pair { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<h1>M78: band labels readable on every band layer</h1>
+<table>
+  <thead><tr><th>Item</th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>F1 label over candles</td><td class="bad">text painted under the candles (bottom layer); wicks cross it</td><td class="good">rounded chip (chart background, 85 %) + text in a second view above the series</td></tr>
+    <tr><td>F2 contrast (text / chip, token values)</td><td class="bad">text on the band fill, no chip</td><td class="good">dark: buyer 8.59, seller 5.20; light: buyer 5.02, seller 6.47 (all &ge; 4.5); a colour under 4.5 falls back to the chart text token (dark 11.87, light 7.58)</td></tr>
+    <tr><td>F2 size</td><td class="bad">11 px (below the 12 px axis labels)</td><td class="good">the chart's axis-label size (12 px at Normal, grows with the text size)</td></tr>
+    <tr><td>F3 same text</td><td class="bad">Copilot "Seller area"; Charts "Seller area · 15m · fresh"</td><td class="good">one formatter: "Seller area · 1d · fresh" / "Seller area · 15m · fresh" (parts the data lacks are dropped)</td></tr>
+    <tr><td>F4 left edge</td><td class="bad">text 4 px from the pane edge</td><td class="good">chip 4 px inside the pane, text 8 px (same on the right, before the price axis)</td></tr>
+    <tr><td>F5 band prices</td><td class="bad">none (axis tags removed in #847)</td><td class="good">tap (phone) / hover (desktop) on a band or its label: label, Top, Bottom in place; tap elsewhere / Escape closes</td></tr>
+  </tbody>
+</table>
+<p>Measured, not hidden: the chip lets 15 % of what is under it through; with a candle body right under the text the
+worst cases are dark seller 4.18 and light buyer 3.88 (against the chip alone: 5.20 / 5.02).</p>
+<h2>Copilot answer chart ("Read the SENSEX chart"; the area carries its timeframe and state)</h2>
+<h3>Phone 390 - light</h3>
+<div class="pair">
+  <figure><figcaption>Before (#847)</figcaption><img src="m78/before-copilot-390-light.png" alt="Before, copilot, 390 light"></figure>
+  <figure><figcaption>After (this PR)</figcaption><img src="m78/after-copilot-390-light.png" alt="After, copilot, 390 light"></figure>
+</div>
+<h3>Phone 390 - dark</h3>
+<div class="pair">
+  <figure><figcaption>Before (#847)</figcaption><img src="m78/before-copilot-390-dark.png" alt="Before, copilot, 390 dark"></figure>
+  <figure><figcaption>After (this PR)</figcaption><img src="m78/after-copilot-390-dark.png" alt="After, copilot, 390 dark"></figure>
+</div>
+<h3>Desktop 1440 - light</h3>
+<div class="pair">
+  <figure><figcaption>Before (#847)</figcaption><img src="m78/before-copilot-1440-light.png" alt="Before, copilot, 1440 light"></figure>
+  <figure><figcaption>After (this PR)</figcaption><img src="m78/after-copilot-1440-light.png" alt="After, copilot, 1440 light"></figure>
+</div>
+<h3>Desktop 1440 - dark</h3>
+<div class="pair">
+  <figure><figcaption>Before (#847)</figcaption><img src="m78/before-copilot-1440-dark.png" alt="Before, copilot, 1440 dark"></figure>
+  <figure><figcaption>After (this PR)</figcaption><img src="m78/after-copilot-1440-dark.png" alt="After, copilot, 1440 dark"></figure>
+</div>
+<h2>Charts tab - "Read this chart" (seller + buyer areas)</h2>
+<h3>Phone 390 - light</h3>
+<div class="pair">
+  <figure><figcaption>Before (#847)</figcaption><img src="m78/before-charts-390-light.png" alt="Before, charts, 390 light"></figure>
+  <figure><figcaption>After (this PR)</figcaption><img src="m78/after-charts-390-light.png" alt="After, charts, 390 light"></figure>
+</div>
+<h3>Phone 390 - dark</h3>
+<div class="pair">
+  <figure><figcaption>Before (#847)</figcaption><img src="m78/before-charts-390-dark.png" alt="Before, charts, 390 dark"></figure>
+  <figure><figcaption>After (this PR)</figcaption><img src="m78/after-charts-390-dark.png" alt="After, charts, 390 dark"></figure>
+</div>
+<h3>Desktop 1440 - light</h3>
+<div class="pair">
+  <figure><figcaption>Before (#847)</figcaption><img src="m78/before-charts-1440-light.png" alt="Before, charts, 1440 light"></figure>
+  <figure><figcaption>After (this PR)</figcaption><img src="m78/after-charts-1440-light.png" alt="After, charts, 1440 light"></figure>
+</div>
+<h3>Desktop 1440 - dark</h3>
+<div class="pair">
+  <figure><figcaption>Before (#847)</figcaption><img src="m78/before-charts-1440-dark.png" alt="Before, charts, 1440 dark"></figure>
+  <figure><figcaption>After (this PR)</figcaption><img src="m78/after-charts-1440-dark.png" alt="After, charts, 1440 dark"></figure>
+</div>
+<h2>F5 - a tap on a band (phone 390, dark)</h2>
+<div class="pair wide">
+  <figure><figcaption>After (this PR): the seller area's prices in place</figcaption><img src="m78/after-tooltip-390-dark.png" alt="Tooltip with the seller area's top and bottom" style="max-width:390px"></figure>
+</div>
+</main>
+</body>
+</html>

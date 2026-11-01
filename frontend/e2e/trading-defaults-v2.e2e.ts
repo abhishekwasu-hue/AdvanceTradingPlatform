@@ -26,7 +26,7 @@ const SOME = { ...EMPTY, instrument_kind: "OPTION", option_strategy: "SINGLE", o
   ticket: { lots: 2, product: "NRML", order_type: "LIMIT" } };
 const TODAY_BODY = { strategy_id: "orb_15m_5m", symbol: "NIFTY BANK", exchange: "NSE", timeframe: "1min", mode: "PAPER", holding: "INTRADAY",
   instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1,
-  order_style: "MARKET" };                       // M68 PR-1: the entry style the user picks on the form (none pre-selected)
+  order_style: "MARKET", entry_mode: "AUTO" };   // M68 PR-1 / PR-6: the entry style and New entries the user picks (none pre-selected)
 
 const LIMITS_OFF = { liquidity: { on: false, max_spread_pct: null, min_oi: null } };
 const LIMITS_ON = { liquidity: { on: true, max_spread_pct: 2.5, min_oi: 5000 } };
@@ -241,6 +241,6 @@ test.describe("My trading defaults behaviour", () => {
     const body = JSON.parse(posts(server)[0].raw ?? "{}") as Record<string, unknown>;
     expect(body).toMatchObject({ mode: "PAPER", instrument_kind: "OPTION", expiry_rule: "NEXT", strike_rule: "OTM", strike_offset: 1, max_lots: 3,
       exit_rules: { trailing_stop_pct: 1.5 } });
-    expect(body).not.toHaveProperty("entry_mode");
+    expect(body).toHaveProperty("entry_mode", "AUTO");      // M68 PR-6: what he picked on the form ("Placed automatically"), not a default
   });
 });

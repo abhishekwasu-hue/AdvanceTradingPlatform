@@ -28,7 +28,7 @@ describe("SCR-FIX E1: one not-advice line per page", () => {
 
   it("the evidence dialog: one footnote at its foot, the server's note in Details", () => {
     const pack = evidenceSample as unknown as EvidencePack;
-    const html = renderToStaticMarkup(<EvidenceView pack={pack} hiddenBlocks={new Set()} showFailed={false} onSend={() => undefined} />);
+    const html = renderToStaticMarkup(<MemoryRouter><EvidenceView pack={pack} hiddenBlocks={new Set()} showFailed={false} onSend={() => undefined} /></MemoryRouter>);
     expect(count(html, "data-disclaimer")).toBe(1);
     expect(html).toContain(DISCLAIMER_TEXT);
     expect(html).toContain('data-details="screener.evidence.about"');

@@ -431,8 +431,9 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(page.getByTestId("watch-proposal")).toHaveCount(0);           // the fixture's waiting proposals are entries
     await expect(page.getByTestId("tab-watchtower")).not.toContainText("2");    // the tab badge does not count them either
     await link.click();
-    await expect(page).toHaveURL(/\/signals\?proposal=901$/);
-    await expect(page.locator("[data-signal-detail]")).toHaveAttribute("data-signal-detail", "action:901");
+    // M75 NAV-2: Signals opens in place over the Watchtower, on the proposal (the path stays).
+    await expect(page).toHaveURL(/\/copilot\/watchtower\?panel=signals:901$/);
+    await expect(page.locator("[data-inplace-panel='signals'] [data-signal-detail]")).toHaveAttribute("data-signal-detail", "action:901");
   });
 });
 

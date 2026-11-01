@@ -140,6 +140,31 @@ function StaticHero() {
   );
 }
 
+/** M75 NAV-2: one of the seven tools on its own, for the in-place Copilot panel - the same tab component with the
+ * same first-use acknowledgement and data, without the hero and the tab bar (the panel's title names it). */
+export function CopilotToolBody({ tab }: { tab: CopilotTab }) {
+  return <I18nextProvider i18n={copilotI18n}><ToolBody tab={tab} /></I18nextProvider>;
+}
+
+function ToolBody({ tab }: { tab: CopilotTab }) {
+  const t = useCopilotT();
+  const { user } = useAuth();
+  if (!user) return <Card><p className="text-sm text-fg-muted">{t("shell.signIn")}</p></Card>;
+  const Panel = TAB_COMPONENTS[tab];
+  return (
+    <CopilotMotion>
+      <div className="space-y-4" data-copilot-tool={tab}>
+        <FirstUseModal placeholder={null}>
+          <CopilotDataProvider>
+            <Suspense fallback={<TabSkeleton />}><Panel /></Suspense>
+          </CopilotDataProvider>
+        </FirstUseModal>
+        <p className="text-xs leading-relaxed text-fg-muted" data-disclaimer>{t("chat.disclaimer")}</p>
+      </div>
+    </CopilotMotion>
+  );
+}
+
 export default function AiCopilotPage() {
   return <I18nextProvider i18n={copilotI18n}><Shell /></I18nextProvider>;
 }

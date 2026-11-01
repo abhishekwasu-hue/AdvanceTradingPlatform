@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useBrokerChart } from "../components/chartHistory";
 import ProChart, { useLiveLtp } from "../components/ProChart";
@@ -18,6 +18,8 @@ import { chartWindowRedirect } from "../chart/chartsPage";
 import { useWaitCap } from "../shell/shellWait";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
+/** M75 NAV-3: the multi-chart workspace opens inside this window (its own chunk, read only when it is opened). */
+const ChartWorkspace = lazy(() => import("./ChartWorkspace"));
 
 /**
  * A single broker chart filling a whole browser tab, opened from a chart's "New tab" button:
@@ -66,6 +68,10 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   const [engine, setEngine] = useState<ChartEngine | null>(null);
   // CH5: "Open in workspace" only while the multi-chart workspace is on for this organisation.
   const workspaceOn = !!user && features.on("chart_workspace");
+  // M75 NAV-3: "Open in workspace" lays the workspace over this window in place (starting from this chart); "Back to
+  // the chart" returns to the chart exactly as it was (it stays mounted underneath: timeframe, replay, indicators).
+  const [workspace, setWorkspace] = useState(false);
+  const workspaceParams = useMemo(() => new URLSearchParams({ workspace: "1", chart: symbol, tf: timeframe, exchange }), [symbol, timeframe, exchange]);
   // N4 CH3: bar replay - the chart shows the candles up to the replay bar, the layers are read as of that bar's end
   const [replay, setReplay] = useState<ReplayState>(REPLAY_OFF);
   const [paAvailable, setPaAvailable] = useState(false);
@@ -85,7 +91,17 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   if (firstRead !== "done") return <ChartLoading />;
 
   return (
-    <div className="min-h-screen bg-surface p-4">
+    <>
+    {workspace && (
+      <div data-workspace-in-place>
+        <div className="flex items-center bg-surface px-4 pt-2 text-xs">
+          <button type="button" onClick={() => setWorkspace(false)} data-close-workspace
+            className="rounded border border-border px-1.5 py-0.5 font-semibold text-fg hover:bg-surface-2">Back to the chart</button>
+        </div>
+        <Suspense fallback={<ChartLoading />}><ChartWorkspace params={workspaceParams} /></Suspense>
+      </div>
+    )}
+    <div className="min-h-screen bg-surface p-4" hidden={workspace}>
       <h1 className="sr-only">{symbol} chart</h1>
       <div className="mb-2 flex items-center gap-3 text-xs text-fg-muted">
         <span className="font-semibold text-fg">{exchange}</span>
@@ -93,8 +109,8 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
         {broker && <span>candles via {broker}</span>}
         <span>refreshes every minute · live price every 5 s · scroll left for older history</span>
         {workspaceOn && (
-          <a href={`${window.location.pathname}?${new URLSearchParams({ workspace: "1", chart: symbol, tf: timeframe, exchange }).toString()}`}
-             className="rounded border border-border px-1.5 py-0.5 font-semibold text-fg hover:bg-surface-2">Open in workspace</a>
+          <button type="button" onClick={() => setWorkspace(true)} data-open-workspace
+             className="rounded border border-border px-1.5 py-0.5 font-semibold text-fg hover:bg-surface-2">Open in workspace</button>
         )}
         {error && <span className="text-down">{error}</span>}
       </div>
@@ -118,6 +134,7 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
       <div className="mt-2"><MarketZonesLayer engine={engine} instrument={`${exchange}:${symbol}`} price={lastClose} at={at} /></div>
       <div className="mt-2"><ExpectedMoveLayer engine={engine} instrument={`${exchange}:${symbol}`} enabled={decisionTools} /></div>
     </div>
+    </>
   );
 }
 

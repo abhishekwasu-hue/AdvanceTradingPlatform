@@ -59,7 +59,7 @@ async def series(session: AsyncSession, tenant_id: int | None, key: str, label: 
 
 
 def parse_option_key(key: str) -> tuple[str, str, date, float] | None:
-    """'NFO:NIFTY:CE:2026-07-30:24000' -> ('NIFTY', 'CE', 2026-07-30, 24000.0); anything else None."""
+    """'NFO:NIFTY:CE:2023-03-30:17000' -> ('NIFTY', 'CE', 2023-03-30, 17000.0); anything else None."""
     parts = key.split(":")
     if len(parts) != 5 or parts[0] not in ("NFO", "BFO") or parts[2] not in ("CE", "PE"):
         return None

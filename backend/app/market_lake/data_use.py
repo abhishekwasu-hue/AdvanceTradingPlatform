@@ -76,7 +76,7 @@ def kind_of(label: str) -> str | None:
 
 
 def parse_span(text: str) -> tuple[date, date | None] | None:
-    """'2015 - 2021' -> (2015-01-01, 2021-12-31); 'A onward' -> (A, None); None when no bound is found."""
+    """'2001 - 2003' -> (2001-01-01, 2003-12-31); 'A onward' -> (A, None); None when no bound is found."""
     tokens = _BOUND.findall(text or "")
     if not tokens:
         return None

@@ -116,15 +116,15 @@ def classify(name: str, columns: Iterable[str] = ()) -> Spec | None:
     if re.fullmatch(r"\d{4}-\d{2}", stem) and FO_COLUMNS <= cols:
         return Spec("fo_eod", "", "day", futures=False, official=True)
     up = stem.upper()
-    m = re.fullmatch(r"OE_(FUTURES|INDEX)_(\d+)MIN_([A-Z]+)(_ALL)?", up)
+    m = re.fullmatch(r"OE_(FUTURES|INDEX)_(\d+)MIN_([A-Z]+)(_.*)?", up)
     if m:
         label = _minutes_label(int(m.group(2)))
         return Spec("ohlc", m.group(3), label, futures=m.group(1) == "FUTURES") if label else None
-    m = re.fullmatch(r"([A-Z]+)_(\d+)MINUTE", up)
+    m = re.fullmatch(r"([A-Z]+)_(\d+)MINUTE(_.*)?", up)
     if m:
         label = _minutes_label(int(m.group(2)))
         return Spec("ohlc", m.group(1), label) if label else None
-    m = re.fullmatch(r"([A-Z]+)_FUT_(\d+)M(_ALL)?", up)
+    m = re.fullmatch(r"([A-Z]+)_FUT_(\d+)M(_.*)?", up)
     if m:
         label = _minutes_label(int(m.group(2)))
         return Spec("ohlc", m.group(1), label, futures=True) if label else None
@@ -132,11 +132,11 @@ def classify(name: str, columns: Iterable[str] = ()) -> Spec | None:
     if m:
         label = _minutes_label(int(m.group(2)))
         return Spec("ohlc", m.group(1), label, futures="contract" in cols) if label else None
-    m = re.fullmatch(r"([A-Z]+)_(\d+)H", up)
+    m = re.fullmatch(r"([A-Z]+)_(\d+)H(_.*)?", up)
     if m:
         label = _minutes_label(60 * int(m.group(2)))
         return Spec("ohlc", m.group(1), label) if label else None
-    m = re.fullmatch(r"([A-Z]+)_(D|W)", up)
+    m = re.fullmatch(r"([A-Z]+)_(D|W)(_.*)?", up)
     if m:
         return Spec("ohlc", m.group(1), "day" if m.group(2) == "D" else "week")
     m = re.fullmatch(r"([A-Z]+)_DAILY(_.*)?", up)
@@ -146,7 +146,7 @@ def classify(name: str, columns: Iterable[str] = ()) -> Spec | None:
 
 
 def contract_key(contract: str, fallback_symbol: str) -> tuple[str, str]:
-    """('NIFTY FUT 27 OCT 26') -> ('NFO:NIFTY:FUT:2026-10-27', 'NFO'); a bare symbol -> its index / stock key."""
+    """('NIFTY FUT 30 MAR 23') -> ('NFO:NIFTY:FUT:2023-03-30', 'NFO'); a bare symbol -> its index / stock key."""
     text = " ".join(str(contract or "").upper().split())
     m = _CONTRACT.match(text)
     if not m:

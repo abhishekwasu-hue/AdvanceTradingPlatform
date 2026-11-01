@@ -38,7 +38,7 @@ README = """# synthetic data
 
 | Window | Dates | Use |
 |---|---|---|
-| IS | 2015 - 2021 | calibration |
+| IS | 2001 - 2003 | calibration |
 | CONTAMINATED | 2023-03-01 - 2023-03-02 | regression only |
 | HOLDOUT (sealed) | 2023-03-10 onward | never |
 """
@@ -74,10 +74,10 @@ def make_data(root) -> None:
     fut = [{"timestamp": pd.Timestamp(f"{FRI} 15:{m:02d}:00"), "open": 200.0, "high": 201.0, "low": 199.0, "close": 200.5, "volume": 50 + m,
             "oi": 1000, "contract": "NIFTY FUT 30 MAR 23"} for m in (20, 25, 30)]
     (root / "futures").mkdir(parents=True)
-    pd.DataFrame(fut).to_parquet(root / "futures" / "oe_futures_5min_NIFTY.parquet")
+    pd.DataFrame(fut).to_parquet(root / "futures" / "oe_futures_5min_NIFTY_synthetic.parquet")
     (root / "major_levels_candles").mkdir(parents=True)
     pd.DataFrame([{"timestamp": f"{FRI}T{h:02d}:00:00+05:30", "open": 50.0, "high": 51.0, "low": 49.0, "close": 50.5,
-                   "contract": "GOLD FUT 05 APR 23"} for h in (10, 11)]).to_csv(root / "major_levels_candles" / "GOLD_30m.csv", index=False)
+                   "contract": "GOLD FUT 05 APR 23"} for h in (10, 11)]).to_csv(root / "major_levels_candles" / "GOLD_30m_synthetic.csv", index=False)
     fo = pd.DataFrame([
         {"date": str(THU), "symbol": "NIFTY", "instrument": "OPT", "expiry": "2023-03-30", "strike": 17000.0, "opt_type": "CE",
          "open": 90.0, "high": 95.0, "low": 85.0, "close": 91.0, "settle": 91.0, "volume": 10.0, "volume_unit": "contracts", "oi": 5.0},
@@ -128,8 +128,8 @@ def test_seed_import_owner_only_volume_kept_missing_flags_and_idempotent(tmp_pat
     report = _import(tmp_path)
     assert report.status == "ok", report.as_dict()
     done = {f.path: f for f in report.files if f.status == "done"}
-    assert set(done) == {"upstox/NIFTY_1m_synthetic.csv.gz", "futures/oe_futures_5min_NIFTY.parquet",
-                         "major_levels_candles/GOLD_30m.csv", "nse_fo_bhavcopy/NIFTY/2023-03.parquet"}
+    assert set(done) == {"upstox/NIFTY_1m_synthetic.csv.gz", "futures/oe_futures_5min_NIFTY_synthetic.parquet",
+                         "major_levels_candles/GOLD_30m_synthetic.csv", "nse_fo_bhavcopy/NIFTY/2023-03.parquet"}
     # owner-only: every seeded row is in the owner's private store, none in another organisation's, and the M55 T4
     # shared index scope (another organisation reading the owner's index rows) never sees a seeded row
     assert _count(R, R.source.like("seed:%"), R.tenant_id == other.tenant_id) == 0
@@ -174,9 +174,9 @@ def test_seed_import_owner_only_volume_kept_missing_flags_and_idempotent(tmp_pat
     assert _count(HistoryImportFileRecord, HistoryImportFileRecord.object_key.like("trade-data:%"), HistoryImportFileRecord.tenant_id == owner.tenant_id) == 4
     # a changed file (new sha256) is read again: its new bar is written, identical bars skipped
     pd.DataFrame([{"timestamp": f"{FRI}T12:00:00+05:30", "open": 50.0, "high": 51.0, "low": 49.0, "close": 50.5,
-                   "contract": "GOLD FUT 05 APR 23"}]).to_csv(tmp_path / "major_levels_candles" / "GOLD_30m.csv", mode="a", header=False, index=False)
+                   "contract": "GOLD FUT 05 APR 23"}]).to_csv(tmp_path / "major_levels_candles" / "GOLD_30m_synthetic.csv", mode="a", header=False, index=False)
     third = _import(tmp_path)
-    gold = next(f for f in third.files if f.path.endswith("GOLD_30m.csv"))
+    gold = next(f for f in third.files if f.path.endswith("GOLD_30m_synthetic.csv"))
     assert gold.status == "done" and gold.inserted == 1 and gold.skipped == 2
 
 
@@ -280,7 +280,7 @@ def test_policy_windows_belong_to_the_owner_only_and_reload_idempotently(tmp_pat
 def test_policy_parsing_is_generic():
     windows = data_use.parse_readme(README, ["NIFTY"])
     assert [(w.kind, w.start, w.end) for w in windows] == [
-        ("in_sample", date(2015, 1, 1), date(2021, 12, 31)), ("contaminated", date(2023, 3, 1), date(2023, 3, 2)),
+        ("in_sample", date(2001, 1, 1), date(2003, 12, 31)), ("contaminated", date(2023, 3, 1), date(2023, 3, 2)),
         ("sealed", date(2023, 3, 10), None)]
     assert data_use.parse_readme("| Window | Dates | Use |\n|---|---|---|\n| HOLDOUT | 2020 onward | x |\n", ["*"]) == []   # no data-use heading
     assert data_use.parse_span("2022-01 - 2024-02") == (date(2022, 1, 1), date(2024, 2, 29))

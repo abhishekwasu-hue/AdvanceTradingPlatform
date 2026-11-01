@@ -24,11 +24,10 @@ const EMPTY = { instrument_kind: null, option_position: null, expiry_rule: null,
 const SOME = { ...EMPTY, instrument_kind: "OPTION", option_strategy: "SINGLE", option_position: "BUY", expiry_rule: "NEXT", strike_rule: "OTM", strike_offset: 1,
   max_lots: 2, exit_rules: { trailing_stop_pct: 1.5, break_even_at_r: null, time_exit_minutes: null, time_exit_at: null },
   ticket: { lots: 2, product: "NRML", order_type: "LIMIT" } };
+// M68 PR-1 / PR-4: the entry style, side, expiry and strike the user picks on the form (none pre-selected), in that order
 const TODAY_BODY = { strategy_id: "orb_15m_5m", symbol: "NIFTY BANK", exchange: "NSE", timeframe: "1min", mode: "PAPER", holding: "INTRADAY",
-  instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0,
-  order_style: "MARKET",                         // M68 PR-1: the entry style the user picks on the form (none pre-selected)
-  max_lots: 1,                                   // M68 PR-2: the lots he enters on the form (none pre-filled)
-  entry_mode: "AUTO" };                          // M68 PR-6: the New entries he picks (none pre-selected)
+  instrument_kind: "OPTION", option_position: "BUY", order_style: "MARKET", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0,
+  max_lots: 1, entry_mode: "AUTO" };                          // M68 PR-1 / 2 / 4 / 6: what the user picks or enters on the form (none pre-chosen)
 
 const LIMITS_OFF = { liquidity: { on: false, max_spread_pct: null, min_oi: null } };
 const LIMITS_ON = { liquidity: { on: true, max_spread_pct: 2.5, min_oi: 5000 } };
@@ -142,7 +141,7 @@ test.describe("My trading defaults behaviour", () => {
     await choose(page, main.getByLabel("Expiry", { exact: true }), "NEXT");
     await main.getByLabel("Lots for a new bot").fill("0");
     await main.getByRole("button", { name: "Save my defaults" }).click();
-    await expect(main.locator("[data-note='defaults-note']")).toHaveText("Lots for a new bot: a whole number from 1 to 500.");
+    await expect(main.locator("[data-note='defaults-note']")).toHaveText("Lots for a new bot: a whole number of 1 or more.");
     expect(server.sent).toEqual([]);
     await main.getByLabel("Lots for a new bot").fill("2");
     await main.getByLabel("Trailing stop %").fill("1.5");
@@ -197,7 +196,7 @@ test.describe("My trading defaults behaviour", () => {
     const server = await open(page, "/deployments", { prefs: EMPTY });
     await expect(startCard(page).locator("[data-defaults]")).toHaveCount(0);
     await choose(page, startCard(page).getByLabel("Pick a symbol"), "NIFTY BANK");
-    await expect(startCard(page)).toContainText("Trades a NIFTY BANK option at the nearest expiry, your Position size");   // M68 PR-2
+    await expect(startCard(page)).toContainText("Trades a NIFTY BANK option at the expiry in your Trade settings, your Position size");   // M68 PR-2 / PR-4
     await pickEntryStyle(page, startCard(page));
     await expect(startCard(page)).toContainText("Trades a NIFTY BANK option at the nearest expiry, 1 lot");
     await startCard(page).getByRole("button", { name: "Start on paper" }).click();
@@ -209,7 +208,7 @@ test.describe("My trading defaults behaviour", () => {
     const server = await open(page, "/deployments", { prefs: SOME });
     const card = startCard(page);
     await choose(page, card.getByLabel("Pick a symbol"), "NIFTY BANK");
-    await expect(card.locator("[data-defaults-line]")).toContainText("From your defaults: strike 1 step out of the money, next expiry, 2 lots, trailing stop 1.5%.");
+    await expect(card.locator("[data-defaults-line]")).toContainText("From your defaults: option buying, strike 1 step out of the money, next expiry, 2 lots, trailing stop 1.5%.");
     await expect(card).toContainText("Trades a NIFTY BANK option at the next expiry, 2 lots");
     await expect(card.getByRole("link", { name: "Change my defaults" })).toHaveAttribute("href", "/settings/trading-defaults");
     await pickEntryStyle(page, card);

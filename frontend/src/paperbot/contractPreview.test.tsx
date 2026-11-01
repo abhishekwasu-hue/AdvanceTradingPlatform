@@ -19,7 +19,7 @@ describe("UI-28 U7.4: the contract a trading bot would trade", () => {
   });
   it("sends only the bot's contract rules (the same request Start on paper sends)", () => {
     const req = paperBotRequest("orb_15m_5m", "NIFTY", null);
-    expect(rulesOf(req)).toEqual({ instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0 });   // M68 PR-2: no lots chosen for him
+    expect(rulesOf(req)).toEqual({ instrument_kind: "OPTION" });       // M68 PR-4: no pre-chosen side, expiry or strike; PR-2: no lots
   });
   it("offers the preview for an option bot, never for a cash symbol", () => {
     expect(renderToStaticMarkup(<ContractPreviewV2 request={paperBotRequest("orb_15m_5m", "NIFTY", null)} />)).toContain("See the contract it would trade");

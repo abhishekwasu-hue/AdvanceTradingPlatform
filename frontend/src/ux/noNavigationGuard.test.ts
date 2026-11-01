@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
  * the new count printed by this test (the test also fails when the count is lower, so the ratchet never goes slack).
  * `M75_NAV_DUMP=<file>` writes the current list as JSON (used to build the inventory table in the design doc).
  */
-const BASELINE = 90;
+const BASELINE = 73;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SRC = join(ROOT, "src");

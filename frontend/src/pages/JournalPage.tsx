@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, NotebookPen } from "lucide-react";
+import { useAddress } from "../inplace/address";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
 import { Card, StatTile, signTone } from "../components/ui";
@@ -337,7 +338,8 @@ function JournalClassic(_props: PageProps) {
   const shareCard = features.on("ui_v2") && features.on("growth_v2");
   // AUD-T6: "Similar setups" on each row (ui_v2 + setup_recall); a matched row opens here (`?week=...#trade-<id>`).
   const recallOn = features.on("ui_v2") && features.on("setup_recall");
-  const [target] = useState(() => (typeof window === "undefined" ? { week: null, tradeId: null } : journalTarget(window.location.search, window.location.hash)));
+  const address = useAddress();   // M75 NAV-5a: the router's address (a panel's own one inside a panel)
+  const [target] = useState(() => journalTarget(address.search, address.hash));
   const [focusId, setFocusId] = useState<number | null>(target.tradeId);
   const [week, setWeek] = useState<string | undefined>(target.week ?? undefined);
   const openTrade = useCallback((w: string | null, tradeId: number) => { if (w) setWeek(w); setFocusId(tradeId); }, []);

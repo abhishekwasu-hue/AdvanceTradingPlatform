@@ -1,6 +1,7 @@
 import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useAuth } from "../auth/AuthContext";
 import { cx, Skeleton } from "../components/primitives";
 import PageDishV2 from "../growth/PageDishV2";
@@ -134,7 +135,7 @@ export default function SignalsV2() {
         <p className="rounded-panel border border-subtle bg-surface-1 px-space-4 py-space-3 text-t14 text-fg" data-missing-proposal>
           {missing}{" "}
           {othersProposal && (
-            <Link to={`/copilot/watchtower?action=${proposal}`} className="font-semibold text-brand hover:underline">Open the Watchtower</Link>
+            <InPlaceLink to={`/copilot/watchtower?action=${proposal}`} className="font-semibold text-brand hover:underline">Open the Watchtower</InPlaceLink>
           )}
         </p>
       )}

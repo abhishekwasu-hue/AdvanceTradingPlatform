@@ -1,4 +1,5 @@
 import { ChevronLeft, Lock } from "lucide-react";
+import { useInPlace } from "../inplace/InPlaceProvider";
 import { lazy, Suspense, useEffect, useId, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { api } from "../api/client";
@@ -497,7 +498,7 @@ function ExitStep({ flow, setFlow }: { flow: FlowState; setFlow: SetFlow }) {
 type ResultTab = "trades" | "chart" | "analytics";
 
 function ResultStep({ flow, template }: { flow: FlowState; template: StrategyTemplate | null }) {
-  const navigate = useNavigate();
+  const inPlace = useInPlace();   // M75 NAV-5a: the Trading bot opens in place, the flow stays as it was
   const source = useCandleSource(30, { storedHistory: true });
   const [saved, setSaved] = useState<CustomStrategyResponse | null>(null);
   const [savedFor, setSavedFor] = useState<string>("");
@@ -547,11 +548,11 @@ function ResultStep({ flow, template }: { flow: FlowState; template: StrategyTem
     const contract = paperContract(flow.options);
     if (flow.engine === "template" && template) {
       const state: FlowHandoff = { flowStrategy: { strategyId: `template-pick:${template.id}`, symbol: paperSymbol(symbol), contract, name: template.name } };
-      navigate(paperBotPathFor({ template: template.id, timeframe: flow.timeframe, params: {} }), { state });
+      inPlace.open(paperBotPathFor({ template: template.id, timeframe: flow.timeframe, params: {} }), { state });
       return;
     }
     const state: FlowHandoff = { flowStrategy: { strategyId, symbol: paperSymbol(symbol), contract, name: config?.name ?? flow.name } };
-    navigate(PAPER_PATH, { state });
+    inPlace.open(PAPER_PATH, { state });
   }
 
   const sum = result ? resultSummary(result) : null;

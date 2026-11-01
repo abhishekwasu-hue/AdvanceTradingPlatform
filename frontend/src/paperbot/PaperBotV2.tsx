@@ -2,7 +2,8 @@ import { ChevronRight, Pause, Play, Square, Trash2 } from "lucide-react";
 import { LiveBadge, PaperBadge } from "../ui/PaperBadge";
 import { showsPaper } from "../ui/paperWords";
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { api } from "../api/client";
 import { ApiError, errorSentence } from "../api/errors";
 import { useAuth, useOptionalAuth } from "../auth/AuthContext";
@@ -82,9 +83,9 @@ const TEMPLATE_TIMEFRAME = "15m";
 
 /** Strategy templates step 2: `?template=D2` opens the form with that template picked; the idea library's "Adopt as a
  * paper strategy" (IDEA-1) adds `timeframe` and `set.<key>` settings as the pre-fill (strategyTemplates/link.ts). */
-function templateFromUrl(): TemplateLink | null {
+function templateFromUrl(search: string): TemplateLink | null {
   try {
-    return templateLinkFromSearch(window.location.search);
+    return templateLinkFromSearch(search);   // M75 NAV-5a: the router's address (a panel's own one inside a panel)
   } catch {
     return null;
   }
@@ -312,7 +313,7 @@ export default function PaperBotV2(_props: PageProps) {
         <section ref={formRef} className="scroll-mt-20 space-y-space-3">
           {draftNote && <NoteV2 kind="done" testId="draft-saved">{draftNote}</NoteV2>}
           <StartBotV2 library={library} custom={custom} hasBroker={hasBroker} firstField={firstField} onStarted={() => void loadBots()}
-            defaults={defaults} approvalAllowed templates={templates} initialTemplate={templateFromUrl()}
+            defaults={defaults} approvalAllowed templates={templates} initialTemplate={templateFromUrl(location.search)}
             preselect={preselect} />
         </section>
       )}
@@ -617,7 +618,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
       <div className="space-y-space-4">
         {hasBroker === false && (
           <NoteV2 kind="warn">
-            A trading bot reads live prices from your broker. <Link to={BROKER_PATH} className="font-medium text-brand hover:underline">Connect your broker</Link> first.
+            A trading bot reads live prices from your broker. <InPlaceLink to={BROKER_PATH} className="font-medium text-brand hover:underline">Connect your broker</InPlaceLink> first.
           </NoteV2>
         )}
         <div>
@@ -660,10 +661,10 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
               </div>
             )}
             {/* Day-one fix 1: test this template with these settings on past prices first (nothing starts). */}
-            <Link to={testPathFor({ template: picked.id, timeframe: templateTimeframe || null, params: linkSettings })}
+            <InPlaceLink to={testPathFor({ template: picked.id, timeframe: templateTimeframe || null, params: linkSettings })}
               className="mt-space-1 inline-flex min-h-11 items-center text-t14 font-medium text-brand hover:underline md:min-h-0" data-template-test>
               Test it first on past prices
-            </Link>
+            </InPlaceLink>
           </div>
         )}
         <div>
@@ -796,7 +797,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
               </label>
               <p id={ids.defaults} className="text-t13 text-fg-muted" data-defaults-line>
                 {useDefaults ? appliedLine(offered) : "Starts with the usual settings instead."}{" "}
-                <Link to={DEFAULTS_PATH} className="font-medium text-brand hover:underline">Change my defaults</Link>
+                <InPlaceLink to={DEFAULTS_PATH} className="font-medium text-brand hover:underline">Change my defaults</InPlaceLink>
               </p>
             </div>
           )}

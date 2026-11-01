@@ -84,7 +84,7 @@ describe("registry", () => {
   });
 
   it("answers null for a route with no panel, the bare Chart tab and another site", () => {
-    expect(DEFAULT_REGISTRY.resolve("/positions")).toBeNull();
+    expect(DEFAULT_REGISTRY.resolve("/no-such-page")).toBeNull();   // NAV-5a: /positions has a panel now
     expect(DEFAULT_REGISTRY.resolve("/charts")).toBeNull();
     expect(DEFAULT_REGISTRY.resolve("https://example.com/broker")).toBeNull();
     expect(splitPath("/a/b/")?.pathname).toBe("/a/b");
@@ -196,10 +196,10 @@ describe("fallback: navigate as today", () => {
   it("an address no panel is registered for navigates there (and warns in development)", () => {
     const h = history("/x");
     const unregistered: string[] = [];
-    api(h, { unregistered }).open("/positions");
-    expect(h.url()).toBe("/positions");
-    expect(unregistered).toEqual(["/positions"]);
-    expect(api(h).handles("/positions")).toBe(false);
+    api(h, { unregistered }).open("/no-such-page");
+    expect(h.url()).toBe("/no-such-page");
+    expect(unregistered).toEqual(["/no-such-page"]);
+    expect(api(h).handles("/no-such-page")).toBe(false);
   });
 
   it("with ui_v2 off every open navigates to the full route", () => {

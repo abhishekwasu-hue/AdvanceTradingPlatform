@@ -1,6 +1,6 @@
 import { ChevronDown, History, Play, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { ApiError } from "../api/errors";
 import { CARD, ChipV2, LINK_PRIMARY, LINK_SECONDARY, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import type { PageProps } from "../routes";
@@ -175,10 +175,10 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
             <p className="mb-space-2 text-t14 font-medium text-fg">Try as a scan</p>
             <div className="flex flex-wrap gap-space-2">
               {open.map((s) => (
-                <Link key={s.id} to={screenerPathFor(idea.id, s.id)} className={SCAN_LINK} data-scan={s.id}
+                <InPlaceLink key={s.id} to={screenerPathFor(idea.id, s.id)} className={SCAN_LINK} data-scan={s.id}
                   aria-label={`Try as a scan: ${s.label}`}>
                   <Search size={14} aria-hidden className="shrink-0" />{s.label}
-                </Link>
+                </InPlaceLink>
               ))}
             </div>
           </div>
@@ -195,15 +195,15 @@ function IdeaCard({ idea, groupName, adoptLater, adoptOn }: { idea: Idea; groupN
       {adoptPath && (
         <div className="mt-space-3" data-block="idea-adopt">
           <div className="flex flex-wrap items-center gap-space-2">
-            <Link to={adoptPath} className={LINK_PRIMARY} data-adopt={idea.adopt.available ? idea.adopt.template : undefined} aria-label={`Adopt as a paper strategy: ${idea.name}`}>
+            <InPlaceLink to={adoptPath} className={LINK_PRIMARY} data-adopt={idea.adopt.available ? idea.adopt.template : undefined} aria-label={`Adopt as a paper strategy: ${idea.name}`}>
               <Play size={14} aria-hidden />Adopt as a paper strategy
-            </Link>
+            </InPlaceLink>
             {/* Day-one fix 1: the idea's own strategy on past prices first (Strategies › Test; nothing starts). */}
             {testPath && (
-              <Link to={testPath} className={LINK_SECONDARY} data-test-idea={idea.adopt.available ? idea.adopt.template : undefined}
+              <InPlaceLink to={testPath} className={LINK_SECONDARY} data-test-idea={idea.adopt.available ? idea.adopt.template : undefined}
                 aria-label={`Test it on past prices: ${idea.name}`}>
                 <History size={14} aria-hidden />Test it on past prices
-              </Link>
+              </InPlaceLink>
             )}
           </div>
           <p className="mt-space-2 text-t12 text-fg-muted">{ADOPT_NOTE}</p>

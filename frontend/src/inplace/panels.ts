@@ -3,19 +3,43 @@ import { SETTINGS_PATH } from "../settings/paths";
 import { chartTabPath, chartsSymbolFromPath } from "../shell/shellRoutes";
 import { copilotToolPath, signalsPanelPath } from "./copilotPaths";
 import { OPTION_CHAIN_KEYS, futuresPanelPath, optionChainPanelPath } from "./fnoPaths";
-import { createRegistry, type PanelEntry, type PanelParams } from "./registry";
+import { createRegistry, type PanelEntry, type PanelParams, type Presentation } from "./registry";
 
 /**
  * NAV-1 (docs/design/M75_NO_NAVIGATION.md section 4.1): the first three in-place panels - a chart, the broker and the
  * AI key. Each reuses the existing component; it loads in its own chunk the first time the panel opens. The area PRs
  * (NAV-2..8) add their entries here. NAV-2: the Copilot, Analyze a chart, Strategies › Build, News & events, Signals.
  * NAV-3: the Trading bot page. NAV-4: the Option chain, the symbol hub's Futures tab, Plan an options trade and Risk
- * limits.
+ * limits. NAV-5a: Find setups, Strategies › Test, the journal, My positions, Trading defaults, Settings › Alerts (pages
+ * shown whole by PagePanel, their search carried as one parameter); the Copilot's Watchtower proposal; the Trading bot's
+ * template pre-fill.
  */
 
 const clean = (pathname: string) => pathname.replace(/\/+$/, "") || "/";
 const only = (o: Record<string, string | null | undefined>): PanelParams =>
   Object.fromEntries(Object.entries(o).filter((e): e is [string, string] => !!e[1]));
+
+/** NAV-5a: a page's whole search carried as one panel parameter (`q`), so a pre-fill in the address (a template's
+ * settings, an idea's scan) reaches the page in the panel exactly as on its route. */
+const withSearch = (home: string, q?: string) => (q ? `${home}?${q}` : home);
+const searchOf = (search: URLSearchParams) => only({ q: search.toString() });
+
+/** NAV-5a: a page shown whole in place (PagePanel), for the paths it answers for, while its flag (if any) is on. */
+function pagePanel(o: { kind: string; title: string; presentation: Presentation; paths: readonly string[]; flag?: string;
+  hash?: boolean }): PanelEntry {
+  const home = o.paths[0];
+  return {
+    kind: o.kind,
+    keys: o.hash ? ["q", "h"] : ["q"],
+    title: () => o.title,
+    presentation: o.presentation,
+    match: ({ pathname, search, hash }) => (o.paths.includes(clean(pathname))
+      ? only({ q: search.toString(), h: o.hash ? hash.replace(/^#/, "") : undefined }) : null),
+    href: (p) => `${withSearch(home, p.q)}${p.h ? `#${p.h}` : ""}`,
+    ...(o.flag ? { enabled: (on: (flag: string) => boolean) => on(o.flag as string) } : {}),
+    load: () => import("./panels/PagePanel"),
+  };
+}
 
 /** A chart: `/charts/NIFTY?tf=15min&exchange=BSE`, or the classic chart window's `?chart=NIFTY&tf=5min`. */
 export const CHART_PANEL: PanelEntry = {
@@ -73,7 +97,7 @@ const COPILOT_FORWARDED: Record<string, string> = {
  * a chart has its own panel; `/copilot/signals` is the Signals page (its own route). */
 export const COPILOT_PANEL: PanelEntry = {
   kind: "copilot",
-  keys: ["tab", "symbol"],
+  keys: ["tab", "symbol", "action"],
   title: (p) => (p.tab ? COPILOT_TITLE[p.tab] ?? "Copilot" : "Copilot"),
   presentation: "side-wide",
   match: ({ pathname, search }) => {
@@ -82,9 +106,10 @@ export const COPILOT_PANEL: PanelEntry = {
     if (forwarded) return { tab: forwarded };
     const m = /^\/copilot(?:\/([a-z-]+))?$/.exec(path);
     if (!m || (m[1] && !(COPILOT_TOOLS as readonly string[]).includes(m[1]))) return null;
-    return only({ tab: m[1], symbol: search.get("symbol")?.trim().toUpperCase() });
+    // NAV-5a: Signals' "Open it in Watchtower" carries the proposal (`?action=`).
+    return only({ tab: m[1], symbol: search.get("symbol")?.trim().toUpperCase(), action: search.get("action")?.trim() });
   },
-  href: (p) => copilotToolPath(p.tab, p.symbol),
+  href: (p) => copilotToolPath(p.tab, p.symbol, p.action),
   enabled: (on) => on("ai_copilot"),
   load: () => import("./panels/CopilotPanel"),
 };
@@ -141,11 +166,12 @@ export const SIGNALS_PANEL: PanelEntry = {
  * form out by the screen's width, and in a drawer's 448 px at 1440 its "Discard the draft" button ran past the edge. */
 export const BOTS_PANEL: PanelEntry = {
   kind: "bots",
-  keys: [],
+  keys: ["q"],
   title: () => "Trading bot",
   presentation: "side-wide",
-  match: ({ pathname }) => (clean(pathname) === "/deployments" ? {} : null),
-  href: () => "/deployments",
+  // NAV-5a: a template picked by the address (`?template=D1&timeframe=1d&set.period=12`) rides along as `q`.
+  match: ({ pathname, search }) => (clean(pathname) === "/deployments" ? searchOf(search) : null),
+  href: (p) => withSearch("/deployments", p.q),
   load: () => import("./panels/BotsPanel"),
 };
 
@@ -205,8 +231,25 @@ export const RISK_LIMITS_PANEL: PanelEntry = {
   load: () => import("./panels/RiskLimitsPanel"),
 };
 
+// ---- NAV-5a: Signals, bots, ideas, journal, scanner ------------------------------------------------------------------
+
+/** Find setups (`/screener`; an idea's "Try as a scan" carries `?idea=&scan=`) while `screener_v2` is on. */
+export const SCREENER_PANEL = pagePanel({ kind: "screener", title: "Find setups", presentation: "side-wide", paths: ["/screener"], flag: "screener_v2" });
+/** Strategies › Test (`/strategies/test`, the old `/backtest`): "Test it first" with the template's settings. */
+export const TEST_PANEL = pagePanel({ kind: "test", title: "Test a strategy", presentation: "side-wide", paths: ["/strategies/test", "/backtest"] });
+/** The journal (`/positions/results/journal?week=...#trade-12`): a similar setup's entry, opened on its row. */
+export const JOURNAL_PANEL = pagePanel({ kind: "journal", title: "Journal", presentation: "side-wide",
+  paths: ["/positions/results/journal", "/analytics/journal", "/journal"], flag: "discipline_engine", hash: true });
+/** My positions (`/positions`): a bot's open position chip. */
+export const POSITIONS_PANEL = pagePanel({ kind: "positions", title: "My positions", presentation: "side-wide", paths: ["/positions"] });
+/** Settings › My trading defaults: the Trading bot form's "change your defaults". */
+export const DEFAULTS_PANEL = pagePanel({ kind: "trading-defaults", title: "My trading defaults", presentation: "side", paths: ["/settings/trading-defaults"] });
+/** Settings › Alerts: a scan alert's "set up delivery". */
+export const ALERTS_PANEL = pagePanel({ kind: "alerts", title: "Alerts", presentation: "side", paths: ["/settings/alerts"] });
+
 export const DEFAULT_PANELS: readonly PanelEntry[] = [
   FUTURES_PANEL, CHART_PANEL, BROKER_PANEL, AI_KEY_PANEL, COPILOT_PANEL, ANALYZE_PANEL, STRATEGY_BUILD_PANEL, NEWS_PANEL, SIGNALS_PANEL, BOTS_PANEL,
   OPTION_CHAIN_PANEL, OPTIONS_PLAN_PANEL, RISK_LIMITS_PANEL,
+  SCREENER_PANEL, TEST_PANEL, JOURNAL_PANEL, POSITIONS_PANEL, DEFAULTS_PANEL, ALERTS_PANEL,
 ];
 export const DEFAULT_REGISTRY = createRegistry(DEFAULT_PANELS);

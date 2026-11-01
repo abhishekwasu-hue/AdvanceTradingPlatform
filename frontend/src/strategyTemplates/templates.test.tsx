@@ -88,7 +88,8 @@ describe("the template link (idea library slice 2, IDEA-1)", () => {
   });
 
   it("the form reads the link's timeframe and settings and says the idea's settings are the start", () => {
-    expect(pageSource).toContain("templateLinkFromSearch(window.location.search)");
+    expect(pageSource).toContain("templateLinkFromSearch(search)");                 // M75 NAV-5a: the router's address
+    expect(pageSource).toContain("initialTemplate={templateFromUrl(location.search)}");
     expect(pageSource).toContain("typedSettings(picked, initialTemplate.params)");
     expect(pageSource).toContain("Starts with the settings from the idea.");
   });

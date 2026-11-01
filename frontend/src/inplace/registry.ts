@@ -33,7 +33,7 @@ export interface PanelEntry {
   title: (params: PanelParams) => string;
   presentation: Presentation;
   /** The parameters when this panel answers for a full route (pathname and search), null otherwise. */
-  match: (url: { pathname: string; search: URLSearchParams }) => PanelParams | null;
+  match: (url: { pathname: string; search: URLSearchParams; hash: string }) => PanelParams | null;
   /** The full route that shows the same facility as a page: the link's real address and the fallback navigation. */
   href: (params: PanelParams) => string;
   /** False while the facility is switched off for the organisation: the host then navigates as today. */
@@ -51,12 +51,12 @@ export interface PanelRegistry {
 const KIND = /^[a-z][a-z0-9-]*$/;
 
 /** Splits an app address into its pathname (no trailing slash) and search; an address on another site is no route. */
-export function splitPath(path: string): { pathname: string; search: URLSearchParams } | null {
+export function splitPath(path: string): { pathname: string; search: URLSearchParams; hash: string } | null {
   let url: URL;
   try { url = new URL(path, "http://app.invalid"); }
   catch { return null; }   // intentional: not an address at all - no panel answers for it
   if (url.origin !== "http://app.invalid") return null;   // another site: never a panel
-  return { pathname: url.pathname.replace(/\/+$/, "") || "/", search: url.searchParams };
+  return { pathname: url.pathname.replace(/\/+$/, "") || "/", search: url.searchParams, hash: url.hash };
 }
 
 export function createRegistry(entries: readonly PanelEntry[]): PanelRegistry {

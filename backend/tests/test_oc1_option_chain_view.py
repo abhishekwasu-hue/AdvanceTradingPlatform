@@ -167,7 +167,8 @@ def test_iv_without_a_price_to_check_against():
 def test_default_expiry_nearest_and_the_expiry_day_rule():
     days = [date(2026, 10, 27), date(2026, 11, 3), date(2026, 11, 9)]
     assert chain_view.default_expiry(days, date(2026, 10, 21)) == date(2026, 10, 27)     # the nearest
-    assert chain_view.default_expiry(days, date(2026, 10, 27)) == date(2026, 11, 3)      # expiry day: the next one
+    assert chain_view.default_expiry(days, date(2026, 10, 27)) == date(2026, 10, 27)     # M68 PR-4: Not set = the nearest (today's)
+    assert chain_view.default_expiry(days, date(2026, 10, 27), next_on_expiry_day=True) == date(2026, 11, 3)   # his own roll
     assert chain_view.default_expiry(days, date(2026, 10, 28)) == date(2026, 11, 3)
     assert chain_view.default_expiry([date(2026, 11, 9)], date(2026, 11, 9)) == date(2026, 11, 9)  # nothing after it
     assert chain_view.default_expiry([], date(2026, 10, 21)) is None
@@ -184,7 +185,7 @@ def test_expiry_file_list_and_kinds(monkeypatch):
     _expiry_file(monkeypatch, end=date(2026, 10, 18))
     items = chain_view.from_expiry_file("NIFTY", date(2026, 10, 21))
     assert [(i.day, i.kind) for i in items] == [(date(2026, 10, 27), "monthly"), (date(2026, 11, 3), "weekly"), (date(2026, 11, 24), "monthly")]
-    assert chain_view.default_expiry([i.day for i in items], date(2026, 10, 27)) == date(2026, 11, 3)
+    assert chain_view.default_expiry([i.day for i in items], date(2026, 10, 27), next_on_expiry_day=True) == date(2026, 11, 3)
     assert chain_view.from_expiry_file("BANKNIFTY", date(2026, 10, 21)) == []          # not in the file
 
 
@@ -225,7 +226,7 @@ def test_sensex_rule_calendar_moves_a_holiday_expiry_and_keeps_the_rule():
     assert days[:2] == [date(2026, 10, 21), date(2026, 10, 29)]
     assert dict((i.day, i.kind) for i in items)[date(2026, 10, 29)] == "monthly"
     # That day is the expiry day itself: the page opens on the next one.
-    assert chain_view.default_expiry(days, date(2026, 10, 21)) == date(2026, 10, 29)
+    assert chain_view.default_expiry(days, date(2026, 10, 21), next_on_expiry_day=True) == date(2026, 10, 29)
     assert chain_view.from_rules("NIFTY", date(2026, 10, 21), set()) == []        # NIFTY has no weekday rule
 
 

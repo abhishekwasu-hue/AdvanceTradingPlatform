@@ -172,6 +172,16 @@ def _recorded_tool(run: Any, seen: list[str]):
             args = tool.input_model.model_validate(arguments or {})
         except Exception as exc:  # noqa: BLE001 - reported to the model like the real run_tool does
             return ToolResult(False, None, None, name, error=f"invalid arguments: {str(exc)[:200]}")
+        if name.startswith("calc_"):
+            # Code arithmetic (calc tools, the options payoff / what-if) runs for real: it reads no market data. A tool
+            # that needs the trader's saved settings answers with its error here (no database in the eval).
+            try:
+                res = await tool.fn(ctx, args)
+            except Exception as exc:  # noqa: BLE001 - reported to the model like the real run_tool does
+                res = ToolResult(False, None, None, name, error=f"{type(exc).__name__}: not available in the eval")
+            if res.ok:
+                seen.append(name)
+            return res
         fixture_name = ALIASES.get(name, name)
         res = await run(fixture_name, args.model_dump())
         if res.ok:

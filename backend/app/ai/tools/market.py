@@ -158,12 +158,14 @@ class _ChainArgs(BaseModel):
 
 
 class _BacktestArgs(BaseModel):
+    """M72 PR-4 (F12, M68): the timeframe and the window are the trader's own - no default here; the model asks for them
+    when his message does not say (the agent checks the window number came from his words or a tool result)."""
     model_config = ConfigDict(extra="forbid")
     strategy_id: str = Field(min_length=1, max_length=80, description="A strategy id from the platform (built-in or custom:<id>)")
     symbol: str = SYMBOL
     exchange: str = EXCHANGE
-    timeframe: Timeframe = "5min"
-    days: int = Field(default=20, ge=2, le=60)
+    timeframe: Timeframe = Field(description="The timeframe the trader named; ask him when he did not")
+    days: int = Field(ge=2, le=60, description="The number of days the trader asked to test; ask him when he did not")
 
 
 def summarise_frame(df: pd.DataFrame) -> Dict[str, Any]:
@@ -229,20 +231,26 @@ def summarise_chain(chain: Any) -> Dict[str, Any]:
                           "put_iv": _r(r.put_iv)} for r in near]}
 
 
-async def get_option_chain(ctx: ToolContext, args: _ChainArgs) -> ToolResult:
-    """The option chain for an underlying: totals, PCR, max pain, the biggest OI strikes and the strikes around the ATM."""
-    try:
-        adapter, source = await _broker(ctx, args.underlying.upper(), "NFO")
-    except HTTPException as exc:
-        return _failed("option_chain", exc)
+async def read_chain(ctx: ToolContext, underlying: str, expiry: date | None) -> tuple[Any, str]:
+    """The raw chain through the asker's own source (the chain tool's path; M72 PR-4 reuses it) -> (chain, source).
+    Raises HTTPException like `_broker`."""
+    adapter, source = await _broker(ctx, underlying.upper(), "NFO")
     conn = await _hub_connection(ctx)
     if conn is not None and conn.record is not None:
         # TM Part 1: the connection's chain snapshot of the last few seconds (the chain page's, say) - no second call.
         from app.market_data import hub as data_hub
-        chain = await data_hub.shared_chain(int(conn.record.id), args.underlying, args.expiry,
-                                            lambda: adapter.get_option_chain(args.underlying.upper(), args.expiry))
+        chain = await data_hub.shared_chain(int(conn.record.id), underlying, expiry, lambda: adapter.get_option_chain(underlying.upper(), expiry))
     else:
-        chain = await adapter.get_option_chain(args.underlying.upper(), args.expiry)
+        chain = await adapter.get_option_chain(underlying.upper(), expiry)
+    return chain, source
+
+
+async def get_option_chain(ctx: ToolContext, args: _ChainArgs) -> ToolResult:
+    """The option chain for an underlying: totals, PCR, max pain, the biggest OI strikes and the strikes around the ATM."""
+    try:
+        chain, source = await read_chain(ctx, args.underlying, args.expiry)
+    except HTTPException as exc:
+        return _failed("option_chain", exc)
     if not chain.rows:
         return ToolResult(False, None, None, source, error=f"the broker returned an empty chain for {args.underlying}")
     return ToolResult(True, summarise_chain(chain), ctx.now.isoformat(), source, {"read_at": ctx.now.isoformat(), "expiry": str(chain.expiry)})
@@ -266,9 +274,8 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
     """Backtest a platform strategy on server candles (never client data). Statistics only, with a sample-size warning."""
     from app.ai.compliance import WEAK_EVIDENCE_MIN_TRADES
     from app.backtest.engine import run_backtest as engine
-    from app.core.models import RiskConfig
     from app.custom_strategies.resolver import resolve_strategy
-    from app.risk_engine.routes import get_tenant_risk_config
+    from app.risk_engine.routes import get_tenant_risk_config, user_risk_config
     try:
         strategy = await resolve_strategy(args.strategy_id, ctx.user, ctx.session)
     except (KeyError, PermissionError) as exc:
@@ -277,9 +284,15 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
         df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, args.timeframe, args.days)
     except HTTPException as exc:
         return _failed("backtest", exc)
-    from app.core import config as app_config
-    # DEF-0: the organisation's capital, else the PAPER starting balance (the engine starts there too)
-    risk = (await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()).with_capital(app_config.PAPER_STARTING_CAPITAL)
+    # M72 PR-4 (F12, DEF-0): the organisation's saved limits with the capital they name, else this user's own PAPER
+    # account balance - never the built-in starting figure (`user_risk_config`, the rule every order path uses)
+    from app.risk_engine import by_default
+    saved = await get_tenant_risk_config(ctx.tenant_id, ctx.session)
+    if (saved is None or saved.capital is None) and await by_default._account(ctx.session, ctx.user) is None:
+        # M68Q-4: no saved capital and no paper account of his yet - the capital is Not set: ask, never assume one
+        return ToolResult(False, None, None, "backtest", error="his capital is Not set (no saved capital and no paper account yet); ask him for "
+                                                               "the capital to test with, never assume one")
+    risk = await user_risk_config(ctx.session, ctx.user)
     result = await asyncio.to_thread(engine, strategy, df, args.symbol.upper(), args.timeframe, risk)    # CPU-bound: off the event loop
     data = {"strategy_id": args.strategy_id, "symbol": args.symbol.upper(), "timeframe": args.timeframe, "from": _iso(df.index[0]), "to": _iso(df.index[-1]),
             "trades": result.total_trades, "win_rate": _r(result.win_rate), "net_pnl": _r(result.net_pnl), "profit_factor": _r(result.profit_factor),

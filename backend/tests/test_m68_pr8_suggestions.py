@@ -130,7 +130,8 @@ def test_the_interview_deploy_route_refuses_suggested_picks_until_he_accepts_the
     from tests.test_phase_ap_interview import _sessions
     from tests.test_trading_worker import _tenant
     _load_master()                                                          # the NIFTY options list, as on the server
-    headers = _tenant("m68-pr8-accept@example.com")["headers"]
+    tenant = _tenant("m68-pr8-accept@example.com")
+    headers, tenant_id = tenant["headers"], tenant["tenant_id"]
     df = _sessions(days=5)
     serve_candles(monkeypatch, [{"timestamp": ts.isoformat(), "open": r.open, "high": r.high, "low": r.low, "close": r.close,
                                  "volume": r.volume} for ts, r in df.iterrows()])
@@ -157,6 +158,17 @@ def test_the_interview_deploy_route_refuses_suggested_picks_until_he_accepts_the
                            json={"candidate_id": cid, "accept_risk": True, "accept_suggested": True})
     assert accepted.status_code == 201, accepted.text
     assert accepted.json()["mode"] == "PAPER" and accepted.json()["deployment"]["mode"] == "PAPER"
+
+    # The interview leaves a trader profile; with this tenant's usable broker session every later worker cycle in the
+    # same test process would run its market memory / sentiment reads through that test's fake broker.
+    async def forget_profile() -> None:
+        from sqlalchemy import delete
+
+        from app.db.models import TraderProfileRecord
+        async with _session_factory() as session:
+            await session.execute(delete(TraderProfileRecord).where(TraderProfileRecord.tenant_id == tenant_id))
+            await session.commit()
+    asyncio.run(forget_profile())
 
 
 def test_a_strategy_whose_smallest_candle_is_not_a_broker_base_asks_for_base_candles():

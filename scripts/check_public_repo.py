@@ -194,7 +194,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/sets/copilot_trader_safety.jsonl": "bbfa1fcc7a4df13f8102970366740719b011738590ecc089b3b3c60fdff2e2bf",
     "backend/evals/sets/copilot_trader_lang.json": "93a1b22c0fe6e35d6815969ace2666767f3c97e736591e4cfe9fca91b221f0f0",
     "backend/evals/sets/copilot_trader_tools.json": "a58e1baf50ab5a2a9365d40c102a64d30cfe7192face4ebfe41e7ba8ad68d041",
-    "backend/evals/trader_baseline.json": "bbb9112f3fc621ea68429789a1be94ac9ce9d423d05d4485d625218d7a1a1b9e",
+    "backend/evals/trader_baseline.json": "98638992ae9740203b295a1ec8d07f8fca0ec54b23c727c0ab1d9110e7b2c13c",
     "frontend/e2e/fixtures/copilot_tools_v2.json": "37c00546e26cc0cab4b2af0c38ae6041a630d57790be87397fa186502f3e4502",
     # hand-written API replies for the Playwright tests
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",

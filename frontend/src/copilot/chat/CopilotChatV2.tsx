@@ -24,6 +24,7 @@ import FirstUseModal from "../components/FirstUseModal";
 import { useCopilotT } from "../i18n";
 import { COPILOT_TABS, copilotPath } from "../tabs";
 import { AnswerV2 } from "./AnswerV2";
+import { TicketPrepV2 } from "../ticket/TicketPrepV2";
 import { AttachMenu, imageFrom } from "./ChartAttachV2";
 import {
   chartQuestion, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
@@ -244,8 +245,13 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
                 </>
               ) : (
                 <div className={`${CARD} p-space-4`}>
-                  {turn.answer ? <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
-                    : turn.error ? <p role="alert" className="text-t14 text-fg">{turn.error}</p>
+                  {turn.answer ? (
+                    <>
+                      <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
+                      {/* M72 PR-9: the order ticket prepared from his own message (never on a refused question) */}
+                      {!turn.answer.refused && <TicketPrepV2 question={turn.question} />}
+                    </>
+                  ) : turn.error ? <p role="alert" className="text-t14 text-fg">{turn.error}</p>
                     : <p aria-busy="true" className="text-t14 text-fg-muted">{t("chat.asking")}</p>}
                 </div>
               )}

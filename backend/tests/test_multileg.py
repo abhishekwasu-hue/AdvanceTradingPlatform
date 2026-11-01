@@ -82,6 +82,8 @@ class _OptionBroker(_FakeBroker):
 
 
 def _rules(**kw) -> ContractRules:
+    # M68 PR-4 (TS1-042): a ratio spread's sold legs are the bot's own - these tests use the 1:2 they were written against
+    kw.setdefault("ratio_shorts", 2)
     return ContractRules(kind=InstrumentKind.OPTION, position=OptionPosition.WRITE, expiry_rule=ExpiryRule.NEAREST, **kw)
 
 

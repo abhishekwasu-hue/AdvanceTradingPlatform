@@ -475,7 +475,7 @@ async def list_identities(user: User = Depends(get_current_user), session: Async
         "has_password": password_usable(user.hashed_password),
         "identities": [{"provider": r.provider, "label": (social.get(r.provider).label if social.get(r.provider) else r.provider),
                         "email": r.email_at_link, "linked_at": r.created_at.isoformat() if r.created_at else None} for r in rows],
-        "available": [{"id": p.id, "label": p.label, "kind": p.kind} for p in social.live() if p.id not in linked],
+        "available": [{"id": p.id, "slug": p.slug, "label": p.label, "kind": p.kind} for p in social.live() if p.id not in linked],
     }
 
 

@@ -18,6 +18,13 @@ Ported from the Trade repo `check_vix_spike_halt.py` (`run_vix_spike_check`, `up
 * **High level size cut (ATP addition).** The latest fresh valid reading at or above `VIX_GATE_HIGH_LEVEL` (20) cuts the
   risk per trade of new entries on those underlyings by `VIX_GATE_SIZE_CUT_PCT` % (50). A 100% cut refuses the entry.
 
+* **Store-first (M71 W2-D, flag `market_store_reads`).** The previous close comes from the own store's Daily (the NSE
+  files, zero broker calls) when it holds the last completed session before today; else from the broker's daily
+  candles as before. Every broker call of the reading (the live price, a daily read the store could not serve) goes
+  through the credential's DATA budget (`api_budget.BudgetedAdapter`), never the worker's order / exit budget, and
+  takes a token only if one is there now (`api_budget.no_wait`) - a refused call is a failed reading with its reason.
+  Off: exactly as before.
+
 Differences from Trade, on purpose: a spike in any reading of the day pauses the rest of the day (Trade reads once at
 09:20); ATP has no "directional" trade type that Trade exempts; no Telegram message per run. Exits never come here:
 stops, targets, time exits and "Exit now" are not gated (ADR-0004). Nothing here places or changes an order.
@@ -154,15 +161,15 @@ def reading_from(ltp: Optional[float], day_bars: Sequence[Any], now: datetime) -
     return {"last": last, "prev_close": prev, "change_pct": change, "date": today.isoformat()}
 
 
-async def read(service: Any, now: datetime) -> Dict[str, Any]:
+async def read(service: Any, now: datetime, *, day_bars: Sequence[Any] | None = None) -> Dict[str, Any]:
     """One India VIX read through `service` (a MarketDataService on a broker session): the reading, with `error` set when
-    it failed or is incomplete. Stores nothing."""
+    it failed or is incomplete. Stores nothing. `day_bars` (M71 W2-D): the store's Daily bars - no daily broker call."""
     ltp: Optional[float] = None
     bars: List[Any] = []
     error: Optional[str] = None
     try:
         ltp = float(await service.get_ltp(VIX_SYMBOL, VIX_EXCHANGE, now=now))
-        bars = list(await service.get_candles(VIX_SYMBOL, VIX_EXCHANGE, "day", now=now))
+        bars = list(day_bars) if day_bars is not None else list(await service.get_candles(VIX_SYMBOL, VIX_EXCHANGE, "day", now=now))
     except Exception as exc:  # noqa: BLE001 - a failed read is a reading with its reason (the gate treats it as Trade does)
         error = f"{type(exc).__name__}: {exc}"[:150]
     reading = reading_from(ltp, bars, now)
@@ -194,15 +201,68 @@ async def capture(session: AsyncSession, tenant_id: int, service: Any, *, now: O
     return row
 
 
+STORE_FLAG = "market_store_reads"          # M71 W2-D: the previous close from the own store, broker calls on the DATA budget
+
+
+async def _store_on(session: AsyncSession, tenant_id: int) -> bool:
+    from app.platform.controls import flag_enabled
+    try:
+        return await flag_enabled(session, STORE_FLAG, tenant_id)
+    except Exception:  # noqa: BLE001 - a flag that cannot be read is off: the reading exactly as before
+        return False
+
+
+async def stored_day_bars(session: AsyncSession, now: datetime) -> list[Any] | None:
+    """M71 W2-D: India VIX's Daily bars from the own store (the NSE files, zero broker calls) when they hold the last
+    completed session before today (the session `reading_from` takes the previous close of); else None (the broker's
+    daily candles, as before). Closed sessions only."""
+    from app.market_data.calendar import is_trading_day
+    from app.market_store import read_bars
+    from app.market_store.reader import holidays_for
+    holidays = await holidays_for(session, VIX_EXCHANGE)
+    day = to_ist(now).date() - timedelta(days=1)
+    while not is_trading_day(day, holidays):
+        day -= timedelta(days=1)
+    got = await read_bars(session, VIX_SYMBOL, "1d", now - timedelta(days=DAILY_LOOKBACK_DAYS), now, purpose="vix_gate",
+                          exchange=VIX_EXCHANGE, now=now)
+    if not got.served or got.frame.index[-1].tz_convert(IST).date() < day:
+        return None
+    return got.bars()
+
+
+def _paced(adapter: Any, record: Any) -> Any:
+    """M71 W2-D: the credential's DATA budget (`market_store.reader.paced_adapter`), never the worker's order budget."""
+    from app.market_store.models import RestSource
+    from app.market_store.reader import paced_adapter
+    return paced_adapter(RestSource(adapter=adapter, record_id=int(record.id), broker=str(record.broker_name), wait_seconds=0.0))
+
+
 async def capture_for_tenant(session: AsyncSession, tenant_id: int, user: Any, *, org_adapter: Any, market_data_factory: Any,
                              now: Optional[datetime] = None, members: Optional[Sequence[Any]] = None) -> MarketSnapshotRecord:
     """One reading for an organisation through its entitled data path. With `byob_data_tier` on: each active member's own
     Tier A session for India VIX in turn (`user` first, then `members`), until one reads successfully - never a
     teammate's session on another's behalf; the reading records whose session took it. Otherwise the organisation's
-    usable session `org_adapter`. When nothing reads, a failed reading is stored with every reason."""
+    usable session `org_adapter`. When nothing reads, a failed reading is stored with every reason.
+
+    M71 W2-D (flag `market_store_reads`): the same data path and order of sessions, the previous close from the own
+    store when it holds it (`stored_day_bars`), every broker call on the credential's DATA budget without waiting
+    (`_paced`, `api_budget.no_wait`); the organisation's session is then its first usable market-data credential
+    (`_pick_record`, as the charts read), not the worker's order-budget adapter `org_adapter`."""
+    now = now or datetime.now(timezone.utc)
+    if not await _store_on(session, tenant_id):
+        return await _capture_for_tenant(session, tenant_id, user, org_adapter=org_adapter, market_data_factory=market_data_factory,
+                                         now=now, members=members, store=False)
+    from app.market_data import api_budget
+    with api_budget.no_wait():
+        return await _capture_for_tenant(session, tenant_id, user, org_adapter=org_adapter, market_data_factory=market_data_factory,
+                                         now=now, members=members, store=True)
+
+
+async def _capture_for_tenant(session: AsyncSession, tenant_id: int, user: Any, *, org_adapter: Any, market_data_factory: Any,
+                              now: datetime, members: Sequence[Any] | None, store: bool) -> MarketSnapshotRecord:
     from app.market_data import entitlement
     from app.platform.controls import flag_enabled
-    now = now or datetime.now(timezone.utc)
+    day_bars = await stored_day_bars(session, now) if store else None
     if await flag_enabled(session, entitlement.FLAG, tenant_id):
         from app.brokers.token_lifecycle import build_adapter
         candidates: List[Any] = []
@@ -215,7 +275,8 @@ async def capture_for_tenant(session: AsyncSession, tenant_id: int, user: Any, *
             if not (ent.live and ent.record is not None):
                 problems.append(f"user {person.id}: {ent.reason or 'no Tier A session for India VIX'}")
                 continue
-            reading = await read(market_data_factory(build_adapter(ent.record), lookback_days=DAILY_LOOKBACK_DAYS), now)
+            adapter = _paced(build_adapter(ent.record), ent.record) if store else build_adapter(ent.record)
+            reading = await read(market_data_factory(adapter, lookback_days=DAILY_LOOKBACK_DAYS), now, day_bars=day_bars)
             if reading.get("error") is None:
                 return await capture(session, tenant_id, None, now=now, source=ent.record.broker_name, reader_user_id=person.id, reading=reading)
             problems.append(f"user {person.id}: {reading['error']}")
@@ -223,8 +284,25 @@ async def capture_for_tenant(session: AsyncSession, tenant_id: int, user: Any, *
         return await capture(session, tenant_id, None, now=now, source="none", error=error)
     if org_adapter is None:
         return await capture(session, tenant_id, None, now=now, source="none", error="no usable broker session for the organisation")
+    if store:
+        return await _store_org_capture(session, tenant_id, market_data_factory, now, day_bars)
     service = market_data_factory(org_adapter, lookback_days=DAILY_LOOKBACK_DAYS)
     return await capture(session, tenant_id, service, now=now, source=str(getattr(org_adapter, "name", "broker")))
+
+
+async def _store_org_capture(session: AsyncSession, tenant_id: int, market_data_factory: Any, now: datetime,
+                             day_bars: list[Any] | None) -> MarketSnapshotRecord:
+    """M71 W2-D: the organisation's reading through its first usable market-data credential on the DATA budget."""
+    from fastapi import HTTPException
+
+    from app.brokers.token_lifecycle import build_adapter
+    from app.market_data.candles_routes import _pick_record
+    try:
+        record = await _pick_record(session, tenant_id, None, "primary")
+    except HTTPException:
+        return await capture(session, tenant_id, None, now=now, source="none", error="no broker session with market data for the organisation")
+    service = market_data_factory(_paced(build_adapter(record), record), lookback_days=DAILY_LOOKBACK_DAYS)
+    return await capture(session, tenant_id, None, now=now, source=str(record.broker_name), reading=await read(service, now, day_bars=day_bars))
 
 
 def due(last: Optional[datetime], now: datetime) -> bool:

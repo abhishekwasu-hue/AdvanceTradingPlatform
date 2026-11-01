@@ -212,7 +212,7 @@ class BacktestRunner:
             raise HTTPException(status_code=422, detail="execution_models: the pricing model applies to option backtests only")
 
     @classmethod
-    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None,
+    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: int | None = None,
                     user: User | None = None) -> "BacktestRunner":
         cutoffs = await user_cutoffs(session, user, body.exchange, body.symbol)
         if body.options is None:

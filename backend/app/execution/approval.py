@@ -777,7 +777,7 @@ async def exit_price(session: AsyncSession, leg: TradeRecord, lookup: Any) -> Tu
 LIVE_PRICE, LAST_SEEN, OLDER_PRICE, ENTRY_PRICE = "live price", "last seen price", "older price", "entry price"
 
 
-async def exit_now_price(session: AsyncSession, leg: TradeRecord, lookup: Any) -> Tuple[float, str]:
+async def exit_now_price(session: AsyncSession, leg: TradeRecord, lookup: Any) -> tuple[float, str]:
     """M68 PR-3 (TS1-097, ADR-0004: exits are never blocked): the price a user-pressed PAPER exit ("Exit now", a leg / group
     exit, a part exit) closes at. The live price, else the monitor's recent price (`exit_price`, the 5-minute rule - an
     operational safety, kept); when neither exists the exit is NOT refused: it falls back to the monitor's older price (any
@@ -794,7 +794,7 @@ async def exit_now_price(session: AsyncSession, leg: TradeRecord, lookup: Any) -
     return float(leg.entry_price), f"{ENTRY_PRICE} (no price was seen)"
 
 
-def source_words(sources: List[str]) -> str:
+def source_words(sources: list[str]) -> str:
     """One label for the prices a close used: the weakest one wins (live < last seen < older < entry). Pure."""
     for word in (ENTRY_PRICE, OLDER_PRICE, LAST_SEEN):
         hit = next((s for s in sources if s.startswith(word)), None)
@@ -826,13 +826,15 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
         if any(leg.mode != "PAPER" for leg in legs):
             raise ValueError("LIVE positions are closed in the broker app - ATP places no broker order in Phase 0")
     prices: Dict[int, float] = {}
-    sources: List[str] = []
+    sources: list[str] = []
+    per_leg: dict[int, str] = {}
     for leg in legs:
         prices[leg.id], source = await price_of(leg)
         sources.append(source)
+        per_leg[leg.id] = f"Exit now ({via}, {source})"         # M68 PR-3: each leg names its own price source
     reason = f"Exit now ({via}, {source_words(sources)})"
     await write_audit_log(session, trade.tenant_id, user.id, "exit_now", f"trade #{trade.id} ({len(legs)} leg(s)) via {via} at {', '.join(sorted(set(sources)))}")
     await session.commit()
     if len(legs) > 1:
-        return await close_group(session, legs, prices, reason, broker=None, user_id=user.id)
+        return await close_group(session, legs, prices, reason, broker=None, user_id=user.id, reasons=per_leg)
     return [await close_position(session, trade, prices[trade.id], reason, broker=None, user_id=user.id)]

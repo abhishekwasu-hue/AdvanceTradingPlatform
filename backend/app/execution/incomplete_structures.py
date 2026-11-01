@@ -73,7 +73,7 @@ NO_RULE = ("Nothing happens by itself: the filled legs stay open until you answe
            "answer, set it in Settings › Trade settings › Exits.")
 
 
-def rule_text(on_no_answer: Optional[str], deadline: Optional[datetime]) -> str:
+def rule_text(on_no_answer: str | None, deadline: datetime | None) -> str:
     if on_no_answer is None or deadline is None:
         return NO_RULE                     # M68 PR-3 (TS1-030): his rule is Not set - no timer
     if on_no_answer == KEEP:
@@ -81,7 +81,7 @@ def rule_text(on_no_answer: Optional[str], deadline: Optional[datetime]) -> str:
     return f"If you do not answer by {clock_text(deadline)}, the filled legs are closed, sold legs first (your setting)."
 
 
-def _rule(settings: Any, now: datetime) -> tuple[Optional[datetime], Optional[str], Optional[int]]:
+def _rule(settings: Any, now: datetime) -> tuple[datetime | None, str | None, int | None]:
     """(deadline, choice, minutes) of his own "if I do not answer" rule; all None when it is Not set (M68 PR-3: no timer)."""
     choice, minutes = getattr(settings, "on_no_answer", None), getattr(settings, "answer_minutes", None)
     if choice not in (CLOSE_FILLED, KEEP) or minutes is None:

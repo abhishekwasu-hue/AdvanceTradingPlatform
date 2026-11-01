@@ -333,3 +333,31 @@ def test_square_off_fixture_is_not_applied_here():
             return await xs.load(session)
     assert type(_run(go())) is xs.ExitSettings
 
+
+
+def test_an_incomplete_order_with_no_rule_still_closes_on_his_tap_and_nothing_hangs():
+    """TS1-030 / ADR-0004: with no "if I do not answer" rule (Not set) the worker's timer does nothing, but the filled legs
+    stay closable at any moment - "Close the filled legs" closes them at once (PAPER)."""
+    import json as _json
+    u = _user("inc-norule")
+    gid = f"g-{uuid.uuid4().hex[:8]}"
+    none = SmartSettings(settlement_days_before=4, settlement_band_pct=2.0, settlement_telegram=True, protection_band_pct=None)
+    block = inc.new_block(user_id=u["id"], mode="PAPER", strategy_id="x", deployment_id=None, account_id=None, idempotency_key=gid,
+                          pending=[], leg_meta={}, failure="the sold leg did not fill", settings=none, premiums={}, debit=True,
+                          stop_credit_pct=None)
+    legs = [_trade(u, symbol="NIFTY 25100 CE", leg_group_id=gid, leg_role="LONG", group_meta=_json.dumps({inc.KEY: block}))]
+
+    async def lookup(symbol, exchange="NSE"):
+        return 80.0
+
+    async def sweep():
+        async with _session_factory() as session:
+            return await inc.run_exits(session, u["tenant_id"], lookup, user_id=u["id"], now=datetime.now(UTC) + timedelta(days=1))
+    assert _run(sweep()) == 0 and _get(legs[0]).exit_time is None          # no timer: nothing closed or kept by itself
+
+    async def tap():
+        async with _session_factory() as session:
+            return await inc.answer(session, await session.get(User, u["id"]), gid, inc.ACTION_CLOSE_FILLED, price_lookup=lookup)
+    out = _run(tap())
+    assert out["state"] == inc.CLOSED, out
+    assert _get(legs[0]).exit_time is not None and _get(legs[0]).exit_price == 80.0

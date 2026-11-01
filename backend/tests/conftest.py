@@ -100,14 +100,14 @@ def _saved_exit_settings(request):
         return replace(saved, **{k: v for k, v in vars(own).items() if v is not None})
 
     from app.execution import smart_execution
-    real_prefs = smart_execution.SmartSettings.from_prefs.__func__
+    real_settings = smart_execution.settings_for
 
-    def _from_prefs(cls, values):          # the incomplete-order rule he "saved" in the older store (a saved value wins)
-        mine = real_prefs(cls, values)
+    async def _settings_for(session, user):   # the incomplete-order rule a pre-M68 user "saved" (his own saved value wins);
+        mine = await real_settings(session, user)   # the prefs defaults themselves stay Not set (SmartSettings.from_prefs)
         return replace(mine, on_no_answer=mine.on_no_answer or exit_settings.CLOSE_FILLED, answer_minutes=mine.answer_minutes or 5)
     with pytest.MonkeyPatch.context() as own:      # its own patch: a test's monkeypatch.undo() leaves it in place
         own.setattr(exit_settings, "load", _load)
-        own.setattr(smart_execution.SmartSettings, "from_prefs", classmethod(_from_prefs))
+        own.setattr(smart_execution, "settings_for", _settings_for)
         yield
 
 

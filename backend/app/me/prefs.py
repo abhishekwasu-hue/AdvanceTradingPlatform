@@ -260,9 +260,9 @@ class ToursPrefs(_Prefs):
 # kept equal by a test. Every field is None by default: an empty namespace pre-fills nothing.
 class ExitDefaults(_Prefs):
     """The user's own exit settings (ExitRules). The time exits are available but empty unless the user sets them (SR-10)."""
-    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
-    break_even_at_r: Optional[float] = Field(default=None, gt=0, allow_inf_nan=False)
-    time_exit_minutes: Optional[int] = Field(default=None, ge=1)
+    trailing_stop_pct: float | None = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
+    break_even_at_r: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    time_exit_minutes: int | None = Field(default=None, ge=1)
     time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
 

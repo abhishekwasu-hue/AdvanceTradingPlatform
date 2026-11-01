@@ -65,7 +65,6 @@ export const PRODUCTS: { value: Product; label: string; hint: string; term: Glos
 // CT-1 C8: the words live with the one badge (ui/PaperBadge); these names stay for the pieces that import them.
 export const PRACTICE_TITLE = PAPER_WORD;
 export const PRACTICE_TEXT = PAPER_TEXT;
-export const MAX_LOTS = 500;
 
 /** Settings part C: the lots / product / order type the user's own defaults start a ticket with (only the ones set). */
 export interface DraftDefaults { lots?: number; product?: Product; orderType?: OrderType }
@@ -104,7 +103,7 @@ export function unitsText(lots: number | null, lotSize: number | null | undefine
 
 export function clampLots(value: number): number {
   if (!Number.isFinite(value)) return 1;
-  return Math.min(MAX_LOTS, Math.max(1, Math.round(value)));
+  return Math.max(1, Math.round(value));       // M68 PR-4 (TS1-046): no ATP ceiling; the freeze quantity splits a large order
 }
 
 /** The price fields an order type needs: Limit a limit price, SL both, SL-M the trigger only, Market none. */

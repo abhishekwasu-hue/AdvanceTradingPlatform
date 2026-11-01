@@ -186,7 +186,8 @@ def test_the_option_backtest_has_no_underlying_exit_unless_set():
     from app.backtest.options_engine import OptionBacktestConfig, run_option_backtest
     from app.core.enums import OptionStrategy
     from tests.test_phase_w_option_backtest import RISK, _frame, _OneShot
-    cfg = dict(option_strategy=OptionStrategy.CALL_RATIO_SPREAD, implied_volatility=0.14, spread_width=2, target_credit_pct=50, stop_credit_pct=100)
+    cfg = dict(option_strategy=OptionStrategy.CALL_RATIO_SPREAD, implied_volatility=0.14, spread_width=2, ratio_shorts=2,   # M68 PR-4: his own 1:2
+               target_credit_pct=50, stop_credit_pct=100)
     on = run_option_backtest(_OneShot(), _frame(24500, 24800), "NIFTY 50", "1min", RISK, OptionBacktestConfig(**cfg, underlying_breach_exit=True))
     off = run_option_backtest(_OneShot(), _frame(24500, 24800), "NIFTY 50", "1min", RISK, OptionBacktestConfig(**cfg))
     assert "breakeven" in on.trades[0].exit_reason

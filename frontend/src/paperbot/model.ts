@@ -86,9 +86,10 @@ export function paperBotRequest(strategyId: string, symbol: string, info: Pick<S
   const s = cleanSymbol(symbol);
   const swing = isSwing(info);
   const contract: ContractRules = isIndex(s)
-    ? isSellerPack(strategyId)
-      ? { instrument_kind: "OPTION", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0 }
-      : { instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0 }
+    // M68 PR-4 (TS1-019 / 037): no pre-chosen side, expiry or strike - the server takes his own Trade settings › Options
+    // (or the defaults this page pre-fills) and asks for one that is Not set. A seller pack names no side either (REV-H3).
+    // M68 PR-2: no pre-chosen lots either (the form asks, or his Trade settings › Position size).
+    ? { instrument_kind: "OPTION" }
     : { instrument_kind: "UNDERLYING" };
   return {
     strategy_id: strategyId, symbol: s, exchange: "NSE", timeframe: swing ? "day" : "1min", mode: "PAPER",
@@ -131,14 +132,14 @@ function summaryWords(symbol: string, info: Pick<StrategyInfo, "timeframes"> | n
   req?: Pick<DeploymentCreateRequest, "instrument_kind" | "expiry_rule" | "max_lots" | "option_strategy">): { what: string; when: string } {
   const s = cleanSymbol(symbol) || "the symbol";
   const lots = req?.max_lots ?? null;
-  const expiry = EXPIRY_WORDS[req?.expiry_rule ?? "NEAREST"] ?? "nearest";
+  const expiry = req?.expiry_rule ? `the ${EXPIRY_WORDS[req.expiry_rule] ?? "chosen"} expiry` : "the expiry in your Trade settings";
   const size = lots === null ? "your Position size" : `${lots} lot${lots === 1 ? "" : "s"}`;     // M68 PR-2: never a pre-chosen 1
   const structure = req?.option_strategy && req.option_strategy !== "SINGLE" ? req.option_strategy : null;
   // Day-one fix 6: a stock is traded as its shares (plain words; "RELIANCE itself" read oddly).
   const what = !isIndex(s) ? `${s} shares${lots !== null ? `, ${lots} per entry` : ""}`
-    : req?.instrument_kind === "FUTURE" ? `a ${s} future at the ${expiry} expiry, ${size}`
-    : structure ? `${s} options as a ${structureLabel(structure).toLowerCase()} at the ${expiry} expiry, ${size}`
-    : `a ${s} option at the ${expiry} expiry, ${size}`;
+    : req?.instrument_kind === "FUTURE" ? `a ${s} future at ${expiry}, ${size}`
+    : structure ? `${s} options as a ${structureLabel(structure).toLowerCase()} at ${expiry}, ${size}`
+    : `a ${s} option at ${expiry}, ${size}`;
   const when = isSwing(info) ? "held for days" : "closed before the market closes";
   return { what, when };
 }

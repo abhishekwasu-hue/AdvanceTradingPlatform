@@ -72,7 +72,7 @@ async def backtest(
 
     body = BacktestBody(**request.model_dump())
     strategy = with_template_exits(strategy, body)                     # section 5: a template's exit choice (422 if it does not fit)
-    runner = await BacktestRunner.build(body, risk_config, session, tenant_id=user.tenant_id if user is not None else None)
+    runner = await BacktestRunner.build(body, risk_config, session, tenant_id=user.tenant_id if user is not None else None, user=user)
     # REV-S3 (R6): a template gets the history its recipe reads before the window (warm-up only, never traded), or the
     # result says plainly what the test lacked (app/backtest/warmup.py).
     from app.backtest import warmup

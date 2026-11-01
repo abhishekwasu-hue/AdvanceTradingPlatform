@@ -130,6 +130,8 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "screener_venues": FlagInfo("Refuse fields a venue does not carry", "screens", "clearer errors", ("screener_v2",), "", "behind_the_scenes"),
     "screener_ownership": FlagInfo("Promoter / FII / DII stakes and events in screens", "screens", "fields", ("screener_v2",), "ownership data", "unfinished"),
     "screener_waves": FlagInfo("Wave count in screens (running wave, type, alternate, clarity, wave levels and lines)", "screens", "builder functions", ("screener_v2",), "", "unfinished"),
+    "trade_warnings": FlagInfo("One compact check card on the order ticket and the basket: fact lines, a switch per warning type", "trading",
+                               "one card of facts before Place, with Don't show again and Edit on each line", ("ui_v2",), "", "unfinished"),
     "term_margin_pair": FlagInfo("Margin required and available in the basket, re-read on every lot change", "trading",
                                  "a margin pair in the Terminal basket", ("ui_v2", "terminal"), "your broker's margin where the broker offers it, else an estimate", "unfinished"),
     "term_roll": FlagInfo("Roll a position or strategy to the next weekly expiry, as a preview you confirm", "trading",
@@ -219,6 +221,7 @@ FLAG_GROUP: dict[str, str] = {
     "smart_execution": "orders",
     "terminal": "orders",
     "term_margin_pair": "orders",
+    "trade_warnings": "orders",
     "term_roll": "orders",
     "term_strike_area": "orders",
     "term_whatif": "orders",
@@ -357,6 +360,7 @@ FINISH: Dict[str, str] = {
     "chart_futures_basis": "DATA-H / FN7", "help_centre": "P2-6 (early, once the support contact is set)",
     "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",
     "term_roll": "TERM-2 R1", "term_whatif": "TERM-2 R2", "term_strike_area": "TERM-2 R3", "term_margin_pair": "TERM-2 R4",
+    "trade_warnings": "M76 (MP-1 .. MP-15)",
     "trade_engine": "M66 (owner only, after parity is green)",
 }
 KEEP_OFF: Dict[str, str] = {

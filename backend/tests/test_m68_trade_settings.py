@@ -61,10 +61,11 @@ def wired(monkeypatch):
 # --- the registry ----------------------------------------------------------------------------------------------------------
 
 def test_registry_seven_sections_and_every_audit_user_row():
+    # M76 MP-1: + Warnings (the eighth section, owner order M76 amendment 2).
     assert [s.id for s in ts.SECTIONS] == ["order_defaults", "position_size", "exits", "options", "risk_limits", "automation",
-                                           "paper_account"]
+                                           "paper_account", "warnings"]
     assert [s.title for s in ts.SECTIONS] == ["Order defaults", "Position size", "Exits", "Options", "Risk limits", "Automation",
-                                              "Paper account"]
+                                              "Paper account", "Warnings"]
     covered = {r for f in ts.FIELDS if not f.fact for r in f.rows} | set(ts.ON_RISK_LIMITS_PAGE)
     assert AUDIT_USER_ROWS <= covered, sorted(AUDIT_USER_ROWS - covered)
     assert len(AUDIT_USER_ROWS) == 60
@@ -74,6 +75,7 @@ def test_registry_seven_sections_and_every_audit_user_row():
 
 # M68 PR-6: Automation fields nothing reads yet - exit requests are off since M55 S2, the trading window is TS1-026 / 028
 # (PR-3) and re-entry has no TS-1 row (no pre-chosen value in the code).
+M76_WIRED = False   # M76 MP-1: declared, read by nothing yet (admin Advanced only); MP-2 wires them
 PR6_NOT_WIRED = {"automation.approval_exit_minutes", "automation.window_start", "automation.window_end", "automation.reentry",
                  "automation.reentry_max"}
 
@@ -81,6 +83,10 @@ PR6_NOT_WIRED = {"automation.approval_exit_minutes", "automation.window_start", 
 def test_registry_fields_are_well_formed_and_wired_by_their_pr():
     for f in ts.FIELDS:
         assert f.label and f.help and f.label[0].isupper(), f.key
+        if f.order == "M76":                                                   # M76: wired by MP-2 (the check service reads them)
+            assert f.section == "warnings" and f.flag == "trade_warnings" and f.wired is M76_WIRED and not f.fact or f.fact, f.key
+            continue
+        assert f.order == "M68" and f.default is None and f.default_by is None, f.key   # M68: never a default
         assert f.wired is (f.pr in (1, 6) and not f.fact and f.key not in PR6_NOT_WIRED), f.key   # PR-1 / PR-6 wired; later PRs the rest
         assert 1 <= f.pr <= 7, f.key
         if f.kind == "choice":
@@ -106,7 +112,7 @@ def test_the_namespace_is_read_by_one_order_path_reader():
     """M68 PR-1: order paths read the Trade settings only through app/execution/order_defaults.py (one reader)."""
     out = subprocess.run(["grep", "-rlE", "--include=*.py", r"trade_settings|TradeSettings", "app"], cwd=BACKEND, capture_output=True, text=True).stdout
     assert sorted(out.split()) == ["app/execution/automation.py", "app/execution/order_defaults.py", "app/main.py", "app/me/prefs.py",
-                                   "app/me/trade_settings.py"]                      # M68 PR-6: + the Automation reader
+                                   "app/me/trade_settings.py", "app/paper/pretrade_warnings.py"]   # M68 PR-6: + the Automation reader; M76: the warnings reader
 
 
 def test_value_checks():
@@ -146,7 +152,7 @@ def test_a_new_user_sees_not_set_and_no_dead_control():
     assert got.status_code == 200, got.text
     body = got.json()
     assert body["admin"] is False and body["page"] == "/settings/trade-settings"
-    assert [s["id"] for s in body["sections"]] == list(ts.SECTION_IDS)
+    assert [s["id"] for s in body["sections"]] == [i for i in ts.SECTION_IDS if i != "warnings"]   # M76: flag trade_warnings off
     fields = _fields(body)
     # PR-1: the Order defaults controls are wired; every other control is not yet (only facts show)
     assert fields and all(f["fact"] or f["key"].startswith(("order_defaults.", "automation.")) for f in fields.values())   # + PR-6
@@ -160,7 +166,8 @@ def test_a_new_user_sees_not_set_and_no_dead_control():
 def test_an_admin_sees_every_field_not_set():
     body = client.get(URL, headers=_admin("adm")["headers"]).json()
     fields = _fields(body)
-    assert body["admin"] is True and set(fields) == set(ts.BY_KEY)
+    # M76 MP-1: the Warnings section is not shown while its flag (trade_warnings, off by default) is off - admin too
+    assert body["admin"] is True and set(fields) == {k for k in ts.BY_KEY if not k.startswith("warnings.")}
     assert all(f["value"] is None and f["saved"] is False for f in fields.values())
 
 
@@ -254,4 +261,5 @@ def test_the_e2e_fixtures_are_the_registry_view():
     """frontend/e2e/fixtures/trade-settings-{user,admin}.json are this registry's own replies (regenerate on a change)."""
     for name, admin in (("user", False), ("admin", True)):
         path = BACKEND.parent / "frontend" / "e2e" / "fixtures" / f"trade-settings-{name}.json"
-        assert json.loads(path.read_text(encoding="utf-8")) == ts.view({}, admin), name
+        # M76 MP-1: the e2e mocks have `trade_warnings` off (its default), so the Warnings section is not in them.
+        assert json.loads(path.read_text(encoding="utf-8")) == ts.view({}, admin, frozenset({"trade_warnings"})), name

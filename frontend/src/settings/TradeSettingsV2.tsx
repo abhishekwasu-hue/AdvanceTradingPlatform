@@ -6,7 +6,7 @@ import { Combobox } from "../ui/Combobox";
 import { Details } from "../ui/Details";
 import { TermHint } from "../ui/TermHint";
 import {
-  NOT_SET, changesOf, draftOf, editable, loadTradeSettings, partsOf, saveTradeSettings, setCount, termOf, valueWords,
+  NOT_SET, changesOf, draftOf, editable, loadTradeSettings, partsOf, saveTradeSettings, setCount, termOf, unsavedWords, valueWords,
   type Draft, type TradeField, type TradeSection, type TradeSettingsView,
 } from "./tradeSettings";
 
@@ -126,7 +126,7 @@ function FieldRow({ field: f, text, onText }: { field: TradeField; text: string;
       <div className="min-w-0">
         <label htmlFor={`${id}-input`} className={LABEL}>{f.label}{unit}{term && <TermHint term={term} />}</label>
         <p id={`${id}-help`} className="text-t12 text-fg-muted">{f.help}</p>
-        <p className={`text-t12 ${f.saved ? "text-fg" : "text-fg-muted"}`} data-value>{f.saved ? `Saved: ${valueWords(f)}` : NOT_SET}</p>
+        <p className={`text-t12 ${f.saved ? "text-fg" : "text-fg-muted"}`} data-value>{f.saved ? `Saved: ${valueWords(f)}` : unsavedWords(f)}</p>
       </div>
       <div className="min-w-0">
         {!editable(f) ? (

@@ -19,6 +19,20 @@ export interface TradeField {
   key: string; label: string; kind: FieldKind; help: string; unit: string; choices: { value: string; label: string }[];
   low: number | null; high: number | null; low_open: boolean; term: string | null; fact: boolean; wired: boolean;
   scope: "user" | "organisation"; value: unknown; saved: boolean;
+  /** M76 MP-1: a warning switch's starting state chosen by the owner (amendment 2), used while he saved none. */
+  default?: unknown; default_by?: "owner" | null;
+}
+
+/** His saved value, else the starting state of a warning switch, else null (Not set). */
+export function effectiveValue(f: TradeField): unknown {
+  if (f.saved) return f.value;
+  return f.default ?? null;
+}
+
+/** "Not set", or for a warning switch "Not set · starts On" (the owner's starting state, M76 amendment 2). */
+export function unsavedWords(f: TradeField): string {
+  if (f.kind === "switch" && typeof f.default === "boolean") return `${NOT_SET} · starts ${f.default ? "On" : "Off"}`;
+  return NOT_SET;
 }
 
 export interface TradeSection { id: string; title: string; fields: TradeField[]; today: { label: string; path: string } | null }

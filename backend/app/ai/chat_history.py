@@ -3,7 +3,8 @@
 * `remember` writes one turn (the question and the answer card the page showed, without the admin-only `diagnostics`)
   and deletes the person's turns older than the newest `config.COPILOT_CHAT_KEEP`.
 * `recent` reads the newest turns back, oldest first (the page's order).
-* `forget` deletes every turn of the person (Settings → My data, "Delete my Copilot conversation"; also on erasure).
+* `forget` deletes every turn of the person (Settings → My data, "Delete my Copilot conversation"; also on erasure), and
+  what the Copilot remembers about him (M72 PR-11, `app/ai/memory.py`).
 
 Stored for the person only: never read by a trading decision, an order path or another person.
 """
@@ -60,8 +61,11 @@ async def count(session: AsyncSession, tenant_id: int, user_id: int) -> int:
 
 
 async def forget(session: AsyncSession, tenant_id: int, user_id: int) -> int:
-    """Every turn of the person. Returns how many were deleted. Does not commit."""
+    """Every turn of the person - and (M72 PR-11) what the Copilot remembers about him (`ai_memory`). Returns how many turns
+    were deleted. Does not commit."""
+    from app.ai import memory
     result = await session.execute(delete(CopilotChatTurnRecord).where(*_mine(tenant_id, user_id)))
+    await memory.forget(session, tenant_id, user_id)
     return int(result.rowcount or 0)
 
 

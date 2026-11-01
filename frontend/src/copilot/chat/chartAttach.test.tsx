@@ -106,8 +106,9 @@ describe("M59 CR-2: the chart attach in the Ask box", () => {
     expect(text(failed)).toContain("Please upload a screenshot instead");
   });
 
-  it("uses the same chart_analyze pipeline as the page, Image only, and never an order call", () => {
-    expect(chatSource).toContain('chartAnalyzeApi.add(source.kind === "file" ? { file: source.file, fileName: source.name } : { link: source.link }, "image_only")');
+  it("uses the same chart_analyze pipeline as the page, Image only (hybrid only with the page's pick, M72 PR-5), and never an order call", () => {
+    expect(chatSource).toContain('const added = source.kind === "file" ? { file: source.file, fileName: source.name } : { link: source.link };');
+    expect(chatSource).toContain('await chartAnalyzeApi.add(added, "image_only")');
     expect(chatSource).toContain("chartAnalyzeApi.analyze(item.id)");
     expect(chatSource).not.toMatch(/placeOrder|exitNow|cancelOrder/);
     // M59 CR-2: after the analysis only the rule answer is asked (no AI wording); the AI words only on the user's tap

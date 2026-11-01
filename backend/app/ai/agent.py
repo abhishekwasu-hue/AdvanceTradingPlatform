@@ -295,7 +295,7 @@ def _verify(answer: Parsed, allowed: set, by_call: Dict[str, set], from_question
 
 
 async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str = "en", limits: Optional[AgentLimits] = None,
-                    context: dict[str, Any] | None = None) -> AgentAnswer:
+                    context: dict[str, Any] | None = None, memory: dict[str, Any] | None = None) -> AgentAnswer:
     """`context` (M72 PR-3): what the page asked from, as the SERVER read it for this user (`app.ai.ask_context.resolve`);
     the model gets it as data and its numbers count as read (call id "context")."""
     limits = limits or AgentLimits()
@@ -328,6 +328,10 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
     if context:
         from app.ai.ask_context import planner_note
         first = planner_note(context) + question
+    if memory:
+        # M72 PR-11 (CP-11): what HE saved in the Copilot's memory, as data for his own question
+        from app.ai.memory import note
+        first = note(memory) + first
     messages: List[Dict[str, Any]] = [{"role": "user", "content": first}]
     calls: List[Dict[str, Any]] = []
     from_question = set(grounding.allowed_from_text(question))
@@ -347,6 +351,10 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
         by_call["context"] = found
         call_texts["context"] = json.dumps(context, default=str, ensure_ascii=False)
         first_party.add("context")
+    if memory:
+        # his own saved instruments / timeframes: symbols he may be answered about (never a direction source)
+        allowed |= grounding.numbers_in_values(memory)
+        call_texts["memory"] = json.dumps(memory, default=str, ensure_ascii=False)
     final_text: Optional[str] = None
     final: Optional[Parsed] = None
     stopped = "steps"

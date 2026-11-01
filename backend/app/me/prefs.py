@@ -528,6 +528,20 @@ class AiPrefs(_Prefs):
     voice: bool = False
 
 
+MemorySymbol = Annotated[str, StringConstraints(min_length=1, max_length=30, pattern=r"^[A-Za-z0-9][A-Za-z0-9 &._:-]{0,29}$")]
+
+
+class AiMemoryPrefs(_Prefs):
+    """`ai_memory` (M72 PR-11, CP-11): what the Copilot remembers about the user - the instruments and timeframes he follows
+    and his trading style - shown and edited by him in Settings > AI and deleted with "Delete my Copilot conversation".
+    Saved only by him (ATP suggests from his own lists, trades and questions; it stores nothing he did not save). Read only
+    by the Copilot planner for his own questions (flag copilot_memory); never by another user, an order path, a worker
+    trading step or a bot."""
+    instruments: list[MemorySymbol] = Field(default_factory=list, max_length=12)
+    timeframes: list[Literal["15m", "1h", "1d", "1w"]] = Field(default_factory=list, max_length=4)
+    style: Literal["intraday", "swing", "positional", "options_selling", "options_buying", "investing"] | None = None
+
+
 WATCH_PCT = Field(default=None, gt=0, le=100, allow_inf_nan=False)
 
 
@@ -572,7 +586,7 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "option_chain": OptionChainPrefs, "terminal": TerminalPrefs,
                                        "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs,
                                        "trade_settings": TradeSettingsPrefs, "ai_usage": AiUsagePrefs,
-                                       "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs}
+                                       "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs, "ai_memory": AiMemoryPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 

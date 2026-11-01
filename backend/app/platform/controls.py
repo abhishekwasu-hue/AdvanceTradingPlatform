@@ -162,6 +162,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # user's own language (English / Marathi / Hindi, his Settings > AI choice; numbers and symbols unchanged, the Marathi /
     # Hindi advice and order phrases refused) and the Copilot shows the browser's speech input when he turns it on. The
     # interface, the rule answers and every other AI surface stay English; the strategy interview is untouched. OFF: English only.
+    # M72 PR-11 (CP-11; needs `ai_copilot` + `ui_v2`; app/ai/memory.py): what the Copilot remembers about the user - his
+    # instruments, timeframes and style, saved by him in Settings > AI (ATP suggests from his own lists, trades and
+    # questions) - given to the planner for his own questions only; deleted with "Delete my Copilot conversation". Never
+    # read across users, by an order path or a bot. OFF: nothing is read and /api/copilot-memory answers 404.
+    "copilot_memory": "Copilot memory: the instruments, timeframes and style you save, used for your own questions",
     "copilot_languages": "Copilot answers in Marathi or Hindi (the user's choice) and voice input in the Copilot box",
     "copilot_ticket": "Copilot ticket preparation: the order ticket opens filled with only what you typed; you review and place it yourself",
     "copilot_watch": "Copilot watch: opt-in cards when your own positions, short strikes or watchlists change, with Ask why",

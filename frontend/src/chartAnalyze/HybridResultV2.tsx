@@ -88,9 +88,11 @@ export interface HybridResultProps {
   actions?: boolean;
   downloading?: boolean;
   deleting?: boolean;
+  /** M84: "Read from your chart: NIFTY 50 · 15m", with Change and Re-run in place (ChartReadV2). */
+  readLine?: ReactNode;
 }
 
-export default function HybridResultV2({ result, userImageSrc, readingSrc, imageNote, onDownload, onDelete, downloading, deleting, actions = true }: HybridResultProps) {
+export default function HybridResultV2({ result, userImageSrc, readingSrc, imageNote, onDownload, onDelete, downloading, deleting, actions = true, readLine }: HybridResultProps) {
   const r = result.reading;
   const ai = result.ai ? guardDeep(result.ai, KEEP) : null;
   const title = `${r.symbol} ${r.timeframe_label}`;
@@ -104,6 +106,7 @@ export default function HybridResultV2({ result, userImageSrc, readingSrc, image
           <h2 id="hy-charts" className="text-t15 font-semibold text-fg md:text-t18">{title}</h2>
           <span className={cx(CHIP, "bg-brand-tint text-brand-strong")} data-testid="hybrid-label">{result.label}</span>
         </div>
+        {readLine}
         {r.last_close != null && (
           <p className="mt-space-1 text-t12 text-fg-muted">Last close <span className="font-tabular text-fg">{num(r.last_close)}</span> · from the stored candles</p>
         )}

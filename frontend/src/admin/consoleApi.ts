@@ -72,6 +72,8 @@ export interface ConsoleSystem {
   /** M71 PL-4: the universe market-data feed's health (backend/app/market_data/feed_health.py `snapshot()`). Absent on
    * a server from before M71. */
   market_feed?: MarketFeed;
+  /** M73 SL-1: the sign-in providers and whether each is live (its credentials are set). Absent before M73. */
+  sign_in_providers?: { id: string; label: string; kind: string; live: boolean }[];
 }
 
 /** One WebSocket connection of the universe feed. State: connecting | live | reconnecting | renew_needed. */

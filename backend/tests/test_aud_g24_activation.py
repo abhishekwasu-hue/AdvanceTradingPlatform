@@ -126,7 +126,7 @@ def test_opening_a_trade_journal_is_a_first_journal_review():
 
 def test_every_step_is_wired_where_it_happens():
     wired = {
-        "app/auth/routes.py": ['"signup"'], "app/auth/google_routes.py": ['"signup"'],
+        "app/auth/routes.py": ['"signup"'],   # M73: the one sign-up / join path (forms, Google, Facebook)
         "app/brokers/routes.py": ['"broker_connect"'], "app/market_data/candles_routes.py": ['"first_chart"'],
         "app/trading/persistence.py": ['"first_paper_trade"'], "app/journal/routes.py": ['"first_journal_review"'],
     }

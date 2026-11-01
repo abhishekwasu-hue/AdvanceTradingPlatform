@@ -13,13 +13,36 @@ test module shares. A module that switches `news_feed` on, or seeds a global RBI
 not decide what the next module sees: both are reset after every module. So are positions a module left open - the
 worker's exits sweep covers every open position, with or without a deployment.
 """
+import asyncio
 import os
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.pool import Pool
 
 os.environ["GLOBAL_CUES_ENABLED"] = "false"
 
 from app.brokers.circuit_breaker import reset_all
+
+
+@event.listens_for(Pool, "checkout")
+def _connection_lock_of_this_event_loop(dbapi_connection, connection_record, connection_proxy):
+    """The in-memory test databases (SQLite `:memory:` on a StaticPool, e.g. tests/test_auth_api.py) keep ONE connection
+    for the whole run, while every test runs its own event loop (`asyncio.run`). SQLAlchemy's async adapter guards the
+    connection with an asyncio.Lock that binds itself to the loop of the first two queries that overlap; an overlap in
+    any later loop then raised "bound to a different event loop", the connection was invalidated and the pool opened a
+    fresh, EMPTY database - every later test failed with "no such table". A free lock bound to another loop is replaced
+    when the connection is checked out in this one (tests/test_shared_test_db_event_loops.py)."""
+    mutex = getattr(dbapi_connection, "_execute_mutex", None)
+    bound = getattr(mutex, "_loop", None)
+    if bound is None or mutex.locked():
+        return
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    if bound is not running:
+        dbapi_connection._execute_mutex = asyncio.Lock()
 
 
 @pytest.fixture(autouse=True)

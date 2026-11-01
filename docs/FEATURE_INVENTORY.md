@@ -44,7 +44,7 @@ Facts from the code that the tables rely on:
 | ai | Copilot chat, strategist, own AI keys, research, vision | `/api/ai`, `/api/ai/byok` | `ai_copilot` (ON); `ai_one_key`, `ai_agent`, `ai_research` | PARTIAL (no key: rule-based answers) | unknown until the owner's check |
 | alerts | Alert rules, channels, webhooks, push, outbox | `/api/alerts`, `/api/alert-channels`, `/api/alert-webhooks`, `/api/admin/alerts` | `alert_webhooks`, `alerts_reliable_outbox`, `mobile_push`, `screener_intrabar` | PARTIAL (browser push needs VAPID) | unknown until the owner's check |
 | audit | Hash-chained audit log | - | - | INTERNAL | - |
-| auth | Sign-in, sessions, two-factor, Google sign-in, lockout | `/api/auth` | `self_signup` (ON); `beta_cohort_gate` | WORKS | unknown until the owner's check |
+| auth | Sign-in, sessions, two-factor, Google + Facebook sign-in (M73: linking, Settings › Account ways to sign in), lockout | `/api/auth` | `self_signup` (ON); `beta_cohort_gate` | WORKS | unknown until the owner's check |
 | backtest | Backtests, optimiser, Monte Carlo, walk-forward, option snapshots | routes `/api/backtest/...`, `/api/backtests` (no router prefix) | `backtest_optimizer` (ON); `backtest_models`, `backtest_stored_history` | PARTIAL (intraday needs a broker session or stored history) | unknown until the owner's check |
 | beta | Invite codes, cohort stage, feedback, app vitals | `/api/admin/beta`, `/api/feedback`, `/api/pwa` | `beta_cohort_gate` | WORKS | unknown until the owner's check |
 | billing | Plans, Razorpay subscribe / cancel, usage, webhook | `/api/billing`, `/api/billing/webhooks`, `/api/admin/billing` | - | PARTIAL (no payments without Razorpay keys) | unknown until the owner's check |

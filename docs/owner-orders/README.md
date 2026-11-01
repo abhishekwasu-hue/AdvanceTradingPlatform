@@ -73,6 +73,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | "Continue with your broker" sign-in (1 Nov) | ATP_ORDER_M74.md | M74 | not started |
 | - | Copilot trading workspace + no-navigation rule (1 Nov) | ATP_ORDER_M75.md | M75 | not started |
 | - | Copilot workspace: advanced facilities + mistake-proofing (1 Nov, + amendment) | ATP_ORDER_M76.md | M76 | not started |
+| - | Save the Copilot study as PDF / PNG / CSV (1 Nov) | ATP_ORDER_M77.md | M77 | not started |
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

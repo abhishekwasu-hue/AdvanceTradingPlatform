@@ -202,7 +202,7 @@ def test_failed_exchange_is_one_code_and_logs_no_secret(apps, caplog):
     with caplog.at_level(logging.DEBUG):
         with pytest.raises(BrokerSignInError) as exc:
             _run(_identity("upstox", fake))
-    assert exc.value.code == "exchange_failed" and str(exc.value) == "exchange_failed"
+    assert exc.value.code == "failed" and str(exc.value) == "failed"
     for secret in (CODE, PLATFORM_SECRET, TOKEN):
         assert secret not in caplog.text
 
@@ -210,7 +210,7 @@ def test_failed_exchange_is_one_code_and_logs_no_secret(apps, caplog):
 def test_profile_without_a_user_id_is_refused(apps):
     with pytest.raises(BrokerSignInError) as exc:
         _run(_identity("zerodha", FakeBroker("zerodha", user_id="")))
-    assert exc.value.code in ("failed", "exchange_failed")
+    assert exc.value.code == "failed"
 
 
 # --- BL-2: the session stored as today's broker connection -----------------------------------------------------------
@@ -304,3 +304,183 @@ def test_store_refuses_when_the_platform_app_is_withdrawn(apps):
         _store(email, identity)
     assert exc.value.code == "not_configured"
     assert _rows(_user(email).tenant_id, "upstox") == []
+
+
+# --- route level (M73 routes): sign-in, new user, link by email, hidden when not configured --------------------------
+
+from app.auth import mfa as _mfa  # noqa: E402
+from app.auth import social  # noqa: E402
+from app.auth.social_routes import social_start_rate_limit  # noqa: E402
+from app.db.models import UserIdentityRecord  # noqa: E402
+from app.main import app  # noqa: E402
+from tests.test_auth_api import client  # noqa: E402
+from tests.test_m73_social_login import _flags  # noqa: E402
+
+app.dependency_overrides[social_start_rate_limit] = lambda: None
+PUBLIC = "https://aialgodesk.tech"
+CODE_PARAM = {"upstox": "code", "zerodha": "request_token", "fyers": "auth_code"}
+OK_PARAMS = {"upstox": {}, "zerodha": {"status": "success", "action": "login"}, "fyers": {"s": "ok", "code": "200"}}
+
+
+@pytest.fixture
+def brokers(apps, monkeypatch):
+    """All three platform apps set + approved, self sign-up on, and each broker served by a FakeBroker."""
+    monkeypatch.setattr(config, "FRONTEND_URL", PUBLIC)
+    _flags(monkeypatch, self_signup=True)
+    fakes = {b: FakeBroker(b) for b in ("upstox", "zerodha", "fyers")}
+    monkeypatch.setattr(broker_signin, "http_client", lambda b: fakes[b].client())
+    return fakes
+
+
+def _broker_login(broker: str, *, state=None, extra=None, start_params=None, headers=None):
+    start = client.get(f"/api/auth/broker/{broker}/start", params=start_params or {}, follow_redirects=False)
+    assert start.status_code == 302, start.text
+    cookie = start.cookies.get(f"atp_broker_{broker}_flow")
+    assert cookie
+    query = parse_qs(urlsplit(start.headers["location"]).query)
+    sent_state = parse_qs(query["redirect_params"][0])["state"][0] if broker == "zerodha" else query["state"][0]
+    params = {**OK_PARAMS[broker], CODE_PARAM[broker]: CODE, "state": state or sent_state, **(extra or {})}
+    client.cookies.clear()
+    response = client.get(f"/api/auth/broker/{broker}/callback", params=params, follow_redirects=False,
+                          headers={"cookie": f"atp_broker_{broker}_flow={cookie}", **(headers or {})})
+    assert response.status_code == 302, response.text
+    parts = urlsplit(response.headers["location"])
+    return {"path": parts.path, "query": {k: v[0] for k, v in parse_qs(parts.query).items()}, "fragment": parts.fragment,
+            "refresh": next((c for c in response.headers.get_list("set-cookie") if c.startswith("atp_refresh=")), None)}
+
+
+def _identity_rows(user_id: int):
+    async def go():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(UserIdentityRecord).where(UserIdentityRecord.user_id == user_id)))
+    return _run(go())
+
+
+def _link(user: User, broker: str, subject: str = "AB1234") -> None:
+    async def go():
+        async with _session_factory() as session:
+            u = await session.get(User, user.id)
+            await social.link_identity(session, u, social.ProviderIdentity(provider=f"broker:{broker}", subject=subject))
+            await session.commit()
+    _run(go())
+
+
+def test_routes_hidden_and_404_when_not_configured(monkeypatch):
+    monkeypatch.setattr(config, "BROKER_SIGNIN_APPS", _apps(upstox=False))
+    body = client.get("/api/auth/providers").json()
+    assert not [p for p in body["providers"] if p["kind"] == "broker"]
+    for broker in ("upstox", "zerodha", "fyers"):
+        assert client.get(f"/api/auth/broker/{broker}/start", follow_redirects=False).status_code == 404
+        assert client.get(f"/api/auth/broker/{broker}/callback?state=x&code=y", follow_redirects=False).status_code == 404
+
+
+def test_providers_list_the_configured_brokers_with_their_paths(brokers, monkeypatch):
+    monkeypatch.setattr(config, "BROKER_SIGNIN_APPS", _apps(upstox=True, fyers=True, zerodha=False))
+    listed = [p for p in client.get("/api/auth/providers").json()["providers"] if p["kind"] == "broker"]
+    assert listed == [{"id": "broker:upstox", "label": "Upstox", "kind": "broker", "start": "/auth/broker/upstox/start"},
+                      {"id": "broker:fyers", "label": "Fyers", "kind": "broker", "start": "/auth/broker/fyers/start"}]
+    assert PLATFORM_KEY not in str(listed)
+
+
+def test_redirect_url_is_the_one_given_to_the_owner(brokers):
+    for broker in ("upstox", "fyers"):
+        start = client.get(f"/api/auth/broker/{broker}/start", follow_redirects=False)
+        assert parse_qs(urlsplit(start.headers["location"]).query)["redirect_uri"] == [f"{PUBLIC}/api/auth/broker/{broker}/callback"]
+
+
+@pytest.mark.parametrize("broker", ["upstox", "zerodha", "fyers"])
+def test_linked_identity_signs_in_and_stores_todays_session(brokers, broker, caplog):
+    email = f"m74-linked-{broker}@example.com"
+    _register(email)
+    user = _user(email)
+    _link(user, broker, subject=f"LNK-{broker}")
+    brokers[broker].user_id = f"LNK-{broker}"
+    brokers[broker].email = "someone-else@example.com"          # a linked identity signs in by its subject, not its e-mail
+    with caplog.at_level(logging.DEBUG):
+        loc = _broker_login(broker)
+    assert loc["path"] == "/" and loc["query"] == {"social": "ok", "provider": f"broker:{broker}"} and loc["refresh"]
+    [row] = _rows(user.tenant_id, broker)
+    creds = load_credentials(row)
+    assert row.token_status == BrokerTokenStatus.VALID.value and creds.access_token == TOKEN and creds.api_secret is None
+    server_lines = "\n".join(r.getMessage() for r in caplog.records if not r.name.startswith("httpx"))   # the test client's own request line
+    for secret in (TOKEN, CODE, PLATFORM_SECRET):
+        assert secret not in server_lines and secret not in str(loc)
+
+
+@pytest.mark.parametrize("param", ["code", "request_token", "auth_code", "state"])
+def test_access_log_blanks_every_brokers_code_parameter(param):
+    from app.core.logging_config import redact_query
+    line = f"GET /api/auth/broker/x/callback?{param}={CODE}&s=ok HTTP/1.1"
+    assert CODE not in redact_query(line) and f"{param}=[redacted]" in redact_query(line)
+
+
+def test_new_user_gets_an_account_linked_and_connected(brokers):
+    brokers["upstox"].email, brokers["upstox"].user_id = "m74-new@example.com", "NEW001"
+    loc = _broker_login("upstox")
+    assert loc["query"] == {"social": "new", "provider": "broker:upstox"} and loc["refresh"]
+    user = _user("m74-new@example.com")
+    assert user is not None and user.email_verified_at is not None
+    assert [(i.provider, i.subject) for i in _identity_rows(user.id)] == [("broker:upstox", "NEW001")]
+    [row] = _rows(user.tenant_id, "upstox")
+    assert load_credentials(row).access_token == TOKEN
+
+
+def test_new_user_through_a_broker_without_email_finishes_on_the_email_step(brokers):
+    brokers["fyers"].email, brokers["fyers"].user_id = "", "NOMAIL1"
+    loc = _broker_login("fyers")
+    assert loc["path"] == "/account" and loc["query"]["social"] == "complete"
+    assert loc["fragment"].startswith("social_pending=")
+
+
+def test_email_match_is_a_pending_link_never_a_silent_sign_in(brokers):
+    email = "m74-collide@example.com"
+    _register(email)
+    brokers["zerodha"].email, brokers["zerodha"].user_id = email.upper(), "ZC0001"
+    loc = _broker_login("zerodha")
+    assert loc["path"] == "/account" and loc["query"] == {"social": "link", "provider": "broker:zerodha"} and not loc["refresh"]
+    token = loc["fragment"].split("=", 1)[1]
+    confirmed = client.post("/api/auth/social/link/confirm", json={"token": token, "password": "S3cur3Pass!"})
+    assert confirmed.status_code == 200, confirmed.text
+    user = _user(email)
+    assert [(i.provider, i.subject) for i in _identity_rows(user.id)] == [("broker:zerodha", "ZC0001")]
+
+
+def test_mfa_account_gets_the_challenge_first(brokers):
+    email = "m74-mfa@example.com"
+    _register(email)
+    user = _user(email)
+    _link(user, "upstox", subject="MFA001")
+    brokers["upstox"].user_id = "MFA001"
+
+    async def turn_on():
+        async with _session_factory() as session:
+            u = await session.get(User, user.id)
+            u.mfa_enabled = True
+            await session.commit()
+    _run(turn_on())
+    loc = _broker_login("upstox")
+    assert loc["query"]["social"] == "mfa" and loc["fragment"].startswith("social_mfa=") and not loc["refresh"]
+    assert _mfa.parse_mfa_token(loc["fragment"].split("=", 1)[1]) == user.id
+    assert _rows(user.tenant_id, "upstox") == []                  # nothing reaches the tenant before the second factor
+
+
+@pytest.mark.parametrize("broker,extra,error", [
+    ("upstox", {"error": "access_denied"}, "cancelled"),
+    ("zerodha", {"status": "cancelled"}, "cancelled"),
+    ("fyers", {"s": "error"}, "cancelled"),
+])
+def test_broker_refusals_end_on_the_sign_in_page(brokers, broker, extra, error):
+    loc = _broker_login(broker, extra=extra)
+    assert loc["query"] == {"social_error": error, "provider": f"broker:{broker}"}
+
+
+def test_state_mismatch_is_expired_and_nothing_is_exchanged(brokers):
+    loc = _broker_login("fyers", state="forged-state")
+    assert loc["query"] == {"social_error": "expired", "provider": "broker:fyers"}
+    assert brokers["fyers"].requests == []
+
+
+def test_failed_exchange_says_failed_without_the_brokers_text(brokers):
+    brokers["upstox"].exchange_status = 400
+    loc = _broker_login("upstox")
+    assert loc["query"] == {"social_error": "failed", "provider": "broker:upstox"}

@@ -92,10 +92,18 @@ lookup by (`broker:<id>`, subject):
   keys is never overwritten (that session goes to label `broker-login`). OPEN_QUESTIONS M74-1.
 - Renewal of a sign-in row is the next day's sign-in (or "Continue with your broker" again); the own-keys renew /
   OAuth-start routes need the user's own secret and do not apply to it.
-- Built in this PR (backend only, no routes yet): `backend/app/auth/broker_signin.py` (providers, `configured_brokers()`,
-  `identity_for_code()`, `store_signin_session()`), `config.BROKER_SIGNIN_APPS`, `.env.example`. The routes, the
-  sign-in page list (BL-1) and linking (BL-3) attach to M73's registry, flow cookie and `user_identities` once that
-  branch is pushed; no migration (no new columns).
+- Built: `backend/app/auth/broker_signin.py` (providers, `configured_brokers()`, `identity_for_code()`,
+  `store_signin_session()`, and the M73 wiring: `social_routes.add_provider()` with slug `broker/<id>`, so the routes are
+  exactly `/api/auth/broker/<id>/start | link | callback`), `config.BROKER_SIGNIN_APPS`, `.env.example`; frontend
+  `BrokerSignIn` / `brokerOptions` in `frontend/src/auth/SocialButtons.tsx`, passed to `SignInOptionsList` as `extra`.
+  No migration (M73's `user_identities` columns suffice).
+- Minimal M73 extensions (M73 behaviour unchanged for Google / Facebook): `Provider.read_code` (default = `?code=` /
+  `?error=`; brokers read `request_token` / `auth_code` and their own refusal words); the flow cookie name turns `/`
+  into `_` (`atp_broker_upstox_flow`; a `/` is not allowed in a cookie name); `on_signed_in` also runs after a new
+  account is created and after a Settings link; the access-log redaction also blanks `request_token` and `auth_code`.
+- When the session is NOT stored this round (OPEN_QUESTIONS M74-3): an account with two-factor on (the challenge
+  comes first; the broker token is not carried through it) and a link confirmed with the password. The person is
+  signed in; the broker is connected on the next sign-in without those steps, or with the connect card.
 
 ### 3.3 Linking (BL-3)
 M73's Settings > Account list shows `broker:<id>` identities with the same link / unlink buttons; keep one way to sign

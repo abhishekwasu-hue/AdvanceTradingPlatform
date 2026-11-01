@@ -186,6 +186,7 @@ import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 import { currentView, setView } from "./viewState";
 import type { LegalAckBody, LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
 import type { SupportReply } from "../support/support";
+import type { SignInIdentities, SignInProvidersAnswer, SocialPendingInfo } from "../auth/socialTypes";
 import { CONNECT_AI_EVENT, isNotConnected, type AiConnection } from "../aiKeys/connect";
 import type { AiProviderName } from "../aiKeys/keyFormats";
 import type { MarketStrip } from "../dashboard/types";
@@ -542,8 +543,20 @@ export const api = {
 
   me: () => request<UserResponse>("/auth/me"),
 
-  // GS-1: which extra sign-in buttons to show (google: true only once the server has both credentials).
-  authProviders: () => request<{ google: boolean }>("/auth/providers"),
+  // GS-1 / M73: which sign-in provider buttons to show (only those whose credentials the server has) and the
+  // platform-wide `ui_v2` layout of the signed-out page.
+  authProviders: () => request<SignInProvidersAnswer>("/auth/providers"),
+
+  // M73 SL-2 / SL-3: the pending steps after a provider sign-in, and Settings › Account link / unlink.
+  socialPending: (token: string) =>
+    request<SocialPendingInfo>("/auth/social/pending", { method: "POST", body: JSON.stringify({ token }) }),
+  socialConfirmLink: (token: string, password: string, code?: string) =>
+    request<TokenResponse>("/auth/social/link/confirm", { method: "POST", body: JSON.stringify({ token, password, code: code || undefined }) }),
+  socialComplete: (token: string, body: { email?: string; invite_code?: string; legal_acceptance?: Record<string, LegalAckBody> }) =>
+    request<TokenResponse>("/auth/social/complete", { method: "POST", body: JSON.stringify({ token, ...body }) }),
+  signInIdentities: () => request<SignInIdentities>("/auth/identities"),
+  socialLinkStart: (slug: string) => request<{ url: string }>(`/auth/${encodeURIComponent(slug)}/link`, { method: "POST" }),
+  socialUnlink: (provider: string) => request<void>(`/auth/identities/${encodeURIComponent(provider)}`, { method: "DELETE" }),
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 

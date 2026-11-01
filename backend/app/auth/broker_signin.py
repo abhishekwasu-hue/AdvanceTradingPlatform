@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounts.service import ensure_account_for_credential
 from app.audit.log import write_audit_log
+from app.auth import social
 from app.brokers.models import BrokerCredentials
 from app.brokers.registry import get_broker_adapter
 from app.brokers.token_lifecycle import (
@@ -52,12 +53,9 @@ PRIMARY_LABEL = "primary"
 SIGNIN_LABEL = "broker-login"
 
 
-class BrokerSignInError(Exception):
-    """A refusal with one fixed short code the sign-in page words in plain English - never the broker's raw text."""
-
-    def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
+class BrokerSignInError(social.SignInError):
+    """A refusal with one fixed short code the sign-in page words in plain English - never the broker's raw text. A
+    SignInError, so the M73 callback turns it into its `?social_error=<code>` redirect."""
 
 
 @dataclass(frozen=True)
@@ -150,15 +148,15 @@ class BrokerSignInProvider:
     async def identity_for_code(self, code: str, redirect_uri: str,
                                 client: httpx.AsyncClient | None = None) -> BrokerIdentity:
         """Exchanges the code with the existing adapter (the same exchange the daily connect uses) and reads the profile.
-        Any broker failure is `exchange_failed`; a profile without a user id or a session without a token `failed`."""
+        Any broker failure, a profile without a user id or a session without a token is `failed`."""
         app = self._require_app()
         credentials = BrokerCredentials(api_key=app.api_key, api_secret=app.api_secret, request_token=code,
                                         redirect_uri=redirect_uri)
         try:
-            adapter = get_broker_adapter(self.broker, credentials, client)
+            adapter = get_broker_adapter(self.broker, credentials, client or http_client(self.broker))
             profile = await adapter.authenticate()
         except Exception as exc:  # noqa: BLE001 - one fixed code; the broker's text may echo the code or the secret
-            raise BrokerSignInError("exchange_failed") from exc
+            raise BrokerSignInError("failed") from exc
         token = adapter.access_token
         subject = str(profile.user_id or "").strip()
         if not token or not subject:
@@ -171,6 +169,11 @@ class BrokerSignInProvider:
         if app is None:
             raise BrokerSignInError("not_configured")
         return app
+
+
+def http_client(broker: str) -> httpx.AsyncClient | None:
+    """The HTTP client for a sign-in exchange: None = the adapter's own (tests serve the broker from a mock transport)."""
+    return None
 
 
 PROVIDERS: dict[str, BrokerSignInProvider] = {
@@ -252,3 +255,44 @@ async def store_signin_session(session: AsyncSession, user: User, identity: Brok
     await ensure_account_for_credential(session, record)
     await write_audit_log(session, user.tenant_id, user.id, "broker_signin_session_stored", f"{identity.broker}/{label}")
     return record
+
+
+# --- M73 registry wiring: one `broker:<id>` provider per broker, served at /api/auth/broker/<id>/start|link|callback ---
+
+def _social_provider(p: BrokerSignInProvider) -> social.Provider:
+    async def identity_for_code(code: str, flow: object, redirect: str) -> social.ProviderIdentity:
+        found = await p.identity_for_code(code, redirect)
+        # A broker's e-mail is the one on the person's KYC'd trading account (OPEN_QUESTIONS M74-3); a match with an
+        # account that has not linked this broker is still a pending link its password confirms (M73 SL-2).
+        return social.ProviderIdentity(provider=p.kind, subject=found.subject, email=found.email,
+                                       email_verified=found.email is not None, session_token=found)
+
+    async def on_signed_in(session: AsyncSession, user: User, identity: social.ProviderIdentity, request: object) -> None:
+        found = identity.session_token
+        if not isinstance(found, BrokerIdentity) or found.broker != p.broker:
+            return
+        try:
+            await store_signin_session(session, user, found)
+            await session.commit()
+        except BrokerSignInError:
+            await session.rollback()          # no free row / the app withdrawn: signed in, the broker stays as it was
+        except Exception:
+            await session.rollback()
+            raise
+
+    return social.Provider(
+        id=p.kind, slug=f"broker/{p.broker}", kind=social.KIND_BROKER, label=p.display_name, configured=p.configured,
+        callback_path=p.callback_path, authorization_url=lambda flow, redirect: p.authorization_url(redirect, flow.state),
+        identity_for_code=identity_for_code, on_signed_in=on_signed_in, read_code=p.code_from,
+    )
+
+
+def register_providers() -> None:
+    """Adds each broker to the M73 registry and serves its routes (import time, before main.py includes the router)."""
+    from app.auth import social_routes
+    for p in PROVIDERS.values():
+        if social.get(p.kind) is None:
+            social_routes.add_provider(_social_provider(p))
+
+
+register_providers()

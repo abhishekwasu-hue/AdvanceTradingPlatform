@@ -451,3 +451,11 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | M72Q-3 | CP-4 / CP-1: what of the private engine's output (M66 contract: areas, model ids, internal invalidation reference, evidence tokens, engine settings) may go into an outside AI model's prompt. | Only generic public words (area as a price range, state, side, structure); never model ids, evidence tokens, internal references or settings; the engine reading only where `trade_engine` is on (owner only today), everyone else gets ATP's zone layer. | `engine_provider/contract.py` | open (owner) |
 | M72Q-4 | CP-9 ticket prefill: which values the Copilot may put in a ticket. | Only his saved Trade settings, numbers he typed in that message and the object he opened Ask AI from; every other field Not set and asked in the ticket; never a model-chosen strike / lots / SL; the same ticket PAPER / LIVE; LIVE stays off. | `fno/OrderTicketV2.tsx`, `fno/basket.ts` | open (owner) |
 | M72Q-5 | CP-6 strike finder "by the user's own rules" needs fields M68 does not have (target delta, premium band, OI-wall rule), and CP-6 comes before M68 PR-4 (Options section). Selector defaults POP 70 % / 2 strikes, the Greeks' fixed 7 % rate and the agent backtest's capital are not TS1 rows. | Add the three fields to M68 PR-4 as Not set; CP-6 reads them and asks in chat when Not set; add the listed defaults as TS1 rows (the Copilot passes only his values). | `me/trade_settings.py`, `options_builder/routes.py:152-153`, `ai/tools/market.py:257` | open (owner) |
+
+## M75 rule 1: no click-navigation (M75N, 1 Nov)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| M75N-1 | Today "View all" / "Find setups" shortcuts are tab shortcuts: convert them too? | Yes: the list opens in a side panel on Today; tabs are reached from the navigation. | docs/design/M75_NO_NAVIGATION.md | open |
+| M75N-2 | Phone Back with an in-place panel open. | Back closes the panel (one history entry per open, same path), the tab stays. | same | open |
+| M75N-3 | Classic UI sites (`App.tsx`, `src/pages/*`, 10). | Converted in the same area PRs while the classic shell is reachable; the guard counts them until then. | same | open |

@@ -111,7 +111,12 @@ def test_the_namespace_is_read_by_one_order_path_reader():
     through app/risk_engine/own_risk.py; PR-7: the Paper account section through app/paper/paper_settings.py (one reader
     for the capital and the charges)."""
     out = subprocess.run(["grep", "-rlE", "--include=*.py", r"trade_settings|TradeSettings", "app"], cwd=BACKEND, capture_output=True, text=True).stdout
-    assert sorted(out.split()) == ["app/execution/automation.py", "app/execution/order_defaults.py", "app/execution/position_size.py",
+    # M72 PR-1c / PR-4 / PR-7: the Copilot's read-only readers - app/ai/tools/my_data.py reads his settings to show them,
+    # app/ai/copilot_chat.py only names that tool, app/ai/tools/options_kit.py reads his saved Options values and
+    # app/ai/watch.py his risk-free rate. None is an order path or imports one: the AI never places, blocks or changes an
+    # order (ADR-0006; the planner modules are checked in tests/test_m72_pr1c_planner.py).
+    assert sorted(out.split()) == ["app/ai/copilot_chat.py", "app/ai/tools/my_data.py", "app/ai/tools/options_kit.py", "app/ai/watch.py",
+                                   "app/execution/automation.py", "app/execution/order_defaults.py", "app/execution/position_size.py",
                                    "app/instruments/option_defaults.py", "app/main.py", "app/me/prefs.py", "app/me/trade_settings.py",
                                    "app/options_builder/routes.py", "app/paper/paper_settings.py",
                                    "app/risk_engine/own_risk.py"]   # PR-2 / PR-4 / PR-5 / PR-6 / PR-7: one reader each

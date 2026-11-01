@@ -140,6 +140,7 @@ def _waiting(dep: "StrategyDeploymentRecord", now: datetime, reason: Optional[st
 
 # How often a VALID token is re-proven against the broker.
 TOKEN_RECHECK_SECONDS = 300
+WATCH_EVERY_MINUTES = 5             # M72 PR-7: how often the worker looks for new Copilot watch cards (operational)
 RHYTHM_EVERY_MINUTES = 5            # MO4: how often the worker looks for daily-rhythm digests due on Telegram
 SETTLEMENT_EVERY_MINUTES = 30       # TM Part 7: how often the worker looks for stock F&O positions that may settle by delivery
 ONBOARDING_EVERY_MINUTES = 15       # C13: how often the worker looks for first-week onboarding e-mails due
@@ -297,6 +298,7 @@ class TradingWorker:
         self._last_view_sweep: Optional[datetime] = None
         # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
         self._last_eod_summary_day = None
+        self._last_watch_check: Optional[datetime] = None      # M72 PR-7: the Copilot watch
         self._last_rhythm_check: Optional[datetime] = None     # MO4: the daily rhythm's Telegram sends
         self._last_settlement_check: Optional[datetime] = None  # TM Part 7: the physical-settlement warnings
         self._last_onboarding_check: Optional[datetime] = None  # C13: the first-week onboarding e-mails
@@ -730,6 +732,17 @@ class TradingWorker:
                             await rhythm_deliver.send_due(own, now)
                     except Exception as exc:  # noqa: BLE001 - a digest never blocks the cycle
                         logger.warning("Daily rhythm sends failed: %s", type(exc).__name__)
+                # M72 PR-7 (app/ai/watch.py): the Copilot watch - opt-in information cards about each user's own positions,
+                # short strikes and watchlists, with his own numbers. Flags ui_v2 + copilot_watch. Its own session; read-only
+                # towards trading (no proposal, no order, nothing closed).
+                if self._last_watch_check is None or now - self._last_watch_check >= timedelta(minutes=WATCH_EVERY_MINUTES):
+                    self._last_watch_check = now
+                    try:
+                        from app.ai import watch as copilot_watch
+                        async with self.session_factory() as own:
+                            await copilot_watch.run_due(own, now)
+                    except Exception as exc:  # noqa: BLE001 - a card never blocks the cycle
+                        logger.warning("Copilot watch failed: %s", type(exc).__name__)
                 # TM Part 7 (app/paper/settlement_watch.py): stock F&O positions that may settle by delivery, once a day per
                 # position for users who keep the Telegram choice on. Flags ui_v2 + smart_execution. Information only.
                 if self._last_settlement_check is None or now - self._last_settlement_check >= timedelta(minutes=SETTLEMENT_EVERY_MINUTES):

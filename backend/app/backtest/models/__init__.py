@@ -199,6 +199,18 @@ class SpanLikeMargin:
         return required > 0 and equity_mtm < required * self.maintenance_pct / 100.0
 
 
+def option_structure_margin(margin: Any, *, spot: float, short_quantity: float, max_loss: Optional[float]) -> float:
+    """N7 C2c span_like on an option structure - ONE rule for the option backtest and a PAPER structure held for days
+    (M68 PR-5, TS1-041): no written leg = nothing beyond the premium paid; a defined maximum loss (money, the whole
+    position) = that loss; otherwise the short legs' underlying notional (`spot` x their quantity) x the model's
+    short-option %."""
+    if short_quantity <= 0:
+        return float(margin.required("OPTION_LONG", 0.0))
+    if max_loss is not None:
+        return float(margin.required("OPTION_DEFINED", 0.0, max_loss=max_loss))
+    return float(margin.required("OPTION_SHORT", spot * short_quantity))
+
+
 SLIPPAGE: Dict[str, Callable[..., Any]] = {"fixed_pct": FixedPctSlippage, "spread_half": SpreadHalfSlippage, "volume_share": VolumeShareSlippage}
 FILL: Dict[str, Callable[..., Any]] = {"touch": TouchFill, "next_open": NextOpenFill}
 LATENCY: Dict[str, Callable[..., Any]] = {"zero": ZeroLatency, "fixed_ms": FixedMsLatency}

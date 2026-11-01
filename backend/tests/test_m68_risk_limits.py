@@ -361,3 +361,107 @@ def test_the_risk_limits_section_is_wired_and_every_row_has_a_home():
     me = _me("registry")
     keys = {f["key"] for s in client.get("/api/me/trade-settings", headers=me["headers"]).json()["sections"] for f in s["fields"]}
     assert {"risk_limits.vix_gate", "risk_limits.overnight_short_options", "risk_limits.experience_trades"} <= keys
+
+
+# --- TS1-041 in PAPER: a held written straddle / strangle gets the option backtest's span_like margin (review fix) ---------
+
+def _ample_balance(monkeypatch):
+    """A practice account large enough for the sizes `_execute` takes (its own 5,000,000 capital at 1 %)."""
+    from app.paper import fno_basket
+
+    async def balance(session, user):
+        return 50_000_000.0
+    monkeypatch.setattr(fno_basket, "practice_balance", balance)
+
+
+def _held_numbers(result) -> tuple[float, float]:
+    """(the margin to hold for days, the 1x quantity per leg) read from the executor's own notes."""
+    need = next(r for r in result.reasons if r.startswith("Margin to hold for days"))
+    per_leg = next(r for r in result.reasons if r.endswith(" per leg"))
+    return float(need.split(":")[1].split("(")[0].replace(",", "")), float(per_leg.split("=")[1].split()[0])
+
+
+@pytest.mark.parametrize("strategy", [OptionStrategy.SHORT_STRADDLE, OptionStrategy.SHORT_STRANGLE])
+def test_paper_holds_a_written_straddle_or_strangle_with_the_switch_on_at_the_backtests_margin(strategy, monkeypatch):
+    from app.backtest.models import SpanLikeMargin
+    from tests.test_contract_rules import _load_master
+    from tests.test_m55_t1_hold_for_days import _execute, _open
+    from tests.test_multileg import SPOT
+    from tests.test_trading_worker import _tenant
+    _load_master()
+    t = _tenant(f"m68pr5-held-{strategy.value.lower()}-{uuid.uuid4().hex[:6]}@example.com", with_credentials=False)
+    _ample_balance(monkeypatch)
+    _own(t, {"risk_limits.overnight_short_options": True})
+    held = _execute(t, holding="SWING", key=f"m68-held-{uuid.uuid4().hex[:8]}", strategy=strategy, stop=100)
+    assert held.executed, held.reasons
+    assert any("Held for days" in r for r in held.reasons)
+    assert not any("could not be worked out" in r for r in held.reasons)
+    legs = _open(t["tenant_id"])
+    assert len(legs) == 2 and {leg.holding for leg in legs} == {"SWING"} and {leg.leg_role for leg in legs} == {"SHORT"}
+    required, per_leg = _held_numbers(held)
+    # the option backtest's span_like rule and its own number: both short legs' underlying notional x option_short_pct
+    assert required == pytest.approx(round(SPOT * per_leg * 2 * SpanLikeMargin().option_short_pct / 100.0, 2), abs=1)
+
+
+@pytest.mark.parametrize("strategy", [OptionStrategy.SHORT_STRADDLE, OptionStrategy.SHORT_STRANGLE])
+def test_the_switch_off_keeps_a_written_straddle_or_strangle_intraday_as_before(strategy):
+    from tests.test_contract_rules import _load_master
+    from tests.test_m55_t1_hold_for_days import _execute, _open
+    from tests.test_trading_worker import _tenant
+    _load_master()
+    t = _tenant(f"m68pr5-off-{strategy.value.lower()}-{uuid.uuid4().hex[:6]}@example.com", with_credentials=False)
+    result = _execute(t, holding="SWING", key=f"m68-off-{uuid.uuid4().hex[:8]}", strategy=strategy, stop=100)
+    assert result.executed, result.reasons
+    assert {leg.holding for leg in _open(t["tenant_id"])} == {"INTRADAY"}
+    assert not any("Held for days" in r or "Margin to hold" in r for r in result.reasons)
+
+
+def test_the_blocked_margin_counts_a_held_straddle_with_the_same_number(monkeypatch):
+    from app.execution.multileg import _held_margin_blocked
+    from app.paper import fno_basket
+    from tests.test_contract_rules import _load_master
+    from tests.test_m55_t1_hold_for_days import _execute
+    from tests.test_trading_worker import _tenant
+    _load_master()
+    t = _tenant(f"m68pr5-blocked-{uuid.uuid4().hex[:6]}@example.com", with_credentials=False)
+    _ample_balance(monkeypatch)
+    _own(t, {"risk_limits.overnight_short_options": True})
+    first = _execute(t, holding="SWING", key=f"m68-b1-{uuid.uuid4().hex[:8]}", strategy=OptionStrategy.SHORT_STRADDLE, stop=100)
+    assert first.executed, first.reasons
+    required, _ = _held_numbers(first)
+
+    async def blocked():
+        async with _session_factory() as session:
+            return await _held_margin_blocked(session, await session.get(User, t["user_id"]))
+    assert _run(blocked()) == pytest.approx(required, abs=0.01)
+
+    async def balance(session, user):
+        return required * 1.5          # room for one held straddle, not for two
+    monkeypatch.setattr(fno_basket, "practice_balance", balance)
+    second = _execute(t, holding="SWING", key=f"m68-b2-{uuid.uuid4().hex[:8]}", strategy=OptionStrategy.SHORT_STRADDLE, stop=100)
+    assert not second.executed and any("not enough margin" in r for r in second.reasons)
+
+
+def test_a_held_straddle_is_kept_at_the_close_and_still_exits_by_his_own_stop(monkeypatch):
+    from app.trading.position_monitor import monitor_open_positions
+    from tests.test_contract_rules import TODAY, _load_master
+    from tests.test_m55_t1_hold_for_days import _all, _execute, _open, _square_off
+    from tests.test_multileg import SPOT
+    from tests.test_trading_worker import _tenant
+    _load_master()
+    t = _tenant(f"m68pr5-exit-{uuid.uuid4().hex[:6]}@example.com", with_credentials=False)
+    _ample_balance(monkeypatch)
+    _own(t, {"risk_limits.overnight_short_options": True})
+    assert _execute(t, holding="SWING", key=f"m68-x-{uuid.uuid4().hex[:8]}", strategy=OptionStrategy.SHORT_STRADDLE, stop=100).executed
+    assert _square_off(t, TODAY) == 0                       # held overnight
+    legs = _open(t["tenant_id"])
+    entry = {leg.symbol: leg.entry_price for leg in legs}
+
+    async def prices(symbol, exchange):
+        return entry[symbol] * 3 if symbol in entry else SPOT   # far past his own stop
+
+    async def go():
+        async with _session_factory() as session:
+            return await monitor_open_positions(session, t["tenant_id"], prices, now=datetime.now(UTC))
+    assert sum(1 for o in _run(go()) if o.closed) == 2
+    assert _open(t["tenant_id"]) == [] and all(leg.exit_reason for leg in _all(t["tenant_id"]))

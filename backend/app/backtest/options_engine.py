@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Sequence, Set
 import pandas as pd
 
 from app.backtest.analytics import build_analytics
-from app.backtest.models import ModelError, ModelSet
+from app.backtest.models import ModelError, ModelSet, option_structure_margin
 from app.backtest.options import (
     Black76Pricer,
     ExpiryCalendar,
@@ -355,13 +355,10 @@ def run_option_backtest(
     def margin_required(pos: _Open, spot: float) -> float:
         """N7 C2c: span_like on a structure - its defined maximum loss, or the short legs' underlying notional x the
         short-option %; bought options are paid for (no extra margin)."""
-        shorts = [leg for leg in pos.legs if leg.role == "SHORT"]
-        if not shorts:
-            return margin.required("OPTION_LONG", 0.0)
         max_loss = pos.meta.get("max_loss")
-        if not pos.single and max_loss is not None:
-            return margin.required("OPTION_DEFINED", 0.0, max_loss=float(max_loss) * pos.quantity)
-        return margin.required("OPTION_SHORT", spot * sum(leg.quantity for leg in shorts))
+        defined = float(max_loss) * pos.quantity if not pos.single and max_loss is not None else None
+        return option_structure_margin(margin, spot=spot, short_quantity=sum(leg.quantity for leg in pos.legs if leg.role == "SHORT"),
+                                       max_loss=defined)
 
     def unrealised(pos: _Open, prices: Dict[int, float]) -> float:
         return sum((leg.entry_price - prices[i] if leg.role == "SHORT" else prices[i] - leg.entry_price) * leg.quantity

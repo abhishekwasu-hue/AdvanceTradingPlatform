@@ -25,7 +25,8 @@ const FIELDS: { key: keyof RiskConfig; label: string; step?: string; ceiling?: s
 const GUARDIAN_FIELDS: { key: keyof RiskConfig; label: string; step?: string; ceiling?: string; help: string }[] = [
   { key: "max_portfolio_risk_pct", label: "Max portfolio risk (% of capital)", step: "0.5", ceiling: "max_portfolio_risk_pct", help: "Loss if every open stop hits plus the new trade's max loss; index positions share one bucket (R4)." },
   { key: "stop_cooldown_minutes", label: "Cool-down after a stop-out (min)", help: "No re-entry in the same underlying this long after a stop (R10)." },
-  { key: "dd_level_1_pct", label: "Drawdown: halve size at (%)", step: "0.5", help: "This far below the equity peak the risk per trade is halved (P2)." },
+  { key: "dd_level_1_pct", label: "Drawdown: cut size at (%)", step: "0.5", help: "This far below the equity peak the risk per trade is cut by your % (P2)." },
+  { key: "dd_cut_pct", label: "Drawdown: cut the size by (%)", step: "5", help: "How much the step above cuts the risk per trade. Needed when that step is set." },
   { key: "dd_level_2_pct", label: "Drawdown: pause entries at (%)", step: "0.5", ceiling: "dd_level_2_pct", help: "This far below the peak new entries pause until equity recovers (P3)." },
   { key: "event_size_cut_pct", label: "Event-day size cut (%)", step: "5", help: "Default cut for a SIZE_CUT market event (M8)." },
 ];
@@ -217,7 +218,7 @@ export default function RiskManagementPage() {
           </div>
           <div className="mt-3 text-xs text-fg-muted">
             {guardian.settings.dd_level_1_pct != null || guardian.settings.dd_level_2_pct != null
-              ? `The drawdown ladder halves the risk per trade at ${guardian.settings.dd_level_1_pct ?? "-"}% below the equity peak and pauses new entries at ${guardian.settings.dd_level_2_pct ?? "-"}%; the multiplier never rises above 1 after a winning streak.`
+              ? `The drawdown ladder cuts the risk per trade by your ${guardian.settings.dd_cut_pct ?? "-"}% at ${guardian.settings.dd_level_1_pct ?? "-"}% below the equity peak and pauses new entries at ${guardian.settings.dd_level_2_pct ?? "-"}%; the multiplier never rises above 1 after a winning streak.`
               : "No drawdown ladder is set."} Exits are never blocked.
           </div>
         </Card>

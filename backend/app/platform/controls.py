@@ -601,7 +601,7 @@ async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
     return result
 
 
-async def flag_listing(session: AsyncSession, user: Optional[User] = None) -> Dict[str, Dict]:
+async def flag_listing(session: AsyncSession, user: User | None = None) -> Dict[str, Dict]:
     """UX1: the admin Feature flags list - `feature_flags` plus each flag's catalog entry (app/platform/flag_catalog.py)
     and its default (`default_on`: the value with nothing stored, the Phase 0 seed included). M80 F3: with the admin
     `user`, each flag that names live checks also carries `checks` ([{id, label, ok}], app/platform/flag_state.py)."""

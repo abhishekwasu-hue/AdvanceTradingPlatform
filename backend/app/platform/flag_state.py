@@ -17,7 +17,8 @@ probes answer only inside the admin flag list (SUPER_ADMIN + two-factor, app/pla
 """
 from __future__ import annotations
 
-from typing import Awaitable, Callable, Dict, List, Literal, NamedTuple, Tuple
+from collections.abc import Awaitable, Callable
+from typing import Literal, NamedTuple
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +27,7 @@ from app.db.models import User
 
 FlagState = Literal["ready", "behind_the_scenes", "needs_setup", "not_built", "decision"]
 
-STATE_LABELS: Dict[str, str] = {
+STATE_LABELS: dict[str, str] = {
     "ready": "Ready",
     "behind_the_scenes": "Ready (behind the scenes)",
     "needs_setup": "Needs your setup",
@@ -36,7 +37,7 @@ STATE_LABELS: Dict[str, str] = {
 # The states a user gets something from today (no reason required).
 READY_STATES = ("ready", "behind_the_scenes")
 
-PROBE_LABELS: Dict[str, str] = {
+PROBE_LABELS: dict[str, str] = {
     "ai_key": "AI key",
     "broker": "Broker connected",
     "chart_engine": "Private package on this server",
@@ -60,18 +61,18 @@ class FlagStatus(NamedTuple):
     item: str = ""            # needs_setup: the item; not_built: what is missing; decision: which decision; else a note
     where: str = ""           # where to do it (needs_setup always names one)
     order: str = ""           # the roadmap item that finishes it (not_built always names one)
-    probes: Tuple[str, ...] = ()
+    probes: tuple[str, ...] = ()
 
 
-def _ready(note: str = "", where: str = "", probes: Tuple[str, ...] = ()) -> FlagStatus:
+def _ready(note: str = "", where: str = "", probes: tuple[str, ...] = ()) -> FlagStatus:
     return FlagStatus("ready", note, where, "", probes)
 
 
-def _behind(note: str = "", probes: Tuple[str, ...] = ()) -> FlagStatus:
+def _behind(note: str = "", probes: tuple[str, ...] = ()) -> FlagStatus:
     return FlagStatus("behind_the_scenes", note, "", "", probes)
 
 
-def _setup(item: str, where: str, probes: Tuple[str, ...] = ()) -> FlagStatus:
+def _setup(item: str, where: str, probes: tuple[str, ...] = ()) -> FlagStatus:
     return FlagStatus("needs_setup", item, where, "", probes)
 
 
@@ -84,7 +85,7 @@ def _decision(which: str, where: str = "") -> FlagStatus:
 
 
 # One entry per flag in `controls.FEATURE_FLAGS` (tests/test_m80_flag_state.py checks both lists match).
-FLAG_STATUS: Dict[str, FlagStatus] = {
+FLAG_STATUS: dict[str, FlagStatus] = {
     "ai_copilot": _ready("Answers with the built-in parser; an AI key gives AI answers", AI, ("ai_key",)),
     "marketplace": _decision("The marketplace is the last phase; off until you decide"),
     "public_api": _ready(),
@@ -228,7 +229,7 @@ def not_built_reason(name: str) -> str:
     return f"This feature is not built yet: {entry.item} ({entry.order}). Turning it on would give users nothing."
 
 
-def fields_for(name: str) -> Dict[str, object]:
+def fields_for(name: str) -> dict[str, object]:
     """The admin list's fields: `state` (one of STATE_LABELS), its label, `state_reason`, `state_where`, `state_order`
     and the probe ids. The old `status` / `status_label` fields stay as they were (flag_catalog.info_for)."""
     entry = status_for(name)
@@ -280,22 +281,22 @@ async def _telegram(session: AsyncSession, user: User) -> bool:
     return own is not None
 
 
-PROBES: Dict[str, Callable[[AsyncSession, User], Awaitable[bool]]] = {
+PROBES: dict[str, Callable[[AsyncSession, User], Awaitable[bool]]] = {
     "ai_key": _ai_key, "broker": _broker, "chart_engine": _chart_engine, "signal_engine": _signal_engine,
     "telegram": _telegram,
 }
 
 
-async def run_probes(session: AsyncSession, user: User, ids: List[str]) -> Dict[str, bool]:
+async def run_probes(session: AsyncSession, user: User, ids: list[str]) -> dict[str, bool]:
     """{probe id: True / False} for each id asked (each probe runs once, whatever the number of flags naming it)."""
-    results: Dict[str, bool] = {}
+    results: dict[str, bool] = {}
     for probe_id in ids:
         if probe_id in PROBES and probe_id not in results:
             results[probe_id] = bool(await PROBES[probe_id](session, user))
     return results
 
 
-def checks_for(name: str, results: Dict[str, bool]) -> List[Dict[str, object]]:
+def checks_for(name: str, results: dict[str, bool]) -> list[dict[str, object]]:
     """The ✓ / ✗ lines of one flag: [{id, label, ok}] from `run_probes`'s results."""
     return [{"id": p, "label": PROBE_LABELS[p], "ok": results[p]} for p in status_for(name).probes if p in results]
 

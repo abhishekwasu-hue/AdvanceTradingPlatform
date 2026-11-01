@@ -72,6 +72,9 @@ async def _broker_name(session: AsyncSession, tenant_id: int, user: Optional[Use
             return str(own.broker_name)
     else:
         try:
+            if user is not None:                          # M71Q-2: the run reads through the reader's own credential only
+                from app.market_data.reader_credential import credential_for_reader
+                return str((await credential_for_reader(session, tenant_id, user.id)).broker_name)
             return str((await _pick_record(session, tenant_id, None, "primary")).broker_name)
         except HTTPException:
             pass                                          # no usable session now: the stored credential below

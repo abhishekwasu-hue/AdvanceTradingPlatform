@@ -30,6 +30,18 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _drop_windows(tenant_id: int) -> None:
+    from sqlalchemy import delete as sa_delete
+
+    from app.db.models import LakeBackfillWindowRecord as _W
+
+    async def go():
+        async with _session_factory() as session:
+            await session.execute(sa_delete(_W).where(_W.tenant_id == tenant_id))
+            await session.commit()
+    _run(go())
+
+
 @pytest.fixture()
 def owner(monkeypatch):
     user = _user(f"pl7p-{datetime.now(UTC).timestamp()}@example.com")
@@ -38,7 +50,8 @@ def owner(monkeypatch):
     monkeypatch.setattr(config, "HISTORY_OWNER_USER_ID", None)
     monkeypatch.setattr(config, "HISTORY_BACKFILL_FO_VOLUME", "withhold")
     monkeypatch.setattr(config, "TRADE_DATA_POLICY_SCOPE", ("NIFTY",))
-    return user
+    yield user
+    _drop_windows(user.tenant_id)          # the shared test database: the PL-1c gap drain must not see this test's windows
 
 
 def _seal(tenant_id: int, start: date, end: date | None = None, kind: str = "sealed", scope: str = "NIFTY") -> None:

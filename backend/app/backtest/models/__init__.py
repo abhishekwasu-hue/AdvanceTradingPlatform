@@ -199,7 +199,7 @@ class SpanLikeMargin:
         return required > 0 and equity_mtm < required * self.maintenance_pct / 100.0
 
 
-def option_structure_margin(margin: Any, *, spot: float, short_quantity: float, max_loss: Optional[float]) -> float:
+def option_structure_margin(margin: Any, *, spot: float, short_quantity: float, max_loss: float | None) -> float:
     """N7 C2c span_like on an option structure - ONE rule for the option backtest and a PAPER structure held for days
     (M68 PR-5, TS1-041): no written leg = nothing beyond the premium paid; a defined maximum loss (money, the whole
     position) = that loss; otherwise the short legs' underlying notional (`spot` x their quantity) x the model's

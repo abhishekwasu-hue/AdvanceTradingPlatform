@@ -205,7 +205,7 @@ async def active_events(session: AsyncSession, tenant_id: int, underlying: str, 
 
 
 async def guard_entry(session: AsyncSession, tenant_id: int, *, mode: str, underlying: str, cfg: RiskConfig,
-                      now: Optional[datetime] = None, direction: Optional[str] = None, user_id: Optional[int] = None,
+                      now: datetime | None = None, direction: str | None = None, user_id: int | None = None,
                       owner_id: int | None = None) -> GuardianVerdict:
     """The pre-sizing rules: cool-down (R10), drawdown ladder (P2/P3), event blackout (M8), and - with the `vix_gate`
     flag on - the India VIX gate (Z5: a spike pauses new bullish index entries, a high level cuts the size; `direction`

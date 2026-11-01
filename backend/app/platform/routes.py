@@ -49,7 +49,7 @@ class TradingDisableBody(BaseModel):
 
 class RiskCeilingsBody(BaseModel):
     # M68 PR-5 (TS1-048): a number sets a ceiling, null clears it (no ceiling); `tenant_id` = one team, empty = every team.
-    values: Dict[str, float | None] = Field(default_factory=dict, max_length=10)
+    values: dict[str, float | None] = Field(default_factory=dict, max_length=10)
     tenant_id: int | None = None
 
 

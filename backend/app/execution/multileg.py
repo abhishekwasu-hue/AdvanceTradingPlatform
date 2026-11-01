@@ -574,7 +574,7 @@ async def _held_margin_blocked(session: AsyncSession, user: User) -> float:
 
 
 async def _hold_margin_refusal(session: AsyncSession, user: User, structure: ResolvedStructure, premiums: dict[str, float],
-                               lots: int, *, metrics: StructureMetrics, price_source: Optional[BrokerInterface]
+                               lots: int, *, metrics: StructureMetrics, price_source: BrokerInterface | None
                                ) -> tuple[str | None, str, float | None]:
     """M55 T1: a PAPER spread held for days blocks its margin overnight, so it is checked at entry: ATP's labelled
     estimate (`fno_basket.hedge_margin`, the defined max loss) against his practice balance less what his other held
@@ -606,7 +606,7 @@ async def _hold_margin_refusal(session: AsyncSession, user: User, structure: Res
     return None, f"Margin to hold for days: {view.required:,.0f} ({view.label}); {view.free_after:,.0f} free after", view.required
 
 
-async def _written_hold_margin(structure: ResolvedStructure, lots: int, price_source: Optional[BrokerInterface]) -> float | None:
+async def _written_hold_margin(structure: ResolvedStructure, lots: int, price_source: BrokerInterface | None) -> float | None:
     """M68 PR-5 (TS1-041): the span_like margin of a written structure with no defined max loss - the option backtest's
     own rule and numbers (`app.backtest.models.option_structure_margin` with `SpanLikeMargin`), the underlying quoted
     from the legs' price source. None when the underlying has no quote (the caller then refuses; never a made-up spot)."""

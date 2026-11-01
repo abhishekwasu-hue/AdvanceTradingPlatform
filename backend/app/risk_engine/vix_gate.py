@@ -351,7 +351,7 @@ async def readings_today(session: AsyncSession, tenant_id: int, now: Optional[da
     return out
 
 
-def _evaluate(readings: Sequence[Dict[str, Any]], symbol: str, direction: Optional[str], now: datetime, reveal: bool = True,
+def _evaluate(readings: Sequence[dict[str, Any]], symbol: str, direction: str | None, now: datetime, reveal: bool = True,
               own: Any = None) -> VixVerdict:
     """M68 PR-5 (TS1-056): the user's own numbers (app/risk_engine/own_risk.OwnRisk); a number Not set = that part off."""
     return evaluate(readings, symbol=symbol, direction=direction, now=now, spike_pct=getattr(own, "vix_change_pct", None),

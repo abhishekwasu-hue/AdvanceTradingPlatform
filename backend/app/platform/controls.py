@@ -737,7 +737,7 @@ CEILING_KEYS = (*CEILING_MAX_KEYS, "min_stop_cooldown_minutes", "warn_at_pct")
 # A row saved before M68 held EVERY key (a save wrote the merged dict, built-ins included), so it cannot tell an admin's
 # value from a built-in one: a stored value equal to the old built-in reads as not set (the TT12-1 rule). A save from
 # now on stores only what the admin set, marked `m68`, and is read exactly.
-LEGACY_RISK_CEILINGS: Dict[str, float] = {"risk_per_trade_pct": 2.0, "max_daily_loss_pct": 5.0, "max_portfolio_risk_pct": 10.0,
+LEGACY_RISK_CEILINGS: dict[str, float] = {"risk_per_trade_pct": 2.0, "max_daily_loss_pct": 5.0, "max_portfolio_risk_pct": 10.0,
                                           "dd_level_2_pct": 25.0, "min_stop_cooldown_minutes": 0.0}
 
 
@@ -745,11 +745,11 @@ def _ceiling_key(tenant_id: int | None) -> str:
     return KEY_RISK_CEILINGS if tenant_id is None else f"{KEY_RISK_CEILINGS}:tenant:{int(tenant_id)}"
 
 
-def _ceiling_values(stored: Dict) -> Dict[str, float]:
+def _ceiling_values(stored: dict) -> dict[str, float]:
     """The ceilings an admin set in one stored row (only the set ones; a value that is not a positive number is dropped)."""
     own = stored.get("m68") is True
     raw = stored.get("values") if own else stored
-    out: Dict[str, float] = {}
+    out: dict[str, float] = {}
     for key in CEILING_KEYS:
         if not isinstance(raw, dict) or key not in raw:
             continue
@@ -765,13 +765,13 @@ def _ceiling_values(stored: Dict) -> Dict[str, float]:
     return out
 
 
-async def admin_risk_ceilings(session: AsyncSession, tenant_id: int | None = None) -> Dict[str, float | None]:
+async def admin_risk_ceilings(session: AsyncSession, tenant_id: int | None = None) -> dict[str, float | None]:
     """What a platform admin set at one scope (every organisation, or one team): every key, None = not set."""
     values = _ceiling_values(await _get(session, _ceiling_key(tenant_id)))
     return {key: values.get(key) for key in CEILING_KEYS}
 
 
-async def risk_ceilings(session: AsyncSession, tenant_id: int | None = None) -> Dict[str, float]:
+async def risk_ceilings(session: AsyncSession, tenant_id: int | None = None) -> dict[str, float]:
     """The ceilings in force for `tenant_id`'s members: only the set ones (an empty dict = no ceiling at all). With a
     platform-wide and a team value for the same key the stricter applies (the smaller top, the longer cool-down, the
     earlier warning)."""
@@ -785,8 +785,8 @@ async def risk_ceilings(session: AsyncSession, tenant_id: int | None = None) -> 
     return out
 
 
-async def set_risk_ceilings(session: AsyncSession, user: User, values: Dict[str, float | None],
-                            tenant_id: int | None = None) -> Dict[str, float | None]:
+async def set_risk_ceilings(session: AsyncSession, user: User, values: dict[str, float | None],
+                            tenant_id: int | None = None) -> dict[str, float | None]:
     """A platform admin sets (a number) or clears (None) ceilings for every organisation or for one team. Keys not sent
     keep their value. Returns that scope's ceilings, every key (None = not set)."""
     current = {k: v for k, v in (await admin_risk_ceilings(session, tenant_id)).items() if v is not None}

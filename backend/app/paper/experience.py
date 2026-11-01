@@ -218,16 +218,16 @@ def structure_gates(legs: Iterable[Any]) -> List[str]:
 
 
 def derive_level(closed: int, sessions: int, max_drawdown_pct: float, *, advanced_trades: int | None = None,
-                 advanced_sessions: int | None = None) -> Tuple[str, List[Dict[str, Any]]]:
+                 advanced_sessions: int | None = None) -> tuple[str, list[dict[str, Any]]]:
     """(level, the criteria of each level above Beginner with their values) from a PAPER record. M68 PR-5 (TS1-057): the
     Advanced level's trades / sessions are the user's own (`advanced_*`); Not set = a target of None, never met (the
     refusal then names the setting)."""
     dd_limit = app_config.PAPER_LADDER_MAX_DRAWDOWN_PCT
 
-    def own(target: int | None) -> Dict[str, str]:
+    def own(target: int | None) -> dict[str, str]:
         return {} if target is not None else {"note": "Not set: your own number (Settings › Trade settings › Risk limits)"}
 
-    def criteria(min_trades: int | None, min_sessions: int | None) -> List[Dict[str, Any]]:
+    def criteria(min_trades: int | None, min_sessions: int | None) -> list[dict[str, Any]]:
         return [
             {"key": "closed_trades", "label": "Closed PAPER trades", "value": closed, "target": min_trades, "comparison": "at_least",
              "met": min_trades is not None and closed >= min_trades, **own(min_trades)},
@@ -253,7 +253,7 @@ def allowed_by_level(level: str, gate: str) -> bool:
     return LEVELS.index(level) >= LEVELS.index(GATES[gate][0])
 
 
-def refusal_text(gate: str, level: str, record: Dict[str, Any], own: Any = None) -> str:
+def refusal_text(gate: str, level: str, record: dict[str, Any], own: Any = None) -> str:
     if gate == GATE_NAKED and own is not None and (own.experience_trades is None or own.experience_sessions is None):
         from app.risk_engine import own_risk  # M68 PR-5 (TS1-057): his own Advanced numbers are Not set - asked, never assumed
         missing = "experience_trades" if own.experience_trades is None else "experience_sessions"
@@ -277,7 +277,7 @@ async def _own(session: AsyncSession, user: User) -> Any:
     return await own_risk.for_user(session, user)
 
 
-def _targets(own: Any) -> Dict[str, int | None]:
+def _targets(own: Any) -> dict[str, int | None]:
     """M68 PR-5 (TS1-057): the Advanced level's trades / sessions - the user's own (None = Not set)."""
     return {"advanced_trades": own.experience_trades, "advanced_sessions": own.experience_sessions}
 

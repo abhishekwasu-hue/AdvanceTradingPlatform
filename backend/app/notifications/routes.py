@@ -23,6 +23,8 @@ class NotificationResponse(BaseModel):
     related_order_id: Optional[int]
     read: bool
     created_at: str
+    # M72 PR-7: a Copilot watch card's "Ask why" context (symbol and his own object by kind and id; never a number).
+    ask: dict | None = None
 
     @classmethod
     def from_record(cls, record: NotificationRecord, read: bool) -> "NotificationResponse":
@@ -30,8 +32,15 @@ class NotificationResponse(BaseModel):
             id=record.id, event_type=record.event_type, severity=record.severity,
             title=record.title, message=record.message,
             related_trade_id=record.related_trade_id, related_order_id=record.related_order_id,
-            read=read, created_at=record.created_at.isoformat(),
+            read=read, created_at=record.created_at.isoformat(), ask=_ask(record),
         )
+
+
+def _ask(record: NotificationRecord) -> dict | None:
+    if record.event_type != "COPILOT_WATCH" or not record.metadata_json:
+        return None
+    from app.ai.watch import ask_of
+    return ask_of(record.metadata_json)
 
 
 def private_to_addressee():
@@ -51,7 +60,10 @@ def private_to_addressee():
 async def _visible(session: AsyncSession, user: User, query):
     """BT1b: with `byob_data_tier` on, a data-bearing notification addressed to one member is theirs only. Flag off: the
     organisation-wide feed, as before."""
+    from app.core.enums import NotificationType
     from app.platform.controls import flag_enabled
+    # M72 PR-7: a Copilot watch card is about one member's own position / strike / watchlist: his alone, whatever the flags.
+    query = query.where(or_(NotificationRecord.event_type != NotificationType.COPILOT_WATCH.value, NotificationRecord.user_id == user.id))
     if await flag_enabled(session, "byob_data_tier", user.tenant_id):
         return query.where(or_(NotificationRecord.user_id.is_(None), NotificationRecord.user_id == user.id, not_(private_to_addressee())))
     return query

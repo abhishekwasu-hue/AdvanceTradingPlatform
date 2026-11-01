@@ -247,6 +247,16 @@ def test_fetch_frames_attaches_daily_history_for_coarser_context(monkeypatch):
     monkeypatch.setattr(candles_routes, "_pick_record", pick)
     monkeypatch.setattr(token_lifecycle, "build_adapter", lambda record: object())
     monkeypatch.setattr(service.MarketDataService, "get_candles", candles)
+    from app.cache import client as cache_client
+    store = {}                                    # the daily-context cache is this test's own (as in the once-per-session test)
+
+    async def cache_get(key):
+        return store.get(key)
+
+    async def cache_set(key, value, ttl):
+        store[key] = value
+    monkeypatch.setattr(cache_client, "cache_get", cache_get)
+    monkeypatch.setattr(cache_client, "cache_set", cache_set)
     now = datetime(2026, 3, 2, 18, 0, tzinfo=timezone.utc)
 
     async def go(lookback):

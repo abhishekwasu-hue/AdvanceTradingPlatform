@@ -28,6 +28,7 @@ import { eventLine, legLiquidity, liquidityLine, marginLine, type EventRisk } fr
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
 import RiskBlockV2 from "../risk/RiskBlockV2";
 import { Combobox } from "../ui/Combobox";
+import { prefillChips, type TicketPrefill } from "../copilot/ticket/intent";
 
 /**
  * FNO-1 (owner order section 6): the ONE order ticket - used by the option chain now, built to be opened the same way
@@ -53,6 +54,9 @@ export interface OrderTicketProps {
   /** 8b slice 4: the chain rows on screen when the ticket opened from the chain (its liquidity line); absent elsewhere
    * (the line then says bid-ask and open interest are not known here). */
   chainRows?: readonly ChainRow[] | null;
+  /** M72 PR-9 (CP-9): values the Copilot prepared from the user's own message (`copilot/ticket/intent.ts`); each shows its
+   * source and stays changeable. Absent everywhere else: today's ticket exactly. */
+  prefill?: TicketPrefill | null;
 }
 
 export type Step = { kind: "edit" } | { kind: "review"; preview: OrderPreview } | { kind: "done"; result: OrderResult }
@@ -124,7 +128,15 @@ export interface OrderTicketState {
   multi?: MultiTicket;
 }
 
-export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, chainRows, shortcuts = true }: Omit<OrderTicketProps, "onClose"> & {
+/** M72 PR-9: a fresh draft with the user's defaults, then the values he typed to the Copilot (his message wins). */
+export function draftWithPrefill(side: Side, defaults: DraftDefaults | undefined, prefill: TicketPrefill | null | undefined): Draft {
+  const d = newDraft(side, defaults);
+  if (!prefill) return d;
+  return { ...d, ...(prefill.lots !== undefined ? { lots: clampLots(prefill.lots) } : {}),
+           ...(prefill.price !== undefined ? { price: prefill.price } : {}), ...(prefill.stopLoss !== undefined ? { stopLoss: prefill.stopLoss } : {}) };
+}
+
+export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, chainRows, shortcuts = true, prefill }: Omit<OrderTicketProps, "onClose"> & {
   shortcuts?: boolean;
 }): OrderTicketState {
   // Settings part C: the user's own lots / product / order type start a new ticket (v2 only; marked, changeable).
@@ -141,7 +153,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     if (mine.orderType) p.orderType = mine.orderType;
     return Object.keys(p).length ? p : undefined;
   }, [saved, own]);
-  const [draft, setDraft] = useState<Draft>(() => newDraft(side, defaults));
+  const [draft, setDraft] = useState<Draft>(() => draftWithPrefill(side, defaults, prefill));
   const [step, setStep] = useState<Step>({ kind: "edit" });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -161,12 +173,12 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
   // A new target or side starts a fresh ticket (and a fresh id, so a second order is never mistaken for the first).
   useEffect(() => {
     if (!open) return;
-    setDraft(newDraft(side, defaults));
+    setDraft(draftWithPrefill(side, defaults, prefill));
     setStep({ kind: "edit" });
     setProblem(null);
     setRunOn("ONE");
     ref.current = newClientRef();
-  }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults]);
+  }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults, prefill]);
 
   // M68 TS-3: the ticket ASKS for a field that is Not set - it focuses the first one (lots, order type, then product), and
   // moves on to the next once he picks it. Review stays off until all are chosen.
@@ -262,8 +274,11 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
   };
 }
 
-export default function OrderTicketV2({ open, target, side, onClose, onPlaced, api = fnoApi, chainRows }: OrderTicketProps) {
-  const t = useOrderTicket({ open, target, side, onPlaced, api, chainRows });
+export default function OrderTicketV2({ open, target, side, onClose, onPlaced, api = fnoApi, chainRows, prefill }: OrderTicketProps) {
+  const t = useOrderTicket({ open, target, side, onPlaced, api, chainRows, prefill });
+  // M72 PR-9: the source of each value the Copilot prepared, shown while that field still holds it
+  const chips = prefill && t.step.kind === "edit" ? prefillChips(prefill).filter((c) =>
+    c.field === "lots" ? t.draft.lots === prefill.lots : t.draft[c.field] === prefill[c.field]) : [];
   if (!target) return null;
 
   const label = target.label ?? (target.right === "FUT" ? `${target.underlying} ${target.expiry} FUT` : `${target.underlying} ${target.strike} ${target.right}`);
@@ -282,6 +297,11 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
               <p className="text-t13 text-fg-muted font-tabular">
                 LTP <TermHint term="ltp" /> {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}
               </p>
+              {chips.length > 0 && (
+                <p className="mt-space-1 flex flex-wrap gap-space-1" data-ticket="prefill-sources">
+                  {chips.map((c) => <span key={c.field} data-prefill={c.field} className="rounded-pill bg-surface-2 px-space-2 py-space-1 text-t12 text-fg-muted">{c.text}</span>)}
+                </p>
+              )}
             </div>
             <RD.Close aria-label="Close" className="-mr-space-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg">
               <X size={18} aria-hidden />

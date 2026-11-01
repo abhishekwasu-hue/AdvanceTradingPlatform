@@ -53,6 +53,9 @@ class NotificationType(str, Enum):
     SETTLEMENT_WARNING = "SETTLEMENT_WARNING"
     # SE-7: a multi-leg order stopped half way (INCOMPLETE), his answer, and his "if I do not answer" rule applied.
     STRUCTURE_INCOMPLETE = "STRUCTURE_INCOMPLETE"
+    # M72 PR-7 (CP-7): a Copilot watch card on the user's OWN position, strike or watchlist (opt-in per type). Addressed to
+    # him alone (never organisation-wide), in the app and on his own Telegram only; information only (ADR-0006).
+    COPILOT_WATCH = "COPILOT_WATCH"
 
 
 class NotificationSeverity(str, Enum):

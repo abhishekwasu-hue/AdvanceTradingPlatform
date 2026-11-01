@@ -303,3 +303,28 @@ def test_a_value_he_saved_that_no_longer_reads_is_dropped_not_guessed():
     _run(plant())
     own = _load(t)
     assert own.expiry_rule is None and own.spread_width is None
+
+
+def test_a_set_but_unreadable_trade_setting_asks_and_never_takes_the_older_store(monkeypatch):
+    """Review (#843): strike offset, spread width and both delivery-warning numbers read alike - a Trade-settings value
+    that is set but does not read (e.g. -1) is None (he is asked); the older store's value counts only when Not set."""
+    t = _fresh("m68o-unread")
+
+    async def plant():
+        async with _session_factory() as session:
+            now = datetime.now(UTC)
+            for namespace, value in (
+                    (ts.NAMESPACE, {"values": {"options.strike_offset": -1, "options.spread_width": -1,
+                                               "options.settlement_days_before": -1, "options.settlement_band_pct": -1}}),
+                    ("trading_defaults", {"strike_offset": 2, "spread_width": 5}),
+                    ("smart_execution", {"settlement_days_before": 3, "settlement_band_pct": 1.5})):
+                session.add(UserPrefsRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], namespace=namespace,
+                                            value_json=json.dumps(value), version=1, updated_at=now))
+            await session.commit()
+    _run(plant())
+    monkeypatch.setattr(option_defaults.trade_settings, "clean", lambda v: dict(v) if isinstance(v, dict) else {})
+    own = _load(t)
+    assert (own.strike_offset, own.spread_width, own.settlement_days_before, own.settlement_band_pct) == (None, None, None, None)
+    monkeypatch.setattr(option_defaults.trade_settings, "clean", lambda v: {})          # Not set: the older store counts
+    own = _load(t)
+    assert (own.strike_offset, own.spread_width, own.settlement_days_before, own.settlement_band_pct) == (2, 5, 3, 1.5)

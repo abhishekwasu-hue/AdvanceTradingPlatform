@@ -25,7 +25,9 @@ depends_on: str | Sequence[str] | None = None
 ROLLBACK_SAFE = True
 ROLLBACK_SAFE_REASON = ("the previous release reads spread_width as `spread_width or 2` (routes, worker, basket) and its ORM "
                         "default still writes 2 on insert, so a NULL width (only on structures that take none) is read as "
-                        "before; the UPDATE fills only the new ratio_shorts column, which the previous release never reads")
+                        "before; the UPDATE fills only the new ratio_shorts column, which the previous release never reads; after a "
+                        "rollback a ratio spread saved with ratio_shorts other than 2 trades 1:2 again (the previous release "
+                        "builds every ratio spread 1:2)")
 
 
 def upgrade() -> None:

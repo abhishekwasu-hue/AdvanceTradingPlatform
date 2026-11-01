@@ -120,6 +120,11 @@ async def load(session: AsyncSession, user: User | None) -> OptionDefaults:
     def own(name: str) -> Any:
         return values.get(f"{SECTION}.{name}")
 
+    def own_else(name: str, read: Any, older_value: Any) -> Any:
+        """His Trade-settings value when he set one (a set value that does not read is None: he is asked, never the older
+        store's value); the older store's value only when the Trade-settings field is Not set."""
+        return read(own(name)) if own(name) is not None else read(older_value)
+
     days = _whole(smart.get("settlement_days_before"), 0)
     band = _number(smart.get("settlement_band_pct"), 0.0, 100.0)
     warning = own("settlement_warning")
@@ -129,17 +134,17 @@ async def load(session: AsyncSession, user: User | None) -> OptionDefaults:
     return OptionDefaults(
         expiry_rule=_choice(own("expiry_rule"), EXPIRY_RULES) or _choice(older.get("expiry_rule"), EXPIRY_RULES),
         strike_rule=_choice(own("strike_rule"), STRIKE_RULES) or _choice(older.get("strike_rule"), STRIKE_RULES),
-        strike_offset=_whole(own("strike_offset"), 0) if own("strike_offset") is not None else _whole(older.get("strike_offset"), 0),
+        strike_offset=own_else("strike_offset", lambda v: _whole(v, 0), older.get("strike_offset")),
         option_position=_choice(own("option_position"), POSITIONS) or _choice(older.get("option_position"), POSITIONS),
-        spread_width=w if (w := _whole(own("spread_width"), 1)) is not None else _whole(older.get("spread_width"), 1),
+        spread_width=own_else("spread_width", lambda v: _whole(v, 1), older.get("spread_width")),
         ratio=_whole(own("ratio"), 1),
         custom_legs=legs if isinstance(legs, list) else None,
         delta_tolerance=_number(own("delta_tolerance"), 0.0, 1.0),
         strike_search_steps=_whole(own("strike_search_steps"), 1),
         expiry_day_roll=_switch(own("expiry_day_roll")) if own("expiry_day_roll") is not None else _switch(chain.get("expiry_day_next")),
         settlement_warning=_switch(warning),
-        settlement_days_before=_whole(own("settlement_days_before"), 0) if own("settlement_days_before") is not None else days,
-        settlement_band_pct=b if (b := _number(own("settlement_band_pct"), 0.0, 100.0)) is not None else band,
+        settlement_days_before=own_else("settlement_days_before", lambda v: _whole(v, 0), smart.get("settlement_days_before")),
+        settlement_band_pct=own_else("settlement_band_pct", lambda v: _number(v, 0.0, 100.0), smart.get("settlement_band_pct")),
         risk_free_rate_pct=_number(own("risk_free_rate_pct"), 0.0, 100.0),
         builder_pop_pct=_number(own("builder_pop_pct"), 0.0, 100.0),
         builder_strikes_otm=_whole(own("builder_strikes_otm"), 0),

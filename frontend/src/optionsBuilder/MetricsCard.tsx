@@ -78,8 +78,8 @@ export function MetricsCard({ evaluation: e, stale = false }: { evaluation: Eval
         <Row label="Theta / day" value={money(g.theta)} tone={g.theta >= 0 ? "up" : "down"} />
         <Row label="Breakevens" value={e.breakevens?.length ? e.breakevens.map((b) => formatNumber(b, 0)).join(" · ") : "–"} />
         <Row label="Cost to open (estimate)" value={money(cost.to_open.total)} testId="metric-cost"
-             sub={`${cost.charges_words ? `${cost.charges_words}. ` : ""}${cost.orders} orders at ${money(cost.brokerage_per_order)} brokerage each, STT ${money(cost.to_open.stt)}, other charges ${money(cost.to_open.other)}. Open and close: ${money(cost.round_trip)}.`}
-             hint={cost.note} />
+             sub={`${cost.orders} orders at ${money(cost.brokerage_per_order)} each, STT ${money(cost.to_open.stt)}, other charges ${money(cost.to_open.other)}. Open and close: ${money(cost.round_trip)}.`}
+             hint={cost.charges_words ? `${cost.charges_words}. ${cost.note}` : cost.note} />
         <Row label="Probability-weighted P&L" value={money(e.summary.expected_pnl)} tone={e.summary.expected_pnl >= 0 ? "up" : "down"} />
         <Row label="Expected move (1 sd)" value={`±${formatNumber(e.summary.expected_move, 0)}`} />
       </dl>

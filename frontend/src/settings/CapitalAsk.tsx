@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
+import { Details } from "../ui/Details";
 import { formatNumber } from "../ui/format";
 import { saveAsDefault } from "./tradeSettings";
 
@@ -67,7 +68,9 @@ export function CapitalAsk({ onSaved, autoFocus = true, id = "paper-capital" }: 
   return (
     <div className="basis-full space-y-space-2 rounded-control border border-brand bg-surface-2 px-space-3 py-space-3" data-capital-ask>
       <label htmlFor={id} className="block text-t13 font-medium text-fg">Your paper starting capital</label>
-      <p className="text-t12 text-fg-muted">Your paper balance and drawdown are measured from it. ATP does not choose one for you.</p>
+      <Details id="paper.capital-why" label="Why it is asked" className="mt-0">
+        <p>Your paper balance and drawdown are measured from it. ATP does not choose one for you.</p>
+      </Details>
       <div className="flex flex-wrap items-center gap-space-2">
         <span className="inline-flex h-11 min-w-0 flex-1 items-center rounded-control border border-border bg-surface-1 px-space-3 focus-within:border-brand">
           <span className="text-t14 text-fg-muted" aria-hidden>₹</span>

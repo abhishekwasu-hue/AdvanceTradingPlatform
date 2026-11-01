@@ -97,7 +97,7 @@ def test_a_run_on_server_bars_is_stored_and_reproducible(flag_on, monkeypatch):
     from app.brokers import token_lifecycle
     from app.market_data import candles_routes, service
 
-    async def pick(session, tenant_id, broker, label):
+    async def pick(session, tenant_id, broker, label, **_k):
         return types.SimpleNamespace(broker_name="fake")
     asked = []
     # SCR-FIX A9: an adapter-like interval map (Upstox v2's); a non-native interval is refused, as the broker refuses it
@@ -167,7 +167,7 @@ def test_a_run_never_decides_on_the_bar_still_forming(flag_on, monkeypatch):
     t_now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
     start = t_now - timedelta(minutes=5 * 30)                                   # 30 closed 5-minute bars, then one forming
 
-    async def pick(session, tenant_id, broker, label):
+    async def pick(session, tenant_id, broker, label, **_k):
         return types.SimpleNamespace(broker_name="fake")
 
     async def candles(self, symbol, exchange="NSE", interval="1min", now=None):

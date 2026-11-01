@@ -1,6 +1,6 @@
 import { CircleHelp, History, LineChart, ListChecks, Sparkles } from "lucide-react";
 import { lazy, Suspense } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../../inplace/InPlaceLink";
 import { chartTabPath } from "../../shell/shellRoutes";
 import { isTimeframe } from "../../chart/timeframes";
 import { Details } from "../../ui/Details";
@@ -147,13 +147,13 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
       {(answer.action || chart || (answer.followup && onAsk)) && (
         <div className="flex flex-col gap-space-2 sm:flex-row sm:flex-wrap" data-actions>
           {answer.action ? (
-            <Link to={answer.action.to} state={actionState(answer)} data-action={answer.draft ? "draft" : "page"} className={PRIMARY}>
+            <InPlaceLink to={answer.action.to} state={actionState(answer)} data-action={answer.draft ? "draft" : "page"} className={PRIMARY}>
               {answer.action.label}
-            </Link>
+            </InPlaceLink>
           ) : chart ? (
-            <Link to={chartTabPath(chart.symbol, chart.exchange, chart.timeframe)} data-action="chart" className={PRIMARY}>
+            <InPlaceLink to={chartTabPath(chart.symbol, chart.exchange, chart.timeframe)} data-action="chart" className={PRIMARY}>
               <LineChart size={16} aria-hidden />{t("chat.openChart")}
-            </Link>
+            </InPlaceLink>
           ) : null}
           {answer.followup && onAsk && (
             <button type="button" onClick={() => onAsk(answer.followup!.question)} data-followup className={SECONDARY}>

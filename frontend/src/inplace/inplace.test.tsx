@@ -181,8 +181,8 @@ describe("deep links", () => {
 
   it("an unknown or switched-off panel in the address shows nothing", () => {
     expect(api(history("/x?panel=nope:1")).stack).toEqual([]);
-    expect(api(history("/x?panel=ai-key")).stack).toEqual([]);                                  // ai_one_key off
-    expect(api(history("/x?panel=ai-key"), { flags: { ai_one_key: true } }).stack.map((s) => s.kind)).toEqual(["ai-key"]);
+    expect(api(history("/x?panel=copilot")).stack).toEqual([]);                                 // ai_copilot off
+    expect(api(history("/x?panel=copilot"), { flags: { ai_copilot: true } }).stack.map((s) => s.kind)).toEqual(["copilot"]);
     expect(api(history("/x?panel=broker"), { enabled: false }).stack).toEqual([]);              // ui_v2 off
   });
 
@@ -209,12 +209,17 @@ describe("fallback: navigate as today", () => {
     expect(api(h, { enabled: false }).handles("/broker")).toBe(false);
   });
 
-  it("a facility switched off by its flag navigates (the AI key without ai_one_key)", () => {
+  it("a facility switched off by its flag navigates (NAV-2: the AI key opens in place with ai_one_key on or off)", () => {
+    const flagged: PanelEntry = { ...BROKER_PANEL, enabled: (on) => on("broker_v9") };
+    const registry = createRegistry([flagged]);
     const h = history("/x");
-    expect(api(h).handles("/settings/ai")).toBe(false);
-    api(h).open("/settings/ai");
-    expect(h.url()).toBe("/settings/ai");
-    expect(api(h, { flags: { ai_one_key: true } }).handles("/settings/ai")).toBe(true);
+    expect(api(h, { registry }).handles("/broker")).toBe(false);
+    api(h, { registry }).open("/broker");
+    expect(h.url()).toBe("/broker");
+    expect(api(h, { registry, flags: { broker_v9: true } }).handles("/broker")).toBe(true);
+    // NAV-2: without ai_one_key the AI key panel shows what Settings › AI shows then, so it is always in place.
+    expect(api(history("/x")).handles("/settings/ai")).toBe(true);
+    expect(api(history("/x"), { flags: { ai_one_key: true } }).handles("/settings/ai")).toBe(true);
   });
 });
 

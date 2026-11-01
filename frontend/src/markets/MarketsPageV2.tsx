@@ -1,9 +1,10 @@
 import { ArrowLeft, ChartCandlestick, ChevronRight, RefreshCw } from "lucide-react";
 import { Details } from "../ui/Details";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { CARD, LINK_SECONDARY } from "../dashboard/CardV2";
 import { cx } from "../components/primitives/cx";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import type { PageProps } from "../routes";
 import { chartTabPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
@@ -24,7 +25,9 @@ import { Skeleton } from "../components/primitives";
  * MO4 slice 2 (ATP_SESSION_GROWTH_MASTER.md PART 2 item 6): the Sector & index view at /markets (v2 only, flag
  * `markets_view`). It opens ready: the market's move and the strongest / weakest sector in plain words, then every sector
  * (or index) with its move, breadth and strongest / weakest stocks - a heat map on a desktop, a list on a phone. A tile
- * opens that index's or sector's stocks (`?list=<key>`), and each stock or index opens on Charts. The day / week / month
+ * opens that index's or sector's stocks (`?list=<key>`), and each stock or index opens its chart. M75 NAV-3: every link
+ * is an <InPlaceLink> - a chart opens in place (side panel / bottom sheet), the tab stays; a sector's stocks stay on this
+ * tab's own address (`?list=`, Back returns to the board). The day / week / month
  * choice and the view are in the address (`?view=&period=`). Numbers come from the shared end-of-day closes; a missing
  * one says "I don't know" - never a sample. Information only: nothing here places an order.
  */
@@ -108,7 +111,7 @@ function Movers({ title, rows }: { title: string; rows: Mover[] }) {
       <ul className="mt-space-1 space-y-space-1">
         {rows.map((m) => (
           <li key={m.symbol} className="flex items-baseline justify-between gap-space-2 text-t13">
-            <Link to={chartTabPath(m.symbol, m.exchange)} className="inline-flex min-h-11 min-w-0 items-center truncate text-fg hover:text-brand hover:underline md:min-h-0">{m.symbol}</Link>
+            <InPlaceLink to={chartTabPath(m.symbol, m.exchange)} className="inline-flex min-h-11 min-w-0 items-center truncate text-fg hover:text-brand hover:underline md:min-h-0">{m.symbol}</InPlaceLink>
             <Move value={m.change} className="shrink-0 text-t13" />
           </li>
         ))}
@@ -166,7 +169,7 @@ function Tile({ g, view, period, benchmark }: { g: MarketGroup; view: View; peri
   );
   const cls = cx("block min-h-[7.5rem] rounded-panel border border-subtle p-space-3 transition-colors duration-fast", heatClass(v, period));
   return to
-    ? <Link to={to} data-tile={g.name} className={cx(cls, "hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand")}>{body}</Link>
+    ? <InPlaceLink to={to} data-tile={g.name} className={cx(cls, "hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand")}>{body}</InPlaceLink>
     : <div data-tile={g.name} className={cls}>{body}</div>;
 }
 
@@ -190,7 +193,7 @@ function Row({ g, view, period }: { g: MarketGroup; view: View; period: Period }
   const cls = "flex min-h-12 items-center gap-space-3 px-space-3 py-space-2";
   return (
     <li data-row={g.name} className="border-b border-subtle last:border-b-0">
-      {to ? <Link to={to} className={cx(cls, "hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand")}>{body}</Link> : <div className={cls}>{body}</div>}
+      {to ? <InPlaceLink to={to} className={cx(cls, "hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand")}>{body}</InPlaceLink> : <div className={cls}>{body}</div>}
     </li>
   );
 }
@@ -218,7 +221,7 @@ function LeadersCard({ data, period, view }: { data: MarketsOverview; period: Pe
     const to = groupLink(g, view, period);
     return (
       <li key={g.name} className="flex items-baseline justify-between gap-space-2 text-t14">
-        {to ? <Link to={to} className="inline-flex min-h-11 min-w-0 items-center truncate text-fg hover:text-brand hover:underline md:min-h-0">{g.name}</Link> : <span className="min-w-0 truncate text-fg">{g.name}</span>}
+        {to ? <InPlaceLink to={to} className="inline-flex min-h-11 min-w-0 items-center truncate text-fg hover:text-brand hover:underline md:min-h-0">{g.name}</InPlaceLink> : <span className="min-w-0 truncate text-fg">{g.name}</span>}
         <Move value={g.change[period]} className="shrink-0" />
       </li>
     );
@@ -269,7 +272,7 @@ function MemberRow({ m, period, benchmark }: { m: ListMember; period: Period; be
   const rel = relativeText(m.vs_benchmark[period], benchmark);
   return (
     <li data-member={m.symbol} className="border-b border-subtle last:border-b-0">
-      <Link to={chartTabPath(m.symbol, m.exchange)}
+      <InPlaceLink to={chartTabPath(m.symbol, m.exchange)}
         className="grid min-h-12 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-space-3 px-space-3 py-space-2 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,1fr)]">
         <span className="min-w-0">
           <span className="block truncate text-t14 font-semibold text-fg">{m.symbol}</span>
@@ -278,7 +281,7 @@ function MemberRow({ m, period, benchmark }: { m: ListMember; period: Period; be
         <span className="hidden text-right font-tabular text-t14 text-fg md:block">{closeText(m.close)}</span>
         <span className="text-right"><Move value={m.change[period]} className="text-t14" /></span>
         <span className="col-span-2 truncate text-t12 text-fg-muted md:col-span-1 md:text-right">{rel ?? ""}</span>
-      </Link>
+      </InPlaceLink>
     </li>
   );
 }
@@ -314,7 +317,7 @@ export function ListDetailView({ state, view, period, onBack, onRetry }: {
             </p>
           </div>
           {d.kind === "index" && d.symbol && (
-            <Link to={chartTabPath(d.symbol)} className={LINK_SECONDARY}><ChartCandlestick size={16} aria-hidden /> Open chart</Link>
+            <InPlaceLink to={chartTabPath(d.symbol)} className={LINK_SECONDARY}><ChartCandlestick size={16} aria-hidden /> Open chart</InPlaceLink>
           )}
         </div>
         {s && (

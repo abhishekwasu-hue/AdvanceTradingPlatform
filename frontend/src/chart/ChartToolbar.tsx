@@ -1,7 +1,7 @@
 import { MoreHorizontal, Redo2, Undo2 } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { Link } from "react-router";
 import { cx } from "../components/primitives/cx";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { Combobox } from "../ui/Combobox";
 import { SymbolPicker } from "../ui/SymbolPicker";
 import { TimeframePicker, type TimeframePickerProps } from "../ui/TimeframePicker";
@@ -33,7 +33,8 @@ export interface ToolbarAction {
   title?: string;
   icon: ReactNode;
   onClick?: () => void;
-  /** A link instead of a button. */
+  /** A link instead of a button. M75 NAV-3: drawn as <InPlaceLink> - the facility it names opens in place (a chart, Analyze
+   * a chart), the real address stays in `href`. */
   to?: string;
   pressed?: boolean;
   disabled?: boolean;
@@ -92,7 +93,7 @@ function drawingActions(drawing: DrawingToolsProps | undefined): ToolbarAction[]
 /** One action as an icon button (or link) in the bar. */
 function IconAction({ a }: { a: ToolbarAction }) {
   const common = { "aria-label": a.label, title: a.title ?? a.label, className: toolbarIconBtn, "data-testid": a.testId, "data-action": a.id };
-  if (a.to) return <Link to={a.to} {...common}>{a.icon}</Link>;
+  if (a.to) return <InPlaceLink to={a.to} {...common}>{a.icon}</InPlaceLink>;
   return (
     <button type="button" {...common} disabled={a.disabled} aria-pressed={a.pressed} aria-haspopup={a.haspopup} onClick={a.onClick}>{a.icon}</button>
   );
@@ -101,7 +102,7 @@ function IconAction({ a }: { a: ToolbarAction }) {
 /** One action as a labelled row under More (a phone). Picking it closes More. */
 function MoreAction({ a, close }: { a: ToolbarAction; close: () => void }) {
   const body = <>{a.icon}<span>{a.moreLabel ?? a.label}</span></>;
-  if (a.to) return <Link to={a.to} className={moreRow} data-testid={a.testId} data-action={a.id} onClick={close}>{body}</Link>;
+  if (a.to) return <InPlaceLink to={a.to} className={moreRow} data-testid={a.testId} data-action={a.id} onClick={close}>{body}</InPlaceLink>;
   return (
     <button type="button" className={moreRow} data-testid={a.testId} data-action={a.id} disabled={a.disabled} aria-pressed={a.pressed}
       aria-haspopup={a.haspopup} onClick={() => { close(); a.onClick?.(); }}>{body}</button>

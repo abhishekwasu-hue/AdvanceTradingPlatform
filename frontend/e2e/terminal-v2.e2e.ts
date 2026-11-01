@@ -90,6 +90,8 @@ async function open(page: Page, theme: "light" | "dark", opts: {
   features?: Record<string, boolean>; bars?: number; vary?: boolean; incomplete?: boolean;
   /** TERM-2 step 4: legs already in the basket, and extra routes registered last (they win over the ones above). */
   basket?: unknown[]; routes?: (page: Page) => Promise<void>;
+  /** M75 NAV-3: another Terminal address (the previous Terminal at `?view=classic`). */
+  path?: string;
 } = {}): Promise<Seen> {
   await page.clock.install({ time: new Date("2026-10-27T10:30:00+05:30") });
   await page.addInitScript((t) => {
@@ -194,7 +196,7 @@ async function open(page: Page, theme: "light" | "dark", opts: {
     await page.addInitScript((legs) => { try { sessionStorage.setItem("atp_fno_basket", JSON.stringify(legs)); } catch { /* storage unavailable */ } }, opts.basket);
   }
   if (opts.routes) await opts.routes(page);
-  await page.goto("/terminal");
+  await page.goto(opts.path ?? "/terminal");
   await settle(page);
   return seen;
 }
@@ -849,6 +851,55 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
       await page.locator("[data-terminal='panels'] summary").click();
       await expect(page.locator("[data-size='chart-1:w']")).toHaveText("5");
       await expect(page.locator("[data-size='chart-1:h']")).toHaveText(height ?? "");
+    });
+  });
+}
+
+// M75 NAV-3 (docs/design/M75_NO_NAVIGATION.md, the Terminal / charts rows): the Terminal's chart and chain links open in
+// place - the PATH stays /terminal while the panel is open, and closing it returns to the Terminal as it was.
+// (The bots panel's "Open Signals" / "Open Trading bot" links are hidden in every layout today: src/inplace/terminalChartsNav.test.tsx.)
+for (const size of [{ width: 390, height: 844, shape: "bottom", phone: true }, { width: 1440, height: 900, shape: "right", phone: false }] as const) {
+  test.describe(`v2 terminal ${size.width}: links open in place (M75 NAV-3)`, () => {
+    test.use(size.phone ? { viewport: { width: size.width, height: size.height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 }
+      : { viewport: { width: size.width, height: size.height }, deviceScaleFactor: 1 });
+
+    test("the chart's Open a larger chart: the chart beside the Terminal; closing keeps the layout", async ({ page }) => {
+      await open(page, "light");
+      const host = size.phone ? page.locator("[data-phone-panel='chart']") : page.locator("[data-panel='chart-1']");
+      const before = size.phone ? null : await page.locator("[data-page='terminal-v2']").getAttribute("data-layout");
+      await host.locator("a[data-action='open']").first().click();
+      const chart = page.locator("[data-inplace-panel='chart']");
+      await expect(chart.locator("[data-embedded-chart]")).toBeVisible();
+      await expect(chart).toHaveAttribute("data-inplace-shape", size.shape);
+      await expect(chart.locator("a[data-action='open']")).toHaveCount(0);           // no jump from inside the panel
+      expect(new URL(page.url()).pathname).toBe("/terminal");
+      if (process.env.INPLACE_SHOTS) await page.screenshot({ path: `${process.env.INPLACE_SHOTS}/nav3-terminal-chart-${size.width}.png` });
+      if (size.phone) await page.goBack(); else await page.keyboard.press("Escape");
+      await expect(chart).toHaveCount(0);
+      expect(new URL(page.url()).pathname).toBe("/terminal");
+      expect(new URL(page.url()).searchParams.getAll("panel")).toEqual([]);
+      if (before) await expect(page.locator("[data-page='terminal-v2']")).toHaveAttribute("data-layout", before);
+      await expect(host).toBeVisible();
+    });
+
+    test("the previous Terminal's chain, Connect your broker (the chain could not be read): the broker drawer over it", async ({ page }) => {
+      await open(page, "light", { path: "/terminal?view=classic", routes: async (p) => {
+        await p.route(/\/api(?:\/v1)?\/option-chain\/([^/]+)\/live/, (r) => r.fulfill({ status: 503, json: { detail: "No broker session" } }));
+      } });
+      if (size.phone) await page.locator("[data-tab='chain']").tap();
+      const link = page.locator("[data-empty='chain-error'] a", { hasText: "Connect your broker" }).first();
+      await expect(link).toBeVisible({ timeout: 15_000 });
+      await link.click();
+      const broker = page.locator("[data-inplace-panel='broker']");
+      await expect(broker).toBeVisible();
+      await expect(broker).toHaveAttribute("data-inplace-shape", size.shape);
+      expect(new URL(page.url()).pathname).toBe("/terminal");
+      if (size.phone) await expectPhoneLayout(page);
+      if (process.env.INPLACE_SHOTS) await page.screenshot({ path: `${process.env.INPLACE_SHOTS}/nav3-terminal-broker-${size.width}.png` });
+      await page.keyboard.press("Escape");
+      await expect(broker).toHaveCount(0);
+      expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe("/terminal?view=classic");
+      await expect(link).toBeVisible();
     });
   });
 }

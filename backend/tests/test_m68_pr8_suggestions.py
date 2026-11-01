@@ -108,8 +108,10 @@ def test_the_copilot_never_widens_his_stop_and_states_no_minimum_rr():
 
 # --- TS1-083: the progression ladder card ---------------------------------------------------------------------------
 
-def test_the_ladder_targets_are_labelled_suggested_milestones():
+def test_the_ladder_targets_are_labelled_milestones_that_lock_nothing():
     from app.paper import service
-    assert "suggested milestones" in service.LADDER_TARGETS_NOTE and "lock or unlock nothing" in service.LADDER_TARGETS_NOTE
+    assert service.LADDER_TARGETS_NOTE == "Milestones for your own review - they lock or unlock nothing."
+    from app.journal.review import advice_in
+    assert advice_in(service.LADDER_TARGETS_NOTE) == []                       # a plain fact, no advice wording
     source = open(service.__file__, encoding="utf8").read()
     assert '"targets_note": LADDER_TARGETS_NOTE,' in source

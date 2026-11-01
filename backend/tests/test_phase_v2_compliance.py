@@ -38,7 +38,7 @@ def test_checklist_fails_draft_rules_and_fixes_them_deterministically():
     assert report.failed == ["M1"] and "M2" in report.warnings and not report.ok
     assert "must be ordered" in report.failure_text()
     m2 = [c for c in report.checks if c.rule == "M2"][0]
-    assert "inside normal noise" in m2.detail and f"suggested: {MIN_STOP_ATR_MULT:g} x ATR or wider" in m2.detail
+    assert "inside normal noise" in m2.detail and f"{MIN_STOP_ATR_MULT:g} x ATR or wider sits outside it; your stop is kept" in m2.detail
     fixed, report = evaluate_config(_config(stop_loss_atr_mult=0.5, target_rr=(1.0, 0.8), min_rr=1.3), cfg, ceilings, autofix=True)
     assert report.ok and fixed.stop_loss_atr_mult == 0.5 and fixed.target_rr == (1.3, 1.3)       # the stop is kept as written
     assert report.fixes == ["target_rr (1, 0.8) -> (1.3, 1.3) (M1)"]

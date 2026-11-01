@@ -223,7 +223,7 @@ async def summary(session: AsyncSession, user: User, now: Optional[datetime] = N
     }
 
 
-LADDER_TARGETS_NOTE = "The targets are suggested milestones for your own review - they lock or unlock nothing."
+LADDER_TARGETS_NOTE = "Milestones for your own review - they lock or unlock nothing."
 
 
 async def ladder(session: AsyncSession, user: User, now: Optional[datetime] = None, *, evidence: bool = False) -> Dict:

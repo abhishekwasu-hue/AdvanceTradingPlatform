@@ -2580,7 +2580,7 @@ export interface StrategyCandidate {
   params: Record<string, unknown>; rules: { long: string[]; short: string[] }; exits: string;
   /** M68 PR-8 (TS1-075): what the simulation assumed (shown with the evidence, never applied to a bot). */
   test_assumptions?: string[];
-  /** M68 PR-8 (TS1-075): the draft bot's exits - sent with the bot only when the trader ticks "Use the suggested exits". */
+  /** M68 PR-8 (TS1-075): the draft bot's exits - sent with the bot only when the trader ticks "Use the draft's exits". */
   suggested_exits?: SuggestedExits;
   // Phase BF: the same rules in plain English words, the direction and timeframe in words, a one-line summary.
   rules_text?: { long: string[]; short: string[] }; direction_text?: string; timeframe_text?: string; summary?: string;

@@ -443,7 +443,7 @@ async def interview_deploy(body: CandidateDeployBody, user: User = Depends(requi
     payload = json.loads(row.deployment_json or "{}")
     suggested = interview.suggested_contract(payload)
     if suggested and not body.accept_suggested:
-        raise HTTPException(status_code=400, detail=f"Accept the plan's suggested values before deploying (accept_suggested): {interview.suggested_text(suggested)}"[:600])
+        raise HTTPException(status_code=400, detail=f"The plan's own picks need your acceptance before a deploy (accept_suggested): {interview.suggested_text(suggested)}"[:600])
     payload["mode"] = "PAPER"
     request = DeploymentCreateRequest(**payload)
     created = await create_deployment(request, user=user, session=session, session_id=session_id)

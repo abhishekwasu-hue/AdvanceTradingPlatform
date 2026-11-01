@@ -130,7 +130,7 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
         check("R1", stop > 0, f"stop defined before entry: {stop:g} x ATR({config.atr_period}) from the entry price")
         # M68 PR-8 (TS1-078): a suggestion, never a floor - the stop is the trader's own; it is never widened for him.
         check("M2", stop >= MIN_STOP_ATR_MULT,
-              f"stop distance {stop:g} x ATR is inside normal noise - suggested: {MIN_STOP_ATR_MULT:g} x ATR or wider (your stop is kept)"
+              f"stop distance {stop:g} x ATR is inside normal noise ({MIN_STOP_ATR_MULT:g} x ATR or wider sits outside it; your stop is kept)"
               if stop < MIN_STOP_ATR_MULT else f"stop distance {stop:g} x ATR is outside normal noise (>= {MIN_STOP_ATR_MULT:g} x ATR)",
               warn_only=True)
     if config.target_rr is None:

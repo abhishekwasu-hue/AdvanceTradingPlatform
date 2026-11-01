@@ -24,7 +24,7 @@ export function suggestedExitsText(s: SuggestedExits | null | undefined): string
   return parts.join(", ");
 }
 
-/** M68 PR-8 (TS1-075): the bot carries the suggested exits only when the trader ticked "Use the suggested exits". */
+/** M68 PR-8 (TS1-075): the bot carries the suggested exits only when the trader ticked "Use the draft's exits". */
 export function deploymentWith<T extends object>(deployment: T, suggested: SuggestedExits | null | undefined, use: boolean): T {
   return use && suggested ? { ...deployment, holding: suggested.holding, exit_rules: { ...suggested.exit_rules } } : deployment;
 }

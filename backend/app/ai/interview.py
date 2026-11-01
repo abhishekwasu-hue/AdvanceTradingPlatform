@@ -797,8 +797,8 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
     k_lines = [contract_text] + contract_notes
     suggested = suggested_contract(contract)
     if suggested:
-        k_lines.append(tr(lang, f"Suggested by the plan, applied only if you accept them: {suggested_text(suggested)}.",
-                          f"Plan ने सुचवलेले, तुम्ही स्वीकारले तरच लागू: {suggested_text(suggested)}."))
+        k_lines.append(tr(lang, f"Values the plan picked, applied only if you accept them: {suggested_text(suggested)}.",
+                          f"Plan ने निवडलेली मूल्ये, तुम्ही स्वीकारली तरच लागू: {suggested_text(suggested)}."))
     # SB-UX SU4: only what the template and the trader's own settings check - no rule the trader did not state.
     checklist = [
         tr(lang, "The template's own entry rules hold on a closed candle", "Template चे स्वतःचे entry नियम बंद candle वर पूर्ण होतात"),

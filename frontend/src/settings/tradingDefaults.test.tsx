@@ -183,8 +183,8 @@ describe("never pre-filled, and the approval gate", () => {
     expect(formPrefill(approval, false)).toEqual({});
     expect(formPrefill(approval, true)).toEqual({ approval: true });
     expect(formPrefill(d({ entry_mode: "AUTO" }), true)).toEqual({});
-    // M68 PR-6: the full form sends the bot's "New entries" choice (his own, or his Trade settings); nothing chosen = asked
-    expect(code(oldPageSource)).toContain("...(entryModeNow ? { entry_mode: entryModeNow } : {})");
+    // M68 PR-6: the full form sends "New entries" only when he picked it for this bot; else the bot follows his Trade settings
+    expect(code(oldPageSource)).toContain("...(entryMode ? { entry_mode: entryMode } : {})");
   });
 });
 

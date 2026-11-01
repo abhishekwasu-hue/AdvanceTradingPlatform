@@ -284,7 +284,9 @@ FIELDS: tuple[SettingField, ...] = (
 
     # --- Automation (PR-6) -----------------------------------------------------------------------------------------------
     _f(A, "approval_mode", "New entries", "choice",
-       "Whether your bots, alerts and API signals place an entry by themselves or ask you first.", 6, 60, 61,
+       "Whether your bots, alerts, API signals and paper plan tickets place an entry by themselves or ask you first. "
+       "A bot follows this unless you chose New entries for that bot itself; Ask me first also turns your paper plan "
+       "ticket's Place into a request you approve.", 6, 60, 61,
        choices=(("AUTO", "Placed automatically"), ("APPROVAL", "Ask me first")), today="trading_defaults.entry_mode; bot entry_mode",
        wired=True),
     _f(A, "approval_entry_minutes", "An entry request waits", "whole", "Minutes an entry waiting for your answer stays open.", 6, 62,

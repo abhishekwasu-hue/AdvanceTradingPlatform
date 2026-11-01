@@ -45,6 +45,14 @@ import {
   type TargetRule,
 } from "../strategyTemplates/exits";
 
+/** M68 PR-6: which New entries mode this bot uses now, and whether it follows his Trade settings; null when unknown. */
+export function entryModeText(bot: Pick<Deployment, "entry_mode_in_effect" | "entry_mode_follows_settings">): string | null {
+  if (bot.entry_mode_follows_settings === undefined) return null;
+  const mode = bot.entry_mode_in_effect === "APPROVAL" ? "Asks you first" : bot.entry_mode_in_effect === "AUTO" ? "Places entries by itself"
+    : "New entries not set - places nothing";
+  return `${mode}${bot.entry_mode_follows_settings ? " (from your Trade settings)" : " (this bot's own choice)"}`;
+}
+
 /** M68 PR-1: the entry styles a bot can send (Trade settings > Order defaults > Order type), none pre-selected. */
 const ENTRY_STYLES: ComboOption[] = [
   { value: "MARKET", label: "Market" }, { value: "PROTECTED_LIMIT", label: "Limit with price protection" },
@@ -362,6 +370,7 @@ export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel,
             {whyNoTrade(bot) && <Chip tone="warn" variant="meaning" icon="!" name="why-no-trade">{whyNoTrade(bot)}</Chip>}
             {botWaitText(bot) && <span data-bot-wait>{botWaitText(bot)}</span>}
             {bot.open_positions > 0 && !held && <span>{bot.open_positions} open {bot.open_positions === 1 ? "trade" : "trades"}</span>}
+            {state !== "stopped" && entryModeText(bot) && <span data-bot-entry-mode>{entryModeText(bot)}</span>}
           </p>
           {held}
           {state !== "stopped" && why}

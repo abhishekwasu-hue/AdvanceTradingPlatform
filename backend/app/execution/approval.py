@@ -269,17 +269,19 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     from app.execution import automation
     own_minutes = (await automation.load_for(session, user_id)).approval_entry_minutes
     expires = now + timedelta(minutes=own_minutes or app_config.APPROVAL_ENTRY_TTL_MINUTES)
+    # M68Q-PR6-1: say when the end is the platform's time, not his own
+    until = expires.astimezone(IST).strftime('%H:%M') + " IST" + ("" if own_minutes else " (platform time - set your own in Trade settings)")
     label = SOURCE_LABELS.get(source, source)
     lines = leg_lines(structure)
     if lines:
         # M55 T2: his own order, so its legs in order words (card and Telegram); the levels stay the underlying's.
         reason = (f"{label}: {structure_title(structure)} on {signal.symbol} - {'; '.join(lines)}. Underlying at {_money(signal.entry)} "
                   f"(stop {_money(signal.stop_loss)}, target {_money(signal.target1)}) - {strategy_id}. Approve to place these legs "
-                  f"as a PAPER order at the prices then (re-quoted); it expires at {expires.astimezone(IST).strftime('%H:%M')} IST.")
+                  f"as a PAPER order at the prices then (re-quoted); it expires at {until}.")
     else:
         reason = (f"{label}: {direction} {signal.symbol} at {_money(signal.entry)} (stop {_money(signal.stop_loss)}, target {_money(signal.target1)})"
                   f" - {strategy_id}. Approve to place a PAPER order at the price then (re-quoted); it expires at "
-                  f"{expires.astimezone(IST).strftime('%H:%M')} IST.")
+                  f"{until}.")
     # The card shows the first few numbers: the proposal price and its levels lead.
     evidence = {"proposal_price": float(signal.entry), "stop_loss": signal.stop_loss, "target1": signal.target1, "source": source,
                 "symbol": signal.symbol, "direction": direction, "target2": signal.target2, "risk_reward": signal.risk_reward,

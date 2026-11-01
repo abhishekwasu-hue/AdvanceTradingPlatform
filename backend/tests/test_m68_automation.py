@@ -117,12 +117,17 @@ def _bot(t: dict, **kw) -> dict:
     return created
 
 
-def test_a_new_bot_keeps_not_set_or_takes_his_own_setting_and_its_own_value_wins():
+def test_a_bot_stores_a_mode_only_when_picked_for_it_and_otherwise_follows_trade_settings():
     t = _tenant(_email("m68a-bot"))
-    assert _bot(t)["entry_mode"] is None                                    # nothing pre-chosen
+    bare = _bot(t)
+    assert bare["entry_mode"] is None and bare["entry_mode_follows_settings"] is True
+    assert bare["entry_mode_in_effect"] is None                             # Not set anywhere: places nothing
     _save(t, approval_mode="APPROVAL")                                      # no organisation flag needed (TS1-061)
-    assert _bot(t)["entry_mode"] == "APPROVAL"
-    assert _bot(t, entry_mode="AUTO")["entry_mode"] == "AUTO"              # the bot's own value wins
+    following = _bot(t)
+    assert following["entry_mode"] is None                                  # his CURRENT setting is never copied onto the bot
+    assert (following["entry_mode_in_effect"], following["entry_mode_follows_settings"]) == ("APPROVAL", True)
+    own = _bot(t, entry_mode="AUTO")                                        # picked for this bot: its own value wins
+    assert (own["entry_mode"], own["entry_mode_in_effect"], own["entry_mode_follows_settings"]) == ("AUTO", "AUTO", False)
 
 
 def test_who_is_approval_only_flag_then_bot_then_user():
@@ -183,6 +188,38 @@ def test_the_worker_skips_a_bot_with_no_mode_then_follows_his_setting(monkeypatc
     assert len(entries) == 1 and _orders(t["tenant_id"]) == []
     made = (OPEN_NOW + timedelta(minutes=1)).astimezone(UTC)
     assert entries[0].expires_at.replace(tzinfo=UTC) - made == timedelta(minutes=25)
+
+
+def test_switching_trade_settings_to_ask_me_first_makes_a_following_bot_ask_and_an_auto_bot_keeps_entering(monkeypatch):
+    t = _tenant(_email("m68a-switch"))
+    _save(t, approval_mode="AUTO")
+    following = _deploy(t, symbol="RELIANCE")
+
+    async def own_auto():
+        async with _session_factory() as session:
+            dep = StrategyDeploymentRecord(tenant_id=t["tenant_id"], strategy_id="x", symbol="Y", created_by=t["user_id"], entry_mode="AUTO")
+            return await approval.required(session, t["tenant_id"], dep), await automation.entry_mode(session, dep)
+    _save(t, approval_mode="APPROVAL")                                      # he switches later
+    assert _run(own_auto()) == (False, "AUTO")                              # a bot he set to AUTO itself keeps AUTO
+    _force_signal(monkeypatch, _signal)
+    worker = _worker(monkeypatch, _FakeBroker(ltp=100.1))
+    _run(worker.run_cycle(now=OPEN_NOW))
+    entries = _actions(t["tenant_id"], "ENTRY")
+    assert len(entries) == 1 and entries[0].deployment_id == following       # the following bot now asks first
+    assert _orders(t["tenant_id"]) == [] and _trades(t["tenant_id"]) == []
+    assert "platform time - set your own in Trade settings" in entries[0].reason   # M68Q-PR6-1: the card says whose time
+
+
+def test_exits_never_read_the_automation_settings():
+    """ADR-0004: nothing on the exit path reads Automation (an exit closes whatever New entries says)."""
+    import subprocess
+    out = subprocess.run(["grep", "-rlE", "--include=*.py", r"automation\.(load|entry_mode|needs_setting)|from app.execution import .*automation",
+                          "app"], cwd=BACKEND, capture_output=True, text=True).stdout.split()
+    assert sorted(out) == sorted(["app/deployments/routes.py", "app/execution/approval.py", "app/execution/core/dispatcher.py",
+                                  "app/screener/then/auto_paper.py", "app/screener/then/routes.py", "app/workers/trading_worker.py"])
+    text = (BACKEND / "app/execution/approval.py").read_text(encoding="utf-8")
+    exit_part = text[text.index("# --- exits policy (ADR-0004)"):]
+    assert "automation" not in exit_part
 
 
 # --- the request: waiting time, price move, new prices ---------------------------------------------------------------

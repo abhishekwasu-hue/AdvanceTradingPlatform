@@ -387,7 +387,7 @@
      "key": "automation.approval_mode",
      "label": "New entries",
      "kind": "choice",
-     "help": "Whether your bots, alerts and API signals place an entry by themselves or ask you first.",
+     "help": "Whether your bots, alerts, API signals and paper plan tickets place an entry by themselves or ask you first. A bot follows this unless you chose New entries for that bot itself; Ask me first also turns your paper plan ticket's Place into a request you approve.",
      "unit": "",
      "choices": [
       {

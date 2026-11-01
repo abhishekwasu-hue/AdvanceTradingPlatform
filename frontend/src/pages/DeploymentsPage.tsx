@@ -157,6 +157,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   // M68 PR-6 (TS1-060): how this bot's entries go - his Trade settings (Automation > New entries), else asked here.
   const [entryMode, setEntryMode] = useState<"" | EntryModeChoice>("");
   const ownMode = approvalModeOf(ownSettings);
+  // M68 PR-6 (review): only a choice made for THIS bot is stored on it; "" = the bot follows his Trade settings at each entry.
   const entryModeNow = entryMode || ownMode || "";
   const prefilled = useRef(false);
   const marked = <K extends keyof FormPrefill>(key: K, value: FormPrefill[K]) => stillFromDefaults(prefill, key, value);
@@ -303,7 +304,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
         broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, oi_gates: oiGates.length ? oiGates : null, ...contractRules(),
         routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
         order_style: style || undefined, market_protection_pct: style === "PROTECTED_LIMIT" ? band : null,
-        ...(entryModeNow ? { entry_mode: entryModeNow } : {}),
+        ...(entryMode ? { entry_mode: entryMode } : {}),
       });
       setMessage(paperOnly ? `Started on paper: ${created.symbol}. See it under Your bots.`
         : `Deployment #${created.id} is ${created.status}: ${created.strategy_id} on ${created.symbol} (${created.mode}).`);
@@ -495,12 +496,12 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
           </select>
           {!orderStyle && own.botOrderStyle && <span className="text-brand">{FROM_DEFAULTS}</span>}
           <label htmlFor="deploy-entry-mode" className="text-fg-muted ml-2">New entries</label>
-          <select id="deploy-entry-mode" className="rounded bg-surface-2 border border-border px-2 py-1 text-xs" value={entryModeNow}
+          <select id="deploy-entry-mode" className="rounded bg-surface-2 border border-border px-2 py-1 text-xs" value={entryMode}
             onChange={(e) => setEntryMode(e.target.value as "" | EntryModeChoice)} aria-invalid={!entryModeNow || undefined} data-deploy="entry-mode">
-            <option value="">Not set - choose</option>
-            {ENTRY_MODE_CHOICES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            <option value="">{ownMode ? `Follow my Trade settings (${ENTRY_MODE_CHOICES.find((c) => c.value === ownMode)?.label})`
+              : "Not set - choose"}</option>
+            {ENTRY_MODE_CHOICES.map((c) => <option key={c.value} value={c.value}>{c.label} (this bot only)</option>)}
           </select>
-          {!entryMode && ownMode && <span className="text-brand">{FROM_DEFAULTS}</span>}
           <FromDefaults on={prefill.approval === true && entryMode === "APPROVAL"} />
           {style === "PROTECTED_LIMIT" && (
             <label className="flex items-center gap-1 text-fg-muted">

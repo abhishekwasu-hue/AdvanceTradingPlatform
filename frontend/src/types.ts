@@ -1023,6 +1023,11 @@ export type ExecutionMode = "PAPER" | "LIVE";
 
 export interface Deployment {
   id: number;
+  /** M68 PR-6: the bot's own New entries choice (null: it follows his Trade settings), the mode in effect now (null: Not
+   *  set anywhere - it places nothing) and whether it follows the Trade settings. */
+  entry_mode?: "AUTO" | "APPROVAL" | null;
+  entry_mode_in_effect?: "AUTO" | "APPROVAL" | null;
+  entry_mode_follows_settings?: boolean;
   /** Strategy templates section 5: the bot's exit choice as stored (null: none chosen). */
   template_exits?: TemplateExitsRequest | null;
   regime_filter?: string[] | null;

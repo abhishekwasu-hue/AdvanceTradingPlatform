@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M73 sign-in compare</title>
+<style>
+  :root { --bg: #f6f7f9; --fg: #111827; --muted: #4b5563; --card: #ffffff; --line: #e5e7eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0b0f17; --fg: #e5e7eb; --muted: #9ca3af; --card: #111827; --line: #1f2937; } }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 24px 0 8px; }
+  p, li { color: var(--muted); } ul { margin: 4px 0 0; padding-left: 18px; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  figure { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+  figcaption { font-weight: 600; margin-bottom: 6px; } img { width: 100%; height: auto; display: block; border-radius: 6px; }
+</style>
+</head>
+<body>
+<h1>M73 - Sign-in page: before / after</h1>
+<p>Before = origin/main (GS-1, Google configured). After = this PR with <code>ui_v2</code> on, Google and Facebook configured. Every API answer is mocked; no real account.</p>
+<ul>
+  <li>Provider buttons at the top, brand-correct ("Continue with Google" / "Continue with Facebook", official marks), then "or use email".</li>
+  <li>48 px buttons and inputs; no intro paragraph on Sign in / Create account; "Forgot password?" stays visible.</li>
+  <li>New: the link step (an account uses this email - its password and code confirm the link).</li>
+</ul>
+
+<h2>Phone 390 - Sign in</h2>
+<div class="row">
+  <figure><figcaption>Before, light</figcaption><img src="m73/before-signin-phone-light.png" alt="Before, phone, light"></figure>
+  <figure><figcaption>After, light</figcaption><img src="m73/after-signin-phone-light.png" alt="After, phone, light"></figure>
+  <figure><figcaption>Before, dark</figcaption><img src="m73/before-signin-phone-dark.png" alt="Before, phone, dark"></figure>
+  <figure><figcaption>After, dark</figcaption><img src="m73/after-signin-phone-dark.png" alt="After, phone, dark"></figure>
+</div>
+
+<h2>Desktop 1440 - Sign in</h2>
+<div class="row">
+  <figure><figcaption>Before, light</figcaption><img src="m73/before-signin-desktop-light.png" alt="Before, desktop, light"></figure>
+  <figure><figcaption>After, light</figcaption><img src="m73/after-signin-desktop-light.png" alt="After, desktop, light"></figure>
+  <figure><figcaption>Before, dark</figcaption><img src="m73/before-signin-desktop-dark.png" alt="Before, desktop, dark"></figure>
+  <figure><figcaption>After, dark</figcaption><img src="m73/after-signin-desktop-dark.png" alt="After, desktop, dark"></figure>
+</div>
+
+<h2>After only - Create account and the link step (phone)</h2>
+<div class="row">
+  <figure><figcaption>Create account, light</figcaption><img src="m73/after-register-phone-light.png" alt="Create account, phone, light"></figure>
+  <figure><figcaption>Link step, dark</figcaption><img src="m73/after-link-step-phone-dark.png" alt="Link step, phone, dark"></figure>
+</div>
+</body>
+</html>

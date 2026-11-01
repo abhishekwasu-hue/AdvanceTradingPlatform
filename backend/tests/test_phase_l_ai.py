@@ -346,7 +346,9 @@ def test_monitor_proposes_pause_on_losing_streak_and_executes_only_after_approva
     # M68 PR-8 (TS1-079): no losses-in-a-row limit of his own = no streak nudge (ATP picks no streak length for him)
     assert "LOSING_STREAK" not in _run(observe_only())
     from app.core.models import RiskConfig
-    assert client.put("/api/risk-settings", headers=t["headers"], json=RiskConfig(max_consecutive_losses=3).model_dump()).status_code == 200
+    # M68 PR-5 (TS1-051): a losses-in-a-row limit with no cool-down minutes needs his own choice of when the pause ends
+    own = RiskConfig(max_consecutive_losses=3, loss_streak_pause="until_resume").model_dump()
+    assert client.put("/api/risk-settings", headers=t["headers"], json=own).status_code == 200
 
     async def observe_and_raise():
         async with _session_factory() as session:

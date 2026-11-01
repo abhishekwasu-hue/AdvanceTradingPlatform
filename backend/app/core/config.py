@@ -324,6 +324,18 @@ HISTORY_BACKFILL_FO_OPTIONS = os.environ.get("HISTORY_BACKFILL_FO_OPTIONS", "fal
 # F&O volume: "withhold" (default - stored as 0 until the legacy CONTRACTS vs UDiFF TtlTradgVol unit is confirmed on
 # real files, so nothing downstream mixes units) or "as_printed". The unit is recorded per file either way.
 HISTORY_BACKFILL_FO_VOLUME = os.environ.get("HISTORY_BACKFILL_FO_VOLUME", "withhold").strip().lower()
+# M71 PL-7: the owner's private data checkout (trade-data), read-only, seeded into HIS private store by
+# `python -m app.market_lake.seed_import run` (atp.sh import-trade-data mounts the host checkout here). Empty or absent
+# directory = "not available": the import reports it and does nothing. The ref is informational (the host checks it out).
+TRADE_DATA_DIR = os.environ.get("ATP_TRADE_DATA_DIR", "").strip()
+TRADE_DATA_REF = os.environ.get("ATP_TRADE_DATA_REF", "main").strip() or "main"
+# M71 PL-7b, fail closed: the seed import refuses (nothing written) when the private data states no readable policy.
+TRADE_DATA_POLICY_REQUIRED = os.environ.get("TRADE_DATA_POLICY_REQUIRED", "true").strip().lower() in ("1", "true", "yes", "on")
+# The checkout's top-level folders that hold market data (comma list, the host's .env; empty = every top-level folder).
+TRADE_DATA_FOLDERS = tuple(f.strip() for f in os.environ.get("ATP_TRADE_DATA_FOLDERS", "").split(",") if f.strip())
+# The underlying(s) a data-use policy without its own scope applies to (comma list; "*" = every symbol). Default: the
+# owner's order names the NIFTY holdout (OPEN_QUESTIONS M71Q-7).
+TRADE_DATA_POLICY_SCOPE = tuple(s.strip().upper() for s in os.environ.get("TRADE_DATA_POLICY_SCOPE", "NIFTY").split(",") if s.strip()) or ("NIFTY",)
 # Weekends are probed with the cash file only (a special session - budget Saturday, Muhurat - has one); index and F&O
 # files are asked for only when the cash file of that day exists. "false" skips weekends entirely.
 HISTORY_BACKFILL_PROBE_WEEKENDS = os.environ.get("HISTORY_BACKFILL_PROBE_WEEKENDS", "true").lower() in ("1", "true", "yes")

@@ -23,7 +23,7 @@ from app.backtest import chain_recorder
 from app.backtest.engine import ENGINE_VERSION, run_backtest
 from app.backtest.models import ModelError, ModelSet
 from app.backtest.optimizer import MAX_COMBOS, optimize
-from app.backtest.options import OptionChainSnapshotRow, SnapshotPricer, SyntheticPricer, VolatilityModel, underlying_name
+from app.backtest.options import OptionChainSnapshotRow, SnapshotPricer, StoredEodPricer, SyntheticPricer, VolatilityModel, underlying_name
 from app.backtest.options_engine import ENGINE_VERSION as OPTIONS_ENGINE_VERSION
 from app.backtest.options_engine import OptionBacktestConfig, OptionBacktestError, run_option_backtest
 from app.backtest.repro import config_hash, fingerprint
@@ -240,6 +240,7 @@ class BacktestRunner:
         if self.config is not None and body.template_exits is not None:
             self.config.stop_source = body.template_exits.stop_source        # section 5: PREMIUM_PCT on a single option
         self.pricer = pricer
+        self.pricing_note: str | None = None      # M71 PL-7: why recorded end-of-day premiums were not used
         try:
             self.models = ModelSet(**(body.execution_models or {}))
             self.models.built()                       # N7 C2b: a bad model parameter is a 422 here, not a 500 mid-run
@@ -265,6 +266,16 @@ class BacktestRunner:
         opts = body.options
         holidays = await load_holidays(session)
         pricer = None
+        # M71 PL-7 (owner order): on DAILY (or longer) bars the tenant's RECORDED end-of-day premiums (seeded NSE F&O
+        # bhavcopy closes) price a leg at its bar's session close first; the model prices only legs with none, and the
+        # result counts both. Intraday bars are priced by the model (an end-of-day close is no intraday premium).
+        eod: list[OptionChainSnapshotRow] = []
+        note: str | None = None
+        if opts.pricing in ("synthetic", "snapshots") and tenant_id is not None and body.candles:
+            eod, note = await _recorded_eod(session, tenant_id, body)
+        if opts.pricing == "synthetic" and eod:
+            pricer = StoredEodPricer(eod, fallback=SyntheticPricer(VolatilityModel(fixed_iv=opts.implied_volatility,
+                                                                                    window=opts.realised_vol_window), opts.risk_free_rate))
         if opts.pricing != "synthetic":
             fallback = SyntheticPricer(VolatilityModel(fixed_iv=opts.implied_volatility, window=opts.realised_vol_window), opts.risk_free_rate) \
                 if opts.allow_synthetic_fallback else None
@@ -279,13 +290,17 @@ class BacktestRunner:
                 # BT1b: recorded chains came through other organisations' broker sessions - not used with byob_data_tier on.
                 byob = tenant_id is not None and await live_access.byob_on(session, tenant_id)
                 rows = [] if byob else await chain_recorder.load_rows(session, underlying, start, end, tenant_id=tenant_id)
+                if eod:                    # recorded intraday quotes first, then the recorded day's close, then the model
+                    fallback = StoredEodPricer(eod, fallback=fallback)  # type: ignore[assignment]
                 if not rows and fallback is None:
                     raise HTTPException(status_code=400, detail=(
                         "Recorded option-chain quotes are not used while the bring-your-own-broker data tier is on; "
                         "allow the synthetic fallback or upload rows") if byob else (
                         f"No recorded option-chain quotes for {underlying} in the candle span; allow the synthetic fallback or upload rows"))
             pricer = SnapshotPricer(rows, max_age_minutes=opts.snapshot_max_age_minutes, fallback=fallback)
-        return cls(body, risk, pricer=pricer, holidays=holidays)
+        runner = cls(body, risk, pricer=pricer, holidays=holidays)
+        runner.pricing_note = note
+        return runner
 
     def run(self, strategy, df) -> BacktestResult:
         if self.config is None:
@@ -299,6 +314,8 @@ class BacktestRunner:
                 raise HTTPException(status_code=422, detail=f"execution_models: {exc}") from exc
             except OptionBacktestError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if self.pricing_note and result.options is not None:
+            result.options["pricing_note"] = self.pricing_note          # M71 PL-7: model-priced, and why
         # Realism C4: what produced this result, as hashes (recorded with the run).
         result.reproducibility = fingerprint(
             result, df, engine_version=self.body.engine_version, strategy_id=self.body.strategy_id, params=getattr(strategy, "params", None),
@@ -316,6 +333,41 @@ class BacktestRunner:
 def data_version_of_chain(rows) -> str:
     """Uploaded option quotes are data too: hashed into the config so a different chain is a different run."""
     return config_hash(rows=[r.model_dump(mode="json") for r in rows])
+
+
+async def _recorded_eod(session: AsyncSession, tenant_id: int, body: "BacktestBody") -> tuple:
+    """(rows, note): the recorded end-of-day premiums for a daily-or-longer option backtest - only strikes near the
+    candles' range and expiries the span can trade; ([], plain note) when the bars are intraday or the span holds more
+    than the reader takes (the run is then priced by the model, never refused)."""
+    from datetime import timedelta
+
+    from app.backtest.options import daily_or_longer
+    from app.market_lake import seed_store
+    underlying = underlying_name(body.symbol)[0]
+    start, end = _span(body.candles)
+    if not daily_or_longer(body.base_timeframe):
+        if await seed_store.has_premiums(session, tenant_id, underlying, start, end):
+            return [], ("Recorded end-of-day premiums price daily bars only; these intraday bars were priced by the model.")
+        return [], None
+    lo = min(float(c.low) for c in body.candles) * (1 - seed_store.STRIKE_BAND)
+    hi = max(float(c.high) for c in body.candles) * (1 + seed_store.STRIKE_BAND)
+    try:
+        rows = await seed_store.option_premiums(session, tenant_id, underlying, start, end + timedelta(days=1),
+                                                strikes=(lo, hi), expiry_until=end + timedelta(days=seed_store.EXPIRY_HORIZON_DAYS))
+    except ValueError:
+        return [], ("The span holds more recorded end-of-day premiums than one run reads; this run was priced by the model - "
+                    "choose a shorter span to use them.")
+    return rows, None
+
+
+async def _refused_windows(session: AsyncSession, tenant_id: int | None, symbol: str) -> list:
+    """M71 PL-7b: the tenant's sealed / contaminated windows for `symbol`; a symbol the policy cannot read -> 400."""
+    from app.backtest.data_policy import HoldoutError
+    from app.market_lake import data_use
+    try:
+        return await data_use.windows_for(session, tenant_id, symbol, refused_only=True)
+    except HoldoutError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _span(candles: List[OHLCVBar]):
@@ -438,9 +490,20 @@ async def backtest_walk_forward(
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
     runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id, user=user)
-    return await run_in_threadpool(walk_forward, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, risk, folds=folds,
-                                   # N7 C2b: chosen execution models apply to every window (never silently dropped)
-                                   runner=runner.run if body.options is not None or not runner.models.is_default else None)
+    # M71 PL-7b: walk-forward is a calibration check - the tenant's sealed / contaminated rows are left out first
+    from app.backtest import data_policy
+    windows = await _refused_windows(session, user.tenant_id, body.symbol)
+    frame = bars_to_dataframe(body.candles)
+    allowed = data_policy.filter_allowed(frame, None, windows)
+    dropped = int(len(frame) - len(allowed))
+    if dropped and allowed.empty:
+        raise HTTPException(status_code=400, detail=data_policy.windows_reason(windows, dropped))
+    result = await run_in_threadpool(walk_forward, strategy, allowed, body.symbol, body.base_timeframe, risk, folds=folds,
+                                     # N7 C2b: chosen execution models apply to every window (never silently dropped)
+                                     runner=runner.run if body.options is not None or not runner.models.is_default else None)
+    if dropped:
+        result = {**result, "data_policy": {"bars_left_out": dropped, "reason": data_policy.windows_reason(windows, dropped)}}
+    return result
 
 
 # --- Phase W: recorded option-chain quotes -------------------------------------------------
@@ -508,9 +571,10 @@ async def backtest_optimize(body: OptimizeBody, user: User = Depends(get_current
     await fill_candles(session, user, body)                                     # M55 T3: server-side candles
     strategy = await _strategy(BacktestBody(strategy_id=body.strategy_id, symbol=body.symbol, base_timeframe=body.base_timeframe,
                                             candles=body.candles, risk_config=body.risk_config), user, session)
+    windows = await _refused_windows(session, user.tenant_id, body.symbol)   # M71 PL-7b
     try:
         return await run_in_threadpool(optimize, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe,
                                        body.risk_config or RiskConfig(), body.param_grid, metric=body.metric, split=body.split,
-                                       holdout_start=body.holdout_start)
+                                       holdout_start=body.holdout_start, use_windows=windows)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

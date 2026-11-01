@@ -41,7 +41,7 @@ def _metric(result, name: str) -> Optional[float]:
 
 
 def optimize(strategy: BaseStrategy, base_df: pd.DataFrame, symbol: str, base_tf: str, risk_config: RiskConfig, grid: Dict[str, List], *,
-             metric: str = "net_pnl", split: float = 0.7, min_trades: int = 5, holdout_start=None) -> Dict:
+             metric: str = "net_pnl", split: float = 0.7, min_trades: int = 5, holdout_start=None, use_windows=()) -> Dict:
     if metric not in METRICS:
         raise ValueError(f"metric must be one of {METRICS}")
     if not 0.5 <= split <= 0.9:
@@ -56,6 +56,11 @@ def optimize(strategy: BaseStrategy, base_df: pd.DataFrame, symbol: str, base_tf
     base_df = data_policy.filter_allowed(base_df, boundary)          # the optimizer never sees the holdout
     if base_df.empty:
         raise ValueError("All bars fall in the sealed holdout - supply data from before it")
+    # M71 PL-7b: the tenant's sealed / contaminated windows (its own data policy) are refused the same way
+    policy_dropped = int((~data_policy.window_mask(base_df.index, use_windows)).sum())
+    base_df = data_policy.filter_allowed(base_df, None, use_windows)
+    if base_df.empty:
+        raise ValueError(data_policy.windows_reason(use_windows, policy_dropped) or "No bars are left for the search")
     n = len(base_df)
     cut = int(n * split)
     in_sample, out_sample = base_df.iloc[:cut], base_df.iloc[cut:]
@@ -95,6 +100,7 @@ def optimize(strategy: BaseStrategy, base_df: pd.DataFrame, symbol: str, base_tf
     return {
         "metric": metric, "split": split, "in_sample_bars": cut, "out_of_sample_bars": n - cut, "combinations": len(rows),
         "holdout_start": boundary.isoformat() if boundary is not None else None, "holdout_bars_excluded": sealed,
+        "data_policy_bars_excluded": policy_dropped, "data_policy": data_policy.windows_reason(use_windows, policy_dropped),
         "overfitting": overfit,
         "best": best, "best_confirmed_out_of_sample": confirmed, "robust_count": len(robust), "results": ranked,
         "note": ("Ranked by the in-sample metric; `validation` is each candidate's out-of-sample figure and was not used to rank. "

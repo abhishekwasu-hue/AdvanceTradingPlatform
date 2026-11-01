@@ -51,11 +51,12 @@ class LakeBar:
     high: float
     low: float
     close: float
-    volume: int = 0
+    volume: int | None = 0    # None = the source had no volume (M71 PL-7: missing stays missing, never 0)
     oi: Optional[int] = None
 
     def values(self) -> Tuple:
-        return (round(self.open, 4), round(self.high, 4), round(self.low, 4), round(self.close, 4), int(self.volume), self.oi)
+        return (round(self.open, 4), round(self.high, 4), round(self.low, 4), round(self.close, 4),
+                None if self.volume is None else int(self.volume), self.oi)
 
 
 @dataclass
@@ -184,7 +185,7 @@ async def write_candles_bulk(session: AsyncSession, bars: Sequence[LakeBar], sou
             at = (r.instrument_key, r.timeframe, ts)
             if at not in latest or r.version > latest[at][0]:
                 latest[at] = (r.version, LakeBar(r.instrument_key, r.timeframe, ts, float(r.open), float(r.high), float(r.low),
-                                                 float(r.close), int(r.volume), r.oi))
+                                                 float(r.close), None if r.volume is None else int(r.volume), r.oi))
     rows: List[dict] = []
     for (key, tf), group in groups.items():
         for bar, ts in zip(group, ends_of[(key, tf)]):
@@ -193,7 +194,8 @@ async def write_candles_bulk(session: AsyncSession, bars: Sequence[LakeBar], sou
                 result.skipped += 1
                 continue
             row = dict(instrument_key=key, timeframe=tf, ts=ts, source=source, version=(old[0] + 1) if old else 1,
-                       open=bar.open, high=bar.high, low=bar.low, close=bar.close, volume=int(bar.volume), oi=bar.oi, ingested_at=now)
+                       open=bar.open, high=bar.high, low=bar.low, close=bar.close,
+                       volume=None if bar.volume is None else int(bar.volume), oi=bar.oi, ingested_at=now)
             if tenant_id is not None:
                 row["tenant_id"] = tenant_id
             rows.append(row)

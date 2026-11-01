@@ -3,7 +3,9 @@
  * pane is the plot without the price axis (the axis starts at the pane's right edge), so "inside the pane" is "off
  * the axis"; the controls' rectangle comes in as `avoid`, as ChartV2 measures it.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { SeriesAttachedParameter, Time } from "lightweight-charts";
+import { LayerPrimitive } from "./primitives";
 import type { LayerBand } from "./engine";
 import { bandShapes, overlaps, placeBandLabels, textRect, withAlpha, type Converters, type Rect, type Shape } from "./geometry";
 
@@ -36,12 +38,12 @@ describe("band labels (M75 W-1)", () => {
     it(`${name}: a seller area at the bottom right - the label goes inside the band, clear of the controls and the axis`, () => {
       const c = pane(width, height, [controls(width, height, phone)]);
       // a band right where the controls are (low prices, bottom of the pane)
-      const list = bandShapes([{ low: 100, high: 112, role: "supply", color: "#dc2626", label: "Supply area" }], c);
+      const list = bandShapes([{ low: 100, high: 112, role: "supply", color: "#dc2626", label: "Seller area" }], c);
       assertClear(list, c);
       expect(list[0]).toMatchObject({ type: "rect", x: 0, w: width });                     // a FILLED band across the pane
       expect((list[0] as Extract<Shape, { type: "rect" }>).fill).toBe("#dc262626");       // translucent (the 0.15 default)
       expect(texts(list)).toHaveLength(1);
-      expect(texts(list)[0]).toMatchObject({ x: 4, align: "left", text: "Supply area" });
+      expect(texts(list)[0]).toMatchObject({ x: 4, align: "left", text: "Seller area" });
     });
 
     it(`${name}: many stacked areas - labels never overlap each other, the controls or the axis; one with no room is left out`, () => {
@@ -58,21 +60,41 @@ describe("band labels (M75 W-1)", () => {
 
   it("a label that would run onto the axis moves inside the pane; one wider than the pane is not drawn", () => {
     const c = pane(200, 300, [{ x: 0, y: 0, w: 200, h: 200 }]);          // the left spots are taken: only the right is free
-    const [label] = placeBandLabels([{ top: 250, bottom: 280, text: "Supply area", color: "#000" }], c);
+    const [label] = placeBandLabels([{ top: 250, bottom: 280, text: "Seller area", color: "#000" }], c);
     expect(label).toBeDefined();
     const r = textRect(label as Extract<Shape, { type: "text" }>);
     expect(r.x + r.w).toBeLessThanOrEqual(196);
     expect(placeBandLabels([{ top: 250, bottom: 280, text: "x".repeat(40), color: "#000" }], c)).toEqual([]);
   });
 
+  it("a low band under the controls with a long label: the label goes just above the controls, near the band", () => {
+    const c = pane(330, 192, [controls(330, 192, true)]);
+    const ctl = (c.avoid ?? [])[0];
+    const top = ctl.y + 10, bottom = ctl.y + 24;                        // the band runs behind the controls
+    const [label] = placeBandLabels([{ top, bottom, text: "Buyer area · 15m · fresh", color: "#000" }], c);
+    expect(label).toBeDefined();
+    const r = textRect(label as Extract<Shape, { type: "text" }>);
+    expect(overlaps(r, ctl)).toBe(false);
+    expect(top - (r.y + r.h)).toBeLessThanOrEqual(28);
+  });
+
   it("a band taller than the pane still shows its label inside, at the top of what is visible", () => {
     const c = pane(400, 300);
-    const [label] = placeBandLabels([{ top: -500, bottom: 900, text: "Demand area", color: "#000" }], c);
+    const [label] = placeBandLabels([{ top: -500, bottom: 900, text: "Buyer area", color: "#000" }], c);
     expect(label).toMatchObject({ x: 4, y: 2, baseline: "top" });
   });
 
   it("theme colours come as rgb: the band fill keeps its alpha", () => {
     expect(withAlpha("rgb(21, 128, 61)", 0.18)).toBe("rgba(21, 128, 61, 0.18)");
     expect(withAlpha("rgba(21, 128, 61, 1)", 0.5)).toBe("rgba(21, 128, 61, 0.5)");
+  });
+
+  it("a layer paints as soon as it is attached (a reading that answers while the chart is idle shows at once)", () => {
+    const requestUpdate = vi.fn();
+    const layer = new LayerPrimitive(() => [], () => null);
+    layer.attached({ requestUpdate } as unknown as SeriesAttachedParameter<Time>);
+    expect(requestUpdate).toHaveBeenCalledTimes(1);
+    layer.refresh();
+    expect(requestUpdate).toHaveBeenCalledTimes(2);
   });
 });

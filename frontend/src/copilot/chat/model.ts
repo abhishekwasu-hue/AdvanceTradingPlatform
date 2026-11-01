@@ -274,13 +274,13 @@ export function distanceText(area: NonNullable<AnswerHeadline["area"]>, price: (
 }
 
 /** CU3 + M75 W-1 (W2): the chart answer's nearest area for the mini chart - ONE filled band (buyer / seller colour from
- * the chart tokens via its role), labelled "Supply area" / "Demand area" inside or beside it; never two dashed price
+ * the chart tokens via its role), labelled "Seller area" / "Buyer area" (the owner's words, M75 CW-2) inside or beside it; never two dashed price
  * lines with "Area top" / "Area bottom" titles over the price axis. */
 export function headlineAreas(h: AnswerHeadline | null | undefined): LayerBand[] {
   const a = h?.area;
   if (!a || !Number.isFinite(a.from) || !Number.isFinite(a.to)) return [];
   const role = a.side ?? "neutral";
-  const label = a.side ? `${a.side[0].toUpperCase()}${a.side.slice(1)} area` : "Area";
+  const label = a.side === "supply" ? "Seller area" : a.side === "demand" ? "Buyer area" : "Area";
   return [{ low: Math.min(a.from, a.to), high: Math.max(a.from, a.to), role, color: a.side ? ZONE_COLORS[a.side] : undefined, opacity: 0.18,
             style: "solid", label }];
 }

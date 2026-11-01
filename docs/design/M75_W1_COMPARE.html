@@ -28,6 +28,7 @@ img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-
 <body>
 <main>
 <h1>M75 W-1: areas as filled bands, labels clear of the axis and controls</h1>
+<h2>Copilot answer chart</h2>
 <p>Copilot answer chart ("Read the SENSEX chart"), nearest area placed at the bottom of the chart, where Auto / Reset sit.</p>
 
 <table>
@@ -36,6 +37,7 @@ img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-
     <tr><td>Area drawn as</td><td class="bad">2 dashed price lines</td><td class="good">1 filled translucent band (seller / buyer colour from the chart tokens)</td></tr>
     <tr><td>"Area top" / "Area bottom" on the price axis</td><td class="bad">2 axis tags, covering the scale</td><td class="good">0</td></tr>
     <tr><td>Area label vs Auto / Reset</td><td class="bad">under the controls</td><td class="good">clear (placer avoids the controls' box)</td></tr>
+    <tr><td>Charts tab "Read this chart" areas</td><td class="bad">not drawn until the next pan / tick (layer set while the chart was idle)</td><td class="good">drawn at once, filled, labelled "Seller area / Buyer area · TF · state"</td></tr>
     <tr><td>Same drawing everywhere</td><td>-</td><td class="good">bandShapes / placeBandLabels serve every band layer (Copilot, Charts reading, market zones, price action, evidence, cone)</td></tr>
   </tbody>
 </table>
@@ -61,11 +63,38 @@ img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-
   <figure><figcaption>After</figcaption><img src="m75-w1/after-copilot-1440-dark.png" alt="After, desktop, dark"></figure>
 </div>
 
+
+<h2>Charts tab - "Read this chart" (seller + buyer areas; the lowest one runs under Auto / Reset)</h2>
+<p>Made-up reading (e2e/chartsMocks.ts <code>READING_WITH_AREAS</code>). Before: the reading's areas never showed - the band layer
+was attached without a repaint, so with no tick or pan nothing was painted. After: filled bands; labels inside the pane, off the
+price axis, clear of the controls (the lowest label moves just above Auto / Reset on the phone).</p>
+<h3>Phone 390 - light</h3>
+<div class="pair">
+  <figure><figcaption>Before</figcaption><img src="m75-w1/before-charts-390-light.png" alt="Before, Charts tab, Phone 390 - light"></figure>
+  <figure><figcaption>After</figcaption><img src="m75-w1/after-charts-390-light.png" alt="After, Charts tab, Phone 390 - light"></figure>
+</div>
+<h3>Phone 390 - dark</h3>
+<div class="pair">
+  <figure><figcaption>Before</figcaption><img src="m75-w1/before-charts-390-dark.png" alt="Before, Charts tab, Phone 390 - dark"></figure>
+  <figure><figcaption>After</figcaption><img src="m75-w1/after-charts-390-dark.png" alt="After, Charts tab, Phone 390 - dark"></figure>
+</div>
+<h3>Desktop 1440 - light</h3>
+<div class="pair wide">
+  <figure><figcaption>Before</figcaption><img src="m75-w1/before-charts-1440-light.png" alt="Before, Charts tab, Desktop 1440 - light"></figure>
+  <figure><figcaption>After</figcaption><img src="m75-w1/after-charts-1440-light.png" alt="After, Charts tab, Desktop 1440 - light"></figure>
+</div>
+<h3>Desktop 1440 - dark</h3>
+<div class="pair wide">
+  <figure><figcaption>Before</figcaption><img src="m75-w1/before-charts-1440-dark.png" alt="Before, Charts tab, Desktop 1440 - dark"></figure>
+  <figure><figcaption>After</figcaption><img src="m75-w1/after-charts-1440-dark.png" alt="After, Charts tab, Desktop 1440 - dark"></figure>
+</div>
+
 <details><summary>How labels are placed</summary>
 <ul>
-  <li>Spots tried in order: inside the band (top-left), on a thin band's own line, just above, just below; then the same at the right; then just left of each reserved box.</li>
+  <li>Spots tried in order: inside the band (top-left), on a thin band's own line, just above, just below, just above / below a control box sitting on the band (within 28 px); then the same at the right; then just left of each reserved box.</li>
   <li>Reserved boxes: the view controls (Auto / Reset / Latest), the Live chip, the price-line legend, the chart's attribution mark - measured from the page after each render and on resize.</li>
   <li>Labels stay inside the price pane, so they never reach the price axis; a label with no free spot is left out (the band stays).</li>
+  <li>Shots: e2e/m75w1-capture-v2.e2e.ts (capture-only, never in CI), against builds of main and of this branch.</li>
   <li>Unit test: src/charting/bandLabels.test.ts (phone and desktop panes, 14 stacked bands, label boxes vs controls / axis / each other).</li>
 </ul>
 </details>

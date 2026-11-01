@@ -224,6 +224,8 @@ export const LABEL_CHAR_PX = 7;
 export const LABEL_H = 14;
 /** Distance of a band label from the band's edge and from the pane's edges (the price axis is the pane's right edge). */
 const LABEL_PAD = 4;
+/** M75 W-1: a label moved off a reserved box stays at most this far from its band (it must still read as the band's). */
+const NEAR_PX = 2 * LABEL_H;
 
 export const textWidth = (text: string) => text.length * LABEL_CHAR_PX;
 
@@ -238,7 +240,8 @@ export function textRect(s: Extract<Shape, { type: "text" }>, measure: (text: st
 export const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 /** M75 W-1 (W3): where each band's label goes. Tried in order at the left of the pane - inside the band (when the
- * band is tall enough), on a thin band's own line, just above it, just below it - then the same spots at the right,
+ * band is tall enough), on a thin band's own line, just above it, just below it, just above / below a reserved box
+ * that sits on the band (within NEAR_PX of it) - then the same spots at the right,
  * then just left of each reserved rectangle; the first spot that stays inside the pane (never over the price axis,
  * which is outside the pane's right edge), clear of the reserved rectangles (`avoid`: the view controls, the chip
  * row, the attribution mark) and of the labels already placed wins. A label with no free spot is left out (its band
@@ -256,6 +259,12 @@ export function placeBandLabels(items: readonly { top: number; bottom: number; t
     if (it.bottom - shownTop >= LABEL_H + 2 * 2) ys.push(shownTop + 2);        // inside, top-left
     else ys.push((it.top + it.bottom) / 2 - LABEL_H / 2);                      // a thin band: on its own line
     ys.push(it.top - 2 - LABEL_H, it.bottom + 2);                              // just above, just below
+    // a reserved box beside the band (the view controls over a low band): just above / below that box, still near
+    for (const a of avoid) {
+      for (const y of [a.y - 2 - LABEL_H, a.y + a.h + 2]) {
+        if (Math.max(it.top - (y + LABEL_H), y - it.bottom) <= NEAR_PX) ys.push(y);
+      }
+    }
     const xs = [LABEL_PAD, c.width - LABEL_PAD - w, ...avoid.map((a) => a.x - LABEL_PAD - w)];
     let spot: Rect | null = null;
     for (const x of xs) {

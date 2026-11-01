@@ -242,7 +242,7 @@ describe("the chat-first Copilot page", () => {
     expect(areaText({ side: null, from: 1, to: 2, where: "below", distance: 3, distance_pct: null }, String)).toBe("1 – 2");
     // M75 W-1: the nearest area is ONE filled band in the seller colour, labelled on the chart - no "Area top" / "Area bottom" price lines
     expect(headlineAreas(HEADLINED.headline)).toEqual([
-      { low: 82011.6, high: 82273.2, role: "supply", color: "#dc2626", opacity: 0.18, style: "solid", label: "Supply area" }]);
+      { low: 82011.6, high: 82273.2, role: "supply", color: "#dc2626", opacity: 0.18, style: "solid", label: "Seller area" }]);
     expect(headlineAreas({ ...HEADLINED.headline!, area: { side: null, from: 5, to: 2, where: "below", distance: 1, distance_pct: null } }))
       .toMatchObject([{ low: 2, high: 5, role: "neutral", label: "Area" }]);
     expect(headlineAreas(null)).toEqual([]);

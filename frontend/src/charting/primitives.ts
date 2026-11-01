@@ -118,7 +118,12 @@ export class LayerPrimitive implements ISeriesPrimitive<Time> {
     this.views = [{ zOrder: () => "bottom", renderer: () => renderer }];
   }
 
-  attached(param: SeriesAttachedParameter<Time>) { this.requestUpdate = param.requestUpdate; }
+  /** M75 W-1: paint at once - the library does not repaint on attach, so a layer set while the chart is idle (a
+   * reading that answers after the bars, the market closed: no ticks) stayed invisible until the next pan or tick. */
+  attached(param: SeriesAttachedParameter<Time>) {
+    this.requestUpdate = param.requestUpdate;
+    param.requestUpdate();
+  }
   detached() { this.requestUpdate = null; }
   paneViews() { return this.views; }
 

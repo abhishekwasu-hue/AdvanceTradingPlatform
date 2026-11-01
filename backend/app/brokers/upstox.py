@@ -27,6 +27,7 @@ from app.brokers.models import (
     OptionChain,
     OptionChainRow,
     Quote,
+    lot_or_none,
 )
 from app.brokers.timestamps import parse_broker_timestamp
 from app.core import config
@@ -256,7 +257,7 @@ class UpstoxBroker(BrokerInterface):
                 name=row.get("underlying_symbol") or row.get("name"),
                 segment=row.get("segment"),
                 instrument_type=row.get("instrument_type"),
-                lot_size=int(row.get("lot_size", 1) or 1),
+                lot_size=lot_or_none(row.get("lot_size")),       # M68 TS1-088: none given = None, never 1
                 tick_size=float(row.get("tick_size", 0.05) or 0.05),
                 # Upstox sends expiry as epoch milliseconds; the Instrument model carries ISO dates.
                 expiry=(normalise_expiry(row.get("expiry")).isoformat() if normalise_expiry(row.get("expiry")) else None),

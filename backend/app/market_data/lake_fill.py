@@ -46,7 +46,8 @@ def for_reader(session: AsyncSession, user: Any) -> LakeFill:
         except Exception:  # noqa: BLE001 - the fill is a bonus: the broker's bars are shown as they are without it
             logger.exception("Last-session fill from the own lake failed for %s:%s", exchange, symbol)
             return []
-        return [OHLCVBar(timestamp=_utc(r[0]) - MINUTE, open=r[2], high=r[3], low=r[4], close=r[5], volume=float(r[6] or 0))
+        return [OHLCVBar(timestamp=_utc(r[0]) - MINUTE, open=r[2], high=r[3], low=r[4], close=r[5],
+                         volume=float("nan") if r[6] is None else float(r[6]))   # M71 PL-7: missing stays missing (null)
                 for r in rows]
 
     return fill

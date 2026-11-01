@@ -20,6 +20,7 @@ Nothing in this module places, changes or closes an order.
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -53,11 +54,22 @@ async def enabled(session: AsyncSession, tenant_id: int) -> bool:
 
 
 async def get_account(session: AsyncSession, user: User) -> PaperAccountRecord:
-    """The user's PAPER account, created on first use with the platform's starting capital (a new user starts in PAPER)."""
+    """The user's PAPER account, created on first use (a new user starts in PAPER). M68 PR-7 (TS1-064): it starts with
+    HIS saved starting capital (Settings > Trade settings > Paper account), else with none ("Not set": the first paper
+    order asks for it) - never a value ATP chose. An account still Not set takes his saved value once he saves one."""
+    from app.paper import paper_settings
     row = await session.scalar(select(PaperAccountRecord).where(PaperAccountRecord.user_id == user.id))
     if row is not None:
+        if row.starting_capital is None:
+            saved = await paper_settings.saved_capital(session, user)
+            if saved is not None:
+                row.starting_capital, row.capital_saved = round(saved, 2), True
+                await write_audit_log(session, user.tenant_id, user.id, "paper_capital_set", f"Not set -> {row.starting_capital:,.2f} (your Trade settings)")
+                await session.commit()
         return row
-    row = PaperAccountRecord(tenant_id=user.tenant_id, user_id=user.id, starting_capital=app_config.PAPER_STARTING_CAPITAL, paused=False)
+    saved = await paper_settings.saved_capital(session, user)
+    row = PaperAccountRecord(tenant_id=user.tenant_id, user_id=user.id, starting_capital=round(saved, 2) if saved is not None else None,
+                             capital_saved=saved is not None, paused=False)
     try:
         async with session.begin_nested():
             session.add(row)
@@ -75,17 +87,20 @@ class CapitalLocked(ValueError):
 
 async def set_starting_capital(session: AsyncSession, user: User, amount: float) -> PaperAccountRecord:
     """Only before the first PAPER trade (review M7): changing it later would rewrite past balances and the drawdown the
-    ladder measures."""
-    if not app_config.PAPER_MIN_CAPITAL <= float(amount) <= app_config.PAPER_MAX_CAPITAL:
-        raise ValueError(f"Starting capital must be between {app_config.PAPER_MIN_CAPITAL:,.0f} and {app_config.PAPER_MAX_CAPITAL:,.0f}")
-    traded = await session.scalar(select(TradeRecord.id).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id,
-                                                               TradeRecord.mode == "PAPER").limit(1))
-    if traded is not None:
-        raise CapitalLocked("The starting capital is fixed once your PAPER account has a trade (it is what your balance, drawdown and ladder are measured from)")
+    ladder measures. M68 PR-7 (TS1-068): any amount above zero - ATP sets no floor or ceiling of its own. An account whose
+    capital is still Not set takes his first value even after a trade (nothing was measured from a capital yet)."""
+    if not math.isfinite(float(amount)) or float(amount) <= 0:
+        raise ValueError("Starting capital must be more than 0")
     row = await get_account(session, user)
-    old = float(row.starting_capital)
+    if row.starting_capital is not None:
+        traded = await session.scalar(select(TradeRecord.id).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id,
+                                                                   TradeRecord.mode == "PAPER").limit(1))
+        if traded is not None:
+            raise CapitalLocked("The starting capital is fixed once your PAPER account has a trade (it is what your balance, drawdown and ladder are measured from)")
+    old = "Not set" if row.starting_capital is None else f"{float(row.starting_capital):,.2f}"
     row.starting_capital = round(float(amount), 2)
-    await write_audit_log(session, user.tenant_id, user.id, "paper_capital_set", f"{old:,.2f} -> {row.starting_capital:,.2f}")
+    row.capital_saved = True
+    await write_audit_log(session, user.tenant_id, user.id, "paper_capital_set", f"{old} -> {row.starting_capital:,.2f}")
     await session.commit()
     return row
 
@@ -187,6 +202,7 @@ async def _proposal_counts(session: AsyncSession, user: User) -> Dict[str, int]:
 async def summary(session: AsyncSession, user: User, now: Optional[datetime] = None) -> Dict:
     """Balance, P&L (gross, charges, net), open positions, journal, would-have records and proposal counts - all from this
     user's own PAPER trades and proposals."""
+    from app.paper import paper_settings
     now = now or datetime.now(timezone.utc)
     account = await get_account(session, user)
     every = await _paper_trades(session, user)
@@ -200,17 +216,23 @@ async def summary(session: AsyncSession, user: User, now: Optional[datetime] = N
         if t.mark_price is not None:
             sign = 1.0 if t.direction == "LONG" else -1.0
             unrealised += sign * (float(t.mark_price) - float(t.entry_price)) * float(t.quantity)
-    starting = float(account.starting_capital)
+    # M68 PR-7: Not set -> no balance, equity or drawdown % (each is measured from his capital); the money figures stay.
+    starting = float(account.starting_capital) if account.starting_capital is not None else None
     wins = sum(1 for t in closed if (t.pnl or 0.0) > 0)
+    drawdown = equity_drawdown(starting or 0.0, [float(t.pnl or 0.0) for t in closed])
+    if starting is None:
+        drawdown["max_drawdown_pct"] = None
     sessions = {_utc(t.entry_time).astimezone(IST).date() for t in trades if t.entry_time is not None}
     return {
-        "user_id": user.id, "mode": "PAPER", "starting_capital": round(starting, 2),
-        "balance": round(starting + net, 2), "equity": round(starting + net + unrealised, 2),
+        "user_id": user.id, "mode": "PAPER", "starting_capital": round(starting, 2) if starting is not None else None,
+        "capital_saved": bool(account.capital_saved), "capital_needed": starting is None,
+        "balance": round(starting + net, 2) if starting is not None else None,
+        "equity": round(starting + net + unrealised, 2) if starting is not None else None,
         "realised": {"gross": round(net + charges, 2), "charges": round(charges, 2), "net": round(net, 2)},
         "unrealised": round(unrealised, 2),
         "closed_trades": len(closed), "open_positions": len(open_), "wins": wins, "losses": len(closed) - wins,
         "win_rate": round(wins / len(closed), 4) if closed else None, "sessions": len(sessions),
-        **equity_drawdown(starting, [float(t.pnl or 0.0) for t in closed]),
+        **drawdown,
         "paused": bool(account.paused), "paused_reason": account.paused_reason,
         "excluded_trades": len(every) - len(trades),
         "positions": [_trade_row(t) for t in open_],
@@ -218,6 +240,8 @@ async def summary(session: AsyncSession, user: User, now: Optional[datetime] = N
         "not_taken": await _not_taken(session, user),
         "proposals": await _proposal_counts(session, user),
         "as_of": now.isoformat(),
+        # M68 PR-7 (TS1-069): what a new paper trade pays, his own setting in words (Not set: statutory charges only).
+        "charges_model": (await paper_settings.charges_for(session, user)).as_dict(),
         "note": "Figures from your own PAPER trades priced from platform quotes: net P&L is after the estimated charges of each trade (a contract "
                 "note replaces the estimate). Trades priced from your own inputs (console candles) are left out.",
     }
@@ -241,14 +265,14 @@ async def ladder(session: AsyncSession, user: User, now: Optional[datetime] = No
          "comparison": "at_least", "met": closed >= app_config.PAPER_LADDER_MIN_TRADES},
         {"key": "max_drawdown_pct", "label": "Largest drawdown, % of peak equity", "value": data["max_drawdown_pct"],
          "target": app_config.PAPER_LADDER_MAX_DRAWDOWN_PCT, "comparison": "at_most",
-         "met": closed > 0 and data["max_drawdown_pct"] <= app_config.PAPER_LADDER_MAX_DRAWDOWN_PCT},
+         "met": closed > 0 and data["max_drawdown_pct"] is not None and data["max_drawdown_pct"] <= app_config.PAPER_LADDER_MAX_DRAWDOWN_PCT},
         await discipline_criterion(session, user, now) if evidence else
         {"key": "discipline_score", "label": "Discipline score", "value": None, "target": None, "comparison": None, "met": None,
          "note": "Not measured yet (journal behaviour tags come with P1-e)"},
     ]
     measured = [c for c in criteria if c["met"] is not None]
     extra: Dict[str, Any] = {}
-    if evidence:
+    if evidence and data["starting_capital"] is not None:       # M68 PR-7: the figures are measured from his capital
         closed = sorted((t for t in await _paper_trades(session, user) if _counted(t) and t.exit_time is not None),
                         key=lambda t: (_utc(t.exit_time or t.entry_time), t.id))
         extra["evidence"] = own_stats.evidence([float(t.pnl or 0.0) for t in closed], data["starting_capital"],

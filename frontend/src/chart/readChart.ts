@@ -2,6 +2,7 @@ import { request } from "../api/client";
 import type { LayerData, LayerMarker } from "../charting/engine";
 import { ZONE_COLORS } from "../charting/marketZones";
 import type { TimeframeId } from "./timeframes";
+import { areaLabelText } from "../charting/geometry";
 
 /**
  * AUD-T5 (owner audit 28 Oct; flags `ui_v2` + `read_chart`): "Read this chart" - the server reads the open chart with
@@ -59,7 +60,7 @@ export const readChartApi = {
  * line and the commitment candle as a marker. */
 export function readLayer(r: ReadChart): LayerData {
   const bands = r.areas.map((a) => ({
-    low: a.low, high: a.high, color: ZONE_COLORS[a.role], opacity: 0.14, style: "dashed" as const, label: `${a.role} area · ${a.timeframe} · ${a.state}`,
+    low: a.low, high: a.high, role: a.role, color: ZONE_COLORS[a.role], opacity: 0.14, style: "dashed" as const, label: areaLabelText(a),
   }));
   const p = r.structure?.protected;
   const lines = p ? [{ price: p.price, style: "dashed" as const, title: `protected swing ${p.side}` }] : [];

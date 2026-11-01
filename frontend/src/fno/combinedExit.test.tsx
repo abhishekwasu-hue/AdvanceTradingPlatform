@@ -61,7 +61,11 @@ describe("CX6 the sheet's legs and default", () => {
     expect(defaultMeasure(LEGS.slice(0, 1))).toBe("MTM_INR");
     expect(defaultMeasure([LEGS[1], { ...LEGS[1], id: 99 }])).toBe("MTM_INR");
     expect(defaultMeasure([LEGS[0], { ...LEGS[1], spotSymbol: "NIFTY BANK" }])).toBe("MTM_INR");
-    expect(startForm(LEGS, null)).toMatchObject({ ticked: [11, 12, 13], measure: "SPOT", sl: "", target: "" });
+    // M68 PR-3 (TS1-031): the sheet no longer picks it - nothing chosen until he does, or his own saved Exits value.
+    expect(startForm(LEGS, null)).toMatchObject({ ticked: [11, 12, 13], measure: "", check: "", sl: "", target: "" });
+    expect(startForm(LEGS, null, { combinedMeasure: "SPOT", combinedCheck: "CLOSE" })).toMatchObject({ measure: "SPOT", check: "CLOSE" });
+    expect(formErrors(startForm(LEGS, null), LEGS)).toContain("Choose what the exit watches.");
+    expect(formErrors({ ...startForm(LEGS, null), measure: "SPOT", sl: "25100" }, LEGS)).toContain("Choose when the spot level counts as reached.");
   });
 });
 
@@ -87,11 +91,12 @@ describe("CX6 the form, the body and the preview sentence", () => {
   it("the body: ticked legs, the user's own levels, the spot and the closed-candle check only for a spot exit", () => {
     expect(bodyOf(form({ target: "4000" }), LEGS, "ref-12345678")).toEqual({
       scope: "SELECTED", trade_ids: [11, 12, 13], measure: "MTM_INR", sl_value: 2500, target_value: 4000, spot_symbol: null, spot_exchange: null,
-      check_mode: "TOUCH", timeframe_minutes: null, client_ref: "ref-12345678",
+      timeframe_minutes: null, client_ref: "ref-12345678",            // M68 PR-3: a ₹ exit sends no check (its only one is every price)
     });
     const spot = bodyOf(form({ measure: "SPOT", sl: "25100", check: "CLOSE", timeframe: 60, ticked: [12, 11] }), LEGS, "r");
     expect(spot).toMatchObject({ trade_ids: [11, 12], spot_symbol: "NIFTY 50", spot_exchange: "NSE", check_mode: "CLOSE", timeframe_minutes: 60 });
-    expect(bodyOf(form({ check: "CLOSE" }), LEGS, "r")).toMatchObject({ check_mode: "TOUCH", timeframe_minutes: null });
+    expect(bodyOf(form({ check: "CLOSE" }), LEGS, "r")).not.toHaveProperty("check_mode");
+    expect(bodyOf(form({ check: "CLOSE" }), LEGS, "r")).toMatchObject({ timeframe_minutes: null });
   });
 
   it("the CX6 sentence: 'If combined loss reaches ₹X, these 3 legs exit - sold legs first'", () => {

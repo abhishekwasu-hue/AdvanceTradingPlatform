@@ -150,7 +150,7 @@ async def dispatch_one(session: AsyncSession, row: ExecutionIntentRecord, now: d
             logger.exception("Auto PAPER switches could not be read for intent %s", intent_id)
             auto_paper_enabled = False
     decision = policy.decide(policy.PolicyInputs(
-        mode=row.requested_mode, approval_required=await approval.required(session, tenant_id),
+        mode=row.requested_mode, approval_required=await approval.required(session, tenant_id, user_id=owner.id),
         phase0_locked=await phase0_lock.is_on(session, tenant_id), auto_paper_enabled=auto_paper_enabled))
     if decision.route == policy.ROUTE_REFUSE:
         await intents.finish(session, intent_id, intents.REFUSED, route=decision.route, reason=decision.reason, now=now)
@@ -195,7 +195,7 @@ async def _paper_checks(session: AsyncSession, row: ExecutionIntentRecord, owner
     refused = await caps.entry_refusals(session, owner, caps.candidate_of(row.symbol, signal.entry, signal.stop_loss), now)
     if refused:
         return "refuse", "; ".join(refused), None
-    late = await auto_paper.window_reason(session, now, row.exchange or "NSE")      # review of X2 (M2): the entry window
+    late = await auto_paper.window_reason(session, now, row.exchange or "NSE", owner)   # X2 (M2) / M68 PR-3: his own window
     if late:
         return "propose", late, None
     limit = await auto_paper.limit_reason(session, row, now)
@@ -208,8 +208,11 @@ async def _paper_checks(session: AsyncSession, row: ExecutionIntentRecord, owner
         price = float(await lookup(row.symbol, row.exchange or "NSE"))
     except Exception as exc:  # noqa: BLE001 - no price, no placement
         return "propose", f"No live price for {row.symbol} to re-quote the Auto PAPER entry ({type(exc).__name__}) - a proposal instead", None
+    # M68 PR-6 (TS1-062): the owner's own price-move limit; Not set = no limit (placed at the live price).
+    from app.execution import automation
+    own_drift = (await automation.load(session, owner)).requote_drift_pct
     verdict, why = approval.requote_check(row.direction, float(signal.entry or 0.0), price, stop_loss=signal.stop_loss, target1=signal.target1,
-                                          max_drift_pct=app_config.APPROVAL_REQUOTE_MAX_DRIFT_PCT,
+                                          max_drift_pct=own_drift or 0.0,
                                           max_drift_ticks=app_config.APPROVAL_REQUOTE_MAX_DRIFT_TICKS, tick_size=approval.tick_size_for(row.symbol))
     if why == approval.NO_VALID_PRICE:
         return "propose", f"The live price for {row.symbol} is not usable - a proposal instead", None
@@ -244,7 +247,7 @@ async def _paper(session: AsyncSession, row: ExecutionIntentRecord, owner: User,
         await intents.finish(session, intent_id, intents.DONE, route=policy.ROUTE_PAPER, now=now,
                              reason=f"Auto PAPER: PAPER order #{earlier.id} was placed before an interruption")
         return intents.DONE
-    if await approval.required(session, tenant_id):
+    if await approval.required(session, tenant_id, user_id=owner.id):      # M68 PR-6: his own "Ask me first" too
         return await _fallback(session, row, signal, policy.WHY_AUTO_APPROVAL, now)
     try:
         async with session.begin_nested():

@@ -9,7 +9,8 @@ import { LevelChip } from "../../ui/LevelChip";
 import { Signed } from "../../ui/numbersFirst";
 import { EMPTY, formatPrice } from "../../ui/format";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../../inplace/InPlaceLink";
+import { useInPanel } from "../../inplace/inPanel";
 import { useAuth } from "../../auth/AuthContext";
 import { api } from "../../api/client";
 import ConnectAiPanelV2, { ConnectAiChip } from "../../aiKeys/ConnectAiPanelV2";
@@ -97,10 +98,10 @@ export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, 
       {/* M59 CR-2 attaches the chart in the chat itself when the Copilot can read charts; otherwise the M60 attach
           button opens Analyze a chart. Never both. */}
       {onAttach ? <AttachMenu onAttach={onAttach} disabled={busy} /> : analyzeOn && (
-        <Link to="/copilot/analyze" aria-label={t("v2tabs.attach")} title={t("v2tabs.attach")} data-attach-chart
+        <InPlaceLink to="/copilot/analyze" aria-label={t("v2tabs.attach")} title={t("v2tabs.attach")} data-attach-chart
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border bg-surface-2 text-fg-muted hover:bg-surface-3 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
           <Paperclip size={18} aria-hidden />
-        </Link>
+        </InPlaceLink>
       )}
       <label className="sr-only" htmlFor="copilot-question">{t("chat.boxLabel")}</label>
       <textarea id="copilot-question" value={draft} maxLength={MAX_QUESTION} rows={bottom ? 1 : 2} onChange={(e) => onDraft(e.target.value)} onKeyDown={onKey} onPaste={onPaste}
@@ -170,9 +171,9 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
         </p>
         <div className="shrink-0">
           {home && !aiOff && aiChip ? aiChip : home && !aiOff ? (
-            <Link to={home.ai.settings ?? SETTINGS_PATH.ai} className={SMALL_CHIP} data-ai-state="on">
+            <InPlaceLink to={home.ai.settings ?? SETTINGS_PATH.ai} className={SMALL_CHIP} data-ai-state="on">
               <Sparkles size={14} aria-hidden className="text-up" />{t("chat.aiOn")}
-            </Link>
+            </InPlaceLink>
           ) : null}
         </div>
       </header>
@@ -187,7 +188,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
           {connect ? (
             <button type="button" className={SMALL_CHIP} aria-expanded={keyOpen} onClick={() => onKeyOpen?.(!keyOpen)} data-connect>{t("chat.connect")}</button>
           ) : (
-            <Link to={home.ai.settings ?? SETTINGS_PATH.ai} className={SMALL_CHIP} data-connect>{t("chat.connect")}</Link>
+            <InPlaceLink to={home.ai.settings ?? SETTINGS_PATH.ai} className={SMALL_CHIP} data-connect>{t("chat.connect")}</InPlaceLink>
           )}
         </div>
       )}
@@ -264,7 +265,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
                   {job.built ? (
                     <button type="button" className={`${CHIP} shrink-0 self-start`} disabled={busy} onClick={() => onAsk(job.starter)}>{job.starter}</button>
                   ) : link ? (
-                    <Link to={link.to} className="inline-flex min-h-11 shrink-0 items-center self-start text-t13 font-semibold text-brand hover:underline md:min-h-0">{link.label}</Link>
+                    <InPlaceLink to={link.to} className="inline-flex min-h-11 shrink-0 items-center self-start text-t13 font-semibold text-brand hover:underline md:min-h-0">{link.label}</InPlaceLink>
                   ) : null}
                 </li>
               ))}
@@ -275,7 +276,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
           <h2 id="copilot-more" className="mb-space-1 font-semibold text-fg-muted">{t("chat.more")}</h2>
           <ul className="flex flex-wrap gap-x-space-4">
             {COPILOT_TABS.map((tab) => (
-              <li key={tab}><Link to={copilotPath(tab)} className="inline-flex min-h-11 items-center text-brand hover:underline md:min-h-0">{t(`tabs.${tab}`)}</Link></li>
+              <li key={tab}><InPlaceLink to={copilotPath(tab)} className="inline-flex min-h-11 items-center text-brand hover:underline md:min-h-0">{t(`tabs.${tab}`)}</InPlaceLink></li>
             ))}
           </ul>
         </nav>
@@ -294,6 +295,8 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
 }
 
 function usePlacement(): "bottom" | "inline" {
+  // M75 NAV-2: in an in-place panel the composer sits in the panel (never fixed to the bottom of the screen).
+  const inPanel = useInPanel();
   const read = () => composerPlacement(typeof window === "undefined" ? 1440 : window.innerWidth);
   const [placement, setPlacement] = useState(read);
   useEffect(() => {
@@ -301,7 +304,7 @@ function usePlacement(): "bottom" | "inline" {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-  return placement;
+  return inPanel ? "inline" : placement;
 }
 
 /** CU2: the numbers strip's prices - the Today strip's own polled read (GET /api/market/strip, with SENSEX), again

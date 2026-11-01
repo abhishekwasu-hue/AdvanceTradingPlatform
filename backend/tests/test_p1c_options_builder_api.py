@@ -10,6 +10,8 @@ import subprocess
 import sys
 from datetime import date, timedelta
 
+import pytest
+
 from app.brokers.models import OptionChain, OptionChainRow
 from app.core.config import RISK_FREE_RATE
 from app.options_builder import model as m
@@ -271,6 +273,7 @@ def test_the_cost_table_the_builder_reads_is_pure():
     assert not named & {"__import__", "importlib", "open", "eval", "exec", "compile"}, named
 
 
+@pytest.mark.real_option_defaults      # M68 PR-4: read his real, empty Options (no pre-M68 saved 70 % / 2 strikes)
 def test_m68_pr8_the_builder_asks_for_the_lots_and_the_selector_numbers():
     """M68 PR-8 (TS1-081): no pre-chosen 1 lot on a template, no pre-chosen 70 % chance of profit or 2 strikes out of the
     money on a selector rule - each is asked for (422 naming it); the same numbers sent give the same result as before."""

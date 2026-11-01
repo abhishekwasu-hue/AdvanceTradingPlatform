@@ -18,6 +18,7 @@ callers own persistence (the monitor updates `stop_loss`/`best_price` on the row
 modifies the broker-side SL-M to the new trigger).
 """
 import json
+import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from datetime import time as dtime
@@ -25,6 +26,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -111,16 +113,24 @@ def apply_exit_rules(
             stop, reason = candidate, "trailing"
 
     time_reason: Optional[str] = None
-    if rules.time_exit_minutes is not None and rules.time_exit_minutes > 0:
-        entry_aware = entry_time if entry_time.tzinfo else entry_time.replace(tzinfo=IST)
-        now_aware = now if now.tzinfo else now.replace(tzinfo=IST)
-        if now_aware - entry_aware >= timedelta(minutes=rules.time_exit_minutes):
-            time_reason = f"Time exit ({rules.time_exit_minutes}m in trade)"
-    cutoff = rules.exit_time_of_day()
-    if time_reason is None and cutoff is not None:
-        now_ist = (now if now.tzinfo else now.replace(tzinfo=IST)).astimezone(IST)
-        if now_ist.time() >= cutoff:
-            time_reason = f"Time exit (flat at {rules.time_exit_at} IST)"
+    # ADR-0004: a time rule that cannot be computed (a stored value too large for a timedelta, a malformed value) is
+    # skipped for this evaluation; it never raises, so the stop / target / other exits of this position still run.
+    try:
+        if rules.time_exit_minutes is not None and rules.time_exit_minutes > 0:
+            entry_aware = entry_time if entry_time.tzinfo else entry_time.replace(tzinfo=IST)
+            now_aware = now if now.tzinfo else now.replace(tzinfo=IST)
+            if now_aware - entry_aware >= timedelta(minutes=rules.time_exit_minutes):
+                time_reason = f"Time exit ({rules.time_exit_minutes}m in trade)"
+    except Exception as exc:  # noqa: BLE001 - OverflowError / TypeError / ValueError: skip the time rule only
+        logger.warning("Time exit after %r minutes could not be computed (%s) - time rule skipped", rules.time_exit_minutes, exc)
+    try:
+        cutoff = rules.exit_time_of_day()
+        if time_reason is None and cutoff is not None:
+            now_ist = (now if now.tzinfo else now.replace(tzinfo=IST)).astimezone(IST)
+            if now_ist.time() >= cutoff:
+                time_reason = f"Time exit (flat at {rules.time_exit_at} IST)"
+    except Exception as exc:  # noqa: BLE001 - skip the time-of-day rule only
+        logger.warning("Time exit at %r could not be computed (%s) - time rule skipped", rules.time_exit_at, exc)
 
     return ExitUpdate(stop_loss=round(stop, 2), best_price=round(best, 2), stop_changed=stop != current_stop,
                       stop_reason=reason, time_exit_reason=time_reason)

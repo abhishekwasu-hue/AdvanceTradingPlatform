@@ -37,6 +37,7 @@ DROP_KINDS = ("post_close",)
 EXTREME_KINDS = ("auction_high", "auction_low")
 DAILY_LABELS = ("day", "1d", "1w", "week")
 SHARED_TAG = "shared-index-intraday"
+SEED_PREFIX = "seed:"          # M71 PL-7: rows seeded from the owner's private data (app.market_lake.seed_import)
 SHARED_OFF_LINE = ("Longer intraday index history is not shared while each organisation brings its own broker data, so "
                    "only your broker's own history is shown.")
 
@@ -66,6 +67,10 @@ def _scoped(scope: Scope, key: str, labels: Sequence[str]) -> List[Any]:
         if not is_target_key(key):
             raise PermissionError("the shared scope reads the backfilled index keys only")
         labels = [label for label in labels if label not in DAILY_LABELS]       # intraday only, never his Daily rows
+        # M71 PL-7c / M71Q-2: what was seeded from the owner's private data stays his own - never read by another reader
+        return [MdTenantCandleRecord.tenant_id == tenant_id, MdTenantCandleRecord.instrument_key == key,
+                MdTenantCandleRecord.timeframe.in_(list(labels)), holder_visible(MdTenantCandleRecord.source, user_id),
+                MdTenantCandleRecord.source.not_like(f"{SEED_PREFIX}%")]
     return [MdTenantCandleRecord.tenant_id == tenant_id, MdTenantCandleRecord.instrument_key == key,
             MdTenantCandleRecord.timeframe.in_(list(labels)), holder_visible(MdTenantCandleRecord.source, user_id)]
 

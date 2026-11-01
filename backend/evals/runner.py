@@ -67,7 +67,10 @@ def run_qa(cases: List[Dict[str, Any]]) -> SetScore:
         from_question = set(grounding.allowed_from_text(case["question"]))
         allowed = set(from_question).union(*by_call.values()) if by_call else set(from_question)
         parsed = agent.parse_answer(case["answer"] if isinstance(case["answer"], str) else json.dumps(case["answer"], ensure_ascii=False))
-        problem, _ = agent._verify(parsed, allowed, by_call, from_question, case.get("lang", "en"))
+        texts = {cid: json.dumps(data, default=str, ensure_ascii=False) for cid, data in case["tool_results"].items()}
+        first_party = set(texts) - set(case.get("untrusted", []))
+        problem, _ = agent._verify(parsed, allowed, by_call, from_question, case.get("lang", "en"), call_texts=texts, first_party=first_party,
+                                   question=case["question"])
         shown = problem is None
         if shown and DEVANAGARI.search(parsed.text):          # English only (the owner's ruling), whatever the request language
             shown, problem = False, "an answer that is not in English"

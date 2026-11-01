@@ -150,14 +150,17 @@ test.describe("Trading bot behaviour", () => {
     await expectChoice(form(page).getByLabel("Pick a strategy"), "orb_15m_5m");
     await expect(form(page)).toContainText("Waits for the first 15 minutes' range to break");
     await choose(page, form(page).getByLabel("Pick a symbol"), "NIFTY BANK");
-    await expect(form(page)).toContainText("Trades a NIFTY BANK option at the nearest expiry, 1 lot");
+    // M68 PR-2: no lots chosen for him - the form asks; M68 PR-4: the expiry is his Trade settings' one
+    await expect(form(page)).toContainText("Trades a NIFTY BANK option at the expiry in your Trade settings, your Position size");
+    await expect(form(page).locator("[data-bot-lots]")).toContainText("Lots for this bot");
     await pickEntryStyle(page, form(page));
+    await expect(form(page)).toContainText("Trades a NIFTY BANK option at the nearest expiry, 1 lot");
     await form(page).getByRole("button", { name: "Start on paper" }).click();
     await expect(form(page)).toContainText("Started on paper: NIFTY BANK.");
     const post = server.sent.find((c) => c.method === "POST" && c.url === "/deployments");
     expect(post?.body).toEqual({ strategy_id: "orb_15m_5m", symbol: "NIFTY BANK", exchange: "NSE", timeframe: "1min", mode: "PAPER", holding: "INTRADAY",
       instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1,
-      order_style: "MARKET" });                                                         // M68: the entry style he picked
+      order_style: "MARKET", entry_mode: "AUTO" });                   // M68: the entry style, mode, side, expiry and strike he picked
     await expect(bots(page).locator("[data-bot]")).toHaveCount(1);
 
     await choose(page, form(page).getByLabel("Pick a strategy"), "swing_ema_pullback_d");

@@ -79,7 +79,8 @@ export function Fold({ id, title, line, children, onOpen }: { id: string; title:
   );
 }
 
-function AiSection() {
+/** Settings › AI's body (also the in-place AI key panel, M75 NAV-2). */
+export function AiSection() {
   const oneKey = useFeatures().on("ai_one_key");
   return (
     <div id="ai" className="space-y-space-4">

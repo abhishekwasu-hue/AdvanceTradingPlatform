@@ -47,9 +47,11 @@ def _r(x: Any, nd: int = 2) -> Optional[float]:
 
 
 async def _frame(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, days: int) -> Tuple[pd.DataFrame, str]:
-    """Server candles through the organisation's broker session (the H-C1 a path) -> (frame, source)."""
+    """Server candles through the asker's own broker session (the H-C1 a path) -> (frame, source). M72 PR-1a (M71Q-2):
+    with `byob_data_tier` off too, only a credential he linked himself - never a teammate's (`own_only`)."""
     from app.ai import evidence
-    return await evidence.server_frame(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days, user=ctx.user)
+    return await evidence.server_frame(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days, user=ctx.user,
+                                       own_only=True)
 
 
 async def _candles(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, days: int) -> Tuple[pd.DataFrame, str, List[str]]:
@@ -80,7 +82,8 @@ async def _backtest_frame(ctx: ToolContext, symbol: str, exchange: str, timefram
 
 async def _broker(ctx: ToolContext, symbol: str, exchange: str) -> Tuple[Any, str]:
     """The broker session a quote / chain is read through. BT1b (flag `byob_data_tier`): only the asking user's own
-    session at a confirmed broker, for a symbol inside its budget; otherwise 409 (the tool reports the reason)."""
+    session at a confirmed broker, for a symbol inside its budget; otherwise 409 (the tool reports the reason).
+    M72 PR-1a (M71Q-2): with the flag off, only a credential the asker linked himself - never a teammate's (409)."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
@@ -90,8 +93,30 @@ async def _broker(ctx: ToolContext, symbol: str, exchange: str) -> Tuple[Any, st
         if not own.allows(symbol, exchange):
             raise live_access.LiveDataRefused(own.reason(symbol, exchange))
         return own.adapter(), own.source
-    record = await _pick_record(ctx.session, ctx.tenant_id, None, "primary")
+    if getattr(ctx.user, "tenant_id", None) != ctx.tenant_id:
+        raise live_access.LiveDataRefused(live_access.NO_USER)
+    record = await _pick_record(ctx.session, ctx.tenant_id, None, "primary", user_id=int(ctx.user.id))
     return build_adapter(record), f"broker:{record.broker_name}"
+
+
+async def teammate_refusal(ctx: ToolContext, source: str) -> ToolResult | None:
+    """M72 PR-1a (M71Q-2) for the tools that wrap a page's own read (the chain analyses, the screener run): with
+    `byob_data_tier` off such a read goes through the organisation's first usable credential. When that credential
+    was linked by a teammate, the tool does not run for this member (one person's broker data is never shown to
+    another); his own, or no credential at all, and the tool runs exactly as before. Flag on: the page's own path
+    already reads only his own session."""
+    from app.market_data import live_access
+    from app.market_data.candles_routes import TEAMMATE_BROKER, _pick_record
+    if await live_access.byob_on(ctx.session, ctx.tenant_id):
+        return None
+    try:
+        record = await _pick_record(ctx.session, ctx.tenant_id, None, "primary")
+    except HTTPException:
+        return None                                   # no usable session: the tool reports that itself
+    owner = getattr(record, "user_id", None)          # NOT NULL on every stored credential
+    if (owner is None or owner == getattr(ctx.user, "id", None)) and getattr(ctx.user, "tenant_id", None) == ctx.tenant_id:
+        return None
+    return ToolResult(False, None, None, source, error=TEAMMATE_BROKER)
 
 
 async def _hub_connection(ctx: ToolContext) -> Any:
@@ -252,10 +277,11 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
         df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, args.timeframe, args.days)
     except HTTPException as exc:
         return _failed("backtest", exc)
-    from app.core import config as app_config
-    # DEF-0: the organisation's capital, else the PAPER starting balance (the engine starts there too)
-    risk = (await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()).with_capital(app_config.PAPER_STARTING_CAPITAL)
-    result = await asyncio.to_thread(engine, strategy, df, args.symbol.upper(), args.timeframe, risk)    # CPU-bound: off the event loop
+    from app.paper import paper_settings
+    # DEF-0 / M68 PR-7 (TS1-066): the organisation's capital, else his own paper capital (Not set: none - never a value
+    # ATP chose), and his paper charges (Not set: statutory charges only)
+    risk, charges = await paper_settings.backtest_inputs(ctx.session, ctx.user, await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig())
+    result = await asyncio.to_thread(engine, strategy, df, args.symbol.upper(), args.timeframe, risk, charges=charges)    # CPU-bound: off the event loop
     data = {"strategy_id": args.strategy_id, "symbol": args.symbol.upper(), "timeframe": args.timeframe, "from": _iso(df.index[0]), "to": _iso(df.index[-1]),
             "trades": result.total_trades, "win_rate": _r(result.win_rate), "net_pnl": _r(result.net_pnl), "profit_factor": _r(result.profit_factor),
             "max_drawdown": _r(result.max_drawdown), "expectancy": _r(result.expectancy), "capital": _r(risk.capital),
@@ -293,8 +319,16 @@ async def backtest_draft(ctx: ToolContext, args: _DraftBacktestArgs) -> ToolResu
         df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, fetch_tf, dbt.TEST_DAYS)
     except HTTPException as exc:
         return _failed("backtest", exc)
-    risk = await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()
-    data = await asyncio.to_thread(dbt.honest_test, config, df, args.symbol, fetch_tf, risk)    # CPU-bound: off the event loop
+    from app.paper import paper_settings  # M68 PR-7 (TS1-066): his capital and paper charges (parity)
+    risk, charges = await paper_settings.backtest_inputs(ctx.session, ctx.user, await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig())
+    from app.backtest.data_policy import HoldoutError
+    from app.market_lake import data_use
+    try:
+        windows = await data_use.windows_for(ctx.session, ctx.tenant_id, args.symbol, refused_only=True)   # M71 PL-7b
+        data = await asyncio.to_thread(dbt.honest_test, config, df, args.symbol, fetch_tf, risk, charges=charges,
+                                       use_windows=windows)  # CPU-bound: off the event loop
+    except HoldoutError as exc:
+        return ToolResult(False, None, None, "backtest", error=str(exc)[:300])
     data["exchange"] = args.exchange
     data["prices"], data["prices_line"] = prices["words"], prices["line"]
     return ToolResult(True, data, _iso(df.index[-1]), source, {"first_bar": _iso(df.index[0]), "last_bar": _iso(df.index[-1])})
@@ -311,4 +345,4 @@ for _tool in (
 ):
     register(_tool)
 
-__all__ = ["get_candles", "get_quote", "get_option_chain", "get_market_regime", "run_backtest", "backtest_draft", "summarise_frame", "summarise_chain"]
+__all__ = ["teammate_refusal", "get_candles", "get_quote", "get_option_chain", "get_market_regime", "run_backtest", "backtest_draft", "summarise_frame", "summarise_chain"]

@@ -11,7 +11,9 @@ import { SMART_DEFAULTS, readSmart, smartFormOf, smartOf } from "../settings/sma
 const target = { underlying: "NIFTY", expiry: "2026-12-31", strike: 24800, right: "CE", label: "NIFTY 24800 CE", lotSize: 75, ltp: 120,
   bid: 119.5, ask: 120.5 } as TicketTarget;
 const noop = () => undefined;
-const body = (draft = newDraft("BUY"), defaults?: Parameters<typeof TicketBody>[0]["defaults"], saveDefaults = true) => renderToStaticMarkup(
+// M68 PR-2 asks for the lots first (fno/m68PositionSize.test.tsx); these PR-1 tests start with his lots entered.
+const lotsIn = (): ReturnType<typeof newDraft> => ({ ...newDraft("BUY"), lots: 1 });
+const body = (draft = lotsIn(), defaults?: Parameters<typeof TicketBody>[0]["defaults"], saveDefaults = true) => renderToStaticMarkup(
   <TicketBody target={target} draft={draft} step={{ kind: "edit" }} busy={false} problem={null} idPrefix="t" defaults={defaults} saveDefaults={saveDefaults}
     onDraft={noop} onReview={noop} onPlace={noop} onBack={noop} onClose={noop} />);
 
@@ -24,7 +26,7 @@ const view = (fields: TradeField[]): TradeSettingsView => ({ admin: false, page:
 
 describe("M68 PR-1: the ticket asks for what is Not set", () => {
   it("a new ticket pre-selects no order type and no product, and asks the order type first, then the product", () => {
-    const d = newDraft("BUY");
+    const d = lotsIn();
     expect(d.orderType).toBeNull();
     expect(d.product).toBeNull();
     expect(draftProblems(d)).toEqual([ORDER_TYPE_MISSING, PRODUCT_MISSING]);
@@ -40,19 +42,19 @@ describe("M68 PR-1: the ticket asks for what is Not set", () => {
     expect(html).not.toMatch(/aria-checked="true"[^>]*data-option="(MARKET|LIMIT|SL|SL-M|MIS|NRML)"/);   // only the side is chosen
     expect(html).toContain('data-ticket="order-type-unset"');
     expect(html).toMatch(/disabled=""[^>]*data-ticket="review"|data-ticket="review"[^>]*disabled=""/);
-    expect(html).not.toContain("data-save-default");                              // nothing picked yet: nothing to save
-    const next = body({ ...newDraft("BUY"), orderType: "MARKET" });
+    expect(html).not.toContain(`data-save-default="${ORDER_TYPE_KEY}"`);          // nothing picked yet: nothing to save
+    const next = body({ ...lotsIn(), orderType: "MARKET" });
     expect(next).toMatch(/id="t-product"[^>]*data-asking="yes"|data-asking="yes"[^>]*id="t-product"/);
   });
 
   it("a picked order type and product each offer Save as my default (only with ui_v2, never for a value from his defaults)", () => {
-    const html = body({ ...newDraft("BUY"), orderType: "LIMIT", product: "NRML" });
+    const html = body({ ...lotsIn(), orderType: "LIMIT", product: "NRML" });
     expect(html).toContain(`data-save-default="${ORDER_TYPE_KEY}"`);
     expect(html).toContain(`data-save-default="${PRODUCT_KEY}"`);
     expect(html).not.toMatch(/data-asking="yes"/);
     expect(html).not.toMatch(/disabled=""[^>]*data-ticket="review"/);
-    expect(body({ ...newDraft("BUY"), orderType: "LIMIT", product: "NRML" }, undefined, false)).not.toContain("data-save-default");
-    const fromDefaults = body(newDraft("BUY", { orderType: "LIMIT", product: "NRML" }), { orderType: "LIMIT", product: "NRML" });
+    expect(body({ ...lotsIn(), orderType: "LIMIT", product: "NRML" }, undefined, false)).not.toContain("data-save-default");
+    const fromDefaults = body(newDraft("BUY", { orderType: "LIMIT", product: "NRML", lots: 1 }), { orderType: "LIMIT", product: "NRML", lots: 1 });
     expect(fromDefaults).not.toContain("data-save-default");
   });
 

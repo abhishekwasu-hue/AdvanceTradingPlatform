@@ -78,9 +78,11 @@ def _part(result: BacktestResult, df: pd.DataFrame, capital: float) -> Dict[str,
 
 
 def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: RiskConfig, *,
-                holdout: Any = None, min_trades: Optional[int] = None) -> Dict[str, Any]:
+                holdout: Any = None, min_trades: int | None = None, charges: Any = None, use_windows: Any = ()) -> dict[str, Any]:
     """The draft `config` (a `CustomStrategyConfig`) on `df` (server candles at `base_tf`) through ATP's backtest engine.
-    `holdout`: the sealed holdout boundary (None reads the operator's `BACKTEST_HOLDOUT_START`)."""
+    `holdout`: the sealed holdout boundary (None reads the operator's `BACKTEST_HOLDOUT_START`). M68 PR-7 (TS1-066):
+    `risk.capital` is the trader's own (the caller resolves it; None: the shares of capital are left out) and `charges`
+    his paper charges (None: statutory charges only)."""
     from app.ai.compliance import WEAK_EVIDENCE_MIN_TRADES
     from app.backtest import data_policy, validation
     from app.backtest.engine import run_backtest
@@ -93,26 +95,33 @@ def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: 
     if boundary is not None:
         kept = data_policy.filter_allowed(df, boundary)
         sealed, df = int(len(df) - len(kept)), kept
+    # M71 PL-7b: the draft test feeds the Copilot's search for a strategy - the tenant's sealed / contaminated rows never
+    kept = data_policy.filter_allowed(df, None, use_windows)
+    policy_left_out, df = int(len(df) - len(kept)), kept
+    if df.empty and policy_left_out:
+        raise data_policy.HoldoutError(data_policy.windows_reason(use_windows, policy_left_out) or "no bars left")
     strategy = DeclarativeStrategy(DRAFT_ID, config)
-    from app.core import config as app_config
-    risk = risk.with_capital(app_config.PAPER_STARTING_CAPITAL)     # DEF-0: own capital, else the PAPER start
+    from app.execution.paper_charges import STATUTORY_ONLY
+    charges = charges or STATUTORY_ONLY
     capital = float(risk.capital or 0.0)
     out: Dict[str, Any] = {
-        "symbol": symbol.upper(), "timeframe": config.timeframe, "bars": int(len(df)), "capital": _r(capital),
+        "symbol": symbol.upper(), "timeframe": config.timeframe, "bars": int(len(df)), "capital": _r(risk.capital),
         "from": _iso(df.index[0]) if len(df) else None, "to": _iso(df.index[-1]) if len(df) else None,
         "from_day": day_label(df.index[0]) if len(df) else None, "to_day": day_label(df.index[-1]) if len(df) else None,
         "days_requested": TEST_DAYS, "later_share_pct": int(round(LATER_SHARE * 100)), "min_trades_for_statistics": need, "sealed_holdout_bars": sealed, "slippage_pct_per_fill": None,
-        "costs_included": "brokerage and statutory charges at their dated rates, and slippage on every fill",
+        "costs_included": f"{charges.words}; statutory rates of each trade's own date",
         "tuned_on_this_data": False, "tries": 1, "note": "Past simulated results on this window only; not a forecast.",
     }
+    if use_windows:                       # M71 PL-7b: only a tenant with a data policy sees these (the shape is unchanged)
+        out.update({"data_policy_bars_left_out": policy_left_out, "data_policy": data_policy.windows_reason(use_windows, policy_left_out)})
+
     min_hist = strategy.min_history()[strategy.timeframes[0]]
     if len(df) <= min_hist:
         out.update(sample="no_data", whole=None, earlier=None, later=None, walk_forward=None, deflated=None)
         return out
-    from app.execution.paper_broker import PaperBroker
-    out["slippage_pct_per_fill"] = _r(PaperBroker().slippage_pct, 4)
+    out["slippage_pct_per_fill"] = _r(charges.slippage_pct, 4)
 
-    whole = run_backtest(strategy, df, symbol.upper(), base_tf, risk)
+    whole = run_backtest(strategy, df, symbol.upper(), base_tf, risk, charges=charges)
     out["whole"] = _part(whole, df, capital)
     out["sample"] = "ok" if whole.total_trades >= need else "too_few"
     # CP6-15: what the losses-in-a-row pause did on the whole window (None when it never engaged). Under "Pause until I
@@ -124,10 +133,11 @@ def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: 
     parts: Dict[str, Optional[Dict[str, Any]]] = {"earlier": None, "later": None}
     for key, part_df in (("earlier", earlier_df), ("later", later_df)):
         if len(part_df) > min_hist:
-            parts[key] = _part(run_backtest(strategy, part_df, symbol.upper(), base_tf, risk), part_df, capital)
+            parts[key] = _part(run_backtest(strategy, part_df, symbol.upper(), base_tf, risk, charges=charges), part_df, capital)
     out.update(parts)
 
-    wf = walk_forward(strategy, df, symbol.upper(), base_tf, risk, folds=WALK_FORWARD_FOLDS)
+    wf = walk_forward(strategy, df, symbol.upper(), base_tf, risk, folds=WALK_FORWARD_FOLDS,
+                      runner=lambda s, part: run_backtest(s, part, symbol.upper(), base_tf, risk, charges=charges))
     out["walk_forward"] = ({"windows": int(wf["folds"]), "profitable_windows": int(wf["profitable_windows"]),
                             "window_trades": [int(w["trades"]) for w in wf["windows"]]} if wf.get("folds") else None)
 

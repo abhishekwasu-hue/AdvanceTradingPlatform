@@ -8,7 +8,7 @@ in; it moves only with the record.
 |---|---|---|
 | Beginner | (start) | cash underlyings, bought options, hedged option structures |
 | Intermediate | the PAPER ladder's sessions, trades and drawdown criteria | futures |
-| Advanced | `EXPERIENCE_ADVANCED_MIN_TRADES` closed trades over `EXPERIENCE_ADVANCED_MIN_SESSIONS` sessions, drawdown within the ladder's limit | naked short options |
+| Advanced | the user's OWN closed trades / sessions (Settings > Trade settings > Risk limits, M68 PR-5 TS1-057), drawdown within the ladder's limit | naked short options |
 
 A naked short option is a written option entered on its own, or a structure whose sold lots of one right (CE or PE)
 outnumber its bought lots of that right (short straddle, 1:2 ratio spread).
@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import write_audit_log
 from app.core import config as app_config
 from app.core.enums import InstrumentKind, OrderSide
-from app.db.models import ExperienceOptOutRecord, PaperAccountRecord, User
+from app.db.models import ExperienceOptOutRecord, User
 from app.market_data.calendar import IST
 
 FLAG = "experience_levels"
@@ -217,22 +217,27 @@ def structure_gates(legs: Iterable[Any]) -> List[str]:
     return gates
 
 
-def derive_level(closed: int, sessions: int, max_drawdown_pct: float) -> Tuple[str, List[Dict[str, Any]]]:
-    """(level, the criteria of each level above Beginner with their values) from a PAPER record."""
+def derive_level(closed: int, sessions: int, max_drawdown_pct: float | None, *, advanced_trades: int | None = None,
+                 advanced_sessions: int | None = None) -> tuple[str, list[dict[str, Any]]]:
+    """(level, the criteria of each level above Beginner with their values) from a PAPER record. M68 PR-5 (TS1-057): the
+    Advanced level's trades / sessions are the user's own (`advanced_*`); Not set = a target of None, never met (the
+    refusal then names the setting). M68 PR-7: no capital of his own = no drawdown (None)."""
     dd_limit = app_config.PAPER_LADDER_MAX_DRAWDOWN_PCT
 
-    def criteria(min_trades: int, min_sessions: int) -> List[Dict[str, Any]]:
+    def own(target: int | None) -> dict[str, str]:
+        return {} if target is not None else {"note": "Not set: your own number (Settings › Trade settings › Risk limits)"}
+
+    def criteria(min_trades: int | None, min_sessions: int | None) -> list[dict[str, Any]]:
         return [
             {"key": "closed_trades", "label": "Closed PAPER trades", "value": closed, "target": min_trades, "comparison": "at_least",
-             "met": closed >= min_trades},
+             "met": min_trades is not None and closed >= min_trades, **own(min_trades)},
             {"key": "sessions", "label": "Sessions with a PAPER trade", "value": sessions, "target": min_sessions, "comparison": "at_least",
-             "met": sessions >= min_sessions},
+             "met": min_sessions is not None and sessions >= min_sessions, **own(min_sessions)},
             {"key": "max_drawdown_pct", "label": "Largest drawdown, % of peak equity", "value": max_drawdown_pct, "target": dd_limit,
-             "comparison": "at_most", "met": closed > 0 and max_drawdown_pct <= dd_limit},
+             "comparison": "at_most", "met": closed > 0 and max_drawdown_pct is not None and max_drawdown_pct <= dd_limit},
         ]
     steps = [(INTERMEDIATE, criteria(app_config.PAPER_LADDER_MIN_TRADES, app_config.PAPER_LADDER_MIN_SESSIONS)),
-             (ADVANCED, criteria(max(app_config.EXPERIENCE_ADVANCED_MIN_TRADES, app_config.PAPER_LADDER_MIN_TRADES),
-                                 max(app_config.EXPERIENCE_ADVANCED_MIN_SESSIONS, app_config.PAPER_LADDER_MIN_SESSIONS)))]
+             (ADVANCED, criteria(advanced_trades, advanced_sessions))]
     level = BEGINNER
     out = []
     for name, crit in steps:
@@ -248,7 +253,12 @@ def allowed_by_level(level: str, gate: str) -> bool:
     return LEVELS.index(level) >= LEVELS.index(GATES[gate][0])
 
 
-def refusal_text(gate: str, level: str, record: Dict[str, Any]) -> str:
+def refusal_text(gate: str, level: str, record: dict[str, Any], own: Any = None) -> str:
+    if gate == GATE_NAKED and own is not None and (own.experience_trades is None or own.experience_sessions is None):
+        from app.risk_engine import own_risk  # M68 PR-5 (TS1-057): his own Advanced numbers are Not set - asked, never assumed
+        missing = "experience_trades" if own.experience_trades is None else "experience_sessions"
+        return (f"{GATES[gate][1]} open at the Advanced experience level, which counts your own numbers - "
+                f"{own_risk.needs_setting(missing)}. An opt-out for today, with a reason, lifts this gate; it is logged and counted")
     if gate == GATE_UNRECOGNISED:
         need = GATES[GATE_FUTURES][0]
         return (f"Unrecognised instrument; the futures gate applies: it opens at the {LEVEL_LABELS[need]} experience level; yours is "
@@ -262,6 +272,16 @@ def refusal_text(gate: str, level: str, record: Dict[str, Any]) -> str:
 
 # --- database --------------------------------------------------------------------------------------------------------
 
+async def _own(session: AsyncSession, user: User) -> Any:
+    from app.risk_engine import own_risk
+    return await own_risk.for_user(session, user)
+
+
+def _targets(own: Any) -> dict[str, int | None]:
+    """M68 PR-5 (TS1-057): the Advanced level's trades / sessions - the user's own (None = Not set)."""
+    return {"advanced_trades": own.experience_trades, "advanced_sessions": own.experience_sessions}
+
+
 def ist_day(now: datetime) -> Any:
     return (now if now.tzinfo else now.replace(tzinfo=timezone.utc)).astimezone(IST).date()
 
@@ -272,9 +292,12 @@ async def record(session: AsyncSession, user: User) -> Dict[str, Any]:
     trades = [t for t in await service._paper_trades(session, user) if service._counted(t)]
     closed = sorted((t for t in trades if t.exit_time is not None), key=lambda t: (service._utc(t.exit_time or t.entry_time), t.id))
     sessions = {service._utc(t.entry_time).astimezone(IST).date() for t in trades if t.entry_time is not None}
-    account = await session.scalar(select(PaperAccountRecord).where(PaperAccountRecord.tenant_id == user.tenant_id,
-                                                                    PaperAccountRecord.user_id == user.id))
-    starting = float(account.starting_capital) if account is not None else float(app_config.PAPER_STARTING_CAPITAL)
+    # M68 PR-7 (TS1-065): measured from his own capital (his account's, else his saved Trade settings value); Not set ->
+    # the drawdown % is not measured (None, not met).
+    from app.paper import paper_settings
+    starting = await paper_settings.capital_of(session, user)
+    if starting is None:
+        return {"closed_trades": len(closed), "sessions": len(sessions), "max_drawdown_pct": None}
     dd = service.equity_drawdown(starting, [float(t.pnl or 0.0) for t in closed])
     return {"closed_trades": len(closed), "sessions": len(sessions), "max_drawdown_pct": float(dd["max_drawdown_pct"])}
 
@@ -291,14 +314,15 @@ async def entry_refusals(session: AsyncSession, user: Optional[User], gates: Seq
         return []
     now = now or datetime.now(timezone.utc)
     rec = await record(session, user)
-    level, _ = derive_level(rec["closed_trades"], rec["sessions"], rec["max_drawdown_pct"])
+    own = await _own(session, user)
+    level, _ = derive_level(rec["closed_trades"], rec["sessions"], rec["max_drawdown_pct"], **_targets(own))
     def base(g: str) -> str:
         return GATE_FUTURES if g == GATE_UNRECOGNISED else g
     blocked = [g for g in dict.fromkeys(gates) if base(g) in GATES and not allowed_by_level(level, base(g))]
     if not blocked:
         return []
     opted = set(await _opted_out_today(session, user, ist_day(now)))
-    return [refusal_text(g, level, rec) for g in blocked if base(g) not in opted]
+    return [refusal_text(g, level, rec, own) for g in blocked if base(g) not in opted]
 
 
 async def status(session: AsyncSession, user: User, now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -306,7 +330,7 @@ async def status(session: AsyncSession, user: User, now: Optional[datetime] = No
     now = now or datetime.now(timezone.utc)
     day = ist_day(now)
     rec = await record(session, user)
-    level, steps = derive_level(rec["closed_trades"], rec["sessions"], rec["max_drawdown_pct"])
+    level, steps = derive_level(rec["closed_trades"], rec["sessions"], rec["max_drawdown_pct"], **_targets(await _own(session, user)))
     opted = set(await _opted_out_today(session, user, day))
     mine = (ExperienceOptOutRecord.tenant_id == user.tenant_id, ExperienceOptOutRecord.user_id == user.id)
     total = int(await session.scalar(select(func.count(ExperienceOptOutRecord.id)).where(*mine)) or 0)
@@ -337,7 +361,7 @@ async def opt_out(session: AsyncSession, user: User, gate: str, reason: str, now
     if gate not in GATES:
         raise OptOutError(f"Unknown gate '{gate}' - known: {', '.join(GATES)}")
     rec = await record(session, user)
-    level, _ = derive_level(rec["closed_trades"], rec["sessions"], rec["max_drawdown_pct"])
+    level, _ = derive_level(rec["closed_trades"], rec["sessions"], rec["max_drawdown_pct"], **_targets(await _own(session, user)))
     if allowed_by_level(level, gate):                       # before the reason: a qualified user hears 409, not 422
         raise NothingToOptOut(f"Your level ({LEVEL_LABELS[level]}) already opens {GATES[gate][1].lower()}")
     text = (reason or "").strip()

@@ -62,7 +62,7 @@ RIGHTS = ("CE", "PE")
 FUTURE = "FUT"
 ORDER_TYPES = ("MARKET", "LIMIT", "SL", "SL-M")
 PRODUCTS = ("MIS", "NRML")
-MAX_LOTS = 500           # a ticket's own upper bound; the exchange's freeze quantity is not in the master yet (FNO-1-2)
+# M68 PR-4 (TS1-046): no ATP ceiling on the lots - an order above the exchange's freeze quantity is split (TS1-087).
 MONTHS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
 PRACTICE = "Practice mode (PAPER): no real order is sent and no money moves."
 # TM-1: the ticket's PAPER order fills through the PaperExecutionAdapter (a BrokerInterface), the first path moved onto it;
@@ -210,8 +210,8 @@ def ask_errors(ask: OrderAsk, tick: float, *, stop_required: bool = False) -> Li
         errors.append("Choose Market, Limit, SL or SL-M")
     if ask.product not in PRODUCTS:
         errors.append("Choose MIS (intraday) or NRML (carry forward)")
-    if not 1 <= int(ask.lots) <= MAX_LOTS:
-        errors.append(f"Lots must be between 1 and {MAX_LOTS}")
+    if int(ask.lots) < 1:
+        errors.append("Lots must be 1 or more")
     if ask.order_type in ("LIMIT", "SL") and not ask.price:
         errors.append("Enter the limit price")
     if ask.order_type in ("SL", "SL-M") and not ask.trigger_price:
@@ -385,7 +385,7 @@ async def _effective_config(session: AsyncSession, user: User, direction: str, u
     from app.risk_engine.guardian import apply_multiplier, guard_entry
     from app.risk_engine.routes import user_risk_config
     cfg = await user_risk_config(session, user)          # DEF-0: limits not set are off; capital = own, else PAPER balance
-    cfg, notes = clamp_config(cfg, await risk_ceilings(session))
+    cfg, notes = clamp_config(cfg, await risk_ceilings(session, user.tenant_id))
     if await by_default.enabled(session, user.tenant_id):
         cfg, cap_notes = await by_default.apply_user_cap(session, user, cfg)
         notes = list(notes) + list(cap_notes)
@@ -482,7 +482,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
 
     tenant = await session.get(Tenant, user.tenant_id)
     refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, MODE, STRATEGY_ID, user=user, reserve=False))
-    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=None)
+    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=None, user_id=user.id)
     if gate:
         refusals.append(plain(gate))
     direction = SignalDirection.LONG if side == "BUY" else SignalDirection.SHORT
@@ -531,8 +531,11 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     charges = None
     if basis is not None and units and not errors:
         from app.execution.india_costs import leg_cost
-        cost = leg_cost(today, "buy" if side == "BUY" else "sell", basis, units, "FUTURE" if future else "OPTION")
-        charges = {"total": round(cost["total"], 2), "estimated": True}
+        from app.paper import paper_settings
+        own = await paper_settings.charges_for(session, user)      # M68 PR-7 (TS1-070): his own brokerage; Not set: none
+        cost = leg_cost(today, "buy" if side == "BUY" else "sell", basis, units, "FUTURE" if future else "OPTION",
+                        brokerage_per_order=own.brokerage_per_order)
+        charges = {"total": round(cost["total"], 2), "estimated": True, "words": own.words}
     can_place = not errors and not refusals and basis is not None
     label = contract.label if contract else contract_label(master.underlying_of(ask.underlying), ask.expiry, ask.strike, right)
     contract_view = contract.as_dict() if contract else None

@@ -279,6 +279,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | M78 | in progress (owner order 1 Nov; one follow-up PR on #847) | Band label legibility: chips over candles, AA contrast, same label format, padding, prices on tap / hover | ATP_ORDER_M78.md |
 | M79 | in progress (owner order 1 Nov; supersedes the v1 parts of M66: step 1 = review + merge atp-private PR #1, then review + merge import/engine-snapshot-v2; flag trade_engine OFF) | Engine takeover on engine-snapshot-v2 (Trade 813358b): T1-T14 plan with C1-C6 corrections, byte-equal parity per layer | ATP_ORDER_M79.md |
 | M80 | in progress (owner order 1 Nov; one PR) | Admin feature flags: re-audit all flags, exact status states with the setup item, live ✓ / ✗, not-built switches disabled, no ON/OFF change | ATP_ORDER_M80.md |
+| PAPER-NR | in progress (owner 1 Nov; one order-path PR after M68 PR-5) | PAPER entries are never refused for margin, capital or the user's own risk limits (shown as information); LIVE unchanged; exits never blocked; kill switch / Phase-0 lock stay | DECISIONS 1 Nov |
 | STRAT-X | not started (owner 30 Oct: "build what you think is right") | Built-in min R:R OFF, stop / target labelled suggested; 4 new templates (PDHL, 52WH, RS vs NIFTY, weekly + daily pullback) | claude/stratx-* |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |

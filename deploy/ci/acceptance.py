@@ -288,10 +288,15 @@ def screens(flow: Flow) -> str:
     return "; ".join(out)
 
 
+# M68 (owner order): the users' own Order defaults (Settings > Trade settings), saved before their first PAPER ticket.
+ORDER_DEFAULTS = {"order_defaults.holding": "INTRADAY", "order_defaults.product": "MIS", "order_defaults.order_type": "MARKET"}
+
 def proposals(flow: Flow) -> str:
     out = []
     for who in "AB":
         u = flow.ctx["users"][who]
+        # M68: ATP pre-chooses no order value - each user saves his own order defaults first, as a new trader does
+        ok(u["api"].put("/api/me/trade-settings", {"values": ORDER_DEFAULTS}))
         ltp = fake_quote(u["symbol"], u["broker"])
         plan = {"symbol": u["symbol"], "direction": "LONG", "setup": "PULLBACK_AT_LEVEL", "entry": ltp, "stop_loss": round(ltp * 0.98, 1),
                 "target": round(ltp * 1.05, 1), "checklist": CHECKLIST, "invalidation": "CI acceptance: close below the stop"}

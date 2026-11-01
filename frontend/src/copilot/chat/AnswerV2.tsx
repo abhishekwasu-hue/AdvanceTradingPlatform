@@ -135,6 +135,8 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
   return (
     <article className="space-y-space-3" data-answer={answer.job} data-source={answer.source} aria-label={answer.title}>
       {h && <HeadlineRow h={h} />}
+      {/* M72 PR-5 (CP-4): a planner answer that read a chart keeps its checked headline line above the code-drawn card */}
+      {card && answer.headline_line && <p className="text-t15 font-semibold text-fg" data-headline-line>{answer.headline_line}</p>}
       {card ? <StructureCardV2 card={card} /> : (
         <div className="space-y-space-1" data-summary>
           {answer.summary.map((line, i) => i === 0 && answer.headline_line

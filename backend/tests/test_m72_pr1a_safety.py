@@ -184,6 +184,7 @@ def test_every_tool_is_audited_for_scope():
         "calc_difference", "calc_percent_change", "calc_sum",
         "calc_option_payoff", "calc_option_what_if",                     # M72 PR-4: arithmetic on stated legs (his own rate)
         "find_strikes",                                                  # M72 PR-4: the asker's own chain read + his own rule
+        "get_engine_read",                                               # M72 PR-5: only the engine runner's own user, his rows
         "propose_pause_deployment", "propose_strategy_review", "propose_alert",
         # market reads: the asker's own credential only (F15), or the page's own read for the same user
         "get_candles", "get_quote", "get_option_chain", "get_market_regime", "run_backtest", "backtest_draft",

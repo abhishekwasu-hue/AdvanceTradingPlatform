@@ -82,15 +82,17 @@ export interface HybridResultProps {
   userImageSrc: string | null;
   readingSrc: string | null;
   imageNote?: string | null;
-  onDownload: () => void;
-  onDelete: () => void;
+  onDownload?: () => void;
+  onDelete?: () => void;
+  /** M72 PR-5: false in the Copilot thread - the Download / Delete buttons stay on the Analyze a chart page. */
+  actions?: boolean;
   downloading?: boolean;
   deleting?: boolean;
   /** M84: "Read from your chart: NIFTY 50 · 15m", with Change and Re-run in place (ChartReadV2). */
   readLine?: ReactNode;
 }
 
-export default function HybridResultV2({ result, userImageSrc, readingSrc, imageNote, onDownload, onDelete, downloading, deleting, readLine }: HybridResultProps) {
+export default function HybridResultV2({ result, userImageSrc, readingSrc, imageNote, onDownload, onDelete, downloading, deleting, actions = true, readLine }: HybridResultProps) {
   const r = result.reading;
   const ai = result.ai ? guardDeep(result.ai, KEEP) : null;
   const title = `${r.symbol} ${r.timeframe_label}`;
@@ -122,10 +124,12 @@ export default function HybridResultV2({ result, userImageSrc, readingSrc, image
           </figure>
         </div>
         <p className="mt-space-2 text-t12 text-fg-muted" data-testid="side-by-side-note">{result.side_by_side_note}</p>
-        <div className="mt-space-3 flex flex-col gap-space-2 sm:flex-row">
-          <Button className="h-11 md:h-9" icon={<Download size={16} aria-hidden />} loading={downloading} onClick={onDownload}>Download image</Button>
-          <Button className="h-11 md:h-9" icon={<Trash2 size={16} aria-hidden />} loading={deleting} onClick={onDelete}>Delete</Button>
-        </div>
+        {actions && (
+          <div className="mt-space-3 flex flex-col gap-space-2 sm:flex-row">
+            <Button className="h-11 md:h-9" icon={<Download size={16} aria-hidden />} loading={downloading} onClick={onDownload}>Download image</Button>
+            <Button className="h-11 md:h-9" icon={<Trash2 size={16} aria-hidden />} loading={deleting} onClick={onDelete}>Delete</Button>
+          </div>
+        )}
       </section>
 
       <Block title="Structure" id="hy-structure">

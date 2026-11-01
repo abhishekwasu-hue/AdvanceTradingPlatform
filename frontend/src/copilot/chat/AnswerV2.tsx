@@ -14,6 +14,7 @@ import {
 } from "./model";
 import CostChip from "../components/CostChip";
 import { RichText } from "./RichText";
+import { DraftCardsV2 } from "./DraftCardV2";
 import { StructureCardV2 } from "./StructureCardV2";
 
 /** CU3: the answer's ONE action (and the strategy card's second, outlined, "test it" button). */
@@ -188,6 +189,7 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
           )}
         </div>
       )}
+      {answer.drafts && answer.drafts.length > 0 && <DraftCardsV2 drafts={answer.drafts} />}
       {answer.chips && answer.chips.length > 0 && <Chips chips={answer.chips} onAsk={onAsk} />}
       {answer.starters.length > 0 && onAsk && (
         <div className="flex flex-wrap gap-space-2">

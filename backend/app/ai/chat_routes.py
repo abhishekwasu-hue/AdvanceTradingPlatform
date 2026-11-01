@@ -22,9 +22,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import chat_history
+from app.ai import ask_context, chat_history, platform_key
 from app.ai import copilot_chat as chat
 from app.ai import resolve as ai_resolve
+from app.ai.ask_context import ChatContext
 from app.ai.compliance_terms import require_ai_acknowledged
 from app.ai.rate_limit import ai_rate_limit
 from app.ai.tools import ToolContext, ToolResult, run_tool
@@ -43,6 +44,9 @@ class ChatBody(BaseModel):
     # M59 CR-2: false = the rule answer only, no AI wording (no metered AI call) - the Copilot's chart attach asks this
     # way after an analysis; the AI words come only when the user taps "Explain in words" (a normal question).
     wording: bool = True
+    # M72 PR-3 (CP-3): where the question was asked from - page, symbol, timeframe, one object by kind + id. The server
+    # re-reads the object for this user (404 when it is not his); no number about it comes from the client.
+    context: ChatContext | None = None
 
 
 async def _flags(session: AsyncSession, user: User) -> None:
@@ -119,6 +123,11 @@ def _ai_state(provider: Any, one_key: bool = False) -> Dict[str, Any]:
     if isinstance(provider, _AtLimit):
         return {"ready": False, "title": "AI limit reached", "line": provider.reason, "settings": chat.KEY_SETTINGS, "reason": provider.reason,
                 "code": ai_resolve.LIMIT_CODE, "own_key": True}
+    platform_reason = getattr(provider, "platform_reason", "")
+    if platform_reason in platform_key.LIMIT_REASONS:
+        # M72 PR-1b: a platform cap reached is a hard stop for the AI; the rules answer and the page says why.
+        return {"ready": False, "title": "AI limit reached", "line": provider.reason, "settings": chat.KEY_SETTINGS, "reason": provider.reason,
+                "code": ai_resolve.LIMIT_CODE, "own_key": False, "platform": True}
     ready = getattr(provider, "name", "rule_based") != "rule_based"
     out = {"ready": ready, "title": None if ready else chat.NO_KEY_TITLE, "line": None if ready else chat.NO_KEY_LINE,
            "settings": chat.KEY_SETTINGS, "reason": None if ready else (getattr(provider, "reason", "") or None)}
@@ -144,18 +153,98 @@ async def chat_home(user: User = Depends(get_current_user), session: AsyncSessio
             "starters": [j.starter for j in jobs], "keep": chat_history.keep()}
 
 
+AGENT_FLAG = "copilot_agent"
+AGENT_FALLBACK_NOTE = "The AI could not answer this one, so this answer uses ATP's own sentences."
+
+
+async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, user_id: int, question: str,
+                        context: dict[str, Any] | None = None) -> tuple[dict[str, Any] | None, str]:
+    """M72 PR-1c (CP-1, F22): the planner first. (the answer in the chat's shape, "") when the AI answered and its answer
+    passed the checks; (None, why) otherwise - the caller then answers from ATP's rules. Never an order (ADR-0006)."""
+    from app.ai import agent, grounding
+    from app.ai.prompt_versions import stamp
+    user = await session.get(User, user_id, populate_existing=True)
+    if user is None:
+        return None, "the user could not be read"
+    from app.ai.languages import answer_language
+    lang = await answer_language(session, user)            # M72 PR-10: his own answer language (flag copilot_languages), else English
+    from app.ai import memory as copilot_memory
+    remembered = await copilot_memory.for_planner(session, user)       # M72 PR-11: his saved memory (flag copilot_memory), else None
+    stamp(provider, agent.PROMPT_VERSION)
+    try:
+        ans = await agent.run_agent(provider, ToolContext(session, tenant_id, user), question, limits=await agent.admin_limits(session),
+                                    context=context, lang=lang, memory=remembered)
+    except Exception as exc:  # noqa: BLE001 - the planner never breaks the chat: the rules answer instead
+        await session.rollback()
+        return None, f"planner error ({exc.__class__.__name__})"
+    if ans.source != "ai":
+        return None, ans.stopped
+    worked = [chat.Step(c["name"], chat.TOOL_NAMES.get(c["name"], "Data"), bool(c.get("ok")), c.get("as_of"), None, [],
+                        None if c.get("ok") else chat.plain_reason(c.get("error"), c["name"]), dict(c.get("arguments") or {}))
+              for c in ans.tool_calls]
+    # M72 PR-2 (CP-2, F7): the checked headline first, then the short lines; the cards are tables code drew from the tool
+    # results the model named (never a model-written table); the chips are fixed follow-up actions.
+    lines = [x.strip() for x in ans.text.splitlines() if x.strip()]
+    summary = [ans.headline, *lines] if ans.headline else lines or [ans.text]
+    shape = chat.Answer(job="agent", title="Answer", summary=summary, worked=worked, notes=list(ans.disclaimers),
+                        blocks=[{k: v for k, v in c.items() if k != "call"} for c in ans.cards]).as_dict()
+    shape.update(source="ai", answer=ans.text, claims=ans.claims, disclaimers=ans.disclaimers, proposals=ans.proposals, chips=ans.chips,
+                 headline_line=ans.headline or None, headline=ans.chart_headline, structure_card=ans.structure_card,
+                 drafts=ans.drafts,
+                 numbers=ans.numbers or grounding.provenance(ans.text, set(), grounding.allowed_from_text(question)),
+                 agent={"run_id": ans.run_id, "stopped": ans.stopped, "contract": ans.contract})
+    return shape, ""
+
+
 @router.post("/chat")
 async def chat_ask(body: ChatBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flags(session, user)
     tenant_id, user_id, admin = int(user.tenant_id), int(user.id), user.role == UserRole.SUPER_ADMIN.value   # read before any tool runs
+    context = await ask_context.resolve(session, tenant_id, user_id, body.context)      # 404: an object that is not his
+    token = chat.CONTEXT_SYMBOL.set(ask_context.symbol_of(context))
+    try:
+        result = await _chat_ask(body, session, tenant_id, user_id, admin, context)
+    finally:
+        chat.CONTEXT_SYMBOL.reset(token)
+    if context:
+        result["context"] = {"symbol": context.get("symbol"), "kind": (context.get("object") or {}).get("kind")}
+    return result
+
+
+async def _chat_ask(body: ChatBody, session: AsyncSession, tenant_id: int, user_id: int, admin: bool, context: dict[str, Any] | None) -> dict[str, Any]:
+    provider = await _provider(session, tenant_id, user_id)
+    ai_state = _ai_state(provider, await ai_resolve.one_key_on(session, tenant_id))
+    agent_tried, agent_why = False, ""
+    if (body.wording and ai_state["ready"] and getattr(provider, "supports_tools", False) and chat.refusal_kind(body.message) is None
+            and await flag_enabled(session, AGENT_FLAG, tenant_id)):
+        # M72 PR-1c: the AI planner first; ATP's rules only when the AI is down or its answer fails the checks (F22).
+        agent_tried = True
+        planned, agent_why = await _agent_answer(session, provider, tenant_id, user_id, body.message, context)
+        if planned is not None:
+            from app.ai import metering
+            run_info = planned.pop("agent")                  # the run's audit id: admin diagnostics only, never the user's view
+            await ai_resolve.mark_used(session, tenant_id, provider)
+            planned["ai"], planned["usage"] = ai_state, metering.spent_by(provider)
+            await chat_history.remember(session, tenant_id, user_id, body.message, planned)
+            await session.commit()
+            if admin:
+                planned["diagnostics"] = {"agent": run_info}
+            return planned
+        await ai_resolve.mark_used(session, tenant_id, provider, error=f"AI planner not used ({agent_why}); answered from the rules")
+        await session.commit()                       # the metered calls and the run's audit rows, used or not
     run = _runner(session, tenant_id, user_id, body.message)
     from app.signals.language import FLAG as SIGNAL_LANGUAGE_FLAG
     out = await chat.answer(body.message, run, signal_v2=await flag_enabled(session, SIGNAL_LANGUAGE_FLAG, tenant_id),
                             flags=await chat_flags(session, tenant_id))
     result = out.as_dict()
-    provider = await _provider(session, tenant_id, user_id)
-    result["ai"] = _ai_state(provider, await ai_resolve.one_key_on(session, tenant_id))
-    if out.job in chat.BUILT and result["ai"]["ready"] and body.wording:
+    result["ai"] = ai_state
+    if agent_tried:
+        # The planner was asked and did not answer: no second model call for the wording - the rules answer as they are.
+        result["note"] = AGENT_FALLBACK_NOTE
+        out.diagnostics["agent_not_used"] = agent_why
+        from app.ai import metering
+        result["usage"] = metering.spent_by(provider)
+    elif out.job in chat.BUILT and result["ai"]["ready"] and body.wording:
         text, why = await chat.narrate(provider, out, body.message)
         await ai_resolve.mark_used(session, tenant_id, provider, error=None if text else f"AI answer not used ({why}); answered from the rules")
         await session.commit()                       # P0.8-C: the metered call, used or not

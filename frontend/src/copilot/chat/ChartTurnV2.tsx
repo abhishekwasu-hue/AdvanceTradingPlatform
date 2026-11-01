@@ -3,6 +3,7 @@ import { useState } from "react";
 import { InPlaceLink } from "../../inplace/InPlaceLink";
 import AlertDialogV2, { type AlertTarget } from "../../chartAnalyze/AlertDialogV2";
 import { ENGINE_ADMIN_TITLE, ENGINE_USER_LINE, ENGINE_USER_TITLE, engineAudience } from "../../chartAnalyze/engineWords";
+import HybridResultV2 from "../../chartAnalyze/HybridResultV2";
 import ResultViewV2 from "../../chartAnalyze/ResultViewV2";
 import { useCopilotT } from "../i18n";
 import type { ChartTurnState } from "./model";
@@ -47,6 +48,7 @@ export function ChartTurnV2({ chart }: { chart: ChartTurnState }) {
   const { item, imageSrc } = chart;
   return (
     <div className="space-y-space-3" data-chart-turn="done" data-item={item.id}>
+      {item.hybrid && <HybridResultV2 result={item.hybrid} userImageSrc={imageSrc} readingSrc={chart.readingSrc ?? null} actions={false} />}
       {item.result && (
         <ResultViewV2 result={item.result} itemLabel={item.label} itemDisclaimer={item.disclaimer} imageSrc={imageSrc} actions={false} onAlert={setAlertTarget} />
       )}

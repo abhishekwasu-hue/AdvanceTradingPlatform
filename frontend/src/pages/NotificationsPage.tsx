@@ -14,6 +14,7 @@ import { useDeepLinkTarget } from "../utils/useDeepLinkTarget";
 import { useNotificationReads } from "../live/useNotificationReads";
 import { formatDateTimeIST } from "../ui/format";
 import { notificationEventWords } from "../ui/notificationWords";
+import { AskAiAbout } from "../copilot/AskAiAbout";
 
 function severityClasses(severity: NotificationSeverity): string {
   switch (severity) {
@@ -107,6 +108,10 @@ export default function NotificationsPage() {
                 {n.message && <div className="mt-0.5 text-xs text-fg-muted">{n.message}</div>}
                 {scanVision && scanVision.in_app && scanReports.has(n.id) && (
                   <div className="mt-1.5"><VisionReportView resp={single(scanVision, scanReports.get(n.id)!)} onChanged={refresh} /></div>
+                )}
+                {/* M72 PR-7: a Copilot watch card opens the Copilot beside the page with his own position / signal. */}
+                {n.ask && (
+                  <div className="mt-1.5"><AskAiAbout ctx={{ page: "notifications", symbol: n.ask.symbol, object: n.ask.object }} label="Ask why" /></div>
                 )}
                 {!n.read && (
                   <button

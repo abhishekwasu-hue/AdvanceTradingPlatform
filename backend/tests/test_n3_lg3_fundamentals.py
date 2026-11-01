@@ -430,7 +430,7 @@ def lib_world(monkeypatch):
     stem = f"LGL{uuid.uuid4().hex[:4].upper()}"
     symbols = [stem + k for k in LIB_CLOSES]
 
-    async def pick(session, tenant_id, broker, label):
+    async def pick(session, tenant_id, broker, label, **_k):
         import types
         return types.SimpleNamespace(broker_name="fake")
 

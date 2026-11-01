@@ -180,6 +180,7 @@ def test_every_tool_is_audited_for_scope():
         # the asker's own rows (user_id + tenant)
         "get_positions", "get_pnl_today", "get_my_positions", "get_my_last_trade", "get_weekly_review", "get_screen_universe",
         "get_my_orders", "get_my_trade_settings", "get_journal_entries", "get_watchlist",          # M72 PR-1c
+        "get_coach_week",                                                # M72 PR-8: the asker's own journal week (user + tenant)
         # M72 PR-1c: pure arithmetic over numbers already read in the request (no rows at all)
         "calc_difference", "calc_percent_change", "calc_sum",
         "calc_option_payoff", "calc_option_what_if",                     # M72 PR-4: arithmetic on stated legs (his own rate)

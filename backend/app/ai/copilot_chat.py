@@ -473,6 +473,7 @@ TOOL_NAMES: Dict[str, str] = {
     "get_watchlist": "Your watchlists", "get_positions": "Your positions", "get_pnl_today": "Your P&L today", "get_quote": "Live price",
     "get_candles": "Price history", "get_market_regime": "Market regime", "get_option_chain": "Option chain",
     "calc_difference": "Calculation", "calc_percent_change": "Calculation", "calc_sum": "Calculation",
+    "get_coach_week": "Your journal week",       # M72 PR-8 (CP-8)
 }
 NOT_SET_UP: Dict[str, str] = {
     "get_market_context": "the market context panel is not set up yet", "get_chart_structure": "the chart structure reader is not set up yet",

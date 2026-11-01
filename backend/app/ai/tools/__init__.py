@@ -102,6 +102,7 @@ def register(tool: Tool) -> Tool:
 
 def registry() -> Dict[str, Tool]:
     from app.ai.tools import (  # noqa: F401 - registers the tools on first use
+        coach,
         copilot,
         copilot_trades,
         engine_read,

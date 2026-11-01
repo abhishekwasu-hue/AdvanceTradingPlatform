@@ -349,7 +349,7 @@ app.add_middleware(
 
 
 app.include_router(auth_router)
-app.include_router(google_auth_router)   # GS-1: Google sign-in (404 until both credentials are set)
+app.include_router(google_auth_router)   # GS-1 / M73: sign-in providers (Google, Facebook; 404 until credentials are set)
 app.include_router(broker_router)
 app.include_router(broker_connect_router)   # P2a: simple broker connect (catalog, connections, connect, renew)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart

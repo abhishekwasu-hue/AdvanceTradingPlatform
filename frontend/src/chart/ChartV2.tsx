@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useDrawingTools } from "../charting/DrawingToolbar";
+import type { LayerBand } from "../charting/engine";
 import type { ChartMarker } from "../charting/markers";
 import { venueZone } from "../charting/chartTypes";
 import type { LightweightEngine } from "../charting/lightweight";
@@ -41,6 +42,8 @@ export interface ChartV2Props {
   livePush?: boolean;
   /** UI2-4e: levels to mark (a signal's entry, stop and target). */
   levels?: readonly LevelLine[];
+  /** M75 W-1: areas (a Copilot answer's nearest area) as filled bands with their label inside or beside them. */
+  areas?: readonly LayerBand[];
   /** Review PR 3: markers on the bars (a backtest's entries and exits); each snaps to the bar at or before its time. */
   markers?: readonly ChartMarker[];
   /** Scrolled back to the oldest bars: load the page before them. */
@@ -65,10 +68,24 @@ export interface ChartV2Props {
 const NO_OVERLAYS: readonly OverlayId[] = [];
 const NO_LEVELS: readonly LevelLine[] = [];
 const NO_MARKERS: readonly ChartMarker[] = [];
+const NO_AREAS: readonly LayerBand[] = [];
+/** M75 W-1: the clear margin kept around each floating control / chip a band label must not touch. */
+const AVOID_PAD = 4;
+
+/** M75 W-1 (W3): the boxes of the floating parts over the canvas (`data-label-avoid`: the view controls, the live chip,
+ * the price-line legend) and the library's attribution mark (`#tv-attr-logo`), in the plot's pixels, grown by a small margin - band labels are placed clear of them. The
+ * crosshair readout is left out: it shows only while the trader points at the chart. */
+export function labelAvoidRects(plot: Element, root: Element): { x: number; y: number; w: number; h: number }[] {
+  const at = plot.getBoundingClientRect();
+  return [...root.querySelectorAll("[data-label-avoid], #tv-attr-logo")].map((el) => el.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0)
+    .map((r) => ({ x: Math.round(r.left - at.left - AVOID_PAD), y: Math.round(r.top - at.top - AVOID_PAD),
+                   w: Math.round(r.width + 2 * AVOID_PAD), h: Math.round(r.height + 2 * AVOID_PAD) }));
+}
 
 export default function ChartV2({
   candles, timeframe, symbol, exchange = "NSE", chartType = "candles", prefs = DEFAULT_CHART_PREFS, overlays = NO_OVERLAYS, live,
-  marketOpen, livePush = false, levels = NO_LEVELS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, className = "h-[480px]",
+  marketOpen, livePush = false, levels = NO_LEVELS, areas = NO_AREAS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, className = "h-[480px]",
 }: ChartV2Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<HTMLDivElement>(null);
@@ -118,6 +135,21 @@ export default function ChartV2({
   const levelKey = levels.map((l) => `${l.price}|${l.title}|${l.tone}`).join(",");
   useEffect(() => { core?.setLevels(levels); }, [core, levelKey]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { core?.setMarkers(markers); }, [core, markers]);
+  const areaKey = areas.map((a) => `${a.low}|${a.high}|${a.role ?? ""}|${a.label ?? ""}|${a.color ?? ""}|${a.opacity ?? ""}|${a.style ?? ""}`).join(",");
+  useEffect(() => { core?.setAreas(areas); }, [core, areaKey]);  // eslint-disable-line react-hooks/exhaustive-deps
+  // M75 W-1: after each render the floating parts may have moved or grown ("Latest" comes and goes, the chip's text
+  // changes); the engine repaints only when the boxes really changed.
+  useLayoutEffect(() => {
+    if (core && plotRef.current && rootRef.current) core.setLabelAvoid(labelAvoidRects(plotRef.current, rootRef.current));
+  });
+  // ...and when the chart is resized (the controls follow the pane's right edge without a render).
+  useEffect(() => {
+    const root = rootRef.current, plot = plotRef.current;
+    if (!core || !root || !plot || typeof ResizeObserver !== "function") return undefined;
+    const ro = new ResizeObserver(() => core.setLabelAvoid(labelAvoidRects(plot, root)));
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, [core]);
   // The chart type is not in the key: setType re-renders the same bars in place, so the trader's zoom stays.
   useEffect(() => { core?.setData(display, `${symbol ?? ""}|${exchange}|${timeframe}`); }, [core, display, symbol, exchange, timeframe]);
 
@@ -131,10 +163,10 @@ export default function ChartV2({
       <div ref={plotRef} className="h-full w-full" />
       {(overlays.length > 0 || (marketOpen !== undefined && !!live) || readout) && (
         <div className="pointer-events-none absolute left-space-2 top-space-2 z-10 flex flex-wrap items-center gap-x-space-3 gap-y-space-1">
-          {marketOpen !== undefined && <span className="pointer-events-auto empty:hidden"><LiveChip live={live} marketOpen={marketOpen} push={livePush && symbol ? { symbol, exchange } : null} /></span>}
+          {marketOpen !== undefined && <span data-label-avoid className="pointer-events-auto empty:hidden"><LiveChip live={live} marketOpen={marketOpen} push={livePush && symbol ? { symbol, exchange } : null} /></span>}
           {overlays.length > 0 && (
             // The price lines' legend (UI2-4b2), in their chart colours; the lower panes name themselves on the canvas.
-            <ul aria-label="Price lines" data-chart-legend className="flex flex-wrap gap-x-space-3 text-t12" style={{ color: "rgb(var(--chart-text))" }}>
+            <ul aria-label="Price lines" data-chart-legend data-label-avoid className="flex flex-wrap gap-x-space-3 text-t12" style={{ color: "rgb(var(--chart-text))" }}>
               {OVERLAYS_V2.map((id, i) => overlays.includes(id) && (
                 <li key={id} className="flex items-center gap-space-1">
                   <span aria-hidden className="inline-block h-0.5 w-3 rounded-pill" style={{ backgroundColor: `rgb(var(--chart-ov-${i + 1}))` }} />

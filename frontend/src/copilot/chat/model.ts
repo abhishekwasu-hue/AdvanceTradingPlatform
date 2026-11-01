@@ -4,6 +4,8 @@ import type { AnalysisChart, AnalysisTable } from "../../optionChain/analyses";
 import type { StrategyDraft } from "../strategyDraft";
 import type { MarketStrip, StripIndex } from "../../dashboard/types";
 import type { AnalysisItem, AnalyzeStatus } from "../../chartAnalyze/types";
+import type { LayerBand } from "../../charting/engine";
+import { ZONE_COLORS } from "../../charting/marketZones";
 
 /**
  * Item 5 (owner's handover, the AI Copilot as a trader's brain), first slice: the chat-first Copilot page's data and its
@@ -271,11 +273,16 @@ export function distanceText(area: NonNullable<AnswerHeadline["area"]>, price: (
   return `${price(area.distance)}${pct} ${area.where}`;
 }
 
-/** CU3: the chart answer's levels to mark on the mini chart - the nearest area's two edges. */
-export function headlineLevels(h: AnswerHeadline | null | undefined): { price: number; title: string; tone: "up" | "down" | "neutral" }[] {
-  if (!h?.area) return [];
-  const tone = h.area.side === "demand" ? "up" : h.area.side === "supply" ? "down" : "neutral";
-  return [{ price: h.area.to, title: "Area top", tone }, { price: h.area.from, title: "Area bottom", tone }];
+/** CU3 + M75 W-1 (W2): the chart answer's nearest area for the mini chart - ONE filled band (buyer / seller colour from
+ * the chart tokens via its role), labelled "Seller area" / "Buyer area" (the owner's words, M75 CW-2) inside or beside it; never two dashed price
+ * lines with "Area top" / "Area bottom" titles over the price axis. */
+export function headlineAreas(h: AnswerHeadline | null | undefined): LayerBand[] {
+  const a = h?.area;
+  if (!a || !Number.isFinite(a.from) || !Number.isFinite(a.to)) return [];
+  const role = a.side ?? "neutral";
+  const label = a.side === "supply" ? "Seller area" : a.side === "demand" ? "Buyer area" : "Area";
+  return [{ low: Math.min(a.from, a.to), high: Math.max(a.from, a.to), role, color: a.side ? ZONE_COLORS[a.side] : undefined, opacity: 0.18,
+            style: "solid", label }];
 }
 
 /** M59 CR-1: a timeframe whose history is not stored yet - "1-hour: data not ready", never a bar count. */

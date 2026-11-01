@@ -59,7 +59,7 @@ export const readChartApi = {
  * line and the commitment candle as a marker. */
 export function readLayer(r: ReadChart): LayerData {
   const bands = r.areas.map((a) => ({
-    low: a.low, high: a.high, color: ZONE_COLORS[a.role], opacity: 0.14, style: "dashed" as const, label: `${a.role} area · ${a.timeframe} · ${a.state}`,
+    low: a.low, high: a.high, role: a.role, color: ZONE_COLORS[a.role], opacity: 0.14, style: "dashed" as const, label: `${a.role === "supply" ? "Seller" : "Buyer"} area · ${a.timeframe} · ${a.state}`,
   }));
   const p = r.structure?.protected;
   const lines = p ? [{ price: p.price, style: "dashed" as const, title: `protected swing ${p.side}` }] : [];

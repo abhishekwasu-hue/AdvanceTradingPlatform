@@ -8,6 +8,7 @@ import { createRegistry, type PanelEntry, type PanelParams } from "./registry";
  * NAV-1 (docs/design/M75_NO_NAVIGATION.md section 4.1): the first three in-place panels - a chart, the broker and the
  * AI key. Each reuses the existing component; it loads in its own chunk the first time the panel opens. The area PRs
  * (NAV-2..8) add their entries here. NAV-2: the Copilot, Analyze a chart, Strategies › Build, News & events, Signals.
+ * NAV-3: the Trading bot page.
  */
 
 const clean = (pathname: string) => pathname.replace(/\/+$/, "") || "/";
@@ -131,7 +132,21 @@ export const SIGNALS_PANEL: PanelEntry = {
   load: () => import("./panels/SignalsPanel"),
 };
 
+// ---- NAV-3: Terminal / charts ------------------------------------------------------------------------------------
+
+/** The Trading bot page (`/deployments`): start a bot, your bots as cards. A Copilot draft handed over with the address
+ * opens in it as on the page (its own location carries the state). */
+export const BOTS_PANEL: PanelEntry = {
+  kind: "bots",
+  keys: [],
+  title: () => "Trading bot",
+  presentation: "drawer",
+  match: ({ pathname }) => (clean(pathname) === "/deployments" ? {} : null),
+  href: () => "/deployments",
+  load: () => import("./panels/BotsPanel"),
+};
+
 export const DEFAULT_PANELS: readonly PanelEntry[] = [
-  CHART_PANEL, BROKER_PANEL, AI_KEY_PANEL, COPILOT_PANEL, ANALYZE_PANEL, STRATEGY_BUILD_PANEL, NEWS_PANEL, SIGNALS_PANEL,
+  CHART_PANEL, BROKER_PANEL, AI_KEY_PANEL, COPILOT_PANEL, ANALYZE_PANEL, STRATEGY_BUILD_PANEL, NEWS_PANEL, SIGNALS_PANEL, BOTS_PANEL,
 ];
 export const DEFAULT_REGISTRY = createRegistry(DEFAULT_PANELS);

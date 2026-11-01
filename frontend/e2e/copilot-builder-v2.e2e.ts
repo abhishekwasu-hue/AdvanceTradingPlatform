@@ -191,7 +191,9 @@ test.describe("Copilot strategy builder behaviour", () => {
     const server = await open(page);
     await askIdea(page);
     const card = await toPaperBot(page);
-    await expect(page).toHaveURL(/\/deployments$/);
+    // M75 NAV-3: the Trading bot page opens in place over the Copilot (a drawer), the draft handed to it.
+    await expect(page.locator("[data-inplace-panel='bots'] [data-block='copilot-draft']")).toBeVisible();
+    await expect(page).toHaveURL(/\/copilot\?panel=bots$/);
     await expect(card).toContainText("Nothing is saved yet");
     const save = card.getByRole("button", { name: "Save as my strategy" });
     await expect(save).toBeDisabled();

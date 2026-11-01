@@ -102,12 +102,19 @@ describe("NAV-2: every Copilot button opens in place (the path stays)", () => {
 });
 
 describe("NAV-2: as before where no panel shows it", () => {
-  it("an answer's draft action (the Trading bot page, no panel yet) navigates with the draft, as today", () => {
+  it("an answer's draft action: the Trading bot page in place since NAV-3 (its panel), the draft handed to it", () => {
     const h = history("/copilot");
     const draft = { copilotDraft: { mode: "PAPER" } };
     inPlace(h).open("/deployments", { state: draft });
-    expect(h.url()).toBe("/deployments");
-    expect(h.location().state).toEqual(draft);
+    expect(h.url()).toBe("/copilot?panel=bots");
+    expect(handoffs(h.location().state)).toEqual([draft]);
+  });
+
+  it("an address no panel shows navigates with its state, as today", () => {
+    const h = history("/copilot");
+    inPlace(h).open("/journal", { state: { x: 1 } });
+    expect(h.url()).toBe("/journal");
+    expect(h.location().state).toEqual({ x: 1 });
   });
 
   it("with ui_v2 off a hand-off navigates with its state and Open chart opens a new browser tab, as before", () => {

@@ -62,13 +62,23 @@ def test_evaluate_records_pass_warn_and_block_events():
             return await evaluate(session, ctx)
     ok = _run(go(quantity=100))          # value 10,000; loss 200; qty 100 -> all PASS
     assert ok.allowed and [c.status for c in ok.checks] == ["PASS", "PASS", "PASS"]
+    # M68 PR-5 (TS1-059): no WARN notice unless an admin set "warn at" (was a fixed 80 %)
+    near = _run(go(quantity=850))
+    assert near.allowed and [c.status for c in near.checks] == ["PASS", "PASS", "PASS"] and not near.notes
+
+    async def warn_at(value):
+        from app.platform import controls
+        async with _session_factory() as session:
+            await controls.set_risk_ceilings(session, await session.get(User, me["id"]), {"warn_at_pct": value}, me["tenant_id"])
+    _run(warn_at(80))
     warn = _run(go(quantity=850))        # value 85,000, loss 1,700, qty 850: each >= 80% of its limit -> WARN
     assert warn.allowed and [c.status for c in warn.checks] == ["WARN", "WARN", "WARN"] and len(warn.notes) == 3
+    assert all("has reached 80% of limit" in c.reason for c in warn.checks)
     block = _run(go(quantity=1_200))     # value 120,000 BLOCK, loss 2,400 BLOCK, qty 1,200 BLOCK
     assert not block.allowed and len(block.reasons) == 3 and all("exceeds limit" in r for r in block.reasons)
 
     events = client.get("/api/risk/events", headers=headers, params={"strategy_id": "ema_rsi_scalper_1m"}).json()
-    assert len(events) == 9 and events[0]["status"] == "BLOCK" and events[-1]["status"] == "PASS"
+    assert len(events) == 12 and events[0]["status"] == "BLOCK" and events[-1]["status"] == "PASS"
     blocked = client.get("/api/risk/events", headers=headers, params={"status": "block"}).json()
     assert len(blocked) == 3 and {e["rule_type"] for e in blocked} == {"MAX_ORDER_VALUE", "MAX_LOSS_PER_TRADE", "MAX_POSITION_QUANTITY"}
 

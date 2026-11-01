@@ -22,7 +22,7 @@ from app.execution.contract_execution import written_lot_cap
 from app.execution.signal_execution import execute_signal_for_user
 from app.execution.smart_execution import slice_units
 from app.instruments.models import ContractSpec
-from app.risk_engine import risk_limits
+from app.risk_engine import risk_limits, risk_manager
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 from app.trading.persistence import build_trading_day_state
 from tests.test_auth_api import _register, _session_factory, client
@@ -43,7 +43,8 @@ def _signal(entry=100.0, stop=90.0, direction=SignalDirection.LONG, rr=None) -> 
                   stop_loss=stop, target1=None, risk_reward=rr, score=0, grade=SignalGrade.VALID, reasons=[], timeframe_combo="manual")
 
 
-def _decide(cfg: RiskConfig, state: TradingDayState | None = None, *, lots: float | None = None, signal: Signal | None = None):
+# M68 PR-2: every entry reaching the risk engine carries the trader's own size (one lot here unless a test names one).
+def _decide(cfg: RiskConfig, state: TradingDayState | None = None, *, lots: float | None = 1, signal: Signal | None = None):
     return RiskManager(cfg).validate_and_size(signal or _signal(), state or TradingDayState(), contract_spec=SPEC,
                                               requested_quantity=lots * LOT if lots else None)
 
@@ -52,7 +53,8 @@ def _decide(cfg: RiskConfig, state: TradingDayState | None = None, *, lots: floa
 
 def test_with_every_check_off_the_typed_lots_are_placed():
     assert _decide(RiskConfig(), lots=7).quantity == 7 * LOT
-    assert _decide(RiskConfig()).quantity == LOT                                   # nothing typed: one lot
+    unsized = _decide(RiskConfig(), lots=None)                                     # M68 PR-2: nothing typed - not placed
+    assert not unsized.approved and unsized.reasons == [risk_manager.NEEDS_LOTS]
     # values stored but switched off read as not set
     stored = RiskConfig(capital=100_000, risk_per_trade_pct=0.5, max_open_positions=1, max_trades_per_day=1, max_lots_per_order=2,
                         min_risk_reward=3.0, max_daily_loss_pct=1.0, max_consecutive_losses=1, margin_safety_pct=50.0)

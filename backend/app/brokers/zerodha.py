@@ -25,6 +25,7 @@ from app.brokers.models import (
     OptionChain,
     OptionChainRow,
     Quote,
+    lot_or_none,
 )
 from app.brokers.timestamps import parse_broker_timestamp
 from app.core import config
@@ -147,7 +148,7 @@ class ZerodhaBroker(BrokerInterface):
                     name=row.get("name") or None,
                     segment=row.get("segment") or None,
                     instrument_type=row.get("instrument_type") or None,
-                    lot_size=int(row["lot_size"]) if row.get("lot_size") else 1,
+                    lot_size=lot_or_none(row.get("lot_size")),       # M68 TS1-088: none given = None, never 1
                     tick_size=float(row["tick_size"]) if row.get("tick_size") else 0.05,
                     expiry=row.get("expiry") or None,
                     strike=strike_raw or None,

@@ -209,6 +209,11 @@ def needs_setting_text(fields: list[str]) -> str:
     return f"Needs your setting: {', '.join(fields)}"
 
 
+def needs_setting_detail(fields: list[str]) -> list[dict[str, Any]]:
+    """The 422 detail for unanswered settings, one item per field, in the same shape as the other M68 routes (PR-1, PR-4)."""
+    return [{"loc": ["body", "answers", f], "type": "needs_setting", "msg": needs_setting_text([f])} for f in fields]
+
+
 # --- reading the free-text request -------------------------------------------------------------------
 
 _DEVANAGARI = re.compile(r"[ऀ-ॿ]")
@@ -912,5 +917,5 @@ def frame_from_candles(candles) -> pd.DataFrame:
     return df
 
 
-__all__ = ["QUESTIONS", "InterviewAnswers", "REQUIRED_ANSWERS", "unanswered", "needs_setting_text", "is_vague", "prefill_from_prompt", "start", "analyse_market", "risk_plan",
+__all__ = ["QUESTIONS", "InterviewAnswers", "REQUIRED_ANSWERS", "unanswered", "needs_setting_text", "needs_setting_detail", "is_vague", "prefill_from_prompt", "start", "analyse_market", "risk_plan",
            "contract_plan", "build_plan", "regime_fit", "frame_from_candles"]

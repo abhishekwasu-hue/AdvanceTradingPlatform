@@ -355,7 +355,7 @@ def _read_symbol(body: InterviewPlanBody) -> str:
     """M68: the symbol whose candles the plan reads - asked for, never a pre-chosen one."""
     symbol = body.symbol or body.answers.symbol
     if not symbol:
-        raise HTTPException(status_code=422, detail=interview.needs_setting_text(["symbol"]))
+        raise HTTPException(status_code=422, detail=interview.needs_setting_detail(["symbol"]))
     return symbol
 
 
@@ -446,7 +446,7 @@ async def interview_deploy(body: CandidateDeployBody, user: User = Depends(requi
     # M68: a bot is never created from an answer he did not give - each unanswered one is asked for by name.
     missing = set(metrics.get("unanswered") or []) | ({"symbol"} if not payload.get("symbol") else set())
     if missing:
-        raise HTTPException(status_code=422, detail=interview.needs_setting_text([k for k in interview.REQUIRED_ANSWERS if k in missing]))
+        raise HTTPException(status_code=422, detail=interview.needs_setting_detail([k for k in interview.REQUIRED_ANSWERS if k in missing]))
     evidence.require_server(metrics.get("data_source"), "Deploying an interview option")      # H-C1 a
     tested = (metrics.get("evidence") or {})
     if not tested.get("tested") or int(tested.get("total_trades") or 0) <= 0:

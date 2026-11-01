@@ -90,7 +90,8 @@ def test_a_plan_with_no_symbol_asks_for_it(monkeypatch):
     _serve(monkeypatch)
     headers = _tenant("m68-pr8b-nosymbol@example.com")["headers"]
     r = _plan(headers, {k: v for k, v in ALL.items() if k != "symbol"})
-    assert r.status_code == 422 and r.json()["detail"] == "Needs your setting: symbol"
+    assert r.status_code == 422 and r.json()["detail"] == [{"loc": ["body", "answers", "symbol"], "type": "needs_setting",
+                                                            "msg": "Needs your setting: symbol"}]
 
 
 @pytest.mark.parametrize("field", ["symbol", "instrument", "vehicle", "style"])
@@ -104,7 +105,8 @@ def test_the_deploy_asks_for_each_unanswered_setting(monkeypatch, field):
     assert body["unanswered"] == [field] and body["candidate_id"]
     _with_evidence(body["candidate_id"])
     refused = _deploy(headers, body["candidate_id"])
-    assert refused.status_code == 422 and refused.json()["detail"] == f"Needs your setting: {field}"
+    assert refused.status_code == 422 and refused.json()["detail"] == [{"loc": ["body", "answers", field], "type": "needs_setting",
+                                                                      "msg": f"Needs your setting: {field}"}]
 
 
 def test_all_answered_deploys_on_the_strategys_own_base_candles(monkeypatch):
@@ -122,3 +124,11 @@ def test_all_answered_deploys_on_the_strategys_own_base_candles(monkeypatch):
     frames = registry.get(payload["strategy_id"]).timeframes
     own = min(frames, key=lambda tf: iv.timeframe_minutes(tf) or 10**9)
     assert (dep["symbol"], dep["mode"], dep["holding"], dep["timeframe"]) == ("RELIANCE", "PAPER", "INTRADAY", own)
+
+
+def test_the_needs_setting_detail_names_each_field_in_the_shape_of_the_other_m68_routes():
+    """Review (#854): one item per unanswered setting, `loc` at the answer, `type` needs_setting (as PR-1 and PR-4)."""
+    assert iv.needs_setting_detail(["instrument", "style"]) == [
+        {"loc": ["body", "answers", "instrument"], "type": "needs_setting", "msg": "Needs your setting: instrument"},
+        {"loc": ["body", "answers", "style"], "type": "needs_setting", "msg": "Needs your setting: style"}]
+    assert iv.needs_setting_detail([]) == []

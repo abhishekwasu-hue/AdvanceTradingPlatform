@@ -63,7 +63,7 @@ describe("the namespace as the frontend reads it", () => {
     expect(defaultsOf(formOf(SOME))).toEqual({ value: SOME, problems: [] });
     expect(defaultsOf(formOf(EMPTY_DEFAULTS))).toEqual({ value: EMPTY_DEFAULTS, problems: [] });
     expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), max_lots: "0" }).problems).toEqual(["Lots for a new bot: a whole number of 1 or more."]);
-    expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), trailing_stop_pct: "0" }).problems).toEqual(["Trailing stop: a number above 0 up to 50."]);
+    expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), trailing_stop_pct: "0" }).problems).toEqual(["Trailing stop: a number above 0 up to 99.99."]);
     expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), time_exit_at: "3 pm" }).problems).toEqual(["Flat at: a time like 15:10."]);
     expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), option_strategy: "LONG_STRADDLE", stop_credit_pct: "150" }).problems[0]).toMatch(/at most 100/);
   });

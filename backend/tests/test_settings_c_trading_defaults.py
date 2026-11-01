@@ -62,9 +62,9 @@ def test_round_trip_and_replace():
     {"stop_credit_pct": 501},
     {"entry_mode": "AUTO_LIVE"},
     {"exit_rules": {"trailing_stop_pct": 0}},
-    {"exit_rules": {"trailing_stop_pct": 51}},
-    {"exit_rules": {"break_even_at_r": 11}},
-    {"exit_rules": {"time_exit_minutes": 376}},
+    {"exit_rules": {"trailing_stop_pct": 100}},              # M68 PR-3: no 50 % cap; 100 % = a stop at zero
+    {"exit_rules": {"break_even_at_r": 0}},                 # M68 PR-3: no 10 R cap; more than zero
+    {"exit_rules": {"time_exit_minutes": 0}},               # M68 PR-3: no 375-minute cap; at least 1
     {"exit_rules": {"time_exit_at": "25:00"}},
     {"exit_rules": {"stop_source": "swing"}},           # not an ExitRules field (review R7)
     {"ticket": {"lots": 0}},
@@ -134,7 +134,7 @@ def test_each_user_has_their_own_defaults():
 
 
 def test_a_stored_value_a_newer_release_wrote_still_reads():
-    raw = json.dumps({"max_lots": 2, "stop_source": "swing", "exit_rules": {"trailing_stop_pct": 99}})
+    raw = json.dumps({"max_lots": 2, "stop_source": "swing", "exit_rules": {"trailing_stop_pct": 100}})   # M68 PR-3: 99 is valid now
     # the unknown key is dropped, the bad exit value takes its default (empty), the lots are kept
     assert prefs.stored_value(NS, raw) == {**EMPTY, "max_lots": 2, "exit_rules": {"trailing_stop_pct": None, "break_even_at_r": None,
                                                                                   "time_exit_minutes": None, "time_exit_at": None}}

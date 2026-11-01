@@ -238,7 +238,9 @@ def test_a_run_whose_pause_never_engages_reports_nothing_and_hashes_without_the_
 
 
 def test_engine_versions_were_bumped_because_results_change():
-    assert underlying_engine.ENGINE_VERSION == "6" and options_engine.ENGINE_VERSION == "9-options"
+    # M68 PR-3 bumped both again (7 / 10-options): with no time of the user's own, an intraday run has no 15:00 cut-off and no
+    # 15:15 square-off any more (tests/test_rev1_s1_s2_backtest_intraday.py test_m68_nothing_saved_no_cut_off_and_no_square_off).
+    assert underlying_engine.ENGINE_VERSION == "7" and options_engine.ENGINE_VERSION == "10-options"
 
 
 # --- live / PAPER -------------------------------------------------------------------------------------------------------

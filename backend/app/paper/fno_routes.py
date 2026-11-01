@@ -278,7 +278,7 @@ class GroupExitBody(BaseModel):
     target_value: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     spot_symbol: Optional[str] = Field(default=None, pattern=SYMBOL)
     spot_exchange: Optional[Literal["NSE", "BSE"]] = None
-    check_mode: Literal["TOUCH", "CLOSE"] = "TOUCH"
+    check_mode: Literal["TOUCH", "CLOSE"] | None = None     # M68 PR-3 (TS1-031): None = his setting, else asked
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
     basket_ref: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9:_-]{1,64}$")
     client_ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
@@ -300,11 +300,13 @@ async def _group_ask(session: AsyncSession, user: User, body: GroupExitBody) -> 
     from app.execution import group_exits
     ids = await group_exits.all_open_ids(session, user) if body.scope == "ALL_OPEN" else list(body.trade_ids)
     kind, spec = body.trailing.as_tuple() if body.trailing is not None else (group_exits.TRAIL_NONE, None)
-    return group_exits.GroupExitAsk(client_ref=f"cx:{body.client_ref}", trade_ids=ids, measure=body.measure,
-                                    sl_value=body.sl_value, target_value=body.target_value, spot_symbol=body.spot_symbol,
-                                    spot_exchange=body.spot_exchange, check_mode=body.check_mode,
-                                    timeframe_minutes=body.timeframe_minutes, scope=body.scope, origin="CX",
-                                    basket_ref=body.basket_ref, trail_kind=kind, trail=spec)
+    from app.execution import exit_settings
+    ask = group_exits.GroupExitAsk(client_ref=f"cx:{body.client_ref}", trade_ids=ids, measure=body.measure,
+                                   sl_value=body.sl_value, target_value=body.target_value, spot_symbol=body.spot_symbol,
+                                   spot_exchange=body.spot_exchange, check_mode=body.check_mode,
+                                   timeframe_minutes=body.timeframe_minutes, scope=body.scope, origin="CX",
+                                   basket_ref=body.basket_ref, trail_kind=kind, trail=spec)
+    return group_exits.resolve_check_mode(ask, (await exit_settings.load(session, user)).combined_check_mode)
 
 
 async def _lookup(session: AsyncSession, user: User) -> Any:

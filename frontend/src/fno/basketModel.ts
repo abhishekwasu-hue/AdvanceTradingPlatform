@@ -87,6 +87,9 @@ const SHAPES: Record<StrategyName, Shape[]> = {
 
 /** The legs of a ready strategy around `around`, `width_steps` strikes apart, with the chain's prices and IVs and the
  * user's own lots and stop for a sold leg - or a plain reason when the chain cannot give them. */
+/** M68 PR-3 (TS1-029): what a ready strategy says when the basket settings did not load (nothing is filled in instead). */
+export const SETTINGS_NOT_LOADED = "Your basket settings did not load, so no ready strategy was built. Try again in a moment.";
+
 export function readyStrategy(name: StrategyName, inp: StrategyInputs): { legs: NewLeg[]; problem: string | null } {
   const step = strikeStep(inp.rows);
   if (step === null) return { legs: [], problem: "The chain has too few strikes for a ready strategy." };

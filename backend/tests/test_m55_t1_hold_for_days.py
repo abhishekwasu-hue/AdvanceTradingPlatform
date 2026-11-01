@@ -6,7 +6,7 @@ or settles on its expiry day. A naked single option written overnight, an undefi
 overnight, and every intraday bot keep the rules they had.
 """
 import asyncio
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 import numpy as np
 import pandas as pd
@@ -240,6 +240,8 @@ def _two_sessions():
 
 
 def _bt(frame, **kw):
+    # M68 PR-3 (D1): a user who saved "new entries until 15:00" and "square-off 15:15" (none is ATP's own any more)
+    kw = {"entries_until": time(15, 0), "square_off_at": time(15, 15), **kw}
     cfg = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, max_lots=1, **kw)
     return run_option_backtest(_OneShot(), frame, "NIFTY 50", "1min", RiskConfig(capital=5_000_000, risk_per_trade_pct=1.0), cfg)
 
@@ -254,7 +256,7 @@ def test_backtest_holds_the_spread_overnight_and_squares_off_the_rest():
     assert intraday.trades[0].exit_reason.startswith("Square-off") and "held_for_days" not in intraday.options
     # "Hold for days" means nothing on a structure that may not be held: the square-off stays.
     cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SHORT_STRADDLE, implied_volatility=0.14, max_lots=1, stop_credit_pct=100,
-                               hold_for_days=True)
+                               hold_for_days=True, entries_until=time(15, 0), square_off_at=time(15, 15))
     straddle = run_option_backtest(_OneShot(), frame, "NIFTY 50", "1min", RiskConfig(capital=5_000_000, risk_per_trade_pct=1.0), cfg)
     assert straddle.trades, straddle.options["signals_skipped"]
     assert straddle.trades[0].exit_reason.startswith("Square-off")

@@ -1,3 +1,4 @@
+from datetime import time as dtime
 from typing import Dict, Optional
 
 import pandas as pd
@@ -9,10 +10,10 @@ from app.backtest.windows import WindowCursor, bar_length, decision_time
 from app.core.enums import SignalDirection
 from app.core.models import BacktestResult, RiskConfig, Trade
 from app.core.resampling import resample_ohlc
+from app.execution.exit_settings import in_window
 from app.execution.paper_charges import STATUTORY_ONLY, PaperCharges
 from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.instruments.registry import get_contract_spec
-from app.market_data.calendar import intraday_cutoffs
 from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 from app.strategy_engine.base import BaseStrategy
@@ -21,7 +22,7 @@ from app.trading.exit_rules import ExitRules, apply_exit_rules
 __all__ = ["resample_ohlc", "run_backtest"]
 
 
-ENGINE_VERSION = "6"   # REV-S1 / S2: the live INTRADAY entry cut-off and square-off; the stop before a time exit on one bar (5: CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (4: realism 1 closed HTF bars; 3: P0.6 daily counters, gap fills)
+ENGINE_VERSION = "7"   # M68 PR-3 (D1): the user's own entry window and square-off time, none by default (6: REV-S1 / S2: the live INTRADAY entry cut-off and square-off; the stop before a time exit on one bar (5: CP6-15: the losses-in-a-row pause ends at the next session or holds to the end (4: realism 1 closed HTF bars; 3: P0.6 daily counters, gap fills)
 
 
 @with_prefix_cache
@@ -34,6 +35,7 @@ def run_backtest(
     exit_rules: Optional[ExitRules] = None,
     models: Optional[ModelSet] = None,
     session_rules: bool = True,
+    cutoffs: tuple[dtime | None, dtime | None, dtime | None] = (None, None, None),
     charges: PaperCharges | None = None,
 ) -> BacktestResult:
     """Event-driven backtest over historical OHLCV bars.
@@ -44,6 +46,10 @@ def run_backtest(
 
     `session_rules=False` only re-runs the engine as it was before REV-S1 (no INTRADAY cut-off / square-off) for the
     recorded golden results; every product path keeps the default, the live worker's rules.
+
+    `cutoffs` (M68 PR-3, TS1-027, D1): the user's own (new entries from, new entries until, square-off time) - the values
+    the live worker reads for him (app/execution/exit_settings.py, BacktestRunner passes them). Each None = Not set: no
+    ATP entry cut-off and no ATP square-off (parity: live does the same).
 
     `charges` (M68 PR-7, TS1-069): the trader's own paper charges - brokerage per order and slippage per side - so a
     backtest pays what his paper fills pay (parity); None = statutory charges only (no brokerage, no slippage).
@@ -97,10 +103,10 @@ def run_backtest(
     template_exit = bool(getattr(strategy, "acts_on_exit_signal", False))
     exit_due = False
     # REV-S1: backtest = live. A strategy on intraday candles trades INTRADAY (a daily-only one is SWING - the deployment
-    # rule in deployments/routes.py), and the worker gives INTRADAY no new entries from the venue's cut-off and squares it
-    # off at the venue's square-off time (trading_worker.py, market_data.calendar.intraday_cutoffs). 24x7 venues: neither.
+    # rule in deployments/routes.py). M68 PR-3 (D1): the worker gives it no new entries outside the user's own window and
+    # squares it off at his own Square-off time (trading_worker.py, app/execution/exit_settings.py); Not set: neither.
     intraday = list(getattr(strategy, "timeframes", [])) != ["day"] and bar_len < pd.Timedelta(days=1) and session_rules
-    no_new_after, square_off_at = intraday_cutoffs(contract_spec.exchange if contract_spec else "NSE") if intraday else (None, None)
+    entries_from, no_new_after, square_off_at = cutoffs if intraday else (None, None, None)
 
     for i in range(min_hist, len(primary_df)):
         bar = primary_df.iloc[i]
@@ -194,8 +200,8 @@ def run_backtest(
         if open_trade is None and pending is None:
             window = cursor.at(bar_close_at)   # only bars that had closed (no forming HTF bar)
             signal = strategy.analyze(window, symbol)
-            # REV-S1: as the worker, the signal is still read after the venue's cut-off, but an INTRADAY one is not entered
-            entries_allowed = no_new_after is None or close_ist.time() < no_new_after
+            # REV-S1: as the worker, the signal is still read outside his window, but an INTRADAY one is not entered
+            entries_allowed = in_window(entries_from, no_new_after, close_ist.time())
             if signal.is_tradeable and entries_allowed:
                 state.as_of = current_time       # M64: the cool-down in minutes, as live (parity)
                 decision = risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)

@@ -204,7 +204,8 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
         try { next = { expiry: later, rows: (await chain.loadChain(later)).rows }; } catch { next = null; }
       }
     }
-    if (settings === null) { setNote({ tone: "warn", text: settingsFailed ? SETTINGS_FAILED : SETTINGS_LOADING }); return; }   // M68 PR-2
+    // M68 PR-2 / PR-3 (TS1-023 / 029): no hidden width / lots / 50 % sold-leg stop while his settings are not read - say so
+    if (settings === null) { setNote({ tone: "warn", text: settingsFailed ? SETTINGS_FAILED : SETTINGS_LOADING }); return; }
     const built = readyStrategy(name, { underlying: chain.symbol, expiry: live.expiry, rows, around: pick, settings, next });
     if (built.problem) { setNote({ tone: "warn", text: built.problem }); return; }
     store.replace(built.legs);

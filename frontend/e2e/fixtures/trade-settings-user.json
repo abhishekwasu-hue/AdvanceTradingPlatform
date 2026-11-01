@@ -401,6 +401,139 @@
    "title": "Exits",
    "fields": [
     {
+     "key": "exits.square_off_time",
+     "label": "Square-off time",
+     "kind": "time",
+     "help": "Intraday positions are closed at this time. Not set: ATP closes nothing by itself.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.incomplete_legs_action",
+     "label": "A multi-leg order fills only in part",
+     "kind": "choice",
+     "help": "What happens to the filled legs when you do not answer in time.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "CLOSE_FILLED",
+       "label": "Close the filled legs"
+      },
+      {
+       "value": "KEEP",
+       "label": "Keep them"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.incomplete_legs_answer_minutes",
+     "label": "Time to answer",
+     "kind": "whole",
+     "help": "Minutes you have to answer before your choice above applies.",
+     "unit": "minutes",
+     "choices": [],
+     "low": 1,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.combined_measure",
+     "label": "Combined exit measured on",
+     "kind": "choice",
+     "help": "What an exit for a whole structure watches.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "MTM_INR",
+       "label": "Profit or loss in rupees"
+      },
+      {
+       "value": "NET_PREMIUM",
+       "label": "Net premium"
+      },
+      {
+       "value": "SPOT",
+       "label": "The index or stock price"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": "premium",
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.combined_check_mode",
+     "label": "Combined exit checked",
+     "kind": "choice",
+     "help": "When a combined exit counts as reached.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "TOUCH",
+       "label": "When the price touches it"
+      },
+      {
+       "value": "CLOSE",
+       "label": "When a candle closes past it"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "exits.close_if_broker_stop_rejected",
+     "label": "Close a position whose broker stop is refused",
+     "kind": "switch",
+     "help": "On: a position is closed when the broker refuses its stop order.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
      "key": "exits.broker_square_off",
      "label": "Your broker's intraday close",
      "kind": "fact",
@@ -1121,6 +1254,40 @@
      "choices": [],
      "low": 0,
      "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.window_start",
+     "label": "New entries from",
+     "kind": "time",
+     "help": "No new entry before this time. Exits always work.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "automation.window_end",
+     "label": "New entries until",
+     "kind": "time",
+     "help": "No new entry after this time. Exits always work.",
+     "unit": "",
+     "choices": [],
+     "low": null,
+     "high": null,
      "low_open": false,
      "term": null,
      "fact": false,

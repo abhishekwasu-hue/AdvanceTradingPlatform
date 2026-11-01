@@ -46,9 +46,10 @@ router = APIRouter(tags=["backtest"])
 
 
 class ExitRulesBody(BaseModel):
-    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, le=50)
-    break_even_at_r: Optional[float] = Field(default=None, gt=0, le=10)
-    time_exit_minutes: Optional[int] = Field(default=None, ge=1, le=375)
+    trailing_stop_pct: float | None = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
+    break_even_at_r: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    # Technical bound, not a trading cap (~19 years): keeps the time arithmetic safe; any holding period a user sets fits.
+    time_exit_minutes: int | None = Field(default=None, ge=1, le=10_000_000)
     time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
     def to_rules(self) -> ExitRules:
@@ -228,18 +229,36 @@ async def _models_allowed(session: AsyncSession, models: ModelSet, tenant_id: Op
                                                     f"these models are not enabled for this organisation (flag {MODELS_FLAG})")
 
 
+async def user_cutoffs(session: AsyncSession, user: User | None, exchange: str | None = None, symbol: str | None = None) -> tuple:
+    """M68 PR-3 (TS1-027, parity scan = backtest = live): the user's own (new entries from, new entries until, square-off
+    time) for the venue, exactly as the worker reads them; (None, None, None) for no user or Not set. The venue is the
+    symbol's own where the registry knows it (as the engine's clock), else `exchange`."""
+    from app.execution import exit_settings
+    from app.instruments.registry import get_contract_spec
+    from app.market_data.calendar import session_family
+    own = await exit_settings.load(session, user)
+    spec = get_contract_spec(symbol) if symbol else None
+    family = session_family(spec.exchange if spec is not None else exchange)
+    return own.entries_from(family), own.entries_until(family), own.square_off_at(family)
+
+
 class BacktestRunner:
     """Phase W: one object that runs `body` as an underlying or an option backtest, so every
     endpoint (plain, Monte Carlo, walk-forward) dispatches the same way. Built once per request:
     the option pricer (recorded quotes for the candle span, the holiday calendar) is loaded here."""
 
-    def __init__(self, body: BacktestBody, risk: RiskConfig, pricer=None, holidays=(), charges: PaperCharges | None = None) -> None:
+    def __init__(self, body: BacktestBody, risk: RiskConfig, pricer=None, holidays=(), cutoffs=(None, None, None),
+                 charges: PaperCharges | None = None) -> None:
         self.body = body
         self.risk = risk
+        # M68 PR-3 (TS1-027, D1): the user's own (new entries from, until, square-off time); Not set = none (as live).
+        self.cutoffs = cutoffs
         # M68 PR-7 (TS1-069): the trader's own paper charges (None: statutory charges only) - backtest = paper (parity).
         self.charges = charges or STATUTORY_ONLY
         self.rules = body.exit_rules.to_rules() if body.exit_rules else None
         self.config = body.options.to_config(holidays) if body.options is not None else None
+        if self.config is not None:
+            self.config.entries_from, self.config.entries_until, self.config.square_off_at = cutoffs
         if self.config is not None and body.template_exits is not None:
             self.config.stop_source = body.template_exits.stop_source        # section 5: PREMIUM_PCT on a single option
         self.pricer = pricer
@@ -265,10 +284,11 @@ class BacktestRunner:
         if user is not None:
             from app.paper import paper_settings
             risk, charges = await paper_settings.backtest_inputs(session, user, risk)
+        cutoffs = await user_cutoffs(session, user, body.exchange, body.symbol)      # M68 PR-3 (TS1-027)
         if body.options is not None:
             await own_options(session, user, body.options)                   # M68 PR-4: his own Options, else asked
         if body.options is None:
-            runner = cls(body, risk, charges=charges)
+            runner = cls(body, risk, cutoffs=cutoffs, charges=charges)
             await _models_allowed(session, runner.models, tenant_id)
             return runner
         await _models_allowed(session, cls(body, risk).models, tenant_id)       # N7 C2c: the option engine's models too
@@ -307,14 +327,14 @@ class BacktestRunner:
                         "allow the synthetic fallback or upload rows") if byob else (
                         f"No recorded option-chain quotes for {underlying} in the candle span; allow the synthetic fallback or upload rows"))
             pricer = SnapshotPricer(rows, max_age_minutes=opts.snapshot_max_age_minutes, fallback=fallback)
-        runner = cls(body, risk, pricer=pricer, holidays=holidays, charges=charges)
+        runner = cls(body, risk, pricer=pricer, holidays=holidays, cutoffs=cutoffs, charges=charges)
         runner.pricing_note = note
         return runner
 
     def run(self, strategy, df) -> BacktestResult:
         if self.config is None:
             result = run_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, exit_rules=self.rules,
-                                  models=self.models, charges=self.charges)
+                                  models=self.models, cutoffs=self.cutoffs, charges=self.charges)
         else:
             try:
                 result = run_option_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, self.config,
@@ -338,7 +358,9 @@ class BacktestRunner:
                                                                              "slippage_pct": self.charges.slippage_pct}}),
             # section 5: likewise only a chosen template exit enters it
             **({"template_exits": self.body.template_exits.model_dump()} if self.body.template_exits is not None
-               and not self.body.template_exits.to_exits().is_default else {}))
+               and not self.body.template_exits.to_exits().is_default else {}),
+            # the user's own entry / square-off times enter it only when one is set, so runs without them keep their hash
+            **({"cutoffs": [t.isoformat() if t else None for t in self.cutoffs]} if any(self.cutoffs) else {}))
         return result
 
 

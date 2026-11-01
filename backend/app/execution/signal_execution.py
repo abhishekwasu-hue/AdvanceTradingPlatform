@@ -557,7 +557,8 @@ async def execute_signal_for_user(
                 # A live position with no broker-side stop is the single most dangerous state
                 # this platform can be in - CRITICAL, immediately, to the whole tenant.
                 closed_note = ""
-                if config.LIVE_EXIT_IF_NO_STOP and broker is not None:
+                from app.execution.exit_settings import close_if_stop_rejected  # M68 PR-3 (TS1-032): his switch, or the operator's
+                if broker is not None and await close_if_stop_rejected(session, tenant_id=user.tenant_id, user_id=user.id):
                     from app.trading.stop_guard import exit_unprotected  # local: stop_guard imports the monitor
                     try:
                         done = await exit_unprotected(session, trade_record, broker, "the protective stop failed at entry",

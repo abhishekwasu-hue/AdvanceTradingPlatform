@@ -73,6 +73,27 @@ export function orderDefaultsOf(view: TradeSettingsView | null | undefined): Ord
   return out;
 }
 
+// ---------------------------------------------------------------- M68 PR-3: Exits for the combined / strategy exit forms
+
+export const COMBINED_MEASURE_KEY = "exits.combined_measure";
+export const COMBINED_CHECK_KEY = "exits.combined_check_mode";
+
+export interface ExitDefaults {
+  combinedMeasure?: "MTM_INR" | "NET_PREMIUM" | "SPOT";
+  combinedCheck?: "TOUCH" | "CLOSE";
+}
+
+/** The trader's own saved Exits values a form starts from (only the ones he saved; nothing is filled in by ATP). */
+export function exitDefaultsOf(view: TradeSettingsView | null | undefined): ExitDefaults {
+  const out: ExitDefaults = {};
+  for (const f of view?.sections.flatMap((s) => s.fields) ?? []) {
+    if (!f.saved) continue;
+    if (f.key === COMBINED_MEASURE_KEY && (f.value === "MTM_INR" || f.value === "NET_PREMIUM" || f.value === "SPOT")) out.combinedMeasure = f.value;
+    if (f.key === COMBINED_CHECK_KEY && (f.value === "TOUCH" || f.value === "CLOSE")) out.combinedCheck = f.value;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- M68 PR-7: Paper account (capital, charges model)
 
 export const PAPER_CAPITAL_KEY = "paper_account.capital";

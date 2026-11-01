@@ -158,17 +158,21 @@ def _check(user: User, trade: Optional[TradeRecord]) -> TradeRecord:
     return trade
 
 
-async def _prices(session: AsyncSession, user: User, legs: Sequence[TradeRecord]) -> Tuple[Dict[int, float], str]:
-    """Every leg's exit price, or ValueError before anything closes (a group never closes half on a missing quote)."""
+async def _prices(session: AsyncSession, user: User, legs: Sequence[TradeRecord], per_leg: dict[int, str] | None = None
+                  ) -> Tuple[Dict[int, float], str]:
+    """Every leg's exit price. M68 PR-3 (TS1-097, ADR-0004): never refused for a missing quote - a leg with no live or
+    recent price closes at its older price, else its entry price, and the label says so (approval.exit_now_price)."""
     from app.ai.worker_bridge import price_lookup_for_user
-    from app.execution.approval import exit_price
+    from app.execution.approval import exit_now_price, source_words
     lookup = await price_lookup_for_user(session, user)
     prices: Dict[int, float] = {}
-    sources = set()
+    sources: list[str] = []
     for leg in legs:
-        prices[leg.id], source = await exit_price(session, leg, lookup)
-        sources.add(source)
-    return prices, ("live price" if sources == {"live price"} else "last seen price")
+        prices[leg.id], source = await exit_now_price(session, leg, lookup)
+        sources.append(source)
+        if per_leg is not None:
+            per_leg[leg.id] = source                 # each leg's own price source, for its own exit reason
+    return prices, source_words(sources)
 
 
 def _row(trade: TradeRecord, outcome: Any) -> Dict[str, Any]:
@@ -202,14 +206,15 @@ async def exit_leg(session: AsyncSession, user: User, trade_id: int, *, confirm:
 
 async def exit_group(session: AsyncSession, user: User, trade_id: int) -> Dict[str, Any]:
     """"Exit the whole group": every open leg of this leg's basket, the sold legs first, then the hedges (`close_group`;
-    a LIVE short that does not close keeps its hedges open). Priced before anything closes: one leg without a price closes
-    nothing and says so."""
+    a LIVE short that does not close keeps its hedges open). Priced before anything closes; a leg without a live or recent
+    price is priced at its older / entry price (M68 PR-3, TS1-097: never refused for a price)."""
     from app.audit.log import write_audit_log
     from app.trading.position_monitor import close_group
     trade = _check(user, await session.get(TradeRecord, trade_id))
     ref, legs = await group_of(session, trade)
+    per_leg: dict[int, str] = {}
     try:
-        prices, source = await _prices(session, user, legs)
+        prices, source = await _prices(session, user, legs, per_leg)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     for leg in legs:
@@ -217,7 +222,8 @@ async def exit_group(session: AsyncSession, user: User, trade_id: int) -> Dict[s
     await write_audit_log(session, trade.tenant_id, user.id, "exit_group", f"basket {ref or '-'}: {len(legs)} leg(s) at {source}")
     await session.commit()
     by_id = {leg.id: leg for leg in legs}
-    outcomes = await close_group(session, legs, prices, f"Exit the whole group ({source})", broker=None, user_id=user.id)
+    outcomes = await close_group(session, legs, prices, f"Exit the whole group ({source})", broker=None, user_id=user.id,
+                                 reasons={i: f"Exit the whole group ({s})" for i, s in per_leg.items()})
     rows = [_row(by_id[o.trade_id], o) for o in outcomes if o.trade_id in by_id]
     if not any(r["closed"] for r in rows):
         raise HTTPException(status_code=409, detail="; ".join(w for r in rows for w in r["warnings"]) or "The group could not be closed")

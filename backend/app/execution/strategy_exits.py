@@ -109,7 +109,7 @@ async def arm(session: AsyncSession, user_id: int, basket_ref: str, trade_ids: S
         group_ask = gx.GroupExitAsk(client_ref=client_ref(basket_ref), trade_ids=ids, measure=measure, sl_value=sl,
                                     target_value=target, spot_symbol=spot_symbol, spot_exchange=spot_exchange,
                                     scope="GROUP", origin=ORIGIN, basket_ref=basket_ref, trail_kind=ask.trail_kind,
-                                    trail=trail)
+                                    trail=trail, check_mode=gx.TOUCH)   # M68 PR-3: a strategy exit has no candle check (its only mode)
         value = None
         if measure != gx.MTM_INR:
             value = await gx.current_value(session, measure, trades, price_lookup, spot_symbol=spot_symbol,

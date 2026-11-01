@@ -889,7 +889,7 @@ EXECUTION_CORE_DRAIN_SECONDS = _bounded_int("EXECUTION_CORE_DRAIN_SECONDS", 20, 
 SCAN_AUTO_PAPER_MAX_PER_DAY = _bounded_int("SCAN_AUTO_PAPER_MAX_PER_DAY", 3, 1, 20)
 SCAN_AUTO_PAPER_COOLDOWN_MINUTES = _bounded_int("SCAN_AUTO_PAPER_COOLDOWN_MINUTES", 30, 0, 24 * 60)
 # Review of X2: an arming lasts this many days (then the owner arms again), and no Auto PAPER entry is placed at or after
-# this IST time (HH:MM; empty = the venue's own no-new-entries time, 15:00 on NSE, and never after the 15:15 square-off).
+# this IST time (HH:MM; empty = none of the operator's own - M68 PR-3: the owner's own entry window and square-off apply).
 SCAN_AUTO_PAPER_ARM_DAYS = _bounded_int("SCAN_AUTO_PAPER_ARM_DAYS", 7, 1, 90)
 SCAN_AUTO_PAPER_LAST_ENTRY = os.environ.get("SCAN_AUTO_PAPER_LAST_ENTRY", "").strip()
 
@@ -980,9 +980,7 @@ VIX_GATE_MAX_AGE_MINUTES = _bounded_int("VIX_GATE_MAX_AGE_MINUTES", 45, 1, 24 * 
 VIX_GATE_CHECK_AT = os.environ.get("VIX_GATE_CHECK_AT", "09:20").strip() or "09:20"
 VIX_GATE_GRACE_MINUTES = _bounded_int("VIX_GATE_GRACE_MINUTES", 10, 0, 240)
 VIX_GATE_CAPTURE_MINUTES = _bounded_int("VIX_GATE_CAPTURE_MINUTES", 15, 1, 240)
-# A ticket's time stop must be later than the current IST time plus this many minutes (a time already past would close
-# the position at once).
-TICKET_TIME_STOP_MIN_LEAD_MINUTES = _bounded_int("TICKET_TIME_STOP_MIN_LEAD_MINUTES", 5, 0, 120)
+# M68 PR-3 (TS1-033): a ticket's time stop must only be later than now (IST); the old 5-minute lead was ATP's own.
 VIX_GATE_UNDERLYINGS = tuple(s.strip().upper() for s in os.environ.get("VIX_GATE_UNDERLYINGS", "NIFTY,BANKNIFTY,SENSEX").split(",") if s.strip())
 
 # AUD-G1.1 (owner audit 28 Oct; DPDP): a user's own "Delete my account" takes effect after this many days; until then

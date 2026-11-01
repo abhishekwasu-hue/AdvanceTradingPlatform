@@ -1207,8 +1207,10 @@ async def _monitor_group(
 async def close_group(
     session: AsyncSession, legs: List[TradeRecord], prices: Dict[int, float], reason: str, *,
     broker: Optional[BrokerInterface], user_id: Optional[int], underlying_price: Optional[float] = None,
+    reasons: dict[int, str] | None = None,
 ) -> List[CloseOutcome]:
-    """Shorts first (risk off), then the wings. Each leg books its own P&L. `underlying_price`: the quote the exit was
+    """Shorts first (risk off), then the wings. `reasons` (M68 PR-3, TS1-097): a leg's own reason where it differs (the price
+    source of a user-pressed exit, per leg); `reason` otherwise. Each leg books its own P&L. `underlying_price`: the quote the exit was
     judged on (journal IV at exit only). A leg missing from `prices` is not closed this time (no quote).
 
     Naked-short guard (PAPER and LIVE alike, CX review F1): when a SHORT leg did not close, the wings are NOT closed -
@@ -1232,7 +1234,7 @@ async def close_group(
             leg_broker = broker if leg.mode == ExecutionMode.LIVE.value else None
             if leg.mode == ExecutionMode.LIVE.value and leg_broker is None:
                 leg_broker = await broker_for_trade(session, leg)
-            outcome = await close_position(session, leg, prices[leg.id], reason, broker=leg_broker, user_id=user_id,
+            outcome = await close_position(session, leg, prices[leg.id], (reasons or {}).get(leg.id, reason), broker=leg_broker, user_id=user_id,
                                            underlying_price=underlying_price)
         outcomes.append(outcome)
         if is_short(leg) and not outcome.closed and leg.exit_time is None and stuck_short is None:

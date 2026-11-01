@@ -93,6 +93,48 @@ def _saved_order_defaults(request):
 
 
 @pytest.fixture(autouse=True)
+def _saved_exit_settings(request):
+    """M68 PR-3 (D1): ATP squares off nothing, has no entry cut-off and no incomplete-order timer of its own - each comes
+    from the user's own Trade settings > Exits / Automation (app/execution/exit_settings.py). The tests written before
+    M68 run as a user who SAVED the values they were written against: square-off at the venue's old time (NSE 15:15, MCX
+    23:15, CDS 16:45), no new entries from the venue's old cut-off (15:00 / 23:00 / 16:30), "close the filled legs" after
+    5 minutes and a combined exit checked on every price; a value he really saved still wins. Tests of the M68 behaviour
+    itself carry the marker `real_exit_settings` and read the real, empty settings (tests/test_m68_exits.py)."""
+    if request.node.get_closest_marker("real_exit_settings"):
+        yield
+        return
+    from dataclasses import replace
+
+    from app.execution import exit_settings
+    from app.market_data.calendar import intraday_cutoffs
+
+    class _SavedBeforeM68(exit_settings.ExitSettings):
+        def square_off_at(self, family):
+            return self.square_off_time or intraday_cutoffs(family)[1]
+
+        def entries_until(self, family):
+            return self.window_end or intraday_cutoffs(family)[0]
+
+    real = exit_settings.load
+
+    async def _load(session, user=None, *, tenant_id=None, user_id=None):
+        own = await real(session, user, tenant_id=tenant_id, user_id=user_id)
+        saved = _SavedBeforeM68(combined_check_mode="TOUCH")
+        return replace(saved, **{k: v for k, v in vars(own).items() if v is not None})
+
+    from app.execution import smart_execution
+    real_settings = smart_execution.settings_for
+
+    async def _settings_for(session, user):   # the incomplete-order rule a pre-M68 user "saved" (his own saved value wins);
+        mine = await real_settings(session, user)   # the prefs defaults themselves stay Not set (SmartSettings.from_prefs)
+        return replace(mine, on_no_answer=mine.on_no_answer or exit_settings.CLOSE_FILLED, answer_minutes=mine.answer_minutes or 5)
+    with pytest.MonkeyPatch.context() as own:      # its own patch: a test's monkeypatch.undo() leaves it in place
+        own.setattr(exit_settings, "load", _load)
+        own.setattr(smart_execution, "settings_for", _settings_for)
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _saved_paper_capital(request):
     """M68 PR-7: ATP pre-chooses no paper starting capital - a new paper account starts with the user's own Trade settings
     > Paper account > Starting capital, else Not set (app/paper/paper_settings.py). The tests written before M68 run as a

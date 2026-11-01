@@ -13,7 +13,7 @@ export interface IncompleteLeg { trade_id: number; symbol: string; side: Side; r
 export interface IncompletePending { symbol: string; side: Side; role: "hedge" | "sold"; quantity: number }
 export interface IncompleteItem {
   group_id: string; underlying: string; strategy: string; mode: "PAPER" | "LIVE"; state: IncompleteState; message: string; failure: string;
-  deadline: string | null; seconds_left: number | null; on_no_answer: "close_filled" | "keep"; rule: string | null;
+  deadline: string | null; seconds_left: number | null; on_no_answer: "close_filled" | "keep" | null; rule: string | null;
   filled: IncompleteLeg[]; pending: IncompletePending[]; actions: IncompleteAction[];
 }
 export interface IncompleteView { items: IncompleteItem[]; as_of: string }

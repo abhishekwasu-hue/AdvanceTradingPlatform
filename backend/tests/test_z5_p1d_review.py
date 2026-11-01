@@ -377,7 +377,8 @@ def test_a_time_stop_already_past_is_refused(monkeypatch):
     monkeypatch.setattr(ticket, "wall_clock", lambda: datetime(2026, 10, 9, 14, 0, tzinfo=IST))
     view = _preview(t, time_stop="09:20")
     assert not view["can_place"] and any("already past" in e for e in view["errors"])
-    assert any("already past" in e for e in _preview(t, time_stop="14:03")["errors"])       # inside the 5-minute lead
+    assert any("already past" in e for e in _preview(t, time_stop="14:00")["errors"])       # not later than now
+    assert _preview(t, time_stop="14:03")["can_place"]                                        # M68 PR-3 (TS1-033): no 5-minute lead
     assert _preview(t, time_stop="14:30")["can_place"]
 
 

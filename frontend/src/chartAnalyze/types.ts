@@ -87,7 +87,11 @@ export interface AnalysisItem {
   result: AnalysisResult | null;
   /** M59 CR-4, hybrid items only: the reading once done, the user's pick, and the annotated chart's address. */
   hybrid?: HybridResult | null;
-  pick?: HybridPick | null;
+  /** M84: the user's own values (either may be null: read from the chart), or the pick a finished analysis used. */
+  pick?: HybridOverride | null;
+  /** M84: what the chart showed, and the values still to ask for (each with its exact reason), before the result. */
+  read_from_chart?: ChartRead | null;
+  needs?: HybridNeed[];
   reading_png?: string | null;
   /** The live share link (organisation only), when the owner made one. Absent on older answers. */
   share?: ItemShare | null;
@@ -139,6 +143,12 @@ export interface StrikesAnswer {
 /** M59 CR-4: "Advanced analysis (code + AI)" - ATP's own reading of the stored candles for the symbol / timeframe the
  * user picked (backend app/chart_analyze/hybrid.py). Every price comes from the stored candles, never the picture. */
 export interface HybridPick { symbol: string; timeframe: string }
+/** M84: the symbol / timeframe are read from what is printed on the chart; the user's value, when he types one, wins. */
+export interface HybridOverride { symbol: string | null; timeframe: string | null }
+export interface ChartRead { symbol: string | null; timeframe: string | null; symbol_text: string | null; timeframe_text: string | null }
+export type PickField = "symbol" | "timeframe";
+export interface HybridNeed { field: PickField; reason: string; ask: string }
+export type PickSource = "chart" | "you" | null;
 
 export interface HybridStatus {
   on: boolean;
@@ -180,6 +190,9 @@ export interface HybridResult {
   label: string;
   disclaimer: string;
   pick: HybridPick;
+  /** M84: what the chart showed (null when the user gave both values) and where each value came from. */
+  read_from_chart?: ChartRead | null;
+  pick_source?: { symbol: PickSource; timeframe: PickSource };
   side_by_side_note: string;
   reading: HybridReading;
   chart: { width: number; height: number };

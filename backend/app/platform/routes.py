@@ -132,7 +132,7 @@ async def put_marketplace_terms(body: RiskCeilingsBody, user: User = Depends(req
 async def _flag_listing_for(session: AsyncSession, user: User) -> dict:
     """The flag listing; the two LIVE switches also say they are owner-only and whether this admin is the owner (M55 S1)."""
     from app.platform import live_owner
-    flags = await controls.flag_listing(session)
+    flags = await controls.flag_listing(session, user)
     owner = live_owner.is_owner(user)
     for name in live_owner.OWNER_ONLY_FLAGS:
         if name in flags:
@@ -166,6 +166,8 @@ async def put_flag(name: str, body: FlagBody, user: User = Depends(require_role(
                                 session_id=session_id, confirm=body.confirm)
     except LiveOwnerRefused as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except controls.FlagNotBuilt as exc:                                 # M80 F4: not built yet - nothing to turn on
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if name == "public_status_page":                                     # Z10-e: the public page follows at once

@@ -601,9 +601,11 @@ async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
     return result
 
 
-async def flag_listing(session: AsyncSession) -> Dict[str, Dict]:
+async def flag_listing(session: AsyncSession, user: User | None = None) -> Dict[str, Dict]:
     """UX1: the admin Feature flags list - `feature_flags` plus each flag's catalog entry (app/platform/flag_catalog.py)
-    and its default (`default_on`: the value with nothing stored, the Phase 0 seed included)."""
+    and its default (`default_on`: the value with nothing stored, the Phase 0 seed included). M80 F3: with the admin
+    `user`, each flag that names live checks also carries `checks` ([{id, label, ok}], app/platform/flag_state.py)."""
+    from app.platform import flag_state
     from app.platform.flag_catalog import info_for
     from app.platform.trader_pack import PACK as pack
 
@@ -617,6 +619,13 @@ async def flag_listing(session: AsyncSession) -> Dict[str, Dict]:
             entry["fate_note"] = f"In the trader pack; {entry['fate_note'][0].lower()}{entry['fate_note'][1:]}"
         if name in missing:
             entry["unavailable_reason"] = missing[name]          # the admin sees the real reason; users never do
+    if user is not None:
+        wanted = sorted({p for name in flags for p in flag_state.status_for(name).probes})
+        results = await flag_state.run_probes(session, user, wanted)
+        for name, entry in flags.items():
+            checks = flag_state.checks_for(name, results)
+            if checks:
+                entry["checks"] = checks
     return flags
 
 
@@ -665,6 +674,10 @@ def legal_open_placeholders() -> Dict[str, List[str]]:
     return {slug: doc.open_placeholders() for slug, doc in documents.documents().items() if doc.open_placeholders()}
 
 
+class FlagNotBuilt(ValueError):
+    """M80 F4: turning on a flag whose feature is not built yet (the route answers 409 with this reason)."""
+
+
 async def set_flag(session: AsyncSession, user: User, name: str, *, on: bool, tenants: Optional[List[int]] = None,
                    override_open_placeholders: bool = False, session_id: int | None = None,
                    confirm: str | None = None) -> Dict[str, Dict]:
@@ -674,6 +687,10 @@ async def set_flag(session: AsyncSession, user: User, name: str, *, on: bool, te
     if name in REMOVED_FROM_VIEW and (on or tenants):
         # P2-1 FA-2 (owner ✅ 26 Oct): removed from view - it stays off; turning it off is always allowed.
         raise ValueError(f"'{name}' was removed from view (P2-1): {REMOVED_FROM_VIEW[name]}")
+    from app.platform import flag_state
+    if flag_state.is_not_built(name) and (on or tenants):
+        # M80 F4: a flag that is not built yet cannot be turned on (nor allow-listed); turning it off always works.
+        raise FlagNotBuilt(flag_state.not_built_reason(name))
     # M55 S1: `live_trading` on or the PAPER-only lock off - the owner only, two-factor checked, typed confirmation
     # (app/platform/live_owner.py; audited either way, a refusal raises LiveOwnerRefused or the step-up refusal).
     from app.platform import live_owner

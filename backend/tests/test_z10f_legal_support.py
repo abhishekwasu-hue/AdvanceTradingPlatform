@@ -411,8 +411,9 @@ def test_switching_the_flag_on_is_refused_while_placeholders_are_open_unless_ove
 def test_other_flags_are_not_affected_by_the_placeholder_check():
     from tests.test_admin_api import _admin
     admin, _ = _without_legal(_admin, "z10f-flag-admin2@example.com")
-    assert client.put("/api/admin/controls/flags/support_bot", headers=admin, json={"on": True}).status_code == 200
-    _set_flags(support_bot=False)
+    # M80: support_bot is "not built yet" (refused with 409, tests/test_m80_flag_state.py), so a built flag stands in.
+    assert client.put("/api/admin/controls/flags/screener_gallery", headers=admin, json={"on": True}).status_code == 200
+    _set_flags(screener_gallery=False)
 
 
 # --- the support bot: flag ----------------------------------------------------------------------------------------------

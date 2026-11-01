@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { FeatureFlags } from "../types";
 import FeatureFlagsCard from "./FeatureFlagsCard";
-import { blockedBy, groupFlags, statusTone } from "./flagList";
+import { blockedBy, flagState, groupFlags, stateLine, stateTone, statusTone } from "./flagList";
 
 const FLAGS: FeatureFlags = {
   screener_v2: { on: false, tenants: [], description: "Screener v2", plain: "The screener", area: "screens", area_label: "Find setups (screens)",
@@ -49,7 +49,7 @@ describe("UX1 admin Feature flags list", () => {
     expect(html).toContain("1 of 1 on");
     expect(html.match(/data-flag-details/g)?.length).toBe(5);
     expect(html).toContain("Keep it on for these organisations only");
-    expect(html.match(/data-flag-filter=/g)?.length).toBe(5);
+    expect(html.match(/data-flag-filter=/g)?.length).toBe(6);                   // M80: + "Not built yet"
   });
 
   it("searches the name, the plain words and the status", () => {
@@ -141,5 +141,53 @@ describe("UX1 admin Feature flags list", () => {
     const owner = render(live(true, [{ id: 7, name: "Desk Seven" }]));
     expect(owner).toMatch(/<button[^>]*disabled=""[^>]*>Revoke<\/button>/);
     expect(owner).toContain("data-live-org-confirm");
+  });
+});
+
+describe("M80 truthful flag status", () => {
+  const M80: FeatureFlags = {
+    ...FLAGS,
+    screener_v2: { ...FLAGS.screener_v2, state: "ready", state_label: "Ready", state_reason: "", state_where: "" },
+    chart_contracts: { ...FLAGS.chart_contracts, state: "needs_setup", state_label: "Needs your setup", state_reason: "Telegram bot",
+      state_where: "Settings › Alerts", checks: [{ id: "telegram", label: "Telegram set up", ok: false }] },
+    screener_gallery: { ...FLAGS.screener_gallery, depends_on: [], state: "not_built", state_label: "Not built yet",
+      state_reason: "No screen to start a study", state_order: "FN5" },
+    history_backfill: { ...FLAGS.history_backfill, state: "behind_the_scenes", state_label: "Ready (behind the scenes)",
+      checks: [{ id: "broker", label: "Broker connected", ok: true }] },
+    live_trading: { ...FLAGS.live_trading, state: "decision", state_label: "Owner decision", state_reason: "LIVE only on your words" },
+  };
+  const render = (flags: FeatureFlags) => renderToStaticMarkup(
+    <FeatureFlagsCard flags={flags} tenants={{}} onTenants={() => {}} busy={false} onSet={() => {}} onSaveList={() => {}} />);
+
+  it("reads the state, falls back to the old label, and filters Needs setup / Not built yet / Owner decision by it", () => {
+    expect(flagState(M80.chart_contracts)).toBe("needs_setup");
+    expect(flagState(FLAGS.chart_contracts)).toBe("needs_setup");          // an old server: "unfinished" reads as setup
+    expect(flagState(FLAGS.live_trading)).toBe("decision");
+    const names = (filter: Parameters<typeof groupFlags>[2]) => groupFlags(M80, "", filter).flatMap((g) => g.rows.map((r) => r.name));
+    expect(names("setup")).toEqual(["chart_contracts"]);
+    expect(names("not_built")).toEqual(["screener_gallery"]);
+    expect(names("decision")).toEqual(["live_trading"]);
+    expect(groupFlags(M80, "settings › alerts").flatMap((g) => g.rows.map((r) => r.name))).toEqual(["chart_contracts"]);
+    expect(stateTone("not_built")).toBe("down");
+    expect(stateTone("needs_setup")).toBe("warn");
+    expect(stateLine(M80.screener_gallery)).toEqual({ reason: "No screen to start a study (FN5)", where: "" });
+  });
+
+  it("shows the chip, the item and where, and the live checks", () => {
+    const html = render(M80);
+    expect(html).toContain('data-flag-state="needs_setup"');
+    expect(html).toContain("Needs your setup");
+    expect(html).toContain("Telegram bot");
+    expect(html).toContain("› Settings › Alerts");
+    expect(html).toMatch(/data-flag-check="telegram" data-ok="false"[^>]*>.*✗.*Telegram set up/);
+    expect(html).toMatch(/data-flag-check="broker" data-ok="true"[^>]*>.*✓.*Broker connected/);
+    expect(html).not.toContain("Unfinished / needs setup");
+  });
+
+  it("disables Turn on for a flag that is not built yet, with the reason; Turn off stays", () => {
+    const html = render(M80);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="Not built yet: No screen to start a study \(FN5\)"[^>]*>Turn on<\/button>/);
+    const on = render({ ...M80, screener_gallery: { ...M80.screener_gallery, on: true } });
+    expect(on).toMatch(/data-flag="screener_gallery"[\s\S]*?<button type="button" class="[^"]*">Turn off<\/button>/);
   });
 });

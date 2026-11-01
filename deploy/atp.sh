@@ -47,6 +47,11 @@
 #   /opt/atp/deploy/atp.sh probe-chain UNDERLYING  B2b, read-only: one option chain (nearest expiry) through the owner's
 #                                                  own broker session - the broker's raw underlying spot beside the ATM
 #                                                  strike and our own last index close. No token, nothing written
+#   /opt/atp/deploy/atp.sh ai-eval [--offline] [--key auto|platform|org] [--tenant ID] [--model NAME] [--json]
+#                                                  M72Q-7: ONE live run of the Copilot planner on the 60-question trader
+#                                                  eval (recorded synthetic tools, the server's own AI key - a PAID run):
+#                                                  score per job, safety, tokens and cost per answer, total cost. Writes
+#                                                  nothing. --offline: a fake model, no key, no cost
 #   /opt/atp/deploy/atp.sh lake-backfill [--check] DATA-H: Daily (several years) and 1-minute (the reader's lookback)
 #                                                  index history through the owner's own broker session into his
 #                                                  private store, resumable; then the bars per index per timeframe.
@@ -2694,6 +2699,25 @@ cmd_probe_chain() {
   esac
 }
 
+# M72Q-7: the owner's one live eval of the Copilot planner (backend/evals/planner_live.py) in the backend container,
+# with the AI key the server already has. Paid unless --dry-run; no call cap (the owner watches the cost). Nothing written.
+cmd_ai_eval() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local a
+  for a in "$@"; do
+    [[ "$a" =~ ^[A-Za-z0-9._=-]{1,60}$ ]] || die "usage: atp.sh ai-eval [--offline] [--key auto|platform|org] [--tenant ID] [--model NAME] [--json]" 2
+  done
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would run the Copilot planner eval (python -m evals.planner_live %s)\n' "$*"; return 0; fi
+  check_tools
+  local rc=0
+  dc exec -T backend python -m evals.planner_live "$@" || rc=$?
+  case "$rc" in
+    0) ;;
+    2) exit 2 ;;            # no key could be used: the eval printed why, nothing was sent
+    *) die "the eval did not finish (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
 usage() { sed -n '2,/--dry-run (anywhere/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # Handover 8d: the owner sets a user's password on the server (backend/scripts/reset_password.py). The password is
@@ -3042,6 +3066,7 @@ main() {
     restore-offsite) cmd_restore_offsite ;;
     releases)       cmd_releases ;;
     probe-chain)    cmd_probe_chain "$@" ;;
+    ai-eval)        cmd_ai_eval "$@" ;;
     loadtest)       cmd_loadtest "$@" ;;
     loadtest-cleanup) cmd_loadtest_cleanup "$@" ;;
     reset-password) cmd_reset_password "$@" ;;

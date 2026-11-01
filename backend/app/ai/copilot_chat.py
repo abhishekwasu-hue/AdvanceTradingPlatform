@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
@@ -282,9 +283,14 @@ def named_symbol(message: str, exclude: frozenset[str] = frozenset()) -> str | N
     return None
 
 
-def symbol_in(message: str, default: str = DEFAULT_SYMBOL) -> str:
-    """The symbol the message names (`named_symbol`), else `default`."""
-    return named_symbol(message) or default
+# M72 PR-3 (CP-3): the symbol of the page the question was asked from ("Ask AI about this"), set by the chat route for one
+# request; a question that names no symbol is about it (else NIFTY, said in the answer).
+CONTEXT_SYMBOL: ContextVar[str | None] = ContextVar("copilot_context_symbol", default=None)
+
+
+def symbol_in(message: str, default: str | None = None) -> str:
+    """The symbol the message names (`named_symbol`), else `default`, else the asking page's symbol, else NIFTY."""
+    return named_symbol(message) or default or CONTEXT_SYMBOL.get() or DEFAULT_SYMBOL
 
 
 def exchange_of(symbol: str) -> str:
@@ -462,6 +468,12 @@ TOOL_NAMES: Dict[str, str] = {
     "get_my_last_trade": "Your last trade", "get_weekly_review": "Your weekly review", "backtest_draft": "Backtest engine",
     "get_news": "News feed", "get_market_snapshot": "Market memory", "get_screen_universe": "Your watchlist",
     "build_screen": "Screen builder", "run_screen": "Screener", "explain_results": "Screen explanations", "propose_alert": "Alert proposal",
+    # M72 PR-1c: the planner's own read tools and calculators
+    "get_my_orders": "Your orders", "get_my_trade_settings": "Your Trade settings", "get_journal_entries": "Your journal",
+    "get_watchlist": "Your watchlists", "get_positions": "Your positions", "get_pnl_today": "Your P&L today", "get_quote": "Live price",
+    "get_candles": "Price history", "get_market_regime": "Market regime", "get_option_chain": "Option chain",
+    "calc_difference": "Calculation", "calc_percent_change": "Calculation", "calc_sum": "Calculation",
+    "get_coach_week": "Your journal week",       # M72 PR-8 (CP-8)
 }
 NOT_SET_UP: Dict[str, str] = {
     "get_market_context": "the market context panel is not set up yet", "get_chart_structure": "the chart structure reader is not set up yet",
@@ -2044,7 +2056,8 @@ def symbol_line(answer: Answer, text: str) -> str | None:
 
 def _name_symbols(answer: Answer, message: str) -> None:
     answer.symbols = symbols_read(answer)
-    answer.symbol_default = (answer.job in SYMBOL_JOBS and named_symbol(message) is None and answer.symbols == [DEFAULT_SYMBOL])
+    answer.symbol_default = (answer.job in SYMBOL_JOBS and named_symbol(message) is None and answer.symbols == [DEFAULT_SYMBOL]
+                             and CONTEXT_SYMBOL.get() is None)
     line = symbol_line(answer, "\n".join(answer.summary))
     if line:
         answer.summary.append(line)

@@ -217,6 +217,9 @@ if sub == "exec":
     if svc == "backend" and cmd[:3] == ["python", "-m", "app.option_chain.probe"]:   # B2b: probe-chain (own tests: test_b2_as_of_spot)
         st.setdefault("chain_probes", []).append(cmd[3:])
         out.append(f"probe-chain {' '.join(cmd[3:])}"); finish()
+    if svc == "backend" and cmd[:3] == ["python", "-m", "evals.planner_live"]:      # M72Q-7: ai-eval (the owner's live planner eval)
+        st.setdefault("ai_evals", []).append(cmd[3:])
+        out.append(f"ai-eval {' '.join(cmd[3:])}"); finish()
     if svc == "postgres" and cmd[:2] == ["sh", "-c"] and "/wal_archive" in cmd[2]:   # health: files and MB in the archive
         out.append(f"{st.get('wal_files', 0)} {st.get('wal_files', 0) * 16}"); finish()
     if svc == "postgres" and cmd[:1] == ["pg_basebackup"]:
@@ -1747,6 +1750,17 @@ def test_probe_chain_is_read_only_and_checks_its_input(host):
     for args in (("NIFTY; rm -rf /",), (), ("NIFTY", "BANKNIFTY"), ("N$FTY",)):
         assert host.run("probe-chain", *args).returncode == 2, args
     assert len(host.state["chain_probes"]) == 1
+
+
+def test_ai_eval_runs_the_planner_eval_in_the_backend_and_checks_its_input(host):
+    assert host.run("deploy").returncode == 0
+    since = len(host.state["calls"])
+    res = host.run("ai-eval", "--offline", "--key", "org", "--tenant", "3")
+    assert res.returncode == 0, res.all
+    assert host.state["ai_evals"] == [["--offline", "--key", "org", "--tenant", "3"]] and host.mutating(since) == []
+    for args in (("--model", "x; rm -rf /"), ("$(id)",)):
+        assert host.run("ai-eval", *args).returncode == 2, args
+    assert len(host.state["ai_evals"]) == 1
 
 
 # --- WL1-4: env-set (the allowlisted .env switches) and lists-sync (the universe sync + system lists NOW) ------------

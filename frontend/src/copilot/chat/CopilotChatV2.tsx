@@ -1,5 +1,6 @@
 import { SETTINGS_PATH } from "../../settings/paths";
-import { KeyRound, Paperclip, SendHorizontal, Sparkles } from "lucide-react";
+import { askContextLabel, type AskContext } from "../askContext";
+import { KeyRound, Paperclip, SendHorizontal, Sparkles, X } from "lucide-react";
 import { IndexCell } from "../../dashboard/MarketStripV2";
 import { vixBand } from "../../dashboard/model";
 import type { MarketStrip } from "../../dashboard/types";
@@ -23,10 +24,13 @@ import FirstUseModal from "../components/FirstUseModal";
 import { useCopilotT } from "../i18n";
 import { COPILOT_TABS, copilotPath } from "../tabs";
 import { AnswerV2 } from "./AnswerV2";
+import { TicketPrepV2 } from "../ticket/TicketPrepV2";
+import { useAiPrefs } from "../language/model";
+import { VoiceButtonV2 } from "../language/VoiceButtonV2";
 import { AttachMenu, imageFrom } from "./ChartAttachV2";
 import {
   chartQuestion, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
-  restoredTurns, settled, withChart, withTurn,
+  hybridPick, restoredTurns, settled, withChart, withTurn,
   type ChartSource, type ChatAnswer, type ChatHome, type Turn,
 } from "./model";
 import { chartAnalyzeApi, isFeatureOff } from "../../chartAnalyze/api";
@@ -74,10 +78,13 @@ export interface ChatViewProps {
   onKeyOpen?: (open: boolean) => void;
   /** M59 CR-2: a chart in the Ask box (upload / TradingView snapshot link); left out: no attach button. */
   onAttach?: (source: ChartSource) => void;
+  /** M72 PR-3 (CP-3): what the next question is about ("Ask AI about this"), with a way to drop it. */
+  about?: ReactNode;
 }
 
 export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, onAttach }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk" | "onAttach"> & { placeholder?: string }) {
   const t = useCopilotT();
+  const aiPrefs = useAiPrefs();          // M72 PR-10: his voice choice (flag copilot_languages); null while off
   const submit = (e: FormEvent) => { e.preventDefault(); const q = cleanQuestion(draft); if (q && !busy) onAsk(q); };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const q = cleanQuestion(draft); if (q && !busy) onAsk(q); }
@@ -107,6 +114,7 @@ export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, 
       <textarea id="copilot-question" value={draft} maxLength={MAX_QUESTION} rows={bottom ? 1 : 2} onChange={(e) => onDraft(e.target.value)} onKeyDown={onKey} onPaste={onPaste}
         placeholder={placeholder ?? t("chat.placeholder")} disabled={busy}
         className={`min-w-0 flex-1 resize-none rounded-control border border-border bg-surface-2 px-space-3 py-space-2 text-t15 text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-60 ${bottom ? "min-h-11" : "min-h-16"}`} />
+      <VoiceButtonV2 prefs={aiPrefs} draft={draft} onDraft={onDraft} disabled={busy} />
       <button type="submit" className={BUTTON} disabled={busy || !cleanQuestion(draft)} aria-label={t("chat.ask")} data-primary>
         <SendHorizontal size={16} aria-hidden /><span className={bottom ? "sr-only" : ""}>{busy ? t("chat.asking") : t("chat.ask")}</span>
       </button>
@@ -153,7 +161,7 @@ export function NumbersStrip({ strip, home, nowMs }: { strip: Loadable<MarketStr
   );
 }
 
-export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach }: ChatViewProps) {
+export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about }: ChatViewProps) {
   const t = useCopilotT();
   const line = marketLineText(home);
   const chips = home ? quickChips(home.jobs) : [];
@@ -207,6 +215,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
         </nav>
       )}
 
+      {about}
       {placement === "inline" && composer}
 
       {!empty && (
@@ -240,8 +249,13 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
                 </>
               ) : (
                 <div className={`${CARD} p-space-4`}>
-                  {turn.answer ? <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
-                    : turn.error ? <p role="alert" className="text-t14 text-fg">{turn.error}</p>
+                  {turn.answer ? (
+                    <>
+                      <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
+                      {/* M72 PR-9: the order ticket prepared from his own message (never on a refused question) */}
+                      {!turn.answer.refused && <TicketPrepV2 question={turn.question} />}
+                    </>
+                  ) : turn.error ? <p role="alert" className="text-t14 text-fg">{turn.error}</p>
                     : <p aria-busy="true" className="text-t14 text-fg-muted">{t("chat.asking")}</p>}
                 </div>
               )}
@@ -312,8 +326,29 @@ function usePlacement(): "bottom" | "inline" {
 const readNumbers = () => api.marketStrip({ sensex: true });
 
 /** The page's state: the home read once, the kept conversation (CU6), then each question as one turn. */
-export function CopilotChatV2() {
+/** M72 PR-3: the "About NIFTY · 15min" chip above the questions, with its remove button. */
+export function AboutChip({ ctx, onClear }: { ctx: AskContext; onClear: () => void }) {
   const t = useCopilotT();
+  return (
+    <p className="flex min-w-0 items-center gap-space-2 text-t13" data-ask-context={ctx.object?.kind ?? "symbol"}>
+      <span className="text-fg-muted">{t("chat.about")}</span>
+      <span className="inline-flex min-h-9 min-w-0 items-center gap-space-1 rounded-pill border border-border bg-surface-2 pl-space-3 pr-space-1 text-fg">
+        <span className="truncate font-medium">{askContextLabel(ctx)}</span>
+        <button type="button" onClick={onClear} aria-label={t("chat.aboutClear")} title={t("chat.aboutClear")} data-ask-context-clear
+          className="inline-flex size-9 shrink-0 items-center justify-center rounded-pill text-fg-muted hover:bg-surface-1 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+          <X size={14} aria-hidden />
+        </button>
+      </span>
+    </p>
+  );
+}
+
+export function CopilotChatV2({ context = null }: { context?: AskContext | null }) {
+  const t = useCopilotT();
+  // M72 PR-3 (F8): the context the page was opened with rides on every question until the user drops it
+  const contextKey = JSON.stringify(context);
+  const [about, setAbout] = useState<AskContext | null>(context);
+  useEffect(() => setAbout(JSON.parse(contextKey) as AskContext | null), [contextKey]);
   const [home, setHome] = useState<ChatHome | null>(null);
   const [homeError, setHomeError] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -379,7 +414,7 @@ export function CopilotChatV2() {
     setDraft("");
     setBusy(true);
     try {
-      const answer: ChatAnswer = await chatApi.ask(question);
+      const answer: ChatAnswer = await chatApi.ask(question, about);
       setTurns((all) => settled(all, id, answer, null));
     } catch (e) {
       setTurns((all) => settled(all, id, null, friendlyError(e, t) || t("chat.failed")));
@@ -399,13 +434,21 @@ export function CopilotChatV2() {
     try {
       const status = await chartAnalyzeApi.status();
       if (!status.engine.installed) { show({ status: "unavailable", engine: status.engine }); return; }
-      const item = await chartAnalyzeApi.add(source.kind === "file" ? { file: source.file, fileName: source.name } : { link: source.link }, "image_only");
+      // M72 PR-5 (CP-4): "Advanced analysis" (ATP's reading beside the picture) when it is on and the page the user asked
+      // from names the symbol and timeframe; otherwise AI only, as before
+      const pick = status.modes.hybrid ? hybridPick(about) : null;
+      const added = source.kind === "file" ? { file: source.file, fileName: source.name } : { link: source.link };
+      const item = pick ? await chartAnalyzeApi.add(added, "hybrid", pick) : await chartAnalyzeApi.add(added, "image_only");
       show({ status: "working", step: "analysing" });
       const done = await chartAnalyzeApi.analyze(item.id);
-      if (done.status !== "done" || !done.result) { show({ status: "failed", message: done.error ?? t("chat.chartFailed") }); return; }
+      if (done.status !== "done" || !(done.result || done.hybrid)) { show({ status: "failed", message: done.error ?? t("chat.chartFailed") }); return; }
       let imageSrc: string | null = null;
       try { imageSrc = URL.createObjectURL(await chartAnalyzeApi.image(done.id)); images.current.push(imageSrc); } catch { /* intentional: the reading shows without the picture */ }
-      show({ status: "done", item: done, imageSrc });
+      let readingSrc: string | null = null;
+      if (done.hybrid) {
+        try { readingSrc = URL.createObjectURL(await chartAnalyzeApi.readingPng(done.id)); images.current.push(readingSrc); } catch { /* intentional: the reading's table shows without its chart */ }
+      }
+      show({ status: "done", item: done, imageSrc, readingSrc });
       // ATP's own structure card for the picture's symbol: the rule answer only (wording=false) - no AI call here; the
       // AI words come only when the user taps "Explain in words" (an ordinary question of his own)
       const question = readingQuestion(done);
@@ -427,7 +470,8 @@ export function CopilotChatV2() {
       <PageIntro id="copilot-chat" title={t("chat.introTitle")} lines={[t("chat.intro1"), t("chat.intro2")]} />
       <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={placement} onDraft={setDraft} onAsk={(q) => void ask(q)}
         strip={strip} keyOpen={keyOpen} onKeyOpen={setKeyOpen} onAttach={canAttach ? (source) => void attachChart(source) : undefined}
-        connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined} />
+        connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined}
+        about={about ? <AboutChip ctx={about} onClear={() => setAbout(null)} /> : undefined} />
     </>
   );
 }
@@ -438,9 +482,9 @@ function Waiting() {
   return <p className="text-t20 font-semibold text-fg md:text-t24">{t("chat.topLine")}</p>;
 }
 
-export default function CopilotChatGate() {
+export default function CopilotChatGate({ context = null }: { context?: AskContext | null }) {
   const t = useCopilotT();
   const { user } = useAuth();
   if (!user) return <p className="text-t14 text-fg-muted">{t("shell.signIn")}</p>;
-  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 /></FirstUseModal>;
+  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 context={context} /></FirstUseModal>;
 }

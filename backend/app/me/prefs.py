@@ -519,13 +519,81 @@ class ShellPrefs(_Prefs):
     sidebar: Optional[Literal["expanded", "rail"]] = None
 
 
+class AiUsagePrefs(_Prefs):
+    """`ai_usage` (M72 PR-1b, M72Q-1): the user's OWN daily limit in rupees for AI answers on the platform AI key
+    (app/ai/platform_key.py). None = Not set: only the operator's per-user daily cap applies. A value of his own can only
+    lower it (the lower of the two is used, never the higher). Read by the platform key's cap check only; no order path,
+    worker or risk check imports it, and his own connected key keeps its own limits (Connect AI)."""
+    daily_cap_inr: float | None = Field(default=None, gt=0, lt=1e7, allow_inf_nan=False)
+
+
+class AiPrefs(_Prefs):
+    """`ai` (M72 PR-10, CP-10, M72Q-2): the language the Copilot planner ANSWERS in (English / Marathi / Hindi; the
+    interface stays English) and whether the Copilot shows the browser's speech input (off by default). Read only while
+    the flag `copilot_languages` is on (app/ai/languages.py); no order path, worker or risk check imports it."""
+    language: Literal["en", "mr", "hi"] = "en"
+    voice: bool = False
+
+
+MemorySymbol = Annotated[str, StringConstraints(min_length=1, max_length=30, pattern=r"^[A-Za-z0-9][A-Za-z0-9 &._:-]{0,29}$")]
+
+
+class AiMemoryPrefs(_Prefs):
+    """`ai_memory` (M72 PR-11, CP-11): what the Copilot remembers about the user - the instruments and timeframes he follows
+    and his trading style - shown and edited by him in Settings > AI and deleted with "Delete my Copilot conversation".
+    Saved only by him (ATP suggests from his own lists, trades and questions; it stores nothing he did not save). Read only
+    by the Copilot planner for his own questions (flag copilot_memory); never by another user, an order path, a worker
+    trading step or a bot."""
+    instruments: list[MemorySymbol] = Field(default_factory=list, max_length=12)
+    timeframes: list[Literal["15m", "1h", "1d", "1w"]] = Field(default_factory=list, max_length=4)
+    style: Literal["intraday", "swing", "positional", "options_selling", "options_buying", "investing"] | None = None
+
+
+WATCH_PCT = Field(default=None, gt=0, le=100, allow_inf_nan=False)
+
+
+class CopilotWatchPrefs(_Prefs):
+    """`copilot_watch` (M72 PR-7, CP-7): the user's own opt-in Copilot watch. Every type is OFF until he turns it on, and a
+    type with a number needs HIS number (None = Not set; ATP chooses none, M68). Read by app/ai/watch.py only, to decide
+    which short information cards to raise for HIS own positions, strikes and watchlists; no order path, worker trading
+    step or risk check imports it, nothing is closed or blocked (ADR-0004, ADR-0006).
+    - near_levels: an open position whose mark has this % (or less) of the room left to his own invalidation or profit level;
+    - strike_distance: a short option whose underlying is within this % of the strike;
+    - greeks_jump: IV at his strike moved by this many IV points, or delta by this much, between two stored chain readings
+      (delta needs his own risk-free rate, Trade settings > Options);
+    - oi_shift: open interest at his strike changed by this % between two stored chain readings;
+    - watchlist_signal: a new setup from his strategies or scans on a symbol in his own watchlists (no number);
+    - telegram: also to his own Telegram chat (off by default; in the app either way)."""
+    telegram: bool = False
+    near_levels: bool = False
+    near_levels_room_left_pct: float | None = WATCH_PCT
+    strike_distance: bool = False
+    strike_distance_pct: float | None = WATCH_PCT
+    greeks_jump: bool = False
+    iv_jump_points: float | None = WATCH_PCT
+    delta_jump: float | None = Field(default=None, gt=0, le=1, allow_inf_nan=False)
+    oi_shift: bool = False
+    oi_shift_pct: float | None = Field(default=None, gt=0, le=10_000, allow_inf_nan=False)
+    watchlist_signal: bool = False
+
+    @model_validator(mode="after")
+    def _numbers_first(self) -> CopilotWatchPrefs:
+        need = {"near_levels": self.near_levels_room_left_pct is not None, "strike_distance": self.strike_distance_pct is not None,
+                "greeks_jump": self.iv_jump_points is not None or self.delta_jump is not None, "oi_shift": self.oi_shift_pct is not None}
+        for kind, has_number in need.items():
+            if getattr(self, kind) and not has_number:
+                raise ValueError(f"{kind}: set your own number first")
+        return self
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
                                        "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs,
                                        "option_chain": OptionChainPrefs, "terminal": TerminalPrefs,
                                        "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs,
-                                       "trade_settings": TradeSettingsPrefs}
+                                       "trade_settings": TradeSettingsPrefs, "ai_usage": AiUsagePrefs,
+                                       "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs, "ai_memory": AiMemoryPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -660,7 +728,7 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "AiUsagePrefs", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
 
 
 async def own_limits(session: AsyncSession, user: User) -> Dict[str, Any]:

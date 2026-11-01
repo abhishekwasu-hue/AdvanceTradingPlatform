@@ -13,6 +13,7 @@ import { openAdmin, type Theme } from "./adminMocks";
  *   `admin-trader-pack-v2-{1440,390}-{light,dark}.png` (the card alone, before "Enable trader features").
  *   ADM-1 (30 Oct): `admin-controls-v2-*` updated - Controls opens on its Safety group; NEW
  *   `admin-controls-<limits|flags>-v2-{1440,390}-{light,dark}.png` (Risk limits; Feature flags folded by category).
+ *   M72 PR-1b (1 Nov): `admin-controls-limits-v2-*` updated - the "Platform AI key" card (budgets per plan, daily cap per user).
  * Every reply is made up (e2e/adminMocks.ts). After an intended change:
  * `npx playwright test --project=phone e2e/admin-console-v2.e2e.ts --update-snapshots`.
  */

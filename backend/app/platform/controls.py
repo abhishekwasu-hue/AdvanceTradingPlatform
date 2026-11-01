@@ -139,6 +139,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # user's own key, else the organisation's, else the rules / `ai_not_connected`). OFF: every AI call and page behaves
     # exactly as before and /api/ai/byok/connect* answers 404. Background jobs stay on the organisation's key. No orders.
     "ai_one_key": "One AI key for every AI feature: the Connect AI panel and the user's own key first for Copilot, chart analysis and the other AI tools",
+    # M72 PR-1b (M72Q-1; needs `ui_v2`; app/ai/platform_key.py): the operator's platform AI key, kept on the host and never in
+    # the repository, answers a user-started AI call when neither the user's own key nor the organisation's own key is
+    # there - inside the plan's monthly platform budget and the per-user daily cap the owner sets in Admin (ATP chooses
+    # no number: either Not set = the rules answer). A cap reached is a hard stop, then the rules. OFF: exactly today's
+    # providers. Owner default: ON for the owner's organisation only (allow-list). The AI never places, blocks or changes orders.
+    "ai_platform_key": "Platform AI key: AI answers without a key of the user's own, inside the plan's AI budget and the per-user daily cap set in Admin",
     # AUD-T7 (owner audit 28 Oct; app/trading/cost_meter.py; needs `ui_v2`): the cost-of-trading meter on My trades - the
     # user's own closed trades' charges against the gross P&L, this financial year and this month, PAPER and LIVE apart,
     # contract-note charges first. Read-only. OFF: GET /api/trades/cost-meter answers 404 and the card is hidden.

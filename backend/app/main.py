@@ -16,6 +16,7 @@ from app.admin.view_as_routes import router as view_as_router
 from app.ai.byok_routes import router as ai_byok_router
 from app.ai.chat_routes import router as ai_chat_router
 from app.ai.connect_routes import router as ai_connect_router
+from app.ai.platform_routes import router as ai_platform_router
 from app.ai.routes import router as ai_router
 from app.alerts.links_routes import router as alert_links_router
 from app.alerts.outbox_admin import router as alert_outbox_admin_router
@@ -399,6 +400,7 @@ app.include_router(marketplace_admin_router)
 app.include_router(api_keys_router)
 app.include_router(public_api_router)
 app.include_router(ai_byok_router)       # BYOK-V1: the user's own AI key for Vision (flag vision_byok, off by default)
+app.include_router(ai_platform_router)   # M72 PR-1b: the caller's own platform AI key use (flag ai_platform_key, off by default)
 app.include_router(ai_connect_router)    # Settings redesign A: "Connect AI in one paste" (flag ai_one_key, off by default)
 app.include_router(ai_router)
 app.include_router(ai_chat_router)   # handover item 5: the chat-first Copilot (flag ui_v2, off)

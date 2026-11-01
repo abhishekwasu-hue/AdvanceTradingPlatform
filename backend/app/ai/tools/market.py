@@ -274,9 +274,8 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
     """Backtest a platform strategy on server candles (never client data). Statistics only, with a sample-size warning."""
     from app.ai.compliance import WEAK_EVIDENCE_MIN_TRADES
     from app.backtest.engine import run_backtest as engine
-    from app.core.models import RiskConfig
     from app.custom_strategies.resolver import resolve_strategy
-    from app.risk_engine.routes import get_tenant_risk_config
+    from app.risk_engine.routes import user_risk_config
     try:
         strategy = await resolve_strategy(args.strategy_id, ctx.user, ctx.session)
     except (KeyError, PermissionError) as exc:
@@ -288,7 +287,9 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
     from app.paper import paper_settings
     # DEF-0 / M68 PR-7 (TS1-066): the organisation's capital, else his own paper capital (Not set: none - never a value
     # ATP chose), and his paper charges (Not set: statutory charges only)
-    risk, charges = await paper_settings.backtest_inputs(ctx.session, ctx.user, await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig())
+    # M72 PR-4 (F12): the organisation's saved limits with the capital they name, else his own PAPER account balance
+    # (`user_risk_config`, the rule every order path uses); PR-7 then keeps his own capital first and adds his charges
+    risk, charges = await paper_settings.backtest_inputs(ctx.session, ctx.user, await user_risk_config(ctx.session, ctx.user))
     if risk.capital is None:
         # M72 PR-4 / M68Q-4: no capital of his anywhere - the capital is Not set: ask, never assume one
         return ToolResult(False, None, None, "backtest", error="his capital is Not set (no saved capital and no paper account yet); ask him for "

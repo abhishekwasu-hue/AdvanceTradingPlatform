@@ -770,8 +770,12 @@ def _close_head(symbol: str, d: Dict[str, Any], tf: str) -> str:
 CHART_TF = {"1w": "week", "1d": "day", "1h": "60min", "15m": "15min"}
 
 
+def _text_or_none(v: Any) -> Optional[str]:
+    return v.strip() if isinstance(v, str) and v.strip() else None
+
+
 def nearest_area(price: float, bands: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
-    """The stored area closest to the price: its side, from - to, and how far the price is from its near edge (0 inside),
+    """The stored area closest to the price: its side, from - to, its timeframe and state (M78), and how far the price is from its near edge (0 inside),
     in points and in percent of the price, with where the area sits ("below", "above", "inside"). Pure."""
     best: tuple[float, dict[str, Any]] | None = None
     for b in bands:
@@ -784,7 +788,10 @@ def nearest_area(price: float, bands: Sequence[dict[str, Any]]) -> dict[str, Any
         if best is None or gap < best[0]:
             side = {"bullish": "demand", "bearish": "supply"}.get(_role_side(b.get("role")) or "")
             best = (gap, {"side": side, "from": float(low), "to": float(high), "where": where, "distance": round(gap, 2),
-                          "distance_pct": round(gap / price * 100, 2) if price else None})
+                          "distance_pct": round(gap / price * 100, 2) if price else None,
+                          # M78 (F3): the area's own timeframe and state as stored (None when the band has none), so
+                          # the answer chart labels it like the Charts tab ("Seller area · 1d · fresh")
+                          "timeframe": _text_or_none(b.get("timeframe")), "state": _text_or_none(b.get("state"))})
     return best[1] if best else None
 
 
@@ -1714,10 +1721,15 @@ def _test_lines(answer: Answer, data: Dict[str, Any], partial: bool = False) -> 
     else:
         lines.append(f"Trades: {trades} ({whole.get('wins')} won, {whole.get('losses')} lost).")
         lines.append(f"Net result after costs: {_plain_money(whole.get('net_pnl'))}.")
-        lines.append(f"Costs inside that result: {_plain_money(whole.get('costs'))} (brokerage and statutory charges, plus slippage of "
-                     f"{_f(data.get('slippage_pct_per_fill'), 4)}% on every fill).")
-        lines.append(f"Deepest drop from a peak: {_plain_money(whole.get('max_drawdown'))} ({_f(whole.get('max_drawdown_pct'))}% of the "
-                     f"capital of {_plain_money(data.get('capital'))} in your risk limits).")
+        # M68 PR-7: the costs are his own paper charges, in words (Not set: statutory charges only).
+        lines.append(f"Costs inside that result: {_plain_money(whole.get('costs'))} "
+                     f"({data.get('costs_included') or 'statutory charges'}).")
+        if data.get("capital") is not None:
+            lines.append(f"Deepest drop from a peak: {_plain_money(whole.get('max_drawdown'))} ({_f(whole.get('max_drawdown_pct'))}% of "
+                         f"your capital of {_plain_money(data.get('capital'))}).")
+        else:
+            lines.append(f"Deepest drop from a peak: {_plain_money(whole.get('max_drawdown'))} (a share of your capital needs your "
+                         "starting capital: Settings › Trade settings › Paper account).")
     pause = data.get("loss_streak")
     if pause:
         lines.append(_pause_line(pause))

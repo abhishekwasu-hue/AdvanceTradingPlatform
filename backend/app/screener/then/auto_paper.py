@@ -7,9 +7,10 @@ N1-3 is the owner's decision. Three switches must all be on, or an AUTO_PAPER se
 3. the template's own owner armed it (`templates.arm_of`: a valid key in `gate_settings_json`; missing, malformed,
    another user's or another mode's arming is "not armed").
 
-Limits (X2-3): at most `SCAN_AUTO_PAPER_MAX_PER_DAY` Auto PAPER entries per template per IST day and a
-`SCAN_AUTO_PAPER_COOLDOWN_MINUTES` cool-down per symbol for the same person, counted from `execution_intents` (route
-PAPER, DONE). Over a limit the setup becomes a proposal. Nothing here places an order: the dispatcher's `_paper` does,
+Limits (X2-3; M68 PR-6, TS1-063: the template owner's own Trade settings > Automation, no platform value): at most
+"Scanner entries at most" Auto PAPER entries per template per IST day and a "Scanner wait per symbol" cool-down per symbol
+for the same person, counted from `execution_intents` (route PAPER, DONE); an arming lasts "Scanner stays armed for" days.
+Over a limit, or with one of them Not set, the setup becomes a proposal. Nothing here places an order: the dispatcher's `_paper` does,
 through the PAPER pipeline without a broker.
 """
 from __future__ import annotations
@@ -56,7 +57,7 @@ _UNREAD: object = object()
 async def arm_state(session: AsyncSession, row: Optional[ScanThenTemplateRecord], now: Optional[datetime] = None,
                     changed: object = _UNREAD) -> Tuple[bool, str]:
     """(armed, why not) - review of X2 (L1): a valid arming (`templates.arm_of`) that was made after the operator last
-    changed the `scan_auto_paper` switch (audit `feature_flag_set`) and is younger than SCAN_AUTO_PAPER_ARM_DAYS.
+    changed the `scan_auto_paper` switch (audit `feature_flag_set`) and is younger than the owner's own arming days (M68).
     `changed`: that time when the caller already read it (`flag_changed_at`), else it is read here."""
     arm = T.arm_of(row)
     if arm is None:
@@ -67,7 +68,11 @@ async def arm_state(session: AsyncSession, row: Optional[ScanThenTemplateRecord]
         return False, WHY_NOT_ARMED
     at = at if at.tzinfo else at.replace(tzinfo=timezone.utc)
     now = now or datetime.now(timezone.utc)
-    days = int(app_config.SCAN_AUTO_PAPER_ARM_DAYS)
+    # M68 PR-6 (TS1-063): how long an arming lasts is the owner's own Trade settings value; Not set = not armed (asked).
+    from app.execution import automation
+    days = (await automation.load_for(session, row.user_id if row is not None else None)).scan_auto_arming_days
+    if days is None:
+        return False, automation.needs_setting("scan_auto_arming_days")
     if now - at > timedelta(days=days):
         return False, WHY_ARM_EXPIRED.format(days=days)
     last = await flag_changed_at(session) if changed is _UNREAD else changed
@@ -124,6 +129,10 @@ async def availability(session: AsyncSession, tenant_id: int, row: Optional[Scan
         return Availability(False, armed, WHY_FLAG_OFF)
     if sw.approval_required:
         return Availability(False, armed, WHY_APPROVAL)
+    if row is not None:
+        from app.execution import approval
+        if await approval.required(session, tenant_id, user_id=row.user_id):     # M68 PR-6: the owner's own "Ask me first"
+            return Availability(False, armed, WHY_APPROVAL)
     if row is None or row.mode != "AUTO_PAPER":
         return Availability(True, False, WHY_NOT_AUTO)
     return Availability(True, armed, "" if armed else why_not)
@@ -225,10 +234,16 @@ async def limit_reason(session: AsyncSession, intent: ExecutionIntentRecord, now
     rule_id, symbol = rule_and_symbol(intent.source_ref)
     if rule_id is None:
         return "Not a scan template's intent"
-    cap = int(app_config.SCAN_AUTO_PAPER_MAX_PER_DAY)
+    # M68 PR-6 (TS1-063): the limits are the owner's own Trade settings values; one Not set = no Auto PAPER (a proposal).
+    from app.execution import automation
+    own = await automation.load_for(session, intent.user_id)
+    missing = own.scan_missing()
+    if missing:
+        return "; ".join(automation.needs_setting(name) for name in missing) + " - a proposal instead"
+    cap = int(own.scan_auto_max or 0)
     if await entries_today(session, intent.tenant_id, rule_id, now) >= cap:
         return f"Auto PAPER limit reached: {cap} entries from this template today - a proposal instead"
-    minutes = int(app_config.SCAN_AUTO_PAPER_COOLDOWN_MINUTES)
+    minutes = int(own.scan_auto_cooldown_minutes or 0)
     if minutes > 0:
         from app.db.models import OrderRecord
         since = now - timedelta(minutes=minutes)

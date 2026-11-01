@@ -7,12 +7,11 @@ from app.backtest.analytics import build_analytics
 from app.backtest.models import ModelSet
 from app.backtest.options import IST, to_utc
 from app.backtest.windows import WindowCursor, bar_length, decision_time
-from app.core import config as app_config
 from app.core.enums import SignalDirection
 from app.core.models import BacktestResult, RiskConfig, Trade
 from app.core.resampling import resample_ohlc
 from app.execution.exit_settings import in_window
-from app.execution.paper_broker import PaperBroker
+from app.execution.paper_charges import STATUTORY_ONLY, PaperCharges
 from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.instruments.registry import get_contract_spec
 from app.risk_engine.loss_streak import BacktestLossStreak
@@ -37,6 +36,7 @@ def run_backtest(
     models: Optional[ModelSet] = None,
     session_rules: bool = True,
     cutoffs: tuple[dtime | None, dtime | None, dtime | None] = (None, None, None),
+    charges: PaperCharges | None = None,
 ) -> BacktestResult:
     """Event-driven backtest over historical OHLCV bars.
 
@@ -50,6 +50,9 @@ def run_backtest(
     `cutoffs` (M68 PR-3, TS1-027, D1): the user's own (new entries from, new entries until, square-off time) - the values
     the live worker reads for him (app/execution/exit_settings.py, BacktestRunner passes them). Each None = Not set: no
     ATP entry cut-off and no ATP square-off (parity: live does the same).
+
+    `charges` (M68 PR-7, TS1-069): the trader's own paper charges - brokerage per order and slippage per side - so a
+    backtest pays what his paper fills pay (parity); None = statutory charges only (no brokerage, no slippage).
     """
     frames: Dict[str, pd.DataFrame] = {}
     for tf in strategy.timeframes:
@@ -63,7 +66,7 @@ def run_backtest(
 
     # Realism C2: execution models; the default set is exactly the engine before C2 (golden test).
     models = models or ModelSet()
-    broker = PaperBroker()
+    broker = (charges or STATUTORY_ONLY).broker()
     if not models.is_default:
         broker.slippage_model = models.slippage_model(broker.slippage_pct)
     fill = models.fill_model()
@@ -77,10 +80,12 @@ def run_backtest(
     margin_kind = _margin_kind(get_contract_spec(symbol), symbol)
     margin_refused = 0
     margin_calls = 0
-    # DEF-0: a backtest's starting equity is the trader's own capital, else the PAPER account's starting balance.
-    risk_config = risk_config.with_capital(app_config.PAPER_STARTING_CAPITAL)
+    # DEF-0 / M68 PR-7 (TS1-066): a backtest's starting equity is the trader's own capital (the caller passes his capital,
+    # else his paper account's - app/paper/paper_settings.py capital_of); none set: the run starts from 0 and every figure
+    # measured as a share of the capital is left out - never a capital ATP chose.
     capital = float(risk_config.capital or 0.0)
-    risk_manager = RiskManager(risk_config)
+    # M68 PR-2 (M68Q-PR2-1): a test on past prices places nothing; with no size of the trader's own it still tests one lot
+    risk_manager = RiskManager(risk_config, one_lot_if_unsized=True)
     state = TradingDayState()
     streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
     contract_spec = get_contract_spec(symbol)

@@ -14,7 +14,7 @@ from app.core.logging_config import bind_log_context, update_log_context
 from app.core.models import RiskConfig, Signal
 from app.db.models import OrderRecord, Tenant, User
 from app.execution import approval as approval_gate
-from app.execution import order_defaults
+from app.execution import order_defaults, position_size
 from app.execution.contract_execution import ContractExecutionError, build_order_plan, contract_ltp, written_lot_cap
 from app.execution.order_persistence import create_order, execution_result_from_order, transition_order
 from app.execution.prechecks import PreCheckRefusal, live_margin_cap, margin_probe_for, validate_instrument
@@ -26,6 +26,7 @@ from app.instruments.registry import get_contract_spec
 from app.kill_switch.checks import active_kill_switch_reasons
 from app.notifications.service import notify
 from app.observability.metrics import ORDER_ENTRY_LATENCY, ORDERS
+from app.paper import paper_settings
 from app.plans.limits import live_allowed_for, tenant_is_active
 from app.platform.controls import clamp_config, risk_ceilings
 from app.platform.controls import entry_blocks as platform_entry_blocks
@@ -54,12 +55,16 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
         paused = await paused_reason(session, user.id)
         if paused:
             reasons.append(paused)
+        # M68 PR-7 (TS1-064, D4): a new PAPER entry waits for HIS starting capital (the first paper order asks for it).
+        needs = await paper_settings.capital_refusal(session, user)
+        if needs:
+            reasons.append(needs)
         # Z5 / P1-d (flag risk_by_default): the user's daily loss lockout and entries-per-day limit - new PAPER entries
         # only; exits never come here (ADR-0004).
         from app.risk_engine import by_default
         if await by_default.enabled(session, user.tenant_id):
             # `reserve`: the order pipelines take the day's entry slot atomically (given back if the entry is not placed).
-            reasons.extend(await by_default.entry_refusals(session, user, reserve=reserve and not reasons))
+            reasons.extend(r for r in await by_default.entry_refusals(session, user, reserve=reserve and not reasons) if r not in reasons)
     if tenant is not None and not tenant_is_active(tenant):
         reasons.append(f"Organisation is {tenant.status}: no new orders")
     if mode == ExecutionMode.LIVE.value and not await live_allowed_for(session, tenant):
@@ -76,6 +81,17 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
         if uncertain:
             reasons.append(uncertain)
     return reasons
+
+
+async def _bot_lots(session: AsyncSession, deployment_id: int | None) -> int | None:
+    """M68 PR-2: the bot's own lots (`strategy_deployments.max_lots`) - the per-bot size of a bot that trades the symbol
+    itself (a contract bot's lots reach here through its ContractRules); None when not set or no bot."""
+    if deployment_id is None:
+        return None
+    from app.db.models import StrategyDeploymentRecord
+    dep = await session.get(StrategyDeploymentRecord, deployment_id)
+    lots = getattr(dep, "max_lots", None) if dep is not None else None
+    return int(lots) if lots else None
 
 
 @by_default_releases_slot
@@ -176,7 +192,7 @@ async def execute_signal_for_user(
         manual = origin == approval_gate.ORIGIN_MANUAL and deployment_id is None and journal_source == "MANUAL"
         gate_origin = origin if origin != approval_gate.ORIGIN_MANUAL or manual else approval_gate.ORIGIN_AUTOMATIC
         gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id, origin=gate_origin,
-                                                approval_action_id=approval_action_id)
+                                                approval_action_id=approval_action_id, user_id=user.id)
         if gate:
             kill_switch_reasons.insert(0, gate)
         fo_notes: list = []
@@ -265,7 +281,7 @@ async def execute_signal_for_user(
         # entry rules run before sizing - cool-down after a stop-out (R10), the drawdown ladder
         # (P2/P3) and event blackouts / size cuts (M8). A refusal is a REJECTED order; a size cut
         # is a smaller risk per trade for every sizer downstream.
-        effective_risk_config, ceiling_notes = clamp_config(effective_risk_config, await risk_ceilings(session))
+        effective_risk_config, ceiling_notes = clamp_config(effective_risk_config, await risk_ceilings(session, user.tenant_id))
         pre_notes.extend(ceiling_notes)
         if mode == ExecutionMode.PAPER.value:
             from app.risk_engine import by_default
@@ -282,7 +298,7 @@ async def execute_signal_for_user(
         guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=underlying_signal.symbol, cfg=effective_risk_config,
                                   # no user_id: these reasons are stored on the order trail and notified org-wide, so
                                   # the VIX gate words them without India VIX's values (BT1b)
-                                  direction=underlying_signal.direction.value) if day_state.daily_pnl > daily_limit else GuardianVerdict()
+                                  direction=underlying_signal.direction.value, owner_id=user.id) if day_state.daily_pnl > daily_limit else GuardianVerdict()
         if guard.reasons:
             order.reasons_json = json.dumps(guard.reasons)
             order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(guard.reasons))
@@ -317,6 +333,31 @@ async def execute_signal_for_user(
                 severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=order.id,
             )
             return ExecutionResult(executed=False, reasons=refusals), order
+
+        if max_quantity is None:
+            # M68 PR-2 (TS1-017): no size from the order or the bot's contract - the bot's own lots (an underlying bot's
+            # `max_lots`), else his Trade settings > Position size; nothing of his own and no risk per trade = nothing is
+            # placed and the trail says which setting it needs (before M68: one lot). Margin caps below only lower it.
+            unit = float(contract_spec.lot_size) if contract_spec is not None else float(effective_risk_config.lot_size or position_size.CASH_UNIT)
+            bot_lots = await _bot_lots(session, deployment_id) if contract is None else None
+            why: str | None = None
+            if bot_lots is not None:
+                max_quantity = bot_lots * unit
+            else:
+                max_quantity, why = position_size.quantity_for(
+                    await position_size.load(session, user), unit=unit, entry=signal.entry, capital=effective_risk_config.capital,
+                    risk_set=effective_risk_config.risk_amount() is not None)
+            if why is not None:
+                order.reasons_json = json.dumps([why])
+                order = await transition_order(session, order, OrderStatus.REJECTED, detail=why)
+                logger.warning("Order rejected - no size: %s", why)
+                ORDERS.labels(mode=mode, status=order.status).inc()
+                await notify(
+                    session, user.tenant_id, NotificationType.REJECTION,
+                    title=f"Order not placed: {signal.symbol}", message=why,
+                    severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=order.id,
+                )
+                return ExecutionResult(executed=False, reasons=pre_notes + [why]), order
 
         is_write = contract is not None and contract.position == OptionPosition.WRITE
         # Phase AS: a swing position is a delivery / carry-forward one, entry and stop alike. M68 TS1-009: the margin
@@ -377,6 +418,8 @@ async def execute_signal_for_user(
             place_protective_stop=not (plan is not None and plan.meta.get("instrument_kind") == "OPTION"
                                        and plan.meta.get("premium_stop_pct") is None),
             order_ref=order.id,
+            # M68 PR-7 (TS1-069): a PAPER fill pays his own brokerage / slippage (Not set: statutory charges only).
+            paper_charges=await paper_settings.charges_for(session, user) if execution_mode == ExecutionMode.PAPER else None,
         )
         # M55 S4: the tag (with this row's client order id) is on the row before anything is sent, so the start-up order
         # sweeper (app/execution/order_sweeper.py) can find the order in the broker's book by it after a crash.

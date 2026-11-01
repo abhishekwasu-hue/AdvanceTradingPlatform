@@ -91,6 +91,7 @@ class SettingField:
     today: str = ""                                  # where the value lives today (for the PR that moves it)
     wired: bool = False
     scope: Literal["user", "organisation"] = "user"
+    flag: str | None = None                       # M68 PR-6: shown / saved only while this feature flag is on for him
 
     @property
     def key(self) -> str:
@@ -152,18 +153,19 @@ FIELDS: tuple[SettingField, ...] = (
     # --- Position size (PR-2) --------------------------------------------------------------------------------------------
     _f(P, "mode", "Size by", "choice", "How the size of a new entry is worked out.", 2, 17,
        choices=(("FIXED_LOTS", "Fixed lots"), ("FIXED_QUANTITY", "Fixed quantity"), ("PCT_CAPITAL", "% of capital"),
-                ("RISK_BASED", "Risk-based (Risk limits)")), today="none: one lot when no size is given"),
+                ("RISK_BASED", "Risk-based (Risk limits)")), today="none: one lot when no size is given", wired=True),
     _f(P, "lots", "Lots", "whole", "The number of lots for a new entry.", 2, 17, 19, 20, 21, 22, 23, **_count("lots"),
-       term="lot", today="trading_defaults.max_lots / ticket.lots"),
-    _f(P, "quantity", "Quantity", "whole", "The number of shares or units for a new entry.", 2, 17, **_count("units")),
-    _f(P, "capital_pct", "Share of capital", "number", "The value of a new entry as a share of your capital.", 2, 17, **_pct()),
+       term="lot", today="trading_defaults.max_lots / ticket.lots", wired=True),
+    _f(P, "quantity", "Quantity", "whole", "The number of shares or units for a new entry.", 2, 17, **_count("units"), wired=True),
+    _f(P, "capital_pct", "Share of capital", "number", "The value of a new entry as a share of your capital.", 2, 17, **_pct(),
+       wired=True),
     _f(P, "lot_size", "Lot size", "fact", "Set by the exchange for each contract. A size is a whole number of lots.", 2, 18, 88,
        term="lot"),
     _f(P, "fanout_mode", "Extra paper accounts: size by", "choice", "How an extra paper account sizes a copied entry.", 2, 24,
        choices=(("MULTIPLIER", "The main size times a number"), ("FIXED", "Fixed lots"), ("PCT_CAPITAL", "% of its capital")),
-       today="paper_sub_accounts.sizing_mode"),
+       today="paper_sub_accounts.sizing_mode", wired=True),
     _f(P, "fanout_value", "Extra paper accounts: value", "number", "The number for the way chosen above.", 2, 24, **_pos(""),
-       today="paper_sub_accounts.sizing_value"),
+       today="paper_sub_accounts.sizing_value", wired=True),
 
     # --- Exits (PR-3) ----------------------------------------------------------------------------------------------------
     _f(X, "stop_loss_kind", "Stop-loss measured in", "choice", "How your stop-loss distance is counted.", 3,
@@ -206,120 +208,150 @@ FIELDS: tuple[SettingField, ...] = (
     # --- Options (PR-4) --------------------------------------------------------------------------------------------------
     _f(OP, "expiry_rule", "Expiry", "choice", "Which expiry a new option or future trades.", 4, 35, 37, 39,
        choices=(("NEAREST", "Nearest"), ("NEXT", "Next"), ("MONTHLY", "Monthly")), term="expiry",
-       today="trading_defaults.expiry_rule"),
+       today="trading_defaults.expiry_rule", wired=True),
     _f(OP, "strike_rule", "Strike", "choice", "Which strike a new option trades.", 4, 35, 37, 39,
        choices=(("ATM", "At the money (ATM)"), ("ITM", "In the money"), ("OTM", "Out of the money")), term="atm",
-       today="trading_defaults.strike_rule"),
-    _f(OP, "strike_offset", "Strikes away from ATM", "whole", "For in or out of the money: how many strikes away.", 4, 35, 37, 39,
-       **_count("strikes", 0), term="strike", today="trading_defaults.strike_offset"),
+       today="trading_defaults.strike_rule", wired=True),
+    _f(OP, "strike_offset", "Strikes away from ATM", "whole", "For in or out of the money: how many strikes away.", 4, 35, 37, 39, 47,
+       **_count("strikes", 0), term="strike", today="trading_defaults.strike_offset", wired=True),
     _f(OP, "option_position", "Option side", "choice", "Whether a new option position is bought or written.", 4, 35, 37,
-       choices=(("BUY", "Bought"), ("WRITE", "Written (sold)")), today="trading_defaults.option_position"),
+       choices=(("BUY", "Bought"), ("WRITE", "Written (sold)")), today="trading_defaults.option_position", wired=True),
     _f(OP, "spread_width", "Spread width", "whole", "The distance between a spread's legs, in listed strikes.", 4, 23, 36, 37, 39,
-       **_count("strikes"), today="trading_defaults.spread_width; strategy_deployments.spread_width"),
-    _f(OP, "ratio", "Ratio spread", "whole", "Sold legs for each bought leg in a ratio spread.", 4, 42, **_count("sold legs")),
-    _f(OP, "custom_legs", "Custom structure legs", "legs", "The legs a custom structure starts with.", 4, 38),
+       **_count("strikes"), today="trading_defaults.spread_width; strategy_deployments.spread_width", wired=True),
+    _f(OP, "ratio", "Ratio spread", "whole", "Sold legs for each bought leg in a ratio spread.", 4, 42, **_count("sold legs"), wired=True),
+    _f(OP, "custom_legs", "Custom structure legs", "legs", "The legs a custom structure starts with.", 4, 38, wired=True),
     _f(OP, "hedge", "Add a protective bought leg", "switch", "On: a written option gets a bought leg further out.", 4),
     _f(OP, "hedge_offset", "Protective leg distance", "whole", "How many strikes further out the bought leg is.", 4,
        **_count("strikes")),
     _f(OP, "delta_tolerance", "Delta tolerance", "number", "How far from your target delta a strike may be.", 4, 43,
-       unit="", low=0.0, high=1.0, low_open=True, term="delta"),
-    _f(OP, "strike_search_steps", "Strikes searched", "whole", "How many strikes either side are looked at for your filter.", 4, 43,
-       **_count("strikes")),
+       unit="", low=0.0, high=1.0, low_open=True, term="delta", wired=True),
+    _f(OP, "strike_search_steps", "Strikes searched", "whole", "How many strikes either side are looked at for your filter.", 4, 43, 47,
+       **_count("strikes"), wired=True),
     _f(OP, "expiry_day_roll", "On an expiry day, open the next expiry", "switch",
        "On: on its expiry day the chain and the builders open the next expiry.", 4, 44, term="expiry",
-       today="option_chain.expiry_day_next"),
+       today="option_chain.expiry_day_next", wired=True),
     _f(OP, "settlement_warning", "Physical delivery warning", "switch",
-       "On: you are warned before a stock option near its strike reaches expiry.", 4, 45, today="smart_execution.settlement_*"),
+       "On: you are warned before a stock option near its strike reaches expiry.", 4, 45, today="smart_execution.settlement_*", wired=True),
     _f(OP, "settlement_days_before", "Warn this many days before expiry", "whole", "When the delivery warning starts.", 4, 45,
-       **_count("days", 0), today="smart_execution.settlement_days_before"),
+       **_count("days", 0), today="smart_execution.settlement_days_before", wired=True),
     _f(OP, "settlement_band_pct", "Near the strike means within", "number", "How close to its strike an option counts as near.",
-       4, 45, **_pct(), today="smart_execution.settlement_band_pct"),
-    _f(OP, "risk_free_rate_pct", "Risk-free rate", "number", "The interest rate used to work out the Greeks.", 4, 100,
-       unit="%", low=0.0, high=100.0, term="greeks", today="fixed 7 %"),
+       4, 45, **_pct(), today="smart_execution.settlement_band_pct", wired=True),
+    _f(OP, "risk_free_rate_pct", "Risk-free rate", "number",
+       "The interest rate used to work out the Greeks. Not set: the platform's rate (shown with the Greeks).", 4, 100, 102,
+       unit="%", low=0.0, high=100.0, term="greeks", today="fixed 7 %", wired=True),
+    # M72 review (M72Q-5): the options builder's selector numbers and the strike finder's inputs - Not set, none pre-chosen.
+    _f(OP, "builder_pop_pct", "Builder: lowest chance of profit", "number",
+       "The options builder suggests a structure only at or above this chance of profit.", 4, 103, **_pct(),
+       today="fixed 70 % (options builder suggest)", wired=True),
+    _f(OP, "builder_strikes_otm", "Builder: strikes out of the money", "whole",
+       "How many strikes out of the money the builder's fixed-strike spread sells.", 4, 103, **_count("strikes", 0),
+       today="fixed 2 (options builder suggest)", wired=True),
+    _f(OP, "finder_target_delta", "Strike finder: target delta", "number", "The delta the strike finder looks for.", 4, 104,
+       unit="", low=0.0, high=1.0, low_open=True, term="delta"),
+    _f(OP, "finder_premium_min", "Strike finder: lowest premium", "number", "The strike finder skips options priced below this.",
+       4, 104, **_pos("₹")),
+    _f(OP, "finder_premium_max", "Strike finder: highest premium", "number", "The strike finder skips options priced above this.",
+       4, 104, **_pos("₹")),
+    _f(OP, "finder_oi_wall_strikes", "Strike finder: distance from an OI wall", "whole",
+       "How many strikes away from a large open-interest strike the finder keeps.", 4, 104, **_count("strikes", 0)),
     _f(OP, "listed_strikes", "Listed strikes and expiries", "fact", "The exchange lists the strikes and expiries you can trade.",
        4, 47, term="strike"),
     _f(OP, "physical_settlement", "Delivery at expiry", "fact",
        "A stock option held at expiry settles by delivery of the shares (an exchange rule).", 4, 45),
 
-    # --- Risk limits (PR-5). The order-time checks themselves stay on Settings > Risk limits (M64, one store). -----------
+    # --- Risk limits (PR-5). The order-time checks themselves stay on Settings > Risk limits (M64, one store): the
+    # losses-in-a-row pause end (TS1-051), two bots on opposite sides (TS1-052) and the first drawdown step's cut (TS1-054)
+    # live there too (risk_settings), see ON_RISK_LIMITS_PAGE. Read by app/risk_engine/own_risk.py. ------------------------
     _f(R, "overnight_short_options", "Hold written straddles and strangles overnight", "switch",
-       "On: written structures without wings may be carried forward.", 5, 41),
-    _f(R, "loss_cooldown_pause_mode", "A losses-in-a-row pause ends", "choice",
-       "When new entries start again after a losses-in-a-row pause with no minutes set.", 5, 51,
-       choices=(("next_session", "At the next session"), ("until_resume", "When I resume")),
-       today="risk_settings.loss_streak_pause"),
-    _f(R, "opposite_positions", "Two bots on opposite sides", "choice",
-       "Whether two of your bots may hold opposite positions in the same symbol.", 5, 52,
-       choices=(("allow", "Allowed"), ("deny", "Not allowed")), today="risk_settings.opposite_positions"),
-    _f(R, "drawdown_cut_pct", "Size cut at the first drawdown step", "number",
-       "At the first drawdown step the size is cut by this much.", 5, 54, **_pct(), term="drawdown",
-       today="fixed 50 % (DRAWDOWN_CUT_MULTIPLIER)"),
-    _f(R, "vix_gate", "India VIX check", "switch", "On: a fast rise or a high level of India VIX pauses or cuts new entries.", 5, 56,
-       term="india-vix", today="admin flag + operator settings"),
+       "On: a bot that carries forward may also hold a written straddle or strangle (no wings) for days.", 5, 41,
+       today="defined-risk spreads only", wired=True),
+    _f(R, "vix_gate", "India VIX check", "switch",
+       "On: a fast rise of India VIX pauses new long entries on NIFTY, BANKNIFTY and SENSEX for the day (also when it "
+       "cannot be read after the check time); a high level cuts their size. Uses your values below.", 5, 56,
+       term="india-vix", today="admin flag + operator settings", wired=True),
     _f(R, "vix_change_pct", "India VIX rise that pauses entries", "number", "A rise of this much pauses new long entries.", 5, 56,
-       **_pct(), term="india-vix"),
+       **_pct(), term="india-vix", wired=True),
     _f(R, "vix_level", "India VIX level that cuts the size", "number", "At or above this level the size is cut.", 5, 56,
-       **_pos("points"), term="india-vix"),
-    _f(R, "vix_size_cut_pct", "Size cut at that level", "number", "How much the size is cut at that level.", 5, 56, **_pct()),
-    _f(R, "experience_trades", "Experience level: trades", "whole", "Closed paper trades before the next level opens.", 5, 57,
-       **_count("trades")),
-    _f(R, "experience_sessions", "Experience level: sessions", "whole", "Sessions traded before the next level opens.", 5, 57,
-       **_count("sessions")),
-    _f(R, "event_default_action", "A new market event day", "choice", "What a market event day you add does to new entries.", 5, 58,
-       choices=(("PAUSE", "Pause new entries"), ("SIZE_CUT", "Cut the size")), today="market event action SIZE_CUT"),
+       **_pos("points"), term="india-vix", wired=True),
+    _f(R, "vix_size_cut_pct", "Size cut at that level", "number", "How much the size is cut at that level.", 5, 56, **_pct(),
+       wired=True),
+    _f(R, "experience_trades", "Experience level: trades", "whole",
+       "With \"Limit me by my experience level\" on: closed paper trades before naked short options open.", 5, 57,
+       **_count("trades"), today="100 trades (operator setting)", wired=True),
+    _f(R, "experience_sessions", "Experience level: sessions", "whole",
+       "With \"Limit me by my experience level\" on: sessions with a paper trade before naked short options open.", 5, 57,
+       **_count("sessions"), today="60 sessions (operator setting)", wired=True),
+    _f(R, "event_default_action", "A new market event day", "choice",
+       "What a market event day you add does to new entries; the form starts from it.", 5, 58,
+       choices=(("BLOCK", "Pause new entries"), ("SIZE_CUT", "Cut the size")), today="market event action SIZE_CUT", wired=True),
     _f(R, "ceiling_risk_per_trade_pct", "Team ceiling: risk per trade", "number", "The most any member may set.", 5, 48,
-       **_pct(), scope="organisation", today="platform ceiling 2 %"),
+       **_pct(), scope="organisation", wired=True, today="platform ceiling 2 %"),
     _f(R, "ceiling_daily_loss_pct", "Team ceiling: daily loss", "number", "The most any member may set.", 5, 48, **_pct(),
-       scope="organisation", today="platform ceiling 5 %"),
+       scope="organisation", wired=True, today="platform ceiling 5 %"),
     _f(R, "ceiling_portfolio_risk_pct", "Team ceiling: risk across positions", "number", "The most any member may set.", 5, 48,
-       **_pct(), scope="organisation", today="platform ceiling 10 %"),
+       **_pct(), scope="organisation", wired=True, today="platform ceiling 10 %"),
     _f(R, "ceiling_drawdown_pause_pct", "Team ceiling: drawdown pause", "number", "The most any member may set.", 5, 48, **_pct(),
-       scope="organisation", today="platform ceiling 25 %"),
+       scope="organisation", wired=True, today="platform ceiling 25 %"),
     _f(R, "ceiling_warn_at_pct", "Team ceiling: warn at", "number", "A notice when a member's use reaches this share of the limit.",
-       5, 59, **_pct(), scope="organisation", today="fixed 80 %"),
+       5, 59, **_pct(), scope="organisation", wired=True, today="fixed 80 %"),
     _f(R, "broker_exchange_checks", "Broker and exchange checks", "fact",
        "Margin available, F&O ban, market open and the broker's own rejections always apply, and so does your kill switch.",
        5, 95, term="margin"),
 
     # --- Automation (PR-6) -----------------------------------------------------------------------------------------------
-    _f(A, "approval_mode", "New entries", "choice", "Whether a bot places an entry by itself or asks you first.", 6, 60, 61,
-       choices=(("AUTO", "Placed automatically"), ("APPROVAL", "Ask me first")), today="trading_defaults.entry_mode; bot entry_mode"),
+    _f(A, "approval_mode", "New entries", "choice",
+       "Whether your bots, alerts, API signals and paper plan tickets place an entry by themselves or ask you first. "
+       "A bot follows this unless you chose New entries for that bot itself; Ask me first also turns your paper plan "
+       "ticket's Place into a request you approve.", 6, 60, 61,
+       choices=(("AUTO", "Placed automatically"), ("APPROVAL", "Ask me first")), today="trading_defaults.entry_mode; bot entry_mode",
+       wired=True),
     _f(A, "approval_entry_minutes", "An entry request waits", "whole", "Minutes an entry waiting for your answer stays open.", 6, 62,
-       **_count("minutes"), today="operator setting (15 minutes)"),
+       **_count("minutes"), today="operator setting (15 minutes)", wired=True),
     _f(A, "approval_exit_minutes", "An exit request waits", "whole", "Minutes an exit waiting for your answer stays open.", 6, 62,
        **_count("minutes"), today="operator setting (30 minutes)"),
     _f(A, "requote_drift_pct", "New price after a move of", "number", "A waiting entry is offered at the new price after this move.",
-       6, 62, **_pct(), today="APPROVAL_REQUOTE_MAX_DRIFT_PCT"),
+       6, 62, **_pct(), today="APPROVAL_REQUOTE_MAX_DRIFT_PCT", wired=True),
     _f(A, "max_requotes", "New prices offered at most", "whole", "How many times a waiting entry is offered at a new price.", 6, 62,
-       **_count("times", 0), today="APPROVAL_MAX_REQUOTES"),
+       **_count("times", 0), today="APPROVAL_MAX_REQUOTES", wired=True),
     _f(A, "window_start", "New entries from", "time", "No new entry before this time. Exits always work.", 3, 26, 28, wired=True),
     _f(A, "window_end", "New entries until", "time", "No new entry after this time. Exits always work.", 3, 26, 28,
        today="was fixed 15:00 (MCX 23:00, CDS 16:30); D1: Not set = no cut-off", wired=True),
     _f(A, "reentry", "Re-enter after an exit", "switch", "On: a bot may enter again on a new signal after an exit.", 6),
     _f(A, "reentry_max", "Re-entries at most", "whole", "How many times a bot may re-enter.", 6, **_count("times")),
     _f(A, "scan_auto_max", "Scanner entries at most", "whole", "Paper entries the scanner may place by itself in a day.", 6, 63,
-       **_count("entries"), today="SCAN_AUTO_PAPER_MAX_PER_DAY"),
+       **_count("entries"), today="SCAN_AUTO_PAPER_MAX_PER_DAY", wired=True, flag="scan_auto_paper"),
     _f(A, "scan_auto_cooldown_minutes", "Scanner wait per symbol", "whole", "Minutes before the scanner enters the same symbol again.",
-       6, 63, **_count("minutes", 0), today="operator setting (30 minutes)"),
+       6, 63, **_count("minutes", 0), today="operator setting (30 minutes)", wired=True, flag="scan_auto_paper"),
     _f(A, "scan_auto_arming_days", "Scanner stays armed for", "whole", "Days the scanner keeps placing paper entries once armed.",
-       6, 63, **_count("days"), today="operator setting (7 days)"),
+       6, 63, **_count("days"), today="operator setting (7 days)", wired=True, flag="scan_auto_paper"),
     _f(A, "market_hours", "Market hours and holidays", "fact", "Orders reach the market only while the exchange is open.", 6, 84),
 
     # --- Paper account (PR-7) --------------------------------------------------------------------------------------------
-    _f(PA, "capital", "Starting capital", "number", "The money your paper account starts with.", 7, 64, 65, 66, 67, **_pos("₹"),
-       term="paper", today="₹10,00,000 (server) / ₹1,00,000 (Setup)"),
-    _f(PA, "charges_model", "Charges", "choice", "What a paper trade pays.", 7, 69,
+    # M68 PR-7 (D4 default, M68Q-4): read by app/paper/paper_settings.py for the paper account, every paper fill and cost
+    # line, and backtests (parity). Not set: a new account has no capital (the first paper order asks) and a paper trade
+    # pays statutory charges only - no brokerage, no slippage.
+    _f(PA, "capital", "Starting capital", "number", "The money a new paper account starts with. Not set: your first paper order asks.",
+       7, 64, 65, 66, 67, **_pos("₹"), term="paper", today="paper_accounts.starting_capital (your account's own)", wired=True),
+    _f(PA, "charges_model", "Charges", "choice", "What a paper trade pays. Not set: statutory charges only, no brokerage.", 7, 69,
        choices=(("STATUTORY", "Statutory charges only"), ("STATUTORY_BROKERAGE", "Statutory charges + my brokerage")),
-       today="₹20 per order + 0.02 % slippage"),
-    _f(PA, "brokerage_per_order", "Brokerage per order", "number", "What your broker charges for one order.", 7, 69, 70, 71,
-       unit="₹", low=0.0, high=BIG, today="fixed ₹20"),
-    _f(PA, "slippage_pct", "Slippage", "number", "How far from the price a paper fill is counted, each side.", 7, 69,
-       unit="%", low=0.0, high=100.0, today="fixed 0.02 %"),
+       today="paper fills and backtests", wired=True),
+    _f(PA, "brokerage_per_order", "Brokerage per order", "number",
+       "What your broker charges for one order; used when Charges is \"Statutory charges + my brokerage\".", 7, 69, 70, 71,
+       unit="₹", low=0.0, high=BIG, today="paper fills, cost lines, Options Builder", wired=True),
+    _f(PA, "slippage_pct", "Slippage", "number", "How far from the price a paper fill is counted, each side. Not set: none.", 7, 69,
+       unit="%", low=0.0, high=100.0, today="paper fills and backtests", wired=True),
     _f(PA, "statutory_charges", "Statutory charges", "fact", "STT, exchange, stamp duty, GST and the SEBI fee are set by law.", 7, 90),
 )
 # TS1-049 / 050 / 053 ("Risk limits.*", one store): the M64 order-time checks, each its own switch, stay on Settings > Risk
 # limits (app/risk_engine/risk_limits.py CHECKS) - the Risk limits section links there instead of declaring them twice.
-ON_RISK_LIMITS_PAGE: tuple[str, ...] = ("TS1-049", "TS1-050", "TS1-053")
+ON_RISK_LIMITS_PAGE: tuple[str, ...] = ("TS1-049", "TS1-050", "TS1-051", "TS1-052", "TS1-053", "TS1-054")
+# The organisation-scope ceilings (TS1-048 / 059) are set by a platform admin (app/platform/controls.py); a member sees
+# them here read-only. field key -> the ceiling's key there.
+CEILING_OF: dict[str, str] = {"risk_limits.ceiling_risk_per_trade_pct": "risk_per_trade_pct",
+                              "risk_limits.ceiling_daily_loss_pct": "max_daily_loss_pct",
+                              "risk_limits.ceiling_portfolio_risk_pct": "max_portfolio_risk_pct",
+                              "risk_limits.ceiling_drawdown_pause_pct": "dd_level_2_pct",
+                              "risk_limits.ceiling_warn_at_pct": "warn_at_pct"}
 BY_KEY: dict[str, SettingField] = {f.key: f for f in FIELDS}
 assert len(BY_KEY) == len(FIELDS), "a Trade settings key is declared twice"
 assert all(f.section in SECTION_IDS for f in FIELDS)
@@ -345,9 +377,9 @@ def _legs_ok(v: Any) -> str | None:
             return "each leg needs right, side, strike_rule, offset and ratio"
         if leg["right"] not in ("CE", "PE") or leg["side"] not in ("BUY", "SELL") or leg["strike_rule"] not in ("ATM", "ITM", "OTM"):
             return "a leg has a value that is not allowed"
-        for k, top in (("offset", 20), ("ratio", 4)):        # TS1-047: listed strikes / the broker's basket (facts)
+        for k, low in (("offset", 0), ("ratio", 1)):     # TS1-047: no ATP ceiling - only a listed strike can be traded
             n = leg[k]
-            if isinstance(n, bool) or not isinstance(n, int) or not (0 if k == "offset" else 1) <= n <= top:
+            if isinstance(n, bool) or not isinstance(n, int) or n < low:
                 return f"a leg's {k} is not allowed"
     return None
 
@@ -396,23 +428,41 @@ def is_admin(user: User) -> bool:
     return user.role == UserRole.SUPER_ADMIN.value
 
 
-def visible(f: SettingField, admin: bool) -> bool:
-    """A user sees a fact and a wired field; an unwired field (nothing reads it yet) only a platform admin, under Advanced."""
+def visible(f: SettingField, admin: bool, off: frozenset[str] = frozenset()) -> bool:
+    """A user sees a fact and a wired field; an unwired field (nothing reads it yet) only a platform admin, under Advanced.
+    A field of a feature that is off for him (`off`: flag names, M68 PR-6) is not shown to a user at all."""
+    if f.flag is not None and f.flag in off and not admin:
+        return False
     return f.fact or f.wired or admin
 
 
-def view(values: dict[str, Any], admin: bool) -> dict[str, Any]:
+async def flags_off(session: AsyncSession, tenant_id: int) -> frozenset[str]:
+    """The feature flags of the registry's fields that are off for this organisation."""
+    from app.platform.controls import flag_enabled
+    off: set[str] = set()
+    for name in {f.flag for f in FIELDS if f.flag is not None}:
+        if not await flag_enabled(session, name, tenant_id):
+            off.add(name)
+    return frozenset(off)
+
+
+def view(values: dict[str, Any], admin: bool, ceilings: dict[str, float] | None = None,
+         off: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """`ceilings`: the organisation's ceilings in force (app/platform/controls.risk_ceilings) - an organisation-scope field
+    shows its ceiling read-only (null = no ceiling) and is never one the user saved. `off`: the flags off for him (PR-6)."""
     sections = []
     for s in SECTIONS:
         fields = []
         for f in FIELDS:
-            if f.section != s.id or not visible(f, admin):
+            if f.section != s.id or not visible(f, admin, off):
                 continue
-            value = values.get(f.key)
+            org = f.scope == "organisation"
+            value = (ceilings or {}).get(CEILING_OF.get(f.key, "")) if org else values.get(f.key)
             fields.append({"key": f.key, "label": f.label, "kind": f.kind, "help": f.help, "unit": f.unit,
                            "choices": [{"value": c, "label": label} for c, label in f.choices],
                            "low": f.low, "high": f.high, "low_open": f.low_open, "term": f.term, "fact": f.fact,
-                           "wired": f.wired, "scope": f.scope, "value": value, "saved": f.key in values})
+                           "wired": f.wired, "scope": f.scope, "value": value,
+                           "saved": (value is not None) if org else f.key in values})
         sections.append({"id": s.id, "title": s.title, "fields": fields,
                          "today": {"label": s.today[0], "path": s.today[1]} if s.today else None})
     return {"sections": sections, "admin": admin, "page": PAGE_PATH}
@@ -441,7 +491,7 @@ class TradeSettingsSave(BaseModel):
     values: dict[str, Any]
 
 
-def _changes(body: TradeSettingsSave, admin: bool) -> dict[str, Any]:
+def _changes(body: TradeSettingsSave, admin: bool, off: frozenset[str] = frozenset()) -> dict[str, Any]:
     """The fields sent, each checked against the registry; any problem refuses the whole save (422, nothing stored)."""
     problems: list[dict[str, Any]] = []
     for key, v in body.values.items():
@@ -452,13 +502,18 @@ def _changes(body: TradeSettingsSave, admin: bool) -> dict[str, Any]:
             problems.append({"loc": ["values", key], "msg": "set by the exchange or the broker, not a setting"})
         elif f.scope != "user":
             problems.append({"loc": ["values", key], "msg": "set by your admin for the organisation"})
-        elif not visible(f, admin):
+        elif not visible(f, admin, off):
             problems.append({"loc": ["values", key], "msg": "not available yet"})
         elif (why := problem(f, v)) is not None:
             problems.append({"loc": ["values", key], "msg": f"{f.label} {why}"})
     if problems:
         raise HTTPException(status_code=422, detail=problems)
     return dict(body.values)
+
+
+async def _ceilings(user: User, session: AsyncSession) -> dict[str, float]:
+    from app.platform.controls import risk_ceilings
+    return await risk_ceilings(session, user.tenant_id)
 
 
 async def _read(user: User, session: AsyncSession) -> tuple[dict[str, Any], int]:
@@ -471,7 +526,7 @@ async def _read(user: User, session: AsyncSession) -> tuple[dict[str, Any], int]
 async def get_trade_settings(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """The caller's own Trade settings: every section and field, its value or null ("Not set") and whether he saved it."""
     values, _version = await _read(user, session)
-    return view(values, is_admin(user))
+    return view(values, is_admin(user), await _ceilings(user, session), await flags_off(session, user.tenant_id))
 
 
 @router.put("/trade-settings")
@@ -480,7 +535,8 @@ async def put_trade_settings(body: TradeSettingsSave, user: User = Depends(get_c
     """Saves only the fields sent (null: back to "Not set"); every other field stays exactly as it was."""
     from app.me import prefs
     admin = is_admin(user)
-    changes = _changes(body, admin)
+    off = await flags_off(session, user.tenant_id)
+    changes = _changes(body, admin, off)
     for attempt in (1, 2, 3):                                  # another device saved in between: merge onto its value
         values, version = await _read(user, session)
         for key, v in changes.items():
@@ -490,7 +546,7 @@ async def put_trade_settings(body: TradeSettingsSave, user: User = Depends(get_c
                 values[key] = float(v) if BY_KEY[key].kind == "number" else v
         try:
             await prefs.save(NAMESPACE, json.dumps({"values": values}).encode(), version, user, session)
-            return view(values, admin)
+            return view(values, admin, await _ceilings(user, session), off)
         except HTTPException as exc:
             if exc.status_code != 409 or attempt == 3:
                 raise
@@ -498,4 +554,4 @@ async def put_trade_settings(body: TradeSettingsSave, user: User = Depends(get_c
 
 
 __all__ = ["router", "FIELDS", "BY_KEY", "SECTIONS", "SECTION_IDS", "SettingField", "Section", "check_stored", "NAMESPACE",
-           "PAGE_PATH", "ON_RISK_LIMITS_PAGE", "clean", "problem", "storable", "view", "visible", "is_admin"]
+           "PAGE_PATH", "ON_RISK_LIMITS_PAGE", "CEILING_OF", "clean", "problem", "storable", "view", "visible", "is_admin"]

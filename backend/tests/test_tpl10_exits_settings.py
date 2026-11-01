@@ -38,6 +38,7 @@ from app.backtest.engine import run_backtest
 from app.backtest.options_engine import OptionBacktestConfig, run_option_backtest
 from app.core.enums import OptionStrategy, SignalDirection, StrikeRule
 from app.core.models import RiskConfig
+from app.execution.paper_charges import PaperCharges
 from app.quality.lookahead import synthetic_bars
 from app.strategy_templates import compile as C
 from app.strategy_templates import exits as X
@@ -105,6 +106,7 @@ BASE_PINS = {
 # P1-2b: the pins were recorded with the then built-in minimum reward:risk 1.2; it is stated here so they stay comparable.
 # DEF-0: the pins were recorded under the old platform risk limits too - set explicitly (tests/def0_legacy.py).
 PIN_RISK = legacy(capital=10_000_000, risk_per_trade_pct=0.5, min_risk_reward=1.2)
+PRE_M68_CHARGES = PaperCharges(brokerage_per_order=20.0, slippage_pct=0.02)   # M68 PR-7: the recorded goldens ran at the former ₹20 / 0.02 % - a trader who saved them
 
 
 def _run_pins(choice=None):
@@ -118,11 +120,11 @@ def _run_pins(choice=None):
             s = TemplateStrategy(t, C.resolve_settings(t, "15m"))
             return s.use_exits(choice) if choice is not None else s
         # REV-S1: the pins were recorded before the backtest took the live INTRADAY cut-off / square-off - re-run that way
-        out[f"{key}:underlying"] = _hash(run_backtest(strat(), df, "S", "15min", PIN_RISK, session_rules=False))
+        out[f"{key}:underlying"] = _hash(run_backtest(strat(), df, "S", "15min", PIN_RISK, session_rules=False, charges=PRE_M68_CHARGES))
         big = df.copy()
         big[["open", "high", "low", "close"]] *= 240.0
-        out[f"{key}:single"] = _hash(run_option_backtest(strat(), big, "NIFTY 50", "15min", PIN_RISK, SINGLE))
-        out[f"{key}:spread"] = _hash(run_option_backtest(strat(), big, "NIFTY 50", "15min", PIN_RISK, SPREAD))
+        out[f"{key}:single"] = _hash(run_option_backtest(strat(), big, "NIFTY 50", "15min", PIN_RISK, SINGLE, charges=PRE_M68_CHARGES))
+        out[f"{key}:spread"] = _hash(run_option_backtest(strat(), big, "NIFTY 50", "15min", PIN_RISK, SPREAD, charges=PRE_M68_CHARGES))
     return out
 
 

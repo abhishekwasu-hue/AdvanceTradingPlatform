@@ -1,6 +1,7 @@
 import { CheckCircle2, FileText, FlaskConical, Pencil, Sparkles, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { useInPlace } from "../../../inplace/InPlaceProvider";
 import { api } from "../../../api/client";
 import { Badge, Button, EmptyState, type Tone } from "../../../components/primitives";
 import type { CandleSourceState } from "../../../components/DataSource";
@@ -40,6 +41,7 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
   // Owner order 23 Oct: no usable broker - the server tests the draft on ATP's stored Daily history (intraday: a plain refusal).
   const stored = useFeatures().on("backtest_stored_history") && !!source.sampleHidden && !source.usable;
   const navigate = useNavigate();
+  const inPlace = useInPlace();
   const location = useLocation();
   // The Idea Builder's "ask the AI for a custom rule set" hands its prompt over.
   const [prompt, setPrompt] = useState(() => (location.state as { prompt?: string } | null)?.prompt ?? "");
@@ -70,7 +72,7 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
       advance(1);
       return api.aiGenerate(prompt, { language: "en", symbol: symbol.trim() || null }, signal);
     });
-    if (d === "interview") { navigate(copilotPath("idea-builder"), { state: { prompt } }); return; }
+    if (d === "interview") { inPlace.open(copilotPath("idea-builder"), { state: { prompt } }); return; }
     if (d) { setSelected(d); setAcceptRisk(false); refresh(); }
   }
 

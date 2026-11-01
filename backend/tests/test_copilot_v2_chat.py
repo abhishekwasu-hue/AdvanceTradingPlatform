@@ -107,6 +107,9 @@ def test_cu3_the_chart_answer_carries_its_headline_numbers_from_the_tools_only()
     area = h["area"]
     assert area["where"] in ("above", "below", "inside") and area["side"] in ("demand", "supply")
     assert area["distance"] >= 0 and area["from"] <= area["to"]
+    # M78 (F3): the area's own timeframe and state ride along (the recorded zones are daily), so the chart label matches
+    assert area["timeframe"] == "1d" and area["state"] in ("fresh", "tested")
+    assert chat.nearest_area(100.0, [{"low": 90, "high": 95, "role": "demand"}])["timeframe"] is None
     out, _, _ = _answer("read the bank nifty 15 min chart")
     assert out.headline["chart"] == {"symbol": "NIFTY BANK", "exchange": "NSE", "timeframe": "15min"}
     assert _answer("Today's market brief")[0].headline is None

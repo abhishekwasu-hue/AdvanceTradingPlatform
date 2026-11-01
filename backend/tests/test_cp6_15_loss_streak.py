@@ -162,7 +162,7 @@ def _live_decisions(me: dict, mode: str) -> List[bool]:
             for ts, outcome in _attempts():
                 now = to_utc(ts)
                 state = await build_trading_day_state(session, user, now=now)
-                approved = RiskManager(cfg).validate_and_size(_signal(ts), state).approved
+                approved = RiskManager(cfg).validate_and_size(_signal(ts), state, requested_quantity=1).approved
                 out.append(approved)
                 if approved:
                     session.add(TradeRecord(tenant_id=me["tenant_id"], user_id=me["id"], mode="PAPER", symbol="NIFTY 50", strategy_id="cp6_15_script",
@@ -187,7 +187,8 @@ async def _tenant_cfg(session, tenant_id: int) -> RiskConfig:
 
 def test_the_default_is_next_session_and_the_default_limit_is_unchanged():
     # DEF-0 (owner, 28 Oct): no built-in losses-in-a-row limit - not set (None) until the trader sets one
-    assert RiskConfig().loss_streak_pause == "next_session" and RiskConfig().max_consecutive_losses is None
+    # M68 PR-5 (TS1-051): the pause end is Not set (None) until the trader picks it - no built-in "next_session"
+    assert RiskConfig().loss_streak_pause is None and RiskConfig().max_consecutive_losses is None
     with pytest.raises(ValueError):
         RiskConfig(loss_streak_pause="forever")
 
@@ -270,7 +271,7 @@ def test_regression_the_live_pause_now_ends_at_the_next_session():
     _store_losses(me, [start - timedelta(hours=3, minutes=m) for m in range(5)])   # five losses in the previous session
     state = _state(me, now)
     assert state.consecutive_losses == 0
-    assert RiskManager(RiskConfig(max_consecutive_losses=LIMIT, min_risk_reward=1.0)).validate_and_size(_signal(now), state).approved
+    assert RiskManager(RiskConfig(max_consecutive_losses=LIMIT, min_risk_reward=1.0)).validate_and_size(_signal(now), state, requested_quantity=1).approved
     # three losses this session pause again, for this session only
     _store_losses(me, [max(start + timedelta(minutes=1), now - timedelta(minutes=m)) for m in (3, 2, 1)])
     assert _state(me, now).consecutive_losses == 3
@@ -321,7 +322,7 @@ def test_resume_is_refused_under_next_session():
 
 def test_the_setting_round_trips_and_defaults_without_a_row():
     me = _new_user("cp615-setting@example.com")
-    assert client.get("/api/risk-settings", headers=me["headers"]).json()["loss_streak_pause"] == "next_session"
+    assert client.get("/api/risk-settings", headers=me["headers"]).json()["loss_streak_pause"] is None    # M68 PR-5: Not set
     status = client.get("/api/risk-settings/loss-streak", headers=me["headers"]).json()
     assert status["mode"] == "next_session" and not status["paused"] and status["limit"] is None      # DEF-0: not set
     assert _save_mode(me, "until_resume")["loss_streak_pause"] == "until_resume"
@@ -343,7 +344,7 @@ def test_exits_are_never_blocked_while_new_entries_are_paused():
             user = await session.get(User, me["id"])
             now = datetime.now(timezone.utc)
             state = await build_trading_day_state(session, user)
-            decision = RiskManager(await _tenant_cfg(session, me["tenant_id"])).validate_and_size(_signal(now), state)
+            decision = RiskManager(await _tenant_cfg(session, me["tenant_id"])).validate_and_size(_signal(now), state, requested_quantity=1)
             assert not decision.approved and any("losses in a row" in r for r in decision.reasons)
             assert (await loss_streak_status(session, me["tenant_id"]))["paused"]
             open_trade = TradeRecord(tenant_id=me["tenant_id"], user_id=me["id"], mode="PAPER", symbol="OPEN1", strategy_id="s", direction="LONG",

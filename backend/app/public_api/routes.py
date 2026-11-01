@@ -180,7 +180,7 @@ async def submit_signal(body: PublicSignal, p: ApiPrincipal = Depends(api_key_au
                     timestamp=datetime.now(timezone.utc), entry=body.entry, stop_loss=body.stop_loss, target1=body.target1, target2=body.target2,
                     risk_reward=rr, score=50, grade=SignalGrade.VALID, reasons=[f"public API key {p.key.name}"], timeframe_combo="external")
     from app.execution import approval
-    if await approval.required(session, p.tenant.id):
+    if await approval.required(session, p.tenant.id, user_id=p.user.id):   # M68 PR-6: his own "Ask me first" too
         # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; the PAPER order waits for Approve in the app.
         key = f"api:{p.key.id}:{body.idempotency_key}" if body.idempotency_key else f"api:{p.key.id}:{uuid.uuid4().hex}"
         try:

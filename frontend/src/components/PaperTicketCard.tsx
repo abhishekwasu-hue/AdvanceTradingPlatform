@@ -5,6 +5,7 @@ import type { PaperRiskStatus, TicketSetup, TicketView, TradePlanView } from "..
 import { Card, signClass } from "./ui";
 import { Details, TextOnDemand } from "../ui/numbersFirst";
 import { useUiV2 } from "../ui/useFeatures";
+import { CapitalAsk, needsCapital } from "../settings/CapitalAsk";
 import { EMPTY_FORM, costRows, gauge, lockoutLine, money, pendingLine, placedMessage, planFromForm, type TicketForm } from "./paperTicket";
 
 /**
@@ -161,6 +162,8 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
               </div>
             )}
             {[...view.errors, ...view.refusals].map((r) => <p key={r} className="text-xs text-down">{r}</p>)}
+            {/* M68 PR-7 (TS-3, D4): no starting capital yet - asked here, then the plan is checked again. */}
+            {v2 && needsCapital(view.refusals) && <CapitalAsk id="ticket-capital" onSaved={() => void preview()} />}
             {view.warnings.map((w) => <p key={w} className="text-xs text-warn">{w}</p>)}
             {view.can_place && view.confirm_label && (
               <button disabled={busy} onClick={() => void place()} data-testid="ticket-confirm"

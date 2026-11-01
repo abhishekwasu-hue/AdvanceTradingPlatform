@@ -60,7 +60,7 @@ from app.db.models import StrategyDeploymentRecord, Tenant, TradeRecord, User, V
 from app.db.savepoint import guarded
 from app.deployments import why as why_log
 from app.deployments.why import held_back
-from app.execution import approval, exit_settings
+from app.execution import approval, automation, exit_settings
 from app.execution.multileg import execute_structure
 from app.execution.ops_throttle import OpsThrottle
 from app.execution.signal_execution import execute_signal_for_user
@@ -2124,11 +2124,20 @@ class TradingWorker:
                     return False
 
         # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; nothing is placed until a person approves.
-        if await approval.required(session, dep.tenant_id, dep):
+        # M68 PR-6 (TS1-060): the bot's own entry mode, else its owner's Trade settings (Automation > New entries).
+        if await approval.required(session, dep.tenant_id, dep, user.id):
             proposed = await self._propose_entry(session, dep, signal, signal_ts, now, user.id, market_data=market_data, frames=frames)
             waiting = (dep.last_error or "").startswith("Waiting for approval")
-            self._why(dep, "proposed" if waiting else "risk_setting", closed_bar, None if waiting else dep.last_error)
+            self._why(dep, "proposed" if waiting else held_back(dep.last_error), closed_bar, None if waiting else dep.last_error)
             return proposed
+        if await automation.entry_mode(session, dep, user.id) is None:
+            # M68 PR-6: ATP does not choose between placing by itself and asking first; nothing is placed, the card says which.
+            mode_problem = automation.needs_setting("approval_mode")
+            dep.last_signal_at = signal_ts
+            dep.last_error = f"Signal at {signal_ts.isoformat()} skipped. {mode_problem}"[:500]
+            self._why(dep, "needs_setting", closed_bar, mode_problem)
+            await session.commit()
+            return False
 
         contract = None
         rules = ContractRules.from_deployment(dep)
@@ -2202,7 +2211,9 @@ class TradingWorker:
         mine = (await order_defaults.load(session, user)).holding
         if mine is None:
             return None, order_defaults.needs_setting("holding")
-        if mine == "SWING" and dep.timeframe != "day" and not can_hold_for_days(dep.option_strategy or "SINGLE"):
+        from app.risk_engine import own_risk
+        written = (await own_risk.for_user(session, user)).overnight_short_options if mine == "SWING" else False   # TS1-041
+        if mine == "SWING" and dep.timeframe != "day" and not can_hold_for_days(dep.option_strategy or "SINGLE", written_overnight=written):
             return None, (f"{order_defaults.needs_setting('holding')}: your Carry forward setting does not fit this bot "
                           f"(it reads {dep.timeframe} candles) - set this bot's own holding")
         self._holdings[dep.id] = mine
@@ -2279,7 +2290,7 @@ class TradingWorker:
         if rules.kind == InstrumentKind.OPTION and structure_kind != OptionStrategy.SINGLE:
             try:
                 structure = await resolve_structure(
-                    session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
+                    session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width,
                     spot=spot, today=today, chain_provider=chains, custom_legs=parse_custom_legs(getattr(dep, "custom_legs", None)),
                 )
             except (ContractResolutionError, ValueError) as exc:
@@ -2309,7 +2320,7 @@ class TradingWorker:
         spot = float(base["close"].iloc[-1]) if len(base) else None
         try:
             structure = await resolve_structure(
-                session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
+                session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width,
                 spot=spot, today=now.astimezone(IST).date(), chain_provider=_chain_provider(market_data.broker, self._cycle_chains),
                 custom_legs=parse_custom_legs(getattr(dep, "custom_legs", None)),
             )
@@ -2593,17 +2604,19 @@ class TradingWorker:
 
     async def _opposite_position(self, session: AsyncSession, dep: StrategyDeploymentRecord, direction: Any) -> Optional[str]:
         """M55 S6 (A11): the plain reason a NEW automated entry is held back, or None. Under the organisation's
-        `opposite_positions` setting "deny" (the default, owner order M55; risk_settings) an entry is skipped while another
+        `opposite_positions` setting "deny" (owner order M55; risk_settings) an entry is skipped while another
         of its bots holds an open position in the same mode on the same underlying in the other direction. Same direction:
-        unchanged. A position with no known direction (a neutral structure) never counts. Reads only - exits never come here."""
-        from app.core.models import OPPOSITE_ALLOW
+        unchanged. A position with no known direction (a neutral structure) never counts. Reads only - exits never come here.
+        M68 PR-5 (TS1-052, owner decision D3 / M68Q-3): only a SAVED "deny" holds an entry back; Not set (NULL, no row) and
+        "allow" never do."""
+        from app.core.models import OPPOSITE_DENY
         from app.db.models import RiskSettingsRecord
         from app.portfolio.risk import BEARISH, BULLISH, direction_of, underlying_of_trade
         wanted = {"LONG": BULLISH, "SHORT": BEARISH}.get(str(getattr(direction, "value", direction) or "").upper())
         if wanted is None:
             return None
         setting = await session.scalar(select(RiskSettingsRecord.opposite_positions).where(RiskSettingsRecord.tenant_id == dep.tenant_id))
-        if setting == OPPOSITE_ALLOW:          # anything else - no row saved yet included - is the default "deny"
+        if setting != OPPOSITE_DENY:           # Not set (NULL / no row yet) or "allow": two bots may hold opposite sides
             return None
         underlying = master.underlying_of(dep.symbol)
         others = await session.scalars(select(TradeRecord).where(

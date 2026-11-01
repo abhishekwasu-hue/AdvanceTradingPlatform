@@ -351,6 +351,14 @@ def test_interview_deploy_goes_through_the_candidate_gate(monkeypatch):
     df = _sessions(days=5)
     candles = [{"timestamp": ts.isoformat(), "open": r.open, "high": r.high, "low": r.low, "close": r.close, "volume": r.volume} for ts, r in df.iterrows()]
     serve_candles(monkeypatch, candles)                                    # H-C1 a: server-fetched, not posted
+    # M68 PR-7: the evidence walks were recorded at the former ₹20 / 0.02 % paper charges (ATP now sets none); this test
+    # keeps those charges so the same template is picked (one with no trades on these candles).
+    from app.ai import interview
+    from app.execution.paper_charges import PaperCharges
+    real_eval = interview.evaluate_on_candles
+    monkeypatch.setattr(interview, "evaluate_on_candles",
+                        lambda s, d, tf, sym, risk: real_eval(s, d, tf, sym, risk, PaperCharges(brokerage_per_order=20.0, slippage_pct=0.02)))
+    interview._EVIDENCE_CACHE.clear()
     plan = client.post("/api/ai/interview/plan", headers=headers, json={
         "answers": {"language": "en", "experience": "learning", "capital": 300000, "risk": "moderate", "style": "intraday", "vehicle": "option_buy", "goal": "big_trends"},
         "base_timeframe": "5min"}).json()
@@ -358,7 +366,7 @@ def test_interview_deploy_goes_through_the_candidate_gate(monkeypatch):
     cid = plan["candidate_id"]
     # Five sessions of synthetic candles give the templates no trades: the gate refuses before anything else is looked at.
     refused = client.post("/api/ai/interview/deploy", headers=headers, json={"candidate_id": cid, "accept_risk": True})
-    assert refused.status_code == 400 and "backtest evidence" in refused.text
+    assert refused.status_code == 400 and "backtest evidence" in refused.text, refused.text
 
     # With server-side evidence (as a longer run produces) on a cash deployment, the risk statement must still be accepted.
     async def with_evidence():

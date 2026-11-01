@@ -193,7 +193,7 @@ def test_bull_put_spread_reaches_its_target_in_a_rally():
 
 def test_undefined_risk_structures_stop_on_the_breakeven_and_the_sizer_refuses_big_lots():
     # A 1:2 call ratio spread in a strong rally: unbounded above the outer breakeven -> underlying exit at that level.
-    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.CALL_RATIO_SPREAD, implied_volatility=0.14, spread_width=2,
+    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.CALL_RATIO_SPREAD, implied_volatility=0.14, spread_width=2, ratio_shorts=2,
                                target_credit_pct=50, stop_credit_pct=100, underlying_breach_exit=True)  # DEF-0: the old built-in levels set explicitly
     result = run_option_backtest(_OneShot(), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg)
     assert result.total_trades == 1 and "breakeven" in result.trades[0].exit_reason and result.trades[0].pnl < 0

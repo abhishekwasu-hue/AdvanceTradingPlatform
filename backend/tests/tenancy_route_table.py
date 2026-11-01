@@ -27,6 +27,9 @@ P_SIGN_IN_PROVIDERS = ("public: which sign-in provider buttons the sign-in page 
                        "ui_v2 layout switch; no data)")
 P_SOCIAL_SIGN_IN = ("public: sign-in providers (M73: Google, Facebook) - the signed per-provider state cookie and the provider's "
                     "own exchange are the credential (rate limited as /login; 404 until the credentials are set)")
+P_BROKER_SIGN_IN = ("public: \"Continue with your broker\" (M74, broker:<id> providers) - the signed per-provider state cookie and "
+                    "the broker's own code exchange with ATP's platform app are the credential (rate limited as /login; 404 "
+                    "until that broker's platform app is set and approved)")
 P_SOCIAL_PENDING = ("public: a pending provider step (M73) - the signed 10-minute step token in the body is the credential, and "
                     "a link needs the account's own password and two-factor code (rate limited and locked out as /login)")
 S_OWN_SIGN_IN_WAYS = ("self: the caller's own linked sign-in providers (M73 Settings › Account): start a link for the caller's own "
@@ -367,6 +370,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/auth/providers"): P_SIGN_IN_PROVIDERS,
     ("GET", "/api/auth/facebook/callback"): P_SOCIAL_SIGN_IN,
     ("GET", "/api/auth/facebook/start"): P_SOCIAL_SIGN_IN,
+    ("GET", "/api/auth/broker/upstox/start"): P_BROKER_SIGN_IN,
+    ("GET", "/api/auth/broker/upstox/callback"): P_BROKER_SIGN_IN,
+    ("GET", "/api/auth/broker/zerodha/start"): P_BROKER_SIGN_IN,
+    ("GET", "/api/auth/broker/zerodha/callback"): P_BROKER_SIGN_IN,
+    ("GET", "/api/auth/broker/fyers/start"): P_BROKER_SIGN_IN,
+    ("GET", "/api/auth/broker/fyers/callback"): P_BROKER_SIGN_IN,
     ("POST", "/api/auth/social/pending"): P_SOCIAL_PENDING,
     ("POST", "/api/auth/social/link/confirm"): P_SOCIAL_PENDING,
     ("POST", "/api/auth/social/complete"): P_SOCIAL_PENDING,
@@ -374,6 +383,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/auth/identities/{provider_id}"): S_OWN_SIGN_IN_WAYS,
     ("POST", "/api/auth/google/link"): S_OWN_SIGN_IN_WAYS,
     ("POST", "/api/auth/facebook/link"): S_OWN_SIGN_IN_WAYS,
+    ("POST", "/api/auth/broker/upstox/link"): S_OWN_SIGN_IN_WAYS,
+    ("POST", "/api/auth/broker/zerodha/link"): S_OWN_SIGN_IN_WAYS,
+    ("POST", "/api/auth/broker/fyers/link"): S_OWN_SIGN_IN_WAYS,
     ("POST", "/api/auth/refresh"): P_SIGN_IN,
     ("POST", "/api/auth/register"): P_SIGN_IN,
     ("GET", "/api/auth/sign-up-open"): P_SIGN_IN,

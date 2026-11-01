@@ -223,6 +223,10 @@ async function openPositions(page: Page, theme: "light" | "dark"): Promise<PosSe
     return r.fulfill({ json: { items: items.map((i) => FACTS[i.symbol] ?? { symbol: i.symbol, exchange: i.exchange, known: false }) } });
   });
   await page.route(api("/paper/fno/positions/groups$"), (r) => r.fulfill({ json: { groups: [{ key: "basket:made-up", kind: "basket", name: "Basket", trade_ids: [301, 302] }] } }));
+  // M68 PR-2: the desk's basket reads his own settings for its ready strategies - here a user who saved his lots, width
+  // and sold-leg stop (Trade settings), so the desk shows the normal loaded state.
+  await page.route(api("/paper/fno/basket/settings"), (r) => r.fulfill({ json: { source: null, width_steps: 2, lots: 1, stop_pct: 50,
+    note: "From your Trade settings: wings 2 strikes apart, 1 lot, a sold leg's stop-loss 50% above its price. Edit any leg." } }));
   await page.route(api("/paper/fno/risk-budget$"), (r) => r.fulfill({ json: { capital: 1_000_000, per_trade: { amount: 10_000, pct: 1 }, daily: { amount: 30_000, pct: 3 }, source: "Your risk settings", paper_balance: { amount: 498000, source: "x", open_margin_counted: false }, blocks: false } }));
   await page.route(api("/paper/fno/journal/drafts$"), (r) => r.fulfill({ json: DRAFTS }));
   await page.route(api("/alerts/rules$"), (r) => r.fulfill({ json: RULES }));

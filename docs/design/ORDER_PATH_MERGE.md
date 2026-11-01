@@ -32,7 +32,7 @@ and use `redis-cli -p 6390 flushall` instead of `redis-cli flushall` below.
       tests/test_m55_s2_exits.py tests/test_contract_exits.py tests/test_def0_exits_and_gates.py \
       tests/test_worker_exits_without_deployment.py tests/test_reexit_guard.py tests/test_cx_group_exits.py \
       tests/test_exit_logic.py tests/test_m55_s6_entry_guards.py tests/test_z10c_phase0_lock.py \
-      tests/test_m68_order_defaults.py
+      tests/test_m68_order_defaults.py tests/test_m68_exits.py   # test_m68_exits.py once PR-3 (#837) is on main
 
 ## PAPER = LIVE suite
 

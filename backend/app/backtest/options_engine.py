@@ -43,6 +43,7 @@ from app.backtest.options import (
     default_lot_size,
     default_strike_step,
     lot_size_for,
+    pricing_counts,
     strike_ladder,
     to_utc,
     underlying_name,
@@ -267,7 +268,11 @@ def run_option_backtest(
         if not isinstance(pricer, SnapshotPricer):
             raise ModelError("black76 prices strikes missing from a recorded or uploaded chain; this run has no chain (synthetic pricing)")
         b76 = Black76Pricer(pricer.rows, vol, config.risk_free_rate, **{"max_age_minutes": pricer.max_age_minutes, **models.pricing_params()})
-        pricer.fallback = b76  # type: ignore[assignment]
+        # M71 PL-7: black76 comes AFTER every recorded step (recorded quotes -> recorded end-of-day -> black76)
+        last: SnapshotPricer = pricer
+        while isinstance(last.fallback, SnapshotPricer):
+            last = last.fallback
+        last.fallback = b76  # type: ignore[assignment]
     # DEF-0: a backtest's starting equity is the trader's own capital, else the PAPER account's starting balance.
     risk_config = risk_config.with_capital(app_config.PAPER_STARTING_CAPITAL)
     capital = float(risk_config.capital or 0.0)
@@ -534,12 +539,12 @@ def run_option_backtest(
         "signals_skipped": dict(skipped), "structures": structures,
         "disclaimer": ("Synthetic premiums (Black-Scholes) approximate what the market would have quoted; they carry no smile, "
                        "no bid/ask and no liquidity. Use this to study structure mechanics, not to claim an edge.")
-        if pricer.name == "synthetic" else ("Premiums from your recorded end-of-day option prices (the day's close); a leg with no recorded "
-                                            "premium was priced by the model - see snapshot_hits / synthetic_fallbacks.")
-        if pricer.name == "recorded_eod" else "Premiums from recorded chain quotes; legs without a fresh quote were priced synthetically if a fallback was allowed.",
+        if pricer.name == "synthetic" else _recorded_disclaimer(pricer),
     }
     if isinstance(pricer, SnapshotPricer):
-        options.update({"snapshot_hits": pricer.hits, "synthetic_fallbacks": pricer.fallbacks, "snapshot_contracts": pricer.contracts})
+        counts = pricing_counts(pricer)
+        options.update({"snapshot_hits": pricer.hits, "synthetic_fallbacks": counts["model_prices"], "snapshot_contracts": pricer.contracts,
+                        **counts})
     if b76 is not None:
         # N7 C2c: every model price flagged - the count, the contracts, and per leg whether any of its prices was a model's
         priced = {f"{int(k[1])} {k[2]} {k[0]}" for k in b76.priced}
@@ -560,6 +565,19 @@ def run_option_backtest(
                                                   "model_prices": b76.count if b76 is not None else 0},
         loss_streak=streak.report(),
     )
+
+
+def _recorded_disclaimer(pricer: OptionPricer) -> str:
+    """M71 PL-7: what priced the legs - recorded quotes, recorded end-of-day closes, the model - each counted."""
+    c = pricing_counts(pricer)
+    parts = []
+    if c["recorded_quote_hits"]:
+        parts.append(f"{c['recorded_quote_hits']} from recorded chain quotes")
+    if c["recorded_eod_hits"]:
+        parts.append(f"{c['recorded_eod_hits']} from your recorded end-of-day premiums (the bar's session close)")
+    if c["model_prices"]:
+        parts.append(f"{c['model_prices']} priced by the model (no recorded premium)")
+    return "Leg prices: " + ("; ".join(parts) if parts else "none needed") + "."
 
 
 class _Skip(Exception):

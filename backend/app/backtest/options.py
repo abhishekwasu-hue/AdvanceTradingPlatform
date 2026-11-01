@@ -392,18 +392,28 @@ class SnapshotPricer:
         return base + (f"; synthetic fallback ({self.fallback.describe()})" if self.fallback is not None else "; no fallback")
 
 
-# M71 PL-7: an end-of-day premium (the session close) prices a decision up to this long after it - a daily bar decided
-# at its close, or the next session's bars before a newer close exists (a weekend and a holiday in between).
-EOD_MAX_AGE_MINUTES = 4 * 24 * 60
+DAILY_OR_LONGER = frozenset({"1d", "d", "day", "daily", "1day", "1w", "w", "week", "weekly", "1wk", "1week", "1mo", "month", "monthly"})
+
+
+def daily_or_longer(timeframe: str) -> bool:
+    """M71 PL-7: recorded end-of-day premiums price only daily (or longer) bars - never an intraday bar."""
+    return (timeframe or "").strip().lower() in DAILY_OR_LONGER
 
 
 @dataclass
 class StoredEodPricer(SnapshotPricer):
     """M71 PL-7: the recorded END-OF-DAY premiums of the tenant's own store (NSE F&O bhavcopy closes, seeded from the
-    owner's private data) - used first; a leg without a recorded premium at or before the decision is priced by the
-    `fallback` (the run's model) and counted. Only premiums known by the decision time are used (no look-ahead)."""
-    max_age_minutes: int = EOD_MAX_AGE_MINUTES
+    owner's private data), for DAILY (or longer) bars only: a leg is priced at the close of the session its bar belongs
+    to (the bar's own close - a daily decision is taken at the close). A leg without a recorded close for that session
+    is priced by `fallback` (the run's model) and counted. Never used for intraday bars (the caller's rule)."""
     name: str = "recorded_eod"
+    _by_day: Dict[Tuple[date, float, str, date], float] = field(default_factory=dict, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        for row in self.rows:
+            day = (to_utc(row.timestamp) - timedelta(microseconds=1)).astimezone(IST).date()
+            self._by_day[(row.expiry, float(row.strike), row.right.upper(), day)] = float(row.ltp)
 
     @property
     def vol(self) -> Optional[VolatilityModel]:
@@ -414,9 +424,36 @@ class StoredEodPricer(SnapshotPricer):
         if self.fallback is not None:
             self.fallback.vol = value
 
+    def price(self, right: str, strike: float, expiry: date, *, spot: float, at: datetime) -> float:
+        day = to_utc(at).astimezone(IST).date()
+        found = self._by_day.get((expiry, float(strike), right.upper(), day))
+        if found is not None:
+            self.hits += 1
+            return found
+        if self.fallback is not None:
+            self.fallbacks += 1
+            return self.fallback.price(right, strike, expiry, spot=spot, at=at)
+        raise PricingUnavailable(f"no recorded end-of-day premium for {int(strike)} {right} {expiry.isoformat()} on {day.isoformat()}")
+
     def describe(self) -> str:
-        base = f"recorded end-of-day premiums ({self.contracts} contracts)"
+        base = f"recorded end-of-day premiums ({self.contracts} contracts, the bar's own session close)"
         return base + (f"; model prices where none is recorded ({self.fallback.describe()})" if self.fallback is not None else "; no fallback")
+
+
+def pricing_counts(pricer: object) -> Dict[str, int]:
+    """Per source along the pricer chain: recorded intraday quotes, recorded end-of-day premiums, model prices."""
+    out = {"recorded_quote_hits": 0, "recorded_eod_hits": 0, "model_prices": 0}
+    node = pricer
+    while node is not None:
+        if isinstance(node, StoredEodPricer):
+            out["recorded_eod_hits"] += node.hits
+        elif isinstance(node, SnapshotPricer):
+            out["recorded_quote_hits"] += node.hits
+        nxt = getattr(node, "fallback", None)
+        if isinstance(node, SnapshotPricer) and not isinstance(nxt, SnapshotPricer):
+            out["model_prices"] += node.fallbacks       # the chain's last recorded step hands these to the model
+        node = nxt if isinstance(nxt, SnapshotPricer) else None
+    return out
 
 
 def black76(right: str, forward: float, strike: float, t: float, r: float, sigma: float) -> float:

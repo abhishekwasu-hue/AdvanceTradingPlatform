@@ -16,6 +16,8 @@ on `deploy`; it runs only when the owner runs the command.
 | `~/.ssh/trade_data_ro` (file) | - | The read-only deploy key of the private data repository (a NEW key, separate from the private package's `~/.ssh/atp_private_ro`). `ATP_TRADE_DATA_KEY` overrides the path. Used only through `GIT_SSH_COMMAND` with `IdentitiesOnly=yes`. |
 | `ATP_TRADE_DATA_REPO` | - | The private data repository's ssh address (`git@github.com:<owner>/<repo>.git`). |
 | `ATP_TRADE_DATA_REF` | `main` | The branch or tag to check out. |
+| `ATP_TRADE_DATA_FOLDERS` | - (the whole checkout) | Comma list of the checkout's market-data folders (their names are in the owner's private report, never here). Only these are checked out (sparse) and read. |
+| `TRADE_DATA_POLICY_REQUIRED` | `true` | Fail closed: the import (and `--check`) exits 3 and writes nothing when the private data states no readable data-use policy. |
 | `ATP_TRADE_DATA_DIR` | `/opt/atp/trade-data` | The host checkout (git-ignored; only the market-data folders, blobs fetched on demand). Mounted read-only into a one-off backend container as `/trade-data`. |
 | `HISTORY_OWNER_TENANT_ID` + `HISTORY_OWNER_TENANT_NAME` | already set (HB0) | The owner's organisation, confirmed by its name - the ONLY organisation the import writes (M71Q-2). |
 | `TRADE_DATA_POLICY_SCOPE` | `NIFTY` | The underlying(s) a data-use table without its own scope applies to (comma list; `*` = all). |
@@ -31,7 +33,7 @@ on `deploy`; it runs only when the owner runs the command.
 ```sh
 su - atp -c 'test -f ~/.ssh/trade_data_ro || ssh-keygen -t ed25519 -N "" -C atp-trade-data-ro -f ~/.ssh/trade_data_ro; cat ~/.ssh/trade_data_ro.pub'
 # add the printed key on GitHub (step 1), then:
-su - atp -c '/opt/atp/deploy/atp.sh env-set ATP_TRADE_DATA_REPO=git@github.com:<owner>/<private-data-repo>.git ATP_TRADE_DATA_REF=main'
+su - atp -c '/opt/atp/deploy/atp.sh env-set ATP_TRADE_DATA_REPO=git@github.com:<owner>/<private-data-repo>.git ATP_TRADE_DATA_REF=main ATP_TRADE_DATA_FOLDERS=<the folder list from the private report>'
 su - atp -c "nohup sh -c '/opt/atp/deploy/atp.sh import-trade-data --check && /opt/atp/deploy/atp.sh import-trade-data' > /tmp/atp-seed.log 2>&1 &"
 tail -n 15 /tmp/atp-seed.log
 ```
@@ -48,11 +50,13 @@ private report, not in a public issue or chat.
 
 ## Rules it keeps
 
+- Generic: a file is recognised by its columns and timestamps (the bar interval from the gaps between bars), never by a
+  list of paths; the instrument comes from a contract column or the file name's symbol word.
 - Read-only on the data: the checkout is mounted `:ro`; the importer never writes there.
 - Owner-only: the owner's organisation (HB0's confirmation rule); refused (exit 2) when it is not configured.
 - Store conventions: END-labelled UTC bars, closed bars only, missing volume stays missing (NULL), DH3 closing-auction
   flags, two different bars with one END refuse the file.
-- Data policy (PL-7b): sealed and contaminated windows are refused by the optimiser, walk-forward and the AI research
-  loop; charts, live reading, backtests shown to the user and screeners display them.
+- Data policy (PL-7b): sealed and contaminated windows are refused by the optimiser, walk-forward, the AI research loop
+  and the Copilot draft test (every spelling of a symbol maps to its underlying; an unreadable one is refused); charts, live reading, backtests shown to the user and screeners display them.
 - Migration: revision `c5e7a9b1d3f6` (volume may be NULL in the private store; `data_use_windows`). Not rollback-safe
   for a code-only rollback once the import has run (`--restore-db` or the migration's downgrade).

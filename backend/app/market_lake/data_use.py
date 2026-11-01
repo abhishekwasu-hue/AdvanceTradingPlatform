@@ -29,7 +29,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.backtest.data_policy import UseWindow
+from app.backtest.data_policy import REFUSED_KINDS, HoldoutError, UseWindow
 from app.core import config
 from app.db.models import DataUseWindowRecord
 
@@ -141,6 +141,22 @@ def load_policy(root: Path, scopes: Sequence[str] | None = None) -> Policy | Non
     return None
 
 
+def policy_problem(root: Path, scopes: Sequence[str] | None = None) -> str | None:
+    """Fail closed (M71 PL-7b): a reason when the data states a policy that parses to no window (a policy file, or a
+    README data-use section, without one readable window), or - with TRADE_DATA_POLICY_REQUIRED - states none at all.
+    None when the policy is readable."""
+    if load_policy(root, scopes) is not None:
+        return None
+    if (root / POLICY_JSON).is_file():
+        return f"{POLICY_JSON} holds no readable data-use window"
+    readme = root / POLICY_README
+    if readme.is_file() and any(_HEADING.match(line.strip()) for line in readme.read_text(encoding="utf-8", errors="replace").splitlines()):
+        return f"the data-use section of {POLICY_README} holds no readable window"
+    if config.TRADE_DATA_POLICY_REQUIRED:
+        return "the private data states no data-use policy (TRADE_DATA_POLICY_REQUIRED is on)"
+    return None
+
+
 async def store(session: AsyncSession, tenant_id: int, policy: Policy) -> dict[str, int]:
     """Replaces the tenant's windows from this policy file with the policy's current set (idempotent). Does not commit."""
     old = {(r.kind, r.scope, r.start_date): r for r in await session.scalars(select(DataUseWindowRecord).where(
@@ -164,30 +180,75 @@ async def store(session: AsyncSession, tenant_id: int, policy: Policy) -> dict[s
     return {"added": added, "changed": changed, "removed": len(gone)}
 
 
-def underlying_of(symbol_or_key: str) -> str:
-    """'NIFTY' / 'NIFTY 50' / 'NSE_INDEX:NIFTY50' / 'NFO:NIFTY:CE:...' / 'NSE:RELIANCE' -> the underlying name."""
+_DERIVATIVE = re.compile(r"^([A-Z&-]+?)(\d{2}(?:[A-Z]{3}|[1-9OND]\d{2})(?:FUT|\d+(?:\.\d+)?(?:CE|PE)))$")
+_PLAIN = re.compile(r"^[A-Z0-9&-]{1,30}$")
+
+
+def _compact(text: str) -> str:
+    return re.sub(r"[^A-Z0-9&]", "", text.upper())
+
+
+def _index_names() -> dict[str, str]:
+    """Every spelling of an index ATP knows -> its name: NIFTY / NIFTY 50 / NIFTY50 (and the lake code) -> NIFTY."""
+    from app.instruments import master
+    from app.market_lake import index_history as dh
+    out: dict[str, str] = {}
+    for name, broker in master.INDEX_SYMBOLS.items():
+        for spelling in (name, broker, dh.lake_key_for(name).split(":", 1)[1]):
+            out[_compact(spelling)] = name
+    for alias, name in getattr(master, "UNDERLYING_ALIASES", {}).items():
+        if name in master.INDEX_SYMBOLS:
+            out.setdefault(_compact(alias), name)
+    return out
+
+
+def underlying_of(symbol_or_key: str) -> str | None:
+    """The underlying a symbol, a lake key or a broker key names - 'NIFTY', 'NIFTY 50', 'NIFTY50', 'NSE:NIFTY 50',
+    'NSE_INDEX|Nifty 50', 'NSE_INDEX:NIFTY50', 'NFO:NIFTY:CE:...', 'NIFTY24NOVFUT', 'NIFTY24N2124000CE' -> 'NIFTY';
+    'NSE:RELIANCE' -> 'RELIANCE'. None when it cannot be read (the research paths then refuse, never pass)."""
     raw = " ".join((symbol_or_key or "").strip().upper().split())
-    if ":" in raw:
-        venue, _, rest = raw.partition(":")
-        if venue in ("NFO", "BFO", "MCX"):
-            return rest.split(":", 1)[0]
-        if venue in ("NSE_INDEX", "BSE_INDEX"):
-            from app.instruments import master
-            from app.market_lake import index_history as dh
-            for name in master.INDEX_SYMBOLS:
-                if dh.lake_key_for(name) == raw:
-                    return name
-            return rest
-        return rest
-    from app.backtest.options import underlying_name
-    return underlying_name(raw)[0]
+    if not raw:
+        return None
+    for sep in (":", "|"):
+        if sep in raw:
+            venue, _, rest = raw.partition(sep)
+            if venue in ("NFO", "BFO", "MCX", "NSE_FO", "BSE_FO", "MCX_FO") and ":" in rest:
+                raw = rest.split(":", 1)[0]
+            else:
+                raw = rest
+            break
+    names = _index_names()
+    hit = names.get(_compact(raw))
+    if hit:
+        return hit
+    m = _DERIVATIVE.match(_compact(raw))
+    if m:
+        prefix = m.group(1)
+        return names.get(prefix, prefix)
+    from app.instruments import master
+    spaced = master.underlying_of(raw)
+    if spaced and _compact(spaced) in names:
+        return names[_compact(spaced)]
+    compact = _compact(raw)
+    return compact if _PLAIN.match(compact) else None
 
 
 async def windows_for(session: AsyncSession, tenant_id: int | None, symbol: str, *, refused_only: bool = False) -> list[UseWindow]:
-    """The tenant's windows that apply to `symbol` (its underlying, or "*"). None / no tenant -> none."""
+    """The tenant's windows that apply to `symbol` (its underlying, or "*"). None / no tenant -> none. A symbol whose
+    underlying cannot be read while the tenant HAS refused windows: refused (HoldoutError) for a research path
+    (`refused_only`), no tags for a display path - never treated as outside the policy."""
     if not tenant_id or int(tenant_id) <= 0:
         return []
     name = underlying_of(symbol)
+    if name is None:
+        if not refused_only:
+            return []
+        any_refused = await session.scalar(select(DataUseWindowRecord.id).where(
+            DataUseWindowRecord.tenant_id == int(tenant_id), DataUseWindowRecord.kind.in_(REFUSED_KINDS)).limit(1))
+        if any_refused is not None:
+            raise HoldoutError(f"{symbol!r} could not be matched to your data policy, so it is not used for a search; "
+                               "use the symbol's plain name (for example NIFTY).")
+        return []
     rows = await session.scalars(select(DataUseWindowRecord).where(
         DataUseWindowRecord.tenant_id == int(tenant_id), DataUseWindowRecord.scope.in_((name, "*"))).order_by(DataUseWindowRecord.start_date))
     out = [UseWindow(r.kind, r.start_date, r.end_date, r.scope, r.label or "") for r in rows]

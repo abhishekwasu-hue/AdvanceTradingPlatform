@@ -66,7 +66,8 @@ def trading_days(index: pd.DatetimeIndex) -> List[date]:
     return sorted({ts.astimezone(IST).date() for ts in idx})
 
 
-def split_window(index: pd.DatetimeIndex, oos_fraction: float = 0.3, boundary: Any = None) -> Tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp]:
+def split_window(index: pd.DatetimeIndex, oos_fraction: float = 0.3, boundary: Any = None,
+                 windows: Any = ()) -> Tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp]:
     """(in-sample start, out-of-sample start, end) over bars that end before the sealed holdout. Refuses (HoldoutError)
     a window that reaches into the holdout - the research loop never sees it."""
     if not 0 < oos_fraction < 0.9:
@@ -74,7 +75,7 @@ def split_window(index: pd.DatetimeIndex, oos_fraction: float = 0.3, boundary: A
     if len(index) < 10:
         raise ValueError("too few bars to split")
     start, end = index[0], index[-1]
-    check_range(start, end, holdout_start(boundary))
+    check_range(start, end, holdout_start(boundary), windows)           # M71 PL-7b: and the tenant's refused windows
     pos = int(len(index) * (1 - oos_fraction))
     days = [ts.tz_convert(IST).date() if ts.tzinfo else ts.date() for ts in index]
     snapped = pos

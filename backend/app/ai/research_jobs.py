@@ -136,7 +136,8 @@ async def run_next(session: AsyncSession, *, now: Optional[Clock] = None) -> Opt
             await session.commit()
             return await inner(idea, history)
 
-        await research_loop.run_study(session, tenant_id=tid, user_id=uid, spec=spec, frame=frame, risk=risk, propose=propose, study_id=sid)
+        await research_loop.run_study(session, tenant_id=tid, user_id=uid, spec=spec, frame=frame, risk=risk, propose=propose, study_id=sid,
+                                    use_windows=windows)
         await _finish(session, row, "done", clock(), data_source=source, usage_json=json.dumps(metering.spent_by(provider), default=str))
     except research_loop.HoldoutError as exc:
         await session.rollback()

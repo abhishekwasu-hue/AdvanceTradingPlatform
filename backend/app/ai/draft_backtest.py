@@ -78,7 +78,7 @@ def _part(result: BacktestResult, df: pd.DataFrame, capital: float) -> Dict[str,
 
 
 def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: RiskConfig, *,
-                holdout: Any = None, min_trades: Optional[int] = None) -> Dict[str, Any]:
+                holdout: Any = None, min_trades: Optional[int] = None, use_windows: Any = ()) -> Dict[str, Any]:
     """The draft `config` (a `CustomStrategyConfig`) on `df` (server candles at `base_tf`) through ATP's backtest engine.
     `holdout`: the sealed holdout boundary (None reads the operator's `BACKTEST_HOLDOUT_START`)."""
     from app.ai.compliance import WEAK_EVIDENCE_MIN_TRADES
@@ -93,6 +93,11 @@ def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: 
     if boundary is not None:
         kept = data_policy.filter_allowed(df, boundary)
         sealed, df = int(len(df) - len(kept)), kept
+    # M71 PL-7b: the draft test feeds the Copilot's search for a strategy - the tenant's sealed / contaminated rows never
+    kept = data_policy.filter_allowed(df, None, use_windows)
+    policy_left_out, df = int(len(df) - len(kept)), kept
+    if df.empty and policy_left_out:
+        raise data_policy.HoldoutError(data_policy.windows_reason(use_windows, policy_left_out) or "no bars left")
     strategy = DeclarativeStrategy(DRAFT_ID, config)
     from app.core import config as app_config
     risk = risk.with_capital(app_config.PAPER_STARTING_CAPITAL)     # DEF-0: own capital, else the PAPER start
@@ -101,7 +106,8 @@ def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: 
         "symbol": symbol.upper(), "timeframe": config.timeframe, "bars": int(len(df)), "capital": _r(capital),
         "from": _iso(df.index[0]) if len(df) else None, "to": _iso(df.index[-1]) if len(df) else None,
         "from_day": day_label(df.index[0]) if len(df) else None, "to_day": day_label(df.index[-1]) if len(df) else None,
-        "days_requested": TEST_DAYS, "later_share_pct": int(round(LATER_SHARE * 100)), "min_trades_for_statistics": need, "sealed_holdout_bars": sealed, "slippage_pct_per_fill": None,
+        "days_requested": TEST_DAYS, "later_share_pct": int(round(LATER_SHARE * 100)), "min_trades_for_statistics": need, "sealed_holdout_bars": sealed, "data_policy_bars_left_out": policy_left_out,
+        "data_policy": data_policy.windows_reason(use_windows, policy_left_out), "slippage_pct_per_fill": None,
         "costs_included": "brokerage and statutory charges at their dated rates, and slippage on every fill",
         "tuned_on_this_data": False, "tries": 1, "note": "Past simulated results on this window only; not a forecast.",
     }

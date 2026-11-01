@@ -69,6 +69,12 @@ def window_mask(index, windows: Sequence[UseWindow] = ()) -> np.ndarray:
     return keep
 
 
+def _ist_day(ts) -> date:
+    """The exchange (IST) trade date of an instant - the same clock `window_mask` uses (a naive time is IST already)."""
+    t = pd.Timestamp(ts)
+    return (t.tz_convert("Asia/Kolkata") if t.tzinfo is not None else t).date()
+
+
 def windows_reason(windows: Sequence[UseWindow], dropped: int) -> Optional[str]:
     """The plain line a refused part gets ("12 bars left out: ..."), None when nothing was left out."""
     refused = _refused(windows)
@@ -103,7 +109,7 @@ def _aligned(index, boundary: pd.Timestamp):
 def check_range(start, end, boundary, windows: Sequence[UseWindow] = ()) -> bool:
     """[start, end] must end before the holdout and touch no sealed / contaminated window; else HoldoutError."""
     for w in _refused(windows):
-        s_day, e_day = pd.Timestamp(start).date(), pd.Timestamp(end).date()
+        s_day, e_day = _ist_day(start), _ist_day(end)
         if e_day >= w.start and (w.end is None or s_day <= w.end):
             raise HoldoutError(f"{s_day} -> {e_day} reaches data your data policy reserves: {w.describe()}. "
                                "Choose a range outside it.")

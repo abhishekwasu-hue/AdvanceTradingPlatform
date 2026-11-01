@@ -70,14 +70,14 @@ def make_data(root) -> None:
     for d in WEEK1 + [MON, TUE, FRI]:
         rows += _minutes(d, 100.0)
     rows += _minutes(THU, 100.0, n=370)                                         # five minutes missing; WED missing
-    _write_csv_gz(root / "upstox" / "NIFTY_1m_synthetic.csv.gz", rows)
+    _write_csv_gz(root / "sample_a" / "NIFTY_bars.csv.gz", rows)
     fut = [{"timestamp": pd.Timestamp(f"{FRI} 15:{m:02d}:00"), "open": 200.0, "high": 201.0, "low": 199.0, "close": 200.5, "volume": 50 + m,
             "oi": 1000, "contract": "NIFTY FUT 30 MAR 23"} for m in (20, 25, 30)]
-    (root / "futures").mkdir(parents=True)
-    pd.DataFrame(fut).to_parquet(root / "futures" / "oe_futures_5min_NIFTY_synthetic.parquet")
-    (root / "major_levels_candles").mkdir(parents=True)
-    pd.DataFrame([{"timestamp": f"{FRI}T{h:02d}:00:00+05:30", "open": 50.0, "high": 51.0, "low": 49.0, "close": 50.5,
-                   "contract": "GOLD FUT 05 APR 23"} for h in (10, 11)]).to_csv(root / "major_levels_candles" / "GOLD_30m_synthetic.csv", index=False)
+    (root / "sample_b").mkdir(parents=True)
+    pd.DataFrame(fut).to_parquet(root / "sample_b" / "NIFTY_fut_bars.parquet")
+    (root / "sample_c").mkdir(parents=True)
+    pd.DataFrame([{"timestamp": f"{FRI}T{h}:00+05:30", "open": 50.0, "high": 51.0, "low": 49.0, "close": 50.5,
+                   "contract": "GOLD FUT 05 APR 23"} for h in ("10:00", "10:30", "11:00")]).to_csv(root / "sample_c" / "GOLD_bars.csv", index=False)
     fo = pd.DataFrame([
         {"date": str(THU), "symbol": "NIFTY", "instrument": "OPT", "expiry": "2023-03-30", "strike": 17000.0, "opt_type": "CE",
          "open": 90.0, "high": 95.0, "low": 85.0, "close": 91.0, "settle": 91.0, "volume": 10.0, "volume_unit": "contracts", "oi": 5.0},
@@ -86,8 +86,8 @@ def make_data(root) -> None:
         {"date": str(THU), "symbol": "NIFTY", "instrument": "FUT", "expiry": "2023-03-30", "strike": 0.0, "opt_type": "XX",
          "open": 170.0, "high": 172.0, "low": 169.0, "close": 171.0, "settle": 171.0, "volume": 3.0, "volume_unit": "contracts", "oi": 9.0},
     ])
-    (root / "nse_fo_bhavcopy" / "NIFTY").mkdir(parents=True)
-    fo.to_parquet(root / "nse_fo_bhavcopy" / "NIFTY" / "2023-03.parquet")
+    (root / "sample_d" / "NIFTY").mkdir(parents=True)
+    fo.to_parquet(root / "sample_d" / "NIFTY" / "2023-03.parquet")
 
 
 @pytest.fixture()
@@ -128,8 +128,8 @@ def test_seed_import_owner_only_volume_kept_missing_flags_and_idempotent(tmp_pat
     report = _import(tmp_path)
     assert report.status == "ok", report.as_dict()
     done = {f.path: f for f in report.files if f.status == "done"}
-    assert set(done) == {"upstox/NIFTY_1m_synthetic.csv.gz", "futures/oe_futures_5min_NIFTY_synthetic.parquet",
-                         "major_levels_candles/GOLD_30m_synthetic.csv", "nse_fo_bhavcopy/NIFTY/2023-03.parquet"}
+    assert set(done) == {"sample_a/NIFTY_bars.csv.gz", "sample_b/NIFTY_fut_bars.parquet",
+                         "sample_c/GOLD_bars.csv", "sample_d/NIFTY/2023-03.parquet"}
     # owner-only: every seeded row is in the owner's private store, none in another organisation's, and the M55 T4
     # shared index scope (another organisation reading the owner's index rows) never sees a seeded row
     assert _count(R, R.source.like("seed:%"), R.tenant_id == other.tenant_id) == 0
@@ -145,7 +145,7 @@ def test_seed_import_owner_only_volume_kept_missing_flags_and_idempotent(tmp_pat
     assert _count(R, R.tenant_id == owner.tenant_id, R.instrument_key == "NSE_INDEX:NIFTY50", R.timeframe == "1m") == 8 * 375 + 370
     # missing volume stays missing (never 0): no volume column -> NULL; F&O volume withheld -> NULL; given -> kept
     assert _count(R, R.tenant_id == owner.tenant_id, R.instrument_key == "NSE_INDEX:NIFTY50", R.volume.is_not(None)) == 0
-    assert _count(R, R.tenant_id == owner.tenant_id, R.instrument_key == "MCX:GOLD:FUT:2023-04-05", R.timeframe == "30m", R.volume.is_(None)) == 2
+    assert _count(R, R.tenant_id == owner.tenant_id, R.instrument_key == "MCX:GOLD:FUT:2023-04-05", R.timeframe == "30m", R.volume.is_(None)) == 3
     assert _count(R, R.tenant_id == owner.tenant_id, R.instrument_key.like("NFO:NIFTY:%"), R.timeframe == "day", R.volume.is_not(None)) == 0
     assert _count(R, R.tenant_id == owner.tenant_id, R.instrument_key == "NFO:NIFTY:FUT:2023-03-30", R.timeframe == "5m", R.volume == 0) == 0
     assert _count(R, R.tenant_id == owner.tenant_id, R.instrument_key == "NFO:NIFTY:FUT:2023-03-30", R.timeframe == "5m", R.volume > 0) == 3
@@ -163,7 +163,7 @@ def test_seed_import_owner_only_volume_kept_missing_flags_and_idempotent(tmp_pat
     assert _count(MdBarFlagRecord, MdBarFlagRecord.tenant_id == owner.tenant_id, MdBarFlagRecord.instrument_key == "NFO:NIFTY:FUT:2023-03-30",
                   MdBarFlagRecord.kind == "post_close") == 1
     # per-file bookkeeping: source label, sha256, rows, first / last
-    rec = _run(_file_record("trade-data:upstox/NIFTY_1m_synthetic.csv.gz"))
+    rec = _run(_file_record("trade-data:sample_a/NIFTY_bars.csv.gz"))
     assert rec.status == "done" and len(rec.sha256) == 64 and rec.rows_read == 8 * 375 + 370 and rec.tenant_id == owner.tenant_id
     assert rec.dataset == "seed" and rec.period == "1m" and rec.first_ts is not None and rec.last_ts is not None
     # idempotent: the same files again -> skipped, nothing rewritten
@@ -174,10 +174,10 @@ def test_seed_import_owner_only_volume_kept_missing_flags_and_idempotent(tmp_pat
     assert _count(HistoryImportFileRecord, HistoryImportFileRecord.object_key.like("trade-data:%"), HistoryImportFileRecord.tenant_id == owner.tenant_id) == 4
     # a changed file (new sha256) is read again: its new bar is written, identical bars skipped
     pd.DataFrame([{"timestamp": f"{FRI}T12:00:00+05:30", "open": 50.0, "high": 51.0, "low": 49.0, "close": 50.5,
-                   "contract": "GOLD FUT 05 APR 23"}]).to_csv(tmp_path / "major_levels_candles" / "GOLD_30m_synthetic.csv", mode="a", header=False, index=False)
+                   "contract": "GOLD FUT 05 APR 23"}]).to_csv(tmp_path / "sample_c" / "GOLD_bars.csv", mode="a", header=False, index=False)
     third = _import(tmp_path)
-    gold = next(f for f in third.files if f.path.endswith("GOLD_30m_synthetic.csv"))
-    assert gold.status == "done" and gold.inserted == 1 and gold.skipped == 2
+    gold = next(f for f in third.files if f.path.endswith("GOLD_bars.csv"))
+    assert gold.status == "done" and gold.inserted == 1 and gold.skipped == 3
 
 
 async def _file_record(key: str) -> HistoryImportFileRecord:
@@ -300,9 +300,9 @@ def test_recorded_premiums_first_the_model_only_where_none_is_recorded(tmp_path,
     with pytest.raises(PermissionError):
         _run(seed_store.option_premiums(None, None, "NIFTY", datetime.now(UTC), datetime.now(UTC)))  # type: ignore[arg-type]
     pricer = StoredEodPricer(rows, fallback=SyntheticPricer(VolatilityModel(fixed_iv=0.15)))
-    after_close = datetime.combine(FRI, time(9, 15), tzinfo=IST).astimezone(UTC)
-    before_close = datetime.combine(THU, time(15, 0), tzinfo=IST).astimezone(UTC)
-    assert pricer.price("CE", 17000.0, date(2023, 3, 30), spot=17050.0, at=after_close) == 91.0      # recorded
-    pricer.price("CE", 17000.0, date(2023, 3, 30), spot=17050.0, at=before_close)                  # not known yet: model
-    pricer.price("CE", 17200.0, date(2023, 3, 30), spot=17050.0, at=after_close)                   # not recorded: model
+    thu_bar = datetime.combine(THU, time(9, 15), tzinfo=IST).astimezone(UTC)       # a daily bar of THU: priced at THU's close
+    fri_bar = datetime.combine(FRI, time(9, 15), tzinfo=IST).astimezone(UTC)
+    assert pricer.price("CE", 17000.0, date(2023, 3, 30), spot=17050.0, at=thu_bar) == 91.0        # recorded, its own session
+    pricer.price("CE", 17000.0, date(2023, 3, 30), spot=17050.0, at=fri_bar)                      # no FRI close recorded: model
+    pricer.price("CE", 17200.0, date(2023, 3, 30), spot=17050.0, at=thu_bar)                      # strike not recorded: model
     assert pricer.hits == 1 and pricer.fallbacks == 2 and "recorded end-of-day" in pricer.describe()

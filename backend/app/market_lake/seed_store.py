@@ -23,6 +23,8 @@ from app.market_lake import data_use
 
 R = MdTenantCandleRecord
 MAX_PREMIUM_ROWS = 500_000
+STRIKE_BAND = 0.25              # strikes within 25 % of the candles' low / high: what a run's ladder can reach
+EXPIRY_HORIZON_DAYS = 120       # expiries up to this long after the span (monthly and far legs)
 
 
 def _require_tenant(tenant_id: int | None) -> int:
@@ -69,26 +71,50 @@ def parse_option_key(key: str) -> tuple[str, str, date, float] | None:
         return None
 
 
+async def has_premiums(session: AsyncSession, tenant_id: int | None, underlying: str, start: datetime, end: datetime) -> bool:
+    """Whether the tenant holds any recorded end-of-day option premium of `underlying` in the span (one indexed lookup)."""
+    tenant = _require_tenant(tenant_id)
+    name = " ".join((underlying or "").upper().split())
+    found = await session.scalar(select(R.ts).where(R.tenant_id == tenant, R.timeframe == "day", _option_keys(name),
+                                                    R.ts >= _utc(start), R.ts <= _utc(end) + timedelta(days=1)).limit(1))
+    return found is not None
+
+
+def _option_keys(name: str) -> Any:
+    return or_(*(R.instrument_key.like(f"{venue}:{name}:{right}:%") for venue in ("NFO", "BFO") for right in ("CE", "PE")))
+
+
 async def option_premiums(session: AsyncSession, tenant_id: int | None, underlying: str, start: datetime, end: datetime, *,
-                          limit: int = MAX_PREMIUM_ROWS) -> list[Any]:
-    """The tenant's recorded end-of-day premiums of `underlying`'s options with the session END in [start - 7 days, end],
-    as `OptionChainSnapshotRow`s (timestamp = the session close, ltp = the day's close, oi). A close of 0 or below is no
-    premium and is left out. More than `limit` rows raises ValueError (refused, never cut)."""
+                          strikes: tuple[float, float] | None = None, expiry_until: datetime | None = None,
+                          limit: int | None = None) -> list[Any]:
+    """The tenant's recorded end-of-day premiums of `underlying`'s options with the session END in [start, end], as
+    `OptionChainSnapshotRow`s (timestamp = the session close, ltp = the day's close, oi) - only strikes inside `strikes`
+    and expiries up to `expiry_until` when given (the contracts a run can trade). A close of 0 or below is no premium
+    and is left out. More than `limit` kept rows raises ValueError (the caller prices by the model, never cuts)."""
     from app.backtest.options import OptionChainSnapshotRow
     tenant = _require_tenant(tenant_id)
+    limit = MAX_PREMIUM_ROWS if limit is None else limit
     name = " ".join((underlying or "").upper().split())
     if not name:
         return []
-    lo, hi = _utc(start) - timedelta(days=7), _utc(end)
-    rows = await session.execute(select(R.instrument_key, R.ts, R.version, cast(R.close, Float), R.oi).where(
-        R.tenant_id == tenant, R.timeframe == "day", or_(R.instrument_key.like(f"NFO:{name}:CE:%"), R.instrument_key.like(f"NFO:{name}:PE:%"),
-                                                         R.instrument_key.like(f"BFO:{name}:CE:%"), R.instrument_key.like(f"BFO:{name}:PE:%")),
-        R.ts >= lo, R.ts <= hi).order_by(R.instrument_key, R.ts, R.version))
+    lo, hi = _utc(start) - timedelta(days=1), _utc(end)
+    last_expiry = _utc(expiry_until).date() if expiry_until is not None else None
+    query = select(R.instrument_key, R.ts, R.version, cast(R.close, Float), R.oi).where(
+        R.tenant_id == tenant, R.timeframe == "day", _option_keys(name), R.ts >= lo, R.ts <= hi).order_by(
+        R.instrument_key, R.ts, R.version).execution_options(yield_per=20_000)
     best: dict[tuple[str, datetime], tuple[float, Any]] = {}
-    for key, ts, _v, close, oi in rows:
+    result = await session.stream(query)
+    async for key, ts, _v, close, oi in result:
+        parsed = parse_option_key(key)
+        if parsed is None:
+            continue
+        _sym, _right, expiry, strike = parsed
+        if (strikes is not None and not strikes[0] <= strike <= strikes[1]) or (last_expiry is not None and expiry > last_expiry):
+            continue
         best[(key, _utc(ts))] = (float(close), oi)
         if len(best) > limit:
-            raise ValueError(f"more than {limit} recorded option premiums in the span; choose a shorter span")
+            await result.close()
+            raise ValueError(f"more than {limit} recorded option premiums in the span")
     out: list[Any] = []
     for (key, ts), (close, oi) in best.items():
         parsed = parse_option_key(key)

@@ -124,7 +124,8 @@ APP_IMAGES=(atp-backend atp-worker atp-frontend atp-research-worker atp-backup)
 # the owner gives his organisation until he picks a name (never hard-coded; the name may hold spaces, @ and +).
 # M55 S1: LIVE_OWNER_USER_ID, the one account that may switch LIVE on (an id; it switches nothing by itself).
 ENV_SET_KEYS=(UNIVERSE_SYNC_ENABLED UNIVERSE_SYNC_HOUR_IST INSTRUMENT_SYNC_EXCHANGES INSTRUMENT_SYNC_HOUR_IST
-              HISTORY_OWNER_TENANT_ID HISTORY_OWNER_TENANT_NAME LIVE_OWNER_USER_ID ATP_TRADE_DATA_REPO ATP_TRADE_DATA_REF)
+              HISTORY_OWNER_TENANT_ID HISTORY_OWNER_TENANT_NAME LIVE_OWNER_USER_ID ATP_TRADE_DATA_REPO ATP_TRADE_DATA_REF
+              ATP_TRADE_DATA_FOLDERS)
 ENV_BACKUPS_KEEP=10
 
 RELEASE=""          # image tag compose uses (ATP_RELEASE)
@@ -2741,6 +2742,9 @@ cmd_env_set() {
     elif [ "$key" = "ATP_TRADE_DATA_REPO" ]; then
       [[ "$val" =~ ^git@github\.com:[A-Za-z0-9_.-]{1,64}/[A-Za-z0-9_.-]{1,100}\.git$ ]] \
         || die "the value for $key is the repository's ssh address: git@github.com:<owner>/<repository>.git" 2
+    elif [ "$key" = "ATP_TRADE_DATA_FOLDERS" ]; then
+      [[ "$val" =~ ^[A-Za-z0-9_-]{1,64}(,[A-Za-z0-9_-]{1,64}){0,19}$ ]] \
+        || die "the value for $key is a comma list of folder names (letters, digits, _ and -)" 2
     elif [ "$key" = "ATP_TRADE_DATA_REF" ]; then
       [[ "$val" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]{0,63}$ && "$val" != *..* ]] \
         || die "the value for $key is a branch or tag name (letters, digits and _ . / -)" 2
@@ -2897,16 +2901,15 @@ cmd_lake_backfill() {
 # private package (A1): a read-only checkout fetched with the host's OWN read-only deploy key for that repository
 # (ATP_TRADE_DATA_KEY, default ~/.ssh/trade_data_ro, through GIT_SSH_COMMAND with IdentitiesOnly), the branch or tag
 # ATP_TRADE_DATA_REF (default main) of ATP_TRADE_DATA_REPO (its ssh address) from .env, into ATP_TRADE_DATA_DIR (default
-# $ATP_DIR/trade-data, git-ignored). Only the market-data folders are checked out (sparse, blobs fetched on demand). The
+# $ATP_DIR/trade-data, git-ignored). Only the folders named in ATP_TRADE_DATA_FOLDERS are checked out (sparse, blobs on demand). The
 # import (backend app/market_lake/seed_import.py) runs in a one-off backend container with the checkout mounted
 # READ-ONLY; it writes only the owner's private store (HISTORY_OWNER_TENANT_ID + HISTORY_OWNER_TENANT_NAME). Never part
 # of `deploy`. Idempotent: a file already imported with the same sha256 is skipped. The key's path is printed, never its
 # content; git's own output is not printed. Long: run it detached like the deploy (nohup ... &).
-TRADE_DATA_FOLDERS="upstox banknifty futures futures_volume nse_fo_bhavcopy major_levels_candles live_export data"
 trade_data_key() { printf '%s' "${ATP_TRADE_DATA_KEY:-$HOME/.ssh/trade_data_ro}"; }
 trade_data_dir() { local d; d="$(env_get ATP_TRADE_DATA_DIR)"; printf '%s' "${ATP_TRADE_DATA_DIR:-${d:-$ATP_DIR/trade-data}}"; }
 trade_data_fetch() {
-  local ref key repo dir ssh_cmd f
+  local ref key repo dir ssh_cmd f folders
   ref="$(env_get ATP_TRADE_DATA_REF)"; ref="${ref:-main}"; key="$(trade_data_key)"; repo="$(env_get ATP_TRADE_DATA_REPO)"; dir="$(trade_data_dir)"
   step "the owner's private data (read-only checkout)"
   [ -f "$key" ] || die "the owner adds the read-only deploy key $key for the private data repository (docs/deploy/TRADE_DATA_SEED.md)" 10
@@ -2918,8 +2921,14 @@ trade_data_fetch() {
   git -C "$dir" remote remove origin >/dev/null 2>&1 || true
   git -C "$dir" remote add origin "$repo" >/dev/null 2>&1
   git -C "$dir" config remote.origin.promisor true; git -C "$dir" config remote.origin.partialclonefilter blob:none
-  git -C "$dir" sparse-checkout init --no-cone >/dev/null 2>&1 || true
-  { printf '/README.md\n/data_policy.json\n'; for f in $TRADE_DATA_FOLDERS; do printf '/%s/\n' "$f"; done; } > "$dir/.git/info/sparse-checkout"
+  # only the market-data folders the owner names in .env (ATP_TRADE_DATA_FOLDERS, comma list); unset = the whole checkout
+  folders="$(env_get ATP_TRADE_DATA_FOLDERS)"
+  if [ -n "$folders" ]; then
+    git -C "$dir" sparse-checkout init --no-cone >/dev/null 2>&1 || true
+    { printf '/README.md\n/data_policy.json\n'; for f in ${folders//,/ }; do printf '/%s/\n' "$f"; done; } > "$dir/.git/info/sparse-checkout"
+  else
+    git -C "$dir" sparse-checkout disable >/dev/null 2>&1 || true
+  fi
   if ! GIT_SSH_COMMAND="$ssh_cmd" GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 --filter=blob:none --no-tags origin \
       "+refs/heads/$ref:refs/remotes/origin/$ref" >/dev/null 2>&1 \
      && ! GIT_SSH_COMMAND="$ssh_cmd" GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 --filter=blob:none --no-tags origin \
@@ -2942,11 +2951,13 @@ cmd_import_trade_data() {
   trade_data_fetch
   dir="$(trade_data_dir)"
   step "seed import ($mode) into the owner's private store"
-  dc run --rm --no-deps -T -v "$dir:/trade-data:ro" -e ATP_TRADE_DATA_DIR=/trade-data backend \
+  dc run --rm --no-deps -T -v "$dir:/trade-data:ro" -e ATP_TRADE_DATA_DIR=/trade-data \
+    -e "ATP_TRADE_DATA_FOLDERS=$(env_get ATP_TRADE_DATA_FOLDERS)" backend \
     python -m app.market_lake.seed_import "$mode" || rc=$?
   case "$rc" in
     0) ok "seed import $mode finished (totals above; details in the owner's private report)" ;;
     2) exit 2 ;;            # it printed why (the owner's organisation is not configured / confirmed)
+    3) die "the private data's data-use policy could not be read - nothing was imported (fail closed; see the line above)" 3 ;;
     *) die "the seed import did not finish (is the database running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
   esac
 }

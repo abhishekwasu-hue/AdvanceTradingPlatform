@@ -4,7 +4,8 @@ Generic code, no data: it reads the directory ATP_TRADE_DATA_DIR (the host's rea
 data repository, fetched by `atp.sh import-trade-data` with its own read-only deploy key; docs/deploy/TRADE_DATA_SEED.md).
 An absent or empty directory -> status "not_available", nothing is read or written.
 
-What goes where (one rule per file SHAPE, recognised by its name and columns; anything else is skipped and listed):
+What goes where (one rule per file SHAPE - its columns and the gaps between its timestamps, never a path list; the
+folders read are TRADE_DATA_FOLDERS from the host, else every top-level folder; anything else is skipped and listed):
 - OHLC bar files (csv / csv.gz / parquet with timestamp|date, open, high, low, close[, volume][, oi][, contract]):
   `md_tenant_candles` of the owner's tenant ONLY (HB0's owner rule: HISTORY_OWNER_TENANT_ID + HISTORY_OWNER_TENANT_NAME;
   M71Q-2 - never the shared lake, never another organisation). Keys as the store's own writers name them: an index by
@@ -49,7 +50,7 @@ import sys
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -68,8 +69,6 @@ logger = logging.getLogger(__name__)
 DATASET = "seed"
 OBJECT_PREFIX = "trade-data:"
 SOURCE_PREFIX = "seed:"
-# Top-level folders of the private data that hold market data (folder names only; their content is never in this repo).
-DATA_FOLDERS = ("upstox", "banknifty", "futures", "futures_volume", "nse_fo_bhavcopy", "major_levels_candles", "live_export", "data")
 SUFFIXES = (".csv.gz", ".csv", ".parquet")
 MCX_COMMODITIES = frozenset({"ALUMINIUM", "COPPER", "CRUDEOIL", "CRUDEOILM", "GOLD", "GOLDM", "GOLDPETAL", "LEAD", "NATURALGAS",
                              "NATGASMINI", "NICKEL", "SILVER", "SILVERM", "SILVERMIC", "ZINC"})
@@ -107,42 +106,62 @@ def _minutes_label(n: int) -> str | None:
     return {1: "1m", 3: "3m", 5: "5m", 15: "15m", 30: "30m", 60: "1h"}.get(n)
 
 
-def classify(name: str, columns: Iterable[str] = ()) -> Spec | None:
-    """A file's Spec from its name (and columns), or None when it is not a market-data file the store takes."""
-    if not name.lower().endswith(SUFFIXES):
+_NOT_SYMBOL = frozenset({"FUT", "FUTURE", "FUTURES", "INDEX", "SPOT", "ALL", "OPT", "OPTIONS", "EOD", "BARS", "DATA", "CANDLES",
+                         "DAILY", "WEEKLY", "D", "W", "H", "M", "MIN", "MINUTE", "CSV", "GZ"})
+
+
+def _symbol_from_name(stem: str) -> str:
+    """The instrument a file name names, by token: a known index / commodity first, else the first upper-case word."""
+    from app.market_lake.data_use import _index_names
+    tokens = [t for t in re.split(r"[^A-Za-z0-9&]+", stem) if t]
+    names = _index_names()
+    for t in tokens:
+        up = t.upper()
+        if up in names or up in MCX_COMMODITIES:
+            return names.get(up, up)
+    for t in tokens:
+        if t.isupper() and t.isalpha() and len(t) >= 2 and t not in _NOT_SYMBOL:
+            return t
+    return ""
+
+
+def infer_interval(stamps: pd.Series) -> str | None:
+    """The bar interval from the timestamps themselves (never from a file name): the most common gap between two
+    bars of one day for intraday files (1m .. 1h), else Daily / Weekly by the median gap between sessions."""
+    ts = pd.Series(pd.to_datetime(stamps.dropna().unique())).sort_values()
+    if len(ts) < 2:
         return None
-    cols = {c.lower() for c in columns}
-    stem = _stem(name)
-    if re.fullmatch(r"\d{4}-\d{2}", stem) and FO_COLUMNS <= cols:
+    gaps = ts.diff().dropna()
+    same_day = gaps[ts.iloc[1:].dt.date.values == ts.iloc[:-1].dt.date.values]
+    if len(same_day):
+        minutes = int(round(same_day.mode().iloc[0].total_seconds() / 60))
+        return _minutes_label(minutes)
+    days = gaps.median().total_seconds() / 86400
+    return "week" if days >= 5 else "day"
+
+
+def classify(name: str, df: pd.DataFrame | None = None) -> Spec | None:
+    """A file's Spec from its SHAPE - columns and timestamps; the name only for the instrument when no column holds
+    it. None when it is not a bar file the store takes. Never a list of known paths."""
+    if not name.lower().endswith(SUFFIXES) or df is None:
+        return None
+    cols = {str(c).lower(): c for c in df.columns}
+    if FO_COLUMNS <= set(cols):
         return Spec("fo_eod", "", "day", futures=False, official=True)
-    up = stem.upper()
-    m = re.fullmatch(r"OE_(FUTURES|INDEX)_(\d+)MIN_([A-Z]+)(_.*)?", up)
-    if m:
-        label = _minutes_label(int(m.group(2)))
-        return Spec("ohlc", m.group(3), label, futures=m.group(1) == "FUTURES") if label else None
-    m = re.fullmatch(r"([A-Z]+)_(\d+)MINUTE(_.*)?", up)
-    if m:
-        label = _minutes_label(int(m.group(2)))
-        return Spec("ohlc", m.group(1), label) if label else None
-    m = re.fullmatch(r"([A-Z]+)_FUT_(\d+)M(_.*)?", up)
-    if m:
-        label = _minutes_label(int(m.group(2)))
-        return Spec("ohlc", m.group(1), label, futures=True) if label else None
-    m = re.fullmatch(r"([A-Z]+)_(\d+)(M|MIN)(_.*)?", up)            # an intraday export: 1M / 15m = minutes
-    if m:
-        label = _minutes_label(int(m.group(2)))
-        return Spec("ohlc", m.group(1), label, futures="contract" in cols) if label else None
-    m = re.fullmatch(r"([A-Z]+)_(\d+)H(_.*)?", up)
-    if m:
-        label = _minutes_label(60 * int(m.group(2)))
-        return Spec("ohlc", m.group(1), label) if label else None
-    m = re.fullmatch(r"([A-Z]+)_(D|W)(_.*)?", up)
-    if m:
-        return Spec("ohlc", m.group(1), "day" if m.group(2) == "D" else "week")
-    m = re.fullmatch(r"([A-Z]+)_DAILY(_.*)?", up)
-    if m:
-        return Spec("ohlc", m.group(1), "day", official=True)
-    return None
+    tcol = cols.get("timestamp") or cols.get("datetime") or cols.get("date")
+    if tcol is None or not {"open", "high", "low", "close"} <= set(cols) or df.empty:
+        return None
+    stamps = _ist_naive(df[tcol])
+    interval = infer_interval(stamps)
+    if interval is None:
+        return None
+    contract = cols.get("contract")
+    futures = bool(contract) and df[contract].astype(str).str.upper().str.contains(" FUT ").any()
+    symbol = _symbol_from_name(_stem(name))
+    if contract and not symbol:
+        symbol = str(df[contract].iloc[0]).split()[0].upper()
+    official = "date" in cols and "timestamp" not in cols and interval in ("day", "week")
+    return Spec("ohlc", symbol, interval, futures=futures, official=official) if symbol else None
 
 
 def contract_key(contract: str, fallback_symbol: str) -> tuple[str, str]:
@@ -222,7 +241,14 @@ def week_end(monday: date, holidays: set[date]) -> date:
     return start + timedelta(days=4)
 
 
-def session_end_utc(day: date, family: str = "NSE") -> datetime:
+SPECIAL_SESSION_END = time(23, 59)     # a session on a non-trading day (Muhurat, a budget Saturday): its close is not known
+
+
+def session_end_utc(day: date, family: str = "NSE", holidays: set[date] | None = None) -> datetime:
+    """A Daily bar's END: the regular close on a regular trading day; on a special session (a weekend or holiday that
+    traded) the END of that day, so no reader sees the day's bar before it can have closed."""
+    if holidays is not None and not is_trading_day(day, holidays):
+        return datetime.combine(day, SPECIAL_SESSION_END, tzinfo=IST).astimezone(UTC)
     return datetime.combine(day, EXCHANGE_SESSIONS[family].close, tzinfo=IST).astimezone(UTC)
 
 
@@ -268,7 +294,7 @@ def parse_ohlc(df: pd.DataFrame, spec: Spec, *, now: datetime, holidays: set[dat
         if minutes is not None:
             end = (pd.Timestamp(start).to_pydatetime().replace(tzinfo=IST) + timedelta(minutes=minutes)).astimezone(UTC)
         elif spec.interval == "day":
-            end = session_end_utc(pd.Timestamp(start).date(), fam)
+            end = session_end_utc(pd.Timestamp(start).date(), fam, holidays if fam == "NSE" else set())
         else:
             end = session_end_utc(week_end(pd.Timestamp(start).date(), holidays), fam)
         if end > now:
@@ -289,7 +315,7 @@ def parse_ohlc(df: pd.DataFrame, spec: Spec, *, now: datetime, holidays: set[dat
     return out
 
 
-def parse_fo_eod(df: pd.DataFrame, *, now: datetime) -> Parsed:
+def parse_fo_eod(df: pd.DataFrame, *, now: datetime, holidays: set[date] | None = None) -> Parsed:
     from app.market_lake.bhavcopy import _strike
     out = Parsed(rows_read=len(df))
     withhold = config.HISTORY_BACKFILL_FO_VOLUME != "as_printed"
@@ -318,7 +344,7 @@ def parse_fo_eod(df: pd.DataFrame, *, now: datetime) -> Parsed:
         else:
             out.invalid += 1
             continue
-        end = session_end_utc(day)
+        end = session_end_utc(day, "NSE", holidays if holidays is not None else set())
         if end > now:
             out.forming += 1
             continue
@@ -461,9 +487,18 @@ def data_root(path: str | None = None) -> Path | None:
     return root
 
 
+def data_folders(root: Path) -> list[str]:
+    """The top-level folders to read: TRADE_DATA_FOLDERS (the host's .env - the private data's own folder names never
+    appear in this public code), else every top-level folder of the checkout (a non-bar file is skipped anyway)."""
+    chosen = [f for f in config.TRADE_DATA_FOLDERS if f and "/" not in f and not f.startswith(".")]
+    if chosen:
+        return chosen
+    return sorted(p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith("."))
+
+
 def discover(root: Path) -> list[Path]:
     out: list[Path] = []
-    for folder in DATA_FOLDERS:
+    for folder in data_folders(root):
         base = root / folder
         if base.is_dir():
             out += sorted(p for p in base.rglob("*") if p.is_file() and not any(part.startswith(".") for part in p.relative_to(root).parts))
@@ -480,7 +515,7 @@ def source_for(rel: Path, spec: Spec) -> str:
 def _symbol_of(spec: Spec, bars: Sequence[LakeBar]) -> str:
     if spec.symbol:
         return spec.symbol
-    names = Counter(data_use.underlying_of(b.instrument_key) for b in bars)
+    names = Counter(data_use.underlying_of(b.instrument_key) or "?" for b in bars)
     return names.most_common(1)[0][0] if names else ""
 
 
@@ -488,11 +523,8 @@ def prepare(root: Path, path: Path, *, now: datetime, holidays: set[date]) -> tu
     rel = path.relative_to(root)
     res = FileResult(path=rel.as_posix(), status="not_market_data", dataset=rel.parts[0])
     try:
-        cols: list[str] = []
-        if path.name.lower().endswith(SUFFIXES):
-            df = read_frame(path)
-            cols = list(df.columns)
-        spec = classify(path.name, cols)
+        df = read_frame(path) if path.name.lower().endswith(SUFFIXES) else None
+        spec = classify(path.name, df)
         if spec is None:
             res.notes.append("not a bar file the store takes")
             return res, None, None
@@ -503,7 +535,7 @@ def prepare(root: Path, path: Path, *, now: datetime, holidays: set[date]) -> tu
             res.status = "refused"
             res.notes.append("sha256 differs from the folder's manifest")
             return res, spec, None
-        parsed = parse_fo_eod(df, now=now) if spec.kind == "fo_eod" else parse_ohlc(df, spec, now=now, holidays=holidays)
+        parsed = parse_fo_eod(df, now=now, holidays=holidays) if spec.kind == "fo_eod" else parse_ohlc(df, spec, now=now, holidays=holidays)
         res.rows_read, res.volume = parsed.rows_read, parsed.volume
         if parsed.refused:
             res.status = "refused"
@@ -717,6 +749,11 @@ async def run(session_factory: Any, *, data_dir: str | None = None, now: datetim
         report.notes.append("the private data directory is not available (ATP_TRADE_DATA_DIR unset, missing or empty) - nothing done")
         return report
     report.data_dir = "set"
+    problem = data_use.policy_problem(root)
+    if problem:                                           # fail closed: no policy read -> nothing imported
+        report.status = "policy_unreadable"
+        report.notes.append(problem)
+        return report
     async with session_factory() as session:
         try:
             tenant_id, user_id = await _owner(session)
@@ -787,6 +824,10 @@ def check(data_dir: str | None = None, *, now: datetime | None = None, holidays:
         report.notes.append("the private data directory is not available (ATP_TRADE_DATA_DIR unset, missing or empty) - nothing done")
         return report
     report.data_dir = "set"
+    problem = data_use.policy_problem(root)
+    if problem:
+        report.status = "policy_unreadable"
+        report.notes.append(problem)
     for path in discover(root):
         res, _spec, parsed = prepare(root, path, now=now, holidays=holidays or set())
         if res.status == "ready":
@@ -819,7 +860,7 @@ async def _main(argv: Sequence[str] | None = None) -> int:
     if args.details:
         for f in report.files:
             print(json.dumps({k: v for k, v in asdict(f).items() if k != "gaps"}, default=str))
-    return {"not_available": 0, "not_configured": 2}.get(report.status, 0 if report.status in ("ok", "partial") else 1)
+    return {"not_available": 0, "not_configured": 2, "policy_unreadable": 3}.get(report.status, 0 if report.status in ("ok", "partial") else 1)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

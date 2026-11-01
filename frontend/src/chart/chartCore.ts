@@ -16,7 +16,7 @@ import {
 import { chartView, formatTick } from "../charting/chartTypes";
 import type { ChartMarker } from "../charting/markers";
 import type { LayerBand } from "../charting/engine";
-import type { Rect } from "../charting/geometry";
+import type { BandRef, Rect } from "../charting/geometry";
 import { LightweightEngine, type LineSeriesLike } from "../charting/lightweight";
 import { DEFAULT_SETTINGS, closes, ema, rsi, sma, vwap, type Series } from "../utils/indicators";
 import { chartFontSize } from "../theme";
@@ -72,6 +72,10 @@ export interface PlotInsets { right: number; bottom: number }
 /** M75 W-1: buyer (demand) areas in the chart's up colour, seller (supply) areas in its down colour, others in its
  * text colour - all from the chart tokens (the trader's candle colours when set). */
 export const zoneColors = (p: ChartPalette) => ({ demand: p.up, supply: p.down, neutral: p.text });
+
+/** M78 (F1 / F2): band labels at the chart's axis-label size, on a chip of the chart background, with the chart text
+ * as the fallback ink - all from the chart tokens. */
+export const bandLabelStyle = (p: ChartPalette) => ({ fontPx: chartFontSize(), chip: p.bg, ink: p.text });
 
 /** A pane under the price pane takes this share of the price pane's height. */
 const LOWER_PANE_STRETCH = 0.25;
@@ -214,6 +218,7 @@ export class ChartCore {
                                         (enabled) => this.setInteraction({ suspended: !enabled }));
     this.engine.setDefaultDrawingColor(p.drawing);
     this.engine.setZoneColors(zoneColors(p));
+    this.engine.setLabelStyle(bandLabelStyle(p));
     this.setPanes(opts.panes);
     const nearStart = (range: LogicalRange | null) => { if (range && range.from < 10) this.opts.onLoadOlder?.(); };
     this.chart.timeScale().subscribeVisibleLogicalRangeChange(nearStart);
@@ -462,6 +467,12 @@ export class ChartCore {
     this.engine.setLabelAvoid(rects.map((r) => ({ ...r, x: r.x - dx })));
   }
 
+  /** M78 (F5): the band (or band label) under a point of the plot, in plot pixels - its bottom / top prices and label;
+   * null when there is none. */
+  bandAt(x: number, y: number): BandRef | null {
+    return this.engine.bandAt(x - this.engine.paneOffsetX(), y);
+  }
+
   /** Review PR 3: the markers (replaced as a whole). They sit on the candle series, which always holds the bars, so
    * they show for every chart type. */
   setMarkers(markers: readonly ChartMarker[]): void {
@@ -519,6 +530,7 @@ export class ChartCore {
                                   rsiBands: this.rsiBands, overlays: this.overlays }, palette, grid, this.candlesHidden());
     this.engine.setDefaultDrawingColor(palette.drawing);
     this.engine.setZoneColors(zoneColors(palette));
+    this.engine.setLabelStyle(bandLabelStyle(palette));
     this.levelLines.forEach((line, i) => line.applyOptions({ color: this.levelColour(this.levels[i].tone) }));
     if (this.levels.length > 0) this.candles.applyOptions(this.lastPriceLine());
     this.paintLabels();

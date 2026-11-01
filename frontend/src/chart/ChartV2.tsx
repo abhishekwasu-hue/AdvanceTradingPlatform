@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useDrawingTools } from "../charting/DrawingToolbar";
 import type { LayerBand } from "../charting/engine";
+import type { BandRef } from "../charting/geometry";
+import { formatNumber } from "../ui/format";
 import type { ChartMarker } from "../charting/markers";
 import { venueZone } from "../charting/chartTypes";
 import type { LightweightEngine } from "../charting/lightweight";
@@ -83,6 +85,27 @@ export function labelAvoidRects(plot: Element, root: Element): { x: number; y: n
                    w: Math.round(r.width + 2 * AVOID_PAD), h: Math.round(r.height + 2 * AVOID_PAD) }));
 }
 
+/** M78 (F5): a tap that moved less than this (px) is a tap, not a pan. */
+const TAP_SLOP = 8;
+/** M78 (F5): the open band tooltip - the band and the plot point it was asked at. */
+interface BandTipState { band: BandRef; x: number; y: number }
+
+/** M78 (F5): a band's prices in place - its label, then its top and bottom (formatNumber), next to the point that was
+ * tapped (phone) or hovered (desktop), turned towards the middle of the chart so it never runs off it. */
+export function BandTip({ tip, width }: { tip: BandTipState; width: number }) {
+  const left = tip.x <= width / 2;
+  const style = { top: Math.max(0, tip.y + 12), boxShadow: "var(--shadow)", ...(left ? { left: tip.x + 12 } : { right: Math.max(0, width - tip.x + 12) }) };
+  return (
+    <div role="tooltip" data-band-tip className="pointer-events-none absolute z-20 rounded-control border border-border bg-surface-1 px-space-2 py-space-1 text-t12 text-fg tabular-nums whitespace-nowrap" style={style}>
+      {tip.band.label && <p className="font-semibold">{tip.band.label}</p>}
+      <dl className="grid grid-cols-[auto_auto] gap-x-space-2">
+        <dt>Top</dt><dd className="text-right" data-band-top>{formatNumber(tip.band.high, 2)}</dd>
+        <dt>Bottom</dt><dd className="text-right" data-band-bottom>{formatNumber(tip.band.low, 2)}</dd>
+      </dl>
+    </div>
+  );
+}
+
 export default function ChartV2({
   candles, timeframe, symbol, exchange = "NSE", chartType = "candles", prefs = DEFAULT_CHART_PREFS, overlays = NO_OVERLAYS, live,
   marketOpen, livePush = false, levels = NO_LEVELS, areas = NO_AREAS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, className = "h-[480px]",
@@ -93,6 +116,7 @@ export default function ChartV2({
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
   const [insets, setInsets] = useState<PlotInsets | null>(null);
   const [readout, setReadout] = useState<Readout | null>(null);
+  const [bandTip, setBandTip] = useState<BandTipState | null>(null);
   const [, , appTheme] = useAppearance();
   const theme = resolveChartTheme(prefs.theme, appTheme);
   const callbacks = useRef({ onLoadOlder, onEngine, onTools });
@@ -153,6 +177,49 @@ export default function ChartV2({
   // The chart type is not in the key: setType re-renders the same bars in place, so the trader's zoom stays.
   useEffect(() => { core?.setData(display, `${symbol ?? ""}|${exchange}|${timeframe}`); }, [core, display, symbol, exchange, timeframe]);
 
+  // M78 (F5): a band's prices on hover (mouse) or tap (touch / pen) of the band or its label, in place; a tap elsewhere,
+  // a pan, leaving the chart with the mouse or Escape closes it.
+  useEffect(() => {
+    const root = rootRef.current, plot = plotRef.current;
+    if (!core || !root || !plot) return undefined;
+    const at = (e: PointerEvent): BandTipState | null => {
+      const r = plot.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      const band = core.bandAt(x, y);
+      return band ? { band, x, y } : null;
+    };
+    let down: { x: number; y: number } | null = null;
+    const onDown = (e: PointerEvent) => { down = { x: e.clientX, y: e.clientY }; };
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType === "mouse") { if (e.buttons === 0) setBandTip(at(e)); else setBandTip(null); return; }
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP) setBandTip(null);
+    };
+    const onUp = (e: PointerEvent) => {
+      const tap = down && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= TAP_SLOP;
+      down = null;
+      if (e.pointerType !== "mouse" && tap) setBandTip(at(e));
+    };
+    const onLeave = (e: PointerEvent) => { if (e.pointerType === "mouse") setBandTip(null); };
+    const onOutside = (e: PointerEvent) => { if (!(e.target instanceof Node) || !root.contains(e.target)) setBandTip(null); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setBandTip(null); };
+    plot.addEventListener("pointerdown", onDown);
+    plot.addEventListener("pointermove", onMove);
+    plot.addEventListener("pointerup", onUp);
+    plot.addEventListener("pointerleave", onLeave);
+    document.addEventListener("pointerdown", onOutside);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      plot.removeEventListener("pointerdown", onDown);
+      plot.removeEventListener("pointermove", onMove);
+      plot.removeEventListener("pointerup", onUp);
+      plot.removeEventListener("pointerleave", onLeave);
+      document.removeEventListener("pointerdown", onOutside);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [core]);
+  // the chart's own areas changed (another answer): an open tooltip would name a band that may be gone
+  useEffect(() => { setBandTip(null); }, [areaKey]);
+
   const tools = useDrawingTools(core?.engine ?? null, core ? plotRef.current : null, symbol, exchange, drawingTools, timeframe);
   useEffect(() => { callbacks.current.onTools?.(tools); }, [tools.view, tools.controller]);  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -182,6 +249,7 @@ export default function ChartV2({
         <ChartViewControls view={view} insets={insets} onAuto={() => core.setAutoScale(!view.autoScale)}
           onReset={() => core.resetView()} onLatest={() => core.scrollToLatest()} />
       )}
+      {bandTip && <BandTip tip={bandTip} width={plotRef.current?.clientWidth ?? 0} />}
       {candles.length === 0 && (
         // C1: above the library's canvases (they stack over an unlayered sibling), so the empty state is never hidden.
         <p data-chart-empty className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-space-4 text-center text-t13" style={{ color: "rgb(var(--chart-text))" }}>

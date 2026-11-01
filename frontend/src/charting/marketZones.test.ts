@@ -62,12 +62,13 @@ describe("the layer and its shapes", () => {
     expect(layer.asOf).toBe("2026-10-09T10:00:00Z");
     expect(layer.bands?.map((b) => b.label)).toEqual(["demand 102.00 (tested) · 2 touches", "demand 98.00 (fresh) · no touches"]);
     const shapes = bandShapes(layer.bands ?? [], conv);
-    expect(shapes.map((s) => s.type)).toEqual(["rect", "segment", "text", "text"]);   // M75 W-1: labels on top of every band
+    expect(shapes.map((s) => s.type)).toEqual(["rect", "segment", "chip", "text", "chip", "text"]);   // M75 W-1: labels on top of every band (M78: on a chip)
     const rect = shapes[0] as Extract<(typeof shapes)[number], { type: "rect" }>;
     expect(rect).toMatchObject({ x: 0, y: 490, w: 400, h: 10 });
     expect(rect.fill).toMatch(/^#16a34a[0-9a-f]{2}$/);
     // a 10 px band is too thin to hold its label inside: it sits on the band's own line, at the left
-    expect(shapes[2]).toMatchObject({ type: "text", x: 4, y: 488, align: "left", baseline: "top", text: "demand 102.00 (tested) · 2 touches" });
+    expect(shapes[2]).toMatchObject({ type: "chip", x: 4, y: 486, h: 18 });
+    expect(shapes[3]).toMatchObject({ type: "text", x: 8, y: 495, align: "left", baseline: "middle", text: "demand 102.00 (tested) · 2 touches" });
     expect(shapes[1]).toMatchObject({ type: "segment", y1: 510, y2: 510, x2: 400, dash: "solid" });
     expect(layer.bands?.map((b) => b.role)).toEqual(["demand", "demand"]);
     expect(bandShapes([{ low: 1, high: 2 }], { ...conv, y: () => null })).toEqual([]);

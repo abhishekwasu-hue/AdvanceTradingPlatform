@@ -19,7 +19,13 @@ export interface Converters {
   avoid?: readonly Rect[];
   /** M75 W-1: a label's real width in pixels (the canvas's `measureText` at the paint); left out, it is estimated. */
   measure?: (text: string) => number;
+  /** M78 (F1 / F2): how band labels are drawn - the chart's axis-label font size, the chip colour (the chart
+   * background token) and the fallback ink (the chart text token). Left out: the 12 px default, no chip, band colour. */
+  labelStyle?: BandLabelStyle;
 }
+
+/** M78: a band label's look, all from the chart tokens (ChartCore passes them; the v1 chart keeps the defaults). */
+export interface BandLabelStyle { fontPx: number; chip: string | null; ink: string | null }
 
 /** An axis-aligned rectangle in pane pixels. */
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -29,7 +35,14 @@ export type Shape =
   | { type: "segment"; x1: number; y1: number; x2: number; y2: number; color: string; width: number; dash: Dash }
   | { type: "rect"; x: number; y: number; w: number; h: number; fill: string; stroke?: string }
   | { type: "polygon"; points: [number, number][]; fill: string }
-  | { type: "text"; x: number; y: number; text: string; color: string; align: "left" | "right" | "center"; baseline: "top" | "middle" | "bottom" };
+  | { type: "text"; x: number; y: number; text: string; color: string; align: "left" | "right" | "center"; baseline: "top" | "middle" | "bottom";
+      /** M78: painted above the series (a band label), in this font size. */ top?: true; size?: number }
+  /** M78 (F1): a band label's rounded background chip, painted above the series under the label's text; `band`: the
+   * band it names (its prices for the tooltip, F5). An empty `fill` paints nothing (the box still counts). */
+  | { type: "chip"; x: number; y: number; w: number; h: number; r: number; fill: string; top: true; band: BandRef };
+
+/** M78 (F5): the band a label or a hit belongs to - its bottom / top prices and its label. */
+export interface BandRef { low: number; high: number; label: string }
 
 export const DEFAULT_COLOR = "#2962ff";
 export const FIB_RETRACEMENT_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
@@ -222,55 +235,104 @@ export function shapes(d: DrawingV1, c: Converters): Shape[] {
 export const LABEL_FONT_PX = 11;
 export const LABEL_CHAR_PX = 7;
 export const LABEL_H = 14;
-/** Distance of a band label from the band's edge and from the pane's edges (the price axis is the pane's right edge). */
-const LABEL_PAD = 4;
-/** M75 W-1: a label moved off a reserved box stays at most this far from its band (it must still read as the band's). */
-const NEAR_PX = 2 * LABEL_H;
+/** M78 (F2): a band label's font size when the chart gives none - the chart's own axis-label size at the Normal text
+ * size (theme.ts `chartFontSize`); ChartCore passes the live one (it grows with the trader's text size). */
+export const BAND_LABEL_FONT_PX = 12;
+/** M78 (F1): the chip around a band label - a few px of padding around the text, rounded corners, the chart
+ * background at this opacity (the band and the candles behind it fade out, the text stays sharp). */
+export const CHIP_PAD_X = 4;
+export const CHIP_PAD_Y = 3;
+export const CHIP_RADIUS = 3;
+export const CHIP_ALPHA = 0.85;
+/** M78 (F2): WCAG AA for normal-size text. */
+export const AA_CONTRAST = 4.5;
+/** Distance of a band label's chip from the band's edge and from the pane's edges (M78 F4: the text sits
+ * LABEL_PAD + CHIP_PAD_X inside the pane; the price axis is the pane's right edge). */
+export const LABEL_PAD = 4;
 
 export const textWidth = (text: string) => text.length * LABEL_CHAR_PX;
 
 /** The box a text shape takes (its align / baseline read the same way the canvas does). */
 export function textRect(s: Extract<Shape, { type: "text" }>, measure: (text: string) => number = textWidth): Rect {
   const w = measure(s.text);
+  const h = s.size ? s.size + 2 : LABEL_H;
   const x = s.align === "left" ? s.x : s.align === "right" ? s.x - w : s.x - w / 2;
-  const y = s.baseline === "top" ? s.y : s.baseline === "bottom" ? s.y - LABEL_H : s.y - LABEL_H / 2;
-  return { x, y, w, h: LABEL_H };
+  const y = s.baseline === "top" ? s.y : s.baseline === "bottom" ? s.y - h : s.y - h / 2;
+  return { x, y, w, h };
 }
 
 export const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
-/** M75 W-1 (W3): where each band's label goes. Tried in order at the left of the pane - inside the band (when the
- * band is tall enough), on a thin band's own line, just above it, just below it, just above / below a reserved box
- * that sits on the band (within NEAR_PX of it) - then the same spots at the right,
- * then just left of each reserved rectangle; the first spot that stays inside the pane (never over the price axis,
+/** M78 (F2): `#rrggbb`, `rgb(r, g, b)` or `rgba(...)` as [r, g, b]; null for anything else. */
+export function parseColor(color: string): [number, number, number] | null {
+  const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(color);
+  if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+  const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})(?:[0-9a-f]{2})?$/i.exec(color);
+  return hex ? [parseInt(hex[1], 16), parseInt(hex[2], 16), parseInt(hex[3], 16)] : null;
+}
+
+const channel = (v: number) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const luminance = ([r, g, b]: [number, number, number]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+
+/** M78 (F2): the WCAG 2 contrast ratio of two opaque colours (1 to 21); null when either cannot be read. */
+export function contrastRatio(a: string, b: string): number | null {
+  const ca = parseColor(a), cb = parseColor(b);
+  if (!ca || !cb) return null;
+  const [la, lb] = [luminance(ca), luminance(cb)];
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/** M78 (F2): a band label's text colour - the band's own colour (its buyer / seller token) when it reads at WCAG AA
+ * on the chip; otherwise (a trader's own candle colours that are too light / dark for the chart background) the
+ * chart's text token, which is AA on it. No chip or no fallback: the band's colour. */
+export function labelInk(color: string, style: BandLabelStyle | undefined): string {
+  if (!style?.chip || !style.ink) return color;
+  const ratio = contrastRatio(color, style.chip);
+  return ratio != null && ratio >= AA_CONTRAST ? color : style.ink;
+}
+
+/** M78 (F1): the height of a band label's chip at a font size. */
+export const chipHeight = (fontPx: number) => fontPx + 2 * CHIP_PAD_Y;
+
+export interface BandLabelItem { top: number; bottom: number; text: string; color: string; band?: BandRef }
+
+/** M75 W-1 (W3) + M78 (F1, F4): where each band's label goes, as a chip (a box the text's width plus padding) with
+ * the text inside it. Tried in order at the left of the pane - inside the band (when the band is tall enough), on a
+ * thin band's own line, just above it, just below it, just above / below a reserved box that sits on the band (within
+ * two chip heights of it) - then the same spots at the right, then just left of each reserved rectangle; the first
+ * spot whose chip stays inside the pane with LABEL_PAD to spare on the left and right (never over the price axis,
  * which is outside the pane's right edge), clear of the reserved rectangles (`avoid`: the view controls, the chip
- * row, the attribution mark) and of the labels already placed wins. A label with no free spot is left out (its band
- * is still drawn), so labels never pile up on each other. */
-export function placeBandLabels(items: readonly { top: number; bottom: number; text: string; color: string }[], c: Converters): Shape[] {
+ * row, the attribution mark) and of the chips already placed wins. A label with no free spot is left out (its band
+ * is still drawn), so labels never pile up on each other. Both shapes are painted above the series. */
+export function placeBandLabels(items: readonly BandLabelItem[], c: Converters): Shape[] {
   const avoid = c.avoid ?? [];
   const taken: Rect[] = [...avoid];
-  const measure = c.measure ?? textWidth;
+  const style = c.labelStyle;
+  const fontPx = style?.fontPx ?? BAND_LABEL_FONT_PX;
+  const measure = c.measure ?? ((text: string) => text.length * Math.ceil((fontPx * LABEL_CHAR_PX) / LABEL_FONT_PX));
+  const h = chipHeight(fontPx);
+  const near = 2 * h;
   const out: Shape[] = [];
   for (const it of items) {
-    const w = Math.ceil(measure(it.text));
+    const w = Math.ceil(measure(it.text)) + 2 * CHIP_PAD_X;
     if (w + 2 * LABEL_PAD > c.width) continue;
     const ys: number[] = [];
     const shownTop = Math.max(it.top, 0);                                      // a band taller than the pane: its visible top
-    if (it.bottom - shownTop >= LABEL_H + 2 * 2) ys.push(shownTop + 2);        // inside, top-left
-    else ys.push((it.top + it.bottom) / 2 - LABEL_H / 2);                      // a thin band: on its own line
-    ys.push(it.top - 2 - LABEL_H, it.bottom + 2);                              // just above, just below
+    if (it.bottom - shownTop >= h + 2 * 2) ys.push(shownTop + 2);              // inside, top-left
+    else ys.push((it.top + it.bottom) / 2 - h / 2);                            // a thin band: on its own line
+    ys.push(it.top - 2 - h, it.bottom + 2);                                    // just above, just below
     // a reserved box beside the band (the view controls over a low band): just above / below that box, still near
     for (const a of avoid) {
-      for (const y of [a.y - 2 - LABEL_H, a.y + a.h + 2]) {
-        if (Math.max(it.top - (y + LABEL_H), y - it.bottom) <= NEAR_PX) ys.push(y);
+      for (const y of [a.y - 2 - h, a.y + a.h + 2]) {
+        if (Math.max(it.top - (y + h), y - it.bottom) <= near) ys.push(y);
       }
     }
     const xs = [LABEL_PAD, c.width - LABEL_PAD - w, ...avoid.map((a) => a.x - LABEL_PAD - w)];
     let spot: Rect | null = null;
     for (const x of xs) {
       for (const y of ys) {
-        const r = { x, y, w, h: LABEL_H };
-        if (y < 0 || y + LABEL_H > c.height || x < 0 || x + w > c.width - LABEL_PAD + 0.5) continue;
+        const r = { x, y, w, h };
+        if (y < 0 || y + h > c.height || x < LABEL_PAD - 0.5 || x + w > c.width - LABEL_PAD + 0.5) continue;
         if (taken.some((t) => overlaps(r, t))) continue;
         spot = r;
         break;
@@ -279,9 +341,20 @@ export function placeBandLabels(items: readonly { top: number; bottom: number; t
     }
     if (!spot) continue;
     taken.push(spot);
-    out.push({ type: "text", x: spot.x, y: spot.y, text: it.text, color: it.color, align: "left", baseline: "top" });
+    const band = it.band ?? { low: NaN, high: NaN, label: it.text };
+    out.push({ type: "chip", ...spot, r: CHIP_RADIUS, fill: style?.chip ? withAlpha(style.chip, CHIP_ALPHA) : "", top: true, band },
+             { type: "text", x: spot.x + CHIP_PAD_X, y: spot.y + h / 2, text: it.text, color: labelInk(it.color, style), align: "left",
+               baseline: "middle", top: true, size: fontPx });
   }
   return out;
+}
+
+/** M78 (F3): the one text of an area band on every band layer (the Charts tab reading, the Copilot answer chart):
+ * "Seller area · 15m · fresh" - the side, then the area's own timeframe and state when the data has them (a part the
+ * data lacks is dropped, never guessed). A side that is not known: "Area". */
+export function areaLabelText(a: { role?: string | null; timeframe?: string | null; state?: string | null }): string {
+  const side = a.role === "supply" ? "Seller area" : a.role === "demand" ? "Buyer area" : "Area";
+  return [side, a.timeframe, a.state].filter((p): p is string => typeof p === "string" && p.trim() !== "").map((p) => p.trim()).join(" · ");
 }
 
 /** Z7a-3: layer bands as shapes - a filled, translucent rectangle across the pane (a line when low == high, or when
@@ -289,7 +362,7 @@ export function placeBandLabels(items: readonly { top: number; bottom: number; t
  * are skipped. */
 export function bandShapes(bands: readonly LayerBand[], c: Converters): Shape[] {
   const out: Shape[] = [];
-  const labels: { top: number; bottom: number; text: string; color: string }[] = [];
+  const labels: BandLabelItem[] = [];
   for (const b of bands) {
     if (!Number.isFinite(b.low) || !Number.isFinite(b.high)) continue;
     const yHigh = c.y(Math.max(b.low, b.high));
@@ -303,7 +376,10 @@ export function bandShapes(bands: readonly LayerBand[], c: Converters): Shape[] 
     } else {
       out.push({ type: "rect", x: 0, y: top, w: c.width, h: height, fill: withAlpha(color, b.opacity ?? 0.15), stroke: withAlpha(color, 0.5) });
     }
-    if (b.label) labels.push({ top, bottom: top + height, text: b.label, color });
+    if (b.label) {
+      labels.push({ top, bottom: top + height, text: b.label, color,
+                    band: { low: Math.min(b.low, b.high), high: Math.max(b.low, b.high), label: b.label } });
+    }
   }
   return [...out, ...placeBandLabels(labels, c)];
 }

@@ -72,3 +72,12 @@ describe("M68 PR-7: his own paper charges", () => {
       field("paper_account.slippage_pct", 0.05), field("paper_account.capital", 400000)]))).toEqual({ brokeragePerOrder: 15, slippagePct: 0.05, capital: 400000 });
   });
 });
+
+describe("M68 PR-7: a setting not set yet points to Trade settings", () => {
+  it("the ticket's blocked line links a Needs-your-setting refusal to Trade settings, a risk limit to Risk limits", async () => {
+    const { blockedBy } = await import("../fno/ticketModel");
+    expect(blockedBy({ can_place: false, errors: [], refusals: [`${NEEDS_CAPITAL} (Settings › Trade settings › Paper account)`] }))
+      .toEqual({ text: `${NEEDS_CAPITAL} (Settings › Trade settings › Paper account)`, link: "/settings/trade-settings" });
+    expect(blockedBy({ can_place: false, errors: [], refusals: ["Your daily loss limit is reached"] })?.link).toBe("/settings/risk-limits");
+  });
+});

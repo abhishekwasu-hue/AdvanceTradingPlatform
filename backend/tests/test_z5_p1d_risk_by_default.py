@@ -11,7 +11,6 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 from sqlalchemy import select
 
-from app.core import config as app_config
 from app.core.enums import SignalDirection
 from app.core.models import RiskConfig
 from app.db.models import AuditLogRecord, MarketSnapshotRecord, RiskLockoutRecord, TradePlanRecord, TradeRecord, User
@@ -196,7 +195,7 @@ def test_settings_defaults_bounds_and_ceilings():
     assert body["settings"] == {"risk_per_trade_pct": 0.0, "risk_per_trade_amount": 0.0, "daily_loss_pct": 0.0, "max_trades_per_day": 0,
                                 "min_rr": 0.0, "max_sector_pct": 0.0, "max_correlated_risk_pct": 0.0, "max_open_positions": 0}
     assert body["set"] == [] and body["risk_cap"]["amount"] is None and body["today"]["limit"] == 0 and body["today"]["used"] is None
-    assert body["capital_basis"] == app_config.PAPER_STARTING_CAPITAL and body["lockout"] is None
+    assert body["capital_basis"] == 1_000_000.0 and body["lockout"] is None       # M68 PR-7: the capital he saved (conftest)
     assert "never locked" in body["exits"]
     assert client.put("/api/paper/risk", headers=t["headers"], json={"risk_per_trade_pct": 3.0}).status_code == 422     # above the 2% ceiling
     assert client.put("/api/paper/risk", headers=t["headers"], json={"daily_loss_pct": 0.0}).status_code == 422

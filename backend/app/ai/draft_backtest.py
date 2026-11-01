@@ -104,7 +104,7 @@ def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: 
         "from": _iso(df.index[0]) if len(df) else None, "to": _iso(df.index[-1]) if len(df) else None,
         "from_day": day_label(df.index[0]) if len(df) else None, "to_day": day_label(df.index[-1]) if len(df) else None,
         "days_requested": TEST_DAYS, "later_share_pct": int(round(LATER_SHARE * 100)), "min_trades_for_statistics": need, "sealed_holdout_bars": sealed, "slippage_pct_per_fill": None,
-        "costs_included": f"{charges.words} (statutory charges at their dated rates)",
+        "costs_included": f"{charges.words}; statutory rates of each trade's own date",
         "tuned_on_this_data": False, "tries": 1, "note": "Past simulated results on this window only; not a forecast.",
     }
     min_hist = strategy.min_history()[strategy.timeframes[0]]

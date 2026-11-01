@@ -338,3 +338,14 @@ def test_service_words_for_the_refusal():
     assert NEEDS == "Needs your setting: Starting capital (Settings › Trade settings › Paper account)"
     assert paper_settings.is_capital_refusal(NEEDS)
     assert service.FLAG == "paper_account"
+
+
+def test_a_research_study_waits_for_his_capital():
+    from app.ai import research_loop
+    with pytest.raises(ValueError, match="Needs your setting: Starting capital"):
+        _run(research_loop.run_study(None, tenant_id=1, user_id=1, spec=None, frame=_frame_one(), risk=RiskConfig(), propose=None))
+
+
+def _frame_one():
+    import pandas as pd
+    return pd.DataFrame({"close": [1.0]}, index=pd.DatetimeIndex(["2026-01-01"], tz="UTC"))

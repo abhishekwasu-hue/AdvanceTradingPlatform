@@ -49,11 +49,14 @@ test.describe("Settings › Trade settings 1440", () => {
     await open(page, fixture("user"));
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Trade settings");
     await expect(page.locator("[data-section]")).toHaveCount(7);
-    // M68 PR-1: Order defaults is wired - its seven controls, every one Not set; no other section has a control yet.
+    // M68 PR-1: Order defaults is wired - its seven controls, every one Not set. PR-7: so is Paper account (capital,
+    // charges, brokerage, slippage - every one Not set: no ₹10,00,000, no ₹20, no 0.02 %); no other section has a control yet.
     await expect(sectionAt(page, "order_defaults").locator("[data-input]")).toHaveCount(7);
     await expect(sectionAt(page, "order_defaults").locator("[data-field] [data-value]")).toHaveText(Array(7).fill("Not set"));
-    await expect(page.locator("[data-input]")).toHaveCount(7);
-    await expect(page.locator("[data-save]")).toHaveCount(1);
+    await expect(sectionAt(page, "paper_account").locator("[data-input]")).toHaveCount(4);
+    await expect(sectionAt(page, "paper_account").locator("[data-field] [data-value]")).toHaveText(Array(4).fill("Not set"));
+    await expect(page.locator("[data-input]")).toHaveCount(11);
+    await expect(page.locator("[data-save]")).toHaveCount(2);
     await expect(page.getByText("Advanced (admin)")).toHaveCount(0);
     await expect(sectionAt(page, "risk_limits").getByRole("link", { name: "Risk limits" })).toHaveAttribute("href", "/settings/risk-limits");
     await expect(page).toHaveScreenshot("trade-settings-v2-1440-light.png", SHOT);

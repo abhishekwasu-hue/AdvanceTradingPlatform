@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import write_audit_log
 from app.core import config as app_config
 from app.core.enums import InstrumentKind, OrderSide
-from app.db.models import ExperienceOptOutRecord, PaperAccountRecord, User
+from app.db.models import ExperienceOptOutRecord, User
 from app.market_data.calendar import IST
 
 FLAG = "experience_levels"
@@ -272,10 +272,10 @@ async def record(session: AsyncSession, user: User) -> Dict[str, Any]:
     trades = [t for t in await service._paper_trades(session, user) if service._counted(t)]
     closed = sorted((t for t in trades if t.exit_time is not None), key=lambda t: (service._utc(t.exit_time or t.entry_time), t.id))
     sessions = {service._utc(t.entry_time).astimezone(IST).date() for t in trades if t.entry_time is not None}
-    account = await session.scalar(select(PaperAccountRecord).where(PaperAccountRecord.tenant_id == user.tenant_id,
-                                                                    PaperAccountRecord.user_id == user.id))
-    # M68 PR-7 (TS1-065): measured from his own capital; Not set -> the drawdown % is not measured (None, not met).
-    starting = float(account.starting_capital) if account is not None and account.starting_capital is not None else None
+    # M68 PR-7 (TS1-065): measured from his own capital (his account's, else his saved Trade settings value); Not set ->
+    # the drawdown % is not measured (None, not met).
+    from app.paper import paper_settings
+    starting = await paper_settings.capital_of(session, user)
     if starting is None:
         return {"closed_trades": len(closed), "sessions": len(sessions), "max_drawdown_pct": None}
     dd = service.equity_drawdown(starting, [float(t.pnl or 0.0) for t in closed])

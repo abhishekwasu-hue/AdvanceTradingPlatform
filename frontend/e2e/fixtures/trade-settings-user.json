@@ -411,6 +411,83 @@
    "title": "Paper account",
    "fields": [
     {
+     "key": "paper_account.capital",
+     "label": "Starting capital",
+     "kind": "number",
+     "help": "The money a new paper account starts with. Not set: your first paper order asks.",
+     "unit": "₹",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": true,
+     "term": "paper",
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "paper_account.charges_model",
+     "label": "Charges",
+     "kind": "choice",
+     "help": "What a paper trade pays. Not set: statutory charges only, no brokerage.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "STATUTORY",
+       "label": "Statutory charges only"
+      },
+      {
+       "value": "STATUTORY_BROKERAGE",
+       "label": "Statutory charges + my brokerage"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "paper_account.brokerage_per_order",
+     "label": "Brokerage per order",
+     "kind": "number",
+     "help": "What your broker charges for one order; used when Charges is \"Statutory charges + my brokerage\".",
+     "unit": "₹",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "paper_account.slippage_pct",
+     "label": "Slippage",
+     "kind": "number",
+     "help": "How far from the price a paper fill is counted, each side. Not set: none.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
      "key": "paper_account.statutory_charges",
      "label": "Statutory charges",
      "kind": "fact",

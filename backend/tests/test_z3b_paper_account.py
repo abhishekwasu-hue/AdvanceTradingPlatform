@@ -96,9 +96,11 @@ def test_new_user_starts_in_paper_with_the_default_capital_and_can_change_it_wit
     t = _tenant(_email("capital"))
     _paper_flag(t["tenant_id"])
     body = client.get("/api/paper/account", headers=t["headers"]).json()
-    assert body["mode"] == "PAPER" and body["starting_capital"] == app_config.PAPER_STARTING_CAPITAL and body["balance"] == app_config.PAPER_STARTING_CAPITAL
+    # M68 PR-7: the capital he saved (tests/conftest.py _saved_paper_capital: 10,00,000); ATP sets none (test_m68_paper_account.py)
+    assert body["mode"] == "PAPER" and body["starting_capital"] == 1_000_000.0 and body["balance"] == 1_000_000.0
     assert body["closed_trades"] == 0 and body["positions"] == [] and body["paused"] is False
-    assert client.put("/api/paper/account", headers=t["headers"], json={"starting_capital": 5.0}).status_code == 422
+    # M68 PR-7 (TS1-068): no ATP floor or ceiling - only "above 0"
+    assert client.put("/api/paper/account", headers=t["headers"], json={"starting_capital": 0}).status_code == 422
     out = client.put("/api/paper/account", headers=t["headers"], json={"starting_capital": 250_000})
     assert out.status_code == 200 and out.json()["starting_capital"] == 250_000 and out.json()["balance"] == 250_000
     # Review M7: fixed once there is a PAPER trade - it is what the balance, drawdown and ladder are measured from.
@@ -147,7 +149,7 @@ def test_balance_pnl_after_charges_positions_and_journal_are_the_users_own():
     assert [j["net_pnl"] for j in journal] == [-230.0, 480.0] and journal[1]["gross_pnl"] == 500.0 and journal[1]["charges"] == 20.0
 
     mine = client.get("/api/paper/account", headers=member["headers"]).json()
-    assert mine["realised"]["net"] == 5_000.0 and mine["closed_trades"] == 1 and mine["starting_capital"] == app_config.PAPER_STARTING_CAPITAL
+    assert mine["realised"]["net"] == 5_000.0 and mine["closed_trades"] == 1 and mine["starting_capital"] == 1_000_000.0
     theirs = client.get("/api/paper/account", headers=stranger["headers"]).json()
     assert theirs["realised"]["net"] == -7_000.0 and theirs["closed_trades"] == 1
     # Compare numbers, not substrings: ids and timestamps in the body can contain "5000" by chance.

@@ -453,7 +453,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
           </>
         )}
 
-        {step.kind === "review" && <Review preview={step.preview} budget={budget} events={events} liquidity={liquidity} />}
+        {step.kind === "review" && <Review preview={step.preview} budget={budget} events={events} liquidity={liquidity}
+          onCapitalSaved={onReviewWith ? () => onReviewWith({}) : undefined} />}
 
         {step.kind === "done" && (
           <p role="status" data-ticket="result"
@@ -482,9 +483,9 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
         )}
         {step.kind === "review" && (
           <>
-            {/* M68 PR-7 (TS-3, D4): no starting capital yet - the ticket asks for it here, then checks the order again. */}
-            {onReviewWith && needsCapital(step.preview.refusals) && <CapitalAsk onSaved={() => onReviewWith({})} />}
             {(() => {
+              // M68 PR-7: the starting capital is asked above, in the confirm step itself (no second sentence here).
+              if (needsCapital(step.preview.refusals)) return null;
               // M64 RM-3: a Risk limits refusal is a block message (its numbers, Change limit, a smaller size offered).
               const block = step.preview.risk?.blocks?.[0];
               if (block && !step.preview.errors.length) {
@@ -493,7 +494,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
               const why = blockedBy(step.preview);
               return why && (
                 <p className="basis-full text-t13 text-fg" data-ticket="blocked-by">
-                  {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-ticket="change-limits">Change limit</a></>}
+                  {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-ticket="change-limits">{why.link === "/settings/trade-settings" ? "Open Trade settings" : "Change limit"}</a></>}
                 </p>
               );
             })()}
@@ -524,8 +525,10 @@ export function samePriceNote(note: string): boolean {
 
 /** The confirm step: every figure from the server, before anything is placed. 8b: the payoff in plain words, the risk
  * line (the max loss beside the user's own limits, information only: `can_place` alone decides the button) and Explain. */
-export function Review({ preview: p, budget, events, liquidity }: {
+export function Review({ preview: p, budget, events, liquidity, onCapitalSaved }: {
   preview: OrderPreview; budget?: RiskBudget | null; events?: EventRisk | "error" | null; liquidity?: RiskLine | null;
+  /** M68 PR-7 (TS-3, D4): his paper account has no starting capital yet - asked here; then the order is checked again. */
+  onCapitalSaved?: () => void;
 }) {
   const problems = [...p.errors, ...p.refusals];
   const payoff = ticketPayoffSentence(p);
@@ -575,6 +578,7 @@ export function Review({ preview: p, budget, events, liquidity }: {
           {problems.map((r) => <li key={r}>{r}</li>)}
         </ul>
       )}
+      {onCapitalSaved && needsCapital(p.refusals) && <CapitalAsk onSaved={onCapitalSaved} />}
       {p.smart?.note && <p className="text-t13 text-fg-muted" data-ticket="slices">{p.smart.note}</p>}
       {p.warnings.length > 0 && (
         <ul className="space-y-space-1 text-t13 text-fg-muted" data-ticket="warnings">

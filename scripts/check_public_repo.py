@@ -185,9 +185,9 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
     "backend/evals/sets/qa.jsonl": "845e5902cbc904864ec1f24bbf589194428ec462e164e388ab04b9734469338e",
     "backend/evals/sets/tool_args.jsonl": "578efa3d69f7d860f221068273a074b018e7998b71bdf8c55d5bdbd66d7f862b",
-    "backend/evals/sets/copilot_jobs.jsonl": "f38a563b08c68a727e5eb4fb2fb13d254c8a136dc207ff93bda186ee4b24a416",
+    "backend/evals/sets/copilot_jobs.jsonl": "571e6d59bc541582594776320250484c80712850ed0d77465d64495f1e498a0a",
     "backend/evals/sets/copilot_safety.jsonl": "6957614b58ca737a77f1445e2d3bd0a13fa5c3063c829e75506e6043a3a37287",
-    "backend/evals/sets/copilot_tools.json": "c7946be46843344a0095458d4faa555e8342138d968f3b2a04eacc25a355d8a6",
+    "backend/evals/sets/copilot_tools.json": "39bbfbb4e1e2e94c6bec38490ca623d128c7324b10691e781a6b93fce5cf3744",
     "frontend/e2e/fixtures/copilot_tools_v2.json": "37c00546e26cc0cab4b2af0c38ae6041a630d57790be87397fa186502f3e4502",
     # hand-written API replies for the Playwright tests
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",
@@ -228,8 +228,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/mytrades_cards_v2.json": "4d0ba8e0bd9fcf0e3117746ad9169e832f209600858c79df807b8ff92a8fa82d",
     "frontend/e2e/fixtures/copilot_chat_v2.json": "d844e9cfe7294dd7a5faf64e21b751ce48b8085739ac8dfd5c7f6bf67d3dc22f",
     # M68 PR-0: Settings > Trade settings - the registry's own replies (backend/app/me/trade_settings.py view(); synthetic)
-    "frontend/e2e/fixtures/trade-settings-user.json": "bac80a6a4e8c8a5d7892767bc9cfeaef8901fa1a175cfbde40e1f04a7612a961",
-    "frontend/e2e/fixtures/trade-settings-admin.json": "a6cc7522c790167e17c44ce834e7c9eca28bcba0468538e1a2b21f89fd401351",
+    "frontend/e2e/fixtures/trade-settings-user.json": "7fa53281bec7bae213e3e89eaa1b6188ab19e4c645de13b3abcc1961a13247be",
+    "frontend/e2e/fixtures/trade-settings-admin.json": "94cfc0ebf36cde7e995f39ad62141526a3953631b999db8064823f53a6e0b181",
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

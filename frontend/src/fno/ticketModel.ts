@@ -199,6 +199,8 @@ export function newClientRef(): string {
 export function blockedBy(p: { can_place: boolean; errors: string[]; refusals: string[] }): { text: string; link: string | null } | null {
   if (p.can_place) return null;
   const text = p.errors[0] ?? p.refusals[0] ?? "This order cannot be placed right now.";
+  // M68: a Trade setting he has not set yet links to Settings › Trade settings (not to his risk limits).
+  if (/^Needs your setting: /.test(text)) return { text, link: "/settings/trade-settings" };
   const own = /your (setting|limit|risk per trade|own|minimum|daily loss)|my limits|limit of|today's loss limit|losses in a row|positions, your limit|your limit is|max lots per order|experience level/i.test(text);
   // M64 RM-3: his own limits link to Settings › Risk limits; an organisation ceiling says "Ask your admin" in its sentence.
   return { text, link: own && !/ask your admin/i.test(text) ? "/settings/risk-limits" : null };

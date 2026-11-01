@@ -222,15 +222,38 @@ async def build_template(body: TemplateBody) -> Dict[str, Any]:
     return {"name": body.name, "legs": legs, "priced_by_model": priced}
 
 
+async def _own_brokerage(session: AsyncSession, user: User) -> Optional[float]:
+    """M68 PR-7 (TS1-071): his Settings > Trade settings > Paper account brokerage per order, only when he chose
+    "Statutory charges + my brokerage" (the rule of app/execution/paper_charges.py `charges_from`, read here from the
+    stored prefs so this research package imports no order layer); None = Not set."""
+    import json
+
+    from sqlalchemy import select
+
+    from app.db.models import UserPrefsRecord
+    raw = await session.scalar(select(UserPrefsRecord.value_json).where(
+        UserPrefsRecord.tenant_id == user.tenant_id, UserPrefsRecord.user_id == user.id, UserPrefsRecord.namespace == "trade_settings"))
+    try:
+        values = (json.loads(raw or "{}") or {}).get("values") or {}
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if not isinstance(values, dict):
+        return None
+    brokerage = values.get("paper_account.brokerage_per_order")
+    if values.get("paper_account.charges_model") != "STATUTORY_BROKERAGE" or isinstance(brokerage, bool) \
+            or not isinstance(brokerage, (int, float)) or not math.isfinite(brokerage) or not 0 <= brokerage <= 1000:
+        return None
+    return float(brokerage)
+
+
 @router.post("/evaluate", dependencies=[Depends(compute_rate_limit)])
 async def evaluate(body: EvaluateBody, user: User = Depends(get_current_user),
                    session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     words = None
     if body.brokerage_per_order is None:          # M68 PR-7: his own saved brokerage (Not set: statutory charges only)
-        from app.paper import paper_settings
-        own = await paper_settings.charges_for(session, user)
-        body = body.model_copy(update={"brokerage_per_order": own.brokerage_per_order})
-        words = own.words
+        own = await _own_brokerage(session, user)
+        body = body.model_copy(update={"brokerage_per_order": own or 0.0})
+        words = f"Statutory charges + your brokerage ₹{own:g} per order" if own is not None else "Statutory charges only: no brokerage"
     out = await run_in_threadpool(_evaluate, body)
     out["costs"]["charges_words"] = words or f"Statutory charges + brokerage ₹{body.brokerage_per_order:g} per order"
     return out

@@ -64,7 +64,7 @@ def number(value: Any) -> float | None:
 
 
 def charges_from(values: dict[str, Any]) -> PaperCharges:
-    """The charges of a cleaned Trade settings `values` map (app/me/trade_settings.py `clean`). Pure."""
+    """The charges of a cleaned Trade settings `values` map (the Trade settings registry's `clean`). Pure."""
     with_brokerage = values.get(CHARGES_KEY) == WITH_BROKERAGE
     brokerage = number(values.get(BROKERAGE_KEY))
     slippage = number(values.get(SLIPPAGE_KEY))

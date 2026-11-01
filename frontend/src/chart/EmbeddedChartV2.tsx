@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLiveLtp } from "../components/chartHelpers";
 import type { LtpResponse } from "../types";
 import { cx } from "../components/primitives/cx";
+import { useInPlace } from "../inplace/InPlaceProvider";
 import ChartV2 from "./ChartV2";
 import type { LevelLine, OverlayId } from "./chartCore";
 import type { LayerBand } from "../charting/engine";
@@ -83,6 +84,11 @@ export default function EmbeddedChartV2({
     const change = toggleIndicator(id, indicatorState);
     if ("overlays" in change) setOverlays(change.overlays);
   };
+  // M75 NAV-3: the link opens the chart in place (a larger chart in a side panel / bottom sheet, the tab stays); it names
+  // the Chart tab only where it still goes there (ui_v2 off).
+  const inPlace = useInPlace();
+  const openTo = chartTabPath(sym, exchange, timeframe);
+  const openLabel = inPlace.handles(openTo) ? "Open a larger chart" : "Open in Chart tab";
   const emptyText = data.loading ? "Loading prices…" : data.error ? "" : data.empty ?? `No prices for ${sym} on this timeframe yet.`;
 
   return (
@@ -93,7 +99,7 @@ export default function EmbeddedChartV2({
           favourites: prefs.prefs.timeframe_favourites, onFavourites: (next) => prefs.update({ timeframe_favourites: next }) }}
         indicators={{ state: indicatorState, on: () => false, onToggle: onIndicator, groups: EMBEDDED_GROUPS }}
         settings={{ prefs: prefs.prefs, onChange: prefs.update, error: prefs.error }}
-        endActions={openLink ? [{ id: "open", label: "Open in Chart tab", icon: <ExternalLink size={16} aria-hidden />, to: chartTabPath(sym, exchange, timeframe) }] : []} />
+        endActions={openLink ? [{ id: "open", label: openLabel, icon: <ExternalLink size={16} aria-hidden />, to: openTo }] : []} />
       <ChartV2 candles={data.candles} timeframe={timeframe} symbol={sym} exchange={exchange} prefs={shown} overlays={overlays} live={live.ltp} marketOpen={marketOpen}
         levels={levels} areas={areas} onLoadOlder={data.loadOlder} drawingTools={false} emptyText={emptyText}
         className={className} />

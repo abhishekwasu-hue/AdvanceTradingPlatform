@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
-import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactElement } from "react";
+import { renderToStaticMarkup as renderBare } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import contract from "./builderTexts.json";
 import { EvidenceView } from "./EvidencePanel";
@@ -10,6 +12,8 @@ import { newBlock, newStage, TIMEFRAMES, type GroupStage, type Registry, type St
 import { TextAreaInline, TextInline } from "./ParamInline";
 import { ResultBoard } from "./ResultBoard";
 import { NIFTY50_FALLBACK_AS_OF, NIFTY50_FALLBACK_NOTE } from "./universe";
+/** M75 NAV-3: the evidence's "Open in Charts" is an in-place link, always inside the app's router. */
+const renderToStaticMarkup = (el: ReactElement) => renderBare(<MemoryRouter>{el}</MemoryRouter>);
 
 /**
  * Owner order SCR-FIX, PR D (phone UI, D1-D10): the Find setups page on a phone. Each check names its item; the

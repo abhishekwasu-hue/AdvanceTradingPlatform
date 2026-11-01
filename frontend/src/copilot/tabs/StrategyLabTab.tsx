@@ -144,8 +144,8 @@ export default function StrategyLabTab() {
                       className={`rounded-full border px-2 py-0.5 text-xs ${symbol === s ? "border-ai/60 bg-ai/15 text-fg" : "border-border text-fg-muted hover:text-fg"}`}>{s}</button>
             ))}
           </div>
-          <div className="w-64"><Select label={t("lab.style")} value={style} onChange={(v) => setStyle(v as typeof style)}
-            options={[{ value: "", label: t("lab.styleChoose") }, { value: "intraday", label: t("lab.styleIntraday") }, { value: "scalping", label: t("lab.styleScalping") }]} /></div>
+          <div className="w-64"><Select label={t("lab.style")} value={style} placeholder={t("lab.styleChoose")} onChange={(v) => setStyle(v as typeof style)}
+            options={[{ value: "intraday", label: t("lab.styleIntraday") }, { value: "scalping", label: t("lab.styleScalping") }]} /></div>
           <div className="w-40"><Select label={t("lab.side")} value={direction} onChange={(v) => setDirection(v as typeof direction)}
             options={[{ value: "long", label: t("lab.direction.LONG") }, { value: "short", label: t("lab.direction.SHORT") }, { value: "both", label: t("lab.direction.BOTH") }]} /></div>
           <Button variant="primary" icon={<Layers size={15} />} disabled={task.busy || !symbol.trim() || !style} onClick={() => void run()} data-testid="lab-run">{t("lab.run")}</Button>

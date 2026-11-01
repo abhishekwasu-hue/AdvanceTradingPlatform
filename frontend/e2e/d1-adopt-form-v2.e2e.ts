@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { expectChoice } from "./combobox";
+import { choose, expectChoice } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -127,7 +127,10 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         const form = page.locator("[data-block='start']");
         await expectChoice(form.getByLabel("Pick a strategy"), "template-pick:A5");
         await expect(form.getByLabel("Pick a strategy")).toContainText("Breakout and retest");
-        await expectChoice(form.getByLabel("Pick a symbol"), "RELIANCE");
+        // M68 PR-8 (TS1-098): no symbol is pre-picked - no quiet index option and no stock either; he picks the stock
+        await expectChoice(form.getByLabel("Pick a symbol"), "");
+        await expect(form).not.toContainText("NIFTY 50 option");
+        await choose(page, form.getByLabel("Pick a symbol"), "RELIANCE");
         const settings = form.locator("[data-template-settings]");
         await expect(settings).toContainText("The idea's settings");
         await expect(settings).toContainText("What broke");

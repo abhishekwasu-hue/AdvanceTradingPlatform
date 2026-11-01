@@ -238,6 +238,9 @@ test.describe("Trading bot behaviour", () => {
     await expect(more.getByRole("button", { name: "LIVE", exact: true })).toHaveCount(0);
     await expect(more.getByText("Trading worker")).toHaveCount(0);
     await expect(more.getByText(/Deployments \(/)).toHaveCount(0);
+    // M68 PR-8 (TS1-098): the full form pre-selects no symbol - he types it before Start
+    await expect(more.getByPlaceholder("Choose a symbol")).toHaveValue("");
+    await more.getByPlaceholder("Choose a symbol").fill("NIFTY 50");
     await pickEntryStyle(page, more);
     await more.getByRole("button", { name: "Start on paper" }).click();
     await expect.poll(() => server.sent.filter((c) => c.method === "POST").length).toBe(1);

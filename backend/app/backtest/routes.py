@@ -35,6 +35,7 @@ from app.core.models import BacktestResult, OHLCVBar, RiskConfig, bars_to_datafr
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BacktestRunRecord, User
 from app.db.session import get_session
+from app.execution.paper_charges import STATUTORY_ONLY, PaperCharges
 from app.instruments.spreads import MAX_CUSTOM_LEGS, MAX_LEG_RATIO, CustomLeg
 from app.market_data.calendar import load_holidays
 from app.strategy_templates import exits as exit_settings
@@ -174,9 +175,11 @@ class BacktestRunner:
     endpoint (plain, Monte Carlo, walk-forward) dispatches the same way. Built once per request:
     the option pricer (recorded quotes for the candle span, the holiday calendar) is loaded here."""
 
-    def __init__(self, body: BacktestBody, risk: RiskConfig, pricer=None, holidays=()) -> None:
+    def __init__(self, body: BacktestBody, risk: RiskConfig, pricer=None, holidays=(), charges: Optional[PaperCharges] = None) -> None:
         self.body = body
         self.risk = risk
+        # M68 PR-7 (TS1-069): the trader's own paper charges (None: statutory charges only) - backtest = paper (parity).
+        self.charges = charges or STATUTORY_ONLY
         self.rules = body.exit_rules.to_rules() if body.exit_rules else None
         self.config = body.options.to_config(holidays) if body.options is not None else None
         if self.config is not None and body.template_exits is not None:
@@ -195,9 +198,16 @@ class BacktestRunner:
             raise HTTPException(status_code=422, detail="execution_models: the pricing model applies to option backtests only")
 
     @classmethod
-    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None) -> "BacktestRunner":
+    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None,
+                    user: Optional[User] = None) -> "BacktestRunner":
+        """M68 PR-7 (TS1-066): with `user`, the run starts from HIS capital (his own `risk.capital`, else his paper
+        account's / saved Trade settings value; Not set: none) and pays his paper charges - as his paper fills do."""
+        charges: Optional[PaperCharges] = None
+        if user is not None:
+            from app.paper import paper_settings
+            risk, charges = await paper_settings.backtest_inputs(session, user, risk)
         if body.options is None:
-            runner = cls(body, risk)
+            runner = cls(body, risk, charges=charges)
             await _models_allowed(session, runner.models, tenant_id)
             return runner
         await _models_allowed(session, cls(body, risk).models, tenant_id)       # N7 C2c: the option engine's models too
@@ -224,16 +234,16 @@ class BacktestRunner:
                         "allow the synthetic fallback or upload rows") if byob else (
                         f"No recorded option-chain quotes for {underlying} in the candle span; allow the synthetic fallback or upload rows"))
             pricer = SnapshotPricer(rows, max_age_minutes=opts.snapshot_max_age_minutes, fallback=fallback)
-        return cls(body, risk, pricer=pricer, holidays=holidays)
+        return cls(body, risk, pricer=pricer, holidays=holidays, charges=charges)
 
     def run(self, strategy, df) -> BacktestResult:
         if self.config is None:
             result = run_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, exit_rules=self.rules,
-                                  models=self.models)
+                                  models=self.models, charges=self.charges)
         else:
             try:
                 result = run_option_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, self.config,
-                                             exit_rules=self.rules, pricer=self.pricer, models=self.models)
+                                             exit_rules=self.rules, pricer=self.pricer, models=self.models, charges=self.charges)
             except ModelError as exc:
                 raise HTTPException(status_code=422, detail=f"execution_models: {exc}") from exc
             except OptionBacktestError as exc:
@@ -246,6 +256,9 @@ class BacktestRunner:
             option_chain=data_version_of_chain(self.body.options.option_chain) if self.body.options and self.body.options.option_chain else None,
             # C2: only a non-default model set enters the hash, so default runs keep the hash they had before C2.
             **({} if self.models.is_default else {"execution_models": self.models.describe()}),
+            # M68 PR-7: likewise only his own paper charges (statutory-only runs keep their hash)
+            **({} if self.charges == STATUTORY_ONLY else {"paper_charges": {"brokerage_per_order": self.charges.brokerage_per_order,
+                                                                             "slippage_pct": self.charges.slippage_pct}}),
             # section 5: likewise only a chosen template exit enters it
             **({"template_exits": self.body.template_exits.model_dump()} if self.body.template_exits is not None
                and not self.body.template_exits.to_exits().is_default else {}))
@@ -359,12 +372,14 @@ async def backtest_monte_carlo(
     await fill_candles(session, user, body)                                     # M55 T3: server-side candles
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
-    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
+    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id, user=user)
     result = await run_in_threadpool(runner.run, strategy, bars_to_dataframe(body.candles))        # P0.1 / S3
     result.data_source = body.data_source
-    from app.core import config as app_config
-    capital = float(risk.with_capital(app_config.PAPER_STARTING_CAPITAL).capital or 0.0)     # DEF-0
+    capital = float(runner.risk.capital or 0.0)     # DEF-0 / M68 PR-7 (TS1-066): his own capital; Not set: 0
     mc = await run_in_threadpool(monte_carlo, result.trades, capital, runs=max(100, min(runs, 5000)), seed=seed)
+    if runner.risk.capital is None and mc.get("runs"):   # a fall of half the capital cannot be measured without one
+        mc["risk_of_ruin_pct"] = None
+        mc["risk_of_ruin_note"] = "Needs your starting capital (Settings › Trade settings › Paper account)"
     return {"backtest": result.model_dump(exclude={"trades", "equity_curve", "analytics", "options"}), "monte_carlo": mc}
 
 
@@ -376,10 +391,12 @@ async def backtest_walk_forward(
     await fill_candles(session, user, body)                                     # M55 T3: server-side candles
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
-    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
-    return await run_in_threadpool(walk_forward, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, risk, folds=folds,
-                                   # N7 C2b: chosen execution models apply to every window (never silently dropped)
-                                   runner=runner.run if body.options is not None or not runner.models.is_default else None)
+    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id, user=user)
+    return await run_in_threadpool(walk_forward, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, runner.risk, folds=folds,
+                                   # N7 C2b: chosen execution models apply to every window (never silently dropped); M68 PR-7:
+                                   # so do his own paper charges
+                                   runner=runner.run if body.options is not None or not runner.models.is_default
+                                   or runner.charges != STATUTORY_ONLY else None)
 
 
 # --- Phase W: recorded option-chain quotes -------------------------------------------------

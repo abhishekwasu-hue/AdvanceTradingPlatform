@@ -10,6 +10,7 @@ import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { ORDER_TYPE_KEY, PRODUCT_KEY, orderDefaultsOf, useTradeSettings } from "../settings/tradeSettings";
 import { SaveAsDefault } from "../settings/SaveAsDefault";
+import { CapitalAsk, needsCapital } from "../settings/CapitalAsk";
 import { formatPrice } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
@@ -481,6 +482,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
         )}
         {step.kind === "review" && (
           <>
+            {/* M68 PR-7 (TS-3, D4): no starting capital yet - the ticket asks for it here, then checks the order again. */}
+            {onReviewWith && needsCapital(step.preview.refusals) && <CapitalAsk onSaved={() => onReviewWith({})} />}
             {(() => {
               // M64 RM-3: a Risk limits refusal is a block message (its numbers, Change limit, a smaller size offered).
               const block = step.preview.risk?.blocks?.[0];
@@ -560,6 +563,7 @@ export function Review({ preview: p, budget, events, liquidity }: {
         </Line>
         {p.charges && <Line label="Charges (estimate)" testId="charges">{moneyText(p.charges.total)}</Line>}
       </dl>
+      {p.charges?.words && <p className="text-t12 text-fg-muted" data-ticket="charges-words">{p.charges.words}</p>}
       {p.fill_note && p.fill_price !== null && !samePriceNote(p.fill_note) && <p className="text-t13 text-fg-muted">{p.fill_note}</p>}
       {payoff && (
         <Details id="ticket.payoff-words" label="In plain words" className="mt-0"><p data-ticket="plain-words">{payoff}</p></Details>

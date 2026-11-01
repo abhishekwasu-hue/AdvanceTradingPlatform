@@ -258,7 +258,9 @@ async def backtest_draft(draft_id: int, body: DraftBacktestBody, user: User = De
         bars = await bar_source.resolve(session, user.tenant_id, body.symbol, body.exchange, body.base_timeframe,
                                         broker=body.broker, lookback_days=body.lookback_days, user=user)
         df, source, prices = bars.frame, bars.source, bars.info()
-    result = run_backtest(copy.copy(strategy), df, body.symbol.upper(), body.base_timeframe, risk)
+    from app.paper import paper_settings  # M68 PR-7 (TS1-066): his capital and paper charges (parity)
+    risk, charges = await paper_settings.backtest_inputs(session, user, risk)
+    result = run_backtest(copy.copy(strategy), df, body.symbol.upper(), body.base_timeframe, risk, charges=charges)
     headline = {k: getattr(result, k, None) for k in ("total_trades", "win_rate", "net_pnl", "max_drawdown", "profit_factor", "expectancy", "gross_pnl", "total_charges")}
     headline["analytics"] = result.analytics
     run = BacktestRunRecord(tenant_id=user.tenant_id, user_id=user.id, strategy_id=f"ai_draft_{draft.id}", symbol=body.symbol.upper(),

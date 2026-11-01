@@ -2709,10 +2709,14 @@ export interface PaperNotTaken {
 
 /** Z3-b: the caller's own PAPER account (GET /api/paper/account; 404 while the `paper_account` flag is off). */
 export interface PaperAccount {
-  user_id: number; mode: "PAPER"; starting_capital: number; balance: number; equity: number;
+  /** M68 PR-7: null = his starting capital is Not set (the balance and equity need it); `capital_saved`: he chose it. */
+  user_id: number; mode: "PAPER"; starting_capital: number | null; balance: number | null; equity: number | null;
+  capital_saved?: boolean; capital_needed?: boolean;
+  /** M68 PR-7: what a new paper trade pays, his own setting in words (Not set: statutory charges only). */
+  charges_model?: { brokerage_per_order: number; slippage_pct: number; with_brokerage: boolean; words: string };
   realised: { gross: number; charges: number; net: number }; unrealised: number;
   closed_trades: number; open_positions: number; wins: number; losses: number; win_rate: number | null; sessions: number;
-  max_drawdown: number; max_drawdown_pct: number; paused: boolean; paused_reason: string | null;
+  max_drawdown: number; max_drawdown_pct: number | null; paused: boolean; paused_reason: string | null;
   /** Trades priced from the user's own inputs (console candles) - left out of every figure here. */
   excluded_trades: number;
   positions: PaperTradeRow[]; journal: PaperTradeRow[]; not_taken: PaperNotTaken[];
@@ -2830,7 +2834,7 @@ export interface TicketCostLine {
 }
 
 export interface TicketSizing {
-  capital_basis: number; risk_per_trade_pct: number; risk_per_trade_amount: number; user_cap: number | null; org_cap: number;
+  capital_basis: number | null; risk_per_trade_pct: number; risk_per_trade_amount: number; user_cap: number | null; org_cap: number;
   binding: string; size_multiplier: number; cap: number; override_cap: number; lot_size: number; risk_per_unit: number;
   suggested_quantity: number; suggested_lots: number; quantity: number; lots: number | null; risk_amount: number;
   risk_pct_of_capital: number | null; gauge: number | null; within_cap: boolean; override: boolean; gauge_zone: "ok" | "override" | "over";
@@ -2887,7 +2891,8 @@ export interface PaperRiskStatus {
   pending: { values: Partial<Record<keyof RiskByDefaultSettings, number | null>>; from: string } | null;
   bounds: Record<keyof RiskByDefaultSettings, [number, number]>; labels: Record<keyof RiskByDefaultSettings, string>;
   /** amount null: no cap of his own (TT-12); the organisation's risk per trade still sizes the entry. */
-  capital_basis: number; risk_cap: { amount: number | null; binding: string | null; by_pct: number | null };
+  /** M68 PR-7: null = his starting capital is Not set (a % limit cannot be measured: `risk_cap.needs_capital`). */
+  capital_basis: number | null; risk_cap: { amount: number | null; binding: string | null; by_pct: number | null; needs_capital?: boolean };
   today: { realised: number; open_marks: number; pnl: number; worst: number; limit: number; used: number | null; entries: number; max_entries: number };
   lockout: { kind: string; reason: string; pnl: number; limit: number; locked_at: string; until: string } | null;
   overrides: { today: number; total: number }; override_max_multiple: number; override_min_reason_chars: number;

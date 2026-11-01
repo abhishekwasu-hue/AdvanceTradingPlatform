@@ -862,14 +862,12 @@ SCAN_AUTO_PAPER_COOLDOWN_MINUTES = _bounded_int("SCAN_AUTO_PAPER_COOLDOWN_MINUTE
 SCAN_AUTO_PAPER_ARM_DAYS = _bounded_int("SCAN_AUTO_PAPER_ARM_DAYS", 7, 1, 90)
 SCAN_AUTO_PAPER_LAST_ENTRY = os.environ.get("SCAN_AUTO_PAPER_LAST_ENTRY", "").strip()
 
-# Z3-b / BT3 (beta spec, Phase 0): the per-user PAPER account (flag `paper_account`, off by default). A new account starts
-# with PAPER_STARTING_CAPITAL (the user may change it within the bounds). The progression ladder card shows the PAPER
+# Z3-b / BT3 (beta spec, Phase 0): the per-user PAPER account (flag `paper_account`, off by default). M68 PR-7 (TS1-064 /
+# 068): a new account starts with the user's OWN capital (Settings > Trade settings > Paper account), else Not set - the
+# first paper order asks; there is no platform start value and no floor or ceiling (any amount above 0). The progression ladder card shows the PAPER
 # stage's criteria from the user's own PAPER trades: at least PAPER_LADDER_MIN_SESSIONS sessions with a PAPER trade, at
 # least PAPER_LADDER_MIN_TRADES closed PAPER trades, and a largest drawdown of at most PAPER_LADDER_MAX_DRAWDOWN_PCT % of
 # peak equity. Phase 0 has no LIVE stage to move to: the card shows the criteria, never a switch.
-PAPER_STARTING_CAPITAL = _bounded_float("PAPER_STARTING_CAPITAL", 1_000_000.0, 10_000.0, 1_000_000_000.0)
-PAPER_MIN_CAPITAL = 10_000.0
-PAPER_MAX_CAPITAL = 100_000_000.0
 PAPER_LADDER_MIN_SESSIONS = _bounded_int("PAPER_LADDER_MIN_SESSIONS", 20, 1, 1000)
 PAPER_LADDER_MIN_TRADES = _bounded_int("PAPER_LADDER_MIN_TRADES", 30, 1, 10_000)
 PAPER_LADDER_MAX_DRAWDOWN_PCT = _bounded_float("PAPER_LADDER_MAX_DRAWDOWN_PCT", 10.0, 0.5, 100.0)

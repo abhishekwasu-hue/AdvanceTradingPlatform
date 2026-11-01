@@ -72,7 +72,8 @@ export interface RiskBudget {
   daily: { amount: number; pct: number } | null;
   source: string;
   /** 8b slice 4: his PAPER balance (starting capital + closed PAPER P&L); the margin open positions use is not taken off. */
-  paper_balance?: { amount: number; source: string; open_margin_counted: false } | null;
+  /** M68 PR-7: amount null while his paper starting capital is Not set. */
+  paper_balance?: { amount: number | null; source: string; open_margin_counted: false; needs_capital?: boolean } | null;
   blocks: false;
 }
 

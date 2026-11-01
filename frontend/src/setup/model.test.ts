@@ -92,7 +92,7 @@ describe("UI2-7 the Setup chip", () => {
 
 describe("UI2-7 risk limits (TT-12: nothing filled in for him)", () => {
   it("no limit has a default; the 'most you can lose today' sentence follows his own numbers", () => {
-    expect(RISK_DEFAULTS).toEqual({ capital: 100000 });
+    expect(RISK_DEFAULTS).toEqual({});                                // M68 PR-7 (TS1-067): no capital filled in either
     expect(riskSentence(100000, 3)).toBe("With these limits the most you can lose today is ₹3,000.");
     expect(riskSentence(1000000, 2.5)).toBe("With these limits the most you can lose today is ₹25,000.");
     expect(perTradeText(100000, 1)).toBe("At most ₹1,000 on one trade.");
@@ -106,10 +106,13 @@ describe("UI2-7 risk limits (TT-12: nothing filled in for him)", () => {
     const ok = { capital: "1,00,000", riskPerTradePct: "1", dailyLossPct: "3", maxTradesPerDay: "10", minRr: "1.5" };
     expect(riskErrors(ok)).toEqual({});
     expect(riskErrors({ capital: "1,00,000", riskPerTradePct: "", dailyLossPct: "", maxTradesPerDay: "", minRr: "" })).toEqual({});
-    const bad = riskErrors({ capital: "5000", riskPerTradePct: "9", dailyLossPct: "x", maxTradesPerDay: "2.5", minRr: "11" });
-    expect(bad.capital).toBe("Starting capital must be between ₹10,000 and ₹1,00,00,00,000.");
+    const bad = riskErrors({ capital: "0", riskPerTradePct: "9", dailyLossPct: "x", maxTradesPerDay: "2.5", minRr: "11" });
+    expect(bad.capital).toBe("Starting capital must be more than ₹0.");
+    // M68 PR-7 (TS1-068): no ATP floor or ceiling - any amount above 0
+    expect(riskErrors({ ...ok, capital: "5000" }).capital).toBeUndefined();
+    expect(riskErrors({ ...ok, capital: "5,00,00,00,000" }).capital).toBeUndefined();
     expect(riskErrors({ ...ok, capital: "" }, { capital: false })).toEqual({});                // no field, nothing to check
-    expect(riskErrors({ ...ok, capital: "" }).capital).toBe("Enter a number for starting capital.");
+    expect(riskErrors({ ...ok, capital: "" }).capital).toBeUndefined();               // M68 PR-7: Not set, nothing is sent
     expect(bad.riskPerTradePct).toBe("Risk per trade must be between 0.05 and 5.");
     expect(bad.dailyLossPct).toBe("Enter a number for daily loss limit.");
     expect(bad.maxTradesPerDay).toBe("Enter a whole number for trades a day.");

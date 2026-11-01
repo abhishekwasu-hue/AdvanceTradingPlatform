@@ -255,10 +255,13 @@ async def own_broker(session: AsyncSession, user: User) -> Optional[Any]:
     return None
 
 
-async def practice_balance(session: AsyncSession, user: User) -> float:
-    """The PAPER balance: the starting capital plus the net P&L of his own closed PAPER trades (as the account shows)."""
+async def practice_balance(session: AsyncSession, user: User) -> float | None:
+    """The PAPER balance: the starting capital plus the net P&L of his own closed PAPER trades (as the account shows).
+    M68 PR-7: None while his starting capital is Not set."""
     from app.paper import service
     account = await service.get_account(session, user)
+    if account.starting_capital is None:
+        return None
     trades = [t for t in await service._paper_trades(session, user) if service._counted(t) and t.exit_time is not None]
     return round(float(account.starting_capital) + sum(float(t.pnl or 0.0) for t in trades), 2)
 

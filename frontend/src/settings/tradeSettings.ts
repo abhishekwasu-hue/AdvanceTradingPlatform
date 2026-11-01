@@ -73,6 +73,34 @@ export function orderDefaultsOf(view: TradeSettingsView | null | undefined): Ord
   return out;
 }
 
+// ---------------------------------------------------------------- M68 PR-7: Paper account (capital, charges model)
+
+export const PAPER_CAPITAL_KEY = "paper_account.capital";
+export const PAPER_CHARGES_KEY = "paper_account.charges_model";
+export const PAPER_BROKERAGE_KEY = "paper_account.brokerage_per_order";
+export const PAPER_SLIPPAGE_KEY = "paper_account.slippage_pct";
+
+export interface PaperChargesOwn {
+  capital?: number;
+  /** His brokerage per order, only when he chose "Statutory charges + my brokerage" and saved one. */
+  brokeragePerOrder?: number;
+  slippagePct?: number;
+}
+
+/** The trader's own saved Paper account values (only the ones he saved; nothing is filled in by ATP). */
+export function paperChargesOf(view: TradeSettingsView | null | undefined): PaperChargesOwn {
+  const out: PaperChargesOwn = {};
+  const v = (key: string) => view?.sections.flatMap((s) => s.fields).find((f) => f.key === key && f.saved)?.value;
+  const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : undefined);
+  const capital = num(v(PAPER_CAPITAL_KEY));
+  if (capital !== undefined && capital > 0) out.capital = capital;
+  const brokerage = num(v(PAPER_BROKERAGE_KEY));
+  if (v(PAPER_CHARGES_KEY) === "STATUTORY_BROKERAGE" && brokerage !== undefined && brokerage >= 0) out.brokeragePerOrder = brokerage;
+  const slip = num(v(PAPER_SLIPPAGE_KEY));
+  if (slip !== undefined && slip >= 0) out.slippagePct = slip;
+  return out;
+}
+
 let cached: Promise<TradeSettingsView | null> | null = null;
 
 /** Test hook: forget the cached read. */

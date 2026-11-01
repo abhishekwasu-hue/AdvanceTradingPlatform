@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.brokers.gates import data_sources
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
-from app.core import config as app_config
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.portfolio import engine
@@ -43,8 +42,11 @@ async def exposure(live_prices: bool = Query(default=True), mine: bool = Query(d
     own_user = user.id if mine else None
     trades = await engine.open_trades(session, user.tenant_id, user_id=own_user)
     risk = await get_tenant_risk_config(user.tenant_id, session)
-    # DEF-0: the organisation's own capital, else the PAPER account's starting balance - never a built-in 100,000.
-    capital = float(risk.capital) if risk is not None and risk.capital is not None else float(app_config.PAPER_STARTING_CAPITAL)
+    # DEF-0 / M68 PR-7: the organisation's own capital, else his own paper capital - never a built-in figure; Not set: 0
+    # (no share of capital is shown, portfolio/engine.py).
+    from app.paper import paper_settings
+    own = await paper_settings.capital_of(session, user)
+    capital = float(risk.capital) if risk is not None and risk.capital is not None else float(own or 0.0)
     prices: Dict[str, float] = {}
     marks: Dict[str, Tuple[float, datetime]] = {}
     price_source = "entry"

@@ -531,8 +531,11 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     charges = None
     if basis is not None and units and not errors:
         from app.execution.india_costs import leg_cost
-        cost = leg_cost(today, "buy" if side == "BUY" else "sell", basis, units, "FUTURE" if future else "OPTION")
-        charges = {"total": round(cost["total"], 2), "estimated": True}
+        from app.paper import paper_settings
+        own = await paper_settings.charges_for(session, user)      # M68 PR-7 (TS1-070): his own brokerage; Not set: none
+        cost = leg_cost(today, "buy" if side == "BUY" else "sell", basis, units, "FUTURE" if future else "OPTION",
+                        brokerage_per_order=own.brokerage_per_order)
+        charges = {"total": round(cost["total"], 2), "estimated": True, "words": own.words}
     can_place = not errors and not refusals and basis is not None
     label = contract.label if contract else contract_label(master.underlying_of(ask.underlying), ask.expiry, ask.strike, right)
     contract_view = contract.as_dict() if contract else None

@@ -88,7 +88,8 @@ class EvaluateBody(BaseModel):
     range_pct: float = Field(default=10.0, gt=0, le=60)
     points: int = Field(default=201, ge=21, le=MAX_POINTS)
     rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
-    brokerage_per_order: float = Field(default=20.0, ge=0, le=1000, allow_inf_nan=False, description="for the cost line; the trader's own")
+    # M68 PR-7 (TS1-071): the trader's own; omitted -> his Trade settings > Paper account brokerage, else none (no ₹20).
+    brokerage_per_order: Optional[float] = Field(default=None, ge=0, le=1000, allow_inf_nan=False, description="for the cost line; the trader's own")
     # Z5 (Trade port, strike_breach_model): the underlying's completed daily bars, oldest first, up to the session before
     # `as_of` - with them the answer carries each short strike's breach chance. `structure`: the daily market structure
     # (+1 up, -1 down, 0 unknown); `holidays`: exchange holidays between now and the expiry (sessions are counted).
@@ -222,8 +223,17 @@ async def build_template(body: TemplateBody) -> Dict[str, Any]:
 
 
 @router.post("/evaluate", dependencies=[Depends(compute_rate_limit)])
-async def evaluate(body: EvaluateBody) -> Dict[str, Any]:
-    return await run_in_threadpool(_evaluate, body)
+async def evaluate(body: EvaluateBody, user: User = Depends(get_current_user),
+                   session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    words = None
+    if body.brokerage_per_order is None:          # M68 PR-7: his own saved brokerage (Not set: statutory charges only)
+        from app.paper import paper_settings
+        own = await paper_settings.charges_for(session, user)
+        body = body.model_copy(update={"brokerage_per_order": own.brokerage_per_order})
+        words = own.words
+    out = await run_in_threadpool(_evaluate, body)
+    out["costs"]["charges_words"] = words or f"Statutory charges + brokerage ₹{body.brokerage_per_order:g} per order"
+    return out
 
 
 def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
@@ -247,7 +257,7 @@ def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
         "single_expiry": single, "disclaimer": DISCLAIMER,
         "net_premium": round(metrics.net_premium(legs), 2),
         "costs": metrics.costs(legs, as_of.astimezone(IST).date() if isinstance(as_of, datetime) else as_of,
-                               brokerage_per_order=body.brokerage_per_order),
+                               brokerage_per_order=float(body.brokerage_per_order or 0.0)),
         "strike_breach": _strike_breach(body, legs, as_of),
     }
     if single:

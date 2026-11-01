@@ -252,10 +252,11 @@ async def run_backtest(ctx: ToolContext, args: _BacktestArgs) -> ToolResult:
         df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, args.timeframe, args.days)
     except HTTPException as exc:
         return _failed("backtest", exc)
-    from app.core import config as app_config
-    # DEF-0: the organisation's capital, else the PAPER starting balance (the engine starts there too)
-    risk = (await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()).with_capital(app_config.PAPER_STARTING_CAPITAL)
-    result = await asyncio.to_thread(engine, strategy, df, args.symbol.upper(), args.timeframe, risk)    # CPU-bound: off the event loop
+    from app.paper import paper_settings
+    # DEF-0 / M68 PR-7 (TS1-066): the organisation's capital, else his own paper capital (Not set: none - never a value
+    # ATP chose), and his paper charges (Not set: statutory charges only)
+    risk, charges = await paper_settings.backtest_inputs(ctx.session, ctx.user, await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig())
+    result = await asyncio.to_thread(engine, strategy, df, args.symbol.upper(), args.timeframe, risk, charges=charges)    # CPU-bound: off the event loop
     data = {"strategy_id": args.strategy_id, "symbol": args.symbol.upper(), "timeframe": args.timeframe, "from": _iso(df.index[0]), "to": _iso(df.index[-1]),
             "trades": result.total_trades, "win_rate": _r(result.win_rate), "net_pnl": _r(result.net_pnl), "profit_factor": _r(result.profit_factor),
             "max_drawdown": _r(result.max_drawdown), "expectancy": _r(result.expectancy), "capital": _r(risk.capital),
@@ -293,8 +294,9 @@ async def backtest_draft(ctx: ToolContext, args: _DraftBacktestArgs) -> ToolResu
         df, source, prices = await _backtest_frame(ctx, args.symbol, args.exchange, fetch_tf, dbt.TEST_DAYS)
     except HTTPException as exc:
         return _failed("backtest", exc)
-    risk = await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig()
-    data = await asyncio.to_thread(dbt.honest_test, config, df, args.symbol, fetch_tf, risk)    # CPU-bound: off the event loop
+    from app.paper import paper_settings  # M68 PR-7 (TS1-066): his capital and paper charges (parity)
+    risk, charges = await paper_settings.backtest_inputs(ctx.session, ctx.user, await get_tenant_risk_config(ctx.tenant_id, ctx.session) or RiskConfig())
+    data = await asyncio.to_thread(dbt.honest_test, config, df, args.symbol, fetch_tf, risk, charges=charges)    # CPU-bound: off the event loop
     data["exchange"] = args.exchange
     data["prices"], data["prices_line"] = prices["words"], prices["line"]
     return ToolResult(True, data, _iso(df.index[-1]), source, {"first_bar": _iso(df.index[0]), "last_bar": _iso(df.index[-1])})

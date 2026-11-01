@@ -306,15 +306,19 @@ FIELDS: tuple[SettingField, ...] = (
     _f(A, "market_hours", "Market hours and holidays", "fact", "Orders reach the market only while the exchange is open.", 6, 84),
 
     # --- Paper account (PR-7) --------------------------------------------------------------------------------------------
-    _f(PA, "capital", "Starting capital", "number", "The money your paper account starts with.", 7, 64, 65, 66, 67, **_pos("₹"),
-       term="paper", today="₹10,00,000 (server) / ₹1,00,000 (Setup)"),
-    _f(PA, "charges_model", "Charges", "choice", "What a paper trade pays.", 7, 69,
+    # M68 PR-7 (D4 default, M68Q-4): read by app/paper/paper_settings.py for the paper account, every paper fill and cost
+    # line, and backtests (parity). Not set: a new account has no capital (the first paper order asks) and a paper trade
+    # pays statutory charges only - no brokerage, no slippage.
+    _f(PA, "capital", "Starting capital", "number", "The money a new paper account starts with. Not set: your first paper order asks.",
+       7, 64, 65, 66, 67, **_pos("₹"), term="paper", today="paper_accounts.starting_capital (your account's own)", wired=True),
+    _f(PA, "charges_model", "Charges", "choice", "What a paper trade pays. Not set: statutory charges only, no brokerage.", 7, 69,
        choices=(("STATUTORY", "Statutory charges only"), ("STATUTORY_BROKERAGE", "Statutory charges + my brokerage")),
-       today="₹20 per order + 0.02 % slippage"),
-    _f(PA, "brokerage_per_order", "Brokerage per order", "number", "What your broker charges for one order.", 7, 69, 70, 71,
-       unit="₹", low=0.0, high=BIG, today="fixed ₹20"),
-    _f(PA, "slippage_pct", "Slippage", "number", "How far from the price a paper fill is counted, each side.", 7, 69,
-       unit="%", low=0.0, high=100.0, today="fixed 0.02 %"),
+       today="paper fills and backtests", wired=True),
+    _f(PA, "brokerage_per_order", "Brokerage per order", "number",
+       "What your broker charges for one order; used when Charges is \"Statutory charges + my brokerage\".", 7, 69, 70, 71,
+       unit="₹", low=0.0, high=BIG, today="paper fills, cost lines, Options Builder", wired=True),
+    _f(PA, "slippage_pct", "Slippage", "number", "How far from the price a paper fill is counted, each side. Not set: none.", 7, 69,
+       unit="%", low=0.0, high=100.0, today="paper fills and backtests", wired=True),
     _f(PA, "statutory_charges", "Statutory charges", "fact", "STT, exchange, stamp duty, GST and the SEBI fee are set by law.", 7, 90),
 )
 # TS1-049 / 050 / 053 ("Risk limits.*", one store): the M64 order-time checks, each its own switch, stay on Settings > Risk

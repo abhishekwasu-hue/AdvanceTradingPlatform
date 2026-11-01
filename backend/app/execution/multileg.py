@@ -44,7 +44,6 @@ from app.execution.multileg_smart import LegsRun, entry_specs, place_legs
 from app.execution.order_persistence import create_order, transition_order
 from app.execution.order_safety import wing_fill_complete
 from app.execution.paper_adapter import PaperExecutionAdapter
-from app.execution.paper_broker import PaperBroker
 from app.execution.router import OrderRouter
 from app.execution.signal_execution import entry_refusals
 from app.execution.tagging import LEG_ENTRY, LEG_EXIT, build_order_tag, client_order_id, new_client_order_id
@@ -53,6 +52,7 @@ from app.instruments.models import ContractSpec
 from app.instruments.spreads import ResolvedStructure, StructureMetrics, can_hold_for_days, structure_metrics
 from app.notifications.service import notify
 from app.observability.metrics import ORDERS
+from app.paper import paper_settings
 from app.platform.controls import clamp_config, risk_ceilings
 from app.reconciliation.service import mark_broker_uncertain
 from app.risk_engine import by_default
@@ -322,7 +322,8 @@ async def execute_structure(
         if execution_mode == ExecutionMode.LIVE:
             venue = broker
         else:
-            practice = PaperExecutionAdapter(PaperBroker())
+            # M68 PR-7 (TS1-069): his own paper brokerage / slippage (Not set: statutory charges only)
+            practice = PaperExecutionAdapter((await paper_settings.charges_for(session, user)).broker())
             for leg in structure.legs:
                 practice.mark(leg.contract.tradingsymbol, premiums[leg.contract.tradingsymbol], leg.contract.exchange)
             venue = practice
@@ -342,7 +343,7 @@ async def execute_structure(
                 deployment_id=deployment_id, account_id=account_id, stop_credit_pct=stop_credit_pct, started=started,
                 idempotency_key=idempotency_key, broker=broker, group_id=group_id, holding="SWING" if held else "INTRADAY")
     elif execution_mode == ExecutionMode.PAPER:
-        paper = PaperBroker()
+        paper = (await paper_settings.charges_for(session, user)).broker()      # M68 PR-7: his own slippage
         for leg in structure.legs:
             price = premiums[leg.contract.tradingsymbol]
             fills[leg.contract.tradingsymbol] = (round(paper._slip(price, leg.contract.trade_direction), 2), None)
@@ -575,7 +576,10 @@ async def _hold_margin_refusal(session: AsyncSession, user: User, structure: Res
                 "lots": int(lots * leg.ratio), "lot_size": int(structure.lot_size), "expiry": leg.contract.expiry.isoformat(), "iv": None}
                for leg in structure.legs]
     estimate = fno_basket.hedge_margin(builder)
-    free = await fno_basket.practice_balance(session, user) - await _held_margin_blocked(session, user)
+    balance = await fno_basket.practice_balance(session, user)
+    if balance is None:                          # M68 PR-7: the practice balance is measured from his own capital
+        return f"Not entered: {paper_settings.needs_capital()}", ""
+    free = balance - await _held_margin_blocked(session, user)
     view = smart_execution.margin_view(None, estimate, free, free_source="practice")
     if view.required is None:
         return "Not entered: the margin to hold this spread for days could not be worked out, so it is not held", ""

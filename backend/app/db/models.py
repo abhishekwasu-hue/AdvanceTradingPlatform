@@ -2760,7 +2760,11 @@ class PaperAccountRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
-    starting_capital: Mapped[float] = mapped_column(Money, nullable=False)
+    # M68 PR-7 (TS1-064): the user's own starting capital; NULL = Not set (a new account no longer starts from a value ATP
+    # chose - the first paper order asks for it). `capital_saved`: he chose this value himself (the TS-6 saved marker); an
+    # account made by an earlier release keeps its stored capital with the marker off, so its balances stay as they were.
+    starting_capital: Mapped[float | None] = mapped_column(Money, nullable=True)
+    capital_saved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     paused_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     paused_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)

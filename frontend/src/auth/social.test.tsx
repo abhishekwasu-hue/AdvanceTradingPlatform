@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import screenSource from "./SignInScreen.tsx?raw";
 import { OrUseEmail, ProviderButton, SignInOptionsList } from "./SocialButtons";
 import { parseSocialReturn, providersFrom, signInV2From, socialErrorMessage, socialStartUrl, stripSocialParams, type SignInProvider } from "./social";
-import { linkTokenFrom } from "./SignInScreen";
+import { linkTokenFrom, openConfirmFromLink } from "./SignInScreen";
 import { ApiError } from "../api/errors";
 import { canUnlink, validIdentities } from "../settings/SignInMethodsCardV2";
 
@@ -113,5 +113,34 @@ describe("M73 SL-2: Settings › Account", () => {
     expect(canUnlink({ has_password: false, identities: [one], available: [] })).toBe(false);
     expect(canUnlink({ has_password: true, identities: [one], available: [] })).toBe(true);
     expect(canUnlink({ has_password: false, identities: [one, { ...one, provider: "facebook" }], available: [] })).toBe(true);
+  });
+});
+
+describe("M73 review 4: the mailed confirmation link", () => {
+  it("opening it shows the page and reads what it will do - it never creates the account", async () => {
+    const calls: string[] = [];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      calls.push(String(input));
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    });
+    const shown: string[] = [];
+    const info: unknown[] = [];
+    openConfirmFromLink("tok.en", {
+      show: (t) => shown.push(t),
+      pending: async () => ({ kind: "verify", provider: "facebook", label: "Facebook", email: "a@example.com" }),
+      info: (i) => info.push(i), fail: () => undefined,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(shown).toEqual(["tok.en"]);
+    expect(info).toEqual([{ kind: "verify", provider: "facebook", label: "Facebook", email: "a@example.com" }]);
+    expect(calls.filter((u) => u.includes("/social/verify"))).toEqual([]);           // no POST on load
+    fetchSpy.mockRestore();
+  });
+
+  it("the account is created only from the 'Create my account' submit", () => {
+    expect(screenSource.match(/socialVerify\(/g)?.length).toBe(1);
+    expect(screenSource).toContain('} else if (mode === "confirm" && pendingToken) {\n        await socialVerify(pendingToken);');
+    expect(screenSource).toContain('confirm: "Create my account"');
   });
 });

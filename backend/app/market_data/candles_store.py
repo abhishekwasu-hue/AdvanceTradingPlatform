@@ -79,7 +79,7 @@ class Own:
 
 async def own_source(session: AsyncSession, user: User, pairs: list[tuple[str, str]], body: Any, priority: Any) -> Own:
     from app.market_data import live_access
-    from app.market_data.candles_routes import _pick_record
+    from app.market_data.reader_credential import credential_for_reader
     from app.market_store import sources
     out = Own()
     try:
@@ -91,7 +91,7 @@ async def own_source(session: AsyncSession, user: User, pairs: list[tuple[str, s
             out.live = next((e for e in src.entitlements.values() if e.live), None)
             out.rest = sources.from_record(user, src.record, src.adapter())
         else:
-            record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
+            record = await credential_for_reader(session, user.tenant_id, user.id, body.broker, body.account_label)   # M71Q-2
             out.record, out.mine = record, ms.may_top_up(user, record)
             out.rest = sources.from_record(user, record, build_adapter(record)) if out.mine else None
     except (HTTPException, live_access.LiveDataRefused):

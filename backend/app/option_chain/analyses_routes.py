@@ -55,7 +55,8 @@ async def _record(session: AsyncSession, user: User, underlying: str) -> tuple:
             return None, True, (ent.reason if ent is not None and ent.reason else NO_BROKER)
         return ent.record, True, None
     try:
-        return await candles_routes._pick_record(session, user.tenant_id, None, "primary"), False, None
+        from app.market_data.reader_credential import credential_for_reader
+        return await credential_for_reader(session, user.tenant_id, user.id), False, None   # M71Q-2
     except HTTPException:
         return None, False, NO_BROKER
 
@@ -71,6 +72,12 @@ async def _own_history(session: AsyncSession, user: User, underlying: str, now: 
     """B1: the user's own stored reads of today (own-broker tier), read before `now` (every expiry; matched in analyses.py)."""
     stored = await own_snapshots.day(session, user, underlying, now.astimezone(IST).date())
     return [analyses.Snapshot(s.captured_at, s.chain()) for s in stored if s.captured_at < now]
+
+
+def request_time() -> datetime:
+    """The request's one clock read (UTC). Everything in one answer - the chain read, the history cut and the valuation
+    instant - takes this value, so a page's numbers never depend on when inside the request a clock was read."""
+    return datetime.now(timezone.utc)
 
 
 def _state(base: Dict[str, Any], state: str, message: str) -> Dict[str, Any]:
@@ -94,7 +101,7 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
         underlying = snapshots.normalise_underlying(symbol)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Enter an index or stock name, for example NIFTY.") from exc
-    now = datetime.now(timezone.utc)
+    now = request_time()
     base: Dict[str, Any] = {"symbol": underlying, "expiry": expiry.isoformat() if expiry else None, "generated_at": now.isoformat()}
 
     record, byob, refusal = await _record(session, user, underlying)
@@ -130,7 +137,10 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
     from app.market_data.calendar import family_holidays
     from app.option_chain.chain_view import spot_instrument
     closed = await family_holidays(session, spot_instrument(underlying)[1])   # B3: trading days to expiry (BSE for SENSEX)
-    results = analyses.compute_all(chain, history, now, holidays=closed)
+    # ONE valuation instant for every time-dependent number (time to expiry -> IV, trading days -> expected move, the
+    # session path's last point): the instant the chain stands on - the request's own read time, or an earlier read's
+    # capture time while the broker is busy (never later than the prices it values; history is cut at the same instant).
+    results = analyses.compute_all(chain, history, cutoff, holidays=closed)
     out: Dict[str, Any] = {**base, "state": "ok", "message": None, "spot": chain.underlying_ltp, "spot_source": spot_source,
                            "data_as_of": when.at.isoformat(), "market_closed": when.closed,
                            "source": {"broker": record.broker_name, "account_label": record.account_label},

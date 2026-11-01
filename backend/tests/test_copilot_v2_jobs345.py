@@ -59,6 +59,17 @@ def test_the_starters_and_new_phrases_route_to_jobs_3_to_5():
 
 # --- the answers on recorded fixtures -------------------------------------------------------------------------------------
 
+
+def test_job3_an_unknown_lot_size_is_said_and_never_assumed_to_be_1():
+    """M68: no pre-chosen trading values - without his own lot size the idea's risk is not worked out with a lot of 1."""
+    import copy
+    fixture = copy.deepcopy(FIX["default"])
+    fixture["get_risk_limits"]["data"].pop("lot_size")
+    out = _run(chat.answer(IDEA, runner.recorded_runner(fixture, [])))
+    text = "\n".join(out.lines())
+    assert "2 lots: lot size not known" in text and "at risk: above" not in text and "at risk: within" not in text
+    assert [s.tool for s in out.worked if s.tool.startswith("calc:")] == ["calc:risk_budget", "calc:reward_to_risk"]
+
 def test_job3_checks_the_idea_and_lists_what_is_missing_without_adding_rules():
     out, called = _answer(IDEA)
     assert called == ["get_chart_structure", "get_market_zones", "get_risk_limits", "get_market_context"]

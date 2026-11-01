@@ -110,7 +110,8 @@ export function AutoPaperBox({ template, busy, onArm, onDisarm }: {
     <div className="space-y-1 rounded border border-border px-2 py-1 text-xs" data-testid="auto-paper" data-armed={auto.armed ? "yes" : "no"}>
       <div className="font-medium text-fg">{t("auto.title")}</div>
       <div className={places ? "text-warn" : "text-fg-muted"}>{places ? t("auto.armed") : t("auto.proposal", { why: auto.why })}</div>
-      <div className="text-fg-muted font-tabular">{t("auto.today", { today: auto.today, max: auto.max_per_day })}</div>
+      <div className="text-fg-muted font-tabular">{auto.max_per_day == null ? t("auto.today_not_set", { today: auto.today })   /* M68 PR-6: his own limit */
+        : t("auto.today", { today: auto.today, max: auto.max_per_day })}</div>
       {auto.armed ? (
         onDisarm && <Button size="sm" variant="ghost" onClick={onDisarm} disabled={busy}>{t("auto.disarm")}</Button>
       ) : auto.available && onArm && (

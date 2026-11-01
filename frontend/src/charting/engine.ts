@@ -17,8 +17,11 @@ export interface StudySpec { id: string; name: string; params?: Record<string, n
 
 export interface LayerLine { price: number; color?: string; title?: string; style?: "solid" | "dashed" | "dotted" }
 export interface LayerMarker { time: number; position: "aboveBar" | "belowBar" | "inBar"; shape: "arrowUp" | "arrowDown" | "circle" | "square"; color?: string; text?: string }
-/** Z7a-3: a horizontal price band across the pane (low == high: a line), with its label at the right edge. */
-export interface LayerBand { low: number; high: number; color?: string; opacity?: number; style?: "solid" | "dashed" | "dotted"; label?: string }
+/** Z7a-3: a horizontal price band across the pane (low == high: a line), with its label (M75 W-1: placed inside or
+ * beside the band, clear of the controls; geometry.ts `placeBandLabels`). `role`: a buyer (demand) / seller (supply)
+ * area - an engine that knows the chart theme paints it in the theme's up / down colours (`color` is the fallback). */
+export type BandRole = "demand" | "supply" | "neutral";
+export interface LayerBand { low: number; high: number; color?: string; opacity?: number; style?: "solid" | "dashed" | "dotted"; label?: string; role?: BandRole }
 /** CH3: a straight line between two data points (a price-action leg, a broken level's run), placed by time and price. */
 export interface LayerSegment { t1: number; p1: number; t2: number; p2: number; color?: string; width?: number; style?: "solid" | "dashed" | "dotted"; label?: string }
 /** CH3: a text at a data point (a swing's "HH 512.30", a break), above or below it. */

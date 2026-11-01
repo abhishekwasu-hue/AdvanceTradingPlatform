@@ -182,7 +182,7 @@ async def _link_start(slug: str, request: Request, response: Response, user: Use
             await record_login_event(session, email=email, user=user, success=False, reason="mfa_failed", request=request)
             await session.commit()
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code")
-    social_flow = social.new_flow("link", link_user_id=user.id)
+    social_flow = social.new_flow("link", link_user_id=user.id, stamp=social.security_stamp(user))
     _set_flow_cookie(provider, response, social_flow)
     return {"url": provider.authorization_url(social_flow.flow, provider.redirect_uri(request))}
 
@@ -271,6 +271,8 @@ async def _link_signed_in(provider: social.Provider, request: Request, session: 
     user = await session.get(User, social_flow.link_user_id) if social_flow.link_user_id is not None else None
     if user is None or not user.is_active:
         return _back(provider, request, error="failed")
+    if not social.stamp_matches(user, social_flow.stamp):
+        return _back(provider, request, error="expired")   # re-review 3: a reset / credential change since the start
     linked = await social.find_identity(session, provider.id, identity.subject)
     if linked is not None:
         if linked.user_id == user.id:
@@ -292,7 +294,7 @@ async def _pending_link(provider: social.Provider, request: Request, session: As
         return _back(provider, request, error="already_linked")      # this account linked another account of the provider
     token = social.encode_pending(social.Pending(kind="link", provider=provider.id, subject=identity.subject,
                                                  email=identity.email, email_verified=identity.email_verified,
-                                                 user_id=user.id))
+                                                 user_id=user.id, extra={"stamp": social.security_stamp(user)}))
     await write_audit_log(session, user.tenant_id, user.id, "social_link_pending", provider.id)
     await session.commit()
     return _back(provider, request, outcome="link", fragment=f"#social_pending={token}")
@@ -383,6 +385,14 @@ class CompleteSignupRequest(BaseModel):
 EXPIRED = "This step took too long. Please start again."
 
 
+async def _pending_user(session: AsyncSession, pending: social.Pending) -> User | None:
+    """The account a link step is for. A typed-address step carries no account id (review 4: the token is readable),
+    only the typed address; the account is found by it, and the security stamp still has to match."""
+    if pending.extra.get("typed"):
+        return await _user_by_email(session, pending.email) if pending.email else None
+    return await session.get(User, pending.user_id) if pending.user_id is not None else None
+
+
 @router.post("/social/pending", dependencies=[Depends(login_rate_limit)])
 async def pending_info(request: PendingRequest, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """What the pending step shows: the provider's name, the e-mail (the person proved it at the provider), and which
@@ -393,9 +403,12 @@ async def pending_info(request: PendingRequest, session: AsyncSession = Depends(
     provider = social.get(pending.provider)
     assert provider is not None
     body: dict[str, Any] = {"kind": pending.kind, "provider": provider.id, "label": provider.label, "email": pending.email}
+    if pending.kind == "verify":
+        # Review 4: the confirmation page shows what the button will do before anything is created.
+        return body
     if pending.kind == "link":
-        user = await session.get(User, pending.user_id) if pending.user_id is not None else None
-        if user is None or not user.is_active:
+        user = await _pending_user(session, pending)
+        if user is None or not user.is_active or not social.stamp_matches(user, pending.extra.get("stamp")):
             raise HTTPException(status_code=400, detail=EXPIRED)
         if pending.extra.get("typed"):
             # Re-review a: the address was typed, not proven - say nothing about that account (the page offers the
@@ -424,9 +437,11 @@ async def confirm_link(request: LinkConfirmRequest, http_request: Request, respo
     """SL-2: the account's own password (and its two-factor code when it has one) confirms the link; then the person is
     signed in. A wrong password counts toward the account's lockout like a wrong password at /login."""
     pending = social.decode_pending(request.token, kind="link")
-    user = await session.get(User, pending.user_id) if pending and pending.user_id is not None else None
+    user = await _pending_user(session, pending) if pending else None
     if pending is None or user is None or not user.is_active or await social.pending_used(pending):
         raise HTTPException(status_code=400, detail=EXPIRED)
+    if not social.stamp_matches(user, pending.extra.get("stamp")):
+        raise HTTPException(status_code=400, detail=EXPIRED)        # re-review 3: a reset / credential change since
     provider = social.get(pending.provider)
     assert provider is not None
     email = user.email.lower()
@@ -434,7 +449,10 @@ async def confirm_link(request: LinkConfirmRequest, http_request: Request, respo
     if refused:
         raise HTTPException(status_code=refused.status_code, detail=refused.reason,
                             headers={"Retry-After": str(refused.retry_after)} if refused.retry_after else None)
-    if not password_usable(user.hashed_password):
+    typed = bool(pending.extra.get("typed"))
+    if not password_usable(user.hashed_password) and not typed:
+        # (A step from a provider-verified address: the person proved this e-mail, so saying so leaks nothing. A typed
+        # address gets the same bcrypt work and "Wrong password." below - re-review 3 low.)
         raise HTTPException(status_code=409, detail="This account has no password yet. Use \"Forgot password?\" to set "
                                                     "one, then link again.")
     await release_connection(session)                       # LD-7: no pool connection held during bcrypt
@@ -504,8 +522,8 @@ async def complete_signup(request: CompleteSignupRequest, http_request: Request,
             # two-factor state, and the link it makes records no address (link_identity: unproven).
             await social.burn(pending)
             link = social.encode_pending(social.Pending(kind="link", provider=provider.id, subject=pending.subject,
-                                                        email=email, email_verified=False, user_id=existing.id,
-                                                        extra={"typed": True}))
+                                                        email=email, email_verified=False, user_id=None,
+                                                        extra={"typed": True, "stamp": social.security_stamp(existing)}))
             raise HTTPException(status_code=409, detail={"code": "link_required", "token": link,
                                                          "message": "An account already uses this email. Confirm with its password to link it."})
         await social.burn(pending)
@@ -573,7 +591,9 @@ async def verify_signup(request: VerifyRequest, http_request: Request, response:
     legal = pending.extra.get("legal")
     legal_entries = TypeAdapter(LegalAcceptance).validate_python(legal) if isinstance(legal, dict) else None
     invite_code = pending.extra.get("invite_code") if isinstance(pending.extra.get("invite_code"), str) else None
-    identity = social.ProviderIdentity(provider=provider.id, subject=pending.subject, email=pending.email, email_verified=True)
+    # Review 4: the link proved the inbox, but the address was typed at the provider step - the link records no address
+    # (email_at_link None), so the inbox owner's password reset or e-mail check still removes it.
+    identity = social.ProviderIdentity(provider=provider.id, subject=pending.subject, email=pending.email, email_verified=False)
     if not await social.burn(pending):
         raise HTTPException(status_code=400, detail="This link is no longer valid. Sign up again.")
     user, issued = await self_signup_account(session, http_request, email=pending.email, password=None,

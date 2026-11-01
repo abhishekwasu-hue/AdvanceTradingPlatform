@@ -33,15 +33,16 @@ import SiteLinks from "../site/SiteLinks";
  * is exactly GS-1's. Either way, back from a provider: the two-factor step, "link" (an account uses this e-mail -
  * its password confirms) or "complete" (finish a new account: an e-mail, the beta code, the terms).
  */
-export type SignInMode = "signin" | "register" | "invite" | "forgot" | "reset" | "mfa" | "link" | "complete";
+export type SignInMode = "signin" | "register" | "invite" | "forgot" | "reset" | "mfa" | "link" | "complete" | "confirm";
 
 const HEADINGS: Record<SignInMode, string> = {
   signin: "Sign in", register: "Create your account", invite: "Join your team", forgot: "Forgot your password?",
   reset: "Choose a new password", mfa: "Two-factor check", link: "Link your account", complete: "Finish creating your account",
+  confirm: "Create your account",
 };
 const ACTIONS: Record<SignInMode, string> = {
   signin: "Sign in", register: "Create account", invite: "Join team", forgot: "Send reset link", reset: "Set new password",
-  mfa: "Verify", link: "Link and sign in", complete: "Create account",
+  mfa: "Verify", link: "Link and sign in", complete: "Create account", confirm: "Create my account",
 };
 
 const inputClass = "w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg "
@@ -141,8 +142,12 @@ export default function SignInScreen() {
     const rest = params.toString();
     navigate({ pathname: location.pathname, search: rest ? `?${rest}` : "" }, { replace: true });
     if (socialVerifyToken) {
-      // M73 review 1: the confirmation link for an email a provider did not give - the account is made now.
-      socialVerify(socialVerifyToken).catch((e) => setError(friendlyError(e)));
+      // M73 review 4: the confirmation link only OPENS a page that says what will happen; the account is made when
+      // the person presses "Create my account" (a mail scanner opening the link creates nothing).
+      openConfirmFromLink(socialVerifyToken, {
+        show: (t) => { setPendingToken(t); setMode("confirm"); },
+        pending: api.socialPending, info: setPendingInfo, fail: (e) => setError(friendlyError(e)),
+      });
     }
     if (verify) {
       api.verifyEmail(verify)
@@ -201,6 +206,8 @@ export default function SignInScreen() {
         await register(email, password, betaCode.trim() || undefined, legalDocs && legalAccepted ? acceptanceFor(legalDocs) : undefined);
       } else if (mode === "link" && pendingToken) {
         await socialConfirmLink(pendingToken, password, mfaCode.replace(/\s+/g, "") || undefined);
+      } else if (mode === "confirm" && pendingToken) {
+        await socialVerify(pendingToken);
       } else if (mode === "complete" && pendingToken) {
         const mailed = await socialComplete(pendingToken, {
           email: pendingInfo?.needs_email ? email : undefined, invite_code: betaCode.trim() || undefined,
@@ -239,11 +246,12 @@ export default function SignInScreen() {
     : mode === "link" ? (pendingInfo ? (pendingInfo.has_password === false
       ? `${pendingInfo.email ?? "This email"} has an account without a password. Use "Forgot password?" to set one, then sign in with ${pendingInfo.label} again.`
       : `${pendingInfo.email ?? "This email"} already has an account. Enter its password${pendingInfo.mfa ? " and authenticator code" : ""} to link ${pendingInfo.label} and sign in.`) : "Checking…")
+    : mode === "confirm" ? (pendingInfo ? `Create an AiAlgoDesk account for ${pendingInfo.email ?? "this email"}. The ${pendingInfo.label} account you signed up with will sign in to it. If you did not ask for this, close this page - nothing is created.` : "Checking your link…")
     : mode === "complete" ? (pendingInfo ? (pendingInfo.needs_email ? `${pendingInfo.label} did not share an email. Enter yours - we send a link to confirm it.` : `Signing up with ${pendingInfo.label} as ${pendingInfo.email ?? ""}.`) : "Checking…")
     : "Start on paper first.";
   const blocked = (needsLegal && legalDocs !== null && !legalAccepted)
     || (mode === "invite" && !(invite && invite.valid)) || (mode === "reset" && !(resetHint && resetHint.valid))
-    || ((mode === "link" || mode === "complete") && !pendingInfo) || (mode === "link" && pendingInfo?.has_password === false)
+    || ((mode === "link" || mode === "complete" || mode === "confirm") && !pendingInfo) || (mode === "link" && pendingInfo?.has_password === false)
     || (mode === "complete" && mailedTo !== null);
   const newPassword = mode === "register" || mode === "invite" || mode === "reset";
   // SL-5: under ui_v2, no intro paragraph where the heading says it all (Sign in, Create account).
@@ -280,14 +288,14 @@ export default function SignInScreen() {
                     className={`${inputClass} ${controlH} font-mono tracking-widest`} value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} />
                 </Field>
               )}
-              {mode !== "reset" && mode !== "mfa" && (
+              {mode !== "reset" && mode !== "mfa" && mode !== "confirm" && (
                 <Field id={ids.email} label="Email">
                   <input id={ids.email} type="email" required autoComplete="email" inputMode="email"
                     readOnly={mode === "invite" || mode === "link" || (mode === "complete" && !pendingInfo?.needs_email)}
                     className={`${inputClass} ${controlH}`} value={email} onChange={(e) => setEmail(e.target.value)} />
                 </Field>
               )}
-              {mode !== "forgot" && mode !== "mfa" && mode !== "complete" && !(mode === "link" && pendingInfo?.has_password === false) && (
+              {mode !== "forgot" && mode !== "mfa" && mode !== "complete" && mode !== "confirm" && !(mode === "link" && pendingInfo?.has_password === false) && (
                 <Field id={ids.password} label={mode === "reset" ? "New password" : "Password"}
                   hint={newPassword ? "At least 10 characters, not a common password." : undefined}>
                   <PasswordInput id={ids.password} value={password} onChange={setPassword}
@@ -360,4 +368,17 @@ export function linkTokenFrom(err: unknown): string | null {
   } catch {
     return null;   // intentional: not JSON - an ordinary error, shown as such
   }
+}
+
+/**
+ * M73 review 4: what opening a mailed confirmation link (`?social_verify=`) does - it shows the "Create my account"
+ * page and reads what that button will do (/auth/social/pending, which creates nothing). It has no way to create the
+ * account: only the button's submit sends /auth/social/verify.
+ */
+export function openConfirmFromLink(token: string, deps: {
+  show: (token: string) => void; pending: (token: string) => Promise<SocialPendingInfo>;
+  info: (info: SocialPendingInfo) => void; fail: (error: unknown) => void;
+}): void {
+  deps.show(token);
+  deps.pending(token).then(deps.info).catch(deps.fail);
 }

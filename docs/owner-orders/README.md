@@ -68,6 +68,16 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Engine takeover: Trade engine inside ATP (31 Oct) | ATP_ORDER_M66.md | M66 | in progress |
 | - | Universal trade settings: no pre-chosen trading defaults (31 Oct) | ATP_ORDER_M68.md | M68 | in progress |
 | - | Permanent fix for broker API limits (31 Oct) | ATP_ORDER_M71.md | M71 | in progress |
+| - | AI Copilot rebuild - trader-friendly, grounded agent (1 Nov) | ATP_ORDER_M72.md | M72 | not started |
+| - | Sign-in page: Google + Facebook login (1 Nov) | ATP_ORDER_M73.md | M73 | not started |
+| - | "Continue with your broker" sign-in (1 Nov) | ATP_ORDER_M74.md | M74 | not started |
+| - | Copilot trading workspace + no-navigation rule (1 Nov) | ATP_ORDER_M75.md | M75 | not started |
+| - | Copilot workspace: advanced facilities + mistake-proofing (1 Nov, + amendment) | ATP_ORDER_M76.md | M76 | not started |
+| - | Save the Copilot study as PDF / PNG / CSV (1 Nov) | ATP_ORDER_M77.md | M77 | not started |
+| - | M75 W-1 follow-up: band label legibility (1 Nov) | ATP_ORDER_M78.md | M78 | in progress |
+| - | Engine takeover: port engine-snapshot-v2, supersedes v1 (1 Nov) | ATP_ORDER_M79.md | M79 (with M66) | in progress |
+| - | Admin feature flags: truthful status badge (1 Nov) | ATP_ORDER_M80.md | M80 | in progress |
+| - | Copilot "Today's read" card: true state (1 Nov) | ATP_ORDER_M82.md | M82 | in progress |
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

@@ -20,6 +20,18 @@ const LegacyCopilot = lazy(() => import("../../pages/AiCopilotPage"));
 const Folded = lazy(() => import("./CopilotFoldedV2"));
 const ChartAnalyze = lazy(() => import("../../chartAnalyze/ChartAnalyzePageV2"));
 
+const LegacyTool = lazy(() => import("../../pages/AiCopilotPage").then((m) => ({ default: m.CopilotToolBody })));
+
+/** What a Copilot address shows under the tab bar: the chat, a folded tab or Analyze a chart (`inPanel`, M75 NAV-2:
+ * the in-place Copilot panel also shows one of the older tools, without the older page's hero and tab bar). */
+export function CopilotBody({ tab, inPanel = false }: { tab?: string; inPanel?: boolean }) {
+  const folded = isFoldedTab(tab) ? tab : null;
+  if (tab === ANALYZE_TAB) return <Suspense fallback={null}><ChartAnalyze /></Suspense>;
+  if (folded) return <Suspense fallback={null}><Folded tab={folded} /></Suspense>;
+  if (inPanel && isCopilotTab(tab)) return <Suspense fallback={null}><LegacyTool tab={tab} /></Suspense>;
+  return <CopilotChatGate />;
+}
+
 export default function CopilotPageV2(_props: PageProps = {}) {
   const { tab } = useParams<{ tab?: string }>();
   const folded = isFoldedTab(tab) ? tab : null;
@@ -30,8 +42,7 @@ export default function CopilotPageV2(_props: PageProps = {}) {
     <I18nextProvider i18n={copilotI18n}>
       <div className="space-y-space-4" data-copilot-v2-tab={active}>
         <CopilotTabsV2 active={active} />
-        {analyze ? <Suspense fallback={null}><ChartAnalyze /></Suspense>
-          : folded ? <Suspense fallback={null}><Folded tab={folded} /></Suspense> : <CopilotChatGate />}
+        <CopilotBody tab={tab} />
       </div>
     </I18nextProvider>
   );

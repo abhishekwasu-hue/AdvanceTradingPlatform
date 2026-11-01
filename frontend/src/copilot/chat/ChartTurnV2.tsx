@@ -1,6 +1,6 @@
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../../inplace/InPlaceLink";
 import AlertDialogV2, { type AlertTarget } from "../../chartAnalyze/AlertDialogV2";
 import { ENGINE_ADMIN_TITLE, ENGINE_USER_LINE, ENGINE_USER_TITLE, engineAudience } from "../../chartAnalyze/engineWords";
 import ResultViewV2 from "../../chartAnalyze/ResultViewV2";
@@ -50,9 +50,9 @@ export function ChartTurnV2({ chart }: { chart: ChartTurnState }) {
       {item.result && (
         <ResultViewV2 result={item.result} itemLabel={item.label} itemDisclaimer={item.disclaimer} imageSrc={imageSrc} actions={false} onAlert={setAlertTarget} />
       )}
-      <Link to="/chart-analyze" className="inline-flex min-h-11 items-center text-t14 font-semibold text-brand hover:underline md:min-h-0" data-chart-open-page>
+      <InPlaceLink to="/chart-analyze" className="inline-flex min-h-11 items-center text-t14 font-semibold text-brand hover:underline md:min-h-0" data-chart-open-page>
         {t("chat.chartOpenPage")}
-      </Link>
+      </InPlaceLink>
       <AlertDialogV2 target={alertTarget} onClose={() => setAlertTarget(null)} onCreated={() => setAlertTarget(null)} />
     </div>
   );

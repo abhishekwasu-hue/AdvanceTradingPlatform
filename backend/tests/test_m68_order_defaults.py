@@ -267,6 +267,7 @@ def test_a_basket_without_a_product_asks_and_his_saved_product_fills_it(setup):
 
 # --- exits are never blocked ----------------------------------------------------------------------------------------------
 
+@pytest.mark.real_position_size        # M68 PR-2: with an EMPTY Position size the exit still closes (ADR-0004)
 def test_an_exit_with_nothing_set_still_closes_and_an_armed_exit_watches_its_own_price(setup):
     t, expiry, strike = setup
     placed = client.post("/api/paper/fno/order", headers=t["headers"],

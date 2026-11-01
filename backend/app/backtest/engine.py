@@ -74,7 +74,8 @@ def run_backtest(
     # DEF-0: a backtest's starting equity is the trader's own capital, else the PAPER account's starting balance.
     risk_config = risk_config.with_capital(app_config.PAPER_STARTING_CAPITAL)
     capital = float(risk_config.capital or 0.0)
-    risk_manager = RiskManager(risk_config)
+    # M68 PR-2 (M68Q-PR2-1): a test on past prices places nothing; with no size of the trader's own it still tests one lot
+    risk_manager = RiskManager(risk_config, one_lot_if_unsized=True)
     state = TradingDayState()
     streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
     contract_spec = get_contract_spec(symbol)

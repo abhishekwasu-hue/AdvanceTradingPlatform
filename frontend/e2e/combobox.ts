@@ -75,6 +75,9 @@ export async function expectGroupLabels(page: Page, field: Locator, group: strin
 /** M68 PR-1: the bot forms pre-select no entry style (Trade settings > Order defaults > Order type); where a form asks
  * for it, pick Market as the user would. Does nothing where the form does not ask. */
 export async function pickEntryStyle(page: Page, scope: Locator | Page): Promise<void> {
+  // M68 PR-2 (TS1-019): no lots are chosen for a new bot either - where the form asks, enter one (the tests' old size)
+  const lots = scope.locator("[data-bot-lots-input]");
+  if (await lots.count() && !(await lots.first().inputValue())) await lots.first().fill("1");
   const combo = scope.locator("[data-entry-input='style']");
   const select = scope.locator("#deploy-entry-style");
   if (await combo.count()) await pickOption(page, combo.first(), "MARKET");

@@ -191,10 +191,13 @@ export const dismissChip = (stored: SetupStored, nowIso: string): SetupStored =>
  * the paper account's starting capital starts from a value (his account's, else ₹1,00,000). */
 export const RISK_DEFAULTS = { capital: 100_000 } as const;
 
-/** The server's bounds (backend `risk_engine/by_default.py` BOUNDS); the paper capital's own (PAPER_MIN / MAX_CAPITAL). */
+/** The server's bounds (backend `risk_engine/by_default.py` BOUNDS); the paper capital's own (PAPER_MIN / MAX_CAPITAL). M68 PR-5
+ * (TS1-049): only "a real number of the right sign" - a % above 0 and at most 100, a count or minimum finite; no ATP caps. */
 export const RISK_BOUNDS = {
-  capital: [10_000, 1_000_000_000], riskPerTradePct: [0.05, 5], dailyLossPct: [0.1, 20], maxTradesPerDay: [0, 500], minRr: [0, 10],
+  capital: [10_000, 1_000_000_000], riskPerTradePct: [0, 100], dailyLossPct: [0, 100], maxTradesPerDay: [0, 1_000_000_000], minRr: [0, 1_000_000_000],
 } as const;
+/** The limits that must be above their bottom (a % of 0 is no limit, left empty instead). */
+const ABOVE_LOW: ReadonlySet<string> = new Set(["riskPerTradePct", "dailyLossPct"]);
 
 export type RiskField = keyof typeof RISK_BOUNDS;
 export type RiskForm = Record<RiskField, string>;
@@ -247,7 +250,11 @@ export function riskErrors(form: RiskForm, opts: { capital?: boolean } = {}): Pa
     const show = (n: number) => (field === "capital" ? rupees(n) : String(n));
     if (!raw || !Number.isFinite(v)) out[field] = `Enter a number for ${RISK_LABELS[field].toLowerCase()}.`;
     else if (whole && !Number.isInteger(v)) out[field] = `Enter a whole number for ${RISK_LABELS[field].toLowerCase()}.`;
-    else if (v < low || v > high) out[field] = `${RISK_LABELS[field]} must be between ${show(low)} and ${show(high)}.`;
+    else if (ABOVE_LOW.has(field) && (v <= low || v > high)) out[field] = `${RISK_LABELS[field]} must be more than ${show(low)} and at most ${show(high)}.`;
+    else if (v < low || v > high) {
+      out[field] = high >= 1_000_000_000 && field !== "capital" ? `${RISK_LABELS[field]} must be at least ${show(low)}.`
+        : `${RISK_LABELS[field]} must be between ${show(low)} and ${show(high)}.`;
+    }
   }
   return out;
 }

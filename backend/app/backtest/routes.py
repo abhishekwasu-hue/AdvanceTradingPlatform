@@ -208,7 +208,7 @@ class BacktestRunner:
         # M71 PL-7 (owner order): on DAILY (or longer) bars the tenant's RECORDED end-of-day premiums (seeded NSE F&O
         # bhavcopy closes) price a leg at its bar's session close first; the model prices only legs with none, and the
         # result counts both. Intraday bars are priced by the model (an end-of-day close is no intraday premium).
-        eod: List[OptionChainSnapshotRow] = []
+        eod: list[OptionChainSnapshotRow] = []
         note: Optional[str] = None
         if opts.pricing in ("synthetic", "snapshots") and tenant_id is not None and body.candles:
             eod, note = await _recorded_eod(session, tenant_id, body)

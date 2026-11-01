@@ -407,7 +407,7 @@ class StoredEodPricer(SnapshotPricer):
     to (the bar's own close - a daily decision is taken at the close). A leg without a recorded close for that session
     is priced by `fallback` (the run's model) and counted. Never used for intraday bars (the caller's rule)."""
     name: str = "recorded_eod"
-    _by_day: Dict[Tuple[date, float, str, date], float] = field(default_factory=dict, init=False, repr=False)
+    _by_day: dict[tuple[date, float, str, date], float] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -440,7 +440,7 @@ class StoredEodPricer(SnapshotPricer):
         return base + (f"; model prices where none is recorded ({self.fallback.describe()})" if self.fallback is not None else "; no fallback")
 
 
-def pricing_counts(pricer: object) -> Dict[str, int]:
+def pricing_counts(pricer: object) -> dict[str, int]:
     """Per source along the pricer chain: recorded intraday quotes, recorded end-of-day premiums, model prices."""
     out = {"recorded_quote_hits": 0, "recorded_eod_hits": 0, "model_prices": 0}
     node = pricer

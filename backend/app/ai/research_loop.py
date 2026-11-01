@@ -93,7 +93,7 @@ async def _backtest(strategy: Any, df: pd.DataFrame, symbol: str, timeframe: str
 
 async def run_study(session: AsyncSession, *, tenant_id: int, user_id: Optional[int], spec: StudyInput, frame: pd.DataFrame,
                     risk: Any, propose: Propose, holdout_boundary: Any = None, study_id: Optional[str] = None,
-                    use_windows: Any = ()) -> Dict[str, Any]:
+                    use_windows: Any = ()) -> dict[str, Any]:
     """Runs one study on `frame` (server bars, oldest first). Returns {study_id, report}. Commits the ledger as it goes,
     so a crash mid-study still leaves every trial tried."""
     if frame.empty:

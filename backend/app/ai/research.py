@@ -16,7 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import date, datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -67,7 +67,7 @@ def trading_days(index: pd.DatetimeIndex) -> List[date]:
 
 
 def split_window(index: pd.DatetimeIndex, oos_fraction: float = 0.3, boundary: Any = None,
-                 windows: Any = ()) -> Tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp]:
+                 windows: Any = ()) -> tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp]:
     """(in-sample start, out-of-sample start, end) over bars that end before the sealed holdout. Refuses (HoldoutError)
     a window that reaches into the holdout - the research loop never sees it."""
     if not 0 < oos_fraction < 0.9:

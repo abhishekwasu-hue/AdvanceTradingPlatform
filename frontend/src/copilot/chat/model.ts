@@ -127,7 +127,7 @@ export type ChartSource = { kind: "file"; file: Blob; name: string } | { kind: "
 /** M59 CR-2: the attached chart's state in its thread turn (the same chart_analyze pipeline as the Analyze a chart page). */
 export type ChartTurnState =
   | { status: "working"; step: "adding" | "analysing" }
-  | { status: "done"; item: AnalysisItem; imageSrc: string | null }
+  | { status: "done"; item: AnalysisItem; imageSrc: string | null; readingSrc?: string | null }
   | { status: "failed"; message: string }
   | { status: "unavailable"; engine: AnalyzeStatus["engine"] };
 
@@ -391,4 +391,18 @@ export const NUMBERS_INDICES: readonly { key: string; label: string }[] = [
 
 export function numbersCells(strip: MarketStrip | null): { key: string; label: string; index: StripIndex | null }[] {
   return NUMBERS_INDICES.map(({ key, label }) => ({ key, label, index: strip?.indices.find((i) => i.key === key) ?? null }));
+}
+
+/** M72 PR-5 (CP-4): the hybrid timeframes (backend chart_analyze/hybrid.TIMEFRAMES) by the words a page's context uses. */
+const HYBRID_TF: Record<string, "5m" | "15m" | "1h" | "1d"> = {
+  "5m": "5m", "5min": "5m", "15m": "15m", "15min": "15m", "1h": "1h", "60m": "1h", "60min": "1h", "1d": "1d", day: "1d", d: "1d",
+};
+/**
+ * M72 PR-5 (CP-4): the symbol and timeframe an attached chart is read on in "Advanced analysis" - only the ones the
+ * user's own Ask-AI context carries (the page he asked from), never guessed from the picture; null = AI only.
+ */
+export function hybridPick(context: { symbol?: string; timeframe?: string } | null | undefined): { symbol: string; timeframe: "5m" | "15m" | "1h" | "1d" } | null {
+  const symbol = context?.symbol?.trim().toUpperCase();
+  const tf = HYBRID_TF[(context?.timeframe ?? "").trim().toLowerCase()];
+  return symbol && tf ? { symbol, timeframe: tf } : null;
 }

@@ -76,6 +76,8 @@ class Tool:
     # CP6-2: False for a tool only ATP's own rules call (the Copilot chat's jobs), never offered to the agent's model - e.g.
     # the draft test, whose every value must be the trader's own words, never a model's guess.
     agent: bool = True
+    # M72 PR-5: offered and run only while this returns True (e.g. the private engine is installed); None = always
+    ready: Callable[[], bool] | None = None
 
     def schema(self) -> Dict[str, Any]:
         """The JSON schema the provider sees (additionalProperties false, so strict mode can be used)."""
@@ -99,7 +101,17 @@ def register(tool: Tool) -> Tool:
 
 
 def registry() -> Dict[str, Tool]:
-    from app.ai.tools import copilot, copilot_trades, market, my_data, options_kit, proposals, read, screener  # noqa: F401 - registers the tools on first use
+    from app.ai.tools import (  # noqa: F401 - registers the tools on first use
+        copilot,
+        copilot_trades,
+        engine_read,
+        market,
+        my_data,
+        options_kit,
+        proposals,
+        read,
+        screener,
+    )
     return dict(_REGISTRY)
 
 
@@ -115,7 +127,8 @@ def names(kind: str, *, agent: bool = False) -> List[str]:
 
 
 async def available(ctx: ToolContext, wanted: List[str]) -> List[str]:
-    """N3 S9: the tools among `wanted` whose flag (if any) is on for the request's organisation - the rest are not offered."""
+    """N3 S9: the tools among `wanted` whose flag (if any) is on for the request's organisation - the rest are not offered.
+    M72 PR-5: a tool whose `ready` check fails (the private engine is not installed) is not offered either."""
     from app.platform.controls import flag_enabled
     tools = registry()
     out: List[str] = []
@@ -124,6 +137,9 @@ async def available(ctx: ToolContext, wanted: List[str]) -> List[str]:
         flag = tools[name].flag if name in tools else None
         if flag is not None and flag not in on:
             on[flag] = await flag_enabled(ctx.session, flag, ctx.tenant_id)
+        tool = tools.get(name)
+        if tool is not None and tool.ready is not None and not tool.ready():
+            continue
         if flag is None or on[flag]:
             out.append(name)
     return out
@@ -138,7 +154,7 @@ async def run_tool(name: str, arguments: Dict[str, Any], ctx: ToolContext, *, gu
         return ToolResult(False, None, None, name, error=f"unknown tool {name!r}")
     if tool.kind == "proposal" and not guard_cleared:
         return ToolResult(False, None, None, name, error="a proposal tool runs only after the agent's guard has cleared the call")
-    if tool.flag is not None and not await available(ctx, [name]):
+    if (tool.flag is not None or tool.ready is not None) and not await available(ctx, [name]):
         return ToolResult(False, None, None, name, error=f"{name} is not enabled for this organisation (flag {tool.flag})")
     try:
         args = tool.input_model.model_validate(arguments or {})

@@ -27,7 +27,7 @@ import { AnswerV2 } from "./AnswerV2";
 import { AttachMenu, imageFrom } from "./ChartAttachV2";
 import {
   chartQuestion, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
-  restoredTurns, settled, withChart, withTurn,
+  hybridPick, restoredTurns, settled, withChart, withTurn,
   type ChartSource, type ChatAnswer, type ChatHome, type Turn,
 } from "./model";
 import { chartAnalyzeApi, isFeatureOff } from "../../chartAnalyze/api";
@@ -424,13 +424,21 @@ export function CopilotChatV2({ context = null }: { context?: AskContext | null 
     try {
       const status = await chartAnalyzeApi.status();
       if (!status.engine.installed) { show({ status: "unavailable", engine: status.engine }); return; }
-      const item = await chartAnalyzeApi.add(source.kind === "file" ? { file: source.file, fileName: source.name } : { link: source.link }, "image_only");
+      // M72 PR-5 (CP-4): "Advanced analysis" (ATP's reading beside the picture) when it is on and the page the user asked
+      // from names the symbol and timeframe; otherwise AI only, as before
+      const pick = status.modes.hybrid ? hybridPick(about) : null;
+      const added = source.kind === "file" ? { file: source.file, fileName: source.name } : { link: source.link };
+      const item = pick ? await chartAnalyzeApi.add(added, "hybrid", pick) : await chartAnalyzeApi.add(added, "image_only");
       show({ status: "working", step: "analysing" });
       const done = await chartAnalyzeApi.analyze(item.id);
-      if (done.status !== "done" || !done.result) { show({ status: "failed", message: done.error ?? t("chat.chartFailed") }); return; }
+      if (done.status !== "done" || !(done.result || done.hybrid)) { show({ status: "failed", message: done.error ?? t("chat.chartFailed") }); return; }
       let imageSrc: string | null = null;
       try { imageSrc = URL.createObjectURL(await chartAnalyzeApi.image(done.id)); images.current.push(imageSrc); } catch { /* intentional: the reading shows without the picture */ }
-      show({ status: "done", item: done, imageSrc });
+      let readingSrc: string | null = null;
+      if (done.hybrid) {
+        try { readingSrc = URL.createObjectURL(await chartAnalyzeApi.readingPng(done.id)); images.current.push(readingSrc); } catch { /* intentional: the reading's table shows without its chart */ }
+      }
+      show({ status: "done", item: done, imageSrc, readingSrc });
       // ATP's own structure card for the picture's symbol: the rule answer only (wording=false) - no AI call here; the
       // AI words come only when the user taps "Explain in words" (an ordinary question of his own)
       const question = readingQuestion(done);

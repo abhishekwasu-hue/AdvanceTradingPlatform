@@ -81,6 +81,11 @@ flag) is bound into the Settings link's flow cookie and every pending link token
 change or verification, or switching the account off invalidates every in-flight link (the callback answers "expired",
 the step 400). A typed link step on an account without a password answers "Wrong password." after the same bcrypt work.
 
+**Review 4 fixes:** the mailed confirmation link only opens a "Create your account" page naming the address and the
+provider; the account is made when "Create my account" is pressed (a mail scanner opening the link creates nothing).
+A link made that way records no address (`email_at_link` empty), so the owner's reset or e-mail check removes it. The
+typed-address link token carries no account id; the account is found by the typed address and the stamp still checked.
+
 ## Extension points (M74 "Continue with your broker")
 - `social.Provider(kind="broker", id="broker:<name>", slug="broker-<name>", ...)` + `social_routes.add_provider(p)`
   serves `/api/auth/<slug>/start|link|callback` with the same flow cookie, pending steps and session.

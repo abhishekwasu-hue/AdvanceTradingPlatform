@@ -395,7 +395,7 @@ def test_facebook_without_email_creates_nothing_until_the_mailed_link_is_opened(
     assert done.status_code == 201 and done.json()["access_token"]
     user = _user("m73-typed@example.com")
     assert user.email_verified_at is not None                                         # the link proved the inbox
-    assert [(r.provider, r.subject, r.email_at_link) for r in _identities(user.id)] == [("facebook", "fb-no-email", "m73-typed@example.com")]
+    assert [(r.provider, r.subject, r.email_at_link) for r in _identities(user.id)] == [("facebook", "fb-no-email", None)]
     assert client.post("/api/auth/social/verify", json={"token": verify}).status_code == 400   # single use
     assert _login(fake, "facebook", email=None, sub="fb-no-email", fb_email=False)["query"] == {"social": "ok", "provider": "facebook"}
 
@@ -817,3 +817,36 @@ def test_a_typed_step_never_says_the_account_has_no_password(fake):
     answer = client.post("/api/auth/social/link/confirm", json={"token": link, "password": WRONG_PASSWORD})
     assert answer.status_code == 401 and answer.json()["detail"] == "Wrong password."
     assert [r.provider for r in _identities(_user(email).id)] == ["google"]
+
+
+def test_the_typed_link_token_names_no_account(fake):
+    """Review 4 (low): the token is readable by anyone who holds it - it carries the typed address only."""
+    import jwt as _jwt
+    email = "m73-typed-noid@example.com"
+    _register(email)
+    token = _fragment(_login(fake, "facebook", email=None, sub="fb-noid", fb_email=False), "social_pending")
+    link = client.post("/api/auth/social/complete", json={"token": token, "email": email}).json()["detail"]["token"]
+    claims = _jwt.decode(link, options={"verify_signature": False})
+    assert claims.get("user_id") is None and "sub" not in claims
+    assert client.post("/api/auth/social/pending", json={"token": link}).json()["kind"] == "link"
+    assert client.post("/api/auth/social/link/confirm", json={"token": link, "password": PASSWORD}).status_code == 200
+    assert [r.provider for r in _identities(_user(email).id)] == ["facebook"]
+
+
+def test_a_link_made_by_the_confirmation_mail_does_not_survive_the_owners_reset(fake, monkeypatch):
+    """Review 4 (medium): the victim (or a mail scanner) opens the confirmation link the attacker caused; the account
+    exists with the attacker's Facebook. The owner's password reset removes that link."""
+    mails = _mailbox(monkeypatch)
+    victim = "m73-preaccount@example.com"
+    token = _fragment(_login(fake, "facebook", email=None, sub="fb-preaccount", fb_email=False), "social_pending")
+    assert client.post("/api/auth/social/complete", json={"token": token, "email": victim}).status_code == 202
+    verify = _verify_token(mails[0])
+    info = client.post("/api/auth/social/pending", json={"token": verify}).json()
+    assert info == {"kind": "verify", "provider": "facebook", "label": "Facebook", "email": victim}   # what the button does
+    assert _user(victim) is None                                                  # showing the page creates nothing
+    assert client.post("/api/auth/social/verify", json={"token": verify}).status_code == 201
+    user = _user(victim)
+    assert [(r.provider, r.email_at_link) for r in _identities(user.id)] == [("facebook", None)]
+    _reset_via_mail(monkeypatch, victim)
+    assert _identities(user.id) == []
+    assert _login(fake, "facebook", email=None, sub="fb-preaccount", fb_email=False)["refresh"] is None

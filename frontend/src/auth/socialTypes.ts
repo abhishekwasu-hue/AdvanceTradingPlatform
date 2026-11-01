@@ -10,7 +10,7 @@ export interface SignInProvidersAnswer {
 
 /** What a pending step asks for: "link" (the account's password, its code) or "signup" (an e-mail, a beta code, the terms). */
 export interface SocialPendingInfo {
-  kind: "link" | "signup";
+  kind: "link" | "signup" | "verify";
   provider: string;
   label: string;
   email: string | null;

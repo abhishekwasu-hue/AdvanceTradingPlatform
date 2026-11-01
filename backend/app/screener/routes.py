@@ -499,6 +499,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     from app.market_data import api_budget, live_access
     from app.market_data.candles_routes import _pick_record
     from app.market_data.fanin import Priority
+    from app.market_data.reader_credential import credential_for_reader
     from app.market_data.service import MarketDataService
     from app.screener.universes import batch_wait_seconds
     if store and not include_forming:
@@ -530,8 +531,11 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         else:
             held = outside                                # A6: read through the API budget below, not dropped
         symbols = [s for s in symbols if own.allows(s, exchange)]
+    elif user_id is not None:
+        record = await credential_for_reader(session, tenant_id, user_id)   # M71Q-2: the reader's own credential only
+        adapter = build_adapter(record)
     else:
-        record = await _pick_record(session, tenant_id, None, "primary")
+        record = await _pick_record(session, tenant_id, None, "primary")   # a worker cycle with no reader: as before
         adapter = build_adapter(record)
     if budget_out is not None:
         adapter = api_budget.BudgetedAdapter(adapter, record.id, record.broker_name,
@@ -634,8 +638,8 @@ async def _store_rest(session: AsyncSession, tenant_id: int, user: Any, symbols:
     another member's session (`market_store.sources.from_record`)."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import live_access
-    from app.market_data.candles_routes import _pick_record
     from app.market_data.fanin import Priority
+    from app.market_data.reader_credential import credential_for_reader
     from app.market_store import sources
     if user is None or not symbols:
         return None, set()
@@ -644,7 +648,7 @@ async def _store_rest(session: AsyncSession, tenant_id: int, user: Any, symbols:
             own = await live_access.user_source(session, user, [(s, exchange) for s in symbols], priority=Priority.SCREENER)
             rest = sources.from_record(user, own.record, own.adapter(), wait_seconds)
             return rest, ({s for s in symbols if own.allows(s, exchange)} if rest is not None else set())
-        record = await _pick_record(session, tenant_id, None, "primary")
+        record = await credential_for_reader(session, tenant_id, user.id if user.tenant_id == tenant_id else None)   # M71Q-2
     except HTTPException:
         return None, set()
     rest = sources.from_record(user, record, build_adapter(record), wait_seconds) if sources.may_top_up(user, record) else None

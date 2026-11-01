@@ -232,7 +232,7 @@ def test_fetch_frames_attaches_daily_history_for_coarser_context(monkeypatch):
     from app.screener.routes import fetch_frames
     asked = []
 
-    async def pick(session, tenant_id, broker, label):
+    async def pick(session, tenant_id, broker, label, **_k):
         return types.SimpleNamespace(broker_name="fake")
 
     def bars(idx):
@@ -394,7 +394,7 @@ def test_intraday_window_ignores_daily_timeframes_when_daily_is_attached(monkeyp
         windows.append(lookback_days)
         real_init(self, broker, *a, lookback_days=lookback_days, **kw)
 
-    async def pick(session, tenant_id, broker, label):
+    async def pick(session, tenant_id, broker, label, **_k):
         return types.SimpleNamespace(broker_name="fake")
 
     async def candles(self, symbol, exchange="NSE", interval="1min", now=None, fresh=False):

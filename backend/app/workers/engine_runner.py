@@ -79,6 +79,8 @@ DISPLAY_NAME = "Signal engine"               # what the Signals inbox shows for 
 SETTINGS_KEY = "trade_engine_runner"         # platform_controls: {"tenants": {"<tenant id>": {...}}}
 STATE = "engine_run_state"                   # runtime_counters name: one row per (organisation, timeframe, symbol)
 DEDUPE = "engine_signal"                     # runtime_counters name: one row per signal (the dedupe key)
+DAY_LOG = "engine_run_day"                   # runtime_counters name (M79 W10): every final run record of one day, per
+                                             # (organisation, timeframe, symbol) - the shadow run's daily comparison
 LOCK_PREFIX = "atp:trade_engine:symbol:"
 RUNS_KEPT = 20                               # run records kept per symbol (newest last)
 LINES_KEPT = 20                              # gap / note lines kept per run record
@@ -399,6 +401,55 @@ async def _save_state(session: AsyncSession, key: str, value: dict[str, Any]) ->
         row.value = json.dumps(value)
 
 
+def day_log_key(tenant_id: int, timeframe: str, day: date, symbol_key: str) -> str:
+    return f"{int(tenant_id)}:{timeframe}:{day.strftime('%Y%m%d')}:{_hash(symbol_key)}"
+
+
+async def _log_final(session: AsyncSession, base: Mapping[str, Any], record: Mapping[str, Any]) -> None:
+    """M79 W10: keep a bar's FINAL run record in its day's log (one entry per bar END, the newest wins), so the daily
+    shadow comparison can give ATP's reason for any bar of the day (the state row keeps only the last RUNS_KEPT)."""
+    end = record.get("bar_end")
+    if not end:
+        return
+    day = datetime.fromisoformat(str(end)).astimezone(F.IST).date()
+    key = day_log_key(int(base["tenant_id"]), str(base["timeframe"]), day, str(base["symbol"]))
+    row = await _counter(session, DAY_LOG, key)
+    value = _load(row)
+    runs = [r for r in value.get("runs") or [] if r.get("bar_end") != end]
+    entry = {k: record.get(k) for k in ("bar_end", "at", "attempt", "status", "reason", "problems", "signals", "duplicates", "engine")}
+    value = {"tenant_id": base["tenant_id"], "symbol": base["symbol"], "timeframe": base["timeframe"], "day": day.isoformat(),
+             "runs": sorted([*runs, entry], key=lambda r: str(r.get("bar_end")))}
+    if row is None:
+        session.add(RuntimeCounterRecord(name=DAY_LOG, key=key, value=json.dumps(value)))
+    else:
+        row.value = json.dumps(value)
+
+
+async def export_day(session: AsyncSession, tenant_id: int, day: date) -> list[dict[str, Any]]:
+    """M79 W10: one organisation's engine signals and final run records of one India-time day, as JSON-ready lines
+    (kind "signal": the internal signal row + `written_at`; kind "run": a final run record). For the owner's shadow
+    comparison on the host; never a user surface."""
+    out: list[dict[str, Any]] = []
+    rows = await session.scalars(select(RuntimeCounterRecord).where(RuntimeCounterRecord.name == DEDUPE))
+    for r in rows:
+        v = _load(r)
+        if v.get("tenant_id") != int(tenant_id) or not v.get("bar_end"):
+            continue
+        if datetime.fromisoformat(str(v["bar_end"])).astimezone(F.IST).date() != day:
+            continue
+        at = r.updated_at if r.updated_at.tzinfo else r.updated_at.replace(tzinfo=UTC)
+        out.append({"kind": "signal", **v, "written_at": at.astimezone(UTC).isoformat()})
+    logs = await session.scalars(select(RuntimeCounterRecord).where(RuntimeCounterRecord.name == DAY_LOG,
+                                                                    RuntimeCounterRecord.key.startswith(f"{int(tenant_id)}:")))
+    for r in logs:
+        v = _load(r)
+        if v.get("day") != day.isoformat():
+            continue
+        for run in v.get("runs") or []:
+            out.append({"kind": "run", "symbol": v.get("symbol"), "timeframe": v.get("timeframe"), **run})
+    return sorted(out, key=lambda x: (x["kind"], str(x.get("symbol")), str(x.get("bar_end")), str(x.get("model_id"))))
+
+
 async def run_records(session: AsyncSession, tenant_id: int) -> list[dict[str, Any]]:
     """The admin's view: per symbol and timeframe the runner's state and its latest run records (gap lines in plain
     words). Never a user surface."""
@@ -516,6 +567,7 @@ async def _emit(session: AsyncSession, cfg: RunnerSettings, watch: Watch, user: 
         outcome.notes.append(note)
     internal = {"tenant_id": cfg.tenant_id, "symbol": watch.key, "timeframe": signal.timeframe, "bar_end": _iso(signal.bar_end),
                 "model_id": signal.model_id, "instance_id": signal.instance_id, "side": signal.side, "area_id": signal.area_id,
+                "area_state": next((a.state for a in result.areas if a.area_id == signal.area_id), None) if signal.area_id else None,
                 "entry_zone": [signal.entry_zone.low, signal.entry_zone.high], "invalidation": signal.invalidation,
                 "evidence": [{"token": e.token, "present": bool(e.present)} for e in signal.evidence],
                 "engine": result.version, "history_id": None}
@@ -614,9 +666,12 @@ async def run_symbol(session: AsyncSession, cfg: RunnerSettings, watch: Watch, e
     if same and state.get("final"):
         return SymbolRun("done", due)
     runs = list(state.get("runs") or [])
-    if not same and runs and not runs[-1].get("final"):      # an earlier bar still being retried: a newer bar closed
+    left = not same and bool(runs) and not runs[-1].get("final")
+    if left:                                                 # an earlier bar still being retried: a newer bar closed
         runs[-1] = {**runs[-1], "final": True, "reason": f"{runs[-1].get('reason')} - left: a newer bar closed"}
     base ={"tenant_id": cfg.tenant_id, "symbol": watch.key, "shown": watch.shown, "timeframe": tf}
+    if left:
+        await _log_final(session, base, runs[-1])
     late = now - (due + timedelta(seconds=cfg.delay_seconds)) > timedelta(seconds=cfg.grace_seconds)
     attempts = int(state.get("attempts") or 0) if same else 0
     if late or attempts >= cfg.max_attempts:
@@ -628,6 +683,8 @@ async def run_symbol(session: AsyncSession, cfg: RunnerSettings, watch: Watch, e
             runs.append(_record(due, now, 0, Outcome(MISSED, "this bar was reached after its grace window; it is not read late"), True))
         await _save_state(session, skey, {**base, "bar_end": _iso(due), "attempts": attempts, "final": True,
                                           "status": runs[-1]["status"] if runs else MISSED, "runs": runs[-RUNS_KEPT:]})
+        if runs:
+            await _log_final(session, base, {**runs[-1], "status": MISSED if not same else "given_up"})
         await session.commit()
         return SymbolRun(MISSED if not same else "given_up", due)
     holder = holder or uuid.uuid4().hex
@@ -647,6 +704,8 @@ async def run_symbol(session: AsyncSession, cfg: RunnerSettings, watch: Watch, e
         runs.append(_record(due, now, attempt, outcome, final))
         await _save_state(session, skey, {**base, "bar_end": _iso(due), "attempts": attempt, "final": final,
                                           "status": outcome.status, "runs": runs[-RUNS_KEPT:]})
+        if final:
+            await _log_final(session, base, runs[-1])
         await session.commit()
         return SymbolRun(outcome.status, due, outcome, final)
     finally:
@@ -712,8 +771,8 @@ async def run_due(session_factory: Any, now: datetime | None = None, *, broker_f
     return report
 
 
-__all__ = ["FLAG", "STRATEGY_ID", "DISPLAY_NAME", "SETTINGS_KEY", "STATE", "DEDUPE", "DEFAULTS", "DEFAULT_WINDOWS", "Watch", "RunnerSettings",
-           "parse_windows", "history_starts", "calendar_last",
+__all__ = ["FLAG", "STRATEGY_ID", "DISPLAY_NAME", "SETTINGS_KEY", "STATE", "DEDUPE", "DAY_LOG", "day_log_key", "export_day", "DEFAULTS",
+           "DEFAULT_WINDOWS", "Watch", "RunnerSettings", "parse_windows", "history_starts", "calendar_last",
            "SettingsProblem", "parse_settings", "save_settings", "due_bar", "bar_end", "window_starts", "state_key", "dedupe_key",
            "run_records", "internal_signal", "lock_name", "card_line", "Outcome", "SymbolRun", "RunReport", "run_symbol", "run_due",
            "DATA_RESERVE", "DATA_WAIT_SECONDS", "DataBudgetUsed", "DataPoolBroker", "data_pool", "store_read", "store_on"]

@@ -32,6 +32,17 @@ import { Details } from "../../ui/Details";
  */
 const CAPITAL_CHIPS = [50_000, 100_000, 200_000, 500_000];
 
+/** M68: the interview's symbol answer, upper-cased - null when he has not chosen one (never a pre-chosen symbol). */
+export function interviewSymbol(value: unknown): string | null {
+  const text = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return text ? text : null;
+}
+
+/** M68: only the answers he gave (a Not set answer comes back as null and is never turned into the text "null"). */
+export function givenAnswers(answers: Record<string, string | number | null | undefined>): Record<string, string> {
+  return Object.fromEntries(Object.entries(answers).filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)]));
+}
+
 /** The "strategy" section of a plan (backend app/ai/interview.py) lists: the template, its rules in words, the backtest
  * line, the regime filter, then the other templates with their backtest figures. On SAMPLE candles only the backtest
  * figures are blurred under the stamp - the rules in words stay readable (white-box). */
@@ -163,7 +174,10 @@ function IdeaBuilderInterview() {
     if (!current) return;
     const q = current;
     const next = { ...answers, [q.id]: value };
-    if (q.id === "instrument" && value !== "index" && (answers.symbol ?? "NIFTY 50").startsWith("NIFTY")) delete next.symbol;
+    if (q.id === "instrument" && value !== "index" && (answers.symbol ?? "").startsWith("NIFTY")) {
+      delete next.symbol;                                    // M68: an index symbol no longer fits - ask again, never fill one in
+      if (!queue.slice(step + 1).includes("symbol")) setQueue((ids) => [...ids.slice(0, step + 1), "symbol", ...ids.slice(step + 1)]);
+    }
     setAnswers(next);
     setLog((prev) => [...prev, { from: "ai", text: q.en, second: q.mr }, { from: "me", text: label ?? optLabel(q, value) }]);
     setCustom("");
@@ -179,7 +193,7 @@ function IdeaBuilderInterview() {
   }
   function applyProfile() {
     if (!start?.profile) return;
-    const saved = Object.fromEntries(Object.entries(start.profile.answers).map(([k, v]) => [k, String(v)]));
+    const saved = givenAnswers(start.profile.answers);
     setAnswers({ ...saved, ...start.prefill, language: "en" });
     setStep(queue.length);
     setOfferProfile(false);
@@ -195,7 +209,8 @@ function IdeaBuilderInterview() {
     return body;
   }
   async function candlesFor(style: string, src: CandleSourceState) {
-    const symbol = (answers.symbol || "NIFTY 50").trim().toUpperCase();
+    const symbol = interviewSymbol(answers.symbol);
+    if (!symbol) throw new Error(t("idea.symbolNotSet"));      // M68: never a pre-chosen symbol
     if (src.mode === "sample") {
       const swing = style === "swing";
       const r = await src.fetch([symbol], swing ? "day" : "1min", { count: swing ? 300 : 3000, startPriceFor: () => 24_000, seedFor: () => 11, daily: swing });
@@ -223,7 +238,7 @@ function IdeaBuilderInterview() {
     const out = await task.run([t("idea.step.refine"), t("idea.step.test")], (signal) =>
       api.aiInterviewRefine(answersBody(), f.tf, f.candles, f.label, reasons, option.option!.id, option.recommended?.strategy_id ?? null, signal, f.lookbackDays));
     if (!out) return;
-    setAnswers(Object.fromEntries(Object.entries(out.answers).map(([k, v]) => [k, String(v)])));
+    setAnswers(givenAnswers(out.answers));
     setPlan(out); setSelected(null); setRejecting(null); setReasons([]);
   }
   async function choose(option: InterviewPlan) {
@@ -311,7 +326,18 @@ function IdeaBuilderInterview() {
           </div>
         )}
 
-        {finished && !plan && (
+        {finished && !plan && !interviewSymbol(answers.symbol) && (
+          <div className="rounded-xl border border-warn/40 bg-warn/5 p-4 text-sm text-fg" data-testid="idea-symbol-not-set">
+            {t("idea.symbolNotSet")}
+            <div className="mt-3">
+              <Button size="sm" variant="primary" onClick={() => setQueue((ids) => [...ids, "symbol"])}>
+                <span className="text-left leading-tight">{t("idea.chooseSymbol")}</span>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {finished && !plan && interviewSymbol(answers.symbol) && (
           <div className="rounded-xl border border-ai/30 bg-ai/5 p-4 text-sm text-fg">
             {t("idea.thanks")}
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -432,7 +458,7 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
 }) {
   const inPlace = useInPlace();
   const t = useCopilotT();
-  const symbol = String(plan.answers.symbol ?? "NIFTY 50");
+  const symbol = interviewSymbol(plan.answers.symbol) ?? t("idea.symbolNotSet");
   const [acceptRisk, setAcceptRisk] = useState(false);
   const [acceptSuggested, setAcceptSuggested] = useState(false);     // M68 PR-8 (TS1-077)
   useEffect(() => { setAcceptSuggested(false); }, [plan.candidate_id]);     // another plan: accept its own values again

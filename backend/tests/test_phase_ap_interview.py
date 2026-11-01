@@ -74,9 +74,9 @@ def test_contract_plan_keeps_the_traders_choice():
     assert any("selling" in n for n in notes)
     contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="experienced", vehicle="option_sell"), "BEARISH")
     assert contract["option_strategy"] == "BEAR_CALL_SPREAD"
-    contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="experienced", vehicle="underlying"), "NEUTRAL")
+    contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="experienced", vehicle="underlying", symbol="NIFTY 50", instrument="index"), "NEUTRAL")
     assert contract["instrument_kind"] == "FUTURE"
-    contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="new", vehicle="underlying"), "NEUTRAL")
+    contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="new", vehicle="underlying", symbol="NIFTY 50", instrument="index"), "NEUTRAL")
     assert contract["instrument_kind"] == "FUTURE"                            # futures chosen -> futures, for everyone
     contract, _, _ = iv.contract_plan(iv.InterviewAnswers(instrument="stock", symbol="TATAMOTORS", vehicle="option_buy"), "NEUTRAL")
     assert contract == {"instrument_kind": "UNDERLYING"}
@@ -97,7 +97,7 @@ def test_market_read_sees_an_uptrend():
 
 
 def test_plan_in_marathi_with_a_deployable_paper_setup():
-    a = iv.InterviewAnswers(language="mr", experience="new", vehicle="option_sell", view="bearish")
+    a = iv.InterviewAnswers(language="mr", experience="new", vehicle="option_sell", view="bearish", symbol="NIFTY 50", instrument="index", style="intraday")
     plan = iv.build_plan(a, _sessions(days=6), "5min")
     assert plan["recommended"]["family"] in ("trend", "momentum")          # an uptrend picks a trend method
     assert [s["id"] for s in plan["sections"]] == ["market", "strategy", "risk", "capital", "rr", "contract", "checklist", "steps"]
@@ -128,7 +128,7 @@ def test_plan_endpoint_end_to_end_in_english(monkeypatch):
     assert started["needs_interview"] and started["prefill"]["symbol"] == "NIFTY 50"
     r = client.post("/api/ai/interview/plan", headers=headers, json={
         "answers": {"language": "en", "experience": "learning", "capital": 300000, "risk": "moderate", "style": "intraday",
-                    "vehicle": "option_buy", "goal": "big_trends"},
+                    "vehicle": "option_buy", "goal": "big_trends", "symbol": "NIFTY 50", "instrument": "index"},
         "base_timeframe": "5min"})
     assert r.status_code == 200, r.text
     plan = r.json()

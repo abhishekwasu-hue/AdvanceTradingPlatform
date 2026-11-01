@@ -2374,7 +2374,7 @@ export interface InterviewStart {
   /** P0.10: the Marathi line under the intro. */
   intro_mr?: string;
   /** Phase AQ: what the Copilot remembers from last time (null on a first visit). */
-  profile: { answers: Record<string, string | number>; preferences: InterviewPreferences } | null;
+  profile: { answers: Record<string, string | number | null>; preferences: InterviewPreferences } | null;
 }
 // Phase AQ: options, feedback and the remembered profile.
 export interface InterviewPreferences {
@@ -2413,7 +2413,10 @@ export interface InterviewPlan {
   language: "en" | "mr";
   /** M68 PR-8 (TS1-077): the plan's own contract picks; a deploy carries them only once the trader accepts them. */
   suggested?: SuggestedValue[];
-  answers: Record<string, string | number>;
+  /** M68: an answer he did not give comes back as null ("Not set"), never a pre-chosen value. */
+  answers: Record<string, string | number | null>;
+  /** M68 PR-8b: the required answers (symbol, instrument, vehicle, style) not yet given; a deploy asks for each one. */
+  unanswered?: string[];
   market: { last_price: number; bias: "BULLISH" | "BEARISH" | "NEUTRAL"; regime: Regime; higher_regime: Regime; higher_timeframe: string; work_timeframe: string; today: { change_pct: number; trend: string } };
   recommended: InterviewCandidate | null;
   alternatives: InterviewCandidate[];

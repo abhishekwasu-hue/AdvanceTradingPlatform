@@ -360,7 +360,8 @@ def test_interview_deploy_goes_through_the_candidate_gate(monkeypatch):
                         lambda s, d, tf, sym, risk: real_eval(s, d, tf, sym, risk, PaperCharges(brokerage_per_order=20.0, slippage_pct=0.02)))
     interview._EVIDENCE_CACHE.clear()
     plan = client.post("/api/ai/interview/plan", headers=headers, json={
-        "answers": {"language": "en", "experience": "learning", "capital": 300000, "risk": "moderate", "style": "intraday", "vehicle": "option_buy", "goal": "big_trends"},
+        "answers": {"language": "en", "experience": "learning", "capital": 300000, "risk": "moderate", "style": "intraday", "vehicle": "option_buy", "goal": "big_trends",
+                    "symbol": "NIFTY 50", "instrument": "index"},
         "base_timeframe": "5min"}).json()
     assert plan["candidate_id"] and all(o["candidate_id"] for o in plan["options"])
     cid = plan["candidate_id"]

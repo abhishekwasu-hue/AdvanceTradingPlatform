@@ -36,6 +36,9 @@ ALLOWED_FILES: Dict[str, str] = {
     # the strategy interview - server texts
     "backend/app/ai/interview.py": "the strategy interview: questions, options, tips and plan texts in English + Marathi",
     "backend/app/ai/advisor.py": "the strategy interview's options round and its 'not this one' feedback texts",
+    # M72 PR-1a (owner order, 1 Nov: "build the Marathi and Hindi no-advice and no-order filters now ... in Devanagari"):
+    # the safety word lists the Copilot checks asks and answers against - never shown to a trader
+    "backend/app/ai/indic_safety.py": "the Copilot's Marathi / Hindi no-advice, no-order, exit and other-user filter phrases (M72 owner order)",
     # test fixtures of the interview
     "backend/tests/test_phase_ap_interview.py": "interview test fixture (Marathi prompts and plan lines)",
     "backend/tests/test_phase_aq_advisor.py": "interview test fixture (the options round in Marathi)",

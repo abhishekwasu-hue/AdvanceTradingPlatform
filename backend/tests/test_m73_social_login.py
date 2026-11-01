@@ -769,3 +769,51 @@ def _set_verified(user_id: int) -> None:
             row.email_verified_at = datetime.now(UTC)
             await session.commit()
     _run(go())
+
+
+def _reset_via_mail(monkeypatch, email: str) -> None:
+    mails = _mailbox(monkeypatch)
+    assert client.post("/api/auth/password/forgot", json={"email": email}).status_code == 202
+    reset = parse_qs(urlsplit(next(w for w in mails[-1]["body"].split() if "reset=" in w)).query)["reset"][0]
+    assert client.post(f"/api/auth/password/reset/{reset}", json={"password": NEW_PASSWORD}).status_code == 200
+
+
+def test_a_settings_link_started_before_a_reset_cannot_finish_after_it(fake, monkeypatch):
+    """Re-review 3 (high): the attacker starts Settings › Link with the password he knows; the owner resets; the
+    callback that follows links nothing."""
+    email = "m73-link-race@example.com"
+    bearer = {"Authorization": f"Bearer {_register(email)}"}
+    started = client.post("/api/auth/facebook/link", headers=bearer, json={"password": PASSWORD})
+    assert started.status_code == 200
+    cookie = started.cookies.get("atp_facebook_flow")
+    q = {k: v[0] for k, v in parse_qs(urlsplit(started.json()["url"]).query).items()}
+    _reset_via_mail(monkeypatch, email)                                    # the owner takes the account back
+    fake.challenge, fake.nonce = q["code_challenge"], None
+    fake.person = {"email": None, "sub": "fb-race", "fb_email": False}
+    client.cookies.clear()
+    back = client.get("/api/auth/facebook/callback", params={"state": q["state"], "code": AUTH_CODE},
+                      headers={"cookie": f"atp_facebook_flow={cookie}"}, follow_redirects=False)
+    assert parse_qs(urlsplit(back.headers["location"]).query) == {"social_error": ["expired"], "provider": ["facebook"]}
+    assert _identities(_user(email).id) == []
+
+
+def test_a_pending_link_minted_before_a_reset_is_dead_after_it(fake, monkeypatch):
+    email = "m73-pending-race@example.com"
+    _register(email)
+    token = _fragment(_login(fake, "google", email=email, sub="g-pending-race"), "social_pending")
+    _reset_via_mail(monkeypatch, email)
+    assert client.post("/api/auth/social/pending", json={"token": token}).status_code == 400
+    assert client.post("/api/auth/social/link/confirm", json={"token": token, "password": NEW_PASSWORD}).status_code == 400
+    assert _identities(_user(email).id) == []
+
+
+def test_a_typed_step_never_says_the_account_has_no_password(fake):
+    """Re-review 3 (low): an account made by a provider (no password) answers a typed link step exactly like a wrong
+    password - same bcrypt work, 401 "Wrong password." - never 409 "no password yet"."""
+    email = "m73-typed-nopass@example.com"
+    _login(fake, "google", email=email, sub="g-typed-nopass")              # a provider-made account, no password
+    token = _fragment(_login(fake, "facebook", email=None, sub="fb-typed-nopass", fb_email=False), "social_pending")
+    link = client.post("/api/auth/social/complete", json={"token": token, "email": email}).json()["detail"]["token"]
+    answer = client.post("/api/auth/social/link/confirm", json={"token": link, "password": WRONG_PASSWORD})
+    assert answer.status_code == 401 and answer.json()["detail"] == "Wrong password."
+    assert [r.provider for r in _identities(_user(email).id)] == ["google"]

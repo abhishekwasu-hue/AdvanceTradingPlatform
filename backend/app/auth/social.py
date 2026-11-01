@@ -156,6 +156,7 @@ class SocialFlow:
     intent: str = "signin"
     invite: str | None = None
     link_user_id: int | None = None
+    stamp: str | None = None          # the account's security stamp when the link was started (re-review 3)
 
 
 def encode_flow(provider: Provider, social_flow: SocialFlow) -> str:
@@ -167,6 +168,7 @@ def encode_flow(provider: Provider, social_flow: SocialFlow) -> str:
         payload["invite"] = social_flow.invite
     if social_flow.link_user_id is not None:
         payload["link_user_id"] = social_flow.link_user_id
+        payload["stamp"] = social_flow.stamp
     return jwt.encode(payload, config.JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
@@ -186,16 +188,30 @@ def decode_flow(provider: Provider, value: str | None) -> SocialFlow | None:
     intent = payload.get("intent") if payload.get("intent") in INTENTS else "signin"
     link_user_id = payload.get("link_user_id")
     return SocialFlow(flow=flow, intent=intent, invite=payload.get("invite") if isinstance(payload.get("invite"), str) else None,
-                      link_user_id=int(link_user_id) if isinstance(link_user_id, int) else None)
+                      link_user_id=int(link_user_id) if isinstance(link_user_id, int) else None,
+                      stamp=payload.get("stamp") if isinstance(payload.get("stamp"), str) else None)
 
 
 def state_matches(social_flow: SocialFlow | None, presented: str | None) -> bool:
     return bool(social_flow and presented and hmac.compare_digest(social_flow.flow.state.encode(), presented.encode()))
 
 
-def new_flow(intent: str = "signin", invite: str | None = None, link_user_id: int | None = None) -> SocialFlow:
+def new_flow(intent: str = "signin", invite: str | None = None, link_user_id: int | None = None,
+             stamp: str | None = None) -> SocialFlow:
     return SocialFlow(flow=google.new_flow(), intent=intent if intent in INTENTS else "signin",
-                      invite=invite, link_user_id=link_user_id)
+                      invite=invite, link_user_id=link_user_id, stamp=stamp)
+
+
+def security_stamp(user: User) -> str:
+    """Re-review 3: a fingerprint of the account's credentials - its password hash, e-mail, verification state and
+    active flag. A password reset or change, an e-mail change or verification, or switching the account off changes
+    it, so every link step started before (a Settings link's flow cookie, a pending link token) stops working."""
+    material = f"{user.id}|{user.hashed_password}|{(user.email or '').lower()}|{user.email_verified_at}|{user.is_active}"
+    return hmac.new(config.JWT_SECRET_KEY.encode(), material.encode(), "sha256").hexdigest()[:32]
+
+
+def stamp_matches(user: User | None, stamp: str | None) -> bool:
+    return bool(user is not None and stamp and hmac.compare_digest(security_stamp(user), stamp))
 
 
 # --- pending steps (a link to confirm, a sign-up to finish) ------------------------------------------------------

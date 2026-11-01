@@ -76,6 +76,11 @@ is never stored - and the owner's reset / verification drop every link without a
 about that account's two-factor state. The confirmation mail says plainly that the provider will be linked, and the new
 account gets a SECURITY notice naming it.
 
+**Re-review 3 fixes:** a security stamp (HMAC of the account's password hash, e-mail, verification state and active
+flag) is bound into the Settings link's flow cookie and every pending link token; a password reset or change, an e-mail
+change or verification, or switching the account off invalidates every in-flight link (the callback answers "expired",
+the step 400). A typed link step on an account without a password answers "Wrong password." after the same bcrypt work.
+
 ## Extension points (M74 "Continue with your broker")
 - `social.Provider(kind="broker", id="broker:<name>", slug="broker-<name>", ...)` + `social_routes.add_provider(p)`
   serves `/api/auth/<slug>/start|link|callback` with the same flow cookie, pending steps and session.

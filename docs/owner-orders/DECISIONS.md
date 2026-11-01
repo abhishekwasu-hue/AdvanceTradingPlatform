@@ -243,3 +243,4 @@
 | 2026-11-01 | M72Q-7 (owner "ho default"): no paid live AI run for the Copilot planner; tests and evals use recorded fixtures only until the owner asks for one. |
 | 2026-11-01 | M72Q-7 CORRECTED (owner): YES - one paid live AI run of the Copilot planner eval is approved, to measure answer quality and cost per answer; it supersedes the "no paid live AI run" row above. Unit tests stay on recorded fixtures. |
 | 2026-11-01 | M72Q-7 (owner): the paid live AI eval run gets no extra call cap from us - the owner watches the cost himself; the run still prints its cost per answer and total. |
+| 2026-11-01 | Owner: finish the coding work within 5 hours with parallel agents. Order-path PRs whose review is MERGE may merge one at a time on LOCAL evidence: main merged in, migration re-chained, the FULL backend suite + exits + PAPER=LIVE suites pass locally; main CI still gates the deploy. Non-order-path PRs keep the local-checks rule. |

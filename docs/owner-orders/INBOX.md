@@ -262,3 +262,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-11-01 | "M72Q-7: paise lagnari AI chi live chachani. Default: nahi. ho default" | M72Q-7 closed: no paid live AI run |
 | 2026-11-01 | "r u mad, default ho mtl hot na" (correction: his "ho" on M72Q-7 means YES to the paid live AI run) | M72Q-7 corrected: paid live run approved |
 | 2026-11-01 | "kharch howu dya, te me baghel, dont worry" (on the M72Q-7 paid live AI run) | M72Q-7: no call cap imposed by us; the owner watches the cost |
+| 2026-11-01 | "coding che kam pudhil 5 hours mdhe purn kra, any how, run multiple agents"; asked how to merge order-path PRs fast, he chose "Local full suite var merge (Recommended)" | merge policy for order-path PRs (today) |

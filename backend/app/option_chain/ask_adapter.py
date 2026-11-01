@@ -147,7 +147,8 @@ async def _record(session: AsyncSession, user: User, underlying: str) -> Tuple[A
             return None, True, (ent.reason if ent is not None and ent.reason else NO_BROKER)
         return ent.record, True, None
     try:
-        return await candles_routes._pick_record(session, user.tenant_id, None, "primary"), False, None
+        from app.market_data.reader_credential import credential_for_reader
+        return await credential_for_reader(session, user.tenant_id, user.id), False, None   # M71Q-2
     except HTTPException:
         return None, False, NO_BROKER
 

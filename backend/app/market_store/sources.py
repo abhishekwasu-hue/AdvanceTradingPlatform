@@ -37,8 +37,8 @@ async def own_rest(session: AsyncSession, user: Any, symbol: str, exchange: str,
                 return None
             return from_record(user, own.record, own.adapter())
         from app.brokers.token_lifecycle import build_adapter
-        from app.market_data.candles_routes import _pick_record
-        record = await _pick_record(session, int(tenant_id or 0), broker, "primary")
+        from app.market_data.reader_credential import credential_for_reader, reader_id
+        record = await credential_for_reader(session, int(tenant_id or 0), reader_id(user, tenant_id), broker)   # his own only
     except (HTTPException, live_access.LiveDataRefused):
         return None
     if not may_top_up(user, record):

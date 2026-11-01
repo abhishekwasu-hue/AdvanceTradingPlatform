@@ -170,7 +170,7 @@ def test_the_same_bars_give_the_same_frames_through_the_store_and_the_broker(mon
     from app.brokers import token_lifecycle
     from app.market_data import candles_routes, service
 
-    async def pick(session, tenant_id, broker, label):
+    async def pick(session, tenant_id, broker, label, **_k):
         return SimpleNamespace(id=1, broker_name="upstox")
 
     async def candles(self, symbol, exchange="NSE", interval="1min", now=None, fresh=False):

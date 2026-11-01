@@ -538,7 +538,7 @@ async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(re
     Z10-c: it writes the organisation-wide market memory and spends its broker budget, so it needs a trading role."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import live_access
-    from app.market_data.candles_routes import _pick_record
+    from app.market_data.reader_credential import credential_for_reader
     from app.market_data.service import MarketDataService
     try:
         if await live_access.byob_on(session, user.tenant_id):
@@ -546,7 +546,7 @@ async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(re
             # user's own broker session while the bring-your-own-broker data tier is on: global cues only.
             raise live_access.LiveDataRefused("Market memory is shared in your organisation, so it is not read through your own "
                                               "broker session (bring-your-own-broker data tier): global cues only.")
-        record = await _pick_record(session, user.tenant_id, body.broker, "primary")
+        record = await credential_for_reader(session, user.tenant_id, user.id, body.broker)   # M71Q-2: his own only
     except HTTPException as exc:
         if exc.status_code != 409:
             raise
@@ -1049,7 +1049,7 @@ async def _strategist_frames(session: AsyncSession, user: User, body: Strategist
         return interview.frame_from_candles(body.candles[-6000:]), None, "candles"
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import live_access
-    from app.market_data.candles_routes import _pick_record
+    from app.market_data.reader_credential import credential_for_reader
     from app.market_data.service import MarketDataService
     symbol, exchange = body.symbol.strip().upper(), body.exchange.strip().upper()
     stored = stored_day = None
@@ -1071,7 +1071,7 @@ async def _strategist_frames(session: AsyncSession, user: User, body: Strategist
                 raise live_access.LiveDataRefused(own.reason(symbol, exchange))
             record, namespace = own.record, own.namespace
         else:
-            record = await _pick_record(session, user.tenant_id, body.broker, "primary")
+            record = await credential_for_reader(session, user.tenant_id, user.id, body.broker)   # M71Q-2: his own only
     except HTTPException:
         if stored is None:
             raise

@@ -116,9 +116,9 @@ async def run_candles_probe(session: AsyncSession, user: User, symbol: str, exch
     from app.brokers.base import BrokerInterface
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import api_budget, lake_fill
-    from app.market_data.candles_routes import _pick_record
+    from app.market_data.reader_credential import credential_for_reader
     from app.market_data.service import MarketDataService
-    record = await _pick_record(session, user.tenant_id, None, "primary")
+    record = await credential_for_reader(session, user.tenant_id, user.id)   # M71Q-2: his own only
     budgeted = api_budget.BudgetedAdapter(build_adapter(record), record.id, record.broker_name)
     service = MarketDataService(cast(BrokerInterface, budgeted), lookback_days=5)
     service.holidays = await family_holidays(session, session_family(exchange))

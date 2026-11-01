@@ -17,6 +17,9 @@ from tests.test_fno1_chain_ticket import _body, _run, setup  # noqa: F401 - the 
 from tests.test_z3b_paper_account import _member
 from tests.test_z5_p1d_risk_by_default import _flag
 
+# M68 PR-2 (TS1-024): an extra account sizes only by the user's own setting (no MULTIPLIER x 1 is chosen for him).
+OWN_SIZE = {"sizing_mode": "MULTIPLIER", "sizing_value": 1}
+
 
 def _accounts(t, *specs):
     _flag("multi_account", t["tenant_id"])
@@ -101,7 +104,7 @@ def test_one_order_becomes_one_paper_child_per_account_with_reasons_for_the_skip
 
 def test_a_refused_primary_leaves_the_secondaries_unplaced(setup):  # noqa: F811 - the fixture
     t, expiry, strike, _ = setup
-    p, s = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}), ("Sec", 500_000, {"role": "SECONDARY", "group_name": "G"}))
+    p, s = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}), ("Sec", 500_000, {"role": "SECONDARY", "group_name": "G", **OWN_SIZE}))
     # M64: a SELL without a stop is no longer refused (risk-based sizing falls back to the typed lots with a warning); the
     # primary is refused by a size limit the trader switched on instead - max lots per order 1, an order of 2 lots.
     saved = client.put("/api/risk-settings/limits", headers=t["headers"],
@@ -134,7 +137,7 @@ def test_resting_orders_and_a_missing_reference_are_refused(setup):  # noqa: F81
 def test_one_exit_closes_every_child_on_every_account_and_says_so_per_child(setup):  # noqa: F811 - the fixture
     """MA-4 / MB-4: the multi-account exit closes each account's own child through the ordinary exit path."""
     t, expiry, strike, _ = setup
-    p, s = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}), ("Sec", 500_000, {"role": "SECONDARY", "group_name": "G"}))
+    p, s = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}), ("Sec", 500_000, {"role": "SECONDARY", "group_name": "G", **OWN_SIZE}))
     ref = uuid.uuid4().hex
     placed = _order(t, _body(expiry, strike, lots=1, stop_loss=90.0, client_ref=ref), run_on="ALL")
     ids = [r["trade_id"] for r in placed["results"]]
@@ -158,7 +161,7 @@ def test_capital_check_alert_and_retry_of_one_account(setup):  # noqa: F811 - th
     so no not-placed alert is raised; ACCOUNT:<id> still sends to that one account."""
     from app.db.models import NotificationRecord
     t, expiry, strike, _ = setup
-    p, small = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}), ("Small", 1_000, {"role": "SECONDARY", "group_name": "G"}))
+    p, small = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}), ("Small", 1_000, {"role": "SECONDARY", "group_name": "G", **OWN_SIZE}))
     out = _order(t, _body(expiry, strike, lots=1, stop_loss=90.0, client_ref=uuid.uuid4().hex), run_on="ALL")
     rows = {r["account_id"]: r for r in out["results"]}
     assert rows[p]["status"] == "PLACED"

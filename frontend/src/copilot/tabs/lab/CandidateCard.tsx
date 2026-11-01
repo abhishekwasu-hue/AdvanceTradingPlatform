@@ -3,7 +3,7 @@ import { useState } from "react";
 import { api } from "../../../api/client";
 import { Badge, Button, type Tone } from "../../../components/primitives";
 import SampleStamp from "../../../components/SampleStamp";
-import type { StrategyCandidate } from "../../../types";
+import type { StrategyCandidate, SuggestedExits } from "../../../types";
 import { friendlyError } from "../../aiTask";
 import TiltCard from "../../components/TiltCard";
 import { useCopilotT } from "../../i18n";
@@ -15,6 +15,20 @@ import EquityCurve from "./EquityCurve";
  * exits and risk, the backtest on tuning vs unseen sessions with its equity curve, and the two human steps - accept
  * the maximum loss and save it, then start it in PAPER. Nothing here is ranked or recommended.
  */
+/** M68 PR-8 (TS1-075): the draft bot's suggested exits in words ("Intraday, time exit 15:10, break-even at 1R"). */
+export function suggestedExitsText(s: SuggestedExits | null | undefined): string {
+  if (!s) return "";
+  const parts = [s.holding === "SWING" ? "Carry forward" : "Intraday"];
+  if (s.exit_rules.time_exit_at) parts.push(`time exit ${s.exit_rules.time_exit_at}`);
+  if (s.exit_rules.break_even_at_r != null) parts.push(`break-even at ${s.exit_rules.break_even_at_r}R`);
+  return parts.join(", ");
+}
+
+/** M68 PR-8 (TS1-075): the bot carries the suggested exits only when the trader ticked "Use the draft's exits". */
+export function deploymentWith<T extends object>(deployment: T, suggested: SuggestedExits | null | undefined, use: boolean): T {
+  return use && suggested ? { ...deployment, holding: suggested.holding, exit_rules: { ...suggested.exit_rules } } : deployment;
+}
+
 const VERDICT_TONE: Record<StrategyCandidate["verdict"], Tone> = {
   robust: "up", overfit: "warn", weak: "down", insufficient: "neutral", sample: "warn", thin: "neutral", untested: "neutral",
 };
@@ -35,7 +49,8 @@ function MetricsRow({ label, m }: { label: string; m: StrategyCandidate["in_samp
 export default function CandidateCard({ c, symbol, sample }: { c: StrategyCandidate; symbol: string; sample: boolean }) {
   const t = useCopilotT();
   const [showDsl, setShowDsl] = useState(false);
-  const [saved, setSaved] = useState<{ strategy_id: string; name: string; deployment: Parameters<typeof api.createDeployment>[0] } | null>(null);
+  const [saved, setSaved] = useState<{ strategy_id: string; name: string; deployment: Parameters<typeof api.createDeployment>[0]; suggested_exits?: SuggestedExits } | null>(null);
+  const [useSuggested, setUseSuggested] = useState(false);
   const [deployed, setDeployed] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +66,8 @@ export default function CandidateCard({ c, symbol, sample }: { c: StrategyCandid
   async function deploy() {
     if (!saved) return;
     setBusy(true); setError(null);
-    try { setDeployed((await api.createDeployment(saved.deployment)).id); } catch (e) { setError(friendlyError(e, t)); } finally { setBusy(false); }
+    const suggested = saved.suggested_exits ?? c.suggested_exits;
+    try { setDeployed((await api.createDeployment(deploymentWith(saved.deployment, suggested, useSuggested))).id); } catch (e) { setError(friendlyError(e, t)); } finally { setBusy(false); }
   }
 
   const sides = (["long", "short"] as const).filter((s) => c.rules[s].length > 0);
@@ -88,6 +104,9 @@ export default function CandidateCard({ c, symbol, sample }: { c: StrategyCandid
             </div>
           )}
           <div className="text-fg-muted"><Target size={13} className="mr-1 inline text-ai" />{c.exits}</div>
+          {c.test_assumptions && c.test_assumptions.length > 0 && (
+            <div className="text-xs text-fg-muted" data-testid="test-assumptions">{t("lab.candidate.assumed")}: {c.test_assumptions.join(" · ")}</div>
+          )}
           {c.triggers.length > 0 && (
             <div className="text-fg-muted"><Crosshair size={13} className="mr-1 inline text-ai-2" />{t("lab.candidate.triggers")}: {c.triggers.map((tr) => `${tr.name} ${num(tr.price)}`).join(" · ")}</div>
           )}
@@ -132,6 +151,13 @@ export default function CandidateCard({ c, symbol, sample }: { c: StrategyCandid
         ) : deployed == null ? (
           <>
             <span className="text-xs text-up"><CheckCircle2 size={13} className="mr-1 inline" />{t("lab.candidate.saved", { id: saved.strategy_id })}</span>
+            {(saved.suggested_exits ?? c.suggested_exits) && (
+              <label className="flex items-center gap-1.5 text-xs text-fg" title={t("lab.candidate.noSuggested")}>
+                <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--ai))]" checked={useSuggested} data-testid="use-suggested-exits"
+                       onChange={(e) => setUseSuggested(e.target.checked)} />
+                {t("lab.candidate.useSuggested", { exits: suggestedExitsText(saved.suggested_exits ?? c.suggested_exits) })}
+              </label>
+            )}
             <Button size="sm" variant="primary" icon={<Rocket size={13} />} loading={busy} onClick={() => void deploy()}>{t("lab.candidate.deployPaper")}</Button>
           </>
         ) : <span className="text-xs text-up"><CheckCircle2 size={13} className="mr-1 inline" />{t("lab.candidate.deployed", { id: deployed })}</span>}

@@ -270,7 +270,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -287,7 +287,7 @@
      "low_open": false,
      "term": "lot",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -304,7 +304,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -321,7 +321,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -368,7 +368,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -385,7 +385,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -604,7 +604,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -630,7 +630,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -647,7 +647,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -677,7 +677,7 @@
      "low_open": false,
      "term": "premium",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -703,7 +703,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -720,7 +720,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -794,7 +794,7 @@
      "low_open": false,
      "term": "expiry",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -824,7 +824,7 @@
      "low_open": false,
      "term": "atm",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -841,7 +841,7 @@
      "low_open": false,
      "term": "strike",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -867,7 +867,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -884,7 +884,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -901,7 +901,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -918,7 +918,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -969,7 +969,7 @@
      "low_open": true,
      "term": "delta",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -986,7 +986,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1003,7 +1003,7 @@
      "low_open": false,
      "term": "expiry",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1020,7 +1020,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1037,7 +1037,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1054,7 +1054,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1063,13 +1063,115 @@
      "key": "options.risk_free_rate_pct",
      "label": "Risk-free rate",
      "kind": "number",
-     "help": "The interest rate used to work out the Greeks.",
+     "help": "The interest rate used to work out the Greeks. Not set: the platform's rate (shown with the Greeks).",
      "unit": "%",
      "choices": [],
      "low": 0.0,
      "high": 100.0,
      "low_open": false,
      "term": "greeks",
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.builder_pop_pct",
+     "label": "Builder: lowest chance of profit",
+     "kind": "number",
+     "help": "The options builder suggests a structure only at or above this chance of profit.",
+     "unit": "%",
+     "choices": [],
+     "low": 0.0,
+     "high": 100.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.builder_strikes_otm",
+     "label": "Builder: strikes out of the money",
+     "kind": "whole",
+     "help": "How many strikes out of the money the builder's fixed-strike spread sells.",
+     "unit": "strikes",
+     "choices": [],
+     "low": 0,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.finder_target_delta",
+     "label": "Strike finder: target delta",
+     "kind": "number",
+     "help": "The delta the strike finder looks for.",
+     "unit": "",
+     "choices": [],
+     "low": 0.0,
+     "high": 1.0,
+     "low_open": true,
+     "term": "delta",
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.finder_premium_min",
+     "label": "Strike finder: lowest premium",
+     "kind": "number",
+     "help": "The strike finder skips options priced below this.",
+     "unit": "₹",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.finder_premium_max",
+     "label": "Strike finder: highest premium",
+     "kind": "number",
+     "help": "The strike finder skips options priced above this.",
+     "unit": "₹",
+     "choices": [],
+     "low": 0.0,
+     "high": 1000000000.0,
+     "low_open": true,
+     "term": null,
+     "fact": false,
+     "wired": false,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
+     "key": "options.finder_oi_wall_strikes",
+     "label": "Strike finder: distance from an OI wall",
+     "kind": "whole",
+     "help": "How many strikes away from a large open-interest strike the finder keeps.",
+     "unit": "strikes",
+     "choices": [],
+     "low": 0,
+     "high": 1000000000.0,
+     "low_open": false,
+     "term": null,
      "fact": false,
      "wired": false,
      "scope": "user",
@@ -1124,7 +1226,7 @@
      "key": "risk_limits.overnight_short_options",
      "label": "Hold written straddles and strangles overnight",
      "kind": "switch",
-     "help": "On: written structures without wings may be carried forward.",
+     "help": "On: a bot that carries forward may also hold a written straddle or strangle (no wings) for days.",
      "unit": "",
      "choices": [],
      "low": null,
@@ -1132,76 +1234,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
-     "scope": "user",
-     "value": null,
-     "saved": false
-    },
-    {
-     "key": "risk_limits.loss_cooldown_pause_mode",
-     "label": "A losses-in-a-row pause ends",
-     "kind": "choice",
-     "help": "When new entries start again after a losses-in-a-row pause with no minutes set.",
-     "unit": "",
-     "choices": [
-      {
-       "value": "next_session",
-       "label": "At the next session"
-      },
-      {
-       "value": "until_resume",
-       "label": "When I resume"
-      }
-     ],
-     "low": null,
-     "high": null,
-     "low_open": false,
-     "term": null,
-     "fact": false,
-     "wired": false,
-     "scope": "user",
-     "value": null,
-     "saved": false
-    },
-    {
-     "key": "risk_limits.opposite_positions",
-     "label": "Two bots on opposite sides",
-     "kind": "choice",
-     "help": "Whether two of your bots may hold opposite positions in the same symbol.",
-     "unit": "",
-     "choices": [
-      {
-       "value": "allow",
-       "label": "Allowed"
-      },
-      {
-       "value": "deny",
-       "label": "Not allowed"
-      }
-     ],
-     "low": null,
-     "high": null,
-     "low_open": false,
-     "term": null,
-     "fact": false,
-     "wired": false,
-     "scope": "user",
-     "value": null,
-     "saved": false
-    },
-    {
-     "key": "risk_limits.drawdown_cut_pct",
-     "label": "Size cut at the first drawdown step",
-     "kind": "number",
-     "help": "At the first drawdown step the size is cut by this much.",
-     "unit": "%",
-     "choices": [],
-     "low": 0.0,
-     "high": 100.0,
-     "low_open": true,
-     "term": "drawdown",
-     "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1210,7 +1243,7 @@
      "key": "risk_limits.vix_gate",
      "label": "India VIX check",
      "kind": "switch",
-     "help": "On: a fast rise or a high level of India VIX pauses or cuts new entries.",
+     "help": "On: a fast rise of India VIX pauses new long entries on NIFTY, BANKNIFTY and SENSEX for the day (also when it cannot be read after the check time); a high level cuts their size. Uses your values below.",
      "unit": "",
      "choices": [],
      "low": null,
@@ -1218,7 +1251,7 @@
      "low_open": false,
      "term": "india-vix",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1235,7 +1268,7 @@
      "low_open": true,
      "term": "india-vix",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1252,7 +1285,7 @@
      "low_open": true,
      "term": "india-vix",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1269,7 +1302,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1278,7 +1311,7 @@
      "key": "risk_limits.experience_trades",
      "label": "Experience level: trades",
      "kind": "whole",
-     "help": "Closed paper trades before the next level opens.",
+     "help": "With \"Limit me by my experience level\" on: closed paper trades before naked short options open.",
      "unit": "trades",
      "choices": [],
      "low": 1,
@@ -1286,7 +1319,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1295,7 +1328,7 @@
      "key": "risk_limits.experience_sessions",
      "label": "Experience level: sessions",
      "kind": "whole",
-     "help": "Sessions traded before the next level opens.",
+     "help": "With \"Limit me by my experience level\" on: sessions with a paper trade before naked short options open.",
      "unit": "sessions",
      "choices": [],
      "low": 1,
@@ -1303,7 +1336,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1312,11 +1345,11 @@
      "key": "risk_limits.event_default_action",
      "label": "A new market event day",
      "kind": "choice",
-     "help": "What a market event day you add does to new entries.",
+     "help": "What a market event day you add does to new entries; the form starts from it.",
      "unit": "",
      "choices": [
       {
-       "value": "PAUSE",
+       "value": "BLOCK",
        "label": "Pause new entries"
       },
       {
@@ -1329,7 +1362,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1346,7 +1379,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "organisation",
      "value": null,
      "saved": false
@@ -1363,7 +1396,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "organisation",
      "value": null,
      "saved": false
@@ -1380,7 +1413,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "organisation",
      "value": null,
      "saved": false
@@ -1397,7 +1430,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "organisation",
      "value": null,
      "saved": false
@@ -1414,7 +1447,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "organisation",
      "value": null,
      "saved": false
@@ -1552,7 +1585,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1569,7 +1602,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1690,7 +1723,7 @@
      "key": "paper_account.capital",
      "label": "Starting capital",
      "kind": "number",
-     "help": "The money your paper account starts with.",
+     "help": "The money a new paper account starts with. Not set: your first paper order asks.",
      "unit": "₹",
      "choices": [],
      "low": 0.0,
@@ -1698,7 +1731,7 @@
      "low_open": true,
      "term": "paper",
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1707,7 +1740,7 @@
      "key": "paper_account.charges_model",
      "label": "Charges",
      "kind": "choice",
-     "help": "What a paper trade pays.",
+     "help": "What a paper trade pays. Not set: statutory charges only, no brokerage.",
      "unit": "",
      "choices": [
       {
@@ -1724,7 +1757,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1733,7 +1766,7 @@
      "key": "paper_account.brokerage_per_order",
      "label": "Brokerage per order",
      "kind": "number",
-     "help": "What your broker charges for one order.",
+     "help": "What your broker charges for one order; used when Charges is \"Statutory charges + my brokerage\".",
      "unit": "₹",
      "choices": [],
      "low": 0.0,
@@ -1741,7 +1774,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1750,7 +1783,7 @@
      "key": "paper_account.slippage_pct",
      "label": "Slippage",
      "kind": "number",
-     "help": "How far from the price a paper fill is counted, each side.",
+     "help": "How far from the price a paper fill is counted, each side. Not set: none.",
      "unit": "%",
      "choices": [],
      "low": 0.0,
@@ -1758,7 +1791,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false

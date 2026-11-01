@@ -48,7 +48,8 @@ def test_interview_describes_templates_the_trader_chooses_without_recommending()
     candles = [{"timestamp": ts.isoformat(), "open": r.open, "high": r.high, "low": r.low, "close": r.close, "volume": r.volume} for ts, r in df.iterrows()]
     for lang in ("en", "mr"):
         plan = client.post("/api/ai/interview/plan", headers=headers, json={
-            "answers": {"language": lang, "experience": "new", "capital": 300000, "risk": "moderate", "style": "intraday", "vehicle": "option_buy", "goal": "big_trends"},
+            "answers": {"language": lang, "experience": "new", "capital": 300000, "risk": "moderate", "style": "intraday", "vehicle": "option_buy", "goal": "big_trends",
+                        "symbol": "NIFTY 50", "instrument": "index"},
             "base_timeframe": "5min", "candles": candles, "data_source": "broker:upstox"}).json()
         # The words the trader reads (sections, warnings, option labels); the JSON key `recommended` that carries the pick
         # stays for older clients and is not shown.

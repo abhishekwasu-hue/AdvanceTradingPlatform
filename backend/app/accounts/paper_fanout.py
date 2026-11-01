@@ -106,9 +106,9 @@ async def update(session: AsyncSession, user: User, row: PaperSubAccountRecord, 
         row.enabled = enabled
         changes.append("on" if enabled else "off")
     if sizing_mode is not None or sizing_value is not None:
-        mode = (sizing_mode or row.sizing_mode).upper()
+        mode = (sizing_mode or row.sizing_mode or "").upper()
         value = row.sizing_value if sizing_value is None else float(sizing_value)
-        if mode not in fp.SIZING_MODES or value <= 0:
+        if mode not in fp.SIZING_MODES or value is None or value <= 0:
             raise FanoutRefused("Sizing is FIXED lots, MULTIPLIER of the Primary's lots or PCT_CAPITAL, with a value above zero.", "bad_sizing")
         row.sizing_mode, row.sizing_value = mode, value
         changes.append(f"sizing {mode} {value:g}")
@@ -138,7 +138,10 @@ async def place(session: AsyncSession, user: User, ask: Any, *, override: Option
         raise FanoutRefused(str(exc), "bad_override") from None
     if not route.accounts and not route.skipped:
         raise FanoutRefused("No simulated account matches: give one account the Primary role first.", "no_accounts")
-    sizing = {r.id: fp.Sizing(r.sizing_mode, r.sizing_value) for r in rows}
+    # M68 PR-2 (TS1-024): the account's own sizing, else his Trade settings > Position size > Extra paper accounts.
+    from app.execution import position_size
+    mine = await position_size.load(session, user)
+    sizing = {r.id: fp.Sizing(*position_size.fanout_sizing(mine, r.sizing_mode, r.sizing_value)) for r in rows}
     margin_per_lot: Optional[float] = None
     if route.accounts:
         # One lot's margin, the ticket's own estimate: % of capital sizing and the per-account capital check (MB-6) use

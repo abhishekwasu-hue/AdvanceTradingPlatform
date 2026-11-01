@@ -8,7 +8,7 @@ import type { ChainRow } from "../optionChain/types";
 import { formatNumber, formatPrice } from "../ui/format";
 import { basketApi, type BasketApi, type BasketAsk, type BasketEvaluation, type BasketSettings, type Product } from "./api";
 import { basket as defaultBasket, useBasket, type BasketStore, type NewLeg } from "./basket";
-import { STRATEGIES, basketAsk, legAsk, legLabel, payoffSentence, readyStrategy, type SavedState, type StrategyName } from "./basketModel";
+import { STRATEGIES, basketAsk, legAsk, legLabel, lotsProblems, payoffSentence, readyStrategy, type SavedState, type StrategyName } from "./basketModel";
 import { PracticeFrame } from "./OrderTicketV2";
 import {
   changeSide, heldAsks, heldPayoff, levelText, netPremium, oneExpiry, outcome, pnlAt, priceGrid, sentenceInput, type PayoffLeg, type PosLeg,
@@ -219,6 +219,8 @@ const SEG = "min-h-11 rounded-control px-space-3 text-t13 font-semibold";
 
 export const COMPARE_NOTE = "Nothing here places or changes an order: make any change yourself with Exit now, the order ticket or the basket.";
 
+export const COMPARE_NEEDS_SETTINGS = "Your settings are not loaded yet, so this ready strategy is not built.";
+export const COMPARE_NEEDS_LOTS = "Every leg needs its lots to compare: enter them in the basket, or save your lots in Settings › Trade settings › Position size.";
 const legWords = (side: "BUY" | "SELL", lots: number) => `${side === "BUY" ? "Long" : "Short"} ${formatNumber(lots, 0)} lot${lots === 1 ? "" : "s"}`;
 
 export function AdjustCompareV2({ open, onClose, title, legs, adjust, store = defaultBasket, api = basketApi, quotes = watchlistsV2Api.quotes }: {
@@ -320,7 +322,7 @@ export function ChangeEditor({ legs, closed, added, adjust, onToggle }: {
         ) : (
           <ul className="space-y-space-1">
             {added.map((l, i) => (
-              <li key={`${legLabel(l)}-${i}`} className="text-t13 text-fg font-tabular">{legWords(l.side, l.lots)} · {legLabel(l)} at {formatPrice(l.price)}</li>
+              <li key={`${legLabel(l)}-${i}`} className="text-t13 text-fg font-tabular">{l.lots === null ? (l.side === "BUY" ? "Long" : "Short") : legWords(l.side, l.lots)} · {legLabel(l)} at {formatPrice(l.price)}</li>
             ))}
           </ul>
         )}
@@ -341,11 +343,15 @@ export function compareChoices({ underlying, legs, saved, rows, expiry, around, 
   settings: Pick<BasketSettings, "width_steps" | "lots" | "stop_pct"> | null;
 }): Choice[] {
   const out: Choice[] = [];
-  if (legs.length) out.push({ key: "basket", name: "Your basket", legs: [...legs], problem: null });
+  // M68 PR-2: a basket whose legs have no lots yet is not compared (its numbers would need a size nobody chose)
+  const noLots = (l: readonly NewLeg[]) => (lotsProblems(l).length ? COMPARE_NEEDS_LOTS : null);
+  if (legs.length) out.push({ key: "basket", name: "Your basket", legs: [...legs], problem: noLots(legs) });
   if (expiry && around !== null && rows.length) {
     for (const name of STRATEGIES.filter((s): s is Exclude<StrategyName, "Calendar"> => s !== "Calendar")) {
-      const built = readyStrategy(name, { underlying, expiry, rows, around, settings: settings ?? { width_steps: 2, lots: 1, stop_pct: 50 } });
-      out.push({ key: `ready:${name}`, name, legs: built.legs, problem: built.problem });
+      // M68 PR-2 (TS1-023): no stand-in values while his settings are not read - the column says so
+      if (settings === null) { out.push({ key: `ready:${name}`, name, legs: [], problem: COMPARE_NEEDS_SETTINGS }); continue; }
+      const built = readyStrategy(name, { underlying, expiry, rows, around, settings });
+      out.push({ key: `ready:${name}`, name, legs: built.legs, problem: built.problem ?? noLots(built.legs) });
     }
   }
   for (const [id, s] of Object.entries(saved?.items ?? {})) {
@@ -364,7 +370,7 @@ export function basketColumn(choice: Choice, out: BasketEvaluation | null, busy:
       note: busy ? null : out && !out.ok ? out.errors[0] ?? null : "Every leg needs a price to compare." };
   }
   const legs: PayoffLeg[] = choice.legs.map((l, i) => ({ right: l.right, side: l.side, strike: l.right === "FUT" ? 0 : l.strike, price: l.price ?? 0,
-    units: l.lots * (out.lot_sizes[i] ?? 0), expiry: l.expiry }));
+    units: (l.lots ?? 0) * (out.lot_sizes[i] ?? 0), expiry: l.expiry }));       // M68 PR-2: priced only once every leg has its lots
   return { name: choice.name, legs, shift: 0, margin: marginText(out), pop: out.summary?.pop ?? null };
 }
 

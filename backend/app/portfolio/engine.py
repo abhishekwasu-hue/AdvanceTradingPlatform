@@ -95,24 +95,29 @@ def snapshot(trades: List[TradeRecord], prices: Dict[str, float], *, capital: fl
         row.risk_at_stop += r
         if t.strategy_id not in row.strategies:
             row.strategies.append(t.strategy_id)
-    cap = capital if capital > 0 else 1.0
+    # M68 PR-7: no capital known (Not set) -> no share of capital is shown (0) and no capital warning is raised from a
+    # basis nobody chose; the money figures stay.
+    known = capital > 0
+    cap = capital if known else 1.0
     for row in by_symbol.values():
-        row.pct_of_capital = round(row.notional / cap * 100.0, 2)
+        row.pct_of_capital = round(row.notional / cap * 100.0, 2) if known else 0.0
         row.notional, row.unrealised_pnl, row.risk_at_stop = round(row.notional, 2), round(row.unrealised_pnl, 2), round(row.risk_at_stop, 2)
     rows = sorted(by_symbol.values(), key=lambda r: r.notional, reverse=True)
     largest = rows[0].pct_of_capital if rows else 0.0
     warnings: List[str] = []
-    if gross > cap:
+    if not known and trades:
+        warnings.append("Shares of capital need your starting capital (Settings › Trade settings › Paper account)")
+    if known and gross > cap:
         warnings.append(f"Gross exposure {gross:,.0f} exceeds capital {cap:,.0f} (leveraged {gross / cap:.1f}x)")
     if largest > 40:
         warnings.append(f"{rows[0].symbol} is {largest:.0f}% of capital - concentration risk")
-    if risk / cap * 100 > 5:
+    if known and risk / cap * 100 > 5:
         warnings.append(f"Loss if every stop hits: {risk:,.0f} ({risk / cap * 100:.1f}% of capital)")
     return PortfolioSnapshot(
         as_of=datetime.now(timezone.utc).isoformat(), capital=capital, open_positions=len(trades),
         gross_notional=round(gross, 2), net_notional=round(net, 2), long_notional=round(long_n, 2), short_notional=round(short_n, 2),
-        gross_pct_of_capital=round(gross / cap * 100.0, 2), unrealised_pnl=round(unreal, 2), realised_today=round(realised_today, 2),
-        risk_at_stops=round(risk, 2), risk_pct_of_capital=round(risk / cap * 100.0, 2), largest_symbol_pct=largest,
+        gross_pct_of_capital=round(gross / cap * 100.0, 2) if known else 0.0, unrealised_pnl=round(unreal, 2), realised_today=round(realised_today, 2),
+        risk_at_stops=round(risk, 2), risk_pct_of_capital=round(risk / cap * 100.0, 2) if known else 0.0, largest_symbol_pct=largest,
         by_symbol=rows, by_strategy={k: round(v, 2) for k, v in by_strategy.items()}, by_mode={k: round(v, 2) for k, v in by_mode.items()},
         warnings=warnings,
     )

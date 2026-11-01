@@ -260,7 +260,9 @@ async def backtest_draft(draft_id: int, body: DraftBacktestBody, user: User = De
         bars = await bar_source.resolve(session, user.tenant_id, body.symbol, body.exchange, body.base_timeframe,
                                         broker=body.broker, lookback_days=body.lookback_days, user=user)
         df, source, prices = bars.frame, bars.source, bars.info()
-    result = run_backtest(copy.copy(strategy), df, body.symbol.upper(), body.base_timeframe, risk)
+    from app.paper import paper_settings  # M68 PR-7 (TS1-066): his capital and paper charges (parity)
+    risk, charges = await paper_settings.backtest_inputs(session, user, risk)
+    result = run_backtest(copy.copy(strategy), df, body.symbol.upper(), body.base_timeframe, risk, charges=charges)
     headline = {k: getattr(result, k, None) for k in ("total_trades", "win_rate", "net_pnl", "max_drawdown", "profit_factor", "expectancy", "gross_pnl", "total_charges")}
     headline["analytics"] = result.analytics
     run = BacktestRunRecord(tenant_id=user.tenant_id, user_id=user.id, strategy_id=f"ai_draft_{draft.id}", symbol=body.symbol.upper(),
@@ -353,12 +355,20 @@ def _check_timeframe(body: InterviewPlanBody) -> None:
         raise HTTPException(status_code=400, detail=f"Use intraday candles for the interview, not {body.base_timeframe!r}")
 
 
+def _read_symbol(body: InterviewPlanBody) -> str:
+    """M68: the symbol whose candles the plan reads - asked for, never a pre-chosen one."""
+    symbol = body.symbol or body.answers.symbol
+    if not symbol:
+        raise HTTPException(status_code=422, detail=interview.needs_setting_detail(["symbol"]))
+    return symbol
+
+
 async def _df_for(session: AsyncSession, user: User, body: InterviewPlanBody):
     """(frame, data_source): posted candles are a sample; otherwise the server fetches them (H-C1 a)."""
     _check_timeframe(body)
+    symbol = _read_symbol(body)
     if body.candles:
         return interview.frame_from_candles(body.candles[-interview.MAX_BARS:]), evidence.client_source(body.data_source)
-    symbol = body.symbol or body.answers.symbol
     bars = await bar_source.resolve(session, user.tenant_id, symbol, body.exchange, body.base_timeframe, broker=body.broker,
                                     lookback_days=body.lookback_days or 30, user=user)     # owner order 23 Oct (intraday: broker)
     return bars.frame.tail(interview.MAX_BARS), bars.source
@@ -368,11 +378,11 @@ async def _options(session: AsyncSession, user: User, answers: interview.Intervi
                    body: InterviewPlanBody) -> dict:
     from app.platform.controls import risk_ceilings
     df, data_source = await _df_for(session, user, body)
-    ceilings = await risk_ceilings(session)
+    ceilings = await risk_ceilings(session, user.tenant_id)
     memory = await market_memory.latest(session, user.tenant_id)   # Phase AR: background for the plan
     # The evidence step walks strategies bar by bar (seconds of CPU): off the event loop.
     result = await run_in_threadpool(advisor.build_options, answers, prefs, df, body.base_timeframe, ceilings=ceilings,
-                                     data_source=data_source, memory=memory)
+                                     data_source=data_source, memory=memory, read_symbol=_read_symbol(body))
     await advisor.save_profile(session, user, answers, advisor.Preferences.model_validate(result["preferences"]))
     # P0.8 / A3: each option's deployment is held on the server; "Deploy in PAPER" takes the candidate id and the
     # trader's risk acceptance, never the browser's copy of the plan.
@@ -381,11 +391,12 @@ async def _options(session: AsyncSession, user: User, answers: interview.Intervi
         pick = option.get("recommended") or {}
         if not option.get("deployment"):
             continue
-        row = AiCandidateRecord(tenant_id=user.tenant_id, user_id=user.id, source="interview", symbol=str(option["deployment"].get("symbol") or answers.symbol).upper(),
+        row = AiCandidateRecord(tenant_id=user.tenant_id, user_id=user.id, source="interview", symbol=str(option["deployment"].get("symbol") or _read_symbol(body)).upper(),
                                 name=str(pick.get("name") or option["deployment"].get("strategy_id") or "interview plan")[:120],
                                 strategy_id=option["deployment"].get("strategy_id"), config_json=None,
                                 metrics_json=json.dumps({"evidence": pick.get("evidence"), "regime_fit": pick.get("regime_fit"), "score": pick.get("score"),
-                                                         "option": option.get("option"), "data_source": data_source}, default=str),
+                                                         "option": option.get("option"), "data_source": data_source,
+                                                         "unanswered": interview.unanswered(answers)}, default=str),
                                 deployment_json=json.dumps(option["deployment"], default=str), risk_json=json.dumps(option.get("risk_config") or {}, default=str),
                                 expires_at=now + CANDIDATE_TTL, created_at=now)
         session.add(row)
@@ -403,6 +414,9 @@ CANDIDATE_TTL = timedelta(days=7)
 class CandidateDeployBody(BaseModel):
     candidate_id: int
     accept_risk: bool = Field(default=False, description="P0.8 / A3: the human confirms the maximum loss per trade before anything runs")
+    # M68 PR-8 (TS1-077): the plan's own contract picks (expiry, strike, structure, width, credit levels) are suggestions;
+    # a deploy carries them only when the trader accepts them here.
+    accept_suggested: bool = False
 
 
 async def _candidate(session: AsyncSession, candidate_id: int, user: User, source: str) -> AiCandidateRecord:
@@ -432,6 +446,11 @@ async def interview_deploy(body: CandidateDeployBody, user: User = Depends(requi
     await require_flag(session, "ai_copilot", user.tenant_id)
     row = await _candidate(session, body.candidate_id, user, "interview")
     metrics = json.loads(row.metrics_json or "{}")
+    payload = json.loads(row.deployment_json or "{}")
+    # M68: a bot is never created from an answer he did not give - each unanswered one is asked for by name.
+    missing = set(metrics.get("unanswered") or []) | ({"symbol"} if not payload.get("symbol") else set())
+    if missing:
+        raise HTTPException(status_code=422, detail=interview.needs_setting_detail([k for k in interview.REQUIRED_ANSWERS if k in missing]))
     evidence.require_server(metrics.get("data_source"), "Deploying an interview option")      # H-C1 a
     tested = (metrics.get("evidence") or {})
     if not tested.get("tested") or int(tested.get("total_trades") or 0) <= 0:
@@ -439,7 +458,9 @@ async def interview_deploy(body: CandidateDeployBody, user: User = Depends(requi
     risk = json.loads(row.risk_json or "{}")
     if not body.accept_risk:
         raise HTTPException(status_code=400, detail=f"Confirm that you accept {_risk_statement(risk)} before deploying (accept_risk)")
-    payload = json.loads(row.deployment_json or "{}")
+    suggested = interview.suggested_contract(payload)
+    if suggested and not body.accept_suggested:
+        raise HTTPException(status_code=400, detail=f"The plan's own picks need your acceptance before a deploy (accept_suggested): {interview.suggested_text(suggested)}"[:600])
     payload["mode"] = "PAPER"
     request = DeploymentCreateRequest(**payload)
     created = await create_deployment(request, user=user, session=session, session_id=session_id)
@@ -1024,7 +1045,8 @@ async def ask_copilot(body: CopilotBody, user: User = Depends(require_ai_acknowl
 # --- Phase AW the strategist: live market study -> validated strategies ----------------------------------
 
 class StrategistBody(BaseModel):
-    symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)
+    # M68 PR-8 (TS1-098): no pre-chosen symbol - the field, or a symbol named in `request`; neither = asked (422).
+    symbol: str | None = Field(default=None, min_length=1, max_length=50)
     exchange: str = Field(default="NSE", max_length=10)
     broker: Optional[str] = Field(default=None, max_length=20)
     candles: Optional[List[OHLCVBar]] = Field(default=None, description="1-minute candles (sample mode); omitted = fetched from your broker")
@@ -1036,6 +1058,12 @@ class StrategistBody(BaseModel):
     request: Optional[str] = Field(default=None, max_length=300)
 
     def resolved(self) -> Tuple["StrategistBody", Optional[dict]]:
+        effective, parsed = self._resolved()
+        if not effective.symbol:
+            raise HTTPException(status_code=422, detail="Needs your setting: the symbol to study")
+        return effective, parsed
+
+    def _resolved(self) -> tuple["StrategistBody", dict | None]:
         if not (self.request or "").strip():
             return self.model_copy(update={"language": AI_LANGUAGE}), None
         parsed = strategist.parse_request(self.request, default_symbol=self.symbol)
@@ -1050,7 +1078,7 @@ class StrategistBody(BaseModel):
 
 class StrategistParseBody(BaseModel):
     request: str = Field(min_length=1, max_length=300)
-    symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)
+    symbol: str | None = Field(default=None, min_length=1, max_length=50)     # M68 PR-8: none pre-chosen
     language: str = Field(default="en", pattern=r"^(en|mr)$")
 
 
@@ -1066,7 +1094,7 @@ async def _strategist_frames(session: AsyncSession, user: User, body: Strategist
     from app.market_data import live_access
     from app.market_data.reader_credential import credential_for_reader
     from app.market_data.service import MarketDataService
-    symbol, exchange = body.symbol.strip().upper(), body.exchange.strip().upper()
+    symbol, exchange = (body.symbol or "").strip().upper(), body.exchange.strip().upper()
     stored = stored_day = None
     if await evidence.store_on(session, user.tenant_id):
         stored = await evidence.store_frame(session, user.tenant_id, symbol, exchange, "1min", lookback_days=12, user=user,
@@ -1236,6 +1264,7 @@ async def strategist_adopt(body: AdoptBody, user: User = Depends(require_trader)
     await session.commit()
     strategy_id = f"custom:{record.id}"
     return {"strategy_id": strategy_id, "name": config.name, "candidate_id": candidate.id, "compliance": report.as_dict(),
-            "deployment": {"strategy_id": strategy_id, "symbol": candidate.symbol, "exchange": "NSE", "timeframe": config.timeframe,
-                           "mode": "PAPER", "holding": "INTRADAY", "exit_rules": {"time_exit_at": "15:10", "break_even_at_r": 1.0}}}
+            # M68 PR-8 (TS1-075): the bot carries only what the trader picked; the draft's exits are suggested apart.
+            "deployment": {"strategy_id": strategy_id, "symbol": candidate.symbol, "timeframe": config.timeframe, "mode": "PAPER"},
+            "suggested_exits": strategist.suggested_exits()}
 

@@ -4,8 +4,11 @@ S1: run_backtest takes the worker's INTRADAY rules from the same venue clock (ma
 entry once a bar closes at / after the cut-off (NSE 15:00) and the square-off at the square-off time (NSE 15:15), so a test
 never holds an intraday trade overnight. A daily-only (SWING) strategy is untouched; a 24x7 / MCX venue keeps its own clock.
 S2: on the bar where a time exit fires, a stop inside that bar exits at the stop; the time exit takes the close otherwise.
+
+M68 PR-3 (D1): the cut-off and the square-off are now the USER's own (Trade settings, passed as `cutoffs`); these tests run
+as a user who saved the old NSE times (SAVED); with nothing saved there is neither (the last two tests).
 """
-from datetime import timedelta
+from datetime import time, timedelta
 
 import pandas as pd
 
@@ -16,6 +19,7 @@ from app.trading.exit_rules import ExitRules
 
 CFG = RiskConfig(capital=100_000, risk_per_trade_pct=1.0)
 STOP_GAP = 2.0
+SAVED = (None, time(15, 0), time(15, 15))        # M68 PR-3: a user who saved "new entries until 15:00" and "square-off 15:15"
 
 
 class _LongAt:
@@ -56,26 +60,26 @@ def _days(*spans: tuple[str, int]) -> pd.DataFrame:
 
 def test_a_signal_on_the_bar_closing_at_1505_is_not_entered():
     df = _flat("2026-10-26 14:30", 50)                                   # 14:30 .. 15:19
-    late = run_backtest(_LongAt("2026-10-26 15:04"), df, "NIFTY", "1min", CFG)   # that bar closes 15:05
+    late = run_backtest(_LongAt("2026-10-26 15:04"), df, "NIFTY", "1min", CFG, cutoffs=SAVED)   # that bar closes 15:05
     assert late.total_trades == 0
 
 
 def test_a_signal_before_the_cut_off_is_entered():
     df = _flat("2026-10-26 14:30", 50)
-    early = run_backtest(_LongAt("2026-10-26 14:58"), df, "NIFTY", "1min", CFG)  # closes 14:59
+    early = run_backtest(_LongAt("2026-10-26 14:58"), df, "NIFTY", "1min", CFG, cutoffs=SAVED)  # closes 14:59
     assert early.total_trades == 1
 
 
 def test_the_bar_closing_exactly_at_the_cut_off_takes_no_entry():
     df = _flat("2026-10-26 14:30", 50)
-    assert run_backtest(_LongAt("2026-10-26 14:59"), df, "NIFTY", "1min", CFG).total_trades == 0   # closes 15:00
+    assert run_backtest(_LongAt("2026-10-26 14:59"), df, "NIFTY", "1min", CFG, cutoffs=SAVED).total_trades == 0   # closes 15:00
 
 
 # ---- S1: the square-off ----------------------------------------------------------------------------------------------------
 
 def test_an_open_intraday_trade_is_closed_at_1515():
     df = _flat("2026-10-26 14:00", 80)                                   # 14:00 .. 15:19, nothing hits the stop
-    result = run_backtest(_LongAt("2026-10-26 14:10"), df, "NIFTY", "1min", CFG)
+    result = run_backtest(_LongAt("2026-10-26 14:10"), df, "NIFTY", "1min", CFG, cutoffs=SAVED)
     trade = result.trades[0]
     assert trade.exit_reason == "Square-off (15:15 IST)"
     assert pd.Timestamp(trade.exit_time) == pd.Timestamp("2026-10-26 15:15", tz="Asia/Kolkata")
@@ -84,7 +88,7 @@ def test_an_open_intraday_trade_is_closed_at_1515():
 
 def test_a_test_never_holds_an_intraday_trade_overnight_when_the_data_skips_the_close():
     df = _days(("2026-10-26 14:00", 45), ("2026-10-27 09:15", 30))       # day 1 ends 14:44: no square-off bar
-    result = run_backtest(_LongAt("2026-10-26 14:10"), df, "NIFTY", "1min", CFG)
+    result = run_backtest(_LongAt("2026-10-26 14:10"), df, "NIFTY", "1min", CFG, cutoffs=SAVED)
     trade = result.trades[0]
     assert trade.exit_reason == "Square-off (15:15 IST)"
     assert pd.Timestamp(trade.exit_time) == pd.Timestamp("2026-10-27 09:15", tz="Asia/Kolkata")   # the next bar's open
@@ -98,8 +102,22 @@ def test_a_daily_swing_strategy_is_not_squared_off():
 
 def test_the_venue_clock_follows_the_symbol_mcx_trades_past_1500():
     df = _flat("2026-10-26 14:30", 60)
-    result = run_backtest(_LongAt("2026-10-26 15:04"), df, "GOLD", "1min", CFG)   # MCX: cut-off 23:00, square-off 23:15
+    result = run_backtest(_LongAt("2026-10-26 15:04"), df, "GOLD", "1min", CFG,
+                          cutoffs=(None, time(23, 0), time(23, 15)))       # his MCX times: cut-off 23:00, square-off 23:15
     assert result.total_trades == 1 and result.trades[0].exit_reason == "End of backtest"
+
+
+def test_m68_nothing_saved_no_cut_off_and_no_square_off():
+    """M68 PR-3 (D1): with no time of his own the 15:04 signal is entered and nothing squares it off (live does the same)."""
+    df = _flat("2026-10-26 14:30", 50)                                   # 14:30 .. 15:19
+    result = run_backtest(_LongAt("2026-10-26 15:04"), df, "NIFTY", "1min", CFG)
+    assert result.total_trades == 1 and result.trades[0].exit_reason == "End of backtest"
+
+
+def test_m68_his_own_window_start_holds_back_an_early_entry():
+    df = _flat("2026-10-26 14:30", 50)
+    assert run_backtest(_LongAt("2026-10-26 14:40"), df, "NIFTY", "1min", CFG, cutoffs=(time(14, 45), None, None)).total_trades == 0
+    assert run_backtest(_LongAt("2026-10-26 14:50"), df, "NIFTY", "1min", CFG, cutoffs=(time(14, 45), None, None)).total_trades == 1
 
 
 # ---- S2: the stop before a time exit on the same bar ---------------------------------------------------------------------
@@ -129,5 +147,5 @@ def test_without_a_stop_inside_the_bar_the_time_exit_takes_the_close():
 
 def test_a_stop_inside_the_square_off_bar_exits_at_the_stop():
     df = _stop_inside(_flat("2026-10-26 14:00", 80), "2026-10-26 15:14")
-    trade = run_backtest(_LongAt("2026-10-26 14:10"), df, "NIFTY", "1min", CFG).trades[0]
+    trade = run_backtest(_LongAt("2026-10-26 14:10"), df, "NIFTY", "1min", CFG, cutoffs=SAVED).trades[0]
     assert trade.exit_reason == "Stop Loss"

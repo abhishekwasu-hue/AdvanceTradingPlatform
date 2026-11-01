@@ -107,7 +107,7 @@ class OrderBody(BaseModel):
     strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)   # None for a future
     right: Literal["CE", "PE", "FUT"]
     side: Literal["BUY", "SELL"]
-    lots: int = Field(ge=1, le=fno_ticket.MAX_LOTS)
+    lots: int = Field(ge=1)
     # M68 PR-1 (TS1-002): not sent = his Trade settings; Not set there either = the ticket asks ("Choose ..." + `missing`).
     order_type: Literal["MARKET", "LIMIT", "SL", "SL-M"] | None = None
     product: Literal["MIS", "NRML"] | None = None
@@ -278,7 +278,7 @@ class GroupExitBody(BaseModel):
     target_value: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     spot_symbol: Optional[str] = Field(default=None, pattern=SYMBOL)
     spot_exchange: Optional[Literal["NSE", "BSE"]] = None
-    check_mode: Literal["TOUCH", "CLOSE"] = "TOUCH"
+    check_mode: Literal["TOUCH", "CLOSE"] | None = None     # M68 PR-3 (TS1-031): None = his setting, else asked
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
     basket_ref: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9:_-]{1,64}$")
     client_ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
@@ -300,11 +300,13 @@ async def _group_ask(session: AsyncSession, user: User, body: GroupExitBody) -> 
     from app.execution import group_exits
     ids = await group_exits.all_open_ids(session, user) if body.scope == "ALL_OPEN" else list(body.trade_ids)
     kind, spec = body.trailing.as_tuple() if body.trailing is not None else (group_exits.TRAIL_NONE, None)
-    return group_exits.GroupExitAsk(client_ref=f"cx:{body.client_ref}", trade_ids=ids, measure=body.measure,
-                                    sl_value=body.sl_value, target_value=body.target_value, spot_symbol=body.spot_symbol,
-                                    spot_exchange=body.spot_exchange, check_mode=body.check_mode,
-                                    timeframe_minutes=body.timeframe_minutes, scope=body.scope, origin="CX",
-                                    basket_ref=body.basket_ref, trail_kind=kind, trail=spec)
+    from app.execution import exit_settings
+    ask = group_exits.GroupExitAsk(client_ref=f"cx:{body.client_ref}", trade_ids=ids, measure=body.measure,
+                                   sl_value=body.sl_value, target_value=body.target_value, spot_symbol=body.spot_symbol,
+                                   spot_exchange=body.spot_exchange, check_mode=body.check_mode,
+                                   timeframe_minutes=body.timeframe_minutes, scope=body.scope, origin="CX",
+                                   basket_ref=body.basket_ref, trail_kind=kind, trail=spec)
+    return group_exits.resolve_check_mode(ask, (await exit_settings.load(session, user)).combined_check_mode)
 
 
 async def _lookup(session: AsyncSession, user: User) -> Any:
@@ -430,7 +432,7 @@ class BasketLeg(BaseModel):
     strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)   # None for a future (FNO-3)
     right: Literal["CE", "PE", "FUT"]
     side: Literal["BUY", "SELL"]
-    lots: int = Field(ge=1, le=fno_ticket.MAX_LOTS)
+    lots: int = Field(ge=1)
     price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     iv: Optional[float] = Field(default=None, gt=0, lt=5, allow_inf_nan=False)
@@ -491,7 +493,8 @@ async def basket_evaluate(body: EvaluateBody, user: User = Depends(get_current_u
     if body.spot is None:
         raise HTTPException(status_code=422, detail="The underlying's price (spot) is needed for the payoff.")
     legs = body.asks()
-    out = await fno_basket.evaluate(session, legs, body.spot)
+    from app.option_chain.chain_view import risk_free_rate_for
+    out = await fno_basket.evaluate(session, legs, body.spot, rate=await risk_free_rate_for(session, user))   # M68 PR-4 (TS1-102)
     if not out.get("ok") or not (body.with_open or body.margin_pair):
         return out
     from app.paper import fno_term
@@ -619,7 +622,7 @@ REF = r"^[A-Za-z0-9-]{8,64}$"
 
 class ExitPartBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    lots: int = Field(ge=1, le=fno_ticket.MAX_LOTS * 10)
+    lots: int = Field(ge=1)
     client_ref: str = Field(pattern=REF)
     confirm: bool = False
 
@@ -636,7 +639,7 @@ class ModifyBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     trigger_price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
-    lots: Optional[int] = Field(default=None, ge=1, le=fno_ticket.MAX_LOTS)
+    lots: int | None = Field(default=None, ge=1)
     level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     spot_level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
 

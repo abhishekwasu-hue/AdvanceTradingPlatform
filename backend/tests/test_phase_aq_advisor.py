@@ -33,7 +33,8 @@ def test_desired_is_the_traders_own_answer_whatever_the_feedback():
 
 
 def test_three_options_each_a_deployable_plan_without_a_match_score():
-    a = InterviewAnswers(language="en", experience="learning", risk="moderate", vehicle="option_buy")
+    a = InterviewAnswers(language="en", experience="learning", risk="moderate", vehicle="option_buy",
+                         symbol="NIFTY 50", instrument="index", style="intraday")     # M68: all his own answers
     r = ad.build_options(a, ad.Preferences(), _sessions(days=6), "5min")
     assert [o["option"]["id"] for o in r["options"]] == ["safe", "balanced", "active"]
     safe, balanced, active = r["options"]
@@ -53,7 +54,7 @@ def test_three_options_each_a_deployable_plan_without_a_match_score():
 
 
 def test_rejected_strategies_are_not_offered_again():
-    a = InterviewAnswers(language="en", experience="learning")
+    a = InterviewAnswers(language="en", experience="learning", symbol="NIFTY 50", style="intraday")
     first = ad.build_options(a, ad.Preferences(), _sessions(days=6), "5min")
     gone = first["options"][1]["recommended"]["strategy_id"]
     _, p, _ = ad.apply_feedback(a, ad.Preferences(), ["dislike_strategy"], gone, "balanced")
@@ -76,7 +77,7 @@ def test_simplicity_feedback_raises_the_match_of_a_trend_strategy():
 def test_plan_refine_choose_and_profile_endpoints():
     headers = {"Authorization": f"Bearer {_register('advisor@example.com')}"}
     candles = _bars(_sessions(days=5))
-    answers = {"language": "mr", "experience": "new", "capital": 200000, "style": "intraday", "vehicle": "option_buy"}
+    answers = {"language": "mr", "experience": "new", "capital": 200000, "style": "intraday", "vehicle": "option_buy", "symbol": "NIFTY 50", "instrument": "index"}
     assert client.post("/api/ai/interview/start", headers=headers, json={"prompt": ""}).json()["profile"] is None
 
     plan = client.post("/api/ai/interview/plan", headers=headers, json={"answers": answers, "candles": candles, "data_source": "broker:upstox"})

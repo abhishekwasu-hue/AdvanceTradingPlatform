@@ -262,6 +262,7 @@ export interface OptionBacktestConfig {
   strike_rule?: StrikeRule;
   strike_offset?: number;
   spread_width?: number;
+  ratio_shorts?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
   underlying_breach_exit?: boolean | null;   // DEF-0: the trader's own underlying-level exit (off unless set)
@@ -458,8 +459,12 @@ export interface RiskConfig {
   dd_level_1_pct: number | null;
   dd_level_2_pct: number | null;
   event_size_cut_pct: number | null;
-  /** CP6-15: when the losses-in-a-row pause ends (the server's default is "next_session"). */
-  loss_streak_pause?: LossStreakPause;
+  /** M68 PR-5 (TS1-054): how much the first drawdown step cuts the size, % (null = not set: no cut). */
+  dd_cut_pct?: number | null;
+  /** CP6-15: when the losses-in-a-row pause ends. M68 PR-5 (TS1-051): null = Not set (no built-in choice). */
+  loss_streak_pause?: LossStreakPause | null;
+  /** M68 PR-5 (TS1-052): opposite positions of two bots; null = Not set (allowed). */
+  opposite_positions?: "allow" | "deny" | null;
 }
 
 export type LossStreakPause = "next_session" | "until_resume";
@@ -477,7 +482,8 @@ export interface LossStreakStatus {
   exits_blocked: false;
 }
 
-export type RiskCeilings = Record<string, number>;
+/** M68 PR-5 (TS1-048): only the ceilings an admin set ({} = none); the admin's own view lists every key, null = not set. */
+export type RiskCeilings = Record<string, number | null>;
 
 export interface MarketEvent {
   id: number;
@@ -1130,6 +1136,8 @@ export interface ContractRules {
   strike_filters?: StrikeFilters | null;
   option_strategy?: OptionStrategy;
   spread_width?: number;
+  /** M68 PR-4 (TS1-042): a ratio spread's own sold legs per bought leg. */
+  ratio_shorts?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
   underlying_breach_exit?: boolean | null;   // DEF-0: the trader's own underlying-level exit (off unless set)
@@ -1203,8 +1211,9 @@ export interface DeploymentCreateRequest extends ContractRules {
   entry_mode?: "AUTO" | "APPROVAL";
   strategy_id: string;
   symbol: string;
-  exchange: string;
-  timeframe: string;
+  /** M68 PR-8 (TS1-099): not sent = the symbol's own exchange and the strategy's own smallest candle (the server's facts). */
+  exchange?: string | null;
+  timeframe?: string | null;
   mode: ExecutionMode;
   broker_name?: string | null;
   broker_account_id?: number | null;
@@ -2362,7 +2371,7 @@ export interface InterviewStart {
   /** P0.10: the Marathi line under the intro. */
   intro_mr?: string;
   /** Phase AQ: what the Copilot remembers from last time (null on a first visit). */
-  profile: { answers: Record<string, string | number>; preferences: InterviewPreferences } | null;
+  profile: { answers: Record<string, string | number | null>; preferences: InterviewPreferences } | null;
 }
 // Phase AQ: options, feedback and the remembered profile.
 export interface InterviewPreferences {
@@ -2399,7 +2408,12 @@ export interface InterviewCandidate {
 }
 export interface InterviewPlan {
   language: "en" | "mr";
-  answers: Record<string, string | number>;
+  /** M68 PR-8 (TS1-077): the plan's own contract picks; a deploy carries them only once the trader accepts them. */
+  suggested?: SuggestedValue[];
+  /** M68: an answer he did not give comes back as null ("Not set"), never a pre-chosen value. */
+  answers: Record<string, string | number | null>;
+  /** M68 PR-8b: the required answers (symbol, instrument, vehicle, style) not yet given; a deploy asks for each one. */
+  unanswered?: string[];
   market: { last_price: number; bias: "BULLISH" | "BEARISH" | "NEUTRAL"; regime: Regime; higher_regime: Regime; higher_timeframe: string; work_timeframe: string; today: { change_pct: number; trend: string } };
   recommended: InterviewCandidate | null;
   alternatives: InterviewCandidate[];
@@ -2600,6 +2614,10 @@ export interface SimMetrics {
 export interface StrategyCandidate {
   id: string; name: string; family: string; direction: "LONG" | "SHORT" | "BOTH"; timeframe: string; why: string;
   params: Record<string, unknown>; rules: { long: string[]; short: string[] }; exits: string;
+  /** M68 PR-8 (TS1-075): what the simulation assumed (shown with the evidence, never applied to a bot). */
+  test_assumptions?: string[];
+  /** M68 PR-8 (TS1-075): the draft bot's exits - sent with the bot only when the trader ticks "Use the draft's exits". */
+  suggested_exits?: SuggestedExits;
   // Phase BF: the same rules in plain English words, the direction and timeframe in words, a one-line summary.
   rules_text?: { long: string[]; short: string[] }; direction_text?: string; timeframe_text?: string; summary?: string;
   triggers: { name: string; price: number }[]; stop_points: number | null; risk_amount: number; quantity_hint: number | null;
@@ -2734,10 +2752,14 @@ export interface PaperNotTaken {
 
 /** Z3-b: the caller's own PAPER account (GET /api/paper/account; 404 while the `paper_account` flag is off). */
 export interface PaperAccount {
-  user_id: number; mode: "PAPER"; starting_capital: number; balance: number; equity: number;
+  /** M68 PR-7: null = his starting capital is Not set (the balance and equity need it); `capital_saved`: he chose it. */
+  user_id: number; mode: "PAPER"; starting_capital: number | null; balance: number | null; equity: number | null;
+  capital_saved?: boolean; capital_needed?: boolean;
+  /** M68 PR-7: what a new paper trade pays, his own setting in words (Not set: statutory charges only). */
+  charges_model?: { brokerage_per_order: number; slippage_pct: number; with_brokerage: boolean; words: string };
   realised: { gross: number; charges: number; net: number }; unrealised: number;
   closed_trades: number; open_positions: number; wins: number; losses: number; win_rate: number | null; sessions: number;
-  max_drawdown: number; max_drawdown_pct: number; paused: boolean; paused_reason: string | null;
+  max_drawdown: number; max_drawdown_pct: number | null; paused: boolean; paused_reason: string | null;
   /** Trades priced from the user's own inputs (console candles) - left out of every figure here. */
   excluded_trades: number;
   positions: PaperTradeRow[]; journal: PaperTradeRow[]; not_taken: PaperNotTaken[];
@@ -2837,7 +2859,15 @@ export interface ContextEvent { date: string; start_time: string | null; end_tim
 export interface ContextPanel { tiles: Record<string, ContextTile>; order: string[]; as_of: string; note: string }
 
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */
+/** M68 PR-8 (TS1-075): a strategist draft's suggested exits (holding and exit rules), applied only on the trader's tick. */
+export interface SuggestedExits { holding: "INTRADAY" | "SWING"; exit_rules: { time_exit_at?: string | null; break_even_at_r?: number | null } }
+
+/** M68 PR-8 (TS1-077): one value an interview plan picked for the trader (not his answer). */
+export interface SuggestedValue { key: string; label: string; value: string }
+
 export interface PaperLadder {
+  /** M68 PR-8 (TS1-083): the targets are suggested milestones; they lock nothing. */
+  targets_note?: string;
   stage: string;
   stages: { key: string; label: string; status: "current" | "locked" | "done"; note?: string }[];
   criteria: LadderCriterion[]; met: number; measured: number;
@@ -2855,7 +2885,7 @@ export interface TicketCostLine {
 }
 
 export interface TicketSizing {
-  capital_basis: number; risk_per_trade_pct: number; risk_per_trade_amount: number; user_cap: number | null; org_cap: number;
+  capital_basis: number | null; risk_per_trade_pct: number; risk_per_trade_amount: number; user_cap: number | null; org_cap: number;
   binding: string; size_multiplier: number; cap: number; override_cap: number; lot_size: number; risk_per_unit: number;
   suggested_quantity: number; suggested_lots: number; quantity: number; lots: number | null; risk_amount: number;
   risk_pct_of_capital: number | null; gauge: number | null; within_cap: boolean; override: boolean; gauge_zone: "ok" | "override" | "over";
@@ -2912,7 +2942,8 @@ export interface PaperRiskStatus {
   pending: { values: Partial<Record<keyof RiskByDefaultSettings, number | null>>; from: string } | null;
   bounds: Record<keyof RiskByDefaultSettings, [number, number]>; labels: Record<keyof RiskByDefaultSettings, string>;
   /** amount null: no cap of his own (TT-12); the organisation's risk per trade still sizes the entry. */
-  capital_basis: number; risk_cap: { amount: number | null; binding: string | null; by_pct: number | null };
+  /** M68 PR-7: null = his starting capital is Not set (a % limit cannot be measured: `risk_cap.needs_capital`). */
+  capital_basis: number | null; risk_cap: { amount: number | null; binding: string | null; by_pct: number | null; needs_capital?: boolean };
   today: { realised: number; open_marks: number; pnl: number; worst: number; limit: number; used: number | null; entries: number; max_entries: number };
   lockout: { kind: string; reason: string; pnl: number; limit: number; locked_at: string; until: string } | null;
   overrides: { today: number; total: number }; override_max_multiple: number; override_min_reason_chars: number;

@@ -23,6 +23,7 @@ from app.backtest.options_engine import OptionBacktestConfig, run_option_backtes
 from app.backtest.repro import result_hash
 from app.core.enums import OptionPosition, OptionStrategy, SignalDirection
 from app.core.models import RiskConfig
+from app.execution.paper_charges import PaperCharges
 from app.market_data.calendar import IST
 from app.option_chain.greeks import BSInputs, black_scholes
 from app.option_chain.models import OptionType
@@ -34,6 +35,7 @@ from tests.test_n7_c2b_models import _bars
 from tests.test_phase_w_option_backtest import _frame, _OneShot
 
 RISK = RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0)
+PRE_M68_CHARGES = PaperCharges(brokerage_per_order=20.0, slippage_pct=0.02)   # M68 PR-7: the recorded goldens ran at the former ₹20 / 0.02 % - a trader who saved them
 OPTION_GOLDEN = {   # the option engine before C2c (claude/n7-c2b), default models
     "bull_put": "sha256:c8505a512499dbe96d1fc5f60d48aca84bfd4921d098b4fce1fe91989100a361",
     "single_buy": "sha256:5b18c602f61681c3121dcf790b6de436052075aa941da9ddfefac3dc34560c16",
@@ -63,8 +65,8 @@ def _golden_hash(result):
 @pytest.mark.parametrize("case", sorted(CASES))
 def test_option_engine_defaults_are_byte_identical(case):
     cfg, direction = CASES[case]
-    assert _golden_hash(run_option_backtest(_OneShot(direction), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg)) == OPTION_GOLDEN[case]
-    again = run_option_backtest(_OneShot(direction), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg, models=ModelSet())
+    assert _golden_hash(run_option_backtest(_OneShot(direction), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg, charges=PRE_M68_CHARGES)) == OPTION_GOLDEN[case]
+    again = run_option_backtest(_OneShot(direction), _frame(24500, 24800), "NIFTY 50", "1min", RISK, cfg, models=ModelSet(), charges=PRE_M68_CHARGES)
     assert _golden_hash(again) == OPTION_GOLDEN[case] and again.execution is None
 
 

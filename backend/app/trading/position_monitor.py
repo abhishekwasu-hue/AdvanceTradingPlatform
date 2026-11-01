@@ -40,7 +40,6 @@ from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord
 from app.db.savepoint import guarded
 from app.execution import approval as approval_policy
-from app.execution.paper_broker import PaperBroker
 from app.execution.products import product_for_trade
 from app.execution.tagging import LEG_EXIT, build_order_tag, client_order_id, has_client_id
 from app.instruments.master import INDEX_EXCHANGE, underlying_of
@@ -1064,7 +1063,11 @@ async def close_position(
 
     direction_sign = 1 if trade.direction == "LONG" else -1
     gross_pnl = direction_sign * (realised_price - trade.entry_price) * trade.quantity
-    charges = PaperBroker().estimate_round_trip_costs(trade.entry_price, realised_price, trade.quantity, trade.instrument_kind or "UNDERLYING",
+    # M68 PR-7 (TS1-069): the estimate with the position owner's own brokerage (Not set: statutory charges only); the
+    # charges are stored on the trade now, so a later change of his setting never rewrites this P&L.
+    from app.paper import paper_settings
+    own = await paper_settings.charges_of_ids(session, trade.tenant_id, trade.user_id)
+    charges = own.broker().estimate_round_trip_costs(trade.entry_price, realised_price, trade.quantity, trade.instrument_kind or "UNDERLYING",
                                                       sold_first=trade.direction == "SHORT", entry_date=trade.entry_time,
                                                       exit_date=now or datetime.now(timezone.utc),
                                                       delivery=(getattr(trade, "holding", None) or "") == "SWING")
@@ -1204,8 +1207,10 @@ async def _monitor_group(
 async def close_group(
     session: AsyncSession, legs: List[TradeRecord], prices: Dict[int, float], reason: str, *,
     broker: Optional[BrokerInterface], user_id: Optional[int], underlying_price: Optional[float] = None,
+    reasons: dict[int, str] | None = None,
 ) -> List[CloseOutcome]:
-    """Shorts first (risk off), then the wings. Each leg books its own P&L. `underlying_price`: the quote the exit was
+    """Shorts first (risk off), then the wings. `reasons` (M68 PR-3, TS1-097): a leg's own reason where it differs (the price
+    source of a user-pressed exit, per leg); `reason` otherwise. Each leg books its own P&L. `underlying_price`: the quote the exit was
     judged on (journal IV at exit only). A leg missing from `prices` is not closed this time (no quote).
 
     Naked-short guard (PAPER and LIVE alike, CX review F1): when a SHORT leg did not close, the wings are NOT closed -
@@ -1229,7 +1234,7 @@ async def close_group(
             leg_broker = broker if leg.mode == ExecutionMode.LIVE.value else None
             if leg.mode == ExecutionMode.LIVE.value and leg_broker is None:
                 leg_broker = await broker_for_trade(session, leg)
-            outcome = await close_position(session, leg, prices[leg.id], reason, broker=leg_broker, user_id=user_id,
+            outcome = await close_position(session, leg, prices[leg.id], (reasons or {}).get(leg.id, reason), broker=leg_broker, user_id=user_id,
                                            underlying_price=underlying_price)
         outcomes.append(outcome)
         if is_short(leg) and not outcome.closed and leg.exit_time is None and stuck_short is None:

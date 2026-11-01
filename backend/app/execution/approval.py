@@ -485,7 +485,7 @@ async def _free_deployment_slot(session: AsyncSession, tenant_id: int, deploymen
 
 
 def ticket_time_stop_passed(evidence: Dict, now: datetime) -> Optional[str]:
-    """Z5 / P1-d: a PAPER ticket's proposal approved after its plan's time stop (or within the minimum lead before it)
+    """Z5 / P1-d: a PAPER ticket's proposal approved after its plan's time stop (M68 PR-3: no ATP lead - only later than now)
     would open a position the time exit closes at once. Why it must not be placed, or None."""
     if not isinstance(evidence, dict) or not evidence.get("ticket") or not evidence.get("exit_rules"):
         return None
@@ -495,10 +495,10 @@ def ticket_time_stop_passed(evidence: Dict, now: datetime) -> Optional[str]:
         return None
     if not time_stop:
         return None
-    earliest = (_utc(now).astimezone(IST) + timedelta(minutes=app_config.TICKET_TIME_STOP_MIN_LEAD_MINUTES)).strftime("%H:%M")
+    earliest = _utc(now).astimezone(IST).strftime("%H:%M")      # M68 PR-3 (TS1-033): later than now; no ATP lead
     if str(time_stop) <= earliest:
-        return (f"The plan's time stop {time_stop} IST is no longer later than {earliest} IST - the position would close at once; "
-                "nothing was placed (make a new plan)")
+        return (f"The plan's time stop {time_stop} IST is no longer later than now ({earliest} IST) - the position would close at "
+                "once; nothing was placed (make a new plan)")
     return None
 
 
@@ -803,13 +803,42 @@ async def exit_price(session: AsyncSession, leg: TradeRecord, lookup: Any) -> Tu
                      "and target keep working; try again when a live price is available")
 
 
+LIVE_PRICE, LAST_SEEN, OLDER_PRICE, ENTRY_PRICE = "live price", "last seen price", "older price", "entry price"
+
+
+async def exit_now_price(session: AsyncSession, leg: TradeRecord, lookup: Any) -> tuple[float, str]:
+    """M68 PR-3 (TS1-097, ADR-0004: exits are never blocked): the price a user-pressed PAPER exit ("Exit now", a leg / group
+    exit, a part exit) closes at. The live price, else the monitor's recent price (`exit_price`, the 5-minute rule - an
+    operational safety, kept); when neither exists the exit is NOT refused: it falls back to the monitor's older price (any
+    age), else the position's entry price, and says so in the trade's reason. Never a typed price (review M2)."""
+    try:
+        return await exit_price(session, leg, lookup)
+    except ValueError:
+        pass
+    if leg.mark_price and float(leg.mark_price) > 0 and leg.mark_time is not None:
+        seen = _utc(leg.mark_time).astimezone(IST).strftime("%d %b %H:%M")
+        logger.warning("Exit now: no recent price for %s - closed at the older price seen %s IST", leg.symbol, seen)
+        return float(leg.mark_price), f"{OLDER_PRICE} seen {seen} IST"
+    logger.warning("Exit now: no price at all for %s - closed at its entry price", leg.symbol)
+    return float(leg.entry_price), f"{ENTRY_PRICE} (no price was seen)"
+
+
+def source_words(sources: list[str]) -> str:
+    """One label for the prices a close used: the weakest one wins (live < last seen < older < entry). Pure."""
+    for word in (ENTRY_PRICE, OLDER_PRICE, LAST_SEEN):
+        hit = next((s for s in sources if s.startswith(word)), None)
+        if hit is not None:
+            return hit
+    return LIVE_PRICE
+
+
 async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via: str = "web"):
     """"Exit now": closes a PAPER position at once, whatever is pending or snoozed (ADR-0004). Priced at the live price of
     the person's own entitlement, else the last price the monitor saw for it if recent (review V2) - never a typed price
-    (review M2). LIVE is
-    refused: Phase 0 has no broker order path, LIVE positions are closed in the broker app (review M4). A leg of a
-    structure closes the whole structure. The close itself is claimed atomically in `close_position` (review M3).
-    Returns the close outcomes; raises ValueError when there is no price at all, or for LIVE."""
+    (review M2); M68 PR-3 (TS1-097): with neither, the older price, else the entry price (`exit_now_price`) - never refused
+    for a missing price. LIVE is refused: Phase 0 has no broker order path, LIVE positions are closed in the broker app
+    (review M4). A leg of a structure closes the whole structure. The close itself is claimed atomically in
+    `close_position` (review M3). Returns the close outcomes; raises ValueError only for LIVE."""
     from app.ai.worker_bridge import price_lookup_for_user
     from app.trading.position_monitor import close_group, close_position
     if trade.mode != "PAPER":
@@ -817,7 +846,7 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
     lookup = await price_lookup_for_user(session, user)
 
     async def price_of(leg: TradeRecord) -> Tuple[float, str]:
-        return await exit_price(session, leg, lookup)
+        return await exit_now_price(session, leg, lookup)       # M68 PR-3 (TS1-097): falls back, never refuses
 
     legs = [trade]
     if trade.leg_group_id:
@@ -826,13 +855,15 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
         if any(leg.mode != "PAPER" for leg in legs):
             raise ValueError("LIVE positions are closed in the broker app - ATP places no broker order in Phase 0")
     prices: Dict[int, float] = {}
-    sources: List[str] = []
+    sources: list[str] = []
+    per_leg: dict[int, str] = {}
     for leg in legs:
         prices[leg.id], source = await price_of(leg)
         sources.append(source)
-    reason = f"Exit now ({via}, {'live price' if set(sources) == {'live price'} else 'last seen price'})"
+        per_leg[leg.id] = f"Exit now ({via}, {source})"         # M68 PR-3: each leg names its own price source
+    reason = f"Exit now ({via}, {source_words(sources)})"
     await write_audit_log(session, trade.tenant_id, user.id, "exit_now", f"trade #{trade.id} ({len(legs)} leg(s)) via {via} at {', '.join(sorted(set(sources)))}")
     await session.commit()
     if len(legs) > 1:
-        return await close_group(session, legs, prices, reason, broker=None, user_id=user.id)
+        return await close_group(session, legs, prices, reason, broker=None, user_id=user.id, reasons=per_leg)
     return [await close_position(session, trade, prices[trade.id], reason, broker=None, user_id=user.id)]

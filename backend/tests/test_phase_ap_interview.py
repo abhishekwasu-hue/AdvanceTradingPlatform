@@ -3,6 +3,8 @@ import math
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+import pytest
+from fastapi import HTTPException
 
 from app.ai import interview as iv
 from app.deployments.routes import DeploymentCreateRequest
@@ -72,9 +74,9 @@ def test_contract_plan_keeps_the_traders_choice():
     assert any("selling" in n for n in notes)
     contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="experienced", vehicle="option_sell"), "BEARISH")
     assert contract["option_strategy"] == "BEAR_CALL_SPREAD"
-    contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="experienced", vehicle="underlying"), "NEUTRAL")
+    contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="experienced", vehicle="underlying", symbol="NIFTY 50", instrument="index"), "NEUTRAL")
     assert contract["instrument_kind"] == "FUTURE"
-    contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="new", vehicle="underlying"), "NEUTRAL")
+    contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="new", vehicle="underlying", symbol="NIFTY 50", instrument="index"), "NEUTRAL")
     assert contract["instrument_kind"] == "FUTURE"                            # futures chosen -> futures, for everyone
     contract, _, _ = iv.contract_plan(iv.InterviewAnswers(instrument="stock", symbol="TATAMOTORS", vehicle="option_buy"), "NEUTRAL")
     assert contract == {"instrument_kind": "UNDERLYING"}
@@ -95,7 +97,7 @@ def test_market_read_sees_an_uptrend():
 
 
 def test_plan_in_marathi_with_a_deployable_paper_setup():
-    a = iv.InterviewAnswers(language="mr", experience="new", vehicle="option_sell", view="bearish")
+    a = iv.InterviewAnswers(language="mr", experience="new", vehicle="option_sell", view="bearish", symbol="NIFTY 50", instrument="index", style="intraday")
     plan = iv.build_plan(a, _sessions(days=6), "5min")
     assert plan["recommended"]["family"] in ("trend", "momentum")          # an uptrend picks a trend method
     assert [s["id"] for s in plan["sections"]] == ["market", "strategy", "risk", "capital", "rr", "contract", "checklist", "steps"]
@@ -103,7 +105,12 @@ def test_plan_in_marathi_with_a_deployable_paper_setup():
     assert any("मत" in w for w in plan["warnings"])                           # bearish view vs a bullish market
     dep = plan["deployment"]
     assert dep["mode"] == "PAPER" and dep["regime_filter"] == ["TRENDING_UP", "TRENDING_DOWN"]
-    DeploymentCreateRequest(**dep).normalised()                               # the create API accepts it as is
+    # M68 PR-4 (TS1-035): the draft names no strike - the create API takes the user's own (Trade settings) or asks for it
+    if "strike_rule" not in dep:
+        with pytest.raises(HTTPException) as asked:
+            DeploymentCreateRequest(**dep).normalised()
+        assert asked.value.status_code == 422 and asked.value.detail[0]["type"] == "needs_setting"
+    DeploymentCreateRequest(**{"strike_rule": "ATM", **dep}).normalised()      # with his strike the create API accepts it
     # DEF-0 D2 / SB-UX SU4: no capital and no risk answered - none is pre-filled
     assert plan["risk_config"]["risk_per_trade_pct"] is None and plan["risk_config"]["max_daily_loss_pct"] is None
     assert plan["risk_config"]["capital"] is None and "Capital not given" in plan["ai_prompt"] and "no risk per trade set" in plan["ai_prompt"]
@@ -121,7 +128,7 @@ def test_plan_endpoint_end_to_end_in_english(monkeypatch):
     assert started["needs_interview"] and started["prefill"]["symbol"] == "NIFTY 50"
     r = client.post("/api/ai/interview/plan", headers=headers, json={
         "answers": {"language": "en", "experience": "learning", "capital": 300000, "risk": "moderate", "style": "intraday",
-                    "vehicle": "option_buy", "goal": "big_trends"},
+                    "vehicle": "option_buy", "goal": "big_trends", "symbol": "NIFTY 50", "instrument": "index"},
         "base_timeframe": "5min"})
     assert r.status_code == 200, r.text
     plan = r.json()

@@ -1721,10 +1721,15 @@ def _test_lines(answer: Answer, data: Dict[str, Any], partial: bool = False) -> 
     else:
         lines.append(f"Trades: {trades} ({whole.get('wins')} won, {whole.get('losses')} lost).")
         lines.append(f"Net result after costs: {_plain_money(whole.get('net_pnl'))}.")
-        lines.append(f"Costs inside that result: {_plain_money(whole.get('costs'))} (brokerage and statutory charges, plus slippage of "
-                     f"{_f(data.get('slippage_pct_per_fill'), 4)}% on every fill).")
-        lines.append(f"Deepest drop from a peak: {_plain_money(whole.get('max_drawdown'))} ({_f(whole.get('max_drawdown_pct'))}% of the "
-                     f"capital of {_plain_money(data.get('capital'))} in your risk limits).")
+        # M68 PR-7: the costs are his own paper charges, in words (Not set: statutory charges only).
+        lines.append(f"Costs inside that result: {_plain_money(whole.get('costs'))} "
+                     f"({data.get('costs_included') or 'statutory charges'}).")
+        if data.get("capital") is not None:
+            lines.append(f"Deepest drop from a peak: {_plain_money(whole.get('max_drawdown'))} ({_f(whole.get('max_drawdown_pct'))}% of "
+                         f"your capital of {_plain_money(data.get('capital'))}).")
+        else:
+            lines.append(f"Deepest drop from a peak: {_plain_money(whole.get('max_drawdown'))} (a share of your capital needs your "
+                         "starting capital: Settings › Trade settings › Paper account).")
     pause = data.get("loss_streak")
     if pause:
         lines.append(_pause_line(pause))

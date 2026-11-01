@@ -31,8 +31,12 @@ def engages_kill_switch(mode: object) -> bool:
     return not advisory(mode)
 
 
-def margin_info(needed: float | None, free: float) -> str:
-    """The margin vs free balance information line of one PAPER entry (owner, PAPER-NR (2))."""
+def margin_info(needed: float | None, free: float | None) -> str:
+    """The margin vs free balance information line of one PAPER entry (owner, PAPER-NR (2)). `free` None: no practice
+    balance to measure against (M68 PR-7: his paper capital is Not set where the paper-account feature is off)."""
+    if free is None:
+        return "Practice margin: " + (f"needs ₹{needed:,.0f}; " if needed is not None else "not estimated for this order; ") \
+            + "no practice balance (no paper capital set)"
     if needed is None:
         return (f"Practice margin: not estimated for this order; ₹{free:,.0f} free in your practice account"
                 + (f" ({BELOW_ZERO})" if free < 0 else ""))

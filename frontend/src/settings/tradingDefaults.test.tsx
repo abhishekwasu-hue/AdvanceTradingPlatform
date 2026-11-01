@@ -40,7 +40,7 @@ describe("the namespace as the frontend reads it", () => {
     expect(readDefaults({})).toEqual(EMPTY_DEFAULTS);
     expect(hasAnyDefault(EMPTY_DEFAULTS)).toBe(false);
     const read = readDefaults({ mode: "LIVE", order_style: "PROTECTED_LIMIT", broker_name: "upstox", routing_policy: "MOST_MARGIN", holding: "SWING",
-      max_lots: 501, strike_offset: 1.5, expiry_rule: "WEEKLY", option_strategy: "CUSTOM", exit_rules: { trailing_stop_pct: 0, time_exit_at: "25:00" },
+      max_lots: 0, strike_offset: 1.5, expiry_rule: "WEEKLY", option_strategy: "CUSTOM", exit_rules: { trailing_stop_pct: 0, time_exit_at: "25:00" },
       ticket: { lots: 3, product: "CNC", side: "SELL" } });
     expect(read).toEqual({ ...EMPTY_DEFAULTS, ticket: { lots: 3, product: null, order_type: null } });
     expect(Object.keys(read)).not.toEqual(expect.arrayContaining(["mode"]));
@@ -62,8 +62,8 @@ describe("the namespace as the frontend reads it", () => {
   it("the page's form round-trips and says what cannot be saved in plain words", () => {
     expect(defaultsOf(formOf(SOME))).toEqual({ value: SOME, problems: [] });
     expect(defaultsOf(formOf(EMPTY_DEFAULTS))).toEqual({ value: EMPTY_DEFAULTS, problems: [] });
-    expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), max_lots: "0" }).problems).toEqual(["Lots for a new bot: a whole number from 1 to 500."]);
-    expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), trailing_stop_pct: "0" }).problems).toEqual(["Trailing stop: a number above 0 up to 50."]);
+    expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), max_lots: "0" }).problems).toEqual(["Lots for a new bot: a whole number of 1 or more."]);
+    expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), trailing_stop_pct: "0" }).problems).toEqual(["Trailing stop: a number above 0 up to 99.99."]);
     expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), time_exit_at: "3 pm" }).problems).toEqual(["Flat at: a time like 15:10."]);
     expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), option_strategy: "LONG_STRADDLE", stop_credit_pct: "150" }).problems[0]).toMatch(/at most 100/);
   });
@@ -91,7 +91,7 @@ describe("identity: empty defaults change nothing (byte-identical bodies)", () =
   it("the full form and the ticket", () => {
     expect(formPrefill(null, true)).toEqual({});
     expect(formPrefill(EMPTY_DEFAULTS, true)).toEqual({});
-    expect(newDraft("BUY", undefined)).toEqual({ side: "BUY", lots: 1, orderType: null, product: null, price: "", trigger: "", stopLoss: "" });   // owner F1 / M68 PR-1: no product or order type pre-selected
+    expect(newDraft("BUY", undefined)).toEqual({ side: "BUY", lots: null, orderType: null, product: null, price: "", trigger: "", stopLoss: "" });   // owner F1 / M68 PR-1 / PR-2: no product, order type or lots pre-selected
     expect(JSON.stringify(newDraft("SELL", Object.keys(ticketPrefill(EMPTY_DEFAULTS)).length ? ticketPrefill(EMPTY_DEFAULTS) : undefined)))
       .toBe(JSON.stringify(newDraft("SELL")));
     expect(ticketPrefill(EMPTY_DEFAULTS)).toEqual({});
@@ -126,8 +126,9 @@ describe("pre-fill per form", () => {
   it("a daily strategy keeps the swing rules: no structure, no writing (not claimed either)", () => {
     const { request, applied } = paperBotRequestWithDefaults("swing_ema_pullback_d", "NIFTY 50", daily,
       d({ option_strategy: "IRON_CONDOR", option_position: "WRITE", max_lots: 2 }), false);
-    expect(request).toMatchObject({ holding: "SWING", option_position: "BUY", max_lots: 2 });
+    expect(request).toMatchObject({ holding: "SWING", max_lots: 2 });
     expect(request).not.toHaveProperty("option_strategy");
+    expect(request).not.toHaveProperty("option_position");      // M68 PR-4: no pre-chosen side; the form asks (Buy only, swing)
     expect(applied).toEqual(["2 lots"]);
   });
 
@@ -211,12 +212,13 @@ describe("wiring: behind ui_v2, PAPER only, a page Part B can link", () => {
     const none = render(null);
     expect(none).not.toContain("Use my defaults");
     expect(render(EMPTY_DEFAULTS)).toBe(none);
-    // the first render has no strategy picked yet; the summary still names the defaults' expiry and lots
+    // the first render has no strategy and (M68 PR-8, TS1-098) no symbol picked yet - no index is pre-selected, so only the
+    // defaults that fit any bot are named; the option defaults (strike, expiry, lots) apply once he picks an index
     const some = render(SOME);
     expect(some).toContain("Use my defaults for this bot");
-    expect(some).toContain("From your defaults: strike 2 steps out of the money, next expiry, 2 lots, trailing stop 1.5%.");
+    expect(some).toContain("From your defaults: trailing stop 1.5%.");
     expect(some).toContain("Change my defaults");
-    expect(some).toContain("at the next expiry, 2 lots");
+    expect(some).not.toContain("at the next expiry, 2 lots");
   });
 
   it("the ticket marks the fields that still show a default", () => {

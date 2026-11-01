@@ -129,23 +129,23 @@ QUESTIONS: List[Question] = [
              [Option("scalping", "Scalping - minutes, many small trades", "Scalping - काही मिनिटे, अनेक छोटे trades"),
               Option("intraday", "Intraday - hours, closed the same day", "Intraday - काही तास, त्याच दिवशी बंद"),
               Option("positional", "Calmer intraday - follow the bigger trend, few trades", "शांत intraday - मोठ्या trend सोबत, कमी trades"),
-              Option("swing", "Swing - days to weeks, held overnight", "Swing - काही दिवस ते आठवडे (position रात्रभर)")], "intraday"),
+              Option("swing", "Swing - days to weeks, held overnight", "Swing - काही दिवस ते आठवडे (position रात्रभर)")], None),     # M68: no pre-chosen style
     Question("instrument", "choice", "What do you want to trade?", "तुम्हाला काय trade करायचे आहे?",
              "Indices move smoothly and are liquid; a stock can gap on news.",
              "Index सहज हलतो आणि liquidity जास्त असते; stock बातमीवर अचानक gap करू शकतो.",
              [Option("index", "Index - NIFTY / BANK NIFTY", "Index - NIFTY / BANK NIFTY"),
               Option("fno_stock", "An F&O stock", "F&O stock"),
-              Option("stock", "A cash-market stock", "Cash market stock")], "index"),
+              Option("stock", "A cash-market stock", "Cash market stock")], None),      # M68: no pre-chosen instrument
     Question("symbol", "symbol", "Which symbol?", "कोणता symbol?",
              "The market read and the backtest run on this symbol's candles.",
              "Market चे विश्लेषण आणि backtest याच symbol च्या candles वर होईल.",
-             [], "NIFTY 50"),
+             [], None),                                                                 # M68: no pre-chosen symbol
     Question("vehicle", "choice", "How do you want to take the trade?", "Trade कशा प्रकारे घ्यायचा?",
              "Option buying caps the loss at the premium; option selling earns time decay but needs a hedge.",
              "Option buying मध्ये तोटा premium इतकाच मर्यादित; option selling मध्ये time decay मिळतो पण hedge लागतो.",
              [Option("underlying", "The stock itself / futures", "Stock स्वतः / futures"),
               Option("option_buy", "Buy options (CE/PE)", "Option buy (CE/PE)"),
-              Option("option_sell", "Sell options (hedged spreads)", "Option sell (hedge सोबत spread)")], "option_buy"),
+              Option("option_sell", "Sell options (hedged spreads)", "Option sell (hedge सोबत spread)")], None),     # M68
     Question("time", "choice", "How much time can you give during market hours?", "Market चालू असताना तुम्ही किती वेळ देऊ शकता?",
              "The platform trades for you either way; this decides how many alerts and how much manual checking to plan for.",
              "Platform दोन्ही प्रकारे trade करतो; यावरून किती alerts आणि किती वेळा तपासायचे ते ठरते.",
@@ -174,10 +174,12 @@ class InterviewAnswers(BaseModel):
     # DEF-0 / SB-UX SU4: the trader's own limits; not answered or "Not set" = None (no limit) - no built-in default.
     risk: Literal["conservative", "moderate", "aggressive"] | None = None
     daily_loss: float | None = Field(default=None, ge=0.5, le=10.0)
-    style: Literal["scalping", "intraday", "positional", "swing"] = "intraday"
-    instrument: Literal["index", "fno_stock", "stock"] = "index"
-    symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)
-    vehicle: Literal["underlying", "option_buy", "option_sell"] = "option_buy"
+    # M68 (owner order): what to trade and how is his own answer - not answered = None ("Not set"), never a pre-chosen
+    # symbol, instrument, vehicle or style. A plan previews with "Not set"; a deploy asks for each one (422).
+    style: Literal["scalping", "intraday", "positional", "swing"] | None = None
+    instrument: Literal["index", "fno_stock", "stock"] | None = None
+    symbol: str | None = Field(default=None, min_length=1, max_length=50)
+    vehicle: Literal["underlying", "option_buy", "option_sell"] | None = None
     time: Literal["active", "few_checks", "auto"] = "auto"
     goal: Literal["learn", "steady", "big_trends"] = "learn"
     view: Literal["bullish", "bearish", "neutral", "unsure"] = "unsure"
@@ -186,6 +188,30 @@ class InterviewAnswers(BaseModel):
     @classmethod
     def _not_set_is_none(cls, value: Any) -> Any:
         return _unset(value)
+
+    @field_validator("style", "instrument", "symbol", "vehicle", mode="before")
+    @classmethod
+    def _blank_is_not_set(cls, value: Any) -> Any:
+        return None if isinstance(value, str) and not value.strip() else value
+
+
+# M68: the answers a bot cannot be created without - each one is his own; none has a default.
+REQUIRED_ANSWERS = ("symbol", "instrument", "vehicle", "style")
+NOT_SET_LABEL = "Not set"
+
+
+def unanswered(a: InterviewAnswers) -> list[str]:
+    """The required answers he has not given, in question order (empty = all answered)."""
+    return [k for k in REQUIRED_ANSWERS if getattr(a, k) is None]
+
+
+def needs_setting_text(fields: list[str]) -> str:
+    return f"Needs your setting: {', '.join(fields)}"
+
+
+def needs_setting_detail(fields: list[str]) -> list[dict[str, Any]]:
+    """The 422 detail for unanswered settings, one item per field, in the same shape as the other M68 routes (PR-1, PR-4)."""
+    return [{"loc": ["body", "answers", f], "type": "needs_setting", "msg": needs_setting_text([f])} for f in fields]
 
 
 # --- reading the free-text request -------------------------------------------------------------------
@@ -482,9 +508,14 @@ def contract_plan(a: InterviewAnswers, bias: str, last_price: Optional[float] = 
     are not written overnight here)."""
     lang = a.language
     notes: List[str] = []
-    underlying = instrument_master.underlying_of(a.symbol)
+    # M68: an unanswered symbol / vehicle is shown as "Not set", never filled in.
+    shown = a.symbol.upper() if a.symbol else tr(lang, "the symbol (Not set - choose a symbol)", "symbol (Not set - symbol निवडा)")
+    underlying = instrument_master.underlying_of(a.symbol) if a.symbol else shown
     is_index = underlying in instrument_master.INDEX_SYMBOLS or a.instrument == "index"
     vehicle = a.vehicle
+    if vehicle is None:
+        return ({}, notes, tr(lang, f"{shown}: how to take the trade is Not set - choose shares / futures, buy options or sell options",
+                              f"{shown}: trade कसा घ्यायचा ते Not set - shares / futures, option buy किंवा option sell निवडा"))
     if a.instrument == "stock" and vehicle != "underlying":
         vehicle = "underlying"
         notes.append(tr(lang, "A cash-market stock has no options - the plan trades the stock itself.",
@@ -510,8 +541,8 @@ def contract_plan(a: InterviewAnswers, bias: str, last_price: Optional[float] = 
         if swing:
             return ({"instrument_kind": "UNDERLYING"}, notes + [tr(lang, "Bought for delivery (CNC) and held until the stop or target; long only - cash shares cannot be held short overnight.",
                                                                     "Delivery (CNC) ने खरेदी, stop किंवा target पर्यंत धरून; फक्त long - cash shares रात्रभर short ठेवता येत नाहीत.")],
-                    tr(lang, f"{a.symbol.upper()} shares, delivery (swing)", f"{a.symbol.upper()} shares, delivery (swing)"))
-        return ({"instrument_kind": "UNDERLYING"}, notes, tr(lang, f"{a.symbol.upper()} shares (intraday)", f"{a.symbol.upper()} shares (intraday)"))
+                    tr(lang, f"{shown} shares, delivery (swing)", f"{shown} shares, delivery (swing)"))
+        return ({"instrument_kind": "UNDERLYING"}, notes, tr(lang, f"{shown} shares (intraday)", f"{shown} shares (intraday)"))
     if vehicle == "option_buy" and swing:
         notes.append(tr(lang, "Monthly expiry for a swing: weekly options lose too much value (theta) while you wait days for the move.",
                         "Swing साठी monthly expiry: काही दिवस वाट पाहताना weekly option चे मूल्य (theta) खूप घटते."))
@@ -538,6 +569,38 @@ def contract_plan(a: InterviewAnswers, bias: str, last_price: Optional[float] = 
              "target_credit_pct": 50.0, "stop_credit_pct": 150.0}, notes,
             tr(lang, f"{structure.replace('_', ' ').title()} on {underlying}, take profit at 50% of the credit, stop at 150%",
                f"{underlying} वर {structure.replace('_', ' ').title()}, credit च्या 50% वर नफा, 150% वर stop"))
+
+
+# M68 PR-8 (TS1-077): the contract values the plan picked for the trader (not his answers): shown as suggestions, and a
+# deploy carries them only once he ticks that he accepts them (`accept_suggested`). What to trade (the instrument from his
+# own vehicle answer, buying or writing) is his own choice; an index's "underlying" being its futures is a market fact.
+_EXPIRY_WORDS = {"NEAREST": "Nearest", "NEXT": "Next", "MONTHLY": "Monthly"}
+_STRIKE_WORDS = {"ATM": "At the money", "ITM": "In the money", "OTM": "Out of the money"}
+
+
+def suggested_contract(contract: dict) -> list[dict]:
+    """The plan's own contract picks as {key, label, value}: expiry, strike, structure, width, credit levels. Empty when
+    the plan picked none (the stock itself)."""
+    out: list[dict] = []
+    if contract.get("option_strategy"):
+        out.append({"key": "option_strategy", "label": "Structure", "value": str(contract["option_strategy"]).replace("_", " ").capitalize()})
+    if contract.get("expiry_rule"):
+        out.append({"key": "expiry_rule", "label": "Expiry", "value": _EXPIRY_WORDS.get(contract["expiry_rule"], contract["expiry_rule"])})
+    if contract.get("strike_rule"):
+        steps = int(contract.get("strike_offset") or 0)
+        words = _STRIKE_WORDS.get(contract["strike_rule"], contract["strike_rule"])
+        out.append({"key": "strike_rule", "label": "Strike", "value": f"{words}, {steps} step{'s' if steps != 1 else ''}" if steps else words})
+    if contract.get("spread_width") is not None and contract.get("option_strategy"):
+        out.append({"key": "spread_width", "label": "Spread width", "value": f"{int(contract['spread_width'])} strikes"})
+    if contract.get("target_credit_pct") is not None:
+        out.append({"key": "target_credit_pct", "label": "Take profit", "value": f"{float(contract['target_credit_pct']):g} % of the credit"})
+    if contract.get("stop_credit_pct") is not None:
+        out.append({"key": "stop_credit_pct", "label": "Stop", "value": f"{float(contract['stop_credit_pct']):g} % of the credit"})
+    return out
+
+
+def suggested_text(items: list[dict]) -> str:
+    return "; ".join(f"{i['label']} {i['value']}" for i in items)
 
 
 # --- the plan ---------------------------------------------------------------------------------------------
@@ -604,15 +667,18 @@ def _evidence(lang: str, strategy, df: pd.DataFrame, base_tf: str, symbol: str, 
 
 
 def _rank(a: InterviewAnswers, market: dict, df: pd.DataFrame, base_tf: str, cfg: RiskConfig, *,
-          exclude: Tuple[str, ...] = (), family_bonus: Optional[Dict[str, float]] = None) -> List[dict]:
+          exclude: tuple[str, ...] = (), family_bonus: dict[str, float] | None = None, read_symbol: str | None = None) -> list[dict]:
     """Fit first (style, regime, goal) for every candidate; the best few are then walked over
     the recent candles for evidence - a backtest per strategy is the slow part."""
     regime = market["regime"]["kind"]
     conf = float(market["regime"]["confidence"] or 0)
     lang = a.language
+    symbol = read_symbol or a.symbol
+    if not symbol:
+        raise ValueError(needs_setting_text(["symbol"]))            # M68: the candles read are this symbol's own
     ranked: List[dict] = []
     for sid, p in PROFILES.items():
-        if a.style not in p.styles or sid in exclude:
+        if (a.style is not None and a.style not in p.styles) or sid in exclude:     # M68: style Not set = no style filter
             continue
         try:
             strategy = copy.copy(registry.get(sid))
@@ -633,7 +699,7 @@ def _rank(a: InterviewAnswers, market: dict, df: pd.DataFrame, base_tf: str, cfg
     ranked.sort(key=lambda r: r["score"], reverse=True)
     top = ranked[:EVIDENCE_CANDIDATES]
     with ThreadPoolExecutor(max_workers=EVIDENCE_CANDIDATES) as pool:
-        results = list(pool.map(lambda r: _evidence(lang, r["_strategy"], df, base_tf, a.symbol), top))
+        results = list(pool.map(lambda r: _evidence(lang, r["_strategy"], df, base_tf, symbol), top))
     for r, (score, evidence, last_signal) in zip(top, results):
         r["score"] = round(r["score"] + score, 2)
         r["evidence"], r["last_signal"] = evidence, last_signal
@@ -644,10 +710,10 @@ def _rank(a: InterviewAnswers, market: dict, df: pd.DataFrame, base_tf: str, cfg
 
 
 def build_plan(a: InterviewAnswers, df: pd.DataFrame, base_tf: str, *, ceilings: Optional[Dict[str, float]] = None,
-               data_source: str = "sample") -> dict:
+               data_source: str = "sample", read_symbol: Optional[str] = None) -> dict:
     market = analyse_market(df, base_tf, a.language)
     cfg, risk_notes = risk_plan(a, ceilings)
-    ranked = _rank(a, market, df, base_tf, cfg)
+    ranked = _rank(a, market, df, base_tf, cfg, read_symbol=read_symbol)
     return compose_plan(a, market, ranked, ranked[0] if ranked else None, cfg, risk_notes, data_source)
 
 
@@ -757,11 +823,20 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
            f"Trade {exit_rules['break_even_at_r']:g}R नफ्यात आला की stop खरेदी भावावर येतो; stop कधीच विरुद्ध दिशेने सरकत नाही."),
     ] if exit_rules.get("break_even_at_r") else [])
     if exit_rules["time_exit_at"]:
-        rr_lines.append(tr(lang, "Everything still open is closed at 15:10 - no overnight risk.", "15:10 ला उघडे असलेले सगळे trades बंद - रात्रीचा risk नाही."))
+        at = exit_rules["time_exit_at"]                 # M68 PR-8: the trader's own time, never a fixed one in the text
+        rr_lines.append(tr(lang, f"Everything still open is closed at {at} - no overnight risk.", f"{at} ला उघडे असलेले सगळे trades बंद - रात्रीचा risk नाही."))
     elif a.style == "swing":
         rr_lines.append(tr(lang, "Held overnight: the stop sits with the broker (re-armed every morning) and the trade runs for days until the stop or a target.",
                            "रात्रभर धरले जाते: stop broker कडे असतो (रोज सकाळी पुन्हा लावला जातो) आणि trade stop किंवा target पर्यंत काही दिवस चालतो."))
     k_lines = [contract_text] + contract_notes
+    missing = unanswered(a)
+    if missing:
+        k_lines.append(tr(lang, f"Not set - answer before a deploy: {', '.join(missing)}.",
+                          f"Not set - deploy आधी उत्तर द्या: {', '.join(missing)}."))
+    suggested = suggested_contract(contract)
+    if suggested:
+        k_lines.append(tr(lang, f"Values the plan picked, applied only if you accept them: {suggested_text(suggested)}.",
+                          f"Plan ने निवडलेली मूल्ये, तुम्ही स्वीकारली तरच लागू: {suggested_text(suggested)}."))
     # SB-UX SU4: only what the template and the trader's own settings check - no rule the trader did not state.
     checklist = [
         tr(lang, "The template's own entry rules hold on a closed candle", "Template चे स्वतःचे entry नियम बंद candle वर पूर्ण होतात"),
@@ -795,13 +870,17 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
     deployment = None
     if pick:
         swing = a.style == "swing"
-        deployment = {"strategy_id": pick["strategy_id"], "symbol": a.symbol.upper(), "exchange": "NSE", "timeframe": "day" if swing else "1min",
+        # M68: the symbol is his answer (None = Not set, asked for at the deploy); a non-swing bot sends no base candles -
+        # the deploy takes the strategy's own smallest candle (_own_base); no holding is chosen for an unanswered style.
+        deployment = {"strategy_id": pick["strategy_id"], "symbol": a.symbol.upper() if a.symbol else None,
+                      **({"timeframe": "day"} if swing else {}),
                       "mode": "PAPER", **contract, "exit_rules": exit_rules, "regime_filter": regime_filter,
-                      "holding": "SWING" if swing else "INTRADAY"}
+                      "holding": "SWING" if swing else ("INTRADAY" if a.style else None)}
     return {
         "language": lang, "answers": a.model_dump(), "market": market, "recommended": pick, "alternatives": alternatives,
         "ranking": [{"strategy_id": r["strategy_id"], "name": r["name"], "score": r["score"]} for r in ranked],
-        "risk_config": cfg.model_dump(), "deployment": deployment, "sections": sections, "warnings": warnings,
+        "risk_config": cfg.model_dump(), "deployment": deployment, "suggested": suggested if deployment else [], "sections": sections, "warnings": warnings,
+        "unanswered": missing,
         "ai_prompt": ai_prompt(a, market, cfg, pick), "disclaimer": DISCLAIMER[lang],
     }
 
@@ -815,7 +894,8 @@ def ai_prompt(a: InterviewAnswers, market: dict, cfg: RiskConfig, pick: Optional
         + (f"Capital for trading {cfg.capital:,.0f} INR; " if cfg.capital is not None else "Capital not given; ")
         + (f"risk {cfg.risk_per_trade_pct:g}% per trade" if cfg.risk_per_trade_pct is not None else "no risk per trade set")
         + (f", daily loss limit {cfg.max_daily_loss_pct:g}%." if cfg.max_daily_loss_pct is not None else ", no daily loss limit."),
-        f"Style: {a.style}. Instrument: {a.symbol.upper()} via {a.vehicle.replace('_', ' ')}. Goal: {a.goal.replace('_', ' ')}. Time: {a.time.replace('_', ' ')}.",
+        f"Style: {a.style or NOT_SET_LABEL}. Instrument: {a.symbol.upper() if a.symbol else NOT_SET_LABEL} via "
+        f"{a.vehicle.replace('_', ' ') if a.vehicle else NOT_SET_LABEL}. Goal: {a.goal.replace('_', ' ')}. Time: {a.time.replace('_', ' ')}.",
         f"Market now: today {market['today']['change_pct']:+.2f}% ({market['today']['trend'].lower()}), price {'above' if market['today']['above_vwap'] else 'below'} VWAP; "
         f"{market['work_timeframe']} regime {market['regime']['kind']}, {market['higher_timeframe']} regime {market['higher_regime']['kind']}; "
         f"structure {market['structure']['trend']}; overall bias {market['bias']}"
@@ -837,5 +917,5 @@ def frame_from_candles(candles) -> pd.DataFrame:
     return df
 
 
-__all__ = ["QUESTIONS", "InterviewAnswers", "is_vague", "prefill_from_prompt", "start", "analyse_market", "risk_plan",
+__all__ = ["QUESTIONS", "InterviewAnswers", "REQUIRED_ANSWERS", "unanswered", "needs_setting_text", "needs_setting_detail", "is_vague", "prefill_from_prompt", "start", "analyse_market", "risk_plan",
            "contract_plan", "build_plan", "regime_fit", "frame_from_candles"]

@@ -74,14 +74,24 @@ describe("the incomplete order card", () => {
 });
 
 describe("his answer settings", () => {
-  it("defaults to closing the filled legs after 5 minutes, with bounds on the minutes", () => {
-    expect(SMART_DEFAULTS.on_no_answer).toBe("close_filled");
-    expect(readSmart({ on_no_answer: "unwind", answer_minutes: "x" })).toMatchObject({ on_no_answer: "close_filled", answer_minutes: 5 });
+  it("M68 PR-3: Not set by default (no timer), with bounds on the minutes he sets", () => {
+    expect(SMART_DEFAULTS.on_no_answer).toBeNull();
+    expect(SMART_DEFAULTS.answer_minutes).toBeNull();
+    expect(readSmart({ on_no_answer: "unwind", answer_minutes: "x" })).toMatchObject({ on_no_answer: null, answer_minutes: null });
+    expect(smartOf(smartFormOf(SMART_DEFAULTS))).toEqual({ value: SMART_DEFAULTS, problems: [] });   // empty stays Not set
     expect(readSmart({ on_no_answer: "keep", answer_minutes: 30 })).toMatchObject({ on_no_answer: "keep", answer_minutes: 30 });
     const form = smartFormOf(SMART_DEFAULTS);
     expect(smartOf({ ...form, answer_minutes: "0" }).problems[0]).toContain("from 1 to 120");
     expect(smartOf({ ...form, answer_minutes: "121" }).problems[0]).toContain("from 1 to 120");
     expect(smartOf({ ...form, answer_minutes: "2.5" }).problems[0]).toContain("whole number");
     expect(smartOf({ ...form, answer_minutes: "15", on_no_answer: "keep" })).toEqual({ value: { ...SMART_DEFAULTS, answer_minutes: 15, on_no_answer: "keep" }, problems: [] });
+  });
+
+  it("M68 PR-3: with no rule of his own the card shows no countdown - nothing happens by itself", () => {
+    const html = renderToStaticMarkup(<IncompleteCardV2 item={{ ...ITEM, on_no_answer: null, deadline: null, seconds_left: null }}
+      secondsLeft={null} busy={false} onAnswer={() => undefined} />);
+    expect(html).toContain('data-incomplete-part="no-rule"');
+    expect(html).not.toContain("data-countdown");
+    expect(text(html)).toContain("Nothing happens by itself");
   });
 });

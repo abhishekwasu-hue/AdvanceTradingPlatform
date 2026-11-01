@@ -47,6 +47,12 @@ def _fields(body: dict) -> dict:
     return {f["key"]: f for s in body["sections"] for f in s["fields"]}
 
 
+# M68 PR-3: the Exits fields an exit path reads now (app/execution/exit_settings.py), and the entry window (TS1-026 / 028).
+PR3_WIRED = frozenset({"exits.square_off_time", "exits.incomplete_legs_action", "exits.incomplete_legs_answer_minutes",
+                       "exits.combined_measure", "exits.combined_check_mode", "exits.close_if_broker_stop_rejected",
+                       "automation.window_start", "automation.window_end"})
+
+
 @pytest.fixture
 def wired(monkeypatch):
     """Marks a few fields wired, as their PR will, so a USER can see and save them."""
@@ -72,6 +78,8 @@ def test_registry_seven_sections_and_every_audit_user_row():
         assert any(f.section == s.id and not f.fact for f in ts.FIELDS), s.id
 
 
+PR4_NOT_WIRED = {"options.hedge", "options.hedge_offset", "options.finder_target_delta", "options.finder_premium_min",
+                 "options.finder_premium_max", "options.finder_oi_wall_strikes"}
 # M68 PR-6: Automation fields nothing reads yet - exit requests are off since M55 S2, the trading window is TS1-026 / 028
 # (PR-3) and re-entry has no TS-1 row (no pre-chosen value in the code).
 PR6_NOT_WIRED = {"automation.approval_exit_minutes", "automation.window_start", "automation.window_end", "automation.reentry",
@@ -81,7 +89,10 @@ PR6_NOT_WIRED = {"automation.approval_exit_minutes", "automation.window_start", 
 def test_registry_fields_are_well_formed_and_wired_by_their_pr():
     for f in ts.FIELDS:
         assert f.label and f.help and f.label[0].isupper(), f.key
-        assert f.wired is (f.pr in (1, 6) and not f.fact and f.key not in PR6_NOT_WIRED), f.key   # PR-1 / PR-6 wired; later PRs the rest
+        # PR-1 / 2 / 5 / 6 / 7 wired; PR-4 Options (all but the hedge and the strike finder, which nothing reads yet); PR-3 Exits
+        # and the new-entry window; later PRs the rest
+        assert f.wired is ((f.pr in (1, 2, 4, 5, 6, 7) and not f.fact and f.key not in PR4_NOT_WIRED | PR6_NOT_WIRED)
+                           or f.key in PR3_WIRED), f.key
         assert 1 <= f.pr <= 7, f.key
         if f.kind == "choice":
             assert len(f.choices) >= 2 and len({c for c, _ in f.choices}) == len(f.choices), f.key
@@ -103,10 +114,15 @@ def test_glossary_keys_exist_in_the_frontend_glossary():
 
 
 def test_the_namespace_is_read_by_one_order_path_reader():
-    """M68 PR-1: order paths read the Trade settings only through app/execution/order_defaults.py (one reader)."""
+    """M68 PR-1 / PR-2 / PR-4: order paths read the Trade settings only through app/execution/order_defaults.py,
+    position_size.py and app/instruments/option_defaults.py (one reader per section); M68 PR-5: the Risk limits section
+    through app/risk_engine/own_risk.py; PR-7: the Paper account section through app/paper/paper_settings.py (one reader
+    for the capital and the charges); M68 PR-3: exit paths through app/execution/exit_settings.py (the Exits section)."""
     out = subprocess.run(["grep", "-rlE", "--include=*.py", r"trade_settings|TradeSettings", "app"], cwd=BACKEND, capture_output=True, text=True).stdout
-    assert sorted(out.split()) == ["app/execution/automation.py", "app/execution/order_defaults.py", "app/main.py", "app/me/prefs.py",
-                                   "app/me/trade_settings.py"]                      # M68 PR-6: + the Automation reader
+    assert sorted(out.split()) == ["app/execution/automation.py", "app/execution/exit_settings.py", "app/execution/order_defaults.py",
+                                   "app/execution/position_size.py", "app/instruments/option_defaults.py", "app/main.py", "app/me/prefs.py",
+                                   "app/me/trade_settings.py", "app/options_builder/routes.py", "app/paper/paper_settings.py",
+                                   "app/risk_engine/own_risk.py"]   # PR-2 / PR-3 / PR-4 / PR-5 / PR-6 / PR-7: one reader each
 
 
 def test_value_checks():
@@ -148,8 +164,11 @@ def test_a_new_user_sees_not_set_and_no_dead_control():
     assert body["admin"] is False and body["page"] == "/settings/trade-settings"
     assert [s["id"] for s in body["sections"]] == list(ts.SECTION_IDS)
     fields = _fields(body)
-    # PR-1: the Order defaults controls are wired; every other control is not yet (only facts show)
-    assert fields and all(f["fact"] or f["key"].startswith(("order_defaults.", "automation.")) for f in fields.values())   # + PR-6
+    # PR-1 / 2 / 4 / 5 / 6 / 7: Order defaults, Position size, Options, Risk limits, Automation and Paper account are wired;
+    # PR-3: the Exits fields and the new-entry window
+    assert fields and all(f["fact"] or f["key"].split(".")[0] in ("order_defaults", "position_size", "options", "risk_limits", "automation",
+                                                                  "paper_account") or f["key"] in PR3_WIRED
+                          for f in fields.values())
     # M68 PR-6: a field of a feature that is off for him (the scanner's Auto PAPER, flag scan_auto_paper) is not shown
     assert {k for k, f in fields.items() if not f["fact"]} == {f.key for f in ts.FIELDS if f.wired and f.flag is None}
     assert all(f["value"] is None and f["saved"] is False for f in fields.values())
@@ -208,11 +227,11 @@ def test_the_body_shape_is_strict():
 
 def test_a_user_cannot_save_an_unwired_field_an_admin_can():
     user, admin = _who("user"), _admin("admin")
-    refused = client.put(URL, headers=user["headers"], json={"values": {"position_size.lots": 2}})
+    refused = client.put(URL, headers=user["headers"], json={"values": {"automation.reentry_max": 2}})
     assert refused.status_code == 422 and "not available yet" in refused.text
-    saved = client.put(URL, headers=admin["headers"], json={"values": {"position_size.lots": 2}})
+    saved = client.put(URL, headers=admin["headers"], json={"values": {"automation.reentry_max": 2}})
     assert saved.status_code == 200, saved.text
-    assert _fields(saved.json())["position_size.lots"]["value"] == 2
+    assert _fields(saved.json())["automation.reentry_max"]["value"] == 2
 
 
 def test_the_generic_prefs_route_does_not_write_trade_settings():

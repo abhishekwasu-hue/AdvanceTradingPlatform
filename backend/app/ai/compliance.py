@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Tuple
 from app.core.models import RiskConfig
 from app.strategy_engine.declarative import CustomStrategyConfig
 
-MIN_STOP_ATR_MULT = 1.0                 # M2: a stop inside one ATR sits inside normal noise
+MIN_STOP_ATR_MULT = 1.0                 # M2: a stop inside one ATR sits inside normal noise (a suggestion, M68 PR-8)
 GAP_MULTIPLE = 3.0                      # worst case: a gap through the stop costs about this many planned losses
 WEAK_EVIDENCE_MIN_TRADES = 30
 WEAK_EVIDENCE_MIN_PROFIT_FACTOR = 1.1
@@ -128,10 +128,11 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
         check("R1", False, "no stop is set in the draft")
     else:
         check("R1", stop > 0, f"stop defined before entry: {stop:g} x ATR({config.atr_period}) from the entry price")
+        # M68 PR-8 (TS1-078): a suggestion, never a floor - the stop is the trader's own; it is never widened for him.
         check("M2", stop >= MIN_STOP_ATR_MULT,
-              f"stop distance {stop:g} x ATR is inside normal noise (minimum {MIN_STOP_ATR_MULT:g} x ATR)"
+              f"stop distance {stop:g} x ATR is inside normal noise ({MIN_STOP_ATR_MULT:g} x ATR or wider sits outside it; your stop is kept)"
               if stop < MIN_STOP_ATR_MULT else f"stop distance {stop:g} x ATR is outside normal noise (>= {MIN_STOP_ATR_MULT:g} x ATR)",
-              fix=("stop_loss_atr_mult", MIN_STOP_ATR_MULT, f"stop_loss_atr_mult {stop:g} -> {MIN_STOP_ATR_MULT:g} (M2)"))
+              warn_only=True)
     if config.target_rr is None:
         check("M1", True, "no target is set in the draft: none is applied")
     else:
@@ -177,8 +178,8 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
           if cfg.stop_cooldown_minutes else "no cool-down after a stop-out set")
     check("M8", True, "market-events calendar: BLOCK days refuse entries, SIZE_CUT days cut risk per trade"
           + (f" ({float(cfg.event_size_cut_pct):g}% unless the event says)" if cfg.event_size_cut_pct is not None else " by the event's own cut"))
-    check("P2", True, f"drawdown ladder: risk per trade halved {float(cfg.dd_level_1_pct):g}% below the equity peak"
-          if cfg.dd_level_1_pct else "no drawdown size cut set")
+    check("P2", True, f"drawdown ladder: risk per trade cut {float(cfg.dd_cut_pct):g}% at {float(cfg.dd_level_1_pct):g}% below the equity peak"
+          if cfg.dd_level_1_pct and cfg.dd_cut_pct else "no drawdown size cut set")
     check("P3", True, f"drawdown ladder: new entries paused {float(cfg.dd_level_2_pct):g}% below the equity peak"
           if cfg.dd_level_2_pct else "no drawdown pause set")
     check("P4", True, "the size multiplier never exceeds 1 - a winning streak never raises size on its own")
@@ -224,7 +225,8 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
     if daily_amount is not None:
         worst += f" The daily loss limit stops trading at {_money(daily_amount)} ({float(cfg.max_daily_loss_pct or 0.0):g}%)."
     if cfg.dd_level_1_pct and cfg.dd_level_2_pct:
-        worst += (f" The drawdown ladder halves size {float(cfg.dd_level_1_pct):g}% below the equity peak and pauses entries at "
+        cut = f"cuts size {float(cfg.dd_cut_pct):g}%" if cfg.dd_cut_pct else "cuts no size (no cut set)"
+        worst += (f" The drawdown ladder {cut} {float(cfg.dd_level_1_pct):g}% below the equity peak and pauses entries at "
                   f"{float(cfg.dd_level_2_pct):g}%.")
     report.user_must_accept = {"max_loss_per_trade_text": loss_text, "worst_case_text": worst}
 

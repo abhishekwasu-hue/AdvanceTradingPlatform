@@ -179,7 +179,7 @@ async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: st
 async def _effective_risk(session: AsyncSession, tenant_id: int):
     from app.platform.controls import clamp_config, risk_ceilings
     from app.risk_engine.routes import get_tenant_risk_config
-    ceilings = await risk_ceilings(session)
+    ceilings = await risk_ceilings(session, tenant_id)
     cfg, _ = clamp_config(await get_tenant_risk_config(tenant_id, session) or RiskConfig(), ceilings)
     return cfg, ceilings
 

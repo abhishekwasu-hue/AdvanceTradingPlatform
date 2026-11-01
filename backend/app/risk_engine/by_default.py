@@ -36,7 +36,7 @@ import functools
 import json
 import math
 from contextvars import ContextVar
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, ParamSpec, Sequence, Set, Tuple, TypeVar
 
@@ -54,18 +54,22 @@ FLAG = "risk_by_default"
 MODE = "PAPER"
 KIND_DAILY_LOSS = "DAILY_LOSS"
 
-# The bounds a user may set their own values within (the platform ceilings clamp further at runtime).
+# The bounds a user may set their own values within (a ceiling an admin set clamps further at runtime). M68 PR-5 (TS1-049):
+# only "a real number of the right sign" - a % at most 100, a count or an amount finite; ATP's own caps (5 % risk per
+# trade, 20 % daily loss, 500 entries, 10 x reward:risk) are gone. The two % limits must be above 0 (`POSITIVE`).
+BIG = 1_000_000_000
 BOUNDS: Dict[str, Tuple[float, float]] = {
-    "risk_per_trade_pct": (0.05, 5.0),
-    "risk_per_trade_amount": (0.0, 10_000_000.0),
-    "daily_loss_pct": (0.1, 20.0),
-    "max_trades_per_day": (0, 500),
-    "min_rr": (0.0, 10.0),
+    "risk_per_trade_pct": (0.0, 100.0),
+    "risk_per_trade_amount": (0.0, float(BIG)),
+    "daily_loss_pct": (0.0, 100.0),
+    "max_trades_per_day": (0, BIG),
+    "min_rr": (0.0, float(BIG)),
     # N1 F2 (flag portfolio_risk_caps): the user's own portfolio caps on new PAPER entries; 0 = no limit.
     "max_sector_pct": (0.0, 500.0),
     "max_correlated_risk_pct": (0.0, 50.0),
-    "max_open_positions": (0, 200),
+    "max_open_positions": (0, BIG),
 }
+POSITIVE = frozenset({"risk_per_trade_pct", "daily_loss_pct"})
 LABELS = {
     "risk_per_trade_pct": "Risk per trade, % of capital",
     "risk_per_trade_amount": "Risk per trade, rupees (0 = no rupee cap)",
@@ -134,6 +138,11 @@ def legacy_defaults() -> Dict[str, Any]:
 
 def _valid(value: Any, low: float, high: float) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and low <= value <= high
+
+
+def in_bounds(key: str, value: Any) -> bool:
+    """A user's value of `key` within its BOUNDS (and above 0 for a POSITIVE one)."""
+    return _valid(value, *BOUNDS[key]) and (key not in POSITIVE or value > 0)
 
 
 def explicit_keys(stored: Dict[str, Any]) -> Set[str]:
@@ -226,7 +235,7 @@ def settings_on(text: Optional[str], day: date) -> RiskSettings:
 def set_on(text: Optional[str], day: date) -> List[str]:
     """The keys the user set himself, in force on `day` (the rest show as "Not set")."""
     data, explicit = _on(text, day)
-    return sorted(k for k in explicit if _valid(data.get(k), *BOUNDS[k]))
+    return sorted(k for k in explicit if in_bounds(k, data.get(k)))
 
 
 def plan_change(text: Optional[str], values: Dict[str, Any], today: date) -> Tuple[str, Dict[str, Any], Dict[str, Any], str]:
@@ -235,7 +244,7 @@ def plan_change(text: Optional[str], values: Dict[str, Any], today: date) -> Tup
     waits for the next IST day. A due deferred change is folded in first. Pure."""
     data, explicit = _on(text, today)
     current = RiskSettings.from_values(data, explicit).as_dict()
-    explicit = {k for k in explicit if _valid(data.get(k), *BOUNDS[k])}
+    explicit = {k for k in explicit if in_bounds(k, data.get(k))}
     pending = pending_of(text)
     deferred: Dict[str, Any] = dict(pending["values"]) if pending is not None and str(pending["from"]) > today.isoformat() else {}
     applied: Dict[str, Any] = {}
@@ -275,12 +284,13 @@ def validate_settings(values: Dict[str, Any], ceilings: Dict[str, float]) -> Lis
         if value is None:                            # TT-12: clear it (off)
             continue
         low, high = BOUNDS[key]
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or not low <= value <= high:
-            errors.append(f"{LABELS[key]} must be between {low:g} and {high:g}")
+        if not in_bounds(key, value):
+            errors.append(f"{LABELS[key]} must be {'more than' if key in POSITIVE else 'at least'} {low:g}"
+                          + (f" and at most {high:g}" if high < BIG else ""))
     if isinstance(values.get("risk_per_trade_pct"), (int, float)) and values["risk_per_trade_pct"] > ceilings.get("risk_per_trade_pct", math.inf):
-        errors.append(f"{LABELS['risk_per_trade_pct']} is above the platform ceiling {ceilings['risk_per_trade_pct']:g}")
+        errors.append(f"{LABELS['risk_per_trade_pct']} is above the ceiling your admin set ({ceilings['risk_per_trade_pct']:g})")
     if isinstance(values.get("daily_loss_pct"), (int, float)) and values["daily_loss_pct"] > ceilings.get("max_daily_loss_pct", math.inf):
-        errors.append(f"{LABELS['daily_loss_pct']} is above the platform ceiling {ceilings['max_daily_loss_pct']:g}")
+        errors.append(f"{LABELS['daily_loss_pct']} is above the ceiling your admin set ({ceilings['max_daily_loss_pct']:g})")
     return errors
 
 
@@ -300,9 +310,13 @@ def effective_settings(settings: RiskSettings, ceilings: Dict[str, float]) -> Tu
 
 # --- pure rules --------------------------------------------------------------------------------------------------------
 
-def risk_cap(capital_basis: float, settings: RiskSettings) -> Dict[str, Any]:
+def risk_cap(capital_basis: float | None, settings: RiskSettings) -> dict[str, Any]:
     """The user's cap per trade: the stricter of the % of capital and the rupee amount; either 0 = not set. Neither set
-    (TT-12): no cap of his own - `amount` None (the organisation's risk per trade still sizes the entry)."""
+    (TT-12): no cap of his own - `amount` None (the organisation's risk per trade still sizes the entry).
+    M68 PR-7: `capital_basis` None (his starting capital is Not set) - a % cap cannot be measured (`needs_capital`; a new
+    entry waits for the capital, `entry_refusals`)."""
+    if capital_basis is None:
+        return {**risk_cap(0.0, replace(settings, risk_per_trade_pct=0.0)), "needs_capital": settings.risk_per_trade_pct > 0}
     by_pct = max(0.0, float(capital_basis)) * settings.risk_per_trade_pct / 100.0 if settings.risk_per_trade_pct > 0 else None
     amount = settings.risk_per_trade_amount if settings.risk_per_trade_amount > 0 else None
     if amount is not None and (by_pct is None or amount < by_pct):
@@ -383,10 +397,11 @@ def cost_line(*, direction: str, entry: float, stop: float, target: float, quant
     }
 
 
-def daily_loss_breached(capital_basis: float, settings: RiskSettings, closed_pnls_in_order: Sequence[float], open_marks: float) -> Dict[str, Any]:
+def daily_loss_breached(capital_basis: float | None, settings: RiskSettings, closed_pnls_in_order: Sequence[float], open_marks: float) -> dict[str, Any]:
     """Whether the day's PAPER P&L reached the limit at any point seen: after any close (in close order), or now with the
-    open marks. Pure."""
-    limit = max(0.0, float(capital_basis)) * settings.daily_loss_pct / 100.0
+    open marks. Pure. M68 PR-7: `capital_basis` None (Not set) - the % limit cannot be measured (limit 0; a new entry waits
+    for the capital, `entry_refusals`)."""
+    limit = max(0.0, float(capital_basis or 0.0)) * settings.daily_loss_pct / 100.0
     running, worst = 0.0, 0.0
     for pnl in closed_pnls_in_order:
         running += float(pnl or 0.0)
@@ -415,10 +430,14 @@ async def user_settings(session: AsyncSession, user: User, now: Optional[datetim
     return settings_on(row.risk_settings_json if row is not None else None, to_ist(now).date())
 
 
-async def capital_basis(session: AsyncSession, user: User, now: Optional[datetime] = None) -> float:
-    """The PAPER starting capital plus the realised net P&L of this user's PAPER trades closed before today (IST)."""
-    row = await _account(session, user)
-    starting = float(row.starting_capital) if row is not None else float(app_config.PAPER_STARTING_CAPITAL)
+async def capital_basis(session: AsyncSession, user: User, now: datetime | None = None) -> float | None:
+    """The PAPER starting capital plus the realised net P&L of this user's PAPER trades closed before today (IST).
+    M68 PR-7 (TS1-065): his own capital (the account's, else his saved Trade settings value); None = Not set - never a
+    capital ATP chose."""
+    from app.paper import paper_settings
+    starting = await paper_settings.capital_of(session, user)
+    if starting is None:
+        return None
     before = await session.scalar(select(func.coalesce(func.sum(TradeRecord.pnl), 0.0)).where(
         TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.mode == MODE,
         TradeRecord.exit_time.is_not(None), TradeRecord.exit_time < trading_day_start(now)))
@@ -471,7 +490,7 @@ async def lockout(session: AsyncSession, user: User, now: Optional[datetime] = N
         return {"kind": KIND_DAILY_LOSS, "reason": row.reason, "pnl": float(row.pnl), "limit": float(row.limit_amount),
                 "locked_at": _utc(row.locked_at).isoformat(), "until": until.isoformat()}
     from app.platform.controls import risk_ceilings
-    settings, _ = effective_settings(await user_settings(session, user, now), await risk_ceilings(session))
+    settings, _ = effective_settings(await user_settings(session, user, now), await risk_ceilings(session, user.tenant_id))
     basis = await capital_basis(session, user, now)
     act = await day_activity(session, user, now)
     check = daily_loss_breached(basis, settings, act["closed_pnls"], act["open_marks"])
@@ -510,6 +529,9 @@ async def entry_refusals(session: AsyncSession, user: User, now: Optional[dateti
     if locked:
         reasons.append(locked["reason"])
     settings = await user_settings(session, user, now)
+    if (settings.risk_per_trade_pct > 0 or settings.daily_loss_pct > 0) and await capital_basis(session, user, now) is None:
+        from app.paper import paper_settings  # M68 PR-7: a % of a capital he has not set cannot be measured
+        reasons.append(paper_settings.needs_capital())
     if settings.max_trades_per_day > 0:
         if reserve and not reasons:
             refused = await reserve_entry(session, user, settings.max_trades_per_day, now)
@@ -620,7 +642,7 @@ async def apply_user_cap(session: AsyncSession, user: User, cfg: RiskConfig, *, 
     override included) as well as the organisation's limit, whichever is stricter."""
     if amount is None:
         from app.platform.controls import risk_ceilings
-        settings, _ = effective_settings(await user_settings(session, user, now), await risk_ceilings(session))
+        settings, _ = effective_settings(await user_settings(session, user, now), await risk_ceilings(session, user.tenant_id))
         amount = risk_cap(await capital_basis(session, user, now), settings)["amount"]
         if amount is None:                            # TT-12: no cap of his own - the organisation's alone sizes it
             return cfg, []

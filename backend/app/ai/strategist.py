@@ -31,7 +31,7 @@ import math
 import re
 from dataclasses import dataclass
 from itertools import product
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -47,6 +47,21 @@ COST_PCT = 0.03            # round-trip costs + slippage, % of price
 MAX_TRADES_PER_DAY = 3
 LAST_ENTRY = (14, 45)      # IST
 SQUARE_OFF = (15, 15)
+# M68 PR-8 (TS1-075): the draft bot's exits are SUGGESTED, never sent on their own: the candidate shows them, and only a
+# trader who ticks "Use the suggested exits" sends them with his bot. The simulation's own assumptions (above) are shown
+# on the card as what the test assumed, never applied to a bot.
+SUGGESTED_EXITS: dict[str, Any] = {"holding": "INTRADAY", "exit_rules": {"time_exit_at": "15:10", "break_even_at_r": 1.0}}
+
+
+def suggested_exits() -> dict:
+    """A fresh copy of the draft bot's suggested exits (a caller may change its copy)."""
+    return {"holding": SUGGESTED_EXITS["holding"], "exit_rules": dict(SUGGESTED_EXITS["exit_rules"])}
+
+
+def simulation_assumptions() -> list[str]:
+    """What the simulation assumed, in words - shown with the evidence, never applied to a bot."""
+    return [f"At most {MAX_TRADES_PER_DAY} trades a day", f"No new entry after {LAST_ENTRY[0]:02d}:{LAST_ENTRY[1]:02d}",
+            f"Open trades closed at {SQUARE_OFF[0]:02d}:{SQUARE_OFF[1]:02d}", f"Costs and slippage {COST_PCT:g} % of the price per round trip"]
 IS_FRACTION = 0.7
 MIN_IS_TRADES = 4
 # P0.9: "held on unseen data" needs at least this many trades on the unseen sessions, and real broker candles.
@@ -374,10 +389,10 @@ def _is_grammar_word(word: str) -> bool:
     return word in TICKER_STOP_WORDS or any(p.search(low) for p, _ in STYLE_WORDS) or any(p.search(low) for p, _ in DIRECTION_REQUEST_WORDS)
 
 
-def parse_request(text: str, *, default_symbol: str = "NIFTY 50") -> dict:
+def parse_request(text: str, *, default_symbol: str | None = None) -> dict:
     """A plain-words request - `banknifty long only scalping`, `RELIANCE intraday both sides` - into the strategist's
-    inputs. Returns what was matched so the UI can show it; anything not said keeps the default (symbol as given,
-    intraday, direction decided by the market). ATP is English only: the words are English, and `language` is always
+    inputs. Returns what was matched so the UI can show it; anything not said keeps the default (symbol as given - none
+    when none was given, M68 PR-8 - intraday, direction decided by the market). ATP is English only: the words are English, and `language` is always
     "en" (a request in another script matches nothing and keeps the defaults)."""
     raw = (text or "").strip()
     norm = raw
@@ -410,7 +425,7 @@ def parse_request(text: str, *, default_symbol: str = "NIFTY 50") -> dict:
 def request_summary(lang: str, parsed: dict) -> str:
     style = "scalping (1-minute, 5-minute filter)" if parsed["style"] == "scalping" else "intraday (5-minute, 15-minute filter)"
     direction = {"long": "LONG only", "short": "SHORT only", "both": "both sides", "auto": "both sides"}[parsed["direction"]]
-    return f"Understood: {parsed['symbol']}, {style}, {direction}."
+    return f"Understood: {parsed['symbol'] or 'no symbol yet'}, {style}, {direction}."     # M68 PR-8: none pre-chosen
 
 
 def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str, real_data: bool = True) -> dict:
@@ -434,15 +449,16 @@ def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str, rea
         "rules": {"long": [c.label() for c in cfg.long_conditions], "short": [c.label() for c in cfg.short_conditions]},
         "rules_text": {"long": [rule_words(lang, c) for c in cfg.long_conditions], "short": [rule_words(lang, c) for c in cfg.short_conditions]},
         "direction_text": DIRECTION_WORDS[side], "timeframe_text": TIMEFRAME_WORDS.get(cfg.timeframe, cfg.timeframe),
-        "exits": f"Stop {cfg.stop_loss_atr_mult:g} x ATR(14); targets {cfg.target_rr[0]:g}R / {cfg.target_rr[1]:g}R; flat by 15:15.",
+        "exits": f"Stop {cfg.stop_loss_atr_mult:g} x ATR(14); targets {cfg.target_rr[0]:g}R / {cfg.target_rr[1]:g}R.",
+        "test_assumptions": simulation_assumptions(),
         "triggers": triggers, "stop_points": stop_pts, "risk_amount": risk_amount, "quantity_hint": qty,
         "in_sample": r["in_sample"], "out_of_sample": r["out_of_sample"], "all": r["all"], "oos_sessions": r["oos_sessions"],
         "verdict": verdict, "verdict_text": verdict_text, "trades": r["trades"],
         "summary": (f"{t.en}: {DIRECTION_WORDS[side]} on {TIMEFRAME_WORDS.get(cfg.timeframe, cfg.timeframe)} candles, "
                             f"{len(cfg.long_conditions) + len(cfg.short_conditions)} rules, stop {cfg.stop_loss_atr_mult:g} x ATR. {verdict_text}"),
         "config": json.loads(cfg.model_dump_json()),
-        "deployment": {"strategy_id": None, "symbol": symbol.upper(), "exchange": "NSE", "timeframe": cfg.timeframe, "mode": "PAPER",
-                       "holding": "INTRADAY", "exit_rules": {"time_exit_at": "15:10", "break_even_at_r": 1.0}},
+        "deployment": {"strategy_id": None, "symbol": symbol.upper(), "timeframe": cfg.timeframe, "mode": "PAPER"},
+        "suggested_exits": suggested_exits(),
         "source": r.get("source", "template"),
     }
 

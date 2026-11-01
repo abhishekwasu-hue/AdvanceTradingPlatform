@@ -87,7 +87,7 @@
    "data": {
     "bars": 1500,
     "capital": 200000.0,
-    "costs_included": "brokerage and statutory charges at their dated rates, and slippage on every fill",
+    "costs_included": "Statutory charges, your brokerage \u20b920 per order, your slippage 0.02% each side; statutory rates of each trade's own date",
     "days_requested": 60,
     "deflated": {
      "chance_above_zero_pct": 99.9,
@@ -180,7 +180,7 @@
    "data": {
     "bars": 250,
     "capital": 200000.0,
-    "costs_included": "brokerage and statutory charges at their dated rates, and slippage on every fill",
+    "costs_included": "Statutory charges, your brokerage \u20b920 per order, your slippage 0.02% each side; statutory rates of each trade's own date",
     "days_requested": 60,
     "deflated": null,
     "earlier": {

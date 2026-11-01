@@ -16,7 +16,7 @@ import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
 import { fnoApi, runOnOptions, type FnoApi, type MultiExitResult, type MultiResult, type OrderPreview, type OrderResult, type PracticeAccount, type Side } from "./api";
 import {
-  MAX_LOTS, ORDER_TYPES, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
+  ORDER_TYPES, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
   blockedBy, draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
   PRODUCT_UNSET_TEXT, ORDER_TYPE_UNSET_TEXT, LOTS_UNSET_TEXT, firstMissing,
 } from "./ticketModel";
@@ -383,7 +383,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                     const v = Number(text);
                     onDraft({ lots: text === "" ? null : Number.isFinite(v) ? clampLots(v) : draft.lots });     // a letter changes nothing
                   }} data-ticket="lots" />
-                <button type="button" aria-label="One lot more" onClick={() => onDraft({ lots: clampLots((draft.lots ?? 0) + 1) })} disabled={draft.lots !== null && draft.lots >= MAX_LOTS}
+                <button type="button" aria-label="One lot more" onClick={() => onDraft({ lots: clampLots((draft.lots ?? 0) + 1) })}   // M68 PR-4 (TS1-046): no ATP lot cap
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border text-fg disabled:opacity-40" data-ticket="lots-more">
                   <Plus size={16} aria-hidden />
                 </button>

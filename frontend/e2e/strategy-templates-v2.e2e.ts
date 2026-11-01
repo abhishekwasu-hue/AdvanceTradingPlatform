@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { choose, expectChoice, expectChoiceLabels, expectGroupLabels, pickEntryStyle } from "./combobox";
+import { choose, expectChoice, expectChoiceLabels, expectGroupLabels, pickEntryStyle, pickOptionChoices } from "./combobox";
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
@@ -185,6 +185,9 @@ test.describe("Strategy templates behaviour", () => {
     await expect(form(page).locator("[data-start-why]")).toHaveText("Choose the width of the structure to start.");
     await expect(start).toBeDisabled();
     await form(page).getByLabel("Wing width (strike steps)").fill("3");
+    // M68 PR-4: nor the expiry or the strike - Start says which, and the form asks for it
+    await expect(form(page).locator("[data-start-why]")).toHaveText("Needs your setting: Expiry.");
+    await pickOptionChoices(page, form(page));
     // M68 PR-1: nothing pre-selects how entries are sent either - Start says so until he picks it
     await expect(form(page).locator("[data-start-why]")).toHaveText("Choose how this bot sends its entries.");
     await pickEntryStyle(page, form(page));       // M68 PR-6: picks "New entries" too (asked the same way)

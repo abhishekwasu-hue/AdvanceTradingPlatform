@@ -38,9 +38,10 @@ describe("a seller pack on an index: nothing pre-chosen", () => {
     expect(paperBotRequestWithDefaults(F2, "NIFTY BANK", intraday, EMPTY_DEFAULTS, false).request).not.toHaveProperty("option_position");
   });
 
-  it("any other strategy on an index is exactly as before (one bought option)", () => {
-    expect(paperBotRequest("orb_15m_5m", "NIFTY 50", intraday)).toMatchObject({ instrument_kind: "OPTION", option_position: "BUY" });
-    expect(constructionProblem(paperBotRequest("orb_15m_5m", "NIFTY 50", intraday))).toBeNull();
+  it("M68 PR-4 (TS1-037): any other strategy on an index names no side either - the form asks", () => {
+    expect(paperBotRequest("orb_15m_5m", "NIFTY 50", intraday)).toMatchObject({ instrument_kind: "OPTION" });
+    expect(paperBotRequest("orb_15m_5m", "NIFTY 50", intraday)).not.toHaveProperty("option_position");
+    expect(constructionProblem(paperBotRequest("orb_15m_5m", "NIFTY 50", intraday))).toBe("Choose how this bot trades the option to start.");
   });
 
   it("a pack on a stock trades the shares: nothing to choose", () => {
@@ -71,14 +72,15 @@ describe("a seller pack on an index: nothing pre-chosen", () => {
     // a straddle has no width to choose
     expect(constructionProblem(withConstruction(base, "SHORT_STRADDLE", null))).toBeNull();
     // a request that already says how it trades is never changed by the form's choice
-    const bought = paperBotRequest("orb_15m_5m", "NIFTY 50", intraday);
+    const bought = { ...paperBotRequest("orb_15m_5m", "NIFTY 50", intraday), option_position: "BUY" as const };
     expect(withConstruction(bought, "WRITE", null)).toBe(bought);
   });
 
-  it("the width is whole strike steps from 1 to 20, else not chosen", () => {
+  it("the width is whole strike steps, 1 or more (M68 PR-4: no ATP ceiling), else not chosen", () => {
     expect(widthOf("3")).toBe(3);
     expect(widthOf(" 20 ")).toBe(20);
-    for (const t of ["", "0", "21", "2.5", "-1", "abc"]) expect(widthOf(t)).toBeNull();
+    expect(widthOf("21")).toBe(21);
+    for (const t of ["", "0", "2.5", "-1", "abc"]) expect(widthOf(t)).toBeNull();
   });
 
   it("the user's own defaults fill it: a structure, a side (buy too), and no width is invented", () => {
@@ -97,9 +99,10 @@ describe("a seller pack on an index: nothing pre-chosen", () => {
     expect(needsConstruction(paperBotRequestWithDefaults(F1, "NIFTY 50", intraday, d({ option_position: "WRITE" }), false, false).request)).toBe(true);
   });
 
-  it("a buy default on any other strategy changes nothing (the request already buys)", () => {
-    const base = paperBotRequest("orb_15m_5m", "NIFTY 50", intraday);
-    expect(paperBotRequestWithDefaults("orb_15m_5m", "NIFTY 50", intraday, d({ option_position: "BUY" }), false)).toEqual({ request: base, applied: [] });
+  it("M68 PR-4: a buy default on any other strategy is his own side (the request names none)", () => {
+    const { request } = paperBotRequestWithDefaults("orb_15m_5m", "NIFTY 50", intraday, d({ option_position: "BUY" }), false);
+    expect(request).toMatchObject({ option_position: "BUY" });
+    expect(constructionProblem(request)).toBeNull();
   });
 });
 

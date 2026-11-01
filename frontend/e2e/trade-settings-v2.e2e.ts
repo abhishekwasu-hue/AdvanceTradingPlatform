@@ -54,14 +54,16 @@ test.describe("Settings › Trade settings 1440", () => {
     await expect(sectionAt(page, "order_defaults").locator("[data-input]")).toHaveCount(7);
     await expect(sectionAt(page, "order_defaults").locator("[data-field] [data-value]")).toHaveText(Array(7).fill("Not set"));
     await expect(sectionAt(page, "position_size").locator("[data-input]")).toHaveCount(6);
+    // M68 PR-4: Options is wired too - its 15 controls (the custom legs are saved from the bot form, shown as information)
+    await expect(sectionAt(page, "options").locator("[data-input]")).toHaveCount(15);
     await expect(sectionAt(page, "risk_limits").locator("[data-input]")).toHaveCount(8);
     await expect(sectionAt(page, "risk_limits").locator("[data-readonly]")).toHaveCount(5);
     await expect(sectionAt(page, "risk_limits").getByText("No ceiling")).toHaveCount(5);
     // M68 PR-6: Automation is wired too - its seven controls (the fixture's trader has the scanner's Auto PAPER on), Not set
     await expect(sectionAt(page, "automation").locator("[data-input]")).toHaveCount(7);
     await expect(sectionAt(page, "automation").locator("[data-field] [data-value]")).toHaveText(Array(7).fill("Not set"));
-    await expect(page.locator("[data-input]")).toHaveCount(28);
-    await expect(page.locator("[data-save]")).toHaveCount(4);                      // one Save per wired section
+    await expect(page.locator("[data-input]")).toHaveCount(43);
+    await expect(page.locator("[data-save]")).toHaveCount(5);                      // one Save per wired section
     await expect(page.getByText("Advanced (admin)")).toHaveCount(0);
     await expect(sectionAt(page, "risk_limits").getByRole("link", { name: "Risk limits" })).toHaveAttribute("href", "/settings/risk-limits");
     await expect(page).toHaveScreenshot("trade-settings-v2-1440-light.png", SHOT);

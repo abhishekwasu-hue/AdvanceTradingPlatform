@@ -308,11 +308,11 @@ export const SUGGESTIONS: readonly StrategySuggestion[] = [
 export const START_BOT_PATH = "/deployments";
 
 /** The deployment "Start on Paper Autopilot" created before REV-1 M2 (D3). Kept as a helper; the Setup step no longer
- * starts a bot in one tap. Always PAPER: this screen never offers LIVE. */
+ * starts a bot in one tap. Always PAPER: this screen never offers LIVE. M68 PR-4 (TS1-040): the pre-chosen contract (a
+ * bought ATM option at the nearest expiry) is gone - the option's side, expiry and strike are his own (the server takes
+ * his Trade settings › Options and asks for one that is Not set). */
 export function paperDeployment(s: StrategySuggestion): DeploymentCreateRequest & { mode: "PAPER" } {
-  const contract: ContractRules = s.option
-    ? { instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0 }
-    : { instrument_kind: "UNDERLYING" };
+  const contract: ContractRules = s.option ? { instrument_kind: "OPTION" } : { instrument_kind: "UNDERLYING" };
   return {
     strategy_id: s.strategyId, symbol: s.symbol, exchange: "NSE", timeframe: s.timeframe, mode: "PAPER",
     holding: s.timeframe === "day" ? "SWING" : "INTRADAY", ...contract,

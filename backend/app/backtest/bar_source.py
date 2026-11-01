@@ -314,8 +314,9 @@ async def resolve(session: AsyncSession, tenant_id: int, symbol: str, exchange: 
         if broker_fetch is not None:
             df, source = await broker_fetch()
         else:
+            # M71Q-2: a reader's backtest reads through his own credential only, never a teammate's
             df, source = await evidence.server_frame(session, tenant_id, symbol, exchange, timeframe, broker=broker,
-                                                     lookback_days=lookback_days, user=user)
+                                                     lookback_days=lookback_days, user=user, own_only=user is not None)
         return BacktestBars(df, source, "broker", broker_words(source), note)
     except HTTPException as exc:
         broker_error = exc

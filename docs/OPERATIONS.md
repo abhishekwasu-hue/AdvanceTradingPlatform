@@ -950,6 +950,13 @@ Never publish a listing without an attached backtest run; the API refuses the su
   a plan with no budget, or no per-user daily cap, gets the rules. Both are checked before every call; a cap reached is a
   hard stop, then the rules. A user may set a lower daily limit of his own in Settings › AI. Platform spend is metered on
   the `ai_platform_*` metrics and never counts against the organisation's own-key budget.
+- **Live eval of the Copilot planner (M72Q-7, one paid run the owner starts)**: `/opt/atp/deploy/atp.sh ai-eval` runs
+  `python -m evals.planner_live` in the backend container - the 60 trader questions and the safety block through the real
+  planner, with the recorded synthetic tool results (no user data leaves) and the server's own AI key (`--key auto`: the
+  platform key, else the one organisation with a saved key; `--key org --tenant ID` picks one). It prints the eval table,
+  the score per job, the safety result, tokens and cost per answer and the total (USD and INR). No call cap; nothing is
+  written. `--offline` checks the wiring with a fake model at zero cost. Long run: start it detached
+  (`nohup ... > /tmp/atp-ai-eval.log 2>&1 &`) and read the log.
 - **Cut-off answers**: an answer the model could not finish inside its token budget is retried once with a bigger
   budget and otherwise dropped with "cut off" in the note - you never see half a sentence presented as the answer.
   Long drafts get a longer timeout (`AI_TIMEOUT_PER_1K_SECONDS`, default 8 s per 1,000 tokens of budget, on top of

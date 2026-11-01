@@ -183,7 +183,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     # the AI eval sets and their baselines (backend/evals/runner.py)
     "backend/evals/baselines.json": "3c28c69e5964aab11c234bd6cf7608f66c9d327f1dfeacdb64d7f42f2b109a09",
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
-    "backend/evals/sets/qa.jsonl": "845e5902cbc904864ec1f24bbf589194428ec462e164e388ab04b9734469338e",
+    "backend/evals/sets/qa.jsonl": "ed0530199bad39021edf8e4777700dedb99619c0eeeaca623dcf958d015e22ad",
     "backend/evals/sets/tool_args.jsonl": "578efa3d69f7d860f221068273a074b018e7998b71bdf8c55d5bdbd66d7f862b",
     "backend/evals/sets/copilot_jobs.jsonl": "f38a563b08c68a727e5eb4fb2fb13d254c8a136dc207ff93bda186ee4b24a416",
     "backend/evals/sets/copilot_safety.jsonl": "6957614b58ca737a77f1445e2d3bd0a13fa5c3063c829e75506e6043a3a37287",
@@ -194,7 +194,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/sets/copilot_trader_safety.jsonl": "bbfa1fcc7a4df13f8102970366740719b011738590ecc089b3b3c60fdff2e2bf",
     "backend/evals/sets/copilot_trader_lang.json": "93a1b22c0fe6e35d6815969ace2666767f3c97e736591e4cfe9fca91b221f0f0",
     "backend/evals/sets/copilot_trader_tools.json": "a58e1baf50ab5a2a9365d40c102a64d30cfe7192face4ebfe41e7ba8ad68d041",
-    "backend/evals/trader_baseline.json": "bbb9112f3fc621ea68429789a1be94ac9ce9d423d05d4485d625218d7a1a1b9e",
+    "backend/evals/trader_baseline.json": "98638992ae9740203b295a1ec8d07f8fca0ec54b23c727c0ab1d9110e7b2c13c",
     "frontend/e2e/fixtures/copilot_tools_v2.json": "37c00546e26cc0cab4b2af0c38ae6041a630d57790be87397fa186502f3e4502",
     # hand-written API replies for the Playwright tests
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",

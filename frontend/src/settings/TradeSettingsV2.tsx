@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { BUTTON_PRIMARY, FIELD, LABEL, NoteV2 } from "../trading/PartsV2";
 import { Combobox } from "../ui/Combobox";
@@ -78,7 +78,7 @@ function SectionCard({ section, admin, save, onSaved }: {
         ) : (
           <p className="text-t13 text-fg-muted" data-part="empty">
             {section.today
-              ? <>For now you set these in <Link to={section.today.path} className="font-medium text-brand hover:underline">{section.today.label}</Link>.</>
+              ? <>For now you set these in <InPlaceLink to={section.today.path} className="font-medium text-brand hover:underline">{section.today.label}</InPlaceLink>.</>
               : "Nothing to choose here yet."}
           </p>
         )}

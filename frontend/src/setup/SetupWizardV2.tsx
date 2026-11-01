@@ -1,6 +1,6 @@
 import { Check } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { CARD, LINK_SECONDARY } from "../dashboard/CardV2";
 import {
@@ -110,7 +110,7 @@ export default function SetupWizardV2() {
               ? "You can change any step above at any time."
               : "The steps you skipped are still open. The Setup reminder on Today stays until they are done, or until you close it."}
           </p>
-          <Link to="/" className={LINK_SECONDARY}>Go to Today</Link>
+          <InPlaceLink to="/" className={LINK_SECONDARY}>Go to Today</InPlaceLink>
         </div>
       )}
       {setup.error && <p role="alert" className="text-t13 text-warn">{setup.error}</p>}

@@ -3,6 +3,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { api } from "../api/client";
 import type { AiConnection } from "../aiKeys/connect";
 import { AI_CONNECTION_CHANGED_EVENT } from "../aiKeys/connect";
@@ -210,10 +211,10 @@ export default function SettingsIndexV2(_props: PageProps = {}) {
       <div className="flex flex-wrap items-center justify-between gap-x-space-4 gap-y-space-2">
         <h1 className="text-t20 font-semibold text-fg">Settings</h1>
         {!liveHidden && (
-          <Link to={GO_LIVE_PATH_V2} data-prepare-live
+          <InPlaceLink to={GO_LIVE_PATH_V2} data-prepare-live
             className={`inline-flex min-h-11 items-center gap-space-1 rounded-control text-t14 font-medium text-brand hover:underline ${FOCUS}`}>
             Prepare for LIVE <ChevronRight size={16} aria-hidden />
-          </Link>
+          </InPlaceLink>
         )}
       </div>
       <SearchBox query={query} onQuery={setQuery} onEnter={jump} />

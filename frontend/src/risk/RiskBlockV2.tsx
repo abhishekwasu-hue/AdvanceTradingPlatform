@@ -1,5 +1,5 @@
-import { Link } from "react-router";
 import type { RiskBlock } from "../settings/riskLimits";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 
 /**
  * M64 RM-3: one block message - never silent, never a raw reason. One plain sentence with its numbers (from the server),
@@ -28,9 +28,9 @@ export default function RiskBlockV2({ block, onSmaller, busy = false, testId = "
         {block.admin || !block.link ? (
           <span className="text-t13 font-medium text-fg-muted" data-risk-block="admin">Ask your admin</span>
         ) : (
-          <Link to={block.link} className="inline-flex min-h-11 items-center text-t14 font-medium text-brand underline md:min-h-9" data-risk-block="link">
+          <InPlaceLink to={block.link} className="inline-flex min-h-11 items-center text-t14 font-medium text-brand underline md:min-h-9" data-risk-block="link">
             Change limit
-          </Link>
+          </InPlaceLink>
         )}
       </div>
     </div>

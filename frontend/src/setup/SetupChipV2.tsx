@@ -1,5 +1,5 @@
 import { ChevronRight, X } from "lucide-react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useAuth } from "../auth/AuthContext";
 import { CARD } from "../dashboard/CardV2";
 import { SETUP_PATH, setupChip } from "./model";
@@ -14,12 +14,12 @@ import { useSetup } from "./useSetup";
 export default function SetupChipV2({ label, next, to, onDismiss }: { label: string; next: string; to: string; onDismiss?: () => void }) {
   return (
     <div data-block="setup" className={`${CARD} flex min-h-12 items-center gap-space-1 py-0 pl-space-4 md:pl-space-5 ${onDismiss ? "pr-space-1" : "pr-space-4 md:pr-space-5"}`}>
-      <Link to={to}
+      <InPlaceLink to={to}
         className="flex min-h-11 min-w-0 flex-1 items-center gap-space-3 rounded-control transition-colors duration-fast hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
         <span className="inline-flex h-7 shrink-0 items-center rounded-pill bg-brand/10 px-space-3 text-t13 font-semibold text-brand">{label}</span>
         <span className="min-w-0 flex-1 text-t14 text-fg">{next}</span>
         <ChevronRight size={18} aria-hidden className="shrink-0 text-fg-muted" />
-      </Link>
+      </InPlaceLink>
       {onDismiss && (
         <button type="button" onClick={onDismiss} aria-label="Hide the setup reminder"
           className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted transition-colors duration-fast hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">

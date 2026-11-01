@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { Database, FlaskConical, Plug } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -268,7 +268,7 @@ export function PlainDataSourceBar({ source, bare }: { source: CandleSourceState
       <div className={`${mb}flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg`} data-plain-data-source="no-broker">
         <Plug size={16} aria-hidden className="shrink-0 text-fg-muted" />
         <span className="min-w-0 flex-1">{NEEDS_BROKER_FOR_DATA}</span>
-        <Link to="/broker" className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">Open Broker</Link>
+        <InPlaceLink to="/broker" className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">Open Broker</InPlaceLink>
       </div>
     );
   }

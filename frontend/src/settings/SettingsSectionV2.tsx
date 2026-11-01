@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, useLocation } from "react-router";
 import { Details } from "../ui/numbersFirst";
@@ -191,7 +192,7 @@ function AdvancedSection() {
       {/* TERM-2 (owner 30 Oct): the Terminal as it was, until the owner approves the rebuild. */}
       {features.on("terminal") && (
         <Fold id="terminal-classic" title="Previous Terminal" line="The Terminal before the rebuild">
-          <Link to="/terminal?view=classic" data-terminal-classic className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-9">Open the previous Terminal</Link>
+          <InPlaceLink to="/terminal?view=classic" data-terminal-classic className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-9">Open the previous Terminal</InPlaceLink>
         </Fold>
       )}
       {/* B3: nothing about LIVE while Phase 0 is PAPER only (the admin keeps the platform checklist on /admin). */}

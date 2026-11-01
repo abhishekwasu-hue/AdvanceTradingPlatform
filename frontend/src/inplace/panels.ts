@@ -14,7 +14,8 @@ import { createRegistry, type PanelEntry, type PanelParams, type Presentation } 
  * limits. NAV-5a: Find setups, Strategies › Test, the journal, My positions, Trading defaults, Settings › Alerts (pages
  * shown whole by PagePanel, their search carried as one parameter); the Copilot's Watchtower proposal; the Trading bot's
  * template pre-fill. NAV-5b: Orders, Risk status and Set-up. NAV-6a: My money, Performance, Sectors and Custom scan.
- * NAV-6b: Notifications, Account & plan, the service status and the legal documents.
+ * NAV-6b: Notifications, Account & plan, the service status and the legal documents. NAV-7: Settings › Advanced,
+ * Strategies, the Terminal and Today.
  */
 
 const clean = (pathname: string) => pathname.replace(/\/+$/, "") || "/";
@@ -298,6 +299,26 @@ export const LEGAL_PANEL: PanelEntry = {
   load: () => import("./panels/LegalPanel"),
 };
 
+// ---- NAV-7: Settings and set-up -----------------------------------------------------------------------------------
+
+/** Settings › Advanced (`/settings/advanced#go-live`, `#own-bot`, `#alert-delivery`): the section opens on that row. */
+export const ADVANCED_PANEL = pagePanel({ kind: "advanced", title: "Advanced", presentation: "side-wide", paths: ["/settings/advanced"], hash: true });
+/** Strategies (the library, `/strategies`): set-up's "browse the strategies". */
+export const STRATEGIES_PANEL = pagePanel({ kind: "strategies", title: "Strategies", presentation: "side-wide", paths: ["/strategies"] });
+/** The Terminal (`/terminal?view=classic`: Settings' "Open the previous Terminal") while `terminal` is on. */
+export const TERMINAL_PANEL = pagePanel({ kind: "terminal", title: "Terminal", presentation: "side-wide", paths: ["/terminal"], flag: "terminal" });
+/** Today (`/` with no search: the set-up wizard's "Go to Today"). An address on `/` with a search (the classic chart
+ * window's `?chart=` / `?contract=`) is not Today. */
+export const TODAY_PANEL: PanelEntry = {
+  kind: "today",
+  keys: [],
+  title: () => "Today",
+  presentation: "side-wide",
+  match: ({ pathname, search, hash }) => (clean(pathname) === "/" && !search.toString() && !hash ? {} : null),
+  href: () => "/",
+  load: () => import("./panels/PagePanel"),
+};
+
 export const DEFAULT_PANELS: readonly PanelEntry[] = [
   FUTURES_PANEL, CHART_PANEL, BROKER_PANEL, AI_KEY_PANEL, COPILOT_PANEL, ANALYZE_PANEL, STRATEGY_BUILD_PANEL, NEWS_PANEL, SIGNALS_PANEL, BOTS_PANEL,
   OPTION_CHAIN_PANEL, OPTIONS_PLAN_PANEL, RISK_LIMITS_PANEL,
@@ -305,5 +326,6 @@ export const DEFAULT_PANELS: readonly PanelEntry[] = [
   ORDERS_PANEL, RISK_STATUS_PANEL, SETUP_PANEL,
   MONEY_PANEL, PERFORMANCE_PANEL, MARKETS_PANEL, CUSTOM_SCAN_PANEL,
   NOTIFICATIONS_PANEL, ACCOUNT_PANEL, STATUS_PANEL, LEGAL_PANEL,
+  ADVANCED_PANEL, STRATEGIES_PANEL, TERMINAL_PANEL, TODAY_PANEL,
 ];
 export const DEFAULT_REGISTRY = createRegistry(DEFAULT_PANELS);

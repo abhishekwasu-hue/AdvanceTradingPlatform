@@ -294,9 +294,9 @@ export default function SignInScreen() {
                     describedBy={newPassword ? `${ids.password}-hint` : undefined} tall={v2} />
                 </Field>
               )}
-              {mode === "link" && pendingInfo?.mfa && pendingInfo.has_password !== false && (
-                <Field id={ids.code} label="Authenticator code">
-                  <input id={ids.code} required inputMode="numeric" autoComplete="one-time-code" placeholder="123 456"
+              {mode === "link" && pendingInfo && pendingInfo.mfa !== false && pendingInfo.has_password !== false && (
+                <Field id={ids.code} label={pendingInfo.mfa ? "Authenticator code" : "Authenticator code (if two-factor is on)"}>
+                  <input id={ids.code} required={pendingInfo.mfa === true} inputMode="numeric" autoComplete="one-time-code" placeholder="123 456"
                     className={`${inputClass} ${controlH} font-mono tracking-widest`} value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} />
                 </Field>
               )}

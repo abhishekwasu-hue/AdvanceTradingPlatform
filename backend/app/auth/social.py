@@ -278,8 +278,11 @@ async def identities_of(session: AsyncSession, user_id: int) -> list[UserIdentit
 async def link_identity(session: AsyncSession, user: User, identity: ProviderIdentity, *, alert: bool = True) -> UserIdentityRecord:
     """Adds the link and its audit row (`social_link`, detail = the provider). `alert`: a SECURITY notification to the
     account (a link to an existing account; not for the identity a brand-new account was made with). Does not commit."""
+    # Re-review blocker: only an address the provider (or our own mailed link) verified is recorded; a typed, unproven
+    # one is never stored, so it can never pass for "verified" later (drop_identities_linked_unverified).
+    proven = identity.email[:320] if identity.email and identity.email_verified else None
     record = UserIdentityRecord(user_id=user.id, provider=identity.provider, subject=identity.subject[:255],
-                                email_at_link=(identity.email or None) and identity.email[:320])
+                                email_at_link=proven)
     session.add(record)
     await session.flush()
     await write_audit_log(session, user.tenant_id, user.id, "social_link", identity.provider)
@@ -305,8 +308,8 @@ async def security_notice(session: AsyncSession, user: User, title: str, message
 async def drop_identities_linked_unverified(session: AsyncSession, user: User, why: str) -> list[str]:
     """Review blocker 1: the inbox owner proved himself (a password reset, or the e-mail verification link). Any
     provider linked while the account's e-mail was not yet verified may be someone else's - it is removed (audit
-    `social_unlink`, detail "<provider> (<why>)"). A link whose provider verified this very address stays. Returns the
-    providers removed. Does not commit."""
+    `social_unlink`, detail "<provider> (<why>)", and a SECURITY notice). Every link without a proven address goes too.
+    Only a link whose provider verified this very address stays. Returns the providers removed. Does not commit."""
     verified_at = user.email_verified_at
     removed: list[str] = []
     for record in await identities_of(session, user.id):
@@ -314,12 +317,18 @@ async def drop_identities_linked_unverified(session: AsyncSession, user: User, w
             continue                                  # the provider itself verified this address
         created = record.created_at.replace(tzinfo=UTC) if record.created_at and record.created_at.tzinfo is None else record.created_at
         verified = verified_at.replace(tzinfo=UTC) if verified_at is not None and verified_at.tzinfo is None else verified_at
-        if verified is None or (created is not None and created < verified):
+        # email_at_link is set only for an address a provider (or our mailed link) proved; a link without one - e.g. a
+        # Facebook account with no e-mail linked by password - is never trusted past the inbox owner's proof.
+        if record.email_at_link is None or verified is None or (created is not None and created < verified):
             await session.delete(record)
             removed.append(record.provider)
             await write_audit_log(session, user.tenant_id, user.id, "social_unlink", f"{record.provider} ({why})")
     if removed:
         await session.flush()
+        names = ", ".join(_label(p) for p in removed)
+        await security_notice(session, user, f"{names} unlinked from your account",
+                              f"{names} had been linked before your email address was confirmed, so it was removed. "
+                              "Link it again in Settings › Account if it is yours.")
     return removed
 
 

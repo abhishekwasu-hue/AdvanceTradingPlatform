@@ -393,7 +393,12 @@ async def pending_info(request: PendingRequest, session: AsyncSession = Depends(
         user = await session.get(User, pending.user_id) if pending.user_id is not None else None
         if user is None or not user.is_active:
             raise HTTPException(status_code=400, detail=EXPIRED)
-        body.update(mfa=bool(user.mfa_enabled), has_password=password_usable(user.hashed_password))
+        if pending.extra.get("typed"):
+            # Re-review a: the address was typed, not proven - say nothing about that account (the page offers the
+            # code field as optional; the server still demands it when two-factor is on).
+            body.update(mfa=None, has_password=None)
+        else:
+            body.update(mfa=bool(user.mfa_enabled), has_password=password_usable(user.hashed_password))
     else:
         tenant_id = None
         if pending.intent == "invite" and pending.invite:
@@ -490,11 +495,16 @@ async def complete_signup(request: CompleteSignupRequest, http_request: Request,
     existing = await _user_by_email(session, email)
     if existing is not None:
         if pending.email is None and existing.is_active:
-            # SL-2: the typed address is an account's - only its password can link this provider account to it.
+            # SL-2: the typed address is an account's - only its password can link this provider account to it. The
+            # finish step is spent (re-review a); the link step is marked "typed": it never reveals the account's
+            # two-factor state, and the link it makes records no address (link_identity: unproven).
+            await social.burn(pending)
             link = social.encode_pending(social.Pending(kind="link", provider=provider.id, subject=pending.subject,
-                                                        email=email, email_verified=False, user_id=existing.id))
+                                                        email=email, email_verified=False, user_id=existing.id,
+                                                        extra={"typed": True}))
             raise HTTPException(status_code=409, detail={"code": "link_required", "token": link,
                                                          "message": "An account already uses this email. Confirm with its password to link it."})
+        await social.burn(pending)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     if pending.email is None:
@@ -525,7 +535,9 @@ async def _mail_confirmation(request: Request, email: str, label: str, token: st
     sent = await mailer.send(
         email, "Confirm your email for AiAlgoDesk",
         f"Someone (hopefully you) signed up for AiAlgoDesk with {label} and gave this email address.\n\n"
-        f"Open this link within 24 hours to confirm it and finish creating your account:\n{link}\n\n"
+        f"Opening the link creates a new AiAlgoDesk account for this address and links that {label} account to it: "
+        f"whoever controls that {label} account will be able to sign in to it.\n\n"
+        f"Open this link within 24 hours to confirm and finish creating the account:\n{link}\n\n"
         "If this was not you, ignore this email - no account is created without this link.")
     if not sent:
         logger.warning("sign-up confirmation mail not sent (no platform mailer) - the person cannot finish this sign-up")
@@ -560,9 +572,14 @@ async def verify_signup(request: VerifyRequest, http_request: Request, response:
     identity = social.ProviderIdentity(provider=provider.id, subject=pending.subject, email=pending.email, email_verified=True)
     if not await social.burn(pending):
         raise HTTPException(status_code=400, detail="This link is no longer valid. Sign up again.")
-    _, issued = await self_signup_account(session, http_request, email=pending.email, password=None,
-                                          legal_entries=legal_entries, invite_code=invite_code, source=provider.id,
-                                          email_verified=True, identity=identity)
+    user, issued = await self_signup_account(session, http_request, email=pending.email, password=None,
+                                             legal_entries=legal_entries, invite_code=invite_code, source=provider.id,
+                                             email_verified=True, identity=identity)
+    # Re-review b: the new account is told, in its own notifications, which provider signs in to it.
+    await social.security_notice(session, user, f"{provider.label} is linked to your new account",
+                                 f"Your account was created with {provider.label}; that {provider.label} account signs in "
+                                 "to it. If this was not you, change your password and unlink it in Settings › Account.")
+    await session.commit()
     return _token_response(issued, response)
 
 

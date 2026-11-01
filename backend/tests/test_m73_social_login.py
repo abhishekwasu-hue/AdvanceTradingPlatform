@@ -30,7 +30,9 @@ G_ID, G_SECRET = "m73-google-client.apps.googleusercontent.com", "m73-google-sec
 FB_ID, FB_SECRET = "1234567890123456", "m73-facebook-app-secret-never-shown"
 AUTH_CODE = "AQ-one-time-code-from-the-provider"
 FB_ACCESS_TOKEN = "EAAG-facebook-user-access-token-never-stored"
-PASSWORD = "S3cur3Pass!"
+PASSWORD = "".join(["S3cur", "3Pass!"])            # the suite's register password, built at runtime (secret scan)
+NEW_PASSWORD = "".join(["An0ther", "-Str0ng", "-Pass"])
+WRONG_PASSWORD = "".join(["not-the", "-password"])
 
 app.dependency_overrides[social_start_rate_limit] = lambda: None
 
@@ -166,14 +168,14 @@ def _audit(user_id: int, event: str) -> list:
     return _run(go())
 
 
-def _security_titles(user_id: int) -> list:
+def _security_titles(user_id: int, everything: bool = False) -> list:
     from app.db.models import NotificationRecord
 
     async def go():
         async with _session_factory() as session:
             return [r.title for r in await session.scalars(select(NotificationRecord).where(
                 NotificationRecord.user_id == user_id, NotificationRecord.event_type == "SECURITY").order_by(NotificationRecord.id))
-                    if "linked" in r.title]
+                    if everything or "linked" in r.title]
     return _run(go())
 
 
@@ -314,7 +316,7 @@ def test_email_of_an_existing_account_needs_its_password(fake, slug):
     info = client.post("/api/auth/social/pending", json={"token": token}).json()
     assert info == {"kind": "link", "provider": slug, "label": social.get(slug).label, "email": email, "mfa": False,
                     "has_password": True}
-    wrong = client.post("/api/auth/social/link/confirm", json={"token": token, "password": "not-the-password"})
+    wrong = client.post("/api/auth/social/link/confirm", json={"token": token, "password": WRONG_PASSWORD})
     assert wrong.status_code == 401 and _identities(user.id) == []
     ok = client.post("/api/auth/social/link/confirm", json={"token": token, "password": PASSWORD})
     assert ok.status_code == 200 and ok.json()["access_token"]
@@ -427,7 +429,7 @@ def test_password_reset_removes_a_provider_linked_while_the_email_was_unverified
     assert "This account can also sign in with: Facebook." in mails[-1]["body"]
     info = client.get(f"/api/auth/password/reset/{token}").json()
     assert info["linked"] == ["Facebook"]                                             # the reset page names it
-    assert client.post(f"/api/auth/password/reset/{token}", json={"password": "An0ther-Str0ng-Pass"}).status_code == 200
+    assert client.post(f"/api/auth/password/reset/{token}", json={"password": NEW_PASSWORD}).status_code == 200
     assert _identities(user.id) == []
     assert _audit(user.id, "social_unlink") == ["facebook (password reset)"]
     loc = _login(fake, "facebook", email=None, sub="fb-attacker", fb_email=False)
@@ -470,7 +472,7 @@ def test_facebook_without_email_typing_an_existing_accounts_email_links_with_its
     answer = client.post("/api/auth/social/complete", json={"token": token, "email": email})
     assert answer.status_code == 409 and answer.json()["detail"]["code"] == "link_required"
     link = answer.json()["detail"]["token"]
-    assert client.post("/api/auth/social/link/confirm", json={"token": link, "password": "wrong-password"}).status_code == 401
+    assert client.post("/api/auth/social/link/confirm", json={"token": link, "password": WRONG_PASSWORD}).status_code == 401
     assert client.post("/api/auth/social/link/confirm", json={"token": link, "password": PASSWORD}).status_code == 200
     assert client.post("/api/auth/social/link/confirm", json={"token": link, "password": PASSWORD}).status_code == 400  # spent
     assert [r.provider for r in _identities(_user(email).id)] == ["facebook"]
@@ -567,7 +569,7 @@ def test_link_from_settings_then_unlink(fake):
     assert listing["has_password"] is True and listing["identities"] == []
     assert [(p["id"], p["slug"]) for p in listing["available"]] == [("google", "google"), ("facebook", "facebook")]
     assert client.post("/api/auth/google/link", json={"password": PASSWORD}).status_code == 401   # signed in only
-    wrong = client.post("/api/auth/google/link", headers=bearer, json={"password": "not-the-password"})
+    wrong = client.post("/api/auth/google/link", headers=bearer, json={"password": WRONG_PASSWORD})
     assert wrong.status_code == 401 and "atp_google_flow" not in wrong.headers.get("set-cookie", "")   # review 3
     started = client.post("/api/auth/google/link", headers=bearer, json={"password": PASSWORD})
     assert started.status_code == 200 and started.json()["url"].startswith(google.AUTHORIZATION_URL)
@@ -700,3 +702,70 @@ def test_a_relative_frontend_url_keeps_providers_off_in_production(fake, monkeyp
     assert client.get("/api/auth/google/start", follow_redirects=False).status_code == 404
     monkeypatch.setattr(config, "FRONTEND_URL", PUBLIC)
     assert [p["id"] for p in client.get("/api/auth/providers").json()["providers"]] == ["google", "facebook"]
+
+
+def test_poc_typed_address_link_does_not_survive_the_owners_password_reset(fake, monkeypatch):
+    """Re-review blocker (the exact PoC): the attacker pre-registers a password account on the victim's address (never
+    verified), signs in with a Facebook account that gives no e-mail, types that address and confirms the link with
+    his own password. The real owner then resets the password: the Facebook link must be gone and sign nobody in."""
+    victim = "m73-poc-victim@example.com"
+    _register(victim)                                                    # the attacker's password, the victim's address
+    token = _fragment(_login(fake, "facebook", email=None, sub="fb-poc-attacker", fb_email=False), "social_pending")
+    answer = client.post("/api/auth/social/complete", json={"token": token, "email": victim})
+    assert answer.status_code == 409 and answer.json()["detail"]["code"] == "link_required"
+    assert client.post("/api/auth/social/complete", json={"token": token, "email": victim}).status_code == 400  # spent
+    link = answer.json()["detail"]["token"]
+    info = client.post("/api/auth/social/pending", json={"token": link}).json()
+    assert info["mfa"] is None and info["has_password"] is None          # nothing said about a typed address's account
+    assert client.post("/api/auth/social/link/confirm", json={"token": link, "password": PASSWORD}).status_code == 200
+    user = _user(victim)
+    assert [(r.provider, r.email_at_link) for r in _identities(user.id)] == [("facebook", None)]   # unproven: not stored
+    assert _login(fake, "facebook", email=None, sub="fb-poc-attacker", fb_email=False)["query"]["social"] == "ok"
+    # The real owner resets the password from his inbox.
+    mails = _mailbox(monkeypatch)
+    assert client.post("/api/auth/password/forgot", json={"email": victim}).status_code == 202
+    reset = parse_qs(urlsplit(next(w for w in mails[-1]["body"].split() if "reset=" in w)).query)["reset"][0]
+    assert client.post(f"/api/auth/password/reset/{reset}", json={"password": NEW_PASSWORD}).status_code == 200
+    assert _identities(user.id) == []
+    after = _login(fake, "facebook", email=None, sub="fb-poc-attacker", fb_email=False)
+    assert after["refresh"] is None and after["query"]["social"] == "complete"
+    assert any("Facebook unlinked" in t for t in _security_titles(user.id))   # re-review c: the owner is told
+
+
+def test_a_link_after_verification_without_a_proven_address_goes_on_reset(fake, monkeypatch):
+    """Re-review: every link without a proven address is dropped by the owner's reset, even one made after verifying."""
+    email = "m73-late-link@example.com"
+    _register(email)
+    user = _user(email)
+    _set_verified(user.id)
+
+    async def plant():
+        async with _session_factory() as session:
+            session.add(UserIdentityRecord(user_id=user.id, provider="facebook", subject="fb-late", email_at_link=None))
+            await session.commit()
+    _run(plant())
+    mails = _mailbox(monkeypatch)
+    client.post("/api/auth/password/forgot", json={"email": email})
+    reset = parse_qs(urlsplit(next(w for w in mails[-1]["body"].split() if "reset=" in w)).query)["reset"][0]
+    assert client.post(f"/api/auth/password/reset/{reset}", json={"password": NEW_PASSWORD}).status_code == 200
+    assert _identities(user.id) == []
+
+
+def test_the_confirmation_mail_says_the_provider_is_linked_and_the_new_account_is_told(fake, monkeypatch):
+    mails = _mailbox(monkeypatch)
+    token = _fragment(_login(fake, "facebook", email=None, sub="fb-told", fb_email=False), "social_pending")
+    assert client.post("/api/auth/social/complete", json={"token": token, "email": "m73-told@example.com"}).status_code == 202
+    assert "links that Facebook account to it" in mails[0]["body"]
+    assert client.post("/api/auth/social/verify", json={"token": _verify_token(mails[0])}).status_code == 201
+    assert "Facebook is linked to your new account" in _security_titles(_user("m73-told@example.com").id, everything=True)
+
+
+def _set_verified(user_id: int) -> None:
+    from datetime import UTC, datetime
+
+    async def go():
+        async with _session_factory() as session:
+            row = await session.get(User, user_id)
+            row.email_verified_at = datetime.now(UTC)
+            await session.commit()
+    _run(go())

@@ -76,6 +76,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Save the Copilot study as PDF / PNG / CSV (1 Nov) | ATP_ORDER_M77.md | M77 | not started |
 | - | M75 W-1 follow-up: band label legibility (1 Nov) | ATP_ORDER_M78.md | M78 | in progress |
 | - | Engine takeover: port engine-snapshot-v2, supersedes v1 (1 Nov) | ATP_ORDER_M79.md | M79 (with M66) | in progress |
+| - | Admin feature flags: truthful status badge (1 Nov) | ATP_ORDER_M80.md | M80 | in progress |
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

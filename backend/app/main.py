@@ -127,6 +127,7 @@ from app.options_builder.saved import router as options_builder_saved_router
 from app.paper.fno_insights_routes import router as paper_fno_insights_router
 from app.paper.fno_journal_routes import router as paper_fno_journal_router
 from app.paper.fno_routes import router as paper_fno_router
+from app.paper.pretrade_routes import router as pretrade_checks_router
 from app.paper.report_card_routes import router as paper_report_card_router
 from app.paper.routes import router as paper_router
 from app.paper.ticket_routes import router as paper_ticket_router
@@ -461,6 +462,7 @@ app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, coho
 app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)
 app.include_router(feedback_router)        # PW6: "Send feedback"
 app.include_router(ticket_metrics_router)  # M76 MP-0: one order ticket's report (counters only)
+app.include_router(pretrade_checks_router)  # M76 MP-2: the check card's checks (flag trade_warnings, off)
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
 app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and position what-if (flag decision_tools)
 app.include_router(system_watchlists_router)  # WL1: read-only system lists (indices, index stocks, sectors, F&O); before /{id}

@@ -25,6 +25,7 @@ from app.db.models import User
 from app.me import trade_settings as ts
 
 IST = timezone(timedelta(hours=5, minutes=30))
+WARNING_IDS = ts.WARNING_IDS
 _INSTRUMENT = re.compile(r"[^A-Za-z0-9|.:_-]")
 
 

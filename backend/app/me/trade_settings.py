@@ -137,14 +137,15 @@ O, P, X, OP, R, A, PA, W = SECTION_IDS
 def _warn(name: str, label: str, help: str, on: bool, **kw: Any) -> tuple[SettingField, SettingField]:
     """M76 MP-1: one warning type = its switch (the owner's start state) + its "Ask me" switch (off unless he turns it
     on: with it on, Place first asks him to accept that line)."""
-    base = {"flag": "trade_warnings", "order": "M76", "default_by": "owner", **kw}
+    base = {"flag": "trade_warnings", "order": "M76", "default_by": "owner", "wired": True, **kw}
     return (SettingField(W, name, label, "switch", help, 1, default=on, **base),
             SettingField(W, f"{name}_ask", f"{label}: ask me before placing", "switch",
                          "On: Place first asks you to accept this line. Off: pressing Place is enough.", 1, default=False, **base))
 
 
 # M76 MP-1 / MP-2: the warning types the check card has today. Types that need M75 (structure, plan) or a value with no
-# source of truth yet come with their own PR (docs/design/M76_REVIEW.md section 9).
+# source of truth yet come with their own PR (docs/design/M76_REVIEW.md section 9). Wired by MP-2: the check service
+# (app/paper/pretrade_checks.py) and the check card read them.
 WARNING_TYPES: tuple[tuple[str, str, str, bool], ...] = (
     # pure mistakes: ON (amendment 2)
     ("duplicate_order", "Same contract and side already open or waiting",
@@ -170,10 +171,10 @@ WARNING_IDS: tuple[str, ...] = tuple(t[0] for t in WARNING_TYPES)
 WARNING_FIELDS: tuple[SettingField, ...] = tuple(f for name, label, help, on in WARNING_TYPES for f in _warn(name, label, help, on)) + (
     SettingField(W, "collar_pct", "Limit price far from the last price: more than", "number",
                  "Your own band for the limit-price line, in % of the last price.", 1, unit="%", low=0.0, high=100.0, low_open=True,
-                 term="ltp", flag="trade_warnings", order="M76"),
+                 term="ltp", flag="trade_warnings", order="M76", wired=True),
     SettingField(W, "mis_minutes", "Intraday close near: within", "whole",
                  "Minutes before your square-off time when an MIS order gets the line.", 1, unit="minutes", low=1, high=BIG,
-                 flag="trade_warnings", order="M76"),
+                 flag="trade_warnings", order="M76", wired=True),
     SettingField(W, "blocks", "What holds back an order", "fact",
                  "Exchange rules (tick size, an expired contract) and your own risk limits hold back an order. A warning never does: "
                  "Place stays on.", 1, flag="trade_warnings", order="M76"),

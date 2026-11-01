@@ -75,7 +75,7 @@ def test_registry_seven_sections_and_every_audit_user_row():
 
 # M68 PR-6: Automation fields nothing reads yet - exit requests are off since M55 S2, the trading window is TS1-026 / 028
 # (PR-3) and re-entry has no TS-1 row (no pre-chosen value in the code).
-M76_WIRED = False   # M76 MP-1: declared, read by nothing yet (admin Advanced only); MP-2 wires them
+M76_WIRED = True    # M76 MP-2: the check service and the check card read them (MP-1 declared them unwired)
 PR6_NOT_WIRED = {"automation.approval_exit_minutes", "automation.window_start", "automation.window_end", "automation.reentry",
                  "automation.reentry_max"}
 

@@ -19,7 +19,7 @@ import { basketBlockedBy, blockedBy } from "./ticketModel";
 export type TicketSurfaceKind = "ticket" | "basket";
 export type TicketOutcome = "placed" | "closed";
 
-export interface SurfaceCount { cards: number; lines: number }
+export interface SurfaceCount { cards: number; lines: number; /** M76 MP-2: lines in view (the card folds the rest); absent = all. */ visible?: number }
 
 const EMPTY: SurfaceCount = { cards: 0, lines: 0 };
 
@@ -38,6 +38,26 @@ export function ticketSurfaces(p: { can_place: boolean; errors: string[]; refusa
   const block = p.risk?.blocks?.[0];
   if ((block && !p.errors.length) || blockedBy(p)) c = add(c, 1);
   return c;
+}
+
+/**
+ * M76 MP-2 (flag `trade_warnings`): with the ONE check card, every warning line is in it - one card when it has a line,
+ * the lines folded past three. Blocks (exchange errors, his own risk limits' refusals, the "cannot place" line) stay
+ * outside it and count as before (they are not warnings; at Place there are none, since they hold Place back).
+ */
+export function cardSurfaces(lines: number, visible: number, blocks: SurfaceCount = EMPTY): SurfaceCount {
+  const card = lines > 0 ? 1 : 0;
+  return { cards: card + blocks.cards, lines: lines + blocks.lines, visible: Math.min(visible, lines) + blocks.lines };
+}
+
+/** The single-order ticket's blocks only (refusals, errors, the "cannot place" line / Risk limits block). */
+export function ticketBlocks(p: { can_place: boolean; errors: string[]; refusals: string[]; risk?: { blocks?: unknown[] } | null }): SurfaceCount {
+  return ticketSurfaces({ ...p, warnings: [] }, []);
+}
+
+/** The basket's blocks only (each leg's issue list, the basket's refusals, the "cannot place" line). */
+export function basketBlocks(p: { can_execute: boolean; refusals: string[]; legs: { errors: string[]; refusals: string[] }[] }): SurfaceCount {
+  return basketSurfaces(p, []);
 }
 
 /** The basket's confirm step (BasketPanelV2 `ConfirmView`). */
@@ -95,11 +115,13 @@ export class TicketClock {
   /** What the Review step shows now (its lines fill in as the budget and the events calendar are read). */
   shown(count: SurfaceCount | null): void { if (count) this.last = count; }
 
-  placed(count?: SurfaceCount): void {
+  /** `extra` (M76 MP-2): the check card's checks still running at Place and the time its checks took. */
+  placed(count?: SurfaceCount, extra?: { pending?: number; checksMs?: number | null }): void {
     if (this.sent) return;
     const t = this.clock();
     const c = count ?? this.last ?? EMPTY;
-    this.report("placed", c, this.openAt === null ? null : t - this.openAt, this.reviewAt === null ? null : t - this.reviewAt);
+    if (extra?.checksMs !== undefined && extra.checksMs !== null) this.checksMs = extra.checksMs;
+    this.report("placed", c, this.openAt === null ? null : t - this.openAt, this.reviewAt === null ? null : t - this.reviewAt, extra?.pending ?? 0);
   }
 
   closed(): void {
@@ -107,12 +129,13 @@ export class TicketClock {
     this.report("closed", this.last, null, null);
   }
 
-  private report(outcome: TicketOutcome, c: SurfaceCount, open: number | null, review: number | null): void {
+  private report(outcome: TicketOutcome, c: SurfaceCount, open: number | null, review: number | null, pending = 0): void {
     this.sent = true;
     const r = (v: number | null) => (v === null ? null : Math.max(0, Math.round(v)));
     try {
-      this.send({ surface: this.surface, device: deviceOf(), outcome, cards_shown: c.cards, lines_total: c.lines, lines_visible: c.lines,
-        ms_open_to_place: r(open), ms_review_to_place: r(review), checks_ms: r(this.checksMs), pending_at_place: 0 });
+      this.send({ surface: this.surface, device: deviceOf(), outcome, cards_shown: c.cards, lines_total: c.lines,
+        lines_visible: Math.min(c.visible ?? c.lines, c.lines), ms_open_to_place: r(open), ms_review_to_place: r(review), checks_ms: r(this.checksMs),
+        pending_at_place: pending });
     } catch { /* intentional: metrics are best effort */ }
   }
 }

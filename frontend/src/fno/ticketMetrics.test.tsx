@@ -162,9 +162,9 @@ describe("M76 MP-0: one report per ticket, never in Place's way", () => {
   });
 
   it("Place never awaits the report and stays read-only: the ticket and the basket call it before their own order call", () => {
-    for (const [src, fn, call] of [[ticketSource, "async function place()", "await api.place"], [basketSource, "async function execute()", "await api.execute"]] as const) {
+    for (const [src, fn, call] of [[ticketSource, "async function place(", "await api.place"], [basketSource, "async function execute(", "await api.execute"]] as const) {
       const body = src.slice(src.indexOf(fn), src.indexOf(call, src.indexOf(fn)));
-      expect(body).toContain("metrics.current?.placed(shown)");
+      expect(body).toContain("metrics.current?.placed(shown");
       expect(body).not.toMatch(/await[^;]*metrics/);
     }
     expect(metricsSource).not.toMatch(/await /);                          // the sender is fire and forget

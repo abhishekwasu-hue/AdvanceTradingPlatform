@@ -90,6 +90,8 @@ export interface OrderPreview {
   errors: string[];
   refusals: string[];
   warnings: string[];
+  /** M76 MP-2: one id per entry of `warnings` (the check card's type for it; "status" = not a warning). */
+  warning_ids?: string[] | null;
   can_place: boolean;
   confirm_label: string | null;
   as_of: string;

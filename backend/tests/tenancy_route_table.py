@@ -727,6 +727,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/group-exits/{exit_id}/edit"): "trader", # CX: the caller's own armed combined exit (404 otherwise)
     ("POST", "/api/paper/fno/group-exits/{exit_id}/cancel"): "trader",   # CX: the caller's own armed combined exit (404 otherwise)
     ("POST", "/api/paper/fno/order/preview"): "trader",
+    ("POST", "/api/paper/fno/order/checks"): "trader",          # M76 MP-2: read-only facts for the check card (flag trade_warnings)
+    ("POST", "/api/paper/fno/order/checks/accept"): "trader",   # M76 MP-2: "accepted today" for his own lines (Redis, no order)
     # FNO-2: the basket's numbers (instrument master + the body); TERM-2 R2 / R4 (flags term_whatif / term_margin_pair):
     # also the caller's OWN open PAPER legs (tenant and user) and his own funds - stores nothing, changes no order.
     ("POST", "/api/paper/fno/basket/evaluate"): S_OWN_WHATIF,

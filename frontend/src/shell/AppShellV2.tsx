@@ -19,7 +19,6 @@ import { BrokerGate } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
 import { ColourV2Provider, colourV2On, colourV3On, useColourV3Root, useTabularRoot } from "../ui/colourV2";
 import { PageHelpProvider } from "./pageHelp";
-import { STORED_HISTORY_PATHS, storedDailyFor } from "../ui/dataPages";
 import BottomNavV2 from "./BottomNavV2";
 import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./common";
@@ -27,14 +26,14 @@ import MoreSheetV2 from "./MoreSheetV2";
 import { LEARN_IDEAS_ADDRESS, LEARN_WORDS_ADDRESS, visiblePinned, visibleSections, type NavContext } from "./navModel";
 import { WIDE_QUERY, isSidebarShortcut, useSidebarMode } from "./sidebarPrefs";
 import PageTabsV2 from "./PageTabsV2";
-import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
+import { PAGE_COMPONENTS_V2, brokerGateFor } from "./pagesV2";
 import { MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS, WATCHLIST_ADDRESS } from "./aliases";
 import { IDEAS_ADDRESS } from "../ideas/model";
 import { LEARN_ADDRESS } from "../learn/model";
 import { SETTINGS_SECTIONS } from "../settings/paths";
 import { closedFlag } from "./pageFlags";
 import { ComingSoon } from "../ui/ComingSoon";
-import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
+import { V2_ALIASES, routerPath, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
 import SidebarV2 from "./SidebarV2";
 import TopBarV2, { type TopBarV2Props } from "./TopBarV2";
 import AskAiSheetV2 from "./AskAiSheetV2";
@@ -216,6 +215,7 @@ export default function AppShellV2() {
   // UX1 (handover 8b): a page whose feature flag is off shows "Coming soon" at its address (it is not in the nav).
   const closed = closedFlag(key, features);
 
+  const gate = brokerGateFor(location.pathname, features.on);
   let content: ReactNode;
   if (legacy) content = <Navigate to={`${pathFor(legacy)}${withoutPageParam(location.search)}`} replace />;
   // M60: a forward keeps the address's #part (a journal row, a Settings part), as the router would without it.
@@ -223,9 +223,9 @@ export default function AppShellV2() {
   else if (closed) content = <ComingSoon flag={closed} />;
   // The gate stays mounted while the trader moves between data pages, so the broker status is not re-read per click.
   // A page that shows the broker states itself (UI2-2: the dashboard) is not wrapped (src/shell/pagesV2.ts).
-  else if (shellGates(location.pathname, features.on("backtest_stored_history") ? [...OWN_BROKER_STATES, ...STORED_HISTORY_PATHS] : OWN_BROKER_STATES)) {
+  else if (gate) {
     // Day-one fix 2: with stored history on, Find setups and Signals keep their Daily content before the broker login.
-    content = <BrokerGate storedDaily={features.on("backtest_stored_history") ? storedDailyFor(location.pathname) : null}>{routes}</BrokerGate>;
+    content = <BrokerGate storedDaily={gate.storedDaily}>{routes}</BrokerGate>;
   }
   else content = routes;
 

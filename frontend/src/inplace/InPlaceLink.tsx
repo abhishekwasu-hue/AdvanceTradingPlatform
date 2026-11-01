@@ -15,7 +15,7 @@ export function InPlaceLink({ to, onClick, ...rest }: Omit<LinkProps, "to"> & { 
     if ((rest.target && rest.target !== "_self") || rest.reloadDocument) return;
     if (!inPlace.handles(to)) return;   // no panel for it: the link navigates as before
     e.preventDefault();
-    inPlace.open(to);
+    inPlace.open(to, rest.state === undefined ? undefined : { state: rest.state });   // NAV-2: the handed state rides along
   };
   return <Link to={to} onClick={click} {...rest} />;
 }

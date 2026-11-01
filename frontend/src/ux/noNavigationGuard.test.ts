@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
  * the new count printed by this test (the test also fails when the count is lower, so the ratchet never goes slack).
  * `M75_NAV_DUMP=<file>` writes the current list as JSON (used to build the inventory table in the design doc).
  */
-const BASELINE = 141;
+const BASELINE = 122;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SRC = join(ROOT, "src");
@@ -50,7 +50,8 @@ const EXCLUDED_FILES: Record<string, string> = {
   "src/settings/model.ts": "NAV - the Settings tab's own menu (one row per section)",
   "src/shell/common.tsx": "NAV - the 'page not found' screen's way home (no tab is being worked in)",
   "src/ui/ComingSoon.tsx": "NAV - a 'coming soon' placeholder's way home (no tab is being worked in)",
-  "src/inplace/InPlaceProvider.tsx": "INPLACE - the in-place host itself (NAV-1): it writes `?panel=` on the SAME path and Back closes; it navigates (as today) only for an address no panel is registered for, with a dev warning",
+  "src/inplace/InPlaceProvider.tsx": "INPLACE - the in-place host itself (NAV-1): it writes `?panel=` on the SAME path and Back closes; it navigates (as today, or in a new browser tab where the button did so before) only for an address no panel is registered for, with a dev warning",
+  "src/inplace/PanelRouter.tsx": "INPLACE - a panel's own address (NAV-2): it moves only inside the panel; a page in the panel that goes to another address is handed to the host",
   "src/inplace/InPlaceLink.tsx": "INPLACE - the in-place link (NAV-1): the real address for a long-press / new tab; a plain click opens the panel registered for it (an area PR registers the panel when it switches a site to it)",
 };
 
@@ -73,6 +74,7 @@ const EXCLUDED_SITES: { file: string; text?: RegExp; line?: RegExp; reason: stri
   { file: "src/settings/SettingsSectionV2.tsx", text: /data-back/, reason: "NAV - back to the Settings menu" },
   { file: "src/chart/ChartsPageV2.tsx", text: /^navigate\(`\$\{chartsPath\((?:p\.symbol|sym)\)/, reason: "SAME-TAB - the Chart tab changes its own symbol (the symbol is part of its address)" },
   { file: "src/trading/RiskV2.tsx", text: /to="\/account"/, reason: "AUTH - sign in" },
+  { file: "src/shell/askAiEntry.tsx", text: /^\{ id: "(?:analyze|copilot)",/, reason: "INPLACE - an Ask AI sheet row: the sheet opens it with <InPlaceLink> (NAV-2), in place" },
   { file: "src/admin/ViewAsBanner.tsx", text: /./, reason: "AUTH - admin 'view as' start / stop switches the signed-in identity" },
   { file: "src/broker/BrokerPromptHost.tsx", line: /if \(!onBrokerPage\) navigate\(BROKER_PATH\)/, reason: "AUTH - the first sign-in step of a new account (not a click)" },
   { file: "src/pages/ChartWindow.tsx", text: /location\.replace\(chartWindowRedirect/, reason: "REDIRECT - an old address forwarded on load (not a click)" },

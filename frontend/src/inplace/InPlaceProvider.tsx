@@ -5,7 +5,9 @@ import { SkeletonRows } from "../components/primitives/Feedback";
 import { useFeatures } from "../ui/useFeatures";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { DEFAULT_REGISTRY } from "./panels";
-import { createInPlaceApi, openPanels, type InPlaceApi, type NavigateFn } from "./api";
+import { createInPlaceApi, handoffs, openPanels, type InPlaceApi, type NavigateFn } from "./api";
+import { InPanelContext } from "./inPanel";
+import { PanelRouter } from "./PanelRouter";
 import { presentationFor, type PanelEntry, type PanelParams, type PanelProps, type PanelRegistry } from "./registry";
 
 export type { InPlaceApi } from "./api";
@@ -24,7 +26,15 @@ export type { InPlaceApi } from "./api";
  * - Opening a path no panel is registered for (or while `ui_v2` is off, or the facility's flag is off) navigates as
  *   today, so every button keeps working while the areas convert one by one (NAV-2..8). Every full route still shows
  *   the full page when opened directly.
+ * - NAV-2: each panel's page runs on its own address (PanelRouter): it reads its search and the state the button handed
+ *   over as on its full route; a link inside it to another facility opens that one in place on top (or navigates as
+ *   today when no panel shows it).
  */
+
+/** A button that opened a new browser tab before still does when no panel shows its address. */
+function newBrowserTab(path: string) {
+  window.open(path, "_blank", "noopener");
+}
 
 const InPlaceContext = createContext<InPlaceApi | null>(null);
 
@@ -60,27 +70,31 @@ export function InPlaceProvider({ children, registry = DEFAULT_REGISTRY }: { chi
     location: () => here.current,
     navigate: navigate as NavigateFn,
     onUnregistered: warnUnregistered,
+    newTab: newBrowserTab,
     onOpenLevel: (level) => {
       const active = typeof document === "undefined" ? null : document.activeElement;
       openers.current[level] = active instanceof HTMLElement && active !== document.body ? active : null;
     },
   }), stack: open.map((p) => p.spec) }), [enabled, on, registry, navigate, open]);
 
+  const handed = handoffs(location.state);
   return (
     <InPlaceContext.Provider value={api}>
       {children}
       {open.map((p, i) => (
         <PanelLayer key={`${i}:${p.spec.kind}`} entry={p.entry} params={p.spec.params ?? {}} phone={phone}
-          top={i === open.length - 1} level={i} openers={openers}
-          close={api.close} replace={(params) => api.replace({ kind: p.spec.kind, params })} />
+          top={i === open.length - 1} level={i} openers={openers} handed={handed[i]}
+          close={api.close} replace={(params) => api.replace({ kind: p.spec.kind, params })}
+          leave={(to, state) => api.open(to, state == null ? undefined : { state })} />
       ))}
     </InPlaceContext.Provider>
   );
 }
 
-function PanelLayer({ entry, params, phone, top, level, openers, close, replace }: {
+function PanelLayer({ entry, params, phone, top, level, openers, handed, close, replace, leave }: {
   entry: PanelEntry; params: PanelParams; phone: boolean; top: boolean; level: number;
-  openers: { current: (HTMLElement | null)[] }; close: () => void; replace: (params: PanelParams) => void;
+  openers: { current: (HTMLElement | null)[] }; handed: unknown; close: () => void; replace: (params: PanelParams) => void;
+  leave: (to: string, state: unknown) => void;
 }) {
   // A panel opened by Forward or a deep link (not by open()) gets back what had focus when it appeared. A layout effect
   // runs before Radix moves focus into the panel (its focus scope does that in a passive effect).
@@ -100,9 +114,13 @@ function PanelLayer({ entry, params, phone, top, level, openers, close, replace 
   };
   const body = (
     <div data-inplace-panel={entry.kind} data-inplace-shape={shape.shell === "dialog" ? "modal" : shape.side}>
-      <Suspense fallback={<SkeletonRows rows={4} label={`Loading ${entry.title(params)}`} />}>
-        <Panel params={params} close={close} replace={replace} />
-      </Suspense>
+      <InPanelContext.Provider value={true}>
+        <PanelRouter path={entry.href(params)} state={handed} onLeave={leave}>
+          <Suspense fallback={<SkeletonRows rows={4} label={`Loading ${entry.title(params)}`} />}>
+            <Panel params={params} close={close} replace={replace} />
+          </Suspense>
+        </PanelRouter>
+      </InPanelContext.Provider>
     </div>
   );
   const common = { open: true, onOpenChange, title: entry.title(params), onCloseAutoFocus, wide: shape.wide };
@@ -120,9 +138,11 @@ export function useInPlace(): InPlaceApi {
     enabled: false,
     stack: [],
     handles: () => false,
-    open: (target) => {
+    open: (target, opts) => {
       const path = typeof target === "string" ? target : DEFAULT_REGISTRY.get(target.kind)?.href(target.params ?? {});
-      if (path) navigate(path);
+      if (!path) return;
+      if (opts?.newTab) newBrowserTab(path);
+      else navigate(path, opts?.state !== undefined ? { state: opts.state } : undefined);
     },
     close: () => undefined,
     replace: () => undefined,

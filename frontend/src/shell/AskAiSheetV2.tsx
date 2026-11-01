@@ -1,6 +1,6 @@
 import { ArrowLeft, ChevronRight, MessagesSquare, ScanSearch, ScanText, Table2 } from "lucide-react";
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { Sheet } from "../components/primitives/Dialog";
 import { expiryLabel } from "../trading/model";
 import { Skeleton } from "../components/primitives";
@@ -64,7 +64,7 @@ export function AskAiSheetBody({ ctx, options, view, onView, onClose }: {
         <ChevronRight size={16} aria-hidden className="shrink-0 text-fg-muted" />
       </>
     );
-    if (o.to) return <Link key={o.id} to={o.to} onClick={onClose} className={ROW} data-ask-option={o.id}>{body}</Link>;
+    if (o.to) return <InPlaceLink key={o.id} to={o.to} onClick={onClose} className={ROW} data-ask-option={o.id}>{body}</InPlaceLink>;
     const act = () => {
       if (o.id === "chain") { onView("chain"); return; }
       if (o.id === "read") { ctx?.read?.toggle(); onClose(); }

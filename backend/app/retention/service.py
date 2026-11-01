@@ -211,6 +211,8 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
     await revoke_all_sessions(session, user.id, "account erased")
     await session.execute(delete(MfaBackupCodeRecord).where(MfaBackupCodeRecord.user_id == user.id))
     await session.execute(delete(PasswordResetRecord).where(PasswordResetRecord.user_id == user.id))
+    from app.db.models import UserIdentityRecord  # M73 SL-2: their linked sign-in providers go with the account
+    await session.execute(delete(UserIdentityRecord).where(UserIdentityRecord.user_id == user.id))
     await session.execute(update(LoginEventRecord).where(LoginEventRecord.email == old_email.lower()).values(email=placeholder))
     await scrub_llm_text(session, LlmCallRecord.user_id == user.id, "[erased]")       # H-C1 e: their AI conversations
     # BYOK-V1: their own AI provider keys and Vision settings go with the account.

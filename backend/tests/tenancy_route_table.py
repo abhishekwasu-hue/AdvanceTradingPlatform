@@ -23,7 +23,18 @@ P_SIGN_IN = ("public: sign-up, login, token refresh, password reset, invites and
              "body is the credential (rate limited)")
 P_GOOGLE_SIGN_IN = ("public: Google sign-in (GS-1) - the signed state cookie and Google's verified ID token are the credential "
                     "(rate limited; 404 until both credentials are set)")
-P_SIGN_IN_PROVIDERS = "public: which extra sign-in buttons the sign-in page shows (one boolean, no data)"
+P_SIGN_IN_PROVIDERS = ("public: which sign-in provider buttons the sign-in page shows (booleans, the live providers' names, the "
+                       "ui_v2 layout switch; no data)")
+P_SOCIAL_SIGN_IN = ("public: sign-in providers (M73: Google, Facebook) - the signed per-provider state cookie and the provider's "
+                    "own exchange are the credential (rate limited as /login; 404 until the credentials are set)")
+P_BROKER_SIGN_IN = ("public: \"Continue with your broker\" (M74, broker:<id> providers) - the signed per-provider state cookie and "
+                    "the broker's own code exchange with ATP's platform app are the credential (rate limited as /login; 404 "
+                    "until that broker's platform app is set and approved)")
+P_SOCIAL_PENDING = ("public: a pending provider step (M73) - the signed, single-use step token in the body is the credential "
+                    "(10 minutes; the mailed confirmation link 24 hours), and a link needs the account's own password and "
+                    "two-factor code (rate limited and locked out as /login)")
+S_OWN_SIGN_IN_WAYS = ("self: the caller's own linked sign-in providers (M73 Settings › Account): start a link for the caller's own "
+                      "account, or unlink one (refused when it is the last way to sign in)")
 P_PAYMENT_WEBHOOK = "public: payment provider webhook, verified by its signature"
 P_PLANS = "public: the plan catalogue"
 P_OAUTH_CALLBACK = "public: the broker's OAuth redirect; the signed state parameter names the organisation"
@@ -361,6 +372,25 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/auth/password/reset/{token}"): P_SIGN_IN,
     ("POST", "/api/auth/password/reset/{token}"): P_SIGN_IN,
     ("GET", "/api/auth/providers"): P_SIGN_IN_PROVIDERS,
+    ("GET", "/api/auth/facebook/callback"): P_SOCIAL_SIGN_IN,
+    ("GET", "/api/auth/facebook/start"): P_SOCIAL_SIGN_IN,
+    ("GET", "/api/auth/broker/upstox/start"): P_BROKER_SIGN_IN,
+    ("GET", "/api/auth/broker/upstox/callback"): P_BROKER_SIGN_IN,
+    ("GET", "/api/auth/broker/zerodha/start"): P_BROKER_SIGN_IN,
+    ("GET", "/api/auth/broker/zerodha/callback"): P_BROKER_SIGN_IN,
+    ("GET", "/api/auth/broker/fyers/start"): P_BROKER_SIGN_IN,
+    ("GET", "/api/auth/broker/fyers/callback"): P_BROKER_SIGN_IN,
+    ("POST", "/api/auth/social/pending"): P_SOCIAL_PENDING,
+    ("POST", "/api/auth/social/link/confirm"): P_SOCIAL_PENDING,
+    ("POST", "/api/auth/social/complete"): P_SOCIAL_PENDING,
+    ("POST", "/api/auth/social/verify"): P_SOCIAL_PENDING,
+    ("GET", "/api/auth/identities"): "member",
+    ("DELETE", "/api/auth/identities/{provider_id}"): S_OWN_SIGN_IN_WAYS,
+    ("POST", "/api/auth/google/link"): S_OWN_SIGN_IN_WAYS,
+    ("POST", "/api/auth/facebook/link"): S_OWN_SIGN_IN_WAYS,
+    ("POST", "/api/auth/broker/upstox/link"): S_OWN_SIGN_IN_WAYS,
+    ("POST", "/api/auth/broker/zerodha/link"): S_OWN_SIGN_IN_WAYS,
+    ("POST", "/api/auth/broker/fyers/link"): S_OWN_SIGN_IN_WAYS,
     ("POST", "/api/auth/refresh"): P_SIGN_IN,
     ("POST", "/api/auth/register"): P_SIGN_IN,
     ("GET", "/api/auth/sign-up-open"): P_SIGN_IN,

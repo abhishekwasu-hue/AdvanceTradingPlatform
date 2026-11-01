@@ -35,7 +35,7 @@ import { SaveAsDefault } from "../settings/SaveAsDefault";
 import { draftFromState, formSymbol } from "../copilot/strategyDraft";
 import CopilotDraftV2 from "./CopilotDraftV2";
 import {
-  BOTS_NOT_CHECKED, IDEA_SYMBOL, READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWaitText, botWhat, cleanSymbol, lastChecked, lastSignal, paperBotRequestWithDefaults, whyNoTrade, sortBots,
+  BOTS_NOT_CHECKED, READY, SYMBOLS, TEMPLATE_ID_PREFIX, botName, botState, botStatusText, botWaitText, botWhat, cleanSymbol, lastChecked, lastSignal, paperBotRequestWithDefaults, whyNoTrade, sortBots,
   isIndex, isSwing, startSummaryParts, strategyLine, symbolProblem, withIdeaLots, type Preselect,
 } from "./model";
 import { templatesApi, type StrategyTemplate, type TemplateAdoption } from "../strategyTemplates/api";
@@ -461,7 +461,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     .sort((a, b) => READY.findIndex((r) => r.id === a.id) - READY.findIndex((r) => r.id === b.id)), [library]);
   const others = useMemo(() => (library ?? []).filter((s) => !READY.some((r) => r.id === s.id)), [library]);
   const [strategyId, setStrategyId] = useState("");
-  const [symbolChoice, setSymbolChoice] = useState("NIFTY 50");
+  // M68 PR-8 (TS1-098): no symbol pre-selected - the trader picks one (the form asks: "Pick or type a symbol.").
+  const [symbolChoice, setSymbolChoice] = useState("");
   const [otherSymbol, setOtherSymbol] = useState("");
   const auth = useOptionalAuth();
   // CT-1 C6: a picked symbol of the usual list keeps its choice (a strategy then sets its own); any other is "another".
@@ -500,8 +501,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     if (urlTemplateApplied.current || !initialTemplate || !t) return;
     urlTemplateApplied.current = true;
     setStrategyId(PICK + t.id);
-    // Day-one fix 6: an idea's link (it carries the idea's settings) starts on a stock, never a quiet index option.
-    if (Object.keys(initialTemplate.params).length > 0) setSymbolChoice((cur) => (cur === "NIFTY 50" ? IDEA_SYMBOL : cur));
+    // Day-one fix 6 / M68 PR-8: an idea's link never quietly picks an index option - and no symbol at all: he picks it.
     if (initialTemplate.timeframe && t.timeframes.some((x) => x.value === initialTemplate.timeframe)) setTemplateTimeframe(initialTemplate.timeframe);
   }, [templates, initialTemplate]);
 
@@ -543,14 +543,14 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     setResult(null);
   }, [preselect]);
 
-  // The first ready-made strategy, with the symbol it is shown with.
+  // The first ready-made strategy (M68 PR-8: without a symbol).
   useEffect(() => {
     // (a template from the link, picked in this same commit, wins: the effect above already set it)
     if (strategyId || !library?.length || urlTemplateApplied.current) return;
     const first = ready[0] ?? library[0];
     setStrategyId(first.id);
-    const r = READY.find((x) => x.id === first.id);
-    if (r) setSymbolChoice(r.symbol);
+    // M68 PR-8 (TS1-098): the first strategy no longer brings its shown symbol along - no symbol is pre-selected (a
+    // strategy he picks himself still offers its usual symbol, visibly, in the field below).
   }, [library, ready, strategyId]);
 
   if (library === null) return <CardV2 title="Start a trading bot"><LoadingRowsV2 rows={3} /></CardV2>;

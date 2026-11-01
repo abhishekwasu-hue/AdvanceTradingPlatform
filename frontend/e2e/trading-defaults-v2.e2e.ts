@@ -237,6 +237,9 @@ test.describe("My trading defaults behaviour", () => {
     await expect(lots).toHaveValue("2");
     await lots.fill("3");
     await expect(more.locator("label", { hasText: "Max lots" }).locator("[data-from-defaults]")).toHaveCount(0);
+    // M68 PR-8 (TS1-098): the full form pre-selects no symbol - he types it before Start
+    await expect(more.getByPlaceholder("Choose a symbol")).toHaveValue("");
+    await more.getByPlaceholder("Choose a symbol").fill("NIFTY 50");
     await pickEntryStyle(page, more);
     await more.getByRole("button", { name: "Start on paper" }).click();
     await expect.poll(() => posts(server).length).toBe(1);

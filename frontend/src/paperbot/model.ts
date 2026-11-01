@@ -35,8 +35,8 @@ export const INDEX_SYMBOLS: ReadonlySet<string> = new Set([
 
 /** The symbols offered in the list; "Another symbol" lets the trader type one. */
 export const SYMBOLS: readonly string[] = ["NIFTY 50", "NIFTY BANK", "FINNIFTY", "RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "SBIN"];
-/** Day-one fix 6: an idea opened from the Ideas page starts on a stock, so the form never quietly picks an index option
- * for a price-action idea (the trader changes it in one tap). */
+/** Day-one fix 6: an idea opened from the Ideas page used to start on this stock, so the form never quietly picked an index
+ * option. M68 PR-8 (TS1-098): the form now pre-picks no symbol at all; this stays the example stock of the tests. */
 export const IDEA_SYMBOL = "RELIANCE";
 
 const SYMBOL = /^[A-Z0-9&][A-Z0-9&\- ]{0,29}$/;

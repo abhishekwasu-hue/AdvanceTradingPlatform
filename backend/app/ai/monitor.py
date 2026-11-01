@@ -2,8 +2,8 @@
 
 Deterministic rules over the tenant's own records (never a model call in the decision path):
 
-- LOSING_STREAK: a deployment's last N trades today all lost           -> PAUSE_DEPLOYMENT
-- DAY_DRAWDOWN:  a deployment's realised P&L today below -X% of capital -> PAUSE_DEPLOYMENT
+- LOSING_STREAK: a deployment's last N trades today all lost (N = his own losses-in-a-row limit) -> PAUSE_DEPLOYMENT
+- DAY_DRAWDOWN:  a deployment's realised P&L today past his own daily loss limit             -> PAUSE_DEPLOYMENT
 - ERROR_STREAK:  consecutive evaluation failures                        -> PAUSE_DEPLOYMENT
 - STALE_POSITION: an open position older than the time budget and
                   moving against us with an adverse regime              -> EXIT_POSITION
@@ -35,8 +35,9 @@ from app.observability.metrics import AI_DECISIONS, AI_PROPOSALS
 from app.risk_engine.routes import get_tenant_risk_config
 
 TTL_HOURS = 24
-LOSING_STREAK = 3
-DAY_DRAWDOWN_PCT = 2.0
+# M68 PR-8 (TS1-079): the losing-streak and day-drawdown nudges use the trader's OWN limits (risk settings: losses in a
+# row, daily loss limit); none set = no nudge. ATP picks no streak length or drawdown for him. ERROR_STREAK counts code /
+# data failures of the bot (operational, not a trading choice) and stays.
 ERROR_STREAK = 3       # below the worker's own auto-pause (5) so the human hears first
 STALE_POSITION_MINUTES = 120
 WIN_RATE_DRIFT = 0.25      # absolute drop vs the backtest's win rate, with >= 10 trades
@@ -83,6 +84,9 @@ async def observe(session: AsyncSession, tenant_id: int, deployments: List[Strat
     # DEF-0 / M68 PR-7 (TS1-065): the organisation's own capital - never a built-in figure; not set: no day-drawdown %
     # proposal (a share of a capital nobody chose is not measured).
     capital = float(risk.capital) if risk is not None and risk.capital is not None else 0.0
+    streak = int(risk.max_consecutive_losses) if risk is not None and risk.max_consecutive_losses else None
+    # % and / or rupees, his own (M68 PR-8); no capital of his own: only his rupee limit counts (PR-7)
+    day_limit = risk.daily_loss_amount() if risk is not None else None
     day_start = now.astimezone(IST).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     proposals: List[Proposal] = []
     for dep in deployments:
@@ -90,15 +94,16 @@ async def observe(session: AsyncSession, tenant_id: int, deployments: List[Strat
             continue
         trades = list(await session.scalars(select(TradeRecord).where(TradeRecord.deployment_id == dep.id).order_by(TradeRecord.id)))
         closed_today = [t for t in trades if t.exit_time is not None and _utc(t.exit_time) >= day_start]
-        if len(closed_today) >= LOSING_STREAK and all((t.pnl or 0.0) < 0 for t in closed_today[-LOSING_STREAK:]):
+        if streak is not None and len(closed_today) >= streak and all((t.pnl or 0.0) < 0 for t in closed_today[-streak:]):
             proposals.append(Proposal(dep.id, None, "PAUSE_DEPLOYMENT", "LOSING_STREAK",
-                                      f"Deployment #{dep.id} ({dep.strategy_id} on {dep.symbol}) lost its last {LOSING_STREAK} trades today.",
-                                      {"losses": [round(t.pnl or 0.0, 2) for t in closed_today[-LOSING_STREAK:]]}))
+                                      f"Deployment #{dep.id} ({dep.strategy_id} on {dep.symbol}) lost its last {streak} trades today (your limit: {streak} in a row).",
+                                      {"losses": [round(t.pnl or 0.0, 2) for t in closed_today[-streak:]], "your_limit": streak}))
         day_pnl = sum((t.pnl or 0.0) for t in closed_today)
-        if capital > 0 and day_pnl < -capital * DAY_DRAWDOWN_PCT / 100.0:
+        if day_limit is not None and day_limit > 0 and day_pnl < -day_limit:
+            pct = f" ({day_pnl / capital * 100:.1f}% of capital {capital:,.0f})" if capital > 0 else ""
             proposals.append(Proposal(dep.id, None, "PAUSE_DEPLOYMENT", "DAY_DRAWDOWN",
-                                      f"Deployment #{dep.id} is down {day_pnl:,.0f} today ({day_pnl / capital * 100:.1f}% of capital {capital:,.0f}).",
-                                      {"day_pnl": round(day_pnl, 2), "capital": capital, "threshold_pct": DAY_DRAWDOWN_PCT}))
+                                      f"Deployment #{dep.id} is down {day_pnl:,.0f} today{pct}, past your daily loss limit of {day_limit:,.0f}.",
+                                      {"day_pnl": round(day_pnl, 2), "capital": capital, "your_limit": round(day_limit, 2)}))
         if (dep.consecutive_failures or 0) >= ERROR_STREAK:
             proposals.append(Proposal(dep.id, None, "PAUSE_DEPLOYMENT", "ERROR_STREAK",
                                       f"Deployment #{dep.id} failed {dep.consecutive_failures} evaluations in a row: {dep.last_error or 'see logs'}",

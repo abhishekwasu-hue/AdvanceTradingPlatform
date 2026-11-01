@@ -120,6 +120,7 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
                 );
               })}
             </ul>
+            {ladder.targets_note && <p className="text-xs text-fg-muted" data-testid="ladder-targets-note">{ladder.targets_note}</p>}
             {ladder.evidence && <LadderEvidence evidence={ladder.evidence} />}
             {!v2 && <p className="text-xs text-fg-muted">Figures from your own PAPER trades, as of {formatDateTimeIST(ladder.as_of)}.</p>}
           </div>

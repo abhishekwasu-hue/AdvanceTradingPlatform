@@ -107,6 +107,14 @@ async function open(page: Page, o: { theme?: "light" | "dark"; path?: string; te
 }
 
 const form = (page: Page) => page.locator("[data-block='start']");
+
+/** M68 PR-8 (TS1-098): the form pre-selects no symbol - the trader picks NIFTY 50 himself (the baselines show it picked). */
+async function pickNifty(page: Page) {
+  const field = form(page).getByLabel("Pick a symbol");
+  await expectChoice(field, "");
+  await choose(page, field, "NIFTY 50");
+  await field.evaluate((e) => (e as HTMLElement).blur());
+}
 const SHOT = { animations: "disabled" as const, fullPage: true, maxDiffPixelRatio: 0.02, timeout: 15_000 };
 
 for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, { name: "390", width: 390, height: 844, mobile: true },
@@ -118,6 +126,7 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
       test(`the form with a template picked looks the same (${theme})`, async ({ page }) => {
         await open(page, { theme, path: "/deployments?template=D2" });
         await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
+        await pickNifty(page);
         await expect(page).toHaveScreenshot(`strategy-templates-v2-${size.name}-${theme}.png`, SHOT);
       });
     }
@@ -126,6 +135,7 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
       test(`the exits for this bot, pre-filled with the template's defaults (${theme})`, async ({ page }) => {
         await open(page, { theme, path: "/deployments?template=D2", exits: true });
         await expect(form(page).locator("[data-template-exits]")).toContainText("Exits for this bot");
+        await pickNifty(page);
         await expectChoice(form(page).getByLabel("Stop"), "TEMPLATE_INVALIDATION");          // NIFTY 50: its option
         await choose(page, form(page).getByLabel("Take profit"), { label: "At a multiple of my risk" });
         await form(page).getByLabel("Times my risk").fill("2");
@@ -227,7 +237,8 @@ test.describe("Strategy templates behaviour", () => {
     await expectChoice(exits.getByLabel("Take profit"), "NONE");
     await expectChoiceLabels(page, exits.getByLabel("Take profit"), 
       ["No fixed target", "At a multiple of my risk", "When the template says the idea has ended"]);
-    // NIFTY 50 trades its option: the stop may be the template's level or only the premium stop
+    // NIFTY 50 (he picks it - M68 PR-8) trades its option: the stop may be the template's level or only the premium stop
+    await pickNifty(page);
     await expectChoiceLabels(page, exits.getByLabel("Stop"), 
       ["Where the idea is wrong", "Only my premium stop"]);
     await expect(exits).toContainText("Your premium stop always stays as a safety net.");

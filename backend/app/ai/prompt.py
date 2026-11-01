@@ -31,8 +31,8 @@ from app.db.models import Tenant, TradeRecord, User
 from app.instruments.spreads import RATIO_SPREADS, UNDEFINED_RISK, is_debit
 from app.risk_engine import guardian
 
-PROMPT_VERSION = "guardian-v3.1"           # v3.1: English-only replies (the owner's ruling)
-MIN_STOP_ATR_MULTIPLE = 1.0
+PROMPT_VERSION = "guardian-v3.2"           # v3.2: the stop floor and the minimum R:R are suggestions only (M68 PR-8); v3.1: English only
+MIN_STOP_ATR_MULTIPLE = 1.0     # M68 PR-8 (TS1-078): a suggestion in the prompt's words, never a floor on the user's stop
 DEFAULT_INSTRUMENTS = "NSE equities; NIFTY, BANKNIFTY, FINNIFTY, SENSEX options and futures (index options share one correlated risk bucket)"
 
 
@@ -275,11 +275,12 @@ Market regime (from the platform's classifier): {ctx.market_regime}
 - {'No re-entry in an underlying for ' + str(ctx.cooldown_minutes) + ' minutes after a stop-out' if ctx.cooldown_minutes else 'No cool-down after a stop-out is set'}. Never averaging down; a stop only moves the favourable way.
 - Drawdown ladder: cuts the size by {_limit(ctx.dd_cut_pct, '{:g}%')} at {_limit(ctx.dd_level_1_pct, '{:g}% below the equity peak')}; pauses new entries at {_limit(ctx.dd_level_2_pct, '{:g}%')}. Size never rises after a streak.
 - Event days on the calendar above block entries or cut the size by {_limit(ctx.event_size_cut_pct, '{:g}%')}.
-- Every stop must sit at least {ctx.min_stop_atr_multiple:g} x ATR from the entry (outside normal noise); the platform raises a tighter one.
+- The stop is the user's own. A stop inside {ctx.min_stop_atr_multiple:g} x ATR from the entry sits inside normal noise: say so as a suggestion; the platform never changes the user's stop.
 
 === NON-NEGOTIABLE RULES FOR WHAT YOU PROPOSE ===
-R1. A pre-defined stop before entry: `stop_loss_atr_mult` >= {ctx.min_stop_atr_multiple:g}, at the level where the idea is invalidated.
-R2. Targets at or above `min_rr`, ordered; `min_rr` >= 1.0.
+R1. A pre-defined stop before entry: `stop_loss_atr_mult` > 0, at the level where the idea is invalidated (the user's own value when he
+    named one; {ctx.min_stop_atr_multiple:g} x ATR or wider is a suggestion you may explain, never a rule you impose).
+R2. Targets ordered. `min_rr` only when the user stated a minimum reward:risk (else null - no filter nobody stated).
 R3. Option selling must be defined-risk (spreads, condors, butterflies). Propose SHORT_STRADDLE, SHORT_STRANGLE, a ratio spread or a
     naked WRITE only if the user explicitly accepts unlimited risk in their request{" (allowed on this account)" if ctx.allow_naked else " - and say that the platform will size it off the stop and require an extra acceptance"}.
 R4. If the regime above is unfavourable for the idea, say so and propose a regime_filter or "no trade". Selectivity is an edge.
@@ -290,7 +291,7 @@ If the user asks for something these rules forbid, refuse that part in one or tw
 === OUTPUT: ONE JSON object and nothing else (no markdown fences) ===
 {{"config": {{"name": str, "timeframe": one of ["1min","3min","5min","15min","30min","60min"],
             "long_conditions": [Condition], "short_conditions": [Condition],
-            "stop_loss_atr_mult": number >= {ctx.min_stop_atr_multiple:g}, "atr_period": int 2..500, "target_rr": [number, number], "min_rr": number >= 1}},
+            "stop_loss_atr_mult": number > 0, "atr_period": int 2..500, "target_rr": [number, number], "min_rr": number|null}},
  "deployment": {{"symbol": str|null, "instrument_kind": "UNDERLYING"|"OPTION"|"FUTURE",
                 "option_strategy": one of [{structures}],
                 "option_position": "BUY"|"WRITE"|null, "expiry_rule": "NEAREST"|"NEXT"|"MONTHLY"|null,

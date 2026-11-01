@@ -1214,8 +1214,9 @@ export interface DeploymentCreateRequest extends ContractRules {
   entry_mode?: "AUTO" | "APPROVAL";
   strategy_id: string;
   symbol: string;
-  exchange: string;
-  timeframe: string;
+  /** M68 PR-8 (TS1-099): not sent = the symbol's own exchange and the strategy's own smallest candle (the server's facts). */
+  exchange?: string | null;
+  timeframe?: string | null;
   mode: ExecutionMode;
   broker_name?: string | null;
   broker_account_id?: number | null;
@@ -2410,6 +2411,8 @@ export interface InterviewCandidate {
 }
 export interface InterviewPlan {
   language: "en" | "mr";
+  /** M68 PR-8 (TS1-077): the plan's own contract picks; a deploy carries them only once the trader accepts them. */
+  suggested?: SuggestedValue[];
   answers: Record<string, string | number>;
   market: { last_price: number; bias: "BULLISH" | "BEARISH" | "NEUTRAL"; regime: Regime; higher_regime: Regime; higher_timeframe: string; work_timeframe: string; today: { change_pct: number; trend: string } };
   recommended: InterviewCandidate | null;
@@ -2611,6 +2614,10 @@ export interface SimMetrics {
 export interface StrategyCandidate {
   id: string; name: string; family: string; direction: "LONG" | "SHORT" | "BOTH"; timeframe: string; why: string;
   params: Record<string, unknown>; rules: { long: string[]; short: string[] }; exits: string;
+  /** M68 PR-8 (TS1-075): what the simulation assumed (shown with the evidence, never applied to a bot). */
+  test_assumptions?: string[];
+  /** M68 PR-8 (TS1-075): the draft bot's exits - sent with the bot only when the trader ticks "Use the draft's exits". */
+  suggested_exits?: SuggestedExits;
   // Phase BF: the same rules in plain English words, the direction and timeframe in words, a one-line summary.
   rules_text?: { long: string[]; short: string[] }; direction_text?: string; timeframe_text?: string; summary?: string;
   triggers: { name: string; price: number }[]; stop_points: number | null; risk_amount: number; quantity_hint: number | null;
@@ -2852,7 +2859,15 @@ export interface ContextEvent { date: string; start_time: string | null; end_tim
 export interface ContextPanel { tiles: Record<string, ContextTile>; order: string[]; as_of: string; note: string }
 
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */
+/** M68 PR-8 (TS1-075): a strategist draft's suggested exits (holding and exit rules), applied only on the trader's tick. */
+export interface SuggestedExits { holding: "INTRADAY" | "SWING"; exit_rules: { time_exit_at?: string | null; break_even_at_r?: number | null } }
+
+/** M68 PR-8 (TS1-077): one value an interview plan picked for the trader (not his answer). */
+export interface SuggestedValue { key: string; label: string; value: string }
+
 export interface PaperLadder {
+  /** M68 PR-8 (TS1-083): the targets are suggested milestones; they lock nothing. */
+  targets_note?: string;
   stage: string;
   stages: { key: string; label: string; status: "current" | "locked" | "done"; note?: string }[];
   criteria: LadderCriterion[]; met: number; measured: number;

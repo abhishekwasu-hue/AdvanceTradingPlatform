@@ -43,6 +43,7 @@ import type {
   ChartRunResponse,
   Deployment,
   DeploymentCreateRequest,
+  SuggestedExits,
   ContractSpec,
   CustomStrategyConfig,
   CustomStrategyResponse,
@@ -1079,13 +1080,14 @@ export const api = {
     request<StrategistResult>("/ai/strategist/build", { method: "POST", body: JSON.stringify(body), signal }),
   // Phase BF: what a plain-words request means to the strategist (English only).
   aiStrategistParse: (text: string, symbol: string, language: "en" = "en") =>
-    request<StrategistRequestParsed>("/ai/strategist/parse", { method: "POST", body: JSON.stringify({ request: text, symbol, language }) }),
+    request<StrategistRequestParsed>("/ai/strategist/parse", { method: "POST", body: JSON.stringify({ request: text, symbol: symbol.trim() || null, language }) }),
   // P0.8 / A3: the server's candidate id plus the human's risk acceptance; a config typed by the browser is not accepted.
   aiStrategistAdopt: (candidateId: number, name: string, acceptRisk: boolean) =>
-    request<{ strategy_id: string; name: string; candidate_id: number; deployment: DeploymentCreateRequest; compliance: { ok: boolean; user_must_accept: Record<string, string> } }>(
+    request<{ strategy_id: string; name: string; candidate_id: number; deployment: DeploymentCreateRequest; suggested_exits?: SuggestedExits; compliance: { ok: boolean; user_must_accept: Record<string, string> } }>(
       "/ai/strategist/adopt", { method: "POST", body: JSON.stringify({ candidate_id: candidateId, name, accept_risk: acceptRisk }) }),
-  aiInterviewDeploy: (candidateId: number, acceptRisk: boolean) =>
-    request<{ candidate_id: number; deployment: Deployment; mode: "PAPER" }>("/ai/interview/deploy", { method: "POST", body: JSON.stringify({ candidate_id: candidateId, accept_risk: acceptRisk }) }),
+  aiInterviewDeploy: (candidateId: number, acceptRisk: boolean, acceptSuggested = false) =>
+    request<{ candidate_id: number; deployment: Deployment; mode: "PAPER" }>("/ai/interview/deploy", { method: "POST",
+      body: JSON.stringify({ candidate_id: candidateId, accept_risk: acceptRisk, accept_suggested: acceptSuggested }) }),
   // Phase AV: the Copilot home.
   aiBrief: (language: "en" = "en") => request<DailyBrief>(`/ai/brief?language=${language}`),
   aiCoach: (language: "en" = "en", days = 30, mode: "ALL" | "PAPER" | "LIVE" = "ALL") =>

@@ -34,15 +34,18 @@ def test_checklist_fails_draft_rules_and_fixes_them_deterministically():
     ceilings = {"risk_per_trade_pct": 2.0}
     # P1-2b: the draft states its own minimum (1.3); a stated 1.2 or none = no minimum (no hidden filter).
     _, report = evaluate_config(_config(stop_loss_atr_mult=0.5, target_rr=(1.0, 0.8), min_rr=1.3), cfg, ceilings)
-    assert report.failed == ["M2", "M1"] and not report.ok
-    assert "inside normal noise" in report.failure_text() and "must be ordered" in report.failure_text()
+    # M68 PR-8 (TS1-078): a stop inside 1 x ATR is a suggestion (WARN), never a failure or a change of his stop
+    assert report.failed == ["M1"] and "M2" in report.warnings and not report.ok
+    assert "must be ordered" in report.failure_text()
+    m2 = [c for c in report.checks if c.rule == "M2"][0]
+    assert "inside normal noise" in m2.detail and f"{MIN_STOP_ATR_MULT:g} x ATR or wider sits outside it; your stop is kept" in m2.detail
     fixed, report = evaluate_config(_config(stop_loss_atr_mult=0.5, target_rr=(1.0, 0.8), min_rr=1.3), cfg, ceilings, autofix=True)
-    assert report.ok and fixed.stop_loss_atr_mult == MIN_STOP_ATR_MULT and fixed.target_rr == (1.3, 1.3)
-    assert report.fixes == ["stop_loss_atr_mult 0.5 -> 1 (M2)", "target_rr (1, 0.8) -> (1.3, 1.3) (M1)"]
+    assert report.ok and fixed.stop_loss_atr_mult == 0.5 and fixed.target_rr == (1.3, 1.3)       # the stop is kept as written
+    assert report.fixes == ["target_rr (1, 0.8) -> (1.3, 1.3) (M1)"]
     # No minimum stated: only the order is fixed, never raised to a number nobody stated.
     unset, plain = evaluate_config(_config(stop_loss_atr_mult=0.5, target_rr=(1.0, 0.8)), cfg, ceilings, autofix=True)
     assert plain.ok and unset.min_rr is None and unset.target_rr == (0.8, 1.0)
-    assert [c for c in report.checks if c.rule == "M2"][0].fixed is True
+    assert [c for c in report.checks if c.rule == "M2"][0].fixed is False and [c for c in report.checks if c.rule == "M2"][0].status == "WARN"
     # The engine-enforced rules report the tenant's live values; deployment-level ones are N/A.
     by_rule = {c.rule: c for c in report.checks}
     assert by_rule["R4"].status == "PASS" and "6%" in by_rule["R4"].detail
@@ -78,17 +81,23 @@ def test_generator_gives_the_ai_one_auto_fix_round_then_fixes_deterministically(
             user = await session.get(User, me["id"])
             return (await generator.generate(session, tenant, user, "Buy pullbacks on 5 minute bars with a tight stop", provider=provider)).id
 
-    # Round 1 violates M2; the errors go back to the model; round 2 is compliant.
+    # M68 PR-8 (TS1-078): a tight stop (0.4 x ATR) is the draft's own and only a suggestion - no retry round, kept as written.
     provider = _ScriptedProvider([_answer(stop_loss_atr_mult=0.4), VALID_ANSWER])
     draft = client.get(f"/api/ai/drafts/{_run(gen(provider))}", headers=headers).json()
-    assert len(provider.calls) == 2 and "violated the risk rules" in provider.calls[1] and "M2" in provider.calls[1]
+    assert len(provider.calls) == 1 and draft["config"]["stop_loss_atr_mult"] == 0.4 and draft["compliance"]["ok"]
+    assert "M2" in draft["compliance"]["warnings"] and draft["compliance"]["fixes"] == []
+
+    # Round 1 violates M1 (targets out of order); the errors go back to the model; round 2 is compliant.
+    provider = _ScriptedProvider([_answer(target_rr=[1.0, 0.9]), VALID_ANSWER])
+    draft = client.get(f"/api/ai/drafts/{_run(gen(provider))}", headers=headers).json()
+    assert len(provider.calls) == 2 and "violated the risk rules" in provider.calls[1] and "M1" in provider.calls[1]
     assert draft["status"] == "DRAFT" and draft["config"]["stop_loss_atr_mult"] == 1.5 and draft["compliance"]["ok"] and draft["compliance"]["fixes"] == []
 
-    # Both rounds violate: the deterministic fix applies on the last one and is on the record.
-    provider = _ScriptedProvider([_answer(stop_loss_atr_mult=0.4), _answer(stop_loss_atr_mult=0.3, target_rr=[1.0, 0.9])])
+    # Both rounds violate: the deterministic fix applies on the last one and is on the record; the stop is never widened.
+    provider = _ScriptedProvider([_answer(target_rr=[1.0, 0.9]), _answer(stop_loss_atr_mult=0.3, target_rr=[1.0, 0.9])])
     draft = client.get(f"/api/ai/drafts/{_run(gen(provider))}", headers=headers).json()
-    assert draft["status"] == "DRAFT" and draft["config"]["stop_loss_atr_mult"] == 1.0 and draft["config"]["target_rr"] == [0.9, 1.0]   # P1-2b: ordered only, no minimum stated
-    assert draft["compliance"]["ok"] and len(draft["compliance"]["fixes"]) == 2 and "M2" in draft["compliance"]["fixes"][0]
+    assert draft["status"] == "DRAFT" and draft["config"]["stop_loss_atr_mult"] == 0.3 and draft["config"]["target_rr"] == [0.9, 1.0]   # P1-2b: ordered only, no minimum stated
+    assert draft["compliance"]["ok"] and len(draft["compliance"]["fixes"]) == 1 and "M1" in draft["compliance"]["fixes"][0]
     assert "max_loss_per_trade_text" in draft["compliance"]["user_must_accept"]
 
 

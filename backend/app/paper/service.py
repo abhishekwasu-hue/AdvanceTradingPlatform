@@ -247,6 +247,9 @@ async def summary(session: AsyncSession, user: User, now: Optional[datetime] = N
     }
 
 
+LADDER_TARGETS_NOTE = "Milestones for your own review - they lock or unlock nothing."
+
+
 async def ladder(session: AsyncSession, user: User, now: Optional[datetime] = None, *, evidence: bool = False) -> Dict:
     """The progression ladder card (P1 §1.4), PAPER stage only in Phase 0: each criterion with its value from the user's
     own PAPER trades and its threshold from settings. States facts; it never recommends trading or a stage change.
@@ -278,6 +281,8 @@ async def ladder(session: AsyncSession, user: User, now: Optional[datetime] = No
                 {"key": STAGE_PAPER, "label": "PAPER", "status": "current"},
                 {"key": STAGE_LIVE, "label": "LIVE (approval-only)", "status": "locked", "note": "not yet enabled"}],
             "criteria": criteria, "met": sum(1 for c in measured if c["met"]), "measured": len(measured),
+            # M68 PR-8 (TS1-083): the targets are suggested milestones (information); they lock and unlock nothing.
+            "targets_note": LADDER_TARGETS_NOTE,
             "summary": {k: data[k] for k in ("starting_capital", "balance", "equity", "closed_trades", "sessions", "max_drawdown_pct", "win_rate")},
             "as_of": data["as_of"]}
 

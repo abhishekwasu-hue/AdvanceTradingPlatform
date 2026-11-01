@@ -10,6 +10,8 @@ import subprocess
 import sys
 from datetime import date, timedelta
 
+import pytest
+
 from app.brokers.models import OptionChain, OptionChainRow
 from app.core.config import RISK_FREE_RATE
 from app.options_builder import model as m
@@ -46,7 +48,7 @@ def _priced(legs, iv=0.15):
 
 
 def _template(h, name, **kw):
-    body = {"name": name, "atm_strike": SPOT, "width": 200, "near_expiry": EXP.isoformat(), **kw}
+    body = {"name": name, "atm_strike": SPOT, "width": 200, "near_expiry": EXP.isoformat(), "lots": 1, **kw}   # M68 PR-8: lots are his own
     return client.post("/api/options-builder/template", json=body, headers=h)
 
 
@@ -269,3 +271,27 @@ def test_the_cost_table_the_builder_reads_is_pure():
     assert imported <= {"datetime", "typing", "pandas"}, imported
     named = {n.id for n in ast.walk(ast.parse((root / "india_costs.py").read_text())) if isinstance(n, ast.Name)}
     assert not named & {"__import__", "importlib", "open", "eval", "exec", "compile"}, named
+
+
+@pytest.mark.real_option_defaults      # M68 PR-4: read his real, empty Options (no pre-M68 saved 70 % / 2 strikes)
+def test_m68_pr8_the_builder_asks_for_the_lots_and_the_selector_numbers():
+    """M68 PR-8 (TS1-081): no pre-chosen 1 lot on a template, no pre-chosen 70 % chance of profit or 2 strikes out of the
+    money on a selector rule - each is asked for (422 naming it); the same numbers sent give the same result as before."""
+    h = _headers("p1c-m68@example.com")
+    missing = client.post("/api/options-builder/template", json={"name": "Iron Condor", "atm_strike": SPOT, "width": 200,
+                                                                  "near_expiry": EXP.isoformat()}, headers=h)
+    assert missing.status_code == 422 and "lots" in missing.text
+    assert all(leg["lots"] == 3 for leg in _template(h, "Iron Condor", lots=3).json()["legs"])
+    body = {"chain": _chain(), "rule": "iron_condor", "step": 100, "hedge_width_points": 200, "as_of": AS_OF.isoformat()}
+    asked = client.post("/api/options-builder/suggest", json=body, headers=h)
+    assert asked.status_code == 422 and "chance of profit" in asked.text
+    fixed = {**body, "rule": "credit_spread_fixed", "direction": "BULLISH"}
+    asked = client.post("/api/options-builder/suggest", json=fixed, headers=h)
+    assert asked.status_code == 422 and "strikes_otm" in asked.text
+    # parity: the old defaults sent explicitly give exactly the old answer
+    from app.options_builder import chain as ob_chain
+    from app.options_builder import selectors
+    from app.options_builder.routes import SuggestBody, _suggest
+    sent = SuggestBody.model_validate({**fixed, "strikes_otm": 2})
+    raw = ob_chain.raw_chain(sent.chain, as_of=sent.as_of)
+    assert _suggest(sent)["result"] == selectors.select_credit_spread_fixed_strikes(raw, "BULLISH", SPOT, hedge_width_points=200, step=100, strikes_otm=2)

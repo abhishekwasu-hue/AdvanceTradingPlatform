@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Tuple
 from app.core.models import RiskConfig
 from app.strategy_engine.declarative import CustomStrategyConfig
 
-MIN_STOP_ATR_MULT = 1.0                 # M2: a stop inside one ATR sits inside normal noise
+MIN_STOP_ATR_MULT = 1.0                 # M2: a stop inside one ATR sits inside normal noise (a suggestion, M68 PR-8)
 GAP_MULTIPLE = 3.0                      # worst case: a gap through the stop costs about this many planned losses
 WEAK_EVIDENCE_MIN_TRADES = 30
 WEAK_EVIDENCE_MIN_PROFIT_FACTOR = 1.1
@@ -128,10 +128,11 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
         check("R1", False, "no stop is set in the draft")
     else:
         check("R1", stop > 0, f"stop defined before entry: {stop:g} x ATR({config.atr_period}) from the entry price")
+        # M68 PR-8 (TS1-078): a suggestion, never a floor - the stop is the trader's own; it is never widened for him.
         check("M2", stop >= MIN_STOP_ATR_MULT,
-              f"stop distance {stop:g} x ATR is inside normal noise (minimum {MIN_STOP_ATR_MULT:g} x ATR)"
+              f"stop distance {stop:g} x ATR is inside normal noise ({MIN_STOP_ATR_MULT:g} x ATR or wider sits outside it; your stop is kept)"
               if stop < MIN_STOP_ATR_MULT else f"stop distance {stop:g} x ATR is outside normal noise (>= {MIN_STOP_ATR_MULT:g} x ATR)",
-              fix=("stop_loss_atr_mult", MIN_STOP_ATR_MULT, f"stop_loss_atr_mult {stop:g} -> {MIN_STOP_ATR_MULT:g} (M2)"))
+              warn_only=True)
     if config.target_rr is None:
         check("M1", True, "no target is set in the draft: none is applied")
     else:

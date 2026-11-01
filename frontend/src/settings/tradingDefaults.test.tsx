@@ -212,12 +212,13 @@ describe("wiring: behind ui_v2, PAPER only, a page Part B can link", () => {
     const none = render(null);
     expect(none).not.toContain("Use my defaults");
     expect(render(EMPTY_DEFAULTS)).toBe(none);
-    // the first render has no strategy picked yet; the summary still names the defaults' expiry and lots
+    // the first render has no strategy and (M68 PR-8, TS1-098) no symbol picked yet - no index is pre-selected, so only the
+    // defaults that fit any bot are named; the option defaults (strike, expiry, lots) apply once he picks an index
     const some = render(SOME);
     expect(some).toContain("Use my defaults for this bot");
-    expect(some).toContain("From your defaults: strike 2 steps out of the money, next expiry, 2 lots, trailing stop 1.5%.");
+    expect(some).toContain("From your defaults: trailing stop 1.5%.");
     expect(some).toContain("Change my defaults");
-    expect(some).toContain("at the next expiry, 2 lots");
+    expect(some).not.toContain("at the next expiry, 2 lots");
   });
 
   it("the ticket marks the fields that still show a default", () => {

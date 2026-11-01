@@ -111,6 +111,10 @@ in. `user_identities` unique (provider, subject) = one broker identity -> one AT
 the broker's display name and email fit M73's columns, the session lives in `broker_credentials`.
 
 ### 3.4 Security (BL-5)
+Through the M73 routes (security review, 399d63ef) the brokers get the same protections as Google / Facebook: the
+flow state is spent once server-side (a replayed callback reaches no broker); a Settings link needs the account's
+password and two-factor code and sends a SECURITY notification; a broker that gives no e-mail goes through the mailed
+single-use confirmation before any account or link exists.
 State in a signed cookie (above); codes, tokens and secrets never in a log, audit text, redirect or error (errors are
 fixed short codes); token encrypted in the existing secrets store; audit rows `broker_signin` (per sign-in, with the
 provider kind) and `broker_signin_session_stored`; callbacks rate-limited as `/login`; the code length capped.

@@ -492,3 +492,66 @@ def test_admin_health_shows_each_broker_and_whether_it_is_live(apps):
     rows = [r for r in sign_in_providers() if r["kind"] == "broker"]
     assert [(r["id"], r["live"]) for r in rows] == [("broker:upstox", True), ("broker:zerodha", False), ("broker:fyers", False)]
     assert PLATFORM_KEY not in str(rows) and PLATFORM_SECRET not in str(rows)
+
+
+# --- M73 security review, applied to brokers: re-auth to link, mailed confirmation, single-use state ------------------
+
+from tests.test_m73_social_login import _mailbox, _security_titles, _verify_token  # noqa: E402
+
+
+def test_settings_link_needs_the_password_then_links_connects_and_notifies(brokers):
+    email = "m74-settings@example.com"
+    bearer = {"Authorization": f"Bearer {_register(email)}"}
+    user = _user(email)
+    assert client.post("/api/auth/broker/upstox/link", json={"password": "S3cur3Pass!"}).status_code == 401   # signed in only
+    wrong = client.post("/api/auth/broker/upstox/link", headers=bearer, json={"password": "not-it"})
+    assert wrong.status_code == 401 and "atp_broker_upstox_flow" not in wrong.headers.get("set-cookie", "")
+    started = client.post("/api/auth/broker/upstox/link", headers=bearer, json={"password": "S3cur3Pass!"})
+    assert started.status_code == 200
+    cookie = started.cookies.get("atp_broker_upstox_flow")
+    state = parse_qs(urlsplit(started.json()["url"]).query)["state"][0]
+    brokers["upstox"].user_id, brokers["upstox"].email = "SET001", "not-the-account-email@example.com"
+    client.cookies.clear()
+    back = client.get("/api/auth/broker/upstox/callback", params={"code": CODE, "state": state},
+                      headers={"cookie": f"atp_broker_upstox_flow={cookie}"}, follow_redirects=False)
+    assert parse_qs(urlsplit(back.headers["location"]).query) == {"social": ["linked"], "provider": ["broker:upstox"]}
+    assert [(i.provider, i.subject) for i in _identity_rows(user.id)] == [("broker:upstox", "SET001")]
+    assert _security_titles(user.id) == ["Upstox was linked to sign in to your account"]
+    [row] = _rows(user.tenant_id, "upstox")
+    assert load_credentials(row).access_token == TOKEN                 # linking also connects the broker today
+
+
+def test_a_state_works_once(brokers):
+    email = "m74-replay@example.com"
+    _register(email)
+    _link(_user(email), "fyers", subject="RPL001")
+    brokers["fyers"].user_id = "RPL001"
+    start = client.get("/api/auth/broker/fyers/start", follow_redirects=False)
+    cookie = start.cookies.get("atp_broker_fyers_flow")
+    state = parse_qs(urlsplit(start.headers["location"]).query)["state"][0]
+    params = {"auth_code": CODE, "s": "ok", "state": state}
+    headers = {"cookie": f"atp_broker_fyers_flow={cookie}"}
+    client.cookies.clear()
+    first = client.get("/api/auth/broker/fyers/callback", params=params, headers=headers, follow_redirects=False)
+    assert parse_qs(urlsplit(first.headers["location"]).query)["social"] == ["ok"]
+    exchanges = len(brokers["fyers"].requests)
+    client.cookies.clear()
+    again = client.get("/api/auth/broker/fyers/callback", params=params, headers=headers, follow_redirects=False)
+    assert parse_qs(urlsplit(again.headers["location"]).query) == {"social_error": ["expired"], "provider": ["broker:fyers"]}
+    assert len(brokers["fyers"].requests) == exchanges                 # the replay reaches no broker
+
+
+def test_broker_without_email_creates_nothing_until_the_mailed_link_is_opened(brokers, monkeypatch):
+    mails = _mailbox(monkeypatch)
+    brokers["zerodha"].email, brokers["zerodha"].user_id = "", "NOMAIL2"
+    loc = _broker_login("zerodha")
+    assert loc["query"] == {"social": "complete", "provider": "broker:zerodha"} and loc["refresh"] is None
+    token = loc["fragment"].split("=", 1)[1]
+    answer = client.post("/api/auth/social/complete", json={"token": token, "email": "m74-typed@example.com"})
+    assert answer.status_code == 202 and answer.json()["status"] == "check_email"
+    assert _user("m74-typed@example.com") is None and [m["to"] for m in mails] == ["m74-typed@example.com"]
+    done = client.post("/api/auth/social/verify", json={"token": _verify_token(mails[0])})
+    assert done.status_code == 201
+    user = _user("m74-typed@example.com")
+    assert user.email_verified_at is not None
+    assert [(i.provider, i.subject) for i in _identity_rows(user.id)] == [("broker:zerodha", "NOMAIL2")]

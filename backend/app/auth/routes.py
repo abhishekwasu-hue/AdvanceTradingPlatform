@@ -239,7 +239,7 @@ async def self_signup_account(
         await write_audit_log(session, user.tenant_id, user.id, "beta_invite_redeemed", f"code #{beta_code.id}")
     if identity is not None:
         from app.auth import social
-        await social.link_identity(session, user, identity)
+        await social.link_identity(session, user, identity, alert=False)   # the identity this account was made with
     if email_verified:
         verification.mark_verified(user)
     else:
@@ -471,7 +471,7 @@ async def join_by_invite(
         await legal_acceptance.accept(session, user, legal_versions, source="invite", request=http_request, require_all=True)
     if identity is not None:
         from app.auth import social
-        await social.link_identity(session, user, identity)
+        await social.link_identity(session, user, identity, alert=False)   # the identity this account was made with
     issued = await start_session(session, user, http_request)
     await session.commit()
     await activation.record_step(session, user, "signup")    # AUD-G2.4
@@ -585,6 +585,8 @@ class ResetInfoResponse(BaseModel):
     email_hint: str
     valid: bool
     reason: Optional[str] = None
+    # M73 review 3: the sign-in providers linked to this account (their names), so the reset page can show them.
+    linked: list[str] = []
 
 
 class ResetPasswordRequest(BaseModel):
@@ -634,6 +636,9 @@ async def _issue_reset(session: AsyncSession, user: User, request: Request, requ
 async def _email_reset_link(session: AsyncSession, user: User, link: str) -> bool:
     """Best effort: send through the tenant's own SMTP alert channel, to the user's address.
     Returns False when there is no such channel or sending fails - never raises."""
+    linked = await _linked_labels(session, user.id)          # M73 review 3: name the linked sign-in providers
+    linked_note = (f"\n\nThis account can also sign in with: {', '.join(linked)}. If you did not link these, unlink them "
+                   "in Settings › Account after the reset." if linked else "")
     from app.alerts.channels import decrypt_config
     from app.alerts.dispatcher import send_email
     channel = await session.scalar(select(AlertChannelRecord).where(
@@ -645,7 +650,8 @@ async def _email_reset_link(session: AsyncSession, user: User, link: str) -> boo
             user.email, "Reset your AiAlgoDesk password",
             f"Someone (hopefully you) asked to reset the password for {user.email}.\n\n"
             f"Open this link within {RESET_TTL_MINUTES} minutes to choose a new password:\n{link}\n\n"
-            "If you did not ask for this, ignore this email - the link works only once and your password is unchanged.",
+            "If you did not ask for this, ignore this email - the link works only once and your password is unchanged."
+            + linked_note,
         )
     try:
         config = decrypt_config(channel).model_copy(update={"to_addresses": [user.email]})
@@ -653,7 +659,8 @@ async def _email_reset_link(session: AsyncSession, user: User, link: str) -> boo
             config, "Reset your AiAlgoDesk password",
             f"Someone (hopefully you) asked to reset the password for {user.email}.\n\n"
             f"Open this link within {RESET_TTL_MINUTES} minutes to choose a new password:\n{link}\n\n"
-            "If you did not ask for this, ignore this email - the link works only once and your password is unchanged.",
+            "If you did not ask for this, ignore this email - the link works only once and your password is unchanged."
+            + linked_note,
         )
         return True
     except Exception:  # noqa: BLE001 - delivery is best effort; the owner path still exists
@@ -694,7 +701,14 @@ async def reset_info(token: str, session: AsyncSession = Depends(get_session)) -
         raise HTTPException(status_code=404, detail="Unknown reset link")
     user = await session.get(User, record.user_id)
     problem = _reset_problem(record)
-    return ResetInfoResponse(email_hint=_mask_email(user.email) if user else "", valid=problem is None, reason=problem)
+    return ResetInfoResponse(email_hint=_mask_email(user.email) if user else "", valid=problem is None, reason=problem,
+                             linked=await _linked_labels(session, user.id) if user and problem is None else [])
+
+
+async def _linked_labels(session: AsyncSession, user_id: int) -> list[str]:
+    """M73: the names of the sign-in providers linked to an account ("Google", "Facebook")."""
+    from app.auth import social
+    return [social.get(r.provider).label if social.get(r.provider) else r.provider for r in await social.identities_of(session, user_id)]
 
 
 @router.post("/password/reset/{token}", response_model=TokenResponse, dependencies=[Depends(login_rate_limit)])
@@ -714,6 +728,9 @@ async def reset_password(token: str, request: ResetPasswordRequest, http_request
     user.hashed_password = await hash_password_async(request.password)
     record.used_at = datetime.now(timezone.utc)
     await revoke_all_sessions(session, user.id, "password reset")
+    # M73 review 1: the inbox owner proved himself - a provider linked while the e-mail was unverified is removed.
+    from app.auth import social
+    await social.drop_identities_linked_unverified(session, user, "password reset")
     await write_audit_log(session, user.tenant_id, user.id, "password_reset_completed")
     issued = await start_session(session, user, http_request)
     await session.commit()

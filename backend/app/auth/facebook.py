@@ -7,6 +7,8 @@ exchanged at the Graph token endpoint with the app secret and the PKCE verifier,
 a confirmed primary e-mail, and none at all when the person has none or declined it - the sign-in then asks for one
 (SL-2). Nothing here logs or returns a code, a token, the verifier or the app secret; errors carry only a fixed code.
 """
+import hashlib
+import hmac
 from typing import Any
 from urllib.parse import urlencode
 
@@ -15,6 +17,9 @@ from fastapi import Request
 
 from app.auth.google import Flow, GoogleSignInError, code_challenge
 from app.core import config
+from app.core.logging_config import install_access_log_redaction
+
+install_access_log_redaction()        # the Graph call's appsecret_proof never reaches an httpx log line
 
 SCOPES = "email,public_profile"
 CALLBACK_PATH = "/api/auth/facebook/callback"
@@ -82,9 +87,15 @@ async def exchange_code(client: httpx.AsyncClient, code: str, flow: Flow, redire
     return token
 
 
+def appsecret_proof(access_token: str) -> str:
+    """Review nit 5: HMAC-SHA256 of the user token keyed with the app secret - Graph refuses a token used without it when
+    "Require App Secret" is on, so a token stolen elsewhere is useless. Blanked in every log line (logging_config)."""
+    return hmac.new(config.FACEBOOK_APP_SECRET.encode(), access_token.encode(), hashlib.sha256).hexdigest()
+
+
 async def fetch_me(client: httpx.AsyncClient, access_token: str) -> dict[str, Any]:
     try:
-        response = await client.get(me_endpoint(), params={"fields": "id,name,email"},
+        response = await client.get(me_endpoint(), params={"fields": "id,name,email", "appsecret_proof": appsecret_proof(access_token)},
                                     headers={"Authorization": f"Bearer {access_token}"})
         body = response.json() if response.status_code == 200 else {}
     except (httpx.HTTPError, ValueError):

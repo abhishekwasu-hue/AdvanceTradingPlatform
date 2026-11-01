@@ -72,6 +72,7 @@ const MESSAGES: Record<string, (p: string) => string> = {
   signup_form: () => "Create your account with the sign-up form first. After that, this sign-in works.",
   invite_invalid: () => "This invitation is no longer valid. Ask the owner for a new one.",
   email_taken: () => "An account already uses the invited email. Sign in instead.",
+  invite_email_mismatch: (p) => `This invitation is for another email. Continue with the ${p} account of the invited email, or choose a password below.`,
   linked_elsewhere: (p) => `This ${p} account is already linked to another account.`,
   already_linked: (p) => `Your account is already linked to another ${p} account. Unlink it first.`,
 };

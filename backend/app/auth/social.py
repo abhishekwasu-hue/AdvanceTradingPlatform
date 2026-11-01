@@ -122,9 +122,20 @@ def by_slug(slug: str) -> Provider | None:
     return next((p for p in REGISTRY.values() if p.slug == slug), None)
 
 
+def frontend_ready() -> bool:
+    """Every callback ends in a redirect to FRONTEND_URL; a hardened environment needs it absolute (as PUBLIC_BASE_URL),
+    so a provider never runs there with a relative return address (review nit 6)."""
+    return config.FRONTEND_URL.startswith("http") or config.ENVIRONMENT not in config.HARDENED_ENVIRONMENTS
+
+
+def is_live(provider: Provider) -> bool:
+    """Credentials set (the provider's own check) and the return address usable."""
+    return bool(provider.configured()) and frontend_ready()
+
+
 def live() -> list[Provider]:
-    """The providers whose credentials are set (the sign-in buttons, the admin health row)."""
-    return [p for p in REGISTRY.values() if p.configured()]
+    """The providers that are live (the sign-in buttons, the admin health row)."""
+    return [p for p in REGISTRY.values() if is_live(p)]
 
 
 async def _google_identity(code: str, flow: Flow, redirect: str) -> ProviderIdentity:
@@ -209,14 +220,19 @@ class Pending:
     intent: str = "signin"
     invite: str | None = None
     user_id: int | None = None
+    jti: str = ""
+    extra: dict[str, Any] = field(default_factory=dict, compare=False)   # "verify": the finish step's answers
+
+
+VERIFY_TTL_SECONDS = 24 * 3600           # the e-mailed confirmation link (kind "verify"), as the verification link
 
 
 def encode_pending(p: Pending) -> str:
     now = datetime.now(UTC)
     return jwt.encode({"purpose": PENDING_PURPOSE, "kind": p.kind, "provider": p.provider, "subject": p.subject,
                        "email": p.email, "email_verified": p.email_verified, "intent": p.intent, "invite": p.invite,
-                       "user_id": p.user_id, "jti": secrets.token_urlsafe(8), "iat": now,
-                       "exp": now + timedelta(seconds=PENDING_TTL_SECONDS)},
+                       "user_id": p.user_id, "jti": secrets.token_urlsafe(12), "extra": p.extra or None, "iat": now,
+                       "exp": now + timedelta(seconds=VERIFY_TTL_SECONDS if p.kind == "verify" else PENDING_TTL_SECONDS)},
                       config.JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
@@ -227,19 +243,30 @@ def decode_pending(value: str | None, kind: str | None = None) -> Pending | None
         payload = jwt.decode(value, config.JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM], options={"require": ["exp"]})
     except jwt.PyJWTError:
         return None
-    if payload.get("purpose") != PENDING_PURPOSE or payload.get("kind") not in ("link", "signup"):
+    if payload.get("purpose") != PENDING_PURPOSE or payload.get("kind") not in ("link", "signup", "verify"):
         return None
     if kind is not None and payload.get("kind") != kind:
         return None
     if get(str(payload.get("provider"))) is None or not payload.get("subject"):
         return None
     user_id = payload.get("user_id")
-    return Pending(kind=payload["kind"], provider=str(payload["provider"]), subject=str(payload["subject"]),
+    return Pending(jti=str(payload.get("jti") or ""), kind=payload["kind"], provider=str(payload["provider"]), subject=str(payload["subject"]),
                    email=payload.get("email") if isinstance(payload.get("email"), str) else None,
                    email_verified=payload.get("email_verified") is True,
                    intent=payload.get("intent") if payload.get("intent") in INTENTS else "signin",
                    invite=payload.get("invite") if isinstance(payload.get("invite"), str) else None,
-                   user_id=int(user_id) if isinstance(user_id, int) else None)
+                   user_id=int(user_id) if isinstance(user_id, int) else None,
+                   extra=payload.get("extra") if isinstance(payload.get("extra"), dict) else {})
+
+
+async def pending_used(p: Pending) -> bool:
+    return not p.jti or await was_used(f"pending-{p.kind}", p.jti)
+
+
+async def burn(p: Pending) -> bool:
+    """Spends a pending step (review nit 4): True the first time, False when it was already used."""
+    ttl = VERIFY_TTL_SECONDS if p.kind == "verify" else PENDING_TTL_SECONDS
+    return bool(p.jti) and await burn_once(f"pending-{p.kind}", p.jti, ttl + 60)
 
 
 def identity_of(p: Pending) -> ProviderIdentity:
@@ -258,14 +285,95 @@ async def identities_of(session: AsyncSession, user_id: int) -> list[UserIdentit
                                       .order_by(UserIdentityRecord.id)))
 
 
-async def link_identity(session: AsyncSession, user: User, identity: ProviderIdentity) -> UserIdentityRecord:
-    """Adds the link and its audit row (`social_link`, detail = the provider). Does not commit."""
+async def link_identity(session: AsyncSession, user: User, identity: ProviderIdentity, *, alert: bool = True) -> UserIdentityRecord:
+    """Adds the link and its audit row (`social_link`, detail = the provider). `alert`: a SECURITY notification to the
+    account (a link to an existing account; not for the identity a brand-new account was made with). Does not commit."""
     record = UserIdentityRecord(user_id=user.id, provider=identity.provider, subject=identity.subject[:255],
                                 email_at_link=(identity.email or None) and identity.email[:320])
     session.add(record)
     await session.flush()
     await write_audit_log(session, user.tenant_id, user.id, "social_link", identity.provider)
+    if alert:
+        await security_notice(session, user, f"{_label(identity.provider)} was linked to sign in to your account",
+                              "If this was not you, unlink it in Settings › Account and change your password.")
     return record
+
+
+def _label(provider_id: str) -> str:
+    provider = get(provider_id)
+    return provider.label if provider else provider_id
+
+
+async def security_notice(session: AsyncSession, user: User, title: str, message: str) -> None:
+    """A SECURITY notification to the account's owner (the bell, and the channels he chose)."""
+    from app.core.enums import NotificationSeverity, NotificationType
+    from app.notifications.service import notify
+    await notify(session, user.tenant_id, NotificationType.SECURITY, title=title, message=message,
+                 severity=NotificationSeverity.WARNING, user_id=user.id)
+
+
+async def drop_identities_linked_unverified(session: AsyncSession, user: User, why: str) -> list[str]:
+    """Review blocker 1: the inbox owner proved himself (a password reset, or the e-mail verification link). Any
+    provider linked while the account's e-mail was not yet verified may be someone else's - it is removed (audit
+    `social_unlink`, detail "<provider> (<why>)"). A link whose provider verified this very address stays. Returns the
+    providers removed. Does not commit."""
+    verified_at = user.email_verified_at
+    removed: list[str] = []
+    for record in await identities_of(session, user.id):
+        if record.email_at_link and record.email_at_link.lower() == (user.email or "").lower():
+            continue                                  # the provider itself verified this address
+        created = record.created_at.replace(tzinfo=UTC) if record.created_at and record.created_at.tzinfo is None else record.created_at
+        verified = verified_at.replace(tzinfo=UTC) if verified_at is not None and verified_at.tzinfo is None else verified_at
+        if verified is None or (created is not None and created < verified):
+            await session.delete(record)
+            removed.append(record.provider)
+            await write_audit_log(session, user.tenant_id, user.id, "social_unlink", f"{record.provider} ({why})")
+    if removed:
+        await session.flush()
+    return removed
+
+
+# --- single use (review nit 4) -------------------------------------------------------------------------------------
+
+_used_locally: dict[str, float] = {}
+
+
+def _used_key(kind: str, value: str) -> str:
+    import hashlib
+    return f"atp:social:used:{kind}:{hashlib.sha256(value.encode()).hexdigest()[:40]}"
+
+
+async def was_used(kind: str, value: str) -> bool:
+    """Whether `value` was already spent (this process, or any worker through Redis)."""
+    import time
+
+    from app.cache.client import cache_get
+    key = _used_key(kind, value)
+    until = _used_locally.get(key)
+    if until is not None and until >= time.monotonic():
+        return True
+    try:
+        return await cache_get(key) is not None
+    except Exception:  # noqa: BLE001 - Redis down: this process's own memory decides
+        return False
+
+
+async def burn_once(kind: str, value: str, ttl_seconds: int) -> bool:
+    """True the first time `value` (a state, a pending step's id) is presented, False on every later use within
+    `ttl_seconds`. Redis holds it across workers; this process remembers it too (Redis down: still single use here)."""
+    import time
+
+    from app.cache.client import cache_try_lock
+    key = _used_key(kind, value)
+    now = time.monotonic()
+    for k, until in list(_used_locally.items()):
+        if until < now:
+            _used_locally.pop(k, None)
+    if key in _used_locally:
+        return False
+    _used_locally[key] = now + ttl_seconds
+    acquired, reachable = await cache_try_lock(key, "1", ttl_seconds)
+    return acquired or not reachable
 
 
 def public_providers() -> list[dict[str, str]]:

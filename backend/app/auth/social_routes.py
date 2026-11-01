@@ -28,8 +28,9 @@ from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,6 +44,7 @@ from app.auth.routes import (
     _complete_login,
     _invite_by_token,
     _invite_problem,
+    _legal_versions,
     _set_refresh_cookie,
     _token_response,
     join_by_invite,
@@ -85,7 +87,7 @@ async def providers(session: AsyncSession = Depends(get_session)) -> dict[str, A
 
 def _provider_or_404(slug: str) -> social.Provider:
     provider = social.by_slug(slug)
-    if provider is None or not provider.configured():
+    if provider is None or not social.is_live(provider):
         raise HTTPException(status_code=404, detail="Not Found")
     return provider
 
@@ -150,10 +152,36 @@ async def _start(slug: str, request: Request) -> RedirectResponse:
     return response
 
 
-async def _link_start(slug: str, request: Request, response: Response, user: User) -> dict[str, str]:
-    """Settings › Account "Link": an authenticated request sets the flow cookie naming this account (so a link can never
-    be started from a URL someone else made) and gives the provider's address; the page then goes there."""
+class LinkStartRequest(BaseModel):
+    password: str = Field(default="", max_length=256)
+    code: str | None = Field(default=None, max_length=16)
+
+
+async def _link_start(slug: str, request: Request, response: Response, user: User, body: LinkStartRequest,
+                      session: AsyncSession) -> dict[str, str]:
+    """Settings › Account "Link": the account's password (and its two-factor code when it is on) re-confirms the person
+    (review 3: a stolen session alone cannot add a way in); then the flow cookie names this account (a link can never be
+    started from a URL someone else made) and the page goes to the provider's address."""
     provider = _provider_or_404(slug)
+    email = user.email.lower()
+    refused = await refusal(session, email, request)
+    if refused:
+        raise HTTPException(status_code=refused.status_code, detail=refused.reason,
+                            headers={"Retry-After": str(refused.retry_after)} if refused.retry_after else None)
+    if not password_usable(user.hashed_password):
+        raise HTTPException(status_code=409, detail="Set a password first (\"Forgot password?\" on the sign-in page), then "
+                                                    "link another way to sign in.")
+    await release_connection(session)                       # LD-7: no pool connection held during bcrypt
+    if not await verify_password_async(body.password, user.hashed_password):
+        await record_login_event(session, email=email, user=user, success=False, reason="bad_password", request=request)
+        await session.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Wrong password.")
+    if user.mfa_enabled:
+        ok, _ = await mfa.verify_code(session, user, (body.code or "").replace(" ", ""))
+        if not ok:
+            await record_login_event(session, email=email, user=user, success=False, reason="mfa_failed", request=request)
+            await session.commit()
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code")
     social_flow = social.new_flow("link", link_user_id=user.id)
     _set_flow_cookie(provider, response, social_flow)
     return {"url": provider.authorization_url(social_flow.flow, provider.redirect_uri(request))}
@@ -173,6 +201,8 @@ async def _callback(slug: str, request: Request, session: AsyncSession) -> Redir
         return _back(provider, request, error="expired")    # no cookie, an old one, or a state from another browser (CSRF)
     if not code or social_flow is None:
         return _back(provider, request, error="failed")
+    if not await social.burn_once("state", social_flow.flow.state, social.FLOW_TTL_SECONDS + 60):
+        return _back(provider, request, error="expired")    # review nit 4: a state is spent once, server-side
     try:
         identity = await provider.identity_for_code(code[:2048], social_flow.flow, provider.redirect_uri(request))
     except social.SignInError as exc:
@@ -268,6 +298,11 @@ async def _pending_link(provider: social.Provider, request: Request, session: As
     return _back(provider, request, outcome="link", fragment=f"#social_pending={token}")
 
 
+def _invite_email_matches(email: str | None, verified: bool, invited: str) -> bool:
+    """Review 2: Join team with a provider only when the provider verified the invited address itself."""
+    return bool(email and verified and email.strip().lower() == invited.strip().lower())
+
+
 async def _signup_form_needed(session: AsyncSession, email: str | None, tenant_id: int | None = None,
                               invite: bool = False) -> bool:
     if email is None:
@@ -286,6 +321,8 @@ async def _new_person(provider: social.Provider, request: Request, session: Asyn
         record = await _invite_by_token(session, social_flow.invite)
         if record is None or _invite_problem(record):
             return _back(provider, request, error="invite_invalid")
+        if not _invite_email_matches(identity.email, identity.email_verified, record.email):
+            return _back(provider, request, error="invite_email_mismatch")
         if await _user_by_email(session, record.email) is not None:
             return _back(provider, request, error="email_taken")
         if await _signup_form_needed(session, record.email, record.tenant_id, invite=True):
@@ -383,7 +420,7 @@ async def confirm_link(request: LinkConfirmRequest, http_request: Request, respo
     signed in. A wrong password counts toward the account's lockout like a wrong password at /login."""
     pending = social.decode_pending(request.token, kind="link")
     user = await session.get(User, pending.user_id) if pending and pending.user_id is not None else None
-    if pending is None or user is None or not user.is_active:
+    if pending is None or user is None or not user.is_active or await social.pending_used(pending):
         raise HTTPException(status_code=400, detail=EXPIRED)
     provider = social.get(pending.provider)
     assert provider is not None
@@ -413,18 +450,22 @@ async def confirm_link(request: LinkConfirmRequest, http_request: Request, respo
         if any(i.provider == provider.id for i in await social.identities_of(session, user.id)):
             raise HTTPException(status_code=409, detail=f"This account is already linked to another {provider.label} account.")
         await social.link_identity(session, user, social.identity_of(pending))
+    if not await social.burn(pending):
+        raise HTTPException(status_code=400, detail=EXPIRED)               # spent by a parallel request
     return await _complete_login(session, user, http_request, method, response)
 
 
-@router.post("/social/complete", response_model=TokenResponse, status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(login_rate_limit)])
+@router.post("/social/complete", status_code=status.HTTP_201_CREATED, dependencies=[Depends(login_rate_limit)])
 async def complete_signup(request: CompleteSignupRequest, http_request: Request, response: Response,
-                          session: AsyncSession = Depends(get_session)) -> TokenResponse:
-    """SL-3: the pending sign-up finished through the same code path as the register / invite forms. An e-mail typed
-    here (Facebook gave none) is not verified yet: the verification link goes out, exactly as after the form; and when
-    an account already uses it, the answer is 409 `link_required` with a link step (its password confirms)."""
+                          session: AsyncSession = Depends(get_session)) -> Any:
+    """SL-3: the pending sign-up finished through the same code path as the register / invite forms.
+
+    Review blocker 1: an e-mail typed here (Facebook gave none) is NOT trusted until its owner opens the link we mail to
+    it - nothing is created and nobody is signed in now (202 `check_email`); /auth/social/verify makes the account and
+    links the provider once the link is opened. An address an account already uses answers 409 `link_required` with a
+    link step (that account's password confirms)."""
     pending = social.decode_pending(request.token, kind="signup")
-    if pending is None:
+    if pending is None or await social.pending_used(pending):
         raise HTTPException(status_code=400, detail=EXPIRED)
     provider = social.get(pending.provider)
     assert provider is not None
@@ -434,10 +475,15 @@ async def complete_signup(request: CompleteSignupRequest, http_request: Request,
         record = await _invite_by_token(session, pending.invite)
         if record is None or _invite_problem(record):
             raise HTTPException(status_code=status.HTTP_410_GONE, detail="This invitation is no longer valid. Ask the owner for a new one.")
+        if not _invite_email_matches(pending.email, pending.email_verified, record.email):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={
+                "code": "invite_email_mismatch", "message": f"This invitation is for another email. Sign in to {provider.label} "
+                                                            "with the invited email, or use the invitation's password form."})
         if await _user_by_email(session, record.email) is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
         _, issued = await join_by_invite(session, http_request, record, password=None,
                                          legal_entries=request.legal_acceptance, identity=social.identity_of(pending))
+        await social.burn(pending)
         return _token_response(issued, response)
 
     if not await flag_enabled(session, "self_signup"):
@@ -445,7 +491,6 @@ async def complete_signup(request: CompleteSignupRequest, http_request: Request,
     email = pending.email or (str(request.email).lower() if request.email else None)
     if not email:
         raise HTTPException(status_code=400, detail={"code": "email_required", "message": "Enter your email address."})
-    verified = pending.email is not None and pending.email_verified
     existing = await _user_by_email(session, email)
     if existing is not None:
         if pending.email is None and existing.is_active:
@@ -455,11 +500,73 @@ async def complete_signup(request: CompleteSignupRequest, http_request: Request,
             raise HTTPException(status_code=409, detail={"code": "link_required", "token": link,
                                                          "message": "An account already uses this email. Confirm with its password to link it."})
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    if pending.email is None:
+        # Checked now (a stale page reloads the documents), applied when the link is opened.
+        await _legal_versions(session, request.legal_acceptance)
+        verify = social.Pending(kind="verify", provider=provider.id, subject=pending.subject, email=email, email_verified=False,
+                                extra={"legal": jsonable_encoder(request.legal_acceptance) if request.legal_acceptance else None,
+                                       "invite_code": request.invite_code})
+        sent = await _mail_confirmation(http_request, email, provider.label, social.encode_pending(verify))
+        await social.burn(pending)
+        response.status_code = status.HTTP_202_ACCEPTED
+        return {"status": "check_email", "email": email, "sent": sent}
+
     identity = social.ProviderIdentity(provider=provider.id, subject=pending.subject, email=pending.email,
                                        email_verified=pending.email_verified)
     _, issued = await self_signup_account(session, http_request, email=email, password=None,
                                           legal_entries=request.legal_acceptance, invite_code=request.invite_code,
-                                          source=provider.id, email_verified=verified, identity=identity)
+                                          source=provider.id, email_verified=pending.email_verified, identity=identity)
+    await social.burn(pending)
+    return _token_response(issued, response)
+
+
+async def _mail_confirmation(request: Request, email: str, label: str, token: str) -> bool:
+    """The confirmation link for an e-mail a provider did not give (review blocker 1). The link is never logged."""
+    from app.notifications import mailer
+    base = config.FRONTEND_URL if config.FRONTEND_URL.startswith("http") else str(request.base_url)
+    link = f"{base.rstrip('/')}/account?{urlencode({'social_verify': token})}"
+    sent = await mailer.send(
+        email, "Confirm your email for AiAlgoDesk",
+        f"Someone (hopefully you) signed up for AiAlgoDesk with {label} and gave this email address.\n\n"
+        f"Open this link within 24 hours to confirm it and finish creating your account:\n{link}\n\n"
+        "If this was not you, ignore this email - no account is created without this link.")
+    if not sent:
+        logger.warning("sign-up confirmation mail not sent (no platform mailer) - the person cannot finish this sign-up")
+    return bool(sent)
+
+
+class VerifyRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=8192)
+
+
+@router.post("/social/verify", response_model=TokenResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(login_rate_limit)])
+async def verify_signup(request: VerifyRequest, http_request: Request, response: Response,
+                        session: AsyncSession = Depends(get_session)) -> TokenResponse:
+    """Review blocker 1: the mailed link was opened - the address is proven. Only now is the account made (the same
+    sign-up path, the terms and beta code given on the finish step) and the provider linked; then the person is in."""
+    pending = social.decode_pending(request.token, kind="verify")
+    if pending is None or not pending.email or await social.pending_used(pending):
+        raise HTTPException(status_code=400, detail="This link is no longer valid. Sign up again.")
+    provider = social.get(pending.provider)
+    assert provider is not None
+    if not await flag_enabled(session, "self_signup"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Self sign-up is disabled - ask an existing organisation for an invite")
+    if await social.find_identity(session, provider.id, pending.subject) is not None:
+        raise HTTPException(status_code=409, detail="This account is already set up. Sign in instead.")
+    if await _user_by_email(session, pending.email) is not None:
+        raise HTTPException(status_code=409, detail="An account already uses this email. Sign in, then link "
+                                                    f"{provider.label} in Settings › Account.")
+    legal = pending.extra.get("legal")
+    legal_entries = TypeAdapter(LegalAcceptance).validate_python(legal) if isinstance(legal, dict) else None
+    invite_code = pending.extra.get("invite_code") if isinstance(pending.extra.get("invite_code"), str) else None
+    identity = social.ProviderIdentity(provider=provider.id, subject=pending.subject, email=pending.email, email_verified=True)
+    if not await social.burn(pending):
+        raise HTTPException(status_code=400, detail="This link is no longer valid. Sign up again.")
+    _, issued = await self_signup_account(session, http_request, email=pending.email, password=None,
+                                          legal_entries=legal_entries, invite_code=invite_code, source=provider.id,
+                                          email_verified=True, identity=identity)
     return _token_response(issued, response)
 
 
@@ -491,6 +598,9 @@ async def unlink_identity(provider_id: str, user: User = Depends(get_current_use
                                                     "password?\" on the sign-in page) or link another way, then unlink.")
     await session.delete(target)
     await write_audit_log(session, user.tenant_id, user.id, "social_unlink", provider_id)
+    label = social.get(provider_id).label if social.get(provider_id) else provider_id
+    await social.security_notice(session, user, f"{label} was unlinked from your account",
+                                 "If this was not you, change your password and check Settings › Account.")
     await session.commit()
 
 
@@ -502,8 +612,9 @@ def _add_provider_routes(provider: social.Provider) -> None:
     async def start(request: Request) -> RedirectResponse:
         return await _start(slug, request)
 
-    async def link(request: Request, response: Response, user: User = Depends(get_current_user)) -> dict[str, str]:
-        return await _link_start(slug, request, response, user)
+    async def link(request: Request, response: Response, body: LinkStartRequest, user: User = Depends(get_current_user),
+                   session: AsyncSession = Depends(get_session)) -> dict[str, str]:
+        return await _link_start(slug, request, response, user, body, session)
 
     async def callback(request: Request, session: AsyncSession = Depends(get_session)) -> RedirectResponse:
         return await _callback(slug, request, session)
@@ -512,7 +623,8 @@ def _add_provider_routes(provider: social.Provider) -> None:
     link.__name__ = f"{provider.id}_link"
     callback.__name__ = f"{provider.id}_callback"
     router.add_api_route(f"/{slug}/start", start, methods=["GET"], dependencies=[Depends(social_start_rate_limit)])
-    router.add_api_route(f"/{slug}/link", link, methods=["POST"], dependencies=[Depends(social_start_rate_limit)])
+    router.add_api_route(f"/{slug}/link", link, methods=["POST"],
+                         dependencies=[Depends(social_start_rate_limit), Depends(login_rate_limit)])
     router.add_api_route(f"/{slug}/callback", callback, methods=["GET"], dependencies=[Depends(login_rate_limit)])
 
 

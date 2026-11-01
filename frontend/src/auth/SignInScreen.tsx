@@ -78,7 +78,7 @@ function PasswordInput({ id, value, onChange, autoComplete, minLength, described
 const linkClass = "text-t14 font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand rounded-control";
 
 export default function SignInScreen() {
-  const { login, completeMfaLogin, register, acceptInvite, resetPassword, socialConfirmLink, socialComplete } = useAuth();
+  const { login, completeMfaLogin, register, acceptInvite, resetPassword, socialConfirmLink, socialComplete, socialVerify } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const ids = { email: useId(), password: useId(), code: useId(), beta: useId(), error: useId() };
@@ -94,7 +94,8 @@ export default function SignInScreen() {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [resetToken, setResetToken] = useState<string | null>(null);
-  const [resetHint, setResetHint] = useState<{ email_hint: string; valid: boolean; reason: string | null } | null>(null);
+  const [resetHint, setResetHint] = useState<{ email_hint: string; valid: boolean; reason: string | null; linked?: string[] } | null>(null);
+  const [mailedTo, setMailedTo] = useState<string | null>(null);   // M73: the finish step's confirmation link went here
   // PW6: the closed-beta invite code - the field opens when the server asks for one (or the visitor says they have one).
   const [betaCode, setBetaCode] = useState("");
   const [betaField, setBetaField] = useState(false);
@@ -134,10 +135,15 @@ export default function SignInScreen() {
     const verify = params.get("verify");
     const reset = params.get("reset");
     const inviteParam = params.get("invite");
-    if (!verify && !reset && !inviteParam) return;
-    for (const k of ["verify", "reset", "invite"]) params.delete(k);
+    const socialVerifyToken = params.get("social_verify");
+    if (!verify && !reset && !inviteParam && !socialVerifyToken) return;
+    for (const k of ["verify", "reset", "invite", "social_verify"]) params.delete(k);
     const rest = params.toString();
     navigate({ pathname: location.pathname, search: rest ? `?${rest}` : "" }, { replace: true });
+    if (socialVerifyToken) {
+      // M73 review 1: the confirmation link for an email a provider did not give - the account is made now.
+      socialVerify(socialVerifyToken).catch((e) => setError(friendlyError(e)));
+    }
     if (verify) {
       api.verifyEmail(verify)
         .then((u) => setNotice(`${u.email} is verified. Sign in to continue.`))
@@ -196,10 +202,14 @@ export default function SignInScreen() {
       } else if (mode === "link" && pendingToken) {
         await socialConfirmLink(pendingToken, password, mfaCode.replace(/\s+/g, "") || undefined);
       } else if (mode === "complete" && pendingToken) {
-        await socialComplete(pendingToken, {
+        const mailed = await socialComplete(pendingToken, {
           email: pendingInfo?.needs_email ? email : undefined, invite_code: betaCode.trim() || undefined,
           legal_acceptance: legalDocs && legalAccepted ? acceptanceFor(legalDocs) : undefined,
         });
+        if (mailed) {
+          setMailedTo(mailed);
+          setNotice(`We sent a link to ${mailed}. Open it to confirm your email and finish creating your account.`);
+        }
       }
     } catch (err) {
       // M73 SL-2: the e-mail typed on the finish step is an account's - its password confirms the link.
@@ -224,7 +234,7 @@ export default function SignInScreen() {
   const intro = mode === "signin" ? "Welcome back. Sign in to your trading desk."
     : mode === "mfa" ? "Enter the 6-digit code from your authenticator app, or one of your backup codes."
     : mode === "forgot" ? "Enter the email you sign in with. We send you a link to choose a new password."
-    : mode === "reset" ? (resetHint ? (resetHint.valid ? `For ${resetHint.email_hint}. You will be signed out on every other device.` : resetHint.reason ?? "This link is no longer valid.") : "Checking your link…")
+    : mode === "reset" ? (resetHint ? (resetHint.valid ? `For ${resetHint.email_hint}. You will be signed out on every other device.${resetHint.linked?.length ? ` This account also signs in with ${resetHint.linked.join(" and ")}.` : ""}` : resetHint.reason ?? "This link is no longer valid.") : "Checking your link…")
     : mode === "invite" ? (invite ? (invite.valid ? `You were invited to ${invite.tenant_name} as ${ROLE_LABELS[invite.role] ?? invite.role}. Choose a password to join.` : invite.reason ?? "This invitation is no longer valid.") : "Checking your invitation…")
     : mode === "link" ? (pendingInfo ? (pendingInfo.has_password === false
       ? `${pendingInfo.email ?? "This email"} has an account without a password. Use "Forgot password?" to set one, then sign in with ${pendingInfo.label} again.`
@@ -233,7 +243,8 @@ export default function SignInScreen() {
     : "Start on paper first.";
   const blocked = (needsLegal && legalDocs !== null && !legalAccepted)
     || (mode === "invite" && !(invite && invite.valid)) || (mode === "reset" && !(resetHint && resetHint.valid))
-    || ((mode === "link" || mode === "complete") && !pendingInfo) || (mode === "link" && pendingInfo?.has_password === false);
+    || ((mode === "link" || mode === "complete") && !pendingInfo) || (mode === "link" && pendingInfo?.has_password === false)
+    || (mode === "complete" && mailedTo !== null);
   const newPassword = mode === "register" || mode === "invite" || mode === "reset";
   // SL-5: under ui_v2, no intro paragraph where the heading says it all (Sign in, Create account).
   const showIntro = !(v2 && (mode === "signin" || mode === "register"));

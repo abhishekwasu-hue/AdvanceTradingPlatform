@@ -12,6 +12,20 @@ One at a time:
 4. Merge with the exact head sha. Only then the next order-path PR starts step 1.
 5. After the merge, run the two suites below on the new main and report the counts.
 
+## Isolation
+
+Run both suites on their OWN Redis (several agents / sessions share the default local Redis and flush it, which makes the
+worker-lock tests fail falsely - seen 1 Nov: 3 false failures on a shared Redis, 192/192 on an own one):
+
+    redis-server --port 6390 --daemonize yes --save "" && export REDIS_URL=redis://127.0.0.1:6390/0
+
+and use `redis-cli -p 6390 flushall` instead of `redis-cli flushall` below.
+
+## Baseline on main 86fe4e40 (1 Nov)
+
+- exits-never-blocked: 192 passed
+- PAPER = LIVE: 86 passed
+
 ## Exits-never-blocked suite
 
     cd backend && redis-cli flushall && python -m pytest -q -p no:cacheprovider \

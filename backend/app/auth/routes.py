@@ -1,6 +1,6 @@
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -203,28 +203,59 @@ async def register(request: RegisterRequest, http_request: Request, response: Re
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
     _enforce_password_policy(request.password, request.email)
-    legal_versions = await _legal_versions(session, request.legal_acceptance)
+    _, issued = await self_signup_account(session, http_request, email=request.email, password=request.password,
+                                          legal_entries=request.legal_acceptance, invite_code=request.invite_code)
+    return _token_response(issued, response)
+
+
+async def self_signup_account(
+    session: AsyncSession, http_request: Request, *, email: str, password: str | None,
+    legal_entries: LegalAcceptance | None, invite_code: str | None, source: str | None = None,
+    email_verified: bool = False, identity: Any | None = None,
+) -> tuple[User, IssuedTokens]:
+    """The ONE sign-up path (M73 SL-3): the register form and a sign-in provider (Google, Facebook) both come here, so the
+    terms acceptance (`legal_pages`), the closed beta (`beta_cohort_gate`), the new organisation with its default plan
+    and the OWNER / SUPER_ADMIN role are exactly the same. The caller has checked `self_signup` and that the e-mail is
+    free. `password` None = a provider account: an unusable password ("Forgot password?" sets one). `email_verified`:
+    the provider verified the address (else the verification link goes out, as for the form). `identity` (a
+    `social.ProviderIdentity`) is linked to the new account in the same transaction. Commits; returns the user and the
+    new session."""
+    legal_versions = await _legal_versions(session, legal_entries)
     # PW6: the closed beta. Off (the default): nothing changes. On: a valid invite code and a place in the cohort, spent
     # in this transaction - a sign-up that fails below does not use the code up. The operator's own configured
     # SUPER_ADMIN addresses (SUPER_ADMIN_EMAILS) are exempt: they issue the codes, so they cannot need one.
     beta_code = None
-    beta_gate = not is_configured_super_admin(request.email) and await flag_enabled(session, "beta_cohort_gate")
+    beta_gate = not is_configured_super_admin(email) and await flag_enabled(session, "beta_cohort_gate")
     await release_connection(session)                       # LD-7: reads only so far; no pool connection held during bcrypt
-    hashed_password = await hash_password_async(request.password)
+    hashed_password = await hash_password_async(password) if password is not None else await _unusable_hash_async()
     if beta_gate:
         from app.beta.invites import redeem
-        beta_code = await redeem(session, request.invite_code)
+        beta_code = await redeem(session, invite_code)
 
-    user = await new_owner_account(session, request.email, hashed_password)
+    user = await new_owner_account(session, email, hashed_password, source=source)
     if legal_versions is not None:
         await legal_acceptance.accept(session, user, legal_versions, source="signup", request=http_request, require_all=True)
     if beta_code is not None:
         await write_audit_log(session, user.tenant_id, user.id, "beta_invite_redeemed", f"code #{beta_code.id}")
-    await verification.send_link(session, user, http_request)  # Phase N3: best effort, logged when no mailer
+    if identity is not None:
+        from app.auth import social
+        await social.link_identity(session, user, identity, alert=False)   # the identity this account was made with
+    if email_verified:
+        verification.mark_verified(user)
+    else:
+        await verification.send_link(session, user, http_request)  # Phase N3: best effort, logged when no mailer
     issued = await start_session(session, user, http_request)
     await session.commit()
     await activation.record_step(session, user, "signup")    # AUD-G2.4: after the commit, never in the way
-    return _token_response(issued, response)
+    return user, issued
+
+
+async def _unusable_hash_async() -> str:
+    """M73: `unusable_password_hash` on bcrypt's threads (same pool as the other hashes)."""
+    import asyncio
+
+    from app.auth.security import _bcrypt_executor, unusable_password_hash
+    return await asyncio.get_running_loop().run_in_executor(_bcrypt_executor(), unusable_password_hash)
 
 
 async def new_owner_account(session: AsyncSession, email: str, hashed_password: str, *, source: Optional[str] = None) -> User:
@@ -411,9 +442,21 @@ async def accept_invite(token: str, request: AcceptInviteRequest, http_request: 
     if await session.scalar(select(User).where(User.email == record.email)) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
     _enforce_password_policy(request.password, record.email)
-    legal_versions = await _legal_versions(session, request.legal_acceptance, record.tenant_id)
+    _, issued = await join_by_invite(session, http_request, record, password=request.password,
+                                     legal_entries=request.legal_acceptance)
+    return _token_response(issued, response)
+
+
+async def join_by_invite(
+    session: AsyncSession, http_request: Request, record: TenantInviteRecord, *, password: str | None,
+    legal_entries: LegalAcceptance | None, identity: Any | None = None,
+) -> tuple[User, IssuedTokens]:
+    """The ONE join-a-team path (M73 SL-3): the invite form and a sign-in provider whose verified e-mail is the invited
+    one. The account is made inside the inviting tenant with the invited role (the seat was counted against the plan
+    when the invite was made). The caller has checked the invite is open and the e-mail free. Commits."""
+    legal_versions = await _legal_versions(session, legal_entries, record.tenant_id)
     await release_connection(session)                       # LD-7: reads only so far; no pool connection held during bcrypt
-    hashed_password = await hash_password_async(request.password)
+    hashed_password = await hash_password_async(password) if password is not None else await _unusable_hash_async()
 
     user = User(
         tenant_id=record.tenant_id, email=record.email, hashed_password=hashed_password, role=record.role,
@@ -426,10 +469,13 @@ async def accept_invite(token: str, request: AcceptInviteRequest, http_request: 
     await write_audit_log(session, record.tenant_id, user.id, "invite_accepted", f"{record.email} as {record.role}")
     if legal_versions is not None:
         await legal_acceptance.accept(session, user, legal_versions, source="invite", request=http_request, require_all=True)
+    if identity is not None:
+        from app.auth import social
+        await social.link_identity(session, user, identity, alert=False)   # the identity this account was made with
     issued = await start_session(session, user, http_request)
     await session.commit()
     await activation.record_step(session, user, "signup")    # AUD-G2.4
-    return _token_response(issued, response)
+    return user, issued
 
 
 # --- Sessions (Phase C1) -------------------------------------------------------------------------
@@ -539,6 +585,8 @@ class ResetInfoResponse(BaseModel):
     email_hint: str
     valid: bool
     reason: Optional[str] = None
+    # M73 review 3: the sign-in providers linked to this account (their names), so the reset page can show them.
+    linked: list[str] = []
 
 
 class ResetPasswordRequest(BaseModel):
@@ -588,6 +636,9 @@ async def _issue_reset(session: AsyncSession, user: User, request: Request, requ
 async def _email_reset_link(session: AsyncSession, user: User, link: str) -> bool:
     """Best effort: send through the tenant's own SMTP alert channel, to the user's address.
     Returns False when there is no such channel or sending fails - never raises."""
+    linked = await _linked_labels(session, user.id)          # M73 review 3: name the linked sign-in providers
+    linked_note = (f"\n\nThis account can also sign in with: {', '.join(linked)}. If you did not link these, unlink them "
+                   "in Settings › Account after the reset." if linked else "")
     from app.alerts.channels import decrypt_config
     from app.alerts.dispatcher import send_email
     channel = await session.scalar(select(AlertChannelRecord).where(
@@ -599,7 +650,8 @@ async def _email_reset_link(session: AsyncSession, user: User, link: str) -> boo
             user.email, "Reset your AiAlgoDesk password",
             f"Someone (hopefully you) asked to reset the password for {user.email}.\n\n"
             f"Open this link within {RESET_TTL_MINUTES} minutes to choose a new password:\n{link}\n\n"
-            "If you did not ask for this, ignore this email - the link works only once and your password is unchanged.",
+            "If you did not ask for this, ignore this email - the link works only once and your password is unchanged."
+            + linked_note,
         )
     try:
         config = decrypt_config(channel).model_copy(update={"to_addresses": [user.email]})
@@ -607,7 +659,8 @@ async def _email_reset_link(session: AsyncSession, user: User, link: str) -> boo
             config, "Reset your AiAlgoDesk password",
             f"Someone (hopefully you) asked to reset the password for {user.email}.\n\n"
             f"Open this link within {RESET_TTL_MINUTES} minutes to choose a new password:\n{link}\n\n"
-            "If you did not ask for this, ignore this email - the link works only once and your password is unchanged.",
+            "If you did not ask for this, ignore this email - the link works only once and your password is unchanged."
+            + linked_note,
         )
         return True
     except Exception:  # noqa: BLE001 - delivery is best effort; the owner path still exists
@@ -648,7 +701,14 @@ async def reset_info(token: str, session: AsyncSession = Depends(get_session)) -
         raise HTTPException(status_code=404, detail="Unknown reset link")
     user = await session.get(User, record.user_id)
     problem = _reset_problem(record)
-    return ResetInfoResponse(email_hint=_mask_email(user.email) if user else "", valid=problem is None, reason=problem)
+    return ResetInfoResponse(email_hint=_mask_email(user.email) if user else "", valid=problem is None, reason=problem,
+                             linked=await _linked_labels(session, user.id) if user and problem is None else [])
+
+
+async def _linked_labels(session: AsyncSession, user_id: int) -> list[str]:
+    """M73: the names of the sign-in providers linked to an account ("Google", "Facebook")."""
+    from app.auth import social
+    return [social.get(r.provider).label if social.get(r.provider) else r.provider for r in await social.identities_of(session, user_id)]
 
 
 @router.post("/password/reset/{token}", response_model=TokenResponse, dependencies=[Depends(login_rate_limit)])
@@ -668,6 +728,9 @@ async def reset_password(token: str, request: ResetPasswordRequest, http_request
     user.hashed_password = await hash_password_async(request.password)
     record.used_at = datetime.now(timezone.utc)
     await revoke_all_sessions(session, user.id, "password reset")
+    # M73 review 1: the inbox owner proved himself - a provider linked while the e-mail was unverified is removed.
+    from app.auth import social
+    await social.drop_identities_linked_unverified(session, user, "password reset")
     await write_audit_log(session, user.tenant_id, user.id, "password_reset_completed")
     issued = await start_session(session, user, http_request)
     await session.commit()

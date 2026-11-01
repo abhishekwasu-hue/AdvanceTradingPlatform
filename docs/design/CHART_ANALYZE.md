@@ -38,7 +38,12 @@ and volume are read from the picture and may be approximate"**; prices are marke
 alert form says so too). Annotations are drawn as an overlay on the user's own image, in that image's pixel space.
 
 **B. Hybrid (PR-B, PR-C).** Built in M59 CR-4 (flag `chart_analyze_hybrid`, OFF until the owner's ✅) as
-"Advanced analysis (code + AI)": the user picks the symbol and timeframe (never read from the picture); the server reads
+"Advanced analysis (code + AI)". Owner order M84: the symbol and timeframe are read from what is PRINTED on the chart
+(the same AI picture read as "AI only", its `recognised` block only; app/chart_analyze/detect.py maps the name to ATP's
+index names / the instrument master and the label to 5m / 15m / 1h / 1d; a value that cannot be read or does not map is
+asked for alone, with its exact reason, and never guessed); the user's own value is an optional override that wins, and
+he can change either on the result and re-run in place (a new analysis of the same picture). No price is ever read from
+the picture; the server reads
 ATP's own structure reading of the stored candles (app/chart_analyze/hybrid.py) and code draws it on a server-rendered
 chart of those candles (app/chart_analyze/reading_png.py), shown BESIDE the user's picture - the picture's price axis is
 not known, so nothing is drawn on it. The engine's optional hybrid entry point (`HybridProvider`) gets only the generic

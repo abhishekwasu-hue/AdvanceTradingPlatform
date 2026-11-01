@@ -445,20 +445,20 @@ def test_link_from_settings_then_unlink(fake):
     bearer = {"Authorization": f"Bearer {_register(email)}"}
     listing = client.get("/api/auth/identities", headers=bearer).json()
     assert listing["has_password"] is True and listing["identities"] == []
-    assert [p["id"] for p in listing["available"]] == ["google", "facebook"]
+    assert [(p["id"], p["slug"]) for p in listing["available"]] == [("google", "google"), ("facebook", "facebook")]
     assert client.post("/api/auth/google/link").status_code == 401                  # signed in only
     started = client.post("/api/auth/google/link", headers=bearer)
     assert started.status_code == 200 and started.json()["url"].startswith(google.AUTHORIZATION_URL)
     cookie = started.cookies.get("atp_google_flow")
     q = {k: v[0] for k, v in parse_qs(urlsplit(started.json()["url"]).query).items()}
     fake.challenge, fake.nonce = q["code_challenge"], q["nonce"]
-    fake.person = {"email": "another-address@gmail.com", "sub": "g-settings", "fb_email": True}
+    fake.person = {"email": "another-address@example.com", "sub": "g-settings", "fb_email": True}
     client.cookies.clear()
     back = client.get("/api/auth/google/callback", params={"state": q["state"], "code": AUTH_CODE},
                       headers={"cookie": f"atp_google_flow={cookie}"}, follow_redirects=False)
     assert parse_qs(urlsplit(back.headers["location"]).query) == {"social": ["linked"], "provider": ["google"]}
     listing = client.get("/api/auth/identities", headers=bearer).json()
-    assert [(i["provider"], i["email"]) for i in listing["identities"]] == [("google", "another-address@gmail.com")]
+    assert [(i["provider"], i["email"]) for i in listing["identities"]] == [("google", "another-address@example.com")]
     assert client.delete("/api/auth/identities/google", headers=bearer).status_code == 204   # the password remains
     assert _audit(_user(email).id, "social_unlink") == ["google"]
     assert client.delete("/api/auth/identities/google", headers=bearer).status_code == 404
@@ -535,3 +535,11 @@ def test_callback_shares_the_login_rate_limit():
     for path in ("/api/auth/social/link/confirm", "/api/auth/social/complete", "/api/auth/social/pending"):
         route = next(r for r in social_routes.router.routes if getattr(r, "path", "") == path)
         assert any(d.call is login_rate_limit for d in route.dependant.dependencies)
+
+
+def test_admin_health_lists_which_providers_are_live(fake, monkeypatch):
+    from app.admin.console import sign_in_providers
+    monkeypatch.setattr(config, "FACEBOOK_APP_SECRET", "")
+    rows = sign_in_providers()
+    assert [(r["id"], r["live"]) for r in rows] == [("google", True), ("facebook", False)]
+    assert FB_ID not in str(rows) and G_SECRET not in str(rows) and G_ID not in str(rows)

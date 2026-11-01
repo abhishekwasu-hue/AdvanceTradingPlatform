@@ -228,7 +228,7 @@ export default function SignInScreen() {
     : mode === "invite" ? (invite ? (invite.valid ? `You were invited to ${invite.tenant_name} as ${ROLE_LABELS[invite.role] ?? invite.role}. Choose a password to join.` : invite.reason ?? "This invitation is no longer valid.") : "Checking your invitation…")
     : mode === "link" ? (pendingInfo ? (pendingInfo.has_password === false
       ? `${pendingInfo.email ?? "This email"} has an account without a password. Use "Forgot password?" to set one, then sign in with ${pendingInfo.label} again.`
-      : `${pendingInfo.email ?? "This email"} already has an account. Enter its password to link ${pendingInfo.label} and sign in.`) : "Checking…")
+      : `${pendingInfo.email ?? "This email"} already has an account. Enter its password${pendingInfo.mfa ? " and authenticator code" : ""} to link ${pendingInfo.label} and sign in.`) : "Checking…")
     : mode === "complete" ? (pendingInfo ? (pendingInfo.needs_email ? `${pendingInfo.label} did not share an email. Enter yours - we send a link to confirm it.` : `Signing up with ${pendingInfo.label} as ${pendingInfo.email ?? ""}.`) : "Checking…")
     : "Start on paper first.";
   const blocked = (needsLegal && legalDocs !== null && !legalAccepted)
@@ -239,7 +239,7 @@ export default function SignInScreen() {
   const showIntro = !(v2 && (mode === "signin" || mode === "register"));
   const providerIntent = mode === "register" ? "signup" : mode === "invite" ? "invite" : "signin";
   const showProviders = v2 && providers.length > 0 && (mode === "signin" || mode === "register" || (mode === "invite" && !!invite?.valid));
-  const controlH = v2 ? "h-12" : "h-11";
+  const controlH = v2 ? "h-12" : "h-11";      // the submit Button's own size (h-9) needs "!" to give way under v2
 
   return (
     <div className="flex min-h-screen flex-col bg-surface text-fg" data-screen="sign-in">
@@ -262,7 +262,7 @@ export default function SignInScreen() {
               </div>
             )}
             <form onSubmit={submit} className={`${showProviders ? "" : "mt-space-5 "}space-y-space-4`} aria-describedby={error ? ids.error : undefined}>
-              {(mode === "mfa" || (mode === "link" && pendingInfo?.mfa)) && (
+              {mode === "mfa" && (
                 <Field id={ids.code} label="Authenticator code">
                   <input id={ids.code} autoFocus required inputMode="numeric" autoComplete="one-time-code" placeholder="123 456"
                     className={`${inputClass} ${controlH} font-mono tracking-widest`} value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} />
@@ -281,6 +281,12 @@ export default function SignInScreen() {
                   <PasswordInput id={ids.password} value={password} onChange={setPassword}
                     autoComplete={newPassword ? "new-password" : "current-password"} minLength={newPassword ? 10 : 1}
                     describedBy={newPassword ? `${ids.password}-hint` : undefined} tall={v2} />
+                </Field>
+              )}
+              {mode === "link" && pendingInfo?.mfa && pendingInfo.has_password !== false && (
+                <Field id={ids.code} label="Authenticator code">
+                  <input id={ids.code} required inputMode="numeric" autoComplete="one-time-code" placeholder="123 456"
+                    className={`${inputClass} ${controlH} font-mono tracking-widest`} value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} />
                 </Field>
               )}
               {(mode === "signin" || mode === "link") && (
@@ -306,7 +312,7 @@ export default function SignInScreen() {
                   <span>{error}</span>
                 </p>
               )}
-              <Button type="submit" variant="primary" loading={busy} disabled={blocked} className={`${controlH} w-full text-t14`}>
+              <Button type="submit" variant="primary" loading={busy} disabled={blocked} className={`${v2 ? "!h-12" : "h-11"} w-full text-t14`}>
                 {busy ? "Please wait…" : ACTIONS[mode]}
               </Button>
             </form>

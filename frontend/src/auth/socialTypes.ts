@@ -27,5 +27,5 @@ export interface SignInIdentity { provider: string; label: string; email: string
 export interface SignInIdentities {
   has_password: boolean;
   identities: SignInIdentity[];
-  available: { id: string; label: string; kind: string }[];
+  available: { id: string; slug: string; label: string; kind: string }[];
 }

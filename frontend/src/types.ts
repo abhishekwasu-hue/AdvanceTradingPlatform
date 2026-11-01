@@ -262,6 +262,7 @@ export interface OptionBacktestConfig {
   strike_rule?: StrikeRule;
   strike_offset?: number;
   spread_width?: number;
+  ratio_shorts?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
   underlying_breach_exit?: boolean | null;   // DEF-0: the trader's own underlying-level exit (off unless set)
@@ -458,8 +459,12 @@ export interface RiskConfig {
   dd_level_1_pct: number | null;
   dd_level_2_pct: number | null;
   event_size_cut_pct: number | null;
-  /** CP6-15: when the losses-in-a-row pause ends (the server's default is "next_session"). */
-  loss_streak_pause?: LossStreakPause;
+  /** M68 PR-5 (TS1-054): how much the first drawdown step cuts the size, % (null = not set: no cut). */
+  dd_cut_pct?: number | null;
+  /** CP6-15: when the losses-in-a-row pause ends. M68 PR-5 (TS1-051): null = Not set (no built-in choice). */
+  loss_streak_pause?: LossStreakPause | null;
+  /** M68 PR-5 (TS1-052): opposite positions of two bots; null = Not set (allowed). */
+  opposite_positions?: "allow" | "deny" | null;
 }
 
 export type LossStreakPause = "next_session" | "until_resume";
@@ -477,7 +482,8 @@ export interface LossStreakStatus {
   exits_blocked: false;
 }
 
-export type RiskCeilings = Record<string, number>;
+/** M68 PR-5 (TS1-048): only the ceilings an admin set ({} = none); the admin's own view lists every key, null = not set. */
+export type RiskCeilings = Record<string, number | null>;
 
 export interface MarketEvent {
   id: number;
@@ -1023,6 +1029,11 @@ export type ExecutionMode = "PAPER" | "LIVE";
 
 export interface Deployment {
   id: number;
+  /** M68 PR-6: the bot's own New entries choice (null: it follows his Trade settings), the mode in effect now (null: Not
+   *  set anywhere - it places nothing) and whether it follows the Trade settings. */
+  entry_mode?: "AUTO" | "APPROVAL" | null;
+  entry_mode_in_effect?: "AUTO" | "APPROVAL" | null;
+  entry_mode_follows_settings?: boolean;
   /** Strategy templates section 5: the bot's exit choice as stored (null: none chosen). */
   template_exits?: TemplateExitsRequest | null;
   regime_filter?: string[] | null;
@@ -1125,6 +1136,8 @@ export interface ContractRules {
   strike_filters?: StrikeFilters | null;
   option_strategy?: OptionStrategy;
   spread_width?: number;
+  /** M68 PR-4 (TS1-042): a ratio spread's own sold legs per bought leg. */
+  ratio_shorts?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
   underlying_breach_exit?: boolean | null;   // DEF-0: the trader's own underlying-level exit (off unless set)
@@ -1194,7 +1207,7 @@ export interface DeploymentCreateRequest extends ContractRules {
   /** P0.5 / T5: LIVE entry style. PROTECTED_LIMIT sends a marketable limit `market_protection_pct` past the signal price. */
   order_style?: "MARKET" | "PROTECTED_LIMIT";
   market_protection_pct?: number | null;
-  /** Z3 / BT2: APPROVAL - every entry becomes a proposal you approve (needs the `approval_only_entries` flag). */
+  /** Z3 / BT2: APPROVAL - every entry becomes a proposal you approve. M68 PR-6: his own choice, no flag; omitted = his Trade settings. */
   entry_mode?: "AUTO" | "APPROVAL";
   strategy_id: string;
   symbol: string;
@@ -2451,6 +2464,24 @@ export interface MarketMemory {
   sentiment_view?: string[];
 }
 
+/** M82 R2-R4: the read the Today's read card shows and whether "Read now" can run. */
+export interface BriefReadNow {
+  enabled: boolean;
+  broker: "ok" | "expired" | "none" | "teammate" | "shared" | "role";
+  reason: string | null;
+  reconnect?: { broker: string; account_label: string };
+}
+export interface BriefRead {
+  state: "today" | "last_session" | "older" | "none";
+  label: string | null;
+  read_date: string | null;
+  session_date: string;
+  session_label: string;
+  reason: "none_ever" | "broker_expired" | "worker_missed" | null;
+  reason_text: string | null;
+  read_now: BriefReadNow;
+}
+
 /** Phase BD-lite: the market thesis of one symbol (shadow overlay only). */
 export interface ThesisFactor { factor: string; weight: number; available: boolean; direction: -1 | 0 | 1; strength: number; value: unknown }
 export interface ThesisScenario { trigger?: number; /** P0.8-D: indices only, unless the operator's thesis_stock_targets flag is on */ target?: number; invalidation?: number; low?: number; high?: number; text: string }
@@ -2524,6 +2555,8 @@ export interface DailyBrief {
   market_updated_at: string | null;
   /** P0.10: how old the market figures are; `figures_shown` false = none, stale, or a placeholder (every symbol the same). */
   market_data?: { state: "fresh" | "stale" | "suspect" | "none"; updated_at: string | null; age_minutes: number | null; figures_shown: boolean };
+  /** M82: which market read the card shows (its session date) or, with none, the one reason why; and "Read now". */
+  read?: BriefRead;
   market: { symbols: MemorySnapshot[]; cues: MemorySnapshot[]; globals: MemorySnapshot[] };
   events: { kind: string; action: string; description: string; start_time: string | null; end_time: string | null }[];
   you: { PAPER: BriefDay; LIVE: BriefDay };
@@ -2716,10 +2749,14 @@ export interface PaperNotTaken {
 
 /** Z3-b: the caller's own PAPER account (GET /api/paper/account; 404 while the `paper_account` flag is off). */
 export interface PaperAccount {
-  user_id: number; mode: "PAPER"; starting_capital: number; balance: number; equity: number;
+  /** M68 PR-7: null = his starting capital is Not set (the balance and equity need it); `capital_saved`: he chose it. */
+  user_id: number; mode: "PAPER"; starting_capital: number | null; balance: number | null; equity: number | null;
+  capital_saved?: boolean; capital_needed?: boolean;
+  /** M68 PR-7: what a new paper trade pays, his own setting in words (Not set: statutory charges only). */
+  charges_model?: { brokerage_per_order: number; slippage_pct: number; with_brokerage: boolean; words: string };
   realised: { gross: number; charges: number; net: number }; unrealised: number;
   closed_trades: number; open_positions: number; wins: number; losses: number; win_rate: number | null; sessions: number;
-  max_drawdown: number; max_drawdown_pct: number; paused: boolean; paused_reason: string | null;
+  max_drawdown: number; max_drawdown_pct: number | null; paused: boolean; paused_reason: string | null;
   /** Trades priced from the user's own inputs (console candles) - left out of every figure here. */
   excluded_trades: number;
   positions: PaperTradeRow[]; journal: PaperTradeRow[]; not_taken: PaperNotTaken[];
@@ -2845,7 +2882,7 @@ export interface TicketCostLine {
 }
 
 export interface TicketSizing {
-  capital_basis: number; risk_per_trade_pct: number; risk_per_trade_amount: number; user_cap: number | null; org_cap: number;
+  capital_basis: number | null; risk_per_trade_pct: number; risk_per_trade_amount: number; user_cap: number | null; org_cap: number;
   binding: string; size_multiplier: number; cap: number; override_cap: number; lot_size: number; risk_per_unit: number;
   suggested_quantity: number; suggested_lots: number; quantity: number; lots: number | null; risk_amount: number;
   risk_pct_of_capital: number | null; gauge: number | null; within_cap: boolean; override: boolean; gauge_zone: "ok" | "override" | "over";
@@ -2902,7 +2939,8 @@ export interface PaperRiskStatus {
   pending: { values: Partial<Record<keyof RiskByDefaultSettings, number | null>>; from: string } | null;
   bounds: Record<keyof RiskByDefaultSettings, [number, number]>; labels: Record<keyof RiskByDefaultSettings, string>;
   /** amount null: no cap of his own (TT-12); the organisation's risk per trade still sizes the entry. */
-  capital_basis: number; risk_cap: { amount: number | null; binding: string | null; by_pct: number | null };
+  /** M68 PR-7: null = his starting capital is Not set (a % limit cannot be measured: `risk_cap.needs_capital`). */
+  capital_basis: number | null; risk_cap: { amount: number | null; binding: string | null; by_pct: number | null; needs_capital?: boolean };
   today: { realised: number; open_marks: number; pnl: number; worst: number; limit: number; used: number | null; entries: number; max_entries: number };
   lockout: { kind: string; reason: string; pnl: number; limit: number; locked_at: string; until: string } | null;
   overrides: { today: number; total: number }; override_max_multiple: number; override_min_reason_chars: number;

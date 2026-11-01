@@ -69,15 +69,17 @@ async def _auto_block(session: AsyncSession, rule: AlertRuleRecord, row: Any, kn
                       counts: Optional[Dict[int, int]] = None) -> Dict[str, Any]:
     """N1 X2: the template's Auto PAPER state - the three switches and today's count against the limit. `known` /
     `counts`: the organisation's switches and today's counts by rule, when the caller read them once for many rules."""
-    from app.core import config as app_config
+    from app.execution import automation
     from app.screener.then import auto_paper
     if row is None:
-        return {"available": False, "armed": False, "why": "no template", "today": 0, "max_per_day": int(app_config.SCAN_AUTO_PAPER_MAX_PER_DAY)}
+        return {"available": False, "armed": False, "why": "no template", "today": 0, "max_per_day": None}
     av = await auto_paper.availability(session, rule.tenant_id, row, known=known)
     today = (counts.get(rule.id, 0) if counts is not None
              else await auto_paper.entries_today(session, rule.tenant_id, rule.id, datetime.now(timezone.utc)))
+    # M68 PR-6 (TS1-063): the template owner's own limit (None = Not set: no Auto PAPER until he sets it).
+    own = await automation.load_for(session, row.user_id)
     return {"available": av.available, "armed": av.armed, "why": av.why, "today": today,
-            "max_per_day": int(app_config.SCAN_AUTO_PAPER_MAX_PER_DAY), "armed_at": (T.arm_of(row) or {}).get("at")}
+            "max_per_day": own.scan_auto_max, "armed_at": (T.arm_of(row) or {}).get("at")}
 
 
 @router.get("/rules/{rule_id}/then")
@@ -111,6 +113,12 @@ async def arm_then(rule_id: int, body: ArmBody, user: User = Depends(require_tra
         raise HTTPException(status_code=409, detail="Auto PAPER is not offered on this platform (the operator's switch is off)")
     if (body.confirm or "").strip() != T.ARM_CONFIRM:
         raise HTTPException(status_code=422, detail=f'Type "{T.ARM_CONFIRM}" to confirm')
+    # M68 PR-6 (TS1-063, TS-3): the limits are his own - arming asks for the ones Not set (Settings > Trade settings).
+    from app.execution import automation
+    missing = (await automation.load(session, user)).scan_missing()
+    if missing:
+        raise HTTPException(status_code=422, detail=[{"loc": ["values", f"{automation.SECTION}.{name}"], "type": "needs_setting",
+                                                      "msg": automation.needs_setting(name)} for name in missing])
     now = datetime.now(timezone.utc)
     T.set_arm(row, user.id, now.isoformat())
     row.updated_at = now

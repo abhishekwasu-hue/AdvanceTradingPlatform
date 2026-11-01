@@ -324,6 +324,18 @@ HISTORY_BACKFILL_FO_OPTIONS = os.environ.get("HISTORY_BACKFILL_FO_OPTIONS", "fal
 # F&O volume: "withhold" (default - stored as 0 until the legacy CONTRACTS vs UDiFF TtlTradgVol unit is confirmed on
 # real files, so nothing downstream mixes units) or "as_printed". The unit is recorded per file either way.
 HISTORY_BACKFILL_FO_VOLUME = os.environ.get("HISTORY_BACKFILL_FO_VOLUME", "withhold").strip().lower()
+# M71 PL-7: the owner's private data checkout (trade-data), read-only, seeded into HIS private store by
+# `python -m app.market_lake.seed_import run` (atp.sh import-trade-data mounts the host checkout here). Empty or absent
+# directory = "not available": the import reports it and does nothing. The ref is informational (the host checks it out).
+TRADE_DATA_DIR = os.environ.get("ATP_TRADE_DATA_DIR", "").strip()
+TRADE_DATA_REF = os.environ.get("ATP_TRADE_DATA_REF", "main").strip() or "main"
+# M71 PL-7b, fail closed: the seed import refuses (nothing written) when the private data states no readable policy.
+TRADE_DATA_POLICY_REQUIRED = os.environ.get("TRADE_DATA_POLICY_REQUIRED", "true").strip().lower() in ("1", "true", "yes", "on")
+# The checkout's top-level folders that hold market data (comma list, the host's .env; empty = every top-level folder).
+TRADE_DATA_FOLDERS = tuple(f.strip() for f in os.environ.get("ATP_TRADE_DATA_FOLDERS", "").split(",") if f.strip())
+# The underlying(s) a data-use policy without its own scope applies to (comma list; "*" = every symbol). Default: the
+# owner's order names the NIFTY holdout (OPEN_QUESTIONS M71Q-7).
+TRADE_DATA_POLICY_SCOPE = tuple(s.strip().upper() for s in os.environ.get("TRADE_DATA_POLICY_SCOPE", "NIFTY").split(",") if s.strip()) or ("NIFTY",)
 # Weekends are probed with the cash file only (a special session - budget Saturday, Muhurat - has one); index and F&O
 # files are asked for only when the cash file of that day exists. "false" skips weekends entirely.
 HISTORY_BACKFILL_PROBE_WEEKENDS = os.environ.get("HISTORY_BACKFILL_PROBE_WEEKENDS", "true").lower() in ("1", "true", "yes")
@@ -858,18 +870,16 @@ EXECUTION_CORE_DRAIN_SECONDS = _bounded_int("EXECUTION_CORE_DRAIN_SECONDS", 20, 
 SCAN_AUTO_PAPER_MAX_PER_DAY = _bounded_int("SCAN_AUTO_PAPER_MAX_PER_DAY", 3, 1, 20)
 SCAN_AUTO_PAPER_COOLDOWN_MINUTES = _bounded_int("SCAN_AUTO_PAPER_COOLDOWN_MINUTES", 30, 0, 24 * 60)
 # Review of X2: an arming lasts this many days (then the owner arms again), and no Auto PAPER entry is placed at or after
-# this IST time (HH:MM; empty = the venue's own no-new-entries time, 15:00 on NSE, and never after the 15:15 square-off).
+# this IST time (HH:MM; empty = none of the operator's own - M68 PR-3: the owner's own entry window and square-off apply).
 SCAN_AUTO_PAPER_ARM_DAYS = _bounded_int("SCAN_AUTO_PAPER_ARM_DAYS", 7, 1, 90)
 SCAN_AUTO_PAPER_LAST_ENTRY = os.environ.get("SCAN_AUTO_PAPER_LAST_ENTRY", "").strip()
 
-# Z3-b / BT3 (beta spec, Phase 0): the per-user PAPER account (flag `paper_account`, off by default). A new account starts
-# with PAPER_STARTING_CAPITAL (the user may change it within the bounds). The progression ladder card shows the PAPER
+# Z3-b / BT3 (beta spec, Phase 0): the per-user PAPER account (flag `paper_account`, off by default). M68 PR-7 (TS1-064 /
+# 068): a new account starts with the user's OWN capital (Settings > Trade settings > Paper account), else Not set - the
+# first paper order asks; there is no platform start value and no floor or ceiling (any amount above 0). The progression ladder card shows the PAPER
 # stage's criteria from the user's own PAPER trades: at least PAPER_LADDER_MIN_SESSIONS sessions with a PAPER trade, at
 # least PAPER_LADDER_MIN_TRADES closed PAPER trades, and a largest drawdown of at most PAPER_LADDER_MAX_DRAWDOWN_PCT % of
 # peak equity. Phase 0 has no LIVE stage to move to: the card shows the criteria, never a switch.
-PAPER_STARTING_CAPITAL = _bounded_float("PAPER_STARTING_CAPITAL", 1_000_000.0, 10_000.0, 1_000_000_000.0)
-PAPER_MIN_CAPITAL = 10_000.0
-PAPER_MAX_CAPITAL = 100_000_000.0
 PAPER_LADDER_MIN_SESSIONS = _bounded_int("PAPER_LADDER_MIN_SESSIONS", 20, 1, 1000)
 PAPER_LADDER_MIN_TRADES = _bounded_int("PAPER_LADDER_MIN_TRADES", 30, 1, 10_000)
 PAPER_LADDER_MAX_DRAWDOWN_PCT = _bounded_float("PAPER_LADDER_MAX_DRAWDOWN_PCT", 10.0, 0.5, 100.0)
@@ -885,10 +895,9 @@ PAPER_EVIDENCE_MIN_TRADES = _bounded_int("PAPER_EVIDENCE_MIN_TRADES", 20, 2, 10_
 PAPER_EVIDENCE_RUIN_PCT = _bounded_float("PAPER_EVIDENCE_RUIN_PCT", 50.0, 1.0, 100.0)
 # N2-2 (P1 §1.4, flag `experience_levels`): experience levels from the user's own PAPER record gate complexity. Beginner
 # until the PAPER ladder's count criteria are met (sessions, closed trades, drawdown above); Intermediate opens futures;
-# Advanced (EXPERIENCE_ADVANCED_MIN_TRADES closed trades over EXPERIENCE_ADVANCED_MIN_SESSIONS sessions, drawdown within
-# the ladder's limit) opens naked short options. A logged opt-out with a reason lifts one gate for one IST day.
-EXPERIENCE_ADVANCED_MIN_TRADES = _bounded_int("EXPERIENCE_ADVANCED_MIN_TRADES", 100, 1, 100_000)
-EXPERIENCE_ADVANCED_MIN_SESSIONS = _bounded_int("EXPERIENCE_ADVANCED_MIN_SESSIONS", 60, 1, 10_000)
+# Advanced (the user's OWN closed trades / sessions, Settings > Trade settings > Risk limits - M68 PR-5 TS1-057, the old
+# 100 / 60 are gone; drawdown within the ladder's limit) opens naked short options. A logged opt-out with a reason lifts
+# one gate for one IST day; the reason's least length is a record rule (the opt-out is logged), not a trading value.
 EXPERIENCE_OPT_OUT_MIN_REASON_CHARS = _bounded_int("EXPERIENCE_OPT_OUT_MIN_REASON_CHARS", 15, 1, 300)
 
 # Z3 (review V2): "Exit now" without a live quote may book at the monitor's last price for the position only when that
@@ -939,16 +948,12 @@ RISK_DEFAULT_DAILY_LOSS_PCT = _bounded_float("RISK_DEFAULT_DAILY_LOSS_PCT", 2.0,
 RISK_DEFAULT_MAX_TRADES_PER_DAY = _bounded_int("RISK_DEFAULT_MAX_TRADES_PER_DAY", 10, 0, 500)
 RISK_DEFAULT_MIN_RR = _bounded_float("RISK_DEFAULT_MIN_RR", 1.5, 0.0, 10.0)
 
-# Z5 (Trade port, `check_vix_spike_halt.py` + `trading_engine.check_vix_spike_halt`): the India VIX gate (flag `vix_gate`,
-# off by default). It reads the organisation's India VIX readings of the day (market memory, captured through its own
-# broker session). VIX_GATE_SPIKE_PCT: a reading today at or above this % change against the previous close pauses new
-# BULLISH (long) entries on VIX_GATE_UNDERLYINGS for the rest of the IST day, PAPER and LIVE alike (the Trade rule;
-# bearish entries and other symbols are not touched). VIX_GATE_HIGH_LEVEL: the latest reading today at or above this
-# level cuts the risk per trade of every new entry on those underlyings by VIX_GATE_SIZE_CUT_PCT % (0 level = off).
-# A reading older than VIX_GATE_MAX_AGE_MINUTES is not used for the level. Exits are never gated (ADR-0004).
-VIX_GATE_SPIKE_PCT = _bounded_float("VIX_GATE_SPIKE_PCT", 5.0, 0.5, 100.0)
-VIX_GATE_HIGH_LEVEL = _bounded_float("VIX_GATE_HIGH_LEVEL", 20.0, 0.0, 200.0)
-VIX_GATE_SIZE_CUT_PCT = _bounded_float("VIX_GATE_SIZE_CUT_PCT", 50.0, 0.0, 100.0)
+# Z5 (Trade port, `check_vix_spike_halt.py` + `trading_engine.check_vix_spike_halt`): the India VIX gate. Flag `vix_gate`
+# (off by default): India VIX readings of the day are captured for the organisation (market memory, through its own broker
+# session). M68 PR-5 (TS1-056): the check itself is each user's own switch and numbers (Settings > Trade settings > Risk
+# limits: the rise that pauses new long entries on VIX_GATE_UNDERLYINGS, the level and its size cut) - the operator's
+# VIX_GATE_SPIKE_PCT / HIGH_LEVEL / SIZE_CUT_PCT (5 % / 20 / 50 %) are gone. A reading older than VIX_GATE_MAX_AGE_MINUTES
+# is not used for the level. Exits are never gated (ADR-0004).
 VIX_GATE_MAX_AGE_MINUTES = _bounded_int("VIX_GATE_MAX_AGE_MINUTES", 45, 1, 24 * 60)
 # VIX_GATE_CHECK_AT: the gate is open before this IST time (Trade's 09:20 check, five minutes after the open); readings
 # are captured from then on every VIX_GATE_CAPTURE_MINUTES while NSE is open. After VIX_GATE_GRACE_MINUTES more, on a
@@ -956,9 +961,7 @@ VIX_GATE_MAX_AGE_MINUTES = _bounded_int("VIX_GATE_MAX_AGE_MINUTES", 45, 1, 24 * 
 VIX_GATE_CHECK_AT = os.environ.get("VIX_GATE_CHECK_AT", "09:20").strip() or "09:20"
 VIX_GATE_GRACE_MINUTES = _bounded_int("VIX_GATE_GRACE_MINUTES", 10, 0, 240)
 VIX_GATE_CAPTURE_MINUTES = _bounded_int("VIX_GATE_CAPTURE_MINUTES", 15, 1, 240)
-# A ticket's time stop must be later than the current IST time plus this many minutes (a time already past would close
-# the position at once).
-TICKET_TIME_STOP_MIN_LEAD_MINUTES = _bounded_int("TICKET_TIME_STOP_MIN_LEAD_MINUTES", 5, 0, 120)
+# M68 PR-3 (TS1-033): a ticket's time stop must only be later than now (IST); the old 5-minute lead was ATP's own.
 VIX_GATE_UNDERLYINGS = tuple(s.strip().upper() for s in os.environ.get("VIX_GATE_UNDERLYINGS", "NIFTY,BANKNIFTY,SENSEX").split(",") if s.strip())
 
 # AUD-G1.1 (owner audit 28 Oct; DPDP): a user's own "Delete my account" takes effect after this many days; until then

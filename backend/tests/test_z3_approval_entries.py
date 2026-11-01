@@ -216,15 +216,15 @@ def test_live_and_derived_deployments_are_not_proposed_in_phase_0(monkeypatch):
     assert "ATP places no LIVE entry" in (_get(StrategyDeploymentRecord, dep_id).last_error or "")
 
 
-def test_deployment_entry_mode_approval_binds_without_the_flag_and_needs_the_flag_to_be_set(monkeypatch):
+def test_deployment_entry_mode_approval_binds_without_the_flag(monkeypatch):
     t = _tenant(_email("mode"))
-    # Creating an APPROVAL deployment needs the flag.
+    # M68 PR-6 (TS1-061): "Ask me first" is the user's own choice - no organisation flag is needed to choose it any more
+    # (before M68 this create was refused with 400 until the approval_only_entries flag was on).
     body = {"strategy_id": "ema_rsi_scalper_1m", "symbol": "TCS", "mode": "PAPER", "broker_name": "upstox", "entry_mode": "APPROVAL"}
-    refused = client.post("/api/deployments", headers=t["headers"], json=body)
-    assert refused.status_code == 400 and "approval_only_entries" in refused.text
     _flag_for(t["tenant_id"])
     created = client.post("/api/deployments", headers=t["headers"], json=body)
-    assert created.status_code == 201, created.text and created.json()["entry_mode"] == "APPROVAL"
+    assert created.status_code == 201, created.text
+    assert created.json()["entry_mode"] == "APPROVAL"
     # The flag going off later never turns an APPROVAL deployment back into an automatic one.
     _flag_for(t["tenant_id"], on=False)
 
@@ -497,15 +497,21 @@ def test_exit_now_never_takes_a_typed_price_refuses_live_and_is_the_holders(monk
     trade_id = _open_trade(t)
     assert client.post(f"/api/positions/{trade_id}/exit-now", headers=other["headers"]).status_code == 404
     assert client.post(f"/api/positions/{trade_id}/exit-now", headers=mate["headers"]).status_code == 403       # L8
-    # No quote and never priced by the monitor: refused, whatever price is sent along (review M2).
+    # M68 PR-3 (TS1-097, ADR-0004): no quote and never priced by the monitor - the exit is NOT refused: it closes at the
+    # entry price, labelled so; a sent price is still never used (review M2).
     no_price = client.post(f"/api/positions/{trade_id}/exit-now", headers=t["headers"], json={"price": 100000})
-    assert no_price.status_code == 409 and "No recent price" in no_price.text and _get(TradeRecord, trade_id).exit_time is None
-    # Review V2: a last price older than the limit (or from an earlier session) is not a price to close at.
+    assert no_price.status_code == 200, no_price.text
+    row = no_price.json()["closed"][0]
+    assert row["exit_price"] == 100.0 and row["exit_reason"] == "Exit now (web, entry price (no price was seen))"
+    # Review V2 kept as a label: a last price older than the limit is no "last seen price" - it closes at that older price,
+    # with when it was seen.
     stale = _open_trade(t, mark=130.0, mark_age_minutes=3 * 24 * 60)
     old = client.post(f"/api/positions/{stale}/exit-now", headers=t["headers"])
-    assert old.status_code == 409 and "No recent price" in old.text and _get(TradeRecord, stale).exit_time is None
+    assert old.status_code == 200 and old.json()["closed"][0]["exit_price"] == 130.0
+    assert old.json()["closed"][0]["exit_reason"].startswith("Exit now (web, older price seen ")
     aged = _open_trade(t, mark=130.0, mark_age_minutes=app_config.EXIT_NOW_MAX_MARK_AGE_MINUTES + 1)
-    assert client.post(f"/api/positions/{aged}/exit-now", headers=t["headers"]).status_code == 409
+    aged_out = client.post(f"/api/positions/{aged}/exit-now", headers=t["headers"])
+    assert aged_out.status_code == 200 and "older price" in aged_out.json()["closed"][0]["exit_reason"]
     # With the monitor's last price it closes there.
     marked = _open_trade(t, mark=101.0)
     out = client.post(f"/api/positions/{marked}/exit-now", headers=t["headers"], json={"price": 100000})

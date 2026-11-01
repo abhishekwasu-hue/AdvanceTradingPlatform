@@ -8,17 +8,18 @@ import { PaperBadge } from "../ui/PaperBadge";
 import { Details } from "../ui/Details";
 import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
-import { ORDER_TYPE_KEY, PRODUCT_KEY, orderDefaultsOf, useTradeSettings } from "../settings/tradeSettings";
+import { LOTS_KEY, ORDER_TYPE_KEY, PRODUCT_KEY, orderDefaultsOf, savedLots, useTradeSettings } from "../settings/tradeSettings";
 import { SaveAsDefault } from "../settings/SaveAsDefault";
+import { CapitalAsk, needsCapital } from "../settings/CapitalAsk";
 import { formatPrice } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
 import { fnoApi, runOnOptions, type FnoApi, type MultiExitResult, type MultiResult, type OrderPreview, type OrderResult, type PracticeAccount, type Side } from "./api";
 import {
-  MAX_LOTS, ORDER_TYPES, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
+  ORDER_TYPES, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
   blockedBy, draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
-  PRODUCT_UNSET_TEXT, ORDER_TYPE_UNSET_TEXT, firstMissing,
+  PRODUCT_UNSET_TEXT, ORDER_TYPE_UNSET_TEXT, LOTS_UNSET_TEXT, firstMissing,
 } from "./ticketModel";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
 import { riskLine, structureOf, ticketPayoffSentence, type RiskBudget, type RiskLine } from "./insights";
@@ -134,6 +135,8 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
   const defaults = useMemo<DraftDefaults | undefined>(() => {
     const mine = orderDefaultsOf(own);
     const p: DraftDefaults = { ...ticketPrefill(saved) };
+    const lots = savedLots(own);                 // M68 PR-2: his Position size > Lots first (TS-6: then the ticket lots)
+    if (lots !== null) p.lots = lots;
     if (mine.product) p.product = mine.product;
     if (mine.orderType) p.orderType = mine.orderType;
     return Object.keys(p).length ? p : undefined;
@@ -165,14 +168,15 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     ref.current = newClientRef();
   }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults]);
 
-  // M68 TS-3: the ticket ASKS for a field that is Not set - it focuses the first one (order type, then product), and
-  // moves on to the next once he picks it. Review stays off until both are chosen.
+  // M68 TS-3: the ticket ASKS for a field that is Not set - it focuses the first one (lots, order type, then product), and
+  // moves on to the next once he picks it. Review stays off until all are chosen.
   const asking = step.kind === "edit" ? firstMissing(draft) : null;
   useEffect(() => {
     if (!open || !asking) return undefined;
     const timer = window.setTimeout(() => {
       const group = document.getElementById(`${idPrefix}-${asking}`);
-      group?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: false });
+      if (group instanceof HTMLInputElement) group.focus({ preventScroll: false });      // the lots field itself
+      else group?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: false });
     }, 0);
     return () => window.clearTimeout(timer);
   }, [open, asking, idPrefix]);
@@ -369,18 +373,25 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                 Lots{marks.lots && <span className="ml-space-1 font-normal text-brand" data-from-defaults="lots">{FROM_DEFAULTS}</span>}
               </label>
               <div className="flex items-center gap-space-2">
-                <button type="button" aria-label="One lot less" onClick={() => onDraft({ lots: clampLots(draft.lots - 1) })} disabled={draft.lots <= 1}
+                <button type="button" aria-label="One lot less" onClick={() => draft.lots !== null && onDraft({ lots: clampLots(draft.lots - 1) })} disabled={draft.lots === null || draft.lots <= 1}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border text-fg disabled:opacity-40" data-ticket="lots-less">
                   <Minus size={16} aria-hidden />
                 </button>
-                <input id={ids.lots} inputMode="numeric" value={draft.lots} className={cx(FIELD, "text-center")}
-                  onChange={(e) => onDraft({ lots: clampLots(Number(e.target.value || 1)) })} data-ticket="lots" />
-                <button type="button" aria-label="One lot more" onClick={() => onDraft({ lots: clampLots(draft.lots + 1) })} disabled={draft.lots >= MAX_LOTS}
+                <input id={ids.lots} inputMode="numeric" value={draft.lots ?? ""} placeholder="Lots" className={cx(FIELD, "text-center")}
+                  aria-invalid={asking === "lots" ? true : undefined}
+                  onChange={(e) => {
+                    const text = e.target.value.trim();
+                    const v = Number(text);
+                    onDraft({ lots: text === "" ? null : Number.isFinite(v) ? clampLots(v) : draft.lots });     // a letter changes nothing
+                  }} data-ticket="lots" />
+                <button type="button" aria-label="One lot more" onClick={() => onDraft({ lots: clampLots((draft.lots ?? 0) + 1) })}   // M68 PR-4 (TS1-046): no ATP lot cap
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border text-fg disabled:opacity-40" data-ticket="lots-more">
                   <Plus size={16} aria-hidden />
                 </button>
               </div>
               <p className="mt-space-1 text-t13 text-fg font-tabular" data-ticket="units">{unitsText(draft.lots, target.lotSize)}</p>
+              {draft.lots === null && <p className="text-t12 text-fg-muted" data-ticket="lots-unset">{LOTS_UNSET_TEXT}</p>}
+              {saveDefaults && draft.lots !== null && !marks.lots && <SaveAsDefault key={draft.lots} fieldKey={LOTS_KEY} value={draft.lots} />}
             </div>
             <Segmented label="Order type" testId="order-type" id={`${idPrefix}-order-type`} asking={asking === "order-type"} value={draft.orderType}
               onChange={(v) => onDraft({ orderType: v })} options={ORDER_TYPES} />
@@ -452,7 +463,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
           </>
         )}
 
-        {step.kind === "review" && <Review preview={step.preview} budget={budget} events={events} liquidity={liquidity} />}
+        {step.kind === "review" && <Review preview={step.preview} budget={budget} events={events} liquidity={liquidity}
+          onCapitalSaved={onReviewWith ? () => onReviewWith({}) : undefined} />}
 
         {step.kind === "done" && (
           <p role="status" data-ticket="result"
@@ -482,6 +494,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
         {step.kind === "review" && (
           <>
             {(() => {
+              // M68 PR-7: the starting capital is asked above, in the confirm step itself (no second sentence here).
+              if (needsCapital(step.preview.refusals)) return null;
               // M64 RM-3: a Risk limits refusal is a block message (its numbers, Change limit, a smaller size offered).
               const block = step.preview.risk?.blocks?.[0];
               if (block && !step.preview.errors.length) {
@@ -490,7 +504,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
               const why = blockedBy(step.preview);
               return why && (
                 <p className="basis-full text-t13 text-fg" data-ticket="blocked-by">
-                  {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-ticket="change-limits">Change limit</a></>}
+                  {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-ticket="change-limits">{why.link === "/settings/trade-settings" ? "Open Trade settings" : "Change limit"}</a></>}
                 </p>
               );
             })()}
@@ -521,8 +535,10 @@ export function samePriceNote(note: string): boolean {
 
 /** The confirm step: every figure from the server, before anything is placed. 8b: the payoff in plain words, the risk
  * line (the max loss beside the user's own limits, information only: `can_place` alone decides the button) and Explain. */
-export function Review({ preview: p, budget, events, liquidity }: {
+export function Review({ preview: p, budget, events, liquidity, onCapitalSaved }: {
   preview: OrderPreview; budget?: RiskBudget | null; events?: EventRisk | "error" | null; liquidity?: RiskLine | null;
+  /** M68 PR-7 (TS-3, D4): his paper account has no starting capital yet - asked here; then the order is checked again. */
+  onCapitalSaved?: () => void;
 }) {
   const problems = [...p.errors, ...p.refusals];
   const payoff = ticketPayoffSentence(p);
@@ -560,6 +576,7 @@ export function Review({ preview: p, budget, events, liquidity }: {
         </Line>
         {p.charges && <Line label="Charges (estimate)" testId="charges">{moneyText(p.charges.total)}</Line>}
       </dl>
+      {p.charges?.words && <p className="text-t12 text-fg-muted" data-ticket="charges-words">{p.charges.words}</p>}
       {p.fill_note && p.fill_price !== null && !samePriceNote(p.fill_note) && <p className="text-t13 text-fg-muted">{p.fill_note}</p>}
       {payoff && (
         <Details id="ticket.payoff-words" label="In plain words" className="mt-0"><p data-ticket="plain-words">{payoff}</p></Details>
@@ -571,6 +588,7 @@ export function Review({ preview: p, budget, events, liquidity }: {
           {problems.map((r) => <li key={r}>{r}</li>)}
         </ul>
       )}
+      {onCapitalSaved && needsCapital(p.refusals) && <CapitalAsk onSaved={onCapitalSaved} />}
       {p.smart?.note && <p className="text-t13 text-fg-muted" data-ticket="slices">{p.smart.note}</p>}
       {p.warnings.length > 0 && (
         <ul className="space-y-space-1 text-t13 text-fg-muted" data-ticket="warnings">

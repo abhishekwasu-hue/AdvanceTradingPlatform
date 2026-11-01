@@ -58,7 +58,7 @@ async def risk_budget(session: AsyncSession, user: User) -> Dict[str, Any]:
     # DEF-0: the trader's own limits only - a limit not set is None (the line says "not set"); the capital is his own,
     # else his PAPER balance.
     cfg = await user_risk_config(session, user)
-    cfg, _ = clamp_config(cfg, await risk_ceilings(session))
+    cfg, _ = clamp_config(cfg, await risk_ceilings(session, user.tenant_id))
     if await by_default.enabled(session, user.tenant_id):
         cfg, _ = await by_default.apply_user_cap(session, user, cfg)
     per_trade, daily = cfg.risk_amount(), cfg.daily_loss_amount()
@@ -77,10 +77,12 @@ async def paper_balance(session: AsyncSession, user: User) -> Dict[str, Any]:
     """His PAPER balance (starting capital + the net P&L of his closed, counted PAPER trades), read only."""
     from sqlalchemy import func
 
-    from app.core import config as app_config
-    from app.db.models import PaperAccountRecord, TradeRecord
-    starting = await session.scalar(select(PaperAccountRecord.starting_capital).where(PaperAccountRecord.user_id == user.id))
-    start = float(starting) if starting is not None else float(app_config.PAPER_STARTING_CAPITAL)
+    from app.db.models import TradeRecord
+    from app.paper import paper_settings
+    start = await paper_settings.capital_of(session, user)      # M68 PR-7 (TS1-065): his own; None = Not set
+    if start is None:
+        return {"amount": None, "source": "Set your paper starting capital (Settings › Trade settings › Paper account)",
+                "open_margin_counted": False, "needs_capital": True}
     net = await session.scalar(select(func.coalesce(func.sum(TradeRecord.pnl), 0.0)).where(
         TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.mode == "PAPER",
         TradeRecord.exit_time.is_not(None), TradeRecord.price_source.is_(None)))

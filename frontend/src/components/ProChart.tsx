@@ -21,6 +21,8 @@ import { CHART_TYPE_LABELS, brickAt, chartView, formatTick, periodSeconds, sessi
 import { SessionBreaksPrimitive } from "../charting/sessionBreaksPrimitive";
 import type { ChartType } from "../charting/workspace";
 import { Sheet } from "./primitives";
+import { InPlaceLink } from "../inplace/InPlaceLink";
+import { useInPlace } from "../inplace/InPlaceProvider";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { formatCount, formatDateTimeIST, formatNumber, formatTimeIST } from "../ui/format";
 
@@ -566,12 +568,7 @@ export default function ProChart({
         )}
         {!compact && !phone && indicatorControls}
         <div className={`${compact ? "ml-auto" : ""} flex items-center gap-1`}>
-          {openUrl && (
-            <a href={openUrl} target="_blank" rel="noopener" title="Open this chart in a new browser tab"
-               className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs font-semibold text-fg hover:bg-surface-2">
-              <ExternalLink size={11} /> New tab
-            </a>
-          )}
+          {openUrl && <OpenChartLink url={openUrl} />}
           {!fullWindow && (
             <button onClick={() => setExpanded((v) => !v)} title={expanded ? "Back to normal size (Esc)" : "Open the chart full screen"}
                     className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs font-semibold text-fg hover:bg-surface-2">
@@ -630,5 +627,21 @@ export default function ProChart({
       {showAdx && <div className="relative"><span className="absolute left-1 top-0 z-10 text-xs" style={{ color: COLORS.adx }}>ADX {settings.adxPeriod} · threshold {settings.adxMin}</span><div ref={adxRef} className="w-full" /></div>}
       {display.length === 0 && <div className="flex h-24 items-center justify-center text-xs text-fg-muted">No candles yet - the broker returned none for this window (market closed, or the session token has expired).</div>}
     </div>
+  );
+}
+
+/**
+ * The chart's "New tab" button (broker charts: chartWindowUrl). M75 NAV-3: where a panel shows that chart (the v2 shell)
+ * a click opens it in place - the tab stays, its real address stays in `href` for a long-press or a middle-click; the
+ * classic shell opens a new browser tab, as before.
+ */
+function OpenChartLink({ url }: { url: string }) {
+  const inPlace = useInPlace();
+  const here = inPlace.handles(url);
+  return (
+    <InPlaceLink to={url} target={here ? undefined : "_blank"} rel="noopener" title={here ? "Open a larger chart" : "Open this chart in a new browser tab"}
+      className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs font-semibold text-fg hover:bg-surface-2">
+      <ExternalLink size={11} /> {here ? "Open" : "New tab"}
+    </InPlaceLink>
   );
 }

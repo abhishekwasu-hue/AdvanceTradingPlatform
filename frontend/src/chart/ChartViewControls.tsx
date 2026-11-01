@@ -10,6 +10,7 @@ import type { Readout, ViewState } from "./gestures";
  * "Latest" comes and goes: the row grows to the left. Neutral: the chart's own text, axis and background tokens (they
  * sit inside the chart's `data-chart-theme` root), words and icons, never colour alone. 44 px targets on a phone, 36 px
  * from md, and a tooltip on each.
+ * M75 W-1 (W3): the group carries `data-label-avoid`, so band labels are placed clear of it (ChartV2 measures it).
  */
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 const btn = `pointer-events-auto inline-flex min-h-11 min-w-11 items-center justify-center gap-space-1 rounded-control border px-space-2 text-t12 md:min-h-9 md:min-w-9 ${focus}`;
@@ -36,7 +37,7 @@ export function ChartViewControls({ view, insets, onAuto, onReset, onLatest }: {
   onLatest: () => void;
 }) {
   return (
-    <div role="group" aria-label="Chart view" data-chart-view-controls
+    <div role="group" aria-label="Chart view" data-chart-view-controls data-label-avoid
       className="pointer-events-none absolute z-10 flex flex-row-reverse items-center gap-space-1"
       style={{ right: insets.right + 8, bottom: insets.bottom + 8 }}>
       {/* Row reversed: Reset sits in the corner, then Auto; Latest is added at the far (left) end. */}

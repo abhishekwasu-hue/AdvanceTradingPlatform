@@ -9,11 +9,12 @@ deployment would only discover the problem at 09:15 with real money on the line.
 import json
 import logging
 import re
+from dataclasses import replace
 from datetime import date, datetime
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +33,9 @@ from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Trad
 from app.db.session import get_session
 from app.execution.contract_execution import contract_ltp
 from app.instruments import master as instrument_master
+from app.instruments import option_defaults
 from app.instruments.contracts import (
+    RULE_STRIKE_STRUCTURES,
     ContractResolutionError,
     ContractRules,
     describe_rules,
@@ -40,7 +43,9 @@ from app.instruments.contracts import (
 )
 from app.instruments.spreads import (
     MAX_CUSTOM_LEGS,
-    MAX_LEG_RATIO,
+    RATIO_SPREADS,
+    UNDEFINED_RISK,
+    WIDTH_STRUCTURES,
     CustomLeg,
     can_hold_for_days,
     custom_legs_json,
@@ -87,24 +92,33 @@ class StrikeFiltersRequest(BaseModel):
     min_iv_pct: Optional[float] = Field(default=None, ge=0, le=500)
     max_iv_pct: Optional[float] = Field(default=None, ge=0, le=500)
     target_delta: Optional[float] = Field(default=None, gt=0, lt=1)
-    delta_tolerance: float = Field(default=0.10, gt=0, le=0.5)
+    # M68 PR-4 (TS1-043): no pre-chosen tolerance or search window - the user's own (the form, else Settings > Trade
+    # settings > Options); asked for only once he sets a target delta / a filter. No ATP ceiling on the window (TS1-047).
+    delta_tolerance: float | None = Field(default=None, gt=0, lt=1)
     min_premium: Optional[float] = Field(default=None, ge=0)
     max_premium: Optional[float] = Field(default=None, gt=0)
-    search_steps: int = Field(default=5, ge=1, le=20)
+    search_steps: int | None = Field(default=None, ge=1)
 
     def to_filters(self) -> StrikeFilters:
-        return StrikeFilters(**self.model_dump())
+        data = {k: v for k, v in self.model_dump().items() if v is not None}
+        return StrikeFilters(**data)
 
 
 class ExitRulesRequest(BaseModel):
-    """Phase J1: dynamic exits applied by the position monitor (and the backtest engine)."""
-    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, le=50)
-    break_even_at_r: Optional[float] = Field(default=None, gt=0, le=10)
-    time_exit_minutes: Optional[int] = Field(default=None, ge=1, le=375)
+    """Phase J1: dynamic exits applied by the position monitor (and the backtest engine). M68 PR-3 (TS1-034): no ATP
+    ceiling - a real number of the right sign; a trail under 100 % (at 100 % a stop would sit at zero)."""
+    trailing_stop_pct: float | None = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
+    break_even_at_r: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    # Technical bound, not a trading cap (~19 years): keeps the time arithmetic safe; any holding period a user sets fits.
+    time_exit_minutes: int | None = Field(default=None, ge=1, le=10_000_000)
     time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
     def to_rules(self) -> ExitRules:
         return ExitRules(**self.model_dump())
+
+
+# M68 PR-4 (TS1-035): a condor / strangle sells out of the money by its definition; how many strikes out is the user's own.
+OTM_OFFSET_STRUCTURES = frozenset({OptionStrategy.IRON_CONDOR, OptionStrategy.SHORT_STRANGLE, OptionStrategy.LONG_STRANGLE})
 
 
 class ContractRulesRequest(BaseModel):
@@ -114,13 +128,18 @@ class ContractRulesRequest(BaseModel):
     option_position: Optional[OptionPosition] = None
     expiry_rule: Optional[ExpiryRule] = None
     strike_rule: Optional[StrikeRule] = None
-    strike_offset: int = Field(default=0, ge=0, le=10)
+    # M68 PR-4 (TS1-035 / 036 / 042 / 046 / 047): no pre-chosen expiry, strike, distance, side, width or ratio, and no ATP
+    # ceiling on a distance, a width or the lots - only a listed strike can be traded (checked when the contract is picked)
+    # and the exchange's freeze quantity splits a large order. Not sent = the user's own Trade settings > Options
+    # (`_own_option_defaults`); Not set there either = a 422 at the field ("Needs your setting: ...", TS-3).
+    strike_offset: int | None = Field(default=None, ge=0)
     premium_stop_pct: Optional[float] = Field(default=None, ge=5, le=95)
-    max_lots: Optional[int] = Field(default=None, ge=1, le=500)
+    max_lots: int | None = Field(default=None, ge=1)
     strike_filters: Optional[StrikeFiltersRequest] = None
     # Phase H2: multi-leg structures. SINGLE keeps the Phase F single leg.
     option_strategy: OptionStrategy = OptionStrategy.SINGLE
-    spread_width: int = Field(default=2, ge=1, le=20, description="wing distance in listed strike steps")
+    spread_width: int | None = Field(default=None, ge=1, description="wing distance in listed strike steps")
+    ratio_shorts: int | None = Field(default=None, ge=1, description="a ratio spread's sold legs per bought leg")
     target_credit_pct: Optional[float] = Field(default=None, ge=5, le=95, description="take profit at this % of the credit captured")
     stop_credit_pct: Optional[float] = Field(default=None, ge=10, le=500, description="stop when the loss reaches this % of the credit")
     underlying_breach_exit: Optional[bool] = Field(default=None, description="DEF-0: close the structure when the underlying breaches a short strike / breakeven (off unless set)")
@@ -163,23 +182,46 @@ class ContractRulesRequest(BaseModel):
         if self.strike_filters is not None and self.strike_filters.min_premium is not None and self.strike_filters.max_premium is not None \
                 and self.strike_filters.min_premium > self.strike_filters.max_premium:
             raise HTTPException(status_code=400, detail="min_premium must not exceed max_premium")
-        data["expiry_rule"] = self.expiry_rule or ExpiryRule.NEAREST
+        problems: List[dict] = []
+        if self.expiry_rule is None:
+            problems.append(option_defaults.field_error(("expiry_rule",), "expiry_rule"))
         if self.instrument_kind == InstrumentKind.FUTURE:
+            if problems:
+                raise HTTPException(status_code=422, detail=problems)
             if self.option_position or self.strike_rule or self.strike_offset or self.premium_stop_pct is not None:
                 raise HTTPException(status_code=400, detail="Futures take only an expiry rule (and max_lots)")
             return ContractRulesRequest(**data)
-        position = self.option_position or (OptionPosition.WRITE if self.option_strategy != OptionStrategy.SINGLE else OptionPosition.BUY)
+        # A structure's side is its definition (a credit structure writes, a debit one buys); a single option's is his own.
+        position = self.option_position
+        if self.option_strategy == OptionStrategy.SINGLE and position is None:
+            problems.append(option_defaults.field_error(("option_position",), "option_position"))
         if self.option_strategy == OptionStrategy.CUSTOM:
             position = OptionPosition.WRITE if any(leg.role == "SHORT" for leg in self.custom_legs or []) else OptionPosition.BUY
         elif self.option_strategy != OptionStrategy.SINGLE:
             # Credit structures sell their primary legs (wings bought); debit structures buy theirs.
             position = OptionPosition.BUY if is_debit(self.option_strategy) else OptionPosition.WRITE
         data["option_position"] = position
-        data["strike_rule"] = self.strike_rule or StrikeRule.ATM
-        if data["strike_rule"] == StrikeRule.ATM and self.strike_offset:
+        if self.strike_rule == StrikeRule.ATM and self.strike_offset:
             raise HTTPException(status_code=400, detail="strike_offset only applies to ITM/OTM strikes")
-        if data["strike_rule"] != StrikeRule.ATM and not self.strike_offset:
-            data["strike_offset"] = 1
+        if self.option_strategy.value in RULE_STRIKE_STRUCTURES:
+            if self.strike_rule is None:
+                problems.append(option_defaults.field_error(("strike_rule",), "strike_rule"))
+            elif self.strike_rule != StrikeRule.ATM and not self.strike_offset:
+                problems.append(option_defaults.field_error(("strike_offset",), "strike_offset"))
+        if self.option_strategy in OTM_OFFSET_STRUCTURES and not self.strike_offset:
+            problems.append(option_defaults.field_error(("strike_offset",), "strike_offset"))
+        if self.option_strategy in WIDTH_STRUCTURES and self.spread_width is None:
+            problems.append(option_defaults.field_error(("spread_width",), "spread_width"))
+        if self.option_strategy in RATIO_SPREADS and self.ratio_shorts is None:
+            problems.append(option_defaults.field_error(("ratio_shorts",), "ratio"))
+        f = self.strike_filters
+        if f is not None and f.target_delta is not None and f.delta_tolerance is None:
+            problems.append(option_defaults.field_error(("strike_filters", "delta_tolerance"), "delta_tolerance"))
+        if f is not None and f.to_filters().active and f.search_steps is None:
+            problems.append(option_defaults.field_error(("strike_filters", "search_steps"), "strike_search_steps"))
+        if problems:
+            raise HTTPException(status_code=422, detail=problems)
+        data["strike_offset"] = self.strike_offset or 0
         # DEF-0 D3: no built-in premium stop - blank = no such exit (the trader sets his own)
         return ContractRulesRequest(**data)
 
@@ -187,12 +229,19 @@ class ContractRulesRequest(BaseModel):
         return describe_structure(self.option_strategy, self.spread_width, self.to_rules(), self.custom_leg_specs())
 
     def to_rules(self) -> ContractRules:
-        return ContractRules(
-            kind=self.instrument_kind, position=self.option_position, expiry_rule=self.expiry_rule or ExpiryRule.NEAREST,
-            strike_rule=self.strike_rule or StrikeRule.ATM, strike_offset=self.strike_offset,
+        # Read after `normalised()`: every choice an entry needs is the user's own by then. A field a structure does not
+        # use (the strike rule of a straddle) keeps the dataclass reading, which nothing resolves from.
+        rules = ContractRules(
+            kind=self.instrument_kind, position=self.option_position, strike_offset=self.strike_offset or 0,
             premium_stop_pct=self.premium_stop_pct, max_lots=self.max_lots,
             strike_filters=self.strike_filters.to_filters() if self.strike_filters else StrikeFilters(),
+            ratio_shorts=self.ratio_shorts,
         )
+        if self.expiry_rule is not None:
+            rules = replace(rules, expiry_rule=self.expiry_rule)
+        if self.strike_rule is not None:
+            rules = replace(rules, strike_rule=self.strike_rule)
+        return rules
 
     def filters_json(self) -> Optional[str]:
         return self.strike_filters.to_filters().to_json() if self.strike_filters else None
@@ -201,9 +250,17 @@ class ContractRulesRequest(BaseModel):
 class CustomLegRequest(BaseModel):
     right: str = Field(pattern="^(CE|PE|ce|pe)$")
     role: str = Field(pattern="^(SHORT|LONG|short|long)$")
-    strike_rule: StrikeRule = StrikeRule.ATM
-    strike_offset: int = Field(default=0, ge=0, le=20)
-    ratio: int = Field(default=1, ge=1, le=MAX_LEG_RATIO)
+    # M68 PR-4 (TS1-038 / 047): each leg names its own strike (no ATM pre-pick) and has no ATP ceiling on its distance
+    # or ratio; an in / out of the money leg needs its distance (1 or more).
+    strike_rule: StrikeRule
+    strike_offset: int = Field(default=0, ge=0)
+    ratio: int = Field(default=1, ge=1)
+
+    @model_validator(mode="after")
+    def _distance(self) -> "CustomLegRequest":
+        if self.strike_rule != StrikeRule.ATM and self.strike_offset < 1:
+            raise ValueError("an in or out of the money leg needs its strikes away from ATM (1 or more)")
+        return self
 
     def to_spec(self) -> CustomLeg:
         return CustomLeg.from_dict(self.model_dump())
@@ -239,9 +296,12 @@ class DeploymentCreateRequest(ContractRulesRequest):
     holding: Literal["INTRADAY", "SWING"] | None = None
     order_style: Literal["MARKET", "PROTECTED_LIMIT"] | None = None
     market_protection_pct: Optional[float] = Field(default=None, ge=0.05, le=5.0)
-    # Z3 / BT2: APPROVAL - every entry signal becomes a proposal and only an approved one places a PAPER order. Needs the
-    # `approval_only_entries` flag; with the flag on every deployment is approval-only whatever this says.
-    entry_mode: Literal["AUTO", "APPROVAL"] = "AUTO"
+    # Z3 / BT2: APPROVAL - every entry signal becomes a proposal and only an approved one places a PAPER order; with the
+    # organisation's `approval_only_entries` flag on every deployment is approval-only whatever this says.
+    # M68 PR-6 (TS1-060 / 061): no pre-chosen mode and no flag needed - it is his own choice for THIS bot. Not sent = the
+    # bot follows his Trade settings (Automation > New entries) at each entry; Not set there either = it places no entry
+    # until he chooses ("Needs your setting: New entries" on the bot card).
+    entry_mode: Literal["AUTO", "APPROVAL"] | None = None
     # Strategy templates section 5: a template's exit choice (where the stop comes from, when to take profit); omitted =
     # as before (the template's own level as the stop, no target; a spread's credit levels).
     template_exits: Optional[TemplateExitsBody] = None
@@ -283,7 +343,8 @@ class DeploymentResponse(BaseModel):
     max_lots: Optional[int] = None
     strike_filters: Optional[dict] = None
     option_strategy: str = "SINGLE"
-    spread_width: int = 2
+    spread_width: int | None = None          # M68 PR-4: None = Not set (a structure that takes none)
+    ratio_shorts: int | None = None
     target_credit_pct: Optional[float] = None
     stop_credit_pct: Optional[float] = None
     underlying_breach_exit: bool = False
@@ -300,7 +361,12 @@ class DeploymentResponse(BaseModel):
     holding: str | None = None            # M68 PR-1: None = Not set (the bot follows his Trade settings)
     order_style: str | None = None
     market_protection_pct: Optional[float] = None
-    entry_mode: str = "AUTO"
+    entry_mode: str | None = None          # M68 PR-6: the bot's own choice; None = it follows his Trade settings
+    # M68 PR-6 (review): the mode in effect now (the organisation's approval flag, else the bot's own, else its owner's
+    # Trade settings > Automation > New entries; None = Not set anywhere - the bot places nothing) and whether it follows
+    # the Trade settings. Filled by the routes (`_with_entry_modes`).
+    entry_mode_in_effect: str | None = None
+    entry_mode_follows_settings: bool = False
     template_exits: Optional[dict] = None
 
     @classmethod
@@ -317,7 +383,8 @@ class DeploymentResponse(BaseModel):
             expiry_rule=record.expiry_rule, strike_rule=record.strike_rule, strike_offset=record.strike_offset or 0,
             premium_stop_pct=record.premium_stop_pct, max_lots=record.max_lots,
             strike_filters=json.loads(record.strike_filters) if record.strike_filters else None,
-            option_strategy=record.option_strategy or "SINGLE", spread_width=record.spread_width or 2,
+            option_strategy=record.option_strategy or "SINGLE", spread_width=record.spread_width,
+            ratio_shorts=getattr(record, "ratio_shorts", None),
             target_credit_pct=record.target_credit_pct, stop_credit_pct=record.stop_credit_pct,
             underlying_breach_exit=bool(getattr(record, "underlying_breach_exit", None)),
             custom_legs=json.loads(record.custom_legs) if getattr(record, "custom_legs", None) else None,
@@ -328,7 +395,7 @@ class DeploymentResponse(BaseModel):
             oi_gates=[g for g in (getattr(record, "oi_gates", None) or "").split(",") if g] or None,
             holding=getattr(record, "holding", None),
             order_style=getattr(record, "order_style", None), market_protection_pct=getattr(record, "market_protection_pct", None),
-            entry_mode=getattr(record, "entry_mode", None) or "AUTO",
+            entry_mode=getattr(record, "entry_mode", None),
             template_exits=_exits_answer(record),
         )
 
@@ -339,10 +406,27 @@ def _exits_answer(record: StrategyDeploymentRecord) -> Optional[dict]:
     return None if choice.is_default else {k: v for k, v in choice.columns().items() if v is not None}
 
 
-def _holds_spread(request: "DeploymentCreateRequest") -> bool:
-    """M55 T1: "Hold for days" on a defined-risk credit structure (bull put, bear call, iron condor, iron butterfly)."""
+def _holds_spread(request: "DeploymentCreateRequest", written_overnight: bool = False) -> bool:
+    """M55 T1: "Hold for days" on a defined-risk credit structure (bull put, bear call, iron condor, iron butterfly);
+    M68 PR-5 (TS1-041): also a written straddle / strangle when the user switched that on (`written_overnight`)."""
     return (request.holding == "SWING" and request.instrument_kind == InstrumentKind.OPTION
-            and can_hold_for_days(request.option_strategy))
+            and can_hold_for_days(request.option_strategy, written_overnight=written_overnight))
+
+
+async def _with_entry_modes(session: AsyncSession, tenant_id: int, records: list, out: list) -> list:
+    """M68 PR-6 (review): each bot's entry mode in effect and whether it follows its owner's Trade settings (one read per
+    owner). Reads only."""
+    from app.execution import approval, automation
+    flag = await approval.flag_on(session, tenant_id)
+    modes: dict[int | None, str | None] = {}
+    for record, response in zip(records, out):
+        own = getattr(record, "entry_mode", None)
+        owner = getattr(record, "created_by", None)
+        if own is None and owner not in modes:
+            modes[owner] = (await automation.load_for(session, owner)).approval_mode
+        response.entry_mode_follows_settings = own is None
+        response.entry_mode_in_effect = "APPROVAL" if flag else (own if own is not None else modes.get(owner))
+    return out
 
 
 async def _own_order_defaults(session: AsyncSession, user: User, request: "DeploymentCreateRequest") -> None:
@@ -379,10 +463,41 @@ def _own_base(request: "DeploymentCreateRequest", strategy) -> None:
     request.timeframe = sized[0][1]
 
 
-def _check_holding(request: "DeploymentCreateRequest", strategy) -> None:
+async def _own_option_defaults(session: AsyncSession, user: User, request: ContractRulesRequest) -> None:
+    """M68 PR-4 (TS1-035 / 036 / 042 / 043): an option / future field the form did not send takes the user's OWN Trade
+    settings > Options value (app/instruments/option_defaults.py; never an ATP one). Not set there either: it stays None
+    and `normalised()` asks for it (a 422 at the field). A structure's own definition is not touched."""
+    if request.instrument_kind == InstrumentKind.UNDERLYING:
+        return
+    mine = await option_defaults.load(session, user)
+    if request.expiry_rule is None and mine.expiry_rule:
+        request.expiry_rule = ExpiryRule(mine.expiry_rule)
+    if request.instrument_kind != InstrumentKind.OPTION:
+        return
+    structure = request.option_strategy
+    if structure == OptionStrategy.SINGLE and request.option_position is None and mine.option_position:
+        request.option_position = OptionPosition(mine.option_position)
+    if structure.value in RULE_STRIKE_STRUCTURES and request.strike_rule is None and mine.strike_rule:
+        request.strike_rule = StrikeRule(mine.strike_rule)
+    away = request.strike_rule in (StrikeRule.ITM, StrikeRule.OTM) and structure.value in RULE_STRIKE_STRUCTURES
+    if (away or structure in OTM_OFFSET_STRUCTURES) and not request.strike_offset and mine.strike_offset:
+        request.strike_offset = mine.strike_offset
+    if structure in WIDTH_STRUCTURES and request.spread_width is None:
+        request.spread_width = mine.spread_width
+    if structure in RATIO_SPREADS and request.ratio_shorts is None:
+        request.ratio_shorts = mine.ratio
+    f = request.strike_filters
+    if f is not None:
+        if f.target_delta is not None and f.delta_tolerance is None and mine.delta_tolerance is not None and mine.delta_tolerance < 1:
+            f.delta_tolerance = mine.delta_tolerance
+        if f.search_steps is None:
+            f.search_steps = mine.strike_search_steps
+
+
+def _check_holding(request: "DeploymentCreateRequest", strategy, written_overnight: bool = False) -> None:
     """Phase AS: what a swing (overnight) deployment may and may not be."""
     daily = list(getattr(strategy, "timeframes", [])) == ["day"]
-    if _holds_spread(request):
+    if _holds_spread(request, written_overnight):
         # M55 T1: a defined-risk credit structure held for days - entries on the user's own timeframe (intraday or daily).
         if daily and request.timeframe != "day":
             raise HTTPException(status_code=400, detail=f"{strategy.name} trades daily candles: set timeframe to 'day'")
@@ -390,6 +505,10 @@ def _check_holding(request: "DeploymentCreateRequest", strategy) -> None:
             raise HTTPException(status_code=400, detail=f"{strategy.name} reads intraday candles: pick an intraday timeframe")
         return
     if request.holding == "SWING":
+        if request.instrument_kind == InstrumentKind.OPTION and request.option_strategy in UNDEFINED_RISK:
+            from app.risk_engine import own_risk
+            raise HTTPException(status_code=400, detail="A written straddle or strangle is held overnight only with your own setting on - "
+                                f"{own_risk.needs_setting('overnight_short_options')}")
         if request.option_strategy != OptionStrategy.SINGLE:
             raise HTTPException(status_code=400, detail="Swing (overnight) holding is for single positions; multi-leg structures stay intraday")
         if request.option_position == OptionPosition.WRITE:
@@ -408,7 +527,7 @@ def describe_deployment(record: StrategyDeploymentRecord) -> str:
             legs = parse_custom_legs(getattr(record, "custom_legs", None))
         except ValueError:
             legs = []
-        text = describe_structure(strategy, record.spread_width or 2, rules, legs)
+        text = describe_structure(strategy, record.spread_width, rules, legs)
         if rules.strike_filters.active:
             text += f", filters: {rules.strike_filters.describe()}"
     else:
@@ -529,15 +648,18 @@ async def create_deployment(
     sent_holding = request.holding
     await _own_order_defaults(session, user, request)
     _own_base(request, strategy)
+    await _own_option_defaults(session, user, request)
+    from app.risk_engine import own_risk
+    written_overnight = (await own_risk.for_user(session, user)).overnight_short_options     # M68 PR-5 (TS1-041)
     try:
-        _check_holding(request, strategy)
+        _check_holding(request, strategy, written_overnight)
     except HTTPException:
         if sent_holding is not None or request.holding is None:
             raise
         # M68 PR-1: his saved holding does not fit this strategy (e.g. Carry forward on intraday candles): the bot keeps
         # its holding Not set (it says so on its card) rather than refusing a form that did not send one.
         request.holding = None
-        _check_holding(request, strategy)
+        _check_holding(request, strategy, written_overnight)
     # REV-H3: a seller pack on an option needs the user's own construction (no server-side buy-at-the-money pick)
     pack_problem = packs.contract_problem(request.strategy_id, request.instrument_kind, request.option_strategy, request.option_position)
     if pack_problem:
@@ -550,10 +672,8 @@ async def create_deployment(
         template_exits = exit_settings.checked(strategy, request.template_exits, request.instrument_kind, request.option_strategy)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"problems": exc.args[0]}) from exc
-    if request.entry_mode == "APPROVAL":
-        from app.execution import approval
-        if not await approval.flag_on(session, user.tenant_id):
-            raise HTTPException(status_code=400, detail="Approval-only entries are not enabled on this platform (flag approval_only_entries)")
+    # M68 PR-6 (TS1-060, review): a bot stores an entry mode ONLY when he picked one in this bot's form. Not sent = the bot
+    # follows his Trade settings > Automation > New entries at each entry (NULL); with that Not set too it places nothing.
 
     # Phase AS: a swing deployment reads daily candles (checked by _check_holding); the intraday
     # base-timeframe rules below are for everything else.
@@ -644,9 +764,10 @@ async def create_deployment(
         option_position=rules.option_position.value if rules.option_position else None,
         expiry_rule=rules.expiry_rule.value if rules.expiry_rule else None,
         strike_rule=rules.strike_rule.value if rules.strike_rule else None,
-        strike_offset=rules.strike_offset, premium_stop_pct=rules.premium_stop_pct, max_lots=rules.max_lots,
+        strike_offset=rules.strike_offset or 0, premium_stop_pct=rules.premium_stop_pct, max_lots=rules.max_lots,
         strike_filters=rules.filters_json(),
         option_strategy=rules.option_strategy.value, spread_width=rules.spread_width,
+        ratio_shorts=rules.ratio_shorts if rules.option_strategy in RATIO_SPREADS else None,
         target_credit_pct=rules.target_credit_pct, stop_credit_pct=rules.stop_credit_pct,
         underlying_breach_exit=True if rules.underlying_breach_exit else None,
         custom_legs=custom_legs_json(rules.custom_leg_specs()) if rules.option_strategy == OptionStrategy.CUSTOM else None,
@@ -674,7 +795,7 @@ async def create_deployment(
     await session.commit()
     await session.refresh(record)
     logger.info("Deployment %s created: %s %s %s", record.id, record.strategy_id, record.symbol, record.mode)
-    return DeploymentResponse.from_record(record)
+    return (await _with_entry_modes(session, user.tenant_id, [record], [DeploymentResponse.from_record(record)]))[0]
 
 
 @router.post("/preview-contract")
@@ -685,6 +806,7 @@ async def preview_contract(
     """What the rules would trade right now, for both signal directions - the Autopilot form
     shows this before a deployment is created. Uses the supplied spot, else the tenant's broker
     LTP when a usable session exists; with neither, says so."""
+    await _own_option_defaults(session, user, request)
     rules = request.normalised()
     if rules.instrument_kind == InstrumentKind.UNDERLYING:
         return {"symbol": request.symbol.upper().strip(), "kind": "UNDERLYING", "note": "Trades the symbol itself"}
@@ -821,7 +943,8 @@ async def list_deployments(
         query = query.where(StrategyDeploymentRecord.status != DeploymentStatus.STOPPED.value)
     rows = await session.scalars(query.order_by(StrategyDeploymentRecord.created_at.desc()))
     counts = await _open_position_counts(session, user.tenant_id)
-    return [DeploymentResponse.from_record(r, counts.get(r.id, 0)) for r in rows]
+    rows = list(rows)
+    return await _with_entry_modes(session, user.tenant_id, rows, [DeploymentResponse.from_record(r, counts.get(r.id, 0)) for r in rows])
 
 
 @router.get("/{deployment_id}", response_model=DeploymentResponse)
@@ -830,7 +953,7 @@ async def get_deployment(
 ) -> DeploymentResponse:
     record = await _get_owned_or_404(deployment_id, user, session)
     counts = await _open_position_counts(session, user.tenant_id)
-    return DeploymentResponse.from_record(record, counts.get(record.id, 0))
+    return (await _with_entry_modes(session, user.tenant_id, [record], [DeploymentResponse.from_record(record, counts.get(record.id, 0))]))[0]
 
 
 @router.get("/{deployment_id}/why")

@@ -476,7 +476,10 @@ async def _paper_command(session: AsyncSession, tenant: Tenant, user: User, cmd:
         return await _status_text(session, tenant, user)
     if not arg:
         data = await paper.summary(session, user)
-        lines = [f"PAPER account: balance {data['balance']:,.2f} (start {data['starting_capital']:,.2f}), equity {data['equity']:,.2f}",
+        head = (f"PAPER account: balance {data['balance']:,.2f} (start {data['starting_capital']:,.2f}), equity {data['equity']:,.2f}"
+                if data["starting_capital"] is not None else      # M68 PR-7: Not set - the balance needs his capital
+                "PAPER account: starting capital not set yet (Settings > Trade settings > Paper account, or your first paper order asks)")
+        lines = [head,
                  f"Realised: gross {data['realised']['gross']:+,.2f} - charges {data['realised']['charges']:,.2f} = net {data['realised']['net']:+,.2f}",
                  f"Closed trades {data['closed_trades']}, open {data['open_positions']}, sessions {data['sessions']}"
                  + (f" - PAUSED ({data['paused_reason']})" if data["paused"] else "")]

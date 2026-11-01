@@ -1,6 +1,7 @@
 """Z3 / BT2 (beta spec, Phase 0): approval-only entries, approval expiry and re-quote, and the exits policy.
 
-With the `approval_only_entries` flag on for an organisation (or a deployment's own `entry_mode` = APPROVAL), nothing
+With the `approval_only_entries` flag on for an organisation (or a deployment's own `entry_mode` = APPROVAL, or - M68 PR-6 - the
+user's own Trade settings > Automation > New entries = "Ask me first" for his bots without a mode of their own), nothing
 enters on its own. Every automatic entry signal - a deployment's signal in the trading worker, a TradingView webhook
 alert, a public-API signal - becomes an ENTRY proposal on the ordinary monitor state machine (`ai_actions`, ADR-0006):
 PROPOSED -> APPROVED -> EXECUTED, or REJECTED / EXPIRED / FAILED, with Snooze (PW5), Telegram buttons (PW4) and push
@@ -17,11 +18,13 @@ order through a broker API).
 * **Who decides (review L8).** A proposal has an owner (`owner_user_id`): the deployment's creator, the alert's owner,
   the person who sent a manual setup, the holder of the position. Only the owner or the organisation OWNER decides it,
   and an approved entry is placed for the owner (their PAPER account).
-* **Expiry.** An entry proposal expires after `APPROVAL_ENTRY_TTL_MINUTES`; the worker expires due rows every cycle.
+* **Expiry.** An entry proposal expires after its owner's own waiting time (Trade settings > Automation, M68 PR-6), else
+  after `APPROVAL_ENTRY_TTL_MINUTES`; the worker expires due rows every cycle.
 * **Re-quote.** On Approve the entry is priced again at the current LTP (`requote_check`). A move from the proposal
-  price beyond `APPROVAL_REQUOTE_MAX_DRIFT_PCT` % or `APPROVAL_REQUOTE_MAX_DRIFT_TICKS` ticks (the stricter limit wins)
-  places nothing: the approved row is closed as EXPIRED and a fresh proposal at the new price is raised (at most
-  `APPROVAL_MAX_REQUOTES` times) for the person to decide again. A price already through the stop or target 1 expires
+  price beyond the owner's own % (Trade settings > Automation; Not set = no % limit, M68 PR-6) or
+  `APPROVAL_REQUOTE_MAX_DRIFT_TICKS` ticks (the stricter limit wins) places nothing: the approved row is closed as EXPIRED
+  and a fresh proposal at the new price is raised (at most the owner's own number of times; Not set = none) for the
+  person to decide again. A price already through the stop or target 1 expires
   the proposal without a re-quote. Inside the limit the PAPER order is placed at the re-quoted price.
 * **Exits (ADR-0004).** Protective exits - stop loss, premium floor/ceiling, time stop, square-off, kill switch, any
   structure rule - stay automatic and never look at a proposal or a snooze. A target exit (Target 1 / Target 2) on an
@@ -94,11 +97,19 @@ async def flag_on(session: AsyncSession, tenant_id: int) -> bool:
     return await flag_enabled(session, FLAG, tenant_id)
 
 
-async def required(session: AsyncSession, tenant_id: int, deployment: Optional[StrategyDeploymentRecord] = None) -> bool:
-    """True when a new entry for this organisation (and deployment) may only come from an approved proposal."""
-    if deployment is not None and (deployment.entry_mode or "AUTO") == "APPROVAL":
+async def required(session: AsyncSession, tenant_id: int, deployment: Optional[StrategyDeploymentRecord] = None,
+                   user_id: int | None = None) -> bool:
+    """True when a new entry for this organisation (and deployment / user) may only come from an approved proposal.
+    M68 PR-6 (TS1-060 / 061): the organisation's flag (an admin control for a team) first; then the bot's own entry
+    mode; then the user's own Trade settings > Automation > New entries ("Ask me first"). `user_id`: whose entry it is
+    (default: the bot's creator). A bot or user with nothing chosen is not approval-only here - a bot then places
+    nothing (`automation.entry_mode` is None: the worker and `gate_refusal` say "Needs your setting")."""
+    if await flag_on(session, tenant_id):
         return True
-    return await flag_on(session, tenant_id)
+    from app.execution import automation
+    if deployment is None and user_id is None:
+        return False
+    return await automation.entry_mode(session, deployment, user_id) == "APPROVAL"
 
 
 def can_trade(user: User) -> bool:
@@ -136,7 +147,7 @@ async def exit_now_enabled(session: AsyncSession, tenant_id: int) -> bool:
 
 
 async def gate_refusal(session: AsyncSession, tenant_id: int, *, deployment_id: Optional[int], origin: str,
-                       approval_action_id: Optional[int]) -> Optional[str]:
+                       approval_action_id: Optional[int], user_id: int | None = None) -> Optional[str]:
     """Why this entry must be refused under approval-only mode, or None. Called by every order pipeline entry point.
     Only an APPROVED entry proposal of this organisation (and deployment) lets an automatic entry through. TT-2: a manual
     order (origin "manual", set only by the F&O ticket / basket routes for the user's own confirmed tap) is his approval;
@@ -144,9 +155,14 @@ async def gate_refusal(session: AsyncSession, tenant_id: int, *, deployment_id: 
     deployment = await session.get(StrategyDeploymentRecord, deployment_id) if deployment_id is not None else None
     if deployment is not None and deployment.tenant_id != tenant_id:
         deployment = None
-    if not await required(session, tenant_id, deployment):
-        return None
     if origin == ORIGIN_MANUAL and deployment_id is None and approval_action_id is None:
+        return None
+    if not await required(session, tenant_id, deployment, user_id):
+        if deployment is not None and approval_action_id is None:
+            # M68 PR-6 (TS1-060): a bot with no entry mode of its own and none in its owner's Trade settings places nothing.
+            from app.execution import automation
+            if await automation.entry_mode(session, deployment, user_id) is None:
+                return automation.needs_setting("approval_mode")
         return None
     if approval_action_id is None:
         return "Approval-only mode: an entry needs an approved proposal - this one came without one"
@@ -249,18 +265,23 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     if deployment is not None:
         await _free_deployment_slot(session, tenant_id, deployment.id, now)
     direction = signal.direction.value if hasattr(signal.direction, "value") else str(signal.direction)
-    expires = now + timedelta(minutes=app_config.APPROVAL_ENTRY_TTL_MINUTES)
+    # M68 PR-6 (TS1-062): the owner's own waiting time; Not set = the platform's (a request must end; an expired one places nothing).
+    from app.execution import automation
+    own_minutes = (await automation.load_for(session, user_id)).approval_entry_minutes
+    expires = now + timedelta(minutes=own_minutes or app_config.APPROVAL_ENTRY_TTL_MINUTES)
+    # M68Q-PR6-1: say when the end is the platform's time, not his own
+    until = expires.astimezone(IST).strftime('%H:%M') + " IST" + ("" if own_minutes else " (platform time - set your own in Trade settings)")
     label = SOURCE_LABELS.get(source, source)
     lines = leg_lines(structure)
     if lines:
         # M55 T2: his own order, so its legs in order words (card and Telegram); the levels stay the underlying's.
         reason = (f"{label}: {structure_title(structure)} on {signal.symbol} - {'; '.join(lines)}. Underlying at {_money(signal.entry)} "
                   f"(stop {_money(signal.stop_loss)}, target {_money(signal.target1)}) - {strategy_id}. Approve to place these legs "
-                  f"as a PAPER order at the prices then (re-quoted); it expires at {expires.astimezone(IST).strftime('%H:%M')} IST.")
+                  f"as a PAPER order at the prices then (re-quoted); it expires at {until}.")
     else:
         reason = (f"{label}: {direction} {signal.symbol} at {_money(signal.entry)} (stop {_money(signal.stop_loss)}, target {_money(signal.target1)})"
                   f" - {strategy_id}. Approve to place a PAPER order at the price then (re-quoted); it expires at "
-                  f"{expires.astimezone(IST).strftime('%H:%M')} IST.")
+                  f"{until}.")
     # The card shows the first few numbers: the proposal price and its levels lead.
     evidence = {"proposal_price": float(signal.entry), "stop_loss": signal.stop_loss, "target1": signal.target1, "source": source,
                 "symbol": signal.symbol, "direction": direction, "target2": signal.target2, "risk_reward": signal.risk_reward,
@@ -464,7 +485,7 @@ async def _free_deployment_slot(session: AsyncSession, tenant_id: int, deploymen
 
 
 def ticket_time_stop_passed(evidence: Dict, now: datetime) -> Optional[str]:
-    """Z5 / P1-d: a PAPER ticket's proposal approved after its plan's time stop (or within the minimum lead before it)
+    """Z5 / P1-d: a PAPER ticket's proposal approved after its plan's time stop (M68 PR-3: no ATP lead - only later than now)
     would open a position the time exit closes at once. Why it must not be placed, or None."""
     if not isinstance(evidence, dict) or not evidence.get("ticket") or not evidence.get("exit_rules"):
         return None
@@ -474,10 +495,10 @@ def ticket_time_stop_passed(evidence: Dict, now: datetime) -> Optional[str]:
         return None
     if not time_stop:
         return None
-    earliest = (_utc(now).astimezone(IST) + timedelta(minutes=app_config.TICKET_TIME_STOP_MIN_LEAD_MINUTES)).strftime("%H:%M")
+    earliest = _utc(now).astimezone(IST).strftime("%H:%M")      # M68 PR-3 (TS1-033): later than now; no ATP lead
     if str(time_stop) <= earliest:
-        return (f"The plan's time stop {time_stop} IST is no longer later than {earliest} IST - the position would close at once; "
-                "nothing was placed (make a new plan)")
+        return (f"The plan's time stop {time_stop} IST is no longer later than now ({earliest} IST) - the position would close at "
+                "once; nothing was placed (make a new plan)")
     return None
 
 
@@ -521,8 +542,11 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
             if holder is None or holder.tenant_id != action.tenant_id or not holder.is_active:
                 raise ValueError("The person this proposal is for is no longer an active member - nothing was placed")
             owner = holder
+        # M68 PR-6 (TS1-062): the owner's own price-move limit; Not set = no limit (placed at the price then).
+        from app.execution import automation
+        own_drift = (await automation.load(session, owner)).requote_drift_pct
         verdict, why = requote_check(direction, float(evidence["proposal_price"]), price, stop_loss=evidence.get("stop_loss"),
-                                     target1=evidence.get("target1"), max_drift_pct=app_config.APPROVAL_REQUOTE_MAX_DRIFT_PCT,
+                                     target1=evidence.get("target1"), max_drift_pct=own_drift or 0.0,
                                      max_drift_ticks=app_config.APPROVAL_REQUOTE_MAX_DRIFT_TICKS, tick_size=tick_size_for(symbol))
         if verdict != "ok":
             return await _close_unplaced(session, action, user, evidence, deployment, verdict, why, price, now)
@@ -590,7 +614,10 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
         return action
     result = f"Not placed: {why}"
     owner_id = action.owner_user_id if action.owner_user_id is not None else user.id
-    if verdict == "requote" and requotes < app_config.APPROVAL_MAX_REQUOTES:
+    # M68 PR-6 (TS1-062): how many new prices the owner wants offered; Not set = none (ATP raises no request it was not told to).
+    from app.execution import automation
+    allowed = (await automation.load_for(session, owner_id)).max_requotes
+    if verdict == "requote" and allowed is not None and requotes < allowed:
         signal = Signal.model_validate(evidence["signal"])
         risk = abs(price - signal.stop_loss) if signal.stop_loss is not None else 0.0
         rr = round(abs(signal.target1 - price) / risk, 2) if risk and signal.target1 is not None else signal.risk_reward
@@ -612,8 +639,10 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
             result = f"Not placed: {why}. No re-quote: PAPER entries are paused"
         if fresh is not None:
             result = f"Not placed: {why}. Re-quoted as proposal #{fresh.id}"
+    elif verdict == "requote" and allowed is None:
+        result = f"Not placed: {why}. No new price offered - {automation.needs_setting('max_requotes')}"
     elif verdict == "requote":
-        result = f"Not placed: {why}. No re-quote left ({requotes} of {app_config.APPROVAL_MAX_REQUOTES} used)"
+        result = f"Not placed: {why}. No re-quote left ({requotes} of {allowed} used)"
     await session.execute(update(AiActionRecord).where(AiActionRecord.id == action.id).values(result=result[:300])
                           .execution_options(synchronize_session=False))
     await write_audit_log(session, action.tenant_id, user.id, "entry_proposal_not_placed", f"#{action.id}: {result}")
@@ -774,13 +803,42 @@ async def exit_price(session: AsyncSession, leg: TradeRecord, lookup: Any) -> Tu
                      "and target keep working; try again when a live price is available")
 
 
+LIVE_PRICE, LAST_SEEN, OLDER_PRICE, ENTRY_PRICE = "live price", "last seen price", "older price", "entry price"
+
+
+async def exit_now_price(session: AsyncSession, leg: TradeRecord, lookup: Any) -> tuple[float, str]:
+    """M68 PR-3 (TS1-097, ADR-0004: exits are never blocked): the price a user-pressed PAPER exit ("Exit now", a leg / group
+    exit, a part exit) closes at. The live price, else the monitor's recent price (`exit_price`, the 5-minute rule - an
+    operational safety, kept); when neither exists the exit is NOT refused: it falls back to the monitor's older price (any
+    age), else the position's entry price, and says so in the trade's reason. Never a typed price (review M2)."""
+    try:
+        return await exit_price(session, leg, lookup)
+    except ValueError:
+        pass
+    if leg.mark_price and float(leg.mark_price) > 0 and leg.mark_time is not None:
+        seen = _utc(leg.mark_time).astimezone(IST).strftime("%d %b %H:%M")
+        logger.warning("Exit now: no recent price for %s - closed at the older price seen %s IST", leg.symbol, seen)
+        return float(leg.mark_price), f"{OLDER_PRICE} seen {seen} IST"
+    logger.warning("Exit now: no price at all for %s - closed at its entry price", leg.symbol)
+    return float(leg.entry_price), f"{ENTRY_PRICE} (no price was seen)"
+
+
+def source_words(sources: list[str]) -> str:
+    """One label for the prices a close used: the weakest one wins (live < last seen < older < entry). Pure."""
+    for word in (ENTRY_PRICE, OLDER_PRICE, LAST_SEEN):
+        hit = next((s for s in sources if s.startswith(word)), None)
+        if hit is not None:
+            return hit
+    return LIVE_PRICE
+
+
 async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via: str = "web"):
     """"Exit now": closes a PAPER position at once, whatever is pending or snoozed (ADR-0004). Priced at the live price of
     the person's own entitlement, else the last price the monitor saw for it if recent (review V2) - never a typed price
-    (review M2). LIVE is
-    refused: Phase 0 has no broker order path, LIVE positions are closed in the broker app (review M4). A leg of a
-    structure closes the whole structure. The close itself is claimed atomically in `close_position` (review M3).
-    Returns the close outcomes; raises ValueError when there is no price at all, or for LIVE."""
+    (review M2); M68 PR-3 (TS1-097): with neither, the older price, else the entry price (`exit_now_price`) - never refused
+    for a missing price. LIVE is refused: Phase 0 has no broker order path, LIVE positions are closed in the broker app
+    (review M4). A leg of a structure closes the whole structure. The close itself is claimed atomically in
+    `close_position` (review M3). Returns the close outcomes; raises ValueError only for LIVE."""
     from app.ai.worker_bridge import price_lookup_for_user
     from app.trading.position_monitor import close_group, close_position
     if trade.mode != "PAPER":
@@ -788,7 +846,7 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
     lookup = await price_lookup_for_user(session, user)
 
     async def price_of(leg: TradeRecord) -> Tuple[float, str]:
-        return await exit_price(session, leg, lookup)
+        return await exit_now_price(session, leg, lookup)       # M68 PR-3 (TS1-097): falls back, never refuses
 
     legs = [trade]
     if trade.leg_group_id:
@@ -797,13 +855,15 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
         if any(leg.mode != "PAPER" for leg in legs):
             raise ValueError("LIVE positions are closed in the broker app - ATP places no broker order in Phase 0")
     prices: Dict[int, float] = {}
-    sources: List[str] = []
+    sources: list[str] = []
+    per_leg: dict[int, str] = {}
     for leg in legs:
         prices[leg.id], source = await price_of(leg)
         sources.append(source)
-    reason = f"Exit now ({via}, {'live price' if set(sources) == {'live price'} else 'last seen price'})"
+        per_leg[leg.id] = f"Exit now ({via}, {source})"         # M68 PR-3: each leg names its own price source
+    reason = f"Exit now ({via}, {source_words(sources)})"
     await write_audit_log(session, trade.tenant_id, user.id, "exit_now", f"trade #{trade.id} ({len(legs)} leg(s)) via {via} at {', '.join(sorted(set(sources)))}")
     await session.commit()
     if len(legs) > 1:
-        return await close_group(session, legs, prices, reason, broker=None, user_id=user.id)
+        return await close_group(session, legs, prices, reason, broker=None, user_id=user.id, reasons=per_leg)
     return [await close_position(session, trade, prices[trade.id], reason, broker=None, user_id=user.id)]

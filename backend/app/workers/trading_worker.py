@@ -60,7 +60,7 @@ from app.db.models import StrategyDeploymentRecord, Tenant, TradeRecord, User, V
 from app.db.savepoint import guarded
 from app.deployments import why as why_log
 from app.deployments.why import held_back
-from app.execution import approval
+from app.execution import approval, automation, exit_settings
 from app.execution.multileg import execute_structure
 from app.execution.ops_throttle import OpsThrottle
 from app.execution.signal_execution import execute_signal_for_user
@@ -99,10 +99,12 @@ WAITING_FOR_CONFIRMED_DATA = "Waiting for Upstox/Dhan data: no new entries; exit
 WORKER_NAME = "trading_worker"
 LOCK_KEY = "atp:trading_worker:lock"
 
-# Intraday (MIS) discipline: no fresh entries in the last half hour, and flatten everything
-# before the brokers' own forced square-off (which typically starts ~15:20 IST and fills badly).
-NO_NEW_ENTRIES_AFTER = dtime(15, 0)
-SQUARE_OFF_AT = dtime(15, 15)
+# M68 PR-3 (TS1-026, owner decision D1 on its provisional default M68Q-1): ATP adds no intraday cut-off and no
+# square-off of its own. A position is squared off at its owner's own Settings > Trade settings > Exits > Square-off time,
+# a bot takes no new entry outside its creator's own Automation > New entries from / until
+# (app/execution/exit_settings.py); Not set = neither. The broker's own MIS square-off near the close is a broker fact.
+# The venue's calendar time (app/market_data/calendar.py `square_off_at`) stays only as the moment a held spread is
+# settled on its expiry day (M55 T1 - an expiry fact, not an intraday rule).
 
 # A deployment that fails this many cycles in a row is paused rather than retried forever. M55 S7: code errors only - a
 # market-data read that fails makes it "waiting for data" instead (app_config.DEPLOYMENT_DATA_FAILURES_BEFORE_WAIT).
@@ -313,6 +315,7 @@ class TradingWorker:
         self._why_notes: Dict[int, tuple] = {}
         # M68 PR-1: the holding this evaluation uses per bot (the bot's own, else his Trade settings) - never stored on the bot.
         self._holdings: dict[int, str | None] = {}
+        self._window_why: dict[int, str | None] = {}   # M68 PR-3: why a bot takes no new entry now (its creator's own window)
         self._regime_wanted: set = set()
         # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
         self._vision_task: Optional["asyncio.Task[None]"] = None
@@ -1505,13 +1508,13 @@ class TradingWorker:
         # M55 S2 (A13): every price read of the exits below may use the exit reserve of a per-day read allowance.
         with exit_reads():
             open_families = getattr(self, "_open_families", None) or {"NSE"}
-            # Phase O2: each venue squares off on its own clock (NSE 15:15, MCX 23:15, crypto never);
-            # positions on venues still inside their session are monitored as before.
-            due_square_off = {f for f in open_families if (cut := intraday_cutoffs(f)[1]) is not None and now_ist.time() >= cut}
-            if due_square_off:
-                report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user_id, families=due_square_off,
-                                                                      today=now_ist.date())
-            monitored = open_families - due_square_off
+            # M68 PR-3 (D1): each INTRADAY position is squared off at its owner's own Square-off time (Not set: never by
+            # ATP); a held spread settles on its expiry day at its venue's settlement time (M55 T1). Every open venue's
+            # positions are monitored too (a position whose square-off could not close stays watched - ADR-0004).
+            settling = {f for f in open_families if (cut := intraday_cutoffs(f)[1]) is not None and now_ist.time() >= cut}
+            report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user_id, families=open_families,
+                                                                  today=now_ist.date(), settle_families=settling, now_ist=now_ist)
+            monitored = open_families
             if monitored:
                 # Z3 / BT2: on approval-only positions a target asked "Exit now?"; M55 S2 (A8): every exit is automatic now
                 # (the predicate is always None - the approval gate is for entries only).
@@ -1645,8 +1648,6 @@ class TradingWorker:
                 _waiting(dep, now, WAIT_NEXT_CHECK)
                 await session.commit()
                 continue
-            no_new_after = intraday_cutoffs(family)[0]
-            entries_allowed = no_new_after is None or now_ist.time() < no_new_after
             with bind_log_context(strategy_id=dep.strategy_id, deployment_id=dep.id):
                 dep_user = user
                 try:
@@ -1666,6 +1667,10 @@ class TradingWorker:
                         await session.commit()
                         continue
                     dep_user = resolved
+                    # M68 PR-3 (TS1-026, D1): the creator's own entry window (Not set: no ATP cut-off; exits ran above).
+                    window_why = (await exit_settings.load(session, dep_user)).entry_window_reason(family, now_ist.time())
+                    self._window_why[dep.id] = window_why
+                    entries_allowed = window_why is None
                     async with guarded(session, keep=(dep, tenant, user, dep_user)):
                         executed = await self._evaluate_deployment(
                             session, dep, dep_user, market_data, adapters, now, entries_allowed,
@@ -2086,8 +2091,9 @@ class TradingWorker:
             await session.commit()
             return False
         if not entries_allowed:
-            dep.last_error = f"Signal at {signal_ts.isoformat()} skipped: no new entries after {NO_NEW_ENTRIES_AFTER.strftime('%H:%M')} IST"
-            self._why(dep, "entry_cutoff", closed_bar, f"No new entries after {NO_NEW_ENTRIES_AFTER.strftime('%H:%M')} IST")
+            why = self._window_why.get(dep.id) or "Outside your time for new entries"
+            dep.last_error = f"Signal at {signal_ts.isoformat()} skipped: {why}"[:500]
+            self._why(dep, "entry_cutoff", closed_bar, why)
             await session.commit()
             return False
         if await self._has_open_position(session, dep):
@@ -2118,11 +2124,20 @@ class TradingWorker:
                     return False
 
         # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; nothing is placed until a person approves.
-        if await approval.required(session, dep.tenant_id, dep):
+        # M68 PR-6 (TS1-060): the bot's own entry mode, else its owner's Trade settings (Automation > New entries).
+        if await approval.required(session, dep.tenant_id, dep, user.id):
             proposed = await self._propose_entry(session, dep, signal, signal_ts, now, user.id, market_data=market_data, frames=frames)
             waiting = (dep.last_error or "").startswith("Waiting for approval")
-            self._why(dep, "proposed" if waiting else "risk_setting", closed_bar, None if waiting else dep.last_error)
+            self._why(dep, "proposed" if waiting else held_back(dep.last_error), closed_bar, None if waiting else dep.last_error)
             return proposed
+        if await automation.entry_mode(session, dep, user.id) is None:
+            # M68 PR-6: ATP does not choose between placing by itself and asking first; nothing is placed, the card says which.
+            mode_problem = automation.needs_setting("approval_mode")
+            dep.last_signal_at = signal_ts
+            dep.last_error = f"Signal at {signal_ts.isoformat()} skipped. {mode_problem}"[:500]
+            self._why(dep, "needs_setting", closed_bar, mode_problem)
+            await session.commit()
+            return False
 
         contract = None
         rules = ContractRules.from_deployment(dep)
@@ -2196,7 +2211,9 @@ class TradingWorker:
         mine = (await order_defaults.load(session, user)).holding
         if mine is None:
             return None, order_defaults.needs_setting("holding")
-        if mine == "SWING" and dep.timeframe != "day" and not can_hold_for_days(dep.option_strategy or "SINGLE"):
+        from app.risk_engine import own_risk
+        written = (await own_risk.for_user(session, user)).overnight_short_options if mine == "SWING" else False   # TS1-041
+        if mine == "SWING" and dep.timeframe != "day" and not can_hold_for_days(dep.option_strategy or "SINGLE", written_overnight=written):
             return None, (f"{order_defaults.needs_setting('holding')}: your Carry forward setting does not fit this bot "
                           f"(it reads {dep.timeframe} candles) - set this bot's own holding")
         self._holdings[dep.id] = mine
@@ -2273,7 +2290,7 @@ class TradingWorker:
         if rules.kind == InstrumentKind.OPTION and structure_kind != OptionStrategy.SINGLE:
             try:
                 structure = await resolve_structure(
-                    session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
+                    session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width,
                     spot=spot, today=today, chain_provider=chains, custom_legs=parse_custom_legs(getattr(dep, "custom_legs", None)),
                 )
             except (ContractResolutionError, ValueError) as exc:
@@ -2303,7 +2320,7 @@ class TradingWorker:
         spot = float(base["close"].iloc[-1]) if len(base) else None
         try:
             structure = await resolve_structure(
-                session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
+                session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width,
                 spot=spot, today=now.astimezone(IST).date(), chain_provider=_chain_provider(market_data.broker, self._cycle_chains),
                 custom_legs=parse_custom_legs(getattr(dep, "custom_legs", None)),
             )
@@ -2587,17 +2604,19 @@ class TradingWorker:
 
     async def _opposite_position(self, session: AsyncSession, dep: StrategyDeploymentRecord, direction: Any) -> Optional[str]:
         """M55 S6 (A11): the plain reason a NEW automated entry is held back, or None. Under the organisation's
-        `opposite_positions` setting "deny" (the default, owner order M55; risk_settings) an entry is skipped while another
+        `opposite_positions` setting "deny" (owner order M55; risk_settings) an entry is skipped while another
         of its bots holds an open position in the same mode on the same underlying in the other direction. Same direction:
-        unchanged. A position with no known direction (a neutral structure) never counts. Reads only - exits never come here."""
-        from app.core.models import OPPOSITE_ALLOW
+        unchanged. A position with no known direction (a neutral structure) never counts. Reads only - exits never come here.
+        M68 PR-5 (TS1-052, owner decision D3 / M68Q-3): only a SAVED "deny" holds an entry back; Not set (NULL, no row) and
+        "allow" never do."""
+        from app.core.models import OPPOSITE_DENY
         from app.db.models import RiskSettingsRecord
         from app.portfolio.risk import BEARISH, BULLISH, direction_of, underlying_of_trade
         wanted = {"LONG": BULLISH, "SHORT": BEARISH}.get(str(getattr(direction, "value", direction) or "").upper())
         if wanted is None:
             return None
         setting = await session.scalar(select(RiskSettingsRecord.opposite_positions).where(RiskSettingsRecord.tenant_id == dep.tenant_id))
-        if setting == OPPOSITE_ALLOW:          # anything else - no row saved yet included - is the default "deny"
+        if setting != OPPOSITE_DENY:           # Not set (NULL / no row yet) or "allow": two bots may hold opposite sides
             return None
         underlying = master.underlying_of(dep.symbol)
         others = await session.scalars(select(TradeRecord).where(
@@ -2614,8 +2633,11 @@ class TradingWorker:
     async def _square_off_all(
         self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,
         live_broker: Optional[BrokerInterface], user_id: Optional[int], families: Optional[set] = None,
-        today: date | None = None,
+        today: date | None = None, settle_families: Optional[set] = None, now_ist: Optional[datetime] = None,
     ) -> int:
+        """M68 PR-3 (TS1-026, D1): the INTRADAY positions whose owner's own Square-off time has come (Not set: none - ATP
+        squares off nothing by itself), and the held spreads expiring today on a venue in `settle_families` (M55 T1).
+        `now_ist` None (a direct call): every INTRADAY position of `families` whose owner set a time, as at that time."""
         open_trades = list(await session.scalars(
             select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
         ))
@@ -2623,13 +2645,21 @@ class TradingWorker:
         closed = 0
         groups: Dict[str, List[TradeRecord]] = {}
         expiring: dict[str, list[TradeRecord]] = {}
+        own: Dict[int, exit_settings.ExitSettings] = {}
+        settle = families if settle_families is None else settle_families
         for trade in open_trades:
-            if families is not None and session_family(venues[trade.id]) not in families:
+            family = session_family(venues[trade.id])
+            if families is not None and family not in families:
                 continue
             if (getattr(trade, "holding", None) or "INTRADAY") == "SWING":
-                if _held_spread_expires(trade, today):
+                if (settle is None or family in settle) and _held_spread_expires(trade, today):
                     expiring.setdefault(trade.leg_group_id, []).append(trade)   # M55 T1: settles on its expiry day
                 continue   # Phase AS: a swing position is held overnight by design
+            if trade.user_id not in own:
+                own[trade.user_id] = await exit_settings.load(session, tenant_id=tenant_id, user_id=trade.user_id)
+            cut = own[trade.user_id].square_off_at(family)
+            if cut is None or (now_ist is not None and now_ist.time() < cut):
+                continue   # M68 D1: his own time not set (or not reached) - ATP closes nothing; his broker's MIS close is a fact
             if trade.leg_group_id:
                 groups.setdefault(trade.leg_group_id, []).append(trade)
                 continue

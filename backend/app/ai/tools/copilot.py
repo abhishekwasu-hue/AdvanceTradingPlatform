@@ -213,7 +213,11 @@ def summarise_analyses(out: Dict[str, Any]) -> Dict[str, Any]:
 async def get_option_chain_analyses(ctx: ToolContext, args: _ChainArgs) -> ToolResult:
     """The six option chain analyses on the user's own broker chain: support / resistance from OI, OI build-up, PCR,
     max pain, the expected move (ATM straddle) and the IV skew, each with its numbers and fixed sentences."""
+    from app.ai.tools.market import teammate_refusal
     from app.option_chain import analyses_routes as oc
+    refused = await teammate_refusal(ctx, "option_chain_analyses")      # M72 PR-1a (M71Q-2): never a teammate's credential
+    if refused is not None:
+        return refused
     try:
         out = await oc.option_chain_analyses(symbol=args.symbol, expiry=args.expiry, user=ctx.user, session=ctx.session)
     except HTTPException as exc:

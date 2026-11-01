@@ -162,11 +162,13 @@ def test_approval_only_switched_on_between_the_decision_and_the_call_is_a_propos
     real = approval.required
     calls = []
 
-    async def flips(session, tenant_id, deployment=None):
-        calls.append(tenant_id)
+    async def flips(session, tenant_id, deployment=None, user_id=None):
+        # M68 PR-6: each ask names the owner (his own "Ask me first"): the template's availability, the decision, _paper
+        if user_id is not None:
+            calls.append(tenant_id)
         if tenant_id == t["tenant_id"] and len([c for c in calls if c == t["tenant_id"]]) >= 3:
             return True                                            # on by the time _paper asks again
-        return await real(session, tenant_id, deployment)
+        return await real(session, tenant_id, deployment, user_id)
     monkeypatch.setattr(approval, "required", flips)
     row = _go(t)
     assert row.route == policy.ROUTE_PROPOSE and _trades(t) == [] and len(_rows(AiActionRecord, t["tenant_id"])) == 1

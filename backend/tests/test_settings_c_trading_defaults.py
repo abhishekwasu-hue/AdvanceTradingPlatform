@@ -52,19 +52,19 @@ def test_round_trip_and_replace():
     {"holding": "SWING"},                               # follows the strategy's candles, not a default
     {"option_strategy": "CUSTOM"},                      # its legs are drawn per deployment
     {"instrument_kind": "CRYPTO"},
-    {"strike_offset": 11},
+    {"strike_offset": -1},                              # M68 PR-4 (TS1-047): no ATP ceiling, only "a real distance"
     {"premium_stop_pct": 4},
     {"max_lots": 0},
-    {"max_lots": 501},
+    {"max_lots": -3},                                   # M68 PR-4 (TS1-046): no 500-lot ceiling
     {"max_lots": "2"},                                  # strict: a string is not a number
-    {"spread_width": 21},
+    {"spread_width": 0},                                # M68 PR-4 (TS1-047): no 20-step ceiling
     {"target_credit_pct": 96},
     {"stop_credit_pct": 501},
     {"entry_mode": "AUTO_LIVE"},
     {"exit_rules": {"trailing_stop_pct": 0}},
-    {"exit_rules": {"trailing_stop_pct": 51}},
-    {"exit_rules": {"break_even_at_r": 11}},
-    {"exit_rules": {"time_exit_minutes": 376}},
+    {"exit_rules": {"trailing_stop_pct": 100}},              # M68 PR-3: no 50 % cap; 100 % = a stop at zero
+    {"exit_rules": {"break_even_at_r": 0}},                 # M68 PR-3: no 10 R cap; more than zero
+    {"exit_rules": {"time_exit_minutes": 0}},               # M68 PR-3: no 375-minute cap; at least 1
     {"exit_rules": {"time_exit_at": "25:00"}},
     {"exit_rules": {"stop_source": "swing"}},           # not an ExitRules field (review R7)
     {"ticket": {"lots": 0}},
@@ -114,7 +114,7 @@ def test_ticket_choices_equal_the_ticket_api():
     assert set(t["product"].annotation.__args__[0].__args__) == set(fno_ticket.PRODUCTS)
     assert set(t["order_type"].annotation.__args__[0].__args__) == set(fno_ticket.ORDER_TYPES)
     lots = {type(m).__name__: m for m in t["lots"].metadata}
-    assert lots["Le"].le == fno_ticket.MAX_LOTS and lots["Ge"].ge == 1
+    assert "Le" not in lots and lots["Ge"].ge == 1          # M68 PR-4 (TS1-046): no ATP ceiling on the lots
 
 
 def test_option_strategies_are_the_api_ones_without_custom():
@@ -134,7 +134,7 @@ def test_each_user_has_their_own_defaults():
 
 
 def test_a_stored_value_a_newer_release_wrote_still_reads():
-    raw = json.dumps({"max_lots": 2, "stop_source": "swing", "exit_rules": {"trailing_stop_pct": 99}})
+    raw = json.dumps({"max_lots": 2, "stop_source": "swing", "exit_rules": {"trailing_stop_pct": 100}})   # M68 PR-3: 99 is valid now
     # the unknown key is dropped, the bad exit value takes its default (empty), the lots are kept
     assert prefs.stored_value(NS, raw) == {**EMPTY, "max_lots": 2, "exit_rules": {"trailing_stop_pct": None, "break_even_at_r": None,
                                                                                   "time_exit_minutes": None, "time_exit_at": None}}
@@ -144,6 +144,8 @@ def test_the_server_never_reads_it_to_trade():
     app_dir = Path(__file__).resolve().parents[1] / "app"
     # M68: the Trade settings registry names it as where a value lived ("today"), and the Order defaults reader keeps a
     # ticket product / order type the user saved there (TS-6) - his own value, never a server default.
-    allowed = {"prefs.py", "trade_settings.py", "order_defaults.py"}
+    # M68 PR-2: the Position size reader keeps his "Lots for a new bot" (`max_lots`) the same way (TS-6); M68 PR-4: the
+    # Options reader too; M68 PR-6: the Automation reader keeps an entry mode he saved there (TS-6) the same way.
+    allowed = {"prefs.py", "trade_settings.py", "order_defaults.py", "position_size.py", "option_defaults.py", "automation.py"}
     readers = [p for p in app_dir.rglob("*.py") if "trading_defaults" in p.read_text(encoding="utf-8") and p.name not in allowed]
     assert readers == [], readers

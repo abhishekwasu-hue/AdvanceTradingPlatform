@@ -37,8 +37,12 @@ describe("day-one fix 2: pages keep their Daily content before the broker login"
   });
 
   it("the shell passes the sentence only with stored history on", () => {
+    // M75 NAV-2: one decision for the tab and the same page in an in-place panel (shell/pagesV2.ts brokerGateFor).
     const shell = readFileSync("src/shell/AppShellV2.tsx", "utf8");
-    expect(shell).toContain('storedDaily={features.on("backtest_stored_history") ? storedDailyFor(location.pathname) : null}');
+    expect(shell).toContain("const gate = brokerGateFor(location.pathname, features.on);");
+    expect(shell).toContain("<BrokerGate storedDaily={gate.storedDaily}>");
+    expect(readFileSync("src/shell/pagesV2.ts", "utf8")).toContain('return { storedDaily: stored ? storedDailyFor(pathname) : null };');
+    expect(readFileSync("src/shell/pagesV2.ts", "utf8")).toContain('const stored = on("backtest_stored_history");');
   });
 });
 

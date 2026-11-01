@@ -59,6 +59,7 @@ from app.brokers.models import (
     OptionChain,
     OptionChainRow,
     Quote,
+    lot_or_none,
 )
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.totp import totp_code
@@ -202,7 +203,7 @@ def instrument_from_row(row: Dict[str, Any], segment: str) -> Optional[Instrumen
         itype = "FUT"
     else:
         itype = "EQ"
-    lot = _num(_col(row, "lLotSize", "iLotSize"), 1.0) or 1.0
+    lot = lot_or_none(_col(row, "lLotSize", "iLotSize"))      # M68 TS1-088: none given = None, never 1
     return Instrument(instrument_token=token, exchange=SEGMENT_EXCHANGE.get(segment, segment.upper()),
                       tradingsymbol=platform_symbol(trading_symbol, segment), name=(_col(row, "pSymbolName") or None),
                       segment=segment, instrument_type=itype, lot_size=lot, tick_size=tick,

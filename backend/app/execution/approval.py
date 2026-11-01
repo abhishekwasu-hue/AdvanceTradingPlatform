@@ -246,13 +246,10 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     paused = await paused_reason(session, user_id)
     if paused:
         raise EntriesPaused(paused)
-    from app.risk_engine import paper_nr
     from app.risk_engine.by_default import proposal_refusal
-    # PAPER-NR: a proposal is a PAPER entry - his own limits are information on it, never a reason to raise none.
-    practice: list[str] = []
     locked = await proposal_refusal(session, tenant_id, user_id, now)      # Z5 / P1-d: daily loss lockout, entries per day
     if locked:
-        practice.extend(paper_nr.infos([locked]))
+        raise EntriesPaused(locked)
     owner_row: Optional[User] = None
     book = None
     if user_id is not None:                                                  # N1 F2: the owner's portfolio caps (entries only)
@@ -263,9 +260,8 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
             book = await caps.read_book(session, owner_row, now)              # one read for the caps and the impact line
         refused = await caps.entry_refusals(session, owner_row, caps.candidate_of(
             signal.symbol, signal.entry, signal.stop_loss, quantity=(ticket or {}).get("max_quantity")), now, book=book)
-        practice.extend(paper_nr.infos(refused))
-    if practice:
-        signal = signal.model_copy(update={"reasons": list(signal.reasons) + practice})
+        if refused:
+            raise EntriesPaused("; ".join(refused))
     if deployment is not None:
         await _free_deployment_slot(session, tenant_id, deployment.id, now)
     direction = signal.direction.value if hasattr(signal.direction, "value") else str(signal.direction)
@@ -293,8 +289,6 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                 "holding": holding, "requotes": requotes, "requoted_from": requoted_from, "data_as_of": _utc(signal.timestamp).isoformat(),
                 "exchange": (exchange or "NSE").upper(),
                 "signal": signal.model_dump(mode="json"), "strike_breach": strike_breach, "ticket": ticket}
-    if practice:
-        evidence["practice_info"] = practice
     if structure is not None:
         evidence["structure"] = structure
         evidence["leg_lines"] = lines
@@ -561,10 +555,8 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
         from app.portfolio import caps
         refused = await caps.entry_refusals(session, owner, caps.candidate_of(
             symbol, price, signal.stop_loss, quantity=(evidence.get("ticket") or {}).get("max_quantity")), now)
-        # PAPER-NR: an approved proposal is a PAPER entry - the caps are information on it, never a refusal.
-        from app.risk_engine import paper_nr
         if refused:
-            signal = signal.model_copy(update={"reasons": list(signal.reasons) + paper_nr.infos(refused)})
+            raise ValueError("; ".join(refused) + " - nothing was placed")
         risk = abs(price - signal.stop_loss) if signal.stop_loss is not None else 0.0
         rr = round(abs(signal.target1 - price) / risk, 2) if risk and signal.target1 is not None else signal.risk_reward
         signal = signal.model_copy(update={"entry": price, "risk_reward": rr, "timestamp": now,

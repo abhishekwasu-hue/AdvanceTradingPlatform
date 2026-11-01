@@ -153,22 +153,23 @@ def test_one_exit_closes_every_child_on_every_account_and_says_so_per_child(setu
 
 
 def test_capital_check_alert_and_retry_of_one_account(setup):  # noqa: F811 - the fixture
-    """MA-5: an account whose capital is below its lots' estimated margin is skipped with the figures (MB-6), the
-    not-placed accounts raise one critical alert (MB-5), and ACCOUNT:<id> retries that one account."""
+    """MA-5 / MB-6: each account's capital against its lots' estimated margin. PAPER-NR (owner, 1 Nov): paper capital
+    never refuses a PAPER entry - the small account is placed with the margin vs capital line (below zero said so),
+    so no not-placed alert is raised; ACCOUNT:<id> still sends to that one account."""
     from app.db.models import NotificationRecord
     t, expiry, strike, _ = setup
     p, small = _accounts(t, ("Main", 500_000, {"role": "PRIMARY"}), ("Small", 1_000, {"role": "SECONDARY", "group_name": "G"}))
     out = _order(t, _body(expiry, strike, lots=1, stop_loss=90.0, client_ref=uuid.uuid4().hex), run_on="ALL")
     rows = {r["account_id"]: r for r in out["results"]}
     assert rows[p]["status"] == "PLACED"
-    assert rows[small]["status"] == "SKIPPED" and rows[small]["reasons"][0].startswith("capital 1,000 is below the estimated margin")
+    assert rows[small]["status"] == "PLACED" and rows[small]["reasons"][0].startswith("Practice margin: needs")
+    assert "below zero - practice only" in rows[small]["reasons"][0]
 
     async def alerts():
         async with _session_factory() as session:
             return list(await session.scalars(select(NotificationRecord).where(
                 NotificationRecord.tenant_id == t["tenant_id"], NotificationRecord.title.like("Multi-account order:%"))))
-    found = _run(alerts())
-    assert len(found) == 1 and found[0].severity == "CRITICAL" and "Small" in found[0].message
+    assert _run(alerts()) == []
 
     # The user raises the capital and retries that one account only.
     raised = client.patch(f"/api/accounts/mine/paper/{small}", headers=t["headers"], json={"capital": 500_000})

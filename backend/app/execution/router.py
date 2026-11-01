@@ -15,7 +15,6 @@ from app.core.models import RiskConfig, Signal, Trade
 from app.execution.paper_broker import PaperBroker
 from app.execution.tagging import LEG_ENTRY, LEG_STOP, build_order_tag, client_order_id
 from app.instruments.registry import get_contract_spec
-from app.risk_engine import paper_nr
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 
 logger = logging.getLogger(__name__)
@@ -132,11 +131,9 @@ class OrderRouter:
         exchange: str = "NSE", product: str | None = None, place_protective_stop: bool = True,
         algo_id: str | None = None, order_style: str | None = None, market_protection_pct: float | None = None,
         is_option: Optional[bool] = None, paper_execution: str = "direct", freeze_quantity: Optional[int] = None,
-        order_ref: int | None = None, typed_lots: bool = False,
+        order_ref: int | None = None,
     ) -> None:
         self.mode = mode
-        # PAPER-NR: a ticket's own checked lots are his size in PAPER (app/risk_engine/paper_nr.py `decide`).
-        self.typed_lots = typed_lots
         # M55 S4: the `orders` row this execution belongs to - its entry and protective stop carry client order ids
         # derived from it (app/execution/tagging.py), so the start-up sweeper finds them in the broker's book by id.
         self.order_ref = order_ref
@@ -186,12 +183,7 @@ class OrderRouter:
         broker call; it returns (allowed, reasons, notes) from the risk hierarchy."""
         contract_spec = contract_spec or get_contract_spec(signal.symbol)
         # DEF-0: with no risk per trade set the size is the caller's cap (the trader's lots / max lots), else one lot.
-        if paper_nr.advisory(self.mode):
-            # PAPER-NR: his limits are information in PAPER; he keeps his own sizing (app/risk_engine/paper_nr.py).
-            decision = paper_nr.decide(self.risk_manager.config, signal, state, contract_spec=contract_spec,
-                                       requested_quantity=max_quantity, typed_wins=self.typed_lots)
-        else:
-            decision = self.risk_manager.validate_and_size(signal, state, contract_spec=contract_spec, requested_quantity=max_quantity)
+        decision = self.risk_manager.validate_and_size(signal, state, contract_spec=contract_spec, requested_quantity=max_quantity)
         if not decision.approved:
             return ExecutionResult(executed=False, reasons=decision.reasons, blocks=decision.blocks)
         notes: list[str] = list(decision.warnings)      # M64: e.g. the no-stop fallback's WARNING

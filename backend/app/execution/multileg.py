@@ -55,8 +55,7 @@ from app.notifications.service import notify
 from app.observability.metrics import ORDERS
 from app.platform.controls import clamp_config, risk_ceilings
 from app.reconciliation.service import mark_broker_uncertain
-from app.risk_engine import by_default
-from app.risk_engine import paper_nr
+from app.risk_engine import by_default, paper_nr
 from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
 from app.risk_engine.hierarchy import RiskContext
 from app.risk_engine.hierarchy import evaluate as evaluate_hierarchy
@@ -137,9 +136,8 @@ async def execute_structure(
         orders.append(order)
         leg_signals.append(leg_signal)
 
-    practice_notes: list = []              # PAPER-NR: his own limits, as information on the order trail
     refusals = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
-                                    broker_name=getattr(broker, "name", None) if broker is not None else None, notes=practice_notes)
+                                    broker_name=getattr(broker, "name", None) if broker is not None else None)
     # Z3 / BT2 + M55 T2: under approval-only mode a structure passes only as an APPROVED entry proposal's execution
     # (origin "approval" with its id, checked against the database); every other caller is refused.
     gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id,
@@ -153,9 +151,7 @@ async def execute_structure(
         refusals.append(ban)
     # N2-2 (flag experience_levels): an unhedged short side or a futures leg needs the level, or the day's opt-out.
     from app.paper import experience
-    refused, noted = paper_nr.split(mode, await experience.entry_refusals(session, user, experience.structure_gates(structure.legs)))
-    refusals.extend(refused)
-    practice_notes.extend(noted)
+    refusals.extend(await experience.entry_refusals(session, user, experience.structure_gates(structure.legs)))
     # #309 review: the underlying levels are stored on every leg's trade after its fill; refuse them before any leg moves.
     bad = nonfinite_levels(signal)
     if bad:
@@ -201,15 +197,14 @@ async def execute_structure(
             cfg = cfg.with_capital(await capital_basis(session, user))
     # Phase V1: ceilings, then the guardian's entry rules (cool-down, drawdown ladder, events).
     cfg, guardian_notes = clamp_config(cfg, await risk_ceilings(session))
-    guardian_notes = practice_notes + list(guardian_notes)
     state = await build_trading_day_state(session, user)
     daily_amount = cfg.daily_loss_amount()
     daily_limit = -daily_amount if daily_amount is not None else -math.inf
     # A breached daily-loss limit outranks the guardian (the risk engine's refusal engages the kill switch).
     if mode == ExecutionMode.PAPER.value and await by_default.enabled(session, user.tenant_id):
-        # Z5 / P1-d: the user's own PAPER risk cap. PAPER-NR: it cuts nothing in PAPER - information only.
-        _capped, cap_notes = await by_default.apply_user_cap(session, user, cfg)
-        guardian_notes.extend(paper_nr.infos(cap_notes))
+        # Z5 / P1-d: the user's own PAPER risk cap as well as the organisation's (strictest wins), before the guardian.
+        cfg, cap_notes = await by_default.apply_user_cap(session, user, cfg)
+        guardian_notes.extend(cap_notes)
     guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=structure.underlying_symbol, cfg=cfg,
                               # no user_id: stored and notified org-wide - number-free VIX wording (BT1b)
                               direction=signal.direction.value) if state.daily_pnl > daily_limit else GuardianVerdict()
@@ -235,11 +230,8 @@ async def execute_structure(
         "stop_loss": round(basis + metrics.risk_per_unit, 2) if metrics.risk_per_unit > 0 else 0.0,
         "target1": None, "target2": None, "risk_reward": None,
     })
-    asked = float(rules.max_lots * lot) if rules.max_lots else None
-    if paper_nr.advisory(mode):          # PAPER-NR: his limits are information; his own sizing stays
-        decision = paper_nr.decide(cfg, sizing_signal, state, contract_spec=spec, requested_quantity=asked)
-    else:
-        decision = RiskManager(cfg).validate_and_size(sizing_signal, state, contract_spec=spec, requested_quantity=asked)
+    decision = RiskManager(cfg).validate_and_size(sizing_signal, state, contract_spec=spec,
+                                                  requested_quantity=float(rules.max_lots * lot) if rules.max_lots else None)
     notes = list(structure.notes) + [_economics_note(metrics, lot)] + guardian_notes + list(decision.warnings)
     if not decision.approved:
         reasons = notes + decision.reasons
@@ -247,10 +239,6 @@ async def execute_structure(
         await _reject_all(session, orders, reasons)
         return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics, blocks=decision.blocks)
     lots = int(decision.quantity // lot)
-    if lots < 1 and paper_nr.advisory(mode):
-        notes.append(paper_nr.info(f"one lot of this structure risks {metrics.risk_per_unit * lot:,.0f}, more than your risk per trade "
-                                   f"({cfg.risk_amount() or 0:,.0f}); one lot placed."))
-        lots = 1
     if lots < 1:
         reasons = notes + [f"One lot of this structure risks {metrics.risk_per_unit * lot:,.0f}, more than your risk per trade "
                            f"({cfg.risk_amount() or 0:,.0f}). Change limit: Settings > Risk limits"]
@@ -271,7 +259,7 @@ async def execute_structure(
     quantity = lots * lot
     if held and execution_mode == ExecutionMode.PAPER:
         # M55 T1: the margin a spread held overnight blocks, checked at entry (LIVE: the broker's margin above, NRML).
-        # PAPER-NR: margin and paper capital never refuse a PAPER entry - the line says what it needs and what is free.
+        # PAPER-NR: a short practice balance never refuses a PAPER entry - the note is the margin vs free balance line.
         refusal, note = await _hold_margin_refusal(session, user, structure, premiums, lots, advisory=paper_nr.advisory(mode))
         if refusal:
             reasons = notes + [refusal]
@@ -291,9 +279,6 @@ async def execute_structure(
     # Phase V1 (R4): open risk at the stops plus this structure's max loss within the cap.
     block, _ = await portfolio_risk_block(session, user.tenant_id, mode=mode, underlying=structure.underlying_symbol, cfg=cfg,
                                           new_max_loss=metrics.risk_per_unit * quantity)
-    if block and paper_nr.advisory(mode):            # PAPER-NR: R4 is information in PAPER
-        notes.append(paper_nr.info(block))
-        block = None
     if block:
         reasons = notes + [block]
         await _reject_all(session, orders, reasons)
@@ -584,8 +569,8 @@ async def _hold_margin_refusal(session: AsyncSession, user: User, structure: Res
     """M55 T1: a PAPER spread held for days blocks its margin overnight, so it is checked at entry: ATP's labelled
     estimate (`fno_basket.hedge_margin`, the defined max loss) against his practice balance less what his other held
     spreads block. No broker is built here (Rule 0: execute_structure never obtains a broker itself; LIVE is checked by
-    the broker's own margin in `_live_lot_cap`). (refusal or None, note). `advisory` (PAPER-NR): never a refusal - the
-    note is the margin vs free balance line, below zero included."""
+    the broker's own margin in `_live_lot_cap`). (refusal or None, note). `advisory` (PAPER-NR): the balance being short
+    (or the margin not worked out) is never a refusal - the note is the margin vs free balance line, below zero included."""
     from app.execution import smart_execution
     from app.paper import fno_basket
     builder = [{"direction": "SELL" if leg.role == "SHORT" else "BUY", "option_type": leg.contract.right,

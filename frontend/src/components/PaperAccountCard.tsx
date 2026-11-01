@@ -15,6 +15,21 @@ import { useUiV2 } from "../ui/useFeatures";
  * the server, computed from this user's own PAPER trades. Hidden when the `paper_account` flag is off (the API answers 404).
  * N2-1 (flag `ladder_evidence`): the discipline criterion's weekly scores and the "Your figures" block, when sent.
  */
+/** PAPER-NR (owner, 1 Nov): the words beside a practice balance below zero. */
+const BELOW_ZERO = "below zero - practice only";
+
+/** PAPER-NR (2): a short practice balance never refuses a PAPER entry, so the balance may go below zero - then it is red
+ * and says so (v2 pages). */
+export function PaperBalanceTile({ balance, v2 }: { balance: number; v2: boolean }) {
+  const below = v2 && balance < 0;
+  return (
+    <StatTile label="Balance" tone={below ? "down" : "default"} value={below
+      ? <span className="flex flex-col"><span>{formatNumber(balance, 2)}</span>
+          <span className="text-t12 font-semibold text-down" data-testid="paper-below-zero">{BELOW_ZERO}</span></span>
+      : formatNumber(balance, 2)} />
+  );
+}
+
 export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
   // UX-11 (v2 pages): numbers first - the breakdown as a key-value table and every note under one Details.
   const v2 = useUiV2();
@@ -46,7 +61,7 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
     <Card title="PAPER account" className="space-y-3">
       <div data-testid="paper-account" className="space-y-3">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatTile label="Balance" value={formatNumber(account.balance, 2)} />
+          <PaperBalanceTile balance={account.balance} v2={v2} />
           <StatTile label="Equity (with open marks)" value={formatNumber(account.equity, 2)} />
           <StatTile label="Net P&L (after charges)" value={v2 ? <Signed value={r.net} kind="count" decimals={2} /> : signedMoney(r.net)} tone={v2 ? "default" : r.net > 0 ? "up" : r.net < 0 ? "down" : "default"} />
           <StatTile label="Closed / open" value={`${account.closed_trades} / ${account.open_positions}`} />

@@ -249,10 +249,6 @@ async def guard_entry(session: AsyncSession, tenant_id: int, *, mode: str, under
     verdict.reasons.extend(vix.reasons)
     verdict.notes.extend(vix.notes)
     verdict.size_multiplier *= vix.size_multiplier
-    from app.risk_engine import paper_nr
-    if paper_nr.advisory(mode):
-        # PAPER-NR: in PAPER these rules are information - nothing refused, nothing cut (LIVE unchanged).
-        return paper_nr.guardian(verdict)
     return verdict
 
 

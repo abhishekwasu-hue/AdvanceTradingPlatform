@@ -116,6 +116,8 @@ def test_single_leg_order_is_rejected_by_the_hierarchy_with_the_reason_on_the_tr
 
 
 def test_strategy_loss_limit_stops_the_strategy_and_daily_loss_stops_the_tenant():
+    """LIVE: a STRATEGY-loss block engages the STRATEGY kill switch, a TENANT daily-loss block the TENANT one.
+    PAPER-NR (owner, 1 Nov, decision 4): a PAPER block still refuses the order but never engages either switch."""
     headers = _auth("risk-h-stop@example.com")
     me = _me(headers)
     _limit(headers, "STRATEGY", "MAX_STRATEGY_LOSS", 1_000, scope_id="ema_rsi_scalper_1m")
@@ -127,15 +129,31 @@ def test_strategy_loss_limit_stops_the_strategy_and_daily_loss_stops_the_tenant(
             user = await session.get(User, me["id"])
             return await execute_signal_for_user(session, user, mode="PAPER", strategy_id=strategy_id, signal=_signal(),
                                                  risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=0.1), holding="INTRADAY", order_style="MARKET")
-    result, order = _run(go())
-    assert not result.executed and any("one strategy's loss today" in r for r in result.reasons)
+
+    async def live(strategy_id="ema_rsi_scalper_1m"):
+        async with _session_factory() as session:
+            user = await session.get(User, me["id"])
+            return await evaluate(session, RiskContext(tenant_id=me["tenant_id"], user_id=me["id"], strategy_id=strategy_id, symbol="RELIANCE",
+                                                       quantity=10, entry=100.0, stop_loss=98.0, capital=1_000_000, mode="LIVE"), user=user)
 
     async def switch(scope, strategy_id=None):
         async with _session_factory() as session:
             return await get_switch(session, scope, me["tenant_id"], strategy_id)
+
+    def engaged(scope, strategy_id=None):
+        found = _run(switch(scope, strategy_id))
+        return found is not None and found.engaged
+
+    # PAPER: refused by the limit, no switch engaged - the next PAPER signal is refused by the limit again, not the switch.
+    result, order = _run(go())
+    assert not result.executed and any("one strategy's loss today" in r for r in result.reasons)
+    assert not engaged(KillSwitchScope.STRATEGY, "ema_rsi_scalper_1m")
+    result, order = _run(go())
+    assert not result.executed and not any("kill switch" in r.lower() for r in result.reasons)
+    # LIVE: the same block engages the STRATEGY switch (unchanged), and the next signal is refused at the door by it.
+    assert not _run(live()).allowed
     strategy_switch = _run(switch(KillSwitchScope.STRATEGY, "ema_rsi_scalper_1m"))
     assert strategy_switch is not None and strategy_switch.engaged and "Risk limit" in strategy_switch.reason
-    # The next signal is refused at the door by the kill switch, before any sizing.
     result, order = _run(go())
     assert not result.executed and any("kill switch" in r.lower() for r in result.reasons)
     # Another strategy of the same tenant is untouched by a STRATEGY-scope stop.
@@ -145,8 +163,9 @@ def test_strategy_loss_limit_stops_the_strategy_and_daily_loss_stops_the_tenant(
     _limit(headers, "TENANT", "MAX_DAILY_LOSS", 1_000)
     result, order = _run(go(strategy_id="supertrend_adx_scalper_1m"))
     assert not result.executed and any("today's loss" in r and "Ask your admin" in r for r in result.reasons)
-    tenant_switch = _run(switch(KillSwitchScope.TENANT))
-    assert tenant_switch is not None and tenant_switch.engaged
+    assert not engaged(KillSwitchScope.TENANT)                     # PAPER-NR (4)
+    assert not _run(live(strategy_id="supertrend_adx_scalper_1m")).allowed
+    assert engaged(KillSwitchScope.TENANT)                         # LIVE unchanged
     async def clear():
         async with _session_factory() as session:
             await disengage(session, KillSwitchScope.TENANT, me["tenant_id"])

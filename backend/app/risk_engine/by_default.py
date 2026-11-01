@@ -501,13 +501,12 @@ def _per_day_text(count: int, limit: int) -> str:
     return f"PAPER entries per day: {count} of {limit} made today - no new PAPER entries today; exits stay available"
 
 
-async def entry_refusals(session: AsyncSession, user: User, now: Optional[datetime] = None, *, reserve: bool = False,
-                         record: bool = True) -> List[str]:
+async def entry_refusals(session: AsyncSession, user: User, now: Optional[datetime] = None, *, reserve: bool = False) -> List[str]:
     """Why this user's new PAPER entry is refused: the daily loss lockout, the entries-per-day limit. Entries only.
     `reserve` (the order pipelines): the entry takes one of the day's slots atomically (`reserve_entry`); a preview
-    only reads the count. `record` False (PAPER-NR: the reasons are information only) records no lockout row."""
+    only reads the count."""
     reasons = []
-    locked = await lockout(session, user, now, record=record)
+    locked = await lockout(session, user, now)
     if locked:
         reasons.append(locked["reason"])
     settings = await user_settings(session, user, now)

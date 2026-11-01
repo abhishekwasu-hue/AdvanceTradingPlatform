@@ -189,11 +189,12 @@ async def _paper_checks(session: AsyncSession, row: ExecutionIntentRecord, owner
     paused = await paused_reason(session, owner.id)
     if paused:
         return "refuse", paused, None
-    # PAPER-NR: an Auto PAPER entry is a PAPER entry - his own limits and the caps are information, never a refusal.
-    from app.risk_engine import paper_nr
     locked = await proposal_refusal(session, row.tenant_id, owner.id, now)
-    practice = paper_nr.infos(([locked] if locked else []) + await caps.entry_refusals(
-        session, owner, caps.candidate_of(row.symbol, signal.entry, signal.stop_loss), now))
+    if locked:
+        return "refuse", locked, None
+    refused = await caps.entry_refusals(session, owner, caps.candidate_of(row.symbol, signal.entry, signal.stop_loss), now)
+    if refused:
+        return "refuse", "; ".join(refused), None
     late = await auto_paper.window_reason(session, now, row.exchange or "NSE")      # review of X2 (M2): the entry window
     if late:
         return "propose", late, None
@@ -217,7 +218,7 @@ async def _paper_checks(session: AsyncSession, row: ExecutionIntentRecord, owner
         return "propose", f"The live price for {row.symbol} is not usable - a proposal instead", None
     if verdict != "ok":
         return "propose", f"The price moved since the setup ({why}) - a proposal instead", None
-    return "place", "; ".join(practice), price
+    return "place", "", price
 
 
 async def _paper(session: AsyncSession, row: ExecutionIntentRecord, owner: User, signal: Signal, now: datetime) -> str:
@@ -263,8 +264,7 @@ async def _paper(session: AsyncSession, row: ExecutionIntentRecord, owner: User,
         return await _fallback(session, row, signal, why, now)
     owner_id = owner.id
     placed = signal.model_copy(update={"entry": price, "timestamp": now,
-                                       "reasons": list(signal.reasons) + [f"Auto PAPER (intent #{intent_id}), re-quoted at {price:g}"]
-                                       + ([why] if why else [])})       # PAPER-NR: the information notes, if any
+                                       "reasons": list(signal.reasons) + [f"Auto PAPER (intent #{intent_id}), re-quoted at {price:g}"]})
     try:
         result, order = await execute_signal_for_user(
             session, owner, mode="PAPER", strategy_id=facts.strategy_id, signal=placed, idempotency_key=intents.order_key(intent_id),

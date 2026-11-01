@@ -221,9 +221,6 @@ async def evaluate(session: AsyncSession, ctx: RiskContext, *, user: Optional[Us
         else:
             status, action, severity = "PASS", RiskAction.ALLOW, NotificationSeverity.INFO
             reason = f"{limit_type.value} ({rule.scope.lower()}): {label} {_fmt(limit_type, current)} within limit {_fmt(limit_type, rule.limit_value)}"
-        if status == "BLOCK" and not paper_nr.hierarchy_blocks(ctx.mode, rule.scope):
-            # PAPER-NR: in PAPER an organisation limit below GLOBAL scope is information (recorded as a WARN, no action).
-            status, action, severity, reason = "WARN", RiskAction.WARN, NotificationSeverity.WARNING, paper_nr.info(reason)
         if status == "BLOCK" and limit_type == RiskLimitType.MAX_STRATEGY_LOSS:
             action = RiskAction.STOP_STRATEGY
         if status == "BLOCK" and limit_type == RiskLimitType.MAX_DAILY_LOSS and rule.scope in (RiskScope.TENANT.value, RiskScope.GLOBAL.value):
@@ -245,6 +242,7 @@ async def evaluate(session: AsyncSession, ctx: RiskContext, *, user: Optional[Us
 
     # Consequences: stop the strategy / the tenant so the next signal is refused at the door.
     for check in verdict.checks:
+        # PAPER-NR (4): a PAPER block refuses the order but never engages a STRATEGY / TENANT kill switch.
         if check.status != "BLOCK" or user is None or not paper_nr.engages_kill_switch(ctx.mode):
             continue
         limit_type = RiskLimitType(check.rule.limit_type)

@@ -149,7 +149,7 @@ async def place(session: AsyncSession, user: User, ask: Any, *, override: Option
     plan = fp.size(route, sizing, primary_lots=int(ask.lots), lot_size=1, margin_per_lot=margin_per_lot)
     # MB-6 pre-send check per account (PAPER): the account's own capital against the estimated margin of its lots.
     # PAPER-NR (2): paper capital never refuses a PAPER entry - the account is placed, with the margin vs capital line.
-    practice: Dict[int, List[str]] = {}
+    practice: dict[int, list[str]] = {}
     if margin_per_lot:
         from app.risk_engine import paper_nr
         for leg in plan.legs:

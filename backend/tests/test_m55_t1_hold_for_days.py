@@ -125,16 +125,19 @@ def test_a_held_bull_put_is_entered_with_its_margin_checked_and_every_leg_held()
 
 
 def test_margin_refusal_at_entry(monkeypatch):
+    """PAPER-NR (owner, 1 Nov): a short practice balance no longer refuses a PAPER entry - it is placed with the margin
+    vs free balance line, below zero said so (was: refused "not enough margin to hold this spread for days")."""
     _load_master()
     t = _tenant("m55-t1-margin@example.com", with_credentials=False)
 
     async def small(session, user):
         return 1_000.0
     monkeypatch.setattr(fno_basket, "practice_balance", small)
-    refused = _execute(t, holding="SWING", key="m55-margin-1")
-    assert not refused.executed
-    assert any("not enough margin to hold this spread for days" in r for r in refused.reasons)
-    assert _all(t["tenant_id"]) == []
+    placed = _execute(t, holding="SWING", key="m55-margin-1")
+    assert placed.executed, placed.reasons
+    assert any(r.startswith("Practice margin: needs") and "below zero - practice only" in r for r in placed.reasons)
+    assert not any("not enough margin" in r for r in placed.reasons)
+    assert len(_all(t["tenant_id"])) == 2
     # The intraday bot is not asked for overnight margin (unchanged).
     assert _execute(t, holding="INTRADAY", key="m55-margin-2").executed
 
@@ -151,7 +154,8 @@ def test_margin_counts_the_other_held_spreads(monkeypatch):
         return required * 1.5          # room for one held spread, not for two
     monkeypatch.setattr(fno_basket, "practice_balance", balance)
     second = _execute(t, holding="SWING", key="m55-m2-2")
-    assert not second.executed and any("not enough margin" in r for r in second.reasons)
+    # PAPER-NR: the other held spread's margin still counts; the shortfall is information, not a refusal.
+    assert second.executed and any(r.startswith("Practice margin: needs") and "below zero - practice only" in r for r in second.reasons)
 
 
 # --- the worker: no square-off, held across sessions, exits by its own rules, settles at expiry ------------------------

@@ -220,12 +220,9 @@ async def preview(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, 
                                        origin=origin)
         rows.append({"seq": seq, "leg": i, "role": "hedge" if leg.side == "BUY" else "short", **view})
     refusals: List[str] = []
-    warnings: List[str] = []
     room = await _room(session, user, len(legs))
     if room:
-        # PAPER-NR: his open-position / trades-a-day limits are information in PAPER, never a refusal.
-        from app.risk_engine import paper_nr
-        warnings.extend(paper_nr.infos([room.replace(" Nothing was placed.", "")]))
+        refusals.append(room)
     totals: Optional[Dict[str, Any]] = None
     totals_errors: List[str] = []
     priced = all(r["fill_price"] is not None for r in rows)
@@ -240,7 +237,7 @@ async def preview(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, 
             totals_errors = list(numbers.get("errors") or [])
     can = not refusals and all(r["can_place"] for r in rows)
     smart = await smart_view(session, user, legs, rows, product) if with_smart and await fno_ticket.smart_on(session, user.tenant_id) else None
-    return {"mode": fno_ticket.MODE, "practice": fno_ticket.PRACTICE, "legs": rows, "refusals": refusals, "warnings": warnings, "totals": totals,
+    return {"mode": fno_ticket.MODE, "practice": fno_ticket.PRACTICE, "legs": rows, "refusals": refusals, "totals": totals,
             "totals_errors": totals_errors, "can_execute": can, "product": product, "smart": smart,
             "confirm_label": f"Place {len(rows)} PAPER orders, hedge legs first" if can else None, "as_of": now.isoformat()}
 

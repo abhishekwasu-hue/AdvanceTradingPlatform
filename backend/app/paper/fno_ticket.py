@@ -51,7 +51,6 @@ from app.execution.approval import ORIGIN_AUTOMATIC
 from app.instruments import master
 from app.instruments.models import ContractSpec
 from app.market_data.calendar import to_ist
-from app.risk_engine import paper_nr
 
 logger = logging.getLogger(__name__)
 PriceLookup = Callable[..., Awaitable[float]]
@@ -225,18 +224,11 @@ def ask_errors(ask: OrderAsk, tick: float, *, stop_required: bool = False) -> Li
             errors.append("For a buy SL order the limit price must be at or above the trigger")
         if ask.side == "SELL" and ask.price > ask.trigger_price:
             errors.append("For a sell SL order the limit price must be at or below the trigger")
-    errors.extend(own_stop_rule(ask, stop_required))
-    return errors
-
-
-def own_stop_rule(ask: OrderAsk, stop_required: bool) -> List[str]:
-    """DEF-0 D7: his own My limits switch "A sold option or a future needs a stop-loss", as its sentence when it applies.
-    PAPER-NR: the PAPER ticket shows it as information (`assess`), never as an error."""
     if stop_required and ask.right == FUTURE and ask.stop_loss is None:
-        return ["Your setting asks for a stop-loss on a future: add one, or change the setting in My limits"]
-    if stop_required and ask.side == "SELL" and ask.stop_loss is None:
-        return ["Your setting asks for a stop-loss on a sold option: add one, or change the setting in My limits"]
-    return []
+        errors.append("Your setting asks for a stop-loss on a future: add one, or change the setting in My limits")
+    elif stop_required and ask.side == "SELL" and ask.stop_loss is None:
+        errors.append("Your setting asks for a stop-loss on a sold option: add one, or change the setting in My limits")
+    return errors
 
 
 def stop_errors(side: str, fill: float, stop: Optional[float], what: str = "option") -> List[str]:
@@ -395,9 +387,8 @@ async def _effective_config(session: AsyncSession, user: User, direction: str, u
     cfg = await user_risk_config(session, user)          # DEF-0: limits not set are off; capital = own, else PAPER balance
     cfg, notes = clamp_config(cfg, await risk_ceilings(session))
     if await by_default.enabled(session, user.tenant_id):
-        # PAPER-NR: his own PAPER cap cuts nothing in PAPER - information only.
-        _capped, cap_notes = await by_default.apply_user_cap(session, user, cfg)
-        notes = list(notes) + paper_nr.infos(cap_notes)
+        cfg, cap_notes = await by_default.apply_user_cap(session, user, cfg)
+        notes = list(notes) + list(cap_notes)
     guard = await guard_entry(session, user.tenant_id, mode=MODE, underlying=underlying, cfg=cfg, direction=direction, user_id=user.id)
     return apply_multiplier(cfg, guard.size_multiplier), list(guard.reasons), list(notes) + list(guard.notes)
 
@@ -430,6 +421,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     from app.execution import approval
     from app.execution.signal_execution import entry_refusals
     from app.paper import experience
+    from app.risk_engine.risk_manager import RiskManager
     from app.trading.persistence import build_trading_day_state
     now = now or datetime.now(timezone.utc)
     errors: List[str] = []
@@ -454,9 +446,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         warnings.append("This contract expires today.")
     tick = contract.tick_size if contract else 0.05
     from app.me.prefs import own_limits
-    errors.extend(ask_errors(ask, tick))
-    # PAPER-NR (3): "a sold option or a future needs a stop-loss" (his own switch) is information in PAPER.
-    warnings.extend(paper_nr.infos(own_stop_rule(ask, bool((await own_limits(session, user)).get("stop_required_on_sold")))))
+    errors.extend(ask_errors(ask, tick, stop_required=bool((await own_limits(session, user)).get("stop_required_on_sold"))))
     lot_size = contract.lot_size if contract else None
     units = float(ask.lots * lot_size) if lot_size else None
 
@@ -491,14 +481,13 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         errors.extend(stop_errors(side, float(reference), ask.stop_loss, what))
 
     tenant = await session.get(Tenant, user.tenant_id)
-    refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, MODE, STRATEGY_ID, user=user, reserve=False,
-                                                           notes=warnings))
+    refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, MODE, STRATEGY_ID, user=user, reserve=False))
     gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=None, user_id=user.id)
     if gate:
         refusals.append(plain(gate))
     direction = SignalDirection.LONG if side == "BUY" else SignalDirection.SHORT
     if contract is not None:
-        warnings.extend(paper_nr.infos(await experience.symbol_entry_refusals(session, user, contract.tradingsymbol, direction)))
+        refusals.extend(await experience.symbol_entry_refusals(session, user, contract.tradingsymbol, direction))
         from app.compliance import fo_limits
         ban, ban_note = await fo_limits.entry_refusal(session, _meta(contract, side)["underlying_symbol"], now)
         if ban:
@@ -512,9 +501,8 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         refusals.extend(plain(r) for r in guard_reasons)
         warnings.extend(n for n in notes if n)
         stop = position_stop(side, ask.stop_loss, tick)
-        # PAPER-NR: his limits are information; his own typed lots are the size (the pipeline places the same).
-        decision = paper_nr.decide(cfg, _signal(contract, side, basis, stop, now, fill_note), await build_trading_day_state(session, user),
-                                   contract_spec=_spec(contract), requested_quantity=units, typed_wins=True)
+        decision = RiskManager(cfg).validate_and_size(_signal(contract, side, basis, stop, now, fill_note), await build_trading_day_state(session, user),
+                                                      contract_spec=_spec(contract), requested_quantity=units)
         # DEF-0: the risk per trade is the trader's own setting; not set = no risk cap (None) and no refusal for size.
         amount = cfg.risk_amount()
         cap_amount = round(amount, 2) if amount is not None else None

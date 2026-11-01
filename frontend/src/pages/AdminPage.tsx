@@ -9,6 +9,7 @@ import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
 import FeatureFlagsCard from "../admin/FeatureFlagsCard";
 import TraderPackCard from "../admin/TraderPackCard";
+import AiPlatformLimitsCard from "../admin/AiPlatformLimitsCard";
 import AiProviderCard from "../components/AiProviderCard";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import HolidaysCard from "../components/HolidaysCard";
@@ -211,6 +212,9 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
           ceilingTeam.trim() ? Number(ceilingTeam) : null).then((c) => { setCeilings(c); setCeilingDraft(ceilingText(c)); }))}
           className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save ceilings</button>
       </Card>}
+
+      {/* M72 PR-1b: the platform AI key's budgets and daily cap (v2 console; set before or after ai_platform_key is on). */}
+      {inGroup("limits") && section && <AiPlatformLimitsCard />}
 
       {inGroup("flags") && <FeatureFlagsCard flags={flags} tenants={flagTenants} busy={busy}
         onTenants={(name, value) => setFlagTenants({ ...flagTenants, [name]: value })}

@@ -70,6 +70,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "ai_agent": FlagInfo("Copilot reads your positions and news before answering", "ai", "better answers", ("ai_copilot",), "an AI key", "ready"),
     "ai_research": FlagInfo("AI drafts are back-tested and scored automatically", "ai", "research loop", ("ai_copilot",), "an AI key", "unfinished"),
     "ai_one_key": FlagInfo("Connect AI in one paste: one key for every AI feature", "ai", "Connect AI panel on Copilot and Settings › AI", ("ui_v2",), "", "ready"),
+    "ai_platform_key": FlagInfo("AI answers on the platform's own key, without a key of the user's own", "ai", "AI answers out of the box; today's use on Settings › AI", ("ui_v2",), "the platform key on the server, each plan's AI budget and the per-user daily cap (Admin › Controls › Limits)", "unfinished"),
     "cost_meter": FlagInfo("Cost of trading: what charges took from your own closed trades this year and this month", "trading", "a Cost of trading card on My trades", ("ui_v2",), "", "ready"),
     "daily_rhythm": FlagInfo("Daily rhythm: a brief before the open, a pulse, a closing wrap and a weekly review", "data", "a card on the Dashboard; Telegram by the user's choice (Settings › Alerts)", ("ui_v2",), "Telegram connected for the messages", "unfinished"),
     "data_hub": FlagInfo("One live price stream per broker connection for every page; live prices in the browser", "data", "prices that move on their own on charts and watchlists; a notice while prices reconnect or the broker login needs renewing", ("ui_v2",), "a broker with a live price stream (Upstox, Zerodha) for streaming, else prices refresh every few seconds", "unfinished"),
@@ -298,6 +299,7 @@ FLAG_GROUP: dict[str, str] = {
     "ai_agent": "ai",
     "ai_research": "ai",
     "ai_one_key": "ai",
+    "ai_platform_key": "ai",
     "vision_byok": "ai",
     "vision_byok_v3": "ai",
     "signal_language_v2": "ai",
@@ -358,6 +360,7 @@ FINISH: Dict[str, str] = {
     "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",
     "term_roll": "TERM-2 R1", "term_whatif": "TERM-2 R2", "term_strike_area": "TERM-2 R3", "term_margin_pair": "TERM-2 R4",
     "trade_engine": "M66 (owner only, after parity is green)",
+    "ai_platform_key": "M72 PR-1b (owner's organisation only until each plan's budget and the daily cap are set)",
 }
 KEEP_OFF: Dict[str, str] = {
     "chart_analyze_strikes": "strikes next to a setup read close to advice; after P2-5 is on",

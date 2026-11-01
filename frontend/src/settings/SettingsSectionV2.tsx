@@ -15,6 +15,7 @@ import SignedWebhooksV2 from "../alerts/SignedWebhooksV2";
 import { isNativeApp } from "../native/platform";
 import RhythmTelegramV2 from "../rhythm/RhythmTelegramV2";
 import ConnectAiPanelV2 from "../aiKeys/ConnectAiPanelV2";
+import PlatformAiUsageV2 from "../aiKeys/PlatformAiUsageV2";
 import KeyGuidesV2 from "../aiKeys/KeyGuidesV2";
 import { useAuth } from "../auth/AuthContext";
 import type { PageProps } from "../routes";
@@ -92,6 +93,8 @@ export function AiSection() {
           <VisionByokCard />
         </>
       )}
+      {/* M72 PR-1b: today's use on the platform AI key and his own daily limit (renders nothing when another key answers). */}
+      <PlatformAiUsageV2 />
     </div>
   );
 }

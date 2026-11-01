@@ -134,6 +134,40 @@ async def put_marketplace_terms(body: RiskCeilingsBody, user: User = Depends(req
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+class AiPlatformLimitsBody(BaseModel):
+    """M72 PR-1b: the owner's platform-key limits in rupees. A plan's value null = clear it (Not set); `clear_cap` clears the
+    per-user daily cap. Fields left out keep their value."""
+    plan_budget_inr: dict[str, float | None] = Field(default_factory=dict, max_length=10)
+    user_daily_cap_inr: float | None = None
+    clear_cap: bool = False
+
+
+async def _ai_platform_view(session: AsyncSession) -> dict:
+    from app.ai import platform_key
+    from app.plans.registry import PLANS
+    values = await platform_key.limits(session)
+    # The key itself never leaves the host: only whether one is there and for which provider.
+    return {**values, "key_configured": platform_key.configured_provider() is not None, "provider": platform_key.configured_provider(),
+            "plans": [{"id": plan.id, "name": plan.name} for plan in PLANS.values()]}
+
+
+@admin_router.get("/ai-platform")
+async def get_ai_platform(session: AsyncSession = Depends(get_session)) -> dict:
+    """M72 PR-1b (M72Q-1): each plan's monthly platform AI budget and the per-user daily cap (None = Not set)."""
+    return await _ai_platform_view(session)
+
+
+@admin_router.put("/ai-platform")
+async def put_ai_platform(body: AiPlatformLimitsBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    from app.ai import platform_key
+    try:
+        await platform_key.set_limits(session, user, plan_budget_inr=body.plan_budget_inr, user_daily_cap_inr=body.user_daily_cap_inr,
+                                      clear_cap=body.clear_cap)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await _ai_platform_view(session)
+
+
 # --- Phase N4: feature flags -----------------------------------------------------------------------
 
 async def _flag_listing_for(session: AsyncSession, user: User) -> dict:

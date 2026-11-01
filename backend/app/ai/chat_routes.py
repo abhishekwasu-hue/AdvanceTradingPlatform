@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import chat_history
+from app.ai import chat_history, platform_key
 from app.ai import copilot_chat as chat
 from app.ai import resolve as ai_resolve
 from app.ai.compliance_terms import require_ai_acknowledged
@@ -119,6 +119,11 @@ def _ai_state(provider: Any, one_key: bool = False) -> Dict[str, Any]:
     if isinstance(provider, _AtLimit):
         return {"ready": False, "title": "AI limit reached", "line": provider.reason, "settings": chat.KEY_SETTINGS, "reason": provider.reason,
                 "code": ai_resolve.LIMIT_CODE, "own_key": True}
+    platform_reason = getattr(provider, "platform_reason", "")
+    if platform_reason in platform_key.LIMIT_REASONS:
+        # M72 PR-1b: a platform cap reached is a hard stop for the AI; the rules answer and the page says why.
+        return {"ready": False, "title": "AI limit reached", "line": provider.reason, "settings": chat.KEY_SETTINGS, "reason": provider.reason,
+                "code": ai_resolve.LIMIT_CODE, "own_key": False, "platform": True}
     ready = getattr(provider, "name", "rule_based") != "rule_based"
     out = {"ready": ready, "title": None if ready else chat.NO_KEY_TITLE, "line": None if ready else chat.NO_KEY_LINE,
            "settings": chat.KEY_SETTINGS, "reason": None if ready else (getattr(provider, "reason", "") or None)}

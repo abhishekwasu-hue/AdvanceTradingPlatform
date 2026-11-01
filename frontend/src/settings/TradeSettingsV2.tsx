@@ -82,7 +82,7 @@ function SectionCard({ section, admin, save, onSaved }: {
               : "Nothing to choose here yet."}
           </p>
         )}
-        {main.length > 0 && section.today && (      /* M68 PR-5: the order-time checks stay on their own page */
+        {main.length > 0 && section.id === "risk_limits" && section.today && (      /* M68 PR-5: the order-time checks stay on their own page */
           <p className="mt-space-2 text-t13 text-fg-muted" data-part="more">
             More in <Link to={section.today.path} className="font-medium text-brand hover:underline">{section.today.label}</Link>.
           </p>

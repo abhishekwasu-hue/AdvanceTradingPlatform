@@ -91,10 +91,17 @@ def test_the_owner_listed_flags_are_in_the_pack():
                  "execution_core", "scan_then", "ai_copilot", "ai_agent", "ai_one_key", "ai_multiview", "screener_copilot",
                  "context_panel", "chart_price_action", "chart_studies", "chart_trades_layer", "chart_workspace",
                  "market_zones", "markets_view", "history_backfill", "discipline_engine", "paper_account",
-                 "approval_only_entries", "risk_by_default", "decision_tools", "options_builder", "options_builder_saved",
+                 "risk_by_default", "decision_tools", "options_builder", "options_builder_saved",
                  "daily_rhythm", "signal_language_v2", "alerts_stale_guard", "alerts_reliable_outbox", "vix_gate",
                  "portfolio_risk"):
         assert name in trader_pack.PACK, name
+
+
+def test_m68_pr6_the_pack_no_longer_makes_every_entry_wait_for_approval():
+    """M68 (DECISIONS 31 Oct supersedes the 23 Oct list here, TS1-061): whether entries wait for an Approve is each
+    user's own Trade settings choice; the organisation flag stays an admin control, left out of the pack."""
+    assert "approval_only_entries" not in trader_pack.PACK
+    assert "Trade settings" in trader_pack.excluded()["approval_only_entries"]
 
 
 def test_every_other_flag_is_listed_as_excluded_with_a_reason():

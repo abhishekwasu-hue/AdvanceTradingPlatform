@@ -93,6 +93,35 @@ def _saved_position_size(request):
 
 
 @pytest.fixture(autouse=True)
+def _saved_automation(request):
+    """M68 PR-6: ATP pre-chooses no entry mode, request waiting time, re-quote limit or scanner limit - each comes from the
+    user's own Trade settings > Automation (app/execution/automation.py). The tests written before M68 run as a user who
+    SAVED "Placed automatically" and the operator values they were written against (read at call time, so a test that
+    patches app.core.config still gets its value); a value he really saved still wins. Tests of the M68 behaviour itself
+    carry the marker `real_automation` and read the real, empty settings (tests/test_m68_automation.py)."""
+    if request.node.get_closest_marker("real_automation"):
+        yield
+        return
+    from dataclasses import replace
+
+    from app.core import config as app_config
+    from app.execution import automation
+    real = automation.load
+
+    async def _load(session, user):
+        own = await real(session, user)
+        saved = automation.Automation(
+            approval_mode="AUTO", approval_entry_minutes=app_config.APPROVAL_ENTRY_TTL_MINUTES,
+            requote_drift_pct=app_config.APPROVAL_REQUOTE_MAX_DRIFT_PCT or None, max_requotes=app_config.APPROVAL_MAX_REQUOTES,
+            scan_auto_max=app_config.SCAN_AUTO_PAPER_MAX_PER_DAY, scan_auto_cooldown_minutes=app_config.SCAN_AUTO_PAPER_COOLDOWN_MINUTES,
+            scan_auto_arming_days=app_config.SCAN_AUTO_PAPER_ARM_DAYS)
+        return replace(saved, **{k: v for k, v in vars(own).items() if v is not None})
+    with pytest.MonkeyPatch.context() as own:      # its own patch: a test's monkeypatch.undo() leaves it in place
+        own.setattr(automation, "load", _load)
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _no_broker_margin_call(monkeypatch):
     """DEF-0 D8: the order ticket asks the user's own broker for its margin. Tests never call a broker: the read answers
     "no answer"; tests/test_def0_ui.py stubs an answer to show the estimate."""

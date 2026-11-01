@@ -458,8 +458,12 @@ export interface RiskConfig {
   dd_level_1_pct: number | null;
   dd_level_2_pct: number | null;
   event_size_cut_pct: number | null;
-  /** CP6-15: when the losses-in-a-row pause ends (the server's default is "next_session"). */
-  loss_streak_pause?: LossStreakPause;
+  /** M68 PR-5 (TS1-054): how much the first drawdown step cuts the size, % (null = not set: no cut). */
+  dd_cut_pct?: number | null;
+  /** CP6-15: when the losses-in-a-row pause ends. M68 PR-5 (TS1-051): null = Not set (no built-in choice). */
+  loss_streak_pause?: LossStreakPause | null;
+  /** M68 PR-5 (TS1-052): opposite positions of two bots; null = Not set (allowed). */
+  opposite_positions?: "allow" | "deny" | null;
 }
 
 export type LossStreakPause = "next_session" | "until_resume";
@@ -477,7 +481,8 @@ export interface LossStreakStatus {
   exits_blocked: false;
 }
 
-export type RiskCeilings = Record<string, number>;
+/** M68 PR-5 (TS1-048): only the ceilings an admin set ({} = none); the admin's own view lists every key, null = not set. */
+export type RiskCeilings = Record<string, number | null>;
 
 export interface MarketEvent {
   id: number;
@@ -1023,6 +1028,11 @@ export type ExecutionMode = "PAPER" | "LIVE";
 
 export interface Deployment {
   id: number;
+  /** M68 PR-6: the bot's own New entries choice (null: it follows his Trade settings), the mode in effect now (null: Not
+   *  set anywhere - it places nothing) and whether it follows the Trade settings. */
+  entry_mode?: "AUTO" | "APPROVAL" | null;
+  entry_mode_in_effect?: "AUTO" | "APPROVAL" | null;
+  entry_mode_follows_settings?: boolean;
   /** Strategy templates section 5: the bot's exit choice as stored (null: none chosen). */
   template_exits?: TemplateExitsRequest | null;
   regime_filter?: string[] | null;
@@ -1194,7 +1204,7 @@ export interface DeploymentCreateRequest extends ContractRules {
   /** P0.5 / T5: LIVE entry style. PROTECTED_LIMIT sends a marketable limit `market_protection_pct` past the signal price. */
   order_style?: "MARKET" | "PROTECTED_LIMIT";
   market_protection_pct?: number | null;
-  /** Z3 / BT2: APPROVAL - every entry becomes a proposal you approve (needs the `approval_only_entries` flag). */
+  /** Z3 / BT2: APPROVAL - every entry becomes a proposal you approve. M68 PR-6: his own choice, no flag; omitted = his Trade settings. */
   entry_mode?: "AUTO" | "APPROVAL";
   strategy_id: string;
   symbol: string;
@@ -2448,6 +2458,24 @@ export interface MarketMemory {
   sentiment_view?: string[];
 }
 
+/** M82 R2-R4: the read the Today's read card shows and whether "Read now" can run. */
+export interface BriefReadNow {
+  enabled: boolean;
+  broker: "ok" | "expired" | "none" | "teammate" | "shared" | "role";
+  reason: string | null;
+  reconnect?: { broker: string; account_label: string };
+}
+export interface BriefRead {
+  state: "today" | "last_session" | "older" | "none";
+  label: string | null;
+  read_date: string | null;
+  session_date: string;
+  session_label: string;
+  reason: "none_ever" | "broker_expired" | "worker_missed" | null;
+  reason_text: string | null;
+  read_now: BriefReadNow;
+}
+
 /** Phase BD-lite: the market thesis of one symbol (shadow overlay only). */
 export interface ThesisFactor { factor: string; weight: number; available: boolean; direction: -1 | 0 | 1; strength: number; value: unknown }
 export interface ThesisScenario { trigger?: number; /** P0.8-D: indices only, unless the operator's thesis_stock_targets flag is on */ target?: number; invalidation?: number; low?: number; high?: number; text: string }
@@ -2521,6 +2549,8 @@ export interface DailyBrief {
   market_updated_at: string | null;
   /** P0.10: how old the market figures are; `figures_shown` false = none, stale, or a placeholder (every symbol the same). */
   market_data?: { state: "fresh" | "stale" | "suspect" | "none"; updated_at: string | null; age_minutes: number | null; figures_shown: boolean };
+  /** M82: which market read the card shows (its session date) or, with none, the one reason why; and "Read now". */
+  read?: BriefRead;
   market: { symbols: MemorySnapshot[]; cues: MemorySnapshot[]; globals: MemorySnapshot[] };
   events: { kind: string; action: string; description: string; start_time: string | null; end_time: string | null }[];
   you: { PAPER: BriefDay; LIVE: BriefDay };

@@ -20,6 +20,7 @@ from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST
 from app.platform import controls
 from app.risk_engine import by_default, vix_gate
+from tests.def0_legacy import own_vix
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _get, _tenant, _worker
 from tests.test_z3_approval_entries import _flag_for as _approval_flag
@@ -56,7 +57,7 @@ def _org(t: dict, *, capital=1_000_000.0, risk_pct=1.0, min_rr=0.0) -> None:
     """The organisation's own risk settings: a capital like the PAPER account's, so the user's cap is what binds. P1-2b:
     no minimum reward:risk unless the test sets one (`min_rr`)."""
     body = RiskConfig(capital=capital, risk_per_trade_pct=risk_pct, max_daily_loss_pct=5.0, max_trades_per_day=50, max_open_positions=10,
-                      dd_level_1_pct=20.0, dd_level_2_pct=25.0, stop_cooldown_minutes=0, min_risk_reward=min_rr).model_dump()
+                      dd_level_1_pct=20.0, dd_cut_pct=50.0, dd_level_2_pct=25.0, stop_cooldown_minutes=0, min_risk_reward=min_rr).model_dump()
     out = client.put("/api/risk-settings", headers=t["headers"], json=body)
     assert out.status_code == 200, out.text
 
@@ -198,10 +199,12 @@ def test_settings_defaults_bounds_and_ceilings():
     assert body["set"] == [] and body["risk_cap"]["amount"] is None and body["today"]["limit"] == 0 and body["today"]["used"] is None
     assert body["capital_basis"] == app_config.PAPER_STARTING_CAPITAL and body["lockout"] is None
     assert "never locked" in body["exits"]
-    assert client.put("/api/paper/risk", headers=t["headers"], json={"risk_per_trade_pct": 3.0}).status_code == 422     # above the 2% ceiling
+    # M68 PR-5 (TS1-048 / 049): no ceiling unless an admin sets one, and no ATP cap: 3 % saves; above 100 % does not
+    assert client.put("/api/paper/risk", headers=t["headers"], json={"risk_per_trade_pct": 100.5}).status_code == 422
+    assert client.put("/api/paper/risk", headers=t["headers"], json={"risk_per_trade_pct": 3.0}).status_code == 200
     assert client.put("/api/paper/risk", headers=t["headers"], json={"daily_loss_pct": 0.0}).status_code == 422
     assert client.put("/api/paper/risk", headers=t["headers"], json={"bogus": 1}).status_code == 422
-    out = client.put("/api/paper/risk", headers=t["headers"], json={"risk_per_trade_pct": 0.5, "min_rr": 2.0})
+    out = client.put("/api/paper/risk", headers=t["headers"], json={"risk_per_trade_pct": 0.5, "min_rr": 2.0})    # a tightening
     assert out.status_code == 200 and out.json()["settings"]["risk_per_trade_pct"] == 0.5 and out.json()["settings"]["min_rr"] == 2.0
     assert out.json()["set"] == ["min_rr", "risk_per_trade_pct"] and out.json()["change"]["deferred"] == {}
 
@@ -213,7 +216,7 @@ def test_settings_defaults_bounds_and_ceilings():
 
 
 def test_stored_settings_out_of_bounds_fall_back_to_defaults():
-    s = by_default.RiskSettings.from_json(json.dumps({"risk_per_trade_pct": 99, "daily_loss_pct": 3.0, "max_trades_per_day": True, "min_rr": "x",
+    s = by_default.RiskSettings.from_json(json.dumps({"risk_per_trade_pct": 101, "daily_loss_pct": 3.0, "max_trades_per_day": True, "min_rr": "x",
                                                       "_set": ["risk_per_trade_pct", "daily_loss_pct", "max_trades_per_day", "min_rr"]}))
     d = by_default.RiskSettings.defaults()
     assert s.risk_per_trade_pct == d.risk_per_trade_pct and s.daily_loss_pct == 3.0 and s.max_trades_per_day == d.max_trades_per_day and s.min_rr == d.min_rr
@@ -438,6 +441,7 @@ def test_a_locked_users_stop_still_closes_the_position(monkeypatch):
     _flag(by_default.FLAG, t["tenant_id"])
     _mine(t)
     _flag(vix_gate.FLAG, t["tenant_id"])
+    own_vix(client, t["headers"])
     _vix_clock(monkeypatch)
     _vix(t, 30.0, 20.0)                                           # a VIX spike too: still no exit is held
     _closed(t, -25_000.0)
@@ -577,6 +581,7 @@ def test_vix_gate_in_the_ticket_and_pipeline_entries_only(monkeypatch):
     _vix_clock(monkeypatch)
     _vix(t, 13.1, 13.0)
     _vix(t, 14.0, 13.0, day=date(2020, 1, 1))                     # another day's reading: says nothing about today
+    own_vix(client, t["headers"])                                 # M68 PR-5: his own India VIX check, the old numbers
     assert not any("India VIX" in r for r in _preview(t, symbol="NIFTY")["refusals"])          # flag off
     _flag(vix_gate.FLAG, t["tenant_id"])
     assert not any("India VIX" in r for r in _preview(t, symbol="NIFTY")["refusals"])          # today's reading is calm
@@ -602,6 +607,9 @@ def test_vix_high_level_cuts_the_size(monkeypatch):
     _flag(by_default.FLAG, t["tenant_id"])
     _flag(vix_gate.FLAG, t["tenant_id"])
     _vix(t, 23.0, 22.5)
+    own_vix(client, t["headers"], vix_level=None)                 # M68 PR-5: his level Not set - no cut
+    assert _preview(t, symbol="NIFTY")["sizing"]["size_multiplier"] == 1.0
+    own_vix(client, t["headers"])                                 # his own level 20 and cut 50 %
     view = _preview(t, symbol="NIFTY")
     assert view["can_place"] and view["sizing"]["size_multiplier"] == 0.5 and view["sizing"]["cap"] == 5000.0
     assert any("risk per trade cut 50%" in w for w in view["warnings"])

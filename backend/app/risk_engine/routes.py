@@ -57,20 +57,21 @@ def _stored_config(record: RiskSettingsRecord) -> RiskConfig:
         stop_cooldown_minutes=record.stop_cooldown_minutes,
         dd_level_1_pct=record.dd_level_1_pct,
         dd_level_2_pct=record.dd_level_2_pct,
-        event_size_cut_pct=record.event_size_cut_pct,
-        loss_streak_pause=record.loss_streak_pause if record.loss_streak_pause in loss_streak.PAUSE_MODES else loss_streak.NEXT_SESSION,
+        event_size_cut_pct=record.event_size_cut_pct, dd_cut_pct=record.dd_cut_pct,
+        # M68 PR-5 (TS1-051): a pause end the organisation never saved is Not set (None), never a built-in choice.
+        loss_streak_pause=record.loss_streak_pause if record.loss_streak_pause in loss_streak.PAUSE_MODES else None,
         max_lots_per_order=record.max_lots_per_order, daily_loss_rupees=record.daily_loss_rupees,
         risk_per_trade_rupees=record.risk_per_trade_rupees, loss_cooldown_minutes=record.loss_cooldown_minutes,
         margin_safety_pct=record.margin_safety_pct,
-        # M55 S6: anything but an explicit "allow" reads as the default "deny".
-        opposite_positions=OPPOSITE_ALLOW if record.opposite_positions == OPPOSITE_ALLOW else OPPOSITE_DENY,
+        # M68 PR-5 (TS1-052, D3): only a saved "allow" / "deny" is a choice; anything else is Not set (= allowed).
+        opposite_positions=record.opposite_positions if record.opposite_positions in (OPPOSITE_ALLOW, OPPOSITE_DENY) else None,
     )
 
 
 @router.get("/ceilings")
 async def get_ceilings(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    """Phase V1: the platform ceilings this tenant's settings must stay under."""
-    return await controls.risk_ceilings(session)
+    """Phase V1: the ceilings this tenant's settings must stay under (M68 PR-5: {} = none)."""
+    return await controls.risk_ceilings(session, user.tenant_id)      # M68 PR-5: only the ones an admin set (none by default)
 
 
 async def get_tenant_risk_config(tenant_id: int, session: AsyncSession) -> RiskConfig | None:
@@ -104,11 +105,11 @@ async def update_risk_settings(
     config: RiskConfig, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> RiskConfig:
     # Phase V1: never above the platform's hard ceilings, never a shorter cool-down than its minimum.
-    violations = controls.ceiling_violations(config, await controls.risk_ceilings(session))
+    violations = controls.ceiling_violations(config, await controls.risk_ceilings(session, user.tenant_id))
     if violations:
         raise HTTPException(status_code=400, detail="; ".join(violations))
-    if not math.isfinite(config.min_risk_reward) or not 0 <= config.min_risk_reward <= 10:
-        raise HTTPException(status_code=400, detail="min_risk_reward must be between 0 (not set) and 10")
+    if not math.isfinite(config.min_risk_reward) or config.min_risk_reward < 0:   # M68 PR-5 (TS1-050): no ATP top
+        raise HTTPException(status_code=400, detail="min_risk_reward must be 0 (not set) or more")
     if config.dd_level_1_pct is not None and config.dd_level_2_pct is not None and config.dd_level_1_pct > config.dd_level_2_pct > 0:
         raise HTTPException(status_code=400, detail="dd_level_1_pct must not exceed dd_level_2_pct")
     record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
@@ -124,19 +125,25 @@ async def update_risk_settings(
     record.max_trades_per_day = config.max_trades_per_day
     record.max_open_positions = config.max_open_positions
     record.max_consecutive_losses = config.max_consecutive_losses
-    record.min_risk_reward = org_min_rr_to_store(config.min_risk_reward)
+    record.min_risk_reward = org_min_rr_to_store(config.min_risk_reward) if config.min_risk_reward > 0 else None   # TS1-053: NULL = not set
     record.lot_size = config.lot_size
     record.max_portfolio_risk_pct = config.max_portfolio_risk_pct
     record.stop_cooldown_minutes = config.stop_cooldown_minutes
     record.dd_level_1_pct = config.dd_level_1_pct
     record.dd_level_2_pct = config.dd_level_2_pct
     record.event_size_cut_pct = config.event_size_cut_pct
-    record.loss_streak_pause = config.loss_streak_pause
+    # M68 PR-5: a field this older form does not send keeps its stored value (never filled with a built-in one).
+    for key in ("loss_streak_pause", "dd_cut_pct"):
+        if key in config.model_fields_set:
+            setattr(record, key, getattr(config, key))
     # M64: the fields this older form does not send keep their values; each check it sends is ON when its value is set,
     # OFF when cleared, and counts as saved by the trader (app/risk_engine/risk_limits.py).
     for key in ("max_lots_per_order", "daily_loss_rupees", "risk_per_trade_rupees", "loss_cooldown_minutes", "margin_safety_pct"):
         if key in config.model_fields_set:
             setattr(record, key, getattr(config, key))
+    needs = risk_limits.needs_settings(record)
+    if needs:
+        raise HTTPException(status_code=400, detail=needs[0])
     switches = risk_limits.switches_of(record if record.id is not None else None)
     enabled, saved = set(switches["enabled"]), set(switches["saved"])
     sent = set(config.model_fields_set)
@@ -230,7 +237,7 @@ async def get_risk_limits(user: User = Depends(get_current_user), session: Async
     """Settings > Risk limits: every check with its switch (OFF until the trader turns it on), its values, units, bounds
     and one-line help; the PAPER ticket's own values of the same checks (flag risk_by_default) under `paper`."""
     record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
-    view = risk_limits.view(record, await controls.risk_ceilings(session))
+    view = risk_limits.view(record, await controls.risk_ceilings(session, user.tenant_id))
     view["paper"] = await _paper_twin_values(session, user)
     return view
 
@@ -238,30 +245,36 @@ async def get_risk_limits(user: User = Depends(get_current_user), session: Async
 @router.put("/limits", dependencies=[Depends(require_scope("risk:write"))])
 async def put_risk_limits(body: dict, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     """Saves switches and values from Settings > Risk limits (`{"checks": {id: {"enabled", "values"}}, "capital",
-    "loss_streak_pause"}`). A check switched on needs its value; a switched-off one keeps its value. Each check sent
-    counts as saved by the trader. Audited. Places nothing; exits are never checked (ADR-0004)."""
+    "loss_streak_pause", "opposite_positions"}`; null = Not set). A check switched on needs its value; a switched-off one
+    keeps its value. Each check sent counts as saved by the trader. Audited. Places nothing; exits are never checked (ADR-0004)."""
     from app.audit.log import write_audit_log
     if not isinstance(body, dict):
         raise HTTPException(status_code=422, detail="The limits could not be read. Reload the page and try again.")
-    ceilings = await controls.risk_ceilings(session)
+    ceilings = await controls.risk_ceilings(session, user.tenant_id)
     record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
     values, switches, problems = risk_limits.plan_save(record, body, ceilings)
     capital = body.get("capital", getattr(record, "capital", None) if record is not None else None)
     if capital is not None and (not isinstance(capital, (int, float)) or isinstance(capital, bool) or not math.isfinite(capital) or capital <= 0):
         problems.append("Account basis: enter an amount above 0, or leave it empty to use your paper balance.")
-    pause = body.get("loss_streak_pause", getattr(record, "loss_streak_pause", None) if record is not None else None) or loss_streak.NEXT_SESSION
-    if pause not in loss_streak.PAUSE_MODES:
+    # M68 PR-5 (TS1-051 / 052): Not set stays Not set (null); a value sent must be one of the choices.
+    pause = body.get("loss_streak_pause", getattr(record, "loss_streak_pause", None) if record is not None else None)
+    if pause is not None and pause not in loss_streak.PAUSE_MODES:
         problems.append("Cool-down after losses in a row: pick when the pause ends.")
+    opposite = body.get("opposite_positions", getattr(record, "opposite_positions", None) if record is not None else None)
+    if opposite is not None and opposite not in (OPPOSITE_ALLOW, OPPOSITE_DENY):
+        problems.append("Two bots on opposite sides: pick Allowed or Not allowed.")
+    problems.extend(risk_limits.needs_settings_of(values, switches["enabled"], pause))
     if problems:
         raise HTTPException(status_code=422, detail=problems[0])
     if record is None:
-        record = RiskSettingsRecord(tenant_id=user.tenant_id, updated_by=user.id, min_risk_reward=0.0)   # M68 TS1-018: no cash unit pre-set
+        record = RiskSettingsRecord(tenant_id=user.tenant_id, updated_by=user.id)   # M68 TS1-018: no cash unit pre-set
         session.add(record)
     record.updated_by = user.id
     for key, value in values.items():
         setattr(record, key, value)
     record.capital = float(capital) if capital is not None else None
     record.loss_streak_pause = pause
+    record.opposite_positions = opposite
     record.limits_switches_json = risk_limits.switches_json(switches)
     sent = sorted((body.get("checks") or {}).keys())
     await write_audit_log(session, user.tenant_id, user.id, "risk_limits_set",

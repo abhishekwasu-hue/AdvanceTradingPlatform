@@ -79,7 +79,17 @@ export async function pickEntryStyle(page: Page, scope: Locator | Page): Promise
   const lots = scope.locator("[data-bot-lots-input]");
   if (await lots.count() && !(await lots.first().inputValue())) await lots.first().fill("1");
   const combo = scope.locator("[data-entry-input='style']");
-  if (await combo.count()) { await pickOption(page, combo.first(), "MARKET"); return; }
   const select = scope.locator("#deploy-entry-style");
-  if (await select.count() && !(await select.inputValue())) await select.selectOption("MARKET");
+  if (await combo.count()) await pickOption(page, combo.first(), "MARKET");
+  else if (await select.count() && !(await select.inputValue())) await select.selectOption("MARKET");
+  await pickEntryMode(page, scope);
+}
+
+/** M68 PR-6: the bot forms pre-select no "New entries" (Trade settings > Automation); where a form asks for it, pick
+ * "Placed automatically" as the user would. Does nothing where the form does not ask. */
+export async function pickEntryMode(page: Page, scope: Locator | Page): Promise<void> {
+  const combo = scope.locator("[data-entry-input='mode']");
+  if (await combo.count()) { await pickOption(page, combo.first(), "AUTO"); return; }
+  const select = scope.locator("#deploy-entry-mode");
+  if (await select.count() && !(await select.inputValue())) await select.selectOption("AUTO");
 }

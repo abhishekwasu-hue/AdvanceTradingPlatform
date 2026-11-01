@@ -11,7 +11,7 @@ Downgrade restores NOT NULL with the old defaults, filling a NULL (Not set) with
 previous release reads every row.
 
 Revision ID: b4e6f8a0c2d5
-Revises: 8d2f4a6c0e19
+Revises: aaa362c38a32
 Create Date: 2026-11-01 10:00:00
 """
 from collections.abc import Sequence
@@ -21,7 +21,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'b4e6f8a0c2d5'
-down_revision: str | Sequence[str] | None = '8d2f4a6c0e19'
+down_revision: str | Sequence[str] | None = 'aaa362c38a32'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 ROLLBACK_SAFE = False    # Z11: allows NULL and drops two server defaults - the previous release's RiskConfig refuses a NULL lot_size and its fan-out reads a NULL sizing mode; a code-only rollback past it is refused, use --restore-db (or this downgrade)

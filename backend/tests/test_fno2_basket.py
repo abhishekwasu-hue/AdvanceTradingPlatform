@@ -57,7 +57,7 @@ def _contract(expiry: date, strike: float, right: str) -> str:
 
 def _risk(t: dict, *, max_open=10) -> None:
     body = RiskConfig(capital=1_000_000.0, risk_per_trade_pct=1.0, max_daily_loss_pct=5.0, max_trades_per_day=50, max_open_positions=max_open,
-                      dd_level_1_pct=20.0, dd_level_2_pct=25.0, stop_cooldown_minutes=0).model_dump()
+                      dd_level_1_pct=20.0, dd_cut_pct=50.0, dd_level_2_pct=25.0, stop_cooldown_minutes=0).model_dump()
     out = client.put("/api/risk-settings", headers=t["headers"], json=body)
     assert out.status_code == 200, out.text
 

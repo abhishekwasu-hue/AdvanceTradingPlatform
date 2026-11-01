@@ -114,6 +114,31 @@ export function sizesItself(view: TradeSettingsView | null | undefined): boolean
   return own.lots !== undefined;
 }
 
+// ---------------------------------------------------------------- M68 PR-5: Risk limits for the forms
+
+export const EVENT_ACTION_KEY = "risk_limits.event_default_action";
+
+/** TS1-058: the trader's own saved starting choice for a market event day he adds (none: the form asks). */
+export function eventActionOf(view: TradeSettingsView | null | undefined): "BLOCK" | "SIZE_CUT" | undefined {
+  const f = view?.sections.flatMap((s) => s.fields).find((x) => x.key === EVENT_ACTION_KEY && x.saved);
+  return f?.value === "BLOCK" || f?.value === "SIZE_CUT" ? f.value : undefined;
+}
+
+// ---------------------------------------------------------------- M68 PR-6: Automation for the bot forms
+
+export const APPROVAL_MODE_KEY = "automation.approval_mode";
+export type EntryModeChoice = "AUTO" | "APPROVAL";
+/** "New entries": nothing pre-selected; the bot form asks when his Trade settings has none. */
+export const ENTRY_MODE_CHOICES: { value: EntryModeChoice; label: string }[] = [
+  { value: "AUTO", label: "Placed automatically" }, { value: "APPROVAL", label: "Ask me first" },
+];
+
+/** The trader's own saved "New entries" choice (undefined: Not set - the form asks). */
+export function approvalModeOf(view: TradeSettingsView | null | undefined): EntryModeChoice | undefined {
+  const field = view?.sections.flatMap((s) => s.fields).find((f) => f.key === APPROVAL_MODE_KEY && f.saved);
+  return field?.value === "AUTO" || field?.value === "APPROVAL" ? field.value : undefined;
+}
+
 let cached: Promise<TradeSettingsView | null> | null = null;
 
 /** Test hook: forget the cached read. */

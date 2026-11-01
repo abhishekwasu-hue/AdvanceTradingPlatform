@@ -46,6 +46,7 @@ export const SCAN_THEN_EN = {
     armed: "Armed: a confirmed setup is placed as a PAPER order without a proposal (PAPER only; exits run as usual).",
     proposal: "Not placing on its own: {{why}}",
     today: "Auto PAPER entries today: {{today}} of {{max}}",
+    today_not_set: "Auto PAPER entries today: {{today}} (your daily limit is not set yet - Settings › Trade settings › Automation)",
     confirmLabel: "Type AUTO_PAPER to arm",
     arm: "Arm Auto PAPER",
     disarm: "Disarm",

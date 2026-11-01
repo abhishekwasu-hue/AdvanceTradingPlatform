@@ -256,7 +256,7 @@ def test_migration_keeps_every_stored_value_and_goes_down():
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     module = _migration()
-    assert module.down_revision == "8d2f4a6c0e19" and module.ROLLBACK_SAFE is False
+    assert module.down_revision == "aaa362c38a32" and module.ROLLBACK_SAFE is False
     engine = sa.create_engine("sqlite://")
     with engine.begin() as conn:
         conn.execute(sa.text("CREATE TABLE risk_settings (id INTEGER PRIMARY KEY, lot_size INTEGER NOT NULL)"))

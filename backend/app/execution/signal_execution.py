@@ -187,7 +187,7 @@ async def execute_signal_for_user(
         manual = origin == approval_gate.ORIGIN_MANUAL and deployment_id is None and journal_source == "MANUAL"
         gate_origin = origin if origin != approval_gate.ORIGIN_MANUAL or manual else approval_gate.ORIGIN_AUTOMATIC
         gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id, origin=gate_origin,
-                                                approval_action_id=approval_action_id)
+                                                approval_action_id=approval_action_id, user_id=user.id)
         if gate:
             kill_switch_reasons.insert(0, gate)
         fo_notes: list = []
@@ -276,7 +276,7 @@ async def execute_signal_for_user(
         # entry rules run before sizing - cool-down after a stop-out (R10), the drawdown ladder
         # (P2/P3) and event blackouts / size cuts (M8). A refusal is a REJECTED order; a size cut
         # is a smaller risk per trade for every sizer downstream.
-        effective_risk_config, ceiling_notes = clamp_config(effective_risk_config, await risk_ceilings(session))
+        effective_risk_config, ceiling_notes = clamp_config(effective_risk_config, await risk_ceilings(session, user.tenant_id))
         pre_notes.extend(ceiling_notes)
         if mode == ExecutionMode.PAPER.value:
             from app.risk_engine import by_default
@@ -293,7 +293,7 @@ async def execute_signal_for_user(
         guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=underlying_signal.symbol, cfg=effective_risk_config,
                                   # no user_id: these reasons are stored on the order trail and notified org-wide, so
                                   # the VIX gate words them without India VIX's values (BT1b)
-                                  direction=underlying_signal.direction.value) if day_state.daily_pnl > daily_limit else GuardianVerdict()
+                                  direction=underlying_signal.direction.value, owner_id=user.id) if day_state.daily_pnl > daily_limit else GuardianVerdict()
         if guard.reasons:
             order.reasons_json = json.dumps(guard.reasons)
             order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(guard.reasons))

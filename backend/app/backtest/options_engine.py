@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Sequence, Set
 import pandas as pd
 
 from app.backtest.analytics import build_analytics
-from app.backtest.models import ModelError, ModelSet
+from app.backtest.models import ModelError, ModelSet, option_structure_margin
 from app.backtest.options import (
     Black76Pricer,
     ExpiryCalendar,
@@ -113,6 +113,8 @@ class OptionBacktestConfig:
     # M55 T1: the deployment's "Hold for days" (holding SWING) on a defined-risk credit structure - no square-off at the
     # close (it exits by its own rules or settles at expiry); the entry cut-off stays, as in the worker. Ignored otherwise.
     hold_for_days: bool = False
+    # M68 PR-5 (TS1-041): the user's own switch - a written straddle / strangle may be held for days too (as the bot).
+    hold_written_overnight: bool = False
     # Strategy templates section 5: a single option's stop source - None / TEMPLATE_INVALIDATION (the strategy's stop on
     # the underlying, as before) or PREMIUM_PCT (only the premium floor / ceiling; no underlying-level stop).
     stop_source: Optional[str] = None
@@ -245,7 +247,8 @@ def run_option_backtest(
         pricer.fallback.vol = vol
     calendar = ExpiryCalendar.for_underlying(underlying, config.holidays, weekday=config.expiry_weekday, weekly=config.weekly_expiry)
     rules = config.rules()
-    held_for_days = config.hold_for_days and can_hold_for_days(config.option_strategy)   # M55 T1: credit structures only
+    held_for_days = config.hold_for_days and can_hold_for_days(config.option_strategy,     # M55 T1 / M68 PR-5 (TS1-041)
+                                                               written_overnight=config.hold_written_overnight)
     if config.option_strategy == OptionStrategy.CUSTOM and not config.custom_legs:
         raise OptionBacktestError("CUSTOM structure has no legs")
 
@@ -353,13 +356,10 @@ def run_option_backtest(
     def margin_required(pos: _Open, spot: float) -> float:
         """N7 C2c: span_like on a structure - its defined maximum loss, or the short legs' underlying notional x the
         short-option %; bought options are paid for (no extra margin)."""
-        shorts = [leg for leg in pos.legs if leg.role == "SHORT"]
-        if not shorts:
-            return margin.required("OPTION_LONG", 0.0)
         max_loss = pos.meta.get("max_loss")
-        if not pos.single and max_loss is not None:
-            return margin.required("OPTION_DEFINED", 0.0, max_loss=float(max_loss) * pos.quantity)
-        return margin.required("OPTION_SHORT", spot * sum(leg.quantity for leg in shorts))
+        defined = float(max_loss) * pos.quantity if not pos.single and max_loss is not None else None
+        return option_structure_margin(margin, spot=spot, short_quantity=sum(leg.quantity for leg in pos.legs if leg.role == "SHORT"),
+                                       max_loss=defined)
 
     def unrealised(pos: _Open, prices: Dict[int, float]) -> float:
         return sum((leg.entry_price - prices[i] if leg.role == "SHORT" else prices[i] - leg.entry_price) * leg.quantity

@@ -28,7 +28,8 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Details } from "../ui/numbersFirst";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
-import { LOTS_KEY, ORDER_TYPE_KEY, POSITION_SIZE_WHERE, PROTECTION_KEY, orderDefaultsOf, sizesItself, useTradeSettings } from "../settings/tradeSettings";
+import { APPROVAL_MODE_KEY, ENTRY_MODE_CHOICES, LOTS_KEY, ORDER_TYPE_KEY, POSITION_SIZE_WHERE, PROTECTION_KEY, approvalModeOf, orderDefaultsOf,
+  sizesItself, useTradeSettings, type EntryModeChoice } from "../settings/tradeSettings";
 import { SaveAsDefault } from "../settings/SaveAsDefault";
 import { draftFromState, formSymbol } from "../copilot/strategyDraft";
 import CopilotDraftV2 from "./CopilotDraftV2";
@@ -44,11 +45,22 @@ import {
   type TargetRule,
 } from "../strategyTemplates/exits";
 
+/** M68 PR-6: which New entries mode this bot uses now, and whether it follows his Trade settings; null when unknown. */
+export function entryModeText(bot: Pick<Deployment, "entry_mode_in_effect" | "entry_mode_follows_settings">): string | null {
+  if (bot.entry_mode_follows_settings === undefined) return null;
+  const mode = bot.entry_mode_in_effect === "APPROVAL" ? "Asks you first" : bot.entry_mode_in_effect === "AUTO" ? "Places entries by itself"
+    : "New entries not set - places nothing";
+  return `${mode}${bot.entry_mode_follows_settings ? " (from your Trade settings)" : " (this bot's own choice)"}`;
+}
+
 /** M68 PR-1: the entry styles a bot can send (Trade settings > Order defaults > Order type), none pre-selected. */
 const ENTRY_STYLES: ComboOption[] = [
   { value: "MARKET", label: "Market" }, { value: "PROTECTED_LIMIT", label: "Limit with price protection" },
 ];
 const ENTRY_STYLE_MISSING = "Choose how this bot sends its entries.";
+/** M68 PR-6 (TS1-060): "New entries" - none pre-selected (Trade settings > Automation). */
+const MODE_OPTIONS: ComboOption[] = ENTRY_MODE_CHOICES.map((c) => ({ value: c.value, label: c.label }));
+const MODE_MISSING = "Choose whether this bot places entries by itself or asks you first.";
 const BAND_MISSING = "Enter the price protection % (0.05 to 5).";
 // M68 PR-2 (TS1-019): a bot's size is the trader's own - the form asks when neither the bot nor his Trade settings has one.
 const LOTS_MISSING = "Enter how many lots this bot trades (1 to 500).";
@@ -307,7 +319,7 @@ export default function PaperBotV2(_props: PageProps) {
         <section ref={formRef} className="scroll-mt-20 space-y-space-3">
           {draftNote && <NoteV2 kind="done" testId="draft-saved">{draftNote}</NoteV2>}
           <StartBotV2 library={library} custom={custom} hasBroker={hasBroker} firstField={firstField} onStarted={() => void loadBots()}
-            defaults={defaults} approvalAllowed={features.on("approval_only_entries")} templates={templates} initialTemplate={templateFromUrl()}
+            defaults={defaults} approvalAllowed templates={templates} initialTemplate={templateFromUrl()}
             preselect={preselect} />
         </section>
       )}
@@ -365,6 +377,7 @@ export function BotRow({ bot, name, busy, disabled, confirming, onAsk, onCancel,
             {whyNoTrade(bot) && <Chip tone="warn" variant="meaning" icon="!" name="why-no-trade">{whyNoTrade(bot)}</Chip>}
             {botWaitText(bot) && <span data-bot-wait>{botWaitText(bot)}</span>}
             {bot.open_positions > 0 && !held && <span>{bot.open_positions} open {bot.open_positions === 1 ? "trade" : "trades"}</span>}
+            {state !== "stopped" && entryModeText(bot) && <span data-bot-entry-mode>{entryModeText(bot)}</span>}
           </p>
           {held}
           {state !== "stopped" && why}
@@ -438,7 +451,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
 }) {
   const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), timeframe: useId(), stop: useId(),
     target: useId(), times: useId(), wave: useId(), share: useId(), exitNotes: useId(), construction: useId(), width: useId(), startWhy: useId(),
-    entry: useId(), band: useId(), lots: useId() };
+    entry: useId(), band: useId(), lots: useId(), mode: useId() };
   const [useDefaults, setUseDefaults] = useState(true);
   const ready = useMemo(() => (library ?? []).filter((s) => READY.some((r) => r.id === s.id))
     .sort((a, b) => READY.findIndex((r) => r.id === a.id) - READY.findIndex((r) => r.id === b.id)), [library]);
@@ -459,6 +472,9 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const [entryStyle, setEntryStyle] = useState<"" | "MARKET" | "PROTECTED_LIMIT">("");
   const [bandText, setBandText] = useState("");
   const [lotsText, setLotsText] = useState("");
+  // M68 PR-6 (TS1-060): whether this bot places entries by itself or asks first - his Trade settings, else asked here.
+  const ownMode = approvalModeOf(ownSettings);
+  const [entryModePick, setEntryModePick] = useState<"" | EntryModeChoice>("");
   const [result, setResult] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [touched, setTouched] = useState(false);
   // Strategy templates step 2: the picked template, its chart timeframe and the server's pre-fill for them (nothing is
@@ -580,10 +596,13 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const botLots = askLots ? lotsOf(lotsText) : null;
   const sized = botLots !== null ? { ...sent, max_lots: botLots } : sent;
   const stockBot = !sized.instrument_kind || sized.instrument_kind === "UNDERLYING";
-  const summary = startSummaryParts(symbol, info, sized);
+  // his "Ask me first" saved as a default (My trading defaults) already sets entry_mode on the request; else his choice here
+  const askMode = !ownMode && !sent.entry_mode;
+  const sentWithMode = askMode && entryModePick ? { ...sized, entry_mode: entryModePick } : sized;
+  const summary = startSummaryParts(symbol, info, sentWithMode);
   const entryWhy = askEntry && !style ? ENTRY_STYLE_MISSING : askBand && band === null ? BAND_MISSING
-    : askLots && botLots === null ? (stockBot ? SHARES_MISSING : LOTS_MISSING) : null;
-  const startWhy = (effectiveId ? constructionProblem(sized) : null) ?? (effectiveId ? entryWhy : null);
+    : askLots && botLots === null ? (stockBot ? SHARES_MISSING : LOTS_MISSING) : askMode && !entryModePick ? MODE_MISSING : null;
+  const startWhy = (effectiveId ? constructionProblem(sentWithMode) : null) ?? (effectiveId ? entryWhy : null);
   const widthLabel = (s: OptionStrategy | undefined) => (s && (WINGED_STRUCTURES.includes(s) || s === "LONG_BUTTERFLY") ? "Wing width" : "Short strike distance");
   const setExit = (patch: Partial<ExitPick>) => { setExitPick((p) => ({ ...(exitsNow ?? p), ...patch })); setResult(null); };
 
@@ -592,7 +611,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     if (problem || !effectiveId || exitIssue || startWhy) return;
     setBusy(true); setResult(null);
     try {
-      await api.createDeployment(sized);
+      await api.createDeployment(sentWithMode);
       setResult({ kind: "done", text: `Started on paper: ${cleanSymbol(symbol)}. It shows under Your bots and starts checking the market on its next round.` });
       onStarted();
     } catch (e) {
@@ -746,6 +765,17 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
               aria-invalid={lotsText.trim() !== "" && botLots === null ? true : undefined} data-bot-lots-input title={`Or save your size once in ${POSITION_SIZE_WHERE}`}
               onChange={(e) => { setLotsText(e.target.value); setResult(null); }} />
             {botLots !== null && <SaveAsDefault key={botLots} fieldKey={LOTS_KEY} value={botLots} />}
+          </div>
+        )}
+        {askMode && (
+          <div className="space-y-space-3 rounded-control border border-subtle p-space-3" data-entry-mode>
+            <div>
+              <label htmlFor={ids.mode} className={LABEL}>New entries</label>
+              <Combobox id={ids.mode} label="New entries" value={entryModePick} className="w-full" placeholder="Choose one"
+                options={MODE_OPTIONS} dataAttrs={{ "data-entry-input": "mode" }}
+                onChange={(v) => { setEntryModePick(v as EntryModeChoice); setResult(null); }} />
+              {entryModePick && <SaveAsDefault key={entryModePick} fieldKey={APPROVAL_MODE_KEY} value={entryModePick} />}
+            </div>
           </div>
         )}
         {(askEntry || askBand) && (

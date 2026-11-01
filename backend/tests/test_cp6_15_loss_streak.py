@@ -187,7 +187,8 @@ async def _tenant_cfg(session, tenant_id: int) -> RiskConfig:
 
 def test_the_default_is_next_session_and_the_default_limit_is_unchanged():
     # DEF-0 (owner, 28 Oct): no built-in losses-in-a-row limit - not set (None) until the trader sets one
-    assert RiskConfig().loss_streak_pause == "next_session" and RiskConfig().max_consecutive_losses is None
+    # M68 PR-5 (TS1-051): the pause end is Not set (None) until the trader picks it - no built-in "next_session"
+    assert RiskConfig().loss_streak_pause is None and RiskConfig().max_consecutive_losses is None
     with pytest.raises(ValueError):
         RiskConfig(loss_streak_pause="forever")
 
@@ -319,7 +320,7 @@ def test_resume_is_refused_under_next_session():
 
 def test_the_setting_round_trips_and_defaults_without_a_row():
     me = _new_user("cp615-setting@example.com")
-    assert client.get("/api/risk-settings", headers=me["headers"]).json()["loss_streak_pause"] == "next_session"
+    assert client.get("/api/risk-settings", headers=me["headers"]).json()["loss_streak_pause"] is None    # M68 PR-5: Not set
     status = client.get("/api/risk-settings/loss-streak", headers=me["headers"]).json()
     assert status["mode"] == "next_session" and not status["paused"] and status["limit"] is None      # DEF-0: not set
     assert _save_mode(me, "until_resume")["loss_streak_pause"] == "until_resume"

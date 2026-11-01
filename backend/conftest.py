@@ -11,3 +11,5 @@ def pytest_configure(config):
                                        "(tests/conftest.py _saved_order_defaults is not applied)")
     config.addinivalue_line("markers", "real_position_size: M68 PR-2 - read each user's own Trade settings > Position size "
                                        "(tests/conftest.py _saved_position_size is not applied)")
+    config.addinivalue_line("markers", "real_automation: M68 PR-6 - read each user's own Trade settings > Automation "
+                                       "(tests/conftest.py _saved_automation is not applied)")

@@ -97,7 +97,7 @@ async def _org_config(session: AsyncSession, tenant_id: int, capital: Optional[f
     from app.platform.controls import clamp_config, risk_ceilings
     from app.risk_engine.routes import get_tenant_risk_config
     cfg = (await get_tenant_risk_config(tenant_id, session) or RiskConfig()).with_capital(capital)
-    cfg, _ = clamp_config(cfg, await risk_ceilings(session))
+    cfg, _ = clamp_config(cfg, await risk_ceilings(session, tenant_id))
     return cfg
 
 
@@ -149,7 +149,7 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     if not await is_cash_underlying(session, symbol):
         errors.append("The PAPER ticket covers NSE/BSE cash underlyings in Phase 0 (no futures, options, commodities or crypto)")
 
-    ceilings = await risk_ceilings(session)
+    ceilings = await risk_ceilings(session, user.tenant_id)
     settings, setting_notes = by_default.effective_settings(await by_default.user_settings(session, user, now), ceilings)
     warnings.extend(setting_notes)
     basis = await by_default.capital_basis(session, user, now)
@@ -318,7 +318,7 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
     await session.commit()
     plan_id = row.id
     try:
-        if await approval.required(session, user.tenant_id):
+        if await approval.required(session, user.tenant_id, user_id=user.id):   # M68 PR-6: his own "Ask me first" too
             problems: List[str] = []
             try:
                 action = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=signal.strategy_id, source="ticket",
@@ -415,7 +415,7 @@ async def risk_status(session: AsyncSession, user: User, now: Optional[datetime]
     from app.risk_engine import vix_gate
     asked_at = now
     now = now or datetime.now(timezone.utc)
-    ceilings = await risk_ceilings(session)
+    ceilings = await risk_ceilings(session, user.tenant_id)
     stored = await by_default.user_settings(session, user, now)
     account_row = await by_default._account(session, user)
     pending = by_default.pending_of(account_row.risk_settings_json if account_row is not None else None)
@@ -451,7 +451,7 @@ async def save_settings(session: AsyncSession, user: User, values: Dict[str, Any
     from app.paper.service import get_account
     from app.platform.controls import risk_ceilings
     now = now or datetime.now(timezone.utc)
-    errors = by_default.validate_settings(values, await risk_ceilings(session))
+    errors = by_default.validate_settings(values, await risk_ceilings(session, user.tenant_id))
     if errors:
         raise ValueError("; ".join(errors))
     account = await get_account(session, user)

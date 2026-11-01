@@ -160,7 +160,7 @@ test.describe("Trading bot behaviour", () => {
     const post = server.sent.find((c) => c.method === "POST" && c.url === "/deployments");
     expect(post?.body).toEqual({ strategy_id: "orb_15m_5m", symbol: "NIFTY BANK", exchange: "NSE", timeframe: "1min", mode: "PAPER", holding: "INTRADAY",
       instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0, max_lots: 1,
-      order_style: "MARKET" });                                                         // M68: the entry style he picked
+      order_style: "MARKET", entry_mode: "AUTO" });                                     // M68: the entry style / mode he picked
     await expect(bots(page).locator("[data-bot]")).toHaveCount(1);
 
     await choose(page, form(page).getByLabel("Pick a strategy"), "swing_ema_pullback_d");

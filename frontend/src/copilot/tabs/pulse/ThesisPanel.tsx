@@ -4,6 +4,7 @@ import { ApiError, api } from "../../../api/client";
 import { Badge, Button, fieldClass } from "../../../components/primitives";
 import type { MarketThesis, ThesisHistory } from "../../../types";
 import { friendlyError } from "../../aiTask";
+import { useCopilotData } from "../../data";
 import { useCopilotT } from "../../i18n";
 import { Panel } from "../shared";
 import { formatNumber } from "../../../ui/format";
@@ -53,14 +54,17 @@ export default function ThesisPanel() {
       else { setError(friendlyError(e, t)); setThesis(null); }
     } finally { if (id === latest.current) { setBusy(false); setDoneFor(forSymbol); } }
   }
-  useEffect(() => { void load(); }, [symbol]); // eslint-disable-line react-hooks/exhaustive-deps
+  // M83 A3: the tab's one "Read now" bumps `readVersion` - the thesis reloads from the new read, no page reload.
+  const { memory, memoryError, loadMemory, readVersion } = useCopilotData();
+  useEffect(() => { void load(); }, [symbol, readVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (memory === null) void loadMemory(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    api.aiMarketMemory().then((m) => {
-      const list = m.watchlist ?? [];
-      setWatchlist(list);
-      if (list.length && !list.includes(symbol)) setSymbol(list[0]);
-    }).catch(() => undefined).finally(() => setWatchlistDone(true));  // intentional: no watchlist: the symbol box still works
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (memory === null && !memoryError) return;
+    const list = memory?.watchlist ?? [];      // no watchlist: the symbol box still works
+    setWatchlist(list);
+    if (list.length && !list.includes(symbol)) setSymbol(list[0]);
+    setWatchlistDone(true);
+  }, [memory, memoryError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const Icon = thesis ? DIR_ICON[thesis.direction] ?? Eye : Eye;
   const dirTone = thesis?.direction === "BULLISH" ? "up" : thesis?.direction === "BEARISH" ? "down" : "neutral";

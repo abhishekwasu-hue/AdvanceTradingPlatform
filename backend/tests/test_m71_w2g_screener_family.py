@@ -5,6 +5,7 @@ Flag on: `fetch_frames(store=True)` and every broker call that path still makes 
 takes a token from the credential's API budget first (`budget_out`, api_budget.BudgetedAdapter - the paced adapter).
 Flag off: exactly as before (store off, no budget). Synthetic store rows and a spy broker only - no network.
 """
+import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -72,7 +73,7 @@ def _session_call(fn):
 
 @pytest.mark.parametrize("store", [False, True])
 def test_breakouts_library_ranking_and_the_copilot_tool_pass_the_store_flag(monkeypatch, store):
-    t = _org(f"wire-{int(store)}-{datetime.now(UTC).timestamp():.0f}", store)
+    t = _org(f"wire-{int(store)}-{uuid.uuid4().hex[:12]}", store)
     rec = _Recorder()
     monkeypatch.setattr(BR, "fetch_frames", rec)
     monkeypatch.setattr(library_routes, "fetch_frames", rec)
@@ -114,7 +115,7 @@ def _stocked(user_id, tenant_id, symbols):
 
 @pytest.fixture
 def stocked():
-    t = _org(f"store-{datetime.now(UTC).timestamp():.0f}", True)
+    t = _org(f"store-{uuid.uuid4().hex[:12]}", True)
     _stocked(t["user_id"], t["tenant_id"], NIFTY)
     yield t
     _clear(*[f"NSE:{s}" for s in NIFTY])
@@ -190,7 +191,7 @@ def test_the_same_bars_give_the_same_frames_through_the_store_and_the_broker(mon
 def test_a_daily_ranking_on_the_store_makes_no_broker_call(monkeypatch):
     """Ranking / daily breakouts with the flag on: the NSE daily files, no broker session needed (zero calls)."""
     from tests.test_m71_pl3_read_service import _store_days
-    t = _org(f"rank-{datetime.now(UTC).timestamp():.0f}", True)
+    t = _org(f"rank-{uuid.uuid4().hex[:12]}", True)
     today = datetime.now(UTC).astimezone(IST).date()
     keys = {"M71GUP": 1.0, "M71GDN": -1.0}
     for s in keys:

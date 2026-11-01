@@ -10,7 +10,8 @@ private engine is installed (`loader.load()` is not None; otherwise a no-op, nev
 
 1. The runner settings (`platform_controls` row `trade_engine_runner`, admin-set, operational only): whose signals
    (`user_id`), the symbols, the signal timeframe, the small delay after a bar's close, the grace window, the bounded
-   attempts, the data window and the user's own engine settings handed to the engine as they are.
+   attempts, the data windows (per timeframe since M79: the blocking window and the stored history before it) and the
+   user's own engine settings handed to the engine as they are.
 2. Per symbol: the signal timeframe's last bar closed by (now - delay), from the market calendar. A bar is read once;
    a bar whose data is not complete yet is tried again on a later cycle, at most `max_attempts` times and only within
    `grace_seconds` after (close + delay), then given up with its reason. A per-symbol lock keeps two runs of one symbol
@@ -50,7 +51,7 @@ import os
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -89,6 +90,14 @@ DEFAULTS: dict[str, Any] = {"signal_timeframe": "5m", "delay_seconds": 3, "grace
 LIMITS: dict[str, tuple[float, float]] = {"delay_seconds": (0, 600), "grace_seconds": (0, 3600), "max_attempts": (1, 10),
                                           "intraday_days": (1, 3650), "daily_days": (1, 3650), "read_timeout_seconds": (1, 600)}
 SIGNAL_TIMEFRAMES = (*F.MINUTES, F.DAILY)
+
+# M79 (owner default, 1 Nov: "match Trade's live path, 90 days of 15M, history up to 1825 days of 15M, 3650 Daily
+# days"): per-timeframe data windows, operational settings only (`windows` in the runner settings). `days`: the window
+# whose gaps block the read (M66 decision 3, unchanged); `history_days`: how far back the frame reaches into the stored
+# history - handed in as it is there, its gaps listed for the admin and never blocking (Trade's live path reads that
+# history "as far back as it is served"). A timeframe not listed uses `intraday_days` / `daily_days` as before.
+DEFAULT_WINDOWS: dict[str, dict[str, int]] = {"15m": {"days": 90, "history_days": 1825}, "1d": {"days": 400, "history_days": 3650}}
+WINDOW_LIMITS = (1, 3650)
 
 
 def _env_float(name: str, default: float, low: float, high: float) -> float:
@@ -217,6 +226,13 @@ class RunnerSettings:
     daily_days: int = DEFAULTS["daily_days"]
     read_timeout_seconds: float = DEFAULTS["read_timeout_seconds"]
     engine_settings: Mapping[str, Any] = field(default_factory=dict)
+    windows: Mapping[str, Mapping[str, int]] = field(default_factory=lambda: {k: dict(v) for k, v in DEFAULT_WINDOWS.items()})
+
+    def window_days(self, timeframe: str) -> tuple[int, int]:
+        """(the blocking window's days, the frame's days back including the stored history) of `timeframe`."""
+        w = self.windows.get(timeframe) or {}
+        days = int(w.get("days") or (self.daily_days if timeframe == F.DAILY else self.intraday_days))
+        return days, max(days, int(w.get("history_days") or days))
 
 
 class SettingsProblem(ValueError):
@@ -253,7 +269,28 @@ def parse_settings(tenant_id: int, raw: Any) -> RunnerSettings:
     if not isinstance(engine_settings, Mapping):
         raise SettingsProblem("the engine settings are not a set of values")
     return RunnerSettings(tenant_id=int(tenant_id), user_id=user_id, symbols=tuple(watches), signal_timeframe=tf,
-                          engine_settings=dict(engine_settings), **numbers)
+                          engine_settings=dict(engine_settings), windows=parse_windows(raw.get("windows", DEFAULT_WINDOWS)), **numbers)
+
+
+def parse_windows(raw: Any) -> dict[str, dict[str, int]]:
+    """The `windows` setting -> {timeframe: {"days": n, "history_days": m}} (each optional); SettingsProblem when it
+    cannot be used. An empty set = every timeframe on `intraday_days` / `daily_days`."""
+    if not isinstance(raw, Mapping):
+        raise SettingsProblem("the data windows are not a set of values per timeframe")
+    low, high = WINDOW_LIMITS
+    out: dict[str, dict[str, int]] = {}
+    for tf, w in raw.items():
+        if tf not in SIGNAL_TIMEFRAMES:
+            raise SettingsProblem(f"the data window's timeframe {tf!r} is not one ATP builds")
+        if not isinstance(w, Mapping) or set(w) - {"days", "history_days"}:
+            raise SettingsProblem(f"the {tf} data window takes only days and history_days")
+        for name, value in w.items():
+            if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+                raise SettingsProblem(f"the {tf} data window's {name} must be a whole number from {low} to {high}")
+        if "history_days" in w and "days" in w and w["history_days"] < w["days"]:
+            raise SettingsProblem(f"the {tf} data window's history_days must be at least its days")
+        out[str(tf)] = {k: int(v) for k, v in w.items()}
+    return out
 
 
 async def _stored_settings(session: AsyncSession) -> dict[str, Any]:
@@ -301,10 +338,23 @@ def due_bar(cal: Any, timeframe: str, now: datetime, delay_seconds: float) -> da
 
 
 def window_starts(cal: Any, timeframes: Sequence[str], as_of: datetime, cfg: RunnerSettings) -> dict[str, datetime]:
-    """{timeframe: the window's first bar START}: the session open `daily_days` (Daily) or `intraday_days` back."""
+    """{timeframe: the blocking window's first bar START}: the session open of the timeframe's window `days` back
+    (`windows`, else `daily_days` (Daily) / `intraday_days`)."""
     day = as_of.astimezone(F.IST).date()
-    return {tf: F.session_open(cal, day - timedelta(days=cfg.daily_days if tf == F.DAILY else cfg.intraday_days))
-            for tf in timeframes}
+    return {tf: F.session_open(cal, day - timedelta(days=cfg.window_days(tf)[0])) for tf in timeframes}
+
+
+def history_starts(cal: Any, timeframes: Sequence[str], as_of: datetime, cfg: RunnerSettings) -> dict[str, datetime]:
+    """{timeframe: the frame's first bar START}: `history_days` back when the timeframe reaches into the stored history,
+    else its window start."""
+    day = as_of.astimezone(F.IST).date()
+    return {tf: F.session_open(cal, day - timedelta(days=cfg.window_days(tf)[1])) for tf in timeframes}
+
+
+def calendar_last(now: datetime) -> date:
+    """The last day of the calendar handed to the engine: the end of the next year, so the engine's own holiday list
+    (its config adapter) holds every listed holiday ahead of the bars, as Trade's config lists whole years."""
+    return date(now.astimezone(F.IST).year + 1, 12, 31)
 
 
 # --- records (runtime_counters) --------------------------------------------------------------------------------------------
@@ -493,16 +543,22 @@ async def _attempt(session: AsyncSession, cfg: RunnerSettings, watch: Watch, eng
     timeframes = list(dict.fromkeys([tf, *engine.timeframes]))
     if tf not in engine.timeframes:
         return Outcome(FAILED, f"the engine does not read the {tf} timeframe (runner settings)")
-    starts = window_starts(cal, timeframes, due, cfg)
+    required = window_starts(cal, timeframes, due, cfg)
+    starts = history_starts(cal, timeframes, due, cfg)
+    deep = {tf: required[tf] for tf in timeframes if starts[tf] < required[tf]}
     from app.market_lake import own_bars
     scope = await own_bars.scope_for(session, user, watch.key)
     extra: dict[str, Any] = {"store": await store_read(session, user, watch)} if store else {}
+    if deep:
+        extra["required"] = deep
     data, notes = await collect(session, key=watch.key, exchange=watch.exchange, timeframes=timeframes, starts=starts, now=now,
                                 cal=cal, scope=scope, broker=broker, broker_symbol=watch.broker_symbol, **extra)
     # `now` = the due bar's END: every frame holds only bars closed by then (no look-ahead), and a bar the source has not
     # delivered yet is a gap of the signal frame, not a quietly older read.
-    built = F.build_request(data, timeframes, tf, due, starts, cal, settings=cfg.engine_settings)
+    built = F.build_request(data, timeframes, tf, due, starts, cal, settings=cfg.engine_settings, required=deep or None)
     gaps = [g.text for g in built.gaps][:LINES_KEPT]
+    if built.history_gaps:
+        notes = [f"stored history (not blocking): {len(built.history_gaps)} gap(s), e.g. {built.history_gaps[0].text}", *notes]
     notes = list(notes)[:LINES_KEPT]
     if built.request is None:
         return Outcome(DATA_GAP, "no closed bar of the signal timeframe to read", built.data_problems, gaps, notes)
@@ -546,8 +602,9 @@ async def run_symbol(session: AsyncSession, cfg: RunnerSettings, watch: Watch, e
                      now: datetime, *, collect: Collect = S.collect, holder: str | None = None, store: bool = False) -> SymbolRun:
     """One symbol on this cycle: read the due bar when it has not been read (or is being retried). Commits."""
     tf = cfg.signal_timeframe
-    first = (now.astimezone(F.IST) - timedelta(days=max(cfg.daily_days, cfg.intraday_days) + DUE_LOOKBACK_DAYS + 7)).date()
-    cal = await S.load_calendar(session, watch.exchange, first, now.astimezone(F.IST).date() + timedelta(days=1))
+    back = max([cfg.daily_days, cfg.intraday_days] + [cfg.window_days(t)[1] for t in (*F.MINUTES, F.DAILY)])
+    first = (now.astimezone(F.IST) - timedelta(days=back + DUE_LOOKBACK_DAYS + 7)).date()
+    cal = await S.load_calendar(session, watch.exchange, first, calendar_last(now))
     due = due_bar(cal, tf, now, cfg.delay_seconds)
     if due is None:
         return SymbolRun("idle")
@@ -655,7 +712,8 @@ async def run_due(session_factory: Any, now: datetime | None = None, *, broker_f
     return report
 
 
-__all__ = ["FLAG", "STRATEGY_ID", "DISPLAY_NAME", "SETTINGS_KEY", "STATE", "DEDUPE", "DEFAULTS", "Watch", "RunnerSettings",
+__all__ = ["FLAG", "STRATEGY_ID", "DISPLAY_NAME", "SETTINGS_KEY", "STATE", "DEDUPE", "DEFAULTS", "DEFAULT_WINDOWS", "Watch", "RunnerSettings",
+           "parse_windows", "history_starts", "calendar_last",
            "SettingsProblem", "parse_settings", "save_settings", "due_bar", "bar_end", "window_starts", "state_key", "dedupe_key",
            "run_records", "internal_signal", "lock_name", "card_line", "Outcome", "SymbolRun", "RunReport", "run_symbol", "run_due",
            "DATA_RESERVE", "DATA_WAIT_SECONDS", "DataBudgetUsed", "DataPoolBroker", "data_pool", "store_read", "store_on"]

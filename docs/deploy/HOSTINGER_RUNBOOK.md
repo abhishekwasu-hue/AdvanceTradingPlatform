@@ -253,13 +253,14 @@ users see "Chart analysis is not available right now". Owner steps, once:
 1. On the host, as `atp`: `ssh-keygen -t ed25519 -f ~/.ssh/atp_private_ro -N "" -C "atp host read-only"`.
 2. In `atp-private` on GitHub: Settings -> Deploy keys -> Add deploy key, paste `~/.ssh/atp_private_ro.pub`, leave
    **"Allow write access" unticked**. Only the `.pub` half leaves the host; never paste the key into a chat.
-3. In `/opt/atp/.env` add `ATP_PRIVATE_REF=<tag of atp-private>` (for example `v0.1.0`). `ATP_PRIVATE_REPO` is only
+3. In `/opt/atp/.env` add `ATP_PRIVATE_REF=<tag of atp-private>` (for example `v0.1.0`), or the full 40-character sha of
+   a reviewed atp-private commit when no tag exists yet. `ATP_PRIVATE_REPO` is only
    needed when the private repository is not `atp-private` under ATP's own GitHub owner.
 4. Run the one deploy command. It fetches that tag into `/opt/atp/private` with the deploy key, mounts it read-only into
    the backend and the worker, and recreates both on it. `health` then shows
    `chart analysis engine: OK (<name> <version>)` or `MISSING (<reason>)`.
 
-A new engine version = a new tag in `ATP_PRIVATE_REF`, then the deploy. No migration.
+A new engine version = a new tag (or commit sha) in `ATP_PRIVATE_REF`, then the deploy. No migration.
 
 ## 5. DNS and TLS
 

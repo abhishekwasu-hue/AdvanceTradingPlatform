@@ -1019,8 +1019,9 @@ gate_report() {
 # --- A1 (UI-H bug lane): the chart analysis engine, the private package atp_private (docs/design/PRIVATE_PACKAGE.md §6) -
 # A read-only checkout at $ATP_DIR/private (git-ignored), fetched with the host's read-only deploy key
 # (~/.ssh/atp_private_ro, through GIT_SSH_COMMAND) at the tag ATP_PRIVATE_REF in .env; docker-compose.hostinger.yml
-# mounts it read-only into the backend and the worker and puts it on PYTHONPATH. Optional: without the key or the tag
-# the deploy goes on and says in one line what the owner adds. The key's path is printed, never its content; git's
+# mounts it read-only into the backend and the worker and puts it on PYTHONPATH. ATP_PRIVATE_REF is a tag, or a full
+# 40-character commit sha (M79: the owner pins a reviewed commit while no tag exists; GitHub serves a commit by its
+# sha). Optional: without the key or the ref the deploy goes on and says in one line what the owner adds. The key's path is printed, never its content; git's
 # own output is not printed (the private repository's address is not a secret, but nothing of its content is shown).
 PRIVATE_DIR="$ATP_DIR/private"
 private_key() { printf '%s' "${ATP_PRIVATE_KEY:-$HOME/.ssh/atp_private_ro}"; }
@@ -1043,23 +1044,25 @@ private_install() {
   if [ -z "$ref" ] && [ ! -f "$key" ]; then warn "chart analysis engine not installed - $owner_line"; return 0; fi
   if [ -z "$ref" ]; then warn "chart analysis engine not installed - the owner adds ATP_PRIVATE_REF=<tag of atp-private> in .env"; return 0; fi
   if [ ! -f "$key" ]; then warn "chart analysis engine not installed - the owner adds the read-only deploy key ~/.ssh/atp_private_ro (runbook 'Chart analysis engine')"; return 0; fi
-  case "$ref" in -*|*..*|*[!A-Za-z0-9._/-]*) warn "chart analysis engine not installed - ATP_PRIVATE_REF in .env is not a tag name"; return 0 ;; esac
+  case "$ref" in -*|*..*|*[!A-Za-z0-9._/-]*) warn "chart analysis engine not installed - ATP_PRIVATE_REF in .env is not a tag name or a full commit sha"; return 0 ;; esac
   [ -n "$repo" ] || { warn "chart analysis engine not installed - the owner adds ATP_PRIVATE_REPO (the private repository's ssh address) in .env"; return 0; }
-  if [ "$DRY_RUN" = "1" ]; then info "would fetch tag $ref of the private package into $PRIVATE_DIR with the deploy key"; return 0; fi
+  local kind="tag" refspec="+refs/tags/$ref:refs/tags/$ref" target="refs/tags/$ref"
+  if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then kind="commit"; refspec="$ref"; target="$ref"; fi
+  if [ "$DRY_RUN" = "1" ]; then info "would fetch $kind $ref of the private package into $PRIVATE_DIR with the deploy key"; return 0; fi
   local ssh_cmd="ssh -i $key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
   [ -d "$PRIVATE_DIR/.git" ] || git init -q "$PRIVATE_DIR" >/dev/null 2>&1 || { warn "chart analysis engine not installed - could not create $PRIVATE_DIR"; return 0; }
-  if ! GIT_SSH_COMMAND="$ssh_cmd" GIT_TERMINAL_PROMPT=0 git -C "$PRIVATE_DIR" fetch -q --depth 1 --no-tags "$repo" "+refs/tags/$ref:refs/tags/$ref" >/dev/null 2>&1; then
-    warn "chart analysis engine: could not fetch tag $ref from the private repository (is the deploy key added there, read-only, and does the tag exist?) - the checkout stays at $(private_version)"
+  if ! GIT_SSH_COMMAND="$ssh_cmd" GIT_TERMINAL_PROMPT=0 git -C "$PRIVATE_DIR" fetch -q --depth 1 --no-tags "$repo" "$refspec" >/dev/null 2>&1; then
+    warn "chart analysis engine: could not fetch $kind $ref from the private repository (is the deploy key added there, read-only, and does the $kind exist?) - the checkout stays at $(private_version)"
     return 0
   fi
   # the container's own user (not this one) imports it: the code is world-readable inside the checkout (umask 022,
   # this script's 077 would hide it); .git stays private to the deploy user, and nothing here is a credential
-  if (umask 022 && git -C "$PRIVATE_DIR" -c advice.detachedHead=false checkout -q --force --detach "refs/tags/$ref" >/dev/null 2>&1 \
+  if (umask 022 && git -C "$PRIVATE_DIR" -c advice.detachedHead=false checkout -q --force --detach "$target" >/dev/null 2>&1 \
       && git -C "$PRIVATE_DIR" clean -qfdx >/dev/null 2>&1 \
       && find "$PRIVATE_DIR" -path "$PRIVATE_DIR/.git" -prune -o -exec chmod go+rX,go-w {} + 2>/dev/null) \
       && chmod 755 "$PRIVATE_DIR"; then
-    ok "chart analysis engine source at tag $ref ($(private_version)), mounted read-only into the backend and the worker"
-  else warn "chart analysis engine: could not check out tag $ref in $PRIVATE_DIR"; fi
+    ok "chart analysis engine source at $kind $ref ($(private_version)), mounted read-only into the backend and the worker"
+  else warn "chart analysis engine: could not check out $kind $ref in $PRIVATE_DIR"; fi
 }
 
 # `health`: the engine as the running backend's loader sees it (backend/scripts/engine_status.py). MISSING only WARNs:

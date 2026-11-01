@@ -187,6 +187,7 @@ import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 import { currentView, setView } from "./viewState";
 import type { LegalAckBody, LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
 import type { SupportReply } from "../support/support";
+import type { SignInIdentities, SignInProvidersAnswer, SocialPendingInfo } from "../auth/socialTypes";
 import { CONNECT_AI_EVENT, isNotConnected, type AiConnection } from "../aiKeys/connect";
 import type { AiProviderName } from "../aiKeys/keyFormats";
 import type { MarketStrip } from "../dashboard/types";
@@ -543,8 +544,25 @@ export const api = {
 
   me: () => request<UserResponse>("/auth/me"),
 
-  // GS-1: which extra sign-in buttons to show (google: true only once the server has both credentials).
-  authProviders: () => request<{ google: boolean }>("/auth/providers"),
+  // GS-1 / M73: which sign-in provider buttons to show (only those whose credentials the server has) and the
+  // platform-wide `ui_v2` layout of the signed-out page.
+  authProviders: () => request<SignInProvidersAnswer>("/auth/providers"),
+
+  // M73 SL-2 / SL-3: the pending steps after a provider sign-in, and Settings › Account link / unlink.
+  socialPending: (token: string) =>
+    request<SocialPendingInfo>("/auth/social/pending", { method: "POST", body: JSON.stringify({ token }) }),
+  socialConfirmLink: (token: string, password: string, code?: string) =>
+    request<TokenResponse>("/auth/social/link/confirm", { method: "POST", body: JSON.stringify({ token, password, code: code || undefined }) }),
+  // 202 { status: "check_email" } when the e-mail was typed here: the account is made only once the mailed link is opened.
+  socialComplete: (token: string, body: { email?: string; invite_code?: string; legal_acceptance?: Record<string, LegalAckBody> }) =>
+    request<TokenResponse | { status: "check_email"; email: string; sent: boolean }>("/auth/social/complete", { method: "POST", body: JSON.stringify({ token, ...body }) }),
+  signInIdentities: () => request<SignInIdentities>("/auth/identities"),
+  socialVerify: (token: string) =>
+    request<TokenResponse>("/auth/social/verify", { method: "POST", body: JSON.stringify({ token }) }),
+  // M73 review 3: linking needs the account's password (and its authenticator code when two-factor is on).
+  socialLinkStart: (slug: string, password: string, code?: string) =>
+    request<{ url: string }>(`/auth/${encodeURIComponent(slug)}/link`, { method: "POST", body: JSON.stringify({ password, code: code || undefined }) }),
+  socialUnlink: (provider: string) => request<void>(`/auth/identities/${encodeURIComponent(provider)}`, { method: "DELETE" }),
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 
@@ -573,7 +591,7 @@ export const api = {
     request<{ detail: string }>("/auth/password/forgot", { method: "POST", body: JSON.stringify({ email }) }),
 
   resetInfo: (token: string) =>
-    request<{ email_hint: string; valid: boolean; reason: string | null }>(`/auth/password/reset/${encodeURIComponent(token)}`),
+    request<{ email_hint: string; valid: boolean; reason: string | null; linked?: string[] }>(`/auth/password/reset/${encodeURIComponent(token)}`),
 
   resetPassword: (token: string, password: string) =>
     request<TokenResponse>(`/auth/password/reset/${encodeURIComponent(token)}`, { method: "POST", body: JSON.stringify({ password }) }),

@@ -57,6 +57,7 @@ BLOCKED_READS: Tuple[Tuple["re.Pattern[str]", str], ...] = tuple((re.compile(p),
     (r"^/api/broker/[^/]+/oauth(/|$)", "a broker sign-in"),
     (r"^/api/broker/[^/]+/login-url$", "a broker sign-in link"),
     (r"^/api/auth/google(/|$)", "a sign-in"),
+    (r"^/api/auth/broker/[^/]+/(start|callback)$", "a broker sign-in"),   # M74: it would also store a broker session
     (r"^/api/alerts/telegram/connect$", "the Telegram connect check (it links a chat)"),
     (r"^/api/alerts/unsubscribe$", "an unsubscribe link"),
     (r"^/api/webhooks/tradingview/token$", "the webhook address (a credential)"),

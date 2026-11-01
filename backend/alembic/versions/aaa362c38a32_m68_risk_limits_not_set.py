@@ -13,7 +13,7 @@ only rows made from now on may be NULL. Downgrade fills the NULLs with the old d
 columns, drops `dd_cut_pct`.
 
 Revision ID: aaa362c38a32
-Revises: 6b9d1f3a5c27
+Revises: c4e8a2f6b913
 Create Date: 2026-11-01 10:00:00
 """
 from collections.abc import Sequence
@@ -23,7 +23,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'aaa362c38a32'
-down_revision: str | Sequence[str] | None = '6b9d1f3a5c27'
+down_revision: str | Sequence[str] | None = 'c4e8a2f6b913'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 ROLLBACK_SAFE = True    # Z11

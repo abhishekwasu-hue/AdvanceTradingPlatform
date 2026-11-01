@@ -108,6 +108,29 @@ def test_a_tag_that_cannot_be_fetched_warns_and_the_deploy_goes_on(host):
     _no_key_text(res, host)
 
 
+def test_a_full_commit_sha_is_fetched_and_checked_out_like_a_tag(host):
+    """M79: ATP_PRIVATE_REF may pin a reviewed commit by its full sha while the private repository has no tag yet."""
+    origin = _private_origin(host.tmp)
+    work = host.tmp / "private-work"
+    (work / "atp_private" / "chart_analyze" / "__init__.py").write_text("# made-up engine, untagged commit\n")
+    _git(work, "commit", "-q", "-am", "untagged"); _git(work, "push", "-q", "origin", "main")
+    sha = _git(work, "rev-parse", "HEAD")
+    _key(host)
+    host.write_env(extra={"ATP_PRIVATE_REF": sha, "ATP_PRIVATE_REPO": str(origin)})
+    res = host.run("deploy")
+    assert res.returncode == 0, res.all
+    assert f"chart analysis engine source at commit {sha}" in res.stdout and "not installed" not in res.stdout
+    private = host.dir / "private"
+    assert _git(private, "rev-parse", "HEAD") == sha
+    assert (private / "atp_private" / "chart_analyze" / "__init__.py").read_text().startswith("# made-up engine, untagged")
+    missing = "0" * 40
+    host.write_env(extra={"ATP_PRIVATE_REF": missing, "ATP_PRIVATE_REPO": str(origin)})
+    res = host.run("deploy")
+    assert res.returncode == 0 and f"could not fetch commit {missing}" in res.stdout, res.all
+    assert _git(private, "rev-parse", "HEAD") == sha                 # the checkout stays at the last good commit
+    _no_key_text(res, host)
+
+
 @pytest.mark.parametrize("engine, line", [
     ({"installed": True, "name": "fake-engine", "version": "1.2.3"}, "ok    chart analysis engine: OK (fake-engine 1.2.3)"),
     ({"installed": False, "reason": "the private package is not installed on this server"},

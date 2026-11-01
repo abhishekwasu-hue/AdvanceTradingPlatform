@@ -482,7 +482,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
 
     tenant = await session.get(Tenant, user.tenant_id)
     refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, MODE, STRATEGY_ID, user=user, reserve=False))
-    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=None)
+    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=None, user_id=user.id)
     if gate:
         refusals.append(plain(gate))
     direction = SignalDirection.LONG if side == "BUY" else SignalDirection.SHORT

@@ -11,3 +11,5 @@ def pytest_configure(config):
                                        "(tests/conftest.py _saved_order_defaults is not applied)")
     config.addinivalue_line("markers", "real_paper_account: M68 PR-7 - read each user's own Trade settings > Paper account "
                                        "starting capital (tests/conftest.py _saved_paper_capital is not applied)")
+    config.addinivalue_line("markers", "real_automation: M68 PR-6 - read each user's own Trade settings > Automation "
+                                       "(tests/conftest.py _saved_automation is not applied)")

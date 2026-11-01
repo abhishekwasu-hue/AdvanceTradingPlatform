@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { readView, saveView, type ChartsView } from "../chart/chartsPage";
 import { systemListsApi } from "../chart/systemLists";
@@ -7,6 +6,7 @@ import { WatchlistPanel } from "../chart/WatchlistPanel";
 import type { WatchItem } from "../chart/watchlistsV2";
 import { cx } from "../components/primitives/cx";
 import { CARD } from "../dashboard/CardV2";
+import { useInPlace } from "../inplace/InPlaceProvider";
 import type { PageProps } from "../routes";
 import { chartTabPath } from "../shell/shellRoutes";
 import { recentKeyFor } from "../ui/SymbolPicker";
@@ -21,10 +21,11 @@ import { NOT_FILLED_NOTE, readyMadeState, type ReadyMade } from "./model";
  * It shows the very same watchlist panel as Charts (src/chart/WatchlistPanel.tsx: the list chooser, search, sort, copy
  * to my list, live prices with `data_hub`) - nothing about the panel changes here. The list shown is shared with Charts
  * (the Charts view's `watchlist_id` / `watchlist_system`), so both open on the same list. A row opens its symbol on
- * Charts. While the ready-made lists are not filled yet the page says so in one line, never sample rows.
+ * Charts - M75 NAV-3: in place (a side panel / bottom sheet over the list, which stays as it was). While the
+ * ready-made lists are not filled yet the page says so in one line, never sample rows.
  */
 export default function WatchlistPageV2(_props: PageProps) {
-  const navigate = useNavigate();
+  const inPlace = useInPlace();
   const { user } = useAuth();
   const userId = user?.id ?? null;
   const features = useFeatures();
@@ -41,7 +42,7 @@ export default function WatchlistPageV2(_props: PageProps) {
   }), [userId]);
 
   const readyMade = useReadyMade();
-  const open = (item: WatchItem) => navigate(chartTabPath(item.symbol, item.exchange));
+  const open = (item: WatchItem) => inPlace.open(chartTabPath(item.symbol, item.exchange));
 
   return (
     <div data-page="watchlist" className="mx-auto flex w-full max-w-[760px] flex-col gap-space-4">

@@ -81,6 +81,8 @@ test.describe("CT-1 C10 one Ask AI entry, 390 x 844", () => {
     await expect(sheet.getByRole("link", { name: /Open the Copilot/ })).toHaveAttribute("href", "/copilot");
     await expect(sheet.locator("[data-ask-option='read']")).toHaveCount(0);
     await sheet.getByRole("link", { name: /Open the Copilot/ }).click();
-    await expect(page).toHaveURL(/\/copilot$/);
+    // M75 NAV-2: the Copilot opens in place over Today (the path stays; the panel is in the address).
+    await expect(page.locator("[data-inplace-panel='copilot']")).toBeVisible();
+    await expect(page).toHaveURL(/\/\?panel=copilot$/);
   });
 });

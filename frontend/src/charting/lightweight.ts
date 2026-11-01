@@ -12,8 +12,8 @@
  */
 import { DEFAULT_INTERACTION, interactionOptions, type InteractionOptions } from "../chart/chartOptions";
 import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
-import type { ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerData, StudyLine, StudySpec } from "./engine";
-import { DEFAULT_COLOR, layerShapes, timeToLogical, type Converters } from "./geometry";
+import type { BandRole, ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerBand, LayerData, StudyLine, StudySpec } from "./engine";
+import { DEFAULT_COLOR, layerShapes, timeToLogical, type BandLabelStyle, type BandRef, type Converters, type Rect } from "./geometry";
 import { DrawingPrimitive, LayerPrimitive } from "./primitives";
 import { logicalToTime, type DataPoint } from "./tools";
 
@@ -75,13 +75,16 @@ export class LightweightEngine implements ChartEngine {
   private studies = new Map<string, StudySpec>();
   private drawings = new Map<string, DrawingV1>();
   private rendered = new Map<string, Rendered>();
-  private layers = new Map<string, { lines: PriceLineLike[]; bands: LayerPrimitive | null }>();
+  private layers = new Map<string, { lines: PriceLineLike[]; bands: LayerPrimitive | null; data: LayerBand[] }>();
   private studyLines = new Map<string, { line: LineSeriesLike; pane: number; color: string }>();
   private listeners = new Set<(e: EngineEvent) => void>();
   private unsubs: (() => void)[] = [];
   private disposed = false;
   private barTimes: number[] | null = null;                    // the candles' times (epoch s), rebuilt when the data changes
   private defaultColor: string | null = null;                  // UI2-4b1: the chart theme's colour for a default-coloured drawing
+  private zoneColors: Partial<Record<BandRole, string>> = {};  // M75 W-1: the chart theme's buyer / seller area colours
+  private labelAvoid: readonly Rect[] = [];                    // M75 W-1: pane rectangles layer labels keep clear of
+  private labelStyle: BandLabelStyle | undefined;              // M78: band labels' font size, chip and fallback ink (chart tokens)
 
   /** `panning` (R4): the owner of the gesture options (the v2 `ChartCore`), asked to suspend / resume them. Without
    * one (ProChart) the engine writes the default gesture options itself, as full objects. */
@@ -155,6 +158,64 @@ export class LightweightEngine implements ChartEngine {
     this.defaultColor = color;
     for (const [id, d] of [...this.drawings]) { this.removeDrawing(id); this.addDrawing(id, d); }
   }
+
+  /** M75 W-1: the chart theme's colours for bands with a `role` (buyer / seller areas); a band without a role, or an
+   * engine never given them (the v1 chart), keeps the band's own colour. Layers repaint in place. */
+  setZoneColors(colors: Partial<Record<BandRole, string>>) {
+    if (JSON.stringify(colors) === JSON.stringify(this.zoneColors)) return;
+    this.zoneColors = { ...colors };
+    this.refreshLayers();
+  }
+
+  /** M75 W-1 (W3): pane rectangles (the floating view controls, the chip row) no band label may sit on. */
+  setLabelAvoid(rects: readonly Rect[]) {
+    if (JSON.stringify(rects) === JSON.stringify(this.labelAvoid)) return;
+    this.labelAvoid = rects.map((r) => ({ ...r }));
+    this.refreshLayers();
+  }
+
+  /** M78 (F1 / F2): how band labels look - the chart's axis-label font size, the chip (chart background) and the
+   * fallback ink (chart text), from the chart tokens. Layers repaint in place. */
+  setLabelStyle(style: BandLabelStyle) {
+    if (JSON.stringify(style) === JSON.stringify(this.labelStyle)) return;
+    this.labelStyle = { ...style };
+    this.refreshLayers();
+  }
+
+  /** M78 (F5): the band under a pane point - a band label's chip first, then the thinnest band whose price range
+   * holds the point (a line: within a few pixels) - with its bottom / top prices; null when there is none, or when the
+   * point is outside the price pane as last painted. Every price comes from the layer's data, never from pixels. */
+  bandAt(x: number, y: number): BandRef | null {
+    for (const layer of this.layers.values()) {
+      const hit = layer.bands?.labelAt(x, y);
+      if (hit && Number.isFinite(hit.low) && Number.isFinite(hit.high)) return hit;
+    }
+    let best: { ref: BandRef; span: number } | null = null;
+    for (const layer of this.layers.values()) {
+      const size = layer.bands?.paneSize();
+      if (!size || x < 0 || y < 0 || x > size.width || y > size.height) continue;
+      for (const b of layer.data) {
+        if (!Number.isFinite(b.low) || !Number.isFinite(b.high)) continue;
+        const low = Math.min(b.low, b.high), high = Math.max(b.low, b.high);
+        const y1 = this.candles.priceToCoordinate(high), y2 = this.candles.priceToCoordinate(low);
+        if (y1 == null || y2 == null) continue;
+        const [top, bottom] = [Math.min(y1, y2), Math.max(y1, y2)];
+        const slack = bottom - top < 6 ? 3 : 0;                     // a line or a thin band is still easy to hit
+        if (y < top - slack || y > bottom + slack) continue;
+        if (!best || bottom - top < best.span) best = { ref: { low, high, label: b.label ?? "" }, span: bottom - top };
+      }
+    }
+    return best ? best.ref : null;
+  }
+
+  private refreshLayers() {
+    for (const layer of this.layers.values()) layer.bands?.refresh();
+  }
+
+  private themedBand = (b: LayerBand): LayerBand => {
+    const color = b.role ? this.zoneColors[b.role] : undefined;
+    return color ? { ...b, color } : b;
+  };
 
   /** A pane point (pixels) as time and price, or null outside the data's reach. Time comes from the bar under x
    * (interpolated between bars, extrapolated past the last one), so an anchor is exact on any timeframe. */
@@ -247,10 +308,12 @@ export class LightweightEngine implements ChartEngine {
     let bands: LayerPrimitive | null = null;
     if (data.bands?.length || data.segments?.length || data.labels?.length) {
       const shapes = { bands: [...(data.bands ?? [])], segments: [...(data.segments ?? [])], labels: [...(data.labels ?? [])] };
-      bands = new LayerPrimitive((c) => layerShapes(shapes, c), (w, h) => this.converters(w, h));
+      bands = new LayerPrimitive((c) => layerShapes({ ...shapes, bands: shapes.bands.map(this.themedBand) },
+                                                    { ...c, avoid: [...this.labelAvoid, ...(c.avoid ?? [])], labelStyle: this.labelStyle }),
+                                 (w, h) => this.converters(w, h));
       this.candles.attachPrimitive(bands);
     }
-    this.layers.set(id, { lines: made, bands });
+    this.layers.set(id, { lines: made, bands, data: [...(data.bands ?? [])] });
   }
 
   /** N4 CH6: one line series per study id, kept while its pane and colour stay (only the data is replaced). */

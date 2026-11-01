@@ -8,7 +8,7 @@ Downgrade fills a Not set capital with the old platform start value (1,000,000) 
 release reads every row.
 
 Revision ID: c4e8a2f6b031
-Revises: 8d2f4a6c0e19
+Revises: 6b9d1f3a5c27
 Create Date: 2026-11-01 10:00:00
 """
 from collections.abc import Sequence
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c4e8a2f6b031'
-down_revision: str | Sequence[str] | None = '8d2f4a6c0e19'
+down_revision: str | Sequence[str] | None = '6b9d1f3a5c27'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 ROLLBACK_SAFE = False    # Z11: allows a NULL starting capital - the previous release reads float(starting_capital) and fails on a NULL; a code-only rollback past it is refused, use --restore-db (or this downgrade)

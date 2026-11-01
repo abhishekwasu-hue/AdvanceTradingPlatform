@@ -42,7 +42,7 @@ describe("AUD-T5 Read this chart", () => {
     const layer = readLayer(read);
     expect(READ_LAYER_ID).toBe("read-chart");
     expect(layer.bands?.map((b) => [b.low, b.high])).toEqual([[51100, 51200], [51600, 51700]]);
-    expect(layer.bands?.[0].label).toBe("demand area · 1h · fresh");
+    expect(layer.bands?.[0].label).toBe("Buyer area · 1h · fresh")   // M75 W-1: the owner's words (CW-2);
     expect(layer.lines).toEqual([{ price: 51000, style: "dashed", title: "protected swing low" }]);
     expect(layer.markers?.[0]).toMatchObject({ time: 1793259900, position: "belowBar", text: "commitment" });
     expect(readLayer({ ...read, commitment: null, structure: null }).markers).toEqual([]);

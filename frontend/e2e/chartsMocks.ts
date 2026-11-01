@@ -257,3 +257,22 @@ export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, mar
   });
   return calls;
 }
+
+/** M75 W-1: a made-up "Read this chart" answer (`GET /charts/read`) with seller and buyer areas inside the made-up bars'
+ * price range (about 23,450 - 24,780): one at the top, one in the middle, one at the bottom under the view controls. */
+export const READING_WITH_AREAS = (() => {
+  const area = (role: "supply" | "demand", low: number, high: number, state: string) => ({
+    key: null, role, low, high, low_text: "", high_text: "", timeframe: "15m", state, state_words: "", touches: 1, words: "" });
+  return {
+    instrument: "NSE:NIFTY", tf: "15m", bars: 400, as_of: "2026-10-19T05:00:00+00:00", last_bar: null, answer_key: null,
+    note: "A reading of past prices in structure words - reference, not advice.",
+    structure: { direction: "up", words: "Structure on the 15-minute chart: up.", last_event: null, protected: null },
+    areas: [area("supply", 24700, 24780, "fresh"), area("demand", 24000, 24060, "tested"), area("demand", 23450, 23520, "fresh")],
+    pullback: { available: false, trend: null, phase: null, counter: null, as_of: null, words: "" }, commitment: null,
+    lines: ["Structure on the 15-minute chart: up."],
+  };
+})();
+
+export async function mockChartReading(page: Page, reading: Record<string, unknown> = READING_WITH_AREAS): Promise<void> {
+  await page.route(api("/charts/read"), (r) => r.fulfill({ json: reading }));
+}

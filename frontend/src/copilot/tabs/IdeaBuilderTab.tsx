@@ -1,6 +1,7 @@
 import { ArrowLeft, Bot, CandlestickChart, Check, Compass, History, Rocket, RotateCcw, ShieldCheck, Sparkles, ThumbsDown, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { useInPlace } from "../../inplace/InPlaceProvider";
 import { api } from "../../api/client";
 import { chartWindowUrl } from "../../components/chartHelpers";
 import { DataSourceBar, SampleChip, useCandleSource, type CandleSourceState } from "../../components/DataSource";
@@ -56,7 +57,7 @@ interface Msg { from: "ai" | "me"; text: string; second?: string }
  */
 export default function IdeaBuilderTab() {
   const uiV2 = useUiV2();
-  const navigate = useNavigate();
+  const inPlace = useInPlace();
   const location = useLocation();
   const [interview, setInterview] = useState(false);
   if (!uiV2 || interview) return <IdeaBuilderInterview />;
@@ -66,7 +67,7 @@ export default function IdeaBuilderTab() {
       <div className="space-y-3" data-idea-builder-moved>
         <h2 className="text-base font-semibold text-fg">Build a strategy step by step</h2>
         <div className="flex flex-wrap gap-2">
-          <Button variant="primary" onClick={() => navigate("/strategies/build", { state: idea ? { idea } : null })}>Open the strategy builder</Button>
+          <Button variant="primary" onClick={() => inPlace.open("/strategies/build", idea ? { state: { idea } } : undefined)}>Open the strategy builder</Button>
           <Button variant="ghost" onClick={() => setInterview(true)}>Advanced: the strategy interview</Button>
         </div>
         <Details id="copilot.idea-builder"><p>Pick a template or describe your idea in words, choose the market, the entry and your exits, then test it and start it on paper.</p></Details>
@@ -84,6 +85,7 @@ function IdeaBuilderInterview() {
   const source = useCandleSource(30);
   const location = useLocation();
   const navigate = useNavigate();
+  const inPlace = useInPlace();
   const initialPrompt = (location.state as { prompt?: string } | null)?.prompt ?? "";
 
   const [startKey, setStartKey] = useState(initialPrompt ? 1 : 0);
@@ -341,7 +343,7 @@ function IdeaBuilderInterview() {
         if (!shown) return <p className="text-sm text-fg-muted">{t("idea.openTemplate")}</p>;
         // keyed by the template: the risk acceptance of one template never carries over to another
         return <ChosenTemplate key={shown.option?.id ?? "plan"} plan={shown} sample={sample} broker={source.mode === "broker" ? source.broker : undefined}
-                               onDone={setDone} onError={(e) => setError(friendlyError(e, t))} onDraft={(draftId) => navigate(copilotPath("strategy-lab"), { state: { draftId } })} />;
+                               onDone={setDone} onError={(e) => setError(friendlyError(e, t))} onDraft={(draftId) => inPlace.open(copilotPath("strategy-lab"), { state: { draftId } })} />;
       })()}
     </div>
   );
@@ -428,6 +430,7 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
   plan: InterviewPlan; sample: boolean; broker?: string;
   onDone: (m: string) => void; onError: (e: unknown) => void; onDraft: (draftId: number) => void;
 }) {
+  const inPlace = useInPlace();
   const t = useCopilotT();
   const symbol = String(plan.answers.symbol ?? "NIFTY 50");
   const [acceptRisk, setAcceptRisk] = useState(false);
@@ -470,7 +473,7 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
             </Button>
           </>
         )}
-        <Button size="sm" variant="ghost" icon={<CandlestickChart size={13} />} onClick={() => window.open(chartWindowUrl(symbol, "5min", "NSE", broker), "_blank")}>
+        <Button size="sm" variant="ghost" icon={<CandlestickChart size={13} />} onClick={() => inPlace.open(chartWindowUrl(symbol, "5min", "NSE", broker), { newTab: true })}>
           <span className="text-left leading-tight">{t("idea.openChart")}</span>
         </Button>
         {/* the AI writes a draft from this template's prompt, today's regime and the interview's symbol; it opens in Strategy Lab for review */}

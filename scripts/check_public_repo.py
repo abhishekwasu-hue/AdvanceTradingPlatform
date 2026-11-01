@@ -183,7 +183,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     # the AI eval sets and their baselines (backend/evals/runner.py)
     "backend/evals/baselines.json": "3c28c69e5964aab11c234bd6cf7608f66c9d327f1dfeacdb64d7f42f2b109a09",
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
-    "backend/evals/sets/qa.jsonl": "845e5902cbc904864ec1f24bbf589194428ec462e164e388ab04b9734469338e",
+    "backend/evals/sets/qa.jsonl": "ed0530199bad39021edf8e4777700dedb99619c0eeeaca623dcf958d015e22ad",
     "backend/evals/sets/tool_args.jsonl": "578efa3d69f7d860f221068273a074b018e7998b71bdf8c55d5bdbd66d7f862b",
     "backend/evals/sets/copilot_jobs.jsonl": "571e6d59bc541582594776320250484c80712850ed0d77465d64495f1e498a0a",
     "backend/evals/sets/copilot_safety.jsonl": "6957614b58ca737a77f1445e2d3bd0a13fa5c3063c829e75506e6043a3a37287",
@@ -194,7 +194,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/sets/copilot_trader_safety.jsonl": "bbfa1fcc7a4df13f8102970366740719b011738590ecc089b3b3c60fdff2e2bf",
     "backend/evals/sets/copilot_trader_lang.json": "93a1b22c0fe6e35d6815969ace2666767f3c97e736591e4cfe9fca91b221f0f0",
     "backend/evals/sets/copilot_trader_tools.json": "c866475c9df9e7f8d3d5c946da8d91d107e47e7ccc07430c8477799505ddd440",
-    "backend/evals/trader_baseline.json": "bbb9112f3fc621ea68429789a1be94ac9ce9d423d05d4485d625218d7a1a1b9e",
+    "backend/evals/trader_baseline.json": "98638992ae9740203b295a1ec8d07f8fca0ec54b23c727c0ab1d9110e7b2c13c",
     "frontend/e2e/fixtures/copilot_tools_v2.json": "37c00546e26cc0cab4b2af0c38ae6041a630d57790be87397fa186502f3e4502",
     # hand-written API replies for the Playwright tests
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",
@@ -235,8 +235,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/mytrades_cards_v2.json": "4d0ba8e0bd9fcf0e3117746ad9169e832f209600858c79df807b8ff92a8fa82d",
     "frontend/e2e/fixtures/copilot_chat_v2.json": "d844e9cfe7294dd7a5faf64e21b751ce48b8085739ac8dfd5c7f6bf67d3dc22f",
     # M68 PR-0: Settings > Trade settings - the registry's own replies (backend/app/me/trade_settings.py view(); synthetic)
-    "frontend/e2e/fixtures/trade-settings-user.json": "7fa53281bec7bae213e3e89eaa1b6188ab19e4c645de13b3abcc1961a13247be",
-    "frontend/e2e/fixtures/trade-settings-admin.json": "94cfc0ebf36cde7e995f39ad62141526a3953631b999db8064823f53a6e0b181",
+    "frontend/e2e/fixtures/trade-settings-user.json": "9858c0a59abe38561dfb867251fdd871c7c32a948905caa9f1d36aed75dba06d",
+    "frontend/e2e/fixtures/trade-settings-admin.json": "7dcd35f6dc73fa65f32acfd940edbe8eb0d8d25dc4ac8c357b5cc398abad01d5",
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

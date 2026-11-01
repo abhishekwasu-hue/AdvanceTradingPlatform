@@ -1,0 +1,403 @@
+{
+ "_comment": "M77 SX-1: number-format cases shared by the frontend (ui/format.ts, numberFormatParity.test.ts) and the backend (app/study/numfmt.py, tests/test_m77_sx1_numfmt.py). Both must give exactly `out`.",
+ "cases": [
+  {
+   "fn": "number",
+   "v": 0,
+   "decimals": 0,
+   "out": "0"
+  },
+  {
+   "fn": "number",
+   "v": 999,
+   "decimals": 0,
+   "out": "999"
+  },
+  {
+   "fn": "number",
+   "v": 1000,
+   "decimals": 0,
+   "out": "1,000"
+  },
+  {
+   "fn": "number",
+   "v": 99999,
+   "decimals": 0,
+   "out": "99,999"
+  },
+  {
+   "fn": "number",
+   "v": 100000,
+   "decimals": 0,
+   "out": "1,00,000"
+  },
+  {
+   "fn": "number",
+   "v": 12450000,
+   "decimals": 0,
+   "out": "1,24,50,000"
+  },
+  {
+   "fn": "number",
+   "v": 1234567890,
+   "decimals": 0,
+   "out": "1,23,45,67,890"
+  },
+  {
+   "fn": "number",
+   "v": 1234567.891,
+   "decimals": 2,
+   "out": "12,34,567.89"
+  },
+  {
+   "fn": "number",
+   "v": -1234.5,
+   "decimals": 1,
+   "out": "\u22121,234.5"
+  },
+  {
+   "fn": "number",
+   "v": -0.001,
+   "decimals": 2,
+   "out": "0.00"
+  },
+  {
+   "fn": "number",
+   "v": 24812.5,
+   "decimals": 2,
+   "opts": {
+    "trim": true
+   },
+   "out": "24,812.5"
+  },
+  {
+   "fn": "number",
+   "v": 24812,
+   "decimals": 2,
+   "opts": {
+    "trim": true
+   },
+   "out": "24,812"
+  },
+  {
+   "fn": "number",
+   "v": 1234567.891,
+   "decimals": 2,
+   "opts": {
+    "trim": true
+   },
+   "out": "12,34,567.89"
+  },
+  {
+   "fn": "number",
+   "v": 100000.004,
+   "decimals": 2,
+   "opts": {
+    "trim": true
+   },
+   "out": "1,00,000"
+  },
+  {
+   "fn": "number",
+   "v": -1500.1,
+   "decimals": 3,
+   "opts": {
+    "trim": true
+   },
+   "out": "\u22121,500.1"
+  },
+  {
+   "fn": "number",
+   "v": -0.001,
+   "decimals": 2,
+   "opts": {
+    "trim": true
+   },
+   "out": "0"
+  },
+  {
+   "fn": "number",
+   "v": 1000,
+   "decimals": 0,
+   "opts": {
+    "trim": true
+   },
+   "out": "1,000"
+  },
+  {
+   "fn": "number",
+   "v": 1e+21,
+   "decimals": 0,
+   "out": "1,00,00,00,00,00,00,00,00,00,000"
+  },
+  {
+   "fn": "number",
+   "v": 0.5,
+   "decimals": 0,
+   "out": "1"
+  },
+  {
+   "fn": "number",
+   "v": 2.5,
+   "decimals": 0,
+   "out": "3"
+  },
+  {
+   "fn": "number",
+   "v": -2.5,
+   "decimals": 0,
+   "out": "\u22123"
+  },
+  {
+   "fn": "number",
+   "v": 0.125,
+   "decimals": 2,
+   "out": "0.13"
+  },
+  {
+   "fn": "number",
+   "v": 1.005,
+   "decimals": 2,
+   "out": "1.00"
+  },
+  {
+   "fn": "number",
+   "v": -0.5,
+   "decimals": 0,
+   "out": "\u22121"
+  },
+  {
+   "fn": "number",
+   "v": 1234.5,
+   "decimals": 0,
+   "out": "1,235"
+  },
+  {
+   "fn": "number",
+   "v": -98765432.1,
+   "decimals": 2,
+   "out": "\u22129,87,65,432.10"
+  },
+  {
+   "fn": "inr",
+   "v": 123456,
+   "out": "\u20b91,23,456"
+  },
+  {
+   "fn": "inr",
+   "v": 124500,
+   "out": "\u20b91,24,500"
+  },
+  {
+   "fn": "inr",
+   "v": 0,
+   "out": "\u20b90"
+  },
+  {
+   "fn": "inr",
+   "v": 3120.456,
+   "out": "\u20b93,120"
+  },
+  {
+   "fn": "inr",
+   "v": 3120.5,
+   "out": "\u20b93,121"
+  },
+  {
+   "fn": "inr",
+   "v": -700,
+   "out": "\u2212\u20b9700"
+  },
+  {
+   "fn": "inr",
+   "v": -0.4,
+   "out": "\u20b90"
+  },
+  {
+   "fn": "inr",
+   "v": 124500,
+   "opts": {
+    "paise": true
+   },
+   "out": "\u20b91,24,500.00"
+  },
+  {
+   "fn": "inr",
+   "v": 3120.456,
+   "opts": {
+    "paise": true
+   },
+   "out": "\u20b93,120.46"
+  },
+  {
+   "fn": "inr",
+   "v": -700,
+   "opts": {
+    "paise": true
+   },
+   "out": "\u2212\u20b9700.00"
+  },
+  {
+   "fn": "inr",
+   "v": -0.004,
+   "opts": {
+    "paise": true
+   },
+   "out": "\u20b90.00"
+  },
+  {
+   "fn": "inr",
+   "v": 24000000.0,
+   "opts": {
+    "paise": true,
+    "compact": true
+   },
+   "out": "\u20b92,40,00,000.00"
+  },
+  {
+   "fn": "inr",
+   "v": 124500,
+   "opts": {
+    "compact": true
+   },
+   "out": "\u20b91,24,500"
+  },
+  {
+   "fn": "inr",
+   "v": 100000,
+   "opts": {
+    "compact": true
+   },
+   "out": "\u20b91,00,000"
+  },
+  {
+   "fn": "inr",
+   "v": 85000,
+   "opts": {
+    "compact": true
+   },
+   "out": "\u20b985,000"
+  },
+  {
+   "fn": "inr",
+   "v": 99999.6,
+   "opts": {
+    "compact": true
+   },
+   "out": "\u20b91,00,000"
+  },
+  {
+   "fn": "inr",
+   "v": 24000000,
+   "opts": {
+    "compact": true
+   },
+   "out": "\u20b92.4 Cr"
+  },
+  {
+   "fn": "inr",
+   "v": 10000000,
+   "opts": {
+    "compact": true
+   },
+   "out": "\u20b91 Cr"
+  },
+  {
+   "fn": "inr",
+   "v": 9999999.6,
+   "opts": {
+    "compact": true
+   },
+   "out": "\u20b91 Cr"
+  },
+  {
+   "fn": "inr",
+   "v": 9999999,
+   "opts": {
+    "compact": true
+   },
+   "out": "\u20b999,99,999"
+  },
+  {
+   "fn": "inr",
+   "v": -0.3,
+   "opts": {
+    "compact": true
+   },
+   "out": "\u20b90"
+  },
+  {
+   "fn": "inr",
+   "v": -250000,
+   "opts": {
+    "compact": true
+   },
+   "out": "\u2212\u20b92,50,000"
+  },
+  {
+   "fn": "signedInr",
+   "v": 3120,
+   "out": "+\u20b93,120"
+  },
+  {
+   "fn": "signedInr",
+   "v": -700,
+   "out": "\u2212\u20b9700"
+  },
+  {
+   "fn": "signedInr",
+   "v": 0,
+   "out": "\u20b90"
+  },
+  {
+   "fn": "signedInr",
+   "v": 0.4,
+   "out": "\u20b90"
+  },
+  {
+   "fn": "signedInr",
+   "v": -0.4,
+   "out": "\u20b90"
+  },
+  {
+   "fn": "signedInr",
+   "v": 3120.5,
+   "opts": {
+    "paise": true
+   },
+   "out": "+\u20b93,120.50"
+  },
+  {
+   "fn": "signedInr",
+   "v": 0.004,
+   "opts": {
+    "paise": true
+   },
+   "out": "\u20b90.00"
+  },
+  {
+   "fn": "signedInr",
+   "v": -0.004,
+   "opts": {
+    "paise": true
+   },
+   "out": "\u20b90.00"
+  },
+  {
+   "fn": "signedInr",
+   "v": 124500,
+   "opts": {
+    "compact": true
+   },
+   "out": "+\u20b91,24,500"
+  },
+  {
+   "fn": "signedInr",
+   "v": 0.2,
+   "opts": {
+    "compact": true
+   },
+   "out": "\u20b90"
+  }
+ ]
+}

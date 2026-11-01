@@ -15,7 +15,7 @@ import { createRegistry, type PanelEntry, type PanelParams, type Presentation } 
  * shown whole by PagePanel, their search carried as one parameter); the Copilot's Watchtower proposal; the Trading bot's
  * template pre-fill. NAV-5b: Orders, Risk status and Set-up. NAV-6a: My money, Performance, Sectors and Custom scan.
  * NAV-6b: Notifications, Account & plan, the service status and the legal documents. NAV-7: Settings › Advanced,
- * Strategies, the Terminal and Today.
+ * Strategies, the Terminal and Today. NAV-8: an admin's view of one user's support status.
  */
 
 const clean = (pathname: string) => pathname.replace(/\/+$/, "") || "/";
@@ -319,6 +319,23 @@ export const TODAY_PANEL: PanelEntry = {
   load: () => import("./panels/PagePanel"),
 };
 
+// ---- NAV-8: Admin ---------------------------------------------------------------------------------------------------
+
+/** One user's support status (`/admin?section=support&user=12`): the user list's "Status". Only an address naming a
+ * user is this panel; the Support section itself stays the console's own tab. */
+export const ADMIN_SUPPORT_PANEL: PanelEntry = {
+  kind: "admin-support",
+  keys: ["user"],
+  title: (p) => (p.user ? `Support · user ${p.user}` : "Support"),
+  presentation: "side-wide",
+  match: ({ pathname, search }) => {
+    const user = search.get("user")?.trim() ?? "";
+    return clean(pathname) === "/admin" && search.get("section") === "support" && /^\d{1,12}$/.test(user) ? { user } : null;
+  },
+  href: (p) => `/admin?section=support${p.user ? `&user=${p.user}` : ""}`,
+  load: () => import("./panels/AdminSupportPanel"),
+};
+
 export const DEFAULT_PANELS: readonly PanelEntry[] = [
   FUTURES_PANEL, CHART_PANEL, BROKER_PANEL, AI_KEY_PANEL, COPILOT_PANEL, ANALYZE_PANEL, STRATEGY_BUILD_PANEL, NEWS_PANEL, SIGNALS_PANEL, BOTS_PANEL,
   OPTION_CHAIN_PANEL, OPTIONS_PLAN_PANEL, RISK_LIMITS_PANEL,
@@ -327,5 +344,6 @@ export const DEFAULT_PANELS: readonly PanelEntry[] = [
   MONEY_PANEL, PERFORMANCE_PANEL, MARKETS_PANEL, CUSTOM_SCAN_PANEL,
   NOTIFICATIONS_PANEL, ACCOUNT_PANEL, STATUS_PANEL, LEGAL_PANEL,
   ADVANCED_PANEL, STRATEGIES_PANEL, TERMINAL_PANEL, TODAY_PANEL,
+  ADMIN_SUPPORT_PANEL,
 ];
 export const DEFAULT_REGISTRY = createRegistry(DEFAULT_PANELS);

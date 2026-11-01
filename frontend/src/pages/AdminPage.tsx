@@ -10,6 +10,7 @@ import { Card, StatTile } from "../components/ui";
 import FeatureFlagsCard from "../admin/FeatureFlagsCard";
 import TraderPackCard from "../admin/TraderPackCard";
 import AiPlatformLimitsCard from "../admin/AiPlatformLimitsCard";
+import CopilotAgentLimitsCard from "../admin/CopilotAgentLimitsCard";
 import AiProviderCard from "../components/AiProviderCard";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import HolidaysCard from "../components/HolidaysCard";
@@ -215,6 +216,7 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
 
       {/* M72 PR-1b: the platform AI key's budgets and daily cap (v2 console; set before or after ai_platform_key is on). */}
       {inGroup("limits") && section && <AiPlatformLimitsCard />}
+      {inGroup("limits") && section && <CopilotAgentLimitsCard />}
 
       {inGroup("flags") && <FeatureFlagsCard flags={flags} tenants={flagTenants} busy={busy}
         onTenants={(name, value) => setFlagTenants({ ...flagTenants, [name]: value })}

@@ -181,7 +181,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     # the private fixtures manifest: paths and sha256 only, no data (backend/tests/private_fixtures.py, owner decision PR-2)
     "backend/tests/private_fixtures_manifest.json": "2aeb33e870fec47b0caa3f317d68e221267a7220c96dec102239e712198b3472",
     # the AI eval sets and their baselines (backend/evals/runner.py)
-    "backend/evals/baselines.json": "7fcee9a85d45cc74368fbf7b09c0d122ce0c2e6b5ea7bba30dd915f9f70e71a8",
+    "backend/evals/baselines.json": "89cc8e06ea1a8bf659712ba683bbc8c221e884f274713446542f97a76ec9bc31",
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
     "backend/evals/sets/qa.jsonl": "ed0530199bad39021edf8e4777700dedb99619c0eeeaca623dcf958d015e22ad",
     "backend/evals/sets/tool_args.jsonl": "578efa3d69f7d860f221068273a074b018e7998b71bdf8c55d5bdbd66d7f862b",

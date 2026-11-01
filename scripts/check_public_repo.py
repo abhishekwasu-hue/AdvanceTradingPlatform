@@ -188,6 +188,13 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/sets/copilot_jobs.jsonl": "f38a563b08c68a727e5eb4fb2fb13d254c8a136dc207ff93bda186ee4b24a416",
     "backend/evals/sets/copilot_safety.jsonl": "6957614b58ca737a77f1445e2d3bd0a13fa5c3063c829e75506e6043a3a37287",
     "backend/evals/sets/copilot_tools.json": "c7946be46843344a0095458d4faa555e8342138d968f3b2a04eacc25a355d8a6",
+    # M72 CP-0: the trader eval (backend/evals/trader_eval.py) - 60 questions, the safety block, the language lists, the recorded
+    # synthetic tool results (evals/build_trader_fixtures.py) and the baseline (raised only)
+    "backend/evals/sets/copilot_trader.jsonl": "b402a544489fd33a1c894d39eb1e397f64b78b5984e7f617d699786da893da37",
+    "backend/evals/sets/copilot_trader_safety.jsonl": "bbfa1fcc7a4df13f8102970366740719b011738590ecc089b3b3c60fdff2e2bf",
+    "backend/evals/sets/copilot_trader_lang.json": "93a1b22c0fe6e35d6815969ace2666767f3c97e736591e4cfe9fca91b221f0f0",
+    "backend/evals/sets/copilot_trader_tools.json": "a58e1baf50ab5a2a9365d40c102a64d30cfe7192face4ebfe41e7ba8ad68d041",
+    "backend/evals/trader_baseline.json": "ff294e0ad37ea689b8c519a61244d0423a07217114a028c052ec93a31f2f464d",
     "frontend/e2e/fixtures/copilot_tools_v2.json": "37c00546e26cc0cab4b2af0c38ae6041a630d57790be87397fa186502f3e4502",
     # hand-written API replies for the Playwright tests
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",

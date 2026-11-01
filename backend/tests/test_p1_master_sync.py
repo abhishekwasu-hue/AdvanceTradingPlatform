@@ -111,9 +111,10 @@ def test_a_ticket_miss_explains_the_refresh():
 def test_expiry_day_opens_the_next_expiry_unless_turned_off():
     today = date(2026, 10, 27)
     listed = [today, date(2026, 11, 3), date(2026, 11, 10)]
-    assert chain_view.default_expiry(listed, today) == date(2026, 11, 3)
+    assert chain_view.default_expiry(listed, today) == today                       # M68 PR-4 (TS1-044): Not set = the nearest
+    assert chain_view.default_expiry(listed, today, next_on_expiry_day=True) == date(2026, 11, 3)
     assert chain_view.default_expiry(listed, today, next_on_expiry_day=False) == today
-    assert chain_view.default_expiry(listed, date(2026, 10, 28)) == date(2026, 11, 3)
+    assert chain_view.default_expiry(listed, date(2026, 10, 28), next_on_expiry_day=True) == date(2026, 11, 3)
 
 
 def test_the_setting_is_read_from_the_users_option_chain_prefs():

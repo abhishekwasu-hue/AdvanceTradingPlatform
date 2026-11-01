@@ -90,6 +90,12 @@ lookup by (`broker:<id>`, subject):
   secret is never written to a tenant row. One login a day = app + broker.
 - Rows: label `primary` when free or already this broker account's platform row; a `primary` row with the user's own
   keys is never overwritten (that session goes to label `broker-login`). OPEN_QUESTIONS M74-1.
+- Renewal of a sign-in row is the next day's sign-in (or "Continue with your broker" again); the own-keys renew /
+  OAuth-start routes need the user's own secret and do not apply to it.
+- Built in this PR (backend only, no routes yet): `backend/app/auth/broker_signin.py` (providers, `configured_brokers()`,
+  `identity_for_code()`, `store_signin_session()`), `config.BROKER_SIGNIN_APPS`, `.env.example`. The routes, the
+  sign-in page list (BL-1) and linking (BL-3) attach to M73's registry, flow cookie and `user_identities` once that
+  branch is pushed; no migration (no new columns).
 
 ### 3.3 Linking (BL-3)
 M73's Settings > Account list shows `broker:<id>` identities with the same link / unlink buttons; keep one way to sign

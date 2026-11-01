@@ -723,6 +723,19 @@ BROKER_OAUTH_REDIRECT_BASE_URL = os.environ.get("BROKER_OAUTH_REDIRECT_BASE_URL"
 # registered at Google is PUBLIC_BASE_URL + "/api/auth/google/callback". The secret is never returned or logged.
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+# M74: "Continue with your broker" sign-in through ATP's OWN platform app at each broker (docs/design/M74_BROKER_SIGNIN.md).
+# Per broker (upstox, zerodha, fyers): the platform app's key and secret, and APPROVED=1 once the broker has approved the
+# app for other clients - only the owner knows that. All three set = the broker is offered on the sign-in page; any one
+# empty = it is not shown at all. The redirect URL registered on the app is PUBLIC_BASE_URL + /api/auth/broker/<id>/callback.
+# The secrets are never returned, logged or written to a tenant's broker row.
+BROKER_SIGNIN_APPS = {
+    broker: {
+        "api_key": os.environ.get(f"BROKER_SIGNIN_{broker.upper()}_API_KEY", "").strip(),
+        "api_secret": os.environ.get(f"BROKER_SIGNIN_{broker.upper()}_API_SECRET", "").strip(),
+        "approved": os.environ.get(f"BROKER_SIGNIN_{broker.upper()}_APPROVED", "").strip().lower() in ("1", "true", "yes"),
+    }
+    for broker in ("upstox", "zerodha", "fyers")
+}
 # PW5: the Zerodha Kite Publisher api_key for "Trade in your broker app" basket links (docs/BROKER_DATA_TERMS.md). A
 # public per-app identifier that sits in the page's HTML form, not a secret - but never committed with a value. Empty =
 # no Zerodha link. Only read when the `broker_app_links` flag is on (off by default). ATP places no order with it.

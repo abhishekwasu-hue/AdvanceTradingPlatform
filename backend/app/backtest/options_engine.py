@@ -534,7 +534,9 @@ def run_option_backtest(
         "signals_skipped": dict(skipped), "structures": structures,
         "disclaimer": ("Synthetic premiums (Black-Scholes) approximate what the market would have quoted; they carry no smile, "
                        "no bid/ask and no liquidity. Use this to study structure mechanics, not to claim an edge.")
-        if pricer.name == "synthetic" else "Premiums from recorded chain quotes; legs without a fresh quote were priced synthetically if a fallback was allowed.",
+        if pricer.name == "synthetic" else ("Premiums from your recorded end-of-day option prices (the day's close); a leg with no recorded "
+                                            "premium was priced by the model - see snapshot_hits / synthetic_fallbacks.")
+        if pricer.name == "recorded_eod" else "Premiums from recorded chain quotes; legs without a fresh quote were priced synthetically if a fallback was allowed.",
     }
     if isinstance(pricer, SnapshotPricer):
         options.update({"snapshot_hits": pricer.hits, "synthetic_fallbacks": pricer.fallbacks, "snapshot_contracts": pricer.contracts})

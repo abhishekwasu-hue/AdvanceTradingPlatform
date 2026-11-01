@@ -392,6 +392,33 @@ class SnapshotPricer:
         return base + (f"; synthetic fallback ({self.fallback.describe()})" if self.fallback is not None else "; no fallback")
 
 
+# M71 PL-7: an end-of-day premium (the session close) prices a decision up to this long after it - a daily bar decided
+# at its close, or the next session's bars before a newer close exists (a weekend and a holiday in between).
+EOD_MAX_AGE_MINUTES = 4 * 24 * 60
+
+
+@dataclass
+class StoredEodPricer(SnapshotPricer):
+    """M71 PL-7: the recorded END-OF-DAY premiums of the tenant's own store (NSE F&O bhavcopy closes, seeded from the
+    owner's private data) - used first; a leg without a recorded premium at or before the decision is priced by the
+    `fallback` (the run's model) and counted. Only premiums known by the decision time are used (no look-ahead)."""
+    max_age_minutes: int = EOD_MAX_AGE_MINUTES
+    name: str = "recorded_eod"
+
+    @property
+    def vol(self) -> Optional[VolatilityModel]:
+        return self.fallback.vol if isinstance(self.fallback, SyntheticPricer) else None
+
+    @vol.setter
+    def vol(self, value: VolatilityModel) -> None:
+        if self.fallback is not None:
+            self.fallback.vol = value
+
+    def describe(self) -> str:
+        base = f"recorded end-of-day premiums ({self.contracts} contracts)"
+        return base + (f"; model prices where none is recorded ({self.fallback.describe()})" if self.fallback is not None else "; no fallback")
+
+
 def black76(right: str, forward: float, strike: float, t: float, r: float, sigma: float) -> float:
     """Black-76: e^(-rT) [F N(d1) - K N(d2)] (call), e^(-rT) [K N(-d2) - F N(-d1)] (put)."""
     if forward <= 0 or strike <= 0 or sigma <= 0 or t <= 0:

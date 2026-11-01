@@ -24,4 +24,6 @@ dist/
 
 # A1: the private package checkout deploy/atp.sh keeps on the host (never committed here)
 /private/
+# M71 PL-7: the owner's private data checkout `atp.sh import-trade-data` keeps on the host (never committed here)
+/trade-data/
 frontend/lighthouse-report/

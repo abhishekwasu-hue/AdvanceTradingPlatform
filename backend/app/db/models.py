@@ -2993,7 +2993,9 @@ class MdTenantCandleRecord(Base):
     high: Mapped[float] = mapped_column(Price, nullable=False)
     low: Mapped[float] = mapped_column(Price, nullable=False)
     close: Mapped[float] = mapped_column(Price, nullable=False)
-    volume: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    # M71 PL-7: NULL = the source had no volume for this bar (a seeded file without a volume column, F&O volume withheld
+    # while its unit is unsettled) - missing stays missing, never 0. Every other writer stores the broker's number.
+    volume: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     oi: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
@@ -3277,6 +3279,30 @@ class LakeBackfillWindowRecord(Base):
     bars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class DataUseWindowRecord(Base):
+    """M71 PL-7b: one data-use window of a tenant's private research data, loaded at import from the private data's own
+    policy (never written in public code). Kinds: sealed (the final holdout: never searched), contaminated (the logic was
+    designed on it: regression only), in_sample, validation. `scope` = the underlying the window applies to ("*" = all).
+    `end_date` NULL = open-ended ("onward"). Calibration / research / optimisation paths refuse sealed and contaminated
+    rows (app.market_lake.data_use); charts, live reading, backtests shown to the user and screeners display them."""
+
+    __tablename__ = "data_use_windows"
+    __table_args__ = (UniqueConstraint("tenant_id", "kind", "scope", "start_date", name="uq_data_use_window"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    scope: Mapped[str] = mapped_column(String(40), nullable=False, default="*")
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    label: Mapped[str | None] = mapped_column(String(60), nullable=True)           # the policy's own name of the window
+    use_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    policy_source: Mapped[str | None] = mapped_column(String(200), nullable=True)  # the policy file it came from
+    policy_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 

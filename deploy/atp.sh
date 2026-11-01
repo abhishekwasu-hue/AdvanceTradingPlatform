@@ -51,6 +51,13 @@
 #                                                  index history through the owner's own broker session into his
 #                                                  private store, resumable; then the bars per index per timeframe.
 #                                                  --check: what is missing + the stored vs the broker's last close
+#   /opt/atp/deploy/atp.sh import-trade-data [--check]
+#                                                  M71 PL-7: fetches the owner's PRIVATE data repository (its own read-only
+#                                                  deploy key ~/.ssh/trade_data_ro, ATP_TRADE_DATA_REPO / ATP_TRADE_DATA_REF
+#                                                  in .env; only the market-data folders) into ATP_TRADE_DATA_DIR (default
+#                                                  /opt/atp/trade-data, never committed), then seeds his private store from
+#                                                  it, mounted read-only (resumable; a re-run rewrites nothing). Never runs
+#                                                  on deploy. --check: what each file would give; nothing written
 #   /opt/atp/deploy/atp.sh journal-status          M62 JN-1, read-only: is discipline_engine on (everyone / which
 #                                                  organisations), journal rows and manual entries per organisation,
 #                                                  closed trades without a journal row. Counts only; nothing written
@@ -117,7 +124,7 @@ APP_IMAGES=(atp-backend atp-worker atp-frontend atp-research-worker atp-backup)
 # the owner gives his organisation until he picks a name (never hard-coded; the name may hold spaces, @ and +).
 # M55 S1: LIVE_OWNER_USER_ID, the one account that may switch LIVE on (an id; it switches nothing by itself).
 ENV_SET_KEYS=(UNIVERSE_SYNC_ENABLED UNIVERSE_SYNC_HOUR_IST INSTRUMENT_SYNC_EXCHANGES INSTRUMENT_SYNC_HOUR_IST
-              HISTORY_OWNER_TENANT_ID HISTORY_OWNER_TENANT_NAME LIVE_OWNER_USER_ID)
+              HISTORY_OWNER_TENANT_ID HISTORY_OWNER_TENANT_NAME LIVE_OWNER_USER_ID ATP_TRADE_DATA_REPO ATP_TRADE_DATA_REF)
 ENV_BACKUPS_KEEP=10
 
 RELEASE=""          # image tag compose uses (ATP_RELEASE)
@@ -2731,6 +2738,12 @@ cmd_env_set() {
     elif [ "$key" = "HISTORY_OWNER_TENANT_NAME" ]; then
       [[ "$val" =~ ^[A-Za-z0-9_.,:@+-]([A-Za-z0-9_.,:@+\ -]{0,62}[A-Za-z0-9_.,:@+-])?$ ]] \
         || die "the value for $key is the organisation's name exactly as the Team page shows it: letters, digits, spaces and _ . , : @ + - (1 to 64 characters, no space at either end)" 2
+    elif [ "$key" = "ATP_TRADE_DATA_REPO" ]; then
+      [[ "$val" =~ ^git@github\.com:[A-Za-z0-9_.-]{1,64}/[A-Za-z0-9_.-]{1,100}\.git$ ]] \
+        || die "the value for $key is the repository's ssh address: git@github.com:<owner>/<repository>.git" 2
+    elif [ "$key" = "ATP_TRADE_DATA_REF" ]; then
+      [[ "$val" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]{0,63}$ && "$val" != *..* ]] \
+        || die "the value for $key is a branch or tag name (letters, digits and _ . / -)" 2
     else
       [[ "$val" =~ ^[A-Za-z0-9_.,:-]{1,64}$ ]] || die "the value for $key may hold only letters, digits and _ . , : - (1 to 64 characters)" 2
     fi
@@ -2880,6 +2893,64 @@ cmd_lake_backfill() {
   esac
 }
 
+# M71 PL-7 (owner, 1 Nov): the owner's private data (docs/deploy/TRADE_DATA_SEED.md) -> HIS private store. Mirrors the
+# private package (A1): a read-only checkout fetched with the host's OWN read-only deploy key for that repository
+# (ATP_TRADE_DATA_KEY, default ~/.ssh/trade_data_ro, through GIT_SSH_COMMAND with IdentitiesOnly), the branch or tag
+# ATP_TRADE_DATA_REF (default main) of ATP_TRADE_DATA_REPO (its ssh address) from .env, into ATP_TRADE_DATA_DIR (default
+# $ATP_DIR/trade-data, git-ignored). Only the market-data folders are checked out (sparse, blobs fetched on demand). The
+# import (backend app/market_lake/seed_import.py) runs in a one-off backend container with the checkout mounted
+# READ-ONLY; it writes only the owner's private store (HISTORY_OWNER_TENANT_ID + HISTORY_OWNER_TENANT_NAME). Never part
+# of `deploy`. Idempotent: a file already imported with the same sha256 is skipped. The key's path is printed, never its
+# content; git's own output is not printed. Long: run it detached like the deploy (nohup ... &).
+TRADE_DATA_FOLDERS="upstox banknifty futures futures_volume nse_fo_bhavcopy major_levels_candles live_export data"
+trade_data_key() { printf '%s' "${ATP_TRADE_DATA_KEY:-$HOME/.ssh/trade_data_ro}"; }
+trade_data_dir() { local d; d="$(env_get ATP_TRADE_DATA_DIR)"; printf '%s' "${ATP_TRADE_DATA_DIR:-${d:-$ATP_DIR/trade-data}}"; }
+trade_data_fetch() {
+  local ref key repo dir ssh_cmd f
+  ref="$(env_get ATP_TRADE_DATA_REF)"; ref="${ref:-main}"; key="$(trade_data_key)"; repo="$(env_get ATP_TRADE_DATA_REPO)"; dir="$(trade_data_dir)"
+  step "the owner's private data (read-only checkout)"
+  [ -f "$key" ] || die "the owner adds the read-only deploy key $key for the private data repository (docs/deploy/TRADE_DATA_SEED.md)" 10
+  [ -n "$repo" ] || die "the owner adds ATP_TRADE_DATA_REPO (the private data repository's ssh address) in .env" 10
+  case "$ref" in -*|*..*|*[!A-Za-z0-9._/-]*) die "ATP_TRADE_DATA_REF in .env is not a branch or tag name" 2 ;; esac
+  ssh_cmd="ssh -i $key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+  mkdir -p "$dir"
+  [ -d "$dir/.git" ] || git init -q "$dir" >/dev/null 2>&1 || die "could not create $dir" 1
+  git -C "$dir" remote remove origin >/dev/null 2>&1 || true
+  git -C "$dir" remote add origin "$repo" >/dev/null 2>&1
+  git -C "$dir" config remote.origin.promisor true; git -C "$dir" config remote.origin.partialclonefilter blob:none
+  git -C "$dir" sparse-checkout init --no-cone >/dev/null 2>&1 || true
+  { printf '/README.md\n/data_policy.json\n'; for f in $TRADE_DATA_FOLDERS; do printf '/%s/\n' "$f"; done; } > "$dir/.git/info/sparse-checkout"
+  if ! GIT_SSH_COMMAND="$ssh_cmd" GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 --filter=blob:none --no-tags origin \
+      "+refs/heads/$ref:refs/remotes/origin/$ref" >/dev/null 2>&1 \
+     && ! GIT_SSH_COMMAND="$ssh_cmd" GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch -q --depth 1 --filter=blob:none --no-tags origin \
+      "+refs/tags/$ref:refs/tags/$ref" >/dev/null 2>&1; then
+    die "could not fetch $ref of the private data repository (is the deploy key added there, read-only, and does $ref exist?)" 1
+  fi
+  local target="refs/remotes/origin/$ref"; git -C "$dir" rev-parse -q --verify "$target" >/dev/null 2>&1 || target="refs/tags/$ref"
+  (umask 022 && GIT_SSH_COMMAND="$ssh_cmd" GIT_TERMINAL_PROMPT=0 git -C "$dir" -c advice.detachedHead=false checkout -q --force --detach "$target" >/dev/null 2>&1 \
+    && find "$dir" -path "$dir/.git" -prune -o -exec chmod go+rX,go-w {} + 2>/dev/null && chmod 755 "$dir") \
+    || die "could not check out $ref in $dir" 1   # world-readable for the container's own user; mounted read-only
+  ok "private data at $ref ($(git -C "$dir" rev-parse --short=12 HEAD 2>/dev/null || echo none)) in $dir"
+}
+cmd_import_trade_data() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  local mode=run rc=0 dir
+  case "${1:-}" in "") ;; --check) mode=check ;; *) die "usage: atp.sh import-trade-data [--check]" 2 ;; esac
+  [ $# -le 1 ] || die "usage: atp.sh import-trade-data [--check]" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would fetch the private data read-only and run the seed import (%s) in a backend container\n' "$mode"; return 0; fi
+  check_tools
+  trade_data_fetch
+  dir="$(trade_data_dir)"
+  step "seed import ($mode) into the owner's private store"
+  dc run --rm --no-deps -T -v "$dir:/trade-data:ro" -e ATP_TRADE_DATA_DIR=/trade-data backend \
+    python -m app.market_lake.seed_import "$mode" || rc=$?
+  case "$rc" in
+    0) ok "seed import $mode finished (totals above; details in the owner's private report)" ;;
+    2) exit 2 ;;            # it printed why (the owner's organisation is not configured / confirmed)
+    *) die "the seed import did not finish (is the database running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
 # M62 JN-1 (owner, 30 Oct): the journal's real state (backend app/journal/ops.py), run in the backend container.
 # Read-only: whether discipline_engine is on and for which organisations, the journal rows and manual entries per
 # organisation, the closed trades without a journal row. Counts, organisation ids and names only; no secret is printed.
@@ -2964,6 +3035,7 @@ main() {
     lists-sync)     cmd_lists_sync "$@" ;;
     probe-candles)  cmd_probe_candles "$@" ;;
     lake-backfill)  cmd_lake_backfill "$@" ;;
+    import-trade-data) cmd_import_trade_data "$@" ;;
     journal-status) cmd_journal_status "$@" ;;
     journal-backfill) cmd_journal_backfill "$@" ;;
     help|-h|--help) usage ;;

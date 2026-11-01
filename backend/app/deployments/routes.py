@@ -561,7 +561,7 @@ async def create_deployment(
     reads_daily = request.holding == "SWING" and request.timeframe == "day"
     if not reads_daily and request.timeframe not in SUPPORTED_BASE_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"timeframe must be one of {list(SUPPORTED_BASE_TIMEFRAMES)}")
-    base_minutes = _timeframe_minutes(request.timeframe)
+    base_minutes = _timeframe_minutes(request.timeframe or "")                       # set by _own_base above
     for tf in ([] if reads_daily else strategy.timeframes):
         tf_minutes = _timeframe_minutes(tf)
         if tf_minutes is None or base_minutes is None or tf_minutes < base_minutes or tf_minutes % base_minutes != 0:

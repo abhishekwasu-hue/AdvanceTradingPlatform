@@ -31,7 +31,7 @@ import math
 import re
 from dataclasses import dataclass
 from itertools import product
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -50,7 +50,7 @@ SQUARE_OFF = (15, 15)
 # M68 PR-8 (TS1-075): the draft bot's exits are SUGGESTED, never sent on their own: the candidate shows them, and only a
 # trader who ticks "Use the suggested exits" sends them with his bot. The simulation's own assumptions (above) are shown
 # on the card as what the test assumed, never applied to a bot.
-SUGGESTED_EXITS = {"holding": "INTRADAY", "exit_rules": {"time_exit_at": "15:10", "break_even_at_r": 1.0}}
+SUGGESTED_EXITS: Dict[str, Any] = {"holding": "INTRADAY", "exit_rules": {"time_exit_at": "15:10", "break_even_at_r": 1.0}}
 
 
 def suggested_exits() -> dict:

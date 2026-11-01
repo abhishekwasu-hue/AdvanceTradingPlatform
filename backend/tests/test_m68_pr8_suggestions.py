@@ -115,3 +115,63 @@ def test_the_ladder_targets_are_labelled_milestones_that_lock_nothing():
     assert advice_in(service.LADDER_TARGETS_NOTE) == []                       # a plain fact, no advice wording
     source = open(service.__file__, encoding="utf8").read()
     assert '"targets_note": LADDER_TARGETS_NOTE,' in source
+
+
+def test_the_interview_deploy_route_refuses_suggested_picks_until_he_accepts_them(monkeypatch):
+    """TS1-077 over HTTP: a plan carrying its own contract picks is refused (400) without accept_suggested and created
+    (201) with it - the same candidate, the same risk acceptance."""
+    import asyncio
+    import json
+
+    from app.db.models import AiCandidateRecord
+    from tests.server_evidence import serve_candles
+    from tests.test_auth_api import _session_factory, client
+    from tests.test_contract_rules import _load_master
+    from tests.test_phase_ap_interview import _sessions
+    from tests.test_trading_worker import _tenant
+    _load_master()                                                          # the NIFTY options list, as on the server
+    headers = _tenant("m68-pr8-accept@example.com")["headers"]
+    df = _sessions(days=5)
+    serve_candles(monkeypatch, [{"timestamp": ts.isoformat(), "open": r.open, "high": r.high, "low": r.low, "close": r.close,
+                                 "volume": r.volume} for ts, r in df.iterrows()])
+    plan = client.post("/api/ai/interview/plan", headers=headers, json={
+        "answers": {"language": "en", "experience": "learning", "capital": 300000, "risk": "moderate", "style": "intraday",
+                    "vehicle": "option_buy", "goal": "big_trends", "symbol": "NIFTY 50", "instrument": "index"},
+        "base_timeframe": "5min"})
+    assert plan.status_code == 200, plan.text
+    cid = plan.json()["candidate_id"]
+
+    async def with_evidence() -> list:
+        async with _session_factory() as session:
+            row = await session.get(AiCandidateRecord, cid)
+            metrics = json.loads(row.metrics_json or "{}")
+            metrics["evidence"] = {"tested": True, "total_trades": 18, "win_rate": 0.5}
+            row.metrics_json = json.dumps(metrics)
+            await session.commit()
+            return interview.suggested_contract(json.loads(row.deployment_json or "{}"))
+    picks = asyncio.run(with_evidence())
+    assert picks, "the option plan carries its own contract picks"
+    refused = client.post("/api/ai/interview/deploy", headers=headers, json={"candidate_id": cid, "accept_risk": True})
+    assert refused.status_code == 400 and "accept_suggested" in refused.text and interview.suggested_text(picks)[:40] in refused.text
+    accepted = client.post("/api/ai/interview/deploy", headers=headers,
+                           json={"candidate_id": cid, "accept_risk": True, "accept_suggested": True})
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["mode"] == "PAPER" and accepted.json()["deployment"]["mode"] == "PAPER"
+
+
+def test_a_strategy_whose_smallest_candle_is_not_a_broker_base_asks_for_base_candles():
+    """TS1-099: _own_base never picks a base the broker does not serve - "1d" (not "day", not an intraday base) is asked for."""
+    import pytest
+    from fastapi import HTTPException
+
+    from app.deployments.routes import SUPPORTED_BASE_TIMEFRAMES, DeploymentCreateRequest, _own_base
+
+    class _Stub:
+        name = "stub"
+        timeframes = ["1d"]
+    assert "1d" not in SUPPORTED_BASE_TIMEFRAMES
+    req = DeploymentCreateRequest(strategy_id="ema_rsi_scalper_1m", symbol="reliance")
+    with pytest.raises(HTTPException) as refused:
+        _own_base(req, _Stub())
+    assert refused.value.status_code == 422 and str(refused.value.detail).startswith("Needs your setting: base candles")
+    assert req.timeframe is None and req.exchange == "NSE"                 # the exchange is still the symbol's own fact

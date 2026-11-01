@@ -14,6 +14,7 @@ from app.core.logging_config import bind_log_context, update_log_context
 from app.core.models import RiskConfig, Signal
 from app.db.models import OrderRecord, Tenant, User
 from app.execution import approval as approval_gate
+from app.execution import order_defaults
 from app.execution.contract_execution import ContractExecutionError, build_order_plan, contract_ltp, written_lot_cap
 from app.execution.order_persistence import create_order, execution_result_from_order, transition_order
 from app.execution.prechecks import PreCheckRefusal, live_margin_cap, margin_probe_for, validate_instrument
@@ -84,7 +85,7 @@ async def execute_signal_for_user(
     broker: Optional[BrokerInterface] = None, deployment_id: Optional[int] = None,
     contract: Optional[ResolvedContract] = None, rules: Optional[ContractRules] = None,
     quote_broker: Optional[BrokerInterface] = None, account_id: Optional[int] = None, exit_rules: Optional[str] = None,
-    holding: str = "INTRADAY", order_style: Optional[str] = None, market_protection_pct: Optional[float] = None,
+    holding: str | None = None, order_style: str | None = None, market_protection_pct: float | None = None,
     journal_source: Optional[str] = None,
     origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: Optional[int] = None,
     max_quantity: Optional[float] = None, risk_cap_amount: Optional[float] = None, exchange: Optional[str] = None,
@@ -202,6 +203,20 @@ async def execute_signal_for_user(
                     kill_switch_reasons.append(ban)
                 elif ban_note:
                     fo_notes.append(ban_note)
+        # M68 PR-1 (TS1-005 / 008 / 010 / 011): the holding, the order type and the price protection are the user's own -
+        # the caller's (order / bot / proposal) value, else his Trade settings. Not set: nothing is placed, and the order
+        # trail says which setting it needs (ATP does not choose). An exit never comes here (ADR-0004).
+        mine = await order_defaults.load(session, user)
+        holding = holding or mine.holding
+        order_style = order_style or mine.bot_order_style
+        if market_protection_pct is None:
+            market_protection_pct = mine.price_protection_pct
+        if holding is None:
+            kill_switch_reasons.append(order_defaults.needs_setting("holding"))
+        if order_style is None:
+            kill_switch_reasons.append(order_defaults.needs_setting("order_type"))
+        elif order_style.upper() == "PROTECTED_LIMIT" and market_protection_pct is None:
+            kill_switch_reasons.append(order_defaults.needs_setting("price_protection_pct"))
         if kill_switch_reasons:
             order.reasons_json = json.dumps(kill_switch_reasons)
             order = await transition_order(
@@ -304,6 +319,9 @@ async def execute_signal_for_user(
             return ExecutionResult(executed=False, reasons=refusals), order
 
         is_write = contract is not None and contract.position == OptionPosition.WRITE
+        # Phase AS: a swing position is a delivery / carry-forward one, entry and stop alike. M68 TS1-009: the margin
+        # probes ask the margin of the order's own product (NRML margin differs from MIS); `holding` is set here.
+        entry_product = product_for(holding, contract.kind.value if contract is not None else "UNDERLYING", order_exchange)
         if execution_mode == ExecutionMode.LIVE and not is_write:
             probe = margin_probe_for(
                 contract, symbol=signal.symbol, exchange=order_exchange,
@@ -311,7 +329,8 @@ async def execute_signal_for_user(
                 unit=float(contract_spec.lot_size) if contract_spec is not None else 1.0, unit_price=signal.entry,
             )
             try:
-                margin_cap, margin_note = await live_margin_cap(broker, **probe, share=effective_risk_config.margin_share())
+                margin_cap, margin_note = await live_margin_cap(broker, **probe, product=entry_product,
+                                                                share=effective_risk_config.margin_share())
             except PreCheckRefusal as exc:
                 reason = str(exc)
                 order.reasons_json = json.dumps([reason])
@@ -331,7 +350,7 @@ async def execute_signal_for_user(
         if is_write and execution_mode == ExecutionMode.LIVE:
             # Writing needs the broker's margin number; an unknown requirement is a refusal.
             try:
-                cap_lots, note = await written_lot_cap(broker, contract, effective_risk_config.margin_share())
+                cap_lots, note = await written_lot_cap(broker, contract, effective_risk_config.margin_share(), product=entry_product)
             except ContractExecutionError as exc:
                 reason = str(exc)
                 order.reasons_json = json.dumps([reason])
@@ -348,11 +367,10 @@ async def execute_signal_for_user(
             mode=execution_mode, risk_config=effective_risk_config, broker=broker,
             exchange=order_exchange,
             algo_id=algo_ids.order_algo_id(tenant.algo_id if tenant is not None else None, broker.name if broker is not None else None),
-            # Phase AS: a swing position is a delivery / carry-forward one, entry and stop alike.
-            product=product_for(holding, contract.kind.value if contract is not None else "UNDERLYING", order_exchange),
+            product=entry_product,
             # P0.5 / T5 + T2: the deployment's entry style; the stop's order type follows what the broker accepts
             # for the instrument kind actually traded.
-            order_style=order_style or "MARKET", market_protection_pct=market_protection_pct,
+            order_style=order_style, market_protection_pct=market_protection_pct,
             is_option=(contract.kind.value == "OPTION") if contract is not None else None,
             paper_execution=paper_execution, freeze_quantity=freeze_quantity,
             # DEF-0 D3: an Autopilot option with no premium stop of the trader's own gets no broker stop at its premium
@@ -379,8 +397,9 @@ async def execute_signal_for_user(
             reasons = list(verdict.reasons) + ([block] if block else [])
             return verdict.allowed and block is None, reasons, verdict.notes
 
-        result: ExecutionResult = await order_router.execute(signal, state, contract_spec=contract_spec, max_quantity=max_quantity,
-                                                            pre_place_check=hierarchy_check)
+        with order_defaults.stop_band(mine.stop_limit_band_pct):     # M68 TS1-014: the protective stop's gap is his own
+            result: ExecutionResult = await order_router.execute(signal, state, contract_spec=contract_spec, max_quantity=max_quantity,
+                                                                pre_place_check=hierarchy_check)
         if plan is not None:
             result.reasons = plan.notes + result.reasons
         if pre_notes:

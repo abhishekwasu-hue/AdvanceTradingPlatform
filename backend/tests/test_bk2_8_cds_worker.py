@@ -56,7 +56,7 @@ def _close_what_this_module_opened():
 def _cds_deploy(t, *, exchange="CDS", symbol="USDINR", status="ACTIVE", mode="PAPER") -> int:
     async def go():
         async with _session_factory() as session:
-            dep = StrategyDeploymentRecord(tenant_id=t["tenant_id"], strategy_id=STRATEGY, symbol=symbol, exchange=exchange, timeframe="1min",
+            dep = StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=t["tenant_id"], strategy_id=STRATEGY, symbol=symbol, exchange=exchange, timeframe="1min",
                                            mode=mode, broker_name="upstox", status=status, created_by=t["user_id"])
             session.add(dep)
             await session.commit()

@@ -213,7 +213,7 @@ def test_uncertain_tenant_rejects_live_entries_from_every_entry_point_but_paper_
         async with _session_factory() as session:
             user = await session.get(User, t["user_id"])
             return await execute_signal_for_user(session, user, mode=mode, strategy_id="ema_rsi_scalper_1m", signal=_signal(),
-                                                 broker=_FakeBroker() if mode == "LIVE" else None)
+                                                 broker=_FakeBroker() if mode == "LIVE" else None, holding="INTRADAY", order_style="MARKET")
 
     result, order = _run(go("LIVE"))
     assert not result.executed and order.status == "REJECTED"
@@ -294,7 +294,7 @@ def test_a_paper_entry_with_a_nan_level_is_rejected_not_left_at_risk_check(field
         async with _session_factory() as session:
             user = await session.get(User, t["user_id"])
             signal = _signal().model_copy(update={field: value})
-            return await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=signal)
+            return await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=signal, holding="INTRADAY", order_style="MARKET")
 
     result, order = _run(go())
     assert not result.executed and order.status == "REJECTED"

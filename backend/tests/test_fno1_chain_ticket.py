@@ -185,7 +185,7 @@ def test_paper_fills_only_what_the_price_reaches_now(order_type, side, price, tr
 
 
 def test_ticket_errors_are_plain_words():
-    ask = fno_ticket.OrderAsk(underlying="NIFTY", expiry=date(2030, 1, 1), strike=22800, right="CE", side="BUY", lots=1, order_type="SL")
+    ask = fno_ticket.OrderAsk(underlying="NIFTY", expiry=date(2030, 1, 1), strike=22800, right="CE", side="BUY", lots=1, order_type="SL", product="MIS")
     assert fno_ticket.ask_errors(ask, 0.05) == ["Enter the limit price", "Enter the trigger price"]
     ask.price, ask.trigger_price = 100.02, 100.0
     assert "not a multiple of the tick size" in fno_ticket.ask_errors(ask, 0.05)[0]
@@ -311,7 +311,7 @@ def test_under_the_lock_the_ticket_places_paper_and_a_live_entry_never_reaches_a
                 sig = Signal(symbol=symbol, strategy_id="manual_fno", strategy_name="x", direction=SignalDirection.LONG,
                              timestamp=datetime.now(timezone.utc), entry=100.0, stop_loss=70.0, grade=SignalGrade.VALID)
                 result, order = await execute_signal_for_user(session, user, mode="LIVE", strategy_id="manual_fno", signal=sig,
-                                                              broker=broker, idempotency_key=f"fno1-live:{uuid.uuid4().hex}")
+                                                              broker=broker, idempotency_key=f"fno1-live:{uuid.uuid4().hex}", holding="INTRADAY", order_style="MARKET")
                 return result.executed, order.status, json.loads(order.reasons_json or "[]")
         executed, status, reasons = _run(live())
         assert not executed and status == "REJECTED" and any(phase0_lock.ENTRY_REASON in r for r in reasons)

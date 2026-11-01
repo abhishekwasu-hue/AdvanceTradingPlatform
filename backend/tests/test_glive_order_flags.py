@@ -329,7 +329,7 @@ def _wing_run(monkeypatch, strict, wing_fill_ratio=1.0, reject_wing=False):
         async with _session_factory() as session:
             st = await resolve_structure(session, "NIFTY 50", _rules(), OptionStrategy.BULL_PUT_SPREAD, SignalDirection.LONG,
                                          spread_width=2, spot=SPOT, today=TODAY)
-            return await _place_live_legs(broker, st, st.lot_size, "s", None, {}, []), st.lot_size
+            return await _place_live_legs(broker, st, st.lot_size, "s", None, {}, [], product="MIS"), st.lot_size
     broker = B()
     (ok, failure), lot = _run(go(broker))
     return ok, failure, [(o.transaction_type.value, o.quantity) for o in broker.placed], lot

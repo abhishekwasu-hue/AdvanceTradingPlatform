@@ -305,6 +305,8 @@ test.describe("8b slice 3 flows", () => {
     await expect(ticket.locator("[data-practice-frame]")).toContainText("PAPER");
     await expect(ticket).toContainText("NIFTY 03 NOV 24500 CE");
     expect(orderCalls(seen)).toEqual([]);
+    // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+    if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").tap();
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1: no product saved - pick one before Review
     await ticket.locator("[data-ticket='review']").tap();
     await ticket.locator("[data-ticket='place']").tap();

@@ -45,6 +45,31 @@ def _no_instrument_master_download(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _saved_order_defaults(request):
+    """M68 PR-1: ATP pre-chooses no holding, product, order type, band or trigger - each comes from the user's own Trade
+    settings > Order defaults (app/execution/order_defaults.py). The tests written before M68 run as a user who SAVED
+    Intraday / MIS / Market / 0.5 % / touch / the option's own price there (the values they were written against); a value
+    he really saved still wins. Tests of the M68 behaviour itself (Not set => ask / skip) carry the marker
+    `real_order_defaults` and read the real, empty settings (tests/test_m68_order_defaults.py)."""
+    if request.node.get_closest_marker("real_order_defaults"):
+        yield
+        return
+    from dataclasses import replace
+
+    from app.execution import order_defaults
+    real = order_defaults.load
+    saved = order_defaults.OrderDefaults(holding="INTRADAY", product="MIS", order_type="MARKET", price_protection_pct=0.5,
+                                         trigger_mode="TOUCH", trigger_source="PREMIUM")
+
+    async def _load(session, user):
+        own = await real(session, user)
+        return replace(saved, **{k: v for k, v in vars(own).items() if v is not None})
+    with pytest.MonkeyPatch.context() as own:      # its own patch: a test's monkeypatch.undo() leaves it in place
+        own.setattr(order_defaults, "load", _load)
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _no_broker_margin_call(monkeypatch):
     """DEF-0 D8: the order ticket asks the user's own broker for its margin. Tests never call a broker: the read answers
     "no answer"; tests/test_def0_ui.py stubs an answer to show the estimate."""

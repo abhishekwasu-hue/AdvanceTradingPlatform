@@ -142,7 +142,7 @@ class _ChainBroker(_FakeBroker):
 def _option_dep(t, symbol="NIFTY 50"):
     async def go():
         async with _session_factory() as session:
-            dep = StrategyDeploymentRecord(tenant_id=t["tenant_id"], strategy_id="ema_rsi_scalper_1m", symbol=symbol, exchange="NSE",
+            dep = StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=t["tenant_id"], strategy_id="ema_rsi_scalper_1m", symbol=symbol, exchange="NSE",
                                            timeframe="1min", mode="PAPER", broker_name="upstox", status="ACTIVE", created_by=t["user_id"],
                                            instrument_kind="OPTION", option_strategy="BULL_PUT_SPREAD")
             session.add(dep)

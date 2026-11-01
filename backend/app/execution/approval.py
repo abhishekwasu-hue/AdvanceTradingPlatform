@@ -210,7 +210,7 @@ def _money(value: Optional[float]) -> str:
 
 async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal, strategy_id: str, source: str,
                         idempotency_key: str, deployment: Optional[StrategyDeploymentRecord] = None, requested_mode: str = "PAPER",
-                        exit_rules: Optional[str] = None, holding: str = "INTRADAY", user_id: Optional[int] = None,
+                        exit_rules: str | None = None, holding: str | None = None, user_id: int | None = None,
                         now: Optional[datetime] = None, requotes: int = 0, requoted_from: Optional[int] = None,
                         exchange: str = "NSE", strike_breach: dict | None = None, ticket: dict | None = None,
                         structure: dict | None = None) -> AiActionRecord | None:
@@ -423,7 +423,7 @@ async def _execute_legs(session: AsyncSession, action: AiActionRecord, owner: Us
             rules=rules, target_credit_pct=deployment.target_credit_pct, stop_credit_pct=deployment.stop_credit_pct,
             underlying_exit=bool(getattr(deployment, "underlying_breach_exit", None)), idempotency_key=f"approval:{action.id}",
             broker=None, quote_broker=quotes, deployment_id=deployment.id, origin=ORIGIN_APPROVAL, approval_action_id=action.id,
-            holding=str(evidence.get("holding") or "INTRADAY"))   # M55 T1: an approved SWING structure is held for days too
+            holding=evidence.get("holding") or None)   # M55 T1: an approved SWING structure is held for days too
         if not result.executed:
             raise ValueError("PAPER order not placed: " + ("; ".join(result.reasons) or "the structure was refused"))
         trade_id = result.trades[0].id if result.trades else None
@@ -434,7 +434,9 @@ async def _execute_legs(session: AsyncSession, action: AiActionRecord, owner: Us
     result, order = await execute_signal_for_user(
         session, owner, mode="PAPER", strategy_id=strategy_id, signal=signal, idempotency_key=f"approval:{action.id}",
         deployment_id=deployment.id, contract=contract, rules=rules, quote_broker=quotes, exit_rules=evidence.get("exit_rules"),
-        holding=str(evidence.get("holding") or "INTRADAY"), origin=ORIGIN_APPROVAL, approval_action_id=action.id,
+        holding=evidence.get("holding") or None, origin=ORIGIN_APPROVAL, approval_action_id=action.id,
+        # M68 PR-1: the bot's own order type and band (None: his Trade settings, else not placed - says which setting).
+        order_style=deployment.order_style, market_protection_pct=deployment.market_protection_pct,
         journal_source="PROPOSAL", exchange=deployment.exchange)
     if not result.executed:
         raise ValueError("PAPER order not placed: " + ("; ".join(result.reasons) or order.status))
@@ -541,7 +543,11 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
         result, order = await execute_signal_for_user(
             session, owner, mode="PAPER", strategy_id=str(evidence.get("strategy_id") or signal.strategy_id), signal=signal,
             idempotency_key=f"approval:{action.id}", deployment_id=action.deployment_id, exit_rules=evidence.get("exit_rules"),
-            holding=str(evidence.get("holding") or "INTRADAY"), origin=ORIGIN_APPROVAL, approval_action_id=action.id,
+            holding=evidence.get("holding") or None, origin=ORIGIN_APPROVAL, approval_action_id=action.id,
+            # M68 PR-1: the bot's own order type / band; a plan ticket's proposal is placed at the live price by his own
+            # Approve (a market entry, as the ticket's Place); else his Trade settings (Not set: not placed, says why).
+            order_style=(deployment.order_style if deployment is not None else ("MARKET" if evidence.get("ticket") else None)),
+            market_protection_pct=deployment.market_protection_pct if deployment is not None else None,
             # Z5 / P1-d: a ticket's proposal keeps the plan's quantity as a ceiling and its checked cap (override included).
             max_quantity=(evidence.get("ticket") or {}).get("max_quantity"), risk_cap_amount=(evidence.get("ticket") or {}).get("risk_cap_amount"),
             journal_source="PROPOSAL",            # Z6 L2: the journal records where the trade came from
@@ -593,7 +599,7 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
                                         strategy_id=str(evidence.get("strategy_id") or signal.strategy_id), source="requote",
                                         idempotency_key=f"requote:{action.id}", deployment=deployment,
                                         requested_mode=str(evidence.get("requested_mode") or "PAPER"), exit_rules=evidence.get("exit_rules"),
-                                        holding=str(evidence.get("holding") or "INTRADAY"), user_id=owner_id, now=now,
+                                        holding=evidence.get("holding") or None, user_id=owner_id, now=now,
                                         requotes=requotes + 1, requoted_from=action.id, exchange=str(evidence.get("exchange") or "NSE"),
                                         ticket=evidence.get("ticket"), structure=evidence.get("structure"))
         except InvalidEntryPrice:

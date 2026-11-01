@@ -120,6 +120,8 @@ for (const [width, height] of SIZES) {
         await callCell(page).click();
         await page.locator("[data-chain-actions] [data-action='buy']").click();
         const ticket = page.locator("[data-order-ticket]");
+        // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+        if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").click();
         await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
         await ticket.locator("[data-ticket='review']").click();
         await expect(ticket.locator("[data-risk-checks='ticket']")).toBeVisible();
@@ -165,6 +167,8 @@ test.describe("F&O 8b slice 1 flows", () => {
     const ticket = page.locator("[data-order-ticket]");
     await expect(ticket.locator("[data-practice-frame]")).toContainText("PAPER");
     expect(seen.gets.filter((g) => g.endsWith("/risk-budget"))).toEqual([]);         // read only on the confirm step
+    // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+    if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").tap();
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();      // F1: no product saved - pick one before Review
     await ticket.locator("[data-ticket='review']").tap();
     await expect(ticket.locator("[data-ticket='plain-words']")).toContainText(

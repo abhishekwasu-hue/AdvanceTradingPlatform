@@ -363,10 +363,10 @@ def test_worker_records_chains_for_active_option_deployments_once_per_interval(m
     t = _tenant("w-chains@example.com")
     broker = _ChainBroker()
     worker = _worker(monkeypatch, broker)
-    option_dep = StrategyDeploymentRecord(tenant_id=t["tenant_id"], strategy_id="ema_rsi_scalper_1m", symbol="NIFTY 50", exchange="NSE", timeframe="1min",
+    option_dep = StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=t["tenant_id"], strategy_id="ema_rsi_scalper_1m", symbol="NIFTY 50", exchange="NSE", timeframe="1min",
                                           mode="PAPER", broker_name="upstox", status="ACTIVE", created_by=t["user_id"], instrument_kind="OPTION",
                                           option_strategy="BULL_PUT_SPREAD")
-    cash_dep = StrategyDeploymentRecord(tenant_id=t["tenant_id"], strategy_id="ema_rsi_scalper_1m", symbol="RELIANCE", exchange="NSE", timeframe="1min",
+    cash_dep = StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=t["tenant_id"], strategy_id="ema_rsi_scalper_1m", symbol="RELIANCE", exchange="NSE", timeframe="1min",
                                         mode="PAPER", broker_name="upstox", status="ACTIVE", created_by=t["user_id"])
     now = OPEN_NOW.astimezone(timezone.utc) + timedelta(days=3, hours=2)   # away from the instants other tests record at
 

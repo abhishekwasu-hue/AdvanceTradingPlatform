@@ -204,7 +204,7 @@ def test_pause_stops_only_this_users_new_paper_entries_and_proposals_never_exits
         async with _session_factory() as session:
             user = await session.get(User, user_id)
             result, order = await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=_sig(),
-                                                          idempotency_key=f"pause:{uuid.uuid4().hex}", origin="manual")
+                                                          idempotency_key=f"pause:{uuid.uuid4().hex}", origin="manual", holding="INTRADAY", order_style="MARKET")
             return result.executed, json.loads(order.reasons_json)
     executed, reasons = _run(enter(owner["user_id"]))
     assert not executed and any("PAPER entries paused" in r and "lunch" in r for r in reasons)

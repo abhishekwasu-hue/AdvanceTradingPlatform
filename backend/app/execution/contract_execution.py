@@ -19,7 +19,7 @@ exit on them (F4); the contract's price levels are what the broker-side SL-M and
 """
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 from app.brokers.base import BrokerInterface
 from app.brokers.models import BrokerOrderRequest
@@ -144,13 +144,14 @@ def build_order_plan(signal: Signal, contract: ResolvedContract, rules: Contract
     return OrderPlan(order_signal, spec, max_quantity, meta, notes)
 
 
-async def written_lot_cap(broker: BrokerInterface, contract: ResolvedContract, share: float = MARGIN_SAFETY) -> Tuple[int, str]:
+async def written_lot_cap(broker: BrokerInterface, contract: ResolvedContract, share: float = MARGIN_SAFETY, *,
+                          product: str) -> tuple[int, str]:
     """LIVE only: how many lots of this written option the account can carry - the broker's
     margin requirement for one lot against `share` of available margin (M64: the trader's margin safety %, or all of
     it when that check is off). Unknown margin is a refusal, not a guess."""
     probe = BrokerOrderRequest(
         symbol=contract.instrument_key if _is_upstox(broker) and "|" in (contract.instrument_key or "") else contract.tradingsymbol,
-        exchange=contract.exchange, transaction_type=OrderSide.SELL, quantity=contract.lot_size, order_type="MARKET", product="MIS",
+        exchange=contract.exchange, transaction_type=OrderSide.SELL, quantity=contract.lot_size, order_type="MARKET", product=product,
     )
     per_lot = await broker.get_order_margin(probe)
     if per_lot is None or per_lot <= 0:

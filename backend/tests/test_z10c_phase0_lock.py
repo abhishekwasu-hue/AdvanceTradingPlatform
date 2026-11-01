@@ -276,7 +276,7 @@ def test_a_live_option_structure_is_refused_while_locked(monkeypatch):
         async with _session_factory() as session:
             wrapped = RateLimitedBroker(broker, RateBudget(RateLimits(100.0, 100, 1000)), tenant_id=t["tenant_id"])
             phase0_lock.remember(True, ())
-            return await _place_live_legs(wrapped, await structure(session), 1, "s", None, {}, [])
+            return await _place_live_legs(wrapped, await structure(session), 1, "s", None, {}, [], product="MIS")
 
     broker = _OptionBroker()
     _set_lock(True)

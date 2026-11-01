@@ -67,10 +67,10 @@ def _spec(lot=50.0) -> ContractSpec:
 
 def _routers(liquidity=None):
     risk = RiskConfig(capital=1_000_000.0, risk_per_trade_pct=1.0)
-    paper = OrderRouter(ExecutionMode.PAPER, risk, exchange="NFO", product="NRML")
+    paper = OrderRouter(ExecutionMode.PAPER, risk, exchange="NFO", product="NRML", order_style="MARKET")
     paper.paper_venue = PaperExecutionAdapter(paper.paper_broker, liquidity=liquidity)
     broker = _FakeLiveBroker(PaperBroker(), liquidity=liquidity)
-    live = OrderRouter(ExecutionMode.LIVE, risk, broker=broker, exchange="NFO", product="NRML", place_protective_stop=False)
+    live = OrderRouter(ExecutionMode.LIVE, risk, broker=broker, exchange="NFO", product="NRML", place_protective_stop=False, order_style="MARKET")
     live.fill_poll_delay_seconds = 0
     return paper, live, broker
 
@@ -144,7 +144,7 @@ def test_a6_a_circuit_breaker_refusal_is_the_same_in_paper_and_live():
 def test_a6_a_failed_broker_call_is_failed_and_the_order_is_sent_once():
     risk = RiskConfig(capital=1_000_000.0, risk_per_trade_pct=1.0)
     broker = _FakeLiveBroker(PaperBroker(), raise_on_place=True)
-    live = OrderRouter(ExecutionMode.LIVE, risk, broker=broker, exchange="NFO", product="NRML", place_protective_stop=False)
+    live = OrderRouter(ExecutionMode.LIVE, risk, broker=broker, exchange="NFO", product="NRML", place_protective_stop=False, order_style="MARKET")
     state = TradingDayState()
     result = _run(live.execute(_signal(), state, contract_spec=_spec(), max_quantity=100.0))
     try:
@@ -157,22 +157,22 @@ def test_a6_paper_never_sends_to_a_real_broker_and_live_never_falls_back_to_pape
     risk = RiskConfig(capital=1_000_000.0, risk_per_trade_pct=1.0)
     real = _FakeLiveBroker(PaperBroker())
     real.mark("NIFTY30OCT2625000CE", 100.0, "NFO")
-    paper = OrderRouter(ExecutionMode.PAPER, risk, broker=real, exchange="NFO", product="NRML")
+    paper = OrderRouter(ExecutionMode.PAPER, risk, broker=real, exchange="NFO", product="NRML", order_style="MARKET")
     result = _run(paper.execute(_signal(), TradingDayState(), contract_spec=_spec(), max_quantity=100.0))
     assert result.executed and real.calls == 0                    # filled on the paper venue, the broker untouched
     for broker in (None, PaperExecutionAdapter()):
-        live = OrderRouter(ExecutionMode.LIVE, risk, broker=broker)
+        live = OrderRouter(ExecutionMode.LIVE, risk, broker=broker, product="MIS", order_style="MARKET")
         with pytest.raises(LiveTradingNotConfigured):
             _run(live.execute(_signal(), TradingDayState(), contract_spec=_spec(), max_quantity=100.0))
 
 
 def test_a6_the_freeze_slices_run_on_the_one_path_for_both_modes():
     risk = RiskConfig(capital=1_000_000.0, risk_per_trade_pct=1.0)
-    paper = OrderRouter(ExecutionMode.PAPER, risk, exchange="NFO", product="NRML", freeze_quantity=100)
+    paper = OrderRouter(ExecutionMode.PAPER, risk, exchange="NFO", product="NRML", freeze_quantity=100, order_style="MARKET")
     broker = _FakeLiveBroker(PaperBroker())
     broker.mark("NIFTY30OCT2625000CE", 100.0, "NFO")
     live = OrderRouter(ExecutionMode.LIVE, risk, broker=broker, exchange="NFO", product="NRML", freeze_quantity=100,
-                       place_protective_stop=False)
+                       place_protective_stop=False, order_style="MARKET")
     out = []
     for router in (paper, live):
         state = TradingDayState()

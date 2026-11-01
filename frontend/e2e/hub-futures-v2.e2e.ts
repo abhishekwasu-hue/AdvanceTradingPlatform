@@ -186,9 +186,12 @@ test.describe("Symbol hub v2 flows", () => {
     await expect(ticket.getByRole("heading")).toHaveText("NIFTY 27 OCT FUT");
     await expect(ticket.locator("[data-practice-frame]")).toContainText("PAPER");
     await expect(ticket.locator("[data-ticket='units']")).toHaveText("1 lot = 75 qty (lot size 75)");
+    // M68 PR-1: no order type is pre-selected either - pick Market where none is chosen yet
+    if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").click();
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();   // F1: no product saved - pick one before Review
-    // DEF-0 D7: no stop is forced on a future (the Advanced part stays closed) - the trader opens it and adds his own
-    await ticket.locator("[data-ticket='advanced'] summary").click();
+    // DEF-0 D7: no stop is forced on a future - the trader adds his own (M68 TS-3: "More options" stays open after the
+    // product he picked there)
+    if (!(await ticket.locator("[data-ticket='stop']").isVisible())) await ticket.locator("[data-ticket='advanced'] summary").click();
     await ticket.locator("[data-ticket='stop']").fill("24500");
     await ticket.locator("[data-ticket='review']").click();
     await expect(ticket.locator("[data-line='margin']")).toContainText("SPAN");

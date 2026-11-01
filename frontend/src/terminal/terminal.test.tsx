@@ -461,7 +461,7 @@ describe("owner fixes T1-2 .. T1-7", () => {
   it("T1-5 / owner F1: the product starts from his trading defaults; with none saved nothing is pre-selected and Review waits for his pick", () => {
     expect(newDraft("BUY", { product: "NRML" }).product).toBe("NRML");
     expect(newDraft("BUY").product).toBeNull();
-    expect(draftProblems(newDraft("BUY"))[0]).toBe(PRODUCT_MISSING);
+    expect(draftProblems(newDraft("BUY", { orderType: "MARKET" }))[0]).toBe(PRODUCT_MISSING);   // M68: the order type is asked first
     expect(draftProblems(newDraft("BUY", { product: "MIS" }))).not.toContain(PRODUCT_MISSING);
     expect(PRODUCT_UNSET_TEXT).toMatch(/^Pick MIS or NRML/);
     // TERM-2 step 2: the Terminal's basket panel is the one basket, which starts from his trading defaults itself.

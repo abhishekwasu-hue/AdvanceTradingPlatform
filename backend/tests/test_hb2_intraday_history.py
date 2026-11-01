@@ -637,7 +637,7 @@ def test_mcx_session_request_cap_and_blackout_dates(monkeypatch):
 
     async def mcx_deployment():
         async with _session_factory() as session:
-            session.add(StrategyDeploymentRecord(tenant_id=owner.tenant_id, strategy_id="ema_crossover", symbol="CRUDEOIL",
+            session.add(StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=owner.tenant_id, strategy_id="ema_crossover", symbol="CRUDEOIL",
                                                  exchange="MCX", timeframe="5min", mode="PAPER", status="ACTIVE"))
             await session.commit()
     _run(mcx_deployment())
@@ -664,7 +664,7 @@ def test_a_cds_deployment_in_session_holds_the_pass_until_17_00():
 
     async def cds_deployment():
         async with _session_factory() as session:
-            session.add(StrategyDeploymentRecord(tenant_id=owner.tenant_id, strategy_id="ema_crossover", symbol="USDINR",
+            session.add(StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=owner.tenant_id, strategy_id="ema_crossover", symbol="USDINR",
                                                  exchange="CDS", timeframe="5min", mode="PAPER", status="ACTIVE"))
             await session.commit()
     _run(cds_deployment())

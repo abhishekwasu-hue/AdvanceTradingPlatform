@@ -15,7 +15,7 @@ a system failure, notified as one). `RISK_CHECK -> FAILED` was added to the orde
 allowed transitions (app/execution/order_state_machine.py) specifically to make this reachable -
 it was not a legal transition before this fix.
 
-LIVE mode (`OrderRouter(mode=ExecutionMode.LIVE, broker=...)`) is not yet wired into the shared
+LIVE mode (`OrderRouter(mode=ExecutionMode.LIVE, broker=..., product="MIS", order_style="MARKET")`) is not yet wired into the shared
 `execute_signal_for_user` pipeline (see that module's own scoping) - it is only reachable by
 constructing `OrderRouter` directly, so these tests exercise it at that level, the same way the
 existing `test_risk_and_execution.py` broker tests already do.
@@ -77,7 +77,7 @@ def test_order_router_survives_a_broker_exception_mid_placement():
     fix locally before writing this test) - it must now come back as a clean, non-executed result.
     """
     broker = _BrokerDownMidFill(ConnectionError("connection reset by peer"))
-    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker)
+    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker, product="MIS", order_style="MARKET")
     state = TradingDayState()
 
     result = asyncio.run(router.execute(_sample_signal(), state))
@@ -96,7 +96,7 @@ def test_order_router_survives_a_broker_timeout_mid_placement():
     rather than assuming any Exception subclass is handled identically by coincidence.
     """
     broker = _BrokerDownMidFill(asyncio.TimeoutError("broker did not respond in time"))
-    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker)
+    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker, product="MIS", order_style="MARKET")
     state = TradingDayState()
 
     result = asyncio.run(router.execute(_sample_signal(), state))
@@ -117,7 +117,7 @@ def test_broker_rejection_is_not_flagged_as_a_system_failure():
             return BrokerOrderResponse(order_id="X", status="REJECTED", message="insufficient margin")
 
     broker = _RejectingBroker(RuntimeError("unused"))
-    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker)
+    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker, product="MIS", order_style="MARKET")
     result = asyncio.run(router.execute(_sample_signal(), TradingDayState()))
 
     assert result.executed is False

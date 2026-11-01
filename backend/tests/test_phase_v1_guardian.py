@@ -50,8 +50,7 @@ def _execute(t, *, mode="PAPER", risk_config=None, key=None):
             user = await session.get(User, t["user_id"])
             result, order = await execute_signal_for_user(
                 session, user, mode=mode, strategy_id="ema_rsi_scalper_1m", signal=_signal(), idempotency_key=key,
-                risk_config=risk_config or legacy(capital=100_000.0, risk_per_trade_pct=1.0, max_daily_loss_pct=50.0, max_open_positions=10),
-            )
+                risk_config=risk_config or legacy(capital=100_000.0, risk_per_trade_pct=1.0, max_daily_loss_pct=50.0, max_open_positions=10), holding="INTRADAY", order_style="MARKET")
             trade = await session.get(TradeRecord, order.trade_id) if order.trade_id else None
             return result, order, trade
     return _run(go())

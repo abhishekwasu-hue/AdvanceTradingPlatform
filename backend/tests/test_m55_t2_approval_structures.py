@@ -94,7 +94,7 @@ def _decide(action_id, user_id, *, approve: bool, at):
 def _expected_spread():
     async def go():
         async with _session_factory() as session:
-            rules = ContractRules.from_deployment(StrategyDeploymentRecord(instrument_kind="OPTION", option_position="WRITE", max_lots=1))
+            rules = ContractRules.from_deployment(StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", instrument_kind="OPTION", option_position="WRITE", max_lots=1))
             return await resolve_structure(session, "NIFTY 50", rules, OptionStrategy.BULL_PUT_SPREAD, SignalDirection.LONG,
                                            spread_width=2, spot=SPOT, today=TODAY)
     return _run(go())

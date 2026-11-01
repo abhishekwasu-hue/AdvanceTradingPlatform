@@ -487,7 +487,7 @@ def test_an_entry_refused_later_gives_its_slot_back():
             user = await session.get(User, u["user_id"])
             low_rr = _sig().model_copy(update={"risk_reward": 0.5})   # under the organisation's minimum: refused after the slot
             result, _ = await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=low_rr,
-                                                      idempotency_key=f"slot:{uuid.uuid4().hex}")
+                                                      idempotency_key=f"slot:{uuid.uuid4().hex}", holding="INTRADAY", order_style="MARKET")
             return result.executed, result.reasons
     executed, reasons = _run(refused_later())
     assert executed is False and any("reward:risk is" in r for r in reasons)

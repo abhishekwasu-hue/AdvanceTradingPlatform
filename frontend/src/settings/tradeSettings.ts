@@ -5,6 +5,7 @@
  * own copy. A field that nothing reads yet ("not wired") is not sent to a trader at all; a platform admin sees it under
  * Advanced. Facts (set by the exchange or the broker) are shown as information, never as a control.
  */
+import { useEffect, useState } from "react";
 import { request } from "../api/client";
 import { GLOSSARY, type GlossaryKey } from "../ui/glossary";
 import { formatNumber } from "../ui/format";
@@ -32,8 +33,62 @@ export function loadTradeSettings(fetcher: typeof request = request): Promise<Tr
 }
 
 /** Saves only the fields in `values` (null: back to Not set); the server leaves every other field as it was. */
-export function saveTradeSettings(values: Record<string, unknown>, fetcher: typeof request = request): Promise<TradeSettingsView> {
-  return fetcher<TradeSettingsView>("/me/trade-settings", { method: "PUT", body: JSON.stringify({ values }) });
+export async function saveTradeSettings(values: Record<string, unknown>, fetcher: typeof request = request): Promise<TradeSettingsView> {
+  const view = await fetcher<TradeSettingsView>("/me/trade-settings", { method: "PUT", body: JSON.stringify({ values }) });
+  cached = Promise.resolve(view);          // the next ticket / form starts from what he just saved
+  return view;
+}
+
+// ---------------------------------------------------------------- M68 PR-1: Order defaults for the ticket and the forms
+
+export const PRODUCT_KEY = "order_defaults.product";
+export const ORDER_TYPE_KEY = "order_defaults.order_type";
+export const HOLDING_KEY = "order_defaults.holding";
+export const PROTECTION_KEY = "order_defaults.price_protection_pct";
+const TICKET_TYPES = ["MARKET", "LIMIT", "SL", "SL-M"] as const;
+const BOT_STYLES = ["MARKET", "PROTECTED_LIMIT"] as const;
+
+export interface OrderDefaults {
+  product?: "MIS" | "NRML";
+  orderType?: (typeof TICKET_TYPES)[number];
+  holding?: "INTRADAY" | "SWING";
+  botOrderStyle?: (typeof BOT_STYLES)[number];
+  protectionPct?: number;
+}
+
+/** The trader's own saved Order defaults (only the ones he saved; nothing is ever filled in by ATP). */
+export function orderDefaultsOf(view: TradeSettingsView | null | undefined): OrderDefaults {
+  const out: OrderDefaults = {};
+  const field = (key: string) => view?.sections.flatMap((s) => s.fields).find((f) => f.key === key && f.saved);
+  const v = (key: string) => field(key)?.value;
+  const product = v(PRODUCT_KEY);
+  if (product === "MIS" || product === "NRML") out.product = product;
+  const type = v(ORDER_TYPE_KEY);
+  if (TICKET_TYPES.includes(type as never)) out.orderType = type as OrderDefaults["orderType"];
+  if (BOT_STYLES.includes(type as never)) out.botOrderStyle = type as OrderDefaults["botOrderStyle"];
+  const holding = v(HOLDING_KEY);
+  if (holding === "INTRADAY" || holding === "SWING") out.holding = holding;
+  const pct = v(PROTECTION_KEY);
+  if (typeof pct === "number" && Number.isFinite(pct) && pct > 0) out.protectionPct = pct;
+  return out;
+}
+
+let cached: Promise<TradeSettingsView | null> | null = null;
+
+/** Test hook: forget the cached read. */
+export function resetTradeSettingsCache(): void { cached = null; }
+
+/** The trader's Trade settings, read once per page load (null while loading, when off, or when the read failed). */
+export function useTradeSettings(enabled: boolean, fetcher: typeof request = request): TradeSettingsView | null {
+  const [value, setValue] = useState<TradeSettingsView | null>(null);
+  useEffect(() => {
+    if (!enabled) { setValue(null); return undefined; }
+    let live = true;
+    if (!cached) cached = loadTradeSettings(fetcher).catch(() => { cached = null; return null; });
+    void cached.then((v) => { if (live) setValue(v); });
+    return () => { live = false; };
+  }, [enabled, fetcher]);
+  return value;
 }
 
 /** The glossary key for a field's (?), only when the glossary has it. */

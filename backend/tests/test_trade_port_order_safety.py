@@ -144,7 +144,7 @@ def _structure_run(monkeypatch, strict: bool, book_fails_after: int = 10 ** 6):
             structure = await resolve_structure(session, "NIFTY 50", _rules(), OptionStrategy.BULL_PUT_SPREAD, SignalDirection.LONG,
                                                 spread_width=2, spot=SPOT, today=TODAY)
             fills, notes = {}, []
-            ok, failure = await _place_live_legs(broker, structure, structure.lot_size, "s", None, fills, notes)
+            ok, failure = await _place_live_legs(broker, structure, structure.lot_size, "s", None, fills, notes, product="MIS")
             return ok, failure, structure.lot_size
     broker = _HalfWing()
     ok, failure, lot = _run(go(broker))

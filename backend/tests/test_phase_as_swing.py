@@ -4,6 +4,7 @@ import math
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+import pytest
 
 from app.ai import advisor as ad
 from app.ai import interview as iv
@@ -12,7 +13,7 @@ from app.core.enums import SignalDirection
 from app.core.models import RiskConfig
 from app.db.models import TradeRecord
 from app.deployments.routes import DeploymentCreateRequest
-from app.execution.products import product_for, product_for_trade
+from app.execution.products import HoldingNotSet, product_for, product_for_trade
 from app.market_data import service as md_service
 from app.market_data.freshness import candle_staleness, timeframe_seconds
 from app.strategy_engine.chart_routes import evaluate_on_candles
@@ -40,7 +41,9 @@ def test_products_follow_the_holding():
     assert product_for("INTRADAY", "UNDERLYING", "NSE") == "MIS"
     assert product_for("SWING", "UNDERLYING", "NSE") == "CNC"
     assert product_for("SWING", "OPTION", "NFO") == "NRML" and product_for("SWING", "FUTURE", "NFO") == "NRML"
-    assert product_for(None, None, None) == "MIS"
+    with pytest.raises(HoldingNotSet):              # M68 PR-1: a new entry never takes INTRADAY by default
+        product_for(None, None, None)
+    assert product_for_trade(TradeRecord(holding=None, instrument_kind="OPTION", exchange="NFO")) == "MIS"   # exit: the record
     assert product_for_trade(TradeRecord(holding="SWING", instrument_kind="UNDERLYING", exchange=None)) == "CNC"
 
 

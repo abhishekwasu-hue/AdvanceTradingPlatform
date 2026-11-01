@@ -279,7 +279,7 @@ def test_the_daily_review_queues_the_users_own_symbols_once_per_trading_day(flag
     async def seed():
         async with _session_factory() as session:
             for sym, creator in (("V3DAYA", me["id"]), ("V3DAYB", me["id"]), ("V3DAYMATE", mate)):
-                session.add(StrategyDeploymentRecord(tenant_id=me["tenant_id"], strategy_id="ema_crossover", symbol=sym, exchange="NSE",
+                session.add(StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=me["tenant_id"], strategy_id="ema_crossover", symbol=sym, exchange="NSE",
                                                      timeframe="5min", mode="PAPER", status="ACTIVE", created_by=creator))
             await session.commit()
     _run(seed())

@@ -101,13 +101,16 @@ async def execute_structure(
     rules: ContractRules, target_credit_pct: Optional[float], stop_credit_pct: Optional[float],
     idempotency_key: str, broker: Optional[BrokerInterface] = None, quote_broker: Optional[BrokerInterface] = None,
     deployment_id: Optional[int] = None, risk_config: Optional[RiskConfig] = None, account_id: Optional[int] = None,
-    underlying_exit: bool = False, holding: str = "INTRADAY",
+    underlying_exit: bool = False, holding: str | None = None,
     origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: int | None = None,
 ) -> StructureResult:
     """M55 T2: `origin` / `approval_action_id` as on `execute_signal_for_user` - "approval" with the id of an APPROVED
     entry proposal (app/execution/approval.py::execute_entry) is the only way a structure passes approval-only mode;
     the default is the refusing "automatic"."""
     started = time.perf_counter()
+    # M68 PR-1 (TS1-008): the holding is the bot's / proposal's, else the user's Trade settings; Not set = refused below.
+    from app.execution import order_defaults
+    holding = holding or (await order_defaults.load(session, user)).holding
     # M55 T1: only a defined-risk credit structure is ever held for days (SWING); anything else stays INTRADAY.
     held = holding == "SWING" and can_hold_for_days(structure.strategy)
     product = "NRML" if held else "MIS"
@@ -152,6 +155,8 @@ async def execute_structure(
     bad = nonfinite_levels(signal)
     if bad:
         refusals.append(f"Underlying signal {bad} is not a finite number")
+    if holding is None:
+        refusals.append(order_defaults.needs_setting("holding"))
     if refusals:
         await _reject_all(session, orders, refusals)
         await notify(session, user.tenant_id, NotificationType.REJECTION, title=f"Structure rejected: {structure.underlying_symbol}",
@@ -322,7 +327,8 @@ async def execute_structure(
                 practice.mark(leg.contract.tradingsymbol, premiums[leg.contract.tradingsymbol], leg.contract.exchange)
             venue = practice
         run = await place_legs(venue, entry_specs(structure, quantity), strategy_id=strategy_id, tenant=tenant,
-                               band_pct=settings.protection_band_pct, prices=premiums, live=execution_mode == ExecutionMode.LIVE,
+                               band_pct=(await order_defaults.load(session, user)).price_protection_pct, prices=premiums,
+                               live=execution_mode == ExecutionMode.LIVE,
                                product=product)
         notes.extend(run.notes)
         if execution_mode == ExecutionMode.PAPER:
@@ -334,7 +340,7 @@ async def execute_structure(
                 session, user, tenant, orders, structure, run, notes, metrics, settings, fills=fills, premiums=premiums,
                 quantity=quantity, lot=lot, group_meta=group_meta, signal=signal, strategy_id=strategy_id, mode=mode,
                 deployment_id=deployment_id, account_id=account_id, stop_credit_pct=stop_credit_pct, started=started,
-                idempotency_key=idempotency_key, broker=broker, group_id=group_id)
+                idempotency_key=idempotency_key, broker=broker, group_id=group_id, holding="SWING" if held else "INTRADAY")
     elif execution_mode == ExecutionMode.PAPER:
         paper = PaperBroker()
         for leg in structure.legs:
@@ -411,7 +417,7 @@ async def _book_legs(
     premiums: Dict[str, float], *, structure: ResolvedStructure, metrics: StructureMetrics, quantity: float, lot: int, group_id: str,
     group_meta: Dict, signal: Signal, strategy_id: str, mode: str, broker: Optional[BrokerInterface], deployment_id: Optional[int],
     account_id: Optional[int], stop_credit_pct: Optional[float], notes: List[str], started: float,
-    quantities: Optional[Dict[str, float]] = None, holding: str = "INTRADAY",
+    quantities: dict[str, float] | None = None, holding: str,
 ) -> List[TradeRecord]:
     """Books every leg that has a fill (all of them on the old path; the filled ones of an INCOMPLETE run): its order
     through SUBMITTED -> PENDING -> FILLED -> POSITION_OPEN and one TradeRecord in the group. `quantities`: the filled
@@ -452,7 +458,7 @@ async def _smart_not_complete(
     notes: List[str], metrics: StructureMetrics, settings, *, fills: Dict[str, Tuple[float, Optional[str]]], premiums: Dict[str, float],
     quantity: float, lot: int, group_meta: Dict, signal: Signal, strategy_id: str, mode: str, deployment_id: Optional[int],
     account_id: Optional[int], stop_credit_pct: Optional[float], started: float, idempotency_key: str, broker: Optional[BrokerInterface],
-    group_id: str,
+    group_id: str, holding: str,
 ) -> StructureResult:
     """SE-7 / TM-11: the engine stopped at a leg that did not fill. Nothing is undone by itself: the filled legs are booked
     as the group's positions (INCOMPLETE, the user's two choices and his own "if I do not answer" setting), the legs not
@@ -491,7 +497,7 @@ async def _smart_not_complete(
                               quantity=quantity, lot=lot, group_id=group_id, group_meta=meta, signal=signal, strategy_id=strategy_id,
                               mode=mode, broker=broker, deployment_id=deployment_id, account_id=account_id,
                               stop_credit_pct=stop_credit_pct, notes=reasons, started=started,
-                              quantities={k: f.quantity for k, f in run.fills.items()})
+                              quantities={k: f.quantity for k, f in run.fills.items()}, holding=holding)
     for key, (order, leg) in by_key.items():
         if key in run.fills:
             continue
@@ -580,7 +586,7 @@ async def _hold_margin_refusal(session: AsyncSession, user: User, structure: Res
 
 
 async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *, debit_per_unit: Optional[float] = None,
-                        share: float = MARGIN_SAFETY, product: str = "MIS") -> Tuple[int, str]:
+                        share: float = MARGIN_SAFETY, product: str) -> tuple[int, str]:
     """Lots the account's margin allows against `share` of the available margin (M64: the trader's margin safety %
     when he switched it on, else the whole available margin). M64 RM-4: the structure's margin is the broker's margin for
     ALL its legs placed together (the hedge benefit included) when the broker reports one; otherwise the sum of the short
@@ -620,7 +626,7 @@ async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *
     return lots, f"Margin {per_lot:,.0f}/lot {source}, {available:,.0f} available -> at most {lots} lot(s)"
 
 
-async def _structure_margin(broker: BrokerInterface, structure: ResolvedStructure, product: str = "MIS") -> float | None:
+async def _structure_margin(broker: BrokerInterface, structure: ResolvedStructure, product: str) -> float | None:
     """M64 RM-4: the broker's margin for one lot of every leg placed together (hedge benefit included), or None when the
     broker has no basket margin call or it fails - the caller then sums the short legs (never a made-up number)."""
     requests = [BrokerOrderRequest(
@@ -646,8 +652,8 @@ def leg_entry_tag(broker: BrokerInterface, tenant: Tenant | None, strategy_id: s
 
 async def _place_live_legs(
     broker: BrokerInterface, structure: ResolvedStructure, quantity: float, strategy_id: str, tenant: Optional[Tenant],
-    fills: Dict[str, Tuple[float, Optional[str]]], notes: List[str], leg_tags: dict[str, str] | None = None,
-    product: str = "MIS",
+    fills: dict[str, tuple[float, str | None]], notes: list[str], leg_tags: dict[str, str] | None = None, *,
+    product: str,
 ) -> Tuple[bool, str]:
     """Wings first, then shorts - and a short is sent only once every wing's fill is *confirmed* in the broker's
     book (P0.5 / T3), so the account is never short without its protection. A leg that does not fill inside the
@@ -705,7 +711,7 @@ async def _place_live_legs(
 
 
 async def _unwind(broker: BrokerInterface, placed: List, quantity: float, strategy_id: str, algo_id: Optional[str], max_tag: int,
-                  product: str = "MIS") -> int:
+                  *, product: str) -> int:
     """Reverses every confirmed fill, shorts first, for exactly the quantity that filled (P0.5 / T3)."""
     done = 0
     ordered = sorted(placed, key=lambda item: 0 if item[0].role == "SHORT" else 1)

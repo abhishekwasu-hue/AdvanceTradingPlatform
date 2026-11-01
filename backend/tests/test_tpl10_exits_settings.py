@@ -531,7 +531,7 @@ def test_the_worker_closes_the_deployments_own_paper_trade_on_the_exit_bar():
 
     async def go():
         async with _session_factory() as session:
-            dep = StrategyDeploymentRecord(tenant_id=a["tenant_id"], strategy_id=_strategy().id, symbol="RELIANCE", exchange="NSE",
+            dep = StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=a["tenant_id"], strategy_id=_strategy().id, symbol="RELIANCE", exchange="NSE",
                                            timeframe="15min", mode="PAPER", broker_name="upstox", status="ACTIVE", created_by=a["user_id"],
                                            target_rule="TEMPLATE_EXIT")
             session.add(dep)
@@ -575,7 +575,7 @@ def test_the_worker_never_acts_on_a_live_trade_or_without_the_choice():
 
     async def go():
         async with _session_factory() as session:
-            dep = StrategyDeploymentRecord(tenant_id=a["tenant_id"], strategy_id=_strategy().id + "x", symbol="RELIANCE", exchange="NSE",
+            dep = StrategyDeploymentRecord(holding="INTRADAY", order_style="MARKET", tenant_id=a["tenant_id"], strategy_id=_strategy().id + "x", symbol="RELIANCE", exchange="NSE",
                                            timeframe="15min", mode="PAPER", broker_name="upstox", status="ACTIVE", created_by=a["user_id"],
                                            target_rule="TEMPLATE_EXIT")
             session.add(dep)

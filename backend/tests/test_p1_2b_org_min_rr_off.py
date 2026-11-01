@@ -81,7 +81,7 @@ def _options(cfg: RiskConfig) -> List[bool]:
 
 def _live(cfg: RiskConfig) -> List[bool]:
     """The live / paper path: the order router's own RiskManager on the same signals (a fresh day, nothing open)."""
-    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=cfg)
+    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=cfg, product="MIS", order_style="MARKET")
     return [router.risk_manager.validate_and_size(_signal(ts), TradingDayState()).approved for ts in ATTEMPTS]
 
 
@@ -218,7 +218,7 @@ def _all_paths(strategy_factory, cfg: RiskConfig) -> Dict[str, List[bool]]:
     """Scanner / signals (the strategy's own signal), the live / paper path (signal + the router's RiskManager) and both
     backtest engines, for the same bars."""
     sigs = _signals(strategy_factory())
-    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=cfg)
+    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=cfg, product="MIS", order_style="MARKET")
     ocfg = options_engine.OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY,
                                                implied_volatility=0.14, max_lots=1, premium_stop_pct=30.0)  # DEF-0: old 30% explicit
     return {
@@ -276,7 +276,7 @@ def _custom_paths(factory, cfg: RiskConfig) -> Dict[str, bool]:
     """Whether each path enters at all: the scanner's signal and the live / paper risk check on the last bar, and both
     backtest engines over the same bars."""
     sig = factory().analyze({"1min": _frame()}, "NIFTY 50")
-    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=cfg)
+    router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=cfg, product="MIS", order_style="MARKET")
     ocfg = options_engine.OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY,
                                                implied_volatility=0.14, max_lots=1, premium_stop_pct=30.0)  # DEF-0: old 30% explicit
     return {"scanner": sig.is_tradeable,

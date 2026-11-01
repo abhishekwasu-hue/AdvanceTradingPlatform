@@ -48,6 +48,7 @@ class PlanBody(BaseModel):
     quantity: Optional[float] = Field(default=None, gt=0, lt=1e9, allow_inf_nan=False)
     override: bool = False
     override_reason: Optional[str] = Field(default=None, max_length=300)
+    holding: Literal["INTRADAY", "SWING"] | None = None          # M68 PR-1: None = his Trade settings
 
     def plan(self) -> ticket.Plan:
         return ticket.Plan(**self.model_dump())

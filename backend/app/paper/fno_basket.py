@@ -172,7 +172,9 @@ async def settings(session: AsyncSession, user: User, underlying: str) -> Dict[s
 
 # --- the confirm step and Execute basket ----------------------------------------------------------------------------
 
-def _ask(leg: LegAsk, product: str, client_ref: Optional[str] = None) -> fno_ticket.OrderAsk:
+def _ask(leg: LegAsk, product: str | None, client_ref: str | None = None) -> fno_ticket.OrderAsk:
+    # M68 PR-1: the basket's product is his (None: each leg asks "Choose MIS or NRML"). "Execute basket" sends every leg
+    # at market - the basket's own action, as its confirm step says; a limit per leg is the single ticket's.
     return fno_ticket.OrderAsk(underlying=master.underlying_of(leg.underlying), expiry=leg.expiry, strike=leg.strike, right=leg.right,
                                side=leg.side, lots=leg.lots, order_type="MARKET", product=product, stop_loss=leg.stop_loss,
                                chain_ltp=leg.price, client_ref=client_ref)
@@ -206,7 +208,7 @@ async def _room(session: AsyncSession, user: User, count: int) -> Optional[str]:
             "first. Nothing was placed.")
 
 
-async def preview(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str, spot: Optional[float],
+async def preview(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str | None, spot: float | None,
                   price_lookup: Optional[fno_ticket.PriceLookup], live_only: bool = False, now: Optional[datetime] = None,
                   with_smart: bool = True, origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
     """The confirm step: each leg as the ticket sees it (placement order), the basket's own checks, and the totals at
@@ -261,7 +263,7 @@ async def practice_balance(session: AsyncSession, user: User) -> float:
     return round(float(account.starting_capital) + sum(float(t.pnl or 0.0) for t in trades), 2)
 
 
-async def smart_view(session: AsyncSession, user: User, legs: Sequence[LegAsk], rows: Sequence[Dict[str, Any]], product: str) -> Dict[str, Any]:
+async def smart_view(session: AsyncSession, user: User, legs: Sequence[LegAsk], rows: Sequence[dict[str, Any]], product: str | None) -> dict[str, Any]:
     """The confirm step's smart-execution block: the legs in the order they go (hedges first, each with its slices), the
     exit order, and the margin - the broker's with the hedge benefit through his own session where the adapter has a
     basket margin call, else ATP's labelled estimate - with the free balance before and after."""
@@ -280,8 +282,8 @@ async def smart_view(session: AsyncSession, user: User, legs: Sequence[LegAsk], 
     if len(priced) == len(rows) and rows:
         builder = [_builder_leg(leg, int(r["contract"]["lot_size"]), float(r["fill_price"])) for r, leg in priced]
         estimate = hedge_margin(builder)
-        broker = await own_broker(session, user)
-        if broker is not None:
+        broker = await own_broker(session, user) if product is not None else None   # M68: no guessed product's margin
+        if broker is not None and product is not None:
             broker_name = getattr(broker, "name", None)
             orders = [BrokerOrderRequest(symbol=r["contract"]["tradingsymbol"], exchange=r["contract"]["exchange"],
                                          transaction_type=OrderSide.BUY if r["side"] == "BUY" else OrderSide.SELL,
@@ -308,7 +310,7 @@ def _smart_rows(outcome: Any, legs: Sequence[LegAsk], results: Dict[int, Dict[st
     return rows
 
 
-async def execute_smart(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str, basket_ref: str,
+async def execute_smart(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str | None, basket_ref: str,
                         price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None,
                         origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
     """Execute basket through the smart-execution engine: hedges first, and the first leg that does not fill stops the
@@ -394,7 +396,7 @@ async def _group(session: AsyncSession, user: User, basket_ref: str, rows: Seque
     await fno_groups.tag_filled(session, user, basket_ref, [r["trade_id"] for r in rows if r.get("status") == "PLACED" and r.get("trade_id")])
 
 
-async def execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str, basket_ref: str,
+async def execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str | None, basket_ref: str,
                   price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None,
                   origin: str = fno_ticket.ORIGIN_AUTOMATIC, exits: Optional[Any] = None) -> Dict[str, Any]:
     """Places every leg as PAPER, hedge legs first, or nothing when the check at the live price refuses anything.
@@ -416,7 +418,7 @@ def user_id_of(user: User) -> int:
     return int(identity[0]) if identity else int(user.id)
 
 
-async def _execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str, basket_ref: str,
+async def _execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str | None, basket_ref: str,
                    price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None,
                    origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
     now = now or datetime.now(timezone.utc)

@@ -45,12 +45,18 @@ function preview(body: Record<string, unknown>) {
 
 interface Seen { posts: MockCalls["posts"]; held: number }
 
-/** F1: with no product saved in the user's trading defaults nothing is pre-selected; pick NRML so Review can be tapped. */
+/** F1 / M68 PR-1: with no product and no order type saved nothing is pre-selected; pick Market (when no type is picked
+ * yet) and NRML so Review can be tapped. */
 async function pickProduct(ticket: Locator): Promise<void> {
+  if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) {
+    await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").click();
+  }
   await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();
 }
 
-async function open(page: Page, theme: "light" | "dark", opts: { options?: MockOptions; held?: unknown[]; tradingDefaults?: unknown } = {}): Promise<Seen> {
+async function open(page: Page, theme: "light" | "dark", opts: { options?: MockOptions; held?: unknown[]; tradingDefaults?: unknown;
+  /** M68 PR-1: the Trade settings saves ("Save as my default") are recorded here; the read answers Not set. */
+  tradeSettings?: Record<string, unknown>[] } = {}): Promise<Seen> {
   await page.clock.install({ time: new Date("2026-10-27T10:30:00+05:30") });
   await page.addInitScript((t) => {
     try {
@@ -107,6 +113,14 @@ async function open(page: Page, theme: "light" | "dark", opts: { options?: MockO
   // Settings part C: the user's own ticket defaults (left out: the prefs read is a 404, the ticket starts as today).
   if (opts.tradingDefaults) {
     await page.route(/\/api(?:\/v1)?\/me\/prefs$/, (r) => r.fulfill({ json: { prefs: { trading_defaults: opts.tradingDefaults }, versions: { trading_defaults: 1 } } }));
+  }
+  if (opts.tradeSettings) {
+    const saves = opts.tradeSettings;
+    await page.route(/\/api(?:\/v1)?\/me\/trade-settings$/, async (route) => {
+      const empty = { admin: false, page: "/settings/trade-settings", sections: [] };
+      if (route.request().method() === "PUT") saves.push((route.request().postDataJSON() as { values: Record<string, unknown> }).values);
+      return route.fulfill({ json: empty });
+    });
   }
   await page.goto("/option-chain");
   await page.addStyleTag({ content: [
@@ -203,8 +217,9 @@ test.describe("Chain ticket v2 flows", () => {
     await page.locator("[data-chain-actions] [data-action='sell']").tap();
     const ticket = page.locator("[data-order-ticket]");
     await pickProduct(ticket);
-    // DEF-0 D7: no stop is forced on a sold option (the Advanced part stays closed) - the trader opens it and sets his own
-    await ticket.locator("[data-ticket='advanced'] summary").tap();
+    // DEF-0 D7: no stop is forced on a sold option - the trader sets his own. M68 TS-3: "More options" is still open from
+    // the product he just picked there (its "Save as my default" sits next to it).
+    await expect(ticket.locator("[data-ticket='advanced']")).toHaveAttribute("open", "");
     await ticket.locator("[data-ticket='stop']").fill("200");
     await ticket.locator("[data-ticket='lots']").fill("6");
     await ticket.locator("[data-ticket='review']").tap();
@@ -352,3 +367,45 @@ test.describe("Chain ticket v2 multi-account (M45 MA-6)", () => {
     await expect(page.locator("[data-ticket='run-on']")).toHaveCount(0);
   });
 });
+
+/** M68 PR-1 (TS-3): a new user (nothing saved) - the ticket pre-selects no order type and no product; it asks for each one,
+ * focused and outlined, with "Save as my default"; only then is ONE PAPER order placed. Baselines (NEW):
+ * `order-ticket-asks-v2-<width>-light.png` at 1440 and 390. */
+for (const [width, height] of [[1440, 900], [390, 844]] as const) {
+  test.describe(`M68 ticket asks at ${width}`, () => {
+    test.use(width === 390 ? { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width, height } });
+
+    test("a new user places a PAPER order only after choosing the order type and the product", async ({ page }) => {
+      const saves: Record<string, unknown>[] = [];
+      const seen = await open(page, "light", { tradeSettings: saves });
+      await callCell(page).click();
+      await page.locator("[data-chain-actions] [data-action='buy']").click();
+      const ticket = page.locator("[data-order-ticket]");
+      const type = ticket.locator("[data-ticket='order-type']");
+      await expect(type).toHaveAttribute("data-asking", "yes");
+      await expect(type.locator("[data-option='MARKET']")).toBeFocused();
+      await expect(ticket.locator("[data-ticket='order-type-unset']")).toHaveText("Pick how the order is sent: Market, Limit, SL or SL-M.");
+      await expect(ticket.locator("[data-ticket='review']")).toBeDisabled();
+      await expect(ticket.locator("[aria-checked='true'][data-option='MARKET'], [aria-checked='true'][data-option='MIS'], [aria-checked='true'][data-option='NRML']")).toHaveCount(0);
+      if (width === 390) await expectPhoneLayout(page);
+      await expect(ticket).toHaveScreenshot(`order-ticket-asks-v2-${width}-light.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+
+      await type.locator("[data-option='MARKET']").click();
+      const product = ticket.locator("[data-ticket='product']");
+      await expect(product).toHaveAttribute("data-asking", "yes");
+      await expect(product.locator("[data-option='MIS']")).toBeFocused();
+      await expect(ticket.locator("[data-ticket='review']")).toBeDisabled();
+      expect(seen.posts.filter((p) => p.url.includes("/paper/fno/order"))).toEqual([]);         // nothing sent while it asks
+      await product.locator("[data-option='NRML']").click();
+      await ticket.locator("[data-save-default='order_defaults.product'] input").check();
+      await expect(ticket.locator("[data-save-default='order_defaults.product'] [data-save-default-note]")).toHaveText("Saved");
+      expect(saves).toEqual([{ "order_defaults.product": "NRML" }]);
+      await ticket.locator("[data-ticket='review']").click();
+      await ticket.locator("[data-ticket='place']").click();
+      await expect(ticket.locator("[data-ticket='result']")).toContainText("Placed in practice mode");
+      const placed = seen.posts.filter((p) => p.url.endsWith("/paper/fno/order"));
+      expect(placed).toHaveLength(1);
+      expect(placed[0].body).toMatchObject({ order_type: "MARKET", product: "NRML", lots: 1 });
+    });
+  });
+}

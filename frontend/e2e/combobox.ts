@@ -71,3 +71,12 @@ export async function expectGroupLabels(page: Page, field: Locator, group: strin
   await button.click();
   await expect(page.locator("[data-combobox-list]")).toHaveCount(0);
 }
+
+/** M68 PR-1: the bot forms pre-select no entry style (Trade settings > Order defaults > Order type); where a form asks
+ * for it, pick Market as the user would. Does nothing where the form does not ask. */
+export async function pickEntryStyle(page: Page, scope: Locator | Page): Promise<void> {
+  const combo = scope.locator("[data-entry-input='style']");
+  if (await combo.count()) { await pickOption(page, combo.first(), "MARKET"); return; }
+  const select = scope.locator("#deploy-entry-style");
+  if (await select.count() && !(await select.inputValue())) await select.selectOption("MARKET");
+}

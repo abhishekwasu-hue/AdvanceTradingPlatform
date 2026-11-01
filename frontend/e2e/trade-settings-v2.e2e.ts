@@ -49,11 +49,13 @@ test.describe("Settings › Trade settings 1440", () => {
     await open(page, fixture("user"));
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Trade settings");
     await expect(page.locator("[data-section]")).toHaveCount(7);
-    // M68 PR-1: Order defaults is wired - its seven controls, every one Not set; no other section has a control yet.
+    // M68 PR-1 / PR-2: Order defaults and Position size are wired - their 7 and 6 controls, every one Not set; no other
+    // section has a control yet.
     await expect(sectionAt(page, "order_defaults").locator("[data-input]")).toHaveCount(7);
     await expect(sectionAt(page, "order_defaults").locator("[data-field] [data-value]")).toHaveText(Array(7).fill("Not set"));
-    await expect(page.locator("[data-input]")).toHaveCount(7);
-    await expect(page.locator("[data-save]")).toHaveCount(1);
+    await expect(sectionAt(page, "position_size").locator("[data-input]")).toHaveCount(6);
+    await expect(page.locator("[data-input]")).toHaveCount(13);
+    await expect(page.locator("[data-save]")).toHaveCount(2);
     await expect(page.getByText("Advanced (admin)")).toHaveCount(0);
     await expect(sectionAt(page, "risk_limits").getByRole("link", { name: "Risk limits" })).toHaveAttribute("href", "/settings/risk-limits");
     await expect(page).toHaveScreenshot("trade-settings-v2-1440-light.png", SHOT);
@@ -61,9 +63,11 @@ test.describe("Settings › Trade settings 1440", () => {
 
   test("a platform admin sees every field Not set under Advanced", async ({ page }) => {
     await open(page, fixture("admin"), "SUPER_ADMIN");
-    // M68 PR-1: Order defaults is wired (no Advanced part left there); Position size is the next section still to wire.
+    // M68 PR-1 / PR-2: Order defaults and Position size are wired (no Advanced part left there); Exits is the next section
+    // still to wire.
     await expect(sectionAt(page, "order_defaults").locator("summary", { hasText: "Advanced (admin)" })).toHaveCount(0);
-    const od = sectionAt(page, "position_size");
+    await expect(sectionAt(page, "position_size").locator("summary", { hasText: "Advanced (admin)" })).toHaveCount(0);
+    const od = sectionAt(page, "exits");
     await od.locator("summary", { hasText: "Advanced (admin)" }).click();
     await od.locator("summary", { hasText: "Set by the exchange or your broker" }).click();
     await expect(od.locator("[data-field] [data-value]").first()).toHaveText("Not set");

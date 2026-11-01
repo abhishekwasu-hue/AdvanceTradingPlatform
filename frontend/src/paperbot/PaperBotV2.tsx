@@ -743,9 +743,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
           <div className="space-y-space-1 rounded-control border border-subtle p-space-3" data-bot-lots>
             <label htmlFor={ids.lots} className={LABEL}>{stockBot ? "Shares for each entry" : "Lots for this bot"}</label>
             <input id={ids.lots} className={FIELD} inputMode="numeric" autoComplete="off" value={lotsText} placeholder="1 to 500"
-              aria-invalid={lotsText.trim() !== "" && botLots === null ? true : undefined} data-bot-lots-input
+              aria-invalid={lotsText.trim() !== "" && botLots === null ? true : undefined} data-bot-lots-input title={`Or save your size once in ${POSITION_SIZE_WHERE}`}
               onChange={(e) => { setLotsText(e.target.value); setResult(null); }} />
-            <p className="text-t13 text-fg-muted">Nothing is chosen for you. Or set your size once in {POSITION_SIZE_WHERE}.</p>
             {botLots !== null && <SaveAsDefault key={botLots} fieldKey={LOTS_KEY} value={botLots} />}
           </div>
         )}

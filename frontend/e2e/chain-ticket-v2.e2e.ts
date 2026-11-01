@@ -393,14 +393,14 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
       if (width === 390) await expectPhoneLayout(page);
       await expect(ticket).toHaveScreenshot(`order-ticket-asks-lots-v2-${width}-light.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
       await lots.fill("1");
-      await ticket.locator("[data-save-default='position_size.lots'] input").check();
-      await expect(ticket.locator("[data-save-default='position_size.lots'] [data-save-default-note]")).toHaveText("Saved");
       const type = ticket.locator("[data-ticket='order-type']");
       await expect(type).toHaveAttribute("data-asking", "yes");
       await expect(type.locator("[data-option='MARKET']")).toBeFocused();
       await expect(ticket.locator("[data-ticket='order-type-unset']")).toHaveText("Pick how the order is sent: Market, Limit, SL or SL-M.");
       await expect(ticket.locator("[data-ticket='review']")).toBeDisabled();
       await expect(ticket.locator("[aria-checked='true'][data-option='MARKET'], [aria-checked='true'][data-option='MIS'], [aria-checked='true'][data-option='NRML']")).toHaveCount(0);
+      await ticket.locator("[data-save-default='position_size.lots'] input").check();          // his lots, saved for next time
+      await expect(ticket.locator("[data-save-default='position_size.lots'] [data-save-default-note]")).toHaveText("Saved");
       if (width === 390) await expectPhoneLayout(page);
       await expect(ticket).toHaveScreenshot(`order-ticket-asks-v2-${width}-light.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
 

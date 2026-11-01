@@ -169,7 +169,7 @@ test.describe("Strategy templates behaviour", () => {
     await expect(form(page)).toContainText("Started on paper: RELIANCE.");
     const post = server.sent.find((c) => c.url === "/deployments");
     expect(post?.body).toEqual({ strategy_id: "template:B1:1:1d:both:,,,,,,", symbol: "RELIANCE", exchange: "NSE", timeframe: "day",
-      mode: "PAPER", holding: "SWING", instrument_kind: "UNDERLYING", order_style: "MARKET" });          // M68: his pick
+      mode: "PAPER", holding: "SWING", instrument_kind: "UNDERLYING", order_style: "MARKET", max_lots: 1 });   // M68: his picks (PR-2: his shares)
   });
 
   test("REV-H3: a seller pack on an index starts with nothing chosen; Start waits, with the reason, until the user chooses", async ({ page }) => {

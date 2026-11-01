@@ -326,6 +326,9 @@ test.describe("v2 terminal 1440", () => {
     const builder = page.locator("[data-panel='basket'] [data-basket-panel][data-embedded]");
     await expect(builder.locator("[data-basket-body]")).toBeVisible();
     await expect(builder.locator("[data-basket='legs'] > li")).toHaveCount(2);
+    // M68 PR-2 (TS1-022): no lots of his own saved - each added leg asks for its lots; the numbers follow once entered
+    await expect(builder.locator("[data-basket='problems']")).toContainText("Leg 1: enter its lots.");
+    for (const i of [0, 1]) await builder.locator("[data-leg-lots]").nth(i).fill("1");
     for (const f of ["net", "max-loss", "breakevens", "margin"]) await expect(builder.locator(`[data-figure='${f}']`)).toBeVisible();
     await expect(page.locator("[data-panel='basket'] [data-practice-frame]")).toHaveCount(0);     // one PAPER badge per screen
     const alert = page.locator("[data-terminal='incomplete'] [data-incomplete-action]");

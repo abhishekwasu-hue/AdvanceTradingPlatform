@@ -150,9 +150,11 @@ export function askOf(target: TicketTarget, d: Draft, clientRef: string): OrderA
 /** Desktop shortcuts: B = Buy, S = Sell - never while typing in a field, never with a modifier key. */
 export function shortcutSide(e: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey">, target: EventTarget | null): Side | null {
   if (e.ctrlKey || e.metaKey || e.altKey) return null;
-  const el = target as { tagName?: string; isContentEditable?: boolean } | null;
+  const el = target as { tagName?: string; isContentEditable?: boolean; getAttribute?: (name: string) => string | null } | null;
   const tag = (el?.tagName ?? "").toUpperCase();
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return null;
+  // M68 PR-2: the lots field (focused when the ticket asks for it) takes digits only - B / S still choose the side there
+  const lotsField = typeof el?.getAttribute === "function" && el.getAttribute("data-ticket") === "lots";
+  if (!lotsField && tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return null;
   const k = e.key.toLowerCase();
   return k === "b" ? "BUY" : k === "s" ? "SELL" : null;
 }

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { TicketBody } from "./OrderTicketV2";
-import { LOTS_MISSING, LOTS_UNSET_TEXT, askOf, draftProblems, firstMissing, newDraft, unitsText, type TicketTarget } from "./ticketModel";
+import { LOTS_MISSING, LOTS_UNSET_TEXT, askOf, draftProblems, firstMissing, newDraft, shortcutSide, unitsText, type TicketTarget } from "./ticketModel";
 import { BasketStore } from "./basket";
 import { lotsProblems, readyStrategy, basketProblems } from "./basketModel";
 import { futureLeg } from "./hubModel";
@@ -36,6 +36,11 @@ describe("M68 PR-2: the ticket asks for the lots", () => {
     expect(newDraft("BUY", { lots: 3 }).lots).toBe(3);                              // his own saved lots start it
     expect(unitsText(null, 75)).toBe("Lot size 75");
     expect(askOf(target, { ...d, lots: 2, orderType: "MARKET", product: "MIS" }, "ref").lots).toBe(2);
+    // the focused lots field takes digits only: B / S still choose the side there; any other field keeps its letters
+    const key = (k: string) => ({ key: k, ctrlKey: false, metaKey: false, altKey: false });
+    const field = (ticket: string | null) => ({ tagName: "INPUT", getAttribute: (n: string) => (n === "data-ticket" ? ticket : null) }) as unknown as EventTarget;
+    expect(shortcutSide(key("s"), field("lots"))).toBe("SELL");
+    expect(shortcutSide(key("s"), field("stop"))).toBeNull();
   });
 
   it("the empty lots field says so and offers no save; entered lots offer Save as my default, never for his own saved lots", () => {

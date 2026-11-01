@@ -378,7 +378,11 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                 </button>
                 <input id={ids.lots} inputMode="numeric" value={draft.lots ?? ""} placeholder="Lots" className={cx(FIELD, "text-center")}
                   aria-invalid={asking === "lots" ? true : undefined}
-                  onChange={(e) => onDraft({ lots: e.target.value.trim() === "" ? null : clampLots(Number(e.target.value)) })} data-ticket="lots" />
+                  onChange={(e) => {
+                    const text = e.target.value.trim();
+                    const v = Number(text);
+                    onDraft({ lots: text === "" ? null : Number.isFinite(v) ? clampLots(v) : draft.lots });     // a letter changes nothing
+                  }} data-ticket="lots" />
                 <button type="button" aria-label="One lot more" onClick={() => onDraft({ lots: clampLots((draft.lots ?? 0) + 1) })} disabled={draft.lots !== null && draft.lots >= MAX_LOTS}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border text-fg disabled:opacity-40" data-ticket="lots-more">
                   <Plus size={16} aria-hidden />

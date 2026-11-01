@@ -431,6 +431,8 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
   const t = useCopilotT();
   const symbol = String(plan.answers.symbol ?? "NIFTY 50");
   const [acceptRisk, setAcceptRisk] = useState(false);
+  const [acceptSuggested, setAcceptSuggested] = useState(false);     // M68 PR-8 (TS1-077)
+  useEffect(() => { setAcceptSuggested(false); }, [plan.candidate_id]);     // another plan: accept its own values again
   const [busy, setBusy] = useState(false);
   // DEF-0: null when the capital or the risk per trade is not set
   const perTrade = plan.risk_config.capital != null && plan.risk_config.risk_per_trade_pct != null
@@ -464,8 +466,14 @@ function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
               <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--ai))]" checked={acceptRisk} onChange={(e) => setAcceptRisk(e.target.checked)} />
               <span>{t("idea.acceptLoss", { amount: perTrade != null ? formatNumber(perTrade, 0) : "-" })}</span>
             </label>
-            <Button size="sm" variant="primary" icon={<Rocket size={13} />} disabled={busy || !acceptRisk}
-                    onClick={() => void act(async () => t("idea.deployed", { id: (await api.aiInterviewDeploy(plan.candidate_id!, acceptRisk)).deployment.id }))}>
+            {(plan.suggested?.length ?? 0) > 0 && (
+              <label className="flex items-center gap-1.5 text-xs text-fg" data-testid="accept-suggested">
+                <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--ai))]" checked={acceptSuggested} onChange={(e) => setAcceptSuggested(e.target.checked)} />
+                <span>{t("idea.acceptSuggested", { values: (plan.suggested ?? []).map((v) => `${v.label} ${v.value}`).join("; ") })}</span>
+              </label>
+            )}
+            <Button size="sm" variant="primary" icon={<Rocket size={13} />} disabled={busy || !acceptRisk || ((plan.suggested?.length ?? 0) > 0 && !acceptSuggested)}
+                    onClick={() => void act(async () => t("idea.deployed", { id: (await api.aiInterviewDeploy(plan.candidate_id!, acceptRisk, acceptSuggested)).deployment.id }))}>
               <span className="text-left leading-tight">{t("idea.deployPaper")}</span>
             </Button>
           </>

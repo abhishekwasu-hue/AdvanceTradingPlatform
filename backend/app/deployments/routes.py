@@ -215,8 +215,10 @@ ContractRulesRequest.model_rebuild()
 class DeploymentCreateRequest(ContractRulesRequest):
     strategy_id: str = Field(min_length=1, max_length=100)
     symbol: str = Field(min_length=1, max_length=50)
-    exchange: str = Field(default="NSE", min_length=1, max_length=20)
-    timeframe: str = Field(default="1min", description="Base candle interval fetched from the broker")
+    # M68 PR-8 (TS1-099): no pre-chosen exchange or base candles. Not sent = the symbol's own exchange (the instrument
+    # registry, a market fact) and the strategy's own smallest candle (its own timeframes; daily for a daily strategy).
+    exchange: str | None = Field(default=None, min_length=1, max_length=20)
+    timeframe: str | None = Field(default=None, description="Base candle interval fetched from the broker; not sent = the strategy's own smallest candle")
     mode: ExecutionMode = ExecutionMode.PAPER
     broker_name: Optional[str] = None
     # Phase I2: route LIVE orders to one broker account (None = the broker's default account).
@@ -355,6 +357,26 @@ async def _own_order_defaults(session: AsyncSession, user: User, request: "Deplo
         if request.market_protection_pct is None:
             raise HTTPException(status_code=422, detail=[{"loc": ["body", "market_protection_pct"], "type": "needs_setting",
                                                           "msg": "Enter the price protection % for a limit with price protection"}])
+
+
+def _own_base(request: "DeploymentCreateRequest", strategy) -> None:
+    """M68 PR-8 (TS1-099): a bot created without an exchange or base candles takes the symbol's own exchange (the
+    instrument registry: NSE for stocks and NIFTY indices, BSE for SENSEX / BANKEX) and the strategy's own smallest candle
+    (daily for a daily strategy) - facts of what he picked, never an ATP choice. A strategy whose smallest candle is not
+    a base the broker serves asks for one."""
+    if request.exchange is None:
+        symbol = request.symbol.upper().strip()
+        request.exchange = instrument_master.INDEX_EXCHANGE.get(instrument_master.underlying_of(symbol), "NSE")
+    if request.timeframe is not None:
+        return
+    frames = list(getattr(strategy, "timeframes", []) or [])
+    if frames == ["day"]:
+        request.timeframe = "day"
+        return
+    sized = sorted((m, tf) for tf in frames if (m := _timeframe_minutes(tf)) is not None)
+    if not sized or sized[0][1] not in SUPPORTED_BASE_TIMEFRAMES:
+        raise HTTPException(status_code=422, detail=f"Needs your setting: base candles - pick one of {', '.join(SUPPORTED_BASE_TIMEFRAMES)}")
+    request.timeframe = sized[0][1]
 
 
 def _check_holding(request: "DeploymentCreateRequest", strategy) -> None:
@@ -506,6 +528,7 @@ async def create_deployment(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     sent_holding = request.holding
     await _own_order_defaults(session, user, request)
+    _own_base(request, strategy)
     try:
         _check_holding(request, strategy)
     except HTTPException:
@@ -615,7 +638,7 @@ async def create_deployment(
 
     record = StrategyDeploymentRecord(
         tenant_id=user.tenant_id, strategy_id=request.strategy_id, symbol=symbol,
-        exchange=request.exchange.upper(), timeframe=request.timeframe, mode=request.mode.value,
+        exchange=(request.exchange or "").upper(), timeframe=request.timeframe, mode=request.mode.value,
         broker_name=broker_name, status=DeploymentStatus.ACTIVE.value, created_by=user.id,
         instrument_kind=rules.instrument_kind.value,
         option_position=rules.option_position.value if rules.option_position else None,

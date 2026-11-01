@@ -113,7 +113,8 @@ class TemplateBody(BaseModel):
     width: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     near_expiry: date
     next_expiry: Optional[date] = None
-    lots: int = Field(default=1, ge=1, le=1000)
+    # M68 PR-8 (TS1-081): the lots are the trader's own (the page asks for them); no pre-chosen 1 lot.
+    lots: int = Field(ge=1, le=1000)
     lot_size: Optional[int] = Field(default=None, ge=1, le=100_000)
     # Optional model pricing (a starting point before real prices from the chain): every leg gets the model's price
     # at `iv`, marked premium_source "model". All three are needed together.
@@ -142,6 +143,9 @@ def _parse_when(v: Any) -> Any:
     return v
 
 
+POP_RULES = ("iron_condor", "iron_butterfly", "credit_spread")      # the selector rules that read a chance of profit
+
+
 class SuggestBody(BaseModel):
     chain: OptionChain
     rule: Literal["iron_condor", "iron_butterfly", "credit_spread", "credit_spread_fixed", "credit_spread_itm", "naked_itm"]
@@ -149,8 +153,9 @@ class SuggestBody(BaseModel):
     hedge_width_points: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     atm_strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     direction: Optional[Literal["BULLISH", "BEARISH"]] = None
-    pop_threshold_pct: float = Field(default=70.0, ge=0, le=100)
-    strikes_otm: int = Field(default=2, ge=0, le=50)
+    # M68 PR-8 (TS1-081): no pre-chosen chance of profit or strike distance - a rule that reads one asks for it.
+    pop_threshold_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    strikes_otm: Optional[int] = Field(default=None, ge=0, le=50)
     itm_depth_points: float = Field(default=0.0, ge=0, lt=MAX_PRICE, allow_inf_nan=False)
     hedge_enabled: bool = False
     as_of: Optional[Union[datetime, date]] = None
@@ -316,20 +321,26 @@ def _suggest(body: SuggestBody) -> Dict[str, Any]:
     if needs_direction and body.direction is None:
         raise HTTPException(status_code=422, detail=f"{body.rule} needs a direction (BULLISH or BEARISH)")
     direction = body.direction or ""
+    if body.rule in POP_RULES and body.pop_threshold_pct is None:
+        raise HTTPException(status_code=422, detail=f"Needs your setting: the minimum chance of profit (pop_threshold_pct) for {body.rule}")
+    if body.rule == "credit_spread_fixed" and body.strikes_otm is None:
+        raise HTTPException(status_code=422, detail="Needs your setting: how many strikes out of the money (strikes_otm) for credit_spread_fixed")
+    pop = float(body.pop_threshold_pct or 0.0)
+    otm = int(body.strikes_otm or 0)
     result: Optional[Dict[str, Any]]
     if body.rule == "credit_spread":
-        result = selectors.select_credit_spread(raw, direction, body.hedge_width_points, body.pop_threshold_pct)
+        result = selectors.select_credit_spread(raw, direction, body.hedge_width_points, pop)
     else:
         if atm is None:
             raise HTTPException(status_code=422, detail="give atm_strike, or a chain with its underlying price")
         at: float = atm
         if body.rule == "iron_condor":
-            result = selectors.select_iron_condor(raw, at, body.step, body.hedge_width_points, body.pop_threshold_pct)
+            result = selectors.select_iron_condor(raw, at, body.step, body.hedge_width_points, pop)
         elif body.rule == "iron_butterfly":
-            result = selectors.select_iron_butterfly(raw, at, body.hedge_width_points, body.pop_threshold_pct)
+            result = selectors.select_iron_butterfly(raw, at, body.hedge_width_points, pop)
         elif body.rule == "credit_spread_fixed":
             result = selectors.select_credit_spread_fixed_strikes(raw, direction, at, hedge_width_points=body.hedge_width_points,
-                                                                  step=body.step, strikes_otm=body.strikes_otm)
+                                                                  step=body.step, strikes_otm=otm)
         elif body.rule == "credit_spread_itm":
             result = selectors.select_credit_spread_itm(raw, direction, at, itm_depth_points=body.itm_depth_points,
                                                         hedge_width_points=body.hedge_width_points, step=body.step)

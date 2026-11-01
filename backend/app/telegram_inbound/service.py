@@ -564,7 +564,8 @@ async def _manual_paper(session: AsyncSession, tenant: Tenant, user: User, text:
                                            idempotency_key=f"manual:{user.id}:{secrets.token_hex(8)}", user_id=user.id, exchange=exchange)
     except approval.EntriesPaused as exc:
         return f"Not proposed: {exc}"
-    warn = "" if rr is None or rr >= manual.RR_WARN else f" Reward:risk {rr:g} is below {manual.RR_WARN:g} - Approve still places it."
+    own = await get_tenant_risk_config(tenant.id, session)                  # M68 PR-8: his own minimum, never a fixed one
+    warn = manual.rr_warning(rr, float(own.min_risk_reward) if own is not None else None)
     return (f"Manual PAPER setup: {setup['direction']} {setup['symbol']} at {price:,.2f}, SL {setup['stop_loss']:g}, T {setup['target']:g}, "
             f"reward:risk {rr if rr is not None else 'NA'}. Entry proposal #{row.id if row else '?'} - Approve / Reject follow.{warn}")
 

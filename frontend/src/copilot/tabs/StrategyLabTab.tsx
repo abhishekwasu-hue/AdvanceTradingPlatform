@@ -74,8 +74,9 @@ function RegimeCheck({ source, symbol }: { source: ReturnType<typeof useCandleSo
 export default function StrategyLabTab() {
   const t = useCopilotT();
   const source = useCandleSource(30);
-  const [symbol, setSymbol] = useState("NIFTY 50");
-  const [style, setStyle] = useState<"intraday" | "scalping">("intraday");
+  // M68 PR-8 (TS1-098): no symbol and no style pre-selected - he picks both (or names them in his idea) before a test.
+  const [symbol, setSymbol] = useState("");
+  const [style, setStyle] = useState<"" | "intraday" | "scalping">("");
   const [direction, setDirection] = useState<"long" | "short" | "both">("both");
   const [idea, setIdea] = useState("");
   const [parsed, setParsed] = useState<StrategistRequestParsed | null>(null);
@@ -101,6 +102,8 @@ export default function StrategyLabTab() {
   }, [idea]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run() {
+    if (!style) return;                       // asked first (the button stays off until he picks one)
+    const chosenStyle = style;
     const sym = symbol.trim().toUpperCase();
     const out = await task.run([t("lab.step.read"), t("lab.step.write"), t("lab.step.tune"), t("lab.step.unseen")], async (signal) => {
       let candles: OHLCVBar[] | undefined;
@@ -108,7 +111,7 @@ export default function StrategyLabTab() {
         const r = await source.fetch([sym], "1min", { count: 375 * 12, startPriceFor: () => (sym.includes("BANK") ? 52_000 : sym.includes("NIFTY") ? 24_500 : 1_500), seedFor: () => 7 });
         candles = sessionize(r.candles[sym] ?? []);
       }
-      return api.aiStrategistBuild({ symbol: sym, candles, broker: source.mode === "broker" ? source.broker || undefined : undefined, style, direction, language: "en" }, signal);
+      return api.aiStrategistBuild({ symbol: sym, candles, broker: source.mode === "broker" ? source.broker || undefined : undefined, style: chosenStyle, direction, language: "en" }, signal);
     });
     if (out) setResult(out);
   }
@@ -142,10 +145,10 @@ export default function StrategyLabTab() {
             ))}
           </div>
           <div className="w-64"><Select label={t("lab.style")} value={style} onChange={(v) => setStyle(v as typeof style)}
-            options={[{ value: "intraday", label: t("lab.styleIntraday") }, { value: "scalping", label: t("lab.styleScalping") }]} /></div>
+            options={[{ value: "", label: t("lab.styleChoose") }, { value: "intraday", label: t("lab.styleIntraday") }, { value: "scalping", label: t("lab.styleScalping") }]} /></div>
           <div className="w-40"><Select label={t("lab.side")} value={direction} onChange={(v) => setDirection(v as typeof direction)}
             options={[{ value: "long", label: t("lab.direction.LONG") }, { value: "short", label: t("lab.direction.SHORT") }, { value: "both", label: t("lab.direction.BOTH") }]} /></div>
-          <Button variant="primary" icon={<Layers size={15} />} disabled={task.busy || !symbol.trim()} onClick={() => void run()} data-testid="lab-run">{t("lab.run")}</Button>
+          <Button variant="primary" icon={<Layers size={15} />} disabled={task.busy || !symbol.trim() || !style} onClick={() => void run()} data-testid="lab-run">{t("lab.run")}</Button>
           {estimate && <CostChip tokens={estimate.tokens} inr={estimate.inr} estimate />}
         </div>
         {source.mode === "sample" && <p className="flex items-center gap-2 text-xs text-warn"><SampleChip />{t("lab.sampleNote")}</p>}

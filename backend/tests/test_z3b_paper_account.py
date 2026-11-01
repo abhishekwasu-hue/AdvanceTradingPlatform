@@ -291,7 +291,9 @@ def test_manual_parse_and_parity_with_the_trade_bot_levels_and_reward_risk():
         assert len(manual.side_errors(direction, price, stop, target)) == n_errors, (direction, price, stop, target)
         assert manual.reward_risk(price, stop, target) == rr, (price, stop, target)
     assert manual.reward_risk(2400.5, 2380, 2460) == 2.9 and manual.reward_risk(101.3, 99.7, 104.9) == 2.25
-    assert manual.RR_WARN == 3.0
+    # M68 PR-8 (TS1-080): the warning reads his own minimum reward:risk; none set (0 / None) = no warning
+    assert manual.rr_warning(2.9, None) == "" and manual.rr_warning(2.9, 0.0) == "" and manual.rr_warning(3.0, 3.0) == ""
+    assert "below your minimum 3" in manual.rr_warning(2.9, 3.0) and manual.rr_warning(None, 3.0) == ""
 
 
 # --- Telegram ------------------------------------------------------------------------------------------------------------
@@ -336,7 +338,11 @@ def _paper_commands(t, monkeypatch):
     rows = _run(raised())
     assert len(rows) == 1 and json.loads(rows[0].evidence_json)["source"] == "manual" and rows[0].status == "PROPOSED"
     low = _post(t, _message("987654", "/paper TCS short SL 2410 T 2390")).json()["reply"]
-    assert "Reward:risk 1 is below 3" in low
+    assert "below" not in low                       # M68 PR-8 (TS1-080): no minimum of his own = no warning
+    from app.core.models import RiskConfig
+    assert client.put("/api/risk-settings", headers=t["headers"], json=RiskConfig(min_risk_reward=3.0).model_dump()).status_code == 200
+    low = _post(t, _message("987654", "/paper TCS short SL 2420 T 2390")).json()["reply"]
+    assert "Reward:risk 0.5 is below your minimum 3" in low
 
 
 # --- verification fixes -------------------------------------------------------------------------------------------------

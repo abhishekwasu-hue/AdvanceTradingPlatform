@@ -339,6 +339,15 @@ def test_monitor_proposes_pause_on_losing_streak_and_executes_only_after_approva
     now = MONITOR_NOW
     _seed_trades(t["tenant_id"], dep_id, t["user_id"], [-300, -250, -400], now=now)
 
+    async def observe_only():
+        async with _session_factory() as session:
+            deps = list(await session.scalars(select(StrategyDeploymentRecord).where(StrategyDeploymentRecord.tenant_id == t["tenant_id"])))
+            return [p.rule for p in await monitor.observe(session, t["tenant_id"], deps, now)]
+    # M68 PR-8 (TS1-079): no losses-in-a-row limit of his own = no streak nudge (ATP picks no streak length for him)
+    assert "LOSING_STREAK" not in _run(observe_only())
+    from app.core.models import RiskConfig
+    assert client.put("/api/risk-settings", headers=t["headers"], json=RiskConfig(max_consecutive_losses=3).model_dump()).status_code == 200
+
     async def observe_and_raise():
         async with _session_factory() as session:
             deps = list(await session.scalars(select(StrategyDeploymentRecord).where(StrategyDeploymentRecord.tenant_id == t["tenant_id"])))
@@ -372,7 +381,8 @@ def test_monitor_rejection_expiry_and_drawdown_rule():
     t = _worker_tenant("w-ai-monitor2@example.com")
     # DEF-0: the monitor reads the organisation's own capital (no built-in 100,000) - set it
     from tests.def0_legacy import legacy
-    assert client.put("/api/risk-settings", headers=t["headers"], json=legacy().model_dump()).status_code == 200
+    # M68 PR-8 (TS1-079): the nudge reads his own daily loss limit (2 % here), never a built-in one
+    assert client.put("/api/risk-settings", headers=t["headers"], json=legacy(max_daily_loss_pct=2.0).model_dump()).status_code == 200
     dep_id = _deploy(t)
     now = MONITOR_NOW
     _seed_trades(t["tenant_id"], dep_id, t["user_id"], [-1500, 200, -1200], now=now)   # -2500 on 100k capital = -2.5%

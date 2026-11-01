@@ -95,9 +95,11 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   const [busy, setBusy] = useState(false);
 
   const [strategyId, setStrategyId] = useState("");
-  const [symbol, setSymbol] = useState("NIFTY 50");
-  const [exchange, setExchange] = useState("NSE");
-  const [timeframe, setTimeframe] = useState<string>("1min");
+  // M68 PR-8 (TS1-098): what to trade is his pick - no symbol, exchange or base candles pre-selected. An empty exchange /
+  // base is sent as not set: the server takes the symbol's own exchange and the strategy's own smallest candle.
+  const [symbol, setSymbol] = useState("");
+  const [exchange, setExchange] = useState("");
+  const [timeframe, setTimeframe] = useState<string>("");
   const [mode, setMode] = useState<ExecutionMode>("PAPER");
   const [brokerName, setBrokerName] = useState<string>("");
   const [accounts, setAccounts] = useState<BrokerAccount[]>([]);
@@ -293,7 +295,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
     setMessage(null);
     try {
       const created = await api.createDeployment({
-        strategy_id: strategyId, symbol, exchange, timeframe: swing ? "day" : timeframe, mode, broker_name: brokerName || null,
+        strategy_id: strategyId, symbol, exchange: exchange.trim() || null, timeframe: swing ? "day" : timeframe || null, mode, broker_name: brokerName || null,
         holding: held ? "SWING" : "INTRADAY",
         broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, oi_gates: oiGates.length ? oiGates : null, ...contractRules(),
         routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
@@ -425,7 +427,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
           </div>
           <div>
             <label className="block text-xs text-fg-muted mb-1">Symbol</label>
-            <input className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={symbol} onChange={(e) => {
+            <input className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={symbol} placeholder="Choose a symbol" onChange={(e) => {
               const next = e.target.value;
               setSymbol(next);
               setPreview(null);
@@ -434,7 +436,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
           </div>
           <div>
             <label className="block text-xs text-fg-muted mb-1">Exchange</label>
-            <input className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={exchange} onChange={(e) => setExchange(e.target.value)} />
+            <input className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={exchange} placeholder="From the symbol" onChange={(e) => setExchange(e.target.value)} />
           </div>
           <div>
             <label className="block text-xs text-fg-muted mb-1">Base candles</label>
@@ -442,6 +444,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
               <div className="rounded border border-warn/40 bg-warn/10 px-2 py-1.5 text-xs text-warn">day · swing: held overnight (CNC / NRML), never squared off at 15:15</div>
             ) : (
               <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
+                <option value="">From the strategy</option>
                 {BASE_TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{tf}</option>)}
               </select>
             )}
@@ -833,7 +836,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
               <AlertTriangle size={16} /> This will place real orders with real money.
             </div>
             <ul className="text-xs text-fg-muted list-disc pl-5 space-y-1">
-              <li><b>{strategyId}</b> on <b>{symbol}</b> ({exchange}) via <b className="capitalize">{brokerName || "your stored broker"}</b>, every minute during market hours{kind !== "UNDERLYING" ? <> - trading <b>{kind === "OPTION" ? `${position === "BUY" ? "bought" : "written"} options` : "futures"}</b> on it</> : ""}.</li>
+              <li><b>{strategyId}</b> on <b>{symbol}</b> ({exchange || "its own exchange"}) via <b className="capitalize">{brokerName || "your stored broker"}</b>, every minute during market hours{kind !== "UNDERLYING" ? <> - trading <b>{kind === "OPTION" ? `${position === "BUY" ? "bought" : "written"} options` : "futures"}</b> on it</> : ""}.</li>
               {kind === "OPTION" && position === "WRITE" && <li className="text-down">Written options have open-ended risk until the underlying stop or the premium ceiling exits; margin is blocked at the broker.</li>}
               <li>Every entry passes your Risk Management limits and kill switches; a broker-side stop-loss is placed with each fill.</li>
               <li>You can pause or stop it here at any time; Emergency Exit (Risk Management) flattens everything.</li>

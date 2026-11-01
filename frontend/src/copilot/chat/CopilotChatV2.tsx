@@ -25,6 +25,8 @@ import { useCopilotT } from "../i18n";
 import { COPILOT_TABS, copilotPath } from "../tabs";
 import { AnswerV2 } from "./AnswerV2";
 import { TicketPrepV2 } from "../ticket/TicketPrepV2";
+import { useAiPrefs } from "../language/model";
+import { VoiceButtonV2 } from "../language/VoiceButtonV2";
 import { AttachMenu, imageFrom } from "./ChartAttachV2";
 import {
   chartQuestion, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
@@ -82,6 +84,7 @@ export interface ChatViewProps {
 
 export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, onAttach }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk" | "onAttach"> & { placeholder?: string }) {
   const t = useCopilotT();
+  const aiPrefs = useAiPrefs();          // M72 PR-10: his voice choice (flag copilot_languages); null while off
   const submit = (e: FormEvent) => { e.preventDefault(); const q = cleanQuestion(draft); if (q && !busy) onAsk(q); };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); const q = cleanQuestion(draft); if (q && !busy) onAsk(q); }
@@ -111,6 +114,7 @@ export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, 
       <textarea id="copilot-question" value={draft} maxLength={MAX_QUESTION} rows={bottom ? 1 : 2} onChange={(e) => onDraft(e.target.value)} onKeyDown={onKey} onPaste={onPaste}
         placeholder={placeholder ?? t("chat.placeholder")} disabled={busy}
         className={`min-w-0 flex-1 resize-none rounded-control border border-border bg-surface-2 px-space-3 py-space-2 text-t15 text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-60 ${bottom ? "min-h-11" : "min-h-16"}`} />
+      <VoiceButtonV2 prefs={aiPrefs} draft={draft} onDraft={onDraft} disabled={busy} />
       <button type="submit" className={BUTTON} disabled={busy || !cleanQuestion(draft)} aria-label={t("chat.ask")} data-primary>
         <SendHorizontal size={16} aria-hidden /><span className={bottom ? "sr-only" : ""}>{busy ? t("chat.asking") : t("chat.ask")}</span>
       </button>

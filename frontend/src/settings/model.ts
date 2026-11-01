@@ -70,6 +70,7 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
   entry("AI spending limits", "ai", SETTINGS_PATH.ai, ["limit", "cap", "spend", "cost"]),
   entry("Connect Telegram", "alerts", `${SETTINGS_PATH.alerts}#telegram`, ["telegram", "phone alerts"]),
   entry("Daily briefs on Telegram", "alerts", `${SETTINGS_PATH.alerts}#daily-briefs`, ["brief", "morning brief", "closing wrap", "weekly review", "digest"], "daily_rhythm"),
+  entry("Copilot answers: language and voice", "ai", `${SETTINGS_PATH.ai}#copilot-answers`, ["language", "voice", "microphone", "speak"], "copilot_languages"),
   entry("Copilot watch", "alerts", `${SETTINGS_PATH.alerts}#copilot-watch`, ["watch", "near my levels", "short strike", "iv jump", "open interest", "watchlist setup"], "copilot_watch"),
   entry("Email, SMS and app notifications", "alerts", `${SETTINGS_PATH.alerts}#channels`, ["email", "sms", "push", "whatsapp", "alert channels"]),
   entry("Text size", "appearance", `${SETTINGS_PATH.appearance}#appearance-text-size-label`, ["font", "bigger", "larger", "zoom"]),

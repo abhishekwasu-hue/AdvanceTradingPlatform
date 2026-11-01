@@ -166,10 +166,12 @@ async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, us
     user = await session.get(User, user_id, populate_existing=True)
     if user is None:
         return None, "the user could not be read"
+    from app.ai.languages import answer_language
+    lang = await answer_language(session, user)            # M72 PR-10: his own answer language (flag copilot_languages), else English
     stamp(provider, agent.PROMPT_VERSION)
     try:
         ans = await agent.run_agent(provider, ToolContext(session, tenant_id, user), question, limits=await agent.admin_limits(session),
-                                    context=context)
+                                    context=context, lang=lang)
     except Exception as exc:  # noqa: BLE001 - the planner never breaks the chat: the rules answer instead
         await session.rollback()
         return None, f"planner error ({exc.__class__.__name__})"

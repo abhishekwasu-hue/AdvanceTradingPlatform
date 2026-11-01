@@ -159,6 +159,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # side, lots, limit price, stop-loss; his saved Trade settings as the ticket applies them); he reviews and presses
     # Place himself. The server is unchanged (the ticket's own preview / place routes). OFF: no card. The owner's order
     # says default ON; it ships OFF until he turns it on.
+    # M72 PR-10 (CP-10, M72Q-2; needs `ai_copilot` + `ui_v2`; app/ai/languages.py): the Copilot planner answers in the
+    # user's own language (English / Marathi / Hindi, his Settings > AI choice; numbers and symbols unchanged, the Marathi /
+    # Hindi advice and order phrases refused) and the Copilot shows the browser's speech input when he turns it on. The
+    # interface, the rule answers and every other AI surface stay English; the strategy interview is untouched. OFF: English only.
+    "copilot_languages": "Copilot answers in Marathi or Hindi (the user's choice) and voice input in the Copilot box",
     "copilot_ticket": "Copilot ticket preparation: the order ticket opens filled with only what you typed; you review and place it yourself",
     "copilot_watch": "Copilot watch: opt-in cards when your own positions, short strikes or watchlists change, with Ask why",
     "ai_platform_key": "Platform AI key: AI answers without a key of the user's own, inside the plan's AI budget and the per-user daily cap set in Admin",

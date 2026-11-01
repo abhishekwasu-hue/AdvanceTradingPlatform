@@ -15,6 +15,7 @@ import SignedWebhooksV2 from "../alerts/SignedWebhooksV2";
 import { isNativeApp } from "../native/platform";
 import RhythmTelegramV2 from "../rhythm/RhythmTelegramV2";
 import CopilotWatchV2 from "../copilot/watch/CopilotWatchV2";
+import AnswerLanguageV2 from "../copilot/language/AnswerLanguageV2";
 import ConnectAiPanelV2 from "../aiKeys/ConnectAiPanelV2";
 import PlatformAiUsageV2 from "../aiKeys/PlatformAiUsageV2";
 import KeyGuidesV2 from "../aiKeys/KeyGuidesV2";
@@ -84,6 +85,7 @@ export function Fold({ id, title, line, children, onOpen }: { id: string; title:
 /** Settings › AI's body (also the in-place AI key panel, M75 NAV-2). */
 export function AiSection() {
   const oneKey = useFeatures().on("ai_one_key");
+  const languages = useFeatures().on("copilot_languages");
   return (
     <div id="ai" className="space-y-space-4">
       {/* Part A: one key for every AI feature. Without `ai_one_key`, today's AI cards. */}
@@ -96,6 +98,8 @@ export function AiSection() {
       )}
       {/* M72 PR-1b: today's use on the platform AI key and his own daily limit (renders nothing when another key answers). */}
       <PlatformAiUsageV2 />
+      {/* M72 PR-10: the language the Copilot answers in and its microphone (flag copilot_languages). */}
+      {languages && <div id="copilot-answers" className="scroll-mt-20"><Card title="Copilot answers"><AnswerLanguageV2 /></Card></div>}
     </div>
   );
 }

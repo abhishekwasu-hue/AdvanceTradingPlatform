@@ -262,6 +262,7 @@ export interface OptionBacktestConfig {
   strike_rule?: StrikeRule;
   strike_offset?: number;
   spread_width?: number;
+  ratio_shorts?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
   underlying_breach_exit?: boolean | null;   // DEF-0: the trader's own underlying-level exit (off unless set)
@@ -458,8 +459,12 @@ export interface RiskConfig {
   dd_level_1_pct: number | null;
   dd_level_2_pct: number | null;
   event_size_cut_pct: number | null;
-  /** CP6-15: when the losses-in-a-row pause ends (the server's default is "next_session"). */
-  loss_streak_pause?: LossStreakPause;
+  /** M68 PR-5 (TS1-054): how much the first drawdown step cuts the size, % (null = not set: no cut). */
+  dd_cut_pct?: number | null;
+  /** CP6-15: when the losses-in-a-row pause ends. M68 PR-5 (TS1-051): null = Not set (no built-in choice). */
+  loss_streak_pause?: LossStreakPause | null;
+  /** M68 PR-5 (TS1-052): opposite positions of two bots; null = Not set (allowed). */
+  opposite_positions?: "allow" | "deny" | null;
 }
 
 export type LossStreakPause = "next_session" | "until_resume";
@@ -477,7 +482,8 @@ export interface LossStreakStatus {
   exits_blocked: false;
 }
 
-export type RiskCeilings = Record<string, number>;
+/** M68 PR-5 (TS1-048): only the ceilings an admin set ({} = none); the admin's own view lists every key, null = not set. */
+export type RiskCeilings = Record<string, number | null>;
 
 export interface MarketEvent {
   id: number;
@@ -1130,6 +1136,8 @@ export interface ContractRules {
   strike_filters?: StrikeFilters | null;
   option_strategy?: OptionStrategy;
   spread_width?: number;
+  /** M68 PR-4 (TS1-042): a ratio spread's own sold legs per bought leg. */
+  ratio_shorts?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
   underlying_breach_exit?: boolean | null;   // DEF-0: the trader's own underlying-level exit (off unless set)

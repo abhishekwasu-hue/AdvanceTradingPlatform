@@ -111,8 +111,11 @@ async def execute_structure(
     # M68 PR-1 (TS1-008): the holding is the bot's / proposal's, else the user's Trade settings; Not set = refused below.
     from app.execution import order_defaults
     holding = holding or (await order_defaults.load(session, user)).holding
-    # M55 T1: only a defined-risk credit structure is ever held for days (SWING); anything else stays INTRADAY.
-    held = holding == "SWING" and can_hold_for_days(structure.strategy)
+    # M55 T1: only a defined-risk credit structure is held for days (SWING); M68 PR-5 (TS1-041): a written straddle /
+    # strangle too when the user switched that on. Anything else stays INTRADAY.
+    from app.risk_engine import own_risk
+    written = (await own_risk.for_user(session, user)).overnight_short_options if holding == "SWING" else False
+    held = holding == "SWING" and can_hold_for_days(structure.strategy, written_overnight=written)
     product = "NRML" if held else "MIS"
     tenant = await session.get(Tenant, user.tenant_id)
     execution_mode = ExecutionMode(mode)
@@ -196,7 +199,7 @@ async def execute_structure(
         if cfg.capital is None:
             cfg = cfg.with_capital(await capital_basis(session, user))
     # Phase V1: ceilings, then the guardian's entry rules (cool-down, drawdown ladder, events).
-    cfg, guardian_notes = clamp_config(cfg, await risk_ceilings(session))
+    cfg, guardian_notes = clamp_config(cfg, await risk_ceilings(session, user.tenant_id))
     state = await build_trading_day_state(session, user)
     daily_amount = cfg.daily_loss_amount()
     daily_limit = -daily_amount if daily_amount is not None else -math.inf
@@ -207,7 +210,7 @@ async def execute_structure(
         guardian_notes.extend(cap_notes)
     guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=structure.underlying_symbol, cfg=cfg,
                               # no user_id: stored and notified org-wide - number-free VIX wording (BT1b)
-                              direction=signal.direction.value) if state.daily_pnl > daily_limit else GuardianVerdict()
+                              direction=signal.direction.value, owner_id=user.id) if state.daily_pnl > daily_limit else GuardianVerdict()
     if guard.reasons:
         await _reject_all(session, orders, guard.reasons)
         await notify(session, user.tenant_id, NotificationType.RISK_REJECTION, title=f"Structure refused by the risk guardian: {structure.underlying_symbol}",
@@ -230,8 +233,20 @@ async def execute_structure(
         "stop_loss": round(basis + metrics.risk_per_unit, 2) if metrics.risk_per_unit > 0 else 0.0,
         "target1": None, "target2": None, "risk_reward": None,
     })
-    decision = RiskManager(cfg).validate_and_size(sizing_signal, state, contract_spec=spec,
-                                                  requested_quantity=float(rules.max_lots * lot) if rules.max_lots else None)
+    own = float(rules.max_lots * lot) if rules.max_lots else None
+    if own is None:
+        # M68 PR-2 (TS1-017): the bot's own lots, else his Trade settings > Position size (a structure has no single price:
+        # % of capital does not size it); nothing of his own and no risk per trade - nothing is placed (before: one lot).
+        from app.execution import position_size
+        own, why = position_size.quantity_for(await position_size.load(session, user), unit=float(lot), entry=None,
+                                              capital=cfg.capital, risk_set=cfg.risk_amount() is not None)
+        if why is not None:
+            reasons = list(structure.notes) + guardian_notes + [why]
+            await _reject_all(session, orders, reasons)
+            await notify(session, user.tenant_id, NotificationType.REJECTION, title=f"Structure not placed: {structure.underlying_symbol}",
+                         message=why, severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=orders[0].id)
+            return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
+    decision = RiskManager(cfg).validate_and_size(sizing_signal, state, contract_spec=spec, requested_quantity=own)
     notes = list(structure.notes) + [_economics_note(metrics, lot)] + guardian_notes + list(decision.warnings)
     if not decision.approved:
         reasons = notes + decision.reasons
@@ -244,8 +259,10 @@ async def execute_structure(
                            f"({cfg.risk_amount() or 0:,.0f}). Change limit: Settings > Risk limits"]
         await _reject_all(session, orders, reasons)
         return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
-    if rules.max_lots:
-        lots = min(lots, rules.max_lots)
+    if own is not None:
+        # M68 PR-2: the trader's own size (the bot's lots or his Position size) is the ceiling of a risk-based size too,
+        # as on the single-leg path (app/execution/router.py OrderRouter.execute)
+        lots = min(lots, int(own // lot))
     if execution_mode == ExecutionMode.LIVE:
         try:
             cap, note = await _live_lot_cap(broker, structure, debit_per_unit=-metrics.net_credit if metrics.debit else None,
@@ -257,9 +274,11 @@ async def execute_structure(
         notes.append(note)
         lots = min(lots, cap)
     quantity = lots * lot
+    hold_margin: float | None = None
     if held and execution_mode == ExecutionMode.PAPER:
         # M55 T1: the margin a spread held overnight blocks, checked at entry (LIVE: the broker's margin above, NRML).
-        refusal, note = await _hold_margin_refusal(session, user, structure, premiums, lots)
+        refusal, note, hold_margin = await _hold_margin_refusal(session, user, structure, premiums, lots, metrics=metrics,
+                                                                price_source=price_source)
         if refusal:
             reasons = notes + [refusal]
             await _reject_all(session, orders, reasons)
@@ -304,6 +323,8 @@ async def execute_structure(
     group_meta = metrics.as_dict()
     # `quantity` is the 1x leg's; the position monitor weights each leg by its own quantity / this.
     group_meta.update({"lots": lots, "quantity": quantity, "underlying_symbol": structure.underlying_symbol, "ratios": ratios})
+    if hold_margin is not None:
+        group_meta["hold_margin"] = hold_margin     # M68 PR-5: what this held structure blocks (`_held_margin_blocked`)
     fills: Dict[str, Tuple[float, Optional[str]]] = {}
 
     from app.execution import smart_execution
@@ -545,8 +566,9 @@ async def _log_blocks(session: AsyncSession, user: User, blocks: list[dict], sym
 
 
 async def _held_margin_blocked(session: AsyncSession, user: User) -> float:
-    """M55 T1: the margin his other PAPER structures held for days still block - each one's defined max loss (per unit,
-    from its group metadata) x its quantity, as the option backtest's span_like margin counts a defined-risk structure."""
+    """M55 T1: the margin his other PAPER structures held for days still block - the margin worked out at its entry
+    (`hold_margin` in its group metadata, M68 PR-5: a written straddle / strangle too), else its defined max loss (per
+    unit) x its quantity, as the option backtest's span_like margin counts a defined-risk structure."""
     from sqlalchemy import select
     rows = await session.execute(select(TradeRecord.leg_group_id, TradeRecord.group_meta).where(
         TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.exit_time.is_(None),
@@ -557,18 +579,25 @@ async def _held_margin_blocked(session: AsyncSession, user: User) -> float:
             continue
         try:
             meta = json.loads(raw or "{}")
-            blocked[group_id] = max(0.0, float(meta.get("max_loss") or 0.0)) * float(meta.get("quantity") or 0.0)
+            if meta.get("hold_margin") is not None:
+                blocked[group_id] = max(0.0, float(meta["hold_margin"]))
+            else:
+                blocked[group_id] = max(0.0, float(meta.get("max_loss") or 0.0)) * float(meta.get("quantity") or 0.0)
         except (TypeError, ValueError):
             blocked[group_id] = 0.0
     return round(sum(blocked.values()), 2)
 
 
 async def _hold_margin_refusal(session: AsyncSession, user: User, structure: ResolvedStructure, premiums: dict[str, float],
-                               lots: int) -> tuple[str | None, str]:
+                               lots: int, *, metrics: StructureMetrics, price_source: BrokerInterface | None
+                               ) -> tuple[str | None, str, float | None]:
     """M55 T1: a PAPER spread held for days blocks its margin overnight, so it is checked at entry: ATP's labelled
     estimate (`fno_basket.hedge_margin`, the defined max loss) against his practice balance less what his other held
-    spreads block. No broker is built here (Rule 0: execute_structure never obtains a broker itself; LIVE is checked by
-    the broker's own margin in `_live_lot_cap`). (refusal or None, note)."""
+    spreads block. M68 PR-5 (TS1-041): a written straddle / strangle held by his switch has no defined max loss, so its
+    margin is the option backtest's span_like rule (`option_structure_margin`: the short legs' underlying notional x the
+    short-option %), the underlying quoted from the same price source as the legs. No broker is built here (Rule 0:
+    execute_structure never obtains a broker itself; LIVE is checked by the broker's own margin in `_live_lot_cap`).
+    (refusal or None, note, the margin it blocks or None)."""
     from app.execution import smart_execution
     from app.paper import fno_basket
     builder = [{"direction": "SELL" if leg.role == "SHORT" else "BUY", "option_type": leg.contract.right,
@@ -576,14 +605,41 @@ async def _hold_margin_refusal(session: AsyncSession, user: User, structure: Res
                 "lots": int(lots * leg.ratio), "lot_size": int(structure.lot_size), "expiry": leg.contract.expiry.isoformat(), "iv": None}
                for leg in structure.legs]
     estimate = fno_basket.hedge_margin(builder)
+    if estimate["with_hedge"]["value"] is None and metrics.max_loss is None and structure.short_legs:
+        written = await _written_hold_margin(structure, lots, price_source)
+        if written is not None:
+            estimate = {**estimate, "with_hedge": {**estimate["with_hedge"], "value": written,
+                                                   "basis": "Undefined risk: the short legs' underlying notional x the "
+                                                            "short-option % (the option backtest's span_like margin)."}}
     free = await fno_basket.practice_balance(session, user) - await _held_margin_blocked(session, user)
     view = smart_execution.margin_view(None, estimate, free, free_source="practice")
     if view.required is None:
-        return "Not entered: the margin to hold this spread for days could not be worked out, so it is not held", ""
+        return "Not entered: the margin to hold this spread for days could not be worked out, so it is not held", "", None
     if view.free_after is None or view.free_after < 0:
         return (f"Not entered: not enough margin to hold this spread for days - it needs {view.required:,.0f}, "
-                f"{max(free, 0.0):,.0f} is free in your practice account"), ""
-    return None, f"Margin to hold for days: {view.required:,.0f} ({view.label}); {view.free_after:,.0f} free after"
+                f"{max(free, 0.0):,.0f} is free in your practice account"), "", None
+    return None, f"Margin to hold for days: {view.required:,.0f} ({view.label}); {view.free_after:,.0f} free after", view.required
+
+
+async def _written_hold_margin(structure: ResolvedStructure, lots: int, price_source: BrokerInterface | None) -> float | None:
+    """M68 PR-5 (TS1-041): the span_like margin of a written structure with no defined max loss - the option backtest's
+    own rule and numbers (`app.backtest.models.option_structure_margin` with `SpanLikeMargin`), the underlying quoted
+    from the legs' price source. None when the underlying has no quote (the caller then refuses; never a made-up spot)."""
+    from app.backtest.models import SpanLikeMargin, option_structure_margin
+    from app.instruments import master as instrument_master
+    from app.option_chain.chain_view import spot_instrument
+    if price_source is None:
+        return None
+    try:
+        symbol, exchange = spot_instrument(instrument_master.underlying_of(structure.underlying_symbol))
+        spot = float(await price_source.get_ltp_for_symbol(symbol, exchange))
+    except Exception as exc:  # noqa: BLE001 - no quote = no margin number = refused by the caller
+        logger.warning("Underlying quote for the held-structure margin of %s failed: %s", structure.underlying_symbol, exc)
+        return None
+    if not math.isfinite(spot) or spot <= 0:
+        return None
+    short_quantity = sum(lots * structure.lot_size * leg.ratio for leg in structure.short_legs)
+    return round(option_structure_margin(SpanLikeMargin(), spot=spot, short_quantity=short_quantity, max_loss=None), 2)
 
 
 async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *, debit_per_unit: Optional[float] = None,

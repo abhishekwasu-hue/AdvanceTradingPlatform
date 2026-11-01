@@ -35,7 +35,7 @@ from app.core.models import BacktestResult, OHLCVBar, RiskConfig, bars_to_datafr
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BacktestRunRecord, User
 from app.db.session import get_session
-from app.instruments.spreads import MAX_CUSTOM_LEGS, MAX_LEG_RATIO, CustomLeg
+from app.instruments.spreads import MAX_CUSTOM_LEGS, CustomLeg
 from app.market_data.calendar import load_holidays
 from app.strategy_templates import exits as exit_settings
 from app.strategy_templates.exits import TemplateExitsBody
@@ -57,26 +57,30 @@ class ExitRulesBody(BaseModel):
 class CustomLegBody(BaseModel):
     right: str = Field(pattern="^(CE|PE|ce|pe)$")
     role: str = Field(pattern="^(SHORT|LONG|short|long)$")
-    strike_rule: StrikeRule = StrikeRule.ATM
-    strike_offset: int = Field(default=0, ge=0, le=20)
-    ratio: int = Field(default=1, ge=1, le=MAX_LEG_RATIO)
+    # M68 PR-4 (TS1-038 / 047): each leg names its own strike (no ATM pre-pick); no ATP ceiling on its distance or ratio.
+    strike_rule: StrikeRule
+    strike_offset: int = Field(default=0, ge=0)
+    ratio: int = Field(default=1, ge=1)
 
 
 class OptionBacktestBody(BaseModel):
     """Phase W: trade the signals as options. The deployment fields (structure, expiry/strike
     rules, width, exit percentages, custom legs, max lots) plus the simulation's own knobs."""
     option_strategy: OptionStrategy = OptionStrategy.SINGLE
-    option_position: OptionPosition = OptionPosition.BUY
-    expiry_rule: ExpiryRule = ExpiryRule.NEAREST
-    strike_rule: StrikeRule = StrikeRule.ATM
-    strike_offset: int = Field(default=0, ge=0, le=10)
-    spread_width: int = Field(default=2, ge=1, le=20)
+    # M68 PR-4 (TS1-039 / 042 / 047): no pre-chosen side, expiry, strike, distance, width or ratio and no ATP ceiling on
+    # them - not sent = the user's own Trade settings > Options (`own_options`), Not set there either = a 422 at the field.
+    option_position: OptionPosition | None = None
+    expiry_rule: ExpiryRule | None = None
+    strike_rule: StrikeRule | None = None
+    strike_offset: int | None = Field(default=None, ge=0)
+    spread_width: int | None = Field(default=None, ge=1)
+    ratio_shorts: int | None = Field(default=None, ge=1)
     target_credit_pct: Optional[float] = Field(default=None, ge=5, le=95)
     stop_credit_pct: Optional[float] = Field(default=None, ge=10, le=500)
     underlying_breach_exit: bool = False
     premium_stop_pct: Optional[float] = Field(default=None, ge=5, le=95)
     custom_legs: Optional[List[CustomLegBody]] = Field(default=None, max_length=MAX_CUSTOM_LEGS)
-    max_lots: Optional[int] = Field(default=None, ge=1, le=500)
+    max_lots: int | None = Field(default=None, ge=1)               # M68 PR-4 (TS1-046): no ATP ceiling
     # Conventions: None = the exchange's current one for the underlying.
     lot_size: Optional[int] = Field(default=None, ge=1, le=10000)
     strike_step: Optional[float] = Field(default=None, gt=0)
@@ -87,24 +91,78 @@ class OptionBacktestBody(BaseModel):
     pricing: str = Field(default="synthetic", pattern=r"^(synthetic|snapshots|uploaded)$")
     implied_volatility: Optional[float] = Field(default=None, gt=0.01, le=3.0, description="fraction: 0.14 = 14%; None = realised vol")
     realised_vol_window: int = Field(default=20, ge=5, le=500)
-    risk_free_rate: float = Field(default=0.07, ge=0, le=0.25)
+    # M68 PR-4 (TS1-100): None = the user's own rate (Trade settings > Options > Risk-free rate), else the platform's.
+    risk_free_rate: float | None = Field(default=None, ge=0, le=1)
     snapshot_max_age_minutes: int = Field(default=15, ge=1, le=1440)
     allow_synthetic_fallback: bool = True
     option_chain: Optional[List[OptionChainSnapshotRow]] = Field(default=None, max_length=500_000)
     intraday: bool = True
     hold_for_days: bool = False       # M55 T1: a credit structure held for days (no square-off at the close)
+    # M68 PR-5 (TS1-041): the user's own "Hold written straddles and strangles overnight" (Risk limits), as the bot reads it
+    hold_written_overnight: bool = False
 
     def to_config(self, holidays=()) -> OptionBacktestConfig:
+        # Read after `own_options`: every choice the structure uses is the user's own; a field it does not use (the
+        # strike rule of a straddle, the side of a spread) is not passed and nothing builds from it.
+        chosen = {k: v for k, v in (("option_position", self.option_position), ("expiry_rule", self.expiry_rule),
+                                    ("strike_rule", self.strike_rule), ("spread_width", self.spread_width),
+                                    ("risk_free_rate", self.risk_free_rate)) if v is not None}
         return OptionBacktestConfig(
-            option_strategy=self.option_strategy, option_position=self.option_position, expiry_rule=self.expiry_rule,
-            strike_rule=self.strike_rule, strike_offset=self.strike_offset, spread_width=self.spread_width,
+            option_strategy=self.option_strategy, strike_offset=self.strike_offset or 0, ratio_shorts=self.ratio_shorts, **chosen,
             target_credit_pct=self.target_credit_pct, stop_credit_pct=self.stop_credit_pct, premium_stop_pct=self.premium_stop_pct,
             underlying_breach_exit=self.underlying_breach_exit,
             custom_legs=[CustomLeg.from_dict(leg.model_dump()) for leg in (self.custom_legs or [])], max_lots=self.max_lots,
             lot_size=self.lot_size, strike_step=self.strike_step, expiry_weekday=self.expiry_weekday, weekly_expiry=self.weekly_expiry,
             holidays=set(holidays), implied_volatility=self.implied_volatility, realised_vol_window=self.realised_vol_window,
-            risk_free_rate=self.risk_free_rate, intraday=self.intraday, hold_for_days=self.hold_for_days,
+            intraday=self.intraday, hold_for_days=self.hold_for_days,
+            hold_written_overnight=self.hold_written_overnight,
         )
+
+
+async def own_options(session: AsyncSession, user: User | None, opts: OptionBacktestBody) -> None:
+    """M68 PR-4 (TS1-039): a field the backtest form did not send takes the user's OWN Trade settings > Options value;
+    Not set there either = a 422 at the field ("Needs your setting: ..."), as the bot form (app/deployments/routes.py)."""
+    from app.instruments import option_defaults
+    from app.instruments.contracts import RULE_STRIKE_STRUCTURES
+    from app.instruments.spreads import RATIO_SPREADS, WIDTH_STRUCTURES
+    mine = await option_defaults.load(session, user)
+    structure = opts.option_strategy
+    single, rule_strike = structure == OptionStrategy.SINGLE, structure.value in RULE_STRIKE_STRUCTURES
+    if opts.expiry_rule is None and mine.expiry_rule:
+        opts.expiry_rule = ExpiryRule(mine.expiry_rule)
+    if single and opts.option_position is None and mine.option_position:
+        opts.option_position = OptionPosition(mine.option_position)
+    if rule_strike and opts.strike_rule is None and mine.strike_rule:
+        opts.strike_rule = StrikeRule(mine.strike_rule)
+    away = rule_strike and opts.strike_rule in (StrikeRule.ITM, StrikeRule.OTM)
+    otm_offset = structure in (OptionStrategy.IRON_CONDOR, OptionStrategy.SHORT_STRANGLE, OptionStrategy.LONG_STRANGLE)
+    if (away or otm_offset) and not opts.strike_offset and mine.strike_offset:
+        opts.strike_offset = mine.strike_offset
+    if structure in WIDTH_STRUCTURES and opts.spread_width is None:
+        opts.spread_width = mine.spread_width
+    if structure in RATIO_SPREADS and opts.ratio_shorts is None:
+        opts.ratio_shorts = mine.ratio
+    if opts.risk_free_rate is None:
+        opts.risk_free_rate = option_defaults.risk_free_rate(mine)
+    problems = []
+    need = lambda field, name: problems.append({"loc": ["body", "options", field], "type": "needs_setting",  # noqa: E731
+                                                "msg": option_defaults.needs_setting(name)})
+    if opts.expiry_rule is None:
+        need("expiry_rule", "expiry_rule")
+    if single and opts.option_position is None:
+        need("option_position", "option_position")
+    if rule_strike and opts.strike_rule is None:
+        need("strike_rule", "strike_rule")
+    elif (away or otm_offset) and not opts.strike_offset:
+        need("strike_offset", "strike_offset")
+    if opts.strike_rule == StrikeRule.ATM and rule_strike and opts.strike_offset:
+        raise HTTPException(status_code=400, detail="strike_offset only applies to ITM/OTM strikes")
+    if structure in WIDTH_STRUCTURES and opts.spread_width is None:
+        need("spread_width", "spread_width")
+    if structure in RATIO_SPREADS and opts.ratio_shorts is None:
+        need("ratio_shorts", "ratio")
+    if problems:
+        raise HTTPException(status_code=422, detail=problems)
 
 
 class BacktestBody(DataChoice):
@@ -196,7 +254,10 @@ class BacktestRunner:
             raise HTTPException(status_code=422, detail="execution_models: the pricing model applies to option backtests only")
 
     @classmethod
-    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None) -> "BacktestRunner":
+    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: int | None = None,
+                    user: User | None = None) -> "BacktestRunner":
+        if body.options is not None:
+            await own_options(session, user, body.options)                   # M68 PR-4: his own Options, else asked
         if body.options is None:
             runner = cls(body, risk)
             await _models_allowed(session, runner.models, tenant_id)
@@ -411,7 +472,7 @@ async def backtest_monte_carlo(
     await fill_candles(session, user, body)                                     # M55 T3: server-side candles
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
-    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
+    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id, user=user)
     result = await run_in_threadpool(runner.run, strategy, bars_to_dataframe(body.candles))        # P0.1 / S3
     result.data_source = body.data_source
     from app.core import config as app_config
@@ -428,7 +489,7 @@ async def backtest_walk_forward(
     await fill_candles(session, user, body)                                     # M55 T3: server-side candles
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
-    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
+    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id, user=user)
     # M71 PL-7b: walk-forward is a calibration check - the tenant's sealed / contaminated rows are left out first
     from app.backtest import data_policy
     windows = await _refused_windows(session, user.tenant_id, body.symbol)

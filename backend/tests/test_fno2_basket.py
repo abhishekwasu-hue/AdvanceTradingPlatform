@@ -57,7 +57,7 @@ def _contract(expiry: date, strike: float, right: str) -> str:
 
 def _risk(t: dict, *, max_open=10) -> None:
     body = RiskConfig(capital=1_000_000.0, risk_per_trade_pct=1.0, max_daily_loss_pct=5.0, max_trades_per_day=50, max_open_positions=max_open,
-                      dd_level_1_pct=20.0, dd_level_2_pct=25.0, stop_cooldown_minutes=0).model_dump()
+                      dd_level_1_pct=20.0, dd_cut_pct=50.0, dd_level_2_pct=25.0, stop_cooldown_minutes=0).model_dump()
     out = client.put("/api/risk-settings", headers=t["headers"], json=body)
     assert out.status_code == 200, out.text
 
@@ -362,11 +362,12 @@ def test_the_most_a_user_can_save_fits_the_size_cap():
 
 # --- the user's own settings for the ready strategies ---------------------------------------------------------------------
 
-def test_ready_strategy_settings_are_the_users_own_else_a_neutral_default():
+def test_ready_strategy_settings_are_the_users_own_else_not_set():
+    # M68 PR-2 (TS1-023): no neutral width 2 / one lot any more - nothing of his own reads Not set (null), said so.
     t = _org_tenant("set")
     out = client.get("/api/paper/fno/basket/settings", headers=t["headers"], params={"underlying": "NIFTY"}).json()
-    assert out["source"] is None and out["width_steps"] == fno_basket.NEUTRAL_WIDTH_STEPS and out["lots"] == 1
-    assert "neutral start" in out["note"] and "Edit any leg" in out["note"]
+    assert out["source"] is None and out["width_steps"] is None and out["lots"] is None
+    assert out["note"].startswith("Nothing is set for you") and "Edit any leg" in out["note"]
     member = _member(t)
 
     async def deploy(user_id, symbol, width, lots, stop, sid):
@@ -383,6 +384,15 @@ def test_ready_strategy_settings_are_the_users_own_else_a_neutral_default():
     assert out["source"] == "mine on NIFTY 50" and out["width_steps"] == 4 and out["lots"] == 2 and out["stop_pct"] == 60.0
     out = client.get("/api/paper/fno/basket/settings", headers=t["headers"], params={"underlying": "FINNIFTY"}).json()
     assert out["source"] is not None                                          # their latest options settings when none on it
+    # his Trade settings win over a bot's (Position size > Lots; Options > Spread width once that field is his to save)
+    saved = client.put("/api/me/trade-settings", headers=t["headers"], json={"values": {"position_size.lots": 3}})
+    assert saved.status_code == 200, saved.text
+    out = client.get("/api/paper/fno/basket/settings", headers=t["headers"], params={"underlying": "NIFTY"}).json()
+    assert out["lots"] == 3 and out["width_steps"] == 4
+    # M68 PR-2: each value says where it came from - his lots from Trade settings, the width and the stop from his bot
+    assert out["sources"] == {"lots": "your Trade settings", "width_steps": "your bot mine on NIFTY 50", "stop_pct": "your bot mine on NIFTY 50"}
+    assert "3 lots (your Trade settings)" in out["note"] and "60% above its price (your bot mine on NIFTY 50)" in out["note"]
+    assert out["note"].startswith("Wings 4 strikes apart (your bot mine on NIFTY 50)")
 
 
 def test_broker_link_says_why_not_without_the_flag(condor):

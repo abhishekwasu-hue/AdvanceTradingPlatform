@@ -70,6 +70,57 @@ def _saved_order_defaults(request):
 
 
 @pytest.fixture(autouse=True)
+def _saved_option_defaults(request):
+    """M68 PR-4: ATP pre-chooses no expiry, strike, distance, side, width, ratio, delta tolerance, strike window,
+    expiry-day roll or delivery warning - each comes from the user's own Trade settings > Options
+    (app/instruments/option_defaults.py). The tests written before M68 run as a user who SAVED the values they were
+    written against (nearest expiry, ATM, 1 strike away, bought, width 2, ratio 1:2, tolerance 0.10, 5 strikes searched,
+    the next expiry on an expiry day, the delivery warning on at 4 days / 2 %, the builder's 70 % / 2 strikes); a value he really saved still wins. Tests of
+    the M68 behaviour itself (Not set => ask / skip) carry the marker `real_option_defaults`."""
+    if request.node.get_closest_marker("real_option_defaults"):
+        yield
+        return
+    from dataclasses import replace
+
+    from app.instruments import option_defaults
+    real = option_defaults.load
+    saved = option_defaults.OptionDefaults(expiry_rule="NEAREST", strike_rule="ATM", strike_offset=1, option_position="BUY",
+                                           spread_width=2, ratio=2, delta_tolerance=0.10, strike_search_steps=5,
+                                           expiry_day_roll=True, settlement_warning=True, settlement_days_before=4,
+                                           settlement_band_pct=2.0, builder_pop_pct=70.0, builder_strikes_otm=2)
+
+    async def _load(session, user):
+        own = await real(session, user)
+        return replace(saved, **{k: v for k, v in vars(own).items() if v is not None})
+    with pytest.MonkeyPatch.context() as own:      # its own patch: a test's monkeypatch.undo() leaves it in place
+        own.setattr(option_defaults, "load", _load)
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _saved_position_size(request):
+    """M68 PR-2: ATP pre-chooses no size - a new entry is sized from the order's / the bot's own size, else the user's
+    Trade settings > Position size (app/execution/position_size.py); nothing of his own and no risk per trade = nothing is
+    placed. The tests written before M68 run as a user whose Position size is one lot when nothing else sizes the entry
+    (the value they were written against); a size the order, the bot or he himself set still wins. Tests of the M68
+    behaviour itself carry the marker `real_position_size` (tests/test_m68_position_size.py)."""
+    if request.node.get_closest_marker("real_position_size"):
+        yield
+        return
+    from app.execution import position_size
+    real = position_size.quantity_for
+
+    def _quantity_for(ps, *, unit, entry, capital, risk_set):
+        got = real(ps, unit=unit, entry=entry, capital=capital, risk_set=risk_set)
+        if got == (None, position_size.NEEDS_LOTS_TEXT):
+            return float(unit) if unit and unit > 0 else position_size.CASH_UNIT, None
+        return got
+    with pytest.MonkeyPatch.context() as own:
+        own.setattr(position_size, "quantity_for", _quantity_for)
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _saved_automation(request):
     """M68 PR-6: ATP pre-chooses no entry mode, request waiting time, re-quote limit or scanner limit - each comes from the
     user's own Trade settings > Automation (app/execution/automation.py). The tests written before M68 run as a user who

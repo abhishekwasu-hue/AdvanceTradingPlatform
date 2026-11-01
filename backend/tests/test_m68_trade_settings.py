@@ -110,7 +110,11 @@ def test_the_namespace_is_read_by_one_order_path_reader():
     position_size.py and app/instruments/option_defaults.py (one reader per section); M68 PR-5: the Risk limits section
     through app/risk_engine/own_risk.py."""
     out = subprocess.run(["grep", "-rlE", "--include=*.py", r"trade_settings|TradeSettings", "app"], cwd=BACKEND, capture_output=True, text=True).stdout
-    assert sorted(out.split()) == ["app/execution/automation.py", "app/execution/order_defaults.py", "app/execution/position_size.py",
+    # M72 PR-1c: the Copilot's read-only tools (app/ai/tools/my_data.py reads his settings to show them; app/ai/copilot_chat.py
+    # only names that tool) - no order path: the AI never places, blocks or changes an order (ADR-0006,
+    # tests/test_m72_pr1c_planner.py: no Copilot module imports an order path).
+    assert sorted(out.split()) == ["app/ai/copilot_chat.py", "app/ai/tools/my_data.py",
+                                   "app/execution/automation.py", "app/execution/order_defaults.py", "app/execution/position_size.py",
                                    "app/instruments/option_defaults.py", "app/main.py", "app/me/prefs.py", "app/me/trade_settings.py",
                                    "app/risk_engine/own_risk.py"]   # PR-2 / PR-4 / PR-5 / PR-6: one reader each
 

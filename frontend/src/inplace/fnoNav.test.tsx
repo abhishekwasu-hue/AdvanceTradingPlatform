@@ -180,11 +180,9 @@ describe("NAV-4: the links keep the real address", () => {
     expect(html).toBe('<a class="x" data-ticket="change-limits" href="/settings/risk-limits">Change limit</a>');
   });
 
-  it("a card's converted \"more\" link and an unconverted one both keep the address", () => {
-    const html = (inPlaceMore: boolean) => renderToStaticMarkup(
-      <MemoryRouter><CardV2 title="NIFTY 50" more={{ label: "Open the chart", to: "/charts/NIFTY%2050", inPlace: inPlaceMore }}>x</CardV2></MemoryRouter>);
-    expect(html(true)).toContain('href="/charts/NIFTY%2050"');
-    expect(html(false)).toContain('href="/charts/NIFTY%2050"');
+  it("a card's \"more\" link keeps the real address", () => {
+    const html = renderToStaticMarkup(<MemoryRouter><CardV2 title="NIFTY 50" more={{ label: "Open the chart", to: "/charts/NIFTY%2050" }}>x</CardV2></MemoryRouter>);
+    expect(html).toContain('href="/charts/NIFTY%2050"');
   });
 });
 
@@ -193,7 +191,7 @@ describe("NAV-4: the sites use the host (source)", () => {
     ["fno/BasketPanelV2.tsx", /openInPlace\("\/option-chain\/plan"\);/],
     ["fno/BasketPanelV2.tsx", /<InPlaceLink to=\{why\.link\} className="font-medium text-brand underline" data-basket="change-limits">/],
     ["fno/ChainActionSheetV2.tsx", /<InPlaceLink to=\{chartLink\(target, contract\)\} className=\{ROW\} data-action="chart" onClick=\{on\.onChart\}>/],
-    ["fno/CockpitDeskV2.tsx", /more=\{\{ label: "Open the chart", to: chartsPath\(focus\.spotSymbol\), inPlace: true \}\}/],
+    ["fno/CockpitDeskV2.tsx", /more=\{\{ label: "Open the chart", to: chartsPath\(focus\.spotSymbol\) \}\}/],   // NAV-6a: CardV2 draws every "more" in place
     ["fno/CompareV2.tsx", /\{adjust && <InPlaceLink to=\{adjust\}/],
     ["fno/FuturesChainV2.tsx", /<InPlaceLink to=\{chartTabPath\(row\.tradingsymbol, row\.exchange, timeframe\)\}/],
     ["fno/FuturesChainV2.tsx", /<InPlaceLink to=\{basketHref\(data\.underlying, timeframe\)\} data-futures-basket/],

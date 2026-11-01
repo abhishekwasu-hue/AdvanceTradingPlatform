@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from "react";
+import { useInPlace } from "../inplace/InPlaceProvider";
 import { useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import type { BrokerConnection } from "../types";
@@ -38,6 +39,7 @@ export default function BrokerPromptHost() {
   const { rows, refresh } = useBrokerConnections();
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const inPlace = useInPlace();   // M75 NAV-6b: the prompt's Connect opens the broker drawer in place
   const [shown, setShown] = useState<BrokerPrompt | null>(null);
   const onBrokerPage = isBrokerPath(pathname);
 
@@ -60,7 +62,7 @@ export default function BrokerPromptHost() {
   return (
     <Suspense fallback={null}>
       <BrokerPromptDialog state={shown} onLater={close} onChanged={refresh}
-        onConnect={() => { close(); navigate(BROKER_PATH); }} />
+        onConnect={() => { close(); inPlace.open(BROKER_PATH); }} />
     </Suspense>
   );
 }

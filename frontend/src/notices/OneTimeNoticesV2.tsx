@@ -1,6 +1,7 @@
 import { Info, X } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { useLocation } from "react-router";
 import { NOTICES_CHANGED } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { dismissNotice, readNotices, visibleNotices, type OneTimeNotice } from "./oneTimeNotices";
@@ -14,9 +15,9 @@ export function NoticeCard({ notice, onDismiss }: { notice: OneTimeNotice; onDis
       <p className="min-w-0 flex-1 text-t14 text-fg">
         {notice.text}
         {" "}
-        <Link to={notice.link} className="whitespace-nowrap font-semibold text-brand underline-offset-2 hover:underline">
+        <InPlaceLink to={notice.link} className="whitespace-nowrap font-semibold text-brand underline-offset-2 hover:underline">
           Open Risk limits
-        </Link>
+        </InPlaceLink>
       </p>
       <button type="button" onClick={onDismiss} aria-label="Dismiss"
         className="-m-space-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg md:h-9 md:w-9">

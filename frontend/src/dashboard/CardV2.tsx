@@ -1,6 +1,5 @@
 import { ChevronRight } from "lucide-react";
 import { useId, type ReactNode } from "react";
-import { Link } from "react-router";
 import { InPlaceLink } from "../inplace/InPlaceLink";
 import { chipClass } from "../ui/Chip";
 import { Skeleton } from "../components/primitives";
@@ -23,9 +22,9 @@ export function CardV2({ title, count, more, children, className = "", testId, t
   /** CT-1 C8: the screen's one mode badge (PAPER), beside the title and outside the heading's name. */
   badge?: ReactNode;
   count?: number;
-  /** M75 NAV-4: `inPlace` draws the link as <InPlaceLink> - the facility opens in place over the tab (a card that has
-   * been converted); without it the link navigates as before (the cards the later NAV PRs convert). */
-  more?: { label: string; to: string; inPlace?: boolean };
+  /** M75 NAV-6a: drawn as <InPlaceLink> - the facility opens in place over the tab where a panel shows it (the real
+   * address stays in `href`); an address no panel shows navigates as before. */
+  more?: { label: string; to: string };
   children: ReactNode;
   className?: string;
   testId?: string;
@@ -44,9 +43,7 @@ export function CardV2({ title, count, more, children, className = "", testId, t
         </h2>
         {badge && <span className="mr-auto flex items-center">{badge}</span>}
         {more && (
-          more.inPlace
-            ? <InPlaceLink to={more.to} className={MORE}>{more.label} <ChevronRight size={16} aria-hidden /></InPlaceLink>
-            : <Link to={more.to} className={MORE}>{more.label} <ChevronRight size={16} aria-hidden /></Link>
+          <InPlaceLink to={more.to} className={MORE}>{more.label} <ChevronRight size={16} aria-hidden /></InPlaceLink>
         )}
       </div>
       <div className="mt-space-3">{children}</div>
@@ -56,16 +53,14 @@ export function CardV2({ title, count, more, children, className = "", testId, t
 
 /** A friendly empty state with at most one action (§5 "Empty states"; UX-11 U4: one line + one action - a link or a
  * button). Shared as `EmptyState` in src/ui/numbersFirst.ts. */
-/** M75 NAV-5b: `inPlace` on a link action draws it with <InPlaceLink> (the facility opens in place), as `more.inPlace`. */
-export type EmptyAction = { label: string; to: string; inPlace?: boolean } | { label: string; onClick: () => void };
+/** M75 NAV-6a: a link action is drawn as <InPlaceLink> (the facility opens in place where a panel shows it), as `more`. */
+export type EmptyAction = { label: string; to: string } | { label: string; onClick: () => void };
 export function EmptyStateV2({ text, action }: { text: string; action?: EmptyAction }) {
   return (
     <div className="flex flex-col items-start gap-space-3 py-space-2 sm:flex-row sm:items-center sm:justify-between" data-empty>
       <p className="text-t14 text-fg-muted">{text}</p>
       {action && ("to" in action
-        ? action.inPlace
-          ? <InPlaceLink to={action.to} className={LINK_SECONDARY}>{action.label}</InPlaceLink>
-          : <Link to={action.to} className={LINK_SECONDARY}>{action.label}</Link>
+        ? <InPlaceLink to={action.to} className={LINK_SECONDARY}>{action.label}</InPlaceLink>
         : <button type="button" onClick={action.onClick} className={LINK_SECONDARY}>{action.label}</button>)}
     </div>
   );

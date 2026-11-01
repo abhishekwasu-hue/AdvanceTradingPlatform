@@ -115,7 +115,7 @@ export default function CockpitDeskV2({ units, alertsOn, deskApi = defaultApi, c
       <div className="grid gap-space-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="min-w-0 space-y-space-4">
           <div className={show("chart")} data-desk-panel="chart">
-            <CardV2 testId="fno-desk-chart" more={{ label: "Open the chart", to: chartsPath(focus.spotSymbol), inPlace: true }}
+            <CardV2 testId="fno-desk-chart" more={{ label: "Open the chart", to: chartsPath(focus.spotSymbol) }}
               title={<span className="inline-flex items-center gap-space-2"><ChartCandlestick size={18} aria-hidden className="text-brand" />{focus.spotSymbol}</span>}>
               {candles.status === "loading" ? <p className="text-t13 text-fg-muted">Loading the chart…</p>
                 : candles.status === "error" || !candles.value.length ? <p className="text-t13 text-fg-muted">The chart is not available from your data connection just now.</p>

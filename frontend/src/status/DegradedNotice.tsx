@@ -1,4 +1,5 @@
 import { AlertTriangle } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useState } from "react";
 import { NOTICE_REFRESH_MS, loadStatusSessions, type StatusNotice } from "./sessions";
 
@@ -19,9 +20,9 @@ export function DegradedNoticeView({ notice, statusLink }: { notice: StatusNotic
         <AlertTriangle size={18} aria-hidden className={`shrink-0 ${outage ? "text-down" : "text-warn"}`} />
         <span className="min-w-0 flex-1 text-t14 text-fg">{notice.text}</span>
         {statusLink && (
-          <a href="/status" className="text-t13 font-medium text-brand underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+          <InPlaceLink to="/status" className="text-t13 font-medium text-brand underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
             See status
-          </a>
+          </InPlaceLink>
         )}
       </div>
     </div>

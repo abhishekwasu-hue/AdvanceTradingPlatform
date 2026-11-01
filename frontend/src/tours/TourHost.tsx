@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useInPlace } from "../inplace/InPlaceProvider";
+import { useLocation } from "react-router";
 import type { TourId } from "./pages";
 import { autoTour, closeTour, useTours, type CloseReason, type TourRequest } from "./state";
 
@@ -22,7 +23,7 @@ export default function TourHost({ userKey, role, tourId }: { userKey: number | 
   const tours = useTours(userKey);
   const { store } = tours;
   const location = useLocation();
-  const navigate = useNavigate();
+  const inPlace = useInPlace();
   const path = location.pathname;
   const [active, setActive] = useState<{ tour: TourRequest; auto: boolean; path: string } | null>(null);
   // The address where no tip opens by itself again in this visit (the welcome was closed there, or the page's elements
@@ -55,8 +56,8 @@ export default function TourHost({ userKey, role, tourId }: { userKey: number | 
     const closed = closeTour(playing.tour, reason, new Date().toISOString());
     void store.update(closed.change);
     if (closed.hold) setHeld(playing.path);
-    if (closed.go) navigate(closed.go);
-  }, [store, navigate]);
+    if (closed.go) inPlace.open(closed.go);   // M75 NAV-6b: the tour's last step opens its facility in place
+  }, [store, inPlace]);
 
   const onUnavailable = useCallback(() => {
     setHeld(activeRef.current?.path ?? null);

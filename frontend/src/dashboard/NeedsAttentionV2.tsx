@@ -1,6 +1,6 @@
 import { Bell, CircleCheck, LogIn, PauseCircle, ShieldAlert, TriangleAlert, UserCircle2, X, Zap, type LucideIcon } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { resendVerification } from "../ui/verifyEmail";
 import { Button } from "../components/primitives";
 import { CodeForm, type BrokerLogin } from "../ui/BrokerGate";
@@ -103,7 +103,7 @@ function Row({ row, primary, loginBroker, login, onHide }: { row: AttentionRow; 
                   {action.label}
                 </Button>
               ) : (
-                <Link to={action.to} className={`${primary ? LINK_PRIMARY : LINK_SECONDARY} flex-1 sm:flex-none`}>{action.label}</Link>
+                <InPlaceLink to={action.to} className={`${primary ? LINK_PRIMARY : LINK_SECONDARY} flex-1 sm:flex-none`}>{action.label}</InPlaceLink>
               )
             )}
             {hide}

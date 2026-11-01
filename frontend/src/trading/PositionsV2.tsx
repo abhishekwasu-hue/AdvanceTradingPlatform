@@ -272,7 +272,7 @@ export default function PositionsV2(_props: PageProps = {}) {
 
       <CardV2 title="Open positions" count={list?.length} testId="positions" tour="positions-list">
         {positions.status === "loading" ? <LoadingRowsV2 /> : positions.status === "error" ? <LoadFailedV2 what="your positions" /> : rows.length === 0 ? (
-          <EmptyStateV2 text="All positions are closed. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener", inPlace: true }} />
+          <EmptyStateV2 text="All positions are closed. Find a setup or let Autopilot trade for you." action={{ label: "Find setups", to: "/screener" }} />
         ) : (
           <>
             {fnoOn && (
@@ -679,7 +679,7 @@ function ClosedTradesV2({ trades, onSaved }: { trades: Loadable<TradeRecord[]>; 
   const rows = useMemo(() => closedRows(dataOf(trades) ?? []), [trades]);
   const shown = all ? rows : rows.slice(0, CLOSED_SHOWN);
   return (
-    <CardV2 title="Closed trades" count={rows.length} more={{ label: "Orders", to: "/positions/orders", inPlace: true }} testId="history">
+    <CardV2 title="Closed trades" count={rows.length} more={{ label: "Orders", to: "/positions/orders" }} testId="history">
       {trades.status === "loading" ? <LoadingRowsV2 /> : trades.status === "error" ? <LoadFailedV2 what="your closed trades" /> : rows.length === 0 ? (
         <EmptyStateV2 text="Closed trades show here." />
       ) : (

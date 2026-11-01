@@ -1,4 +1,5 @@
 import { ChevronDown, ChevronUp, Info } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useCallback, useId, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useHasPageHelpSlot, useRegisterPageHelp } from "../shell/pageHelp";
@@ -99,9 +100,9 @@ export function PageIntroView({ lines, showMe, collapsed = false, onDismiss, onE
       <div id={bodyId} className="min-w-0 flex-1 text-t14 text-fg-muted">
         <p>{lines.join(" ")}</p>
         {showMe && (
-          <a href={showMe.href} className="mt-space-1 inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">
+          <InPlaceLink to={showMe.href} className="mt-space-1 inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">
             {showMe.label ?? "Show me"}
-          </a>
+          </InPlaceLink>
         )}
       </div>
       <button type="button" onClick={onDismiss} aria-expanded aria-controls={bodyId} aria-label="Hide this tip"

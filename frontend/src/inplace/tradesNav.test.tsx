@@ -85,24 +85,22 @@ describe("NAV-5b: every Positions / orders / portfolio / risk button opens in pl
     for (const kind of ["orders", "risk", "setup"]) expect(DEFAULT_REGISTRY.resolve(DEFAULT_REGISTRY.get(kind)!.href({}))).toEqual({ kind, params: {} });
   });
 
-  it("an empty state's converted action keeps its real address; an unconverted one too", () => {
-    const html = (inPlaceAction: boolean) => renderToStaticMarkup(
-      <MemoryRouter><EmptyStateV2 text="Nothing yet." action={{ label: "Signals", to: "/signals", inPlace: inPlaceAction }} /></MemoryRouter>);
-    expect(html(true)).toContain('href="/signals"');
-    expect(html(false)).toContain('href="/signals"');
+  it("an empty state's action keeps its real address", () => {
+    const html = renderToStaticMarkup(<MemoryRouter><EmptyStateV2 text="Nothing yet." action={{ label: "Signals", to: "/signals" }} /></MemoryRouter>);
+    expect(html).toContain('href="/signals"');
   });
 });
 
 describe("NAV-5b: the sites use the host (source)", () => {
   const uses: [string, RegExp][] = [
-    ["trading/OrdersV2.tsx", /action=\{\{ label: "Signals", to: "\/signals", inPlace: true \}\}/],
-    ["trading/PortfolioV2.tsx", /action=\{\{ label: "Find setups", to: "\/screener", inPlace: true \}\}/],
+    ["trading/OrdersV2.tsx", /action=\{\{ label: "Signals", to: "\/signals" \}\}/],
+    ["trading/PortfolioV2.tsx", /action=\{\{ label: "Find setups", to: "\/screener" \}\}/],
     ["trading/PortfolioV2.tsx", /<InPlaceLink to="\/risk-management"/],
     ["trading/PositionsV2.tsx", /onConnect=\{\(\) => inPlace\.open\(CONNECT_BROKER_PATH\)\}/],
-    ["trading/PositionsV2.tsx", /action=\{\{ label: "Find setups", to: "\/screener", inPlace: true \}\}/],
+    ["trading/PositionsV2.tsx", /action=\{\{ label: "Find setups", to: "\/screener" \}\}/],
     ["trading/PositionsV2.tsx", /<InPlaceLink to=\{adjust\} data-testid="fno-adjust"/],
     ["trading/PositionsV2.tsx", /<InPlaceLink to=\{chartsPath\(row\.chartSymbol\)\}/],
-    ["trading/PositionsV2.tsx", /more=\{\{ label: "Orders", to: "\/positions\/orders", inPlace: true \}\}/],
+    ["trading/PositionsV2.tsx", /more=\{\{ label: "Orders", to: "\/positions\/orders" \}\}/],
     ["trading/RiskV2.tsx", /<InPlaceLink to=\{RISK_LIMITS_PATH\}/],
     ["trading/RiskV2.tsx", /<InPlaceLink to=\{SETUP_PATH\}/],
   ];

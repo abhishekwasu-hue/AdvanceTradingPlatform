@@ -1,6 +1,7 @@
 import { ChevronDown, ExternalLink, GraduationCap, PlayCircle, Search } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useId, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { useLocation } from "react-router";
 import { ApiError } from "../api/errors";
 import { CARD, LINK_SECONDARY, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import type { PageProps } from "../routes";
@@ -181,7 +182,7 @@ function LessonCard({ lesson, open, onToggle, groupName, terms }: {
           </dl>
         )}
         <div className="mt-space-3 flex flex-wrap gap-space-2">
-          {lesson.next && isAppPath(lesson.next.path) && <Link to={lesson.next.path} className={LINK_SECONDARY}>{lesson.next.label}</Link>}
+          {lesson.next && isAppPath(lesson.next.path) && <InPlaceLink to={lesson.next.path} className={LINK_SECONDARY}>{lesson.next.label}</InPlaceLink>}
           {video && (
             <a href={video} target="_blank" rel="noopener noreferrer" className={LINK_SECONDARY} data-video-link>
               <PlayCircle size={16} aria-hidden />Watch the video<ExternalLink size={14} aria-hidden />

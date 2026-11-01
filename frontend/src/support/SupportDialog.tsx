@@ -1,6 +1,6 @@
 import { LifeBuoy, Send } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
 import { api } from "../api/client";
 import { Button } from "../components/primitives/Button";
 import { Dialog } from "../components/primitives/Dialog";
@@ -77,8 +77,8 @@ export default function SupportDialog({ open, onOpenChange, onFeedback }: {
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
                     <span>{sourceLabel(t.reply)}</span>
                     {safeLinks(t.reply.links).map((l) => (
-                      <Link key={l.url} to={l.url} onClick={() => onOpenChange(false)}
-                            className="rounded-full border border-border px-2 py-0.5 text-fg hover:bg-surface-1">{l.title}</Link>
+                      <InPlaceLink key={l.url} to={l.url} onClick={() => onOpenChange(false)}
+                            className="rounded-full border border-border px-2 py-0.5 text-fg hover:bg-surface-1">{l.title}</InPlaceLink>
                     ))}
                   </div>
                   {t.reply.handoff && (

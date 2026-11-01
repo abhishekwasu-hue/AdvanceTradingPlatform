@@ -1,4 +1,5 @@
 import { BROKER_PATH } from "../broker/paths";
+import { LEGAL_TITLES } from "../legal/legal";
 import { SETTINGS_PATH } from "../settings/paths";
 import { chartTabPath, chartsSymbolFromPath } from "../shell/shellRoutes";
 import { copilotToolPath, signalsPanelPath } from "./copilotPaths";
@@ -12,7 +13,8 @@ import { createRegistry, type PanelEntry, type PanelParams, type Presentation } 
  * NAV-3: the Trading bot page. NAV-4: the Option chain, the symbol hub's Futures tab, Plan an options trade and Risk
  * limits. NAV-5a: Find setups, Strategies › Test, the journal, My positions, Trading defaults, Settings › Alerts (pages
  * shown whole by PagePanel, their search carried as one parameter); the Copilot's Watchtower proposal; the Trading bot's
- * template pre-fill. NAV-5b: Orders and Set-up.
+ * template pre-fill. NAV-5b: Orders, Risk status and Set-up. NAV-6a: My money, Performance, Sectors and Custom scan.
+ * NAV-6b: Notifications, Account & plan, the service status and the legal documents.
  */
 
 const clean = (pathname: string) => pathname.replace(/\/+$/, "") || "/";
@@ -256,10 +258,52 @@ export const RISK_STATUS_PANEL = pagePanel({ kind: "risk", title: "Risk status",
 /** Settings › Set-up (`/settings/setup`): Risk's "change my set-up answers". */
 export const SETUP_PANEL = pagePanel({ kind: "setup", title: "Set-up", presentation: "side-wide", paths: ["/settings/setup"] });
 
+// ---- NAV-6a: Today cards and the attention list --------------------------------------------------------------------
+
+/** My trades › My money (`/positions/money`, the old `/portfolio`): an attention item's "Portfolio". */
+export const MONEY_PANEL = pagePanel({ kind: "money", title: "My money", presentation: "side-wide", paths: ["/positions/money", "/portfolio"] });
+/** My trades › Results (`/positions/results`, the old `/analytics`): the Today card's "Performance". */
+export const PERFORMANCE_PANEL = pagePanel({ kind: "performance", title: "Performance", presentation: "side-wide", paths: ["/positions/results", "/analytics"] });
+/** Sectors & indices (`/markets?period=week`) while `markets_view` is on: the week tiles. */
+export const MARKETS_PANEL = pagePanel({ kind: "markets", title: "Sectors & indices", presentation: "side-wide", paths: ["/markets"], flag: "markets_view" });
+/** Custom scan (`/screener/custom`) while `screener_v2` is on: an empty signals card's "Set up a scan". */
+export const CUSTOM_SCAN_PANEL = pagePanel({ kind: "custom-scan", title: "Custom scan", presentation: "side-wide", paths: ["/screener/custom"], flag: "screener_v2" });
+
+// ---- NAV-6b: the shell (top bar, help, tours, notices, broker gate, status, legal banner) ----------------------------
+
+/** Notifications (`/notifications`): the top bar's bell. */
+export const NOTIFICATIONS_PANEL = pagePanel({ kind: "notifications", title: "Notifications", presentation: "drawer", paths: ["/notifications"] });
+/** Account & plan (`/settings/account`, the old `/account`): the top bar's account notices. */
+export const ACCOUNT_PANEL = pagePanel({ kind: "account", title: "Account & plan", presentation: "side", paths: ["/settings/account", "/account"] });
+
+/** The service status (`/status`): the degraded notice's "See status", in a modal. */
+export const STATUS_PANEL: PanelEntry = {
+  kind: "status",
+  keys: [],
+  title: () => "Service status",
+  presentation: "modal",
+  match: ({ pathname }) => (clean(pathname) === "/status" ? {} : null),
+  href: () => "/status",
+  load: () => import("./panels/StatusPanel"),
+};
+
+/** A legal document (`/legal/<slug>`): the legal banner's document links, in a modal. */
+export const LEGAL_PANEL: PanelEntry = {
+  kind: "legal",
+  keys: ["slug"],
+  title: (p) => (p.slug && p.slug in LEGAL_TITLES ? LEGAL_TITLES[p.slug as keyof typeof LEGAL_TITLES] : "Legal"),
+  presentation: "modal",
+  match: ({ pathname }) => { const m = /^\/legal\/([a-z-]+)$/.exec(clean(pathname)); return m ? { slug: m[1] } : null; },
+  href: (p) => `/legal/${p.slug ?? ""}`,
+  load: () => import("./panels/LegalPanel"),
+};
+
 export const DEFAULT_PANELS: readonly PanelEntry[] = [
   FUTURES_PANEL, CHART_PANEL, BROKER_PANEL, AI_KEY_PANEL, COPILOT_PANEL, ANALYZE_PANEL, STRATEGY_BUILD_PANEL, NEWS_PANEL, SIGNALS_PANEL, BOTS_PANEL,
   OPTION_CHAIN_PANEL, OPTIONS_PLAN_PANEL, RISK_LIMITS_PANEL,
   SCREENER_PANEL, TEST_PANEL, JOURNAL_PANEL, POSITIONS_PANEL, DEFAULTS_PANEL, ALERTS_PANEL,
   ORDERS_PANEL, RISK_STATUS_PANEL, SETUP_PANEL,
+  MONEY_PANEL, PERFORMANCE_PANEL, MARKETS_PANEL, CUSTOM_SCAN_PANEL,
+  NOTIFICATIONS_PANEL, ACCOUNT_PANEL, STATUS_PANEL, LEGAL_PANEL,
 ];
 export const DEFAULT_REGISTRY = createRegistry(DEFAULT_PANELS);

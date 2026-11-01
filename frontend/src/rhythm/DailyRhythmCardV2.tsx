@@ -1,6 +1,6 @@
 import { ChevronRight } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router";
 import { api } from "../api/client";
 import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { TAB_LABELS, KIND_ORDER, RHYTHM_REFRESH_MS, cleanBrief } from "./model";
@@ -28,10 +28,10 @@ export function RhythmSectionV2({ section, typed = false }: { section: RhythmSec
       <div className="flex min-h-11 items-center justify-between gap-space-3 md:min-h-0">
         <h3 className="text-t14 font-semibold text-fg">{section.title}</h3>
         {section.link && (
-          <Link to={section.link.to}
+          <InPlaceLink to={section.link.to}
             className="inline-flex h-11 shrink-0 items-center gap-space-1 rounded-control text-t13 font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-auto">
             {section.link.label} <ChevronRight size={14} aria-hidden />
-          </Link>
+          </InPlaceLink>
         )}
       </div>
       {view ? <div className="mt-space-2">{view}</div> : section.lines.length === 0 ? (

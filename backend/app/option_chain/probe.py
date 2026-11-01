@@ -87,12 +87,12 @@ async def run_chain_probe(session: AsyncSession, user: User, underlying: str, no
     from app.brokers.base import BrokerInterface
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import lake_fill
-    from app.market_data.candles_routes import _pick_record
+    from app.market_data.reader_credential import credential_for_reader
     from app.market_data.service import MarketDataService
     from app.market_store.models import RestSource
     from app.market_store.reader import paced_adapter
     now = now or datetime.now(timezone.utc)
-    record = await _pick_record(session, user.tenant_id, None, "primary")
+    record = await credential_for_reader(session, user.tenant_id, user.id)   # M71Q-2: his own only
     store = await store_first(session, user.tenant_id)
     # The data pool's one pacing point (the same `api_budget.BudgetedAdapter` the probe used, built in one place).
     adapter = paced_adapter(RestSource(build_adapter(record), int(record.id), str(record.broker_name)))

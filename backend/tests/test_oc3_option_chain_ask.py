@@ -290,7 +290,7 @@ def _broker(monkeypatch, chain):
     from app.market_data import candles_routes
     fake = _Chains(chain)
 
-    async def pick(session, tenant_id, broker, label):
+    async def pick(session, tenant_id, broker, label, **_k):
         return types.SimpleNamespace(broker_name="fake", account_label="primary")
     monkeypatch.setattr(candles_routes, "_pick_record", pick)
     monkeypatch.setattr(candles_routes, "build_adapter", lambda record: fake)

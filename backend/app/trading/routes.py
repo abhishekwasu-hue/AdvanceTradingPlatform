@@ -210,7 +210,8 @@ async def open_position_greeks(
             own = await live_access.user_source(session, user, wanted, priority=live_access.Priority.POSITION)
         adapter = own.adapter() if own is not None else None
     else:
-        stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
+        stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id,
+                                                                                 BrokerCredentialRecord.user_id == user.id)))   # M71Q-2: his own
         usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
         if rows and not usable:
             raise HTTPException(status_code=409, detail="Greeks need live premiums - no usable broker session (log in on the Broker page)")

@@ -759,6 +759,13 @@ ALERT_WEBHOOKS_TIMEOUT_SECONDS = _bounded_int("ALERT_WEBHOOKS_TIMEOUT_SECONDS", 
 # AUD-T5 ("Read this chart", flag `read_chart`; app/charts/read_chart.py): how many reads one member may ask for per
 # minute (each runs the chart's structure read, the area replay and, once a day per symbol, the Daily trend read).
 READ_CHART_PER_MINUTE = _bounded_int("READ_CHART_PER_MINUTE", 20, 1, 600)
+# M77 SX-2 (flag `study_export`; app/study): the saved Copilot study's bounds (M77Q-3, owner "Ok default yes"). Operator
+# settings, not trading numbers: the largest stored snapshot, the longest note, the most closed bars kept per chart, and
+# how many studies one member may save per minute (each one runs the chart reads of every timeframe studied).
+STUDY_SNAPSHOT_MAX_BYTES = _bounded_int("STUDY_SNAPSHOT_MAX_BYTES", 512 * 1024, 64 * 1024, 4 * 1024 * 1024)
+STUDY_NOTES_MAX_CHARS = _bounded_int("STUDY_NOTES_MAX_CHARS", 5000, 100, 20000)
+STUDY_CHART_MAX_BARS = _bounded_int("STUDY_CHART_MAX_BARS", 400, 50, 2000)
+STUDY_SAVES_PER_MINUTE = _bounded_int("STUDY_SAVES_PER_MINUTE", 6, 1, 120)
 
 
 # OI Banner (O2): the collector's slot and the strikes kept either side of the money (wider than any banner window,

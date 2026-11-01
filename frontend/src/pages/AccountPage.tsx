@@ -43,6 +43,7 @@ export default function AccountPage() {
   // MO4 slice 3: the plan page's usage meter above the plans and billing (ui_v2 + growth_v2).
   const growth = v2 && features.on("growth_v2");
   const referrals = v2 && features.on("referrals");     // Readiness C13: "Invite a friend"
+  const studies = v2 && features.on("study_export");    // M77 SX-2: saved studies are part of "Download my data"
 
   useEffect(() => {
     if (!user) return;
@@ -196,7 +197,7 @@ export default function AccountPage() {
         {sessionsMessage && <div className="mt-2 text-xs text-fg-muted">{sessionsMessage}</div>}
         <Details id="account.sessions" className="mt-2"><p>For your safety you are asked to sign in again after a while, even on a device you use every day.</p></Details>
       </Card>
-      <MyDataCardV2 copilot={v2} />
+      <MyDataCardV2 copilot={v2} studies={studies} />
       {v2 && <SupportAccessCard />}
     </div>
   );

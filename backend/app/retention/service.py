@@ -225,6 +225,9 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
     # Analyze a chart: their chart images (files) and analyses go with the account.
     from app.chart_analyze.service import erase_user as erase_chart_analyses
     await erase_chart_analyses(session, user)
+    # M77 SX-2: their saved studies (snapshots with their own notes).
+    from app.study.store import erase_user as erase_studies
+    await erase_studies(session, user.tenant_id, user.id)
     # PW6: the "Send feedback" messages they wrote (free text) go with the account too.
     # C12: and the support-ticket state of those messages (platform_controls rows keyed by the message id).
     from app.support.desk import forget as forget_tickets

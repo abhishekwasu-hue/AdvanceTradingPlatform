@@ -44,6 +44,18 @@ def _iso(t: Optional[datetime]) -> Optional[str]:
     return None if t is None else t.astimezone(timezone.utc).isoformat()
 
 
+async def snapshot_for(session: AsyncSession, key: str, when: datetime, tenant_id: int | None,
+                       user_id: int | None) -> read.Snapshot | None:
+    """The stored zones snapshot this layer reads for a member at `when` (the scope rule above): the organisation's own
+    settings' snapshot, else the platform's; the member's own (DATA-H holder) snapshot when it is at least as new. Shared
+    with the saved study (app/study/snapshot.py, M77 SX-2) so both read the same areas."""
+    snap = await read.read_as_of(session, key, when, tenant_id, allow_platform_fallback=True)
+    own = await read.read_holder(session, key, when, tenant_id, user_id)
+    if own is not None and (snap is None or own.as_of >= snap.as_of):
+        snap = own                                    # DATA-H: zones from the reader's own history, only for him
+    return snap
+
+
 @router.get("/market-zones")
 async def market_zones_layer(instrument: str = Query(..., min_length=1, max_length=100), at: Optional[datetime] = None,
                              price: Optional[float] = Query(default=None, gt=0),
@@ -67,10 +79,7 @@ async def market_zones_layer(instrument: str = Query(..., min_length=1, max_leng
     when = now if at is None or at > now else at.astimezone(timezone.utc)
     if price is not None and not math.isfinite(price):
         raise HTTPException(status_code=422, detail="price must be a finite number")
-    snap = await read.read_as_of(session, key, when, user.tenant_id, allow_platform_fallback=True)
-    own = await read.read_holder(session, key, when, user.tenant_id, user.id)
-    if own is not None and (snap is None or own.as_of >= snap.as_of):
-        snap = own                                    # DATA-H: zones from the reader's own history, only for him
+    snap = await snapshot_for(session, key, when, user.tenant_id, user.id)
     if snap is None:
         return {"instrument": key, "at": _iso(when), "as_of": None, "scope": None, "fallback": False, "settings_note": None, "price": price,
                 "price_source": None, "bands": [], "zones": [], "live_count": 0, "max_bands": max_bands, "reason": NO_ZONES, "note": NOTE}
@@ -85,4 +94,4 @@ async def market_zones_layer(instrument: str = Query(..., min_length=1, max_leng
             "max_bands": max_bands, "reason": None if bands else (NO_ZONES if not cands else FAR_ZONES), "note": NOTE}
 
 
-__all__ = ["router", "FLAG"]
+__all__ = ["router", "FLAG", "snapshot_for"]

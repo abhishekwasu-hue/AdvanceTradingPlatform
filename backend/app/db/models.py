@@ -3927,3 +3927,32 @@ class CopilotChatTurnRecord(Base):
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
+class CopilotStudyRecord(Base):
+    """M77 SX-2 (owner order M77 PD-1, M77Q-3): one saved Copilot study of one member - the SNAPSHOT the server built
+    from its own reads (bars, areas, structure, his drawings, his notes; schema `study/1`), never a number the browser
+    sent. The PDF / PNG / CSV are rebuilt from it on download (same snapshot = same bytes; `snapshot_sha256` proves it)
+    and are never stored as files. Per user and tenant; kept until he deletes it; part of "Download my data"; goes with
+    the account (retention.erase_user). `share_json` is the structure-only share state (M77Q-4, built in SX-7).
+    Read-only data: never read by a trading decision or an order path."""
+
+    __tablename__ = "copilot_studies"
+    __table_args__ = (Index("ix_copilot_studies_user_symbol_created", "user_id", "symbol", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(60), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False)
+    instrument_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    timeframes: Mapped[str] = mapped_column(String(40), nullable=False)          # comma-separated, as studied ("1d,1h,15m")
+    title: Mapped[str | None] = mapped_column(String(120), nullable=True)        # his own words, optional
+    sections_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    reading_source: Mapped[str] = mapped_column(String(10), nullable=False, default="atp")   # atp | engine
+    app_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    share_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)

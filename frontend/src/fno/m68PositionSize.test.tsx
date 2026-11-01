@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { TicketBody } from "./OrderTicketV2";
 import { LOTS_MISSING, LOTS_UNSET_TEXT, askOf, draftProblems, firstMissing, newDraft, shortcutSide, unitsText, type TicketTarget } from "./ticketModel";
 import { BasketStore } from "./basket";
-import { lotsProblems, readyStrategy, basketProblems } from "./basketModel";
+import { legLotsOf, lotsProblems, readyStrategy, basketProblems } from "./basketModel";
 import { futureLeg } from "./hubModel";
 import { LOTS_KEY, positionSizeOf, savedLots, sizesItself, type TradeField, type TradeSettingsView } from "../settings/tradeSettings";
 import type { ChainRow } from "../optionChain/types";
@@ -137,5 +137,15 @@ describe("M68 PR-2 (TS1-023): ready strategies wait for his own settings", () =>
     const ready = choices.filter((c) => c.key.startsWith("ready:"));
     expect(ready.length).toBeGreaterThan(0);
     expect(ready.every((c) => c.legs.length === 0 && c.problem === COMPARE_NEEDS_SETTINGS)).toBe(true);
+  });
+});
+
+describe("M68 PR-2 (TS1-022): a leg's typed lots are his own", () => {
+  it("below 1 (or not a number) is empty, never turned into 1; whole numbers from 1 are kept", () => {
+    for (const t of ["", " ", "0", "-2", "0.4", "x"]) expect(legLotsOf(t), t).toBeNull();
+    expect(legLotsOf("1")).toBe(1);
+    expect(legLotsOf("3")).toBe(3);
+    expect(legLotsOf("2.6")).toBe(3);
+    expect(legLotsOf("900")).toBe(500);
   });
 });

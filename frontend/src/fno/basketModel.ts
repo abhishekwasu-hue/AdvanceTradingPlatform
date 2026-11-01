@@ -135,6 +135,15 @@ export function basketAsk(legs: readonly NewLeg[], spot: number | null, product:
 
 export const NEEDS_PREFIX = "Needs your setting: ";
 
+/** M68 PR-2 (TS1-022): the lots he typed for a leg - a whole number from 1 (at most the basket's 500), else empty (null):
+ * "0", a negative, a fraction below 1 or a letter is not turned into a value he did not type; the leg asks again. */
+export function legLotsOf(text: string): number | null {
+  const t = text.trim();
+  if (t === "") return null;
+  const v = Math.round(Number(t));
+  return Number.isFinite(v) && v >= 1 ? Math.min(500, v) : null;
+}
+
 /** M68 PR-2 (TS1-022): each leg whose lots are still empty, in the words the basket shows ("Leg 2: enter its lots."). */
 export function lotsProblems(legs: readonly Pick<NewLeg, "lots">[]): string[] {
   return legs.flatMap((l, i) => (l.lots === null ? [`Leg ${i + 1}: enter its lots.`] : []));

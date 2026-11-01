@@ -21,7 +21,7 @@ import {
 } from "./api";
 import { basket as defaultBasket, useBasket, type BasketLeg, type BasketStore, type NewLeg } from "./basket";
 import {
-  MAX_SAVED, STATUS_WORD, STRATEGIES, STRATEGY_TEXT, basketAsk, basketProblems, builderHandoff, legLabel, legsOf, loadBaskets, lotsProblems, nameProblem,
+  MAX_SAVED, STATUS_WORD, STRATEGIES, STRATEGY_TEXT, basketAsk, basketProblems, builderHandoff, legLabel, legLotsOf, legsOf, loadBaskets, lotsProblems, nameProblem,
   needsStop, newSavedId, payoffSentence, readyStrategy, remainingLegs, resultHeadline, saveBaskets, savedOf, stopFor, strikeStep, writeHandoff,
   type SavedState, type StrategyName,
 } from "./basketModel";
@@ -709,7 +709,7 @@ function LegRow({ leg: l, n, lotSize, idPrefix, on }: { leg: BasketLeg; n: numbe
           {/* M68 PR-2 (TS1-022): an empty leg asks for its lots here - never a pre-chosen 1. */}
           <input aria-label={`Lots of leg ${n}`} inputMode="numeric" value={l.lots ?? ""} placeholder="Lots" data-leg-lots
             aria-invalid={l.lots === null ? true : undefined}
-            onChange={(e) => { const v = Math.round(Number(e.target.value)); on.onLeg(l.id, { lots: e.target.value.trim() === "" || !Number.isFinite(v) ? null : Math.min(500, Math.max(1, v)) }); }}
+            onChange={(e) => on.onLeg(l.id, { lots: legLotsOf(e.target.value) })}
             className="h-11 w-12 rounded-control border border-border bg-surface-2 text-center text-t14 font-tabular text-fg focus:border-brand focus:outline-none" />
           <button type="button" aria-label={`One lot more on leg ${n}`} disabled={l.lots !== null && l.lots >= 500} onClick={() => on.onLeg(l.id, { lots: Math.min(500, (l.lots ?? 0) + 1) })}
             className="flex h-11 w-11 items-center justify-center rounded-control border border-border text-fg disabled:opacity-40" data-leg-more><Plus size={14} aria-hidden /></button>

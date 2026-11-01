@@ -388,7 +388,11 @@ def test_ready_strategy_settings_are_the_users_own_else_not_set():
     saved = client.put("/api/me/trade-settings", headers=t["headers"], json={"values": {"position_size.lots": 3}})
     assert saved.status_code == 200, saved.text
     out = client.get("/api/paper/fno/basket/settings", headers=t["headers"], params={"underlying": "NIFTY"}).json()
-    assert out["lots"] == 3 and out["width_steps"] == 4 and out["note"].startswith("From your Trade settings")
+    assert out["lots"] == 3 and out["width_steps"] == 4
+    # M68 PR-2: each value says where it came from - his lots from Trade settings, the width and the stop from his bot
+    assert out["sources"] == {"lots": "your Trade settings", "width_steps": "your bot mine on NIFTY 50", "stop_pct": "your bot mine on NIFTY 50"}
+    assert "3 lots (your Trade settings)" in out["note"] and "60% above its price (your bot mine on NIFTY 50)" in out["note"]
+    assert out["note"].startswith("Wings 4 strikes apart (your bot mine on NIFTY 50)")
 
 
 def test_broker_link_says_why_not_without_the_flag(condor):

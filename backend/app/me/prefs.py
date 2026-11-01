@@ -195,7 +195,7 @@ class SavedBasketLeg(_Prefs):
     strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)   # None for a future (FNO-3)
     right: Literal["CE", "PE", "FUT"]
     side: Literal["BUY", "SELL"]
-    lots: int = Field(ge=1, le=500)
+    lots: int = Field(ge=1)                      # M68 PR-4 (TS1-046): no ATP ceiling
     price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
 
@@ -268,7 +268,7 @@ class ExitDefaults(_Prefs):
 
 class TicketDefaults(_Prefs):
     """The chain order ticket's starting lots, product and order type (frontend src/fno/ticketModel.ts newDraft)."""
-    lots: Optional[int] = Field(default=None, ge=1, le=500)
+    lots: int | None = Field(default=None, ge=1)
     product: Optional[Literal["MIS", "NRML"]] = None
     order_type: Optional[Literal["MARKET", "LIMIT", "SL", "SL-M"]] = None
 
@@ -284,12 +284,12 @@ class TradingDefaultsPrefs(_Prefs):
     option_position: Optional[Literal["BUY", "WRITE"]] = None
     expiry_rule: Optional[Literal["NEAREST", "NEXT", "MONTHLY"]] = None
     strike_rule: Optional[Literal["ATM", "ITM", "OTM"]] = None
-    strike_offset: Optional[int] = Field(default=None, ge=0, le=10)
+    strike_offset: int | None = Field(default=None, ge=0)             # M68 PR-4 (TS1-046 / 047): no ATP ceiling
     premium_stop_pct: Optional[float] = Field(default=None, ge=5, le=95, allow_inf_nan=False)
-    max_lots: Optional[int] = Field(default=None, ge=1, le=500)
+    max_lots: int | None = Field(default=None, ge=1)
     # CUSTOM is left out: its legs are drawn per deployment on the full form, so there is nothing to pre-fill.
     option_strategy: Optional[OptionStrategyName] = None
-    spread_width: Optional[int] = Field(default=None, ge=1, le=20)
+    spread_width: int | None = Field(default=None, ge=1)
     target_credit_pct: Optional[float] = Field(default=None, ge=5, le=95, allow_inf_nan=False)
     stop_credit_pct: Optional[float] = Field(default=None, ge=10, le=500, allow_inf_nan=False)
     # APPROVAL is applied by a form only while the organisation's `approval_only_entries` flag allows it (the API's own rule).
@@ -347,10 +347,13 @@ class SmartExecutionPrefs(_Prefs):
     protection band of a marketable limit where a broker takes no market orders (TM-3). The defaults are the settings'
     starting values, shown on Settings; the rules read only these (no fixed number in a rule). Information and order
     style only: never holds back an order, never touches an exit (ADR-0004)."""
-    settlement_days_before: int = Field(default=4, ge=0, le=30, description="days before expiry the delivery warning starts")
-    settlement_band_pct: float = Field(default=2.0, ge=0, le=20, allow_inf_nan=False,
-                                       description="an option this close to its strike (% of the strike) counts as near the money")
-    settlement_telegram: bool = True
+    # M68 PR-4 (TS1-045): no starting values - Not set until he saves them (no warning while Not set). Their home is now
+    # Settings > Trade settings > Options > Physical delivery warning (app/instruments/option_defaults.py reads that
+    # first, then a value stored here). No ATP ceiling on the days or the band.
+    settlement_days_before: int | None = Field(default=None, ge=0, description="days before expiry the delivery warning starts")
+    settlement_band_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False,
+                                              description="an option this close to its strike (% of the strike) counts as near the money")
+    settlement_telegram: bool | None = None
     # M68 PR-1 (TS1-013): no starting value - Not set until he saves one. Its home is now Settings > Trade settings >
     # Order defaults > Price protection (app/execution/order_defaults.py reads that first, then a value stored here).
     protection_band_pct: float | None = Field(default=None, ge=0.05, le=5, allow_inf_nan=False,
@@ -475,7 +478,8 @@ class OptionChainPrefs(_Prefs):
     pcr_zones: PcrZonesPrefs = Field(default_factory=PcrZonesPrefs)
     # P1 (27 Oct): on an expiry day the chain (and the Terminal's spread / basket builder, which builds from it) opens the
     # NEXT expiry; today's stays selectable with its "expires today" notice. Read by the option-chain routes only.
-    expiry_day_next: bool = True
+    # M68 PR-4 (TS1-044): None = Not set - the nearest expiry opens (Trade settings > Options > expiry_day_roll wins).
+    expiry_day_next: bool | None = None
 
 
 class StrategyExitPrefs(_Prefs):

@@ -30,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.brokers.models import OptionChain
-from app.core.config import RISK_FREE_RATE
 from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
@@ -87,7 +86,9 @@ class EvaluateBody(BaseModel):
     iv_shift: float = Field(default=0.0, ge=-0.5, le=1.0)
     range_pct: float = Field(default=10.0, gt=0, le=60)
     points: int = Field(default=201, ge=21, le=MAX_POINTS)
-    rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
+    # M68 PR-4 (TS1-102): None = the user's own rate (Trade settings > Options > Risk-free rate), else the platform's; the
+    # answer says which rate was used (`rate`, `rate_source`).
+    rate: float | None = Field(default=None, ge=-0.05, le=0.3)
     brokerage_per_order: float = Field(default=20.0, ge=0, le=1000, allow_inf_nan=False, description="for the cost line; the trader's own")
     # Z5 (Trade port, strike_breach_model): the underlying's completed daily bars, oldest first, up to the session before
     # `as_of` - with them the answer carries each short strike's breach chance. `structure`: the daily market structure
@@ -120,7 +121,9 @@ class TemplateBody(BaseModel):
     spot: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     iv: Optional[float] = Field(default=None, gt=0, lt=5)
     as_of: Optional[Union[datetime, date]] = None
-    rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
+    # M68 PR-4 (TS1-102): None = the user's own rate (Trade settings > Options > Risk-free rate), else the platform's; the
+    # answer says which rate was used (`rate`, `rate_source`).
+    rate: float | None = Field(default=None, ge=-0.05, le=0.3)
 
     @field_validator("as_of", mode="before")
     @classmethod
@@ -149,8 +152,10 @@ class SuggestBody(BaseModel):
     hedge_width_points: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     atm_strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     direction: Optional[Literal["BULLISH", "BEARISH"]] = None
-    pop_threshold_pct: float = Field(default=70.0, ge=0, le=100)
-    strikes_otm: int = Field(default=2, ge=0, le=50)
+    # M68 PR-4 (TS1-103): no pre-chosen POP threshold or distance - the request's own, else the user's Trade settings >
+    # Options; Not set = a 422 at the field for a rule that reads it.
+    pop_threshold_pct: float | None = Field(default=None, ge=0, le=100)
+    strikes_otm: int | None = Field(default=None, ge=0)
     itm_depth_points: float = Field(default=0.0, ge=0, lt=MAX_PRICE, allow_inf_nan=False)
     hedge_enabled: bool = False
     as_of: Optional[Union[datetime, date]] = None
@@ -194,7 +199,9 @@ async def get_catalog() -> Dict[str, Any]:
 
 
 @router.post("/template", dependencies=[Depends(compute_rate_limit)])
-async def build_template(body: TemplateBody) -> Dict[str, Any]:
+async def build_template(body: TemplateBody, user: User = Depends(get_current_user),
+                         session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    rate_source = await _own_rate(session, user, body)
     if body.name not in catalog.CATALOG:
         raise HTTPException(status_code=404, detail=f"no template named {body.name!r}")
     legs = catalog.build_template(body.name, body.atm_strike, body.width, body.near_expiry.isoformat(),
@@ -218,12 +225,24 @@ async def build_template(body: TemplateBody) -> Dict[str, Any]:
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=f"{leg['option_type']} {leg['strike']:g}: {exc}") from exc
             leg["premium_source"] = "model"
-    return {"name": body.name, "legs": legs, "priced_by_model": priced}
+    return {"name": body.name, "legs": legs, "priced_by_model": priced, "rate": body.rate, "rate_source": rate_source}
 
 
 @router.post("/evaluate", dependencies=[Depends(compute_rate_limit)])
-async def evaluate(body: EvaluateBody) -> Dict[str, Any]:
-    return await run_in_threadpool(_evaluate, body)
+async def evaluate(body: EvaluateBody, user: User = Depends(get_current_user),
+                   session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    rate_source = await _own_rate(session, user, body)
+    return {**await run_in_threadpool(_evaluate, body), "rate": body.rate, "rate_source": rate_source}
+
+
+async def _own_rate(session: AsyncSession, user: User, body: Any) -> str:
+    """M68 PR-4 (TS1-102): the rate the Greeks use - the request's, else his own, else the platform's (labelled)."""
+    if body.rate is not None:
+        return "request"
+    from app.instruments import option_defaults
+    own = await option_defaults.load(session, user)
+    body.rate = option_defaults.risk_free_rate(own)
+    return "yours" if own.risk_free_rate is not None else "platform"
 
 
 def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
@@ -292,9 +311,23 @@ async def basket(body: BasketBody) -> Dict[str, Any]:
 
 
 @router.post("/suggest", dependencies=[Depends(compute_rate_limit)])
-async def suggest(body: SuggestBody) -> Dict[str, Any]:
+async def suggest(body: SuggestBody, user: User = Depends(get_current_user),
+                  session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """A ported selector rule on the chain; the rule and its numbers come back with the result so the page can show
     them. None when the chain cannot give a complete structure - never a partial one."""
+    from app.instruments import option_defaults
+    own = await option_defaults.load(session, user)        # M68 PR-4 (TS1-103): his own numbers, never ATP's
+    if body.pop_threshold_pct is None:
+        body.pop_threshold_pct = own.builder_pop_pct
+    if body.strikes_otm is None:
+        body.strikes_otm = own.builder_strikes_otm
+    problems = []
+    if body.rule in ("iron_condor", "iron_butterfly", "credit_spread") and body.pop_threshold_pct is None:
+        problems.append(option_defaults.field_error(("pop_threshold_pct",), "builder_pop_pct"))
+    if body.rule == "credit_spread_fixed" and body.strikes_otm is None:
+        problems.append(option_defaults.field_error(("strikes_otm",), "builder_strikes_otm"))
+    if problems:
+        raise HTTPException(status_code=422, detail=problems)
     spot = body.chain.underlying_ltp
     if len(body.chain.rows) > MAX_CHAIN_ROWS:
         raise HTTPException(status_code=422, detail=f"the chain has {len(body.chain.rows)} strikes; at most {MAX_CHAIN_ROWS} are read")

@@ -43,6 +43,9 @@ class StrikeFilters:
     min_iv_pct: Optional[float] = None
     max_iv_pct: Optional[float] = None
     target_delta: Optional[float] = None        # absolute delta, e.g. 0.30
+    # M68 PR-4 (TS1-043): the tolerance and the search window are the user's own - a new bot stores both (the API asks for
+    # them once a target delta / a filter is set). These two values only READ a row saved before M68, whose JSON left
+    # them out because they were the values it was created with (TS-6: it keeps them).
     delta_tolerance: float = 0.10               # |delta| must be within this of target_delta
     min_premium: Optional[float] = None
     max_premium: Optional[float] = None
@@ -55,7 +58,11 @@ class StrikeFilters:
         ))
 
     def to_json(self) -> Optional[str]:
-        data = {k: v for k, v in asdict(self).items() if v is not None and not (k == "delta_tolerance" and v == 0.10) and not (k == "search_steps" and v == 5)}
+        data = {k: v for k, v in asdict(self).items() if v is not None}
+        if not self.active:
+            return None
+        if self.target_delta is None:
+            data.pop("delta_tolerance", None)    # read only with a target delta
         return json.dumps(data, sort_keys=True) if data else None
 
     @classmethod

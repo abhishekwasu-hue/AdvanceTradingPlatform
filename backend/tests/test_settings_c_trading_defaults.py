@@ -52,12 +52,12 @@ def test_round_trip_and_replace():
     {"holding": "SWING"},                               # follows the strategy's candles, not a default
     {"option_strategy": "CUSTOM"},                      # its legs are drawn per deployment
     {"instrument_kind": "CRYPTO"},
-    {"strike_offset": 11},
+    {"strike_offset": -1},                              # M68 PR-4 (TS1-047): no ATP ceiling, only "a real distance"
     {"premium_stop_pct": 4},
     {"max_lots": 0},
-    {"max_lots": 501},
+    {"max_lots": -3},                                   # M68 PR-4 (TS1-046): no 500-lot ceiling
     {"max_lots": "2"},                                  # strict: a string is not a number
-    {"spread_width": 21},
+    {"spread_width": 0},                                # M68 PR-4 (TS1-047): no 20-step ceiling
     {"target_credit_pct": 96},
     {"stop_credit_pct": 501},
     {"entry_mode": "AUTO_LIVE"},
@@ -114,7 +114,7 @@ def test_ticket_choices_equal_the_ticket_api():
     assert set(t["product"].annotation.__args__[0].__args__) == set(fno_ticket.PRODUCTS)
     assert set(t["order_type"].annotation.__args__[0].__args__) == set(fno_ticket.ORDER_TYPES)
     lots = {type(m).__name__: m for m in t["lots"].metadata}
-    assert lots["Le"].le == fno_ticket.MAX_LOTS and lots["Ge"].ge == 1
+    assert "Le" not in lots and lots["Ge"].ge == 1          # M68 PR-4 (TS1-046): no ATP ceiling on the lots
 
 
 def test_option_strategies_are_the_api_ones_without_custom():
@@ -144,6 +144,6 @@ def test_the_server_never_reads_it_to_trade():
     app_dir = Path(__file__).resolve().parents[1] / "app"
     # M68: the Trade settings registry names it as where a value lived ("today"), and the Order defaults reader keeps a
     # ticket product / order type the user saved there (TS-6) - his own value, never a server default.
-    allowed = {"prefs.py", "trade_settings.py", "order_defaults.py"}
+    allowed = {"prefs.py", "trade_settings.py", "order_defaults.py", "option_defaults.py"}   # M68 PR-4: the Options reader too (TS-6)
     readers = [p for p in app_dir.rglob("*.py") if "trading_defaults" in p.read_text(encoding="utf-8") and p.name not in allowed]
     assert readers == [], readers

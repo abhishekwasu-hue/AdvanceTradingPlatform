@@ -203,7 +203,7 @@ describe("FNO-1 order ticket", () => {
     expect(unitsText(1, 75)).toBe("1 lot = 75 qty (lot size 75)");
     expect(unitsText(3, 30)).toBe("3 lots = 90 qty (lot size 30)");
     expect(unitsText(2, null)).toBe("2 lots");
-    expect([clampLots(0), clampLots(2.6), clampLots(9999)]).toEqual([1, 3, 500]);
+    expect([clampLots(0), clampLots(2.6), clampLots(9999)]).toEqual([1, 3, 9999]);   // M68 PR-4: no 500 ceiling
     const { els, html, on } = ticket({ ...newDraft("BUY"), lots: 2 });
     expect(text(html)).toContain("2 lots = 150 qty (lot size 75)");
     by(els, "data-ticket", "lots-more").onClick!();

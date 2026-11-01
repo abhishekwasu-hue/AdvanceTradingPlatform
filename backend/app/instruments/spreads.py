@@ -97,9 +97,11 @@ HOLD_FOR_DAYS = WINGED
 RATIO_SPREADS = frozenset({OptionStrategy.CALL_RATIO_SPREAD, OptionStrategy.PUT_RATIO_SPREAD})
 PAYOFF_STRUCTURES = RATIO_SPREADS | frozenset({OptionStrategy.LONG_BUTTERFLY, OptionStrategy.CUSTOM})
 WIDTH_STRUCTURES = WINGED | RATIO_SPREADS | frozenset({OptionStrategy.LONG_BUTTERFLY})   # take spread_width
-RATIO_SHORTS = 2                    # a ratio spread sells this many per bought leg
+# M68 PR-4 (TS1-042): a ratio spread's sold legs per bought leg are the user's own (ContractRules.ratio_shorts, the bot's
+# ratio_shorts column); ATP no longer sells 2 per bought leg by itself.
+# TS1-047: a structure takes at most MAX_CUSTOM_LEGS legs - the broker's basket for one structure (a fact, M68Q-PR4-1);
+# a leg's ratio and distance have no ATP ceiling (only a listed strike can be traded, checked when the leg is resolved).
 MAX_CUSTOM_LEGS = 6
-MAX_LEG_RATIO = 4
 NEUTRAL = frozenset({OptionStrategy.IRON_CONDOR, OptionStrategy.IRON_BUTTERFLY, OptionStrategy.SHORT_STRADDLE,
                      OptionStrategy.SHORT_STRANGLE, OptionStrategy.LONG_STRADDLE, OptionStrategy.LONG_STRANGLE})
 
@@ -155,8 +157,8 @@ class CustomLeg:
         elif offset < 1:
             offset = 1
         ratio = int(raw.get("ratio") or 1)
-        if ratio < 1 or ratio > MAX_LEG_RATIO:
-            raise ValueError(f"leg ratio must be between 1 and {MAX_LEG_RATIO}")
+        if ratio < 1:
+            raise ValueError("leg ratio must be 1 or more")
         return cls(right=right, role=role, strike_rule=rule, strike_offset=offset, ratio=ratio)
 
     def describe(self) -> str:
@@ -362,19 +364,32 @@ def structure_sides(strategy: OptionStrategy, direction: SignalDirection) -> Tup
     return sides, primary_role
 
 
-def plan_side(strategy: OptionStrategy, right: str, primary_strike: float, strikes: Sequence[float], spread_width: int,
-              primary_role: str) -> List[PlannedLeg]:
+def _needs(name: str) -> str:
+    from app.instruments.option_defaults import needs_setting
+    return needs_setting(name)
+
+
+def _check_width(strategy: OptionStrategy, spread_width: int | None) -> None:
+    """M68 PR-4 (TS1-036): a structure that takes a width has the user's own; none = Not set (no entry, it says so)."""
+    if strategy in WIDTH_STRUCTURES and (spread_width is None or spread_width < 1):
+        raise ContractResolutionError(_needs("spread_width"))
+
+
+def plan_side(strategy: OptionStrategy, right: str, primary_strike: float, strikes: Sequence[float], spread_width: int | None,
+              primary_role: str, ratio_shorts: int | None = None) -> List[PlannedLeg]:
     """The legs of one right given its primary strike and the listed strikes. Raises
     ContractResolutionError when the ladder has no strike where a wing or short leg must sit."""
     if strategy == OptionStrategy.CALENDAR_SPREAD:
         return [PlannedLeg(right, "SHORT", primary_strike), PlannedLeg(right, "LONG", primary_strike, far_expiry=True)]
     if strategy in RATIO_SPREADS:
-        # Buy one at the rule strike, sell RATIO_SHORTS further out of the money: cheap or
+        # Buy one at the rule strike, sell `ratio_shorts` (the user's own) further out of the money: cheap or
         # free to enter, profits most at the short strike, unbounded loss beyond it.
+        if ratio_shorts is None or ratio_shorts < 1:
+            raise ContractResolutionError(_needs("ratio"))
         short_strike = _step(strikes, primary_strike, -spread_width if right == "PE" else spread_width)
         if short_strike is None:
             raise ContractResolutionError(f"No {right} strike {spread_width} steps beyond {int(primary_strike)} for the ratio's short legs")
-        return [PlannedLeg(right, "LONG", primary_strike), PlannedLeg(right, "SHORT", short_strike, RATIO_SHORTS)]
+        return [PlannedLeg(right, "LONG", primary_strike), PlannedLeg(right, "SHORT", short_strike, ratio_shorts)]
     if strategy == OptionStrategy.LONG_BUTTERFLY:
         lower = _step(strikes, primary_strike, -spread_width)
         upper = _step(strikes, primary_strike, spread_width)
@@ -390,15 +405,14 @@ def plan_side(strategy: OptionStrategy, right: str, primary_strike: float, strik
 
 
 def plan_structure(strategy: OptionStrategy, direction: SignalDirection, rules: ContractRules, *, spot: float,
-                   strikes_by_right: Dict[str, Sequence[float]], spread_width: int,
+                   strikes_by_right: Dict[str, Sequence[float]], spread_width: int | None,
                    custom_legs: Optional[Sequence[CustomLeg]] = None) -> List[PlannedLeg]:
     """Phase W: every leg of the structure from a strike ladder alone (no master, no chain
     filters) - what the option backtest engine builds positions from. The same rules as
     `resolve_structure`: direction fit, width, primary strike per right, then `plan_side`."""
     if not structure_direction_ok(strategy, direction):
         raise ContractResolutionError(f"{strategy.value} is not entered on a {direction.value} signal")
-    if strategy in WIDTH_STRUCTURES and spread_width < 1:
-        raise ContractResolutionError("spread_width must be at least one strike step")
+    _check_width(strategy, spread_width)
     if spot <= 0:
         raise ContractResolutionError("No spot price to build the structure from")
     if strategy == OptionStrategy.CUSTOM:
@@ -425,7 +439,7 @@ def plan_structure(strategy: OptionStrategy, direction: SignalDirection, rules: 
         primary = select_strike(strikes, spot, right, strike_rule, offset)
         if primary is None:
             raise ContractResolutionError(f"No {right} strikes to build a {strategy.value} from")
-        legs.extend(plan_side(strategy, right, primary, strikes, spread_width, primary_role))
+        legs.extend(plan_side(strategy, right, primary, strikes, spread_width, primary_role, rules.ratio_shorts))
     return legs
 
 
@@ -480,13 +494,12 @@ async def _resolve_custom(
 
 async def resolve_structure(
     session: AsyncSession, symbol: str, rules: ContractRules, strategy: OptionStrategy, direction: SignalDirection, *,
-    spread_width: int, spot: Optional[float], today: date, broker: str = master.UPSTOX_BROKER,
+    spread_width: int | None, spot: float | None, today: date, broker: str = master.UPSTOX_BROKER,
     chain_provider: Optional[ChainProvider] = None, custom_legs: Optional[Sequence[CustomLeg]] = None,
 ) -> ResolvedStructure:
     if not structure_direction_ok(strategy, direction):
         raise ContractResolutionError(f"{strategy.value} is not entered on a {direction.value} signal")
-    if strategy in WIDTH_STRUCTURES and spread_width < 1:
-        raise ContractResolutionError("spread_width must be at least one strike step")
+    _check_width(strategy, spread_width)
     if spot is None or spot <= 0:
         raise ContractResolutionError(f"No spot price for {symbol} to build a {strategy.value} from")
     if strategy == OptionStrategy.CUSTOM:
@@ -525,7 +538,7 @@ async def resolve_structure(
             raise ContractResolutionError(f"{underlying} {right} {int(primary_strike)} {expiry} missing from the master")
         lot_size = int(primary_rec.lot_size or 1)
 
-        planned = plan_side(strategy, right, primary_strike, strikes, spread_width, primary_role)
+        planned = plan_side(strategy, right, primary_strike, strikes, spread_width, primary_role, rules.ratio_shorts)
         far_expiry: Optional[date] = None
         if strategy == OptionStrategy.CALENDAR_SPREAD:
             far_expiry = next((e for e in sorted(expiries) if e > expiry), None)
@@ -546,7 +559,7 @@ async def resolve_structure(
             notes.append(f"{right}: sell {int(primary_strike)} {expiry.isoformat()} / buy {int(primary_strike)} {far_expiry.isoformat()}")
         elif strategy in RATIO_SPREADS:
             side_word = "above" if right == "CE" else "below"
-            notes.append(f"{right}: buy 1x {int(primary_strike)} / sell {RATIO_SHORTS}x {int(planned[1].strike)} ({int(width_points)} pts) - "
+            notes.append(f"{right}: buy 1x {int(primary_strike)} / sell {rules.ratio_shorts}x {int(planned[1].strike)} ({int(width_points)} pts) - "
                          f"undefined risk {side_word} the outer breakeven")
         elif strategy == OptionStrategy.LONG_BUTTERFLY:
             notes.append(f"{right}: buy 1x {int(planned[0].strike)} / sell 2x {int(primary_strike)} / buy 1x {int(planned[2].strike)} "
@@ -699,7 +712,7 @@ def _payoff_metrics(structure: ResolvedStructure, legs: List[dict], target_pct: 
     )
 
 
-def describe_structure(strategy: OptionStrategy, spread_width: int, rules: ContractRules,
+def describe_structure(strategy: OptionStrategy, spread_width: int | None, rules: ContractRules,
                        custom_legs: Optional[Sequence[CustomLeg]] = None) -> str:
     if strategy == OptionStrategy.SINGLE:
         return ""
@@ -707,9 +720,9 @@ def describe_structure(strategy: OptionStrategy, spread_width: int, rules: Contr
     otm = max(1, rules.strike_offset or 1)
     strike = rules.strike_rule.value if rules.strike_rule == StrikeRule.ATM else f"{rules.strike_rule.value}{rules.strike_offset}"
     if strategy == OptionStrategy.CALL_RATIO_SPREAD:
-        return f"call ratio spread, buy 1 {strike} CE / sell {RATIO_SHORTS} {spread_width} step(s) higher (LONG; undefined risk above), {expiry} expiry"
+        return f"call ratio spread, buy 1 {strike} CE / sell {rules.ratio_shorts or '?'} {spread_width} step(s) higher (LONG; undefined risk above), {expiry} expiry"
     if strategy == OptionStrategy.PUT_RATIO_SPREAD:
-        return f"put ratio spread, buy 1 {strike} PE / sell {RATIO_SHORTS} {spread_width} step(s) lower (SHORT; undefined risk below), {expiry} expiry"
+        return f"put ratio spread, buy 1 {strike} PE / sell {rules.ratio_shorts or '?'} {spread_width} step(s) lower (SHORT; undefined risk below), {expiry} expiry"
     if strategy == OptionStrategy.LONG_BUTTERFLY:
         return f"long butterfly, buy wing / sell 2 ATM / buy wing, {spread_width} step(s) wings (CE on LONG, PE on SHORT; debit), {expiry} expiry"
     if strategy == OptionStrategy.CUSTOM:

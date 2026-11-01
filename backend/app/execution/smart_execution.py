@@ -41,27 +41,35 @@ T = TypeVar("T")
 class SmartSettings:
     """The user's own settings the rules read (prefs namespace `smart_execution`; the defaults are the setting's own
     starting values, shown and editable on Settings)."""
-    settlement_days_before: int
-    settlement_band_pct: float
+    # M68 PR-4 (TS1-045): None = Not set; the delivery warning shows only when he turned it on (`settlement_warning`).
+    settlement_days_before: int | None
+    settlement_band_pct: float | None
     settlement_telegram: bool
     protection_band_pct: float | None           # M68 PR-1: None = Not set (order_defaults reads Trade settings first)
     # SE-7: what happens to the filled legs of an incomplete multi-leg order he has not answered within `answer_minutes`.
     on_no_answer: str = "close_filled"
     answer_minutes: int = 5
+    settlement_warning: bool = False
 
     @classmethod
     def from_prefs(cls, values: Dict[str, Any]) -> "SmartSettings":
-        return cls(settlement_days_before=int(values["settlement_days_before"]), settlement_band_pct=float(values["settlement_band_pct"]),
-                   settlement_telegram=bool(values["settlement_telegram"]), protection_band_pct=(None if values.get("protection_band_pct") is None
+        days, band = values.get("settlement_days_before"), values.get("settlement_band_pct")
+        return cls(settlement_days_before=None if days is None else int(days), settlement_band_pct=None if band is None else float(band),
+                   settlement_telegram=values.get("settlement_telegram") is True, protection_band_pct=(None if values.get("protection_band_pct") is None
                                                                        else float(values["protection_band_pct"])),
                    on_no_answer=str(values.get("on_no_answer", cls.on_no_answer)),
                    answer_minutes=int(values.get("answer_minutes", cls.answer_minutes)))
 
 
 async def settings_for(session: Any, user: Any) -> SmartSettings:
+    from dataclasses import replace
+
+    from app.instruments import option_defaults
     from app.me import prefs
     values, _ = await prefs.read_one(NAMESPACE, user, session)
-    return SmartSettings.from_prefs(values)
+    own = await option_defaults.load(session, user)        # M68 PR-4: Trade settings > Options first, then this store
+    return replace(SmartSettings.from_prefs(values), settlement_warning=own.settlement_warning is True,
+                   settlement_days_before=own.settlement_days_before, settlement_band_pct=own.settlement_band_pct)
 
 
 # --- sequencing ----------------------------------------------------------------------------------------------------
@@ -286,12 +294,16 @@ def settlement_flags(holdings: Sequence[Holding], spots: Dict[str, float], today
     future (always delivered if held), or an option in the money or within the user's band. The delivery value is the
     contract's quantity at the strike (an option) or at the price (a future). Information only: nothing is closed."""
     out: List[Dict[str, Any]] = []
+    if not settings.settlement_warning or settings.settlement_days_before is None:
+        return out                       # M68 PR-4 (TS1-045): Not set / off - no warning (delivery itself is an exchange fact)
     for h in holdings:
         if not is_stock_underlying(h.underlying):
             continue
         days = (h.expiry - today).days
         if days < 0 or days > settings.settlement_days_before:
             continue
+        if h.right != "FUT" and settings.settlement_band_pct is None:
+            continue                     # an option is judged only on his own "near the strike" band
         spot = spots.get(h.underlying)
         state: Optional[str]
         if h.right == "FUT":
@@ -306,8 +318,8 @@ def settlement_flags(holdings: Sequence[Holding], spots: Dict[str, float], today
             value = round(float(h.strike) * h.quantity, 2)
         gives = _delivery_side(h)
         when = "today" if days == 0 else ("tomorrow" if days == 1 else f"in {days} days")
-        what = {"ITM": "is in the money", "NEAR_ITM": f"is within {settings.settlement_band_pct:g}% of the money",
-                "FUTURE": "is a stock future"}[state]
+        what = ("is in the money" if state == "ITM" else "is a stock future" if state == "FUTURE"
+                else f"is within {settings.settlement_band_pct:g}% of the money")
         text = (f"{h.label} {what} and expires {when}. Held to expiry it settles by delivery: you would {gives} "
                 f"{h.quantity:g} shares of {h.underlying}" + (f" (about ₹{value:,.0f})." if value is not None else "."))
         out.append({"trade_id": h.trade_id, "label": h.label, "underlying": h.underlying, "expiry": h.expiry.isoformat(),

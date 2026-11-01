@@ -13,6 +13,8 @@ import { Details } from "../ui/Details";
 import { FROM_DEFAULTS, formPrefill, stillFromDefaults, useTradingDefaults, type FormPrefill } from "../settings/tradingDefaults";
 import { useFeatures } from "../ui/useFeatures";
 import { orderDefaultsOf, useTradeSettings } from "../settings/tradeSettings";
+import { EMPTY_LEG, OTM_OFFSET_STRUCTURES, RATIO_STRUCTURES, RULE_STRIKE_STRUCTURES, completeLegs, optionDefaultsOf, optionsMissing, savedLegsOf, type LegDraft } from "../settings/optionDefaults";
+import { SaveAsDefault } from "../settings/SaveAsDefault";
 import {
   BASE_TIMEFRAMES,
   type BrokerAccount,
@@ -31,7 +33,6 @@ import {
   type StoredBrokerInfo,
   type StrategyInfo,
   type WorkerStatus,
-  CustomLeg,
   DEBIT_STRUCTURES,
   WINGED_STRUCTURES,
   HOLD_FOR_DAYS_LINE,
@@ -107,7 +108,8 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   const [acrossBrokers, setAcrossBrokers] = useState(false);
   // P0.5 / T5: the entry style - MARKET, or PROTECTED_LIMIT (the fill capped at a band past the signal price).
   // M68 PR-1 (TS1-012): nothing pre-selected - his own Trade settings (Order defaults) when saved, else he picks here.
-  const own = orderDefaultsOf(useTradeSettings(true));
+  const tradeView = useTradeSettings(true);
+  const own = orderDefaultsOf(tradeView);
   const [orderStyle, setOrderStyle] = useState<"" | "MARKET" | "PROTECTED_LIMIT">("");
   const [protectionPct, setProtectionPct] = useState("");
   const style = orderStyle || own.botOrderStyle || "";
@@ -117,26 +119,30 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   const [confirmLive, setConfirmLive] = useState(false);
   const [liveTyped, setLiveTyped] = useState("");
   // Phase F2: what to trade when the strategy signals on the symbol.
-  const [kind, setKind] = useState<InstrumentKind>("OPTION");  // the default symbol is an index
-  const [position, setPosition] = useState<OptionPosition>("BUY");
-  const [expiryRule, setExpiryRule] = useState<ExpiryRule>("NEAREST");
-  const [strikeRule, setStrikeRule] = useState<StrikeRule>("ATM");
-  const [strikeOffset, setStrikeOffset] = useState(1);
+  // M68 PR-4 (TS1-037): nothing pre-selected - his own Trade settings (Options) pre-fill it when saved, else he picks here.
+  const [kind, setKind] = useState<InstrumentKind | "">("");
+  const [position, setPosition] = useState<OptionPosition | "">("");
+  const [expiryRule, setExpiryRule] = useState<ExpiryRule | "">("");
+  const [strikeRule, setStrikeRule] = useState<StrikeRule | "">("");
+  const [strikeOffset, setStrikeOffset] = useState(0);
   const [premiumStop, setPremiumStop] = useState<string>("");
   const [maxLots, setMaxLots] = useState<string>("");
   const [spot, setSpot] = useState<string>("");
   const [preview, setPreview] = useState<ContractPreview | null>(null);
   // Phase H: multi-leg structure and chain-based strike filters.
   const [structure, setStructure] = useState<OptionStrategy>("SINGLE");
-  const [spreadWidth, setSpreadWidth] = useState(2);
-  // Phase U: the free-form leg builder (CUSTOM structure).
-  const [customLegs, setCustomLegs] = useState<CustomLeg[]>([
-    { right: "PE", role: "SHORT", strike_rule: "ATM", strike_offset: 0, ratio: 1 },
-    { right: "PE", role: "LONG", strike_rule: "OTM", strike_offset: 2, ratio: 1 },
-  ]);
-  const updateLeg = (i: number, patch: Partial<CustomLeg>) => { setCustomLegs((cur) => cur.map((l, j) => (j === i ? { ...l, ...patch } : l))); setPreview(null); };
+  const [spreadWidth, setSpreadWidth] = useState(0);
+  const [ratioShorts, setRatioShorts] = useState(0);     // M68 PR-4 (TS1-042): a ratio spread's sold legs per bought leg
+  // Phase U: the free-form leg builder (CUSTOM structure). M68 PR-4 (TS1-038): it starts empty; he adds each leg.
+  const [customLegs, setCustomLegs] = useState<LegDraft[]>([]);
+  const updateLeg = (i: number, patch: Partial<LegDraft>) => { setCustomLegs((cur) => cur.map((l, j) => (j === i ? { ...l, ...patch } : l))); setPreview(null); };
   const removeLeg = (i: number) => { setCustomLegs((cur) => cur.filter((_, j) => j !== i)); setPreview(null); };
-  const addLeg = () => { setCustomLegs((cur) => [...cur, { right: "CE", role: "SHORT", strike_rule: "OTM", strike_offset: 1, ratio: 1 }]); setPreview(null); };
+  const addLeg = () => { setCustomLegs((cur) => [...cur, { ...EMPTY_LEG }]); setPreview(null); };
+  const [fromOwn, setFromOwn] = useState<Record<string, unknown>>({});
+  const ownMark = (key: string, value: unknown) => key in fromOwn && fromOwn[key] === value;
+  const optionMissing = optionsMissing({ kind, structure, position, expiryRule, strikeRule, strikeOffset, spreadWidth, ratio: ratioShorts, legs: customLegs },
+    { kind: "deploy-kind", position: "deploy-position", expiry: "deploy-expiry", strike: "deploy-strike", offset: "deploy-offset",
+      width: "deploy-width", ratio: "deploy-ratio", legs: "deploy-legs" });
   const [targetCredit, setTargetCredit] = useState<string>("");
   const [stopCredit, setStopCredit] = useState<string>("");
   const [underlyingExit, setUnderlyingExit] = useState(false);   // DEF-0: off unless the trader turns it on
@@ -183,29 +189,36 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
       if (filters[k] !== undefined && filters[k] !== "") { out[k] = Number(filters[k]); any = true; }
     });
     if (filters.search_steps) out.search_steps = Number(filters.search_steps);
+    if (filters.delta_tolerance) out.delta_tolerance = Number(filters.delta_tolerance);     // M68 PR-4 (TS1-043): his own
     return any ? (out as StrikeFilters) : null;
   }
 
   function contractRules(): ContractRules {
-    if (kind === "UNDERLYING") return { instrument_kind: kind as InstrumentKind };
-    if (kind === "FUTURE") return { instrument_kind: kind as InstrumentKind, expiry_rule: expiryRule, max_lots: maxLots ? Number(maxLots) : null };
+    // M68 PR-4: only what he chose (or his own Trade settings pre-filled) is sent; a field Not set is not sent at all.
+    if (kind === "UNDERLYING" || !kind) return { instrument_kind: (kind || "UNDERLYING") as InstrumentKind };
+    if (kind === "FUTURE") return { instrument_kind: kind as InstrumentKind, expiry_rule: expiryRule || null, max_lots: maxLots ? Number(maxLots) : null };
     const base: ContractRules = {
-      instrument_kind: kind as InstrumentKind, expiry_rule: expiryRule, strike_rule: strikeRule,
-      strike_offset: strikeRule === "ATM" ? 0 : strikeOffset, max_lots: maxLots ? Number(maxLots) : null,
+      // a structure that names its own strike (a straddle, a condor's out-of-the-money shorts) gets no strike rule
+      instrument_kind: kind as InstrumentKind, expiry_rule: expiryRule || null,
+      strike_rule: RULE_STRIKE_STRUCTURES.includes(structure) ? strikeRule || null : null,
+      strike_offset: OTM_OFFSET_STRUCTURES.includes(structure) ? strikeOffset
+        : RULE_STRIKE_STRUCTURES.includes(structure) && (strikeRule === "ITM" || strikeRule === "OTM") ? strikeOffset : 0,
+      max_lots: maxLots ? Number(maxLots) : null,
       strike_filters: strikeFilters(), option_strategy: structure,
     };
     if (structure === "SINGLE") {
-      return { ...base, option_position: position, premium_stop_pct: premiumStop ? Number(premiumStop) : null };
+      return { ...base, option_position: position || null, premium_stop_pct: premiumStop ? Number(premiumStop) : null };
     }
     return {
-      ...base, spread_width: spreadWidth,
+      ...base, ...(spreadWidth >= 1 ? { spread_width: spreadWidth } : {}), ...(RATIO_STRUCTURES.includes(structure) && ratioShorts >= 1 ? { ratio_shorts: ratioShorts } : {}),
       target_credit_pct: targetCredit ? Number(targetCredit) : null, stop_credit_pct: stopCredit ? Number(stopCredit) : null,
       underlying_breach_exit: underlyingExit || null,
-      custom_legs: structure === "CUSTOM" ? customLegs : null,
+      custom_legs: structure === "CUSTOM" ? completeLegs(customLegs) : null,
     };
   }
 
   async function runPreview() {
+    if (optionMissing) { setError(optionMissing.text); document.getElementById(optionMissing.field)?.focus(); return; }
     setBusy(true); setError(null);
     try {
       setPreview(await api.previewContract({ ...contractRules(), symbol, spot: spot ? Number(spot) : null }));
@@ -269,6 +282,25 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaults]);
 
+  // M68 PR-4 (TS1-037 / 038): his own Trade settings > Options fill a field that is still Not set, once, marked.
+  const ownOptions = useMemo(() => optionDefaultsOf(tradeView), [tradeView]);
+  const ownApplied = useRef(false);
+  useEffect(() => {
+    if (!tradeView || ownApplied.current) return;
+    ownApplied.current = true;
+    const o = ownOptions;
+    const marks: Record<string, unknown> = {};
+    if (!expiryRule && o.expiryRule) { setExpiryRule(o.expiryRule); marks.expiryRule = o.expiryRule; }
+    if (!position && o.position) { setPosition(o.position); marks.position = o.position; }
+    if (!strikeRule && o.strikeRule) { setStrikeRule(o.strikeRule); marks.strikeRule = o.strikeRule; }
+    if (strikeOffset < 1 && o.strikeOffset) { setStrikeOffset(o.strikeOffset); marks.strikeOffset = o.strikeOffset; }
+    if (spreadWidth < 1 && o.spreadWidth) { setSpreadWidth(o.spreadWidth); marks.spreadWidth = o.spreadWidth; }
+    if (ratioShorts < 1 && o.ratio) { setRatioShorts(o.ratio); marks.ratio = o.ratio; }
+    if (!customLegs.length && o.customLegs?.length) { setCustomLegs(o.customLegs); marks.customLegs = true; }
+    setFromOwn(marks);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tradeView]);
+
   useEffect(() => {
     refresh();
     const timer = setInterval(refresh, 15000);
@@ -284,7 +316,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   // Phase AS: a daily strategy is a swing deployment - daily candles, held overnight (CNC / NRML).
   const swing = !!selectedStrategy && selectedStrategy.timeframes.length === 1 && selectedStrategy.timeframes[0] === "day";
   // M55 T1: "Hold for days" is offered for a defined-risk credit structure only (the API refuses it for anything else).
-  const canHold = canHoldForDays(kind, structure);
+  const canHold = kind !== "" && canHoldForDays(kind, structure);
   const held = swing || (canHold && holdForDays);
 
   async function submit() {
@@ -316,6 +348,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
 
   function handleCreate() {
     if (entryMissing) { setError(entryMissing); document.getElementById("deploy-entry-style")?.focus(); return; }
+    if (optionMissing) { setError(optionMissing.text); document.getElementById(optionMissing.field)?.focus(); return; }
     if (mode === "LIVE") {
       setConfirmLive(true);
       return;
@@ -500,8 +533,9 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
           <div className="grid sm:grid-cols-6 gap-3 items-end">
             <div>
-              <label className="block text-xs text-fg-muted mb-1">Trade as<FromDefaults on={marked("kind", kind)} /></label>
-              <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={kind} onChange={(e) => { setKind(e.target.value as InstrumentKind); setPreview(null); }}>
+              <label className="block text-xs text-fg-muted mb-1">Trade as<FromDefaults on={marked("kind", kind || undefined)} /></label>
+              <select id="deploy-kind" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={kind} aria-invalid={!kind || undefined} onChange={(e) => { setKind(e.target.value as InstrumentKind | ""); setPreview(null); }}>
+                <option value="">Not set - choose</option>
                 <option value="UNDERLYING">Underlying (cash)</option>
                 <option value="OPTION">Option</option>
                 <option value="FUTURE">Future</option>
@@ -521,8 +555,8 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
                   <option value="LONG_STRADDLE">Long straddle (either, debit)</option>
                   <option value="LONG_STRANGLE">Long strangle (either, debit)</option>
                   <option value="CALENDAR_SPREAD">Calendar spread (either, debit)</option>
-                  <option value="CALL_RATIO_SPREAD">Call ratio spread 1:2 (LONG, undefined risk above)</option>
-                  <option value="PUT_RATIO_SPREAD">Put ratio spread 1:2 (SHORT, undefined risk below)</option>
+                  <option value="CALL_RATIO_SPREAD">Call ratio spread (LONG, undefined risk above)</option>
+                  <option value="PUT_RATIO_SPREAD">Put ratio spread (SHORT, undefined risk below)</option>
                   <option value="LONG_BUTTERFLY">Long butterfly 1:2:1 (either, debit)</option>
                   <option value="CUSTOM">Custom legs (builder)</option>
                 </select>
@@ -530,17 +564,19 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
             )}
             {kind === "OPTION" && structure === "SINGLE" && (
               <div>
-                <label className="block text-xs text-fg-muted mb-1">Position<FromDefaults on={marked("position", position)} /></label>
-                <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={position} onChange={(e) => { setPosition(e.target.value as OptionPosition); setPreview(null); }}>
+                <label htmlFor="deploy-position" className="block text-xs text-fg-muted mb-1">Position<FromDefaults on={marked("position", position as OptionPosition) || ownMark("position", position)} /></label>
+                <select id="deploy-position" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={position} aria-invalid={!position || undefined} onChange={(e) => { setPosition(e.target.value as OptionPosition | ""); setPreview(null); }}>
+                  <option value="">Not set - choose</option>
                   <option value="BUY">Buy (LONG→CE, SHORT→PE)</option>
                   <option value="WRITE">Write (LONG→sell PE, SHORT→sell CE)</option>
                 </select>
               </div>
             )}
-            {kind !== "UNDERLYING" && (
+            {(kind === "OPTION" || kind === "FUTURE") && (
               <div>
-                <label className="block text-xs text-fg-muted mb-1">Expiry<FromDefaults on={marked("expiryRule", expiryRule)} /></label>
-                <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={expiryRule} onChange={(e) => { setExpiryRule(e.target.value as ExpiryRule); setPreview(null); }}>
+                <label htmlFor="deploy-expiry" className="block text-xs text-fg-muted mb-1">Expiry<FromDefaults on={marked("expiryRule", expiryRule as ExpiryRule) || ownMark("expiryRule", expiryRule)} /></label>
+                <select id="deploy-expiry" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={expiryRule} aria-invalid={!expiryRule || undefined} onChange={(e) => { setExpiryRule(e.target.value as ExpiryRule | ""); setPreview(null); }}>
+                  <option value="">Not set - choose</option>
                   <option value="NEAREST">Nearest</option>
                   <option value="NEXT">Next</option>
                   <option value="MONTHLY">Monthly</option>
@@ -549,19 +585,30 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
             )}
             {kind === "OPTION" && (
               <>
+                {OTM_OFFSET_STRUCTURES.includes(structure) ? (
+                  <div>
+                    <label htmlFor="deploy-offset" className="block text-xs text-fg-muted mb-1">Short strikes out of the money<FromDefaults on={ownMark("strikeOffset", strikeOffset)} /></label>
+                    <input id="deploy-offset" type="number" min={1} placeholder="Not set" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
+                      value={strikeOffset || ""} onChange={(e) => { setStrikeOffset(Number(e.target.value) || 0); setPreview(null); }} />
+                  </div>
+                ) : RULE_STRIKE_STRUCTURES.includes(structure) && (
                 <div>
-                  <label className="block text-xs text-fg-muted mb-1">Strike<FromDefaults on={marked("strikeRule", strikeRule) || marked("strikeOffset", strikeOffset)} /></label>
+                  <label htmlFor="deploy-strike" className="block text-xs text-fg-muted mb-1">Strike<FromDefaults on={marked("strikeRule", strikeRule as StrikeRule) || marked("strikeOffset", strikeOffset) || ownMark("strikeRule", strikeRule) || ownMark("strikeOffset", strikeOffset)} /></label>
                   <div className="flex gap-1">
-                    <select className="flex-1 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={strikeRule} onChange={(e) => { setStrikeRule(e.target.value as StrikeRule); setPreview(null); }}>
+                    <select id="deploy-strike" className="flex-1 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={strikeRule}
+                      aria-invalid={(!strikeRule && RULE_STRIKE_STRUCTURES.includes(structure)) || undefined} onChange={(e) => { setStrikeRule(e.target.value as StrikeRule | ""); setPreview(null); }}>
+                      <option value="">Not set - choose</option>
                       <option value="ATM">ATM</option>
                       <option value="ITM">ITM</option>
                       <option value="OTM">OTM</option>
                     </select>
-                    {strikeRule !== "ATM" && (
-                      <input type="number" min={1} max={10} className="w-14 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={strikeOffset} onChange={(e) => setStrikeOffset(Number(e.target.value))} title="strike steps" />
+                    {(strikeRule === "ITM" || strikeRule === "OTM") && (
+                      <input id="deploy-offset" type="number" min={1} placeholder="Not set" aria-label="Strikes away from ATM" className="w-16 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
+                        value={strikeOffset || ""} onChange={(e) => setStrikeOffset(Number(e.target.value) || 0)} title="strike steps" />
                     )}
                   </div>
                 </div>
+                )}
                 {structure === "SINGLE" ? (
                   <div>
                     <label className="block text-xs text-fg-muted mb-1">Premium {position === "BUY" ? "stop" : "ceiling"} %<FromDefaults on={marked("premiumStop", premiumStop)} /></label>
@@ -571,8 +618,14 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
                   <>
                     {WIDTH_STRUCTURES.includes(structure) && (
                       <div>
-                        <label className="block text-xs text-fg-muted mb-1">{WINGED_STRUCTURES.includes(structure) || structure === "LONG_BUTTERFLY" ? "Wing width (steps)" : "Short strike distance (steps)"}<FromDefaults on={marked("spreadWidth", spreadWidth)} /></label>
-                        <input type="number" min={1} max={20} className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={spreadWidth} onChange={(e) => { setSpreadWidth(Number(e.target.value)); setPreview(null); }} />
+                        <label htmlFor="deploy-width" className="block text-xs text-fg-muted mb-1">{WINGED_STRUCTURES.includes(structure) || structure === "LONG_BUTTERFLY" ? "Wing width (steps)" : "Short strike distance (steps)"}<FromDefaults on={marked("spreadWidth", spreadWidth) || ownMark("spreadWidth", spreadWidth)} /></label>
+                        <input id="deploy-width" type="number" min={1} placeholder="Not set" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={spreadWidth || ""} onChange={(e) => { setSpreadWidth(Number(e.target.value) || 0); setPreview(null); }} />
+                      </div>
+                    )}
+                    {RATIO_STRUCTURES.includes(structure) && (
+                      <div>
+                        <label htmlFor="deploy-ratio" className="block text-xs text-fg-muted mb-1">Sold per bought leg<FromDefaults on={ownMark("ratio", ratioShorts)} /></label>
+                        <input id="deploy-ratio" type="number" min={1} placeholder="Not set" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={ratioShorts || ""} onChange={(e) => { setRatioShorts(Number(e.target.value) || 0); setPreview(null); }} />
                       </div>
                     )}
                     <div>
@@ -601,41 +654,46 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
                 )}
               </>
             )}
-            {kind !== "UNDERLYING" && (
+            {(kind === "OPTION" || kind === "FUTURE") && (
               <div>
                 <label className="block text-xs text-fg-muted mb-1">Max lots<FromDefaults on={marked("maxLots", maxLots)} /></label>
-                <input type="number" min={1} max={500} placeholder="risk-based" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={maxLots} onChange={(e) => setMaxLots(e.target.value)} />
+                <input type="number" min={1} placeholder="risk-based" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={maxLots} onChange={(e) => setMaxLots(e.target.value)} />
               </div>
             )}
           </div>
           {kind === "OPTION" && structure === "CUSTOM" && (
-            <div className="mt-2 rounded border border-border bg-surface-2/40 p-2 text-xs">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-fg-muted">Legs (2-{MAX_CUSTOM_LEGS}, one expiry; strikes relative to the spot at signal time)</span>
-                <button disabled={customLegs.length >= MAX_CUSTOM_LEGS} onClick={addLeg} className="rounded border border-border hover:bg-surface-2 px-2 py-0.5 disabled:opacity-50">+ leg</button>
+            <div className="mt-2 rounded border border-border bg-surface-2/40 p-2 text-xs" data-deploy="legs">
+              <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                <span className="text-fg-muted">Legs (2-{MAX_CUSTOM_LEGS}, one expiry; strikes relative to the spot at signal time){ownMark("customLegs", true) && <FromDefaults on />}</span>
+                <button id="deploy-legs" disabled={customLegs.length >= MAX_CUSTOM_LEGS} onClick={addLeg} className="rounded border border-border hover:bg-surface-2 px-2 py-0.5 disabled:opacity-50">+ leg</button>
               </div>
+              {!customLegs.length && <p className="text-fg-muted mb-1">No legs yet: add each leg of your structure.</p>}
               <div className="space-y-1">
                 {customLegs.map((leg, i) => (
                   <div key={i} className="grid grid-cols-3 gap-1 items-center sm:grid-cols-6">
-                    <select className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.role} onChange={(e) => updateLeg(i, { role: e.target.value as CustomLeg["role"] })}>
+                    <select aria-label="Buy or sell" className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.role} onChange={(e) => updateLeg(i, { role: e.target.value as LegDraft["role"] })}>
+                      <option value="">Buy / sell?</option>
                       <option value="SHORT">Sell</option>
                       <option value="LONG">Buy</option>
                     </select>
-                    <input type="number" min={1} max={4} className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.ratio} title="ratio (lots of this leg per lot of the structure)" onChange={(e) => updateLeg(i, { ratio: Math.max(1, Math.min(4, Number(e.target.value) || 1)) })} />
-                    <select className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.strike_rule} onChange={(e) => updateLeg(i, { strike_rule: e.target.value as StrikeRule, strike_offset: e.target.value === "ATM" ? 0 : Math.max(1, leg.strike_offset) })}>
+                    <input type="number" min={1} className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.ratio} title="ratio (lots of this leg per lot of the structure)" onChange={(e) => updateLeg(i, { ratio: Math.max(1, Math.round(Number(e.target.value)) || 1) })} />
+                    <select aria-label="Strike" className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.strike_rule} onChange={(e) => updateLeg(i, { strike_rule: e.target.value as LegDraft["strike_rule"], strike_offset: e.target.value === "ATM" ? 0 : leg.strike_offset })}>
+                      <option value="">Strike?</option>
                       <option value="ATM">ATM</option>
                       <option value="ITM">ITM</option>
                       <option value="OTM">OTM</option>
                     </select>
-                    <input type="number" min={0} max={20} disabled={leg.strike_rule === "ATM"} className="rounded bg-surface-2 border border-border px-1 py-1 disabled:opacity-40" value={leg.strike_offset} title="strike steps from ATM" onChange={(e) => updateLeg(i, { strike_offset: Number(e.target.value) || 0 })} />
-                    <select className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.right} onChange={(e) => updateLeg(i, { right: e.target.value as CustomLeg["right"] })}>
+                    <input type="number" min={0} disabled={leg.strike_rule === "ATM" || !leg.strike_rule} placeholder="Not set" className="rounded bg-surface-2 border border-border px-1 py-1 disabled:opacity-40" value={leg.strike_offset || ""} title="strike steps from ATM" onChange={(e) => updateLeg(i, { strike_offset: Number(e.target.value) || 0 })} />
+                    <select aria-label="CE or PE" className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.right} onChange={(e) => updateLeg(i, { right: e.target.value as LegDraft["right"] })}>
+                      <option value="">CE / PE?</option>
                       <option value="CE">CE</option>
                       <option value="PE">PE</option>
                     </select>
-                    <button disabled={customLegs.length <= 2} onClick={() => removeLeg(i)} className="text-down hover:underline disabled:opacity-40">remove</button>
+                    <button onClick={() => removeLeg(i)} className="text-down hover:underline disabled:opacity-40">remove</button>
                   </div>
                 ))}
               </div>
+              {savedLegsOf(customLegs) && <div className="mt-1"><SaveAsDefault fieldKey="options.custom_legs" value={savedLegsOf(customLegs)} /></div>}
               <div className="mt-1 text-xs text-fg-muted">
                 Max loss, max profit and breakevens come from the expiry payoff of these legs. A side with no protection (more sold than bought) is undefined risk:
                 lots are sized off the loss the stop accepts and the group closes beyond that side's breakeven.
@@ -650,7 +708,8 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
               {showFilters && (
                 <div className="mt-2 grid sm:grid-cols-4 gap-2">
                   {([["min_oi", "Min OI"], ["min_volume", "Min volume"], ["max_spread_pct", "Max bid/ask spread %"], ["target_delta", "Target |delta| (0-1)"],
-                     ["min_iv_pct", "Min IV %"], ["max_iv_pct", "Max IV %"], ["min_premium", "Min premium"], ["max_premium", "Max premium"]] as const).map(([k, label]) => (
+                     ["min_iv_pct", "Min IV %"], ["max_iv_pct", "Max IV %"], ["min_premium", "Min premium"], ["max_premium", "Max premium"],
+                     ["delta_tolerance", "Delta tolerance (with a target delta)"], ["search_steps", "Strikes searched either side"]] as const).map(([k, label]) => (
                     <div key={k}>
                       <label className="block text-xs text-fg-muted mb-0.5">{label}</label>
                       <input type="number" step="any" className="w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs" value={filters[k] ?? ""}
@@ -665,7 +724,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
               )}
             </div>
           )}
-          {kind !== "UNDERLYING" && (
+          {(kind === "OPTION" || kind === "FUTURE") && (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-fg-muted">
                 {kind === "OPTION"
@@ -833,7 +892,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
               <AlertTriangle size={16} /> This will place real orders with real money.
             </div>
             <ul className="text-xs text-fg-muted list-disc pl-5 space-y-1">
-              <li><b>{strategyId}</b> on <b>{symbol}</b> ({exchange}) via <b className="capitalize">{brokerName || "your stored broker"}</b>, every minute during market hours{kind !== "UNDERLYING" ? <> - trading <b>{kind === "OPTION" ? `${position === "BUY" ? "bought" : "written"} options` : "futures"}</b> on it</> : ""}.</li>
+              <li><b>{strategyId}</b> on <b>{symbol}</b> ({exchange}) via <b className="capitalize">{brokerName || "your stored broker"}</b>, every minute during market hours{kind === "OPTION" || kind === "FUTURE" ? <> - trading <b>{kind === "OPTION" ? `${position === "BUY" ? "bought" : "written"} options` : "futures"}</b> on it</> : ""}.</li>
               {kind === "OPTION" && position === "WRITE" && <li className="text-down">Written options have open-ended risk until the underlying stop or the premium ceiling exits; margin is blocked at the broker.</li>}
               <li>Every entry passes your Risk Management limits and kill switches; a broker-side stop-loss is placed with each fill.</li>
               <li>You can pause or stop it here at any time; Emergency Exit (Risk Management) flattens everything.</li>

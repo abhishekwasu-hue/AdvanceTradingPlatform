@@ -52,8 +52,10 @@ test.describe("Settings › Trade settings 1440", () => {
     // M68 PR-1: Order defaults is wired - its seven controls, every one Not set; no other section has a control yet.
     await expect(sectionAt(page, "order_defaults").locator("[data-input]")).toHaveCount(7);
     await expect(sectionAt(page, "order_defaults").locator("[data-field] [data-value]")).toHaveText(Array(7).fill("Not set"));
-    await expect(page.locator("[data-input]")).toHaveCount(7);
-    await expect(page.locator("[data-save]")).toHaveCount(1);
+    // M68 PR-4: Options is wired too - its 15 controls (the custom legs are saved from the bot form, shown as information)
+    await expect(sectionAt(page, "options").locator("[data-input]")).toHaveCount(15);
+    await expect(page.locator("[data-input]")).toHaveCount(22);
+    await expect(page.locator("[data-save]")).toHaveCount(2);
     await expect(page.getByText("Advanced (admin)")).toHaveCount(0);
     await expect(sectionAt(page, "risk_limits").getByRole("link", { name: "Risk limits" })).toHaveAttribute("href", "/settings/risk-limits");
     await expect(page).toHaveScreenshot("trade-settings-v2-1440-light.png", SHOT);

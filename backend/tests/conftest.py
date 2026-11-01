@@ -70,6 +70,34 @@ def _saved_order_defaults(request):
 
 
 @pytest.fixture(autouse=True)
+def _saved_option_defaults(request):
+    """M68 PR-4: ATP pre-chooses no expiry, strike, distance, side, width, ratio, delta tolerance, strike window,
+    expiry-day roll or delivery warning - each comes from the user's own Trade settings > Options
+    (app/instruments/option_defaults.py). The tests written before M68 run as a user who SAVED the values they were
+    written against (nearest expiry, ATM, 1 strike away, bought, width 2, ratio 1:2, tolerance 0.10, 5 strikes searched,
+    the next expiry on an expiry day, the delivery warning on at 4 days / 2 %, the builder's 70 % / 2 strikes); a value he really saved still wins. Tests of
+    the M68 behaviour itself (Not set => ask / skip) carry the marker `real_option_defaults`."""
+    if request.node.get_closest_marker("real_option_defaults"):
+        yield
+        return
+    from dataclasses import replace
+
+    from app.instruments import option_defaults
+    real = option_defaults.load
+    saved = option_defaults.OptionDefaults(expiry_rule="NEAREST", strike_rule="ATM", strike_offset=1, option_position="BUY",
+                                           spread_width=2, ratio=2, delta_tolerance=0.10, strike_search_steps=5,
+                                           expiry_day_roll=True, settlement_warning=True, settlement_days_before=4,
+                                           settlement_band_pct=2.0, builder_pop_pct=70.0, builder_strikes_otm=2)
+
+    async def _load(session, user):
+        own = await real(session, user)
+        return replace(saved, **{k: v for k, v in vars(own).items() if v is not None})
+    with pytest.MonkeyPatch.context() as own:      # its own patch: a test's monkeypatch.undo() leaves it in place
+        own.setattr(option_defaults, "load", _load)
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _no_broker_margin_call(monkeypatch):
     """DEF-0 D8: the order ticket asks the user's own broker for its margin. Tests never call a broker: the read answers
     "no answer"; tests/test_def0_ui.py stubs an answer to show the estimate."""

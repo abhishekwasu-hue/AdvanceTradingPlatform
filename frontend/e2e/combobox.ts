@@ -75,8 +75,28 @@ export async function expectGroupLabels(page: Page, field: Locator, group: strin
 /** M68 PR-1: the bot forms pre-select no entry style (Trade settings > Order defaults > Order type); where a form asks
  * for it, pick Market as the user would. Does nothing where the form does not ask. */
 export async function pickEntryStyle(page: Page, scope: Locator | Page): Promise<void> {
+  await pickOptionChoices(page, scope);
   const combo = scope.locator("[data-entry-input='style']");
   if (await combo.count()) { await pickOption(page, combo.first(), "MARKET"); return; }
   const select = scope.locator("#deploy-entry-style");
   if (await select.count() && !(await select.inputValue())) await select.selectOption("MARKET");
+}
+
+/** M68 PR-4: the bot forms pre-select no option side, expiry or strike (Trade settings > Options); where a form asks, pick
+ * what the forms pre-selected before M68 (a bought option, the nearest expiry, at the money), as the user would. A field
+ * that already holds a value (his own pick in the test) is left as it is. */
+export async function pickOptionChoices(page: Page, scope: Locator | Page): Promise<void> {
+  const pickEmpty = async (empty: Locator, value: string) => {
+    if (!(await empty.count())) return;
+    const id = await empty.first().getAttribute("id");                      // a stable handle: the value attribute changes
+    await pickOption(page, scope.locator(`[id="${id}"]`), value);
+  };
+  await pickEmpty(scope.locator("[data-construction] [data-combobox='']"), "BUY");
+  for (const [field, value] of [["expiry", "NEAREST"], ["strike", "ATM"]] as const) {
+    await pickEmpty(scope.locator(`[data-option-input='${field}'][data-combobox='']`), value);
+  }
+  for (const [id, value] of [["#deploy-kind", "OPTION"], ["#deploy-position", "BUY"], ["#deploy-expiry", "NEAREST"], ["#deploy-strike", "ATM"]] as const) {
+    const select = scope.locator(id);
+    if (await select.count() && !(await select.inputValue())) await select.selectOption(value);
+  }
 }

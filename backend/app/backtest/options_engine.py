@@ -92,6 +92,7 @@ class OptionBacktestConfig:
     strike_rule: StrikeRule = StrikeRule.ATM
     strike_offset: int = 0
     spread_width: int = 2
+    ratio_shorts: int | None = None                         # M68 PR-4 (TS1-042): a ratio spread's own sold legs
     target_credit_pct: Optional[float] = None
     stop_credit_pct: Optional[float] = None
     underlying_breach_exit: bool = False                      # DEF-0: the trader's own underlying-level exit (off by default)
@@ -125,7 +126,8 @@ class OptionBacktestConfig:
         position = self.option_position if self.is_single else OptionPosition.WRITE
         stop_pct = self.premium_stop_pct          # DEF-0 D3: None = no premium stop
         return ContractRules(kind=InstrumentKind.OPTION, position=position, expiry_rule=self.expiry_rule, strike_rule=self.strike_rule,
-                             strike_offset=self.strike_offset, premium_stop_pct=stop_pct, max_lots=self.max_lots)
+                             strike_offset=self.strike_offset, premium_stop_pct=stop_pct, max_lots=self.max_lots,
+                             ratio_shorts=self.ratio_shorts)
 
 
 @dataclass

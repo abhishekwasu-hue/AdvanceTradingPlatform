@@ -107,7 +107,7 @@ class OrderBody(BaseModel):
     strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)   # None for a future
     right: Literal["CE", "PE", "FUT"]
     side: Literal["BUY", "SELL"]
-    lots: int = Field(ge=1, le=fno_ticket.MAX_LOTS)
+    lots: int = Field(ge=1)
     # M68 PR-1 (TS1-002): not sent = his Trade settings; Not set there either = the ticket asks ("Choose ..." + `missing`).
     order_type: Literal["MARKET", "LIMIT", "SL", "SL-M"] | None = None
     product: Literal["MIS", "NRML"] | None = None
@@ -430,7 +430,7 @@ class BasketLeg(BaseModel):
     strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)   # None for a future (FNO-3)
     right: Literal["CE", "PE", "FUT"]
     side: Literal["BUY", "SELL"]
-    lots: int = Field(ge=1, le=fno_ticket.MAX_LOTS)
+    lots: int = Field(ge=1)
     price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     iv: Optional[float] = Field(default=None, gt=0, lt=5, allow_inf_nan=False)
@@ -619,7 +619,7 @@ REF = r"^[A-Za-z0-9-]{8,64}$"
 
 class ExitPartBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    lots: int = Field(ge=1, le=fno_ticket.MAX_LOTS * 10)
+    lots: int = Field(ge=1)
     client_ref: str = Field(pattern=REF)
     confirm: bool = False
 
@@ -636,7 +636,7 @@ class ModifyBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     trigger_price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
-    lots: Optional[int] = Field(default=None, ge=1, le=fno_ticket.MAX_LOTS)
+    lots: int | None = Field(default=None, ge=1)
     level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     spot_level: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
 

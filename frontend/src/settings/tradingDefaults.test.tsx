@@ -40,7 +40,7 @@ describe("the namespace as the frontend reads it", () => {
     expect(readDefaults({})).toEqual(EMPTY_DEFAULTS);
     expect(hasAnyDefault(EMPTY_DEFAULTS)).toBe(false);
     const read = readDefaults({ mode: "LIVE", order_style: "PROTECTED_LIMIT", broker_name: "upstox", routing_policy: "MOST_MARGIN", holding: "SWING",
-      max_lots: 501, strike_offset: 1.5, expiry_rule: "WEEKLY", option_strategy: "CUSTOM", exit_rules: { trailing_stop_pct: 0, time_exit_at: "25:00" },
+      max_lots: 0, strike_offset: 1.5, expiry_rule: "WEEKLY", option_strategy: "CUSTOM", exit_rules: { trailing_stop_pct: 0, time_exit_at: "25:00" },
       ticket: { lots: 3, product: "CNC", side: "SELL" } });
     expect(read).toEqual({ ...EMPTY_DEFAULTS, ticket: { lots: 3, product: null, order_type: null } });
     expect(Object.keys(read)).not.toEqual(expect.arrayContaining(["mode"]));
@@ -62,7 +62,7 @@ describe("the namespace as the frontend reads it", () => {
   it("the page's form round-trips and says what cannot be saved in plain words", () => {
     expect(defaultsOf(formOf(SOME))).toEqual({ value: SOME, problems: [] });
     expect(defaultsOf(formOf(EMPTY_DEFAULTS))).toEqual({ value: EMPTY_DEFAULTS, problems: [] });
-    expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), max_lots: "0" }).problems).toEqual(["Lots for a new bot: a whole number from 1 to 500."]);
+    expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), max_lots: "0" }).problems).toEqual(["Lots for a new bot: a whole number of 1 or more."]);
     expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), trailing_stop_pct: "0" }).problems).toEqual(["Trailing stop: a number above 0 up to 50."]);
     expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), time_exit_at: "3 pm" }).problems).toEqual(["Flat at: a time like 15:10."]);
     expect(defaultsOf({ ...formOf(EMPTY_DEFAULTS), option_strategy: "LONG_STRADDLE", stop_credit_pct: "150" }).problems[0]).toMatch(/at most 100/);
@@ -126,8 +126,9 @@ describe("pre-fill per form", () => {
   it("a daily strategy keeps the swing rules: no structure, no writing (not claimed either)", () => {
     const { request, applied } = paperBotRequestWithDefaults("swing_ema_pullback_d", "NIFTY 50", daily,
       d({ option_strategy: "IRON_CONDOR", option_position: "WRITE", max_lots: 2 }), false);
-    expect(request).toMatchObject({ holding: "SWING", option_position: "BUY", max_lots: 2 });
+    expect(request).toMatchObject({ holding: "SWING", max_lots: 2 });
     expect(request).not.toHaveProperty("option_strategy");
+    expect(request).not.toHaveProperty("option_position");      // M68 PR-4: no pre-chosen side; the form asks (Buy only, swing)
     expect(applied).toEqual(["2 lots"]);
   });
 

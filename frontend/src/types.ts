@@ -262,6 +262,7 @@ export interface OptionBacktestConfig {
   strike_rule?: StrikeRule;
   strike_offset?: number;
   spread_width?: number;
+  ratio_shorts?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
   underlying_breach_exit?: boolean | null;   // DEF-0: the trader's own underlying-level exit (off unless set)
@@ -1125,6 +1126,8 @@ export interface ContractRules {
   strike_filters?: StrikeFilters | null;
   option_strategy?: OptionStrategy;
   spread_width?: number;
+  /** M68 PR-4 (TS1-042): a ratio spread's own sold legs per bought leg. */
+  ratio_shorts?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
   underlying_breach_exit?: boolean | null;   // DEF-0: the trader's own underlying-level exit (off unless set)

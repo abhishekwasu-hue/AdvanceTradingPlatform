@@ -62,7 +62,7 @@ RIGHTS = ("CE", "PE")
 FUTURE = "FUT"
 ORDER_TYPES = ("MARKET", "LIMIT", "SL", "SL-M")
 PRODUCTS = ("MIS", "NRML")
-MAX_LOTS = 500           # a ticket's own upper bound; the exchange's freeze quantity is not in the master yet (FNO-1-2)
+# M68 PR-4 (TS1-046): no ATP ceiling on the lots - an order above the exchange's freeze quantity is split (TS1-087).
 MONTHS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
 PRACTICE = "Practice mode (PAPER): no real order is sent and no money moves."
 # TM-1: the ticket's PAPER order fills through the PaperExecutionAdapter (a BrokerInterface), the first path moved onto it;
@@ -210,8 +210,8 @@ def ask_errors(ask: OrderAsk, tick: float, *, stop_required: bool = False) -> Li
         errors.append("Choose Market, Limit, SL or SL-M")
     if ask.product not in PRODUCTS:
         errors.append("Choose MIS (intraday) or NRML (carry forward)")
-    if not 1 <= int(ask.lots) <= MAX_LOTS:
-        errors.append(f"Lots must be between 1 and {MAX_LOTS}")
+    if int(ask.lots) < 1:
+        errors.append("Lots must be 1 or more")
     if ask.order_type in ("LIMIT", "SL") and not ask.price:
         errors.append("Enter the limit price")
     if ask.order_type in ("SL", "SL-M") and not ask.trigger_price:

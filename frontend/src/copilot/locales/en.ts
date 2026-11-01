@@ -420,6 +420,8 @@ export const COPILOT_EN = {
     progress: "Interview progress",
     otherAmount: "other amount",
     typeSymbol: "type a symbol",
+    symbolNotSet: "Not set — choose a symbol",
+    chooseSymbol: "Choose a symbol",
     ok: "OK",
     back: "Back",
     thanks: "Thank you - that is enough. Next the market data is read (trend, structure, support/resistance, volatility) and three templates are tested on it.",

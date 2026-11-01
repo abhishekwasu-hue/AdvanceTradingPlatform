@@ -351,12 +351,20 @@ def _check_timeframe(body: InterviewPlanBody) -> None:
         raise HTTPException(status_code=400, detail=f"Use intraday candles for the interview, not {body.base_timeframe!r}")
 
 
+def _read_symbol(body: InterviewPlanBody) -> str:
+    """M68: the symbol whose candles the plan reads - asked for, never a pre-chosen one."""
+    symbol = body.symbol or body.answers.symbol
+    if not symbol:
+        raise HTTPException(status_code=422, detail=interview.needs_setting_text(["symbol"]))
+    return symbol
+
+
 async def _df_for(session: AsyncSession, user: User, body: InterviewPlanBody):
     """(frame, data_source): posted candles are a sample; otherwise the server fetches them (H-C1 a)."""
     _check_timeframe(body)
+    symbol = _read_symbol(body)
     if body.candles:
         return interview.frame_from_candles(body.candles[-interview.MAX_BARS:]), evidence.client_source(body.data_source)
-    symbol = body.symbol or body.answers.symbol
     bars = await bar_source.resolve(session, user.tenant_id, symbol, body.exchange, body.base_timeframe, broker=body.broker,
                                     lookback_days=body.lookback_days or 30, user=user)     # owner order 23 Oct (intraday: broker)
     return bars.frame.tail(interview.MAX_BARS), bars.source
@@ -370,7 +378,7 @@ async def _options(session: AsyncSession, user: User, answers: interview.Intervi
     memory = await market_memory.latest(session, user.tenant_id)   # Phase AR: background for the plan
     # The evidence step walks strategies bar by bar (seconds of CPU): off the event loop.
     result = await run_in_threadpool(advisor.build_options, answers, prefs, df, body.base_timeframe, ceilings=ceilings,
-                                     data_source=data_source, memory=memory)
+                                     data_source=data_source, memory=memory, read_symbol=_read_symbol(body))
     await advisor.save_profile(session, user, answers, advisor.Preferences.model_validate(result["preferences"]))
     # P0.8 / A3: each option's deployment is held on the server; "Deploy in PAPER" takes the candidate id and the
     # trader's risk acceptance, never the browser's copy of the plan.
@@ -379,11 +387,12 @@ async def _options(session: AsyncSession, user: User, answers: interview.Intervi
         pick = option.get("recommended") or {}
         if not option.get("deployment"):
             continue
-        row = AiCandidateRecord(tenant_id=user.tenant_id, user_id=user.id, source="interview", symbol=str(option["deployment"].get("symbol") or answers.symbol).upper(),
+        row = AiCandidateRecord(tenant_id=user.tenant_id, user_id=user.id, source="interview", symbol=str(option["deployment"].get("symbol") or _read_symbol(body)).upper(),
                                 name=str(pick.get("name") or option["deployment"].get("strategy_id") or "interview plan")[:120],
                                 strategy_id=option["deployment"].get("strategy_id"), config_json=None,
                                 metrics_json=json.dumps({"evidence": pick.get("evidence"), "regime_fit": pick.get("regime_fit"), "score": pick.get("score"),
-                                                         "option": option.get("option"), "data_source": data_source}, default=str),
+                                                         "option": option.get("option"), "data_source": data_source,
+                                                         "unanswered": interview.unanswered(answers)}, default=str),
                                 deployment_json=json.dumps(option["deployment"], default=str), risk_json=json.dumps(option.get("risk_config") or {}, default=str),
                                 expires_at=now + CANDIDATE_TTL, created_at=now)
         session.add(row)
@@ -433,6 +442,11 @@ async def interview_deploy(body: CandidateDeployBody, user: User = Depends(requi
     await require_flag(session, "ai_copilot", user.tenant_id)
     row = await _candidate(session, body.candidate_id, user, "interview")
     metrics = json.loads(row.metrics_json or "{}")
+    payload = json.loads(row.deployment_json or "{}")
+    # M68: a bot is never created from an answer he did not give - each unanswered one is asked for by name.
+    missing = set(metrics.get("unanswered") or []) | ({"symbol"} if not payload.get("symbol") else set())
+    if missing:
+        raise HTTPException(status_code=422, detail=interview.needs_setting_text([k for k in interview.REQUIRED_ANSWERS if k in missing]))
     evidence.require_server(metrics.get("data_source"), "Deploying an interview option")      # H-C1 a
     tested = (metrics.get("evidence") or {})
     if not tested.get("tested") or int(tested.get("total_trades") or 0) <= 0:
@@ -440,7 +454,6 @@ async def interview_deploy(body: CandidateDeployBody, user: User = Depends(requi
     risk = json.loads(row.risk_json or "{}")
     if not body.accept_risk:
         raise HTTPException(status_code=400, detail=f"Confirm that you accept {_risk_statement(risk)} before deploying (accept_risk)")
-    payload = json.loads(row.deployment_json or "{}")
     suggested = interview.suggested_contract(payload)
     if suggested and not body.accept_suggested:
         raise HTTPException(status_code=400, detail=f"The plan's own picks need your acceptance before a deploy (accept_suggested): {interview.suggested_text(suggested)}"[:600])

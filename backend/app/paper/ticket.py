@@ -306,7 +306,7 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
     await session.commit()
     plan_id = row.id
     try:
-        if await approval.required(session, user.tenant_id):
+        if await approval.required(session, user.tenant_id, user_id=user.id):   # M68 PR-6: his own "Ask me first" too
             problems: List[str] = []
             try:
                 action = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=signal.strategy_id, source="ticket",

@@ -216,15 +216,15 @@ def test_live_and_derived_deployments_are_not_proposed_in_phase_0(monkeypatch):
     assert "ATP places no LIVE entry" in (_get(StrategyDeploymentRecord, dep_id).last_error or "")
 
 
-def test_deployment_entry_mode_approval_binds_without_the_flag_and_needs_the_flag_to_be_set(monkeypatch):
+def test_deployment_entry_mode_approval_binds_without_the_flag(monkeypatch):
     t = _tenant(_email("mode"))
-    # Creating an APPROVAL deployment needs the flag.
+    # M68 PR-6 (TS1-061): "Ask me first" is the user's own choice - no organisation flag is needed to choose it any more
+    # (before M68 this create was refused with 400 until the approval_only_entries flag was on).
     body = {"strategy_id": "ema_rsi_scalper_1m", "symbol": "TCS", "mode": "PAPER", "broker_name": "upstox", "entry_mode": "APPROVAL"}
-    refused = client.post("/api/deployments", headers=t["headers"], json=body)
-    assert refused.status_code == 400 and "approval_only_entries" in refused.text
     _flag_for(t["tenant_id"])
     created = client.post("/api/deployments", headers=t["headers"], json=body)
-    assert created.status_code == 201, created.text and created.json()["entry_mode"] == "APPROVAL"
+    assert created.status_code == 201, created.text
+    assert created.json()["entry_mode"] == "APPROVAL"
     # The flag going off later never turns an APPROVAL deployment back into an automatic one.
     _flag_for(t["tenant_id"], on=False)
 

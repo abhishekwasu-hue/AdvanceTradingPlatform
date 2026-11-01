@@ -210,7 +210,7 @@ async def paper_execute(
         # Z3 (review M1): a persisted entry needs a trading role and the trading:write scope, like every other order route.
         if not approval.can_trade(user):
             raise HTTPException(status_code=403, detail="Insufficient role for this action")
-        if await approval.required(session, user.tenant_id):
+        if await approval.required(session, user.tenant_id, user_id=user.id):   # M68 PR-6: his own "Ask me first" too
             # Z3 / BT2: approval-only - the console's signal (priced from the candles this request sent) becomes an ENTRY
             # proposal like any other; Approve re-quotes it at the live price, so a client-sent price never fills.
             if not signal.is_tradeable or signal.entry is None:

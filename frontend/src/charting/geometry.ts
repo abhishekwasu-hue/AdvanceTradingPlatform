@@ -15,7 +15,14 @@ export interface Converters {
   y(price: number): number | null;
   width: number;
   height: number;
+  /** M75 W-1: pane rectangles a layer label must never sit on (the floating view controls, the chip / legend row). */
+  avoid?: readonly Rect[];
+  /** M75 W-1: a label's real width in pixels (the canvas's `measureText` at the paint); left out, it is estimated. */
+  measure?: (text: string) => number;
 }
+
+/** An axis-aligned rectangle in pane pixels. */
+export interface Rect { x: number; y: number; w: number; h: number }
 
 export type Dash = "solid" | "dashed" | "dotted";
 export type Shape =
@@ -32,10 +39,14 @@ const LOSS = "#dc2626";
 
 const toSec = (iso: string | undefined) => (iso ? Math.floor(Date.parse(iso) / 1000) : NaN);
 
-/** A colour with a fill alpha (`#rrggbb` -> `#rrggbbaa`); anything else is returned unchanged. */
+/** A colour with a fill alpha (`#rrggbb` -> `#rrggbbaa`, `rgb(r, g, b)` -> `rgba(r, g, b, a)` - the chart tokens
+ * come as rgb); anything else is returned unchanged. */
 export function withAlpha(color: string, alpha: number): string {
+  const a = Math.min(1, Math.max(0, alpha));
+  const rgb = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,[^)]*)?\)$/.exec(color);
+  if (rgb) return `rgba(${rgb[1]}, ${rgb[2]}, ${rgb[3]}, ${a})`;
   if (!/^#[0-9a-fA-F]{6}$/.test(color)) return color;
-  return color + Math.round(Math.min(1, Math.max(0, alpha)) * 255).toString(16).padStart(2, "0");
+  return color + Math.round(a * 255).toString(16).padStart(2, "0");
 }
 
 /**
@@ -206,10 +217,70 @@ export function shapes(d: DrawingV1, c: Converters): Shape[] {
   }
 }
 
-/** Z7a-3: layer bands as shapes - a tinted rectangle across the pane (a line when low == high, or when the band is
- * thinner than a pixel) and the label at the right edge just above it. Bands off the price scale are skipped. */
+/** M75 W-1: the canvas label font is 11 px (primitives.ts); a label's box is estimated from its length (no canvas in
+ * the pure geometry), generously, so a real glyph run never comes out wider than the box that was kept clear. */
+export const LABEL_FONT_PX = 11;
+export const LABEL_CHAR_PX = 7;
+export const LABEL_H = 14;
+/** Distance of a band label from the band's edge and from the pane's edges (the price axis is the pane's right edge). */
+const LABEL_PAD = 4;
+
+export const textWidth = (text: string) => text.length * LABEL_CHAR_PX;
+
+/** The box a text shape takes (its align / baseline read the same way the canvas does). */
+export function textRect(s: Extract<Shape, { type: "text" }>, measure: (text: string) => number = textWidth): Rect {
+  const w = measure(s.text);
+  const x = s.align === "left" ? s.x : s.align === "right" ? s.x - w : s.x - w / 2;
+  const y = s.baseline === "top" ? s.y : s.baseline === "bottom" ? s.y - LABEL_H : s.y - LABEL_H / 2;
+  return { x, y, w, h: LABEL_H };
+}
+
+export const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/** M75 W-1 (W3): where each band's label goes. Tried in order at the left of the pane - inside the band (when the
+ * band is tall enough), on a thin band's own line, just above it, just below it - then the same spots at the right,
+ * then just left of each reserved rectangle; the first spot that stays inside the pane (never over the price axis,
+ * which is outside the pane's right edge), clear of the reserved rectangles (`avoid`: the view controls, the chip
+ * row, the attribution mark) and of the labels already placed wins. A label with no free spot is left out (its band
+ * is still drawn), so labels never pile up on each other. */
+export function placeBandLabels(items: readonly { top: number; bottom: number; text: string; color: string }[], c: Converters): Shape[] {
+  const avoid = c.avoid ?? [];
+  const taken: Rect[] = [...avoid];
+  const measure = c.measure ?? textWidth;
+  const out: Shape[] = [];
+  for (const it of items) {
+    const w = Math.ceil(measure(it.text));
+    if (w + 2 * LABEL_PAD > c.width) continue;
+    const ys: number[] = [];
+    const shownTop = Math.max(it.top, 0);                                      // a band taller than the pane: its visible top
+    if (it.bottom - shownTop >= LABEL_H + 2 * 2) ys.push(shownTop + 2);        // inside, top-left
+    else ys.push((it.top + it.bottom) / 2 - LABEL_H / 2);                      // a thin band: on its own line
+    ys.push(it.top - 2 - LABEL_H, it.bottom + 2);                              // just above, just below
+    const xs = [LABEL_PAD, c.width - LABEL_PAD - w, ...avoid.map((a) => a.x - LABEL_PAD - w)];
+    let spot: Rect | null = null;
+    for (const x of xs) {
+      for (const y of ys) {
+        const r = { x, y, w, h: LABEL_H };
+        if (y < 0 || y + LABEL_H > c.height || x < 0 || x + w > c.width - LABEL_PAD + 0.5) continue;
+        if (taken.some((t) => overlaps(r, t))) continue;
+        spot = r;
+        break;
+      }
+      if (spot) break;
+    }
+    if (!spot) continue;
+    taken.push(spot);
+    out.push({ type: "text", x: spot.x, y: spot.y, text: it.text, color: it.color, align: "left", baseline: "top" });
+  }
+  return out;
+}
+
+/** Z7a-3: layer bands as shapes - a filled, translucent rectangle across the pane (a line when low == high, or when
+ * the band is thinner than a pixel), then every label on top, placed by `placeBandLabels`. Bands off the price scale
+ * are skipped. */
 export function bandShapes(bands: readonly LayerBand[], c: Converters): Shape[] {
   const out: Shape[] = [];
+  const labels: { top: number; bottom: number; text: string; color: string }[] = [];
   for (const b of bands) {
     if (!Number.isFinite(b.low) || !Number.isFinite(b.high)) continue;
     const yHigh = c.y(Math.max(b.low, b.high));
@@ -223,9 +294,9 @@ export function bandShapes(bands: readonly LayerBand[], c: Converters): Shape[] 
     } else {
       out.push({ type: "rect", x: 0, y: top, w: c.width, h: height, fill: withAlpha(color, b.opacity ?? 0.15), stroke: withAlpha(color, 0.5) });
     }
-    if (b.label) out.push({ type: "text", x: c.width - 4, y: top - 2, text: b.label, color, align: "right", baseline: "bottom" });
+    if (b.label) labels.push({ top, bottom: top + height, text: b.label, color });
   }
-  return out;
+  return [...out, ...placeBandLabels(labels, c)];
 }
 
 /** CH3: layer segments (legs) between two data points; one end that cannot be placed drops the segment. */

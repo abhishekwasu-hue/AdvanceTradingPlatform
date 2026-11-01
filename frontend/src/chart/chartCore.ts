@@ -15,6 +15,8 @@ import {
 } from "lightweight-charts";
 import { chartView, formatTick } from "../charting/chartTypes";
 import type { ChartMarker } from "../charting/markers";
+import type { LayerBand } from "../charting/engine";
+import type { Rect } from "../charting/geometry";
 import { LightweightEngine, type LineSeriesLike } from "../charting/lightweight";
 import { DEFAULT_SETTINGS, closes, ema, rsi, sma, vwap, type Series } from "../utils/indicators";
 import { chartFontSize } from "../theme";
@@ -41,6 +43,9 @@ export interface PaneChoice { volume: boolean; rsi: boolean }
  * chart's up / down / text colour, and always kept in view. */
 export interface LevelLine { price: number; title: string; tone: "up" | "down" | "neutral" }
 
+/** M75 W-1: the layer id the chart's own areas (a Copilot answer's nearest area) are drawn on. */
+export const AREAS_LAYER_ID = "chart-areas";
+
 export interface ChartCoreOptions {
   palette: ChartPalette;
   grid: boolean;
@@ -63,6 +68,10 @@ export interface ChartCoreOptions {
 }
 
 export interface PlotInsets { right: number; bottom: number }
+
+/** M75 W-1: buyer (demand) areas in the chart's up colour, seller (supply) areas in its down colour, others in its
+ * text colour - all from the chart tokens (the trader's candle colours when set). */
+export const zoneColors = (p: ChartPalette) => ({ demand: p.up, supply: p.down, neutral: p.text });
 
 /** A pane under the price pane takes this share of the price pane's height. */
 const LOWER_PANE_STRETCH = 0.25;
@@ -149,6 +158,8 @@ export class ChartCore {
   private levelLines: IPriceLine[] = [];
   /** Review PR 3: the markers, on the candle series (it always holds the bars, transparent for Bars and Line). */
   private markers: readonly ChartMarker[] = [];
+  /** M75 W-1: areas drawn as filled bands (kept in view like the levels). */
+  private areas: readonly LayerBand[] = [];
   private markersPlugin: ISeriesMarkersPluginApi<Time> | null = null;
   private data: ChartBar[] = [];
   private key = "";
@@ -188,8 +199,8 @@ export class ChartCore {
       // The price scale also takes in the level lines, so a stop or target away from the bars still shows.
       autoscaleInfoProvider: (base: () => AutoscaleInfo | null) => {
         const info = base();
-        if (!info?.priceRange || this.levels.length === 0) return info;
-        const prices = this.levels.map((l) => l.price);
+        const prices = [...this.levels.map((l) => l.price), ...this.areas.flatMap((a) => [a.low, a.high])];
+        if (!info?.priceRange || prices.length === 0) return info;
         return { ...info, priceRange: { minValue: Math.min(info.priceRange.minValue, ...prices), maxValue: Math.max(info.priceRange.maxValue, ...prices) } };
       },
     });
@@ -202,6 +213,7 @@ export class ChartCore {
                                         { add: (pane, color, title) => this.addStudyLine(pane, color, title), remove: (s) => this.removeStudyLine(s) },
                                         (enabled) => this.setInteraction({ suspended: !enabled }));
     this.engine.setDefaultDrawingColor(p.drawing);
+    this.engine.setZoneColors(zoneColors(p));
     this.setPanes(opts.panes);
     const nearStart = (range: LogicalRange | null) => { if (range && range.from < 10) this.opts.onLoadOlder?.(); };
     this.chart.timeScale().subscribeVisibleLogicalRangeChange(nearStart);
@@ -436,6 +448,20 @@ export class ChartCore {
     }));
   }
 
+  /** M75 W-1 (W2): areas as filled, translucent bands with their label inside or beside them (geometry.ts
+   * `placeBandLabels`) - never two dashed price lines with titles on the axis. Replaced as a whole; kept in view. */
+  setAreas(areas: readonly LayerBand[]): void {
+    this.areas = areas.filter((a) => Number.isFinite(a.low) && Number.isFinite(a.high));
+    this.engine.setLayer(AREAS_LAYER_ID, this.areas.length > 0 ? { bands: [...this.areas] } : null);
+  }
+
+  /** M75 W-1 (W3): rectangles of the plot (the floating controls, the chip row) no band label may sit on - in plot
+   * pixels; moved into pane pixels here (the pane starts after the left price scale). */
+  setLabelAvoid(rects: readonly Rect[]): void {
+    const dx = this.engine.paneOffsetX();
+    this.engine.setLabelAvoid(rects.map((r) => ({ ...r, x: r.x - dx })));
+  }
+
   /** Review PR 3: the markers (replaced as a whole). They sit on the candle series, which always holds the bars, so
    * they show for every chart type. */
   setMarkers(markers: readonly ChartMarker[]): void {
@@ -492,6 +518,7 @@ export class ChartCore {
     applyChartTheme(this.chart, { candles: this.candles, bars: this.bars, line: this.line, rsi: this.rsi ?? undefined,
                                   rsiBands: this.rsiBands, overlays: this.overlays }, palette, grid, this.candlesHidden());
     this.engine.setDefaultDrawingColor(palette.drawing);
+    this.engine.setZoneColors(zoneColors(palette));
     this.levelLines.forEach((line, i) => line.applyOptions({ color: this.levelColour(this.levels[i].tone) }));
     if (this.levels.length > 0) this.candles.applyOptions(this.lastPriceLine());
     this.paintLabels();

@@ -11,7 +11,7 @@ import chatSource from "./CopilotChatV2.tsx?raw";
 import { ChatView, type ChatViewProps } from "./CopilotChatV2";
 import pageSource from "./CopilotPageV2.tsx?raw";
 import {
-  answerParts, areaText, cardAreaText, cardTrendText, cleanQuestion, hasRawMarkdown, notReadyText, swingText, composerPlacement, distanceText, headlineLevels, jobCards, marketLineText, needsKey, notSetUpLine,
+  answerParts, areaText, cardAreaText, cardTrendText, cleanQuestion, hasRawMarkdown, notReadyText, swingText, composerPlacement, distanceText, headlineAreas, jobCards, marketLineText, needsKey, notSetUpLine,
   numbersCells, quickChips, settled, stampText, toolsUsedLine, withTurn, workedLine,
   type ChatAnswer, type ChatHome, type Turn,
 } from "./model";
@@ -240,8 +240,12 @@ describe("the chat-first Copilot page", () => {
     for (const part of ["data-unknowns", "data-worked", "data-tools-used", "data-section=", "data-block="]) expect(before).not.toContain(part);
     expect(distanceText({ side: null, from: 1, to: 2, where: "inside", distance: 0, distance_pct: 0 }, String)).toBe("Price is inside");
     expect(areaText({ side: null, from: 1, to: 2, where: "below", distance: 3, distance_pct: null }, String)).toBe("1 – 2");
-    expect(headlineLevels(HEADLINED.headline).map((l) => l.tone)).toEqual(["down", "down"]);
-    expect(headlineLevels(null)).toEqual([]);
+    // M75 W-1: the nearest area is ONE filled band in the seller colour, labelled on the chart - no "Area top" / "Area bottom" price lines
+    expect(headlineAreas(HEADLINED.headline)).toEqual([
+      { low: 82011.6, high: 82273.2, role: "supply", color: "#dc2626", opacity: 0.18, style: "solid", label: "Supply area" }]);
+    expect(headlineAreas({ ...HEADLINED.headline!, area: { side: null, from: 5, to: 2, where: "below", distance: 1, distance_pct: null } }))
+      .toMatchObject([{ low: 2, high: 5, role: "neutral", label: "Area" }]);
+    expect(headlineAreas(null)).toEqual([]);
   });
 
   it("M59 CR-1: the chart reading is a card - table, areas nearby, swing levels, one line; never raw Markdown or a bar count", () => {

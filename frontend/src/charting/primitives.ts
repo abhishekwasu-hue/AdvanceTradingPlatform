@@ -6,13 +6,14 @@
 import type { CanvasRenderingTarget2D } from "fancy-canvas";
 import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, SeriesAttachedParameter, Time } from "lightweight-charts";
 import type { DrawingV1 } from "./drawings";
-import { shapes, type Converters, type Shape } from "./geometry";
+import { LABEL_FONT_PX, shapes, type Converters, type Shape } from "./geometry";
 
 /** The slice of CanvasRenderingContext2D the painter uses (structural, so tests can record calls). */
 export type PaintContext = Pick<CanvasRenderingContext2D,
   "save" | "restore" | "beginPath" | "moveTo" | "lineTo" | "closePath" | "stroke" | "fill" | "fillRect" | "strokeRect" | "fillText" | "setLineDash"
 > & { strokeStyle: unknown; fillStyle: unknown; lineWidth: number; font: string; textAlign: CanvasTextAlign; textBaseline: CanvasTextBaseline };
 
+const LABEL_FONT = `${LABEL_FONT_PX}px sans-serif`;
 const DASH: Record<string, number[]> = { solid: [], dashed: [6, 4], dotted: [2, 3] };
 
 export function paint(ctx: PaintContext, list: readonly Shape[]): void {
@@ -45,7 +46,7 @@ export function paint(ctx: PaintContext, list: readonly Shape[]): void {
         ctx.fillStyle = s.fill;
         ctx.fill();
       } else if (s.text) {
-        ctx.font = "11px sans-serif";
+        ctx.font = LABEL_FONT;
         ctx.fillStyle = s.color;
         ctx.textAlign = s.align;
         ctx.textBaseline = s.baseline;
@@ -101,7 +102,16 @@ export class LayerPrimitive implements ISeriesPrimitive<Time> {
       draw: (target: CanvasRenderingTarget2D) => {
         target.useMediaCoordinateSpace(({ context, mediaSize }) => {
           const c = this.converters(mediaSize.width, mediaSize.height);
-          if (c) paint(context, this.build(c));
+          if (!c) return;
+          // M75 W-1: labels are placed by their real width, in the font they are painted with
+          const measure = (text: string) => {
+            context.save();
+            context.font = LABEL_FONT;
+            const w = context.measureText(text).width;
+            context.restore();
+            return w;
+          };
+          paint(context, this.build({ ...c, measure }));
         });
       },
     };
@@ -116,4 +126,7 @@ export class LayerPrimitive implements ISeriesPrimitive<Time> {
     this.build = build;
     this.requestUpdate?.();
   }
+
+  /** M75 W-1: repaint with the same build (its inputs - theme colours, reserved rectangles - changed). */
+  refresh() { this.requestUpdate?.(); }
 }

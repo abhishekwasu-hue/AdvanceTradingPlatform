@@ -6,6 +6,7 @@ import type { LtpResponse } from "../types";
 import { cx } from "../components/primitives/cx";
 import ChartV2 from "./ChartV2";
 import type { LevelLine, OverlayId } from "./chartCore";
+import type { LayerBand } from "../charting/engine";
 import { ChartToolbar } from "./ChartToolbar";
 import { toggle as toggleIndicator } from "./indicatorsModel";
 import { chartTabPath, marketChip, offeredTimeframes } from "./chartsPage";
@@ -39,6 +40,8 @@ export interface EmbeddedChartV2Props {
   exchange?: string;
   /** Levels to mark (entry, stop, target). */
   levels?: readonly LevelLine[];
+  /** M75 W-1: areas to draw as filled bands (a Copilot answer's nearest area). */
+  areas?: readonly LayerBand[];
   /** The timeframe shown; with `onTimeframe` the host keeps it (Signals: its "Open chart" carries it). */
   timeframe?: TimeframeId;
   onTimeframe?: (tf: TimeframeId) => void;
@@ -53,7 +56,7 @@ export interface EmbeddedChartV2Props {
 }
 
 export default function EmbeddedChartV2({
-  symbol, exchange = "NSE", levels, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive, onSymbol,
+  symbol, exchange = "NSE", levels, areas, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive, onSymbol,
 }: EmbeddedChartV2Props) {
   const { user } = useAuth();
   const [overlays, setOverlays] = useState<OverlayId[]>([]);
@@ -92,7 +95,7 @@ export default function EmbeddedChartV2({
         settings={{ prefs: prefs.prefs, onChange: prefs.update, error: prefs.error }}
         endActions={openLink ? [{ id: "open", label: "Open in Chart tab", icon: <ExternalLink size={16} aria-hidden />, to: chartTabPath(sym, exchange, timeframe) }] : []} />
       <ChartV2 candles={data.candles} timeframe={timeframe} symbol={sym} exchange={exchange} prefs={shown} overlays={overlays} live={live.ltp} marketOpen={marketOpen}
-        levels={levels} onLoadOlder={data.loadOlder} drawingTools={false} emptyText={emptyText}
+        levels={levels} areas={areas} onLoadOlder={data.loadOlder} drawingTools={false} emptyText={emptyText}
         className={className} />
       {data.error && (
         <p role="status" className="flex flex-wrap items-center gap-x-space-2 border-t border-subtle px-space-3 py-space-1 text-t13 text-fg">

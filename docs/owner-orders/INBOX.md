@@ -260,3 +260,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-11-01 | "Ho default" (admin limits / ceilings stay with the admin) | confirmed |
 | 2026-11-01 | "PAPER madhye tech limits fakt mahiti mhanun distil; entry adnar nahi - aata mala he samajla nahi. paper chi jar tyane setting keli tar ti suddha tyala lagu vhayla pahije na user define asel na"; to the clarifying question he chose "Fakt paise / margin (Recommended)" | PAPER-NR scope corrected (supersedes the earlier PAPER-NR reading) |
 | 2026-11-01 | "M72Q-7: paise lagnari AI chi live chachani. Default: nahi. ho default" | M72Q-7 closed: no paid live AI run |
+| 2026-11-01 | "r u mad, default ho mtl hot na" (correction: his "ho" on M72Q-7 means YES to the paid live AI run) | M72Q-7 corrected: paid live run approved |

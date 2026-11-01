@@ -1,0 +1,11 @@
+# ATP ORDER M74 - "Continue with your broker" sign-in (owner order, 1 Nov, verbatim)
+
+M74 · ATP · "Continue with your broker" on the sign-in page (owner order 1 Nov) — dropdown of all supported brokers
+Research R36: one platform app per broker (single API key + redirect URL) with each user authorising his own session is the multi-user model; Upstox requires a vendor/partner arrangement (and empanelment + broker hosting for multi-client automated execution); Zerodha reviews multi-user platforms case by case. Today ATP connects brokers with each user's OWN API app.
+BL-1 Sign-in and Create-account screens: a "Continue with your broker" button opening a dropdown/list of every broker ATP supports (logo + name). A broker is selectable only when ATP's platform app for it is configured and approved (server says so); the others are not shown on the sign-in page (no "coming soon"), and remain connectable after sign-in with the user's own keys (today's flow).
+BL-2 Flow: OAuth/redirect login at the broker → ATP receives the broker's user id + profile (email/name where the broker returns it) → sign in the matching ATP account (linked earlier) or create one (terms, plan, 2FA rules identical to email sign-up) → the same login also stores that day's broker session, so the broker is connected for trading/data immediately (one login a day = app + broker).
+BL-3 Linking: a broker identity links to an existing account by verified email or from Settings › Account (link/unlink, keep one sign-in method); one broker identity → one ATP account.
+BL-4 Per-broker adapter capability table (post it): redirect login available? returns email? token lifetime, refresh, daily re-login, partner/platform programme name and status. Start with the brokers whose docs allow it; mark the rest "own keys only".
+BL-5 Security: state/PKCE where supported, no broker tokens in logs, tokens encrypted (existing secrets store), audit rows per sign-in.
+BL-6 Owner block: for each broker, what to apply for (platform/partner app, redirect URL https://aialgodesk.tech/...), and the env names; note that LIVE multi-client automation may also need exchange empanelment — not needed for sign-in or the owner's own trading.
+BL-7 Tests with fake brokers: happy path, new user, link by email, broker not configured → hidden, token stored as today's session.

@@ -277,6 +277,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | M76 | not started (owner order 1 Nov + amendment; review addendum to M75 first; builds after M75 W-2) | Copilot workspace facilities: pre-trade check card (facts only, per-warning switches, never blocks Place), what-if / scenarios, execution helpers, position cards, watch cards, trigger-plan dry run, session summary, similar past setups, teach-on-chart | ATP_ORDER_M76.md |
 | M77 | not started (owner order 1 Nov; design review first; builds after M75 W-2 / W-3) | Save study: PDF (12 sections) / PNG / CSV / JSON, My studies, bulk export, print-safe A4, information-only footer | ATP_ORDER_M77.md |
 | M78 | in progress (owner order 1 Nov; one follow-up PR on #847) | Band label legibility: chips over candles, AA contrast, same label format, padding, prices on tap / hover | ATP_ORDER_M78.md |
+| M79 | in progress (owner order 1 Nov; supersedes the v1 parts of M66: step 1 = review + merge atp-private PR #1, then review + merge import/engine-snapshot-v2; flag trade_engine OFF) | Engine takeover on engine-snapshot-v2 (Trade 813358b): T1-T14 plan with C1-C6 corrections, byte-equal parity per layer | ATP_ORDER_M79.md |
 | STRAT-X | not started (owner 30 Oct: "build what you think is right") | Built-in min R:R OFF, stop / target labelled suggested; 4 new templates (PDHL, 52WH, RS vs NIFTY, weekly + daily pullback) | claude/stratx-* |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |

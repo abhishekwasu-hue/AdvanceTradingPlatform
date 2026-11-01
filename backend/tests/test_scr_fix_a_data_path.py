@@ -120,7 +120,7 @@ def _patch_org_broker(monkeypatch, broker: StrictBroker) -> None:
     from app.brokers import token_lifecycle
     from app.market_data import candles_routes, live_access
 
-    async def pick(session, tenant_id, b, label):
+    async def pick(session, tenant_id, b, label, **_k):
         return types.SimpleNamespace(id=1, broker_name=broker.name, account_label="primary")
 
     async def off(session, tenant_id):
@@ -481,7 +481,7 @@ def test_the_batch_plan_reads_the_credential_the_run_reads(monkeypatch):
     from app.market_data import candles_routes, live_access
     from app.screener import universes
 
-    async def pick(session, tenant_id, broker, label):
+    async def pick(session, tenant_id, broker, label, **_k):
         assert label == "primary"
         return types.SimpleNamespace(broker_name="zerodha")
 

@@ -64,6 +64,7 @@ from app.market_data.entitlement import DataTier, Entitlement
 from app.market_data.fanin import FLAG as BYOB_FLAG
 from app.market_data.fanin import Priority
 from app.market_data.freshness import quote_is_stale
+from app.market_data.reader_credential import credential_for_reader
 from app.market_data.service import CHUNK_LIMIT, MarketDataService, build_frames, merge_bars
 from app.market_data.stream import TickCache, tick_cache
 from app.platform.controls import flag_enabled
@@ -166,9 +167,21 @@ def _tier_c(ents: Dict[tuple, Entitlement]) -> HTTPException:
     return HTTPException(status_code=409, detail=reason, headers={"X-Data-Tier": DataTier.EOD.value})
 
 
-async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[str], account_label: str) -> BrokerCredentialRecord:
-    """The named broker session, or the first usable one; 404/409 with the fix location otherwise."""
+TEAMMATE_BROKER = ("The broker linked in your organisation was linked by a teammate: its data is shown only to that person. "
+                   "Link your own broker on the Broker page to read live prices here.")
+
+
+async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[str], account_label: str, *,
+                       user_id: Optional[int] = None) -> BrokerCredentialRecord:
+    """The named broker session, or the first usable one; 404/409 with the fix location otherwise.
+    M72 PR-1a (M71Q-2): with `user_id` only the credentials that user linked himself are considered (the Copilot's
+    tools pass it) - a teammate's credential is never read for him (409 saying so). Without it: as before."""
     records = await _records(session, tenant_id)
+    if user_id is not None:
+        own = [r for r in records if r.user_id == user_id]
+        if not own and records:
+            raise HTTPException(status_code=409, detail=TEAMMATE_BROKER)
+        records = own
     if broker:
         wanted = [r for r in records if r.broker_name == broker.lower() and r.account_label == (account_label or "primary")]
         if not wanted:
@@ -490,7 +503,7 @@ async def broker_candles(body: CandlesBody, user: User, session: AsyncSession) -
             raise _tier_c(ents)
         record, namespace = live.record, live.session.namespace
     else:
-        record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
+        record = await credential_for_reader(session, user.tenant_id, user.id, body.broker, body.account_label)   # M71Q-2
 
     warnings: List[str] = []
     daily = body.timeframe in DAILY_TIMEFRAMES
@@ -685,10 +698,10 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
             # BT1b: no broker timestamp = age unknown = stale, in the body as on the badge.
             body["stale"], body["stale_reason"] = True, body["data_tier"]["stale_reason"]
         return body
-    record = await _pick_record(session, user.tenant_id, broker, account_label)
+    record = await credential_for_reader(session, user.tenant_id, user.id, broker, account_label)   # M71Q-2: his own only
     # TM Part 1 (flag data_hub): the organisation's own hub stream (registered for this symbol), never the shared keys.
     from app.market_data import hub as data_hub
-    own = await data_hub.org_feed(session, user.tenant_id, record.broker_name, [(symbol, exchange)])
+    own = await data_hub.org_feed(session, user.tenant_id, record.broker_name, [(symbol, exchange)], reader_id=user.id)
     return await _ltp_body(record, own if own is not None else tick_cache, symbol, exchange, now)
 
 
@@ -785,7 +798,7 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
             raise _tier_c(ents)
         record = live.record
     else:
-        record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
+        record = await credential_for_reader(session, user.tenant_id, user.id, body.broker, body.account_label)   # M71Q-2
     adapter = build_adapter(record)
     from app.market_data import hub as data_hub
     hub_chains = await data_hub.hub_on(session, user.tenant_id)

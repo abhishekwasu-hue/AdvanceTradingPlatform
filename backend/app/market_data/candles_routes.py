@@ -166,9 +166,21 @@ def _tier_c(ents: Dict[tuple, Entitlement]) -> HTTPException:
     return HTTPException(status_code=409, detail=reason, headers={"X-Data-Tier": DataTier.EOD.value})
 
 
-async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[str], account_label: str) -> BrokerCredentialRecord:
-    """The named broker session, or the first usable one; 404/409 with the fix location otherwise."""
+TEAMMATE_BROKER = ("The broker linked in your organisation was linked by a teammate: its data is shown only to that person. "
+                   "Link your own broker on the Broker page to read live prices here.")
+
+
+async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[str], account_label: str, *,
+                       user_id: Optional[int] = None) -> BrokerCredentialRecord:
+    """The named broker session, or the first usable one; 404/409 with the fix location otherwise.
+    M72 PR-1a (M71Q-2): with `user_id` only the credentials that user linked himself are considered (the Copilot's
+    tools pass it) - a teammate's credential is never read for him (409 saying so). Without it: as before."""
     records = await _records(session, tenant_id)
+    if user_id is not None:
+        own = [r for r in records if r.user_id == user_id]
+        if not own and records:
+            raise HTTPException(status_code=409, detail=TEAMMATE_BROKER)
+        records = own
     if broker:
         wanted = [r for r in records if r.broker_name == broker.lower() and r.account_label == (account_label or "primary")]
         if not wanted:

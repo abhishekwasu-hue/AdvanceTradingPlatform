@@ -68,8 +68,8 @@ class AgentLimits:
 @dataclass
 class AgentAnswer:
     text: str
-    source: str                                    # ai / summary
-    stopped: str                                   # answered / steps / tool_calls / time / provider_error / not_grounded
+    source: str                                    # ai / summary / refused
+    stopped: str                                   # answered / steps / tool_calls / time / provider_error / not_grounded / refused
     run_id: Optional[int] = None
     tool_calls: List[Dict[str, Any]] = field(default_factory=list)
     numbers: Dict[str, Any] = field(default_factory=dict)
@@ -78,6 +78,7 @@ class AgentAnswer:
     claims: List[Dict[str, str]] = field(default_factory=list)         # {statement, source}: source = a tool call id of this run
     disclaimers: List[str] = field(default_factory=list)
     contract: Optional[str] = None                                     # json / plain (None when no AI answer was shown)
+    refused: Optional[str] = None                                      # M72 PR-1a: the chat's refusal kind, no model call made
 
 
 def _sha(text: str) -> str:
@@ -123,20 +124,36 @@ def parse_answer(raw: str) -> Parsed:
     return Parsed(raw, [], [], "plain")
 
 
-def _verify(answer: Parsed, allowed: set, by_call: Dict[str, set], from_question: set, lang: str):
+def _verify(answer: Parsed, allowed: set, by_call: Dict[str, set], from_question: set, lang: str, *, call_texts: dict[str, str],
+            first_party: set, question: str):
     """(None, text to show) when the answer may be shown - framed by the output filter when it makes a specific call;
-    otherwise (why not, None) for the one rewrite request."""
+    otherwise (why not, None) for the one rewrite request.
+
+    M72 F5: the text, every claim and every disclaimer pass the ONE answer check the Copilot chat's wording passes
+    (`grounding.answer_problem`: numbers, symbols, direction, banned words). `call_texts`: each successful tool call's
+    data as text (the symbols it names); `first_party`: the calls whose data may support a direction - never
+    third-party text (news headlines) and never the trader's question."""
     if not answer.text.strip():
         return "empty answer", None
-    ok, bad = grounding.check_numbers(answer.text, allowed)
-    if not ok:
-        return f"numbers not in the tool results: {', '.join(bad[:6])}", None
+    every = "\n".join(call_texts.values())
+    trusted = every + "\n" + (question or "")
+    direction = "\n".join(t for cid, t in call_texts.items() if cid in first_party)
+    problem = grounding.answer_problem(answer.text, numbers=allowed, trusted_text=trusted, direction_text=direction, where="the tool results")
+    if problem:
+        return problem, None
     for i, claim in enumerate(answer.claims, 1):
-        if claim["source"] not in by_call:
-            return f"claim {i} cites {claim['source'] or 'no source'}, which is not a successful tool call of this request", None
-        ok, bad = grounding.check_numbers(claim["statement"], by_call[claim["source"]] | from_question)
-        if not ok:
-            return f"claim {i} has numbers not in the result of {claim['source']}: {', '.join(bad[:6])}", None
+        source = claim["source"]
+        if source not in by_call:
+            return f"claim {i} cites {source or 'no source'}, which is not a successful tool call of this request", None
+        own = call_texts.get(source, "")
+        problem = grounding.answer_problem(claim["statement"], numbers=by_call[source] | from_question, trusted_text=own + "\n" + (question or ""),
+                                           direction_text=own if source in first_party else "", where=f"the result of {source}")
+        if problem:
+            return f"claim {i}: {problem}", None
+    for extra in answer.disclaimers:
+        problem = grounding.answer_problem(extra, numbers=allowed, trusted_text=trusted, direction_text=direction, where="the tool results")
+        if problem:
+            return f"a disclaimer: {problem}", None
     for extra in [c["statement"] for c in answer.claims] + answer.disclaimers:
         passed, _, reason = output_filter.check(extra, lang, where="agent")
         if not passed:
@@ -150,6 +167,17 @@ def _verify(answer: Parsed, allowed: set, by_call: Dict[str, set], from_question
 async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str = "en", limits: Optional[AgentLimits] = None) -> AgentAnswer:
     limits = limits or AgentLimits()
     started = time.monotonic()
+    # M72 PR-1a: the same refusals as the Copilot chat (one list: `copilot_chat.refusal_kind`) - an order, an exit to block,
+    # another person's data, advice / a tip / a promise, in English, Marathi or Hindi - before any model call or tool run.
+    from app.ai.copilot_chat import REFUSALS, refusal_kind
+    kind = refusal_kind(question)
+    if kind is not None:
+        refused_run = AgentRunRecord(tenant_id=ctx.tenant_id, user_id=ctx.user.id, question_sha256=_sha(question), prompt_version=PROMPT_VERSION,
+                                     model=str(getattr(provider, "model", "") or ""), limits_json=json.dumps(limits.__dict__), outcome="refused",
+                                     steps=0, tool_calls=0, created_at=datetime.now(timezone.utc), finished_at=datetime.now(timezone.utc))
+        ctx.session.add(refused_run)
+        await ctx.session.commit()
+        return AgentAnswer(REFUSALS[kind], "refused", "refused", refused_run.id, refused=kind)
     system = SYSTEM          # English only, whatever `lang` the caller passes
     allowed_proposals = await available(ctx, proposals.allowed_for(question))      # N3 S9: flagged tools only while on
     tools = specs(await available(ctx, names("read", agent=True)) + allowed_proposals)
@@ -168,6 +196,8 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
     untrusted_seen: List[str] = []
     made: List[Dict[str, Any]] = []
     by_call: Dict[str, set] = {}                    # tool call id -> the numbers its successful result carried
+    call_texts: dict[str, str] = {}                 # M72 F5: tool call id -> its data as text (the symbols it names)
+    first_party: set = set()                        # M72 F5: the calls whose data may support a direction (not news)
     final_text: Optional[str] = None
     final: Optional[Parsed] = None
     stopped = "steps"
@@ -186,7 +216,8 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
             break
         if not turn.calls:
             parsed = parse_answer(turn.text or "")
-            problem, shown = _verify(parsed, allowed, by_call, from_question, lang)
+            problem, shown = _verify(parsed, allowed, by_call, from_question, lang, call_texts=call_texts, first_party=first_party,
+                                     question=question)
             if problem is None:
                 final_text, final, stopped = shown, parsed, "answered"
                 break
@@ -225,6 +256,9 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
                 from_tools |= found
                 allowed |= found
                 by_call[call.id] = found
+                call_texts[call.id] = json.dumps(res.data, default=str, ensure_ascii=False)
+                if not res.untrusted:
+                    first_party.add(call.id)
                 if res.untrusted:
                     untrusted_seen.append(proposals.untrusted_text(res.data))
             untrusted_seen.extend(res.third_party)

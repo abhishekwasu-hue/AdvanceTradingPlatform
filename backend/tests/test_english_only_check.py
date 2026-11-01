@@ -114,6 +114,7 @@ def test_escaped_devanagari_and_binary_files_are_not_findings(tmp_path):
 def test_the_allow_list_is_narrow():
     assert set(check_english_only.ALLOWED_FILES) == {
         "backend/app/ai/interview.py", "backend/app/ai/advisor.py",
+        "backend/app/ai/indic_safety.py",                 # M72 PR-1a owner order: the Copilot's MR / HI safety filter phrases
         "backend/tests/test_phase_ap_interview.py", "backend/tests/test_phase_aq_advisor.py",
         "frontend/e2e/fixtures/interview_plan.json"}
     assert check_english_only.NAMESPACE_FILE == "frontend/src/i18n/interviewSecondary.ts"

@@ -183,7 +183,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     # the AI eval sets and their baselines (backend/evals/runner.py)
     "backend/evals/baselines.json": "3c28c69e5964aab11c234bd6cf7608f66c9d327f1dfeacdb64d7f42f2b109a09",
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
-    "backend/evals/sets/qa.jsonl": "845e5902cbc904864ec1f24bbf589194428ec462e164e388ab04b9734469338e",
+    "backend/evals/sets/qa.jsonl": "ed0530199bad39021edf8e4777700dedb99619c0eeeaca623dcf958d015e22ad",
     "backend/evals/sets/tool_args.jsonl": "578efa3d69f7d860f221068273a074b018e7998b71bdf8c55d5bdbd66d7f862b",
     "backend/evals/sets/copilot_jobs.jsonl": "f38a563b08c68a727e5eb4fb2fb13d254c8a136dc207ff93bda186ee4b24a416",
     "backend/evals/sets/copilot_safety.jsonl": "6957614b58ca737a77f1445e2d3bd0a13fa5c3063c829e75506e6043a3a37287",

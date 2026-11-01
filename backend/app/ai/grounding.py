@@ -17,7 +17,7 @@ headline that addresses the model is data, not an instruction.
 from __future__ import annotations
 
 import re
-from typing import Iterable, List, Set, Tuple
+from typing import Iterable, List, Optional, Set, Tuple
 
 _NUMBER = re.compile(
     r"(?<!\d)(?<!\d\.)(?<!\d,)[-+]?\d[\d,]*(?:\.\d+)?\s*(%|(?:k|K|lakh|lakhs|lac|L|cr|crore|crores)(?![A-Za-z]))?"
@@ -180,10 +180,38 @@ def provenance(text: str, verified: Set[str], user_provided: Set[str]) -> dict:
     return out
 
 
+def answer_problem(text: str, *, numbers: Set[str], trusted_text: str, direction_text: str, where: str = "the facts") -> Optional[str]:
+    """M72 F5: the ONE answer check every AI answer passes - the Copilot chat's wording (`copilot.grounded`) and the
+    agent's answer, its claims and disclaimers (`agent._verify`). None when the text may be shown, else why not:
+    * numbers - each one must be in `numbers` (the facts' / tool results' numbers and the question's);
+    * symbols - each ticker must appear in `trusted_text` (the facts or tool results, and the question);
+    * direction - a bullish / bearish claim must be one `direction_text` carries (never the question alone);
+    * banned words - the UI's no-advice list (`wording.check_wording`: recommend, best, guaranteed, sure-shot ...) and the
+      Marathi / Hindi buy / sell / order / promise phrases (`indic_safety.answer_terms`).
+    `where` names the source in the reason ("the facts", "the tool results")."""
+    from app.ai import indic_safety, wording
+    ok, bad = check_numbers(text, numbers)
+    if not ok:
+        return f"numbers not in {where}: {', '.join(bad[:5])}"
+    ok, bad = check_tickers(text, trusted_text)
+    if not ok:
+        return f"symbols not in {where}: {', '.join(bad[:5])}"
+    ok, bad = check_direction(text, direction_text)          # H-C1 d: the question cannot supply a direction
+    if not ok:
+        return f"a direction {where} do not support ({', '.join(bad)})"
+    ok, bad = wording.check_wording(text)                    # ATP review 11: the UI's banned words, on the model's text too
+    if not ok:
+        return f"words that read as advice or a promise ({', '.join(bad[:5])})"
+    bad = indic_safety.answer_terms(text)                    # M72 PR-1a: the same in Marathi / Hindi (Devanagari, romanised)
+    if bad:
+        return f"words that read as advice or a promise ({', '.join(bad[:5])})"
+    return None
+
+
 def wrap_untrusted(name: str, lines: Iterable[str]) -> str:
     body = "\n".join(re.sub(r"(?i)<\s*/*\s*untrusted_data", "[untrusted_data", str(line))[:400] for line in lines)
     return f'<untrusted_data name="{name}">\n{body}\n</untrusted_data>'
 
 
 __all__ = ["numbers_in_values", "numbers_in_text", "allowed_from_text", "check_numbers", "tickers_in", "check_tickers", "wrap_untrusted", "ACRONYMS",
-           "directions_in", "check_direction", "provenance"]
+           "directions_in", "check_direction", "provenance", "answer_problem"]

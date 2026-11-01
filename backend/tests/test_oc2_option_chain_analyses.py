@@ -573,17 +573,23 @@ def test_tenancy_each_organisation_reads_through_its_own_broker_only(monkeypatch
     assert _usage(a["tenant_id"]) == 1 and _usage(b["tenant_id"]) == 1
 
 
-def test_a_member_reads_through_the_organisation_session_and_the_flag_is_per_organisation(monkeypatch):
+def test_a_member_never_reads_through_a_teammates_session_and_the_flag_is_per_organisation(monkeypatch):
+    """M71Q-2: the owner's own session serves him; a member who linked no broker himself is never read through it
+    (the plain "connect your broker" state, no broker read)."""
     from tests.test_z3_members import member
     name = _name()
     broker = _ChainBroker({name: OptionChain(underlying=name, expiry=EXPIRY, underlying_ltp=118.0, rows=FIVE.rows)})
-    _install(monkeypatch, broker)
+    used: List[int] = []
+    _install(monkeypatch, broker, used)
     headers, me = _v2_owner("member")
     _store_credentials(me)
     from tests.test_trading_worker import _upgrade_plan
     _upgrade_plan(me["tenant_id"])
+    assert client.get(URL, headers=headers, params={"symbol": name}).json()["state"] == "ok"
+    reads = len(used)
     viewer = member({"headers": headers}, role="VIEWER")
-    assert client.get(URL, headers=viewer["headers"], params={"symbol": name}).json()["state"] == "ok"
+    body = client.get(URL, headers=viewer["headers"], params={"symbol": name}).json()
+    assert body["state"] == "no_broker" and body["message"] and len(used) == reads
     other_headers, other = _owner(f"oc2-flagoff-{uuid.uuid4().hex[:8]}@example.com")      # flag on for the first organisation only
     _store_credentials(other)
     assert client.get(URL, headers=other_headers, params={"symbol": name}).status_code == 404

@@ -8,8 +8,11 @@ def serve_candles(monkeypatch, candles, source: str = "broker:testbroker"):
     bars = [c if isinstance(c, OHLCVBar) else OHLCVBar(**c) for c in candles]
     calls = []
 
-    async def fake(session, tenant_id, symbol, exchange, timeframe, *, broker=None, lookback_days=30, user=None):
-        calls.append({"tenant_id": tenant_id, "symbol": symbol, "timeframe": timeframe})
+    async def fake(session, tenant_id, symbol, exchange, timeframe, *, broker=None, lookback_days=30, user=None, own_only=None):
+        # M71Q-2: a read made for a person (the backtest bars) asks for his own credential only
+        if own_only is not None and user is not None:
+            assert own_only is True, "a read made for a user must ask for his own credential only"
+        calls.append({"tenant_id": tenant_id, "symbol": symbol, "timeframe": timeframe, "own_only": own_only})
         return interview.frame_from_candles(bars), source
     monkeypatch.setattr(evidence, "server_frame", fake)
     return calls

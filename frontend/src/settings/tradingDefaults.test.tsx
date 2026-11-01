@@ -183,8 +183,8 @@ describe("never pre-filled, and the approval gate", () => {
     expect(formPrefill(approval, false)).toEqual({});
     expect(formPrefill(approval, true)).toEqual({ approval: true });
     expect(formPrefill(d({ entry_mode: "AUTO" }), true)).toEqual({});
-    // the full form sends it only on the paper-only form, with the flag on and the box ticked
-    expect(code(oldPageSource)).toContain('...(paperOnly && approvalAllowed && approval ? { entry_mode: "APPROVAL" as const } : {})');
+    // M68 PR-6: the full form sends the bot's "New entries" choice (his own, or his Trade settings); nothing chosen = asked
+    expect(code(oldPageSource)).toContain("...(entryModeNow ? { entry_mode: entryModeNow } : {})");
   });
 });
 

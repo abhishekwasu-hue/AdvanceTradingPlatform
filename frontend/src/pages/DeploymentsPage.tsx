@@ -12,7 +12,7 @@ import { PageHeader } from "../components/primitives";
 import { Details } from "../ui/Details";
 import { FROM_DEFAULTS, formPrefill, stillFromDefaults, useTradingDefaults, type FormPrefill } from "../settings/tradingDefaults";
 import { useFeatures } from "../ui/useFeatures";
-import { orderDefaultsOf, useTradeSettings } from "../settings/tradeSettings";
+import { ENTRY_MODE_CHOICES, approvalModeOf, orderDefaultsOf, useTradeSettings, type EntryModeChoice } from "../settings/tradeSettings";
 import {
   BASE_TIMEFRAMES,
   type BrokerAccount,
@@ -107,7 +107,8 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   const [acrossBrokers, setAcrossBrokers] = useState(false);
   // P0.5 / T5: the entry style - MARKET, or PROTECTED_LIMIT (the fill capped at a band past the signal price).
   // M68 PR-1 (TS1-012): nothing pre-selected - his own Trade settings (Order defaults) when saved, else he picks here.
-  const own = orderDefaultsOf(useTradeSettings(true));
+  const ownSettings = useTradeSettings(true);
+  const own = orderDefaultsOf(ownSettings);
   const [orderStyle, setOrderStyle] = useState<"" | "MARKET" | "PROTECTED_LIMIT">("");
   const [protectionPct, setProtectionPct] = useState("");
   const style = orderStyle || own.botOrderStyle || "";
@@ -149,10 +150,14 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   // Settings part C: on the v2 Trading bot page only (paperOnly, so PAPER), the user's own defaults pre-fill this form once;
   // each field that still shows its default is marked, and every field stays editable. No defaults: nothing changes.
   const features = useFeatures();
-  const approvalAllowed = features.on("approval_only_entries");
+  // M68 PR-6 (TS1-061): "Ask me first" is his own choice - no organisation flag is needed to offer it.
+  const approvalAllowed = true;
   const defaults = useTradingDefaults(paperOnly && !!user && features.on("ui_v2"));
   const [prefill, setPrefill] = useState<FormPrefill>({});
-  const [approval, setApproval] = useState(false);
+  // M68 PR-6 (TS1-060): how this bot's entries go - his Trade settings (Automation > New entries), else asked here.
+  const [entryMode, setEntryMode] = useState<"" | EntryModeChoice>("");
+  const ownMode = approvalModeOf(ownSettings);
+  const entryModeNow = entryMode || ownMode || "";
   const prefilled = useRef(false);
   const marked = <K extends keyof FormPrefill>(key: K, value: FormPrefill[K]) => stillFromDefaults(prefill, key, value);
   const [regimes, setRegimes] = useState<string[]>([]);
@@ -265,7 +270,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
     if (p.exitBreakEven !== undefined) setExitBreakEven(p.exitBreakEven);
     if (p.exitMinutes !== undefined) setExitMinutes(p.exitMinutes);
     if (p.exitAt !== undefined) setExitAt(p.exitAt);
-    if (p.approval) setApproval(true);
+    if (p.approval) setEntryMode("APPROVAL");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaults]);
 
@@ -298,7 +303,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
         broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, oi_gates: oiGates.length ? oiGates : null, ...contractRules(),
         routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
         order_style: style || undefined, market_protection_pct: style === "PROTECTED_LIMIT" ? band : null,
-        ...(paperOnly && approvalAllowed && approval ? { entry_mode: "APPROVAL" as const } : {}),
+        ...(entryModeNow ? { entry_mode: entryModeNow } : {}),
       });
       setMessage(paperOnly ? `Started on paper: ${created.symbol}. See it under Your bots.`
         : `Deployment #${created.id} is ${created.status}: ${created.strategy_id} on ${created.symbol} (${created.mode}).`);
@@ -316,6 +321,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
 
   function handleCreate() {
     if (entryMissing) { setError(entryMissing); document.getElementById("deploy-entry-style")?.focus(); return; }
+    if (!entryModeNow) { setError("Choose how this bot's entries go (New entries)."); document.getElementById("deploy-entry-mode")?.focus(); return; }
     if (mode === "LIVE") {
       setConfirmLive(true);
       return;
@@ -488,6 +494,14 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
             <option value="PROTECTED_LIMIT">protected limit</option>
           </select>
           {!orderStyle && own.botOrderStyle && <span className="text-brand">{FROM_DEFAULTS}</span>}
+          <label htmlFor="deploy-entry-mode" className="text-fg-muted ml-2">New entries</label>
+          <select id="deploy-entry-mode" className="rounded bg-surface-2 border border-border px-2 py-1 text-xs" value={entryModeNow}
+            onChange={(e) => setEntryMode(e.target.value as "" | EntryModeChoice)} aria-invalid={!entryModeNow || undefined} data-deploy="entry-mode">
+            <option value="">Not set - choose</option>
+            {ENTRY_MODE_CHOICES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+          {!entryMode && ownMode && <span className="text-brand">{FROM_DEFAULTS}</span>}
+          <FromDefaults on={prefill.approval === true && entryMode === "APPROVAL"} />
           {style === "PROTECTED_LIMIT" && (
             <label className="flex items-center gap-1 text-fg-muted">
               band
@@ -761,14 +775,6 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
             </div>
           </div>
         </div>
-
-        {paperOnly && approvalAllowed && (
-          <label className="mt-3 flex min-h-11 items-center gap-2 text-sm text-fg md:min-h-0" data-approval>
-            <input type="checkbox" checked={approval} onChange={(e) => setApproval(e.target.checked)} />
-            <span>This bot keeps asking for my Approve before each entry, even if approval-only is turned off later</span>
-            <FromDefaults on={prefill.approval === true && approval} />
-          </label>
-        )}
 
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
           <div className="text-xs font-bold uppercase tracking-wider text-fg-muted mb-2">Regime filter</div>

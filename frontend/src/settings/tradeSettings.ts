@@ -73,6 +73,21 @@ export function orderDefaultsOf(view: TradeSettingsView | null | undefined): Ord
   return out;
 }
 
+// ---------------------------------------------------------------- M68 PR-6: Automation for the bot forms
+
+export const APPROVAL_MODE_KEY = "automation.approval_mode";
+export type EntryModeChoice = "AUTO" | "APPROVAL";
+/** "New entries": nothing pre-selected; the bot form asks when his Trade settings has none. */
+export const ENTRY_MODE_CHOICES: { value: EntryModeChoice; label: string }[] = [
+  { value: "AUTO", label: "Placed automatically" }, { value: "APPROVAL", label: "Ask me first" },
+];
+
+/** The trader's own saved "New entries" choice (undefined: Not set - the form asks). */
+export function approvalModeOf(view: TradeSettingsView | null | undefined): EntryModeChoice | undefined {
+  const field = view?.sections.flatMap((s) => s.fields).find((f) => f.key === APPROVAL_MODE_KEY && f.saved);
+  return field?.value === "AUTO" || field?.value === "APPROVAL" ? field.value : undefined;
+}
+
 let cached: Promise<TradeSettingsView | null> | null = null;
 
 /** Test hook: forget the cached read. */

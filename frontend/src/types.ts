@@ -1194,7 +1194,7 @@ export interface DeploymentCreateRequest extends ContractRules {
   /** P0.5 / T5: LIVE entry style. PROTECTED_LIMIT sends a marketable limit `market_protection_pct` past the signal price. */
   order_style?: "MARKET" | "PROTECTED_LIMIT";
   market_protection_pct?: number | null;
-  /** Z3 / BT2: APPROVAL - every entry becomes a proposal you approve (needs the `approval_only_entries` flag). */
+  /** Z3 / BT2: APPROVAL - every entry becomes a proposal you approve. M68 PR-6: his own choice, no flag; omitted = his Trade settings. */
   entry_mode?: "AUTO" | "APPROVAL";
   strategy_id: string;
   symbol: string;

@@ -292,7 +292,8 @@ class TradingDefaultsPrefs(_Prefs):
     spread_width: Optional[int] = Field(default=None, ge=1, le=20)
     target_credit_pct: Optional[float] = Field(default=None, ge=5, le=95, allow_inf_nan=False)
     stop_credit_pct: Optional[float] = Field(default=None, ge=10, le=500, allow_inf_nan=False)
-    # APPROVAL is applied by a form only while the organisation's `approval_only_entries` flag allows it (the API's own rule).
+    # M68 PR-6: its home is now Settings > Trade settings > Automation > New entries; a value saved here is still read as
+    # his own (TS-6, app/execution/automation.py) when that is Not set.
     entry_mode: Optional[Literal["AUTO", "APPROVAL"]] = None
     exit_rules: Optional[ExitDefaults] = None
     ticket: Optional[TicketDefaults] = None

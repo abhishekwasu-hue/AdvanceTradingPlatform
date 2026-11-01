@@ -237,9 +237,12 @@ class DeploymentCreateRequest(ContractRulesRequest):
     holding: Literal["INTRADAY", "SWING"] | None = None
     order_style: Literal["MARKET", "PROTECTED_LIMIT"] | None = None
     market_protection_pct: Optional[float] = Field(default=None, ge=0.05, le=5.0)
-    # Z3 / BT2: APPROVAL - every entry signal becomes a proposal and only an approved one places a PAPER order. Needs the
-    # `approval_only_entries` flag; with the flag on every deployment is approval-only whatever this says.
-    entry_mode: Literal["AUTO", "APPROVAL"] = "AUTO"
+    # Z3 / BT2: APPROVAL - every entry signal becomes a proposal and only an approved one places a PAPER order; with the
+    # organisation's `approval_only_entries` flag on every deployment is approval-only whatever this says.
+    # M68 PR-6 (TS1-060 / 061): no pre-chosen mode and no flag needed - it is his own choice. Not sent = his Trade settings
+    # (Automation > New entries), stored on the bot; Not set there either = the bot keeps it Not set and places no entry
+    # until he chooses ("Needs your setting: New entries" on the bot card).
+    entry_mode: Literal["AUTO", "APPROVAL"] | None = None
     # Strategy templates section 5: a template's exit choice (where the stop comes from, when to take profit); omitted =
     # as before (the template's own level as the stop, no target; a spread's credit levels).
     template_exits: Optional[TemplateExitsBody] = None
@@ -298,7 +301,7 @@ class DeploymentResponse(BaseModel):
     holding: str | None = None            # M68 PR-1: None = Not set (the bot follows his Trade settings)
     order_style: str | None = None
     market_protection_pct: Optional[float] = None
-    entry_mode: str = "AUTO"
+    entry_mode: str | None = None          # M68 PR-6: None = Not set (the bot follows his Trade settings)
     template_exits: Optional[dict] = None
 
     @classmethod
@@ -326,7 +329,7 @@ class DeploymentResponse(BaseModel):
             oi_gates=[g for g in (getattr(record, "oi_gates", None) or "").split(",") if g] or None,
             holding=getattr(record, "holding", None),
             order_style=getattr(record, "order_style", None), market_protection_pct=getattr(record, "market_protection_pct", None),
-            entry_mode=getattr(record, "entry_mode", None) or "AUTO",
+            entry_mode=getattr(record, "entry_mode", None),
             template_exits=_exits_answer(record),
         )
 
@@ -527,10 +530,10 @@ async def create_deployment(
         template_exits = exit_settings.checked(strategy, request.template_exits, request.instrument_kind, request.option_strategy)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"problems": exc.args[0]}) from exc
-    if request.entry_mode == "APPROVAL":
-        from app.execution import approval
-        if not await approval.flag_on(session, user.tenant_id):
-            raise HTTPException(status_code=400, detail="Approval-only entries are not enabled on this platform (flag approval_only_entries)")
+    if request.entry_mode is None:
+        # M68 PR-6 (TS1-060): not sent = his own Trade settings > Automation > New entries (never an ATP choice).
+        from app.execution import automation
+        request.entry_mode = (await automation.load(session, user)).approval_mode     # type: ignore[assignment]
 
     # Phase AS: a swing deployment reads daily candles (checked by _check_holding); the intraday
     # base-timeframe rules below are for everything else.

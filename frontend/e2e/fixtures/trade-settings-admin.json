@@ -1450,7 +1450,7 @@
      "key": "automation.approval_mode",
      "label": "New entries",
      "kind": "choice",
-     "help": "Whether a bot places an entry by itself or asks you first.",
+     "help": "Whether your bots, alerts and API signals place an entry by themselves or ask you first.",
      "unit": "",
      "choices": [
       {
@@ -1467,7 +1467,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1484,7 +1484,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1518,7 +1518,7 @@
      "low_open": true,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1535,7 +1535,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1620,7 +1620,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1637,7 +1637,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false
@@ -1654,7 +1654,7 @@
      "low_open": false,
      "term": null,
      "fact": false,
-     "wired": false,
+     "wired": true,
      "scope": "user",
      "value": null,
      "saved": false

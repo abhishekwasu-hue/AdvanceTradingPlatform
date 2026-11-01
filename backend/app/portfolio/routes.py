@@ -61,7 +61,8 @@ async def exposure(live_prices: bool = Query(default=True), mine: bool = Query(d
             except live_access.LiveDataRefused:
                 adapter, symbols = None, []
         else:
-            stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
+            stored = list(await session.scalars(select(BrokerCredentialRecord).where(
+                BrokerCredentialRecord.tenant_id == user.tenant_id, BrokerCredentialRecord.user_id == user.id)))   # M71Q-2: his own
             usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
             adapter = build_adapter(usable[0]) if usable else None
             symbols = list({t.symbol for t in trades})

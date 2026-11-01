@@ -531,11 +531,6 @@ class UserConnection:
 
 async def user_connection(session: Any, user: Any, now: Optional[datetime] = None) -> Optional[UserConnection]:
     """None when the hub is off for the user's organisation or no broker is linked (the broker gate covers that)."""
-    from sqlalchemy import select
-
-    from app.brokers.gates import data_sources
-    from app.brokers.token_lifecycle import data_is_usable, token_is_usable
-    from app.db.models import BrokerCredentialRecord
     from app.market_data import entitlement
     from app.market_data.data_terms import terms_for
     from app.market_data.fanin import FLAG as BYOB_FLAG
@@ -556,14 +551,11 @@ async def user_connection(session: Any, user: Any, now: Optional[datetime] = Non
             return None
         ref = SessionRef.of(shown[0])
         return UserConnection(namespace=ref.namespace, broker=ref.broker, account_label=ref.account_label, byob=True, renew=True, record=shown[0])
-    records = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)
-                                         .order_by(BrokerCredentialRecord.broker_name, BrokerCredentialRecord.account_label)))
-    # Part 1B: a broker whose market-data gate is closed (Kotak Neo, TM-6) is never the organisation's price source.
-    records = data_sources(records)
-    if not records:
+    chosen, usable = await _org_choice(session, user.tenant_id, now)
+    if chosen is None or getattr(chosen, "user_id", None) != user.id:
+        # M71Q-2: the organisation's stream reads through the member who linked that credential; another member gets
+        # no connection here (his pages read through his own credential, or say "connect your broker").
         return None
-    usable = [r for r in records if token_is_usable(r, now)] or [r for r in records if data_is_usable(r, now)]
-    chosen = usable[0] if usable else records[0]
     return UserConnection(namespace=org_namespace(user.tenant_id), broker=chosen.broker_name, account_label=chosen.account_label or "primary",
                           byob=False, renew=not usable, record=chosen)
 
@@ -662,11 +654,34 @@ class BrowserFeed:
         return out
 
 
-async def org_feed(session: Any, tenant_id: int, broker: str, pairs: Sequence[Pair], priority: Priority = Priority.CHART) -> Optional[TickCache]:
+async def _org_choice(session: Any, tenant_id: int, now: datetime) -> Tuple[Optional[Any], bool]:
+    """(the credential the organisation's stream reads through, whether it is usable now) - None when it has none."""
+    from sqlalchemy import select
+
+    from app.brokers.gates import data_sources
+    from app.brokers.token_lifecycle import data_is_usable, token_is_usable
+    from app.db.models import BrokerCredentialRecord
+    records = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)
+                                         .order_by(BrokerCredentialRecord.broker_name, BrokerCredentialRecord.account_label)))
+    # Part 1B: a broker whose market-data gate is closed (Kotak Neo, TM-6) is never the organisation's price source.
+    records = data_sources(records)
+    if not records:
+        return None, False
+    usable = [r for r in records if token_is_usable(r, now)] or [r for r in records if data_is_usable(r, now)]
+    return (usable[0] if usable else records[0]), bool(usable)
+
+
+async def org_feed(session: Any, tenant_id: int, broker: str, pairs: Sequence[Pair], priority: Priority = Priority.CHART, *,
+                   reader_id: Optional[int] = None) -> Optional[TickCache]:
     """With the hub on (and byob off), the organisation's own connection's ticks for an API read - registering `pairs`
-    on it so its one stream carries them - instead of the platform-wide tick keys. None: the hub is off (as before)."""
+    on it so its one stream carries them - instead of the platform-wide tick keys. None: the hub is off (as before).
+    M71Q-2 (`reader_id`, the page routes): None too when that stream reads through another member's credential."""
     if not await hub_on(session, tenant_id):
         return None
+    if reader_id is not None:
+        chosen, _usable = await _org_choice(session, tenant_id, datetime.now(timezone.utc))
+        if chosen is None or getattr(chosen, "user_id", None) != reader_id:
+            return None
     namespace = org_namespace(tenant_id)
     try:
         await register_symbols(namespace, broker, pairs, priority)

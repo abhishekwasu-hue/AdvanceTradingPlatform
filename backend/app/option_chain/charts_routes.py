@@ -16,7 +16,7 @@ behind the Option chain "Charts" view (app/option_chain/charts.py), behind the `
 It stores the usage count and, with the own-broker tier on, the user's own chain read (B1); no order path is reached
 (ADR-0006).
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -29,7 +29,7 @@ from app.db.models import User
 from app.db.session import get_session
 from app.market_data import candles_routes
 from app.option_chain import analyses, as_of, charts, own_snapshots, snapshots
-from app.option_chain.analyses_routes import NO_BROKER, NO_CHAIN, UNAVAILABLE, _record, _require_flag, read_chain_for
+from app.option_chain.analyses_routes import NO_BROKER, NO_CHAIN, UNAVAILABLE, _record, _require_flag, read_chain_for, request_time
 from app.option_chain.snapshots import IST
 
 router = APIRouter(prefix="/api/option-chain", tags=["option-chain"])
@@ -76,7 +76,7 @@ async def option_chain_charts(symbol: str = Query(..., min_length=1, max_length=
         raise HTTPException(status_code=422, detail="Enter an index or stock name, for example NIFTY.") from exc
     if interval not in charts.INTERVALS:
         raise HTTPException(status_code=422, detail="Pick a 5, 10 or 15 minute view.")
-    now = datetime.now(timezone.utc)
+    now = request_time()                                # the request's one clock read (as in analyses_routes)
     base: Dict[str, Any] = {"symbol": underlying, "expiry": expiry.isoformat() if expiry else None, "generated_at": now.isoformat(),
                             "strikes": strikes, "interval": interval}
 
@@ -94,15 +94,18 @@ async def option_chain_charts(symbol: str = Query(..., min_length=1, max_length=
     if not chain.rows:
         return _state(base, "no_data", NO_CHAIN)
 
+    # ONE valuation instant (as in analyses_routes): the instant the chain stands on - the request's own read time, or an
+    # earlier read's capture time while the broker is busy (never later than the prices it values; the session is cut there).
+    cutoff = got.captured_at if got is not None and got.stale and got.captured_at else now
     readings: List[charts.Reading] = []
     baselines: Dict[float, Any] = {}
     earlier: List[charts.EarlierSession] = []
     if byob:                                    # B1: his own reads are his session; this one is stored as read
-        readings, baselines, earlier = await _own_session_data(session, user, underlying, chain.expiry, now)
+        readings, baselines, earlier = await _own_session_data(session, user, underlying, chain.expiry, cutoff)
     else:
-        readings, baselines, earlier = await _session_data(session, user.tenant_id, underlying, chain.expiry, now)
+        readings, baselines, earlier = await _session_data(session, user.tenant_id, underlying, chain.expiry, cutoff)
     settings = await snapshots.settings_for(session, user.tenant_id, underlying)
-    body = charts.compute(chain, readings, now, each_side=strikes, interval=interval, baselines=baselines, earlier=earlier,
+    body = charts.compute(chain, readings, cutoff, each_side=strikes, interval=interval, baselines=baselines, earlier=earlier,
                           settings=settings, collect_span=config.OI_BANNER_COLLECT_SPAN)
     spot = analyses.clean_spot(chain).underlying_ltp
     # B2a: the chain's capture time, or the last session close while the market is closed (never the request time).

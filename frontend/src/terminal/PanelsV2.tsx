@@ -1,12 +1,12 @@
 import { Bot, ChevronDown, ChevronRight, LineChart, ShoppingBasket } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Link } from "react-router";
 import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
 import type { LevelLine } from "../chart/chartCore";
 import EmbeddedChartV2 from "../chart/EmbeddedChartV2";
 import { SkeletonRows } from "../components/primitives";
 import { cx } from "../components/primitives/cx";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { LoadingRowsV2 } from "../dashboard/CardV2";
 import type { ChainTrading } from "../fno/ChainTradingV2";
 import { basketOn } from "../fno/desk";
@@ -136,7 +136,7 @@ export function ChainPanelV2({ underlying, read, trading, rows = 6, spot, compac
     return (
       <div data-empty="chain-error" className="space-y-space-2 py-space-2">
         <p className={MUTED}>{chainProblem(read)}</p>
-        <Link to={BROKER_PATH} className={LINK}>Connect your broker</Link>
+        <InPlaceLink to={BROKER_PATH} className={LINK}>Connect your broker</InPlaceLink>
       </div>
     );
   }
@@ -478,8 +478,8 @@ export function PlaceholderPanelV2({ kind }: { kind: "bots" | "payoff" }) {
         <p className="flex items-center gap-space-2 text-t14 font-semibold text-fg"><Bot size={16} aria-hidden className="text-brand" />Coming in a later update</p>
         <p className={MUTED}>Your running bots and the signals waiting for you will show here, with pause and exit for each bot. Until then, use the Signals and Trading bot pages.</p>
         <div className="flex flex-wrap gap-x-space-4">
-          <Link to="/signals" className={LINK}>Open Signals</Link>
-          <Link to="/deployments" className={LINK}>Open Trading bot</Link>
+          <InPlaceLink to="/signals" className={LINK}>Open Signals</InPlaceLink>
+          <InPlaceLink to="/deployments" className={LINK}>Open Trading bot</InPlaceLink>
         </div>
       </div>
     );

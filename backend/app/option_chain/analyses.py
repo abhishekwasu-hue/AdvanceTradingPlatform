@@ -43,6 +43,7 @@ from app.core.config import RISK_FREE_RATE
 from app.market_data.calendar import trading_days_until
 from app.option_chain import session_rows as SR
 from app.option_chain.models import OptionType
+from app.study.numfmt import format_number, group_indian
 
 logger = logging.getLogger(__name__)
 
@@ -89,30 +90,17 @@ class Snapshot:
 
 # ---------------------------------------------------------------- formatting (sentences only; tables carry raw numbers)
 
-def _group_indian(digits: str) -> str:
-    if len(digits) <= 3:
-        return digits
-    head, tail = digits[:-3], digits[-3:]
-    parts: List[str] = []
-    while len(head) > 2:
-        parts.insert(0, head[-2:])
-        head = head[:-2]
-    if head:
-        parts.insert(0, head)
-    return ",".join(parts + [tail])
+_group_indian = group_indian       # M77 SX-1: the one helper in app.study.numfmt
 
 
 def fmt_number(value: float, decimals: int = 0) -> str:
-    """Indian digit grouping: 1250000 -> "12,50,000"; negatives get a hyphen-minus (plain ASCII text)."""
-    text = f"{abs(value):.{decimals}f}"
-    whole, _, frac = text.partition(".")
-    sign = "-" if value < 0 and float(text) != 0 else ""
-    return f"{sign}{_group_indian(whole)}{'.' + frac if frac else ''}"
+    """Indian digit grouping: 1250000 -> "12,50,000"; negatives get a hyphen-minus (plain ASCII text). A thin wrapper
+    over app.study.numfmt (M77 SX-1): the same output as before, byte for byte."""
+    return format_number(value, decimals, minus="-", rounding="half_even", finite_only=False)
 
 
 def fmt_signed(value: float, decimals: int = 0) -> str:
-    plain = fmt_number(value, decimals)
-    return f"+{plain}" if value > 0 and float(f"{abs(value):.{decimals}f}") != 0 else plain
+    return format_number(value, decimals, signed=True, minus="-", rounding="half_even", finite_only=False)
 
 
 def fmt_strike(strike: float) -> str:

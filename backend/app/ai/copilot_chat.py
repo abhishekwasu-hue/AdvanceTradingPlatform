@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 
-from app.ai import grounding, output_filter, prompt_versions
+from app.ai import grounding, indic_safety, output_filter, prompt_versions
 from app.ai.tools import ToolResult
 
 logger = logging.getLogger(__name__)
@@ -105,6 +105,12 @@ REFUSALS = {
                 "and judge the results yourself."),
     "copy": ("I can't copy another person's strategy, calls or trades. I build only from your own idea, in your own words, with the building "
              "blocks ATP has. Describe what you look for on the chart and I will turn it into a draft."),
+    # M72 PR-1a: an exit is never blocked (ADR-0004) and the AI never changes an order or a setting (ADR-0006).
+    "exit_block": ("I can't block, delay or switch off an exit, and nothing in ATP can: when your stop or your exit rule is reached, the exit "
+                   "always runs. Your stop and your exit rules are your own settings, and only you change them."),
+    # M72 PR-1a (M71Q-2): one person's account data is never shown to another person.
+    "other_user": ("I can only read your own account: your positions, trades, orders and settings. Another person's data is never shown to "
+                   "you, and yours is never shown to anyone else."),
 }
 REFUSAL_STARTERS = ("Read the NIFTY chart", "Today's market brief", "Teach me: what is a demand zone?")
 
@@ -163,9 +169,33 @@ _ADVICE = [
     r"\b(recommend|suggest)\b[\w\s,'-]{0,20}\b(stock|stocks|share|trade|buy|sell|strike|option|entry)\b",
     r"\bwhere (should|do) i (buy|sell|enter|exit|put my stop)\b",
 ]
-REFUSAL_ORDER = ("order", "copy", "promise", "tip", "settings", "advice")
-_COMPILED = {kind: [re.compile(p) for p in pats] for kind, pats in (("order", _ORDER), ("settings", _SETTINGS), ("copy", _COPY),
-                                                                     ("promise", _PROMISE), ("tip", _TIP), ("advice", _ADVICE))}
+# M72 PR-1a: an ask to stop an exit from running (ADR-0004: exits are never blocked). English here; Marathi / Hindi: app/ai/indic_safety.py.
+_EXIT_BLOCK = [
+    r"\b(block|prevent|disable|turn off|switch off|skip|ignore|override|bypass|deactivate|suppress)\b[\w\s,'-]{0,40}"
+    r"\b(exit|exits|exiting|stop-loss|stoploss|stop loss|sl|square ?off)\b",
+    r"\b(don'?t|do not|never)\b[\w\s,'-]{0,10}\b(let|allow)\b[\w\s,'-]{0,40}\b(exit|exits|close|closed|square ?off|squared off)\b",
+    r"\bso (it|they|the \w+) (doesn'?t|don'?t|won'?t|never) (get )?(exit|exits|exited|close|closed|squared off)\b",
+    r"\beven if\b[\w\s,'-]{0,30}\b(stop|sl|stop-loss|stoploss)\b[\w\s,'-]{0,10}\b(hits?|is hit|triggers?)\b[\w\s,'-]{0,30}\b(hold|keep|don'?t exit|no exit)\b",
+]
+# M72 PR-1a (M71Q-2): an ask to read another person's account data.
+_OTHER_USER = [
+    r"\b(?!(?:today|yesterday|tomorrow|tonight|week|month|year|day|session|market|morning|evening|monday|tuesday|wednesday|thursday|friday|"
+    r"saturday|sunday|bot|strategy|deployment|nifty|banknifty|finnifty|sensex|index|stock|account|portfolio|it|that|this|one|what|"
+    r"where|who|how|here|there|let|he|she)'s\b)[a-z]+'s\b"
+    r"[\w\s,&'-]{0,20}\b(positions?|trades?|p&l|pnl|portfolio|holdings?|orders?|account|journal|bots?|deployments?)\b",
+    r"\b(user|users|member|members|teammate|teammates|colleague|colleagues|client|clients|friend|friends|another (user|member)|"
+    r"other (users?|members?)|everyone|everybody|all users|someone else|somebody else)\b[\w\s#,'-]{0,25}"
+    r"\b(positions?|trades?|p&l|pnl|portfolio|holdings?|holding|orders?|account|journal)\b",
+    r"\b(show|give|tell|read|see|open|list)\b[\w\s,'-]{0,15}\b(their|his|her)\s+(positions?|trades?|p&l|pnl|portfolio|holdings?|orders?|account|journal)\b",
+]
+REFUSAL_ORDER = ("exit_block", "order", "copy", "other_user", "promise", "tip", "settings", "advice")
+# M72 PR-1a: these kinds are refused also when the ask is phrased as a question ("what is user 42 holding?").
+_NO_CONCEPT_SKIP = frozenset({"order", "exit_block", "other_user"})
+# M72 PR-1a: the Marathi / Hindi phrases (Devanagari and romanised) come from the one shared list (app/ai/indic_safety.py),
+# which the answer check (`grounding.answer_problem`) reads too.
+_COMPILED = {kind: [re.compile(p) for p in pats + indic_safety.ASK_PATTERNS.get(kind, [])]
+             for kind, pats in (("order", _ORDER), ("settings", _SETTINGS), ("copy", _COPY), ("promise", _PROMISE), ("tip", _TIP),
+                                ("advice", _ADVICE), ("exit_block", _EXIT_BLOCK), ("other_user", _OTHER_USER))}
 
 
 def _norm(message: str) -> str:
@@ -178,7 +208,7 @@ def refusal_kind(message: str) -> Optional[str]:
     q = _norm(message)
     for kind in REFUSAL_ORDER:
         if any(p.search(q) for p in _COMPILED[kind]):
-            if kind != "order" and re.match(r"^(teach me|explain|what (is|are|does)|define|meaning of)\b", q) and not re.search(
+            if kind not in _NO_CONCEPT_SKIP and re.match(r"^(teach me|explain|what (is|are|does)|define|meaning of)\b", q) and not re.search(
                     r"\bshould (i|we)\b|\bfor me\b|\btarget\b|\btips?\b|\bpicks?\b|\bsure\b", q):
                 continue                            # a concept question that happens to name a word on the list
             return kind
@@ -740,8 +770,12 @@ def _close_head(symbol: str, d: Dict[str, Any], tf: str) -> str:
 CHART_TF = {"1w": "week", "1d": "day", "1h": "60min", "15m": "15min"}
 
 
+def _text_or_none(v: Any) -> Optional[str]:
+    return v.strip() if isinstance(v, str) and v.strip() else None
+
+
 def nearest_area(price: float, bands: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
-    """The stored area closest to the price: its side, from - to, and how far the price is from its near edge (0 inside),
+    """The stored area closest to the price: its side, from - to, its timeframe and state (M78), and how far the price is from its near edge (0 inside),
     in points and in percent of the price, with where the area sits ("below", "above", "inside"). Pure."""
     best: tuple[float, dict[str, Any]] | None = None
     for b in bands:
@@ -754,7 +788,10 @@ def nearest_area(price: float, bands: Sequence[dict[str, Any]]) -> dict[str, Any
         if best is None or gap < best[0]:
             side = {"bullish": "demand", "bearish": "supply"}.get(_role_side(b.get("role")) or "")
             best = (gap, {"side": side, "from": float(low), "to": float(high), "where": where, "distance": round(gap, 2),
-                          "distance_pct": round(gap / price * 100, 2) if price else None})
+                          "distance_pct": round(gap / price * 100, 2) if price else None,
+                          # M78 (F3): the area's own timeframe and state as stored (None when the band has none), so
+                          # the answer chart labels it like the Charts tab ("Seller area · 1d · fresh")
+                          "timeframe": _text_or_none(b.get("timeframe")), "state": _text_or_none(b.get("state"))})
     return best[1] if best else None
 
 
@@ -951,8 +988,10 @@ def _size_check(answer: Answer, risk: ToolResult, straddle: Optional[Dict[str, A
     _calc(answer, "risk_budget", "Your risk per trade = capital x risk per trade %", {"capital": capital, "risk_per_trade_pct": pct},
           {"risk_per_trade": budget})
     lines = [f"Your own risk per trade is {_f(budget)} ({_f(pct)}% of your capital of {_f(capital)})."]
-    lot_size = int(risk.data.get("lot_size") or 1)
-    if lots and straddle and straddle.get("call") is not None and straddle.get("put") is not None:
+    lot_size = _own_lot_size(risk.data)
+    if lots and lot_size is None:                       # M68: never an assumed lot size of 1
+        lines.append(_lots_unpriced(lots))
+    elif lots and lot_size and straddle and straddle.get("call") is not None and straddle.get("put") is not None:
         call_risk, put_risk = round(lots * lot_size * float(straddle["call"]), 2), round(lots * lot_size * float(straddle["put"]), 2)
         _calc(answer, "premium_at_risk", "Premium at risk = lots x lot size x option price (ATM)",
               {"lots": lots, "lot_size": lot_size, "atm_call": straddle["call"], "atm_put": straddle["put"]},
@@ -1042,6 +1081,22 @@ def _own_risk(risk: ToolResult) -> Optional[Dict[str, Any]]:
 
 NO_RISK_SETTINGS = ("I don't know your own risk settings: you have not saved them yet. Set them on the Risk limits page and I will "
                     "check against them.")
+LOT_SIZE_NOT_KNOWN = "lot size not known"
+
+
+def _own_lot_size(settings: Dict[str, Any]) -> Optional[int]:
+    """M68 (no pre-chosen trading values): the lot size from the user's OWN settings, or None when it is not set - never
+    an assumed 1."""
+    try:
+        size = int(float(settings.get("lot_size") or 0))
+    except (TypeError, ValueError):
+        return None
+    return size if size > 0 else None
+
+
+def _lots_unpriced(lots: int) -> str:
+    return (f"{lots} {'lot' if lots == 1 else 'lots'}: {LOT_SIZE_NOT_KNOWN}, so I can't work out what this size puts at risk. "
+            "Set your lot size on the Risk limits page.")
 
 
 def _events_this_week(ctx: ToolResult) -> Optional[List[Dict[str, Any]]]:
@@ -1268,8 +1323,10 @@ async def trade_check(answer: Answer, run: Runner, message: str) -> None:
         _calc(answer, "risk_budget", "Your risk per trade = capital x risk per trade %", {"capital": capital, "risk_per_trade_pct": pct},
               {"risk_per_trade": budget})
         lines = [f"Your own risk per trade is {_f(budget)} ({_f(pct)}% of your capital of {_f(capital)})."]
-        lot_size = int(own.get("lot_size") or 1)
-        qty = idea.lots * lot_size if idea.lots else idea.shares
+        lot_size = _own_lot_size(own)                   # M68: None when not set - never an assumed 1
+        qty = (idea.lots * lot_size if lot_size else None) if idea.lots else idea.shares
+        if idea.lots and lot_size is None:
+            lines.append(_lots_unpriced(idea.lots))
         if idea.entry and idea.invalidation and qty:
             per_unit = round(abs(idea.entry - idea.invalidation), 2)
             amount = round(per_unit * qty, 2)

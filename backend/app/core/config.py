@@ -723,6 +723,12 @@ BROKER_OAUTH_REDIRECT_BASE_URL = os.environ.get("BROKER_OAUTH_REDIRECT_BASE_URL"
 # registered at Google is PUBLIC_BASE_URL + "/api/auth/google/callback". The secret is never returned or logged.
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+# M73 SL-1: Facebook Login (OAuth 2.0 + Graph /me). Both empty (the default) = no Facebook button and the
+# /api/auth/facebook/* routes answer 404. The Valid OAuth Redirect URI at Meta is PUBLIC_BASE_URL + "/api/auth/facebook/
+# callback". The secret is never returned or logged. FACEBOOK_GRAPH_VERSION pins the Graph API version the calls use.
+FACEBOOK_APP_ID = os.environ.get("FACEBOOK_APP_ID", "").strip()
+FACEBOOK_APP_SECRET = os.environ.get("FACEBOOK_APP_SECRET", "").strip()
+FACEBOOK_GRAPH_VERSION = os.environ.get("FACEBOOK_GRAPH_VERSION", "v21.0").strip() or "v21.0"
 # PW5: the Zerodha Kite Publisher api_key for "Trade in your broker app" basket links (docs/BROKER_DATA_TERMS.md). A
 # public per-app identifier that sits in the page's HTML form, not a secret - but never committed with a value. Empty =
 # no Zerodha link. Only read when the `broker_app_links` flag is on (off by default). ATP places no order with it.

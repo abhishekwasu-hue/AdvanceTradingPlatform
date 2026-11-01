@@ -5,7 +5,7 @@ import { currentView } from "../api/viewState";
 import type { UserResponse } from "../types";
 import type { LegalAckBody } from "../legal/legal";
 import { clearSignIn, markSignIn } from "../broker/signIn";
-import { readGoogleReturn } from "./google";
+import { readSocialReturn } from "./social";
 
 interface AuthState {
   user: UserResponse | null;
@@ -18,6 +18,10 @@ interface AuthState {
   register: (email: string, password: string, inviteCode?: string, legal?: Record<string, LegalAckBody>) => Promise<void>;
   acceptInvite: (token: string, password: string, legal?: Record<string, LegalAckBody>) => Promise<void>;
   resetPassword: (token: string, password: string) => Promise<void>;
+  /** M73 SL-2: a pending provider link confirmed with the account's password (and its two-factor code). */
+  socialConfirmLink: (token: string, password: string, code?: string) => Promise<void>;
+  /** M73 SL-3: a pending provider sign-up finished (an e-mail the provider did not give, the beta code, the terms). */
+  socialComplete: (token: string, body: { email?: string; invite_code?: string; legal_acceptance?: Record<string, LegalAckBody> }) => Promise<void>;
   logout: () => void;
   /** Re-reads /auth/me (after email verification, scope changes, ...). */
   refreshUser: () => Promise<void>;
@@ -28,9 +32,9 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  // GS-1: back from Google sign-in. Read during the first render, before any effect below can navigate (a redirect
-  // would drop the fragment that carries the two-factor challenge); the address bar is cleaned at once.
-  const [google] = useState(readGoogleReturn);
+  // GS-1 / M73: back from a sign-in provider. Read during the first render, before any effect below can navigate (a
+  // redirect would drop the fragment that carries the two-factor challenge); the address bar is cleaned at once.
+  const [google] = useState(readSocialReturn);
 
   useEffect(() => {
     // P0.3 / S6: nothing survives a reload in memory; the HttpOnly refresh cookie (or a token an older build
@@ -93,6 +97,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signedIn(true);
   }
 
+  async function socialConfirmLink(token: string, password: string, code?: string) {
+    const response = await api.socialConfirmLink(token, password, code);
+    setToken(response.access_token, response.refresh_token);
+    await signedIn();
+  }
+
+  async function socialComplete(token: string, body: { email?: string; invite_code?: string; legal_acceptance?: Record<string, LegalAckBody> }) {
+    const response = await api.socialComplete(token, body);
+    setToken(response.access_token, response.refresh_token);
+    await signedIn(true);
+  }
+
   function logout() {
     // MO3-A1: "Sign out" during a read-only support view ends the view (the admin stays signed in; the banner's host
     // brings the admin back) - it never signs the person out.
@@ -104,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
-  return <AuthContext.Provider value={{ user, loading, login, completeMfaLogin, register, logout, acceptInvite, resetPassword, refreshUser }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, login, completeMfaLogin, register, logout, acceptInvite, resetPassword, socialConfirmLink, socialComplete, refreshUser }}>{children}</AuthContext.Provider>;
 }
 
 /** The sign-in state, or null outside an AuthProvider (a card rendered on its own: a story, a test). */

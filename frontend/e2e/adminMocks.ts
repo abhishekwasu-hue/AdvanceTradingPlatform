@@ -223,7 +223,8 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
     }
     return r.fulfill({ json: pack(packOn ? TRADER_PACK_AFTER : TRADER_PACK_BEFORE, packOn) });
   });
-  await page.route(A("/admin/controls/risk-ceilings$"), ok({ risk_per_trade_pct: 2, max_daily_loss_pct: 5, max_portfolio_risk_pct: 10, dd_level_2_pct: 25, min_stop_cooldown_minutes: 0 }));
+  await page.route(A("/admin/controls/risk-ceilings$"), ok({ risk_per_trade_pct: null, max_daily_loss_pct: null, max_portfolio_risk_pct: null, dd_level_2_pct: null,
+    min_stop_cooldown_minutes: null, warn_at_pct: null }));
   // M72 PR-1b: the platform AI key's limits (Controls › Limits) - every number Not set, a key on the server.
   await page.route(A("/admin/controls/ai-platform$"), ok({ plan_budget_inr: { free: null, pro: null, business: null }, user_daily_cap_inr: null,
     key_configured: true, provider: "anthropic", plans: [{ id: "free", name: "Free" }, { id: "pro", name: "Pro" }, { id: "business", name: "Business" }] }));

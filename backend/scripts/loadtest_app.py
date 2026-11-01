@@ -68,7 +68,7 @@ def _synthetic_broker() -> None:
     from app.brokers import token_lifecycle
     from app.market_data import candles_routes, service
 
-    async def pick(session: Any, tenant_id: int, broker: Optional[str], label: str) -> Any:
+    async def pick(session: Any, tenant_id: int, broker: Optional[str], label: str, **_k: Any) -> Any:
         return types.SimpleNamespace(id=tenant_id, broker_name="synthetic", account_label="primary")  # one credential per organisation
 
     async def candles(self: Any, symbol: str, exchange: str = "NSE", interval: str = "1min", now: Any = None, fresh: bool = False) -> List[Any]:

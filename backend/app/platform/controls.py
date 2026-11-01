@@ -154,6 +154,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # positions, short strikes and watchlists, each type opt-in with his own number (Settings > Alerts), in the app and on
     # his own Telegram; each card has "Ask why". No proposal, nothing closed or blocked (ADR-0004, ADR-0006). OFF: nothing
     # is evaluated or sent and /api/copilot-watch/* answers 404.
+    # M72 PR-9 (CP-9, M72Q-4; needs `ai_copilot` + `ui_v2`; frontend src/copilot/ticket): under a Copilot answer to a
+    # message that names a contract, a card that PREPARES the one order ticket with only what the user typed (contract,
+    # side, lots, limit price, stop-loss; his saved Trade settings as the ticket applies them); he reviews and presses
+    # Place himself. The server is unchanged (the ticket's own preview / place routes). OFF: no card. The owner's order
+    # says default ON; it ships OFF until he turns it on.
+    "copilot_ticket": "Copilot ticket preparation: the order ticket opens filled with only what you typed; you review and place it yourself",
     "copilot_watch": "Copilot watch: opt-in cards when your own positions, short strikes or watchlists change, with Ask why",
     "ai_platform_key": "Platform AI key: AI answers without a key of the user's own, inside the plan's AI budget and the per-user daily cap set in Admin",
     # AUD-T7 (owner audit 28 Oct; app/trading/cost_meter.py; needs `ui_v2`): the cost-of-trading meter on My trades - the

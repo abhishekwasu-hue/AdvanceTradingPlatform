@@ -187,13 +187,17 @@ def test_flag_switched_off_after_the_upload_refuses_the_analysis_and_the_downloa
 
 # --- the pick ------------------------------------------------------------------------------------------------------------
 
-def test_symbol_and_timeframe_are_required_and_checked():
+def test_symbol_and_timeframe_are_optional_and_a_given_value_is_checked():
+    """M84: both values are optional overrides (an empty one is read from the chart); a value given is still checked."""
     who = _hybrid_owner("pick")
-    for kwargs, code in (({"symbol": None}, "symbol_required"), ({"symbol": "  "}, "symbol_required"), ({"timeframe": None}, "timeframe_required"),
-                         ({"timeframe": "7m"}, "bad_timeframe"), ({"symbol": "NIFTY<script>"}, "bad_symbol")):
+    for kwargs, code in (({"timeframe": "7m"}, "bad_timeframe"), ({"symbol": "NIFTY<script>"}, "bad_symbol")):
         got = _add(who, **kwargs)
         assert got.status_code == 422 and got.json()["detail"]["code"] == code, (kwargs, got.text)
     assert client.get(f"{BASE}/items", headers=who["headers"]).json()["items"] == []
+    for kwargs, pick in (({"symbol": None}, {"symbol": None, "timeframe": "15m"}), ({"symbol": "  "}, {"symbol": None, "timeframe": "15m"}),
+                         ({"timeframe": None}, {"symbol": SYMBOL, "timeframe": None}), ({"symbol": None, "timeframe": None}, {"symbol": None, "timeframe": None})):
+        got = _add(who, **kwargs)
+        assert got.status_code == 201 and got.json()["pick"] == pick and got.json()["needs"] == [], (kwargs, got.text)
     ok = _add(who, symbol=" hyb test ".replace("hyb test", SYMBOL.lower()), timeframe="15m")
     assert ok.status_code == 201 and ok.json()["pick"] == {"symbol": SYMBOL, "timeframe": "15m"} and ok.json()["result"] is None
 

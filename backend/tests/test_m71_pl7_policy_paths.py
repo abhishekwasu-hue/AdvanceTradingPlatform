@@ -291,3 +291,43 @@ def test_migration_allows_missing_volume_adds_the_windows_table_and_goes_down():
         assert "data_use_windows" not in sa.inspect(conn).get_table_names()
         cols = {c["name"]: c for c in sa.inspect(conn).get_columns("md_tenant_candles")}
         assert not cols["volume"]["nullable"]
+
+
+# --- re-review: windows stored before any bar; a malformed policy is refused ------------------------------------------
+def test_windows_are_stored_before_any_bar_and_survive_a_failure_after_the_first_file(tmp_path, owner, monkeypatch):
+    make_data(tmp_path)
+    real = seed_import._write_file
+    calls = {"n": 0}
+
+    async def failing_after_first(session, tenant_id, res, spec, parsed, now):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            async def windows_now():
+                return await data_use.windows_for(session, tenant_id, "NIFTY", refused_only=True)
+            assert {w.kind for w in await windows_now()} == {"sealed", "contaminated"}   # tagged before the first bar
+            return await real(session, tenant_id, res, spec, parsed, now)
+        raise RuntimeError("a later step fails")
+    monkeypatch.setattr(seed_import, "_write_file", failing_after_first)
+    report = _run(seed_import.run(_session_factory, data_dir=str(tmp_path), now=NOW))
+    assert report.status == "partial" and calls["n"] >= 2
+
+    async def stored():
+        async with _session_factory() as session:
+            return await data_use.windows_for(session, owner.tenant_id, "NIFTY50", refused_only=True)
+    windows = _run(stored())
+    assert {w.kind for w in windows} == {"sealed", "contaminated"}
+    from app.backtest import data_policy
+    with pytest.raises(HoldoutError):
+        data_policy.check_range("2023-03-09", "2023-03-12", None, windows)        # refusals active for what was written
+
+
+@pytest.mark.parametrize("bad", ['{"windows": [', '{"windows": [{"kind": "sealed", "start": "2023-13-45"}]}',
+                                 '{"windows": [{"kind": "sealed", "start": "2023-03-10", "end": "soon"}]}'])
+def test_a_malformed_policy_file_is_refused_with_nothing_written(tmp_path, owner, bad):
+    make_data(tmp_path)
+    (tmp_path / "data_policy.json").write_text(bad)
+    report = _run(seed_import.run(_session_factory, data_dir=str(tmp_path), now=NOW))
+    assert report.status == "policy_unreadable" and "could not be read" in report.notes[0]
+    assert _run(_count_seeded(owner.tenant_id)) == 0
+    assert _run(seed_import._main(["check", "--data-dir", str(tmp_path)])) == 3
+    assert _run(seed_import._main(["run", "--data-dir", str(tmp_path)])) in (2, 3)      # never a traceback

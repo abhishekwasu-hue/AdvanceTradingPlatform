@@ -127,15 +127,23 @@ def parse_json(text: str, scopes: Sequence[str]) -> list[UseWindow]:
     return out
 
 
+class PolicyError(ValueError):
+    """A policy file that cannot be read (bad JSON, a bad date): the import refuses - never treated as no policy."""
+
+
 def load_policy(root: Path, scopes: Sequence[str] | None = None) -> Policy | None:
-    """The private data's policy (JSON first, else the README table), or None when it states none."""
+    """The private data's policy (JSON first, else the README table), or None when it states none. PolicyError when a
+    policy file is there but cannot be read (it never falls through to the next file)."""
     scopes = [s.upper() for s in (scopes or config.TRADE_DATA_POLICY_SCOPE)]
     for name, parser in ((POLICY_JSON, parse_json), (POLICY_README, parse_readme)):
         path = root / name
         if not path.is_file():
             continue
         raw = path.read_bytes()
-        windows = parser(raw.decode("utf-8", errors="replace"), scopes)
+        try:
+            windows = parser(raw.decode("utf-8", errors="replace"), scopes)
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            raise PolicyError(f"{name} could not be read ({type(exc).__name__}: {str(exc)[:120]})") from None
         if windows:
             return Policy(name, hashlib.sha256(raw).hexdigest(), tuple(windows))
     return None
@@ -145,8 +153,11 @@ def policy_problem(root: Path, scopes: Sequence[str] | None = None) -> str | Non
     """Fail closed (M71 PL-7b): a reason when the data states a policy that parses to no window (a policy file, or a
     README data-use section, without one readable window), or - with TRADE_DATA_POLICY_REQUIRED - states none at all.
     None when the policy is readable."""
-    if load_policy(root, scopes) is not None:
-        return None
+    try:
+        if load_policy(root, scopes) is not None:
+            return None
+    except PolicyError as exc:
+        return str(exc)
     if (root / POLICY_JSON).is_file():
         return f"{POLICY_JSON} holds no readable data-use window"
     readme = root / POLICY_README

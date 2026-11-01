@@ -762,6 +762,15 @@ async def run(session_factory: Any, *, data_dir: str | None = None, now: datetim
             report.notes.append(str(exc))
             return report
         holidays = await _holidays(session)
+        # PL-7b, first: the data-use windows are stored (and committed) BEFORE any bar, so no research / optimisation
+        # path can ever read a sealed row that is not yet tagged - also when a later step of this run fails.
+        policy = data_use.load_policy(root)
+        if policy is not None:
+            report.policy = {"source": policy.source, "windows": len(policy.windows), **await data_use.store(session, tenant_id, policy),
+                             "kinds": dict(Counter(w.kind for w in policy.windows))}
+        else:
+            report.policy = {"windows": 0, "note": "the private data states no data-use policy"}
+        await session.commit()
     series: dict[tuple[str, str], list[datetime]] = defaultdict(list)
     index_minute_keys: set[str] = set()
     for path in discover(root):
@@ -801,12 +810,6 @@ async def run(session_factory: Any, *, data_dir: str | None = None, now: datetim
             MdTenantCandleRecord.tenant_id == tenant_id, MdTenantCandleRecord.timeframe == "1m",
             MdTenantCandleRecord.source.like(f"{SOURCE_PREFIX}%")).distinct())})
         report.windows = await seed_windows(session, tenant_id, user_id, all_minute_keys, now, holidays)
-        policy = data_use.load_policy(root)
-        if policy is None:
-            report.policy = {"windows": 0, "note": "the private data states no data-use policy"}
-        else:
-            report.policy = {"source": policy.source, "windows": len(policy.windows), **await data_use.store(session, tenant_id, policy),
-                             "kinds": dict(Counter(w.kind for w in policy.windows))}
         await session.commit()
     if any(f.status in ("refused", "failed") for f in report.files):
         report.status = "partial"
@@ -835,7 +838,7 @@ def check(data_dir: str | None = None, *, now: datetime | None = None, holidays:
         if parsed is not None:
             parsed.bars.clear()
         report.files.append(res)
-    policy = data_use.load_policy(root)
+    policy = None if problem else data_use.load_policy(root)
     report.policy = {"windows": len(policy.windows), "kinds": dict(Counter(w.kind for w in policy.windows))} if policy else {"windows": 0}
     return report
 

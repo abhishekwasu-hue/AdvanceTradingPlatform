@@ -19,7 +19,7 @@ from app.market_data import hub as data_hub
 from app.market_data.calendar import IST
 from app.market_store import models as M
 from app.market_store import reader as R
-from app.option_chain import as_of, chain_reads
+from app.option_chain import analyses_routes, as_of, chain_reads
 from tests.test_amw2_watchlists import _set_flag
 from tests.test_auth_api import _session_factory, client
 from tests.test_m71_pl3_read_service import DAY, Spy, _clear, _minutes, _store_minutes
@@ -112,6 +112,10 @@ def test_flag_on_paces_the_call_and_a_second_refresh_in_the_window_makes_no_brok
 
 
 def test_the_analytics_output_is_the_same_with_the_flag_on_or_off(monkeypatch):
+    # Both answers stand on the SAME instant: the IV is solved with the time to expiry from the answer's one valuation
+    # instant, so two requests read a moment apart may round an IV differently (e.g. 314.04 vs 314.05) - not a flag effect.
+    instant = datetime.now(UTC)
+    monkeypatch.setattr(analyses_routes, "request_time", lambda: instant)
     name = _name()
     chain = _chain(name)
     _install(monkeypatch, _ChainBroker({name: chain}))
@@ -159,6 +163,25 @@ def test_a_429_shows_the_last_chain_with_its_age_and_backs_off(monkeypatch):
     again = client.get(URL, headers=headers, params={"symbol": name}).json()
     assert again["state"] == "ok" and "snapshot" in again
     assert len(broker.reads) == reads                         # backing off: no broker call during the back-off
+
+
+def test_an_earlier_chain_is_valued_at_its_own_capture_time_not_the_later_request(monkeypatch):
+    """No look-ahead: a busy broker's earlier chain is valued (time to expiry -> IV) at the instant it was read, so its
+    numbers are the earlier answer's exactly, however much later the page asks."""
+    monkeypatch.setattr(data_hub, "CHAIN_SNAPSHOT_SECONDS", 0)
+    first_at = datetime.now(UTC)
+    clock = iter([first_at, first_at + timedelta(minutes=10)])
+    monkeypatch.setattr(analyses_routes, "request_time", lambda: next(clock))
+    name = _name()
+    broker = _ChainBroker({name: _chain(name)})
+    _install(monkeypatch, broker)
+    headers, _ = _owner("429-asof", store=True)
+    first = client.get(URL, headers=headers, params={"symbol": name}).json()
+    broker.chains[name] = BrokerAPIError("Too Many Requests", status_code=429)
+    busy = client.get(URL, headers=headers, params={"symbol": name}).json()
+    assert busy["snapshot"]["captured_at"] == first_at.isoformat() and busy["generated_at"] == (first_at + timedelta(minutes=10)).isoformat()
+    iv = [a for a in busy["analyses"] if a["key"] == "iv_skew"][0]
+    assert iv["state"] == "ok" and _numbers(busy) == _numbers(first)
 
 
 def test_a_429_without_an_earlier_chain_is_a_plain_busy_state(monkeypatch):

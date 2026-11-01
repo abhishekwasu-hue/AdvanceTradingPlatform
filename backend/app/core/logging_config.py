@@ -116,7 +116,7 @@ def trace_ids() -> Dict[str, str]:
 
 # GS-1: OAuth redirects carry one-time credentials in the query (`code`, `state`; some providers `id_token`,
 # `access_token`). uvicorn's access log prints the full path with its query, so those values are blanked there.
-_SECRET_QUERY = re.compile(r"(?<=[?&])(code|state|id_token|access_token|refresh_token)=[^&#\s]*", re.IGNORECASE)
+_SECRET_QUERY = re.compile(r"(?<=[?&])(code|state|id_token|access_token|refresh_token|appsecret_proof)=[^&#\s]*", re.IGNORECASE)
 
 
 def redact_query(text: str) -> str:
@@ -124,11 +124,14 @@ def redact_query(text: str) -> str:
 
 
 class QueryRedactionFilter(logging.Filter):
-    """Blanks OAuth credentials in the request line of an access-log record (its args hold the path)."""
+    """Blanks OAuth credentials in the request line of an access-log record (its args hold the path), and (M73) in the
+    outbound HTTP client's request lines, whose URL arg is an object (httpx.URL), not a str."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple) and record.args:
-            record.args = tuple(redact_query(a) if isinstance(a, str) and "=" in a else a for a in record.args)
+            record.args = tuple(redact_query(a) if isinstance(a, str) and "=" in a
+                                else redact_query(str(a)) if not isinstance(a, (int, float)) and _SECRET_QUERY.search(str(a))
+                                else a for a in record.args)
         elif isinstance(record.msg, str) and "=" in record.msg and not record.args:
             record.msg = redact_query(record.msg)
         return True
@@ -136,9 +139,10 @@ class QueryRedactionFilter(logging.Filter):
 
 def install_access_log_redaction() -> None:
     """Idempotent: adds the filter to uvicorn's access logger once."""
-    access = logging.getLogger("uvicorn.access")
-    if not any(isinstance(f, QueryRedactionFilter) for f in access.filters):
-        access.addFilter(QueryRedactionFilter())
+    for name in ("uvicorn.access", "httpx", "httpcore"):     # M73: the client's lines too (Graph appsecret_proof)
+        target = logging.getLogger(name)
+        if not any(isinstance(f, QueryRedactionFilter) for f in target.filters):
+            target.addFilter(QueryRedactionFilter())
 
 
 def configure_logging(level: int = logging.INFO) -> None:

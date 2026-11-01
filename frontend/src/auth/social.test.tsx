@@ -81,7 +81,7 @@ describe("M73: the return from a provider", () => {
       kind: "error", provider: "facebook", message: "No account uses this Facebook email. Ask your organisation owner for an invite.",
     });
     for (const code of ["cancelled", "expired", "failed", "unverified", "no_account", "inactive", "locked", "wait",
-      "invite_invalid", "email_taken", "linked_elsewhere", "already_linked"]) {
+      "invite_invalid", "email_taken", "invite_email_mismatch", "linked_elsewhere", "already_linked"]) {
       expect(socialErrorMessage(code, "google")).toMatch(/^[A-Z][^_]+\.$/);
     }
     expect(socialErrorMessage("brand_new_code", "google")).toBe(socialErrorMessage("failed", "google"));

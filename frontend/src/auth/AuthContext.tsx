@@ -21,7 +21,10 @@ interface AuthState {
   /** M73 SL-2: a pending provider link confirmed with the account's password (and its two-factor code). */
   socialConfirmLink: (token: string, password: string, code?: string) => Promise<void>;
   /** M73 SL-3: a pending provider sign-up finished (an e-mail the provider did not give, the beta code, the terms). */
-  socialComplete: (token: string, body: { email?: string; invite_code?: string; legal_acceptance?: Record<string, LegalAckBody> }) => Promise<void>;
+  /** Resolves to the address a confirmation link was mailed to (nobody is signed in yet), or null when signed in. */
+  socialComplete: (token: string, body: { email?: string; invite_code?: string; legal_acceptance?: Record<string, LegalAckBody> }) => Promise<string | null>;
+  /** M73: the mailed confirmation link was opened - the account is made and signed in. */
+  socialVerify: (token: string) => Promise<void>;
   logout: () => void;
   /** Re-reads /auth/me (after email verification, scope changes, ...). */
   refreshUser: () => Promise<void>;
@@ -105,6 +108,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function socialComplete(token: string, body: { email?: string; invite_code?: string; legal_acceptance?: Record<string, LegalAckBody> }) {
     const response = await api.socialComplete(token, body);
+    if ("status" in response) return response.email;
+    setToken(response.access_token, response.refresh_token);
+    await signedIn(true);
+    return null;
+  }
+
+  async function socialVerify(token: string) {
+    const response = await api.socialVerify(token);
     setToken(response.access_token, response.refresh_token);
     await signedIn(true);
   }
@@ -120,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
-  return <AuthContext.Provider value={{ user, loading, login, completeMfaLogin, register, logout, acceptInvite, resetPassword, socialConfirmLink, socialComplete, refreshUser }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, login, completeMfaLogin, register, logout, acceptInvite, resetPassword, socialConfirmLink, socialComplete, socialVerify, refreshUser }}>{children}</AuthContext.Provider>;
 }
 
 /** The sign-in state, or null outside an AuthProvider (a card rendered on its own: a story, a test). */

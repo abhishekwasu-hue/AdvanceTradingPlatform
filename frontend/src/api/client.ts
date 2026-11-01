@@ -552,10 +552,15 @@ export const api = {
     request<SocialPendingInfo>("/auth/social/pending", { method: "POST", body: JSON.stringify({ token }) }),
   socialConfirmLink: (token: string, password: string, code?: string) =>
     request<TokenResponse>("/auth/social/link/confirm", { method: "POST", body: JSON.stringify({ token, password, code: code || undefined }) }),
+  // 202 { status: "check_email" } when the e-mail was typed here: the account is made only once the mailed link is opened.
   socialComplete: (token: string, body: { email?: string; invite_code?: string; legal_acceptance?: Record<string, LegalAckBody> }) =>
-    request<TokenResponse>("/auth/social/complete", { method: "POST", body: JSON.stringify({ token, ...body }) }),
+    request<TokenResponse | { status: "check_email"; email: string; sent: boolean }>("/auth/social/complete", { method: "POST", body: JSON.stringify({ token, ...body }) }),
   signInIdentities: () => request<SignInIdentities>("/auth/identities"),
-  socialLinkStart: (slug: string) => request<{ url: string }>(`/auth/${encodeURIComponent(slug)}/link`, { method: "POST" }),
+  socialVerify: (token: string) =>
+    request<TokenResponse>("/auth/social/verify", { method: "POST", body: JSON.stringify({ token }) }),
+  // M73 review 3: linking needs the account's password (and its authenticator code when two-factor is on).
+  socialLinkStart: (slug: string, password: string, code?: string) =>
+    request<{ url: string }>(`/auth/${encodeURIComponent(slug)}/link`, { method: "POST", body: JSON.stringify({ password, code: code || undefined }) }),
   socialUnlink: (provider: string) => request<void>(`/auth/identities/${encodeURIComponent(provider)}`, { method: "DELETE" }),
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
@@ -585,7 +590,7 @@ export const api = {
     request<{ detail: string }>("/auth/password/forgot", { method: "POST", body: JSON.stringify({ email }) }),
 
   resetInfo: (token: string) =>
-    request<{ email_hint: string; valid: boolean; reason: string | null }>(`/auth/password/reset/${encodeURIComponent(token)}`),
+    request<{ email_hint: string; valid: boolean; reason: string | null; linked?: string[] }>(`/auth/password/reset/${encodeURIComponent(token)}`),
 
   resetPassword: (token: string, password: string) =>
     request<TokenResponse>(`/auth/password/reset/${encodeURIComponent(token)}`, { method: "POST", body: JSON.stringify({ password }) }),

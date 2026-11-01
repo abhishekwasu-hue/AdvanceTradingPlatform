@@ -27,8 +27,9 @@ P_SIGN_IN_PROVIDERS = ("public: which sign-in provider buttons the sign-in page 
                        "ui_v2 layout switch; no data)")
 P_SOCIAL_SIGN_IN = ("public: sign-in providers (M73: Google, Facebook) - the signed per-provider state cookie and the provider's "
                     "own exchange are the credential (rate limited as /login; 404 until the credentials are set)")
-P_SOCIAL_PENDING = ("public: a pending provider step (M73) - the signed 10-minute step token in the body is the credential, and "
-                    "a link needs the account's own password and two-factor code (rate limited and locked out as /login)")
+P_SOCIAL_PENDING = ("public: a pending provider step (M73) - the signed, single-use step token in the body is the credential "
+                    "(10 minutes; the mailed confirmation link 24 hours), and a link needs the account's own password and "
+                    "two-factor code (rate limited and locked out as /login)")
 S_OWN_SIGN_IN_WAYS = ("self: the caller's own linked sign-in providers (M73 Settings › Account): start a link for the caller's own "
                       "account, or unlink one (refused when it is the last way to sign in)")
 P_PAYMENT_WEBHOOK = "public: payment provider webhook, verified by its signature"
@@ -370,6 +371,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/auth/social/pending"): P_SOCIAL_PENDING,
     ("POST", "/api/auth/social/link/confirm"): P_SOCIAL_PENDING,
     ("POST", "/api/auth/social/complete"): P_SOCIAL_PENDING,
+    ("POST", "/api/auth/social/verify"): P_SOCIAL_PENDING,
     ("GET", "/api/auth/identities"): "member",
     ("DELETE", "/api/auth/identities/{provider_id}"): S_OWN_SIGN_IN_WAYS,
     ("POST", "/api/auth/google/link"): S_OWN_SIGN_IN_WAYS,

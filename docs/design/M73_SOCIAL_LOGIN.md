@@ -9,7 +9,7 @@
 3. One sign-up / join path: `self_signup_account` and `join_by_invite` in `app/auth/routes.py` are used by the forms
    and by the providers (terms, beta gate, tenant + default plan, OWNER / SUPER_ADMIN role, activation step).
 4. Linking never silent: e-mail match -> pending link confirmed by password (+ two-factor code). Facebook without an
-   e-mail -> a finish step asks for it; the existing verification link confirms it.
+   e-mail -> a finish step asks for it; a mailed confirmation link must be opened before anything is created.
 5. Frontend: provider list at the top of Sign in / Create account / Join team + "or use email" (ui_v2), the link and
    finish steps (both layouts), Settings › Account "Ways to sign in" (ui_v2), admin health row.
 6. Tests SL-7 (backend fakes, vitest), the GS-1 suite kept green, screenshots, owner block.
@@ -39,9 +39,9 @@
   "Continue with Facebook", 48 px, then "or use email". Admin › System: "Sign-in providers" row (live / not set).
 - **SL-2** callback: linked identity -> sign in (two-factor step if on); e-mail of an account -> `#social_pending` link
   step, `POST /api/auth/social/link/confirm` (password, + code when two-factor is on; wrong password counts toward the
-  lockout); no e-mail (Facebook) -> finish step asks for one: a new address gets the account + the existing verification
-  link, an account's address becomes a link step (409 `link_required`). Settings › Account: `GET /api/auth/identities`,
-  `POST /api/auth/<slug>/link` (signed-in request sets the flow cookie - a link cannot be started from someone else's URL),
+  lockout); no e-mail (Facebook) -> finish step asks for one: a new address gets a mailed confirmation link and
+  the account only once it is opened (see "Security review fixes"), an account's address becomes a link step (409 `link_required`). Settings › Account: `GET /api/auth/identities`,
+  `POST /api/auth/<slug>/link` (password + code; the signed-in request sets the flow cookie - a link cannot be started from someone else's URL),
   `DELETE /api/auth/identities/<provider>` refused (409) when it is the last way to sign in.
 - **SL-3** new users: `self_signup_account` / `join_by_invite` (the same functions as `/register` and
   `/invite/<token>/accept`). What only a form collects (terms while `legal_pages`, a beta code while `beta_cohort_gate`,
@@ -52,6 +52,23 @@
 - **SL-5** behind `ui_v2` (platform-wide, read at /auth/providers): providers on top, 48 px inputs and buttons, no intro
   paragraph on Sign in / Create account, "Forgot password?" visible, plain-word errors. Without `ui_v2`: GS-1's page.
   Screenshots: `docs/design/M73_SIGNIN_COMPARE.html`.
+
+## Security review fixes (independent review of #832)
+1. **Facebook without an e-mail (blocker):** a typed address is never trusted. The finish step creates nothing and signs
+   nobody in: it mails a 24-hour, single-use confirmation link (`/account?social_verify=`); only `POST
+   /api/auth/social/verify` (the link opened) makes the account - same sign-up path, the terms / beta code given on the
+   finish step - and links the provider. A password reset and the e-mail verification link remove any provider linked
+   while the account's address was unverified (unless that provider verified this very address); audit
+   `social_unlink` "<provider> (password reset | email verified)".
+2. **Join team:** a provider signs into an invite only when it verified the invited address itself
+   (`invite_email_mismatch` otherwise).
+3. **Settings link:** `POST /api/auth/<slug>/link` needs the account's password (+ the authenticator code when on); an
+   account without a password sets one first. A SECURITY notification on every link to an existing account and every
+   unlink; the reset mail and the reset page name the linked providers.
+4. Pending steps are single use (their `jti` is spent on success) and so is a flow `state` (server-side, Redis + this
+   process).
+5. Graph `/me` carries `appsecret_proof` (HMAC-SHA256 of the token with the app secret); blanked in every log line.
+6. A hardened environment needs an absolute `FRONTEND_URL` (as `PUBLIC_BASE_URL`), else no provider is live.
 
 ## Extension points (M74 "Continue with your broker")
 - `social.Provider(kind="broker", id="broker:<name>", slug="broker-<name>", ...)` + `social_routes.add_provider(p)`

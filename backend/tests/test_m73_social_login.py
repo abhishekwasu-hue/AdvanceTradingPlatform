@@ -7,7 +7,7 @@ import base64
 import hashlib
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -48,9 +48,9 @@ class FakeProviders:
     start and refuses a token request whose verifier does not match it (what the real providers do)."""
 
     def __init__(self) -> None:
-        self.person: Dict[str, Any] = {"email": "nobody@example.com", "sub": "s-1", "fb_email": True}
-        self.challenge: Optional[str] = None
-        self.nonce: Optional[str] = None
+        self.person: dict[str, Any] = {"email": "nobody@example.com", "sub": "s-1", "fb_email": True}
+        self.challenge: str | None = None
+        self.nonce: str | None = None
         self.token_requests: list = []
         self.me_requests: list = []
 
@@ -122,8 +122,8 @@ def _start(slug: str, **params: str) -> tuple:
     return response, cookie, {k: v[0] for k, v in parse_qs(urlsplit(response.headers["location"]).query).items()}
 
 
-def _login(fake: FakeProviders, slug: str, *, email: Optional[str], sub: str, fb_email: bool = True,
-           state: Optional[str] = None, start: Optional[tuple] = None, **params: str) -> Dict[str, Any]:
+def _login(fake: FakeProviders, slug: str, *, email: str | None, sub: str, fb_email: bool = True,
+           state: str | None = None, start: tuple | None = None, **params: str) -> dict[str, Any]:
     """One full round trip: start (records the PKCE challenge / nonce at the fake), then the callback."""
     _, cookie, query = start or _start(slug, **params)
     fake.challenge = query["code_challenge"] if start is None else fake.challenge
@@ -139,12 +139,12 @@ def _login(fake: FakeProviders, slug: str, *, email: Optional[str], sub: str, fb
             "refresh": next((c for c in response.headers.get_list("set-cookie") if c.startswith("atp_refresh=")), None)}
 
 
-def _fragment(loc: Dict[str, Any], key: str) -> str:
+def _fragment(loc: dict[str, Any], key: str) -> str:
     assert loc["fragment"].startswith(f"{key}="), loc
     return loc["fragment"].split("=", 1)[1]
 
 
-def _user(email: str) -> Optional[User]:
+def _user(email: str) -> User | None:
     async def go():
         async with _session_factory() as session:
             return await session.scalar(select(User).where(User.email == email))
@@ -166,7 +166,18 @@ def _audit(user_id: int, event: str) -> list:
     return _run(go())
 
 
-def _bearer_from(refresh_cookie: str) -> Dict[str, str]:
+def _security_titles(user_id: int) -> list:
+    from app.db.models import NotificationRecord
+
+    async def go():
+        async with _session_factory() as session:
+            return [r.title for r in await session.scalars(select(NotificationRecord).where(
+                NotificationRecord.user_id == user_id, NotificationRecord.event_type == "SECURITY").order_by(NotificationRecord.id))
+                    if "linked" in r.title]
+    return _run(go())
+
+
+def _bearer_from(refresh_cookie: str) -> dict[str, str]:
     token = refresh_cookie.split(";", 1)[0].split("=", 1)[1]
     refreshed = client.post("/api/auth/refresh", json={"refresh_token": token})
     assert refreshed.status_code == 200, refreshed.text
@@ -342,13 +353,25 @@ def test_pending_tokens_are_signed_and_typed(fake):
 
 # --- Facebook without an e-mail -----------------------------------------------------------------------------------------
 
-def test_facebook_without_email_asks_for_one_and_sends_the_verification_link(fake, monkeypatch):
+def _mailbox(monkeypatch) -> list:
     sent: list = []
 
-    async def send_link(session, user, request):
-        sent.append(user.email)
-        return {"sent": True}
-    monkeypatch.setattr(auth_routes.verification, "send_link", send_link)
+    async def send(to, subject, body, headers=None):
+        sent.append({"to": to, "subject": subject, "body": body})
+        return True
+    from app.notifications import mailer
+    monkeypatch.setattr(mailer, "send", send)
+    return sent
+
+
+def _verify_token(mail: dict) -> str:
+    link = next(w for w in mail["body"].split() if "social_verify=" in w)
+    return parse_qs(urlsplit(link).query)["social_verify"][0]
+
+
+def test_facebook_without_email_creates_nothing_until_the_mailed_link_is_opened(fake, monkeypatch):
+    """Review blocker 1: a typed address is not trusted - no account, no session, no link until its inbox confirms."""
+    mails = _mailbox(monkeypatch)
     loc = _login(fake, "facebook", email=None, sub="fb-no-email", fb_email=False)
     assert loc["query"] == {"social": "complete", "provider": "facebook"} and loc["refresh"] is None
     token = _fragment(loc, "social_pending")
@@ -356,13 +379,88 @@ def test_facebook_without_email_asks_for_one_and_sends_the_verification_link(fak
     assert info["needs_email"] is True and info["email"] is None and info["kind"] == "signup"
     missing = client.post("/api/auth/social/complete", json={"token": token})
     assert missing.status_code == 400 and "email_required" in missing.text
-    done = client.post("/api/auth/social/complete", json={"token": token, "email": "m73-typed@example.com"})
+    answer = client.post("/api/auth/social/complete", json={"token": token, "email": "m73-typed@example.com"})
+    assert answer.status_code == 202 and answer.json()["status"] == "check_email"
+    assert "access_token" not in answer.text and "atp_refresh" not in answer.headers.get("set-cookie", "")
+    assert _user("m73-typed@example.com") is None                                    # nothing exists yet
+    assert [m["to"] for m in mails] == ["m73-typed@example.com"]
+    # The finish step is spent: it cannot mail again or be replayed.
+    assert client.post("/api/auth/social/complete", json={"token": token, "email": "m73-other@example.com"}).status_code == 400
+    # Before the link is opened the Facebook account signs nobody in.
+    assert _login(fake, "facebook", email=None, sub="fb-no-email", fb_email=False)["query"]["social"] == "complete"
+    verify = _verify_token(mails[0])
+    done = client.post("/api/auth/social/verify", json={"token": verify})
     assert done.status_code == 201 and done.json()["access_token"]
     user = _user("m73-typed@example.com")
-    assert user.email_verified_at is None and sent == ["m73-typed@example.com"]     # verified by the existing link mail
-    assert [(r.provider, r.subject, r.email_at_link) for r in _identities(user.id)] == [("facebook", "fb-no-email", None)]
-    # The same Facebook account now signs in directly.
+    assert user.email_verified_at is not None                                         # the link proved the inbox
+    assert [(r.provider, r.subject, r.email_at_link) for r in _identities(user.id)] == [("facebook", "fb-no-email", "m73-typed@example.com")]
+    assert client.post("/api/auth/social/verify", json={"token": verify}).status_code == 400   # single use
     assert _login(fake, "facebook", email=None, sub="fb-no-email", fb_email=False)["query"] == {"social": "ok", "provider": "facebook"}
+
+
+def test_a_confirmation_link_for_an_address_taken_meanwhile_makes_nothing(fake, monkeypatch):
+    mails = _mailbox(monkeypatch)
+    token = _fragment(_login(fake, "facebook", email=None, sub="fb-raced", fb_email=False), "social_pending")
+    assert client.post("/api/auth/social/complete", json={"token": token, "email": "m73-raced@example.com"}).status_code == 202
+    _register("m73-raced@example.com")                                                # the real owner signs up first
+    answer = client.post("/api/auth/social/verify", json={"token": _verify_token(mails[0])})
+    assert answer.status_code == 409 and _identities(_user("m73-raced@example.com").id) == []
+
+
+def test_password_reset_removes_a_provider_linked_while_the_email_was_unverified(fake, monkeypatch):
+    """Review blocker 1, the old shape of the attack: an account on someone else's address with an attacker's provider
+    linked before the address was verified. The real owner's reset removes that link."""
+    email = "m73-victim@example.com"
+    bearer = {"Authorization": f"Bearer {_register(email)}"}                          # unverified address
+    user = _user(email)
+
+    async def plant():
+        async with _session_factory() as session:
+            session.add(UserIdentityRecord(user_id=user.id, provider="facebook", subject="fb-attacker", email_at_link=None))
+            await session.commit()
+    _run(plant())
+    assert [i["provider"] for i in client.get("/api/auth/identities", headers=bearer).json()["identities"]] == ["facebook"]
+    mails = _mailbox(monkeypatch)
+    assert client.post("/api/auth/password/forgot", json={"email": email}).status_code == 202
+    link = next(w for w in mails[-1]["body"].split() if "reset=" in w)
+    token = parse_qs(urlsplit(link).query)["reset"][0]
+    assert "This account can also sign in with: Facebook." in mails[-1]["body"]
+    info = client.get(f"/api/auth/password/reset/{token}").json()
+    assert info["linked"] == ["Facebook"]                                             # the reset page names it
+    assert client.post(f"/api/auth/password/reset/{token}", json={"password": "An0ther-Str0ng-Pass"}).status_code == 200
+    assert _identities(user.id) == []
+    assert _audit(user.id, "social_unlink") == ["facebook (password reset)"]
+    loc = _login(fake, "facebook", email=None, sub="fb-attacker", fb_email=False)
+    assert loc["refresh"] is None and loc["query"]["social"] == "complete"            # it signs nobody in any more
+
+
+def test_email_verification_removes_a_provider_linked_before_it(fake):
+    email = "m73-verify-drop@example.com"
+    _register(email)
+    user = _user(email)
+
+    async def plant_and_issue():
+        async with _session_factory() as session:
+            session.add(UserIdentityRecord(user_id=user.id, provider="facebook", subject="fb-early", email_at_link=None))
+            session.add(UserIdentityRecord(user_id=user.id, provider="google", subject="g-same", email_at_link=email))
+            row = await session.get(User, user.id)
+            from app.auth import verification
+            token, _ = await verification.issue(session, row)
+            await session.commit()
+            return token
+    token = _run(plant_and_issue())
+    assert client.post(f"/api/auth/verify-email/{token}").status_code == 200
+    # Facebook (no proven address) goes; Google, which verified this very address itself, stays.
+    assert [r.provider for r in _identities(user.id)] == ["google"]
+    assert _audit(user.id, "social_unlink") == ["facebook (email verified)"]
+
+
+def test_the_reset_mail_names_the_linked_providers(fake, monkeypatch):
+    mails = _mailbox(monkeypatch)
+    email = "m73-reset-mail@example.com"
+    _login(fake, "google", email=email, sub="g-reset-mail")
+    assert client.post("/api/auth/password/forgot", json={"email": email}).status_code == 202
+    assert mails and "This account can also sign in with: Google." in mails[-1]["body"]
 
 
 def test_facebook_without_email_typing_an_existing_accounts_email_links_with_its_password(fake):
@@ -374,6 +472,7 @@ def test_facebook_without_email_typing_an_existing_accounts_email_links_with_its
     link = answer.json()["detail"]["token"]
     assert client.post("/api/auth/social/link/confirm", json={"token": link, "password": "wrong-password"}).status_code == 401
     assert client.post("/api/auth/social/link/confirm", json={"token": link, "password": PASSWORD}).status_code == 200
+    assert client.post("/api/auth/social/link/confirm", json={"token": link, "password": PASSWORD}).status_code == 400  # spent
     assert [r.provider for r in _identities(_user(email).id)] == ["facebook"]
 
 
@@ -438,6 +537,27 @@ def test_join_team_with_google_uses_the_invite(fake):
     assert client.get(f"/api/auth/invite/{token}").json()["valid"] is False         # the invite is used up
 
 
+def test_join_team_needs_the_invited_email_at_the_provider(fake):
+    owner = _register("m73-owner-2@example.com")
+    from app.db.models import Tenant
+
+    async def pro_plan():
+        async with _session_factory() as session:
+            user = await session.scalar(select(User).where(User.email == "m73-owner-2@example.com"))
+            (await session.get(Tenant, user.tenant_id)).plan = "pro"
+            await session.commit()
+    _run(pro_plan())
+    invite = client.post("/api/team/invites", headers={"Authorization": f"Bearer {owner}"},
+                         json={"email": "m73-invited@example.com", "role": "USER"})
+    token = parse_qs(urlsplit(invite.json()["invite_url"]).query)["invite"][0]
+    other = _login(fake, "google", email="m73-someone-else@example.com", sub="g-else", intent="invite", invite=token)
+    assert other["query"] == {"social_error": "invite_email_mismatch", "provider": "google"} and other["refresh"] is None
+    no_email = _login(fake, "facebook", email=None, sub="fb-invite", fb_email=False, intent="invite", invite=token)
+    assert no_email["query"] == {"social_error": "invite_email_mismatch", "provider": "facebook"}
+    assert _user("m73-someone-else@example.com") is None and _user("m73-invited@example.com") is None
+    assert client.get(f"/api/auth/invite/{token}").json()["valid"] is True               # the invite is still open
+
+
 # --- Settings › Account -------------------------------------------------------------------------------------------------
 
 def test_link_from_settings_then_unlink(fake):
@@ -446,8 +566,10 @@ def test_link_from_settings_then_unlink(fake):
     listing = client.get("/api/auth/identities", headers=bearer).json()
     assert listing["has_password"] is True and listing["identities"] == []
     assert [(p["id"], p["slug"]) for p in listing["available"]] == [("google", "google"), ("facebook", "facebook")]
-    assert client.post("/api/auth/google/link").status_code == 401                  # signed in only
-    started = client.post("/api/auth/google/link", headers=bearer)
+    assert client.post("/api/auth/google/link", json={"password": PASSWORD}).status_code == 401   # signed in only
+    wrong = client.post("/api/auth/google/link", headers=bearer, json={"password": "not-the-password"})
+    assert wrong.status_code == 401 and "atp_google_flow" not in wrong.headers.get("set-cookie", "")   # review 3
+    started = client.post("/api/auth/google/link", headers=bearer, json={"password": PASSWORD})
     assert started.status_code == 200 and started.json()["url"].startswith(google.AUTHORIZATION_URL)
     cookie = started.cookies.get("atp_google_flow")
     q = {k: v[0] for k, v in parse_qs(urlsplit(started.json()["url"]).query).items()}
@@ -461,13 +583,15 @@ def test_link_from_settings_then_unlink(fake):
     assert [(i["provider"], i["email"]) for i in listing["identities"]] == [("google", "another-address@example.com")]
     assert client.delete("/api/auth/identities/google", headers=bearer).status_code == 204   # the password remains
     assert _audit(_user(email).id, "social_unlink") == ["google"]
+    assert _security_titles(_user(email).id) == ["Google was linked to sign in to your account",
+                                                 "Google was unlinked from your account"]
     assert client.delete("/api/auth/identities/google", headers=bearer).status_code == 404
 
 
 def test_a_provider_account_linked_elsewhere_is_refused(fake):
     _login(fake, "google", email="m73-first-owner@example.com", sub="g-taken")
     bearer = {"Authorization": f"Bearer {_register('m73-second@example.com')}"}
-    started = client.post("/api/auth/google/link", headers=bearer)
+    started = client.post("/api/auth/google/link", headers=bearer, json={"password": PASSWORD})
     q = {k: v[0] for k, v in parse_qs(urlsplit(started.json()["url"]).query).items()}
     fake.challenge, fake.nonce = q["code_challenge"], q["nonce"]
     fake.person = {"email": "m73-first-owner@example.com", "sub": "g-taken", "fb_email": True}
@@ -543,3 +667,36 @@ def test_admin_health_lists_which_providers_are_live(fake, monkeypatch):
     rows = sign_in_providers()
     assert [(r["id"], r["live"]) for r in rows] == [("google", True), ("facebook", False)]
     assert FB_ID not in str(rows) and G_SECRET not in str(rows) and G_ID not in str(rows)
+
+
+def test_a_state_is_spent_once_server_side(fake):
+    """Review nit 4: replaying the callback with the same cookie and state is refused before any exchange."""
+    _, cookie, q = _start("facebook")
+    fake.challenge, fake.nonce = q["code_challenge"], None
+    fake.person = {"email": "m73-once@example.com", "sub": "fb-once", "fb_email": True}
+    query = {"state": q["state"], "code": AUTH_CODE}
+    first = client.get("/api/auth/facebook/callback", params=query, headers={"cookie": f"atp_facebook_flow={cookie}"}, follow_redirects=False)
+    assert parse_qs(urlsplit(first.headers["location"]).query)["social"] == ["new"]
+    exchanges = len(fake.token_requests)
+    client.cookies.clear()
+    again = client.get("/api/auth/facebook/callback", params=query, headers={"cookie": f"atp_facebook_flow={cookie}"}, follow_redirects=False)
+    assert parse_qs(urlsplit(again.headers["location"]).query)["social_error"] == ["expired"]
+    assert len(fake.token_requests) == exchanges
+
+
+def test_graph_me_carries_the_appsecret_proof_and_no_log_line_shows_it(fake, caplog):
+    import hmac as _hmac
+    caplog.set_level(logging.DEBUG)
+    _login(fake, "facebook", email="m73-proof@example.com", sub="fb-proof")
+    proof = _hmac.new(FB_SECRET.encode(), FB_ACCESS_TOKEN.encode(), hashlib.sha256).hexdigest()
+    assert parse_qs(urlsplit(fake.me_requests[-1]["url"]).query)["appsecret_proof"] == [proof]
+    assert proof not in caplog.text
+
+
+def test_a_relative_frontend_url_keeps_providers_off_in_production(fake, monkeypatch):
+    monkeypatch.setattr(config, "ENVIRONMENT", "production")
+    monkeypatch.setattr(config, "FRONTEND_URL", "/")
+    assert client.get("/api/auth/providers").json()["providers"] == []
+    assert client.get("/api/auth/google/start", follow_redirects=False).status_code == 404
+    monkeypatch.setattr(config, "FRONTEND_URL", PUBLIC)
+    assert [p["id"] for p in client.get("/api/auth/providers").json()["providers"]] == ["google", "facebook"]

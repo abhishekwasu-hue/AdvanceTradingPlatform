@@ -19,7 +19,7 @@ from app.market_data import hub as data_hub
 from app.market_data.calendar import IST
 from app.market_store import models as M
 from app.market_store import reader as R
-from app.option_chain import analyses_routes, as_of, chain_reads
+from app.option_chain import analyses_routes, as_of, chain_reads, charts_routes
 from tests.test_amw2_watchlists import _set_flag
 from tests.test_auth_api import _session_factory, client
 from tests.test_m71_pl3_read_service import DAY, Spy, _clear, _minutes, _store_minutes
@@ -220,6 +220,31 @@ def test_charts_page_reads_the_same_way(monkeypatch):
     busy = client.get(CHARTS, headers=headers, params={"symbol": name}).json()
     assert busy["state"] == "ok" and busy["snapshot"]["reason"] == "busy" and busy["data_as_of"] == busy["snapshot"]["captured_at"]
 
+
+
+def _chart_numbers(body):
+    """Everything the charts answer shows, without the request's own clock read and the earlier chain's age."""
+    return {k: v for k, v in body.items() if k not in ("generated_at", "snapshot")}
+
+
+def test_charts_value_an_earlier_chain_at_its_own_capture_time_not_the_later_request(monkeypatch):
+    """No look-ahead (as the analyses): a busy broker's earlier chain is charted (days to expiry, IV, the session's last
+    point) at the instant it was read, so 10 minutes later the charts show the earlier answer's numbers exactly."""
+    monkeypatch.setattr(data_hub, "CHAIN_SNAPSHOT_SECONDS", 0)
+    first_at = datetime.now(UTC)
+    clock = iter([first_at, first_at + timedelta(minutes=10)])
+    monkeypatch.setattr(charts_routes, "request_time", lambda: next(clock))
+    name = _name()
+    broker = _ChainBroker({name: _chain(name)})
+    _install(monkeypatch, broker)
+    headers, _ = _owner("charts-asof", store=True)
+    first = client.get(CHARTS, headers=headers, params={"symbol": name}).json()
+    broker.chains[name] = BrokerAPIError("Too Many Requests", status_code=429)
+    busy = client.get(CHARTS, headers=headers, params={"symbol": name}).json()
+    assert first["state"] == "ok" and busy["state"] == "ok" and busy["snapshot"]["reason"] == "busy"
+    assert busy["snapshot"]["captured_at"] == first_at.isoformat()
+    assert busy["generated_at"] == (first_at + timedelta(minutes=10)).isoformat()
+    assert _chart_numbers(busy) == _chart_numbers(first)
 
 # --- the chain read itself (no route) ------------------------------------------------------------------------------------
 

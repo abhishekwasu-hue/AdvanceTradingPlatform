@@ -951,8 +951,10 @@ def _size_check(answer: Answer, risk: ToolResult, straddle: Optional[Dict[str, A
     _calc(answer, "risk_budget", "Your risk per trade = capital x risk per trade %", {"capital": capital, "risk_per_trade_pct": pct},
           {"risk_per_trade": budget})
     lines = [f"Your own risk per trade is {_f(budget)} ({_f(pct)}% of your capital of {_f(capital)})."]
-    lot_size = int(risk.data.get("lot_size") or 1)
-    if lots and straddle and straddle.get("call") is not None and straddle.get("put") is not None:
+    lot_size = _own_lot_size(risk.data)
+    if lots and lot_size is None:                       # M68: never an assumed lot size of 1
+        lines.append(_lots_unpriced(lots))
+    elif lots and lot_size and straddle and straddle.get("call") is not None and straddle.get("put") is not None:
         call_risk, put_risk = round(lots * lot_size * float(straddle["call"]), 2), round(lots * lot_size * float(straddle["put"]), 2)
         _calc(answer, "premium_at_risk", "Premium at risk = lots x lot size x option price (ATM)",
               {"lots": lots, "lot_size": lot_size, "atm_call": straddle["call"], "atm_put": straddle["put"]},
@@ -1042,6 +1044,22 @@ def _own_risk(risk: ToolResult) -> Optional[Dict[str, Any]]:
 
 NO_RISK_SETTINGS = ("I don't know your own risk settings: you have not saved them yet. Set them on the Risk limits page and I will "
                     "check against them.")
+LOT_SIZE_NOT_KNOWN = "lot size not known"
+
+
+def _own_lot_size(settings: Dict[str, Any]) -> Optional[int]:
+    """M68 (no pre-chosen trading values): the lot size from the user's OWN settings, or None when it is not set - never
+    an assumed 1."""
+    try:
+        size = int(float(settings.get("lot_size") or 0))
+    except (TypeError, ValueError):
+        return None
+    return size if size > 0 else None
+
+
+def _lots_unpriced(lots: int) -> str:
+    return (f"{lots} {'lot' if lots == 1 else 'lots'}: {LOT_SIZE_NOT_KNOWN}, so I can't work out what this size puts at risk. "
+            "Set your lot size on the Risk limits page.")
 
 
 def _events_this_week(ctx: ToolResult) -> Optional[List[Dict[str, Any]]]:
@@ -1268,8 +1286,10 @@ async def trade_check(answer: Answer, run: Runner, message: str) -> None:
         _calc(answer, "risk_budget", "Your risk per trade = capital x risk per trade %", {"capital": capital, "risk_per_trade_pct": pct},
               {"risk_per_trade": budget})
         lines = [f"Your own risk per trade is {_f(budget)} ({_f(pct)}% of your capital of {_f(capital)})."]
-        lot_size = int(own.get("lot_size") or 1)
-        qty = idea.lots * lot_size if idea.lots else idea.shares
+        lot_size = _own_lot_size(own)                   # M68: None when not set - never an assumed 1
+        qty = (idea.lots * lot_size if lot_size else None) if idea.lots else idea.shares
+        if idea.lots and lot_size is None:
+            lines.append(_lots_unpriced(idea.lots))
         if idea.entry and idea.invalidation and qty:
             per_unit = round(abs(idea.entry - idea.invalidation), 2)
             amount = round(per_unit * qty, 2)

@@ -55,7 +55,7 @@ from app.observability.metrics import ORDERS
 from app.paper import paper_settings
 from app.platform.controls import clamp_config, risk_ceilings
 from app.reconciliation.service import mark_broker_uncertain
-from app.risk_engine import by_default
+from app.risk_engine import by_default, paper_nr
 from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
 from app.risk_engine.hierarchy import RiskContext
 from app.risk_engine.hierarchy import evaluate as evaluate_hierarchy
@@ -277,8 +277,9 @@ async def execute_structure(
     hold_margin: float | None = None
     if held and execution_mode == ExecutionMode.PAPER:
         # M55 T1: the margin a spread held overnight blocks, checked at entry (LIVE: the broker's margin above, NRML).
+        # PAPER-NR: a short practice balance never refuses a PAPER entry - the note is the margin vs free balance line.
         refusal, note, hold_margin = await _hold_margin_refusal(session, user, structure, premiums, lots, metrics=metrics,
-                                                                price_source=price_source)
+                                                                price_source=price_source, advisory=paper_nr.advisory(mode))
         if refusal:
             reasons = notes + [refusal]
             await _reject_all(session, orders, reasons)
@@ -590,15 +591,17 @@ async def _held_margin_blocked(session: AsyncSession, user: User) -> float:
 
 
 async def _hold_margin_refusal(session: AsyncSession, user: User, structure: ResolvedStructure, premiums: dict[str, float],
-                               lots: int, *, metrics: StructureMetrics, price_source: BrokerInterface | None
-                               ) -> tuple[str | None, str, float | None]:
+                               lots: int, *, metrics: StructureMetrics, price_source: BrokerInterface | None,
+                               advisory: bool = False) -> tuple[str | None, str, float | None]:
     """M55 T1: a PAPER spread held for days blocks its margin overnight, so it is checked at entry: ATP's labelled
     estimate (`fno_basket.hedge_margin`, the defined max loss) against his practice balance less what his other held
     spreads block. M68 PR-5 (TS1-041): a written straddle / strangle held by his switch has no defined max loss, so its
     margin is the option backtest's span_like rule (`option_structure_margin`: the short legs' underlying notional x the
     short-option %), the underlying quoted from the same price source as the legs. No broker is built here (Rule 0:
     execute_structure never obtains a broker itself; LIVE is checked by the broker's own margin in `_live_lot_cap`).
-    (refusal or None, note, the margin it blocks or None)."""
+    (refusal or None, note, the margin it blocks or None). `advisory` (PAPER-NR): the balance being short (or the margin
+    not worked out) is never a refusal - the note is the margin vs free balance line, below zero included. M68 PR-7: his
+    capital Not set is still refused first, ahead of the advisory branch (no balance to measure against)."""
     from app.execution import smart_execution
     from app.paper import fno_basket
     builder = [{"direction": "SELL" if leg.role == "SHORT" else "BUY", "option_type": leg.contract.right,
@@ -617,6 +620,8 @@ async def _hold_margin_refusal(session: AsyncSession, user: User, structure: Res
                                                             "short-option % (the option backtest's span_like margin)."}}
     free = balance - await _held_margin_blocked(session, user)
     view = smart_execution.margin_view(None, estimate, free, free_source="practice")
+    if advisory and (view.required is None or view.free_after is None or view.free_after < 0):
+        return None, paper_nr.margin_info(view.required, free), view.required
     if view.required is None:
         return "Not entered: the margin to hold this spread for days could not be worked out, so it is not held", "", None
     if view.free_after is None or view.free_after < 0:

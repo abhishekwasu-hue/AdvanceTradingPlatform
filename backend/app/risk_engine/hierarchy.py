@@ -28,6 +28,7 @@ from app.core.enums import KillSwitchScope, NotificationSeverity, NotificationTy
 from app.db.models import RiskEventRecord, RiskLimitRecord, TradeRecord, User
 from app.kill_switch.checks import engage
 from app.notifications.service import notify
+from app.risk_engine import paper_nr
 from app.trading.trade_split import not_a_split
 
 logger = logging.getLogger(__name__)
@@ -246,7 +247,8 @@ async def evaluate(session: AsyncSession, ctx: RiskContext, *, user: Optional[Us
 
     # Consequences: stop the strategy / the tenant so the next signal is refused at the door.
     for check in verdict.checks:
-        if check.status != "BLOCK" or user is None:
+        # PAPER-NR (4): a PAPER block refuses the order but never engages a STRATEGY / TENANT kill switch.
+        if check.status != "BLOCK" or user is None or not paper_nr.engages_kill_switch(ctx.mode):
             continue
         limit_type = RiskLimitType(check.rule.limit_type)
         try:

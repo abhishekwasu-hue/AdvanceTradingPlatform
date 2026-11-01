@@ -439,7 +439,8 @@ def test_the_blocked_margin_counts_a_held_straddle_with_the_same_number(monkeypa
         return required * 1.5          # room for one held straddle, not for two
     monkeypatch.setattr(fno_basket, "practice_balance", balance)
     second = _execute(t, holding="SWING", key=f"m68-b2-{uuid.uuid4().hex[:8]}", strategy=OptionStrategy.SHORT_STRADDLE, stop=100)
-    assert not second.executed and any("not enough margin" in r for r in second.reasons)
+    # PAPER-NR (owner, 1 Nov): the first straddle's margin still counts; the shortfall is information, not a refusal
+    assert second.executed and any(r.startswith("Practice margin: needs") and "below zero - practice only" in r for r in second.reasons)
 
 
 def test_a_held_straddle_is_kept_at_the_close_and_still_exits_by_his_own_stop(monkeypatch):

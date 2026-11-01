@@ -11,7 +11,7 @@ from app.compliance import fo_limits
 from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OptionPosition, OrderSide, OrderStatus, SignalDirection
 from app.core.logging_config import bind_log_context, update_log_context
-from app.core.models import RiskConfig, Signal
+from app.core.models import RiskConfig, Signal, Trade
 from app.db.models import OrderRecord, Tenant, User
 from app.execution import approval as approval_gate
 from app.execution import order_defaults, position_size
@@ -31,6 +31,7 @@ from app.plans.limits import live_allowed_for, tenant_is_active
 from app.platform.controls import clamp_config, risk_ceilings
 from app.platform.controls import entry_blocks as platform_entry_blocks
 from app.reconciliation.service import broker_uncertain_reason, mark_broker_uncertain
+from app.risk_engine import paper_nr
 from app.risk_engine.by_default import releases_unused_entry_slot as by_default_releases_slot
 from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
 from app.risk_engine.hierarchy import RiskContext
@@ -81,6 +82,32 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
         if uncertain:
             reasons.append(uncertain)
     return reasons
+
+
+def _entry_money(*, kind: str | None, written: bool, direction: object, price: float | None, quantity: float) -> float | None:
+    """The money a PAPER entry ties up where it is a plain fact: the premium of a bought option, the value of a cash buy.
+    None for a future, a sold option or a short (their margin is the broker's SPAN / exposure - never made up)."""
+    side = str(getattr(direction, "value", direction) or "").upper()
+    if price is None or quantity <= 0 or written or (kind or "").upper() == "FUTURE" or side != "LONG":
+        return None
+    return round(float(price) * float(quantity), 2)
+
+
+async def _practice_margin_line(session: AsyncSession, user: User, trade: Trade, contract: ResolvedContract | None,
+                                meta: dict | None) -> str:
+    """PAPER-NR (2): one information line for a placed PAPER entry - what it ties up against the practice balance.
+    Never raises and never refuses."""
+    try:
+        from app.paper.fno_basket import practice_balance
+        free = await practice_balance(session, user)
+    except Exception as exc:  # noqa: BLE001 - an information line never stands in the way of the entry
+        logger.info("Practice margin line not built (%s)", type(exc).__name__)
+        return "Practice margin: the practice balance could not be read"
+    kind = contract.kind.value if contract is not None else (meta or {}).get("instrument_kind")
+    written = (contract is not None and contract.position == OptionPosition.WRITE) or (meta or {}).get("option_position") == "WRITE"
+    needed = _entry_money(kind=kind, written=bool(written), direction=trade.direction, price=trade.entry_price,
+                          quantity=float(trade.quantity or 0.0))
+    return paper_nr.margin_info(needed, free)
 
 
 async def _bot_lots(session: AsyncSession, deployment_id: int | None) -> int | None:
@@ -447,6 +474,9 @@ async def execute_signal_for_user(
             result.reasons = plan.notes + result.reasons
         if pre_notes:
             result.reasons = pre_notes + result.reasons
+        if result.executed and result.trade is not None and paper_nr.advisory(mode):
+            # PAPER-NR (2): the money this entry ties up against the practice balance (which may go below zero) - information.
+            result.reasons = result.reasons + [await _practice_margin_line(session, user, result.trade, contract, manual_contract_meta)]
 
         order.reasons_json = json.dumps(result.reasons)
         order.algo_tag = result.algo_tag

@@ -2127,6 +2127,10 @@ export interface VerificationSendResult {
 }
 
 export type FlagStatus = "ready" | "behind_the_scenes" | "unfinished" | "decision";
+/** M80: the re-audited state of a flag (backend app/platform/flag_state.py). */
+export type FlagState = "ready" | "behind_the_scenes" | "needs_setup" | "not_built" | "decision";
+/** M80 F3: one live check of this server's own state (admin only): AI key, broker, private package, Telegram. */
+export interface FlagCheck { id: string; label: string; ok: boolean }
 
 export interface FeatureFlag {
   on: boolean;
@@ -2144,6 +2148,14 @@ export interface FeatureFlag {
   needs?: string;
   status?: FlagStatus;
   status_label?: string;
+  /** M80: the truthful state - the chip, then the reason (or the setup item), then where to do it; `checks` are live. */
+  state?: FlagState;
+  state_label?: string;
+  state_reason?: string;
+  state_where?: string;
+  state_order?: string;
+  probes?: string[];
+  checks?: FlagCheck[];
   /** P2-1: finish | keep_off | removed_from_view, with a one-line note (admin only). */
   fate?: "finish" | "keep_off" | "removed_from_view";
   fate_note?: string;

@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from typing import Dict, Literal, NamedTuple, Tuple
 
+from app.platform import flag_state
+
 FlagStatus = Literal["ready", "behind_the_scenes", "unfinished", "decision"]
 FlagArea = Literal["trading", "charts", "screens", "ai", "data", "platform"]
 
@@ -394,13 +396,15 @@ def fate_for(name: str) -> Dict[str, str]:
 
 
 def info_for(name: str) -> Dict[str, object]:
-    """The admin list's fields for one flag (a flag missing here reads as unfinished, in Accounts and platform)."""
+    """The admin list's fields for one flag (a flag missing here reads as unfinished, in Accounts and platform). M80: plus
+    the re-audited `state` / `state_label` / `state_reason` / `state_where` / `state_order` / `probes`
+    (app/platform/flag_state.py); `status` / `status_label` stay the 22 Oct audit label for their existing readers."""
     info = FLAG_INFO.get(name) or FlagInfo(name, "platform", "", (), "", "unfinished")
     return {"plain": info.plain, "area": info.area, "area_label": AREAS[info.area],
             "group": FLAG_GROUP.get(name, info.area), "group_label": GROUPS.get(FLAG_GROUP.get(name, ""), AREAS[info.area]),
             "turns_on": info.turns_on,
             "depends_on": list(info.depends_on), "needs": info.needs, "status": info.status,
-            "status_label": STATUSES[info.status], **fate_for(name)}
+            "status_label": STATUSES[info.status], **fate_for(name), **flag_state.fields_for(name)}
 
 
 __all__ = ["AREAS", "FINISH", "FLAG_GROUP", "FLAG_INFO", "GROUPS", "KEEP_OFF", "REMOVED_FROM_VIEW", "STATUSES", "FlagInfo", "fate_for", "info_for"]

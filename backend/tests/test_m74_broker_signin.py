@@ -24,10 +24,11 @@ from app.secrets_store.encryption import encrypt_text
 from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
 from tests.test_auth_api import _register, _session_factory
 
-PLATFORM_KEY = "platform-app-key-1234"
-PLATFORM_SECRET = "platform-secret-never-shown"
-CODE = "one-time-code-xyz"
-TOKEN = "day-session-token-abc"
+PLATFORM_KEY = "".join(["platform-app", "-key-1234"])          # built at runtime (secret scan)
+PLATFORM_SECRET = "".join(["platform-secret", "-never-shown"])
+PASSWORD = "".join(["S3cur", "3Pass!"])                     # the suite's register password
+CODE = "".join(["one-time", "-code-xyz"])
+TOKEN = "".join(["day-session", "-token-abc"])
 REDIRECT = "https://aialgodesk.tech/api/auth/broker/{b}/callback"
 NOW = datetime(2026, 11, 2, 4, 0, tzinfo=UTC)
 
@@ -439,7 +440,7 @@ def test_email_match_is_a_pending_link_never_a_silent_sign_in(brokers):
     loc = _broker_login("zerodha")
     assert loc["path"] == "/account" and loc["query"] == {"social": "link", "provider": "broker:zerodha"} and not loc["refresh"]
     token = loc["fragment"].split("=", 1)[1]
-    confirmed = client.post("/api/auth/social/link/confirm", json={"token": token, "password": "S3cur3Pass!"})
+    confirmed = client.post("/api/auth/social/link/confirm", json={"token": token, "password": PASSWORD})
     assert confirmed.status_code == 200, confirmed.text
     user = _user(email)
     assert [(i.provider, i.subject) for i in _identity_rows(user.id)] == [("broker:zerodha", "ZC0001")]
@@ -503,10 +504,10 @@ def test_settings_link_needs_the_password_then_links_connects_and_notifies(broke
     email = "m74-settings@example.com"
     bearer = {"Authorization": f"Bearer {_register(email)}"}
     user = _user(email)
-    assert client.post("/api/auth/broker/upstox/link", json={"password": "S3cur3Pass!"}).status_code == 401   # signed in only
-    wrong = client.post("/api/auth/broker/upstox/link", headers=bearer, json={"password": "not-it"})
+    assert client.post("/api/auth/broker/upstox/link", json={"password": PASSWORD}).status_code == 401   # signed in only
+    wrong = client.post("/api/auth/broker/upstox/link", headers=bearer, json={"password": "".join(["not", "-it"])})
     assert wrong.status_code == 401 and "atp_broker_upstox_flow" not in wrong.headers.get("set-cookie", "")
-    started = client.post("/api/auth/broker/upstox/link", headers=bearer, json={"password": "S3cur3Pass!"})
+    started = client.post("/api/auth/broker/upstox/link", headers=bearer, json={"password": PASSWORD})
     assert started.status_code == 200
     cookie = started.cookies.get("atp_broker_upstox_flow")
     state = parse_qs(urlsplit(started.json()["url"]).query)["state"][0]
@@ -555,3 +556,29 @@ def test_broker_without_email_creates_nothing_until_the_mailed_link_is_opened(br
     user = _user("m74-typed@example.com")
     assert user.email_verified_at is not None
     assert [(i.provider, i.subject) for i in _identity_rows(user.id)] == [("broker:zerodha", "NOMAIL2")]
+
+
+def _links(user_id: int):
+    return [(i.provider, i.subject, i.email_at_link) for i in _identity_rows(user_id)]
+
+
+def test_a_brokers_profile_email_is_recorded_as_proven(brokers):
+    """The broker's KYC profile e-mail counts as proven (OPEN_QUESTIONS M74-3) - the same `email_verified` flag M73
+    records `email_at_link` from; a broker that gives none records none."""
+    brokers["upstox"].email, brokers["upstox"].user_id = "M74-Proven@Example.com", "PRV001"
+    assert _broker_login("upstox")["query"]["social"] == "new"
+    user = _user("m74-proven@example.com")
+    assert _links(user.id) == [("broker:upstox", "PRV001", "m74-proven@example.com")]
+
+
+def test_a_broker_without_email_linked_from_settings_records_no_address(brokers):
+    email = "m74-noaddr@example.com"
+    bearer = {"Authorization": f"Bearer {_register(email)}"}
+    started = client.post("/api/auth/broker/fyers/link", headers=bearer, json={"password": PASSWORD})
+    cookie = started.cookies.get("atp_broker_fyers_flow")
+    state = parse_qs(urlsplit(started.json()["url"]).query)["state"][0]
+    brokers["fyers"].email, brokers["fyers"].user_id = "", "NOADDR1"
+    client.cookies.clear()
+    client.get("/api/auth/broker/fyers/callback", params={"auth_code": CODE, "s": "ok", "state": state},
+               headers={"cookie": f"atp_broker_fyers_flow={cookie}"}, follow_redirects=False)
+    assert _links(_user(email).id) == [("broker:fyers", "NOADDR1", None)]

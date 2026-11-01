@@ -226,6 +226,8 @@ export interface BasketPreview {
     breakevens: number[] | null;
   } | null;
   totals_errors: string[];
+  /** PAPER-NR: his own limits as information in PAPER (never a refusal); absent on older servers. */
+  warnings?: string[];
   can_execute: boolean;
   product: Product;
   confirm_label: string | null;

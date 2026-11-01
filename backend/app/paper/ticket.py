@@ -45,7 +45,7 @@ from app.db.models import AiActionRecord, InstrumentRecord, Tenant, TradePlanRec
 from app.execution import approval
 from app.instruments.registry import get_contract_spec
 from app.market_data.calendar import to_ist
-from app.risk_engine import by_default
+from app.risk_engine import by_default, paper_nr
 
 logger = logging.getLogger(__name__)
 PriceLookup = Callable[..., Awaitable[float]]
@@ -183,30 +183,36 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     min_rr = settings.min_rr if settings.min_rr > 0 else None          # TT-12: no minimum unless he set one
     rr_ok = rr is not None and (min_rr is None or rr >= min_rr)
     within = risk_amount <= cap + 0.005
+    own: List[str] = []          # PAPER-NR: his own limits - information in PAPER, never a refusal
     if not errors:
         if not rr_ok and min_rr is not None:
-            refusals.append(f"Reward:risk {rr if rr is not None else '-'} is below your minimum {settings.min_rr:g}")
+            own.append(f"Reward:risk {rr if rr is not None else '-'} is below your minimum {settings.min_rr:g}")
         if plan.quantity is not None and (quantity <= 0 or abs(quantity / lot - round(quantity / lot)) > 1e-9):
             errors.append(f"Quantity must be a whole number of lots of {lot:g}")
         elif quantity <= 0:
-            refusals.append(f"One lot ({lot:g}) risks {suggested['risk_per_lot']:,.2f} at the stop - more than the cap {cap:,.2f} ({binding}). "
+            own.append(f"One lot ({lot:g}) risks {suggested['risk_per_lot']:,.2f} at the stop - more than the cap {cap:,.2f} ({binding}). "
                             "Move the stop closer or skip the trade")
         elif not within:
             reason = (plan.override_reason or "").strip()
             if not plan.override:
-                refusals.append(f"{quantity:g} risks {risk_amount:,.2f} at the stop - above the cap {cap:,.2f} ({binding}). "
+                own.append(f"{quantity:g} risks {risk_amount:,.2f} at the stop - above the cap {cap:,.2f} ({binding}). "
                                 f"Up to {suggested['quantity']:g} fits; going above needs an override with a reason")
             elif base_cap < user_cap or risk_amount > override_cap + 0.005:
-                refusals.append(f"Even with an override an entry may risk at most {override_cap:,.2f} "
+                own.append(f"Even with an override an entry may risk at most {override_cap:,.2f} "
                                 + (f"({app_config.RISK_OVERRIDE_MAX_MULTIPLE:g} x your cap, within the organisation's limit); "
                                    if math.isfinite(user_cap) else "(the organisation's limit); ")
                                 + f"{quantity:g} risks {risk_amount:,.2f}")
             elif len(reason) < app_config.RISK_OVERRIDE_MIN_REASON_CHARS:
-                refusals.append(f"An override needs a reason of at least {app_config.RISK_OVERRIDE_MIN_REASON_CHARS} characters")
+                own.append(f"An override needs a reason of at least {app_config.RISK_OVERRIDE_MIN_REASON_CHARS} characters")
             else:
                 warnings.append(f"Override: {quantity:g} risks {risk_amount:,.2f}, above your cap {cap:,.2f}. It is logged and counted")
+    if not errors and quantity <= 0:
+        quantity = lot                                    # PAPER-NR (1): a sizing refusal becomes one lot, with the note
+        risk_amount = round(quantity * per_unit, 2)
+        own.append(f"Practice: {quantity:g} (one lot) placed")
+    warnings.extend(paper_nr.infos(own))
     refusals.extend(await entry_refusals(session, await session.get(Tenant, user.tenant_id), user.tenant_id, by_default.MODE,
-                                         f"plan_{plan.setup.lower()}", user=user, reserve=False))
+                                         f"plan_{plan.setup.lower()}", user=user, reserve=False, notes=warnings))
 
     ticks = {key: bool(plan.checklist.get(key)) for key in CHECKLIST}
     auto = {"rr_ok": rr_ok, "size_within_cap": within and quantity > 0}

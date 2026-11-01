@@ -2096,6 +2096,10 @@ class TradingWorker:
             await session.commit()
             return False
         opposite = await self._opposite_position(session, dep, signal.direction)
+        if opposite and paper_nr.advisory(dep.mode):
+            # PAPER-NR: the one-direction-per-symbol setting is information on a PAPER entry, never a skip.
+            signal = signal.model_copy(update={"reasons": list(signal.reasons) + [paper_nr.info(opposite)]})
+            opposite = None
         if opposite:
             # M55 S6 (A11): the organisation's own setting (default deny) - one direction per symbol across its bots. Like
             # "position_open", the signal is read again next cycle (the other bot's position may have closed by then).

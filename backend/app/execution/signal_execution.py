@@ -31,6 +31,7 @@ from app.platform.controls import clamp_config, risk_ceilings
 from app.platform.controls import entry_blocks as platform_entry_blocks
 from app.reconciliation.service import broker_uncertain_reason, mark_broker_uncertain
 from app.risk_engine.by_default import releases_unused_entry_slot as by_default_releases_slot
+from app.risk_engine import paper_nr
 from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
 from app.risk_engine.hierarchy import RiskContext
 from app.risk_engine.hierarchy import evaluate as evaluate_hierarchy
@@ -41,11 +42,15 @@ logger = logging.getLogger(__name__)
 
 
 async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant_id: int, mode: str, strategy_id: str, *,
-                         user: Optional[User] = None, broker_name: Optional[str] = None, reserve: bool = True) -> list:
+                         user: Optional[User] = None, broker_name: Optional[str] = None, reserve: bool = True,
+                         notes: Optional[list] = None) -> list:
     """Every reason a *new entry* must be refused before any sizing or routing: kill switches,
     platform controls (maintenance mode, disabled broker, per-user trading disable - Phase M),
     a suspended organisation, plan limits, the SEBI algo id and the broker-uncertain flag
-    (safety rule 8). Shared by the single-leg pipeline and the multi-leg executor (Phase H2)."""
+    (safety rule 8). Shared by the single-leg pipeline and the multi-leg executor (Phase H2).
+
+    PAPER-NR: the user's own PAPER limits (daily loss lockout, entries per day) are information in PAPER - appended to
+    `notes` when given, never a refusal and no entry slot taken; `reserve` is kept for callers and no longer reserves."""
     reasons = await active_kill_switch_reasons(session, tenant_id, strategy_id)
     reasons.extend(await platform_entry_blocks(session, user=user, mode=mode, broker_name=broker_name))
     if mode == ExecutionMode.PAPER.value and user is not None:
@@ -55,11 +60,12 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
         if paused:
             reasons.append(paused)
         # Z5 / P1-d (flag risk_by_default): the user's daily loss lockout and entries-per-day limit - new PAPER entries
-        # only; exits never come here (ADR-0004).
-        from app.risk_engine import by_default
+        # only; exits never come here (ADR-0004). PAPER-NR: information only (no slot reserved, no lockout recorded).
+        from app.risk_engine import by_default, paper_nr
         if await by_default.enabled(session, user.tenant_id):
-            # `reserve`: the order pipelines take the day's entry slot atomically (given back if the entry is not placed).
-            reasons.extend(await by_default.entry_refusals(session, user, reserve=reserve and not reasons))
+            own = await by_default.entry_refusals(session, user, reserve=False, record=False)
+            if notes is not None:
+                notes.extend(paper_nr.infos(own))
     if tenant is not None and not tenant_is_active(tenant):
         reasons.append(f"Organisation is {tenant.status}: no new orders")
     if mode == ExecutionMode.LIVE.value and not await live_allowed_for(session, tenant):
@@ -76,6 +82,23 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
         if uncertain:
             reasons.append(uncertain)
     return reasons
+
+
+async def _practice_margin_line(session: AsyncSession, user: User, trade, contract: Optional[ResolvedContract],
+                                meta: Optional[dict]) -> str:
+    """PAPER-NR (2): one information line - the money this PAPER entry ties up (where it is a plain fact) against the
+    practice balance. Never raises: a balance that cannot be read is said so."""
+    try:
+        from app.paper.fno_basket import practice_balance
+        free = await practice_balance(session, user)
+    except Exception as exc:  # noqa: BLE001 - an information line never stands in the way of the entry
+        logger.info("Practice margin line not built (%s)", type(exc).__name__)
+        return "Practice margin: the practice balance could not be read"
+    kind = contract.kind.value if contract is not None else (meta or {}).get("instrument_kind")
+    written = (contract is not None and contract.position == OptionPosition.WRITE) or (meta or {}).get("option_position") == "WRITE"
+    needed = paper_nr.entry_margin(kind=kind, written=bool(written), direction=trade.direction, price=trade.entry_price,
+                                   quantity=float(trade.quantity or 0.0))
+    return paper_nr.margin_info(needed, free)
 
 
 @by_default_releases_slot
@@ -170,8 +193,10 @@ async def execute_signal_for_user(
         order = await transition_order(session, order, OrderStatus.VALIDATING, detail="Signal received")
 
         tenant = await session.get(Tenant, user.tenant_id)
+        practice_notes: list = []          # PAPER-NR: his own limits, as information on the order trail
         kill_switch_reasons = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
-                                                   broker_name=getattr(broker, "name", None) if broker is not None else None)
+                                                   broker_name=getattr(broker, "name", None) if broker is not None else None,
+                                                   notes=practice_notes)
         # TT-2: "manual" counts only for a manual order (journal source MANUAL, no deployment); anything else is automatic.
         manual = origin == approval_gate.ORIGIN_MANUAL and deployment_id is None and journal_source == "MANUAL"
         gate_origin = origin if origin != approval_gate.ORIGIN_MANUAL or manual else approval_gate.ORIGIN_AUTOMATIC
@@ -190,12 +215,16 @@ async def execute_signal_for_user(
             # N2-2 (flag experience_levels): futures / naked short options open with the user's experience level or a
             # logged opt-out for the day. New entries only - exits never come here (ADR-0004).
             from app.paper import experience
-            kill_switch_reasons.extend(await experience.entry_refusals(session, user, experience.contract_gates(contract)))
+            refused, noted = paper_nr.split(mode, await experience.entry_refusals(session, user, experience.contract_gates(contract)))
+            kill_switch_reasons.extend(refused)
+            practice_notes.extend(noted)
         else:
             # N2-2 review M1: a raw symbol (webhook, public API, console, approval, underlying deployment) is classified
             # from the instrument master / registry / its shape - a future, an MCX commodity or a sold option is gated too.
             from app.paper import experience
-            kill_switch_reasons.extend(await experience.symbol_entry_refusals(session, user, signal.symbol, signal.direction))
+            refused, noted = paper_nr.split(mode, await experience.symbol_entry_refusals(session, user, signal.symbol, signal.direction))
+            kill_switch_reasons.extend(refused)
+            practice_notes.extend(noted)
             if manual_contract_meta and manual_contract_meta.get("underlying_symbol"):
                 # FNO-1: a manual order on a contract - the F&O ban period applies as to a resolved one (D7).
                 ban, ban_note = await fo_limits.entry_refusal(session, str(manual_contract_meta["underlying_symbol"]), signal.timestamp)
@@ -260,6 +289,7 @@ async def execute_signal_for_user(
         # account's margin must cover at least one unit. Both are business decisions (REJECTED).
         pre_notes: list = []
         pre_notes.extend(fo_notes)
+        pre_notes.extend(practice_notes)
 
         # Phase V1: the platform ceilings clamp the tenant's settings, then the Risk Guardian's
         # entry rules run before sizing - cool-down after a stop-out (R10), the drawdown ladder
@@ -270,9 +300,10 @@ async def execute_signal_for_user(
         if mode == ExecutionMode.PAPER.value:
             from app.risk_engine import by_default
             if await by_default.enabled(session, user.tenant_id):
-                # Z5 / P1-d: the user's own PAPER cap (or the ticket's checked one) and the organisation's - strictest wins.
-                effective_risk_config, cap_notes = await by_default.apply_user_cap(session, user, effective_risk_config, amount=risk_cap_amount)
-                pre_notes.extend(cap_notes)
+                # Z5 / P1-d: the user's own PAPER cap (or the ticket's checked one). PAPER-NR: it cuts nothing in PAPER -
+                # a cap stricter than his sizing is information only.
+                _capped, cap_notes = await by_default.apply_user_cap(session, user, effective_risk_config, amount=risk_cap_amount)
+                pre_notes.extend(paper_nr.infos(cap_notes))
         # A breached daily-loss limit (R5) outranks the guardian: the risk engine's own refusal
         # below engages the kill switch and raises DAILY_LOSS_LIMIT, which a guardian refusal
         # must not pre-empt.
@@ -377,6 +408,8 @@ async def execute_signal_for_user(
             place_protective_stop=not (plan is not None and plan.meta.get("instrument_kind") == "OPTION"
                                        and plan.meta.get("premium_stop_pct") is None),
             order_ref=order.id,
+            # PAPER-NR: a ticket's own checked lots (a manual order he confirmed) are his size in PAPER.
+            typed_lots=ticket_quantity is not None and deployment_id is None,
         )
         # M55 S4: the tag (with this row's client order id) is on the row before anything is sent, so the start-up order
         # sweeper (app/execution/order_sweeper.py) can find the order in the broker's book by it after a crash.
@@ -394,8 +427,9 @@ async def execute_signal_for_user(
             # Phase V1 (R4): the loss if every open stop hits, plus this trade's, within the cap.
             block, _ = await portfolio_risk_block(session, user.tenant_id, mode=mode, underlying=underlying_signal.symbol,
                                                   cfg=effective_risk_config, new_max_loss=abs(signal.entry - signal.stop_loss) * quantity)
-            reasons = list(verdict.reasons) + ([block] if block else [])
-            return verdict.allowed and block is None, reasons, verdict.notes
+            blocks, r4_notes = paper_nr.split(mode, [block] if block else [])      # PAPER-NR: R4 is information in PAPER
+            reasons = list(verdict.reasons) + blocks
+            return verdict.allowed and not blocks, reasons, list(verdict.notes) + r4_notes
 
         with order_defaults.stop_band(mine.stop_limit_band_pct):     # M68 TS1-014: the protective stop's gap is his own
             result: ExecutionResult = await order_router.execute(signal, state, contract_spec=contract_spec, max_quantity=max_quantity,
@@ -404,6 +438,9 @@ async def execute_signal_for_user(
             result.reasons = plan.notes + result.reasons
         if pre_notes:
             result.reasons = pre_notes + result.reasons
+        if result.executed and result.trade is not None and paper_nr.advisory(mode):
+            # PAPER-NR (2): the margin this entry ties up against the practice balance (which may go below zero).
+            result.reasons = result.reasons + [await _practice_margin_line(session, user, result.trade, contract, manual_contract_meta)]
 
         order.reasons_json = json.dumps(result.reasons)
         order.algo_tag = result.algo_tag

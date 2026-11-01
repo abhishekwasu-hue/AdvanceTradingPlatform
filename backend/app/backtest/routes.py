@@ -182,7 +182,7 @@ class BacktestRunner:
         if self.config is not None and body.template_exits is not None:
             self.config.stop_source = body.template_exits.stop_source        # section 5: PREMIUM_PCT on a single option
         self.pricer = pricer
-        self.pricing_note: Optional[str] = None      # M71 PL-7: why recorded end-of-day premiums were not used
+        self.pricing_note: str | None = None      # M71 PL-7: why recorded end-of-day premiums were not used
         try:
             self.models = ModelSet(**(body.execution_models or {}))
             self.models.built()                       # N7 C2b: a bad model parameter is a 422 here, not a 500 mid-run
@@ -209,7 +209,7 @@ class BacktestRunner:
         # bhavcopy closes) price a leg at its bar's session close first; the model prices only legs with none, and the
         # result counts both. Intraday bars are priced by the model (an end-of-day close is no intraday premium).
         eod: list[OptionChainSnapshotRow] = []
-        note: Optional[str] = None
+        note: str | None = None
         if opts.pricing in ("synthetic", "snapshots") and tenant_id is not None and body.candles:
             eod, note = await _recorded_eod(session, tenant_id, body)
         if opts.pricing == "synthetic" and eod:
@@ -299,7 +299,7 @@ async def _recorded_eod(session: AsyncSession, tenant_id: int, body: "BacktestBo
     return rows, None
 
 
-async def _refused_windows(session: AsyncSession, tenant_id: Optional[int], symbol: str) -> list:
+async def _refused_windows(session: AsyncSession, tenant_id: int | None, symbol: str) -> list:
     """M71 PL-7b: the tenant's sealed / contaminated windows for `symbol`; a symbol the policy cannot read -> 400."""
     from app.backtest.data_policy import HoldoutError
     from app.market_lake import data_use

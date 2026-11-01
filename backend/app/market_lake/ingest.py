@@ -51,7 +51,7 @@ class LakeBar:
     high: float
     low: float
     close: float
-    volume: Optional[int] = 0    # None = the source had no volume (M71 PL-7: missing stays missing, never 0)
+    volume: int | None = 0    # None = the source had no volume (M71 PL-7: missing stays missing, never 0)
     oi: Optional[int] = None
 
     def values(self) -> Tuple:

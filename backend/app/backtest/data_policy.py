@@ -35,7 +35,7 @@ class UseWindow:
     """One data-use window (dates are exchange (IST) trade dates; end None = open-ended)."""
     kind: str
     start: date
-    end: Optional[date] = None
+    end: date | None = None
     scope: str = "*"
     label: str = ""
 
@@ -75,7 +75,7 @@ def _ist_day(ts) -> date:
     return (t.tz_convert("Asia/Kolkata") if t.tzinfo is not None else t).date()
 
 
-def windows_reason(windows: Sequence[UseWindow], dropped: int) -> Optional[str]:
+def windows_reason(windows: Sequence[UseWindow], dropped: int) -> str | None:
     """The plain line a refused part gets ("12 bars left out: ..."), None when nothing was left out."""
     refused = _refused(windows)
     if not dropped or not refused:

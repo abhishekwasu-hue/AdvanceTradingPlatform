@@ -416,7 +416,7 @@ class StoredEodPricer(SnapshotPricer):
             self._by_day[(row.expiry, float(row.strike), row.right.upper(), day)] = float(row.ltp)
 
     @property
-    def vol(self) -> Optional[VolatilityModel]:
+    def vol(self) -> VolatilityModel | None:
         return self.fallback.vol if isinstance(self.fallback, SyntheticPricer) else None
 
     @vol.setter

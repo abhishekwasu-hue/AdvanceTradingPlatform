@@ -78,7 +78,7 @@ def _part(result: BacktestResult, df: pd.DataFrame, capital: float) -> Dict[str,
 
 
 def honest_test(config: Any, df: pd.DataFrame, symbol: str, base_tf: str, risk: RiskConfig, *,
-                holdout: Any = None, min_trades: Optional[int] = None, use_windows: Any = ()) -> dict[str, Any]:
+                holdout: Any = None, min_trades: int | None = None, use_windows: Any = ()) -> dict[str, Any]:
     """The draft `config` (a `CustomStrategyConfig`) on `df` (server candles at `base_tf`) through ATP's backtest engine.
     `holdout`: the sealed holdout boundary (None reads the operator's `BACKTEST_HOLDOUT_START`)."""
     from app.ai.compliance import WEAK_EVIDENCE_MIN_TRADES

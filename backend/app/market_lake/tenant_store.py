@@ -86,7 +86,7 @@ async def rows_as_of(session: AsyncSession, tenant_id: int, instrument_key: str,
     return [best[ts][1] for ts in sorted(best)]
 
 
-def _volume_sum(group: Sequence[LakeBar]) -> Optional[int]:
+def _volume_sum(group: Sequence[LakeBar]) -> int | None:
     """The bucket's volume: the sum, or None when any of its bars has no volume (M71 PL-7: never a partial sum)."""
     if any(b.volume is None for b in group):
         return None

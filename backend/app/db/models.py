@@ -645,7 +645,10 @@ class StrategyDeploymentRecord(Base):
     # credit-based exit levels for spreads (take profit at target_credit_pct of the credit
     # captured; stop when the loss reaches stop_credit_pct of the credit).
     option_strategy: Mapped[str] = mapped_column(String(20), nullable=False, default="SINGLE")
-    spread_width: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    # M68 PR-4 (TS1-036, alembic c4e8a2f6b0d3): no default - NULL = Not set (a structure that takes a width asks for it).
+    spread_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # M68 PR-4 (TS1-042): a ratio spread's own sold legs per bought leg (the user's choice; NULL for every other structure).
+    ratio_shorts: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     stop_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     # DEF-0 PR 4: close the structure when the underlying breaches a short strike / crosses a breakeven - only when the

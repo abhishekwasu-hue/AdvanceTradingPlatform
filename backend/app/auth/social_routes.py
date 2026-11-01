@@ -193,11 +193,12 @@ async def _callback(slug: str, request: Request, session: AsyncSession) -> Redir
     provider = _provider_or_404(slug)
     params = request.query_params
     social_flow = social.decode_flow(provider, request.cookies.get(provider.flow_cookie))
-    if params.get("error"):
-        return _back(provider, request, error="cancelled" if params.get("error") == "access_denied" else "failed")
+    try:
+        code = provider.read_code(params)                   # `?error=` (or a broker's own refusal) -> a refusal code
+    except social.SignInError as exc:
+        return _back(provider, request, error=exc.code)
     if not social.state_matches(social_flow, params.get("state")):
         return _back(provider, request, error="expired")    # no cookie, an old one, or a state from another browser (CSRF)
-    code = params.get("code")
     if not code or social_flow is None:
         return _back(provider, request, error="failed")
     if not await social.burn_once("state", social_flow.flow.state, social.FLOW_TTL_SECONDS + 60):
@@ -281,6 +282,7 @@ async def _link_signed_in(provider: social.Provider, request: Request, session: 
         return _back(provider, request, error="already_linked")
     await social.link_identity(session, user, identity)
     await session.commit()
+    await _run_hook(provider, session, user, identity, request)     # M74: linking a broker also connects it today
     return _back(provider, request, outcome="linked")
 
 
@@ -327,7 +329,8 @@ async def _new_person(provider: social.Provider, request: Request, session: Asyn
             return _back(provider, request, error="email_taken")
         if await _signup_form_needed(session, record.email, record.tenant_id, invite=True):
             return _back_pending_signup(provider, request, identity, intent="invite", invite=social_flow.invite)
-        _, issued = await join_by_invite(session, request, record, password=None, legal_entries=None, identity=identity)
+        user, issued = await join_by_invite(session, request, record, password=None, legal_entries=None, identity=identity)
+        await _run_hook(provider, session, user, identity, request)
         return _signed_up(provider, request, issued)
 
     email = identity.email
@@ -340,8 +343,9 @@ async def _new_person(provider: social.Provider, request: Request, session: Asyn
     if await _signup_form_needed(session, email):
         return _back_pending_signup(provider, request, identity)
     assert email is not None
-    _, issued = await self_signup_account(session, request, email=email, password=None, legal_entries=None, invite_code=None,
+    user, issued = await self_signup_account(session, request, email=email, password=None, legal_entries=None, invite_code=None,
                                           source=provider.id, email_verified=True, identity=identity)
+    await _run_hook(provider, session, user, identity, request)      # M74: a new account's broker is connected at once
     return _signed_up(provider, request, issued)
 
 

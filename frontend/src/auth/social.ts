@@ -21,6 +21,19 @@ export type SocialIntent = "signin" | "signup" | "invite";
 
 const LABELS: Record<string, string> = { google: "Google", facebook: "Facebook" };
 
+/** M74: a broker sign-in provider ("broker:upstox") - listed under one "Continue with your broker" entry, not as its own
+ * button. The server lists a broker only when ATP's platform app for it is set and approved. */
+export function isBrokerProvider(p: SignInProvider): boolean {
+  return p.kind === "broker" || p.id.startsWith("broker:");
+}
+
+/** M74: the monogram badge for a broker (no broker logo is shipped - no logo licence allows it). */
+const BROKER_INITIALS: Record<string, string> = { "broker:upstox": "UP", "broker:zerodha": "Z", "broker:fyers": "FY" };
+export function brokerInitials(p: SignInProvider): string {
+  return BROKER_INITIALS[p.id] ?? p.label.replace(/[^A-Za-z]/g, "").slice(0, 2).toUpperCase();
+}
+const BROKER_LABELS: Record<string, string> = { "broker:upstox": "Upstox", "broker:zerodha": "Zerodha", "broker:fyers": "Fyers" };
+
 /** Pure: the buttons to show, from the /auth/providers answer (anything unexpected shows none). */
 export function providersFrom(answer: unknown, native: boolean): SignInProvider[] {
   if (native || !answer || typeof answer !== "object") return [];
@@ -65,7 +78,7 @@ const MESSAGES: Record<string, (p: string) => string> = {
 };
 
 export function providerLabel(id: string | null | undefined): string {
-  return (id && LABELS[id]) || "This";
+  return (id && (LABELS[id] ?? BROKER_LABELS[id])) || "This";
 }
 
 /** The plain-words message for a refusal code (an unknown code reads as a general failure). */

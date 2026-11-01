@@ -17,7 +17,7 @@ dropped.
 """
 import hmac
 import secrets
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -38,7 +38,7 @@ SignInError = GoogleSignInError          # one refusal type with a fixed short c
 
 KIND_OIDC = "oidc"
 KIND_OAUTH2 = "oauth2"
-KIND_BROKER = "broker"                   # M74 (not built here): the registry accepts it; see docs/design/M73_SOCIAL_LOGIN.md
+KIND_BROKER = "broker"                   # M74: app/auth/broker_signin.py registers "broker:<id>" (docs/design/M74_BROKER_SIGNIN.md)
 
 INTENTS = ("signin", "signup", "invite", "link")
 FLOW_TTL_SECONDS = google.FLOW_TTL_SECONDS
@@ -59,6 +59,13 @@ class ProviderIdentity:
 OnSignedIn = Callable[[AsyncSession, User, ProviderIdentity, Request], Awaitable[None]]
 
 
+def default_read_code(params: Mapping[str, str]) -> str | None:
+    """The one-time code from a provider's redirect: `?code=` (OAuth 2.0), or a refusal for `?error=`."""
+    if params.get("error"):
+        raise SignInError("cancelled" if params.get("error") == "access_denied" else "failed")
+    return params.get("code")
+
+
 @dataclass(frozen=True)
 class Provider:
     id: str                    # registry id, stored in user_identities.provider ("google"; M74 "broker:upstox")
@@ -70,6 +77,9 @@ class Provider:
     authorization_url: Callable[[Flow, str], str]
     identity_for_code: Callable[[str, Flow, str], Awaitable[ProviderIdentity]]
     on_signed_in: OnSignedIn | None = None     # generic hook after a sign-in / sign-up (M74 hands the broker session)
+    # M74: brokers name the code differently (Kite `request_token`, Fyers `auth_code`) and refuse differently
+    # (Kite `status=`, Fyers `s=`): the callback reads the code through this (a SignInError = a refusal code).
+    read_code: Callable[[Mapping[str, str]], str | None] = default_read_code
 
     @property
     def uses_nonce(self) -> bool:
@@ -77,7 +87,7 @@ class Provider:
 
     @property
     def flow_cookie(self) -> str:
-        return f"atp_{self.slug}_flow"             # GS-1: "atp_google_flow"
+        return f"atp_{self.slug.replace('/', '_')}_flow"   # GS-1: "atp_google_flow"; M74 "broker/upstox" -> "atp_broker_upstox_flow"
 
     @property
     def flow_cookie_path(self) -> str:

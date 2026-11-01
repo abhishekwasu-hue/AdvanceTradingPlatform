@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { isNativeApp } from "../native/platform";
-import { providersFrom, signInV2From, socialStartUrl, type SignInProvider, type SocialIntent } from "./social";
+import { brokerInitials, isBrokerProvider, providersFrom, signInV2From, socialStartUrl, type SignInProvider, type SocialIntent } from "./social";
 
 /**
  * M73 SL-1: the sign-in options at the top of Sign in, Create account and Join team - one brand-correct button per
@@ -71,7 +71,8 @@ export function SignInOptionsList({ providers, intent = "signin", invite, extra 
   providers: SignInProvider[]; intent?: SocialIntent; invite?: string | null; extra?: SignInOption[];
 }) {
   const options: SignInOption[] = [
-    ...providers.map((p) => ({ key: p.id, node: <ProviderButton provider={p} href={socialStartUrl(p, intent, invite)} /> })),
+    // M74: brokers are not buttons of their own - they sit in the one "Continue with your broker" entry (`extra`).
+    ...providers.filter((p) => !isBrokerProvider(p)).map((p) => ({ key: p.id, node: <ProviderButton provider={p} href={socialStartUrl(p, intent, invite)} /> })),
     ...extra,
   ];
   if (options.length === 0) return null;
@@ -80,6 +81,49 @@ export function SignInOptionsList({ providers, intent = "signin", invite, extra 
       {options.map((o) => <li key={o.key}>{o.node}</li>)}
     </ul>
   );
+}
+
+/**
+ * M74 BL-1: "Continue with your broker" - one button that opens the list of brokers the server reports as set up
+ * (initials badge + name); each opens that broker's own login page. Nothing when no broker is set up (no "coming
+ * soon"): the other brokers stay connectable after sign-in with the user's own keys.
+ */
+export function BrokerSignIn({ brokers, intent = "signin", invite }: {
+  brokers: SignInProvider[]; intent?: SocialIntent; invite?: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  if (brokers.length === 0) return null;
+  return (
+    <div data-broker-sign-in>
+      <button type="button" aria-expanded={open} aria-controls="broker-sign-in-list" onClick={() => setOpen((v) => !v)}
+        className={`${BUTTON} border-border bg-surface text-fg hover:bg-surface-2`}>
+        <span>Continue with your broker</span>
+        <span aria-hidden="true" className={`transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
+      </button>
+      {open && (
+        <ul id="broker-sign-in-list" className="mt-space-2 overflow-hidden rounded-control border border-border" aria-label="Brokers">
+          {brokers.map((b) => (
+            <li key={b.id} className="border-b border-subtle last:border-b-0">
+              <a href={socialStartUrl(b, intent, invite)} data-provider={b.id}
+                className="flex min-h-12 items-center gap-space-3 px-space-4 text-t14 text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+                <span aria-hidden="true"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-t12 font-semibold text-fg-muted">
+                  {brokerInitials(b)}
+                </span>
+                <span>{b.label}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** The `extra` entry for SignInOptionsList: the broker list when the server reports any broker, else none. */
+export function brokerOptions(providers: SignInProvider[], intent: SocialIntent = "signin", invite?: string | null): SignInOption[] {
+  const brokers = providers.filter(isBrokerProvider);
+  return brokers.length ? [{ key: "brokers", node: <BrokerSignIn brokers={brokers} intent={intent} invite={invite} /> }] : [];
 }
 
 /** "or use email" between the provider buttons and the form. */

@@ -6,6 +6,7 @@ e-mail that matches an account which has not linked Google is a pending link con
 (never a silent sign-in), and a sign-up that needs the terms or a beta code finishes on a short step instead of being
 sent back to the form. This module stays as the import point main.py and older code use.
 """
+from app.auth import broker_signin  # noqa: F401,E402 - M74: registers the broker:<id> providers before main includes the router
 from app.auth.social_routes import router, social_start_rate_limit
 
 google_rate_limit = social_start_rate_limit

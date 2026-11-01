@@ -667,7 +667,8 @@ def test_admin_health_lists_which_providers_are_live(fake, monkeypatch):
     from app.admin.console import sign_in_providers
     monkeypatch.setattr(config, "FACEBOOK_APP_SECRET", "")
     rows = sign_in_providers()
-    assert [(r["id"], r["live"]) for r in rows] == [("google", True), ("facebook", False)]
+    # M74 adds the broker:<id> providers after these two (tests/test_m74_broker_signin.py checks their rows).
+    assert [(r["id"], r["live"]) for r in rows if r["kind"] != "broker"] == [("google", True), ("facebook", False)]
     assert FB_ID not in str(rows) and G_SECRET not in str(rows) and G_ID not in str(rows)
 
 

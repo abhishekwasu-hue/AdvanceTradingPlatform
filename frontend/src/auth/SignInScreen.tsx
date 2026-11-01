@@ -11,7 +11,7 @@ import { acceptanceFor, type LegalSummary } from "../legal/legal";
 import { ROLE_LABELS, type InviteInfo } from "../types";
 import { useAuth } from "./AuthContext";
 import { GoogleButton } from "./GoogleSignInButton";
-import { OrUseEmail, SignInOptionsList, useSignInProviders } from "./SocialButtons";
+import { OrUseEmail, SignInOptionsList, brokerOptions, useSignInProviders } from "./SocialButtons";
 import { takeSocialReturn } from "./social";
 import type { SocialPendingInfo } from "./socialTypes";
 import StatusLink from "../status/StatusLink";
@@ -276,7 +276,8 @@ export default function SignInScreen() {
             {showIntro && <p className="mt-space-1 text-t14 text-fg-muted">{intro}</p>}
             {showProviders && (
               <div className="mt-space-5">
-                <SignInOptionsList providers={providers} intent={providerIntent} invite={inviteToken} />
+                <SignInOptionsList providers={providers} intent={providerIntent} invite={inviteToken}
+                  extra={brokerOptions(providers, providerIntent, inviteToken)} />
                 <OrUseEmail />
               </div>
             )}

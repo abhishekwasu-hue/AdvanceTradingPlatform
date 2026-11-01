@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
-import { useInPlace } from "../inplace/InPlaceProvider";
+import { useInPlace } from "../inplace/context";
 import { useAuth } from "../auth/AuthContext";
 import type { PageProps } from "../routes";
 import GetStartedCardV2 from "../setup/GetStartedCardV2";

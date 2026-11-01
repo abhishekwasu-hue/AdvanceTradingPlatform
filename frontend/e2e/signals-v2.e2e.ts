@@ -314,10 +314,9 @@ test.describe("Signals v2 1440 desktop", () => {
     const openChart = page.locator("[data-signal-detail]").getByRole("link", { name: "Open chart" });
     await expect(openChart).toHaveAttribute("href", "/charts/NIFTY%2050?tf=15min");
     await openChart.click();
-    await expect(page).toHaveURL(/\/charts\/NIFTY%2050$/);
-    await expect(page.locator("[data-page='charts-v2']")).toBeVisible();
-    await expect(page.locator("[data-page='charts-v2']").getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15 min", exact: true }))
-      .toHaveAttribute("aria-pressed", "true");
+    // M75 NAV-5a: the chart opens in place over Signals with the same timeframe (the path stays; the panel is on top).
+    await expect(page).toHaveURL(/\/signals\?panel=chart:NIFTY%2050:15min$/);
+    await expect(page.locator("[data-inplace-panel='chart']")).toBeVisible({ timeout: 15_000 });
   });
 
   test("UI2-4e: the detail's chart says Live, then Price delayed with its age when the price stops coming", async ({ page }) => {

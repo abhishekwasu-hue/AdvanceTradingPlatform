@@ -41,6 +41,7 @@ function pagePanel(o: { kind: string; title: string; presentation: Presentation;
     href: (p) => `${withSearch(home, p.q)}${p.h ? `#${p.h}` : ""}`,
     ...(o.flag ? { enabled: (on: (flag: string) => boolean) => on(o.flag as string) } : {}),
     load: () => import("./panels/PagePanel"),
+    page: true,
   };
 }
 
@@ -176,6 +177,7 @@ export const BOTS_PANEL: PanelEntry = {
   match: ({ pathname, search }) => (clean(pathname) === "/deployments" ? searchOf(search) : null),
   href: (p) => withSearch("/deployments", p.q),
   load: () => import("./panels/BotsPanel"),
+  page: true,
 };
 
 // ---- NAV-4: Option chain (F&O) ------------------------------------------------------------------------------------
@@ -191,6 +193,7 @@ export const OPTION_CHAIN_PANEL: PanelEntry = {
     ? only(Object.fromEntries(OPTION_CHAIN_KEYS.map((k) => [k, search.get(k)?.trim()]))) : null),
   href: (p) => optionChainPanelPath(p),
   load: () => import("./panels/OptionChainPanel"),
+  page: true,
 };
 
 /** The symbol hub's Futures tab (`/charts/<symbol>?hub=futures`, a future position's Adjust). Listed before the chart
@@ -220,6 +223,7 @@ export const OPTIONS_PLAN_PANEL: PanelEntry = {
   href: () => "/option-chain/plan",
   enabled: (on) => on("options_builder"),
   load: () => import("./panels/OptionsPlanPanel"),
+  page: true,
 };
 
 /** The trader's own Risk limits (`/settings/risk-limits`): the ticket's and the basket's "Change limit". (NAV-5b:
@@ -317,6 +321,7 @@ export const TODAY_PANEL: PanelEntry = {
   match: ({ pathname, search, hash }) => (clean(pathname) === "/" && !search.toString() && !hash ? {} : null),
   href: () => "/",
   load: () => import("./panels/PagePanel"),
+  page: true,
 };
 
 // ---- NAV-8: Admin ---------------------------------------------------------------------------------------------------

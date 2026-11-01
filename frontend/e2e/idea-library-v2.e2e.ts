@@ -186,7 +186,10 @@ test.describe("Idea library behaviour", () => {
     const t1 = page.locator("[data-idea='T1']");
     await expect(t1.locator("[data-state='scan-off']")).toBeVisible();            // market zones are off for this account
     await page.locator("[data-idea='T5'] [data-scan='above']").click();
-    await expect(page).toHaveURL(/\/screener$/);
+    // M75 NAV: it opens in place over the tab (the path stays; the panel is on top).
+    await expect(page).toHaveURL(/\?panel=screener:idea%3DT5%26scan%3Dabove$/);
+    const panel = page.locator("[data-inplace-panel='screener']");
+    await expect(panel).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel("Scan name")).toHaveValue("Breakout and retest - Retest from above");
     expect(sent.stages).toEqual([{ source: "RetestEntry(\"up\", $retest_of, $retest_max_bars, TRUE)", base_tf: "15m",
       params: { retest_of: "swing", retest_max_bars: 10 } }]);

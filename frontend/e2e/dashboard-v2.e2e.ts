@@ -252,7 +252,10 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await expect(gate.getByRole("heading", { name: "Connect your broker" })).toBeVisible();
     await expect(page.locator("[data-block]")).toHaveCount(0);
     await gate.getByRole("link", { name: "Connect a broker" }).click();
-    await expect(page).toHaveURL(/\/broker$/);                             // P2b: the Broker page
+    // M75 NAV: it opens in place over the tab (the path stays; the panel is on top).
+    await expect(page).toHaveURL(/\/\?panel=broker$/);
+    const panel = page.locator("[data-inplace-panel='broker']");
+    await expect(panel).toBeVisible({ timeout: 15_000 });
   });
 
   test("nothing yet: the friendly empty states, each with one action", async ({ page }) => {

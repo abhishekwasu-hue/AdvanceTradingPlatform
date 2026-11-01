@@ -29,7 +29,7 @@ import { PracticeFrame } from "./OrderTicketV2";
 import { StrategyCompareV2 } from "./CompareV2";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
 import { InPlaceLink } from "../inplace/InPlaceLink";
-import { useInPlaceOpen } from "../inplace/InPlaceProvider";
+import { useInPlaceOpen } from "../inplace/context";
 import { riskLine, structureOf, type RiskBudget, type RiskLine } from "./insights";
 import { eventLine, legLiquidity, liquidityLine, marginLine } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";

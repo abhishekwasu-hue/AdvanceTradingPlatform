@@ -73,12 +73,12 @@ describe("NAV-7: every Settings / set-up link opens in place (the path stays)", 
 
   for (const s of SITES) {
     it(s.site, () => {
-      const h = history("/settings/setup");
+      const h = history("/settings");
       const before = h.location();
       const api = createInPlaceApi({ enabled: true, on, registry: DEFAULT_REGISTRY, location: h.location, navigate: h.navigate });
       expect(api.handles(s.to)).toBe(true);
       api.open(s.to);
-      expect(h.location().pathname).toBe("/settings/setup");
+      expect(h.location().pathname).toBe("/settings");
       expect(openPanels(h.location().search, DEFAULT_REGISTRY, on).map((p) => p.spec)).toEqual([{ kind: s.kind, params: s.params ?? {} }]);
       expect(pushedIn(h.location().state)).toBe(1);
       expect(handoffs(h.location().state)).toEqual([]);

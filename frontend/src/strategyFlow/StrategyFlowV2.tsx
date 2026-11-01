@@ -1,5 +1,5 @@
 import { ChevronLeft, Lock } from "lucide-react";
-import { useInPlace } from "../inplace/InPlaceProvider";
+import { useInPlace } from "../inplace/context";
 import { lazy, Suspense, useEffect, useId, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { api } from "../api/client";

@@ -3,7 +3,7 @@ import { ArrowDownRight, ArrowUpRight, ChartCandlestick, Layers, Plus, RefreshCc
 import { Suspense, lazy, useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { InPlaceLink } from "../inplace/InPlaceLink";
-import { useInPlace } from "../inplace/InPlaceProvider";
+import { useInPlace } from "../inplace/context";
 import { api } from "../api/client";
 import { errorSentence } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";

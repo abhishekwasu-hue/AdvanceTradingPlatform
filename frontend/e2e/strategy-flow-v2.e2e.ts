@@ -186,7 +186,10 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await shot("05-result");
 
         await page.locator("[data-start-paper]").click();
-        await expect(page).toHaveURL(/\/deployments$/);
+        // M75 NAV: it opens in place over the tab (the path stays; the panel is on top).
+        await expect(page).toHaveURL(/\/strategies\/build\?panel=bots$/);
+        const panel = page.locator("[data-inplace-panel='bots']");
+        await expect(panel).toBeVisible({ timeout: 15_000 });
         await settle(page);
         await expect(page.locator("[data-note='draft-saved']")).toContainText("from the strategy builder is picked below");
         await expect(page.locator("[data-tested-contract]")).toBeVisible();

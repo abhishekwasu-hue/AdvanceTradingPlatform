@@ -1,6 +1,6 @@
 import { ArrowRight, Bot, Send, ShieldAlert, Square, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useInPlace } from "../../inplace/InPlaceProvider";
+import { useInPlace } from "../../inplace/context";
 import { api } from "../../api/client";
 import { pathFor } from "../../routes";
 import { Badge, Button, fieldClass } from "../../components/primitives";

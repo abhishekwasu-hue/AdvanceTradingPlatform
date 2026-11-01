@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { useInPlace } from "../inplace/InPlaceProvider";
+import { useInPlace } from "../inplace/context";
 import { useLocation } from "react-router";
 import type { TourId } from "./pages";
 import { autoTour, closeTour, useTours, type CloseReason, type TourRequest } from "./state";

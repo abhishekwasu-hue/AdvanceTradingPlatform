@@ -157,11 +157,13 @@ test.describe("Admin console behaviour", () => {
     await expect(ai.locator("[data-ai-task='copilot']")).toContainText("fast");
     await expect(ai.locator("[data-ai-task='classification']")).toContainText("(est.)");
     await users.locator("[data-user='12']").getByRole("link", { name: "Status" }).click();
-    await expect(page).toHaveURL(/section=support&user=12$/);
-    const person = page.locator("[data-support-user='12']");
+    // M75 NAV-8: the user's support status opens in place over the user list (the section stays).
+    await expect(page).toHaveURL(/section=users&panel=admin-support:12$/);
+    const person = page.locator("[data-inplace-panel='admin-support'] [data-support-user='12']");
     await expect(person).toContainText("Chrome on Android");
     await expect(person).toContainText("198.51.100.x");
     await expect(person).toContainText("expired");
+    await page.goto("/admin?section=support&user=12");   // the Support section itself: the tickets
     await expect(page.locator("[data-feedback='5']")).toContainText("tr****@example.com");
   });
 

@@ -87,6 +87,16 @@ describe("NAV-6a: every Today card and attention link opens in place (the path s
     expect(DEFAULT_REGISTRY.get("performance")!.href({})).toBe("/positions/results");
   });
 
+  it("a whole page's own address on its own tab changes that tab's view, never the same page over itself", () => {
+    const h = history("/markets");
+    const api = inPlace(h);
+    expect(api.handles("/markets?view=sectors&period=day&list=sector-it")).toBe(false);
+    api.open("/markets?list=sector-it");
+    expect(h.url()).toBe("/markets?list=sector-it");                         // the Markets tab's own list, as before
+    const admin = history("/admin?section=users");                            // a special panel on the same path still opens
+    expect(inPlace(admin).handles("/admin?section=support&user=12")).toBe(true);
+  });
+
   it("a flag that is off navigates as before (Sectors without markets_view)", () => {
     const h = history("/");
     inPlace(h, {}).open("/markets?period=week");

@@ -39,6 +39,9 @@ export interface PanelEntry {
   /** False while the facility is switched off for the organisation: the host then navigates as today. */
   enabled?: (on: (flag: string) => boolean) => boolean;
   load: () => Promise<{ default: ComponentType<PanelProps> }>;
+  /** NAV-6a: the panel is a whole page (its full route's page). On that page's own path an address for it is the page
+   * changing its own view (a list, a period, a filter), never the same page in a panel over itself. */
+  page?: boolean;
 }
 
 export interface PanelRegistry {

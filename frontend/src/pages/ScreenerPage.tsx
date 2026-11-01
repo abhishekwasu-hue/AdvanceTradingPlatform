@@ -6,7 +6,7 @@
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
 import { BellRing, ChevronDown, Code2, History, Layers, LayoutGrid, MoreHorizontal, Play, Save } from "lucide-react";
-import { useInPlace } from "../inplace/InPlaceProvider";
+import { useInPlace } from "../inplace/context";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";

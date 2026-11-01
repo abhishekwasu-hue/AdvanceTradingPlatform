@@ -1,5 +1,5 @@
 import { ExternalLink, KeyRound, LogIn, Plug, TriangleAlert, UserCircle2 } from "lucide-react";
-import { useInPlace } from "../inplace/InPlaceProvider";
+import { useInPlace } from "../inplace/context";
 import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { gateShowing } from "../live/gateShowing";

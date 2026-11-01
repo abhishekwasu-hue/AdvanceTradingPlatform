@@ -55,7 +55,7 @@ const SITES: { site: string; to: string; kind: string; params?: Record<string, s
   { site: "shell/TopBarV2.tsx:273 an account notice", to: "/settings/account", kind: "account" },
   { site: "status/DegradedNotice.tsx:22 See status", to: "/status", kind: "status" },
   { site: "support/HelpCentreV2.tsx:72 Open the page (data)", to: "/settings/trading-defaults", kind: "trading-defaults" },
-  { site: "support/SupportDialog.tsx:80 a reply's link (data)", to: "/positions", kind: "positions" },
+  { site: "support/SupportDialog.tsx:80 a reply's link (data)", to: "/positions/orders", kind: "orders" },
   { site: "tours/TourHost.tsx:58 the welcome tour's last step", to: BROKER_PATH, kind: "broker" },
   { site: "ui/BrokerGate.tsx:172 Connect a broker (gate card)", to: CONNECT_BROKER_PATH, kind: "broker" },
   { site: "ui/BrokerGate.tsx:285 Connect (stored-daily note)", to: CONNECT_BROKER_PATH, kind: "broker" },

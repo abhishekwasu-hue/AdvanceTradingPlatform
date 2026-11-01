@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from "react";
-import { useInPlace } from "../inplace/InPlaceProvider";
+import { useInPlace } from "../inplace/context";
 import { useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import type { BrokerConnection } from "../types";

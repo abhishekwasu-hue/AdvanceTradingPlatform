@@ -1,6 +1,6 @@
 import type { MouseEvent } from "react";
-import { Link, useInRouterContext, type LinkProps } from "react-router";
-import { useInPlace } from "./InPlaceProvider";
+import { Link, useInRouterContext, useLocation, type LinkProps } from "react-router";
+import { useInPlace } from "./context";
 
 type InPlaceLinkProps = Omit<LinkProps, "to"> & {
   to: string;
@@ -30,12 +30,15 @@ export function InPlaceLink(props: InPlaceLinkProps) {
 
 function RoutedInPlaceLink({ to, onClick, newTabOtherwise, ...rest }: InPlaceLinkProps) {
   const inPlace = useInPlace();
-  if (newTabOtherwise && !rest.target && !inPlace.handles(to)) rest.target = "_blank";
+  // NAV-6a: an address on the path the link is shown on (the tab's, or a panel's own inside a panel) changes that view
+  // itself - a plain link there (the Markets tab's list, a panel's own filter), never a panel over itself.
+  const own = inPlace.ownView(to, useLocation().pathname);
+  if (newTabOtherwise && !rest.target && !own && !inPlace.handles(to)) rest.target = "_blank";
   const click = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     if ((rest.target && rest.target !== "_self") || rest.reloadDocument) return;
-    if (!inPlace.handles(to)) return;   // no panel for it: the link navigates as before
+    if (own || !inPlace.handles(to)) return;   // its own view, or no panel for it: the link navigates as before
     e.preventDefault();
     inPlace.open(to, rest.state === undefined ? undefined : { state: rest.state });   // NAV-2: the handed state rides along
   };

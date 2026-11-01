@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mockCharts } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 
@@ -12,6 +12,7 @@ import { mockApi } from "./mockApi";
  */
 test.skip(!!process.env.CI, "capture-only: run by hand for the M75 NAV-4 comparison page, never in CI");
 const OUT = process.env.NAV4_OUT ?? "test-results/m75-nav4";
+mkdirSync(OUT, { recursive: true });
 const DATA = JSON.parse(readFileSync(new URL("./fixtures/option_chain_v2.json", import.meta.url), "utf8")) as {
   expiries: Record<string, unknown>; live: Record<string, unknown>;
 };

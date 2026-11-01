@@ -52,6 +52,7 @@ const EXCLUDED_FILES: Record<string, string> = {
   "src/ui/ComingSoon.tsx": "NAV - a 'coming soon' placeholder's way home (no tab is being worked in)",
   "src/inplace/InPlaceProvider.tsx": "INPLACE - the in-place host itself (NAV-1): it writes `?panel=` on the SAME path and Back closes; it navigates (as today, or in a new browser tab where the button did so before) only for an address no panel is registered for, with a dev warning",
   "src/inplace/PanelRouter.tsx": "INPLACE - a panel's own address (NAV-2): it moves only inside the panel; a page in the panel that goes to another address is handed to the host",
+  "src/inplace/context.ts": "INPLACE - the in-place host's hooks (NAV-6 split from InPlaceProvider): outside the host they navigate as today (or open a new browser tab / load the page where the button did so before)",
   "src/inplace/InPlaceLink.tsx": "INPLACE - the in-place link (NAV-1): the real address for a long-press / new tab; a plain click opens the panel registered for it (an area PR registers the panel when it switches a site to it)",
 };
 

@@ -1,4 +1,4 @@
-import { decodePanel, encodePanel, openTransition, panelValues, withPanels, type PanelEntry, type PanelRegistry, type PanelSpec } from "./registry";
+import { decodePanel, encodePanel, openTransition, panelValues, splitPath, withPanels, type PanelEntry, type PanelRegistry, type PanelSpec } from "./registry";
 
 /**
  * M75 NAV-1: the in-place API, without React (InPlaceProvider wires it to the router; the tests to a made-up history).
@@ -20,6 +20,8 @@ export interface InPlaceApi {
   replace: (spec: PanelSpec) => void;
   /** True when `open(path)` would show a panel (not navigate). */
   handles: (path: string) => boolean;
+  /** NAV-6a: true when `path` is the whole page shown at `pathname` changing its own view (see `ownView`). */
+  ownView: (path: string, pathname: string) => boolean;
 }
 
 /** NAV-2: what a converted button hands over, exactly as its navigation did before. */
@@ -86,8 +88,19 @@ export interface ApiDeps {
   newTab?: (path: string) => void;
 }
 
+/** NAV-6a: an address on the page's own path, for a panel that is that whole page, is the page changing its own view
+ * (its search: a list, a period, a filter), never the same page in a panel over itself (design section 2, SAME-TAB).
+ * A special panel on the same path (a chart window's `?chart=`, the admin console's one user) is still a panel. */
+export function ownView(path: string, pathname: string, registry: PanelRegistry): boolean {
+  const url = splitPath(path);
+  if (!url || url.pathname !== (pathname.replace(/\/+$/, "") || "/")) return false;
+  const spec = registry.resolve(path);
+  return !!spec && !!registry.get(spec.kind)?.page;
+}
+
 export function createInPlaceApi(d: ApiDeps): InPlaceApi {
   const isOn = (entry: PanelEntry | undefined): entry is PanelEntry => !!entry && d.enabled && (!entry.enabled || entry.enabled(d.on));
+  const resolve = (path: string) => (ownView(path, d.location().pathname, d.registry) ? null : d.registry.resolve(path));
   const values = () => (d.enabled ? openPanels(d.location().search, d.registry, d.on).map((p) => p.value) : []);
   const write = (next: string[], replace: boolean, pushed: number, handed?: unknown[]) => {
     const loc = d.location();
@@ -99,13 +112,14 @@ export function createInPlaceApi(d: ApiDeps): InPlaceApi {
   return {
     enabled: d.enabled,
     stack: d.enabled ? openPanels(d.location().search, d.registry, d.on).map((p) => p.spec) : [],
-    handles: (path) => { const spec = d.registry.resolve(path); return !!spec && isOn(d.registry.get(spec.kind)); },
+    handles: (path) => { const spec = resolve(path); return !!spec && isOn(d.registry.get(spec.kind)); },
+    ownView: (path, pathname) => ownView(path, pathname, d.registry),
     open: (target, opts) => {
-      const spec = typeof target === "string" ? d.registry.resolve(target) : target;
+      const spec = typeof target === "string" ? resolve(target) : target;
       const entry = spec ? d.registry.get(spec.kind) : undefined;
       if (!spec || !isOn(entry)) {
         const path = typeof target === "string" ? target : entry?.href(target.params ?? {});
-        if (typeof target === "string" && d.enabled && !spec) d.onUnregistered?.(target);
+        if (typeof target === "string" && d.enabled && !spec && !ownView(target, d.location().pathname, d.registry)) d.onUnregistered?.(target);
         if (!path) return;
         if (opts?.newTab && d.newTab) d.newTab(path);
         else if (opts?.state !== undefined) d.navigate(path, { state: opts.state });

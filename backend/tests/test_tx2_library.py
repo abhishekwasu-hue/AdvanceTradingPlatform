@@ -296,7 +296,7 @@ def fake_bars(monkeypatch):
     from app.brokers import token_lifecycle
     from app.market_data import candles_routes, service
 
-    async def pick(session, tenant_id, broker, label):
+    async def pick(session, tenant_id, broker, label, **_k):
         return types.SimpleNamespace(broker_name="fake")
 
     async def candles(self, symbol, exchange="NSE", interval="1min", now=None):

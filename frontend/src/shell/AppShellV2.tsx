@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import BrokerPromptHost from "../broker/BrokerPromptHost";
+import { InPlaceProvider } from "../inplace/InPlaceProvider";
 import ReferralClaimHost from "../growth/ReferralClaimHost";
 import ConnectAiHostV2 from "../aiKeys/ConnectAiHostV2";
 import { brokerDot } from "../broker/brokerState";
@@ -242,6 +243,8 @@ export default function AppShellV2() {
       <PageHelpProvider>
       {/* CT-1 C10: the page on screen hands its symbol / timeframe / expiry to the one Ask AI (src/shell/askAiEntry.tsx). */}
       <AskAiProvider>
+      {/* M75 NAV-1: the in-place host - panels open over the tab on the same path (`?panel=`), Back closes them. */}
+      <InPlaceProvider>
       <div className="flex min-h-screen bg-surface" data-shell="v2">
         <a href="#main"
           className="sr-only focus:not-sr-only focus:fixed focus:left-space-2 focus:top-space-2 focus:z-[70] focus:rounded-control focus:bg-surface-1 focus:px-space-3 focus:py-space-2 focus:text-t14 focus:text-fg focus:shadow-raised">
@@ -294,6 +297,7 @@ export default function AppShellV2() {
           </Suspense>
         )}
       </div>
+      </InPlaceProvider>
       </AskAiProvider>
       </PageHelpProvider>
     </ColourV2Provider>

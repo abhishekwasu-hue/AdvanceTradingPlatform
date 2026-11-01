@@ -462,6 +462,11 @@ TOOL_NAMES: Dict[str, str] = {
     "get_my_last_trade": "Your last trade", "get_weekly_review": "Your weekly review", "backtest_draft": "Backtest engine",
     "get_news": "News feed", "get_market_snapshot": "Market memory", "get_screen_universe": "Your watchlist",
     "build_screen": "Screen builder", "run_screen": "Screener", "explain_results": "Screen explanations", "propose_alert": "Alert proposal",
+    # M72 PR-1c: the planner's own read tools and calculators
+    "get_my_orders": "Your orders", "get_my_trade_settings": "Your Trade settings", "get_journal_entries": "Your journal",
+    "get_watchlist": "Your watchlists", "get_positions": "Your positions", "get_pnl_today": "Your P&L today", "get_quote": "Live price",
+    "get_candles": "Price history", "get_market_regime": "Market regime", "get_option_chain": "Option chain",
+    "calc_difference": "Calculation", "calc_percent_change": "Calculation", "calc_sum": "Calculation",
 }
 NOT_SET_UP: Dict[str, str] = {
     "get_market_context": "the market context panel is not set up yet", "get_chart_structure": "the chart structure reader is not set up yet",

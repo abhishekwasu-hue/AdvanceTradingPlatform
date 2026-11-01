@@ -144,6 +144,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # there - inside the plan's monthly platform budget and the per-user daily cap the owner sets in Admin (ATP chooses
     # no number: either Not set = the rules answer). A cap reached is a hard stop, then the rules. OFF: exactly today's
     # providers. Owner default: ON for the owner's organisation only (allow-list). The AI never places, blocks or changes orders.
+    # M72 PR-1c (CP-1; needs `ai_copilot` + `ui_v2`; app/ai/chat_routes.py, app/ai/agent.py): the Copilot chat asks the AI
+    # planner first when an AI with tool use is ready - it reads the user's own data with typed read tools and computes with
+    # calc tools - and answers from ATP's rules when the AI is down or its answer fails the checks. OFF: exactly today's
+    # chat (rules first, AI wording). Read tools and guarded proposals only; never an order (ADR-0006).
+    "copilot_agent": "Copilot planner: the AI reads your own data with read-only tools before answering; ATP's rules answer when the AI is down",
     "ai_platform_key": "Platform AI key: AI answers without a key of the user's own, inside the plan's AI budget and the per-user daily cap set in Admin",
     # AUD-T7 (owner audit 28 Oct; app/trading/cost_meter.py; needs `ui_v2`): the cost-of-trading meter on My trades - the
     # user's own closed trades' charges against the gross P&L, this financial year and this month, PAPER and LIVE apart,

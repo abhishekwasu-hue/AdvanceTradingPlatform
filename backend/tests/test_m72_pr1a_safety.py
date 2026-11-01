@@ -179,6 +179,9 @@ def test_every_tool_is_audited_for_scope():
     scoped = {
         # the asker's own rows (user_id + tenant)
         "get_positions", "get_pnl_today", "get_my_positions", "get_my_last_trade", "get_weekly_review", "get_screen_universe",
+        "get_my_orders", "get_my_trade_settings", "get_journal_entries", "get_watchlist",          # M72 PR-1c
+        # M72 PR-1c: pure arithmetic over numbers already read in the request (no rows at all)
+        "calc_difference", "calc_percent_change", "calc_sum",
         "propose_pause_deployment", "propose_strategy_review", "propose_alert",
         # market reads: the asker's own credential only (F15), or the page's own read for the same user
         "get_candles", "get_quote", "get_option_chain", "get_market_regime", "run_backtest", "backtest_draft",

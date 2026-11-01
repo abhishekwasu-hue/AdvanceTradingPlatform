@@ -176,6 +176,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/admin/controls/marketplace-terms"): "admin",
     ("GET", "/api/admin/controls/ai-platform"): "admin",
     ("PUT", "/api/admin/controls/ai-platform"): "admin",
+    ("GET", "/api/admin/controls/copilot-agent-limits"): "admin",
+    ("PUT", "/api/admin/controls/copilot-agent-limits"): "admin",
     ("GET", "/api/admin/controls/risk-ceilings"): "admin",
     ("PUT", "/api/admin/controls/risk-ceilings"): "admin",
     ("GET", "/api/admin/controls/trader-pack"): "admin",

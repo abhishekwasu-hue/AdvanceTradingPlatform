@@ -161,6 +161,34 @@ async def put_ai_platform(body: AiPlatformLimitsBody, user: User = Depends(requi
     return await _ai_platform_view(session)
 
 
+class AgentLimitsBody(BaseModel):
+    """M72 PR-1c (F20): the Copilot planner's limits; a value null = back to the default. Fields left out keep their value."""
+    values: dict[str, float | None] = Field(default_factory=dict, max_length=10)
+
+
+def _agent_limits_view(limits: Any) -> dict:
+    from app.ai import agent
+    return {"limits": {k: getattr(limits, k) for k in agent.LIMIT_BOUNDS},
+            "defaults": {k: getattr(agent.AgentLimits(), k) for k in agent.LIMIT_BOUNDS},
+            "bounds": {k: {"low": low, "high": high} for k, (low, high) in agent.LIMIT_BOUNDS.items()}}
+
+
+@admin_router.get("/copilot-agent-limits")
+async def get_agent_limits(session: AsyncSession = Depends(get_session)) -> dict:
+    """M72 PR-1c: the Copilot planner's steps, tool calls, seconds and tokens per step (each inside its bounds)."""
+    from app.ai import agent
+    return _agent_limits_view(await agent.admin_limits(session))
+
+
+@admin_router.put("/copilot-agent-limits")
+async def put_agent_limits(body: AgentLimitsBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    from app.ai import agent
+    try:
+        return _agent_limits_view(await agent.set_admin_limits(session, user, body.values))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 # --- Phase N4: feature flags -----------------------------------------------------------------------
 
 async def _flag_listing_for(session: AsyncSession, user: User) -> dict:

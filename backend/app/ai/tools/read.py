@@ -1,5 +1,8 @@
-"""H-C2a: the first read-only tools. Each reads this tenant's own data or the shared reference data, and returns the
-data with its timestamps. Nothing here writes."""
+"""H-C2a: the first read-only tools. Each reads the asking trader's own rows or the shared reference data, and returns
+the data with its timestamps. Nothing here writes.
+
+M72 PR-1a (review F3): a trader's own rows are scoped to his `user_id` as well as his organisation - in an organisation
+with several members one member never reads another member's positions or P&L (as `copilot_trades` reads them)."""
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta, timezone
@@ -54,8 +57,9 @@ async def get_news(ctx: ToolContext, args: _NewsArgs) -> ToolResult:
 
 
 async def get_positions(ctx: ToolContext, args: _NoArgs) -> ToolResult:
-    """This organisation's open positions (PAPER and LIVE) with entry, stop and targets."""
-    rows = list(await ctx.session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == ctx.tenant_id, TradeRecord.exit_time.is_(None))
+    """Your own open positions (PAPER and LIVE) with entry, stop and targets."""
+    rows = list(await ctx.session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == ctx.tenant_id, TradeRecord.user_id == ctx.user.id,
+                                                                    TradeRecord.exit_time.is_(None))
                                           .order_by(TradeRecord.entry_time.desc()).limit(50)))
     data = [{"id": t.id, "symbol": t.symbol, "mode": t.mode, "direction": t.direction, "quantity": t.quantity, "entry_price": float(t.entry_price),
              "stop_loss": float(t.stop_loss), "target1": float(t.target1) if t.target1 is not None else None, "entry_time": _iso(t.entry_time),
@@ -64,9 +68,10 @@ async def get_positions(ctx: ToolContext, args: _NoArgs) -> ToolResult:
 
 
 async def get_pnl_today(ctx: ToolContext, args: _NoArgs) -> ToolResult:
-    """Today's (IST) closed trades and realised P&L for this organisation."""
+    """Today's (IST) closed trades and realised P&L - your own trades only."""
     start = datetime.combine(ctx.now.astimezone(IST).date(), time(), IST).astimezone(timezone.utc)
-    rows = list(await ctx.session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == ctx.tenant_id, TradeRecord.exit_time >= start)))
+    rows = list(await ctx.session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == ctx.tenant_id, TradeRecord.user_id == ctx.user.id,
+                                                                    TradeRecord.exit_time >= start)))
     pnl = [float(getattr(t, "pnl", 0) or 0) for t in rows]
     data = {"closed_trades": len(rows), "realised_pnl": round(sum(pnl), 2), "winners": sum(1 for p in pnl if p > 0), "losers": sum(1 for p in pnl if p < 0)}
     return ToolResult(True, data, _iso(ctx.now), "trades", {"day_start": _iso(start), "read_at": _iso(ctx.now)})
@@ -85,8 +90,8 @@ for _tool in (
     Tool("get_market_snapshot", "Latest market memory: per-symbol bias, regime and last price, market cues, global cues and the sentiment read, with capture times.",
          _SymbolArg, get_market_snapshot),
     Tool("get_news", "Recent news headlines (third-party, unverified unless marked) with severity and affected symbols.", _NewsArgs, get_news),
-    Tool("get_positions", "The organisation's open positions.", _NoArgs, get_positions),
-    Tool("get_pnl_today", "Today's closed trades and realised P&L (IST day).", _NoArgs, get_pnl_today),
+    Tool("get_positions", "Your own open positions.", _NoArgs, get_positions),
+    Tool("get_pnl_today", "Your own closed trades and realised P&L today (IST day).", _NoArgs, get_pnl_today),
     Tool("get_risk_limits", "The organisation's configured risk limits.", _NoArgs, get_risk_limits),
 ):
     register(_tool)

@@ -54,20 +54,23 @@ describe("selectBands (Z7a-3) - the same rule as the backend", () => {
 });
 
 describe("the layer and its shapes", () => {
-  const conv: Converters = { x: (t) => t, y: (p) => 1000 - p * 5, width: 400, height: 300 };
+  const conv: Converters = { x: (t) => t, y: (p) => 1000 - p * 5, width: 400, height: 600 };
 
-  it("draws a band as a tinted rectangle, a line as a segment, labels at the right edge", () => {
+  it("draws a band as a tinted rectangle, a line as a segment, labels placed by the label placer", () => {
     const bands = selectBands([cand("b", 100, 102, { touches: 2, state: "tested" }), cand("l", 98, 98)], 101);
     const layer = bandsLayer(bands, "2026-10-09T10:00:00Z");
     expect(layer.asOf).toBe("2026-10-09T10:00:00Z");
     expect(layer.bands?.map((b) => b.label)).toEqual(["demand 102.00 (tested) · 2 touches", "demand 98.00 (fresh) · no touches"]);
     const shapes = bandShapes(layer.bands ?? [], conv);
-    expect(shapes.map((s) => s.type)).toEqual(["rect", "text", "segment", "text"]);
+    expect(shapes.map((s) => s.type)).toEqual(["rect", "segment", "chip", "text", "chip", "text"]);   // M75 W-1: labels on top of every band (M78: on a chip)
     const rect = shapes[0] as Extract<(typeof shapes)[number], { type: "rect" }>;
     expect(rect).toMatchObject({ x: 0, y: 490, w: 400, h: 10 });
     expect(rect.fill).toMatch(/^#16a34a[0-9a-f]{2}$/);
-    expect(shapes[1]).toMatchObject({ type: "text", x: 396, align: "right", text: "demand 102.00 (tested) · 2 touches" });
-    expect(shapes[2]).toMatchObject({ type: "segment", y1: 510, y2: 510, x2: 400, dash: "solid" });
+    // a 10 px band is too thin to hold its label inside: it sits on the band's own line, at the left
+    expect(shapes[2]).toMatchObject({ type: "chip", x: 4, y: 486, h: 18 });
+    expect(shapes[3]).toMatchObject({ type: "text", x: 8, y: 495, align: "left", baseline: "middle", text: "demand 102.00 (tested) · 2 touches" });
+    expect(shapes[1]).toMatchObject({ type: "segment", y1: 510, y2: 510, x2: 400, dash: "solid" });
+    expect(layer.bands?.map((b) => b.role)).toEqual(["demand", "demand"]);
     expect(bandShapes([{ low: 1, high: 2 }], { ...conv, y: () => null })).toEqual([]);
     // the platform's default-settings zones served as a fallback say so on every band
     expect(bandsLayer(bands, null, true).bands?.map((b) => b.label)).toEqual([

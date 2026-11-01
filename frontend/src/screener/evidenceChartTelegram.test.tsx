@@ -4,7 +4,9 @@
  * time and O / H / L / C beside it; C4 "Send to my Telegram" in place (the connect row when not linked, the reason's
  * own action, hidden without a bot, the send after linking exactly once); C5 the grid on a phone and its load error.
  */
-import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactElement } from "react";
+import { renderToStaticMarkup as renderBare } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { MatchedBarCard, OpenInCharts } from "./EvidenceChart";
 import { EvidenceView, TelegramSend } from "./EvidencePanel";
@@ -18,6 +20,8 @@ import {
 const pack = sample as unknown as EvidencePack;
 const none = new Set<string>();
 const noop = () => undefined;
+/** M75 NAV-3: "Open in Charts" is an in-place link, always inside the app's router. */
+const renderToStaticMarkup = (el: ReactElement) => renderBare(<MemoryRouter>{el}</MemoryRouter>);
 
 describe("C1: the evidence on the Charts page's chart", () => {
   it("renders the shared chart with the pack's own bars, the timeframe and an Open in Charts link", () => {

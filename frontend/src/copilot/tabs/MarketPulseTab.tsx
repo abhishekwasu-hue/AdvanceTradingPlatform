@@ -1,7 +1,7 @@
 import { AlertTriangle, CalendarClock, CheckCircle2, CircleHelp, ListChecks, Minus, RefreshCw, Rocket, Wallet, XCircle } from "lucide-react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Badge, Button, EmptyState } from "../../components/primitives";
-import type { BriefDay, DailyBrief } from "../../types";
+import type { BriefDay, BriefRead, DailyBrief } from "../../types";
 import { friendlyError } from "../aiTask";
 import RegimeDial, { type DialKind } from "../components/RegimeDial";
 import SentimentGauge3D from "../components/SentimentGauge3D";
@@ -12,7 +12,10 @@ import MemoryPanel from "./pulse/MemoryPanel";
 import ThesisPanel from "./pulse/ThesisPanel";
 import { ageText, money, Panel, Stagger, StaggerItem, TabSkeleton } from "./shared";
 import { strategyDisplayName } from "../../ui/strategyName";
-import { formatNumber, formatPct } from "../../ui/format";
+import { formatDateTimeIST, formatNumber, formatPct, formatTimeIST } from "../../ui/format";
+
+// M82 R3: the broker's own renew panel, opened right on the card (its own chunk, loaded only when it is opened).
+const ConnectPanel = lazy(() => import("../../broker/ConnectPanel"));
 
 /**
  * Market Pulse: today's read of the market in one screen - the 3D sentiment gauge, the regime dial, the briefing's
@@ -24,6 +27,76 @@ function DataStamp({ data }: { data: NonNullable<DailyBrief["market_data"]> }) {
   if (data.state === "fresh") return null;
   const text = data.state === "stale" ? t("pulse.stamp.stale", { age: ageText(data.age_minutes ?? 0) }) : data.state === "suspect" ? t("pulse.stamp.placeholder") : t("pulse.stamp.none");
   return <Badge tone="warn" className="font-bold uppercase tracking-wider">{text}</Badge>;
+}
+
+/** M83 A2: the tab's sticky header - ONE "Read now" that reads the market and refreshes every card on the tab. Disabled,
+ * with the reason, when this user has no valid broker session of his own (the server refuses the broker read then too). */
+export function ReadNowBar() {
+  const t = useCopilotT();
+  const { brief, readNow, reading, readReport } = useCopilotData();
+  const rn = brief?.read?.read_now;
+  const blocked = rn ? !rn.enabled : false;
+  return (
+    <div className="sticky top-0 z-20 rounded-xl border border-border bg-surface/95 px-3 py-2 backdrop-blur" data-testid="pulse-header">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-semibold text-fg">{t("pulse.header.title")}</h2>
+        {brief && <span className="text-xs text-fg-muted">{brief.session.text}</span>}
+        <Button className="ml-auto" size="sm" icon={<RefreshCw size={13} className={reading ? "animate-spin" : ""} />}
+                disabled={reading || blocked} onClick={() => void readNow()} data-testid="pulse-read-now"
+                aria-describedby={blocked ? "pulse-read-now-why" : undefined}>
+          {reading ? t("pulse.header.reading") : t("pulse.header.readNow")}
+        </Button>
+      </div>
+      {blocked && rn?.reason && <p id="pulse-read-now-why" className="mt-1 text-xs text-warn" data-testid="pulse-read-now-why">{rn.reason}</p>}
+      {readReport && <ReadSummary />}
+    </div>
+  );
+}
+
+function ReadSummary() {
+  const t = useCopilotT();
+  const { readReport: r } = useCopilotData();
+  if (!r) return null;
+  if (r.error) return <p className="mt-1 text-xs text-down" role="alert" data-testid="pulse-read-result">{friendlyError(r.error, t)}</p>;
+  return (
+    <div className="mt-1 text-xs" data-testid="pulse-read-result" role="status">
+      <span className={r.symbols > 0 ? "text-fg-muted" : "text-warn"}>
+        {t("pulse.header.result", { time: formatTimeIST(r.at), symbols: r.symbols, cues: r.cues, globals: r.globals })}
+      </span>
+      {r.reasons.length > 0 && (
+        <details className="mt-0.5">
+          <summary className="cursor-pointer text-warn">{t("pulse.header.why", { count: r.reasons.length })}</summary>
+          <ul className="mt-0.5 list-disc pl-4 text-fg-muted">{r.reasons.slice(0, 8).map((x) => <li key={x}>{x}</li>)}</ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** M82 R2 / R3: the session the read belongs to, or - with no read - the one reason why, with Reconnect in place. */
+export function ReadState({ read }: { read: BriefRead }) {
+  const t = useCopilotT();
+  const { reloadBrief } = useCopilotData();
+  const [renew, setRenew] = useState(false);
+  if (read.state !== "none") {
+    return read.label ? <span data-testid="pulse-read-session"><Badge tone={read.state === "today" ? "info" : "neutral"}>{read.label}</Badge></span> : null;
+  }
+  const again = read.read_now.reconnect;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="pulse-read-reason" data-reason={read.reason ?? undefined}>
+      {read.reason === "broker_expired" && again && (
+        <>
+          <Button size="sm" onClick={() => setRenew(true)} data-testid="pulse-reconnect">{t("pulse.reconnect")}</Button>
+          {renew && (
+            <Suspense fallback={null}>
+              <ConnectPanel broker={again.broker} mode="renew" accountLabel={again.account_label} open={renew}
+                            onOpenChange={setRenew} onChanged={reloadBrief} />
+            </Suspense>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 function Meter({ label, used, max, isMoney = false }: { label: string; used: number; max: number | null; isMoney?: boolean }) {
@@ -62,7 +135,7 @@ function YourDay({ day }: { day: BriefDay }) {
 
 export default function MarketPulseTab() {
   const t = useCopilotT();
-  const { brief, briefError, briefLoading, reloadBrief } = useCopilotData();
+  const { brief, briefError, briefLoading, reloadBrief, reading } = useCopilotData();
   const [mode, setMode] = useState<"PAPER" | "LIVE" | null>(null);
 
   if (!brief && briefLoading) return <TabSkeleton />;
@@ -79,18 +152,21 @@ export default function MarketPulseTab() {
 
   return (
     <div className="space-y-4" data-testid="tab-panel-market-pulse">
+      <ReadNowBar />
       <Stagger className="grid gap-4 lg:grid-cols-3">
         <StaggerItem className="lg:col-span-1">
-          <TiltCard className="h-full" data-testid="pulse-read">
+          <TiltCard className="h-full" data-testid="pulse-read" aria-busy={reading || undefined}>
             <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wider text-fg-muted">
-              {t("pulse.todayRead")}{brief.day_type.symbol ? ` · ${brief.day_type.symbol}` : ""}<DataStamp data={data} />
+              {t("pulse.todayRead")}{brief.day_type.symbol ? ` · ${brief.day_type.symbol}` : ""}
+              {brief.read && brief.read.state !== "none" ? <ReadState read={brief.read} /> : <DataStamp data={data} />}
             </div>
             <p className="mt-2 text-lg font-semibold leading-snug text-fg">{brief.plan.headline}</p>
             <p className="mt-2 text-xs text-fg-muted">
               {brief.session.text}
-              {data.age_minutes != null ? ` · ${t("pulse.readAgo", { age: ageText(data.age_minutes) })}` : ` · ${t("pulse.noRead")}`}
+              {data.age_minutes != null ? ` · ${t("pulse.readAgo", { age: ageText(data.age_minutes) })}` : brief.read ? "" : ` · ${t("pulse.noRead")}`}
               {brief.session.holidays_next_7_days.length ? ` · ${t("pulse.holidays", { list: brief.session.holidays_next_7_days.join(", ") })}` : ""}
             </p>
+            {brief.read?.state === "none" && <ReadState read={brief.read} />}
             {!data.figures_shown && data.state !== "none" && (
               <p className="mt-2 text-xs text-warn">{data.state === "stale" ? t("pulse.hiddenStale") : t("pulse.hiddenPlaceholder")}</p>
             )}
@@ -107,13 +183,15 @@ export default function MarketPulseTab() {
                 </span>
               )}
             </div>
-            <div className="mt-3"><Button size="sm" variant="ghost" icon={<RefreshCw size={13} className={briefLoading ? "animate-spin" : ""} />} onClick={reloadBrief} disabled={briefLoading}>{t("states.refresh")}</Button></div>
           </TiltCard>
         </StaggerItem>
         <StaggerItem>
           <TiltCard className="h-full" glow={sentiment && sentiment.score > 10 ? "up" : sentiment && sentiment.score < -10 ? "down" : "ai"} data-testid="pulse-gauge">
             <div className="text-xs font-semibold uppercase tracking-wider text-fg-muted">{t("pulse.sentiment.title")}</div>
             <SentimentGauge3D score={sentiment?.score ?? null} label={sentiment?.label} coverage={sentiment?.coverage} />
+            <p className="mt-1 text-xs text-fg-muted" data-testid="pulse-sentiment-stamp">
+              {sentiment?.as_of ? t("pulse.updatedAt", { time: formatDateTimeIST(sentiment.as_of) }) : t("pulse.sentiment.none")}
+            </p>
             {(brief.sentiment_view ?? []).length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs text-fg-muted">{(brief.sentiment_view ?? []).slice(0, 2).map((l) => <li key={l}>{l}</li>)}</ul>}
           </TiltCard>
         </StaggerItem>

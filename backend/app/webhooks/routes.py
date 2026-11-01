@@ -141,7 +141,7 @@ async def tradingview_webhook(
         score=100, grade=SignalGrade.A1, reasons=["TradingView webhook alert"], timeframe_combo="webhook",
     )
 
-    if await approval.required(session, tenant.id):
+    if await approval.required(session, tenant.id, user_id=user.id):   # M68 PR-6: his own "Ask me first" too
         # Z3 / BT2: approval-only - the alert becomes an ENTRY proposal; the PAPER order waits for Approve.
         try:
             row = await approval.propose_entry(session, tenant.id, signal=signal, strategy_id=payload.strategy_id, source="tradingview",

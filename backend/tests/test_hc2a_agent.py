@@ -135,7 +135,11 @@ def test_an_ungrounded_or_advisory_answer_gets_one_rewrite_then_the_summary():
     bad = _run(_agent(me["id"], stubborn, "How is ALPHA doing?"))
     assert bad.stopped == "not_grounded" and bad.source == "summary" and "get_positions" in bad.text and "140" not in bad.text
     advice = _Scripted([("call", [("get_positions", {})]), ("text", "Guaranteed profit, buy more ALPHA now."), ("text", "ALPHA: 5 units open from 100.")])
-    assert _run(_agent(me["id"], advice, "Should I add?")).text == "ALPHA: 5 units open from 100."
+    assert _run(_agent(me["id"], advice, "How is ALPHA?")).text == "ALPHA: 5 units open from 100."
+    # M72 PR-1a: an advice ASK is refused before the model is called (the chat's refusal), so it never reaches a rewrite
+    asked = _Scripted([("text", "ALPHA: 5 units open from 100.")])
+    refused = _run(_agent(me["id"], asked, "Should I add?"))
+    assert refused.refused == "advice" and refused.source == "refused" and asked.seen == []
 
 
 def test_limits_and_provider_errors_end_in_the_summary():

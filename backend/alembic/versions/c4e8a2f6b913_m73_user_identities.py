@@ -4,7 +4,7 @@ provider per user. `email_at_link` is the provider's e-mail when it was linked (
 No provider token is ever stored. Personal data: cascades with the user, removed on erasure.
 
 Revision ID: c4e8a2f6b913
-Revises: 8d2f4a6c0e19
+Revises: 6b9d1f3a5c27
 Create Date: 2026-11-01 12:00:00
 """
 from collections.abc import Sequence
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c4e8a2f6b913'
-down_revision: str | Sequence[str] | None = '8d2f4a6c0e19'
+down_revision: str | Sequence[str] | None = '6b9d1f3a5c27'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 ROLLBACK_SAFE = True     # Z11: additive (one new table) - the previous release runs on this schema (code-only rollback ok)

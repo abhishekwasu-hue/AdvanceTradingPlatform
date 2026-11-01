@@ -142,7 +142,8 @@ async def execute_structure(
     # (origin "approval" with its id, checked against the database); every other caller is refused.
     gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id,
                                             origin=origin if origin == approval_gate.ORIGIN_APPROVAL else approval_gate.ORIGIN_AUTOMATIC,
-                                            approval_action_id=approval_action_id if origin == approval_gate.ORIGIN_APPROVAL else None)
+                                            approval_action_id=approval_action_id if origin == approval_gate.ORIGIN_APPROVAL else None,
+                                            user_id=user.id)
     if gate:
         refusals.insert(0, gate)
     ban, _ = await fo_limits.entry_refusal(session, signal.symbol, signal.timestamp)   # D7: F&O ban on the underlying

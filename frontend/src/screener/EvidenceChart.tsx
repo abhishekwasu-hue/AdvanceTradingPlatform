@@ -7,13 +7,13 @@
  */
 import { ExternalLink } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useInRouterContext } from "react-router";
 import { useOptionalAuth } from "../auth/AuthContext";
 import ChartV2 from "../chart/ChartV2";
 import { timeframeLabel, type TimeframeId } from "../chart/timeframes";
 import { useChartPrefs } from "../chart/useChartPrefs";
 import type { LightweightEngine } from "../charting/lightweight";
 import { buttonClass, cx } from "../components/primitives";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { chartTabPath } from "../shell/shellRoutes";
 import { formatCount, formatNumber } from "../ui/format";
 import {
@@ -170,15 +170,13 @@ export function EvidenceChartLive({ pack, drawables, highlight = null, className
 const EVIDENCE_LAYER = "screener-evidence";
 const INTRADAY_SCREEN = new Set(["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h"]);
 
-/** "Open in Charts": the Charts page on this symbol and timeframe (a link inside the app; a plain one outside a router). */
+/** "Open in Charts": this symbol and timeframe on a chart. M75 NAV-3: it opens in place (a side panel / bottom sheet over
+ * the scanner, which stays as it was); the real address (the Chart tab) stays in `href`. Always inside the app's router. */
 export function OpenInCharts({ symbol, exchange, timeframe, compact = false }: { symbol: string; exchange?: string; timeframe: TimeframeId | null; compact?: boolean }) {
   const to = chartTabPath(symbol, exchange, timeframe);
-  const inRouter = useInRouterContext();
   const cls = buttonClass({ variant: "secondary", size: "sm", className: "min-h-11 md:min-h-9" });
   const body = <><ExternalLink size={14} aria-hidden /> {compact ? "Charts" : "Open in Charts"}</>;
-  return inRouter
-    ? <Link to={to} className={cls} data-testid="open-in-charts" aria-label={`Open ${symbol} in Charts`}>{body}</Link>
-    : <a href={to} className={cls} data-testid="open-in-charts" aria-label={`Open ${symbol} in Charts`}>{body}</a>;
+  return <InPlaceLink to={to} className={cls} data-testid="open-in-charts" aria-label={`Open ${symbol} in Charts`}>{body}</InPlaceLink>;
 }
 
 /** SCR-FIX C2: the matched bar's own time and O / H / L / C (and volume), beside the chart - the pack's numbers. */

@@ -76,6 +76,9 @@ def test_the_one_sided_warning_follows_trade_s_rule():
     assert R.one_sided_warning(1, 0) is None and R.one_sided_warning(0, 0) is None
     assert "2 directional positions are bullish" in R.one_sided_warning(2, 0)
     assert "3 directional positions are bearish" in R.one_sided_warning(0, 3)
+    # M76-3 (owner-approved): a count only, without the judgement clause.
+    assert R.one_sided_warning(2, 0) == "All 2 directional positions are bullish."
+    assert not any(w in R.one_sided_warning(0, 3) for w in ("move against", "diversification", "correlated"))
     assert R.one_sided_warning(2, 1) is None
     v = R.view(R.positions_of([_t(1, "A"), _t(2, "B"), _t(3, "C", kind="OPTION")]), {}, {}, 10_000.0)
     assert v["direction"] == {"bullish": 2, "bearish": 0, "neutral": 1, "warning": R.one_sided_warning(2, 0)}

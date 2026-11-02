@@ -89,7 +89,7 @@ def test_drawdown_ladder_halves_then_pauses_per_mode():
     _seed(t, exit_reason="Target 1", minutes_ago=3 * 24 * 60, pnl=-6_000.0)     # 6% below the 1,00,000 peak
     result, _, trade = _execute(t, key="v1-dd-1")
     assert result.executed, result.reasons
-    assert trade.quantity == 250 and any("risk per trade halved (rule P2)" in r for r in result.reasons)
+    assert trade.quantity == 250 and any("risk per trade cut 50% (rule P2)" in r for r in result.reasons)   # M68 PR-5: his own 50 %
     # LIVE has its own ladder: a PAPER drawdown does not shrink LIVE... checked through status below.
     _seed(t, exit_reason="Target 1", minutes_ago=2 * 24 * 60, pnl=-6_000.0)     # 12% below
     result, order, _ = _execute(t, key="v1-dd-2")
@@ -135,7 +135,7 @@ def test_event_blackout_blocks_and_size_cut_scales():
     # Only the platform operator may add a global event.
     forbidden = client.post("/api/risk-guardian/events", headers=t["headers"], json={"event_date": _ist_today(), "kind": "BUDGET", "action": "BLOCK", "global_event": True})
     assert forbidden.status_code == 403
-    assert client.post("/api/risk-guardian/events", headers=t["headers"], json={"event_date": _ist_today(), "kind": "NONSENSE"}).status_code == 400
+    assert client.post("/api/risk-guardian/events", headers=t["headers"], json={"event_date": _ist_today(), "kind": "NONSENSE", "action": "BLOCK"}).status_code == 400
 
 
 def test_portfolio_risk_cap_counts_open_stops_and_buckets():
@@ -155,33 +155,36 @@ def test_portfolio_risk_cap_counts_open_stops_and_buckets():
 
 
 def test_platform_ceilings_refuse_settings_and_clamp_at_runtime():
+    # M68 PR-5 (TS1-048, D2 / M68Q-2): no ceiling unless an admin sets one - a 2.5 % risk per trade saves as it is
     t = _tenant("v1-ceilings@example.com")
-    too_much = client.put("/api/risk-settings", headers=t["headers"], json={**legacy().model_dump(), "risk_per_trade_pct": 2.5})
-    assert too_much.status_code == 400 and "exceeds the platform ceiling 2" in too_much.json()["detail"]
+    assert client.get("/api/risk-settings/ceilings", headers=t["headers"]).json().get("risk_per_trade_pct") is None
+    free = client.put("/api/risk-settings", headers=t["headers"], json={**legacy().model_dump(), "risk_per_trade_pct": 2.5})
+    assert free.status_code == 200 and free.json()["risk_per_trade_pct"] == 2.5
     bad_ladder = client.put("/api/risk-settings", headers=t["headers"], json={**legacy().model_dump(), "dd_level_1_pct": 12, "dd_level_2_pct": 10})
     assert bad_ladder.status_code == 400
     ok = client.put("/api/risk-settings", headers=t["headers"], json={**legacy().model_dump(), "risk_per_trade_pct": 1.0, "stop_cooldown_minutes": 45})
     assert ok.status_code == 200 and ok.json()["stop_cooldown_minutes"] == 45 and ok.json()["max_portfolio_risk_pct"] == 6.0
-    assert client.get("/api/risk-settings/ceilings", headers=t["headers"]).json()["risk_per_trade_pct"] == 2.0
 
-    # The operator lowers the ceiling below a saved setting: the engine clamps at runtime and says so.
-    async def lower():
+    # An admin sets a ceiling for this team only: a higher value is refused, a saved one is clamped at runtime.
+    async def team(values):
         async with _session_factory() as session:
             user = await session.get(User, t["user_id"])
-            await controls.set_risk_ceilings(session, user, {"risk_per_trade_pct": 0.5})
-    _run(lower())
+            return await controls.set_risk_ceilings(session, user, values, t["tenant_id"])
+    _run(team({"risk_per_trade_pct": 2.0}))
     try:
+        assert client.get("/api/risk-settings/ceilings", headers=t["headers"]).json()["risk_per_trade_pct"] == 2.0
+        too_much = client.put("/api/risk-settings", headers=t["headers"], json={**legacy().model_dump(), "risk_per_trade_pct": 2.5})
+        assert too_much.status_code == 400 and "exceeds the ceiling your admin set (2)" in too_much.json()["detail"]
+        _run(team({"risk_per_trade_pct": 0.5}))
         result, _, trade = _execute(t, key="v1-ceil-1")
         assert result.executed, result.reasons
-        assert trade.quantity == 250 and any("capped at the platform ceiling 0.5" in r for r in result.reasons)
-        cfg, notes = controls.clamp_config(RiskConfig(risk_per_trade_pct=1.5, stop_cooldown_minutes=0), {**controls.RISK_CEILINGS_DEFAULT, "min_stop_cooldown_minutes": 15})
+        assert trade.quantity == 250 and any("capped at the ceiling your admin set (0.5)" in r for r in result.reasons)
+        cfg, notes = controls.clamp_config(RiskConfig(risk_per_trade_pct=1.5, stop_cooldown_minutes=0), {"min_stop_cooldown_minutes": 15})
         assert cfg.risk_per_trade_pct == 1.5 and cfg.stop_cooldown_minutes == 15 and len(notes) == 1
+        assert controls.clamp_config(RiskConfig(risk_per_trade_pct=50.0), {}) == (RiskConfig(risk_per_trade_pct=50.0), [])
     finally:
-        async def restore():
-            async with _session_factory() as session:
-                user = await session.get(User, t["user_id"])
-                await controls.set_risk_ceilings(session, user, {"risk_per_trade_pct": 2.0})
-        _run(restore())
+        _run(team({"risk_per_trade_pct": None}))
+    assert client.get("/api/risk-settings/ceilings", headers=t["headers"]).json() == {}
 
 
 def test_structures_pass_through_the_guardian_too():

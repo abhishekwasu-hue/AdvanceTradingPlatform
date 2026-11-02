@@ -5,7 +5,7 @@ the books and account reads, symbol mapping to ATP's instrument master, the feed
 PAPER parity. No network, no real account, no secret: fake tokens are built at run time."""
 import asyncio
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -26,6 +26,7 @@ from app.compliance.order_policy import policy_for
 from app.core.enums import OrderSide
 from app.execution import marketable_limit as ml
 from app.execution.paper_adapter import PaperExecutionAdapter
+from app.execution.paper_charges import PaperCharges
 from app.execution.router import DEFAULT_MARKET_PROTECTION_PCT
 from app.market_data import kotak_feed
 from app.market_data.data_terms import terms_for
@@ -439,10 +440,11 @@ def test_paper_practising_for_kotak_neo_takes_the_same_path_as_live():
     assert response.status == "COMPLETE" and response.raw["average_price"] <= 3016.05
     assert paper.capabilities.market_orders_allowed is False and paper.capabilities.stop_market is False
     # The broker's stated API brokerage (Rs 0 on Trade Free) - only the statutory charges remain.
-    plain = PaperExecutionAdapter(clock=lambda: datetime(2026, 10, 23, 5, 0, tzinfo=timezone.utc))
+    # M68 PR-7: a plain paper account pays the trader's own brokerage (here a ₹20 he saved; ATP sets none)
+    plain = PaperExecutionAdapter(PaperCharges(brokerage_per_order=20.0).broker(), clock=lambda: datetime(2026, 10, 23, 5, 0, tzinfo=UTC))
     plain.mark("RELIANCE", 3001.0)
     plain_response = run(plain.place_order(order))
-    assert plain_response.raw["charges"] - response.raw["charges"] > 15                     # the default Rs 20 + GST is gone
+    assert plain_response.raw["charges"] - response.raw["charges"] > 15                     # his Rs 20 + GST is gone
     assert run(plain.get_order_book())[0].order_type == "MARKET"                            # no venue: as before
 
 

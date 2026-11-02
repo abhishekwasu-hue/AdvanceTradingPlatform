@@ -93,7 +93,7 @@ def adjust(bars: Sequence[LakeBar], actions: Sequence[MdCorporateActionRecord], 
             out.append(bar)
             continue
         out.append(replace(bar, open=bar.open * f, high=bar.high * f, low=bar.low * f, close=bar.close * f,
-                           volume=int(round(bar.volume / shares)) if shares else bar.volume))   # dividends / rights leave volume alone
+                           volume=int(round(bar.volume / shares)) if shares and bar.volume is not None else bar.volume))   # dividends / rights leave volume alone
     return out
 
 

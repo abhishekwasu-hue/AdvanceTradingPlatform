@@ -129,7 +129,7 @@ export function useChartStrategies({ enabled, candles, symbol, timeframe, exchan
       const dep = depFor(s.id);
       if (on) {
         if (dep && dep.status === "PAUSED") await api.resumeDeployment(dep.id);
-        else if (!dep) await api.createDeployment({ strategy_id: s.id, symbol: sym, exchange, timeframe: "1min", mode: "PAPER", instrument_kind: "UNDERLYING" });
+        else if (!dep) await api.createDeployment({ strategy_id: s.id, symbol: sym, exchange, mode: "PAPER", instrument_kind: "UNDERLYING" });   // M68 PR-8: base = the strategy's own candle
         setDeployMsg(`${s.name} is running on ${sym} (PAPER).`);
       } else if (dep) {
         await api.pauseDeployment(dep.id, "paused from the chart");

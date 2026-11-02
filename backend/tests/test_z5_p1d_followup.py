@@ -18,6 +18,7 @@ from app.db.models import AiActionRecord, InstrumentRecord, MarketSnapshotRecord
 from app.execution import approval
 from app.market_data.calendar import IST
 from app.risk_engine import by_default, vix_gate
+from tests.def0_legacy import own_vix
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import _FakeBroker, _worker
 from tests.test_z3_approval_entries import _flag_for as _approval_flag
@@ -59,6 +60,8 @@ def test_under_bt1b_only_the_reader_sees_india_vix_values(monkeypatch):
     member = _member(owner)
     for flag in (by_default.FLAG, vix_gate.FLAG, "byob_data_tier"):
         _flag(flag, owner["tenant_id"])
+    own_vix(client, owner["headers"])                                     # M68 PR-5: each user's own India VIX check
+    own_vix(client, member["headers"])
     _vix_clock(monkeypatch)
     _store(owner, last=14.0, prev=13.0, reader=owner["user_id"])         # taken through the owner's own session
 
@@ -137,13 +140,14 @@ def test_an_approved_ticket_whose_time_stop_has_passed_is_not_placed(monkeypatch
             async def lookup(symbol, exchange="NSE"):
                 return 100.0
             done = await approval.execute_entry(session, action, user, price_lookup=lookup,
-                                                now=datetime(2026, 10, 9, 10, 58, tzinfo=IST).astimezone(UTC))
+                                                now=datetime(2026, 10, 9, 11, 0, tzinfo=IST).astimezone(UTC))   # M68 PR-3: not later than now
             plan = await session.get(TradePlanRecord, out["id"])
             return done.status, done.result, plan.status
     status, result, plan_status = _run(approve_late())
     assert status == "FAILED" and "time stop 11:00" in result and plan_status == "FAILED"
     early = {"ticket": {"plan_id": 1}, "exit_rules": json.dumps({"time_exit_at": "11:00"})}
     assert approval.ticket_time_stop_passed(early, datetime(2026, 10, 9, 10, 40, tzinfo=IST)) is None
+    assert approval.ticket_time_stop_passed(early, datetime(2026, 10, 9, 10, 58, tzinfo=IST)) is None   # M68 PR-3: no 5-minute lead
     assert approval.ticket_time_stop_passed({"exit_rules": json.dumps({"time_exit_at": "09:30"})}, datetime(2026, 10, 9, 10, 40, tzinfo=IST)) is None
 
 
@@ -221,6 +225,7 @@ def test_the_readers_own_refused_order_stores_and_notifies_no_vix_values(monkeyp
     _org(owner)
     for flag in (by_default.FLAG, vix_gate.FLAG, "byob_data_tier"):
         _flag(flag, owner["tenant_id"])
+    own_vix(client, owner["headers"])
     _vix_clock(monkeypatch)
     _store(owner, last=14.0, prev=13.0, reader=owner["user_id"])
     executed, reasons, _ = _enter(owner["user_id"], symbol="NIFTY")

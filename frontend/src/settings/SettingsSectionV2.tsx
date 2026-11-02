@@ -14,7 +14,11 @@ import PhonePushV2 from "../alerts/PhonePushV2";
 import SignedWebhooksV2 from "../alerts/SignedWebhooksV2";
 import { isNativeApp } from "../native/platform";
 import RhythmTelegramV2 from "../rhythm/RhythmTelegramV2";
+import CopilotWatchV2 from "../copilot/watch/CopilotWatchV2";
+import AnswerLanguageV2 from "../copilot/language/AnswerLanguageV2";
+import CopilotMemoryV2 from "../copilot/memory/CopilotMemoryV2";
 import ConnectAiPanelV2 from "../aiKeys/ConnectAiPanelV2";
+import PlatformAiUsageV2 from "../aiKeys/PlatformAiUsageV2";
 import KeyGuidesV2 from "../aiKeys/KeyGuidesV2";
 import { useAuth } from "../auth/AuthContext";
 import type { PageProps } from "../routes";
@@ -82,6 +86,8 @@ export function Fold({ id, title, line, children, onOpen }: { id: string; title:
 /** Settings › AI's body (also the in-place AI key panel, M75 NAV-2). */
 export function AiSection() {
   const oneKey = useFeatures().on("ai_one_key");
+  const languages = useFeatures().on("copilot_languages");
+  const remembers = useFeatures().on("copilot_memory");
   return (
     <div id="ai" className="space-y-space-4">
       {/* Part A: one key for every AI feature. Without `ai_one_key`, today's AI cards. */}
@@ -92,12 +98,20 @@ export function AiSection() {
           <VisionByokCard />
         </>
       )}
+      {/* M72 PR-1b: today's use on the platform AI key and his own daily limit (renders nothing when another key answers). */}
+      <PlatformAiUsageV2 />
+      {/* M72 PR-10: the language the Copilot answers in and its microphone (flag copilot_languages). */}
+      {languages && <div id="copilot-answers" className="scroll-mt-20"><Card title="Copilot answers"><AnswerLanguageV2 /></Card></div>}
+      {/* M72 PR-11: what the Copilot remembers about him - shown, edited, deleted (flag copilot_memory). */}
+      {remembers && <div id="copilot-memory" className="scroll-mt-20"><Card title="What the Copilot remembers"><CopilotMemoryV2 /></Card></div>}
     </div>
   );
 }
 
 function AlertsSection() {
   const rhythm = useFeatures().on("daily_rhythm");
+  // M72 PR-7: the Copilot watch - opt-in cards about his own positions, strikes and watchlists, each with his own number.
+  const watch = useFeatures().on("copilot_watch");
   // B8: inside the Android app, with mobile_push on, the phone's own notifications come first.
   const mobilePush = useFeatures().on("mobile_push");
   const phone = isNativeApp() && mobilePush;
@@ -118,6 +132,11 @@ function AlertsSection() {
       {rhythm && (
         <div id="daily-briefs" className="scroll-mt-20">
           <Card title="Daily briefs on Telegram"><RhythmTelegramV2 key={telegramChanged} /></Card>
+        </div>
+      )}
+      {watch && (
+        <div id="copilot-watch" className="scroll-mt-20">
+          <Card title="Copilot watch"><CopilotWatchV2 key={telegramChanged} /></Card>
         </div>
       )}
       <Fold id="channels" title="More ways to get alerts" line="Email, app notifications, SMS and others">

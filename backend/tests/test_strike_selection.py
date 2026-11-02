@@ -128,7 +128,8 @@ def test_filters_are_validated_stored_and_echoed_on_deployments(monkeypatch):
                  strike_filters={"min_oi": 100000, "max_spread_pct": 2.0, "target_delta": 0.3})
     assert ok.status_code == 201, ok.text
     body = ok.json()
-    assert body["strike_filters"] == {"min_oi": 100000.0, "max_spread_pct": 2.0, "target_delta": 0.3}
+    # M68 PR-4 (TS1-043): the tolerance and the strikes searched are his own (here: his saved 0.10 / 5), stored on the bot
+    assert body["strike_filters"] == {"min_oi": 100000.0, "max_spread_pct": 2.0, "target_delta": 0.3, "delta_tolerance": 0.1, "search_steps": 5}
     assert "filters: OI>=100000" in body["contract_rules"]
 
     # Preview: with a usable broker session the chain is fetched from it and the rationale returned.

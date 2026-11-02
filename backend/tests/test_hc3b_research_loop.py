@@ -46,7 +46,7 @@ def _study(me, propose, *, max_drafts=8, boundary=None, frame=None):
         async with _session_factory() as session:
             out = await research_loop.run_study(session, tenant_id=me["tenant_id"], user_id=me["id"],
                                                 spec=StudyInput("EMA trend on NIFTY", "NIFTY 50", "NSE", "15min", max_drafts),
-                                                frame=_frame() if frame is None else frame, risk=RiskConfig(), propose=propose,
+                                                frame=_frame() if frame is None else frame, risk=RiskConfig(capital=1_000_000.0), propose=propose,  # M68 PR-7: his own capital
                                                 holdout_boundary=boundary)
             rows = await research.study_trials(session, me["tenant_id"], out["study_id"])
             out["oos_rows"] = [t for t in rows if t.status == "oos"]                         # the stored OOS check, not a trial
@@ -60,9 +60,9 @@ def test_drafts_are_validated_backtested_recorded_and_the_chosen_one_gets_oos(mo
     seen, windows = [], []
     real = research_loop._backtest
 
-    async def spy(strategy, df, symbol, timeframe, risk):
+    async def spy(strategy, df, symbol, timeframe, risk, charges=None):      # M68 PR-7: his paper charges
         windows.append((df.index[0], df.index[-1]))
-        return await real(strategy, df, symbol, timeframe, risk)
+        return await real(strategy, df, symbol, timeframe, risk, charges)
     monkeypatch.setattr(research_loop, "_backtest", spy)
 
     async def propose(idea, history):
@@ -129,11 +129,11 @@ def test_the_oos_check_counts_only_trades_from_the_cut_and_a_failed_check_is_rep
     real = research_loop._backtest
     calls = {"n": 0}
 
-    async def flaky_oos(strategy, df, symbol, timeframe, risk):
+    async def flaky_oos(strategy, df, symbol, timeframe, risk, charges=None):      # M68 PR-7: his paper charges
         calls["n"] += 1
         if calls["n"] == 2:                                                                    # the OOS run (one draft + OOS)
             raise RuntimeError("engine down")
-        return await real(strategy, df, symbol, timeframe, risk)
+        return await real(strategy, df, symbol, timeframe, risk, charges)
     monkeypatch.setattr(research_loop, "_backtest", flaky_oos)
     queue = [_draft("a", 9, 21)]
 

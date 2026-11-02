@@ -44,7 +44,7 @@ def test_interview_states_no_market_direction_and_describes_templates_neutrally(
     df = _sessions(days=5)
     candles = [{"timestamp": ts.isoformat(), "open": r.open, "high": r.high, "low": r.low, "close": r.close, "volume": r.volume} for ts, r in df.iterrows()]
     plan = client.post("/api/ai/interview/plan", headers=headers, json={
-        "answers": {"language": "en", "experience": "new", "capital": 100000, "risk": "moderate", "style": "intraday", "view": "bearish"},
+        "answers": {"language": "en", "experience": "new", "capital": 100000, "risk": "moderate", "style": "intraday", "view": "bearish", "symbol": "NIFTY 50"},
         "base_timeframe": "5min", "candles": candles, "data_source": "sample"}).json()
     text = json.dumps({"sections": [o["sections"] for o in plan["options"]], "warnings": [o["warnings"] for o in plan["options"]],
                        "options": [o["option"] for o in plan["options"]]})

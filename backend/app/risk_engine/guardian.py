@@ -12,7 +12,7 @@ because a rule that only lives in a prompt is a rule the engine cannot keep:
   square-off exits do not start a cool-down; neither does a kill switch, which blocks by itself.
 * **P2/P3 - the drawdown ladder.** Equity is capital plus the realised P&L of every closed
   trade in that mode (PAPER and LIVE are separate ladders). At `dd_level_1_pct` below the peak
-  the risk per trade is halved (P2); at `dd_level_2_pct` new entries are paused until the
+  the risk per trade is cut by the trader's own `dd_cut_pct` (P2; M68 PR-5, no cut while it is not set); at `dd_level_2_pct` new entries are paused until the
   drawdown recovers or the operator raises the level after a review (P3). The peak never moves
   down, so a hot streak never raises the size (P4): the multiplier is at most 1.
 * **M8 - event blackout.** `market_events` rows (tenant's own, or global ones the operator
@@ -53,9 +53,17 @@ INDEX_UNDERLYINGS = frozenset({"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "
 INDEX_BUCKET = "INDEX"
 # Exit reasons that mean "the market took us out": the ones a cool-down follows.
 STOP_EXIT_MARKERS = ("stop", "premium floor", "premium ceiling", "breached")
-DRAWDOWN_CUT_MULTIPLIER = 0.5
+# M68 PR-5 (TS1-054): the first drawdown step cuts the size by the trader's own `RiskConfig.dd_cut_pct` (was a fixed half).
 EVENT_ACTIONS = ("BLOCK", "SIZE_CUT")
 EVENT_KINDS = ("BUDGET", "RBI_POLICY", "EXPIRY", "RESULTS", "FED", "ELECTION", "OTHER")
+
+
+def drawdown_cut(cfg: RiskConfig) -> float:
+    """The first drawdown step's size cut as a fraction (0..1): the trader's own `dd_cut_pct`; Not set = 0 (no cut)."""
+    pct = cfg.dd_cut_pct
+    if pct is None or not 0 < float(pct) <= 100:
+        return 0.0
+    return float(pct) / 100.0
 
 
 def bucket_for(symbol: str) -> str:
@@ -197,11 +205,13 @@ async def active_events(session: AsyncSession, tenant_id: int, underlying: str, 
 
 
 async def guard_entry(session: AsyncSession, tenant_id: int, *, mode: str, underlying: str, cfg: RiskConfig,
-                      now: Optional[datetime] = None, direction: Optional[str] = None, user_id: Optional[int] = None) -> GuardianVerdict:
+                      now: datetime | None = None, direction: str | None = None, user_id: int | None = None,
+                      owner_id: int | None = None) -> GuardianVerdict:
     """The pre-sizing rules: cool-down (R10), drawdown ladder (P2/P3), event blackout (M8), and - with the `vix_gate`
     flag on - the India VIX gate (Z5: a spike pauses new bullish index entries, a high level cuts the size; `direction`
     is the entry's direction on the underlying). Reasons refuse the entry; the multiplier scales the risk per trade of
-    an allowed one. Entries only: no exit is ever asked here (ADR-0004)."""
+    an allowed one. Entries only: no exit is ever asked here (ADR-0004). `user_id`: who may see India VIX's values in the
+    wording; `owner_id` (default `user_id`): whose own India VIX check applies (M68 PR-5, TS1-056)."""
     asked_at = now                      # the VIX gate keeps its own clock unless a time was given
     now = now or datetime.now(timezone.utc)
     now_ist = now.astimezone(IST)
@@ -224,10 +234,10 @@ async def guard_entry(session: AsyncSession, tenant_id: int, *, mode: str, under
         if level_2 > 0 and dd.drawdown_pct >= level_2:
             verdict.reasons.append(f"Drawdown ladder: {mode} equity {dd.equity:,.0f} is {dd.drawdown_pct:.1f}% below its peak {dd.peak:,.0f} "
                                    f"(>= {level_2:g}%): new entries paused - review the journal before resuming (rule P3)")
-        elif level_1 > 0 and dd.drawdown_pct >= level_1:
-            verdict.size_multiplier *= DRAWDOWN_CUT_MULTIPLIER
+        elif level_1 > 0 and dd.drawdown_pct >= level_1 and (cut := drawdown_cut(cfg)) > 0:
+            verdict.size_multiplier *= 1.0 - cut
             verdict.notes.append(f"Drawdown ladder: {dd.drawdown_pct:.1f}% below the {mode} equity peak (>= {level_1:g}%): "
-                                 f"risk per trade halved (rule P2)")
+                                 f"risk per trade cut {cut * 100:g}% (rule P2)")
 
     # M64: the event rules apply only when the trader switched "Market event days" on (Settings > Risk limits).
     for event in (await active_events(session, tenant_id, underlying, now_ist) if cfg.event_rules else []):
@@ -245,7 +255,8 @@ async def guard_entry(session: AsyncSession, tenant_id: int, *, mode: str, under
                 verdict.notes.append(f"Event risk: {label} today{_window(event)} - risk per trade cut {cut:g}% (rule M8)")
 
     from app.risk_engine import vix_gate
-    vix = await vix_gate.check(session, tenant_id, symbol=underlying, direction=direction, now=asked_at, user_id=user_id)
+    vix = await vix_gate.check(session, tenant_id, symbol=underlying, direction=direction, now=asked_at, user_id=user_id,
+                               owner_id=owner_id)
     verdict.reasons.extend(vix.reasons)
     verdict.notes.extend(vix.notes)
     verdict.size_multiplier *= vix.size_multiplier
@@ -287,8 +298,8 @@ async def status(session: AsyncSession, tenant_id: int, cfg: RiskConfig, now: Op
         multiplier, state = 1.0, "normal"
         if cfg.dd_level_2_pct and dd.drawdown_pct >= cfg.dd_level_2_pct:
             multiplier, state = 0.0, "paused"
-        elif cfg.dd_level_1_pct and dd.drawdown_pct >= cfg.dd_level_1_pct:
-            multiplier, state = DRAWDOWN_CUT_MULTIPLIER, "reduced"
+        elif cfg.dd_level_1_pct and dd.drawdown_pct >= cfg.dd_level_1_pct and drawdown_cut(cfg) > 0:
+            multiplier, state = 1.0 - drawdown_cut(cfg), "reduced"
         since = now - timedelta(minutes=int(cfg.stop_cooldown_minutes or 0))
         cooldowns = []
         if cfg.stop_cooldown_minutes:

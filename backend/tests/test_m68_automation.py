@@ -305,7 +305,7 @@ def test_the_trader_pack_no_longer_turns_approval_on_for_everyone():
 
 
 def test_every_wired_automation_field_is_read_here():
-    wired = {f.name for f in ts.FIELDS if f.section == "automation" and f.wired}
+    wired = {f.name for f in ts.FIELDS if f.section == "automation" and f.wired and f.pr == 6}   # M68 PR-3 wires the entry window (exit_settings)
     assert wired == set(KEYS)
 
 

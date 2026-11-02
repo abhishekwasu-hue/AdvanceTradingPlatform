@@ -122,6 +122,13 @@ async def exit_unprotected(session: AsyncSession, trade: TradeRecord, broker: Br
     return outcome.closed
 
 
+async def _close_if_rejected(session: AsyncSession, trade: TradeRecord) -> bool:
+    """M68 PR-3 (TS1-032): the operator's LIVE_EXIT_IF_NO_STOP, or the position owner's own Trade settings > Exits > "Close a
+    position whose broker stop is refused" (Not set = off, as before). Only ever adds an exit (ADR-0004)."""
+    from app.execution.exit_settings import close_if_stop_rejected
+    return await close_if_stop_rejected(session, tenant_id=trade.tenant_id, user_id=trade.user_id)
+
+
 async def _give_up_rearming(session: AsyncSession, tenant: Tenant, trade: TradeRecord, broker: BrokerInterface, streak: int,
                             counts: Dict[str, int]) -> bool:
     """STOP_REARM_MAX_REJECTS re-armed stops in a row were accepted and then rejected: re-arming again would only repeat
@@ -130,14 +137,14 @@ async def _give_up_rearming(session: AsyncSession, tenant: Tenant, trade: TradeR
     user gets ONE CRITICAL for the position.
     True = the exit path handled it (closed, or tried and alerted)."""
     why = f"the broker rejected {streak} re-armed stops in a row (last {trade.sl_order_id})"
-    if config.LIVE_EXIT_IF_NO_STOP:
+    if await _close_if_rejected(session, trade):
         try:
             done = await exit_unprotected(session, trade, broker, why, rejected=True)
         except Exception as exit_exc:  # noqa: BLE001 - never lose the rest of the guard pass; the alert below follows
             logger.error("No-stop exit errored for trade %s: %s", trade.id, exit_exc)
             done = None
         if done:
-            counts["closed"] += 1
+            counts["closed"] = counts.get("closed", 0) + 1
         if done is not None:
             return True
     if trade.id not in stop_state.gave_up_alert:         # once per position: the guard will not try again
@@ -166,7 +173,7 @@ async def verify_protective_stops(
     Exits are not decided here: the monitor and the square-off judge every open position on its own clock."""
     counts = {"checked": 0, "standing": 0, "rearmed": 0, "filled_pending": 0, "failed": 0}
     if config.LIVE_EXIT_IF_NO_STOP:
-        counts["closed"] = 0
+        counts["closed"] = 0          # an owner's own switch adds the key when it closes one (M68 PR-3)
     query = select(TradeRecord).where(
         TradeRecord.tenant_id == tenant.id, TradeRecord.exit_time.is_(None), TradeRecord.mode == ExecutionMode.LIVE.value,
         TradeRecord.leg_group_id.is_(None)).order_by(TradeRecord.id)
@@ -294,7 +301,7 @@ async def _guard_one(session: AsyncSession, tenant: Tenant, broker: BrokerInterf
     except Exception as exc:  # noqa: BLE001 - alert, keep the software stop, try again next cycle
         counts["failed"] += 1
         logger.error("Stop guard: could not re-arm stop for trade %s: %s", trade.id, exc)
-        if config.LIVE_EXIT_IF_NO_STOP:
+        if await _close_if_rejected(session, trade):
             try:
                 done = await exit_unprotected(session, trade, broker, f"stop re-arm failed: {exc}",
                                               rejected=is_clear_rejection(exc))
@@ -302,7 +309,7 @@ async def _guard_one(session: AsyncSession, tenant: Tenant, broker: BrokerInterf
                 logger.error("No-stop exit errored for trade %s: %s", trade.id, exit_exc)
                 done = None
             if done:
-                counts["closed"] += 1
+                counts["closed"] = counts.get("closed", 0) + 1
             if done is not None:      # tried: exit_unprotected already alerted (or is inside its cooldown)
                 return
         if _failure_alert_due(trade.id):

@@ -29,7 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import KillSwitchScope
-from app.db.models import PaperAccountRecord, TradeRecord, User
+from app.db.models import TradeRecord, User
 from app.market_data.calendar import IST
 
 FLAG = "terminal"
@@ -121,12 +121,11 @@ async def _own_trades(session: AsyncSession, user: User) -> List[TradeRecord]:
     return [t for t in rows if _counted(t)]
 
 
-async def _starting_capital(session: AsyncSession, user: User) -> float:
-    """The paper account's starting capital, read without creating the account (a GET never writes)."""
-    from app.core import config
-    row = await session.scalar(select(PaperAccountRecord).where(PaperAccountRecord.user_id == user.id,
-                                                               PaperAccountRecord.tenant_id == user.tenant_id))
-    return float(row.starting_capital) if row is not None else float(config.PAPER_STARTING_CAPITAL)
+async def _starting_capital(session: AsyncSession, user: User) -> float | None:
+    """The paper account's starting capital, read without creating the account (a GET never writes). M68 PR-7 (TS1-065):
+    his own (the account's, else his saved Trade settings value); None = Not set, never a capital ATP chose."""
+    from app.paper import paper_settings
+    return await paper_settings.capital_of(session, user)
 
 
 async def _feed(session: AsyncSession, user: User) -> Dict[str, Any]:
@@ -165,9 +164,13 @@ async def funds_of(session: AsyncSession, user: User, trades: Sequence[TradeReco
     trades = list(trades) if trades is not None else await _own_trades(session, user)
     closed = [t for t in trades if t.exit_time is not None]
     open_trades = [t for t in trades if t.exit_time is None]
-    balance = await _starting_capital(session, user) + sum(float(t.pnl or 0.0) for t in closed)
+    starting = await _starting_capital(session, user)
     groups = await position_groups(session, user) if len(open_trades) > 1 else []
     margin = margin_estimate(open_trades, groups)
+    if starting is None:                     # M68 PR-7: no balance until he sets his starting capital
+        return {"funds": {"balance": None, "available": None, "source": "practice", "needs_capital": True,
+                          "note": "Set your paper starting capital (Settings › Trade settings › Paper account)."}, "margin": margin}
+    balance = starting + sum(float(t.pnl or 0.0) for t in closed)
     return {"funds": {"balance": round(balance, 2), "available": round(balance - margin["used"], 2), "source": "practice",
                       "note": "Your practice balance minus the margin estimate."}, "margin": margin}
 

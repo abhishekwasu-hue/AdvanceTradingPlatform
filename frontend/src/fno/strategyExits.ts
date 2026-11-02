@@ -22,7 +22,8 @@ export const EXITS_NAMESPACE = "strategy_exits";
 
 /** The section as typed: "" = empty. */
 export interface StrategyExitForm {
-  measure: StrategyMeasure;
+  /** M68 PR-3 (TS1-031): "" = not chosen (his own saved default starts it, else the section asks). */
+  measure: StrategyMeasure | "";
   sl: string;
   target: string;
   trailKind: StrategyTrail;
@@ -63,13 +64,14 @@ export const STRATEGY_TRAILS: { key: StrategyTrail; label: string; hint: string 
 /** The legs the section reads: side and underlying only. */
 export interface ExitLeg { side: "BUY" | "SELL"; underlying: string }
 
-/** T-D2: a spread (two or more legs on one underlying with a sold leg) watches the spot level by default. Pure. */
+/** T-D2: a spread (two or more legs on one underlying with a sold leg). M68 PR-3: no longer picks the measure. Pure. */
 export function isSpread(legs: readonly ExitLeg[]): boolean {
   return legs.length > 1 && new Set(legs.map((l) => l.underlying)).size === 1 && legs.some((l) => l.side === "SELL");
 }
 
 export function emptyForm(legs: readonly ExitLeg[]): StrategyExitForm {
-  return { measure: isSpread(legs) ? "SPOT" : "MTM_INR", sl: "", target: "", trailKind: "NONE", after: "", lock: "", step: "", by: "",
+  void legs;                                     // M68 PR-3 (TS1-031): nothing pre-chosen - the section asks
+  return { measure: "", sl: "", target: "", trailKind: "NONE", after: "", lock: "", step: "", by: "",
     fromDefaults: false };
 }
 
@@ -103,7 +105,7 @@ export function prefillForm(d: StrategyExitDefaults | null | undefined, legs: re
 export function defaultsOfForm(f: StrategyExitForm): StrategyExitDefaults {
   const kind = f.trailKind === "NONE" ? null : f.trailKind;
   return {
-    measure: f.measure, sl_value: amount(f.sl), target_value: amount(f.target), trail_kind: kind,
+    measure: f.measure || null, sl_value: amount(f.sl), target_value: amount(f.target), trail_kind: kind,
     trail_after: kind && kind !== "TRAIL" ? amount(f.after) : null,
     trail_lock: kind === "LOCK" || kind === "LOCK_TRAIL" ? zeroAmount(f.lock) : null,
     trail_step: kind === "TRAIL" || kind === "LOCK_TRAIL" ? amount(f.step) : null,
@@ -147,6 +149,7 @@ export function exitErrors(f: StrategyExitForm): string[] {
   const out: string[] = [];
   const sl = amount(f.sl);
   const target = amount(f.target);
+  if (!f.measure) out.push("Choose what the strategy exit watches.");              // M68 PR-3: never pre-chosen
   if (f.sl.trim() && sl === null) out.push("The overall stop-loss must be a number above zero.");
   if (f.target.trim() && target === null) out.push("The overall target must be a number above zero.");
   const locking = f.trailKind === "LOCK" || f.trailKind === "LOCK_TRAIL" || f.trailKind === "BREAK_EVEN";
@@ -182,7 +185,7 @@ export function exitsAsk(f: StrategyExitForm): StrategyExitsAsk | null {
     ...(k === "LOCK" || k === "LOCK_TRAIL" ? { lock: zeroAmount(f.lock) ?? undefined } : {}),
     ...(k === "TRAIL" || k === "LOCK_TRAIL" ? { step: amount(f.step) ?? undefined, by: amount(f.by) ?? undefined } : {}),
   };
-  return { measure: f.measure, sl_value: amount(f.sl), target_value: amount(f.target), ...(trailing ? { trailing } : {}) };
+  return { measure: f.measure || "MTM_INR", sl_value: amount(f.sl), target_value: amount(f.target), ...(trailing ? { trailing } : {}) };   // sent only once exitErrors is empty
 }
 
 function money(m: StrategyMeasure, v: number): string {
@@ -193,7 +196,7 @@ function money(m: StrategyMeasure, v: number): string {
 
 /** SX2 the trailing in plain words ("" when none or not complete). Pure. */
 export function trailText(f: StrategyExitForm): string {
-  if (f.trailKind === "NONE" || exitErrors({ ...f, sl: f.sl || "1" }).length) return "";
+  if (f.trailKind === "NONE" || !f.measure || exitErrors({ ...f, sl: f.sl || "1" }).length) return "";
   const m = f.measure;
   const a = amount(f.after) ?? 0;
   const keep = zeroAmount(f.lock) ?? 0;

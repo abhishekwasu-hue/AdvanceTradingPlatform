@@ -6,7 +6,7 @@ or settles on its expiry day. A naked single option written overnight, an undefi
 overnight, and every intraday bot keep the rules they had.
 """
 import asyncio
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 import numpy as np
 import pandas as pd
@@ -125,16 +125,19 @@ def test_a_held_bull_put_is_entered_with_its_margin_checked_and_every_leg_held()
 
 
 def test_margin_refusal_at_entry(monkeypatch):
+    """PAPER-NR (owner, 1 Nov): a short practice balance no longer refuses a PAPER entry - it is placed with the margin
+    vs free balance line, below zero said so (was: refused "not enough margin to hold this spread for days")."""
     _load_master()
     t = _tenant("m55-t1-margin@example.com", with_credentials=False)
 
     async def small(session, user):
         return 1_000.0
     monkeypatch.setattr(fno_basket, "practice_balance", small)
-    refused = _execute(t, holding="SWING", key="m55-margin-1")
-    assert not refused.executed
-    assert any("not enough margin to hold this spread for days" in r for r in refused.reasons)
-    assert _all(t["tenant_id"]) == []
+    placed = _execute(t, holding="SWING", key="m55-margin-1")
+    assert placed.executed, placed.reasons
+    assert any(r.startswith("Practice margin: needs") and "below zero - practice only" in r for r in placed.reasons)
+    assert not any("not enough margin" in r for r in placed.reasons)
+    assert len(_all(t["tenant_id"])) == 2
     # The intraday bot is not asked for overnight margin (unchanged).
     assert _execute(t, holding="INTRADAY", key="m55-margin-2").executed
 
@@ -151,7 +154,8 @@ def test_margin_counts_the_other_held_spreads(monkeypatch):
         return required * 1.5          # room for one held spread, not for two
     monkeypatch.setattr(fno_basket, "practice_balance", balance)
     second = _execute(t, holding="SWING", key="m55-m2-2")
-    assert not second.executed and any("not enough margin" in r for r in second.reasons)
+    # PAPER-NR: the other held spread's margin still counts; the shortfall is information, not a refusal.
+    assert second.executed and any(r.startswith("Practice margin: needs") and "below zero - practice only" in r for r in second.reasons)
 
 
 # --- the worker: no square-off, held across sessions, exits by its own rules, settles at expiry ------------------------
@@ -240,6 +244,8 @@ def _two_sessions():
 
 
 def _bt(frame, **kw):
+    # M68 PR-3 (D1): a user who saved "new entries until 15:00" and "square-off 15:15" (none is ATP's own any more)
+    kw = {"entries_until": time(15, 0), "square_off_at": time(15, 15), **kw}
     cfg = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, max_lots=1, **kw)
     return run_option_backtest(_OneShot(), frame, "NIFTY 50", "1min", RiskConfig(capital=5_000_000, risk_per_trade_pct=1.0), cfg)
 
@@ -254,7 +260,7 @@ def test_backtest_holds_the_spread_overnight_and_squares_off_the_rest():
     assert intraday.trades[0].exit_reason.startswith("Square-off") and "held_for_days" not in intraday.options
     # "Hold for days" means nothing on a structure that may not be held: the square-off stays.
     cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SHORT_STRADDLE, implied_volatility=0.14, max_lots=1, stop_credit_pct=100,
-                               hold_for_days=True)
+                               hold_for_days=True, entries_until=time(15, 0), square_off_at=time(15, 15))
     straddle = run_option_backtest(_OneShot(), frame, "NIFTY 50", "1min", RiskConfig(capital=5_000_000, risk_per_trade_pct=1.0), cfg)
     assert straddle.trades, straddle.options["signals_skipped"]
     assert straddle.trades[0].exit_reason.startswith("Square-off")

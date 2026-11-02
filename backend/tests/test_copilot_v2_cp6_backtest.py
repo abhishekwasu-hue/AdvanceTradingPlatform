@@ -99,7 +99,11 @@ def test_the_test_reports_costs_drawdown_parts_windows_and_one_try():
     assert out["walk_forward"]["windows"] == dbt.WALK_FORWARD_FOLDS and len(out["walk_forward"]["window_trades"]) == dbt.WALK_FORWARD_FOLDS
     assert out["deflated"]["tries"] == 1 and 0 <= out["deflated"]["chance_above_zero_pct"] <= dbt.MAX_CHANCE_PCT
     assert out["tuned_on_this_data"] is False and "trades_list" not in out and "trades" not in out     # statistics only
-    assert out["slippage_pct_per_fill"] == 0.02 and "slippage" in out["costs_included"]
+    # M68 PR-7: no charges of his own -> statutory charges only, said so; his own slippage is used when he saved one
+    assert out["slippage_pct_per_fill"] == 0.0 and out["costs_included"].startswith("Statutory charges only")
+    from app.execution.paper_charges import PaperCharges
+    own = dbt.honest_test(cfg, _candles(), "NIFTY", "15min", RISK, holdout=None, charges=PaperCharges(slippage_pct=0.02, slippage_saved=True))
+    assert own["slippage_pct_per_fill"] == 0.02 and "your slippage 0.02% each side" in own["costs_included"]
 
 
 def test_the_net_result_is_after_the_engines_own_costs():

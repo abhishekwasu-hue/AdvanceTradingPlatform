@@ -191,7 +191,7 @@ async def loss_streak_status(session: AsyncSession, tenant_id: int, *, now: Opti
     from app.platform.controls import clamp_config, risk_ceilings
     from app.risk_engine.routes import get_tenant_risk_config
     cfg = await get_tenant_risk_config(tenant_id, session) or RiskConfig()
-    cfg, _ = clamp_config(cfg, await risk_ceilings(session))
+    cfg, _ = clamp_config(cfg, await risk_ceilings(session, tenant_id))
     counted = await loss_streak_count(session, tenant_id, now=now)
     limit = int(cfg.max_consecutive_losses) if cfg.max_consecutive_losses is not None else None   # DEF-0: None = not set
     paused = loss_streak.is_paused(counted["losses_in_a_row"], limit)

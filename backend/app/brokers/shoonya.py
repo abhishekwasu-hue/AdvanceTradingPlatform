@@ -23,6 +23,7 @@ from app.brokers.models import (
     OptionChain,
     OptionChainRow,
     Quote,
+    lot_or_none,
 )
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.totp import totp_code
@@ -164,7 +165,7 @@ class ShoonyaBroker(BrokerInterface):
                 tradingsymbol=row.get("tsym", ""),
                 name=row.get("cname"),
                 instrument_type=row.get("instname"),
-                lot_size=int(row.get("ls", 1) or 1),
+                lot_size=lot_or_none(row.get("ls")),       # M68 TS1-088: none given = None, never 1
                 tick_size=float(row.get("ti", 0.05) or 0.05),
                 expiry=row.get("exd"),
                 strike=float(row["strprc"]) if row.get("strprc") else None,

@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import secrets
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -37,10 +38,33 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
+# M73 SL-2: an account made through a sign-in provider has no password anybody chose. Its hash is marked unusable with
+# this prefix (the Django convention; erasure already stores "!erased"): it never verifies, the sign-in still spends one
+# bcrypt round (no timing difference), and "Forgot password?" sets a real one later (that hash has no prefix).
+UNUSABLE_PASSWORD_PREFIX = "!"
+
+
+def unusable_password_hash() -> str:
+    """A bcrypt hash of a random, discarded password, marked unusable (see UNUSABLE_PASSWORD_PREFIX)."""
+    return UNUSABLE_PASSWORD_PREFIX + hash_password(secrets.token_urlsafe(32))
+
+
+def password_usable(hashed: Optional[str]) -> bool:
+    """True when the account has a password its owner chose (a sign-in way of its own)."""
+    return bool(hashed) and not str(hashed).startswith(UNUSABLE_PASSWORD_PREFIX)
+
+
 def verify_password(password: str, hashed: str) -> bool:
     # Hashes made before P0.3 were produced by bcrypt truncating at 72 bytes; verifying the same way keeps those
     # accounts logging in. New passwords longer than that are refused at registration/change (hash_password).
     raw = password.encode("utf-8")[:BCRYPT_MAX_BYTES]
+    if not password_usable(hashed):
+        rest = hashed[len(UNUSABLE_PASSWORD_PREFIX):] if hashed else ""
+        try:   # the same bcrypt work as a real check, never a match
+            bcrypt.checkpw(raw, rest.encode())
+        except ValueError:
+            pass   # intentional: "!erased" (no bcrypt hash behind the mark) - still never a match
+        return False
     return bcrypt.checkpw(raw, hashed.encode())
 
 

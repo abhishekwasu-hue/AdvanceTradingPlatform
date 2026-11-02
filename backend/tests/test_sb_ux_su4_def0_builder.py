@@ -146,7 +146,7 @@ def test_the_plan_is_only_what_was_answered():
 
 @pytest.mark.parametrize("lang", ["en", "mr"])
 def test_the_options_carry_only_the_users_own_settings(lang):
-    a = iv.InterviewAnswers(language=lang, experience="new", style="intraday", time="auto", vehicle="option_buy")
+    a = iv.InterviewAnswers(language=lang, experience="new", style="intraday", time="auto", vehicle="option_buy", symbol="NIFTY 50", instrument="index")
     _, p, _ = ad.apply_feedback(a, ad.Preferences(), ["too_risky", "low_reward", "too_many_trades", "no_time"])
     plan = ad.build_options(a, p, _sessions(days=6), "5min")
     for o in plan["options"]:

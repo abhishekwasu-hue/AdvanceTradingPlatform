@@ -80,3 +80,41 @@ describe("Advanced analysis: the mode picker", () => {
     vi.doUnmock("../ui/PageIntro");
   });
 });
+
+describe("M84: the symbol and timeframe are read from the chart", () => {
+  const TF = [{ id: "15m", label: "15-minute" }, { id: "1h", label: "1-hour" }];
+
+  it("says what was read from the chart, and names a value the user typed as his", async () => {
+    const { readLine } = await import("./ChartReadV2");
+    expect(readLine({ symbol: "NIFTY 50", timeframe: "15m" }, { symbol: "chart", timeframe: "chart" })).toBe("Read from your chart: NIFTY 50 · 15m");
+    expect(readLine({ symbol: "DEMO", timeframe: "1h" }, { symbol: "you", timeframe: "you" })).toBe("Your symbol and timeframe: DEMO · 1h");
+    expect(readLine({ symbol: "DEMO", timeframe: "15m" }, { symbol: "you", timeframe: "chart" })).toBe("DEMO (yours) · 15m (read from your chart)");
+  });
+
+  it("the result shows the read values with Change in place; no order button", async () => {
+    const { ChartReadLine } = await import("./ChartReadV2");
+    const result = { ...fixtureHybrid(true), read_from_chart: { symbol: "DEMO", timeframe: "1h", symbol_text: "DEMO", timeframe_text: "60" },
+      pick_source: { symbol: "chart" as const, timeframe: "chart" as const } };
+    const html = renderToStaticMarkup(<HybridResultV2 result={result} userImageSrc={null} readingSrc={null} onDownload={noop} onDelete={noop}
+      readLine={<ChartReadLine result={result} timeframes={TF} running={false} onRun={noop} />} />);
+    expect(html).toContain("Read from your chart: DEMO · 1h");
+    const buttons = [...html.matchAll(/<button[^>]*>(.*?)<\/button>/g)].map((m) => m[1].replace(/<[^>]+>/g, ""));
+    expect(buttons).toEqual(["Change", "Download image", "Delete"]);
+  });
+
+  it("a value that could not be read: its exact reason, and only that field is asked for", async () => {
+    const { NeedsCard } = await import("./ChartReadV2");
+    const html = renderToStaticMarkup(<NeedsCard timeframes={TF} running={false} onRun={noop}
+      read={{ symbol: null, timeframe: "15m", symbol_text: "Made-up Holdings", timeframe_text: "15" }}
+      needs={[{ field: "symbol", reason: "“Made-up Holdings” from your chart is not in ATP's instrument list.", ask: "Type the chart's symbol to continue." }]} />);
+    expect(html).toContain("Type the chart&#x27;s symbol to continue.");
+    expect(html).toContain("not in ATP&#x27;s instrument list");
+    expect(html).toContain("Read from your chart: 15m");
+    expect(html).toContain("The chart&#x27;s symbol");
+    expect(html).not.toContain("The chart&#x27;s timeframe");
+    const tfOnly = renderToStaticMarkup(<NeedsCard timeframes={TF} running={false} onRun={noop} read={null}
+      needs={[{ field: "timeframe", reason: "The timeframe could not be read from your chart.", ask: "Pick the chart's timeframe to continue." }]} />);
+    expect(tfOnly).toContain("The chart&#x27;s timeframe");
+    expect(tfOnly).not.toContain("The chart&#x27;s symbol");
+  });
+});

@@ -49,6 +49,9 @@ function SectionCard({ section, admin, save, onSaved }: {
   useEffect(() => { setDraft(draftOf(section)); }, [savedSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { main, facts, advanced } = partsOf(section, admin);
+  // The section's page of today (one link, said two ways below; M75: no new click-navigation site)
+  const todayLink = section.today
+    ? <Link to={section.today.path} className="font-medium text-brand hover:underline">{section.today.label}</Link> : null;
   const keys = [...main, ...advanced].filter(editable).map((f) => f.key);
   const count = setCount(section, admin);
   const set = (key: string, text: string) => { setDraft((d) => ({ ...d, [key]: text })); setNote(null); };
@@ -78,8 +81,13 @@ function SectionCard({ section, admin, save, onSaved }: {
         ) : (
           <p className="text-t13 text-fg-muted" data-part="empty">
             {section.today
-              ? <>For now you set these in <Link to={section.today.path} className="font-medium text-brand hover:underline">{section.today.label}</Link>.</>
+              ? <>For now you set these in {todayLink}.</>
               : "Nothing to choose here yet."}
+          </p>
+        )}
+        {main.length > 0 && section.id === "risk_limits" && section.today && (      /* M68 PR-5: the order-time checks stay on their own page */
+          <p className="mt-space-2 text-t13 text-fg-muted" data-part="more">
+            More in {todayLink}.
           </p>
         )}
         {facts.length > 0 && (
@@ -126,7 +134,9 @@ function FieldRow({ field: f, text, onText }: { field: TradeField; text: string;
       <div className="min-w-0">
         <label htmlFor={`${id}-input`} className={LABEL}>{f.label}{unit}{term && <TermHint term={term} />}</label>
         <p id={`${id}-help`} className="text-t12 text-fg-muted">{f.help}</p>
-        <p className={`text-t12 ${f.saved ? "text-fg" : "text-fg-muted"}`} data-value>{f.saved ? `Saved: ${valueWords(f)}` : NOT_SET}</p>
+        <p className={`text-t12 ${f.saved ? "text-fg" : "text-fg-muted"}`} data-value>{f.scope === "organisation"      /* M68 PR-5: a team ceiling an admin set, else none */
+          ? (f.value != null ? `Your admin: ${valueWords(f)}` : "No ceiling")
+          : f.saved ? `Saved: ${valueWords(f)}` : NOT_SET}</p>
       </div>
       <div className="min-w-0">
         {!editable(f) ? (

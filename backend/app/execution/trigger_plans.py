@@ -322,11 +322,11 @@ async def edit(session: AsyncSession, user: User, plan_id: int, *, condition: Co
     if row.status not in EDITABLE:
         raise PlanError(f"This plan is {STATUS_WORDS[row.status].lower()}: it can no longer be edited.")
     chosen = await _check(session, user, condition, orders, approval, valid_until, now)
+    await _gtt_down(session, row, now)                       # W-10: the old GTT goes first (never a GTT at the old level)
     if not await _move(session, row, EDITABLE, row.status, now, condition_json=json.dumps(asdict(condition)),
                        orders_json=json.dumps([asdict(o) for o in orders]), approval=chosen, valid_until=_utc(valid_until),
                        name=name or None, armed_at=now):
         raise PlanError("This plan changed meanwhile: open it again.")
-    await _gtt_down(session, row, now)
     from app.execution import broker_gtt
     if not broker_gtt.active(row):
         row.results_json = None                   # armed afresh: an earlier broker answer does not carry over
@@ -334,11 +334,17 @@ async def edit(session: AsyncSession, user: User, plan_id: int, *, condition: Co
 
 
 async def _gtt_down(session: AsyncSession, row: TriggerPlanRecord, now: datetime) -> None:
-    """W-10: a paused, edited or cancelled plan's broker GTT is cancelled at his broker (the worker re-arms an armed plan)."""
+    """W-10: a paused, edited or cancelled plan's broker GTT is cancelled at his broker (the worker re-arms an armed plan).
+    The change goes ahead only once no GTT waits at his broker: a GTT that already triggered there moves the plan to
+    TRIGGERED (its order was sent; never placed again), and a cancel his broker did not confirm leaves the plan as it is."""
     from app.execution import broker_gtt
     if broker_gtt.active(row):
         await broker_gtt.on_plan_change(session, row, now)
         await session.flush()
+    if await broker_gtt.took_over(session, row, now):
+        raise PlanError("Your broker's GTT already triggered: its order was sent, so the plan can no longer be changed.")
+    if broker_gtt.active(row):
+        raise PlanError("Your broker did not confirm the GTT's cancel, so the plan is unchanged. Try again.")
 
 
 def condition_words(underlying: str, c: Condition) -> str:
@@ -475,13 +481,16 @@ async def run(session: AsyncSession, tenant_id: int, prices: PriceFn, *, candles
         try:
             if row.status in (ARMED, PAUSED) and _utc(row.valid_until) <= now:
                 await broker_gtt.on_plan_change(session, row, now)        # W-10: its broker GTT goes first
+                if await broker_gtt.took_over(session, row, now) or broker_gtt.active(row):
+                    await session.commit()                                # fired at the broker / not cancelled yet: never
+                    continue                                              # expired while a GTT can still send its order
                 if await _move(session, row, (ARMED, PAUSED), EXPIRED, now, finished_at=now, note="Its validity ended before it triggered"):
                     report["expired"] += 1
                     await _notify(session, row, f"Plan expired: {_label(row)}", "Its validity ended before the condition was met. Nothing was placed.")
                     await session.commit()
                 continue
             if row.status == TRIGGERED:
-                if broker_gtt.gtts(row):                                  # W-10: the broker fired it; ATP never places it
+                if broker_gtt.fired(row) or broker_gtt.active(row):        # W-10: the broker fired it; ATP never places it
                     await broker_gtt.handle(session, row, prices, now)
                     report["done"] += int(row.status == DONE)
                 elif await fire(session, row, prices, now):

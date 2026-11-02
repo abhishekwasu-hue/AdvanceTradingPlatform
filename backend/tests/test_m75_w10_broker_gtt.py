@@ -290,3 +290,56 @@ def test_pause_and_cancel_take_the_gtt_down(setup, broker, monkeypatch):
     assert broker_gtt.active(_plan(plan["id"]))                              # armed again: a new GTT
     assert client.post(f"/api/trigger-plans/{plan['id']}/cancel", headers=t["headers"]).status_code == 200
     assert ("cancel", "G2") in broker.calls and _plan(plan["id"]).status == "CANCELLED"
+
+
+# --- idempotent: a GTT the broker already sent is never placed again; no GTT outlives his tap ------------------------------
+
+def test_a_gtt_that_triggered_before_his_pause_finishes_the_plan_without_a_second_order(setup, broker, monkeypatch):
+    t, expiry, strike, symbol = setup
+    plan = _ready(t, expiry, strike, symbol, monkeypatch)
+    _pass(t["tenant_id"], {SPOT[0]: 24650.0, symbol: 100.0})
+    broker.fire("G1")                                                        # sent at the broker before his tap reached it
+
+    async def too_late(gtt_id):
+        broker.calls.append(("cancel", gtt_id))
+        return GttStatus(gtt_id=gtt_id, status="TRIGGERED", order_id="B1")
+    broker.cancel_gtt = too_late
+    out = client.post(f"/api/trigger-plans/{plan['id']}/pause", headers=t["headers"])
+    assert out.status_code == 409 and "already triggered" in out.json()["detail"]
+    row = _plan(plan["id"])
+    r = json.loads(row.results_json)["0"]
+    assert row.status == "TRIGGERED" and r["settled"] is True and r["broker_order_id"] == "B1"
+    _pass(t["tenant_id"], {SPOT[0]: 24650.0, symbol: 120.0})
+    assert _plan(plan["id"]).status == "DONE" and _orders(t["user_id"], plan["id"]) == []   # the broker's order only
+    assert [c[0] for c in broker.calls].count("place") == 1
+
+
+def test_a_cancel_his_broker_did_not_confirm_leaves_the_plan_unchanged(setup, broker, monkeypatch):
+    t, expiry, strike, symbol = setup
+    plan = _ready(t, expiry, strike, symbol, monkeypatch)
+    _pass(t["tenant_id"], {SPOT[0]: 24650.0, symbol: 100.0})
+
+    async def no_answer(gtt_id):
+        raise TimeoutError("no answer")
+    broker.cancel_gtt = no_answer
+    for action in ("pause", "cancel"):
+        out = client.post(f"/api/trigger-plans/{plan['id']}/{action}", headers=t["headers"])
+        assert out.status_code == 409 and "did not confirm" in out.json()["detail"]
+    row = _plan(plan["id"])
+    assert row.status == "ARMED" and broker_gtt.active(row)                  # still watched: never a GTT nobody follows
+
+
+def test_a_triggered_plan_with_only_an_ended_gtt_is_fired_by_atps_engine_after_a_restart(setup, broker, monkeypatch):
+    t, expiry, strike, symbol = setup
+    broker.reject = True
+    plan = _ready(t, expiry, strike, symbol, monkeypatch)
+    _pass(t["tenant_id"], {SPOT[0]: 24650.0, symbol: 100.0})                 # refused at the broker: ATP's engine watches
+
+    async def triggered_then_restart():
+        from sqlalchemy import update
+        async with _session_factory() as session:                            # ATP's engine moved it, then the worker stopped
+            await session.execute(update(TriggerPlanRecord).where(TriggerPlanRecord.id == plan["id"]).values(status="TRIGGERED"))
+            await session.commit()
+    _run(triggered_then_restart())
+    _pass(t["tenant_id"], {SPOT[0]: 24650.0, symbol: 111.0})
+    assert _plan(plan["id"]).status == "DONE" and len(_orders(t["user_id"], plan["id"])) == 1   # placed once, by ATP

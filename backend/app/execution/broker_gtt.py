@@ -24,7 +24,10 @@ never come here (PAPER = ATP's engine with the same plan states). Each GTT carri
 
 Kill switch: ANY kill switch that engages cancels the GTTs in its scope FIRST (`cancel_all`, called by
 `kill_switch.checks.engage` before the switch is stored) - a cancel always passes every chokepoint. Pausing, editing,
-cancelling or expiring a plan cancels its GTTs too; the plan then waits in ATP's engine again (or ends).
+cancelling or expiring a plan cancels its GTTs too; the plan then waits in ATP's engine again (or ends). The change goes
+ahead only once no GTT waits at his broker: a cancel the broker did not confirm leaves the plan as it is, and a GTT the
+broker had already triggered is recorded as sent and settled (`took_over`: the plan moves to TRIGGERED; ATP never places
+that order again and places only the orders the broker did not send, through the ticket with every check again).
 Reconciliation (`sync`, worker): a GTT the broker TRIGGERED moves the plan ARMED -> TRIGGERED once (the same
 conditional move as ATP's engine) and records the broker's order (by the GTT's order id, from the broker's own book);
 a GTT the broker cancelled, rejected or expired returns the plan to ATP's engine, saying so. Exits are never blocked:
@@ -69,6 +72,11 @@ def gtts(row: TriggerPlanRecord) -> dict[int, dict[str, Any]]:
 
 def active(row: TriggerPlanRecord) -> dict[int, dict[str, Any]]:
     return {n: g for n, g in gtts(row).items() if g.get("status") == ACTIVE and g.get("id")}
+
+
+def fired(row: TriggerPlanRecord) -> dict[int, dict[str, Any]]:
+    """The plan's GTTs the broker already TRIGGERED (their order was sent at the broker: ATP never places them again)."""
+    return {n: g for n, g in gtts(row).items() if g.get("status") == TRIGGERED}
 
 
 def settled(row: TriggerPlanRecord) -> bool:
@@ -207,8 +215,8 @@ async def cancel(session: AsyncSession, row: TriggerPlanRecord, adapter: Any, no
         if state in (CANCELLED, EXPIRED, REJECTED):
             _store(row, n, {**g, "status": CANCELLED}, now)
             done += 1
-        elif state == TRIGGERED:
-            _store(row, n, {**g, "status": TRIGGERED, "order_id": status.order_id}, now)
+        elif state == TRIGGERED:                         # too late: the broker sent it - recorded, never placed again
+            await _record_fired(row, n, g, status.order_id, adapter, now)
     if note:
         row.note = note
     return done
@@ -234,11 +242,7 @@ async def sync(session: AsyncSession, row: TriggerPlanRecord, adapter: Any, now:
                                              note="Your broker's GTT triggered."):
                 return "UNKNOWN"
         for n, s in fired.items():
-            g = gtts(row)[n]
-            book = await _broker_order(adapter, s.order_id)
-            _store(row, n, {**g, "status": TRIGGERED, "order_id": s.order_id}, now, status="SENT_BY_BROKER",
-                   broker_order_id=s.order_id, broker_status=book.get("status"), filled_quantity=book.get("filled_quantity"),
-                   average_price=book.get("average_price"), settled=True)
+            await _record_fired(row, n, gtts(row)[n], s.order_id, adapter, now)
         await session.commit()
         return TRIGGERED
     if ended:
@@ -249,6 +253,28 @@ async def sync(session: AsyncSession, row: TriggerPlanRecord, adapter: Any, now:
         await session.commit()
         return "ENDED"
     return "WAITING"
+
+
+async def _record_fired(row: TriggerPlanRecord, n: int, g: dict[str, Any], order_id: str | None, adapter: Any, now: datetime) -> None:
+    """A GTT the broker triggered: its order is recorded as sent by the broker and settled (ATP never places it)."""
+    book = await _broker_order(adapter, order_id)
+    _store(row, n, {**g, "status": TRIGGERED, "order_id": order_id}, now, status="SENT_BY_BROKER", broker_order_id=order_id,
+           broker_status=book.get("status"), filled_quantity=book.get("filled_quantity"), average_price=book.get("average_price"),
+           settled=True)
+
+
+async def took_over(session: AsyncSession, row: TriggerPlanRecord, now: datetime) -> bool:
+    """An armed or paused plan whose broker GTT already triggered (seen by a cancel) moves to TRIGGERED once: the
+    condition was met at the broker, so the plan finishes from there and is never armed or fired again by ATP."""
+    from app.execution import trigger_plans
+    if not fired(row) or row.status not in (trigger_plans.ARMED, trigger_plans.PAUSED):
+        return False
+    results = row.results_json
+    if await trigger_plans._move(session, row, (trigger_plans.ARMED, trigger_plans.PAUSED), trigger_plans.TRIGGERED, now,  # noqa: SLF001
+                                 triggered_at=now, trigger_price=row.last_price, results_json=results,
+                                 note="Your broker's GTT triggered."):
+        await session.commit()
+    return row.status == trigger_plans.TRIGGERED
 
 
 async def _broker_order(adapter: Any, order_id: str | None) -> dict[str, Any]:
@@ -273,7 +299,13 @@ async def handle(session: AsyncSession, row: TriggerPlanRecord, prices: Any, now
     if user is None:
         return False
     waiting = active(row)
+    if not waiting and await took_over(session, row, now):          # a cancel found it already triggered at the broker
+        await trigger_plans.fire(session, row, prices, now)
+        return True
     triggered = row.status == trigger_plans.TRIGGERED
+    if triggered and not waiting:                                     # the broker's part is settled: ATP's engine places only
+        await trigger_plans.fire(session, row, prices, now)          # the orders the broker did not send (every check again)
+        return True
     if not waiting and not triggered and not await enabled(session, row.tenant_id):
         return False                                             # the flag is off: ATP's engine, nothing else read
     reasons = [] if triggered else await route_reasons(session, user, row)
@@ -286,15 +318,17 @@ async def handle(session: AsyncSession, row: TriggerPlanRecord, prices: Any, now
         if reasons:                                              # no longer his choice / the flag went off: back to ATP
             await cancel(session, row, adapter, now, note="The plan moved back to ATP's trigger engine.")
             await session.commit()
+            if await took_over(session, row, now):
+                await trigger_plans.fire(session, row, prices, now)
+                return True
             return bool(active(row))
         state = await sync(session, row, adapter, now)
+        if state == "ENDED" and await took_over(session, row, now):   # one ended, another had already triggered
+            await trigger_plans.fire(session, row, prices, now)
+            return True
         if row.status == trigger_plans.TRIGGERED and settled(row):
             await trigger_plans.fire(session, row, prices, now)  # every order settled by the broker: the plan ends DONE
         return state in (TRIGGERED, "WAITING", "UNKNOWN") or row.status == trigger_plans.TRIGGERED
-    if triggered:
-        if settled(row):
-            await trigger_plans.fire(session, row, prices, now)
-        return True                                              # a broker plan is never fired by ATP's engine
     try:
         last = float(await prices(row.watch_symbol, row.watch_exchange))
     except Exception:  # noqa: BLE001 - no price: not created this pass
@@ -342,4 +376,5 @@ async def cancel_all(session: AsyncSession, tenant_id: int | None, strategy_id: 
     return done
 
 
-__all__ = ["FLAG", "FILL_RECORDING", "route_reasons", "arm", "cancel", "sync", "handle", "on_plan_change", "cancel_all", "gtts", "active"]
+__all__ = ["FLAG", "FILL_RECORDING", "route_reasons", "arm", "cancel", "sync", "handle", "on_plan_change", "cancel_all", "gtts", "active",
+           "fired", "took_over"]

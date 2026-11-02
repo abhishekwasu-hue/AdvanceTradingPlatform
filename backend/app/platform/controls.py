@@ -196,6 +196,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # TERM-2 step 4 (docs/owner-orders/ATP_ORDER_TERM2.md; needs `ui_v2` + `terminal`), each PAPER first and OFF by default:
     # R4 the margin pair in the basket (required from the broker's basket margin call through the user's own session where
     # the adapter has one, else ATP's labelled estimate; available = the Terminal status funds), re-read on every lot change.
+    # M76 MP-1 / MP-2 (docs/owner-orders/ATP_ORDER_M76.md + amendment; needs `ui_v2`): ONE compact check card on the order
+    # ticket and the basket - fact lines only, a switch per warning type (Settings › Trade settings › Warnings), "Don't
+    # show again" and "Edit" on each line, checks in the background within 300 ms. A warning never disables Place and
+    # never touches an exit. OFF: the tickets show their checks exactly as before and POST /api/paper/fno/order/checks
+    # answers 404.
+    "trade_warnings": "Pre-trade check card: one compact card of fact lines on the order ticket and the basket, a switch per warning type; Place is never held back by a warning",
     "term_margin_pair": "Terminal: margin required and available in the basket, re-read on every lot change (the broker's margin where available, else a labelled estimate)",
     # R1 "Roll" on a position / group: a preview of the exit of the current legs plus the same strikes on the next weekly
     # expiry (POST /api/paper/fno/roll/preview, read only). The exit goes through the existing Exit now / group exit (never

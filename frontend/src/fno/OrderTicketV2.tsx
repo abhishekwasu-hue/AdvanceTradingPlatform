@@ -28,6 +28,10 @@ import type { ChainRow } from "../optionChain/types";
 import { eventLine, legLiquidity, liquidityLine, marginLine, type EventRisk } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
 import RiskBlockV2 from "../risk/RiskBlockV2";
+import { TicketClock, cardSurfaces, ticketBlocks, ticketSurfaces } from "./ticketMetrics";
+import { VISIBLE_LINES, askFirst, assembleLines, editField, factKey, liquidityCheck, sessionSeen, statusLines, switchesOf, withAccepted, type CheckDraft, type CheckLine } from "./checkCard";
+import { CheckCardV2 } from "./CheckCardV2";
+import { useCheckCard, type TicketCard } from "./useCheckCard";
 import { Combobox } from "../ui/Combobox";
 import { prefillChips, type TicketPrefill } from "../copilot/ticket/intent";
 
@@ -127,6 +131,16 @@ export interface OrderTicketState {
   budget: RiskBudget | null; events: EventRisk | "error" | null; liquidity: RiskLine | null;
   onDraft: (patch: Partial<Draft>) => void; review: (over?: Partial<Draft>) => Promise<void>; place: () => Promise<void>; back: () => void;
   multi?: MultiTicket;
+  /** M76 MP-2 (flag `trade_warnings`): the ONE check card (absent: the ticket is exactly as before). */
+  card?: TicketCard;
+}
+
+/** M76 MP-2: the draft the check service reads (the LTP is the one on his screen). */
+export function checkDraftOf(target: TicketTarget, d: Draft): CheckDraft {
+  const price = Number(d.price);
+  return { underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right, side: d.side, lots: d.lots ?? 0,   // Review runs only once lots is chosen (draftProblems)
+    order_type: d.orderType, product: d.product, price: d.orderType === "LIMIT" && Number.isFinite(price) && price > 0 ? price : null,
+    ltp: typeof target.ltp === "number" && target.ltp > 0 ? target.ltp : null };
 }
 
 /** M72 PR-9: a fresh draft with the user's defaults, then the values he typed to the Copilot (his message wins). */
@@ -171,6 +185,15 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     return () => { live = false; };
   }, [open, multiOn, api]);
 
+  // M76 MP-0: one report per ticket - the warning surfaces shown at Place and the time from opening to Place (never awaited).
+  const metrics = useRef<TicketClock | null>(null);
+  metrics.current ??= new TicketClock("ticket");
+  // M76 MP-2: the ONE check card (ui_v2 + trade_warnings); his switches come from his Trade settings.
+  const warnOn = features.on("ui_v2") && features.on("trade_warnings");
+  const checks = useCheckCard(warnOn);
+  const resetChecks = checks.reset;          // stable (useCallback)
+  const seen = useRef<ReadonlySet<string>>(new Set());
+
   // A new target or side starts a fresh ticket (and a fresh id, so a second order is never mistaken for the first).
   useEffect(() => {
     if (!open) return;
@@ -179,7 +202,11 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     setProblem(null);
     setRunOn("ONE");
     ref.current = newClientRef();
-  }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults, prefill]);
+    metrics.current?.opened();
+    resetChecks();
+    seen.current = new Set(sessionSeen());   // facts he pressed Place on earlier in this tab session (amendment 5)
+    return () => metrics.current?.closed();   // the ticket ended (closed, or a new target) after a Review without Place
+  }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults, prefill, resetChecks]);
 
   // M68 TS-3: the ticket ASKS for a field that is Not set - it focuses the first one (lots, order type, then product), and
   // moves on to the next once he picks it. Review stays off until all are chosen.
@@ -205,6 +232,26 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     if (!chainRows || target.right === "FUT" || target.strike === null) return liquidityLine([], false, limits);
     return liquidityLine([legLiquidity(chainRows, target.strike, target.right, target.label ?? "This strike")], true, limits);
   }, [chainRows, target, limits]);
+  // M76 MP-2: his own liquidity limits as a card line (never ATP's comparison, amendment 1).
+  const liquidityOwn = useMemo<CheckLine | null>(() => {
+    if (!warnOn || !target || !chainRows || target.right === "FUT" || target.strike === null) return null;
+    return liquidityCheck([legLiquidity(chainRows, target.strike, target.right, target.label ?? "This strike")], limits);
+  }, [warnOn, chainRows, target, limits]);
+  const lines = useMemo<CheckLine[]>(() => {
+    if (!warnOn || step.kind !== "review") return [];
+    const p = step.preview;
+    return assembleLines({ previewWarnings: p.warnings, previewIds: p.warning_ids, server: checks.answer?.findings,
+      screen: { margin: marginLine(p.margin?.value, budget), event: eventLine(events ?? null, p.contract?.expiry), risk: riskLine(p.max_loss?.value, false, budget),
+        liquidity: liquidityOwn },
+      switches: switchesOf(own), accepted: checks.answer?.accepted, seen: seen.current, hidden: checks.hidden });
+  }, [warnOn, step, checks.answer, checks.hidden, budget, events, liquidityOwn, own]);
+  // M76 MP-0: what the Review step shows now (the same lines `Review` renders), kept for the ticket's one report.
+  const shown = useMemo(() => {
+    if (step.kind !== "review") return null;
+    if (warnOn) return cardSurfaces(lines.length, checks.expanded ? lines.length : VISIBLE_LINES, ticketBlocks(step.preview));
+    return ticketSurfaces(step.preview, reviewRiskLines(step.preview, budget, events, liquidity));
+  }, [step, budget, events, liquidity, warnOn, lines, checks.expanded]);
+  useEffect(() => { metrics.current?.shown(shown); }, [shown]);
 
   // Desktop shortcuts: B = Buy, S = Sell while the ticket is being filled in (never while typing in a field).
   useEffect(() => {
@@ -224,8 +271,12 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     const missing = draftProblems(d, target?.right);
     if (!target || missing.length) { setProblem(missing[0] ?? null); return; }
     setBusy(true);
+    metrics.current?.reviewStarted();
+    checks.start(checkDraftOf(target, d));          // M76 MP-2: in the background, beside the preview; nothing waits for it
     try {
-      setStep({ kind: "review", preview: await api.preview(askOf(target, d, ref.current)) });
+      const preview = await api.preview(askOf(target, d, ref.current));
+      metrics.current?.reviewed();
+      setStep({ kind: "review", preview });
     } catch (e) {
       setProblem(errorSentence(e));
     } finally {
@@ -233,8 +284,15 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     }
   }
 
-  async function place() {
+  async function place(acceptedNow?: CheckLine) {
     if (!target) return;
+    // M76 MP-2: a line whose type has "ask me" on (his own choice) is accepted first; nothing else ever waits.
+    const done = new Set(checks.acceptedHere);
+    if (acceptedNow) done.add(factKey(acceptedNow));
+    const ask = warnOn ? askFirst(lines, done) : [];
+    if (ask.length) { checks.setAsking(ask); return; }
+    if (shown) metrics.current?.placed(shown, warnOn ? { pending: checks.pending, checksMs: checks.answer?.ms ?? checks.checksMs } : undefined);   // never awaited
+    if (warnOn && step.kind === "review") checks.placed(lines, checkDraftOf(target, draft));   // accepted today; fire and forget
     setBusy(true);
     try {
       if (runOn !== "ONE" && api.placeMulti) {
@@ -244,7 +302,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
         if (first) onPlaced?.({ status: "PLACED", trade_id: first.trade_id } as OrderResult);
         return;
       }
-      const result = await api.place(askOf(target, draft, ref.current));
+      const result = await api.place(withAccepted(askOf(target, draft, ref.current), warnOn && step.kind === "review" ? lines : []));
       setStep({ kind: "done", result });
       if (result.status === "PLACED") onPlaced?.(result);
     } catch (e) {
@@ -267,8 +325,22 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
   }
 
   const options = multiOn ? runOnOptions(practice) : [];
+  const card: TicketCard | undefined = warnOn && step.kind === "review" ? {
+    lines, pending: checks.pending, asking: checks.asking, expanded: checks.expanded, setExpanded: checks.setExpanded,
+    statuses: statusLines(step.preview.warnings, step.preview.warning_ids),
+    others: reviewRiskLines(step.preview, budget, events, liquidity).map((l) => (l ? { ...l, tone: "info" as const } : null))
+      .filter((l) => !l || !lines.some((x) => x.text === l.text)),
+    onEdit: (id) => {
+      setStep({ kind: "edit" });
+      const field = editField(id);
+      if (field) window.setTimeout(() => document.querySelector<HTMLElement>(`[data-ticket='${field}'] button, input[data-ticket='${field}']`)?.focus(), 0);
+    },
+    onDontShow: checks.mute,
+    onAccept: (line) => { checks.acceptHere(line); if (askFirst(lines, new Set([...checks.acceptedHere, factKey(line)])).length === 0) void place(line); },
+  } : undefined;
   return {
-    draft, step, busy, problem, idPrefix, defaults, budget, events, liquidity, review, place, saveDefaults: features.on("ui_v2"),
+    card,
+    draft, step, busy, problem, idPrefix, defaults, budget, events, liquidity, review, place: () => place(), saveDefaults: features.on("ui_v2"),
     multi: options.length ? { options, runOn, setRunOn, exitAll } : undefined,
     onDraft: (patch) => { setDraft((d) => ({ ...d, ...patch })); setProblem(null); },
     back: () => setStep({ kind: "edit" }),
@@ -309,7 +381,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
             </RD.Close>
           </div>
           <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults} saveDefaults={t.saveDefaults}
-            budget={t.budget} events={t.events} liquidity={t.liquidity}
+            budget={t.budget} events={t.events} liquidity={t.liquidity} card={t.card}
             onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onReviewWith={(patch) => void t.review(patch)} onBack={t.back} onClose={onClose} multi={t.multi} />
         </RD.Content>
       </RD.Portal>
@@ -353,7 +425,7 @@ export function ExitEveryAccount({ busy, accounts, onExit }: { busy: boolean; ac
 }
 
 /** The ticket's fields, the confirm step and the buttons (no state, no hooks). */
-export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onReviewWith, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi, saveDefaults = false }: {
+export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onReviewWith, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi, saveDefaults = false, card }: {
   target: TicketTarget; draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string;
   /** M68 TS-3: "Save as my default" next to the order type and the product once he picks one (not when it came from it). */
   saveDefaults?: boolean;
@@ -374,6 +446,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
   stickyActions?: boolean;
   /** M45 MA-6: "Run on" for the user's simulated accounts (absent: the ticket is exactly as before). */
   multi?: MultiTicket;
+  /** M76 MP-2: the ONE check card (flag trade_warnings; absent: the confirm step is exactly as before). */
+  card?: TicketCard;
 }) {
   const n = needs(draft.orderType);
   const asking = step.kind === "edit" ? firstMissing(draft) : null;
@@ -484,7 +558,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
           </>
         )}
 
-        {step.kind === "review" && <Review preview={step.preview} budget={budget} events={events} liquidity={liquidity}
+        {step.kind === "review" && <Review preview={step.preview} budget={budget} events={events} liquidity={liquidity} card={card}
           onCapitalSaved={onReviewWith ? () => onReviewWith({}) : undefined} />}
 
         {step.kind === "done" && (
@@ -554,10 +628,17 @@ export function samePriceNote(note: string): boolean {
   return /^Fills at the live price [\d,.]+\.?$/.test(note.trim());
 }
 
+/** The "Before you place" lines of the confirm step (M76 MP-0: also what the ticket's report counts). */
+export function reviewRiskLines(p: OrderPreview, budget?: RiskBudget | null, events?: EventRisk | "error" | null, liquidity?: RiskLine | null): (RiskLine | null)[] {
+  return [riskLine(p.max_loss?.value, false, budget), eventLine(events ?? null, p.contract?.expiry), liquidity ?? null, marginLine(p.margin?.value, budget)];
+}
+
 /** The confirm step: every figure from the server, before anything is placed. 8b: the payoff in plain words, the risk
  * line (the max loss beside the user's own limits, information only: `can_place` alone decides the button) and Explain. */
-export function Review({ preview: p, budget, events, liquidity, onCapitalSaved }: {
+export function Review({ preview: p, budget, events, liquidity, card, onCapitalSaved }: {
   preview: OrderPreview; budget?: RiskBudget | null; events?: EventRisk | "error" | null; liquidity?: RiskLine | null;
+  /** M76 MP-2: with the check card, its lines replace "Before you place" and the warnings list (one card, amendment 5). */
+  card?: TicketCard;
   /** M68 PR-7 (TS-3, D4): his paper account has no starting capital yet - asked here; then the order is checked again. */
   onCapitalSaved?: () => void;
 }) {
@@ -602,8 +683,10 @@ export function Review({ preview: p, budget, events, liquidity, onCapitalSaved }
       {payoff && (
         <Details id="ticket.payoff-words" label="In plain words" className="mt-0"><p data-ticket="plain-words">{payoff}</p></Details>
       )}
-      <RiskChecksV2 testId="ticket" lines={[riskLine(p.max_loss?.value, false, budget), eventLine(events ?? null, p.contract?.expiry), liquidity ?? null,
-        marginLine(p.margin?.value, budget)]} />
+      {card ? (
+        <CheckCardV2 testId="ticket" lines={card.lines} pending={card.pending} others={card.others} asking={card.asking} expanded={card.expanded}
+          onExpand={card.setExpanded} onEdit={card.onEdit} onDontShow={card.onDontShow} onAccept={card.onAccept} />
+      ) : <RiskChecksV2 testId="ticket" lines={reviewRiskLines(p, budget, events, liquidity)} />}
       {problems.length > 0 && (
         <ul role="alert" className="space-y-space-1 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-ticket="refusals">
           {problems.map((r) => <li key={r}>{r}</li>)}
@@ -611,7 +694,7 @@ export function Review({ preview: p, budget, events, liquidity, onCapitalSaved }
       )}
       {onCapitalSaved && needsCapital(p.refusals) && <CapitalAsk onSaved={onCapitalSaved} />}
       {p.smart?.note && <p className="text-t13 text-fg-muted" data-ticket="slices">{p.smart.note}</p>}
-      {p.warnings.length > 0 && (
+      {card ? card.statuses.map((w) => <p key={w} className="text-t13 text-fg-muted" data-ticket="status">{w}</p>) : p.warnings.length > 0 && (
         <ul className="space-y-space-1 text-t13 text-fg-muted" data-ticket="warnings">
           {p.warnings.map((w) => <li key={w}>{w}</li>)}
         </ul>

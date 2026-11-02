@@ -254,6 +254,8 @@ export interface PlanView {
   target: number | null;
   entry: number | null;
   entry_source: string | null;
+  /** M76 MP-5: the check-card lines shown when he pressed Place (absent on older answers). */
+  accepted_warnings?: { id: string; label: string; at: string | null }[];
 }
 
 /** GET /journal/trades/{id} or /journal/manual/{id}: one entry with the trader's own layer (M62 JN-2). */
@@ -306,4 +308,8 @@ export interface ManualTradeBody {
 }
 
 /** The week view with M62's manual entries and the per-entry layer. */
-export type JournalWeekV2 = Omit<JournalWeek, "entries"> & { entries: (JournalEntry & Partial<JournalEntryFull>)[]; manual_entries?: JournalEntryFull[] };
+/** M76 MP-5: per check-card type he pressed Place with this week, the trades and how they ended (numbers only). */
+export interface AcceptedWarningRow { id: string; label: string; trades: number; closed: number; wins: number; losses: number; net_pnl: number }
+
+export type JournalWeekV2 = Omit<JournalWeek, "entries"> & { entries: (JournalEntry & Partial<JournalEntryFull>)[]; manual_entries?: JournalEntryFull[];
+  accepted_warnings?: AcceptedWarningRow[] };

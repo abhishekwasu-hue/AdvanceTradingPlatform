@@ -6,7 +6,8 @@ import { SETTINGS_ROWS } from "./model";
 import { SETTINGS_PATH, settingsSectionAt } from "./paths";
 import { SaveAsDefault } from "./SaveAsDefault";
 import {
-  NOT_SET, changesOf, draftOf, eventActionOf, parseField, partsOf, saveAsDefault, saveTradeSettings, setCount, valueWords,
+  NOT_SET, changesOf, draftOf, effectiveValue, eventActionOf, parseField, partsOf, saveAsDefault, saveTradeSettings, setCount, unsavedWords,
+  valueWords,
   type TradeField, type TradeSection, type TradeSettingsView,
 } from "./tradeSettings";
 import TradeSettingsV2 from "./TradeSettingsV2";
@@ -136,6 +137,25 @@ describe("M68 TS-3: Save as my default", () => {
     expect(on).not.toContain("checked");
     expect(on).not.toContain("disabled");
     expect(renderToStaticMarkup(<SaveAsDefault fieldKey="position_size.lots" value="" />)).toContain("disabled");
+  });
+});
+
+describe("M76 MP-1: warning switches start from the owner's state, shown beside Not set", () => {
+  const sw = (over: Partial<TradeField> = {}): TradeField => ({ key: "warnings.fo_ban", label: "F&O ban list", kind: "switch", help: "", unit: "",
+    choices: [], low: null, high: null, low_open: false, term: null, fact: false, wired: true, scope: "user", value: null, saved: false,
+    default: true, default_by: "owner", ...over });
+
+  it("unsaved: Not set with the start state; saved: his value", () => {
+    expect(unsavedWords(sw())).toBe("Not set · starts On");
+    expect(unsavedWords(sw({ key: "warnings.fo_ban_ask", default: false }))).toBe("Not set · starts Off");
+    expect(effectiveValue(sw())).toBe(true);
+    expect(effectiveValue(sw({ saved: true, value: false }))).toBe(false);
+  });
+
+  it("an M68 field has no start state: Not set stays Not set", () => {
+    expect(unsavedWords(sw({ default: null, default_by: null }))).toBe("Not set");
+    expect(effectiveValue(sw({ default: null }))).toBeNull();
+    expect(unsavedWords(sw({ kind: "number", default: undefined }))).toBe("Not set");
   });
 });
 

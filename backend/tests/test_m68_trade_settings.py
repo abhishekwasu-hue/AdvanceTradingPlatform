@@ -67,10 +67,11 @@ def wired(monkeypatch):
 # --- the registry ----------------------------------------------------------------------------------------------------------
 
 def test_registry_seven_sections_and_every_audit_user_row():
+    # M76 MP-1: + Warnings (the eighth section, owner order M76 amendment 2).
     assert [s.id for s in ts.SECTIONS] == ["order_defaults", "position_size", "exits", "options", "risk_limits", "automation",
-                                           "paper_account"]
+                                           "paper_account", "warnings"]
     assert [s.title for s in ts.SECTIONS] == ["Order defaults", "Position size", "Exits", "Options", "Risk limits", "Automation",
-                                              "Paper account"]
+                                              "Paper account", "Warnings"]
     covered = {r for f in ts.FIELDS if not f.fact for r in f.rows} | set(ts.ON_RISK_LIMITS_PAGE)
     assert AUDIT_USER_ROWS <= covered, sorted(AUDIT_USER_ROWS - covered)
     assert len(AUDIT_USER_ROWS) == 60
@@ -82,6 +83,7 @@ PR4_NOT_WIRED = {"options.hedge", "options.hedge_offset", "options.finder_target
                  "options.finder_premium_max", "options.finder_oi_wall_strikes"}
 # M68 PR-6: Automation fields nothing reads yet - exit requests are off since M55 S2, the trading window is TS1-026 / 028
 # (PR-3) and re-entry has no TS-1 row (no pre-chosen value in the code).
+M76_WIRED = True    # M76 MP-2: the check service and the check card read them (MP-1 declared them unwired)
 PR6_NOT_WIRED = {"automation.approval_exit_minutes", "automation.window_start", "automation.window_end", "automation.reentry",
                  "automation.reentry_max"}
 
@@ -89,6 +91,10 @@ PR6_NOT_WIRED = {"automation.approval_exit_minutes", "automation.window_start", 
 def test_registry_fields_are_well_formed_and_wired_by_their_pr():
     for f in ts.FIELDS:
         assert f.label and f.help and f.label[0].isupper(), f.key
+        if f.order == "M76":                                                   # M76: wired by MP-2 (the check service reads them)
+            assert f.section == "warnings" and f.flag == "trade_warnings" and f.wired is M76_WIRED and not f.fact or f.fact, f.key
+            continue
+        assert f.order == "M68" and f.default is None and f.default_by is None, f.key   # M68: never a default
         # PR-1 / 2 / 5 / 6 / 7 wired; PR-4 Options (all but the hedge and the strike finder, which nothing reads yet); PR-3 Exits
         # and the new-entry window; later PRs the rest
         assert f.wired is ((f.pr in (1, 2, 4, 5, 6, 7) and not f.fact and f.key not in PR4_NOT_WIRED | PR6_NOT_WIRED)
@@ -127,7 +133,8 @@ def test_the_namespace_is_read_by_one_order_path_reader():
                                    "app/execution/automation.py", "app/execution/exit_settings.py", "app/execution/order_defaults.py",
                                    "app/execution/position_size.py", "app/instruments/option_defaults.py", "app/main.py", "app/me/prefs.py",
                                    "app/me/trade_settings.py", "app/options_builder/routes.py", "app/paper/paper_settings.py",
-                                   "app/risk_engine/own_risk.py"]   # PR-2 / PR-3 / PR-4 / PR-5 / PR-6 / PR-7: one reader each
+                                   "app/paper/pretrade_warnings.py", "app/risk_engine/own_risk.py"]
+    # PR-2 / PR-3 / PR-4 / PR-5 / PR-6 / PR-7: one reader each; M76: app/paper/pretrade_warnings.py (the warnings reader)
 
 
 def test_value_checks():
@@ -167,7 +174,7 @@ def test_a_new_user_sees_not_set_and_no_dead_control():
     assert got.status_code == 200, got.text
     body = got.json()
     assert body["admin"] is False and body["page"] == "/settings/trade-settings"
-    assert [s["id"] for s in body["sections"]] == list(ts.SECTION_IDS)
+    assert [s["id"] for s in body["sections"]] == [i for i in ts.SECTION_IDS if i != "warnings"]   # M76: flag trade_warnings off
     fields = _fields(body)
     # PR-1 / 2 / 4 / 5 / 6 / 7: Order defaults, Position size, Options, Risk limits, Automation and Paper account are wired;
     # PR-3: the Exits fields and the new-entry window
@@ -184,7 +191,8 @@ def test_a_new_user_sees_not_set_and_no_dead_control():
 def test_an_admin_sees_every_field_not_set():
     body = client.get(URL, headers=_admin("adm")["headers"]).json()
     fields = _fields(body)
-    assert body["admin"] is True and set(fields) == set(ts.BY_KEY)
+    # M76 MP-1: the Warnings section is not shown while its flag (trade_warnings, off by default) is off - admin too
+    assert body["admin"] is True and set(fields) == {k for k in ts.BY_KEY if not k.startswith("warnings.")}
     assert all(f["value"] is None and f["saved"] is False for f in fields.values())
 
 
@@ -278,4 +286,5 @@ def test_the_e2e_fixtures_are_the_registry_view():
     """frontend/e2e/fixtures/trade-settings-{user,admin}.json are this registry's own replies (regenerate on a change)."""
     for name, admin in (("user", False), ("admin", True)):
         path = BACKEND.parent / "frontend" / "e2e" / "fixtures" / f"trade-settings-{name}.json"
-        assert json.loads(path.read_text(encoding="utf-8")) == ts.view({}, admin), name
+        # M76 MP-1: the e2e mocks have `trade_warnings` off (its default), so the Warnings section is not in them.
+        assert json.loads(path.read_text(encoding="utf-8")) == ts.view({}, admin, off=frozenset({"trade_warnings"})), name

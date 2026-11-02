@@ -33,6 +33,11 @@ import { useInPlaceOpen } from "../inplace/context";
 import { riskLine, structureOf, type RiskBudget, type RiskLine } from "./insights";
 import { eventLine, legLiquidity, liquidityLine, marginLine } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
+import { TicketClock, basketBlocks, basketSurfaces, cardSurfaces } from "./ticketMetrics";
+import { VISIBLE_LINES, askFirst, assembleLines, factKey, liquidityCheck, sessionSeen, switchesOf, withAccepted, type CheckLine } from "./checkCard";
+import { CheckCardV2 } from "./CheckCardV2";
+import { useCheckCard, type TicketCard } from "./useCheckCard";
+import { useTradeSettings } from "../settings/tradeSettings";
 import { IncompleteV2, SmartConfirmV2 } from "./SmartExecutionV2";
 import { ExitSentenceV2, StrategyExitsV2 } from "./StrategyExitsV2";
 import {
@@ -163,6 +168,42 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
       l.label ?? `${formatNumber(l.strike, 0)} ${l.right}`)), true, limits) : null,
   ], [events, lastExpiry, legs, live?.expiry, chain.symbol, rows, limits]);
 
+  // M76 MP-0: one report per basket ticket - the warning surfaces shown at Place and the time to Place (never awaited).
+  const metrics = useRef<TicketClock | null>(null);
+  metrics.current ??= new TicketClock("basket");
+  // M76 MP-2: the ONE check card (ui_v2 + trade_warnings): the confirm step's own figures as fact lines, his switches.
+  const warnOn = features.on("ui_v2") && features.on("trade_warnings");
+  const own = useTradeSettings(open && warnOn);
+  const card0 = useCheckCard(warnOn);
+  const resetCard = card0.reset;             // stable (useCallback)
+  const seen = useRef<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    if (!open) return undefined;
+    metrics.current?.opened();
+    seen.current = new Set(sessionSeen());
+    return () => metrics.current?.closed();
+  }, [open]);
+  const lines = useMemo<CheckLine[]>(() => {
+    if (!warnOn || step.kind !== "confirm" || !step.preview) return [];
+    const parts = confirmRiskLines(step.preview, budget, checks);    // [risk, events, liquidity, margin]: the same lines as before
+    const items = legs.map((l) => legLiquidity(l.expiry === live?.expiry && l.underlying === chain.symbol ? rows : [], l.strike, l.right,
+      l.label ?? `${formatNumber(l.strike, 0)} ${l.right}`));
+    return assembleLines({ switches: switchesOf(own), seen: seen.current, hidden: card0.hidden, screen: {
+      event: checks[0], margin: parts[parts.length - 1], liquidity: liquidityCheck(items, limits), risk: parts[0] } });
+  }, [warnOn, step, own, card0.hidden, checks, budget, legs, live?.expiry, chain.symbol, rows, limits]);
+  const shown = useMemo(() => {
+    if (step.kind !== "confirm" || !step.preview) return null;
+    if (warnOn) return cardSurfaces(lines.length, card0.expanded ? lines.length : VISIBLE_LINES, basketBlocks(step.preview));
+    return basketSurfaces(step.preview, confirmRiskLines(step.preview, budget, checks));
+  }, [step, budget, checks, warnOn, lines, card0.expanded]);
+  useEffect(() => { metrics.current?.shown(shown); }, [shown]);
+  // The panel stays open after a placed basket (the Terminal embeds it): leaving the result starts the next ticket.
+  const lastKind = useRef(step.kind);
+  useEffect(() => {
+    if (lastKind.current === "done" && step.kind !== "done") { metrics.current?.opened(); resetCard(); seen.current = new Set(sessionSeen()); }
+    lastKind.current = step.kind;
+  }, [step.kind, resetCard]);
+
   useEffect(() => {
     if (!open) return undefined;
     setStep({ kind: "edit" });
@@ -233,8 +274,10 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     ref.current = newClientRef();
     setStep({ kind: "confirm", preview: null, legs: sending, remaining });
     setBusy(true);
+    metrics.current?.reviewStarted();
     try {
       const preview = await api.preview(basketAsk(sending, sending.every((l) => l.underlying === chain.symbol) ? spot : null, product));
+      metrics.current?.reviewed();
       setStep({ kind: "confirm", preview, legs: sending, remaining });
     } catch (e) {
       setStep({ kind: "edit" });
@@ -244,13 +287,20 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     }
   }
 
-  async function execute() {
+  async function execute(acceptedNow?: CheckLine) {
     if (step.kind !== "confirm" || product === null) return;
+    const done = new Set(card0.acceptedHere);
+    if (acceptedNow) done.add(factKey(acceptedNow));
+    const ask = warnOn ? askFirst(lines, done) : [];
+    if (ask.length) { card0.setAsking(ask); return; }      // his own "ask me": accept that line first; nothing else waits
+    if (shown) metrics.current?.placed(shown, warnOn ? { pending: 0 } : undefined);   // the moment Place is pressed; never awaited
+    if (warnOn) card0.placed(lines, null);
     setBusy(true);
     try {
       // SX3: the strategy exit goes with the first run only (the remaining legs keep their own stops).
       const exits = step.remaining ? null : exitsAsk(exitForm);
-      const result = await api.execute({ ...basketAsk(step.legs, spot, product), basket_ref: ref.current, ...(exits ? { exits } : {}) });
+      const result = await api.execute(withAccepted({ ...basketAsk(step.legs, spot, product), basket_ref: ref.current, ...(exits ? { exits } : {}) },
+        warnOn ? lines : []));
       setStep({ kind: "done", result, legs: step.legs });
       if (result.placed > 0) onPlaced?.(result);
     } catch (e) {
@@ -368,6 +418,12 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           )}
           {step.kind === "confirm" && (
             <ConfirmView preview={step.preview} busy={busy} budget={budget} checks={checks} onBack={() => setStep({ kind: "edit" })} onPlace={() => { void execute(); }}
+              card={warnOn && step.preview ? {
+                lines, pending: 0, asking: card0.asking, expanded: card0.expanded, setExpanded: card0.setExpanded, statuses: [],
+                others: confirmRiskLines(step.preview, budget, checks).map((l) => (l ? { ...l, tone: "info" as const } : null)).filter((l) => !l || !lines.some((x) => x.text === l.text)),
+                onEdit: () => setStep({ kind: "edit" }), onDontShow: card0.mute,
+                onAccept: (line) => { card0.acceptHere(line); if (askFirst(lines, new Set([...card0.acceptedHere, factKey(line)])).length === 0) void execute(line); },
+              } : undefined}
               exitWords={step.remaining ? "The exits for this strategy were set with the first legs; these legs keep their own stops."
                 : <ExitSentenceV2 parts={exitSentence(exitForm, step.legs.length, step.legs[0]?.underlying ?? null)} />} />
           )}
@@ -735,9 +791,19 @@ function LegRow({ leg: l, n, lotSize, idPrefix, on }: { leg: BasketLeg; n: numbe
   );
 }
 
+/** The "Before you place" lines of the basket's confirm step (M76 MP-0: also what the basket's report counts). */
+export function confirmRiskLines(p: BasketPreview, budget?: RiskBudget | null, checks?: readonly (RiskLine | null)[]): (RiskLine | null)[] {
+  const ext = p.totals?.extremes ?? null;
+  const hedge = p.totals?.margin.hedge ?? null;
+  return [ext ? riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget) : null,
+    ...(checks ?? []), checks ? marginLine(hedge?.with_hedge.value, budget) : null];
+}
+
 /** The confirm step: every leg as it would be placed (hedge legs first), the total margin and max loss (no state). */
-export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks, exitWords: exitLine }: {
+export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks, exitWords: exitLine, card }: {
   preview: BasketPreview | null; busy: boolean; onBack: () => void; onPlace: () => void;
+  /** M76 MP-2: with the check card, its lines replace "Before you place" (one card, amendment 5). */
+  card?: TicketCard;
   /** SX5: the exits for this strategy in plain words (absent: the line is left out). */
   exitWords?: ReactNode;
   /** 8b-d: the risk line beside the total max loss (information only: the button reads `can_execute` alone). */
@@ -790,8 +856,10 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks,
               <Figure label="Max loss" testId="total-max-loss">{ext ? (ext.unbounded_loss ? "Unlimited" : moneyText(ext.max_loss)) : "See the chart"}</Figure>
               {p.totals && <Figure label="Charges to open (estimate)" testId="total-charges">{moneyText(p.totals.costs)}</Figure>}
             </dl>
-            <RiskChecksV2 testId="basket-confirm" lines={[ext ? riskLine(ext.max_loss === null ? null : Math.abs(ext.max_loss), ext.unbounded_loss, budget) : null,
-              ...(checks ?? []), checks ? marginLine(hedge?.with_hedge.value, budget) : null]} />
+            {card ? (
+              <CheckCardV2 testId="basket-confirm" lines={card.lines} pending={card.pending} others={card.others} asking={card.asking} expanded={card.expanded}
+                onExpand={card.setExpanded} onEdit={card.onEdit} onDontShow={card.onDontShow} onAccept={card.onAccept} />
+            ) : <RiskChecksV2 testId="basket-confirm" lines={confirmRiskLines(p, budget, checks)} />}
             {p.totals_errors.length > 0 && <p className="text-t13 text-fg-muted">{p.totals_errors[0]}</p>}
             {p.refusals.length > 0 && (
               <ul role="alert" className="space-y-space-1 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-basket="confirm-refusals">

@@ -218,6 +218,10 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "copilot_watch": _ready("Each user turns on his own alert types with his own numbers", ALERTS),
     # M75 W-2..W-4: the chart, its reading (code annotations) and the AI card work; the plan panel and orders follow (W-6+)
     "copilot_workspace": _ready("Chart, its reading and the AI card in the Copilot; the trade plan panel follows (M75 W-6)"),
+    # M76 MP-0..MP-2, MP-5: the check card, the Warnings switches and the weekly "Warnings you accepted" work; the
+    # structure lines (MP-3), risk preview and what-if (MP-4 / MP-6) and the workspace helpers follow
+    "trade_warnings": _ready("Each user turns each warning type on or off on Settings › Trade settings › Warnings",
+                             "Settings › Trade settings › Warnings"),
     "study_export": _not_built("The Save study sheet, My studies and the PNG / CSV downloads (SX-4..SX-7)", "M77"),
     "ai_platform_key": _setup("The platform AI key on the server, each plan's AI budget and the per-user daily cap",
                               f"{HOST}; Admin › Controls › Limits"),

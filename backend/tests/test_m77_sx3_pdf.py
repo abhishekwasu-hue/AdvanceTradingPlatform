@@ -68,7 +68,7 @@ def test_page_images_are_lossless_a4_at_150_dpi():
 def test_every_section_on_and_off(sections):
     snap = _snap(sections=sections)
     joined = " ".join(_text(snap))
-    marker = {"cover": "Study fingerprint", "charts": P.CHARTS_LATER, "structure": "Nearest area above", "areas": "Last visit",
+    marker = {"cover": "Study fingerprint", "charts": P.CHART_CAPTION, "structure": "Nearest area above", "areas": "Last visit",
               "notes": "Your checklist rule", **{k: f"Not available: {v}." for k, v in S.NOT_BUILT.items()}}
     for s in S.SECTIONS:
         assert (marker[s] in joined) == (s in sections), (s, sections)
@@ -97,7 +97,9 @@ def test_missing_sources_print_not_available_never_blank():
     assert f"Not available: {S.AREAS_OFF}." in joined
     assert "not available (No closed bars for this chart yet.)" in joined
     assert "not available (no live price from your broker session)" in joined
-    assert "No notes." in joined and f"Not available: {P.CHARTS_LATER}." in joined
+    assert "No notes." in joined
+    assert "Not available: 15-minute chart - No closed bars for this chart yet." in joined     # SX-4: each chart says so
+    assert "Not available: 1-hour chart - No closed bars for this chart yet." in joined
     for s in S.NOT_BUILT:
         assert f"Not available: {S.NOT_BUILT[s]}." in joined
 

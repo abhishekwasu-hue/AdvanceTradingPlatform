@@ -181,12 +181,19 @@ class PositionGreeksResponse(BaseModel):
     groups: List[dict]
     net: dict
     skipped: List[dict]
+    # M76 MP-4: `?underlying=` - the net Greeks of the open legs on that underlying only (null without the parameter).
+    underlying_net: dict | None = None
 
 
 @router.get("/positions/greeks", response_model=PositionGreeksResponse)
 async def open_position_greeks(
-    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session), mine: bool = False,
+    for_underlying: str | None = Query(default=None, alias="underlying", max_length=40),
 ) -> PositionGreeksResponse:
+    """M76 MP-4 (read-only, additive): `?mine=true` reads only the caller's own open option legs (tenant AND user), the
+    scope of `/positions?mine=true`; `?underlying=` adds `underlying_net`, the same sums over the legs of that one
+    underlying (``NIFTY 50`` and ``NIFTY`` are one underlying, instruments.master.underlying_of). Without either the answer
+    is exactly as before."""
     from app.brokers.gates import data_sources
     from app.brokers.token_lifecycle import build_adapter, token_is_usable
     from app.db.models import BrokerCredentialRecord
@@ -197,7 +204,8 @@ async def open_position_greeks(
 
     rows = list(await session.scalars(
         select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.exit_time.is_(None),
-                                  TradeRecord.instrument_kind == "OPTION").order_by(TradeRecord.id)
+                                  TradeRecord.instrument_kind == "OPTION",
+                                  *([TradeRecord.user_id == user.id] if mine else [])).order_by(TradeRecord.id)
     ))
     from app.market_data import live_access
     own = None
@@ -276,7 +284,19 @@ async def open_position_greeks(
                        "net_delta": round(g.net_delta, 2), "net_gamma": round(g.net_gamma, 4), "net_theta": round(g.net_theta, 2), "net_vega": round(g.net_vega, 2)})
     net = {"net_delta": round(sum(g["net_delta"] for g in groups), 2), "net_gamma": round(sum(g["net_gamma"] for g in groups), 4),
            "net_theta": round(sum(g["net_theta"] for g in groups), 2), "net_vega": round(sum(g["net_vega"] for g in groups), 2)}
-    return PositionGreeksResponse(as_of=datetime.now(timezone.utc).isoformat(), spot=spots, legs=legs_out, groups=groups, net=net, skipped=skipped)
+    underlying_net = None
+    if for_underlying is not None:
+        wanted_root = instrument_master.underlying_of(for_underlying)
+        by_id = {t.id: t for t in rows}
+        same = [leg for leg in legs_out
+                if instrument_master.underlying_of(by_id[leg["trade_id"]].underlying_symbol or "") == wanted_root]
+        underlying_net = {"underlying": wanted_root, "legs": len(same),
+                          "net_delta": round(sum(leg["position_delta"] for leg in same), 2),
+                          "net_gamma": round(sum(leg["position_gamma"] for leg in same), 4),
+                          "net_theta": round(sum(leg["position_theta"] for leg in same), 2),
+                          "net_vega": round(sum(leg["position_vega"] for leg in same), 2)}
+    return PositionGreeksResponse(as_of=datetime.now(timezone.utc).isoformat(), spot=spots, legs=legs_out, groups=groups, net=net,
+                                  skipped=skipped, underlying_net=underlying_net)
 
 
 def _strike_of(tradingsymbol: str) -> Optional[float]:

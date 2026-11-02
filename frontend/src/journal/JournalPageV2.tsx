@@ -16,6 +16,7 @@ import { saveBlob } from "./journalModel";
 import { ManualTradeSheetV2 } from "./ManualTradeV2";
 import { OwnListsV2 } from "./OwnListsV2";
 import { journalTarget } from "./recall";
+import { MyStudiesV2 } from "../study/MyStudiesV2";
 import SimilarSetupsV2 from "./SimilarSetupsV2";
 import type { JournalFilters } from "./types";
 import { WeeklyReviewV2, type WeekState } from "./WeeklyReviewV2";
@@ -26,14 +27,16 @@ import { WeeklyReviewV2, type WeekState } from "./WeeklyReviewV2";
  * on a figure says how it is worked out. Behind `discipline_engine` like the rest of the journal (503 while it is off).
  */
 
-type Tab = "trades" | "stats" | "review" | "settings";
+type Tab = "trades" | "stats" | "review" | "studies" | "settings";
 const PAGE = 200;
 const OFF_TEXT = "The journal is not turned on for your account yet.";
 
 const isOff = (e: unknown) => e instanceof ApiError && e.status === 503;
 
-export default function JournalPageV2({ api = defaultApi, shareCard = false, recallOn = false, acceptedOn = false, settings }: {
+export default function JournalPageV2({ api = defaultApi, shareCard = false, recallOn = false, acceptedOn = false, studiesOn = false, settings }: {
   api?: JournalApi; shareCard?: boolean; recallOn?: boolean; settings?: ReactNode;
+  /** M77 SX-7 (flag study_export): a "My studies" tab - his saved Copilot studies, in place. */
+  studiesOn?: boolean;
   /** M76 MP-5 (flag trade_warnings): the weekly review shows the check-card lines he pressed Place with. */
   acceptedOn?: boolean;
 }) {
@@ -111,7 +114,7 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
       {shareCard && <DisciplineCardV2 />}
       <PageTabs label="Journal" value={tab} onChange={setTab} idPrefix="journal"
         items={[{ key: "trades", label: "Trades" }, { key: "stats", label: "Stats" }, { key: "review", label: "Weekly review", short: "Week" },
-          { key: "settings", label: "Settings" }]} />
+          ...(studiesOn ? [{ key: "studies" as const, label: "My studies", short: "Studies" }] : []), { key: "settings", label: "Settings" }]} />
       <div role="tabpanel" id={`journal-panel-${tab}`} aria-labelledby={`journal-tab-${tab}`}>
         {tab === "trades" && (
           <JournalListV2 state={list} filters={filters} onFilters={changeFilters} api={api} onRetry={refresh}
@@ -123,6 +126,7 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
           <WeeklyReviewV2 state={weekState} week={week} onWeek={(o) => setWeek((w) => shiftWeek(w, o))} onRetry={refresh}
             onOpen={(kind, id) => setSheet({ kind, id })} acceptedOn={acceptedOn} />
         )}
+        {tab === "studies" && studiesOn && <MyStudiesV2 />}
         {tab === "settings" && (
           <div className="space-y-space-4">
             <OwnListsV2 api={api} onSaved={(d) => setCustomTags(d.settings.custom_tags ?? [])} />

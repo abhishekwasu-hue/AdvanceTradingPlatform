@@ -1,0 +1,185 @@
+{
+ "about": "M77 SX-4: shared band-label placement cases - frontend placeBandLabels (geometry.ts) and backend place_band_labels (app/study/chart.py) must give these chips.",
+ "cases": [
+  {
+   "name": "desktop, three bands and the controls",
+   "width": 800,
+   "height": 400,
+   "fontPx": 12,
+   "avoid": [
+    {
+     "x": 642,
+     "y": 348,
+     "w": 150,
+     "h": 44
+    }
+   ],
+   "items": [
+    {
+     "top": 40,
+     "bottom": 90,
+     "text": "S1 \u00b7 Seller area \u00b7 15m \u00b7 fresh"
+    },
+    {
+     "top": 120,
+     "bottom": 124,
+     "text": "S2 \u00b7 Seller area \u00b7 1h \u00b7 tested"
+    },
+    {
+     "top": 330,
+     "bottom": 380,
+     "text": "B1 \u00b7 Buyer area \u00b7 15m \u00b7 fresh"
+    }
+   ],
+   "expected": [
+    {
+     "index": 0,
+     "x": 4.0,
+     "y": 42.0,
+     "w": 248,
+     "h": 18
+    },
+    {
+     "index": 1,
+     "x": 4.0,
+     "y": 113.0,
+     "w": 248,
+     "h": 18
+    },
+    {
+     "index": 2,
+     "x": 4.0,
+     "y": 332.0,
+     "w": 240,
+     "h": 18
+    }
+   ]
+  },
+  {
+   "name": "phone, crowded thin bands",
+   "width": 360,
+   "height": 300,
+   "fontPx": 12,
+   "avoid": [
+    {
+     "x": 182,
+     "y": 240,
+     "w": 170,
+     "h": 52
+    }
+   ],
+   "items": [
+    {
+     "top": 100,
+     "bottom": 101,
+     "text": "S1 \u00b7 Seller area \u00b7 5m"
+    },
+    {
+     "top": 104,
+     "bottom": 105,
+     "text": "S2 \u00b7 Seller area \u00b7 15m"
+    },
+    {
+     "top": 108,
+     "bottom": 109,
+     "text": "S3 \u00b7 Seller area \u00b7 1h"
+    },
+    {
+     "top": 112,
+     "bottom": 113,
+     "text": "S4 \u00b7 Seller area \u00b7 1h \u00b7 flipped"
+    },
+    {
+     "top": 260,
+     "bottom": 290,
+     "text": "B1 \u00b7 Buyer area \u00b7 15m"
+    }
+   ],
+   "expected": [
+    {
+     "index": 0,
+     "x": 4.0,
+     "y": 91.5,
+     "w": 176,
+     "h": 18
+    },
+    {
+     "index": 2,
+     "x": 4.0,
+     "y": 111.0,
+     "w": 176,
+     "h": 18
+    },
+    {
+     "index": 4,
+     "x": 4.0,
+     "y": 262.0,
+     "w": 176,
+     "h": 18
+    }
+   ]
+  },
+  {
+   "name": "study PDF chart, larger font, band taller than the pane",
+   "width": 900,
+   "height": 560,
+   "fontPx": 15,
+   "avoid": [],
+   "items": [
+    {
+     "top": -80,
+     "bottom": 200,
+     "text": "S1 \u00b7 Seller area \u00b7 1d \u00b7 tested"
+    },
+    {
+     "top": 300,
+     "bottom": 300,
+     "text": "Protected level"
+    },
+    {
+     "top": 540,
+     "bottom": 620,
+     "text": "B1 \u00b7 Buyer area \u00b7 1h"
+    }
+   ],
+   "expected": [
+    {
+     "index": 0,
+     "x": 4.0,
+     "y": 2.0,
+     "w": 308,
+     "h": 21
+    },
+    {
+     "index": 1,
+     "x": 4.0,
+     "y": 289.5,
+     "w": 158,
+     "h": 21
+    },
+    {
+     "index": 2,
+     "x": 4.0,
+     "y": 517.0,
+     "w": 208,
+     "h": 21
+    }
+   ]
+  },
+  {
+   "name": "a label wider than the pane is left out",
+   "width": 120,
+   "height": 200,
+   "fontPx": 12,
+   "avoid": [],
+   "items": [
+    {
+     "top": 50,
+     "bottom": 80,
+     "text": "B1 \u00b7 Buyer area \u00b7 15m \u00b7 fresh and long"
+    }
+   ],
+   "expected": []
+  }
+ ]
+}

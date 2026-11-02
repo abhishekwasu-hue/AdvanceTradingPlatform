@@ -17,8 +17,8 @@ Each page also returns its text lines and their positions, which app/study/pdf.p
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
@@ -133,23 +133,108 @@ class Op:
 @dataclass
 class Page:
     ops: list[Op] = field(default_factory=list)
+    end: float = float(MARGIN)                  # where its content ends (set when the next page starts)
+
+
+@dataclass
+class Unit:
+    """One placed piece the page engine may carry to the next page: a text line, a table row or header, a heading."""
+    page: int                                   # index into Layout.pages
+    op: int                                     # index of its first op on that page
+    y: float                                    # its top
+    kind: str                                   # line | row | header | heading | other
+    block: int                                  # the paragraph / table / picture it belongs to
+    again: Callable[[], None] | None = None     # a table row: draws "<section> (continued)" and the header on a new page
+
+
+def _shifted(op: Op, dy: float) -> Op:
+    x0, y0, x1, y1 = op.box
+    return replace(op, box=(x0, y0 + dy, x1, y1) if op.kind == "text" else (x0, y0 + dy, x1, y1 + dy))
 
 
 class Layout:
-    """Places blocks top to bottom; a block that does not fit starts a new page (a table repeats its header)."""
+    """Places blocks top to bottom; a block that does not fit starts a new page. A table that continues on a new page
+    repeats "<section> (continued)" and its header row; a section's closing lines never stand alone at the top of a page
+    (`end_section` carries the piece before them along)."""
 
     def __init__(self, pal: Palette) -> None:
         self.pal = pal
         self.pages: list[Page] = [Page()]
         self.y = float(MARGIN)
+        self.section = ""                       # the current section's title, for "(continued)"
+        self.units: list[Unit] = []
+        self._block = 0
+        self._section_from = 0                  # index into `units` where the current section starts
 
     @property
     def ops(self) -> list[Op]:
         return self.pages[-1].ops
 
     def new_page(self) -> None:
+        self.pages[-1].end = self.y
         self.pages.append(Page())
         self.y = float(MARGIN)
+
+    def _begin(self) -> None:
+        self._block += 1
+
+    def _mark(self, kind: str, again: Callable[[], None] | None = None) -> None:
+        self.units.append(Unit(len(self.pages) - 1, len(self.ops), self.y, kind, self._block, again))
+
+    def continued(self) -> None:
+        """"<section> (continued)" at the top of a page a table carries on to (none before the first section heading)."""
+        if not self.section:
+            return
+        self._mark("heading")
+        self.text_line(MARGIN, f"{self.section} (continued)", SIZE_HEAD, self.pal.text)
+        self.y += SIZE_HEAD * LINE_GAP
+        self.ops.append(Op("rule", (MARGIN, self.y - 6, PAGE_W - MARGIN, self.y - 4), self.pal.border))
+        self.gap(10)
+
+    def _sticky(self, before: Unit, unit: Unit) -> bool:
+        """`before` goes along with `unit` to the next page: a heading, a table header, or a one-line lead-in to a table."""
+        if before.kind in ("heading", "header"):
+            return True
+        return (before.kind == "line" and unit.kind == "header"
+                and sum(1 for u in self.units if u.block == before.block) == 1)
+
+    def end_section(self) -> None:
+        """A section's closing lines never stand alone at the top of a page: when the section's part on its last page is
+        only its last paragraph, the piece before it (a table row - its section "(continued)" and header drawn again -
+        or a line) comes along to that page, with a heading or header just before that piece. Nothing moves when the
+        previous page would be left empty or the page would overflow."""
+        units, self._section_from = self.units[self._section_from:], len(self.units)
+        last = len(self.pages) - 1
+        tail = [u for u in units if u.page == last]
+        prev = [u for u in units if u.page == last - 1]
+        if not tail or not prev or tail[0].op != 0 or {u.kind for u in tail} != {"line"} or len({u.block for u in tail}) != 1:
+            return
+        k = len(prev) - 1
+        while k > 0 and self._sticky(prev[k - 1], prev[k]):
+            k -= 1
+        first = prev[k]
+        if first.op == 0:
+            return
+        saved = ([Page(list(p.ops), p.end) for p in self.pages], list(self.units), self.y)
+        src, tail_page, tail_end = self.pages[last - 1], self.pages.pop(), self.y
+        moved, src_end = src.ops[first.op:], src.end
+        del src.ops[first.op:]
+        carried = [u for u in self.units if u.page == last - 1 and u.op >= first.op]
+        self.units = [u for u in self.units if u.page < last - 1 or (u.page == last - 1 and u.op < first.op)]
+        self.y = first.y
+        self.new_page()
+        if first.kind == "row" and first.again is not None:
+            first.again()
+        dy, base = self.y - first.y, len(self.ops)
+        self.ops.extend(_shifted(op, dy) for op in moved)
+        self.units.extend(replace(u, page=last, op=base + u.op - first.op, y=u.y + dy) for u in carried)
+        dy, base = src_end + dy - MARGIN, len(self.ops)
+        self.ops.extend(_shifted(op, dy) for op in tail_page.ops)
+        self.units.extend(replace(u, page=last, op=base + u.op, y=u.y + dy) for u in tail)
+        self.y = tail_end + dy
+        if self.y > BODY_BOTTOM:                # it would not fit: the pages stay as they were
+            self.pages, self.units, self.y = saved
+        self._section_from = len(self.units)
 
     def room(self, h: float) -> None:
         if self.y + h > BODY_BOTTOM and self.y > MARGIN:
@@ -162,23 +247,30 @@ class Layout:
         self.y += h
 
     def title(self, text: str) -> None:
+        self._begin()
         self.room(SIZE_TITLE * LINE_GAP * 2)
         for line in wrap(text, SIZE_TITLE, PAGE_W - 2 * MARGIN):
+            self._mark("other")
             self.text_line(MARGIN, line, SIZE_TITLE, self.pal.text)
             self.y += SIZE_TITLE * LINE_GAP
         self.gap(8)
 
     def heading(self, text: str) -> None:
         self.room(SIZE_HEAD * LINE_GAP + SIZE_BODY * LINE_GAP * 3)          # never a heading alone at a page's foot
+        self.section, self._section_from = text, len(self.units)
+        self._begin()
         self.gap(18)
+        self._mark("heading")
         self.text_line(MARGIN, text, SIZE_HEAD, self.pal.text)
         self.y += SIZE_HEAD * LINE_GAP
         self.ops.append(Op("rule", (MARGIN, self.y - 6, PAGE_W - MARGIN, self.y - 4), self.pal.border))
         self.gap(10)
 
     def para(self, text: str, size: int = SIZE_BODY, colour: Rgb | None = None, indent: float = 0) -> None:
+        self._begin()
         for line in wrap(text, size, PAGE_W - 2 * MARGIN - indent):
             self.room(size * LINE_GAP)
+            self._mark("line")
             self.text_line(MARGIN + indent, line, size, colour or self.pal.text)
             self.y += size * LINE_GAP
 
@@ -212,18 +304,29 @@ class Layout:
             return max(len(c) for c in cells(values)) * line_h + 2 * CELL_PAD
 
         header = [t for t, _, _ in columns]
+
+        def header_again() -> None:             # on a new page: "<section> (continued)" and the header row again
+            self.continued()
+            self._mark("header")
+            draw_row(header, self.pal.surface, self.pal.text_muted)
+
+        self._begin()
         self.room(row_height(header) + (row_height(rows[0]) if rows else 0))
+        self._mark("header")
         draw_row(header, self.pal.surface, self.pal.text_muted)
         for i, row in enumerate(rows):
             if self.y + row_height(row) > BODY_BOTTOM:
                 self.new_page()
-                draw_row(header, self.pal.surface, self.pal.text_muted)
+                header_again()
+            self._mark("row", header_again)
             draw_row(row, (tints[i] if tints else None), self.pal.text)
         self.gap(10)
 
     def picture(self, img: Image.Image) -> None:
         """A picture (a chart) full width; it never splits across pages."""
+        self._begin()
         self.room(img.height + 10)
+        self._mark("other")
         self.ops.append(Op("image", (MARGIN, self.y, MARGIN + img.width, self.y + img.height), self.pal.border, image=img))
         self.y += img.height + 10
 
@@ -645,6 +748,7 @@ def layout(snap: Mapping[str, Any], fp: str, *, cvd: bool = False) -> tuple[list
         else:
             lay.heading(S.SECTION_TITLES.get(section, section))
             lay.not_available(str(unavailable.get(section) or "not part of a saved study yet"))
+        lay.end_section()
     return lay.pages, pal
 
 

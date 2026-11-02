@@ -156,3 +156,47 @@ def test_pdf_route_own_study_only_same_bytes(served):  # noqa: F811 - the fixtur
 def test_pdf_route_is_classified_for_tenancy():
     from tests.tenancy_route_table import ROUTE_TABLE
     assert ROUTE_TABLE[("GET", "/api/studies/{study_id}/pdf")].startswith("member")
+
+
+# Proof follow-ups: a table that continues repeats "<section> (continued)" and its header; a section's closing line never
+# stands alone at the top of a page.
+def _page_texts(lay) -> list[list[str]]:
+    return [[op.text for op in page.ops if op.kind == "text"] for page in lay.pages]
+
+
+def test_a_table_that_continues_repeats_the_section_heading_and_its_header():
+    from app.study.palette import palette
+    lay = P.Layout(palette())
+    lay.heading("Areas")
+    lay.table([("Area", 0.5, "left"), ("Band", 0.5, "left")], [[f"S{i}", f"band {i}"] for i in range(80)])
+    pages = _page_texts(lay)
+    assert len(pages) >= 2
+    assert "Areas (continued)" not in pages[0]
+    for later in pages[1:]:
+        assert later[:3] == ["Areas (continued)", "Area", "Band"]
+
+
+def _closing_alone(n_rows: int):
+    from app.study.palette import palette
+    lay = P.Layout(palette())
+    lay.heading("AI explanation")
+    lay.table([("Item", 0.4, "left"), ("Value", 0.6, "left")], [[f"Row {i}", "value"] for i in range(n_rows)])
+    lay.para("Educational only.", size=P.SIZE_SMALL)
+    return lay
+
+
+def test_a_sections_closing_line_is_never_alone_at_the_top_of_a_page():
+    for n in range(1, 120):                             # the first table length that leaves the closing line alone
+        lay = _closing_alone(n)
+        if len(lay.pages) == 2 and _page_texts(lay)[1] == ["Educational only."]:
+            break
+    else:
+        pytest.fail("no table length left the closing line alone")
+    lay.end_section()
+    first, second = _page_texts(lay)
+    assert second == ["AI explanation (continued)", "Item", "Value", f"Row {n - 1}", "value", "Educational only."]
+    assert f"Row {n - 2}" in first and f"Row {n - 1}" not in first
+    ys = [op.box[1] for op in lay.pages[1].ops if op.kind == "text"]
+    assert ys == sorted(ys) and max(ys) < P.BODY_BOTTOM
+    lay.end_section()                                   # a second call changes nothing
+    assert _page_texts(lay) == [first, second]

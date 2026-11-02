@@ -233,7 +233,9 @@ export async function ticketToReview(page: Page, lots = 1): Promise<Locator> {
   await page.locator("[data-chain-actions] [data-action='buy']").click();
   const ticket = page.locator("[data-order-ticket]");
   await expect(ticket).toBeVisible();
-  for (let i = 1; i < lots; i += 1) await ticket.locator("[data-ticket='lots-more']").click();
+  // M68 PR-2: lots may be Not set (the ticket asks); he types them then, else steps up from his saved size.
+  if (await ticket.locator("[data-ticket='lots']").inputValue() === "") await ticket.locator("[data-ticket='lots']").fill(String(lots));
+  else for (let i = 1; i < lots; i += 1) await ticket.locator("[data-ticket='lots-more']").click();
   if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) {
     await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").click();
   }

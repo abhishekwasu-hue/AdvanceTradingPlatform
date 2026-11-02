@@ -55,6 +55,12 @@ jobs:
       - name: Public repository guard (scripts/check_public_repo.py) - whole repo
         run: python scripts/check_public_repo.py
 
+      # M68 TS-7 (owner order M68): no new hard-coded trading value (lots, stop, target, product, order type, square-off
+      # time...) in execution / risk / strategy / ticket code outside the Trade settings registry; exchange / broker facts
+      # sit on its allow-list with a reason. Its test: backend/tests/test_trading_literals_check.py.
+      - name: Trading literals guard (scripts/check_trading_literals.py) - M68 TS-7
+        run: python scripts/check_trading_literals.py
+
       - name: Install linters (pinned) and the application's dependencies (mypy reads them)
         working-directory: backend
         run: |

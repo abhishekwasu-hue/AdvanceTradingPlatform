@@ -258,9 +258,10 @@ async def evaluate(session: AsyncSession, user: User, choice: dict[str, Any], no
 
 # --- marks, delivery and the worker's run ----------------------------------------------------------------------------------
 
-async def read_marks(session: AsyncSession, user: Any) -> tuple[UserPrefsRecord | None, dict[str, Any]]:
+async def read_marks(session: AsyncSession, user: Any, namespace: str = MARKS) -> tuple[UserPrefsRecord | None, dict[str, Any]]:
+    """`namespace`: the internal marks row (M76 MP-11 keeps the workspace watch's own marks in a row of its own)."""
     row = await session.scalar(select(UserPrefsRecord).where(UserPrefsRecord.tenant_id == user.tenant_id, UserPrefsRecord.user_id == user.id,
-                                                             UserPrefsRecord.namespace == MARKS))
+                                                             UserPrefsRecord.namespace == namespace))
     try:
         marks = json.loads(row.value_json) if row else {}
     except ValueError:
@@ -268,10 +269,11 @@ async def read_marks(session: AsyncSession, user: Any) -> tuple[UserPrefsRecord 
     return row, marks if isinstance(marks, dict) else {}
 
 
-async def write_marks(session: AsyncSession, user: Any, row: UserPrefsRecord | None, marks: dict[str, Any], now: datetime) -> None:
+async def write_marks(session: AsyncSession, user: Any, row: UserPrefsRecord | None, marks: dict[str, Any], now: datetime,
+                      namespace: str = MARKS) -> None:
     value = json.dumps(marks, sort_keys=True)
     if row is None:
-        session.add(UserPrefsRecord(tenant_id=user.tenant_id, user_id=user.id, namespace=MARKS, value_json=value, version=1, updated_at=now))
+        session.add(UserPrefsRecord(tenant_id=user.tenant_id, user_id=user.id, namespace=namespace, value_json=value, version=1, updated_at=now))
     else:
         row.value_json, row.version, row.updated_at = value, row.version + 1, now
     await session.commit()

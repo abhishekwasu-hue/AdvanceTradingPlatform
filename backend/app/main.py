@@ -51,6 +51,9 @@ from app.charts.read_chart import router as chart_read_router
 from app.charts.studies import router as chart_studies_router
 from app.charts.trades_layer import router as chart_trades_layer_router
 from app.charts.workspace_events import router as workspace_events_router
+from app.charts.workspace_recall import router as workspace_recall_router
+from app.charts.workspace_summary import router as workspace_summary_router
+from app.charts.workspace_watch import router as workspace_watch_router
 from app.charts.zones_layer import router as chart_zones_layer_router
 from app.compliance.routes import router as compliance_router
 from app.context_panel.routes import router as context_panel_router
@@ -479,6 +482,9 @@ app.include_router(system_watchlists_router)  # WL1: read-only system lists (ind
 app.include_router(watchlists_router)  # AMW-2: the caller's own named watchlists (flag watchlists, off)
 app.include_router(system_watchlists_admin_router)  # WL1: the admin's view of the system lists' refresh (SUPER_ADMIN)
 app.include_router(workspace_events_router)  # M76 MP-7: expiries, calendar and his own events on the workspace chart (copilot_workspace)
+app.include_router(workspace_watch_router)  # M76 MP-11: his watch cards' choices (copilot_workspace; the worker raises the cards)
+app.include_router(workspace_summary_router)  # M76 MP-13: his close summary in numbers (copilot_workspace)
+app.include_router(workspace_recall_router)  # M76 MP-14: area context at entry + similar past setups (copilot_workspace)
 app.include_router(chart_analyze_workspace_router)  # M75 W-4: the Copilot workspace's AI card, once per closed bar (copilot_workspace)
 app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a chart image, educational reading (flag chart_analyze, off)
 app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)

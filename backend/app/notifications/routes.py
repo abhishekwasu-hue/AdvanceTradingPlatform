@@ -25,6 +25,8 @@ class NotificationResponse(BaseModel):
     created_at: str
     # M72 PR-7: a Copilot watch card's "Ask why" context (symbol and his own object by kind and id; never a number).
     ask: dict | None = None
+    # M76 MP-11: a workspace watch card's "Open here" (the Copilot's chart workspace, in place; the symbol only).
+    open_here: dict | None = None
 
     @classmethod
     def from_record(cls, record: NotificationRecord, read: bool) -> "NotificationResponse":
@@ -32,7 +34,7 @@ class NotificationResponse(BaseModel):
             id=record.id, event_type=record.event_type, severity=record.severity,
             title=record.title, message=record.message,
             related_trade_id=record.related_trade_id, related_order_id=record.related_order_id,
-            read=read, created_at=record.created_at.isoformat(), ask=_ask(record),
+            read=read, created_at=record.created_at.isoformat(), ask=_ask(record), open_here=_open_here(record),
         )
 
 
@@ -41,6 +43,13 @@ def _ask(record: NotificationRecord) -> dict | None:
         return None
     from app.ai.watch import ask_of
     return ask_of(record.metadata_json)
+
+
+def _open_here(record: NotificationRecord) -> dict | None:
+    if record.event_type != "COPILOT_WATCH" or not record.metadata_json:
+        return None
+    from app.charts.workspace_watch import open_of
+    return open_of(record.metadata_json)
 
 
 def private_to_addressee():

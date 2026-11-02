@@ -473,6 +473,25 @@ async def on_accepted_warnings(session: AsyncSession, tenant_id: int, trade_ids:
     await _run(session, tenant_id, "accepted_warnings", work)
 
 
+def merge_area_context(plan: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """M76 MP-14: the area the chart's reading had the price inside at entry (source, the chart's and the area's
+    timeframe, side, state). The first one recorded stays (idempotent; never rewritten in hindsight)."""
+    return plan if isinstance(plan.get("area_context"), dict) else {**plan, "area_context": dict(context)}
+
+
+async def on_area_context(session: AsyncSession, tenant_id: int, trade_ids: Iterable[int], context: dict[str, Any]) -> None:
+    """M76 MP-14: the entry's area context (read by the server as of the entry, from closed bars only) goes on each
+    trade's journal entry. Queued like every hook; never raises; nothing on any order path calls it."""
+    ids = [int(t) for t in trade_ids]
+
+    async def work(own: AsyncSession) -> None:
+        for trade_id in ids:
+            _row, entry = await _entry_for(own, trade_id)
+            if entry is not None:
+                entry.plan_json = json.dumps(merge_area_context(_loads(entry.plan_json, {}), context), sort_keys=True, default=str)
+    await _run(session, tenant_id, "area_context", work)
+
+
 async def on_exit(session: AsyncSession, trade: TradeRecord, *, underlying_price: Optional[float] = None) -> None:
     """`underlying_price`: the underlying quote the exit was judged on (options), for IV at exit."""
     ids = _ids(trade)

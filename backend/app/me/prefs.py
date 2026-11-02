@@ -623,6 +623,70 @@ class OwnEventsPrefs(_Prefs):
     events: list[OwnEvent] = Field(default_factory=list, max_length=MAX_OWN_EVENTS)
 
 
+MAX_WATCHED_AREAS = 10
+WATCH_SYMBOL = r"^[A-Z0-9&_\- ]{1,30}$"
+WATCH_EXCHANGE = r"^[A-Z]{2,10}$"
+PRICE = Field(gt=0, le=10_000_000, allow_inf_nan=False)
+
+
+class WatchedArea(_Prefs):
+    """One area he chose to watch from the Copilot workspace's reading (M76 MP-11, D-1): its chart (exchange, symbol and the
+    timeframe it was read on), its side and its edges as the reading drew them. `since` is set by the server when he adds
+    it (the candle check reads only bars after it; never sent by the page)."""
+    id: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
+    exchange: str = Field(default="NSE", pattern=WATCH_EXCHANGE)
+    symbol: str = Field(pattern=WATCH_SYMBOL)
+    tf: Literal["1m", "3m", "5m", "15m", "30m", "1h", "1d"]
+    side: Literal["buyer", "seller"]
+    low: float = PRICE
+    high: float = PRICE
+    since: datetime | None = None
+
+    @model_validator(mode="after")
+    def _edges(self) -> WatchedArea:
+        if self.low > self.high:
+            raise ValueError("low must not be above high")
+        return self
+
+
+class WorkspaceWatchPrefs(_Prefs):
+    """`workspace_watch` (M76 MP-11, D-1): his own opt-in watch cards from the Copilot workspace. Every type is OFF until
+    he turns it on, and a type with a number needs HIS number (None = Not set; ATP chooses none, M68). Read by
+    app/charts/workspace_watch.py only (flags ui_v2 + copilot_workspace), to raise short information cards in the app (and
+    his own Telegram chat when `telegram` is on), each with "Open here"; no order path, worker trading step or risk check
+    reads it, nothing is placed, closed or blocked (ADR-0004, ADR-0006).
+    - area_entry: the price is inside one of his watched areas;
+    - area_rejection: a commitment candle at one of his watched areas on that area's chart (ATP's level gate, as the
+      workspace's reading shows it), on bars after he started watching it;
+    - strike_points: a short option whose underlying is within this many points of the strike;
+    - iv_spike: IV at his option's strike moved by this many IV points between the two latest stored chain readings;
+    - margin_use: his broker's margin in use is at or above this % of his margin (his own broker session; PAPER: none);
+    - cut_off_reminder: this many minutes before his own square-off time (Trade settings > Exits), on trading days."""
+    telegram: bool = False
+    area_entry: bool = False
+    area_rejection: bool = False
+    strike_points: bool = False
+    strike_points_n: float | None = Field(default=None, gt=0, le=100_000, allow_inf_nan=False)
+    iv_spike: bool = False
+    iv_spike_points: float | None = WATCH_PCT
+    margin_use: bool = False
+    margin_use_pct: float | None = WATCH_PCT
+    cut_off_reminder: bool = False
+    cut_off_minutes: int | None = Field(default=None, ge=1, le=600)
+    areas: list[WatchedArea] = Field(default_factory=list, max_length=MAX_WATCHED_AREAS)
+
+    @model_validator(mode="after")
+    def _numbers_first(self) -> WorkspaceWatchPrefs:
+        need = {"strike_points": self.strike_points_n, "iv_spike": self.iv_spike_points, "margin_use": self.margin_use_pct,
+                "cut_off_reminder": self.cut_off_minutes}
+        for kind, number in need.items():
+            if getattr(self, kind) and number is None:
+                raise ValueError(f"{kind}: set your own number first")
+        if len({a.id for a in self.areas}) != len(self.areas):
+            raise ValueError("each watched area once")
+        return self
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
@@ -631,7 +695,8 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs,
                                        "trade_settings": TradeSettingsPrefs, "ai_usage": AiUsagePrefs,
                                        "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs, "ai_memory": AiMemoryPrefs,
-                                       "what_if": WhatIfPrefs, "own_events": OwnEventsPrefs}
+                                       "what_if": WhatIfPrefs, "own_events": OwnEventsPrefs,
+                                       "workspace_watch": WorkspaceWatchPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -766,7 +831,7 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "OwnEvent", "OwnEventsPrefs", "MAX_OWN_EVENTS", "AiUsagePrefs", "WhatIfPrefs", "WhatIfScenario", "MAX_WHAT_IF_SCENARIOS", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "WorkspaceWatchPrefs", "WatchedArea", "MAX_WATCHED_AREAS", "OwnEvent", "OwnEventsPrefs", "MAX_OWN_EVENTS", "AiUsagePrefs", "WhatIfPrefs", "WhatIfScenario", "MAX_WHAT_IF_SCENARIOS", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
 
 
 async def own_limits(session: AsyncSession, user: User) -> Dict[str, Any]:

@@ -7,7 +7,7 @@ from app.ai import briefing
 from app.ai import market_memory as mm
 from app.db.models import TraderProfileRecord
 from tests.test_auth_api import _session_factory
-from tests.test_phase_ar_market_memory import NOW, _Broker, _FakeMD, _add, _run, _tenant
+from tests.test_phase_ar_market_memory import NOW, _add, _Broker, _FakeMD, _run, _tenant
 
 
 def test_super_admin_is_not_refused_by_role_and_viewer_still_is(monkeypatch):

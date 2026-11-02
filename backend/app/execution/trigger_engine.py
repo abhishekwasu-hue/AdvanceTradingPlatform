@@ -115,7 +115,7 @@ async def tenants_with_resting(session: AsyncSession, *, paper_only: bool = Fals
     if paper_only:
         query = query.where(PaperRestingOrderRecord.mode == "PAPER")
         groups = groups.where(GroupExitRecord.mode == "PAPER")
-    from app.execution.trigger_plans import tenants_with_plans       # M75 W-8: an armed or triggered plan needs its pass too
+    from app.execution.trigger_plans import tenants_with_plans  # M75 W-8: an armed or triggered plan needs its pass too
     plans = set() if paper_only else await tenants_with_plans(session)
     return set(await session.scalars(query.distinct())) | set(await session.scalars(groups.distinct())) | plans
 

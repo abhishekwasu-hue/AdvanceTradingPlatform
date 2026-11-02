@@ -1,7 +1,7 @@
 """M85: the Upstox Analytics Token (valid one year) is asked ONCE. While it serves market data, an ended daily login
 never raises the "login ended" notice: the browser reads "prices refresh every few seconds" and the worker keeps the
 organisation's stream on the analytics token. Without a working analytics token the renew notice stays as before."""
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -9,8 +9,6 @@ import pytest
 from app.brokers import upstox_analytics
 from app.market_data import hub as data_hub
 from tests.test_tm1_data_hub import _clean, _email, _flags, run  # noqa: F401 - autouse fixture
-
-UTC = timezone.utc
 
 
 def _row(token_status="EXPIRED"):
@@ -48,8 +46,8 @@ def test_a_row_with_a_daily_login_still_waits_for_its_stream(analytics):
 
 
 def test_worker_keeps_the_stream_on_the_analytics_token_and_never_says_renew(monkeypatch, analytics):
-    from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _tenant, _worker
     from app.brokers.exceptions import BrokerAuthenticationError
+    from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _tenant, _worker
     t = _tenant(_email("m85-data"), token_status="EXPIRED")
     _deploy(t, symbol="RELIANCE")
     _flags([t["tenant_id"]], data_hub=True)
@@ -69,8 +67,8 @@ def test_worker_keeps_the_stream_on_the_analytics_token_and_never_says_renew(mon
 
 
 def test_worker_without_a_working_analytics_token_still_says_renew_once(monkeypatch, analytics):
-    from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _tenant, _worker
     from app.brokers.exceptions import BrokerAuthenticationError
+    from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _tenant, _worker
     analytics["works"] = False
     t = _tenant(_email("m85-none"), token_status="EXPIRED")
     _deploy(t, symbol="RELIANCE")

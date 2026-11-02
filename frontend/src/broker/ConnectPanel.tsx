@@ -1,10 +1,11 @@
-import { ExternalLink, Info, TriangleAlert } from "lucide-react";
+import { CircleCheck, ExternalLink, Info, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import { ApiError, NETWORK_MESSAGE } from "../api/errors";
 import { loginErrorText } from "../ui/brokerSession";
 import { useFeatures } from "../ui/useFeatures";
-import type { BrokerCatalogEntry, BrokerCatalogField } from "../types";
+import type { BrokerCatalogEntry, BrokerCatalogField, BrokerTokenInfo } from "../types";
+import { formatDateIST } from "../ui/format";
 import { BTN_PRIMARY, BTN_SECONDARY, BrokerLogo, ResponsiveDialog } from "./parts";
 import { entryFor, useBrokerCatalog } from "./useBrokerCatalog";
 import { Skeleton } from "../components/primitives";
@@ -19,8 +20,9 @@ import { Skeleton } from "../components/primitives";
  * Renew (the Broker page's row button, the Dashboard banner, the sign-in prompt) opens the same panel with only the
  * catalog's `renew_fields`, sent to POST /renew: Dhan pastes today's token; Zerodha and Fyers ("login_code") press
  * "Log in" (the broker's own login page, in a new tab) and paste the address they land on; Angel One and Shoonya
- * (no renew fields) are one button. Upstox ("analytics_token") renews by pasting an Analytics Token through
- * /connect - the server's own message asks for exactly that, and /renew has nothing to take for Upstox.
+ * (no renew fields) are one button. Upstox ("analytics_token"): while the saved Analytics Token is valid the panel shows
+ * "saved, valid till <date>", the daily login (Upstox's own page) and Replace (M85); the token field (through /connect)
+ * appears only on Replace or once no valid token is saved.
  * A Zerodha / Fyers connect stores the key and secret and answers "needs_login": the panel then moves to that
  * "Log in" step by itself.
  */
@@ -56,6 +58,35 @@ export function stepFor(entry: Pick<BrokerCatalogEntry, "method" | "fields" | "r
   if (mode === "connect" && !afterSave) return { endpoint: "connect", fields: entry.fields, login: false, action: "Connect" };
   if (entry.method === "analytics_token") return { endpoint: "connect", fields: entry.fields, login: false, action: "Renew" };
   return { endpoint: "renew", fields: entry.renew_fields ?? [], login: entry.method === "login_code", action: afterSave ? "Connect" : "Renew" };
+}
+
+/**
+ * M85 U5: the saved Upstox analytics token of this account when it is still valid (its expiry, ISO), else null. The
+ * renew panel then shows "saved, valid till <date>" with Replace - the token field only on Replace or after expiry.
+ */
+export function savedAnalytics(rows: readonly BrokerTokenInfo[] | null | undefined, broker: string, accountLabel: string,
+  now: Date = new Date()): { expiresAt: string } | null {
+  const row = (rows ?? []).find((r) => r.broker_name === broker && (r.account_label || "primary") === accountLabel);
+  if (!row?.analytics_token_set || row.analytics_token_expired || !row.analytics_token_expires_at) return null;
+  return new Date(row.analytics_token_expires_at).getTime() > now.getTime() ? { expiresAt: row.analytics_token_expires_at } : null;
+}
+
+/** M85 U5: the Upstox renew panel while its analytics token is valid - nothing to paste, nothing to log in to (BRK-1:
+ * Upstox connects with the pasted Analytics Token only, no Upstox OAuth flow). Replace shows the token field. */
+export function UpstoxSavedView({ expiresAt, onReplace }: { expiresAt: string; onReplace: () => void }) {
+  return (
+    <div className="space-y-space-4" data-upstox-saved>
+      <div className="flex items-center gap-space-3">
+        <BrokerLogo name="Upstox" />
+        <span className="text-t15 font-semibold text-fg">Upstox</span>
+      </div>
+      <p role="status" className="flex items-start gap-space-2 text-t14 text-fg">
+        <CircleCheck size={18} aria-hidden className="mt-0.5 shrink-0 text-up" />
+        <span>Analytics token saved, valid till <span className="font-semibold tabular-nums">{formatDateIST(expiresAt, { year: true })}</span></span>
+      </p>
+      <button type="button" onClick={onReplace} data-upstox-replace className={`${BTN_SECONDARY} w-full`}>Replace token</button>
+    </div>
+  );
 }
 
 export type PanelResult = { ok: true } | { ok: false; text: string };
@@ -289,6 +320,19 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
   const [afterSave, setAfterSave] = useState<string | null>(null);   // the server's "now press Log in" sentence
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginOpened, setLoginOpened] = useState<LoginOpened | null>(null);
+  // M85: the saved Upstox analytics token (renew only); undefined = not read yet, null = none valid.
+  const [saved, setSaved] = useState<{ expiresAt: string } | null | undefined>(undefined);
+  const [replacing, setReplacing] = useState(false);
+  const upstoxRenew = mode === "renew" && entry?.method === "analytics_token";
+  useEffect(() => {
+    setReplacing(false);
+    if (!open || !upstoxRenew || !broker) { setSaved(undefined); return; }
+    let live = true;
+    api.brokerTokenStatus()
+      .then((rows) => { if (live) setSaved(savedAnalytics(rows, broker, label)); })
+      .catch(() => { if (live) setSaved(null); });          // unknown: the token field, as before
+    return () => { live = false; };
+  }, [open, upstoxRenew, broker, label]);
 
   // A new broker, or the panel opened again: start empty (secrets are never kept once the panel closes).
   useEffect(() => {
@@ -340,7 +384,11 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
   const title = `${mode === "renew" ? "Renew" : "Connect"} ${name}`.trim();
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange} title={title} marker="connect">
-      {entry && step ? (
+      {upstoxRenew && saved === undefined ? (
+        <Skeleton className="h-32" label="Loading" />
+      ) : upstoxRenew && saved && !replacing ? (
+        <UpstoxSavedView expiresAt={saved.expiresAt} onReplace={() => setReplacing(true)} />
+      ) : entry && step ? (
         <ConnectPanelView entry={entry} step={step} values={values} busy={busy} result={result} note={afterSave}
           onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}
           onSubmit={() => void submit()} onDone={() => onOpenChange(false)}

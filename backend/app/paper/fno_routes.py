@@ -166,7 +166,7 @@ async def preview(body: OrderBody, user: User = Depends(require_trader), session
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)            # the caller's own entitlement (BT1), never a teammate's
-    view = await fno_ticket.assess(session, user, body.ask(), price_lookup=lookup, origin=MANUAL)
+    view = await fno_ticket.assess(session, user, body.ask(), price_lookup=lookup, origin=MANUAL, margin_reader=fno_ticket.read_broker_margin)
     await session.commit()
     return view
 
@@ -177,7 +177,7 @@ async def place(body: OrderBody, user: User = Depends(require_trader), session: 
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
-    return await fno_ticket.place(session, user, body.ask(), price_lookup=lookup, origin=MANUAL)
+    return await fno_ticket.place(session, user, body.ask(), price_lookup=lookup, origin=MANUAL, margin_reader=fno_ticket.read_broker_margin)
 
 
 # --- TM-2: the caller's own waiting orders and armed exits -------------------------------------------------------------

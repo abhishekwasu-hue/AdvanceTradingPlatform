@@ -444,7 +444,7 @@ async def fire(session: AsyncSession, row: TriggerPlanRecord, prices: PriceFn, n
                 r = await _ask(session, row, o, n, r, now)
             else:
                 res = await fno_ticket.place(session, user, ask_of(row, o, n), price_lookup=prices, now=now,
-                                             origin=approval.ORIGIN_AUTOMATIC, journal_source="PLAN")
+                                             origin=approval.ORIGIN_AUTOMATIC, journal_source="PLAN", margin_reader=fno_ticket.read_broker_margin)
                 r = {"status": res.get("status"), "trade_id": res.get("trade_id"), "order_id": res.get("order_id"),
                      "reasons": [str(x) for x in (res.get("reasons") or [])][:5], "settled": True}
             await session.refresh(row)

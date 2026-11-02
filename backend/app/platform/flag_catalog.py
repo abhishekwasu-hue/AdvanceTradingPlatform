@@ -271,7 +271,7 @@ FLAG_GROUP: dict[str, str] = {
     "decision_tools": "charts",
     "read_chart": "charts",
     "copilot_workspace": "charts",
-    "trigger_plans": "trading",
+    "trigger_plans": "orders",               # M75 W-8 (was the area name "trading", not a group)
     "study_export": "charts",
     "chart_studies": "charts",
     # Screens: the screener and its builder

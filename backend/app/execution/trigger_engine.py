@@ -115,7 +115,7 @@ async def tenants_with_resting(session: AsyncSession, *, paper_only: bool = Fals
     if paper_only:
         query = query.where(PaperRestingOrderRecord.mode == "PAPER")
         groups = groups.where(GroupExitRecord.mode == "PAPER")
-    from app.execution.trigger_plans import tenants_with_plans       # M75 W-8: an armed or triggered plan needs its pass too
+    from app.execution.trigger_plans import tenants_with_plans  # M75 W-8: an armed or triggered plan needs its pass too
     plans = set() if paper_only else await tenants_with_plans(session)
     return set(await session.scalars(query.distinct())) | set(await session.scalars(groups.distinct())) | plans
 
@@ -472,7 +472,7 @@ async def _send_entry(session: AsyncSession, row: PaperRestingOrderRecord, contr
     async def lookup(symbol: str, exchange: str = "") -> float:
         return float(contract_price)
 
-    result = await fno_ticket.place(session, user, ask, price_lookup=lookup, now=now, origin=str(payload.get("origin") or ORIGIN_AUTOMATIC))
+    result = await fno_ticket.place(session, user, ask, price_lookup=lookup, now=now, origin=str(payload.get("origin") or ORIGIN_AUTOMATIC), margin_reader=fno_ticket.read_broker_margin)
     await session.refresh(row)
     if result.get("status") == "PLACED":
         row.order_id = result.get("order_id")

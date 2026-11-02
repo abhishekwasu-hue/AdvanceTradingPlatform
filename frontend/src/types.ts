@@ -1293,6 +1293,12 @@ export interface BrokerTokenInfo {
   login_url_supported?: boolean;
   code_param?: string | null;
   account_label?: string;
+  // Upstox analytics token (upstox_analytics.public_view): set, its expiry and whether it has expired - never the value.
+  analytics_token_set?: boolean;
+  analytics_token_expires_at?: string | null;
+  analytics_token_expired?: boolean | null;
+  // M85: market data works without the daily login (the analytics token) - data pages open; orders still need the login.
+  data_usable?: boolean;
 }
 
 /** P2b: the Broker page's contract (GET /api/broker/catalog, GET /api/broker/connections, POST connect / renew). */

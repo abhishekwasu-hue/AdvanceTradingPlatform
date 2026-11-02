@@ -357,19 +357,24 @@ def test_worker_keeps_a_stream_subscribed_when_enabled(monkeypatch):
     async def go():
         hold["event"] = asyncio.Event()
         report = await worker.run_cycle(OPEN_NOW)
+        # The worker is platform-wide: organisations an earlier test left with an open trade / waiting order get a
+        # stream too, so only OUR organisation's stream is checked.
+        mine = [k for k in worker.streams.keys() if k.startswith(f"{t['tenant_id']}:")]
+        stream = worker.streams.get(mine[0]) if mine else None
         for _ in range(100):
-            if made and made[0].connected:
+            if stream is not None and stream.connected:
                 break
             await asyncio.sleep(0.01)
-        status = worker.streams.status()
-        active = worker.streams.active
+        status = {k: v for k, v in worker.streams.status().items() if k in mine}
+        active = len(mine)
         # A second cycle reuses the same stream (no second connection) and keeps the symbols.
         await worker.run_cycle(OPEN_NOW + timedelta(minutes=1))
+        same = bool(mine) and worker.streams.get(mine[0]) is stream
         hold["event"].set()
         await worker.streams.stop_all()
-        return report, status, active
-    report, status, active = _run(go())
-    assert len(made) == 1 and made[0].subscribed == 1 and ("NSE:RELIANCE" in made[0]._wanted)
+        return report, status, active, stream, same
+    report, status, active, stream, same = _run(go())
+    assert stream is not None and same and stream.subscribed == 1 and ("NSE:RELIANCE" in stream._wanted)
     assert active == 1 and list(status.values())[0]["connected"] is True and list(status)[0].endswith(":upstox")
     assert worker.streams.status() == {}                       # stopped and dropped
 

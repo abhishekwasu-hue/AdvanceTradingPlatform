@@ -1144,6 +1144,11 @@ class TradingWorker:
                             if broker is not None:
                                 break
                     if broker is None:
+                        # DATA-FIX (owner 2 Nov): the market read is read-only market data, so with no daily login it
+                        # goes through the row's Upstox analytics token when that serves data (M85) - before, only the
+                        # global cues were stored all day ("The automatic market read did not run today").
+                        broker = await self._data_only_adapter(session, tenant_id, now)
+                    if broker is None:
                         written += (await market_memory.capture_global(session, tenant_id, now=now))["globals"]
                         continue
                     result = await market_memory.capture(session, tenant_id, self.market_data_factory, broker, now=now)
@@ -1417,9 +1422,17 @@ class TradingWorker:
             await self.hub.drop(org_namespace(tenant_id))        # the flag went off (or byob on): back to the old path
         linked = sorted({a.broker_name for a in accounts if a.status == "ACTIVE"})
         if data_broker is None and hub_org and linked:
-            # A linked broker whose login ended: the stream stops and the app shows ONE renew notice (never for "no broker
-            # linked"); the token check above already sent the one "session expired" notification.
-            await self.hub.org_without_session(tenant_id, linked)
+            # M85 U2/U3: the daily login ended but the row still serves market data (an Upstox analytics token whose
+            # probe marked a class `works`): the organisation's stream goes on through it - its feed authorises with the
+            # analytics token when that class works; when the broker refuses, the app says "prices refresh every few
+            # seconds" (hub.connection_status), never "login ended". Entries still need the daily login (no_session).
+            data_only = None if exits_only else await self._data_only_adapter(session, tenant_id, now)   # one replica streams
+            if data_only is not None:
+                await self._hub_quotes(session, tenant_id, data_only, deployments, now)
+            else:
+                # A linked broker whose login ended: the stream stops and the app shows ONE renew notice (never for "no
+                # broker linked"); the token check above already sent the one "session expired" notification.
+                await self.hub.org_without_session(tenant_id, linked)
         no_session = data_broker is None
         # Entries are evaluated only with a broker session and the replica lock; the exits below run either way.
         prepare = not no_session and not exits_only
@@ -2881,6 +2894,21 @@ class TradingWorker:
                 from app.trading.position_monitor import underlying_exchange
                 wanted.add((trade.underlying_symbol, underlying_exchange(trade.underlying_symbol)))
         return wanted
+
+    async def _data_only_adapter(self, session: AsyncSession, tenant_id: int, now: datetime) -> Optional[BrokerInterface]:
+        """M85: the organisation's data row when only its market data works (no daily login): an adapter for the hub
+        stream and REST data only - never handed to entries or orders. None when no such row (or it cannot be built)."""
+        from app.brokers.token_lifecycle import data_is_usable
+        from app.market_data.hub import _org_choice
+        try:
+            chosen, usable = await _org_choice(session, tenant_id, now)
+            if chosen is None or not usable or token_is_usable(chosen, now) or not data_is_usable(chosen, now):
+                return None
+            label = chosen.account_label or "primary"
+            return self._rate_limited(tenant_id, f"{chosen.broker_name}@{label}", build_adapter(chosen))
+        except Exception as exc:  # noqa: BLE001 - a data-only stream is an optimisation; renew notice as before
+            logger.warning("Tenant %s: data-only adapter not built: %s", tenant_id, exc)
+            return None
 
     async def _hub_on(self, session: AsyncSession, tenant_id: int) -> bool:
         from app.market_data.hub import hub_on

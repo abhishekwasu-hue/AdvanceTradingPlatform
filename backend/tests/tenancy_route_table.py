@@ -484,6 +484,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/studies/{study_id}"): "member: M77 SX-2 - one of the caller's own studies; another member's reads as not found",
     ("GET", "/api/studies/{study_id}/json"): "member: M77 SX-2 - the caller's own study as a JSON file; another member's reads as not found",
     ("GET", "/api/studies/{study_id}/pdf"): "member: M77 SX-3 - the caller's own study as a PDF; another member's reads as not found",
+    ("GET", "/api/studies/{study_id}/png"): "member: M77 SX-4 - the caller's own study charts as a PNG (store.get_own: tenant and user); another member's reads as not found",
+    ("GET", "/api/studies/{study_id}/csv"): "member: M77 SX-5 - the caller's own study tables as CSV / ZIP (store.get_own: tenant and user); another member's reads as not found",
+    ("GET", "/api/trigger-plans"): "member: M75 W-8 - the caller's own trigger plans only (trigger_plans.list_for_user: tenant and user)",
+    ("POST", "/api/trigger-plans"): "trader: M75 W-8 - creates a plan owned by the caller in his own organisation",
+    ("PUT", "/api/trigger-plans/{plan_id}"): "trader: M75 W-8 - edits one of the caller's own plans (trigger_plans.own: tenant and user); another member's reads as not found",
+    ("POST", "/api/trigger-plans/{plan_id}/{action}"): "trader: M75 W-8 - pause / resume / cancel one of the caller's own plans (trigger_plans.own); another member's reads as not found",
     ("DELETE", "/api/studies/{study_id}"): S_OWN_STUDIES,
     ("GET", "/api/charts/read"): "member: the caller's organisation's stored zones and his own private bars only (else the shared lake); read-only (AUD-T5)",
     ("POST", "/api/screener/board/context"): S_COMPUTE,          # U5 D3a: reference data + shared closes for the caller's symbols; stores nothing

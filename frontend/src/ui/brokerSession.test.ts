@@ -203,3 +203,18 @@ describe("UI2-0 review fixes: broker answers are keyed by user (L3)", () => {
     expect(brokerGateState({ ...base, tokens: knownFor(known, 2).rows }).kind).toBe("loading");
   });
 });
+
+describe("M85: a data page opens on the Upstox analytics token alone", () => {
+  const base = { authLoading: false, signedIn: true, failed: false };
+  const dataOnlyRow = tokenRow("upstox", { needs_login: true, token_status: "EXPIRED", data_usable: true });
+  it("data pages: connected while the analytics token serves market data", () => {
+    expect(brokerGateState({ ...base, tokens: [dataOnlyRow], dataOnly: true }).kind).toBe("connected");
+  });
+  it("pages that need the daily login (positions, funds, holdings) still ask for it", () => {
+    expect(brokerGateState({ ...base, tokens: [dataOnlyRow] }).kind).toBe("login-needed");
+  });
+  it("no working analytics token: the daily login is asked as before", () => {
+    const row = tokenRow("upstox", { needs_login: true, token_status: "EXPIRED", data_usable: false });
+    expect(brokerGateState({ ...base, tokens: [row], dataOnly: true }).kind).toBe("login-needed");
+  });
+});

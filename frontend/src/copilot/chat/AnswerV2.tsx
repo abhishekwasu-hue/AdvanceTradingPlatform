@@ -4,7 +4,7 @@ import { InPlaceLink } from "../../inplace/InPlaceLink";
 import { chartTabPath } from "../../shell/shellRoutes";
 import { isTimeframe } from "../../chart/timeframes";
 import { Details } from "../../ui/Details";
-import { EMPTY, formatPrice } from "../../ui/format";
+import { EMPTY, formatChange, formatPrice, formatTimeIST } from "../../ui/format";
 import { AnalysisTableView, MiniChart } from "../../optionChain/AnalysisTabsV2";
 import { useCopilotT } from "../i18n";
 import { cx } from "../../components/primitives/cx";
@@ -94,6 +94,16 @@ export function HeadlineRow({ h }: { h: AnswerHeadline }) {
         <dt className="text-t12 font-medium uppercase text-fg-muted">{h.symbol} · {h.price_label}</dt>
         <dd className="font-tabular text-t20 font-semibold text-fg md:text-t24" data-headline-price>{formatPrice(h.price)}</dd>
       </div>
+      {h.live_price != null && (
+        <div className="min-w-0" data-headline-live>
+          <dt className="text-t12 font-medium uppercase text-fg-muted">Live{h.live_at ? ` · ${formatTimeIST(h.live_at)}` : ""}</dt>
+          <dd className="font-tabular text-t20 font-semibold text-fg md:text-t24">{formatPrice(h.live_price)}</dd>
+          {h.price != null && (
+            <dd className={cx("font-tabular text-t13", h.live_price > h.price ? "text-up" : h.live_price < h.price ? "text-down" : "text-fg-muted")}
+              data-headline-live-change>{formatChange(h.live_price - h.price)}</dd>
+          )}
+        </div>
+      )}
       <div className="min-w-0">
         <dt className="text-t12 font-medium uppercase text-fg-muted">{t("chat.trend")} · {h.timeframe}</dt>
         <dd className="mt-space-1">

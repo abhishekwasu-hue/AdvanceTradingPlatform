@@ -39,10 +39,10 @@ def _last_ok(calls: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
     return next((c for c in reversed(calls) if c.get("ok") and c.get("name") == name), None)
 
 
-def engine_headline(data: dict[str, Any]) -> dict[str, Any] | None:
+def engine_headline(data: dict[str, Any], live: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """The headline row of an engine reading (public words only): the last close, the higher timeframe's side, the
     nearest area as a band on the mini chart."""
-    from app.ai.copilot_chat import CHART_TF, TF_LABELS, exchange_of, nearest_area
+    from app.ai.copilot_chat import CHART_TF, TF_LABELS, _live_fields, exchange_of, nearest_area
     from app.ai.tools.copilot import INDEX_NAMES
     price = data.get("last_close")
     if not isinstance(price, (int, float)) or price <= 0:
@@ -53,21 +53,24 @@ def engine_headline(data: dict[str, Any]) -> dict[str, Any] | None:
     side = structure.get("higher_side")
     tf = str(data.get("timeframe") or "")
     symbol = str(data.get("symbol") or "")
-    return {"symbol": symbol, "price": price, "price_label": "Last close", "as_of": data.get("as_of"),
+    extra = _live_fields(live)
+    ref = extra["live_price"] if extra["live_price"] is not None else price          # DATA-FIX D1
+    return {"symbol": symbol, "price": price, "price_label": "Last close", **extra, "as_of": data.get("as_of"),
             "trend": side if side in ("up", "down", "sideways") else None,
             "timeframe": TF_LABELS.get(str(structure.get("higher_timeframe") or tf), str(structure.get("higher_timeframe") or tf)),
-            "area": nearest_area(float(price), bands),
+            "area": nearest_area(float(ref), bands),
             "chart": {"symbol": INDEX_NAMES.get(symbol, symbol), "exchange": exchange_of(symbol), "timeframe": CHART_TF.get(tf, "15min" if tf in ("5m", "15m") else "day")}}
 
 
-def chart_parts(calls: list[dict[str, Any]], results: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+def chart_parts(calls: list[dict[str, Any]], results: dict[str, Any],
+                live: dict[str, Any] | None = None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """(headline, structure card) for the chart the planner read last - the engine's reading when it was read, else the
     zone layer's; (None, None) when no chart was read."""
     from app.ai import copilot_chat
     from app.ai.tools import ToolResult
     engine = _last_ok(calls, "get_engine_read")
     if engine is not None and isinstance(results.get(engine["id"]), dict):
-        return engine_headline(results[engine["id"]]), None
+        return engine_headline(results[engine["id"]], live), None
     structure = _last_ok(calls, "get_chart_structure")
     if structure is None or not isinstance(results.get(structure["id"]), dict):
         return None, None
@@ -79,7 +82,24 @@ def chart_parts(calls: list[dict[str, Any]], results: dict[str, Any]) -> tuple[d
                        and str((c.get("arguments") or {}).get("symbol") or "").upper() == symbol), None)
     zones = (ToolResult(True, results[zones_call["id"]], zones_call.get("as_of"), "market_zones") if zones_call is not None
              else ToolResult(False, None, None, "market_zones", error="not read"))
-    return copilot_chat.chart_headline(symbol, tf, res, zones), copilot_chat.structure_card(symbol, tf, res, zones)
+    return copilot_chat.chart_headline(symbol, tf, res, zones, live), copilot_chat.structure_card(symbol, tf, res, zones)
 
 
-__all__ = ["CHART_TOOLS", "wording_problem", "read_a_chart", "engine_headline", "chart_parts"]
+async def live_price(ctx: Any, symbol: str, exchange: str) -> dict[str, Any] | None:
+    """DATA-FIX D1 (owner 2 Nov): the live price of the card's symbol while its market is open - the same quote tool the
+    Copilot uses (the asker's own broker session, the hub's fresh tick when there is one). None when the market is
+    closed or no quote can be read (the card then shows the last close only, as before)."""
+    from app.ai.tools.market import _QuoteArgs, get_quote
+    from app.market_data.calendar import market_session_status
+    try:
+        status = await market_session_status(ctx.session, ctx.now, exchange or "NSE")
+        if not status.is_open or not symbol:
+            return None
+        res = await get_quote(ctx, _QuoteArgs(symbol=symbol, exchange=exchange or "NSE"))
+    except Exception:  # noqa: BLE001 - the live price is an addition; the card stands without it
+        return None
+    ltp = (res.data or {}).get("ltp") if res.ok else None
+    return {"price": ltp, "at": res.as_of} if isinstance(ltp, (int, float)) and ltp > 0 else None
+
+
+__all__ = ["CHART_TOOLS", "wording_problem", "read_a_chart", "engine_headline", "chart_parts", "live_price"]

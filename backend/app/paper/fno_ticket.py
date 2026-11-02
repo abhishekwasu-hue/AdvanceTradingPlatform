@@ -302,12 +302,18 @@ async def read_broker_margin(session: AsyncSession, user: User, contract: Contra
         return None
 
 
+MarginReader = Callable[..., Awaitable[Optional[Tuple[float, str]]]]
+
+
 async def _broker_margin(session: AsyncSession, user: User, contract: Contract, side: str, units: float, product: str,
-                         fallback: Dict[str, Any]) -> Dict[str, Any]:
+                         fallback: Dict[str, Any], reader: Optional[MarginReader]) -> Dict[str, Any]:
     """DEF-0 D8: the broker's margin for this order, labelled an estimate - on PAPER too, where nothing is blocked.
     Without it: the Builder's estimate when it has one, else one honest line (never a "-" beside "comes with the order
     ticket")."""
-    read = await read_broker_margin(session, user, contract, side, units, product)
+    # Z10-c rule 0: the broker read is HANDED IN (`margin_reader`) by the trader's own ticket routes; a path that runs
+    # without a broker (the AI monitor's approved entry, a trigger plan's approved fire) passes none and shows ATP's
+    # labelled estimate - it never builds a broker session itself.
+    read = await reader(session, user, contract, side, units, product) if reader is not None else None
     if read is not None:
         value, name = read
         return {"value": round(value, 2), "estimated": True, "basis": f"Your broker's margin for this order ({name}). PAPER blocks nothing.",
@@ -417,7 +423,7 @@ async def _price(lookup: Optional[PriceLookup], contract: Contract) -> Tuple[Opt
 
 async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_lookup: Optional[PriceLookup],
                  live_only: bool = False, now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC,
-                 approval_action_id: int | None = None) -> Dict[str, Any]:
+                 approval_action_id: int | None = None, margin_reader: Optional[MarginReader] = None) -> Dict[str, Any]:
     """Everything the confirm step shows, checked. Reads only (no entry slot is taken, nothing is stored).
 
     TT-2: `origin` is set by the server from the route - "manual" only on the ticket / basket routes, where the user
@@ -544,7 +550,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         margin_line = future_margin(basis, units) if future else margin(side, right, float(contract.strike or 0.0), basis, ask.lots,
                                                                           contract.lot_size, contract.expiry)
     if margin_line is not None and contract is not None and basis is not None and units and ask.product is not None:
-        margin_line = await _broker_margin(session, user, contract, side, units, ask.product, margin_line)
+        margin_line = await _broker_margin(session, user, contract, side, units, ask.product, margin_line, margin_reader)
     charges = None
     if basis is not None and units and not errors:
         from app.execution.india_costs import leg_cost
@@ -583,7 +589,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
 
 async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_lookup: Optional[PriceLookup],
                 now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC, approval_action_id: int | None = None,
-                journal_source: str = "MANUAL") -> Dict[str, Any]:
+                journal_source: str = "MANUAL", margin_reader: Optional[MarginReader] = None) -> Dict[str, Any]:
     """Checks the ticket again at the live price and places ONE PAPER order through the ordinary pipeline, or says why
     not. Never a broker order: the mode is PAPER, asserted at the chokepoint under the Phase 0 lock. M75 W-8: a trigger
     plan's fire comes here too (journal source PLAN; an approved plan order with its proposal id) - the same checks."""
@@ -593,7 +599,7 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     if ask.accepted_warnings and not ask.accepted_at:
         ask.accepted_at = now.isoformat()               # M76 MP-5: the moment Place was pressed (kept by a waiting order)
     view = await assess(session, user, ask, price_lookup=price_lookup, live_only=True, now=now, origin=origin,
-                        approval_action_id=approval_action_id)
+                        approval_action_id=approval_action_id, margin_reader=margin_reader)
     if not view["can_place"]:
         # M64 RM-3: a Risk limits block on a placing attempt goes to the journal's record (a preview is not logged).
         from app.risk_engine import risk_limits

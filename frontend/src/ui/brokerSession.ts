@@ -77,6 +77,9 @@ export interface BrokerGateInput {
   /** null until the first answer. */
   tokens: BrokerTokenInfo[] | null;
   failed: boolean;
+  /** M85: a data page - a row whose market data works without the daily login (Upstox analytics token) counts as
+   * connected. Off for pages that need the daily login itself (positions, funds, holdings). */
+  dataOnly?: boolean;
 }
 
 const label = (t: BrokerTokenInfo) => t.account_label ?? "primary";
@@ -88,7 +91,7 @@ export function brokerGateState(input: BrokerGateInput): BrokerGateState {
   if (input.failed) return { kind: "unavailable" };
   if (input.tokens === null) return { kind: "loading" };
   if (input.tokens.length === 0) return { kind: "no-broker" };
-  const usable = input.tokens.filter((t) => !t.needs_login);
+  const usable = input.tokens.filter((t) => !t.needs_login || (input.dataOnly === true && t.data_usable === true));
   if (usable.length > 0) return { kind: "connected", brokers: usable };
   // The primary account first, then the order the server listed them in.
   const ordered = [...input.tokens].sort((a, b) => Number(label(b) === "primary") - Number(label(a) === "primary"));
@@ -209,7 +212,7 @@ export function knownFor(known: Known, userId: number | null): Known {
 
 /** The signed-in user's broker state, re-read when the user changes, on `refresh()`, and when this tab is shown again
  * (a login finished in another tab). A background re-check keeps the last good answer (see brokerCheckFailed). */
-export function useBrokerSession(): BrokerSession {
+export function useBrokerSession({ dataOnly = false }: { dataOnly?: boolean } = {}): BrokerSession {
   const { user, loading } = useAuth();
   const userId = user?.id ?? null;
   const [known, setKnown] = useState<Known>(UNKNOWN);
@@ -235,5 +238,5 @@ export function useBrokerSession(): BrokerSession {
 
   const mine = knownFor(known, userId);
   const failed = brokerCheckFailed({ hasGoodAnswer: mine.rows !== null, consecutiveFailures: mine.failures, ageMs: Date.now() - mine.at });
-  return { state: brokerGateState({ authLoading: loading, signedIn: userId !== null, tokens: mine.rows, failed }), refresh, rows: mine.rows };
+  return { state: brokerGateState({ authLoading: loading, signedIn: userId !== null, tokens: mine.rows, failed, dataOnly }), refresh, rows: mine.rows };
 }

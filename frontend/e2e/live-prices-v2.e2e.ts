@@ -17,11 +17,12 @@ const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_stat
 const LISTS = [{ id: 1, name: "Indices", items: [{ symbol: "NIFTY 50", exchange: "NSE" }, { symbol: "NIFTY BANK", exchange: "NSE" }] }];
 const SHOTS = process.env.TM1_SHOTS;
 
-type State = "live" | "reconnecting" | "renew_needed";
+type State = "live" | "reconnecting" | "renew_needed" | "polling";
 const MESSAGES: Record<State, string> = {
   live: "Live prices from Upstox.",
   reconnecting: "Live prices from Upstox are reconnecting. Prices may be a few seconds old until then.",
   renew_needed: "Your Upstox login has ended. Log in again to resume live prices.",
+  polling: "Prices from Upstox refresh every few seconds.",
 };
 const status = (state: State) => ({ state, broker: "upstox", broker_name: "Upstox", account_label: "primary", message: MESSAGES[state],
   since: "2026-10-19T05:30:00+00:00", retry_seconds: state === "reconnecting" ? 2 : null });
@@ -92,6 +93,52 @@ for (const width of [1440, 390]) {
     }
   });
 }
+
+// M85: the Upstox Analytics Token (one year) is asked once. Daily login ended + analytics token valid: the server says
+// "polling" (no notice); the renew panel shows "saved, valid till <date>" with the daily login and Replace.
+const EXPIRED_DAILY = { ...CONNECTED[0], token_status: "EXPIRED", needs_login: true };
+const ANALYTICS = { analytics_token_set: true, analytics_token_expires_at: "2027-10-20T18:30:00+00:00", analytics_token_expired: false };
+const SAVED_EXPIRED_DAILY = [{ ...EXPIRED_DAILY, ...ANALYTICS, data_usable: true }];
+// The panel tests open it from the one notice (the page's own broker card would ask instead when the row reads expired).
+const SAVED = [{ ...CONNECTED[0], ...ANALYTICS }];
+const NOT_SAVED = [{ ...CONNECTED[0], analytics_token_set: false, analytics_token_expires_at: null, analytics_token_expired: null }];
+
+test.describe("M85 Upstox analytics token asked once (390)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+  for (const theme of ["light", "dark"] as const) {
+    test(`before: no saved token - the renew panel asks for it (${theme})`, async ({ page }) => {
+      await open(page, theme, { state: "renew_needed", brokers: NOT_SAVED });
+      await page.locator("[data-live-notice='renew']").getByRole("button", { name: "Log in again" }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.locator("input[data-field='analytics_token']")).toBeVisible();
+      await expect(dialog.locator("[data-upstox-saved]")).toHaveCount(0);
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/m85-panel-asks-token-390-${theme}.png` });
+    });
+
+    test(`after: saved token - no notice; the panel shows its date and Replace (${theme})`, async ({ page }) => {
+      await open(page, theme, { state: "polling", brokers: SAVED_EXPIRED_DAILY });
+      await expect(page.getByText("Loading", { exact: true })).toHaveCount(0, { timeout: 15_000 });
+      await expect(page.locator("[data-live-notice]")).toHaveCount(0);
+      await expect(page.getByText(/login has ended|session has ended/i)).toHaveCount(0);
+      await page.mouse.move(0, 0);
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/m85-morning-no-notice-390-${theme}.png` });
+    });
+
+    test(`after: renew panel with a valid saved token (${theme})`, async ({ page }) => {
+      await open(page, theme, { state: "renew_needed", brokers: SAVED });
+      await page.locator("[data-live-notice='renew']").getByRole("button", { name: "Log in again" }).click();
+      const dialog = page.getByRole("dialog");
+      const saved = dialog.locator("[data-upstox-saved]");
+      await expect(saved).toContainText("Analytics token saved, valid till");
+      await expect(saved).toContainText("2027");
+      await expect(dialog.locator("input")).toHaveCount(0);
+      await expect(dialog.locator("[data-upstox-login]")).toHaveCount(0);           // BRK-1: no Upstox OAuth flow
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/m85-panel-saved-390-${theme}.png` });
+      await dialog.locator("[data-upstox-replace]").click();
+      await expect(dialog.locator("input[data-field='analytics_token']")).toBeVisible();
+    });
+  }
+});
 
 test.describe("live prices: states without a notice", () => {
   test.use({ viewport: { width: 1440, height: 900 } });

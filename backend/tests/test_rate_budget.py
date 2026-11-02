@@ -138,11 +138,16 @@ def test_worker_wraps_each_tenant_adapter_in_its_own_budget(monkeypatch):
     w._force_signal(monkeypatch, w._signal)
 
     report = w._run(worker.run_cycle(now=w.OPEN_NOW))
-    assert report.tenants_processed == 2 and report.signals_executed == 2
+    # The worker is platform-wide: an organisation an earlier test left with an open trade, a waiting order or an armed
+    # plan also gets its pass, so the counts below are taken over OUR two organisations only.
+    ours = {t1["tenant_id"], t2["tenant_id"]}
+    assert report.tenants_processed >= 2 and report.signals_executed == 2
     assert all(isinstance(a, RateLimitedBroker) for a in seen)
-    budgets = {id(a.budget) for a in seen}
+    mine = [a for a in seen if a.tenant_id in ours]
+    assert {a.tenant_id for a in mine} == ours
+    budgets = {id(a.budget) for a in mine}
     assert len(budgets) == 2  # one budget per tenant, never shared
-    assert sum(a.budget.calls for a in seen) > 0
+    assert sum(a.budget.calls for a in mine) > 0
     assert {w._get(StrategyDeploymentRecord, d).last_error for d in (d1, d2)} == {None}
 
 

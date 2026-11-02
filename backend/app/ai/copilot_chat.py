@@ -807,7 +807,14 @@ def nearest_area(price: float, bands: Sequence[dict[str, Any]]) -> dict[str, Any
     return best[1] if best else None
 
 
-def chart_headline(symbol: str, tf: str, res: ToolResult, zones: ToolResult) -> dict[str, Any] | None:
+def _live_fields(live: dict[str, Any] | None) -> dict[str, Any]:
+    """DATA-FIX D1 (owner 2 Nov): while the market is open the card also shows the live price and its time."""
+    if not live or not isinstance(live.get("price"), (int, float)) or live["price"] <= 0:
+        return {"live_price": None, "live_at": None}
+    return {"live_price": live["price"], "live_at": live.get("at")}
+
+
+def chart_headline(symbol: str, tf: str, res: ToolResult, zones: ToolResult, live: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """CU3: the chart answer's headline row - the last close, the structure on the asked timeframe as a trend word, the
     nearest stored area (from - to) and the distance to it - plus the chart the card draws. Only numbers the tools gave."""
     if not res.ok:
@@ -821,8 +828,12 @@ def chart_headline(symbol: str, tf: str, res: ToolResult, zones: ToolResult) -> 
     raw = state.get("direction") or (row or {}).get("direction")
     trend = trend_words(raw) if raw and not (row or {}).get("short") else None
     bands = (zones.data or {}).get("bands") or [] if zones.ok else []
-    area = nearest_area(float(price), bands) if isinstance(price, (int, float)) and price > 0 else None
-    return {"symbol": symbol, "price": price, "price_label": "Last close", "as_of": oc.get("date") or d.get("as_of"),
+    extra = _live_fields(live)
+    # DATA-FIX D1: where the price is against the area is said from the live price when there is one (the reading
+    # itself - trend, areas, breaks - stays on closed bars).
+    ref = extra["live_price"] if extra["live_price"] is not None else price
+    area = nearest_area(float(ref), bands) if isinstance(ref, (int, float)) and ref > 0 else None
+    return {"symbol": symbol, "price": price, "price_label": "Last close", **extra, "as_of": oc.get("date") or d.get("as_of"),
             "trend": trend if trend in ("up", "down", "sideways") else None, "timeframe": TF_LABELS.get(tf, tf), "area": area,
             "chart": {"symbol": INDEX_NAMES.get(symbol, symbol), "exchange": exchange_of(symbol), "timeframe": CHART_TF.get(tf, "day")}}
 

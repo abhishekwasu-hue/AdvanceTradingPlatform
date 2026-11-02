@@ -3,7 +3,7 @@ import { useInPlace } from "../inplace/context";
 import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { gateShowing } from "../live/gateShowing";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
 import { Button, Skeleton } from "../components/primitives";
@@ -346,8 +346,13 @@ export function StoredDailyNote({ state, what, onConnect, onLogin, busy = null, 
  * Renders `children` only while the trader's broker session is usable; otherwise the gate (see the RULE above).
  * Needs the router (Connect goes to Settings) and AuthProvider, as every page inside the app shell has.
  */
+/** M85: the data pages that need the daily login itself (holdings and funds), not only market data. */
+export const DAILY_LOGIN_PATHS: readonly string[] = ["/portfolio"];
+
 export function BrokerGate({ children, storedDaily = null }: { children: ReactNode; storedDaily?: string | null }) {
-  const { state, refresh } = useBrokerSession();
+  const { pathname } = useLocation();
+  const dataOnly = !DAILY_LOGIN_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const { state, refresh } = useBrokerSession({ dataOnly });
   const navigate = useNavigate();
   const inPlace = useInPlace();   // M75 NAV-6b: Connect your broker opens the broker drawer in place
   const { busy, error, codeStep, login, submitCode } = useBrokerLogin(refresh);

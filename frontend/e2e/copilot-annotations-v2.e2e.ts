@@ -58,7 +58,19 @@ function annotations(source: "atp" | "engine") {
   };
 }
 
-async function open(page: Page, theme: "light" | "dark", source: "atp" | "engine" = "atp"): Promise<void> {
+/** M75 W-4: a made-up AI card (the server's answer shape; ready, or one plain line when a cap is hit). */
+const CARD = { status: "ready", message: null, notes: [], as_of: "2026-10-19T05:25:00+00:00", cached: false,
+  disclaimer: "Educational only. It is not investment advice or a recommendation, and ATP places no order from it.",
+  card: { story: ["Price pulled back inside the up leg and holds above the buyer area."],
+          trend: { side: "up", text: "Up on the 5-minute chart; the daily chart is weakening." },
+          current_state: { phase: "pullback", text: "A pullback inside the running leg." },
+          rsi: { divergence: "bullish", text: "A lower swing low with a higher RSI." },
+          what_to_wait_for: { condition: "A commitment candle at the buyer area." },
+          scenarios: { primary: "The leg resumes from the buyer area.", alternative: "The pullback deepens to the lower buyer area." },
+          evidence: [{ name: "Higher high and higher low", present: true }, { name: "Commitment candle", present: false }] } };
+const LIMIT = { ...CARD, status: "limit", card: null, message: "Limit reached: your plan allows 3 chart analyses a day and you have used them. The code reading above is complete on its own." };
+
+async function open(page: Page, theme: "light" | "dark", source: "atp" | "engine" = "atp", card: Record<string, unknown> = CARD): Promise<{ cards: number }> {
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
   await page.addInitScript((t) => {
     try {
@@ -70,8 +82,11 @@ async function open(page: Page, theme: "light" | "dark", source: "atp" | "engine
   await mockApi(page, { features: { ui_v2: true, ai_copilot: true, read_chart: true, copilot_workspace: true }, brokers: CONNECTED });
   await mockCharts(page, {});
   await page.route(/\/api(?:\/v1)?\/charts\/read\?/, (r) => r.fulfill({ json: { ...READING_WITH_AREAS, tf: "5m", annotations: annotations(source) } }));
+  const seen = { cards: 0 };
+  await page.route(/\/api(?:\/v1)?\/chart-analyze\/workspace$/, (r) => { seen.cards += 1; return r.fulfill({ json: card }); });
   await page.goto("/copilot/read?symbol=NIFTY%2050");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
+  return seen;
 }
 
 const table = (page: Page) => page.locator("[data-workspace-annotations]");
@@ -82,7 +97,7 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
       test.use({ viewport: { width, height }, deviceScaleFactor: 1, ...(width < 768 ? { isMobile: true, hasTouch: true } : {}) });
 
       test(`one reading drawn and tabled, source labelled (${width} ${theme})`, async ({ page }) => {
-        await open(page, theme);
+        const seen = await open(page, theme);
         const ws = page.locator("[data-copilot-workspace='NIFTY 50']");
         await expect(ws.locator("[data-embedded-chart='NIFTY 50'] canvas").first()).toBeVisible({ timeout: 15_000 });
         await expect(table(page)).toHaveAttribute("data-workspace-annotations", "atp", { timeout: 15_000 });
@@ -91,6 +106,11 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
         }
         await expect(table(page).locator("[data-row='above'] td")).toContainText("seller area 24700.00 - 24780.00");
         await expect(page.locator("[data-workspace-source]")).toContainText("ATP's chart readers");
+        // M75 W-4: the AI card started by itself after the code reading - one call
+        await expect(page.locator("[data-ai-card='ready']")).toBeVisible({ timeout: 15_000 });
+        await expect(page.locator("[data-ai-row='watch']")).toContainText("A commitment candle at the buyer area.");
+        await page.waitForTimeout(400);
+        expect(seen.cards).toBe(1);
         if (width < 768) await expectPhoneLayout(page);
         await page.waitForTimeout(400);
         if (OUT) {
@@ -102,6 +122,18 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
     });
   }
 }
+
+test.describe("Copilot workspace AI card: a cap hit", () => {
+  test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+
+  test("the plan's limit: one plain line, the code reading stays", async ({ page }) => {
+    await open(page, "dark", "atp", LIMIT);
+    await expect(page.locator("[data-ai-card='limit']")).toContainText("The code reading above is complete on its own.", { timeout: 15_000 });
+    await expect(table(page)).toBeVisible();
+    await expectPhoneLayout(page);
+    if (OUT) await page.locator("[data-workspace-analysis]").screenshot({ path: `${OUT}/after-limit-390-dark.png`, animations: "disabled" });
+  });
+});
 
 test.describe("Copilot workspace annotations: the engine source", () => {
   test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });

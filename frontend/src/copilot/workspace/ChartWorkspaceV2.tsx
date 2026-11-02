@@ -9,6 +9,7 @@ import { cx } from "../../components/primitives/cx";
 import { useInPanel } from "../../inplace/inPanel";
 import { SymbolPicker, readRecent, recentKeyFor, rememberSymbol, type PickedSymbol } from "../../ui/SymbolPicker";
 import { useFeatures } from "../../ui/useFeatures";
+import { AiCardV2, cardTimeframe, useWorkspaceCard } from "./AiCardV2";
 import { workspaceLayer } from "./annotations";
 import { AnnotationsV2 } from "./AnnotationsV2";
 import { contractEmptyNote, isContract, openingSymbol, readingKey } from "./model";
@@ -38,6 +39,9 @@ export default function ChartWorkspaceV2() {
   const key = readingKey(pick, tf);
   // M75 W-3: the reading is drawn as its annotations (one source, labelled) when the server gives them
   const read = useReadChart(engine, key?.instrument ?? "", key?.tf ?? null, readOn && !!key, attempt, workspaceLayer);
+  // M75 W-4: the AI card starts by itself once the code reading is there (the server runs it once per closed bar)
+  const cardTf = cardTimeframe(key?.tf);
+  const card = useWorkspaceCard(pick?.symbol ?? null, cardTf, read.status === "ready");
   const choose = (next: PickedSymbol) => {
     if (!next.symbol.trim()) return;
     const clean = { symbol: next.symbol.trim().toUpperCase(), exchange: (next.exchange || "NSE").toUpperCase(), name: next.name };
@@ -67,6 +71,7 @@ export default function ChartWorkspaceV2() {
           className="min-w-0 rounded-panel border border-subtle bg-surface-1 p-space-4 lg:self-start">
           <h3 id="copilot-workspace-reading" className="mb-space-2 text-t14 font-semibold text-fg">The chart&apos;s reading</h3>
           <Reading state={read} readOn={readOn} hasChart={!!pick} offered={!!key} onRetry={() => setAttempt((n) => n + 1)} />
+          {read.status === "ready" && <div className="mt-space-3"><AiCardV2 state={card} offered={!!cardTf} /></div>}
         </aside>
       </div>
     </section>

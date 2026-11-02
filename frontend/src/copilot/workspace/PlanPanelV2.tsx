@@ -6,6 +6,7 @@ import { MetricsCard } from "../../optionsBuilder/MetricsCard";
 import { evaluatedById, hedgeFirst, money, rangePctFor, type Direction, type Evaluation, type Leg, type OptionKind } from "../../optionsBuilder/model";
 import { PayoffCanvas } from "../../optionsBuilder/PayoffCanvas";
 import { useTradeSettings } from "../../settings/tradeSettings";
+import { studyPlanOf, type StudyPlan } from "../../study/model";
 import { Combobox } from "../../ui/Combobox";
 import { Details } from "../../ui/Details";
 import { useFeatures } from "../../ui/useFeatures";
@@ -84,9 +85,11 @@ export interface PlanPanelProps {
   annotations?: Annotations | null;
   /** Test hook: the what-if reads (M76 MP-6). */
   whatIfApi?: WhatIfApi;
+  /** M77 SX-6: the plan as the study's references (null while no instrument type is chosen), for "Save study". */
+  onPlanChange?: (plan: StudyPlan | null) => void;
 }
 
-export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi, annotations = null, whatIfApi }: PlanPanelProps) {
+export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi, annotations = null, whatIfApi, onPlanChange }: PlanPanelProps) {
   const [kind, setKind] = useState<PlanKind | null>(null);
   const [inst, setInst] = useState<InstrumentDraft>(EMPTY_INSTRUMENT);
   const [draft, setDraft] = useState<LegDraft>(EMPTY_LEG);
@@ -123,6 +126,10 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi, a
     }, EVALUATE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [kind, legs, spot, asOf, evaluate]);
+
+  // M77 SX-6: "Save study" reads the plan he has open - references and his own inputs only (study/model.ts)
+  useEffect(() => { onPlanChange?.(studyPlanOf(kind, legs, equity, exits)); }, [onPlanChange, kind, legs, equity, exits]);
+  useEffect(() => () => onPlanChange?.(null), [onPlanChange]);
 
   const rows = useMemo(() => evaluatedById(legs, evaluation), [legs, evaluation]);
   const missing = kind && kind !== "EQUITY" ? legMissing(draft, inst, kind) : [];

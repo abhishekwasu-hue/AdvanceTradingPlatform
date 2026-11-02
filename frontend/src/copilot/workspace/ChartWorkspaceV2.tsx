@@ -18,6 +18,7 @@ import { PlanPanelV2 } from "./PlanPanelV2";
 import { Button, Sheet } from "../../components/primitives";
 import { MyStudiesV2 } from "../../study/MyStudiesV2";
 import { SaveStudySheetV2 } from "../../study/SaveStudySheetV2";
+import type { StudyPlan } from "../../study/model";
 
 /**
  * M75 W-2 (owner order M75 CW-1, flag `copilot_workspace`): the chart workspace inside the Copilot's "Read the chart"
@@ -57,6 +58,8 @@ export default function ChartWorkspaceV2() {
   const [saveOpen, setSaveOpen] = useState(false);
   const [studiesOpen, setStudiesOpen] = useState(false);
   const [saved, setSaved] = useState(0);
+  // M77 SX-6: the trade plan open beside the chart, as the study's references (null when none)
+  const [plan, setPlan] = useState<StudyPlan | null>(null);
   const cardTf = cardTimeframe(key?.tf);
   const card = useWorkspaceCard(pick?.symbol ?? null, cardTf, read.status === "ready");
   const choose = (next: PickedSymbol) => {
@@ -102,10 +105,10 @@ export default function ChartWorkspaceV2() {
       {/* M75 W-6 (CW-4): the trade plan panel in the same tab, for the chart's symbol (preview only). */}
       {/* M76 MP-6 (S-2): the open chart's reading, for the plan's P&L at its next areas - only on the underlying's own chart
           (a futures / option contract's areas are that contract's prices, not the spot the plan is priced at) */}
-      {pick && <PlanPanelV2 symbol={pick.symbol}
+      {pick && <PlanPanelV2 symbol={pick.symbol} onPlanChange={studiesOn ? setPlan : undefined}
         annotations={read.status === "ready" && !isContract(pick.exchange) ? read.read.annotations ?? null : null} />}
       {studiesOn && pick && key && (
-        <SaveStudySheetV2 open={saveOpen} onOpenChange={setSaveOpen} instrument={key.instrument} symbol={pick.symbol} openTf={key.tf}
+        <SaveStudySheetV2 open={saveOpen} onOpenChange={setSaveOpen} instrument={key.instrument} symbol={pick.symbol} openTf={key.tf} plan={plan}
           onSaved={() => setSaved((n) => n + 1)} />
       )}
       {studiesOn && (

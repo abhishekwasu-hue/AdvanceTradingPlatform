@@ -76,13 +76,16 @@ def _key(user: User, wid: str, instrument: str) -> str:
 
 async def accept(user: User, types: Iterable[str], instrument: str, now: datetime | None = None) -> list[str]:
     """Records that he pressed Place with these lines shown; returns the types recorded (unknown ids are ignored)."""
-    ttl = seconds_to_ist_midnight(now or datetime.now(UTC))
+    moment = now or datetime.now(UTC)
+    ttl = seconds_to_ist_midnight(moment)
+    at = moment.astimezone(UTC).replace(microsecond=0).isoformat()
     done: list[str] = []
     for wid in dict.fromkeys(types):
         if wid not in ts.WARNING_IDS:
             continue
         try:
-            await cache._get_client().set(_key(user, wid, instrument), "1", ex=ttl)  # noqa: SLF001 - a TTL past the cache cap, by design
+            # M77 SX-6: the value is the time Place was pressed (UTC ISO), for the study's check card; any value = accepted
+            await cache._get_client().set(_key(user, wid, instrument), at, ex=ttl)  # noqa: SLF001 - a TTL past the cache cap, by design
             done.append(wid)
         except Exception:  # noqa: BLE001 - fail-open: the line simply shows again
             pass
@@ -97,6 +100,27 @@ async def accepted(user: User, instrument: str) -> set[str]:
     except Exception:  # noqa: BLE001
         return set()
     return {w for w, v in zip(ts.WARNING_IDS, values) if v}
+
+
+async def accepted_times(user: User, instrument: str) -> dict[str, str | None]:
+    """M77 SX-6: the types he accepted today for this contract -> when Place was pressed (None for a record made before
+    the time was kept). Redis down: none."""
+    keys = [_key(user, w, instrument) for w in ts.WARNING_IDS]
+    try:
+        values = await cache._get_client().mget(keys)  # noqa: SLF001
+    except Exception:  # noqa: BLE001
+        return {}
+    out: dict[str, str | None] = {}
+    for w, v in zip(ts.WARNING_IDS, values):
+        if not v:
+            continue
+        text: str | None = v.decode() if isinstance(v, bytes) else str(v)
+        try:
+            datetime.fromisoformat(str(text))
+        except ValueError:
+            text = None
+        out[w] = text
+    return out
 
 
 # --- M76 MP-5: accepted lines on the journal entry ----------------------------------------------------------------------

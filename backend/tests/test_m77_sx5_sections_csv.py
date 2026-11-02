@@ -136,7 +136,7 @@ def test_csv_route_and_sections_read_on_save(served, monkeypatch):  # noqa: F811
     async def card(session, user, symbol, tfs, when):
         return SEC.ai_card_part(ANSWER, "15m", when)
 
-    async def chain(session, user, exchange, symbol):
+    async def chain(session, user, exchange, symbol, legs=None):
         return SEC.option_context_part(VIEW)
 
     monkeypatch.setattr(SEC, "ai_card_read", card)

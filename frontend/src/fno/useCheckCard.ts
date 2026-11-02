@@ -4,6 +4,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { BUDGET_MS, checksApi, factKey, markSeen, type CheckDraft, type CheckLine, type ChecksAnswer, type ChecksApi, type WarningId } from "./checkCard";
+import { recordCard } from "./checkCardLog";
 import type { RiskLine } from "./insights";
 
 /** What the ticket body needs to draw the card (absent: the ticket is exactly as before). */
@@ -42,6 +43,7 @@ export function useCheckCard(enabled: boolean, api: ChecksApi = checksApi, follo
     setAnswer(null); setPending(1); setAsking([]); setAcceptedHere(new Set());
     const began = typeof performance !== "undefined" ? performance.now() : Date.now();
     api.run(draft).then((a) => {
+      recordCard(a);                                   // M77 SX-6: the signed answer, for "Save study"
       if (n !== seq.current) return;
       setAnswer(a); setPending(a.pending.length);
       setChecksMs(Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - began));
@@ -49,6 +51,7 @@ export function useCheckCard(enabled: boolean, api: ChecksApi = checksApi, follo
       window.setTimeout(() => {
         if (n !== seq.current) return;
         api.run(draft, a.pending).then((late) => {
+          recordCard(late);
           if (n !== seq.current) return;
           setAnswer((cur) => (cur ? { ...cur, findings: [...cur.findings, ...late.findings], pending: late.pending } : late));
           setPending(late.pending.length);

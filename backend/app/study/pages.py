@@ -2,9 +2,9 @@
 print-safe), each with the information-only footer and "Page n of N".
 
 * Sections drawn here: 1 cover, 2 charts (SX-4: one full-width chart per timeframe studied, app/study/chart.py), 3
-  structure, 4 areas, 11 notes and checklist, 12 the footer on every page. Every other ticked section prints its title
-  and one line "Not available: <plain reason>" (AI card, option context, trade plan, pre-trade check, scenarios,
-  similar setups: their sources are not saved with a study yet).
+  structure, 4 areas, 5 AI card and 6 option context (SX-5), 7 trade plan with its payoff picture, 8 pre-trade check
+  card, 9 scenarios and 10 similar past setups (SX-6), 11 notes and checklist, 12 the footer on every page. A section
+  without its source prints its title and one line "Not available: <plain reason>".
 * Every number comes from the snapshot (the server's own reads, app/study/snapshot.py) through the one Indian number
   formatter (app/study/numfmt.py); a missing value prints "not available", never a blank, a zero or a guess.
 * Colours are the app's light tokens (app/study/palette.py): seller rows in the `down` tint, buyer rows in the `up`
@@ -392,7 +392,179 @@ def option_context(lay: Layout, snap: Mapping[str, Any]) -> None:
         lay.table([("At the money strike", 0.4, "left"), ("Call", 0.3, "right"), ("Put", 0.3, "right")],
                   [[label, _na((legs.get("call") or {}).get(k), 0 if k == "oi" else 4 if k == "gamma" else 2),
                     _na((legs.get("put") or {}).get(k), 0 if k == "oi" else 4 if k == "gamma" else 2)] for k, label in names.items()])
-    lay.para(f"Chosen strikes: not available ({oc.get('chosen_reason') or 'no trade plan'}).", colour=lay.pal.text_muted)
+    chosen = oc.get("chosen_strikes")
+    if chosen:
+        lay.table([("Chosen strike (your plan)", 0.28, "left"), ("Open interest", 0.14, "right"), ("IV (%)", 0.1, "right"),
+                   ("Delta", 0.12, "right"), ("Gamma", 0.12, "right"), ("Theta", 0.12, "right"), ("Vega", 0.12, "right")],
+                  [[str(c.get("label")) + ("" if c.get("in_chain") else " (not in the chain read)"), _na(c.get("oi"), 0), _na(c.get("iv")),
+                    _na(c.get("delta")), _na(c.get("gamma"), 4), _na(c.get("theta")), _na(c.get("vega"))] for c in chosen])
+    else:
+        lay.para(f"Chosen strikes: not available ({oc.get('chosen_reason') or 'no trade plan'}).", colour=lay.pal.text_muted)
+
+
+SIDE_WORDS = {"BUY": "Long", "SELL": "Short"}
+PAYOFF_H = 420
+
+
+def _money(value: Any) -> str:
+    return format_number(value if isinstance(value, (int, float)) and not isinstance(value, bool) else None, 2)
+
+
+def _unbounded(value: Any, flag: Any) -> str:
+    return "No fixed limit" if flag else _money(value)
+
+
+def _na_reason(lay: Layout, snap: Mapping[str, Any], name: str, fallback: str) -> Mapping[str, Any] | None:
+    part = (snap.get("data") or {}).get(name)
+    if not part:
+        lay.not_available(str((snap.get("not_available") or {}).get(name) or fallback))
+        return None
+    return part
+
+
+def _exit_text(x: Mapping[str, Any]) -> str:
+    if x.get("text"):
+        return str(x["text"])
+    unit = x.get("measure")
+    value = format_number(x.get("value"), 0 if unit == "minutes" else 2)
+    return f"{value} {unit}" if unit and unit != "%" else f"{value}{unit or ''}"
+
+
+def trade_plan(lay: Layout, snap: Mapping[str, Any]) -> None:
+    """SX-6: his trade plan - his legs and inputs, the engine's numbers at the study's reference price, the payoff picture,
+    his exits and his waiting trigger plans."""
+    from app.study.payoff_image import render_payoff
+    lay.heading(S.SECTION_TITLES["trade_plan"])
+    plan = _na_reason(lay, snap, "trade_plan", S.NOT_BUILT["trade_plan"])
+    if plan is None:
+        return
+    spot = plan.get("spot") or {}
+    lay.para(f"{plan.get('kind_words')} plan on {plan.get('underlying') or NOT_AVAILABLE}; numbers measured from {_reference(spot)}.",
+             colour=lay.pal.text_muted)
+    if plan.get("kind") == "EQUITY":
+        eq = plan.get("equity") or {}
+        lay.kv([("Side", SIDE_WORDS.get(str(eq.get("side")), str(eq.get("side")))), ("Quantity", format_number(eq.get("quantity"))),
+                ("Your planned price", price(eq.get("price"))), ("Order value", _money(plan.get("order_value"))),
+                ("Margin (estimate)", f"{_money((plan.get('margin') or {}).get('value'))} - {(plan.get('margin') or {}).get('basis')}"),
+                ("Break-even", price((plan.get("breakevens") or [None])[0]))])
+    else:
+        legs = plan.get("legs") or []
+        lay.table([("Leg", 0.30, "left"), ("Side", 0.08, "left"), ("Lots", 0.07, "right"), ("Quantity", 0.11, "right"),
+                   ("Your price", 0.14, "right"), ("IV (%)", 0.12, "right"), ("Position delta", 0.18, "right")],
+                  [[str(leg.get("label")), SIDE_WORDS.get(str(leg.get("side")), str(leg.get("side"))), format_number(leg.get("lots")),
+                    format_number(leg.get("quantity")), price(leg.get("price")),
+                    _na(leg.get("iv") * 100 if isinstance(leg.get("iv"), (int, float)) else None), _na(leg.get("delta"))] for leg in legs],
+                  tints=[lay.pal.buyer_tint if leg.get("side") == "BUY" else lay.pal.seller_tint for leg in legs])
+        margin = plan.get("margin") or {}
+        margin_text = _money(margin.get("value")) if margin.get("value") is not None else f"{NOT_AVAILABLE} ({str(margin.get('basis') or '').rstrip('.')})"
+        rows = [("Max gain", _unbounded(plan.get("max_profit"), plan.get("unbounded_profit")) if plan.get("single_expiry")
+                 else f"{NOT_AVAILABLE} (the legs expire on different dates)"),
+                ("Max loss", _unbounded(plan.get("max_loss"), plan.get("unbounded_loss")) if plan.get("single_expiry")
+                 else f"{NOT_AVAILABLE} (the legs expire on different dates)"),
+                ("Break-evens", ", ".join(price(b) for b in plan.get("breakevens") or []) or NOT_AVAILABLE),
+                ("Net premium (+ received, - paid)", _money(plan.get("net_premium"))),
+                ("Margin (estimate, with the hedge)", margin_text)]
+        if margin.get("hedged") and margin.get("without_hedge") is not None:
+            rows.append(("Margin (estimate) without the hedge", _money(margin.get("without_hedge"))))
+        greeks = plan.get("greeks") or {}
+        if greeks:
+            rows.append(("Net Greeks", ", ".join(f"{k.capitalize()} {_na(v, 4 if k == 'gamma' else 2)}" for k, v in greeks.items())))
+        lay.kv(rows)
+        lay.para(str(margin.get("words") or "Margin: ATP's estimate."), size=SIZE_SMALL, colour=lay.pal.text_muted)
+        if plan.get("engine_reason"):
+            lay.para(f"IV, Greeks and the payoff now: not available ({str(plan['engine_reason']).rstrip('.')}).", colour=lay.pal.text_muted)
+        payoff = plan.get("payoff")
+        if payoff:
+            marks = list(((snap.get("data") or {}).get("scenarios") or {}).get("rows") or [])
+            lay.room(SIZE_BODY * LINE_GAP + PAYOFF_H + 10)
+            lay.para(f"Payoff {payoff.get('expiry_words') or 'at expiry'} (dark) and now (grey); blue dashes: the reference price; "
+                     "dotted: the scenario prices.", size=SIZE_SMALL, colour=lay.pal.text_muted)
+            lay.picture(render_payoff(payoff, spot=spot.get("value"), marks=marks, pal=lay.pal, width=PAGE_W - 2 * MARGIN, height=PAYOFF_H))
+        if plan.get("disclaimer"):
+            lay.para(str(plan["disclaimer"]), size=SIZE_SMALL, colour=lay.pal.text_muted)
+    exits = plan.get("exits") or []
+    lay.para("Your exits, as set in the plan", size=SIZE_BODY)
+    if exits:
+        lay.kv([(str(x.get("name")), _exit_text(x)) for x in exits])
+    else:
+        lay.para("No exit set yet. Exits are never blocked once the position is open.", colour=lay.pal.text_muted)
+    triggers = plan.get("triggers") or []
+    if triggers:
+        lay.table([("Your trigger plan", 0.26, "left"), ("Condition", 0.44, "left"), ("Status", 0.12, "left"), ("Valid until", 0.18, "left")],
+                  [[str(t.get("name") or "Plan"), f"Price crosses {t.get('side')} {price(t.get('level'))} by {t.get('by')}"
+                    + (f" of {t['timeframe_minutes']} min" if t.get("timeframe_minutes") else "") + (f", {t['window']}" if t.get("window") else ""),
+                    str(t.get("status")), ist(t.get("valid_until"))] for t in triggers])
+    else:
+        lay.para(f"Trigger plan: not available ({plan.get('triggers_reason') or 'none'}).", colour=lay.pal.text_muted)
+
+
+def pre_trade_check(lay: Layout, snap: Mapping[str, Any]) -> None:
+    """SX-6: the check card(s) the ticket showed, as ATP signed them, with the lines he accepted and when."""
+    lay.heading(S.SECTION_TITLES["pre_trade_check"])
+    part = _na_reason(lay, snap, "pre_trade_check", S.NOT_BUILT["pre_trade_check"])
+    if part is None:
+        return
+    for card in part.get("cards") or []:
+        lay.para(f"{card.get('contract')} - checked {ist(card.get('checked_at'))}", colour=lay.pal.text_muted)
+        findings = card.get("findings") or []
+        if findings:
+            lay.table([("Check", 0.22, "left"), ("What the card said", 0.50, "left"), ("You accepted", 0.28, "left")],
+                      [[str(f.get("name")), str(f.get("text")), (f"Yes, {ist(f.get('accepted_at'))}" if f.get("accepted_at") else "Yes")
+                        if f.get("accepted") else "No"] for f in findings])
+        else:
+            lay.para("The card showed no lines.", colour=lay.pal.text_muted)
+        extra = [a for a in card.get("accepted") or [] if a.get("id") not in {f.get("id") for f in findings}]
+        for a in extra:
+            lay.para(f"Also accepted today: {a.get('name')} ({ist(a.get('at'))}).", size=SIZE_SMALL, colour=lay.pal.text_muted)
+
+
+def scenarios(lay: Layout, snap: Mapping[str, Any]) -> None:
+    """SX-6: the plan's P&L at the next areas' edges and at his what-if prices (the engine's numbers), with the margin."""
+    lay.heading(S.SECTION_TITLES["scenarios"])
+    part = _na_reason(lay, snap, "scenarios", S.NOT_BUILT["scenarios"])
+    if part is None:
+        return
+    rows = part.get("rows") or []
+
+    def shift(r: Mapping[str, Any]) -> str:
+        w = r.get("what_if") or {}
+        bits = []
+        if w.get("iv_change") is not None:
+            bits.append(f"IV {format_number(w['iv_change'], 2)} pts")
+        if w.get("days") is not None:
+            bits.append(f"{format_number(w['days'])} day{'' if w['days'] == 1 else 's'} on")
+        return ", ".join(bits)
+
+    lay.table([("Scenario", 0.42, "left"), ("Price", 0.14, "right"), ("P&L now", 0.15, "right"), ("P&L at expiry", 0.15, "right"),
+               ("Also", 0.14, "left")],
+              [[str(r.get("name")), price(r.get("price")), _money(r.get("pnl_today")), _money(r.get("pnl_expiry")), shift(r)] for r in rows],
+              tints=[lay.pal.seller_tint if r.get("role") == "supply" else lay.pal.buyer_tint if r.get("role") == "demand" else None for r in rows])
+    margin = part.get("margin") or {}
+    lay.para(f"Margin (estimate) at every price: {_money(margin.get('value')) if margin.get('value') is not None else NOT_AVAILABLE}"
+             f" - {str(margin.get('basis') or margin.get('words') or '').rstrip('.')}. ATP's estimate does not move with the price.",
+             size=SIZE_SMALL, colour=lay.pal.text_muted)
+    for key in ("today", "expiry"):
+        if part.get(f"{key}_reason"):
+            lay.para(f"P&L {'now' if key == 'today' else 'at expiry'}: not available ({str(part[f'{key}_reason']).rstrip('.')}).",
+                     size=SIZE_SMALL, colour=lay.pal.text_muted)
+
+
+def similar_setups(lay: Layout, snap: Mapping[str, Any]) -> None:
+    """SX-6: his own similar closed trades (setup recall), each holding on its own, with outcomes."""
+    lay.heading(S.SECTION_TITLES["similar_setups"])
+    part = _na_reason(lay, snap, "similar_setups", S.NOT_BUILT["similar_setups"])
+    if part is None:
+        return
+    subject = part.get("subject") or {}
+    lay.para(f"Matched on: {subject.get('setup_words')}, {subject.get('side')} side, timeframe {subject.get('timeframe')}; "
+             f"only your trades closed before {ist(part.get('as_of'))}.", colour=lay.pal.text_muted)
+    for g in part.get("groups") or []:
+        lay.para(f"{g.get('holding_words')}: {g.get('line')}")
+        matches = g.get("matches") or []
+        if matches:
+            lay.table([("Entered", 0.22, "left"), ("Closed", 0.22, "left"), ("Outcome", 0.24, "left"), ("How it closed", 0.32, "left")],
+                      [[ist(m.get("entered_at")), ist(m.get("closed_at")), str(m.get("outcome")), str(m.get("how_closed"))] for m in matches],
+                      size=SIZE_SMALL)
 
 
 CHART_H = 620
@@ -462,6 +634,14 @@ def layout(snap: Mapping[str, Any], fp: str, *, cvd: bool = False) -> tuple[list
             ai_card(lay, snap)
         elif section == "option_context":
             option_context(lay, snap)
+        elif section == "trade_plan":
+            trade_plan(lay, snap)
+        elif section == "pre_trade_check":
+            pre_trade_check(lay, snap)
+        elif section == "scenarios":
+            scenarios(lay, snap)
+        elif section == "similar_setups":
+            similar_setups(lay, snap)
         else:
             lay.heading(S.SECTION_TITLES.get(section, section))
             lay.not_available(str(unavailable.get(section) or "not part of a saved study yet"))

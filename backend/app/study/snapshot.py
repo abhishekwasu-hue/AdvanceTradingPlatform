@@ -16,8 +16,9 @@ Two parts:
 What is read is the code the Charts page already reads (app/charts/read_chart.py, price_action_layer, zones_layer),
 unchanged; nothing here is new chart-reading logic. Reading source: "ATP structure readers" (the method engine's reading
 arrives with M75 W-3; its name, version and settings are never written here - M77Q-2). The sections whose sources are
-not built yet (AI card, option context, trade plan, pre-trade check, scenarios, similar setups) are stored as
-"not available" with a plain reason, never blank. No look-ahead: a bar whose END is after the study time is never read.
+not built yet (trade plan, pre-trade check, scenarios, similar setups) are stored as "not available" with a plain
+reason, never blank; SX-5 adds the AI card and the option context, read when the study is saved (app/study/sections.py)
+or "not available" with their own reason. No look-ahead: a bar whose END is after the study time is never read.
 Read-only: nothing here places, changes or blocks an order.
 """
 from __future__ import annotations
@@ -102,6 +103,8 @@ class StudyInputs:
     app_version: str = config.APP_VERSION
     reading_source: str = READING_SOURCE
     max_bars: int = config.STUDY_CHART_MAX_BARS
+    ai_card: Mapping[str, Any] | None = None             # SX-5: app/study/sections.py ai_card_read (a section, or {"reason"})
+    option_context: Mapping[str, Any] | None = None      # SX-5: app/study/sections.py option_context_read
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -319,6 +322,13 @@ def assemble(inputs: StudyInputs) -> dict[str, Any]:
     if "charts" in ticked:
         data["drawings"] = [_drawing(d) for d in inputs.drawings]
     not_available = {s: NOT_BUILT[s] for s in ticked if s in NOT_BUILT}
+    for name, part in (("ai_card", inputs.ai_card), ("option_context", inputs.option_context)):   # SX-5: read when saved
+        if name in ticked and part is not None:
+            if part.get("reason"):
+                not_available[name] = str(part["reason"])
+            else:
+                data[name] = dict(part)
+                not_available.pop(name, None)
     return {"schema": SCHEMA, "created_at": _iso(when), "title": inputs.title or None,
             "instrument": {"key": inputs.key, "symbol": symbol, "exchange": exchange,
                            "kind": KIND_WORDS.get(str(inputs.instrument_kind or "").upper())},

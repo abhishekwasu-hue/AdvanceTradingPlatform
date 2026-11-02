@@ -59,7 +59,7 @@ describe("W-2: the reading runs once per chart (open = read; a new symbol or tim
     expect(readingKey(nifty, "week")).toBeNull();
   });
   it("the hook reads on exactly those keys (the instrument and timeframe are its only inputs, plus Try again)", () => {
-    expect(workspaceSource).toMatch(/useReadChart\(engine, key\?\.instrument \?\? "", key\?\.tf \?\? null, readOn && !!key, attempt\)/);
+    expect(workspaceSource).toMatch(/useReadChart\(engine, key\?\.instrument \?\? "", key\?\.tf \?\? null, readOn && !!key, attempt, workspaceLayer\)/);   // M75 W-3: + the annotation layer
   });
 });
 

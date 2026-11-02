@@ -3,6 +3,7 @@ import { formatDateTimeIST } from "../ui/format";
 import { ApiError } from "../api/client";
 import type { LightweightEngine } from "../charting/lightweight";
 import { Details } from "../ui/Details";
+import type { LayerData } from "../charting/engine";
 import { READ_LAYER_ID, readChartApi, readLayer, readSummary, type ReadChart } from "./readChart";
 
 /**
@@ -13,8 +14,10 @@ import { READ_LAYER_ID, readChartApi, readLayer, readSummary, type ReadChart } f
  */
 export type ReadState = { status: "idle" | "loading" | "failed" | "off" } | { status: "ready"; read: ReadChart };
 
-/** M75 W-2: `attempt` (a counter the host raises on "Try again") reads the same chart again. */
-export function useReadChart(engine: LightweightEngine | null, instrument: string, tf: string | null, on: boolean, attempt = 0): ReadState {
+/** M75 W-2: `attempt` (a counter the host raises on "Try again") reads the same chart again. M75 W-3: `layerOf` (a
+ * stable function) draws the reading - the Copilot workspace draws its annotations. */
+export function useReadChart(engine: LightweightEngine | null, instrument: string, tf: string | null, on: boolean, attempt = 0,
+                             layerOf: (r: ReadChart) => LayerData = readLayer): ReadState {
   const [state, setState] = useState<ReadState>({ status: "idle" });
   useEffect(() => {
     if (!on || !tf || !instrument) { setState({ status: "idle" }); return undefined; }
@@ -30,9 +33,9 @@ export function useReadChart(engine: LightweightEngine | null, instrument: strin
   const read = state.status === "ready" ? state.read : null;
   useEffect(() => {
     if (!engine) return undefined;
-    engine.setLayer(READ_LAYER_ID, on && read ? readLayer(read) : null);
+    engine.setLayer(READ_LAYER_ID, on && read ? layerOf(read) : null);
     return () => engine.setLayer(READ_LAYER_ID, null);
-  }, [engine, on, read]);
+  }, [engine, on, read, layerOf]);
   return state;
 }
 

@@ -9,6 +9,8 @@ import { cx } from "../../components/primitives/cx";
 import { useInPanel } from "../../inplace/inPanel";
 import { SymbolPicker, readRecent, recentKeyFor, rememberSymbol, type PickedSymbol } from "../../ui/SymbolPicker";
 import { useFeatures } from "../../ui/useFeatures";
+import { workspaceLayer } from "./annotations";
+import { AnnotationsV2 } from "./AnnotationsV2";
 import { contractEmptyNote, isContract, openingSymbol, readingKey } from "./model";
 
 /**
@@ -34,7 +36,8 @@ export default function ChartWorkspaceV2() {
   const [attempt, setAttempt] = useState(0);
   const readOn = features.on("read_chart");
   const key = readingKey(pick, tf);
-  const read = useReadChart(engine, key?.instrument ?? "", key?.tf ?? null, readOn && !!key, attempt);
+  // M75 W-3: the reading is drawn as its annotations (one source, labelled) when the server gives them
+  const read = useReadChart(engine, key?.instrument ?? "", key?.tf ?? null, readOn && !!key, attempt, workspaceLayer);
   const choose = (next: PickedSymbol) => {
     if (!next.symbol.trim()) return;
     const clean = { symbol: next.symbol.trim().toUpperCase(), exchange: (next.exchange || "NSE").toUpperCase(), name: next.name };
@@ -88,5 +91,7 @@ export function Reading({ state, readOn, hasChart, offered, onRetry }: {
       </p>
     );
   }
-  return state.status === "ready" ? <ReadChartBody read={state.read} /> : null;
+  if (state.status !== "ready") return null;
+  const a = state.read.annotations;
+  return a ? <div className="space-y-space-3"><AnnotationsV2 annotations={a} /><ReadChartBody read={state.read} /></div> : <ReadChartBody read={state.read} />;
 }

@@ -55,7 +55,7 @@ Terminal T2 (app/paper/fno_position_actions.py):
                                                    or the level of his own armed stop / target.
 """
 import json
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -67,7 +67,7 @@ from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
 from app.execution.approval import ORIGIN_MANUAL
-from app.paper import fno_basket, fno_contracts, fno_ticket
+from app.paper import fno_basket, fno_contracts, fno_ticket, pretrade_warnings
 
 router = APIRouter(prefix="/api/paper/fno", tags=["paper"])
 UI_V2_FLAG = "ui_v2"
@@ -120,6 +120,9 @@ class OrderBody(BaseModel):
     rest_if_waiting: bool = False
     trigger_mode: Literal["TOUCH", "CLOSE"] | None = None          # M68 TS1-015: his own (a waiting order asks)
     timeframe_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
+    # M76 MP-5 (flag trade_warnings): the check-card types shown when he pressed Place - journaled on the fill only. Unknown
+    # ids are dropped (never a reason to refuse the order); no check, price or size reads them.
+    accepted_warnings: list[str] | None = Field(default=None, max_length=40)
 
     @model_validator(mode="after")
     def _strike_for_options_only(self) -> "OrderBody":
@@ -132,6 +135,7 @@ class OrderBody(BaseModel):
     def ask(self) -> fno_ticket.OrderAsk:
         values = self.model_dump()
         values["underlying"] = _name(self.underlying)
+        values["accepted_warnings"] = pretrade_warnings.clean_accepted(self.accepted_warnings)
         return fno_ticket.OrderAsk(**values)
 
 
@@ -477,6 +481,7 @@ class StrategyExitsBody(BaseModel):
 class ExecuteBody(BasketBody):
     basket_ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,48}$", description="the panel's own id: a second tap never places twice")
     exits: Optional[StrategyExitsBody] = None
+    accepted_warnings: list[str] | None = Field(default=None, max_length=40)   # M76 MP-5: as OrderBody; journaled per filled leg
 
 
 class EvaluateBody(BasketBody):
@@ -567,8 +572,15 @@ async def basket_execute(body: ExecuteBody, user: User = Depends(require_trader)
         kind, spec = body.exits.trailing.as_tuple() if body.exits.trailing is not None else ("NONE", None)
         exits = StrategyExitAsk(measure=body.exits.measure, sl_value=body.exits.sl_value,
                                 target_value=body.exits.target_value, trail_kind=kind, trail=spec)
-    return await fno_basket.execute(session, user, body.asks(), product=await _basket_product(session, user, body.product),
-                                    basket_ref=body.basket_ref, price_lookup=lookup, origin=MANUAL, exits=exits)
+    pressed = datetime.now(UTC).isoformat()            # M76 MP-5: the moment Place was pressed
+    result = await fno_basket.execute(session, user, body.asks(), product=await _basket_product(session, user, body.product),
+                                      basket_ref=body.basket_ref, price_lookup=lookup, origin=MANUAL, exits=exits)
+    accepted = pretrade_warnings.clean_accepted(body.accepted_warnings)
+    if accepted:
+        # M76 MP-5: after the run, the lines he pressed Place with go on each filled leg's journal entry (never raises).
+        filled = [r["trade_id"] for r in result.get("legs", []) if r.get("status") == "PLACED" and r.get("trade_id")]
+        await pretrade_warnings.record_accepted(session, user, filled, accepted, pressed)
+    return result
 
 
 class CloseFilledBody(BaseModel):

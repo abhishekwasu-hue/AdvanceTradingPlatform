@@ -88,6 +88,22 @@ WEB_VITAL_INP = _histogram("web_vital_inp_seconds", "Interaction to Next Paint b
                            buckets=(0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0, 2.0))
 WEB_VITAL_CLS = _histogram("web_vital_cls", "Cumulative Layout Shift by page and device", ("page", "device"),
                            buckets=(0.01, 0.05, 0.1, 0.15, 0.25, 0.5, 1.0))
+# M76 MP-0: one report per order ticket (POST /api/ui/ticket-metrics) - the warning surfaces ("cards") and lines shown
+# when Place was pressed (or at the last Review of a ticket closed without Place) and the time to Place. Labels are
+# closed enums (ticket / basket, phone / desktop, placed / closed); nothing that identifies a person, an instrument or
+# an order. Average cards per ticket = ticket_cards_sum / ticket_cards_count. The 0.3 s bucket is the M76 check budget.
+_COUNT_BUCKETS = (0, 1, 2, 3, 4, 5, 8, 13)
+_TICKET_SECONDS = (0.1, 0.25, 0.3, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300)
+TICKET_REPORTS = _counter("ticket_reports", "Order tickets reported by surface, device and outcome", ("surface", "device", "outcome"))
+TICKET_CARDS = _histogram("ticket_cards", "Warning surfaces shown per ticket at Place (or at its last Review)", ("surface", "outcome"),
+                          buckets=_COUNT_BUCKETS)
+TICKET_LINES = _histogram("ticket_lines", "Warning lines per ticket at Place (or at its last Review), total and visible", ("surface", "kind"),
+                          buckets=_COUNT_BUCKETS)
+TICKET_TO_PLACE = _histogram("ticket_to_place_seconds", "Time from opening the ticket (or its last Review) to Place", ("surface", "device", "span"),
+                             buckets=_TICKET_SECONDS)
+TICKET_CHECKS = _histogram("ticket_checks_seconds", "Time of the ticket's pre-trade checks (today: the Review preview call)", ("surface",),
+                           buckets=(0.05, 0.1, 0.2, 0.3, 0.5, 1, 2, 5, 10))
+TICKET_PENDING_AT_PLACE = _counter("ticket_pending_checks_at_place", "Checks still running when Place was pressed", ("surface",))
 
 # --- AI and billing (Phase O4 / V4.11) --------------------------------------------------------
 AI_PROVIDER_CALLS = _counter("ai_provider_calls", "LLM provider calls by provider and outcome", ("provider", "outcome"))

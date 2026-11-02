@@ -220,6 +220,10 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "copilot_workspace": _ready("Chart, its reading, the AI card and the trade plan panel (preview and Place through the one ticket) in the Copilot"),
     # M75 W-8: price-level plans (touch / candle close, his window) fire once through the ticket; method conditions are W-9
     "trigger_plans": _ready("Price-level plans fire once through the order ticket; area and BOS / CHoCH conditions follow (M75 W-9)"),
+    # M76 MP-0..MP-2, MP-5: the check card, the Warnings switches and the weekly "Warnings you accepted" work; the
+    # structure lines (MP-3), risk preview and what-if (MP-4 / MP-6) and the workspace helpers follow
+    "trade_warnings": _ready("Each user turns each warning type on or off on Settings › Trade settings › Warnings",
+                             "Settings › Trade settings › Warnings"),
     "study_export": _not_built("The Save study sheet, My studies and the PNG / CSV downloads (SX-4..SX-7)", "M77"),
     "ai_platform_key": _setup("The platform AI key on the server, each plan's AI budget and the per-user daily cap",
                               f"{HOST}; Admin › Controls › Limits"),

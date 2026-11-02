@@ -326,7 +326,8 @@ function SettingsTab() {
 export default function JournalPage(props: PageProps) {
   const features = useFeatures();
   if (features.on("ui_v2")) {
-    return <JournalPageV2 shareCard={features.on("growth_v2")} recallOn={features.on("setup_recall")} settings={<SettingsTab />} />;
+    return <JournalPageV2 shareCard={features.on("growth_v2")} recallOn={features.on("setup_recall")}
+      acceptedOn={features.on("trade_warnings")} settings={<SettingsTab />} />;
   }
   return <JournalClassic {...props} />;
 }

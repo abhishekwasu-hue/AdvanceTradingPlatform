@@ -448,6 +448,31 @@ async def on_entry(session: AsyncSession, trade: TradeRecord, *, source: Optiona
     await _run(session, tenant_id, "entry", work)
 
 
+def merge_accepted(plan: dict[str, Any], items: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """M76 MP-5: adds the accepted warning types to a plan, each type once (the first time Place was pressed with it
+    stays). Idempotent."""
+    have: list[dict[str, Any]] = [i for i in plan.get("accepted_warnings") or [] if isinstance(i, dict) and i.get("id")]
+    known = {i["id"] for i in have}
+    for item in items:
+        if item.get("id") and item["id"] not in known:
+            have.append({"id": str(item["id"]), "at": item.get("at")})
+            known.add(item["id"])
+    return {**plan, "accepted_warnings": have}
+
+
+async def on_accepted_warnings(session: AsyncSession, tenant_id: int, trade_ids: Iterable[int], items: list[dict[str, Any]]) -> None:
+    """M76 MP-5: the check-card lines he pressed Place with go on each filled trade's journal entry (which type, the time
+    of Place). Queued like every hook; never raises into the order path."""
+    ids = [int(t) for t in trade_ids]
+
+    async def work(own: AsyncSession) -> None:
+        for trade_id in ids:
+            _row, entry = await _entry_for(own, trade_id)
+            if entry is not None:
+                entry.plan_json = json.dumps(merge_accepted(_loads(entry.plan_json, {}), items), sort_keys=True, default=str)
+    await _run(session, tenant_id, "accepted_warnings", work)
+
+
 async def on_exit(session: AsyncSession, trade: TradeRecord, *, underlying_price: Optional[float] = None) -> None:
     """`underlying_price`: the underlying quote the exit was judged on (options), for IV at exit."""
     ids = _ids(trade)

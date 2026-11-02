@@ -553,11 +553,11 @@ def build_frame(data: SymbolData, timeframe: str, start: datetime, as_of: dateti
             built = Rebuilt(tuple(b for b in old.bars if b.end <= old.cut) + tuple(b for b in built.bars if b.start >= old.cut),
                             tuple(i for i in old.incomplete if i[0] < old.cut) + tuple(i for i in built.incomplete if i[0] >= old.cut))
         source, raw = f"{base.source} (rebuilt from 1-minute bars)" if timeframe != "1m" else base.source, built.bars
-        order = [b.start for b in built.bars]
+        bar_starts = [b.start for b in built.bars]
         detail = {s: f"{have} of {span} minutes there" for s, have, span in built.incomplete}
         now_part, old_part = _split((s for s, _, _ in built.incomplete if s >= start), check)
-        gaps += _grouped(sym, timeframe, INCOMPLETE_BARS, now_part, detail, order)
-        history += _grouped(sym, timeframe, INCOMPLETE_BARS, old_part, detail, order)
+        gaps += _grouped(sym, timeframe, INCOMPLETE_BARS, now_part, detail, bar_starts)
+        history += _grouped(sym, timeframe, INCOMPLETE_BARS, old_part, detail, bar_starts)
     raw = tuple(r for r in raw if r.start >= start)
     bars, _, bad = _to_bars(raw, as_of, extended)
     if source is None:

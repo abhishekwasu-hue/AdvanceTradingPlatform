@@ -69,6 +69,11 @@ SECTIONS: tuple[Section, ...] = (
     Section("risk_limits", "Risk limits", ("Risk limits", "/settings/risk-limits")),
     Section("automation", "Automation", ("My trading defaults", "/settings/trading-defaults")),
     Section("paper_account", "Paper account", None),
+    # M76 MP-1 (owner order M76, amendment 2): one on / off switch per pre-trade warning type, under the feature flag
+    # `trade_warnings`. A warning compares only with a plain fact or with a value HE saved here (none saved: that line
+    # does not exist). The ON / OFF starting state of each switch is the OWNER's (amendment 2), marked `default_by: owner`;
+    # every number stays Not set.
+    Section("warnings", "Warnings", None),
 )
 SECTION_IDS = tuple(s.id for s in SECTIONS)
 
@@ -92,6 +97,11 @@ class SettingField:
     wired: bool = False
     scope: Literal["user", "organisation"] = "user"
     flag: str | None = None                       # M68 PR-6: shown / saved only while this feature flag is on for him
+    order: str = "M68"                               # the owner order the field belongs to (its `pr` is that order's PR)
+    # M76 MP-1: the starting state the OWNER chose for a warning switch (amendment 2), used while the trader saved none.
+    # The saved marker is unchanged: `saved` is still only what he saved himself. None for every M68 field.
+    default: Any = None
+    default_by: Literal["owner"] | None = None
 
     @property
     def key(self) -> str:
@@ -121,7 +131,64 @@ def _count(unit: str, low: float = 1, **kw: Any) -> dict[str, Any]:
 TOUCH_CLOSE = (("TOUCH", "When the price touches it"), ("CLOSE", "When a candle closes past it"))
 EXIT_MEASURE = (("POINTS", "Points from entry"), ("PCT", "% from entry"), ("RUPEES", "Rupees on the trade"))
 
-O, P, X, OP, R, A, PA = SECTION_IDS
+O, P, X, OP, R, A, PA, W = SECTION_IDS
+
+
+def _warn(name: str, label: str, help: str, on: bool, **kw: Any) -> tuple[SettingField, SettingField]:
+    """M76 MP-1: one warning type = its switch (the owner's start state) + its "Ask me" switch (off unless he turns it
+    on: with it on, Place first asks him to accept that line)."""
+    base = {"flag": "trade_warnings", "order": "M76", "default_by": "owner", "wired": True, **kw}
+    return (SettingField(W, name, label, "switch", help, 1, default=on, **base),
+            SettingField(W, f"{name}_ask", f"{label}: ask me before placing", "switch",
+                         "On: Place first asks you to accept this line. Off: pressing Place is enough.", 1, default=False, **base))
+
+
+# M76 MP-1 / MP-2: the warning types the check card has today. Types that need M75 (structure, plan) or a value with no
+# source of truth yet come with their own PR (docs/design/M76_REVIEW.md section 9). Wired by MP-2: the check service
+# (app/paper/pretrade_checks.py) and the check card read them.
+WARNING_TYPES: tuple[tuple[str, str, str, bool], ...] = (
+    # pure mistakes: ON (amendment 2)
+    ("duplicate_order", "Same contract and side already open or waiting",
+     "A line when you already hold, or have a waiting order for, the same contract on the same side.", True),
+    ("limit_far_from_ltp", "Limit price far from the last price",
+     "A line when your limit price is further from the last price than your own % below. No % saved: no line.", True),
+    ("margin_short", "Margin more than available",
+     "A line when the margin for the order is more than your available paper balance.", True),
+    # facts: ON as information, no extra click (amendment 2; M76Q-2)
+    ("market_state", "Market closed or pre-open", "A line when the exchange is closed or in its pre-open session.", True),
+    ("expiry_day", "Contract expires today", "A line when the contract expires today.", True),
+    ("mis_cutoff", "Intraday close near",
+     "A line for an MIS order within your minutes below of your own square-off time. Either not saved: no line.", True),
+    ("fo_ban", "F&O ban list", "A line when the underlying is in the exchange's F&O ban list.", True),
+    ("event", "Events before expiry", "A line for the events in your events calendar before the contract's expiry.", True),
+    ("price_source", "No live price", "A line when the figures use the chain's price because no live price was read.", True),
+    ("liquidity_limits", "Outside your liquidity limits",
+     "A line when the bid-ask gap or open interest is outside your own liquidity limits. None saved: no line.", True),
+    ("own_limits", "Your risk limits",
+     "A line when the order's max loss or size meets one of your own risk limits (information; your limits page holds back an order).", True),
+    # M76 MP-3 structure (W-1): the workspace's reading per timeframe beside the order's direction; ON as information
+    ("counter_trend", "Against the trend, no change of character",
+     "A line when a timeframe's trend runs against your order and that chart's newest BOS / CHoCH is not a CHoCH your way.", True),
+    ("trend_conflict", "Against a timeframe's trend",
+     "A line when a timeframe's trend runs against your order's direction (bullish or bearish).", True),
+    ("area_conflict", "Last close inside an area of the other side",
+     "A line when the last close sits inside a seller area for a bullish order, or a buyer area for a bearish one.", True),
+    ("strike_in_area", "Sold strike inside an area", "A line when the strike of an option you sell lies inside an area.", True),
+    ("room", "Next area of the other side",
+     "A line with the points from the last close to the next area of the other side in your order's direction.", True),
+)
+WARNING_IDS: tuple[str, ...] = tuple(t[0] for t in WARNING_TYPES)
+WARNING_FIELDS: tuple[SettingField, ...] = tuple(f for name, label, help, on in WARNING_TYPES for f in _warn(name, label, help, on)) + (
+    SettingField(W, "collar_pct", "Limit price far from the last price: more than", "number",
+                 "Your own band for the limit-price line, in % of the last price.", 1, unit="%", low=0.0, high=100.0, low_open=True,
+                 term="ltp", flag="trade_warnings", order="M76", wired=True),
+    SettingField(W, "mis_minutes", "Intraday close near: within", "whole",
+                 "Minutes before your square-off time when an MIS order gets the line.", 1, unit="minutes", low=1, high=BIG,
+                 flag="trade_warnings", order="M76", wired=True),
+    SettingField(W, "blocks", "What holds back an order", "fact",
+                 "Exchange rules (tick size, an expired contract) and your own risk limits hold back an order. A warning never does: "
+                 "Place stays on.", 1, flag="trade_warnings", order="M76"),
+)
 FIELDS: tuple[SettingField, ...] = (
     # --- Order defaults (PR-1) -------------------------------------------------------------------------------------------
     _f(O, "holding", "Holding", "choice", "Close the position the same day, or carry it forward.", 1, 5, 6, 7, 8,
@@ -345,7 +412,7 @@ FIELDS: tuple[SettingField, ...] = (
     _f(PA, "slippage_pct", "Slippage", "number", "How far from the price a paper fill is counted, each side. Not set: none.", 7, 69,
        unit="%", low=0.0, high=100.0, today="paper fills and backtests", wired=True),
     _f(PA, "statutory_charges", "Statutory charges", "fact", "STT, exchange, stamp duty, GST and the SEBI fee are set by law.", 7, 90),
-)
+) + WARNING_FIELDS
 # TS1-049 / 050 / 053 ("Risk limits.*", one store): the M64 order-time checks, each its own switch, stay on Settings > Risk
 # limits (app/risk_engine/risk_limits.py CHECKS) - the Risk limits section links there instead of declaring them twice.
 ON_RISK_LIMITS_PAGE: tuple[str, ...] = ("TS1-049", "TS1-050", "TS1-051", "TS1-052", "TS1-053", "TS1-054")
@@ -456,6 +523,9 @@ def view(values: dict[str, Any], admin: bool, ceilings: dict[str, float] | None 
     shows its ceiling read-only (null = no ceiling) and is never one the user saved. `off`: the flags off for him (PR-6)."""
     sections = []
     for s in SECTIONS:
+        own = [f for f in FIELDS if f.section == s.id]
+        if own and all(f.flag is not None and f.flag in off for f in own):
+            continue                       # M76 MP-1: a section of a feature that is off is not shown at all (admin too)
         fields = []
         for f in FIELDS:
             if f.section != s.id or not visible(f, admin, off):
@@ -466,7 +536,8 @@ def view(values: dict[str, Any], admin: bool, ceilings: dict[str, float] | None 
                            "choices": [{"value": c, "label": label} for c, label in f.choices],
                            "low": f.low, "high": f.high, "low_open": f.low_open, "term": f.term, "fact": f.fact,
                            "wired": f.wired, "scope": f.scope, "value": value,
-                           "saved": (value is not None) if org else f.key in values})
+                           "saved": (value is not None) if org else f.key in values,
+                           "default": f.default, "default_by": f.default_by})
         sections.append({"id": s.id, "title": s.title, "fields": fields,
                          "today": {"label": s.today[0], "path": s.today[1]} if s.today else None})
     return {"sections": sections, "admin": admin, "page": PAGE_PATH}
@@ -526,6 +597,17 @@ async def _read(user: User, session: AsyncSession) -> tuple[dict[str, Any], int]
     return clean(value.get("values")), version
 
 
+async def saved_values(user: User, session: AsyncSession) -> dict[str, Any]:
+    """The caller's saved values only (Not set = absent). For readers outside the order paths (M76 warnings)."""
+    values, _version = await _read(user, session)
+    return values
+
+
+def effective(values: dict[str, Any], key: str) -> Any:
+    """His saved value, else the owner's starting state (M76 warning switches only), else None (Not set)."""
+    return values[key] if key in values else BY_KEY[key].default
+
+
 @router.get("/trade-settings")
 async def get_trade_settings(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """The caller's own Trade settings: every section and field, its value or null ("Not set") and whether he saved it."""
@@ -557,5 +639,6 @@ async def put_trade_settings(body: TradeSettingsSave, user: User = Depends(get_c
     raise HTTPException(status_code=409, detail={"message": "the settings changed since this edit was made"})
 
 
-__all__ = ["router", "FIELDS", "BY_KEY", "SECTIONS", "SECTION_IDS", "SettingField", "Section", "check_stored", "NAMESPACE",
-           "PAGE_PATH", "ON_RISK_LIMITS_PAGE", "CEILING_OF", "clean", "problem", "storable", "view", "visible", "is_admin"]
+__all__ = ["router", "FIELDS", "BY_KEY", "WARNING_IDS", "WARNING_TYPES", "effective", "saved_values", "SECTIONS", "SECTION_IDS", "SettingField",
+           "Section", "check_stored", "NAMESPACE", "PAGE_PATH", "ON_RISK_LIMITS_PAGE", "CEILING_OF", "clean", "problem", "storable", "view",
+           "visible", "is_admin"]

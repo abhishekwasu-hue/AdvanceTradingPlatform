@@ -90,6 +90,10 @@ class OrderAsk:
     rest_if_waiting: bool = False           # TM-2: a limit / stop the price has not reached waits for it (needs client_ref)
     trigger_mode: str | None = None      # TT-7: TOUCH (any print) or CLOSE (a closed candle); M68 TS1-015: his own
     timeframe_minutes: Optional[int] = None
+    # M76 MP-5: the check-card types shown when he pressed Place (journaled on the fill; never read by any check) and
+    # that moment (a waiting order keeps it in its payload, so a later fill records the time he pressed Place).
+    accepted_warnings: tuple[str, ...] = ()
+    accepted_at: str | None = None
 
 
 @dataclass
@@ -428,6 +432,13 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     errors: List[str] = []
     refusals: List[str] = []
     warnings: List[str] = []
+    # M76 MP-2: what kind each warning is (the check card's switch for it), one id per entry of `warnings`, same order.
+    # "status" is not a warning (a waiting order's own line). Additive: nothing reads `warnings` differently.
+    warning_ids: list[str] = []
+
+    def warn(wid: str, text: str) -> None:
+        warnings.append(text)
+        warning_ids.append(wid)
     side, right = ask.side.upper(), ask.right.upper()
     missing = await resolve_ask(session, user, ask)
     ask.side, ask.right = side, right
@@ -444,7 +455,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     if ask.expiry < today:
         errors.append("This expiry has passed. Pick a current expiry.")
     elif ask.expiry == today:
-        warnings.append("This contract expires today.")
+        warn("expiry_day", "This contract expires today.")
     tick = contract.tick_size if contract else 0.05
     from app.me.prefs import own_limits
     errors.extend(ask_errors(ask, tick, stop_required=bool((await own_limits(session, user)).get("stop_required_on_sold"))))
@@ -457,7 +468,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         price_source = "live" if price is not None else None
         if price is None and not live_only and ask.chain_ltp and ask.chain_ltp > 0:
             price, price_source = float(ask.chain_ltp), "chain"
-            warnings.append("No live price just now: these figures use the price the chain showed. Placing uses the live price.")
+            warn("price_source", "No live price just now: these figures use the price the chain showed. Placing uses the live price.")
         elif price is None:
             errors.append(f"{problem}. Nothing can be placed without it.")
 
@@ -471,7 +482,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
             if ask.rest_if_waiting:
                 # TM-2: it waits for its price in the resting book; the trigger engine places it then, checked again.
                 resting = True
-                warnings.append(f"Waits for your price {rest_level(ask):,.2f} and is placed when the price reaches it "
+                warn("status", f"Waits for your price {rest_level(ask):,.2f} and is placed when the price reaches it "
                                 "(every check runs again then). It lasts until today's close; cancel it any time.")
             else:
                 refusals.append(fill_note)
@@ -496,13 +507,15 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         if ban:
             refusals.append(ban)
         elif ban_note:
-            warnings.append(ban_note)
+            warn("fo_ban", ban_note)
 
     risk: Dict[str, Any] = {}
     if contract is not None and basis is not None and not errors and units:
         cfg, guard_reasons, notes = await _effective_config(session, user, direction.value, contract.tradingsymbol, now)
         refusals.extend(plain(r) for r in guard_reasons)
-        warnings.extend(n for n in notes if n)
+        for n in notes:
+            if n:
+                warn("own_limits", n)
         stop = position_stop(side, ask.stop_loss, tick)
         decision = RiskManager(cfg).validate_and_size(_signal(contract, side, basis, stop, now, fill_note), await build_trading_day_state(session, user),
                                                       contract_spec=_spec(contract), requested_quantity=units)
@@ -512,7 +525,8 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         allowed = int(decision.quantity // contract.lot_size) if decision.approved else 0
         # M64 RM-3: every refusal as a block message (plain sentence, numbers, Change limit link, a smaller size offered)
         blocks = list(decision.blocks)
-        warnings.extend(decision.warnings)
+        for n in decision.warnings:
+            warn("own_limits", n)
         if not decision.approved:
             refusals.extend(plain(r) for r in decision.reasons)
         elif cap_amount is not None and decision.quantity + 1e-9 < units and allowed >= 1:
@@ -558,7 +572,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         "price": price, "price_source": price_source, "fill_price": fill, "fill_note": fill_note or None,
         "resting": resting, "rest_level": rest_level(ask) if resting else None,
         "stop_loss": ask.stop_loss, "margin": margin_line, "max_loss": loss, "charges": charges, "risk": risk,
-        "errors": errors, "refusals": refusals, "warnings": warnings, "can_place": can_place,
+        "errors": errors, "refusals": refusals, "warnings": warnings, "warning_ids": warning_ids, "can_place": can_place,
         # M68 TS-3: the ticket fields still Not set (neither on the ticket nor in his Trade settings): the ticket asks
         # for each one at its field, with "Save as my default" next to it.
         "missing": missing, "trigger_mode": ask.trigger_mode,
@@ -576,6 +590,8 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     from app.execution.signal_execution import execute_signal_for_user
     from app.platform import phase0_lock
     now = now or datetime.now(timezone.utc)
+    if ask.accepted_warnings and not ask.accepted_at:
+        ask.accepted_at = now.isoformat()               # M76 MP-5: the moment Place was pressed (kept by a waiting order)
     view = await assess(session, user, ask, price_lookup=price_lookup, live_only=True, now=now, origin=origin,
                         approval_action_id=approval_action_id)
     if not view["can_place"]:
@@ -618,6 +634,10 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     if result.executed and result.trade is not None:
         filled = {"price": float(result.trade.entry_price), "quantity": float(result.trade.quantity),
                   "lots": round(float(result.trade.quantity) / contract.lot_size, 4)}
+    if filled is not None and ask.accepted_warnings and order.trade_id:
+        # M76 MP-5: after the fill, the lines he pressed Place with go on the journal entry (queued; never raises).
+        from app.paper import pretrade_warnings
+        await pretrade_warnings.record_accepted(session, user, [order.trade_id], ask.accepted_warnings, ask.accepted_at)
     reasons = [plain(r) for r in (result.reasons or [])]
     return {**view, "status": "PLACED" if result.executed else "REFUSED", "reasons": reasons if not result.executed else [],
             "order_id": order.id, "trade_id": order.trade_id, "filled": filled, "mode": order.mode}
@@ -665,6 +685,7 @@ def ask_payload(ask: OrderAsk) -> Dict[str, Any]:
 def ask_from_payload(payload: Dict[str, Any]) -> OrderAsk:
     values = dict(payload)
     values["expiry"] = date.fromisoformat(str(values["expiry"]))
+    values["accepted_warnings"] = tuple(values.get("accepted_warnings") or ())   # M76 MP-5 (absent in older payloads)
     return OrderAsk(**values)
 
 

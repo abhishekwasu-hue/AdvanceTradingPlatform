@@ -8,7 +8,7 @@ import { HelpPopover } from "../ui/HelpPopover";
 import { COMPONENT_LABELS, TAG_HELP, tagLabel } from "./format";
 import { PnlV2, RV2 } from "./JournalPartsV2";
 import { mostTagged } from "./journalModel";
-import type { DisciplineScore, EntryKind, JournalWeekV2, ScoreComponent } from "./types";
+import type { AcceptedWarningRow, DisciplineScore, EntryKind, JournalWeekV2, ScoreComponent } from "./types";
 
 /**
  * M62 JN-3: the weekly review - the existing discipline score with a (?) on each of its components, "what you tagged
@@ -53,8 +53,34 @@ export function ScoreCardV2({ score }: { score: DisciplineScore }) {
   );
 }
 
-export function WeeklyReviewV2({ state, week, onWeek, onRetry, onOpen }: {
+/** M76 MP-5 (W-4): per check-card line he pressed Place with this week - the trades and how they ended. Numbers only. */
+export function AcceptedWarningsV2({ rows }: { rows: readonly AcceptedWarningRow[] }) {
+  return (
+    <CardV2 title="Warnings you accepted" count={rows.length} testId="accepted-warnings">
+      <table className="w-full text-t13">
+        <thead className="text-left text-t12 text-fg-muted">
+          <tr><th className="py-space-1 font-normal">Line</th><th className="font-normal text-right">Trades</th>
+            <th className="font-normal text-right">Won · lost</th><th className="font-normal text-right">Net (closed)</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((a) => (
+            <tr key={a.id} className="border-t border-subtle" data-accepted={a.id}>
+              <td className="py-space-2 pr-space-2 text-fg">{a.label}</td>
+              <td className="text-right font-tabular text-fg">{formatNumber(a.trades)}</td>
+              <td className="whitespace-nowrap text-right font-tabular"><span className="text-up">{formatNumber(a.wins)}</span>
+                <span className="text-fg-muted"> · </span><span className="text-down">{formatNumber(a.losses)}</span></td>
+              <td className="text-right">{a.closed ? <PnlV2 value={a.net_pnl} /> : <span className="text-t13 text-fg-muted">None closed</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </CardV2>
+  );
+}
+
+export function WeeklyReviewV2({ state, week, onWeek, onRetry, onOpen, acceptedOn = false }: {
   state: WeekState; week: string; onWeek: (offset: number) => void; onRetry: () => void; onOpen: (kind: EntryKind, id: number) => void;
+  acceptedOn?: boolean;
 }) {
   const nav = (
     <div className="flex items-center gap-space-2" data-week-nav>
@@ -97,6 +123,7 @@ export function WeeklyReviewV2({ state, week, onWeek, onRetry, onOpen }: {
           </ul>
         )}
       </CardV2>
+      {acceptedOn && (d.accepted_warnings?.length ?? 0) > 0 && <AcceptedWarningsV2 rows={d.accepted_warnings ?? []} />}
       <CardV2 title="The week's trades" count={all.length} testId="week-trades">
         {all.length === 0 ? <EmptyStateV2 text="No trades this week." /> : (
           <ul className="divide-y divide-subtle">

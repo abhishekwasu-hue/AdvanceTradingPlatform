@@ -356,6 +356,15 @@ def review_trades(trades: Sequence[TradeRecord]) -> List[Any]:
     return out
 
 
+def accepted_of(trades: Sequence[Any], entries: dict[int, JournalEntryRecord]) -> list[dict[str, Any]]:
+    """M76 MP-5: the week's "warnings you accepted and their outcomes" from each entry's `plan_json.accepted_warnings`."""
+    from app.journal.review import accepted_summary
+    from app.paper.pretrade_warnings import LABELS
+    pairs = [(trade_id, str(item["id"])) for trade_id, entry in entries.items() if entry is not None
+             for item in capture._loads(entry.plan_json, {}).get("accepted_warnings") or [] if isinstance(item, dict) and item.get("id")]
+    return accepted_summary(trades, pairs, LABELS)
+
+
 async def weekly_review(session: AsyncSession, user: User, label: Optional[str] = None, *, history_weeks: int = 4,
                         now: Optional[datetime] = None) -> Dict[str, Any]:
     """The week's review from the journal, with the trader's own previous `history_weeks` weeks for comparison."""
@@ -372,6 +381,8 @@ async def weekly_review(session: AsyncSession, user: User, label: Optional[str] 
         stats = _stats(review_trades(past["trades"]))
         history.append({"week": week, "score": past["score"]["score"], "trades": stats["trades"], "net_pnl": stats["net_pnl"],
                         "avg_r": stats["avg_r"], "win_rate": stats["win_rate"]})
-    review = build_review(data["week"], review_trades(data["trades"]), [(t.trade_id, t.tag) for t in live], data["score"], history, s)
+    trades = review_trades(data["trades"])
+    review = build_review(data["week"], trades, [(t.trade_id, t.tag) for t in live], data["score"], history, s,
+                          accepted=accepted_of(trades, data["entries"]))
     review.update(start=data["start"].isoformat(), end=data["end"].isoformat())
     return review

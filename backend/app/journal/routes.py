@@ -87,7 +87,9 @@ async def journal_week(week: str | None = Query(default=None, pattern=WEEK_PATTE
                                               attachments=files.get(("trade", t.id), []), timeframe=timeframes.get(t.deployment_id or -1))
                         for t in data["trades"]],
             "manual_entries": [entries.manual_payload(m, s, attachments=files.get(("manual", m.id), [])) for m in manual],
-            "score": data["score"]}
+            "score": data["score"],
+            # M76 MP-5: per check-card type he pressed Place with this week, the trades and how they ended (numbers only)
+            "accepted_warnings": service.accepted_of(service.review_trades(data["trades"]), data["entries"])}
 
 
 REVIEW_QUESTION = ("Explain this weekly trading review in plain language: what the numbers show about the week and which "

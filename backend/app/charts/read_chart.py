@@ -231,6 +231,41 @@ async def _context(session: AsyncSession, key: str, last_end: datetime) -> Optio
         return None
 
 
+async def workspace_annotations(session: AsyncSession, user: User, key: str, tf: str, now: datetime) -> dict[str, Any] | None:
+    """M76 MP-3: the workspace's annotations for `key` on `tf` as of the last closed bar - the same pieces the route below
+    reads (the signal engine's when it reads this chart for him, else ATP's readers on the same bars, stored areas and
+    top-down rows), for the ticket's check card. None when there are no closed bars or the reading cannot be built now
+    (busy, no data): the card then has no structure line. Read-only."""
+    from app.charts import workspace_reading as WR
+    from app.market_lake import own_bars
+    if tf not in pal.DEFAULT_DAYS:
+        return None
+    private = await own_bars.scope_for(session, user, key)
+    try:
+        frame, _source = await pal.load_frame(session, key, tf, now - timedelta(days=pal.DEFAULT_DAYS[tf]), now, private=private)
+    except pal.WindowTooLarge:
+        return None
+    frame = closed_only(frame, now)
+    if not len(frame):
+        return None
+    engine_part = await WR.engine_reading(session, user, key, tf, now)
+    if engine_part is not None:
+        return engine_part
+    last_end = pd.Timestamp(frame["bar_end"].iloc[-1]).to_pydatetime()
+    last_end = last_end if last_end.tzinfo else last_end.replace(tzinfo=timezone.utc)
+    zones = await _areas(session, user, key, last_end, float(frame["close"].iloc[-1]))
+    mtf = await pal.mtf_rows(session, key, last_end, owner=user.id, private=private)
+    bands = zones.get("bands") or []
+
+    def build() -> dict[str, Any]:
+        return WR.atp_annotations(frame, pal.compute_layer(frame, tf), tf, [area_part(b) for b in bands], mtf)
+    try:
+        result: dict[str, Any] = await pal._in_slot(session, user.id, build)  # noqa: SLF001 - the route's own build slot
+    except HTTPException:
+        return None                                       # busy: no structure line now; Place never waits for it
+    return result
+
+
 @router.get("/read", dependencies=[Depends(rate_limited)])
 async def read_chart(instrument: str = Query(..., min_length=1, max_length=100), tf: pal.Timeframe = "15m",
                      user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:

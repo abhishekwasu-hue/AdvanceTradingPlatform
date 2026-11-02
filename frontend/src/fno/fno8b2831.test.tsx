@@ -120,7 +120,8 @@ describe("FNO-8B-28 the liquidity line with his own limits", () => {
     expect(ticketSource).toContain("useLiquidityLimits(open && features.on(\"ui_v2\"))");
     expect(basketSource).toContain(", true, limits) : null");
     for (const src of [ticketSource, basketSource]) {
-      expect(src.match(/limits/g)?.length).toBeLessThanOrEqual(8);
+      // M76 MP-2: + the check card's own-limits line (information, behind trade_warnings) - still never read by a button.
+      expect(src.match(/limits/g)?.length).toBeLessThanOrEqual(11);
       expect(src).not.toMatch(/disabled=\{[^}]*limits/);
     }
     expect(limitsSource).not.toMatch(/\/paper\/fno\/(order|basket)|\/positions|\/exit/);

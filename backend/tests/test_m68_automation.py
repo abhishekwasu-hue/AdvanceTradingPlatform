@@ -30,7 +30,8 @@ pytestmark = [pytest.mark.real_automation,                    # M68: each user's
               pytest.mark.usefixtures("no_open_positions_from_earlier_tests", "owner_switched_live_on")]
 URL = "/api/me/trade-settings"
 KEYS = ("approval_mode", "approval_entry_minutes", "requote_drift_pct", "max_requotes", "scan_auto_max",
-        "scan_auto_cooldown_minutes", "scan_auto_arming_days", "plan_trigger_action")     # M75 W-8: When a plan triggers
+        "scan_auto_cooldown_minutes", "scan_auto_arming_days", "plan_trigger_action",     # M75 W-8: When a plan triggers
+        "plan_broker_gtt")                                                                      # M75 W-10: Simple price plans
 
 
 def _run(coro):
@@ -217,7 +218,8 @@ def test_exits_never_read_the_automation_settings():
                           "app"], cwd=BACKEND, capture_output=True, text=True).stdout.split()
     assert sorted(out) == sorted(["app/deployments/routes.py", "app/execution/approval.py", "app/execution/core/dispatcher.py",
                                   "app/screener/then/auto_paper.py", "app/screener/then/routes.py", "app/workers/trading_worker.py",
-                                  "app/execution/trigger_plans.py"])           # M75 W-8: a plan's ENTRY choice (never its exits)
+                                  "app/execution/trigger_plans.py",            # M75 W-8: a plan's ENTRY choice (never its exits)
+                                  "app/execution/broker_gtt.py"])              # M75 W-10: where a plan's ENTRY waits (never exits)
     text = (BACKEND / "app/execution/approval.py").read_text(encoding="utf-8")
     exit_part = text[text.index("# --- exits policy (ADR-0004)"):]
     assert "automation" not in exit_part

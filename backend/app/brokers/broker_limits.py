@@ -172,7 +172,8 @@ def spec_for(broker: str | None) -> BrokerSpec:
 
 
 # --- endpoint kinds -------------------------------------------------------------------------------------------------------
-ORDER_METHODS = frozenset({"place_order", "modify_order", "cancel_order", "place_stop_loss_order", "exit_position"})
+ORDER_METHODS = frozenset({"place_order", "modify_order", "cancel_order", "place_stop_loss_order", "exit_position",
+                           "place_gtt", "modify_gtt", "cancel_gtt"})          # M75 W-10: a GTT call is an order call
 HISTORY_METHODS = frozenset({"get_historical_data", "get_intraday_candles"})
 QUOTE_METHODS = frozenset({"get_ltp", "get_quote", "get_quote_for_symbol", "get_ltp_for_symbol", "get_option_chain",
                            "get_quotes_batch"})

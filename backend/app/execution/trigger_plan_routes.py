@@ -31,13 +31,32 @@ MAX_PRICE = 10_000_000
 
 
 class ConditionBody(BaseModel):
+    """W-8: a price level (kind PRICE, the default). W-9: his area + the reader's rejection candle (AREA) or a BOS /
+    CHoCH (STRUCTURE) on his timeframe; every field his own, checked by `trigger_plans.condition_errors`."""
     model_config = ConfigDict(extra="forbid")
-    level: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
-    side: Literal["ABOVE", "BELOW"]
-    mode: Literal["TOUCH", "CLOSE"]
+    kind: Literal["PRICE", "AREA", "STRUCTURE"] = "PRICE"
+    level: float | None = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    side: Literal["ABOVE", "BELOW"] | None = None
+    mode: Literal["TOUCH", "CLOSE"] | None = None
     timeframe_minutes: int | None = Field(default=None, ge=1, le=tp.MAX_TIMEFRAME)
     window_start: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     window_end: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    area_side: Literal["buyer", "seller"] | None = None
+    area_low: float | None = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    area_high: float | None = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    area_timeframe: str | None = Field(default=None, pattern=r"^[0-9A-Za-z]{1,8}$")
+    event: Literal["BOS", "CHOCH"] | None = None
+    direction: Literal["up", "down"] | None = None
+
+    def condition(self) -> tp.Condition:
+        if self.kind == "PRICE":
+            return tp.Condition(level=self.level or 0.0, side=self.side or "", mode=self.mode or "", timeframe_minutes=self.timeframe_minutes,
+                                window_start=self.window_start, window_end=self.window_end)
+        area = self.kind == "AREA"
+        return tp.Condition(kind=self.kind, timeframe_minutes=self.timeframe_minutes, window_start=self.window_start, window_end=self.window_end,
+                            area_side=self.area_side if area else None, area_low=self.area_low if area else None,
+                            area_high=self.area_high if area else None, area_timeframe=self.area_timeframe if area else None,
+                            event=None if area else self.event, direction=None if area else self.direction)
 
 
 class OrderBody(BaseModel):
@@ -67,9 +86,7 @@ class PlanBody(BaseModel):
     valid_until: datetime
 
     def parts(self) -> tuple[tp.Condition, list[tp.PlanOrder], datetime]:
-        c = self.condition
-        cond = tp.Condition(level=c.level, side=c.side, mode=c.mode, timeframe_minutes=c.timeframe_minutes,
-                            window_start=c.window_start, window_end=c.window_end)
+        cond = self.condition.condition()
         until = self.valid_until if self.valid_until.tzinfo else self.valid_until.replace(tzinfo=UTC)
         return cond, [o.plan_order() for o in self.orders], until
 

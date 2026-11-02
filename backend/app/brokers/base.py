@@ -14,6 +14,8 @@ from app.brokers.models import (
     BrokerPosition,
     BrokerProfile,
     BrokerTradeEntry,
+    GttRequest,
+    GttStatus,
     Instrument,
     MarginInfo,
     OptionChain,
@@ -139,6 +141,8 @@ class BrokerInterface(ABC):
     native_intervals: FrozenSet[str] = frozenset({"1min", "3min", "5min", "10min", "15min", "30min", "60min", "day"})
     # The session token this adapter uses (read back by `access_token`); adapters set it in __init__ / authenticate().
     _access_token: Optional[str] = None
+    # M75 W-10 (M75Q-1): True only for an adapter that implements the GTT methods below against its broker's GTT API.
+    supports_gtt: bool = False
 
     @abstractmethod
     async def authenticate(self) -> BrokerProfile: ...
@@ -324,6 +328,20 @@ class BrokerInterface(ABC):
             order_type=order_type, product=product, trigger_price=trigger_price, price=limit, tag=tag,
         )
         return await self.place_order(order)
+
+    # --- M75 W-10 (M75Q-1): optional broker GTT. An adapter without `supports_gtt` never gets these calls. ---------------
+    async def place_gtt(self, gtt: GttRequest) -> GttStatus:
+        """Creates one GTT at the broker. Default: not offered by this broker."""
+        raise NotImplementedError(f"{self.name}: GTT is not offered")
+
+    async def modify_gtt(self, gtt_id: str, gtt: GttRequest) -> GttStatus:
+        raise NotImplementedError(f"{self.name}: GTT is not offered")
+
+    async def cancel_gtt(self, gtt_id: str) -> GttStatus:
+        raise NotImplementedError(f"{self.name}: GTT is not offered")
+
+    async def get_gtt(self, gtt_id: str) -> GttStatus:
+        raise NotImplementedError(f"{self.name}: GTT is not offered")
 
     async def get_intraday_candles(self, symbol: str, exchange: str, interval: str) -> List[OHLCVBar]:
         """Today's candles so far. Default: the historical endpoint with a from/to of today, which

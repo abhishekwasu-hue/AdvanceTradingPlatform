@@ -22,6 +22,7 @@ import { RiskPreviewV2, type RiskPreviewApi } from "./RiskPreviewV2";
 import { WhatIfV2, type WhatIfApi } from "./WhatIfV2";
 import { ivPointsOf } from "./riskPreview";
 import { TriggerPlansV2 } from "./TriggerPlansV2";
+import type { PlanArea } from "./triggerPlans";
 
 /**
  * M75 W-6 (owner order M75 CW-4, flag `copilot_workspace`): the trade plan panel beside the chart, in the same tab.
@@ -77,6 +78,8 @@ const TYPES: { value: OptionKind; label: string }[] = [{ value: "CE", label: "Ca
 export interface PlanPanelProps {
   /** The chart's symbol (the object he opened); the plan is for it. */
   symbol: string;
+  /** M75 W-9: the open chart's reading areas (spot chart of the same symbol only) a trigger plan can watch. */
+  areas?: PlanArea[];
   /** Test hook: the builder's evaluate call. */
   evaluate?: typeof builderApi.evaluate;
   /** Test hook: the risk preview's reads (M76 MP-4). */
@@ -89,7 +92,7 @@ export interface PlanPanelProps {
   onPlanChange?: (plan: StudyPlan | null) => void;
 }
 
-export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi, annotations = null, whatIfApi, onPlanChange }: PlanPanelProps) {
+export function PlanPanelV2({ symbol, areas, evaluate = builderApi.evaluate, riskApi, annotations = null, whatIfApi, onPlanChange }: PlanPanelProps) {
   const [kind, setKind] = useState<PlanKind | null>(null);
   const [inst, setInst] = useState<InstrumentDraft>(EMPTY_INSTRUMENT);
   const [draft, setDraft] = useState<LegDraft>(EMPTY_LEG);
@@ -265,7 +268,7 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi, a
       {/* M75 W-7 (CW-5): placing goes to the existing ticket / basket / equity ticket, each pressed by him. */}
       {kind && <PlanPlaceV2 plan={{ underlying: symbol, kind, legs, equity, exits }} />}
       {/* M75 W-8 (CW-6, flag trigger_plans): set and wait - his condition, then these legs, then his exits. */}
-      {plansOn && (kind === "OPTIONS" || kind === "FUTURE") && <TriggerPlansV2 underlying={symbol} legs={legs} exits={exits} />}
+      {plansOn && (kind === "OPTIONS" || kind === "FUTURE") && <TriggerPlansV2 underlying={symbol} legs={legs} exits={exits} areas={areas} />}
       <Details id="copilot.plan" className="mt-0">
         <p className="text-t13 text-fg-muted">Every field stays Not set until you fill it in. The payoff, Greeks, max profit and loss, break-evens and the
           margin estimate come from the same engine as the Options Builder. The margin is ATP&apos;s estimate, never the broker&apos;s number.</p>

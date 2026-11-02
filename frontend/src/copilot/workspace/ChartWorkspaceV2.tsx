@@ -61,6 +61,8 @@ export default function ChartWorkspaceV2() {
   // M77 SX-6: the trade plan open beside the chart, as the study's references (null when none)
   const [plan, setPlan] = useState<StudyPlan | null>(null);
   const cardTf = cardTimeframe(key?.tf);
+  // M75 W-9: the reading's areas a trigger plan can watch - the spot chart's only (a contract's prices are not the spot's)
+  const planAreas = pick && !isContract(pick.exchange) && read.status === "ready" ? read.read.annotations?.areas ?? [] : [];
   const card = useWorkspaceCard(pick?.symbol ?? null, cardTf, read.status === "ready");
   const choose = (next: PickedSymbol) => {
     if (!next.symbol.trim()) return;
@@ -105,7 +107,7 @@ export default function ChartWorkspaceV2() {
       {/* M75 W-6 (CW-4): the trade plan panel in the same tab, for the chart's symbol (preview only). */}
       {/* M76 MP-6 (S-2): the open chart's reading, for the plan's P&L at its next areas - only on the underlying's own chart
           (a futures / option contract's areas are that contract's prices, not the spot the plan is priced at) */}
-      {pick && <PlanPanelV2 symbol={pick.symbol} onPlanChange={studiesOn ? setPlan : undefined}
+      {pick && <PlanPanelV2 symbol={pick.symbol} areas={planAreas} onPlanChange={studiesOn ? setPlan : undefined}
         annotations={read.status === "ready" && !isContract(pick.exchange) ? read.read.annotations ?? null : null} />}
       {studiesOn && pick && key && (
         <SaveStudySheetV2 open={saveOpen} onOpenChange={setSaveOpen} instrument={key.instrument} symbol={pick.symbol} openTf={key.tf} plan={plan}

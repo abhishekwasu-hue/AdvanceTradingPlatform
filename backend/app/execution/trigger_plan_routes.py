@@ -6,6 +6,11 @@
                                               The client reference makes a second tap return the same plan.
 * `PUT  /api/trigger-plans/{id}`            - edits an armed or paused plan (armed afresh from now).
 * `POST /api/trigger-plans/{id}/pause`      - pauses an armed plan; `/resume` arms it again; `/cancel` cancels it.
+* `POST /api/trigger-plans/dry-run`         - M76 MP-12 (D-2): a dry run of one of his saved plans (`plan_id`) or of the
+                                              plan he is drafting - his condition replayed over the stored closed bars
+                                              of the last N sessions he asks for, and what each order would send now
+                                              (the ticket's own read-only checks). Writes nothing (the session is rolled
+                                              back); app/execution/plan_dry_run.py.
 Nothing here places an order: only the worker fires a plan (app/execution/trigger_plans.py), through the order ticket's
 own `place`. Self-scoped: another member's plan is "not found". The AI has no tool that reaches these (ADR-0006).
 """
@@ -22,10 +27,12 @@ from app.auth.dependencies import get_current_user, require_trader
 from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
+from app.execution import plan_dry_run as pdr
 from app.execution import trigger_plans as tp
 
 router = APIRouter(prefix="/api/trigger-plans", tags=["trigger-plans"])
 plan_rate_limit = user_rate_limit("trigger_plans", limit=30, window_seconds=60)
+dry_run_rate_limit = user_rate_limit("trigger_plan_dry_run", limit=6, window_seconds=60)   # each one replays many candles
 SYMBOL = r"^[A-Za-z0-9 &._-]{1,40}$"
 MAX_PRICE = 10_000_000
 
@@ -102,6 +109,27 @@ class CreateBody(PlanBody):
         return self
 
 
+class DryRunBody(BaseModel):
+    """M76 MP-12: his saved plan (`plan_id`) or his draft (underlying + condition [+ orders + his choice]); `sessions` is
+    his own (no default)."""
+    model_config = ConfigDict(extra="forbid")
+    sessions: int = Field(ge=1, le=pdr.MAX_SESSIONS)
+    plan_id: int | None = Field(default=None, ge=1)
+    underlying: str | None = Field(default=None, pattern=SYMBOL)
+    condition: ConditionBody | None = None
+    orders: list[OrderBody] = Field(default_factory=list, max_length=tp.MAX_ORDERS)
+    approval: Literal["AUTO", "APPROVAL"] | None = None
+
+    @model_validator(mode="after")
+    def _one(self) -> DryRunBody:
+        draft = self.underlying is not None or self.condition is not None or bool(self.orders) or self.approval is not None
+        saved_ok = self.plan_id is not None and not draft
+        draft_ok = self.plan_id is None and self.underlying is not None and self.condition is not None
+        if not (saved_ok or draft_ok):
+            raise ValueError("Send a saved plan's id, or the underlying and the condition of the plan you are drafting")
+        return self
+
+
 async def _enabled(session: AsyncSession, user: User) -> None:
     from app.platform.controls import flag_enabled
     for name in ("ui_v2", tp.FLAG):
@@ -154,6 +182,34 @@ async def edit_plan(plan_id: int, body: PlanBody, user: User = Depends(require_t
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     await session.commit()
     return tp.view(row)
+
+
+@router.post("/dry-run", dependencies=[Depends(dry_run_rate_limit)])
+async def dry_run_plan(body: DryRunBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Read-only: nothing is placed, armed, proposed or changed; the session is rolled back whatever happens."""
+    await _enabled(session, user)
+    from app.ai.worker_bridge import price_lookup_for_user
+    choice: str | None
+    try:
+        if body.plan_id is not None:
+            try:
+                row = await tp.own(session, user, body.plan_id)
+            except LookupError as exc:
+                raise HTTPException(status_code=404, detail="Not found") from exc
+            name, symbol, exchange = row.underlying, row.watch_symbol, row.watch_exchange
+            cond, orders, choice = tp.condition_of(row), tp.orders_of(row), row.approval
+        else:
+            assert body.underlying is not None and body.condition is not None
+            name, symbol, exchange = _underlying(body.underlying)
+            cond, orders, choice = body.condition.condition(), [o.plan_order() for o in body.orders], body.approval
+        lookup = await price_lookup_for_user(session, user) if orders else None   # his own entitlement, as the ticket's preview
+        try:
+            return await pdr.dry_run(session, user, underlying=name, symbol=symbol, exchange=exchange, condition=cond, orders=orders,
+                                     choice=choice, sessions=body.sessions, plan_id=body.plan_id, price_lookup=lookup)
+        except pdr.DryRunError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        await session.rollback()                     # a dry run writes nothing
 
 
 @router.post("/{plan_id}/{action}", dependencies=[Depends(plan_rate_limit)])

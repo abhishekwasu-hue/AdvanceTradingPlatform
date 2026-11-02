@@ -73,6 +73,23 @@ class CatalogField(BaseModel):
     placeholder: Optional[str] = None
 
 
+class CatalogStep(BaseModel):
+    text: str
+    url: Optional[str] = None
+    gives: Optional[str] = None
+    copy_value: Optional[str] = Field(default=None, alias="copy")
+    where: str
+
+    model_config = {"populate_by_name": True}
+
+
+class CatalogGuide(BaseModel):
+    """BRK-1 C: up-front one-line warnings, the shared SEBI info line, the numbered steps (catalog.Guide)."""
+    warnings: List[str]
+    info: str
+    steps: List[CatalogStep]
+
+
 class CatalogEntry(BaseModel):
     broker: str
     name: str
@@ -83,8 +100,8 @@ class CatalogEntry(BaseModel):
     daily_renewal: bool
     available: bool
     renew_fields: List[CatalogField] = []
-    # Part 1B: the connect guide - {"points": [...], "links": [{"label", "url"}]} - or None.
-    guide: Optional[Dict[str, Any]] = None
+    # BRK-1 C: the visible step-by-step connect guide (every broker has one).
+    guide: CatalogGuide
 
 
 class Connection(BaseModel):

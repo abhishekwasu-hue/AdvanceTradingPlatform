@@ -413,8 +413,8 @@ def test_catalog_entry_has_no_gate_no_ui_v2_only_tile_and_no_practice_words():
     row = catalog_entry("kotak_neo").as_dict()
     assert row["method"] == "totp_auto" and row["daily_renewal"] is True
     assert "gates" not in row and "requires_ui_v2" not in row                                      # BRK-1
-    assert all(link["url"].startswith("https://") for link in row["guide"]["links"])
-    for text in row["guide"]["points"] + row["how_to"]:
+    assert all(st["url"].startswith("https://www.kotakneo.com/") for st in row["guide"]["steps"] if st["where"] == "broker")
+    for text in row["guide"]["warnings"] + row["how_to"]:
         lowered = text.lower()
         assert "practice" not in lowered and "not offered" not in lowered, text
         assert not any(word in lowered for word in ("api_", "token_", "gate", "tm-", "flag")), text

@@ -286,7 +286,8 @@ def test_catalog_shape_fields_only_what_the_method_needs():
         for f in row["fields"] + row["renew_fields"]:
             assert set(f) <= {"key", "label", "kind", "placeholder"} and f["kind"] in ("secret", "text")
             assert f["key"] in BrokerCredentials.model_fields
-        assert len(row["how_to"]) == 3 and all(s.endswith(".") and "_" not in s for s in row["how_to"])
+        # BRK-1 C: how_to is the guide's steps as plain lines (test_brk1_catalog_guides.py checks the guide).
+        assert len(row["how_to"]) >= 2 and all(s.endswith(".") and "**" not in s for s in row["how_to"])
         assert row["doc_url"].startswith("https://") and row["available"] is True
         assert row["daily_renewal"] is (row["broker"] not in ("upstox", "coindcx"))
         if not row["daily_renewal"]:

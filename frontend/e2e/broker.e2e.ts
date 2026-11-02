@@ -72,7 +72,7 @@ for (const [label, size] of [["1440", DESKTOP], ["390", PHONE]] as const) {
       test(`looks the same (${theme})`, async ({ page }) => {
         await open(page, "/broker", { theme, session: LATER });
         await expect(page.locator("[data-broker-page]")).toBeVisible();
-        await expect(page.locator("[data-broker-tile]")).toHaveCount(7);
+        await expect(page.locator("[data-broker-tile]")).toHaveCount(9);                // BRK-1: Kotak Neo and Groww like the others
         await expect(page).toHaveScreenshot(`broker-${label}-${theme}.png`, shot);
       });
     }
@@ -128,8 +128,9 @@ test.describe("phone 390", () => {
     await expect(sheet.locator("input")).toHaveCount(2);
     await expect(sheet.getByLabel("Client ID")).toBeVisible();
     await expect(sheet.getByLabel("Access token")).toHaveAttribute("type", "password");
-    await sheet.getByText("Where do I get this?").click();
-    await expect(sheet.locator("ol li")).toHaveCount(3);
+    // BRK-1 C: the guide is open on the first connect - numbered steps, each field says which step gives it.
+    await expect(sheet.locator("[data-guide-open] [data-guide-step]")).toHaveCount(6);
+    await expect(sheet.locator("[data-from-step]")).toHaveText(["From step 5", "From step 4"]);
     const connect = sheet.getByRole("button", { name: "Connect", exact: true });
     await expect(connect).toBeDisabled();
     await sheet.getByLabel("Client ID").fill("1000000001");

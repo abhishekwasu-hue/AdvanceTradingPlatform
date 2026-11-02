@@ -38,6 +38,7 @@ import type {
   BacktestBarsResponse,
   BacktestResult,
   BrokerCredentialsInput,
+  BrokerSpecsReadonly,
   BrokerTokenInfo,
   UpstoxRedirectInfo,
   ChartRunResponse,
@@ -868,6 +869,8 @@ export const api = {
   // --- Autonomous trading core ---
 
   brokerTokenStatus: () => request<BrokerTokenInfo[]>("/broker/token-status"),
+  // BRK-1 C: the values the connect guide copies into the broker (ATP's redirect address, the server IP).
+  brokerSpecs: () => request<BrokerSpecsReadonly>("/broker/specs"),
 
   upstoxRedirectUrl: () => request<UpstoxRedirectInfo>("/broker/upstox/redirect-url"),
   upstoxOAuthStart: (accountLabel = "primary") =>

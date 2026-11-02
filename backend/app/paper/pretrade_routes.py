@@ -48,6 +48,9 @@ class CheckBody(BaseModel):
     price: float | None = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     ltp: float | None = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)     # the LTP on his screen
     only: list[str] | None = Field(default=None, max_length=20)
+    # M76 MP-3: the workspace's open chart (instrument key + timeframe) when the ticket opens beside it (M76Q-7)
+    chart_instrument: str | None = Field(default=None, min_length=1, max_length=100)
+    chart_tf: Literal["1m", "3m", "5m", "15m", "30m", "1h", "1d"] | None = None
 
 
 class AcceptBody(BaseModel):
@@ -76,7 +79,7 @@ async def checks(body: CheckBody, user: User = Depends(require_trader), session:
     accepted = await pw.accepted(user, instrument)
     await session.commit()                         # the request's own session is done before the checks open theirs
     draft = pc.Draft(underlying, body.expiry, body.strike, body.right, body.side, body.lots, body.order_type, body.product,
-                     body.price, body.ltp)
+                     body.price, body.ltp, body.chart_instrument, body.chart_tf)
     out = await pc.run(factory, user, draft, settings, accepted=accepted, only=body.only)
     return {**out, "accepted": sorted(accepted), "instrument": instrument, "budget_ms": int(pc.BUDGET_S * 1000),
             "switches": {w: {"on": settings.on[w], "ask": settings.ask[w]} for w in pw.WARNING_IDS}}

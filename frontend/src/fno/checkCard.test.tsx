@@ -32,6 +32,12 @@ const ALL = {
     { id: "limit_far_from_ltp", severity: "mistake" as const, text: "Limit 182.00 · LTP 160.40 · 13.5% away · your band 5%" },
     { id: "market_state", severity: "fact" as const, text: "Market: pre-open (09:00-09:15)" },
     { id: "mis_cutoff", severity: "fact" as const, text: "MIS · your square-off 15:10 · 12 min left" },
+    // M76 MP-3: structure lines (the server sends them after the facts; the card keeps them last)
+    { id: "room", severity: "fact" as const, text: "Next seller area (daily, 24600.00 - 24680.00): 62.00 points above the last close 24538.00 · ATP chart readers" },
+    { id: "counter_trend", severity: "fact" as const, text: "Daily trend: down · last structure event: BOS down at 24380.00 · your setup: bullish · ATP chart readers" },
+    { id: "trend_conflict", severity: "fact" as const, text: "1-hour trend: down · your setup: bullish · ATP chart readers" },
+    { id: "area_conflict", severity: "fact" as const, text: "Last close 24538.00 inside a seller area (1-hour, 24520.00 - 24560.00) · your setup: bullish · ATP chart readers" },
+    { id: "strike_in_area", severity: "fact" as const, text: "Short 24500.00 PE inside a buyer area (daily, 24420.00 - 24520.00) · ATP chart readers" },
   ],
 };
 
@@ -39,7 +45,8 @@ describe("M76 MP-2: every warning type reaches the one card from its source", ()
   it("each type, once, worst first (the three pure mistakes, then the facts)", () => {
     const lines = assembleLines({ ...ALL, switches: ON });
     expect(lines.map((l) => l.id)).toEqual(["duplicate_order", "limit_far_from_ltp", "margin_short", "market_state", "expiry_day", "mis_cutoff",
-      "fo_ban", "event", "price_source", "liquidity_limits", "own_limits", "own_limits"]);
+      "fo_ban", "event", "price_source", "liquidity_limits", "own_limits", "own_limits",
+      "counter_trend", "trend_conflict", "area_conflict", "strike_in_area", "room"]);
     expect(new Set(lines.map((l) => l.id))).toEqual(new Set(WARNING_IDS));
     expect(lines.slice(0, 3).every((l) => l.severity === "mistake")).toBe(true);
     expect(lines.some((l) => l.text.startsWith("Waits for your price"))).toBe(false);          // a status line, not a warning

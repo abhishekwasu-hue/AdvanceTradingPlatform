@@ -447,6 +447,12 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
         answer.chips = answer_cards.build_chips(final.chips, calls)
         # M72 PR-5 (CP-4): a chart the planner read is drawn by code (the headline's mini chart and the structure card)
         answer.chart_headline, answer.structure_card = chart_answer.chart_parts(calls, result_data)
+        if answer.chart_headline is not None:
+            # DATA-FIX D1 (owner 2 Nov): market open -> the live price beside the last close, and the area line from it
+            head = answer.chart_headline
+            live = await chart_answer.live_price(ctx, str(head.get("symbol") or ""), str((head.get("chart") or {}).get("exchange") or "NSE"))
+            if live is not None:
+                answer.chart_headline, answer.structure_card = chart_answer.chart_parts(calls, result_data, live)
         from app.ai import drafts
         answer.drafts = drafts.build_drafts(calls, result_data)            # M72 PR-6: editable drafts, nothing saved or run
         if answer.chart_headline is not None and answer.chart_headline.get("chart"):

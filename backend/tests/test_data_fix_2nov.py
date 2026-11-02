@@ -52,3 +52,32 @@ def test_worker_market_read_uses_the_analytics_token_when_the_daily_login_ended(
         async with _session_factory() as session:
             return await worker._market_memory(session, now)
     assert _run(go(NOW)) >= 2 + len(mm.CUES)            # NIFTY 50 + NIFTY BANK + cues, not the global cues alone
+
+
+def test_chart_card_says_where_the_price_is_from_the_live_price():
+    """D1 (owner 2 Nov): last close 23,053.10 inside the supply 23,020.95-23,162.70; live 23,339 is above it."""
+    from app.ai import chart_answer, copilot_chat
+    from app.ai.tools import ToolResult
+    res = ToolResult(True, {"last_close": 23053.10, "official_close": {"close": 23053.10, "date": "2026-10-30"}}, None, "x")
+    zones = ToolResult(True, {"bands": [{"low": 23020.95, "high": 23162.70, "role": "bearish"}]}, None, "x")
+    closed = copilot_chat.chart_headline("NIFTY", "1d", res, zones)
+    assert closed["area"]["where"] == "inside" and closed["live_price"] is None and closed["price"] == 23053.10
+    live = copilot_chat.chart_headline("NIFTY", "1d", res, zones, {"price": 23339.05, "at": "2026-11-02T06:02:00+00:00"})
+    assert live["price"] == 23053.10 and live["price_label"] == "Last close"          # the close stays shown
+    assert live["live_price"] == 23339.05 and live["live_at"] == "2026-11-02T06:02:00+00:00"
+    assert live["area"]["where"] == "below"                                            # the area is below the live price
+    eng = chart_answer.engine_headline({"symbol": "NIFTY", "last_close": 23053.10, "timeframe": "1d",
+                                        "areas": [{"low": 23020.95, "high": 23162.70, "side": "seller"}]},
+                                       {"price": 23339.05, "at": None})
+    assert eng["live_price"] == 23339.05 and eng["area"]["where"] == "below"
+
+
+def test_live_price_is_none_while_the_market_is_closed(monkeypatch):
+    from app.ai import chart_answer
+    from app.market_data import calendar
+
+    async def closed(*a, **k):
+        return SimpleNamespace(is_open=False)
+    monkeypatch.setattr(calendar, "market_session_status", closed)
+    ctx = SimpleNamespace(session=None, now=None)
+    assert _run(chart_answer.live_price(ctx, "NIFTY", "NSE")) is None

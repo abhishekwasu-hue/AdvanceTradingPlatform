@@ -39,7 +39,10 @@ export interface MarketLine {
 /** CU3: the chart answer's headline numbers (all from the tools): the last close, the trend word on the asked timeframe,
  * the nearest stored area with its distance, and the chart the card draws (the Charts page's symbol and timeframe). */
 export interface AnswerHeadline {
-  symbol: string; price: number | null; price_label: string; as_of: string | null; trend: "up" | "down" | "sideways" | null; timeframe: string;
+  symbol: string; price: number | null; price_label: string; as_of: string | null;
+  /** DATA-FIX D1 (owner 2 Nov): the live price and its time while the market is open (absent / null otherwise); the
+   * area's `where` is then said from it. */
+  live_price?: number | null; live_at?: string | null; trend: "up" | "down" | "sideways" | null; timeframe: string;
   area: { side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number; distance_pct: number | null;
           /** M78 (F3): the area's own timeframe and state, when the server sends them. */
           timeframe?: string | null; state?: string | null } | null;

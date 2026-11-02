@@ -74,3 +74,36 @@ describe("TT12-1 one-time notice", () => {
     expect(todayShellSource).not.toContain("OneTimeNoticesV2");
   });
 });
+
+/** M68 TS-6: the one-time "ATP no longer pre-sets trading values" notice for an existing user - the server's own link
+ * words; saving a Trade setting marks it seen, so the shell re-reads. */
+describe("M68 TS-6 one-time notice", () => {
+  const TS6: OneTimeNotice = {
+    id: "no_presets_review", text: "ATP no longer pre-sets trading values — review your Trade settings",
+    link: "/settings/trade-settings", label: "Open Trade settings",
+  };
+
+  it("shows the exact text with a way to Trade settings in the server's words", () => {
+    const html = renderToStaticMarkup(<MemoryRouter><NoticeCard notice={TS6} onDismiss={() => undefined} /></MemoryRouter>);
+    expect(html).toContain("ATP no longer pre-sets trading values — review your Trade settings");
+    expect(html).toContain('href="/settings/trade-settings"');
+    expect(html).toContain("Open Trade settings");
+    expect(html).not.toContain("Open Risk limits");
+  });
+
+  it("a notice without its own link words keeps \"Open Risk limits\"", () => {
+    const html = renderToStaticMarkup(<MemoryRouter><NoticeCard notice={NOTICE} onDismiss={() => undefined} /></MemoryRouter>);
+    expect(html).toContain("Open Risk limits");
+  });
+
+  it("saving a Trade setting tells the shell to re-read", async () => {
+    const { saveTradeSettings } = await import("../settings/tradeSettings");
+    const heard = vi.fn();
+    const target = new EventTarget();
+    vi.stubGlobal("window", target);
+    target.addEventListener(NOTICES_CHANGED, heard);
+    const fetcher = vi.fn(async () => ({ sections: [], admin: false, page: "/settings/trade-settings" })) as never;
+    await saveTradeSettings({ "position_size.lots": 2 }, fetcher);
+    expect(heard).toHaveBeenCalledTimes(1);
+  });
+});

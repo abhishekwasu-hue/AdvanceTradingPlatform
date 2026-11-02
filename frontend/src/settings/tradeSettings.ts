@@ -6,7 +6,7 @@
  * Advanced. Facts (set by the exchange or the broker) are shown as information, never as a control.
  */
 import { useEffect, useState } from "react";
-import { request } from "../api/client";
+import { NOTICES_CHANGED, request } from "../api/client";
 import { GLOSSARY, type GlossaryKey } from "../ui/glossary";
 import { formatNumber } from "../ui/format";
 
@@ -50,6 +50,8 @@ export function loadTradeSettings(fetcher: typeof request = request): Promise<Tr
 export async function saveTradeSettings(values: Record<string, unknown>, fetcher: typeof request = request): Promise<TradeSettingsView> {
   const view = await fetcher<TradeSettingsView>("/me/trade-settings", { method: "PUT", body: JSON.stringify({ values }) });
   cached = Promise.resolve(view);          // the next ticket / form starts from what he just saved
+  // M68 TS-6: saving his Trade settings marks the one-time "review your Trade settings" notice seen; the shell re-reads.
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(NOTICES_CHANGED));
   return view;
 }
 

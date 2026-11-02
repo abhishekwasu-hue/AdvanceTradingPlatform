@@ -956,28 +956,18 @@ TAX_FNO_TURNOVER_METHOD = _choice("TAX_FNO_TURNOVER_METHOD", "ABS_PNL", TAX_FNO_
 
 # Z5 / P1-d (P1 spec 1.1, 1.2, 2.2; Phase 0): risk by default and the plan-before-trade PAPER ticket (flag
 # `risk_by_default`, off by default). TT-12 (owner decision, 24 Oct): every limit starts OFF for every user until he sets
-# his own value; the RISK_DEFAULT_* values below are no longer applied to anyone. They are kept only to read a settings
-# row saved before TT-12 (a save then wrote every key, so a stored value equal to one of these may not be the user's own
-# choice and counts as unset - app/risk_engine/by_default.py `explicit_keys`). A user's own values stay within the
-# bounds and the platform's risk ceilings (strictest wins - ADR-0003):
-# - RISK_DEFAULT_RISK_PER_TRADE_PCT: the most a PAPER entry may lose at its stop, % of the user's PAPER capital basis
-#   (starting capital + realised net P&L before today); RISK_DEFAULT_RISK_PER_TRADE_AMOUNT: the same cap in rupees
-#   (0 = no rupee cap). The stricter of the two is the cap; the ticket sizes the quantity from it and the stop distance.
+# his own value (risk per trade, daily loss, entries per day, minimum reward:risk - Settings > Trade settings > Risk
+# limits). M68 PR-9 (TS1-025, legacy clean-up): the former RISK_DEFAULT_* operator values are gone - nothing applied them
+# since TT-12; the old built-ins live on only as the read-only legacy marker app/risk_engine/by_default.py
+# `LEGACY_DEFAULTS` (a row saved before TT-12 counts a stored value equal to one as unset). A user's own values stay
+# within the bounds and the platform's risk ceilings (strictest wins - ADR-0003):
 # - RISK_OVERRIDE_MAX_MULTIPLE: a deliberate, logged and counted override may size up to this many times the cap, never
 #   more (and never past the platform ceiling); RISK_OVERRIDE_MIN_REASON_CHARS: the override needs a reason this long.
-# - RISK_DEFAULT_DAILY_LOSS_PCT: today's PAPER net P&L (realised + today's open marks) at or below minus this % of the
-#   capital basis locks new PAPER entries for the rest of the IST day. Exits are never locked (ADR-0004).
-# - RISK_DEFAULT_MAX_TRADES_PER_DAY: new PAPER entries per IST day (0 = no limit).
-# - RISK_DEFAULT_MIN_RR: a plan's reward:risk (target vs stop, from the entry) must be at least this (only when he set it).
+# - Exits are never locked by any of these limits (ADR-0004).
 # - The cost line's brokerage per order and slippage estimate are the paper broker's own (`PaperBroker`), so the ticket
 #   shows what a PAPER fill is charged.
-RISK_DEFAULT_RISK_PER_TRADE_PCT = _bounded_float("RISK_DEFAULT_RISK_PER_TRADE_PCT", 1.0, 0.05, 5.0)
-RISK_DEFAULT_RISK_PER_TRADE_AMOUNT = _bounded_float("RISK_DEFAULT_RISK_PER_TRADE_AMOUNT", 0.0, 0.0, 10_000_000.0)
 RISK_OVERRIDE_MAX_MULTIPLE = _bounded_float("RISK_OVERRIDE_MAX_MULTIPLE", 2.0, 1.0, 5.0)
 RISK_OVERRIDE_MIN_REASON_CHARS = _bounded_int("RISK_OVERRIDE_MIN_REASON_CHARS", 10, 1, 200)
-RISK_DEFAULT_DAILY_LOSS_PCT = _bounded_float("RISK_DEFAULT_DAILY_LOSS_PCT", 2.0, 0.1, 20.0)
-RISK_DEFAULT_MAX_TRADES_PER_DAY = _bounded_int("RISK_DEFAULT_MAX_TRADES_PER_DAY", 10, 0, 500)
-RISK_DEFAULT_MIN_RR = _bounded_float("RISK_DEFAULT_MIN_RR", 1.5, 0.0, 10.0)
 
 # Z5 (Trade port, `check_vix_spike_halt.py` + `trading_engine.check_vix_spike_halt`): the India VIX gate. Flag `vix_gate`
 # (off by default): India VIX readings of the day are captured for the organisation (market memory, through its own broker

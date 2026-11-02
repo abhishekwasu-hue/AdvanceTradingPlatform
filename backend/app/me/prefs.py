@@ -454,6 +454,7 @@ class NoticesPrefs(_Prefs):
     marks; what a notice says and who gets it live in app/me/notices.py."""
     limits_not_set_seen_at: MarkTime = Field(default=None, description="the 'risk limits are now not set' notice was seen")
     risk_limits_off_seen_at: MarkTime = Field(default=None, description="the M64 'risk limits are now off by default' notice was seen")
+    no_presets_review_seen_at: MarkTime = Field(default=None, description="the M68 TS-6 'ATP no longer pre-sets trading values' notice was seen")
 
 
 class PcrZonesPrefs(_Prefs):

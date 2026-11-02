@@ -72,7 +72,10 @@ def _hybrid_dict(row: ChartAnalysisRecord, parsed: dict[str, Any] | None, *, wit
             "billed_to_user_key": bool(row.billed_to_user_key), "cost_usd": round(float(row.cost_usd or 0.0), 6),
             "created_at": _iso(row.created_at), "analysed_at": _iso(row.analysed_at),
             "summary": hybrid.summary(done) if done else None, "result": None, "hybrid": done if with_result else None,
-            "pick": hybrid.stored_pick(row.result_json), "share": None,
+            "pick": hybrid.stored_override(row.result_json), "share": None,
+            # M84: what the chart showed and the values still to ask for (each with its exact reason), before the result
+            "read_from_chart": done.get("read_from_chart") if done else hybrid.stored_read(row.result_json)[0],
+            "needs": [] if done else hybrid.stored_read(row.result_json)[1],
             "label": done["label"] if done else hybrid.LABEL_CODE_AI, "disclaimer": contract.DISCLAIMER}
 
 
@@ -114,12 +117,16 @@ async def own(session: AsyncSession, user: User, item_id: int) -> ChartAnalysisR
 
 async def add_item(session: AsyncSession, user: User, tenant: Tenant, settings: Dict[str, Any], clean: imaging.CleanImage, *,
                    mode: str, source: str, source_host: Optional[str], now: Optional[datetime] = None,
-                   pick: dict[str, str] | None = None) -> ChartAnalysisRecord:
+                   pick: dict[str, str | None] | None = None, read: dict[str, Any] | None = None) -> ChartAnalysisRecord:
     """Stores the cleaned image and its row. The plan limit is checked first (nothing is written when it refuses).
-    A hybrid item keeps the symbol / timeframe the user picked with the row (`_pick`, until its result replaces it)."""
+    A hybrid item keeps the user's own symbol / timeframe with the row (`_pick`, until its result replaces it; M84: either
+    may be None - read from the chart) and, on a re-run, what the chart already showed (`_read`, no second picture read)."""
     from app.chart_analyze import hybrid
     if mode == "hybrid" and pick is None:
-        raise ValueError("a hybrid item needs the user's pick")
+        raise ValueError("a hybrid item needs the user's values (either may be None)")
+    state: dict[str, Any] = {hybrid.PICK_KEY: pick}
+    if read is not None:
+        state[hybrid.READ_KEY] = read
     now = now or _utcnow()
     await limits.check_can_add(session, user, tenant, settings, now, lock=True)     # serialised per user until the commit below
     name = storage.new_name(user.tenant_id)
@@ -127,7 +134,7 @@ async def add_item(session: AsyncSession, user: User, tenant: Tenant, settings: 
     row = ChartAnalysisRecord(tenant_id=user.tenant_id, user_id=user.id, mode=mode, source=source, source_host=source_host, status=READY,
                               image_path=name, image_sha256=clean.sha256, image_width=clean.width, image_height=clean.height,
                               image_bytes=len(clean.png), created_at=now,
-                              result_json=json.dumps({hybrid.PICK_KEY: pick}, separators=(",", ":")) if mode == "hybrid" else None)
+                              result_json=json.dumps(state, separators=(",", ":")) if mode == "hybrid" else None)
     session.add(row)
     try:
         await session.flush()
@@ -141,15 +148,28 @@ async def add_item(session: AsyncSession, user: User, tenant: Tenant, settings: 
 
 
 async def analyze(session: AsyncSession, user: User, tenant: Tenant, settings: Dict[str, Any], item_id: int, *,
-                  client: Optional[Any] = None, now: Optional[datetime] = None) -> ChartAnalysisRecord:
+                  client: Any | None = None, now: datetime | None = None,
+                  change: dict[str, str | None] | None = None) -> ChartAnalysisRecord:
+    """Runs the analysis. M84, hybrid only: `change` holds the values the user typed in place (each optional; his value
+    wins over the one read from the chart). On a row still waiting for a value it fills that value in; on a finished
+    analysis with a different value it starts a NEW analysis of the same picture (the plan limits count it) and
+    returns that one."""
     now = now or _utcnow()
     row = await own(session, user, item_id)
-    pick = None
+    override: dict[str, str | None] | None = None
+    new_state: str | None = None
     if row.mode == "hybrid":
         from app.chart_analyze import hybrid
-        pick = hybrid.stored_pick(row.result_json)
-        if pick is None and row.status != DONE:
-            raise HTTPException(status_code=409, detail={"message": "Add the chart again and pick its symbol and timeframe.", "code": "pick_missing"})
+        override = hybrid.stored_override(row.result_json)
+        given = {k: v for k, v in (change or {}).items() if v}
+        if given and row.status == DONE:
+            if all(override.get(k) == v for k, v in given.items()):
+                return row
+            return await _rerun(session, user, tenant, settings, row, given, client=client, now=now)
+        if given:
+            override = {**override, **given}
+            read, _needs = hybrid.stored_read(row.result_json)
+            new_state = json.dumps({hybrid.PICK_KEY: override, **({hybrid.READ_KEY: read} if read else {})}, separators=(",", ":"))
     if row.status == DONE:
         return row
     if row.status == RUNNING and not is_stale(row, settings, now):
@@ -163,14 +183,18 @@ async def analyze(session: AsyncSession, user: User, tenant: Tenant, settings: D
     claimable = or_(ChartAnalysisRecord.status.in_((READY, FAILED)),
                     and_(ChartAnalysisRecord.status == RUNNING, or_(ChartAnalysisRecord.started_at.is_(None),
                                                                     ChartAnalysisRecord.started_at < stale_before(settings, now))))
+    claim: dict[str, Any] = {"status": RUNNING, "started_at": now, **({"result_json": new_state} if new_state is not None else {})}
     claimed = await session.execute(update(ChartAnalysisRecord).where(ChartAnalysisRecord.id == row.id, claimable)
-                                    .values(status=RUNNING, started_at=now).execution_options(synchronize_session=False))
+                                    .values(**claim).execution_options(synchronize_session=False))
     if getattr(claimed, "rowcount", 0) != 1:
         raise HTTPException(status_code=409, detail={"message": "This chart is being analysed already.", "code": "running"})
     await session.commit()
     try:
-        if pick is not None:
-            return await _run_hybrid(session, user, tenant, settings, row.id, engine, item_id, pick, client=client, now=now)
+        if override is not None:
+            from app.chart_analyze import hybrid
+            read, _needs = hybrid.stored_read(new_state or row.result_json)
+            chart = {"png": png, "width": row.image_width, "height": row.image_height}
+            return await _run_hybrid(session, user, tenant, settings, row.id, engine, item_id, override, read, chart, client=client, now=now)
         return await _run(session, user, tenant, settings, row, engine, png, item_id, client=client, now=now)
     except BaseException:
         # A cancelled request, a dropped connection or anything unexpected: the row never stays "running". The cleanup is
@@ -219,28 +243,117 @@ async def _run(session: AsyncSession, user: User, tenant: Tenant, settings: Dict
     return await own(session, user, item_id)
 
 
+READ_FAILED = "Your chart could not be read this time."
+READ_UNUSABLE = "The AI's read of your chart could not be used."
+
+
+async def _read_chart(session: AsyncSession, user: User, tenant: Tenant, settings: dict[str, Any], engine: Any, chart: dict[str, Any], *,
+                      client: Any | None, now: datetime) -> tuple[dict[str, str | None] | None, str | None, float, dict[str, Any]]:
+    """M84: the symbol and timeframe as printed on the user's picture, by the same AI picture read as "AI only" (the
+    engine's image-only instructions and parser; only its `recognised` block is used, never a price). Returns (what was
+    printed, None, cost, row values) or (None, why the picture could not be read, cost, row values). A refusal of the
+    plan or the cost cap (HTTPException) is raised to the caller."""
+    from app.chart_analyze import detect
+    try:
+        instr = engine.image_only_instructions(width=chart["width"], height=chart["height"])
+        answer = await ask(session, user, tenant, instr, chart["png"], settings, now=now, client=client)
+    except EngineUnavailable as exc:
+        return None, f"Your chart could not be read: {exc}"[:300], 0.0, {}
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - recorded as a plain reason, never a raw error to the user
+        logger.warning("Chart analysis: the picture read failed (%s)", exc.__class__.__name__)
+        return None, READ_FAILED, 0.0, {}
+    values = {"provider": answer.provider[:20], "model": (answer.model or "")[:80] or None, "billed_to_user_key": answer.billed_to_user_key}
+    if answer.error is not None:
+        return None, f"The AI could not read your chart: {answer.error}"[:300], answer.cost_usd, values
+    try:
+        raw = engine.parse_image_only(answer.text or "", width=chart["width"], height=chart["height"])
+    except Exception as exc:  # noqa: BLE001 - an unreadable reply asks the user for the values instead
+        logger.info("Chart analysis: the picture read did not parse (%s)", exc.__class__.__name__)
+        return None, READ_UNUSABLE, answer.cost_usd, values
+    return detect.printed(raw), None, answer.cost_usd, values
+
+
+async def _rerun(session: AsyncSession, user: User, tenant: Tenant, settings: dict[str, Any], row: ChartAnalysisRecord,
+                 given: dict[str, str], *, client: Any | None, now: datetime) -> ChartAnalysisRecord:
+    """M84: the user changed the symbol or timeframe on a finished analysis - a new analysis of the same stored picture
+    (the plan limits count it), with what the chart already showed reused (no second picture read)."""
+    done = (share.split(row.result_json)[0] or {}) if row.status == DONE else {}
+    old_pick: dict[str, Any] = done["pick"] if isinstance(done.get("pick"), dict) else {}
+    source: dict[str, Any] = done["pick_source"] if isinstance(done.get("pick_source"), dict) else {}
+    override = {f: given.get(f) or (old_pick.get(f) if source.get(f) == "you" else None) for f in ("symbol", "timeframe")}
+    read = done.get("read_from_chart") if isinstance(done.get("read_from_chart"), dict) else None
+    png = storage.read(row.image_path or "")
+    if png is None:
+        raise HTTPException(status_code=410, detail={"message": "The chart image is no longer stored. Add it again.", "code": "image_gone"})
+    clean = imaging.CleanImage(png=png, width=int(row.image_width or 0), height=int(row.image_height or 0), sha256=row.image_sha256 or "")
+    source_kind, host = row.source, row.source_host
+    try:
+        new = await add_item(session, user, tenant, settings, clean, mode="hybrid", source=source_kind, source_host=host, now=now,
+                             pick=override, read=read)
+    except storage.StorageUnavailable:
+        raise HTTPException(status_code=503, detail={"message": "Chart storage is not available on this server. Ask the administrator.",
+                                                     "code": "storage_unavailable"}) from None
+    return await analyze(session, user, tenant, settings, new.id, client=client, now=now)
+
+
 async def _run_hybrid(session: AsyncSession, user: User, tenant: Tenant, settings: dict[str, Any], row_id: int, engine: Any, item_id: int,
-                      pick: dict[str, str], *, client: Any | None, now: datetime) -> ChartAnalysisRecord:
-    """M59 CR-4: ATP's own reading of the stored candles for the user's pick, drawn by code; then, only when the engine
+                      override: dict[str, str | None], read: dict[str, Any] | None, chart: dict[str, Any], *, client: Any | None,
+                      now: datetime) -> ChartAnalysisRecord:
+    """M59 CR-4: ATP's own reading of the stored candles for the pick, drawn by code; then, only when the engine
     has the hybrid entry point, its AI part on those generic facts and ATP's rendered chart (never the user's picture,
     never a price read from it). Without the entry point - or when the AI part cannot run - the result is the code
-    reading alone. The layer releases the session while it builds, so only ids are used after it (no lazy loads)."""
-    from app.chart_analyze import hybrid, reading_png
+    reading alone. The layer releases the session while it builds, so only ids are used after it (no lazy loads).
+
+    M84: the pick is the user's own value where he gave one, else the value printed on his chart (one AI picture read,
+    the same as "AI only", only when a value is missing and the chart was not read before). A value that cannot be read
+    or does not map ends the run as "ready" with that value asked for, and its exact reason (`_needs`)."""
+    from app.chart_analyze import detect, hybrid, reading_png
+    cost = 0.0
+    values: dict[str, Any] = {"analysed_at": now, "engine_version": "ATP structure reading (code)"}
+    unread: str | None = None
+    if read is None and not (override.get("symbol") and override.get("timeframe")):
+        try:
+            seen, unread, cost, read_values = await _read_chart(session, user, tenant, settings, engine, chart, client=client, now=now)
+        except HTTPException:
+            await _finish(session, row_id, now, READY)
+            raise
+        values.update(read_values)
+    else:
+        seen = read
+    resolved = await detect.resolve(session, override, seen)
+    read = resolved["read"]
+    needs = resolved["needs"]
+    if unread is not None:
+        needs = [n for n in detect.unread(unread) if not override.get(n["field"])]
+
+    def state(extra: dict[str, Any] | None = None) -> str:
+        out: dict[str, Any] = {hybrid.PICK_KEY: override, **({hybrid.READ_KEY: read} if read else {}), **(extra or {})}
+        return json.dumps(out, separators=(",", ":"))
+
+    if needs:
+        await _finish(session, row_id, now, READY, result=state({hybrid.NEEDS_KEY: needs}), cost=cost, **values)
+        return await own(session, user, item_id)
+    try:
+        pick = hybrid.check_pick(resolved["pick"]["symbol"], resolved["pick"]["timeframe"])
+    except hybrid.PickError as exc:
+        await _finish(session, row_id, now, FAILED, error=str(exc)[:300], result=state(), cost=cost, **values)
+        return await own(session, user, item_id)
     try:
         reading = await hybrid.read(session, user, pick, now=now)
         png = await anyio.to_thread.run_sync(reading_png.render, reading)
     except hybrid.ReadingUnavailable as exc:
-        await _finish(session, row_id, now, FAILED, error=str(exc)[:300])
+        await _finish(session, row_id, now, FAILED, error=str(exc)[:300], result=state(), cost=cost, **values)
         return await own(session, user, item_id)
     except ValueError:
-        await _finish(session, row_id, now, FAILED, error=f"ATP has no stored candles to draw for {pick['symbol']} on this timeframe yet."[:300])
+        await _finish(session, row_id, now, FAILED, error=f"ATP has no stored candles to draw for {pick['symbol']} on this timeframe yet."[:300],
+                      result=state(), cost=cost, **values)
         return await own(session, user, item_id)
     width, height = reading_png.WIDTH, reading_png.HEIGHT
     notes: list[str] = []
     ai: dict[str, Any] | None = None
     ai_version: dict[str, str] | None = None
-    cost = 0.0
-    values: dict[str, Any] = {"analysed_at": now, "engine_version": "ATP structure reading (code)"}
     if engine_provider.supports_hybrid(engine):
         facts = hybrid.facts(reading, width=width, height=height)
         answer = None
@@ -250,13 +363,13 @@ async def _run_hybrid(session: AsyncSession, user: User, tenant: Tenant, setting
         except EngineUnavailable as exc:
             notes.append(f"The AI part did not run: {exc}")
         except HTTPException:
-            await _finish(session, row_id, now, READY)
+            await _finish(session, row_id, now, READY, result=state(), cost=cost, **values)
             raise
         except Exception as exc:  # noqa: BLE001 - the code reading still stands; the AI part is left out
             logger.warning("Chart analysis %s: the hybrid AI part failed (%s)", row_id, exc.__class__.__name__)
             notes.append("The AI part could not run this time; ATP's reading is shown on its own.")
         if answer is not None:
-            cost = answer.cost_usd
+            cost += answer.cost_usd
             values.update(provider=answer.provider[:20], model=(answer.model or "")[:80] or None, billed_to_user_key=answer.billed_to_user_key,
                           engine_version=f"{engine.name} {engine.version} / {engine.method_version}"[:80])
             if answer.error is not None:
@@ -270,7 +383,8 @@ async def _run_hybrid(session: AsyncSession, user: User, tenant: Tenant, setting
                 except Exception as exc:  # noqa: BLE001 - an unreadable reply leaves the AI part out, never a partial one
                     logger.info("Chart analysis %s: the hybrid reply did not fill the contract (%s)", row_id, exc.__class__.__name__)
                     notes.append("The AI's answer could not be read; ATP's reading is shown on its own.")
-    result = hybrid.result(pick, reading, width=width, height=height, ai=ai, notes=notes, ai_version=ai_version)
+    result = hybrid.result(pick, reading, width=width, height=height, ai=ai, notes=notes, ai_version=ai_version, read_from_chart=read,
+                           pick_source=resolved["source"])
     if await _finish(session, row_id, now, DONE, result=json.dumps(result, separators=(",", ":")), cost=cost, **values):
         await write_audit_log(session, user.tenant_id, user.id, "chart_analyze_done", f"#{row_id} hybrid {result['method']}")
         await session.commit()

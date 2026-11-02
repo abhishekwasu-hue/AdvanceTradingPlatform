@@ -2,7 +2,7 @@
 snapshot as JSON with its SHA-256; PDF / PNG / CSV are rebuilt from it on download, never stored as files).
 
 Revision ID: c4e7a9b1d3f5
-Revises: 6b9d1f3a5c27
+Revises: c4e8a2f6b031
 Create Date: 2026-11-01 18:00:00
 """
 from collections.abc import Sequence
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c4e7a9b1d3f5'
-down_revision: str | Sequence[str] | None = '6b9d1f3a5c27'
+down_revision: str | Sequence[str] | None = 'c4e8a2f6b031'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 ROLLBACK_SAFE = True

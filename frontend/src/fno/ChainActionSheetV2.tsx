@@ -15,6 +15,8 @@ import { MAX_LEGS, basket as defaultBasket, type BasketStore } from "./basket";
 import { heldPnl, heldText } from "./ticketModel";
 import { PaperBadge } from "../ui/PaperBadge";
 import { TermHint } from "../ui/TermHint";
+import { useFeatures } from "../ui/useFeatures";
+import { savedLots, useTradeSettings } from "../settings/tradeSettings";
 
 /**
  * FNO-1 (owner order section 3): tap a strike's call or put on the chain -> this sheet.
@@ -74,10 +76,12 @@ export function chartLink(target: ActionTarget, contract: FnoContract | null): s
   return contract ? chartTabPath(contract.tradingsymbol, contract.exchange) : chartsPath(target.spotSymbol);
 }
 
-export function basketAdd(store: BasketStore, target: ActionTarget, contract: FnoContract | null, side: Side): Note {
-  const ok = store.add({ underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right, side, lots: 1,
+/** M68 PR-2 (TS1-022): the leg starts with his saved lots (Trade settings > Position size), else empty - the basket asks. */
+export function basketAdd(store: BasketStore, target: ActionTarget, contract: FnoContract | null, side: Side, lots: number | null = null): Note {
+  const ok = store.add({ underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right, side, lots,
     price: target.leg.ltp, label: contract?.label ?? null, iv: target.leg.iv });
-  return ok ? { tone: "done", text: `Added to the basket: ${side === "BUY" ? "Buy" : "Sell"} 1 lot of ${labelOf(target, contract)}.` }
+  const size = lots === null ? "" : ` ${lots} lot${lots === 1 ? "" : "s"} of`;
+  return ok ? { tone: "done", text: `Added to the basket: ${side === "BUY" ? "Buy" : "Sell"}${size} ${labelOf(target, contract)}.${lots === null ? " Enter its lots in the basket." : ""}` }
     : { tone: "warn", text: `The basket is full (${MAX_LEGS} legs). Remove a leg first.` };
 }
 
@@ -129,6 +133,7 @@ export default function ChainActionSheetV2({
   const [contractProblem, setContractProblem] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const [note, setNote] = useState<Note>(null);
+  const ownLots = savedLots(useTradeSettings(useFeatures().on("ui_v2")));      // M68 PR-2: a new leg's lots are his own
   const [watchlists, setWatchlists] = useState<WatchlistV2[] | null>(null);
   const [level, setLevel] = useState("");
   const key = target ? `${target.underlying}|${target.expiry}|${target.strike}|${target.right}` : "";
@@ -153,7 +158,7 @@ export default function ChainActionSheetV2({
       setPanel(p);
       if (p === "watchlist" && watchlists === null) lists.list().then(setWatchlists).catch((e: unknown) => setNote({ tone: "warn", text: errorSentence(e) }));
     },
-    onBasket: (side) => done(basketAdd(basketStore, target, contract, side)),
+    onBasket: (side) => done(basketAdd(basketStore, target, contract, side, ownLots)),
     onWatchlist: (list) => { if (contract) void watchlistAdd(lists, contract, list).then(done); },
     onLevel: setLevel,
     onAlert: () => { if (contract) void alertSave(createAlert, contract, level, target.leg.ltp).then(done); },

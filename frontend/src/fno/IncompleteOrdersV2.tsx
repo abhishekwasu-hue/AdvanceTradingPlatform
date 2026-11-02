@@ -63,13 +63,21 @@ export function IncompleteCardV2({ item, secondsLeft, busy, onAnswer, note }: {
       {item.failure && <p className="text-t13 text-fg-muted">What stopped it: {item.failure}</p>}
       {waiting ? (
         <>
-          <p className="flex items-center gap-space-2 text-t14 text-fg" data-incomplete-part="countdown">
-            <Clock size={16} aria-hidden className="shrink-0 text-warn" />
-            <span>
-              <span className="font-semibold font-tabular" data-countdown>{countdownText(secondsLeft)}</span> left to choose. Then{" "}
-              {keep ? "the filled legs stay open" : "the filled legs are closed, sold legs first"} (your setting).
-            </span>
-          </p>
+          {item.on_no_answer === null || secondsLeft === null ? (
+            // M68 PR-3 (TS1-030): his "if I do not answer" rule is Not set - no timer, nothing happens by itself.
+            <p className="flex items-center gap-space-2 text-t14 text-fg" data-incomplete-part="no-rule">
+              <Clock size={16} aria-hidden className="shrink-0 text-warn" />
+              <span>Nothing happens by itself: the filled legs stay open until you choose.</span>
+            </p>
+          ) : (
+            <p className="flex items-center gap-space-2 text-t14 text-fg" data-incomplete-part="countdown">
+              <Clock size={16} aria-hidden className="shrink-0 text-warn" />
+              <span>
+                <span className="font-semibold font-tabular" data-countdown>{countdownText(secondsLeft)}</span> left to choose. Then{" "}
+                {keep ? "the filled legs stay open" : "the filled legs are closed, sold legs first"} (your setting).
+              </span>
+            </p>
+          )}
           <div className="grid grid-cols-1 gap-space-2 sm:grid-cols-3">
             <button type="button" onClick={() => onAnswer("complete_rest")} disabled={busy} data-incomplete-action="complete_rest"
               className="min-h-11 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand disabled:opacity-50">

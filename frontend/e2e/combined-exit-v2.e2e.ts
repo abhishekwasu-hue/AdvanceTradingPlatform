@@ -97,8 +97,8 @@ for (const size of SIZES) {
       const dialog = page.getByRole("dialog");
       await expect(dialog).toContainText("Set combined stop-loss");
       await expect(dialog.locator("[data-leg]")).toHaveCount(3);
-      // A spread on one underlying with sold legs starts on the spot level (T-D2); he picks the ₹ loss here.
-      await expect(dialog.locator("[data-measure='SPOT'] input")).toBeChecked();
+      // M68 PR-3 (TS1-031): nothing is pre-chosen (no saved Exits value) - he picks the ₹ loss here.
+      await expect(dialog.locator("[data-measure] input:checked")).toHaveCount(0);
       await dialog.locator("[data-measure='MTM_INR']").click();
       await dialog.getByTestId("combined-sl").fill("2500");
       await expect(dialog.locator("[data-preview-words]")).toHaveText(WORDS);
@@ -109,7 +109,8 @@ for (const size of SIZES) {
       await expect(dialog).toHaveCount(0);
       const set = seen.posts.filter((p) => p.url === "/paper/fno/group-exits");
       expect(set).toHaveLength(1);
-      expect(set[0].body).toMatchObject({ scope: "SELECTED", trade_ids: [301, 302, 303], measure: "MTM_INR", sl_value: 2500, target_value: null, check_mode: "TOUCH" });
+      expect(set[0].body).toMatchObject({ scope: "SELECTED", trade_ids: [301, 302, 303], measure: "MTM_INR", sl_value: 2500, target_value: null });
+      expect(set[0].body).not.toHaveProperty("check_mode");           // M68 PR-3: a ₹ exit's only check is every price (server)
 
       const chip = page.locator("[data-combined-exit='7']");
       await expect(chip).toContainText("Combined stop-loss · 3 legs");

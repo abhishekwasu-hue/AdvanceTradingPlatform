@@ -121,13 +121,15 @@ def test_levels_move_with_the_record_and_advanced_needs_intermediate(monkeypatch
     monkeypatch.setattr(app_config, "PAPER_LADDER_MIN_TRADES", 10)
     monkeypatch.setattr(app_config, "PAPER_LADDER_MIN_SESSIONS", 5)
     monkeypatch.setattr(app_config, "PAPER_LADDER_MAX_DRAWDOWN_PCT", 10.0)
-    monkeypatch.setattr(app_config, "EXPERIENCE_ADVANCED_MIN_TRADES", 40)
-    monkeypatch.setattr(app_config, "EXPERIENCE_ADVANCED_MIN_SESSIONS", 20)
+    # M68 PR-5 (TS1-057): the Advanced level counts the user's own numbers (Not set = it never opens by itself)
+    own = {"advanced_trades": 40, "advanced_sessions": 20}
+    assert experience.derive_level(40, 20, 3.0)[0] == "INTERMEDIATE"           # his numbers are Not set
     assert experience.derive_level(0, 0, 0.0)[0] == "BEGINNER"
     assert experience.derive_level(10, 4, 0.0)[0] == "BEGINNER"
     assert experience.derive_level(10, 5, 0.0)[0] == "INTERMEDIATE"
     assert experience.derive_level(10, 5, 12.0)[0] == "BEGINNER"           # drawdown beyond the ladder's limit
-    level, steps = experience.derive_level(40, 20, 3.0)
+    assert experience.derive_level(39, 20, 3.0, **own)[0] == "INTERMEDIATE"
+    level, steps = experience.derive_level(40, 20, 3.0, **own)
     assert level == "ADVANCED" and [s["reached"] for s in steps] == [True, True]
     assert steps[0]["opens"] == ["Futures"] and steps[1]["opens"] == ["Naked short options"]
     assert experience.allowed_by_level("INTERMEDIATE", "futures") and not experience.allowed_by_level("INTERMEDIATE", "naked_short_options")

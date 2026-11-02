@@ -410,6 +410,8 @@ class SymbolData:
     futures: for an index, the futures contracts fetched live from the user's broker (none = not fetched).
     futures_expected: True for an index with listed futures - its futures timeframes then need the futures volume.
     sources_tried: plain words of every source looked at, for the missing-source text.
+    history: {timeframe: HistoryBars} (M79): that timeframe's bars before `HistoryBars.cut`, already rebuilt, from
+        the stored history (read once a day); the 1-minute bars then only need to cover the time from the cut.
     """
     symbol: str
     exchange: str
@@ -421,13 +423,34 @@ class SymbolData:
     futures: tuple[FuturesContract, ...] = ()
     futures_expected: bool = False
     sources_tried: tuple[str, ...] = ()
+    history: Mapping[str, HistoryBars] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class HistoryBars:
+    """M79: one timeframe's bars rebuilt from ONE 1-minute source, every bucket ending by `cut` (a session open), with
+    the buckets that had minutes missing. Joined to the same source's newer bars only (sources are never mixed)."""
+    source: str
+    timeframe: str
+    cut: datetime
+    bars: tuple[RawBar, ...]
+    incomplete: tuple[tuple[datetime, int, int], ...] = ()
+
+
+def history_of(minutes: SourceBars, timeframe: str, cut: datetime, cal: MarketCalendar) -> HistoryBars:
+    """The stored 1-minute history before `cut` -> its `timeframe` buckets (`rebuild`, as a frame would)."""
+    built = rebuild(minutes, timeframe, cut, cal)
+    return HistoryBars(minutes.source, timeframe, cut, built.bars, built.incomplete)
 
 
 @dataclass(frozen=True)
 class BuiltFrame:
+    """`gaps` block the read; `history_gaps` lie wholly before the frame's required window (M79: the stored history
+    the engine reads "as far back as it is there") - listed for the admin, never a data problem."""
     frame: Frame
     source: str | None
     gaps: tuple[DataGap, ...]
+    history_gaps: tuple[DataGap, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -437,6 +460,7 @@ class Built:
     request: EngineRequest | None
     gaps: tuple[DataGap, ...]
     sources: Mapping[str, str | None]
+    history_gaps: tuple[DataGap, ...] = ()
 
     @property
     def data_problems(self) -> tuple[str, ...]:
@@ -496,11 +520,22 @@ def _longest_minutes(data: SymbolData) -> SourceBars | None:
     return max(found, key=lambda b: len(b.bars)) if found else None
 
 
+def _split(starts: Iterable[datetime], required: datetime) -> tuple[list[datetime], list[datetime]]:
+    """(STARTs at or after `required`, STARTs before it)."""
+    starts = list(starts)
+    return [s for s in starts if s >= required], [s for s in starts if s < required]
+
+
 def build_frame(data: SymbolData, timeframe: str, start: datetime, as_of: datetime, cal: MarketCalendar,
-                futures_timeframes: Sequence[str] = ("5m",)) -> BuiltFrame:
-    """One timeframe's Frame for `data` with closed bars in (start, as_of], and its gaps."""
+                futures_timeframes: Sequence[str] = ("5m",), required: datetime | None = None) -> BuiltFrame:
+    """One timeframe's Frame for `data` with closed bars in (start, as_of], and its gaps. `required` (M79, runner
+    setting `history_days`): the first bar START of the window whose gaps block the read; the bars from `start` up to
+    it are the stored history, handed in as they are, and their gaps are `history_gaps` (never a data problem). None
+    (or not after `start`) = the whole frame is required, as before."""
     sym = data.symbol
+    check = start if required is None or required <= start else required
     gaps: list[DataGap] = []
+    history: list[DataGap] = []
     source: str | None = None
     raw: tuple[RawBar, ...] = ()
     extended: dict[date, bool | None] | None = None
@@ -513,10 +548,16 @@ def build_frame(data: SymbolData, timeframe: str, start: datetime, as_of: dateti
         base = _minutes(data, timeframe)
         assert base is not None
         built = rebuild(base, timeframe, as_of, cal)
+        old = data.history.get(timeframe)
+        if old is not None and old.source == base.source:          # the stored history + the same source's newer bars
+            built = Rebuilt(tuple(b for b in old.bars if b.end <= old.cut) + tuple(b for b in built.bars if b.start >= old.cut),
+                            tuple(i for i in old.incomplete if i[0] < old.cut) + tuple(i for i in built.incomplete if i[0] >= old.cut))
         source, raw = f"{base.source} (rebuilt from 1-minute bars)" if timeframe != "1m" else base.source, built.bars
-        part = [s for s, _, _ in built.incomplete if s >= start]
+        order = [b.start for b in built.bars]
         detail = {s: f"{have} of {span} minutes there" for s, have, span in built.incomplete}
-        gaps += _grouped(sym, timeframe, INCOMPLETE_BARS, part, detail, [b.start for b in built.bars])
+        now_part, old_part = _split((s for s, _, _ in built.incomplete if s >= start), check)
+        gaps += _grouped(sym, timeframe, INCOMPLETE_BARS, now_part, detail, order)
+        history += _grouped(sym, timeframe, INCOMPLETE_BARS, old_part, detail, order)
     raw = tuple(r for r in raw if r.start >= start)
     bars, _, bad = _to_bars(raw, as_of, extended)
     if source is None:
@@ -524,43 +565,57 @@ def build_frame(data: SymbolData, timeframe: str, start: datetime, as_of: dateti
         gaps.append(DataGap(sym, timeframe, MISSING_SOURCE, 0, detail=f"looked at: {tried}"))
     else:
         if bad:
-            gaps += _grouped(sym, timeframe, INVALID_BARS, bad, {}, [r.start for r in raw])
-        gaps += missing_bars(sym, timeframe, bars, start, as_of, cal)
+            now_part, old_part = _split(bad, check)
+            gaps += _grouped(sym, timeframe, INVALID_BARS, now_part, {}, [r.start for r in raw])
+            history += _grouped(sym, timeframe, INVALID_BARS, old_part, {}, [r.start for r in raw])
+        gaps += missing_bars(sym, timeframe, bars, check, as_of, cal)
+        if check > start:
+            history += missing_bars(sym, timeframe, bars, start, check, cal)
     fut: tuple[float | None, ...] | None = None
     if data.futures_expected and timeframe in futures_timeframes:
         fut, misses = futures_volume(bars, data.futures)
         if not data.futures and bars:
             misses = tuple((b.start, "no futures bars were fetched from your broker") for b in bars if not b.closing_auction)
-        gaps += _grouped(sym, timeframe, MISSING_FUTURES_VOLUME, [s for s, _ in misses], dict(misses), [b.start for b in bars])
+        now_part, old_part = _split((s for s, _ in misses), check)
+        gaps += _grouped(sym, timeframe, MISSING_FUTURES_VOLUME, now_part, dict(misses), [b.start for b in bars])
+        history += _grouped(sym, timeframe, MISSING_FUTURES_VOLUME, old_part, dict(misses), [b.start for b in bars])
     frame = Frame(timeframe=timeframe, bars=tuple(bars), futures_volume=fut)
-    return BuiltFrame(frame, source, tuple(sorted(gaps, key=lambda g: (GAP_KINDS.index(g.kind), g.first or start))))
+
+    def order(found: list[DataGap]) -> tuple[DataGap, ...]:
+        return tuple(sorted(found, key=lambda g: (GAP_KINDS.index(g.kind), g.first or start)))
+    return BuiltFrame(frame, source, order(gaps), order(history))
 
 
 def build_request(data: SymbolData, timeframes: Sequence[str], signal_timeframe: str, now: datetime,
                   starts: Mapping[str, datetime], cal: MarketCalendar, settings: Mapping[str, Any] | None = None,
-                  futures_timeframes: Sequence[str] = ("5m",)) -> Built:
+                  futures_timeframes: Sequence[str] = ("5m",), required: Mapping[str, datetime] | None = None) -> Built:
     """The EngineRequest for one symbol at `now`: `as_of` is the END of the signal timeframe's last bar closed by
-    `now`, and every frame holds only bars closed by that `as_of` (none after it). starts: {timeframe: the window's
-    first bar START}. Every gap of every frame is listed (`Built.gaps`, `Built.data_problems`); the signal frame's
+    `now`, and every frame holds only bars closed by that `as_of` (none after it). starts: {timeframe: the frame's
+    first bar START}. required (M79): {timeframe: the first bar START whose gaps block} for a frame that reaches back
+    into the stored history; a timeframe not in it is required from its start. Every blocking gap of every frame is
+    listed (`Built.gaps`, `Built.data_problems`), the history's gaps apart (`Built.history_gaps`); the signal frame's
     missing bars are counted up to `now` (a source that stopped delivering is a gap, not a quiet old `as_of`)."""
     order = list(dict.fromkeys([signal_timeframe, *timeframes]))
     now = _ist(now)
-    signal = build_frame(data, signal_timeframe, _ist(starts[signal_timeframe]), now, cal, futures_timeframes)
+    need = {tf: _ist(v) for tf, v in (required or {}).items()}
+    signal = build_frame(data, signal_timeframe, _ist(starts[signal_timeframe]), now, cal, futures_timeframes,
+                         need.get(signal_timeframe))
     as_of = signal.frame.bars[-1].end if signal.frame.bars else None
     built: dict[str, BuiltFrame] = {}
     for tf in order:
-        built[tf] = build_frame(data, tf, _ist(starts[tf]), as_of or now, cal, futures_timeframes)
+        built[tf] = build_frame(data, tf, _ist(starts[tf]), as_of or now, cal, futures_timeframes, need.get(tf))
     # The signal frame's gaps are counted up to `now`: bars that should have closed after its last one are missing.
     tail = [g for g in signal.gaps if g.kind == MISSING_BARS and g.first is not None and as_of is not None and g.first >= as_of]
     if tail:
         built[signal_timeframe] = dataclasses.replace(built[signal_timeframe], gaps=built[signal_timeframe].gaps + tuple(tail))
     asked = order
+    history = tuple(g for tf in asked for g in built[tf].history_gaps)
     if as_of is None:                                  # nothing to read; every frame's gaps are still listed
-        return Built(None, tuple(g for tf in asked for g in built[tf].gaps), {tf: built[tf].source for tf in asked})
+        return Built(None, tuple(g for tf in asked for g in built[tf].gaps), {tf: built[tf].source for tf in asked}, history)
     request = EngineRequest(symbol=data.symbol, as_of=as_of, frames={tf: built[tf].frame for tf in asked}, calendar=cal,
                             settings=dict(settings or {}))
     gaps = tuple(g for tf in asked for g in built[tf].gaps)
-    return Built(request, gaps, {tf: built[tf].source for tf in asked})
+    return Built(request, gaps, {tf: built[tf].source for tf in asked}, history)
 
 
 # --- data problems and the probe ---------------------------------------------------------------------------------------
@@ -585,7 +640,7 @@ def gap_report(gaps: Iterable[DataGap]) -> dict[str, dict[str, list[str]]]:
 
 
 __all__ = ["DAILY", "MINUTES", "GAP_KINDS", "MISSING_SOURCE", "MISSING_BARS", "INCOMPLETE_BARS", "MISSING_FUTURES_VOLUME",
-           "INVALID_BARS", "RawBar", "SourceBars", "FuturesContract", "DataGap", "SymbolData", "BuiltFrame", "Built", "Rebuilt",
+           "INVALID_BARS", "RawBar", "SourceBars", "HistoryBars", "history_of", "FuturesContract", "DataGap", "SymbolData", "BuiltFrame", "Built", "Rebuilt",
            "is_index_key", "market_calendar", "session_open", "session_close", "is_session_day", "from_lake_rows",
            "from_broker_bars", "rebuild", "futures_volume", "expected_starts", "missing_bars", "extended_marks", "build_frame",
            "build_request", "problem_tokens", "merge_problems", "gap_report"]

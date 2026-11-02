@@ -103,4 +103,14 @@ def answer_terms(text: str) -> list[str]:
     return sorted({m.group(0).lower() for m in _ANSWER.finditer(re.sub(r"\s+", " ", text or ""))})
 
 
-__all__ = ["ASK_PATTERNS", "answer_terms"]
+# M72 PR-10 (F17): the Marathi / Hindi phrases that ask for a proposal (an alert, a pause, a strategy review) - read by
+# app/ai/tools/proposals.py only when the user's own answer language is Marathi / Hindi; the quote guard still applies.
+INTENT_PHRASES: dict[str, tuple[str, ...]] = {
+    "propose_pause_deployment": ("pause कर", "थांबवून ठेव", "रोककर रख", "pause kar", "thambavun thev", "rok kar rakh"),
+    "propose_alert": ("अलर्ट लाव", "अलर्ट सेट कर", "मला कळव", "अलर्ट लगा", "अलर्ट सेट करो", "मुझे बताना", "मुझे बता देना",
+                      "alert lav", "alert set kar", "mala kalav", "alert laga", "mujhe batana", "mujhe bata dena"),
+    "propose_strategy_review": ("स्ट्रॅटेजी तपास", "स्ट्रैटेजी जांच", "strategy tapas", "strategy check kar", "strategy jaanch", "strategy janch"),
+}
+
+
+__all__ = ["ASK_PATTERNS", "answer_terms", "INTENT_PHRASES"]

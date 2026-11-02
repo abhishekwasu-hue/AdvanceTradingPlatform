@@ -323,4 +323,4 @@ def test_routes_are_classified_for_tenancy_and_the_migration_is_rollback_safe():
                          ("GET", "/api/studies/{study_id}/json"), ("DELETE", "/api/studies/{study_id}")):
         assert ROUTE_TABLE[(method, path)].startswith(("member", "self"))
     text = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "c4e7a9b1d3f5_m77_copilot_studies.py").read_text()
-    assert "ROLLBACK_SAFE = True" in text and "down_revision: str | Sequence[str] | None = '6b9d1f3a5c27'" in text
+    assert "ROLLBACK_SAFE = True" in text and "down_revision: str | Sequence[str] | None = 'c4e8a2f6b031'" in text

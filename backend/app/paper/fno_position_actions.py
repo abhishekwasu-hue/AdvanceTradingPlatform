@@ -102,10 +102,14 @@ async def _hedge_warning(session: AsyncSession, trade: TradeRecord) -> Optional[
     return fno_groups.hedge_warning(trade, legs)
 
 
-async def _price(session: AsyncSession, user: User, trade: TradeRecord) -> Tuple[float, str]:
+async def _price(session: AsyncSession, user: User, trade: TradeRecord, *, exit_only: bool = False) -> Tuple[float, str]:
+    """The live / recent price (an entry at a stale price is refused, 409). `exit_only` (a part exit - ADR-0004, M68 PR-3
+    TS1-097): never refused - the older price, else the entry price, labelled (approval.exit_now_price)."""
     from app.ai.worker_bridge import price_lookup_for_user
-    from app.execution.approval import exit_price
+    from app.execution.approval import exit_now_price, exit_price
     try:
+        if exit_only:
+            return await exit_now_price(session, trade, await price_lookup_for_user(session, user))
         return await exit_price(session, trade, await price_lookup_for_user(session, user))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -150,7 +154,7 @@ async def exit_part(session: AsyncSession, user: User, trade_id: int, *, lots: i
     warning = await _hedge_warning(session, trade)
     if warning and not confirm:
         return {"status": "CONFIRM", "warning": warning, "closed": None, "remaining_lots": held}
-    price, source = await _price(session, user, trade)
+    price, source = await _price(session, user, trade, exit_only=True)
     marks = {PART_REF: tag}
     if lots == held:
         target = trade

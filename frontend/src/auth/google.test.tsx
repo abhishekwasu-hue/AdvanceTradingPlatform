@@ -24,8 +24,9 @@ describe("Google sign-in button (GS-1)", () => {
     expect(googleEnabled({ google: true }, true)).toBe(false);
   });
 
-  it("shows on the login form only", () => {
-    expect(accountSource).toContain('{mode === "signin" && <GoogleSignInButton />}');      // UX1: the sign-in screen
+  it("shows on the login form only (without ui_v2: GS-1's place, under the button)", () => {
+    // M73: with ui_v2 the provider list sits at the top instead (social.test.tsx).
+    expect(accountSource).toContain('{mode === "signin" && !v2 && <GoogleButton show={providers.some((p) => p.id === "google")} />}');
   });
 });
 

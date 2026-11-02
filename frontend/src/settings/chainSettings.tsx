@@ -25,9 +25,10 @@ const MAX_EDGE = 10;
 
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
-/** P1 (27 Oct): on an expiry day the chain and the spread builder open the next expiry (default ON). */
+/** P1 (27 Oct): on an expiry day the chain and the spread builder open the next expiry. M68 PR-4 (TS1-044): only when he
+ * turned it on - Not set (never saved) = off, the nearest expiry opens. Settings › Trade settings › Options wins. */
 export function readExpiryDayNext(raw: unknown): boolean {
-  return !(raw && typeof raw === "object" && (raw as { expiry_day_next?: unknown }).expiry_day_next === false);
+  return !!(raw && typeof raw === "object" && (raw as { expiry_day_next?: unknown }).expiry_day_next === true);
 }
 
 export function readPcrZones(raw: unknown): PcrZones {
@@ -85,7 +86,7 @@ export default function ChainSettingsV2({ fetcher = request }: { fetcher?: typeo
     setBusy(true);
     try {
       const q = version === null ? "" : `?version=${version}`;
-      const r = await fetcher<{ value: unknown; version: number }>(`/me/prefs/${CHAIN_NAMESPACE}${q}`, { method: "PUT", body: JSON.stringify({ pcr_zones: value, expiry_day_next: nextOnExpiry }) });
+      const r = await fetcher<{ value: unknown; version: number }>(`/me/prefs/${CHAIN_NAMESPACE}${q}`, { method: "PUT", body: JSON.stringify({ pcr_zones: value, expiry_day_next: nextOnExpiry || null }) });
       setForm(pcrFormOf(readPcrZones(r.value)));
       setNextOnExpiry(readExpiryDayNext(r.value));
       setVersion(r.version);

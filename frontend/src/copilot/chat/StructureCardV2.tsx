@@ -25,7 +25,7 @@ function AreaList({ title, areas, tone }: { title: string; areas: CardArea[]; to
         <ul className="mt-space-1 space-y-space-1">
           {areas.map((a) => (
             <li key={`${a.from}-${a.to}`} className="font-tabular" data-area={a.where} aria-label={cardAreaText(a, num)}>
-              <span className={cx("block whitespace-nowrap text-t12 font-semibold md:text-t13", tone === "up" ? "text-up" : "text-down")}>{num(a.from)} – {num(a.to)}</span>
+              <span className={cx("block break-words text-t12 font-semibold md:text-t13", tone === "up" ? "text-up" : "text-down")}>{num(a.from)} – {num(a.to)}</span>
               <span className="block text-t12 text-fg-muted">{areaNote(a, num)}</span>
             </li>
           ))}

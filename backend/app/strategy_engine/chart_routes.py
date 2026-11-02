@@ -76,11 +76,13 @@ async def chart_run(
     if timeframe_minutes(body.timeframe) is None:
         raise HTTPException(status_code=400, detail=f"Unknown timeframe {body.timeframe!r}")
     # A bar-by-bar walk is seconds of CPU on a long history: run it off the event loop.
+    from app.paper import paper_settings  # M68 PR-7 (TS1-066): his capital and paper charges (parity)
+    risk, charges = await paper_settings.backtest_inputs(session, user, body.risk_config or RiskConfig())
     return await run_in_threadpool(evaluate_on_candles, strategy, bars_to_dataframe(body.candles[-MAX_BARS:]), body.timeframe, body.symbol,
-                                   body.risk_config or RiskConfig())
+                                   risk, charges)
 
 
-def evaluate_on_candles(strategy, df, timeframe: str, symbol: str, risk: RiskConfig) -> ChartRunResponse:
+def evaluate_on_candles(strategy, df, timeframe: str, symbol: str, risk: RiskConfig, charges=None) -> ChartRunResponse:
     """Walks `strategy` over `df` (candles at `timeframe`) - shared by the chart-run endpoint and
     the AI Copilot's strategy interview (Phase AP), which ranks strategies on the same evidence."""
     base = timeframe_minutes(timeframe)
@@ -109,7 +111,7 @@ def evaluate_on_candles(strategy, df, timeframe: str, symbol: str, risk: RiskCon
         out.reason = f"Not enough candles yet: needs {', '.join(short)} - load more history or a finer timeframe"
         return out
 
-    result = run_backtest(strategy, df, symbol.upper(), timeframe, risk)
+    result = run_backtest(strategy, df, symbol.upper(), timeframe, risk, charges=charges)
     out.trades, out.total_trades, out.win_rate = result.trades, result.total_trades, result.win_rate
     out.net_pnl, out.profit_factor = result.net_pnl, result.profit_factor
     out.last_signal = strategy.analyze(frames, symbol.upper())

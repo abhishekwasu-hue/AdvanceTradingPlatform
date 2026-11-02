@@ -18,11 +18,13 @@ describe("day-one fix 6: the adopt form shows the idea's own settings and never 
     ]);
   });
 
-  it("an idea starts on a stock; the summary says it trades the shares", () => {
+  it("an idea never starts on a pre-picked symbol; a stock's summary says it trades the shares", () => {
     expect(SYMBOLS).toContain(IDEA_SYMBOL);
     expect(startSummary(IDEA_SYMBOL, { timeframes: ["day"] })).toBe("Trades RELIANCE shares, held for days. Paper money only; your risk limits apply.");
     const form = readFileSync("src/paperbot/PaperBotV2.tsx", "utf8");
-    expect(form).toContain('if (Object.keys(initialTemplate.params).length > 0) setSymbolChoice((cur) => (cur === "NIFTY 50" ? IDEA_SYMBOL : cur));');
+    // M68 PR-8 (TS1-098): no symbol is pre-selected at all (no index, and no stock either) - he picks it.
+    expect(form).toContain('const [symbolChoice, setSymbolChoice] = useState("");');
+    expect(form).not.toContain("? IDEA_SYMBOL :");
     expect(form).toContain("data-template-settings");
   });
 });

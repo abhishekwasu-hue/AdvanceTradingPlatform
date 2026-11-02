@@ -12,9 +12,11 @@ import { formatNumber } from "../ui/format";
  * capital). The order ticket's "Run on" then places one PAPER order per account. Never a broker order.
  */
 
-const SIZING_TEXT: Record<PracticeAccount["sizing_mode"], string> = {
+const SIZING_TEXT: Record<NonNullable<PracticeAccount["sizing_mode"]>, string> = {
   MULTIPLIER: "× the Primary's lots", FIXED: "fixed lots", PCT_CAPITAL: "% of its capital",
 };
+// M68 PR-2 (TS1-024): a Secondary with no size of its own follows his Trade settings, else it places nothing.
+const NO_SIZING_TEXT = "size not set: your Trade settings › Position size › Extra paper accounts, else no order";
 const FIELD = "h-11 rounded-control border border-border bg-surface-1 px-space-3 text-t14 text-fg";
 
 function code(e: unknown): string | null {
@@ -70,7 +72,8 @@ export default function PracticeAccountsCard({ api = fnoApi }: { api?: Pick<type
               <span className={`text-t12 ${a.enabled ? "text-up" : "text-warn"}`}>{a.enabled ? "On" : "Off - no new orders"}</span>
             </div>
             <div className="mt-space-1 text-t12 text-fg-muted font-tabular">
-              Capital {formatNumber(a.capital, 0)} · {a.role === "PRIMARY" ? "the lots you enter in the ticket" : `${a.sizing_value} ${SIZING_TEXT[a.sizing_mode]}`}
+              Capital {formatNumber(a.capital, 0)} · {a.role === "PRIMARY" ? "the lots you enter in the ticket"
+                : a.sizing_mode && a.sizing_value !== null ? `${a.sizing_value} ${SIZING_TEXT[a.sizing_mode]}` : NO_SIZING_TEXT}
             </div>
             {confirmFor === a.id ? (
               <div className="mt-space-2 flex flex-wrap items-center gap-space-2 text-t12 text-fg">
@@ -89,13 +92,16 @@ export default function PracticeAccountsCard({ api = fnoApi }: { api?: Pick<type
               <form className="mt-space-2 flex flex-wrap items-center gap-space-2" onSubmit={(ev) => {
                 ev.preventDefault();
                 const data = new FormData(ev.currentTarget);
-                void act(() => api.changePracticeAccount(a.id, {
-                  group_name: String(data.get("group") ?? ""), sizing_mode: String(data.get("mode")), sizing_value: Number(data.get("value")),
-                }));
+                const mode = String(data.get("mode") ?? "");
+                const value = Number(String(data.get("value") ?? "").trim() || NaN);
+                // M68 PR-2: a size is sent only when he chose both (nothing is filled in for him)
+                const sizing = mode && Number.isFinite(value) && value > 0 ? { sizing_mode: mode, sizing_value: value } : {};
+                void act(() => api.changePracticeAccount(a.id, { group_name: String(data.get("group") ?? ""), ...sizing }));
               }}>
                 <label className="text-t12 text-fg-muted">Group <input name="group" defaultValue={a.group_name ?? ""} maxLength={50} className={`${FIELD} ml-space-1 w-32`} /></label>
-                <label className="text-t12 text-fg-muted">Size <input name="value" defaultValue={a.sizing_value} inputMode="decimal" className={`${FIELD} ml-space-1 w-20`} /></label>
-                <select name="mode" defaultValue={a.sizing_mode} aria-label="Sizing" className={FIELD}>
+                <label className="text-t12 text-fg-muted">Size <input name="value" defaultValue={a.sizing_value ?? ""} placeholder="Not set" inputMode="decimal" className={`${FIELD} ml-space-1 w-20`} /></label>
+                <select name="mode" defaultValue={a.sizing_mode ?? ""} aria-label="Sizing" className={FIELD}>
+                  <option value="">Choose how it sizes</option>
                   <option value="MULTIPLIER">× the Primary's lots</option>
                   <option value="FIXED">fixed lots</option>
                   <option value="PCT_CAPITAL">% of its capital</option>

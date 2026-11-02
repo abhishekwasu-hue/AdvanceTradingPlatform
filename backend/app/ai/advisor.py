@@ -164,6 +164,8 @@ def _assign(ranked: List[dict], p: Preferences) -> Dict[str, Optional[dict]]:
 def _contract_honoured(a: InterviewAnswers, contract: dict) -> bool:
     """False when a fact (a cash stock has no options, no overnight option writing) changed what the trader asked to trade."""
     kind, position = contract.get("instrument_kind"), contract.get("option_position")
+    if a.vehicle is None:                  # M68: nothing asked, nothing changed
+        return True
     if a.vehicle == "option_sell":
         return kind == "OPTION" and position != "BUY"
     if a.vehicle == "option_buy":
@@ -231,12 +233,13 @@ def match_score(a: InterviewAnswers, p: Preferences, market: dict, pick: Optiona
 
 
 def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf: str, *, ceilings: Optional[Dict[str, float]] = None,
-                  data_source: str = "sample", memory: Optional[dict] = None) -> dict:
+                  data_source: str = "sample", memory: Optional[dict] = None, read_symbol: Optional[str] = None) -> dict:
     lang = a.language
     market = iv.analyse_market(df, base_tf, lang)
     # Phase AR: what the market memory adds - the fear gauge, the last session, the bias trail.
     from app.ai import market_memory
-    background = market_memory.describe(lang, memory, a.symbol) if memory else []
+    symbol = read_symbol or a.symbol                       # M68: the candles' own symbol; the bot's is his answer only
+    background = market_memory.describe(lang, memory, symbol) if memory and symbol else []
     vix = next((c for c in (memory or {}).get("cues", []) if c["symbol"] == "INDIA VIX"), None)
     high_fear = bool(vix and vix.get("last_price") and float(vix["last_price"]) >= 20)
     # What the trader told us moves the ranking towards the families they prefer.
@@ -256,9 +259,9 @@ def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf
         add("momentum", 0.5 * p.trades_bias)
         add("reversion", 0.5 * p.trades_bias)
     base_cfg, _ = iv.risk_plan(a, ceilings)
-    ranked = iv._rank(a, market, df, base_tf, base_cfg, exclude=tuple(p.rejected), family_bonus=bonus)
+    ranked = iv._rank(a, market, df, base_tf, base_cfg, exclude=tuple(p.rejected), family_bonus=bonus, read_symbol=symbol)
     if not ranked and p.rejected:          # everything that fits was turned down: offer them again, with a note
-        ranked = iv._rank(a, market, df, base_tf, base_cfg, family_bonus=bonus)
+        ranked = iv._rank(a, market, df, base_tf, base_cfg, family_bonus=bonus, read_symbol=symbol)
     picks = _assign(ranked, p)
     options = []
     for oid in ("safe", "balanced", "active"):

@@ -569,6 +569,8 @@ export function drawdownOrderProblem(level1: string, level2: string): string | n
 /** One fill on the Orders list: a trade's entry, and its exit once closed. Display only - built from /trades. */
 export interface OrderFillRow {
   key: string;
+  /** M72 PR-3: the trade this fill belongs to ("Ask AI about this"). */
+  tradeId: number;
   at: string;
   kind: "Entry" | "Exit";
   symbol: string;
@@ -591,10 +593,10 @@ export function orderFillRows(trades: readonly TradeRecord[]): OrderFillRow[] {
       mode: t.mode === "LIVE" ? "Live" as const : "Paper" as const,
       size: formatLots(t.quantity, t.lot_size), strategy: strategyDisplayName(t.strategy_id),
     };
-    rows.push({ ...base, key: `${t.id}-entry`, at: t.entry_time, kind: "Entry", price: formatPrice(t.entry_price),
+    rows.push({ ...base, tradeId: t.id, key: `${t.id}-entry`, at: t.entry_time, kind: "Entry", price: formatPrice(t.entry_price),
       when: formatDateTimeIST(t.entry_time), reason: null });
     if (t.exit_time && t.exit_price !== null) {
-      rows.push({ ...base, key: `${t.id}-exit`, at: t.exit_time, kind: "Exit", price: formatPrice(t.exit_price),
+      rows.push({ ...base, tradeId: t.id, key: `${t.id}-exit`, at: t.exit_time, kind: "Exit", price: formatPrice(t.exit_price),
         when: formatDateTimeIST(t.exit_time), reason: t.exit_reason ? humanise(t.exit_reason.toLowerCase()) : null });
     }
   }

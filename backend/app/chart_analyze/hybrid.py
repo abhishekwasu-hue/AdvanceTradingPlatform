@@ -1,6 +1,7 @@
 """Analyze a chart, hybrid mode (M59 CR-4, owner order ATP_ORDER_M59): "Advanced analysis (code + AI)".
 
-The user uploads (or links) his chart AND picks its symbol and timeframe. No price is ever read from the picture: its
+The user uploads (or links) his chart; its symbol and timeframe are read from what is printed on it (owner order M84,
+app/chart_analyze/detect.py), and the user's own values, when he gives them, win. No price is ever read from the picture: its
 price axis is not known to ATP, so nothing is drawn on it. Instead the server reads ATP's OWN structure reading of the
 stored candles for that symbol / timeframe and code draws it on a server-rendered chart of the same candles, shown
 beside the user's picture ("Your chart" | "ATP's reading of <SYMBOL> <TF>"):
@@ -43,7 +44,7 @@ OFF_MESSAGE = "Advanced analysis is not switched on for your organisation yet. U
 ADMIN_WHERE = "Admin > Feature flags > Charts and tools"
 ADMIN_NEEDS = ("chart_analyze", "chart_price_action", "market_zones (for the areas of interest)")
 SIDE_BY_SIDE = ("ATP does not know your picture's price scale, so nothing is drawn on it. ATP's reading is drawn on its "
-                "own chart of the stored candles for the symbol and timeframe you picked, shown beside your chart.")
+                "own chart of the stored candles for this symbol and timeframe, shown beside your chart.")
 NOT_SHAREABLE = "Only an AI only analysis can be shared for now."
 STRUCTURE_OFF = "ATP's structure reading is not switched on for your organisation yet. Use AI only for now."
 ZONES_OFF = "Areas of interest are not switched on for your organisation yet."
@@ -52,7 +53,9 @@ DRAWN_BARS = 120
 MAX_AREAS = 6
 MAX_LEVELS = 6
 MIN_BARS = 30                     # the bars a timeframe's structure needs before it is a reading (as the Copilot's card)
-PICK_KEY = "_pick"                # the pick stored with a hybrid row until its result replaces it (no new column)
+PICK_KEY = "_pick"                # the user's own values stored with a hybrid row until its result replaces it (no new column)
+READ_KEY = "_read"                # M84: what the chart showed (as printed and as mapped), once the picture was read
+NEEDS_KEY = "_needs"              # M84: the values still to ask for, each with its exact reason
 BREAK_WORDS = {"BOS": "Swing break", "CHOCH": "Break against the trend", "MSS": "Break against the trend",
                "REVERSAL_CONFIRMED": "Trend turned", "RECOVERY": "Trend recovered"}
 
@@ -80,6 +83,17 @@ def check_pick(symbol: str | None, timeframe: str | None) -> dict[str, str]:
     if not tf:
         raise PickError("timeframe_required", "Pick the chart's timeframe.")
     if tf not in TIMEFRAMES:
+        raise PickError("bad_timeframe", "Pick one of the listed timeframes: " + ", ".join(TF_WORDS[t] for t in TIMEFRAMES) + ".")
+    return {"symbol": sym, "timeframe": tf}
+
+
+def check_override(symbol: str | None, timeframe: str | None) -> dict[str, str | None]:
+    """M84: the user's own values, each OPTIONAL (an empty one is read from the chart); a value given is checked as a pick."""
+    sym = " ".join(str(symbol or "").strip().upper().split()) or None
+    tf = str(timeframe or "").strip() or None
+    if sym is not None and not SYMBOL.fullmatch(sym):
+        raise PickError("bad_symbol", "Use the symbol's name only: letters, digits and . & - (at most 40).")
+    if tf is not None and tf not in TIMEFRAMES:
         raise PickError("bad_timeframe", "Pick one of the listed timeframes: " + ", ".join(TF_WORDS[t] for t in TIMEFRAMES) + ".")
     return {"symbol": sym, "timeframe": tf}
 
@@ -261,14 +275,17 @@ def _ai_block(validated: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def result(pick: dict[str, str], reading: dict[str, Any], *, width: int, height: int, ai: dict[str, Any] | None,
-           notes: list[str], ai_version: dict[str, str] | None = None) -> dict[str, Any]:
-    """The stored hybrid result."""
+           notes: list[str], ai_version: dict[str, str] | None = None, read_from_chart: dict[str, Any] | None = None,
+           pick_source: dict[str, str | None] | None = None) -> dict[str, Any]:
+    """The stored hybrid result. M84: `read_from_chart` is what the chart showed (None when the user gave both values),
+    `pick_source` where each value of the pick came from ("chart" or "you")."""
     method = METHOD_CODE_AI if ai is not None else METHOD_CODE
     return {"contract_version": contract.CONTRACT_VERSION, "mode": "hybrid", "method": method,
             "label": LABEL_CODE_AI if ai is not None else LABEL_CODE, "disclaimer": contract.DISCLAIMER,
             "approximate_prices": False, "coordinate_space": "time_price", "pick": dict(pick),
             "side_by_side_note": SIDE_BY_SIDE, "reading": reading, "chart": {"width": width, "height": height},
-            "ai": _ai_block(ai), "ai_version": ai_version, "notes": [n for n in notes if n][:4]}
+            "ai": _ai_block(ai), "ai_version": ai_version, "notes": [n for n in notes if n][:4], "read_from_chart": read_from_chart,
+            "pick_source": dict(pick_source or {"symbol": "you", "timeframe": "you"})}
 
 
 def stored_pick(result_json: str | None) -> dict[str, str] | None:
@@ -286,6 +303,38 @@ def stored_pick(result_json: str | None) -> dict[str, str] | None:
         return check_pick(raw.get("symbol"), raw.get("timeframe")) if isinstance(raw, dict) else None
     except PickError:
         return None
+
+
+def _stored(result_json: str | None) -> dict[str, Any]:
+    if not result_json:
+        return {}
+    try:
+        data = json.loads(result_json)
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def stored_override(result_json: str | None) -> dict[str, str | None]:
+    """M84: the user's own values stored with a hybrid row (either may be None: read from the chart); after the analysis,
+    the pick it used."""
+    data = _stored(result_json)
+    raw = data.get(PICK_KEY) or data.get("pick")
+    if not isinstance(raw, dict):
+        return {"symbol": None, "timeframe": None}
+    try:
+        return check_override(raw.get("symbol"), raw.get("timeframe"))
+    except PickError:
+        return {"symbol": None, "timeframe": None}
+
+
+def stored_read(result_json: str | None) -> tuple[dict[str, Any] | None, list[dict[str, str]]]:
+    """M84: (what the chart showed, the values still to ask for) stored with a hybrid row before its result."""
+    data = _stored(result_json)
+    read = data.get(READ_KEY)
+    needs = data.get(NEEDS_KEY)
+    return (read if isinstance(read, dict) else None,
+            [n for n in needs if isinstance(n, dict)] if isinstance(needs, list) else [])
 
 
 def summary(parsed: dict[str, Any]) -> dict[str, Any]:
@@ -343,4 +392,4 @@ async def read(session: AsyncSession, user: User, pick: dict[str, str], *, now: 
 
 
 __all__ = ["TIMEFRAMES", "LABEL_CODE", "LABEL_CODE_AI", "LABEL_AI_ONLY", "OFF_MESSAGE", "PickError", "ReadingUnavailable", "check_pick",
-           "off_detail", "build_reading", "facts", "result", "stored_pick", "summary", "read", "PICK_KEY"]
+           "check_override", "stored_override", "stored_read", "READ_KEY", "NEEDS_KEY", "off_detail", "build_reading", "facts", "result", "stored_pick", "summary", "read", "PICK_KEY"]

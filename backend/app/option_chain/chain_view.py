@@ -78,9 +78,10 @@ class ExpiryItem:
         return {"date": self.day.isoformat(), "kind": self.kind}
 
 
-def default_expiry(expiries: Sequence[date], today: date, *, next_on_expiry_day: bool = True) -> Optional[date]:
-    """The nearest expiry on or after `today`; on an expiry day, the next one after it (when there is one) - unless the
-    user turned that off (`option_chain.expiry_day_next` False: today's expiry opens)."""
+def default_expiry(expiries: Sequence[date], today: date, *, next_on_expiry_day: bool = False) -> date | None:
+    """The nearest expiry on or after `today` (today's, on an expiry day); M68 PR-4 (TS1-044): the next one after it only
+    when the user turned that on (Settings > Trade settings > Options > "On an expiry day, open the next expiry", or his
+    stored `option_chain.expiry_day_next`). Not set = the nearest; the other stays selectable."""
     ahead = sorted(e for e in set(expiries) if e >= today)
     if not ahead:
         return None
@@ -194,14 +195,15 @@ def highest_oi_strike(rows: Sequence[OptionChainRow], side: str) -> Optional[flo
     return best[0] if best else None
 
 
-def _leg(row: OptionChainRow, side: str, spot: Optional[float], years: Optional[float], change: Optional[float]) -> Dict[str, Optional[float]]:
+def _leg(row: OptionChainRow, side: str, spot: float | None, years: float | None, change: float | None,
+         rate: float = RISK_FREE_RATE) -> Dict[str, float | None]:
     p = "call_" if side == "call" else "put_"
     ltp = _finite(getattr(row, p + "ltp"))
     quoted = _finite(getattr(row, p + "iv"))
     quoted = quoted if quoted is not None and quoted > 0 else None
     kind = OptionType.CALL if side == "call" else OptionType.PUT
     if ltp is not None and ltp > 0 and spot is not None and years is not None and years > 0:
-        sigma = option_iv(quoted, ltp, spot, row.strike, years, RISK_FREE_RATE, kind)
+        sigma = option_iv(quoted, ltp, spot, row.strike, years, rate, kind)
     elif quoted is not None and quoted >= NO_PRICE_PERCENT_FLOOR:
         # Nothing to reprice against: only a quote that can only be a percentage (3 and up) is shown; under 3 it could
         # be a fraction (0.14) or a real low percentage (2.5), so no IV is shown rather than a guess.
@@ -212,7 +214,7 @@ def _leg(row: OptionChainRow, side: str, spot: Optional[float], years: Optional[
     greeks: Dict[str, Optional[float]] = {"delta": _finite(getattr(row, p + "delta")), "gamma": None, "theta": None, "vega": None}
     if iv is not None and spot is not None and years is not None:
         try:
-            bs = black_scholes(BSInputs(spot, row.strike, years, RISK_FREE_RATE, iv / 100.0, kind))
+            bs = black_scholes(BSInputs(spot, row.strike, years, rate, iv / 100.0, kind))
             greeks = {"delta": bs.delta, "gamma": bs.gamma, "theta": bs.theta, "vega": bs.vega}
         except ValueError:
             pass
@@ -278,7 +280,7 @@ def _change(now_oi: Optional[float], then: Optional[float]) -> Optional[float]:
 
 
 def build_view(chain: OptionChain, *, spot: Optional[float], future: Optional[Dict[str, Any]], expiry: Optional[date],
-               now: datetime, oi: OiChange, holidays: Iterable[date] = ()) -> Dict[str, Any]:
+               now: datetime, oi: OiChange, holidays: Iterable[date] = (), rate: float = RISK_FREE_RATE) -> Dict[str, Any]:
     """The page's whole answer for one chain: summary, rows (both legs with IV and Greeks) and the OI-change state.
     B3: `days_to_expiry` counts TRADING days (app/market_data/calendar.py; `holidays` = the exchange's closed days)."""
     rows = sorted(chain.rows, key=lambda r: r.strike)
@@ -294,8 +296,8 @@ def build_view(chain: OptionChain, *, spot: Optional[float], future: Optional[Di
         else:
             base = (oi.baseline or {}).get(r.strike, (None, None))
             call_change, put_change = _change(_finite(r.call_oi), base[0]), _change(_finite(r.put_oi), base[1])
-        out_rows.append({"strike": r.strike, "call": _leg(r, "call", spot, years, call_change),
-                         "put": _leg(r, "put", spot, years, put_change)})
+        out_rows.append({"strike": r.strike, "call": _leg(r, "call", spot, years, call_change, rate),
+                         "put": _leg(r, "put", spot, years, put_change, rate)})
     atm_ivs = [v for row in out_rows if row["strike"] == atm for v in (row["call"]["iv"], row["put"]["iv"]) if v is not None]
     summary = {
         "spot": spot,
@@ -322,10 +324,30 @@ def parse_expiry(text: Optional[str]) -> Optional[date]:
 
 
 async def next_on_expiry_day(session: AsyncSession, user: Any) -> bool:
-    """The user's `option_chain.expiry_day_next` (P1, 27 Oct): default ON."""
-    from app.me import prefs
-    try:
-        stored, _ = await prefs.read_one("option_chain", user, session)
-    except Exception:  # noqa: BLE001 - an unreadable preference keeps the default
-        return True
-    return stored.get("expiry_day_next") is not False
+    """M68 PR-4 (TS1-044): the user's own "On an expiry day, open the next expiry" (Trade settings > Options first, then
+    a stored `option_chain.expiry_day_next`, TS-6). Not set = False: the nearest expiry opens."""
+    from app.instruments import option_defaults
+    return (await option_defaults.load(session, user)).expiry_day_roll is True
+
+
+async def options_settings(session: AsyncSession, user: Any) -> Any:
+    """M68 PR-4: the user's own Settings > Trade settings > Options (app/instruments/option_defaults.py), for the option
+    pages that may not import the instruments layer themselves (the options builder, research only)."""
+    from app.instruments import option_defaults
+    return await option_defaults.load(session, user)
+
+
+def options_field_error(loc: tuple[str, ...], name: str) -> dict[str, Any]:
+    from app.instruments import option_defaults
+    return option_defaults.field_error(loc, name)
+
+
+def rate_of(own: Any) -> float:
+    from app.instruments import option_defaults
+    return option_defaults.risk_free_rate(own)
+
+
+async def risk_free_rate_for(session: AsyncSession, user: Any) -> float:
+    """M68 PR-4 (TS1-100): the rate this user's Greeks use - his own, else the platform's model input."""
+    from app.instruments import option_defaults
+    return option_defaults.risk_free_rate(await option_defaults.load(session, user))

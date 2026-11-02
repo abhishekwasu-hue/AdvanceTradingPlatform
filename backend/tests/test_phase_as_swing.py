@@ -112,7 +112,11 @@ def test_swing_deployment_rules():
     assert ok.status_code == 201, ok.text
     assert ok.json()["holding"] == "SWING"
     assert _create(headers, strategy_id="swing_breakout_d", timeframe="day").status_code == 400            # daily needs SWING
-    assert _create(headers, strategy_id="swing_breakout_d", holding="SWING").status_code == 400            # SWING needs day candles
+    assert _create(headers, strategy_id="swing_breakout_d", timeframe="5min", holding="SWING").status_code == 400  # SWING needs day candles
+    # M68 PR-8 (TS1-099): no base sent = the strategy's own candle - swing_breakout_d reads daily candles, so it is "day"
+    own = _create(headers, strategy_id="swing_breakout_d", holding="SWING")
+    assert own.status_code == 201, own.text
+    assert own.json()["timeframe"] == "day" and own.json()["holding"] == "SWING"
     assert _create(headers, strategy_id="swing_breakout_d", timeframe="day", holding="SWING", symbol="NIFTY 50",
                    instrument_kind="OPTION", option_position="WRITE").status_code == 400                    # no overnight writes
     assert _create(headers, strategy_id="swing_breakout_d", timeframe="day", holding="SWING", symbol="NIFTY 50",
@@ -121,7 +125,8 @@ def test_swing_deployment_rules():
     # Leave nothing ACTIVE behind: later worker tests run every tenant's deployments against fake
     # brokers that serve no daily candles, and their failures would trip the shared circuit breaker.
     from tests.test_auth_api import client
-    assert client.post(f"/api/deployments/{ok.json()['id']}/stop", headers=headers, json={"reason": "test done"}).status_code == 200
+    for made in (ok, own):
+        assert client.post(f"/api/deployments/{made.json()['id']}/stop", headers=headers, json={"reason": "test done"}).status_code == 200
 
 
 def test_square_off_skips_swing_positions_and_exits_use_the_entry_product(monkeypatch):

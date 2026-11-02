@@ -1312,8 +1312,9 @@ export interface BrokerCatalogField {
 export interface BrokerCatalogEntry {
   broker: string;
   name: string;
-  /** "analytics_token" (Upstox), "access_token" (Dhan), "login_code" (Zerodha, Fyers), "totp_auto" (Angel One,
-   * Shoonya), "api_key_secret" (CoinDCX). */
+  /** "analytics_token" (Upstox), "oauth_redirect" (Zerodha, Fyers: Log in, the broker returns to ATP by itself),
+   * "totp_auto" (Angel One, Shoonya, Kotak Neo, Groww, Dhan: ATP logs in by itself each morning), "api_key_secret"
+   * (CoinDCX). Older servers: "access_token" (Dhan), "login_code" (Zerodha, Fyers: paste the address). */
   method: string;
   fields: BrokerCatalogField[];
   /** Three short steps: where the trader finds the fields above. */
@@ -1332,6 +1333,17 @@ export interface BrokerCatalogEntry {
   requires_ui_v2?: boolean;
   /** Part 1B: a short connect guide in plain words with the broker's official links, or null. */
   guide?: BrokerGuide | null;
+  /** BRK-1 B: another official way, shown only behind its own link (Dhan's pasted token, the pasted login address of
+   * Zerodha / Fyers): the link's words, the connect fields that way ([]: the usual ones) and the renew fields. */
+  fallback?: BrokerFallback | null;
+  /** BRK-1 B: ATP's own callback address, to copy into the broker app's Redirect URL (Zerodha, Fyers); else null. */
+  redirect_url?: string | null;
+}
+
+export interface BrokerFallback {
+  label: string;
+  fields: BrokerCatalogField[];
+  renew_fields: BrokerCatalogField[];
 }
 
 export interface BrokerGates {

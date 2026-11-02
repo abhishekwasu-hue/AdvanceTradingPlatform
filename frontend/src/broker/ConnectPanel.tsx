@@ -18,11 +18,12 @@ import { Skeleton } from "../components/primitives";
  * The answer is "Connected ✓" or the server's one plain sentence.
  *
  * Renew (the Broker page's row button, the Dashboard banner, the sign-in prompt) opens the same panel with only the
- * catalog's `renew_fields`, sent to POST /renew: Dhan pastes today's token; Zerodha and Fyers ("login_code") press
- * "Log in" (the broker's own login page, in a new tab) and paste the address they land on; Angel One and Shoonya
- * (no renew fields) are one button. Upstox ("analytics_token"): while the saved Analytics Token is valid the panel shows
- * "saved, valid till <date>", the daily login (Upstox's own page) and Replace (M85); the token field (through /connect)
- * appears only on Replace or once no valid token is saved.
+ * catalog's `renew_fields`, sent to POST /renew. BRK-1 B: Zerodha and Fyers ("oauth_redirect") have ONE button, "Log in":
+ * the broker's own page opens in a new tab and returns to ATP's callback, which finishes the login - nothing is pasted;
+ * the TOTP brokers (Angel One, Shoonya, Kotak Neo, Groww, Dhan) are logged in by ATP each morning, and Renew is one click.
+ * A broker's hidden fallback way (Dhan's pasted token; the pasted login address of Zerodha / Fyers) sits behind its own
+ * link. Upstox ("analytics_token"): while the saved Analytics Token is valid the panel shows "saved, valid till <date>"
+ * and Replace (M85); the token field (through /connect) appears only on Replace or once no valid token is saved.
  * A Zerodha / Fyers connect stores the key and secret and answers "needs_login": the panel then moves to that
  * "Log in" step by itself.
  */
@@ -46,18 +47,38 @@ export type PanelMode = "connect" | "renew";
 export interface PanelStep {
   endpoint: "connect" | "renew";
   fields: readonly BrokerCatalogField[];
-  /** A "Log in" button that opens the broker's own login page first (login_code). */
+  /** A "Log in" button that opens the broker's own login page first (oauth_redirect, or the paste way). */
   login: boolean;
+  /** BRK-1 B: the broker's page returns to ATP's callback by itself - "Log in" is the one button, nothing is pasted. */
+  oauth: boolean;
+  /** A submit button (false: the oauth login, whose "Log in" is the only action). */
+  submit: boolean;
   /** The submit button's words. */
   action: "Connect" | "Renew";
 }
 
+type StepEntry = Pick<BrokerCatalogEntry, "method" | "fields" | "renew_fields"> & Partial<Pick<BrokerCatalogEntry, "fallback">>;
+
+/** BRK-1 B: whether this step offers the hidden fallback way (its own link): only where that way asks for fields. */
+export function fallbackOffered(entry: StepEntry, mode: PanelMode, afterSave = false): boolean {
+  const fb = entry.fallback;
+  if (!fb || entry.method === "analytics_token") return false;
+  return mode === "connect" && !afterSave ? fb.fields.length > 0 : fb.renew_fields.length > 0;
+}
+
 /** The step for a broker: connecting asks for the catalog's fields; renewing for its `renew_fields` (see above).
- * `afterSave`: a login_code connect was just saved, so the next step is today's login, still called Connect. */
-export function stepFor(entry: Pick<BrokerCatalogEntry, "method" | "fields" | "renew_fields">, mode: PanelMode, afterSave = false): PanelStep {
-  if (mode === "connect" && !afterSave) return { endpoint: "connect", fields: entry.fields, login: false, action: "Connect" };
-  if (entry.method === "analytics_token") return { endpoint: "connect", fields: entry.fields, login: false, action: "Renew" };
-  return { endpoint: "renew", fields: entry.renew_fields ?? [], login: entry.method === "login_code", action: afterSave ? "Connect" : "Renew" };
+ * `afterSave`: a Zerodha / Fyers connect was just saved, so the next step is today's login, still called Connect.
+ * `fallback` (BRK-1 B): the hidden way - its connect fields ([]: the usual ones) or its renew fields; for Zerodha / Fyers
+ * that is the older login: open the page, paste the address. */
+export function stepFor(entry: StepEntry, mode: PanelMode, afterSave = false, fallback = false): PanelStep {
+  const fb = fallback && fallbackOffered(entry, mode, afterSave) ? entry.fallback ?? null : null;
+  if (mode === "connect" && !afterSave) {
+    return { endpoint: "connect", fields: fb && fb.fields.length > 0 ? fb.fields : entry.fields, login: false, oauth: false, submit: true, action: "Connect" };
+  }
+  if (entry.method === "analytics_token") return { endpoint: "connect", fields: entry.fields, login: false, oauth: false, submit: true, action: "Renew" };
+  const oauth = entry.method === "oauth_redirect" && !fb;
+  const login = entry.method === "login_code" || entry.method === "oauth_redirect";
+  return { endpoint: "renew", fields: fb ? fb.renew_fields : entry.renew_fields ?? [], login, oauth, submit: !oauth, action: afterSave ? "Connect" : "Renew" };
 }
 
 /**
@@ -156,12 +177,16 @@ export interface ConnectPanelViewProps {
   onDone?: () => void;
   /** Catalog field keys shown under "Advanced" (UX3 fix 6); none by default. */
   fold?: ReadonlySet<string>;
+  /** BRK-1 B: the hidden fallback way's link (its words), whether it is in use, and the switch; no link when left out. */
+  fallbackLabel?: string | null;
+  usingFallback?: boolean;
+  onToggleFallback?: () => void;
 }
 
 const NO_FOLD: ReadonlySet<string> = new Set();
 
 /** The panel's body - no dialog and no fetching, so tests render it directly. */
-export function ConnectPanelView({ entry, step, values, onChange, onSubmit, busy, result, note = null, onLogin, loginBusy = false, loginOpened = null, onDone, fold = NO_FOLD }: ConnectPanelViewProps) {
+export function ConnectPanelView({ entry, step, values, onChange, onSubmit, busy, result, note = null, onLogin, loginBusy = false, loginOpened = null, onDone, fold = NO_FOLD, fallbackLabel = null, usingFallback = false, onToggleFallback }: ConnectPanelViewProps) {
   const ids = useId();
   const submit = (e: FormEvent) => { e.preventDefault(); if (!busy) onSubmit(); };
   const images = HOW_TO_IMAGES[entry.broker] ?? [];
@@ -225,15 +250,22 @@ export function ConnectPanelView({ entry, step, values, onChange, onSubmit, busy
 
       {step.login && (
         <div className="space-y-space-2">
-          <button type="button" onClick={onLogin} disabled={loginBusy} aria-busy={loginBusy || undefined} data-login
-            className={`${BTN_SECONDARY} w-full`}>
+          <button type="button" onClick={onLogin} disabled={loginBusy || !!result?.ok} aria-busy={loginBusy || undefined} data-login
+            data-login-way={step.oauth ? "callback" : "paste"} className={`${step.oauth ? BTN_PRIMARY : BTN_SECONDARY} w-full`}>
             <ExternalLink size={16} aria-hidden /> Log in
           </button>
-          {loginOpened && (
-            <p className="text-t13 text-fg-muted">
-              {loginOpened.opened
-                ? `The ${entry.name} login page opened in a new tab. After you sign in, copy the address from the browser bar and paste it below.`
-                : <>Your browser blocked the new tab. <a href={loginOpened.link} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">Open the {entry.name} login page</a>, sign in, then paste the address from the browser bar below.</>}
+          {step.oauth && !loginOpened && !result?.ok && (
+            <p className="text-t13 text-fg-muted">Sign in on the {entry.name} page that opens. ATP finishes the login by itself.</p>
+          )}
+          {loginOpened && !result?.ok && (
+            <p className="text-t13 text-fg-muted" data-login-opened>
+              {step.oauth
+                ? (loginOpened.opened
+                  ? `The ${entry.name} login page opened in a new tab. Sign in there; ATP finishes the login by itself and this panel updates when you come back.`
+                  : <>Your browser blocked the new tab. <a href={loginOpened.link} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">Open the {entry.name} login page</a> and sign in; ATP finishes the login by itself.</>)
+                : (loginOpened.opened
+                  ? `The ${entry.name} login page opened in a new tab. After you sign in, copy the address from the browser bar and paste it below.`
+                  : <>Your browser blocked the new tab. <a href={loginOpened.link} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">Open the {entry.name} login page</a>, sign in, then paste the address from the browser bar below.</>)}
             </p>
           )}
         </div>
@@ -289,10 +321,18 @@ export function ConnectPanelView({ entry, step, values, onChange, onSubmit, busy
 
       {result?.ok ? (
         <button type="button" onClick={onDone} className={`${BTN_SECONDARY} w-full`}>Done</button>
-      ) : (
+      ) : step.submit ? (
         <button type="submit" disabled={busy || !complete(step.fields, values)} aria-busy={busy || undefined}
           className={`${BTN_PRIMARY} w-full`}>
           {busy ? `${busyWord}…` : step.action}
+        </button>
+      ) : null}
+
+      {/* BRK-1 B: the hidden fallback way (Dhan's pasted token, the pasted login address) - only behind this link. */}
+      {fallbackLabel && onToggleFallback && !result?.ok && (
+        <button type="button" onClick={onToggleFallback} data-fallback-toggle={usingFallback ? "on" : "off"}
+          className="inline-flex min-h-11 w-full items-center justify-center text-center text-t13 text-fg-muted underline-offset-2 hover:text-fg hover:underline">
+          {usingFallback ? "Back to the usual way" : fallbackLabel}
         </button>
       )}
     </form>
@@ -334,12 +374,39 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
     return () => { live = false; };
   }, [open, upstoxRenew, broker, label]);
 
+  // BRK-1 B: the hidden fallback way (its own link), off each time the panel opens.
+  const [fallback, setFallback] = useState(false);
+
   // A new broker, or the panel opened again: start empty (secrets are never kept once the panel closes).
   useEffect(() => {
-    setValues({}); setResult(null); setBusy(false); setAfterSave(null); setLoginBusy(false); setLoginOpened(null);
+    setValues({}); setResult(null); setBusy(false); setAfterSave(null); setLoginBusy(false); setLoginOpened(null); setFallback(false);
   }, [broker, mode, open]);
 
-  const step = entry ? stepFor(entry, mode, afterSave !== null) : null;
+  const step = entry ? stepFor(entry, mode, afterSave !== null, fallback) : null;
+  const offersFallback = entry ? fallbackOffered(entry, mode, afterSave !== null) : false;
+
+  // BRK-1 B: after "Log in" (Zerodha / Fyers), the broker returns to ATP's callback in the other tab; when this tab is
+  // looked at again, the connection is read once, and the panel says "Connected ✓" when the login went through.
+  const waitingForCallback = !!(open && entry && step?.oauth && loginOpened && !result?.ok);
+  useEffect(() => {
+    if (!waitingForCallback || !entry) return;
+    let live = true;
+    const check = () => {
+      if (document.visibilityState === "hidden") return;
+      api.brokerConnections()
+        .then((rows) => {
+          const row = rows.find((c) => c.broker === entry.broker && (c.account_label || "primary") === label);
+          if (live && row?.status === "connected") { setResult({ ok: true }); onChanged?.(); }
+        })
+        .catch(() => {
+          // Not known: say so once; the Broker page shows the outcome when it is read again.
+          if (live) setResult({ ok: false, text: "Could not check the login just now. The Broker page shows it in a moment." });
+        });
+    };
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => { live = false; window.removeEventListener("focus", check); document.removeEventListener("visibilitychange", check); };
+  }, [waitingForCallback, entry, label, onChanged]);
 
   async function submit() {
     if (!entry || !step) return;
@@ -353,8 +420,8 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
       setValues({});
       onChanged?.();
       if (r.status === "connected") setResult({ ok: true });
-      else if (r.status === "needs_login" && step.endpoint === "connect" && entry.method === "login_code") {
-        setAfterSave(r.message || `Saved. Now press Log in, sign in to ${entry.name} and paste the address you land on.`);
+      else if (r.status === "needs_login" && step.endpoint === "connect" && (entry.method === "login_code" || entry.method === "oauth_redirect")) {
+        setAfterSave(r.message || `Saved. Now press Log in and sign in to ${entry.name}.`);
       } else setResult({ ok: false, text: r.message || "Not connected yet. Check the details and try again." });
     } catch (e) {
       setResult({ ok: false, text: failureText(e, entry.name) });
@@ -363,15 +430,19 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
     }
   }
 
-  // "Log in" (login_code): the tab opens inside the click (a tab opened after an await is blocked as a popup), then
-  // goes to the broker's own login page (the existing GET /broker/{name}/login-url).
+  // "Log in": the tab opens inside the click (a tab opened after an await is blocked as a popup), then goes to the
+  // broker's own login page. BRK-1 B: Zerodha / Fyers through GET /broker/{name}/oauth/start (the page returns to ATP's
+  // callback, nothing pasted); the fallback way and older servers through GET /broker/{name}/login-url (then a paste).
   function login() {
-    if (!entry) return;
+    if (!entry || !step) return;
     setLoginBusy(true);
     setResult(null);
     let tab: Window | null = null;
     try { tab = window.open("about:blank", "_blank"); if (tab) tab.opener = null; } catch { tab = null; }
-    api.brokerLoginUrl(entry.broker, label)
+    const start = step.oauth && (entry.broker === "zerodha" || entry.broker === "fyers")
+      ? api.brokerOAuthStart(entry.broker, label)
+      : api.brokerLoginUrl(entry.broker, label);
+    start
       .then(({ authorization_url }) => {
         if (tab) tab.location.href = authorization_url;
         setLoginOpened({ link: authorization_url, opened: !!tab });
@@ -392,7 +463,9 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
         <ConnectPanelView entry={entry} step={step} values={values} busy={busy} result={result} note={afterSave}
           onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}
           onSubmit={() => void submit()} onDone={() => onOpenChange(false)}
-          onLogin={login} loginBusy={loginBusy} loginOpened={loginOpened} fold={fold} />
+          onLogin={login} loginBusy={loginBusy} loginOpened={loginOpened} fold={fold}
+          fallbackLabel={offersFallback ? entry.fallback?.label ?? null : null} usingFallback={fallback}
+          onToggleFallback={() => { setFallback((f) => !f); setValues({}); setResult(null); setLoginOpened(null); }} />
       ) : entries && broker ? (
         <p className="text-t14 text-fg-muted">This broker cannot be connected here yet.</p>
       ) : failed ? (

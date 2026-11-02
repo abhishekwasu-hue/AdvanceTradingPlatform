@@ -211,7 +211,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     # Part 1B: hand-made Groww API responses in the shapes of Groww's API reference (made-up ids and numbers; tokens empty).
     "backend/tests/fixtures/groww/recorded.json": "048c67ff5ce98dd7cb64dc0ca6fec75dbdfe6b355e4b596c6b456c96dca1040c",
     # P2b: P2a's broker catalog (static, public broker names and how-to steps; no account data).
-    "frontend/e2e/fixtures/broker_catalog.json": "075bd516ec146878bbca8bbfcfe3db046527510c7a080f44f71e58eb387eeb20",
+    "frontend/e2e/fixtures/broker_catalog.json": "58479f5243563618e5acd442f9ad389e3475f65c3b04c50d6d4d15bb82e41336",
     "frontend/e2e/fixtures/drafts.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "frontend/e2e/fixtures/interview_plan.json": "3b582f587c25dfe0f99ab25fafb34f77d458e1910cbaba5747c964997fbdb42c",
     "frontend/e2e/fixtures/interview_start.json": "b702f8734442fd26183eb52ae508de6e55edfc0df57ee406c75776cc1ecc4453",

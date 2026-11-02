@@ -6,7 +6,7 @@ import { useAuth } from "../auth/AuthContext";
 import type { BrokerCatalogEntry, BrokerConnection } from "../types";
 import { oauthErrorText } from "../utils/oauthErrors";
 import BrokerAdvanced from "./BrokerAdvanced";
-import { ASK_OWNER, KNOWN_BROKERS, canChangeBrokers, connectionTitle, needsReconnect, shownStatus, statusText } from "./brokerState";
+import { ASK_OWNER, KNOWN_BROKERS, canChangeBrokers, canRenew, connectionTitle, needsReconnect, shownStatus, statusText } from "./brokerState";
 import { SIGN_IN_PAGE_PATH } from "./paths";
 import ConnectPanel, { failureText, isPracticeOnly, type PanelMode } from "./ConnectPanel";
 import { BTN_PRIMARY, BTN_SECONDARY, BrokerLogo, ResponsiveDialog, StatusDot } from "./parts";
@@ -57,11 +57,12 @@ export function ConnectionRow({ c, canChange = true, onRenew, onRemove, onReconn
       </div>
       {/* On a phone the buttons take a line of their own, so the name and status are never cut short. */}
       <div className="flex w-full justify-end gap-space-2 sm:w-auto">
-        {c.renew && !c.data_only && status !== "not_working" && (
-          <button type="button" onClick={onRenew} disabled={!canChange} className={status === "needs_login" ? BTN_PRIMARY : BTN_SECONDARY}>Renew</button>
+        {/* BRK-1 B: a "not working" row with a daily login (its automatic login did not work) keeps Renew as the fallback. */}
+        {canRenew(c) && (
+          <button type="button" onClick={onRenew} disabled={!canChange} className={status === "connected" ? BTN_SECONDARY : BTN_PRIMARY}>Renew</button>
         )}
         {reconnect && (
-          <button type="button" onClick={onReconnect} disabled={!canChange} className={BTN_PRIMARY}>Connect again</button>
+          <button type="button" onClick={onReconnect} disabled={!canChange} className={canRenew(c) ? BTN_SECONDARY : BTN_PRIMARY}>Connect again</button>
         )}
         <button type="button" onClick={onRemove} disabled={!canChange} className={BTN_SECONDARY}>Remove</button>
       </div>

@@ -33,8 +33,9 @@ const ADVICE = /\b(you should|we recommend|recommended|buy now|sell now|guarante
 const ownCopy = (html: string, entry: BrokerCatalogEntry) => {
   const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
   let out = html;
-  for (const f of [...entry.fields, ...entry.renew_fields]) for (const t of [f.key, f.label, f.placeholder ?? ""]) if (t) out = out.split(esc(t)).join("");
+  // The steps first (whole sentences), then the field words - a step may name a field ("the Redirect URL").
   for (const t of [...entry.how_to, entry.doc_url]) out = out.split(esc(t)).join("");
+  for (const f of [...entry.fields, ...entry.renew_fields]) for (const t of [f.key, f.label, f.placeholder ?? ""]) if (t) out = out.split(esc(t)).join("");
   return out;
 };
 
@@ -42,7 +43,7 @@ describe("P2b Connect panel: only the catalog's fields", () => {
   it("covers Upstox, Zerodha, Fyers, Angel One, Shoonya, Dhan and the rest of the catalog (P2a's real catalog)", () => {
     expect(CATALOG.map((e) => e.broker)).toEqual(expect.arrayContaining(["upstox", "zerodha", "fyers", "angel_one", "shoonya", "dhan", "coindcx"]));
     expect(Object.fromEntries(CATALOG.map((e) => [e.broker, e.fields.length])))
-      .toEqual({ upstox: 1, dhan: 2, zerodha: 2, fyers: 3, angel_one: 4, shoonya: 4, coindcx: 2 });
+      .toEqual({ upstox: 1, dhan: 3, zerodha: 2, fyers: 2, angel_one: 4, shoonya: 4, coindcx: 2 });   // BRK-1 B: Dhan TOTP; no Fyers Redirect URL box
   });
 
   for (const entry of CATALOG) {
@@ -99,35 +100,65 @@ describe("P2b Connect panel: only the catalog's fields", () => {
 });
 
 describe("P2b Renew: the same panel, only renew_fields", () => {
-  it("Dhan: one box, today's access token, sent to /renew", () => {
-    const step = stepFor(entryOf("dhan"), "renew");
-    expect(step).toMatchObject({ endpoint: "renew", login: false, action: "Renew" });
-    const html = panel(entryOf("dhan"), { step });
-    expect(inputs(html)).toEqual(["access_token"]);
+  it("Dhan (BRK-1 B): the TOTP login - Renew is one click; a pasted token only behind the fallback link", () => {
+    const dhan = entryOf("dhan");
+    const step = stepFor(dhan, "renew");
+    expect(step).toMatchObject({ endpoint: "renew", login: false, oauth: false, submit: true, action: "Renew", fields: [] });
+    const html = panel(dhan, { step, fallbackLabel: dhan.fallback!.label, onToggleFallback: noop });
+    expect(inputs(html)).toEqual([]);
     expect(html).toMatch(/>Renew<\/button>/);
+    expect(html).toContain('data-fallback-toggle="off"');
+    expect(html).toContain(`>${dhan.fallback!.label}</button>`);
+    const pasted = stepFor(dhan, "renew", false, true);
+    expect(pasted).toMatchObject({ endpoint: "renew", login: false, submit: true });
+    const html2 = panel(dhan, { step: pasted, fallbackLabel: dhan.fallback!.label, usingFallback: true, onToggleFallback: noop });
+    expect(inputs(html2)).toEqual(["access_token"]);
+    expect(html2).toContain(">Back to the usual way</button>");
+    // Connecting the fallback way: the client ID and the token.
+    expect(stepFor(dhan, "connect", false, true).fields.map((f) => f.key)).toEqual(["client_id", "access_token"]);
+    expect(stepFor(dhan, "connect").fields.map((f) => f.key)).toEqual(["client_id", "pin", "totp_secret"]);
   });
 
   for (const broker of ["zerodha", "fyers"]) {
-    it(`${broker}: "Log in" (the broker's own page) and one box for the address the trader lands on`, () => {
+    it(`${broker} (BRK-1 B): ONE "Log in" button - the broker's page returns to ATP, nothing is pasted`, () => {
       const step = stepFor(entryOf(broker), "renew");
-      expect(step).toMatchObject({ endpoint: "renew", login: true, action: "Renew" });
+      expect(step).toMatchObject({ endpoint: "renew", login: true, oauth: true, submit: false, action: "Renew", fields: [] });
       const html = panel(entryOf(broker), { step });
-      expect(inputs(html)).toEqual(["request_token"]);
-      expect(html).toContain("data-login");
+      expect(inputs(html)).toEqual([]);
+      expect(html.match(/<button/g)).toHaveLength(1);
+      expect(html).not.toMatch(/type="submit"/);
+      expect(html).toContain('data-login-way="callback"');
       expect(html).toMatch(/data-login[^>]*>(?:(?!<\/button>).)*Log in<\/button>/s);
-      expect(html).toContain("Address after login");
+      expect(html).toContain("ATP finishes the login by itself");
+      expect(html).not.toContain("Address after login");
       const opened = panel(entryOf(broker), { step, loginOpened: { link: "https://broker.example/login", opened: false } });
       expect(opened).toContain('href="https://broker.example/login"');
+      expect(opened).not.toContain("paste");
+    });
+
+    it(`${broker}: the hidden fallback is the older way - Log in, then one box for the address`, () => {
+      const entry = entryOf(broker);
+      expect(entry.redirect_url).toMatch(new RegExp(`/api/broker/${broker}/oauth/callback$`));
+      const step = stepFor(entry, "renew", false, true);
+      expect(step).toMatchObject({ endpoint: "renew", login: true, oauth: false, submit: true, action: "Renew" });
+      const html = panel(entry, { step, fallbackLabel: entry.fallback!.label, usingFallback: true, onToggleFallback: noop });
+      expect(inputs(html)).toEqual(["request_token"]);
+      expect(html).toContain('data-login-way="paste"');
+      expect(html).toContain("Address after login");
     });
   }
 
   it("a Zerodha / Fyers connect that answers needs_login moves to the Log in step, still called Connect", () => {
     const step = stepFor(entryOf("zerodha"), "connect", true);
-    expect(step).toMatchObject({ endpoint: "renew", login: true, action: "Connect" });
-    const html = panel(entryOf("zerodha"), { step, note: "Saved; now press Log in, sign in to Zerodha (Kite) and paste the address you land on." });
+    expect(step).toMatchObject({ endpoint: "renew", login: true, oauth: true, action: "Connect" });
+    const html = panel(entryOf("zerodha"), { step, note: "Saved; now press Log in and sign in to Zerodha (Kite) - ATP finishes the login by itself." });
     expect(html).toContain("data-note");
     expect(html).toContain("now press Log in");
-    expect(inputs(html)).toEqual(["request_token"]);
+    expect(inputs(html)).toEqual([]);
+    // Fyers saved its own Redirect URL the fallback way: the next step is the paste way.
+    const fyers = entryOf("fyers");
+    expect(stepFor(fyers, "connect", false, true).fields.map((f) => f.key)).toEqual(["api_key", "api_secret", "redirect_uri"]);
+    expect(stepFor(fyers, "connect", true, true)).toMatchObject({ oauth: false, fields: [expect.objectContaining({ key: "request_token" })] });
   });
 
   for (const broker of ["angel_one", "shoonya"]) {
@@ -196,7 +227,7 @@ describe("P2b Broker page", () => {
     const html = row(conn({ status: "needs_login" }));
     expect(html).toContain("data-broker-logo");
     expect(html).toContain(">Upstox<");
-    expect(html).toContain("Needs today&#x27;s login");
+    expect(html).toContain("Needs login");
     expect(html).toContain('data-broker-dot="needs_login"');
     expect(html.match(/<button/g)).toHaveLength(2);
     expect(html).toContain(">Renew</button>");
@@ -274,11 +305,21 @@ describe("P2b review fixes: rows that need connecting again, permissions, anothe
   const row = (c: BrokerConnection, canChange = true) => renderToStaticMarkup(<ul><ConnectionRow c={c} canChange={canChange} /></ul>);
 
   it("a not-working row shows the server's sentence as a second line and 'Connect again' (no Renew)", () => {
-    const html = row(conn({ broker: "dhan", name: "Dhan", status: "not_working", renew: true, message: "Dhan did not accept this token; generate a new one and paste it here." }));
+    const html = row(conn({ broker: "dhan", name: "Dhan", status: "not_working", renew: false, message: "Dhan did not accept this token; generate a new one and paste it here." }));
     expect(html).toContain("data-row-message");
     expect(html).toContain("Dhan did not accept this token; generate a new one and paste it here.");
     expect(html).toContain(">Connect again</button>");
     expect(html).not.toContain(">Renew<");
+  });
+
+  it("BRK-1 B: a TOTP row whose automatic login did not work - 'Not working', its sentence, Renew as the fallback", () => {
+    const message = "This morning's automatic login did not work: Angel One did not accept these details; check them, including the TOTP secret, and try again.";
+    const html = row(conn({ broker: "angel_one", name: "Angel One", status: "not_working", renew: true, message }));
+    expect(html).toContain("Not working");
+    expect(html).toContain("data-row-message");
+    expect(html).toContain(">Renew</button>");
+    expect(html).toContain(">Connect again</button>");
+    expect(html.match(/class="[^"]*"[^>]*>Renew<\/button>/)?.[0]).toBeTruthy();
   });
 
   it("a needs-login row that cannot be renewed also offers 'Connect again'; a renewable one does not", () => {

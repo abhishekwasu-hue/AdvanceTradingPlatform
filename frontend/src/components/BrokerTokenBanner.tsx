@@ -9,7 +9,7 @@ import { formatDateTimeIST } from "../ui/format";
  * "Is my broker session alive today?" - the one thing an operator must check every trading
  * morning. Indian retail broker tokens (Upstox 03:30 IST, Kite/Fyers 06:00 IST) expire daily with
  * no refresh token, so LIVE deployments cannot run until someone logs in again. For Upstox the
- * button drives the whole OAuth round-trip; Fyers and Kite send the browser to the redirect URL
+ * button leads to the Broker page (BRK-1 B: the Analytics Token, no Upstox OAuth); Fyers and Kite send the browser to the redirect URL
  * registered on the broker's console instead, so the banner opens their login page and takes the
  * pasted one-time code (or the whole redirected address) and finishes the login in one step.
  */
@@ -85,18 +85,6 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
     }
   }
 
-  async function loginToUpstox(t: BrokerTokenInfo) {
-    setBusy(true);
-    setError(null);
-    try {
-      const { authorization_url } = await api.upstoxOAuthStart(t.account_label ?? "primary");
-      window.location.href = authorization_url;
-    } catch (e) {
-      setError(errorSentence(e));
-      setBusy(false);
-    }
-  }
-
   if (error) return <div className="text-xs text-down">{error}</div>;
   if (tokens.length === 0) return null;
 
@@ -129,16 +117,10 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
               )}
             </div>
             <div className="flex items-center gap-3">
-              {t.oauth_supported && (
-                <button
-                  onClick={() => void loginToUpstox(t)}
-                  disabled={busy}
-                  className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 disabled:opacity-50"
-                >
-                  <LogIn size={12} /> {busy ? "Redirecting…" : ok ? "Re-login to Upstox" : "Login to Upstox"}
-                </button>
+              {/* BRK-1 B (owner: no Upstox OAuth flow): Upstox connects with the Analytics Token on the Broker page. */}
+              {t.broker_name === "upstox" && (
+                <span className="text-fg-muted">Paste your Analytics Token on the Broker page.</span>
               )}
-              {!compact && <RedirectUriNote t={t} />}
               {t.login_url_supported && (
                 <button
                   onClick={() => void openLogin(t)}

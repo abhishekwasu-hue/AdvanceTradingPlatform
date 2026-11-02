@@ -1,23 +1,20 @@
-import { ChevronRight, LogIn, TriangleAlert } from "lucide-react";
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
-import { api } from "../api/client";
+import { ChevronRight } from "lucide-react";
+import { useId, useState, type FormEvent, type ReactNode } from "react";
 import BrokerAccountsCard from "../components/BrokerAccountsCard";
 import StaticIpCard from "../components/StaticIpCard";
-import UpstoxRedirectUrl from "../components/UpstoxRedirectUrl";
-import type { BrokerCatalogEntry, BrokerTokenInfo } from "../types";
-import { loginErrorText } from "../ui/brokerSession";
+import type { BrokerCatalogEntry } from "../types";
 import { useFeatures, useUiV2 } from "../ui/useFeatures";
 import { ASK_OWNER } from "./brokerState";
 import MultiAccountCard from "./MultiAccountCard";
 import PracticeAccountsCard from "./PracticeAccountsCard";
-import { BTN_PRIMARY, BTN_SECONDARY } from "./parts";
+import { BTN_SECONDARY } from "./parts";
 import { Details } from "../ui/Details";
 
 /**
  * P2b: "Advanced", collapsed at the bottom of the Broker page - the technical settings moved off the main screen:
  * - "Connect another account": a second account at the same broker, under its own account name;
- * - the Upstox OAuth app: "Log in with Upstox" for an Upstox connection that has the API key and secret (the existing
- *   OAuth start), and the exact redirect URL with a copy button (the setting on Upstox's developer site);
+ * (BRK-1 B: no Upstox OAuth app here any more - the owner: Upstox connects with the Analytics Token only, no Upstox OAuth
+ * flow; the backend routes stay for older rows);
  * - the static IP registered with each broker (SEBI);
  * - the broker accounts (default account, enable / disable, balances, the read-only check);
  * - M45 MA-1b (`ui_v2` + `multi_account`): Primary / Secondary roles and groups for the user's own accounts.
@@ -67,59 +64,6 @@ export function AnotherAccount({ entries, canChange, onConnect }: {
   );
 }
 
-/** The Upstox OAuth app: "Log in with Upstox" for each Upstox connection that can log in this way, and the redirect
- * URL (D2's UpstoxRedirectUrl: GET /api/broker/upstox/redirect-url, the deployment's public address, with Copy). */
-export function UpstoxOAuth({ canChange }: { canChange: boolean }) {
-  const [rows, setRows] = useState<BrokerTokenInfo[] | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    api.brokerTokenStatus().then((r) => { if (live) setRows(Array.isArray(r) ? r : []); }).catch(() => { if (live) setRows([]); });
-    return () => { live = false; };
-  }, []);
-  const upstox = (rows ?? []).filter((r) => r.broker_name === "upstox" && r.oauth_supported);
-
-  async function login(t: BrokerTokenInfo) {
-    const label = t.account_label ?? "primary";
-    setBusy(label);
-    setError(null);
-    try {
-      const { authorization_url } = await api.upstoxOAuthStart(label);
-      window.location.href = authorization_url;                 // back on the Broker page with the outcome
-    } catch (e) {
-      setError(loginErrorText(e, "upstox"));
-      setBusy(null);
-    }
-  }
-
-  return (
-    <div className="space-y-space-3">
-      {upstox.length > 0 ? (
-        <div className="flex flex-wrap gap-space-2">
-          {upstox.map((t) => {
-            const label = t.account_label ?? "primary";
-            return (
-              <button key={label} type="button" onClick={() => void login(t)} disabled={!canChange || busy !== null} data-upstox-oauth={label}
-                className={BTN_PRIMARY}>
-                <LogIn size={16} aria-hidden /> {busy === label ? "Opening Upstox…" : `Log in with Upstox${label !== "primary" ? ` (${label})` : ""}`}
-              </button>
-            );
-          })}
-        </div>
-      ) : rows !== null && (
-        <p className="text-t13 text-fg-muted">The OAuth login shows here for an Upstox connection with an API key and secret.</p>
-      )}
-      {error && (
-        <p role="alert" className="flex items-start gap-space-2 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn">
-          <TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0" /><span>{error}</span>
-        </p>
-      )}
-      <UpstoxRedirectUrl selected />
-    </div>
-  );
-}
-
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-space-2">
@@ -151,9 +95,6 @@ export default function BrokerAdvanced({ entries = [], canChange = true, onConne
         <div className="space-y-space-5 border-t border-subtle p-space-4">
           <Section title="Connect another account">
             <AnotherAccount entries={entries} canChange={canChange} onConnect={(b, l) => onConnectAccount?.(b, l)} />
-          </Section>
-          <Section title="Upstox OAuth app">
-            <UpstoxOAuth canChange={canChange} />
           </Section>
           <StaticIpCard />
           <BrokerAccountsCard />

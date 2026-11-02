@@ -872,7 +872,10 @@ export const api = {
   upstoxRedirectUrl: () => request<UpstoxRedirectInfo>("/broker/upstox/redirect-url"),
   upstoxOAuthStart: (accountLabel = "primary") =>
     request<{ authorization_url: string }>(`/broker/upstox/oauth/start?account_label=${encodeURIComponent(accountLabel)}`),
-  // Paste-the-code daily login (Fyers, Kite): open the broker's page, then exchange the pasted code.
+  // BRK-1 B: the daily login of Kite and Fyers - the broker's page opens and returns to ATP's own callback (nothing pasted).
+  brokerOAuthStart: (name: "zerodha" | "fyers", accountLabel = "primary") =>
+    request<{ authorization_url: string }>(`/broker/${name}/oauth/start?account_label=${encodeURIComponent(accountLabel)}`),
+  // Paste-the-code daily login (Fyers, Kite) - BRK-1 B: the hidden fallback: open the broker's page, then exchange the pasted code.
   brokerLoginUrl: (name: string, accountLabel = "primary") =>
     request<BrokerLoginUrl>(`/broker/${name}/login-url?account_label=${encodeURIComponent(accountLabel)}`),
   brokerLoginCode: (name: string, code: string, accountLabel = "primary") =>

@@ -30,7 +30,8 @@ describe("UI2-0 BrokerGate: the three states", () => {
     expect(html).toContain('data-broker-gate="login-needed"');
     expect(html).toContain("Log in to Upstox");
     expect(html).toContain("Your Upstox session has ended.");
-    expect(html).toContain("we never see or store your broker password");
+    expect(html).toContain("Analytics Token, valid for one year");            // BRK-1 B: no Upstox OAuth login
+    expect(render([tokenRow("zerodha")])).toContain("we never see or store your broker password");
     expect(html).not.toContain("REAL PAGE CONTENT");
     expect(html.match(/(?<![:\w-])bg-brand(?![\w-])/g)?.length).toBe(1);
 

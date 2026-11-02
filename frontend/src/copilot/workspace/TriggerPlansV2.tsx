@@ -6,10 +6,11 @@ import type { Leg } from "../../optionsBuilder/model";
 import { Combobox } from "../../ui/Combobox";
 import { Details } from "../../ui/Details";
 import { formatNumber } from "../../ui/format";
+import { DryRunCardV2 } from "./DryRunCardV2";
 import { NOT_SET_TEXT, type ExitDraft } from "./plan";
 import {
-  EMPTY_TRIGGER, READ_TIMEFRAMES, areaChoices, conditionText, planRequest, statusTone, triggerMissing,
-  type PlanArea, type PlanView, type TriggerDraft,
+  EMPTY_TRIGGER, MAX_DRY_SESSIONS, READ_TIMEFRAMES, areaChoices, conditionText, dryMissing, dryRunRequest, drySessions, planRequest, statusTone,
+  triggerMissing, type DryRunView, type PlanArea, type PlanView, type TriggerDraft,
 } from "./triggerPlans";
 
 /**
@@ -19,6 +20,8 @@ import {
  * worker fires it, once, through the order ticket. Pause, resume and cancel are his taps. The AI writes no plan.
  * M75 W-9: the plan can also watch one of the open chart's reading areas (a candle of his timeframe with the reading's
  * rejection there) or a BOS / CHoCH on his timeframe - the same reading source as the chart's (engine or ATP, never both).
+ * M76 MP-12 (D-2): "Dry run" replays his draft (or a saved plan) over the last N sessions he types and shows ONE compact
+ * card in place - read-only on the server (nothing placed, armed or changed).
  */
 const FIELD = "h-11 w-full min-w-0 rounded-control border border-border bg-surface-2 px-space-2 text-t14 text-fg font-tabular focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9";
 const BTN = "inline-flex min-h-11 items-center justify-center rounded-control px-space-3 text-t13 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50 md:min-h-9";
@@ -60,12 +63,16 @@ export function TriggerPlansV2({ underlying, legs, exits, areas = [] }: { underl
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [ref, setRef] = useState(newRef);
+  const [sessions, setSessions] = useState("");
+  const [dry, setDry] = useState<DryRunView | null>(null);
   const load = useCallback(() => {
     request<PlanView[]>("/trigger-plans").then(setPlans, () => setPlans([]));
   }, []);
   useEffect(load, [load]);
   const d = (patch: Partial<TriggerDraft>) => setDraft((x) => ({ ...x, ...patch }));
   const missing = triggerMissing(draft, legs);
+  const dryNeeds = dryMissing(draft, sessions);
+  const n = drySessions(sessions);
   const choices = areaChoices(areas);
   const areaValue = draft.area ? choices.find((c) => c.area.low === draft.area?.low && c.area.high === draft.area?.high && c.area.side === draft.area?.side)?.value ?? null : null;
 
@@ -76,6 +83,17 @@ export function TriggerPlansV2({ underlying, legs, exits, areas = [] }: { underl
       setDraft(EMPTY_TRIGGER);
       setRef(newRef());
       load();
+    } catch (e) {
+      setProblem(errorSentence(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function dryRun(body: Record<string, unknown>) {
+    setBusy(true); setProblem(null); setDry(null);
+    try {
+      setDry(await request<DryRunView>("/trigger-plans/dry-run", { method: "POST", body: JSON.stringify(body) }));
     } catch (e) {
       setProblem(errorSentence(e));
     } finally {
@@ -141,6 +159,16 @@ export function TriggerPlansV2({ underlying, legs, exits, areas = [] }: { underl
           </button>
           {missing.length > 0 && <span className="text-t12 text-fg-muted" data-trigger="missing">Still Not set: {missing.join(", ")}</span>}
         </div>
+        <div className="flex flex-wrap items-end gap-space-2">
+          <div className="w-32">
+            <Field label={`Sessions (1-${MAX_DRY_SESSIONS})`} value={sessions} onChange={setSessions} testId="dry-sessions" />
+          </div>
+          <button type="button" className={cx(BTN, "border border-border text-fg")} disabled={busy || dryNeeds.length > 0 || n == null}
+            onClick={() => n != null && void dryRun(dryRunRequest(underlying, draft, legs, exits, n))} data-trigger="dry-run">
+            Dry run
+          </button>
+          {dryNeeds.length > 0 && <span className="text-t12 text-fg-muted" data-trigger="dry-missing">Dry run needs: {dryNeeds.join(", ")}</span>}
+        </div>
         {problem && <p role="alert" className="text-t13 text-fg" data-trigger="problem">{problem}</p>}
         <Details id="copilot.trigger" className="mt-0">
           <p className="text-t13 text-fg-muted">The plan waits for your level, your area&apos;s rejection candle or your BOS / CHoCH (read from
@@ -148,6 +176,8 @@ export function TriggerPlansV2({ underlying, legs, exits, areas = [] }: { underl
             check again then. A single leg carries your stop-loss and target. Exits are never blocked. Practice mode (PAPER).</p>
         </Details>
       </fieldset>
+
+      {dry && <DryRunCardV2 view={dry} />}
 
       <section aria-label="Trigger plans" data-trigger="list">
         <h4 className="mb-space-1 text-t13 font-semibold text-fg">Trigger plans</h4>
@@ -166,6 +196,8 @@ export function TriggerPlansV2({ underlying, legs, exits, areas = [] }: { underl
                   {p.note && <span className="block text-t12 text-fg-muted">{p.note}</span>}
                 </div>
                 <div className="flex gap-space-1">
+                  <button type="button" className={cx(BTN, "border border-border text-fg")} disabled={busy || n == null}
+                    onClick={() => n != null && void dryRun({ sessions: n, plan_id: p.id })} data-trigger-act="dry-run">Dry run</button>
                   {p.status === "ARMED" && <button type="button" className={cx(BTN, "border border-border text-fg")} onClick={() => void act(p.id, "pause")} data-trigger-act="pause">Pause</button>}
                   {p.status === "PAUSED" && <button type="button" className={cx(BTN, "border border-border text-fg")} onClick={() => void act(p.id, "resume")} data-trigger-act="resume">Resume</button>}
                   {(p.status === "ARMED" || p.status === "PAUSED") && (

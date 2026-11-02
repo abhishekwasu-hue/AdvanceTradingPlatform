@@ -211,6 +211,13 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "setup_recall": _ready(),
     "read_chart": _ready(),
     "why_no_trade": _ready(),
+    "copilot_agent": _setup("AI key with tool use", AI, ("ai_key",)),
+    "copilot_memory": _ready("Each user saves his own on Settings › AI", AI),
+    "copilot_languages": _setup("AI key with tool use", AI, ("ai_key",)),
+    "copilot_ticket": _decision("Ticket preparation: the order said on by default; it ships off until you turn it on"),
+    "copilot_watch": _ready("Each user turns on his own alert types with his own numbers", ALERTS),
+    "ai_platform_key": _setup("The platform AI key on the server, each plan's AI budget and the per-user daily cap",
+                              f"{HOST}; Admin › Controls › Limits"),
 }
 
 _UNKNOWN = FlagStatus("not_built", "Not described in the flag list yet", "", "M80")

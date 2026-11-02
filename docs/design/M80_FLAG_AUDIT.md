@@ -7,7 +7,7 @@ tests that name it; paths are relative (`fe:` = frontend/src, `e2e:` = frontend/
 `fe:`). Live checks (✓ / ✗) are read on the server for the admin's own organisation: AI key, broker connected, private
 package importable, Telegram set up.
 
-Counts: Ready 76, Ready (behind the scenes) 10, Needs your setup 11, Not built yet 2, Owner decision 25 (total 124).
+Counts: Ready 78, Ready (behind the scenes) 10, Needs your setup 14, Not built yet 2, Owner decision 26 (total 130).
 
 ON but not built: by the code defaults none (both "Not built yet" flags are OFF by default). The production values are
 not known from the code; the owner's screenshot showed `multi_account`, `term_whatif`, `strategy_templates` ON - all
@@ -139,3 +139,9 @@ three are now **Ready**. The server refuses to turn on a "Not built yet" flag (4
 | `read_chart` | Ready for users | **Ready** | - | - | - | charts/read_chart.py; fe:shell/askAiEntry.tsx; tests: test_aud_t5_read_chart.py; fe:shell/askAiEntry.test.tsx; fe:chart/readChart.test.tsx |
 | `plan_limits_v2` | Owner / compliance decision | **Owner decision** | Pricing: the limits per plan | - | - | plans/limits.py; watchlists/service.py; fe:components/PlanLimitsV2.tsx; tests: test_mo4_growth.py; test_amw1_plan_limits_v2.py; test_trader_pack.py |
 | `why_no_trade` | Ready for users | **Ready** | - | - | - | deployments/routes.py; fe:api/client.ts; tests: test_aud_t3_why_no_trade.py; fe:paperbot/botWhy.test.tsx |
+| `copilot_agent` | Unfinished / needs setup | **Needs your setup** | AI key with tool use | Settings › AI | AI key | ai/chat_routes.py; ai/agent.py; ai/tools/my_data.py; fe:copilot/chat/model.ts; tests: test_m72_pr3_context.py; test_m72_pr4_options_kit.py; test_m72_pr6_drafts.py; M72 PR-1c..PR-6 merged |
+| `copilot_memory` | Unfinished / needs setup | **Ready** | Each user saves his own on Settings › AI | Settings › AI | - | ai/memory.py; ai/memory_routes.py; fe:copilot/memory/CopilotMemoryV2.tsx; tests: test_m72_pr11_memory.py; fe:copilot/memory/memory.test.tsx |
+| `copilot_languages` | Unfinished / needs setup | **Needs your setup** | AI key with tool use | Settings › AI | AI key | ai/languages.py; ai/output_filter.py; ai/chat_routes.py; fe:copilot/language/AnswerLanguageV2.tsx; tests: fe:copilot/language/language.test.tsx; fe:englishOnlyOutsideInterview.test.tsx |
+| `copilot_ticket` | Owner / compliance decision | **Owner decision** | Ticket preparation: the order said on by default; it ships off until you turn it on | - | - | fe:copilot/ticket/TicketPrepV2.tsx; tests: test_m72_pr9_ticket.py; fe:copilot/ticket/ticket.test.tsx; OPEN_QUESTIONS M72Q-11 |
+| `copilot_watch` | Unfinished / needs setup | **Ready** | Each user turns on his own alert types with his own numbers | Settings › Alerts | - | ai/watch.py; ai/watch_routes.py; workers/trading_worker.py; fe:copilot/watch/CopilotWatchV2.tsx; tests: test_m72_pr7_watch.py; fe:copilot/watch/watch.test.tsx |
+| `ai_platform_key` | Unfinished / needs setup | **Needs your setup** | The platform AI key on the server, each plan's AI budget and the per-user daily cap | Owner host block; Admin › Controls › Limits | - | ai/platform_key.py; ai/platform_routes.py; ai/resolve.py; fe:aiKeys/PlatformAiUsageV2.tsx; tests: test_m72_pr1b_platform_key.py |

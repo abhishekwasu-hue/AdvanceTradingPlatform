@@ -90,6 +90,10 @@ class OrderAsk:
     rest_if_waiting: bool = False           # TM-2: a limit / stop the price has not reached waits for it (needs client_ref)
     trigger_mode: str | None = None      # TT-7: TOUCH (any print) or CLOSE (a closed candle); M68 TS1-015: his own
     timeframe_minutes: Optional[int] = None
+    # M76 MP-5: the check-card types shown when he pressed Place (journaled on the fill; never read by any check) and
+    # that moment (a waiting order keeps it in its payload, so a later fill records the time he pressed Place).
+    accepted_warnings: tuple[str, ...] = ()
+    accepted_at: str | None = None
 
 
 @dataclass
@@ -581,6 +585,8 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     from app.execution.signal_execution import execute_signal_for_user
     from app.platform import phase0_lock
     now = now or datetime.now(timezone.utc)
+    if ask.accepted_warnings and not ask.accepted_at:
+        ask.accepted_at = now.isoformat()               # M76 MP-5: the moment Place was pressed (kept by a waiting order)
     view = await assess(session, user, ask, price_lookup=price_lookup, live_only=True, now=now, origin=origin)
     if not view["can_place"]:
         # M64 RM-3: a Risk limits block on a placing attempt goes to the journal's record (a preview is not logged).
@@ -621,6 +627,10 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     if result.executed and result.trade is not None:
         filled = {"price": float(result.trade.entry_price), "quantity": float(result.trade.quantity),
                   "lots": round(float(result.trade.quantity) / contract.lot_size, 4)}
+    if filled is not None and ask.accepted_warnings and order.trade_id:
+        # M76 MP-5: after the fill, the lines he pressed Place with go on the journal entry (queued; never raises).
+        from app.paper import pretrade_warnings
+        await pretrade_warnings.record_accepted(session, user, [order.trade_id], ask.accepted_warnings, ask.accepted_at)
     reasons = [plain(r) for r in (result.reasons or [])]
     return {**view, "status": "PLACED" if result.executed else "REFUSED", "reasons": reasons if not result.executed else [],
             "order_id": order.id, "trade_id": order.trade_id, "filled": filled, "mode": order.mode}
@@ -668,6 +678,7 @@ def ask_payload(ask: OrderAsk) -> Dict[str, Any]:
 def ask_from_payload(payload: Dict[str, Any]) -> OrderAsk:
     values = dict(payload)
     values["expiry"] = date.fromisoformat(str(values["expiry"]))
+    values["accepted_warnings"] = tuple(values.get("accepted_warnings") or ())   # M76 MP-5 (absent in older payloads)
     return OrderAsk(**values)
 
 

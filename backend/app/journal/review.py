@@ -144,9 +144,29 @@ def _money(value: Optional[float]) -> str:
     return f"{'-' if value < 0 else ''}₹{abs(value):,.2f}"
 
 
+def accepted_summary(trades: Sequence[ReviewTrade], accepted: Iterable[tuple[int, str]], labels: dict[str, str]) -> list[dict[str, Any]]:
+    """M76 MP-5 (W-4): per check-card type he pressed Place with, the decisions it was on and how they ended - numbers
+    only (trades, closed, won, lost, net P&L of the closed ones). `accepted`: (trade_id, type) from the journal entries.
+    A decision counts once per type even when several of its legs carry it. No judgement, no fix line."""
+    by_row = {row: t for t in trades for row in t.rows}
+    on: dict[str, set[int]] = defaultdict(set)
+    for trade_id, wid in accepted:
+        if trade_id in by_row:
+            on[wid].add(by_row[trade_id].id)
+    by_id = {t.id: t for t in trades}
+    out = []
+    for wid in sorted(on):
+        stats = _stats([by_id[i] for i in sorted(on[wid])])
+        out.append({"id": wid, "label": labels.get(wid, wid), "trades": stats["trades"], "closed": stats["closed"],
+                    "wins": stats["wins"], "losses": stats["losses"], "net_pnl": stats["net_pnl"]})
+    return sorted(out, key=lambda a: (-a["trades"], a["id"]))
+
+
 def build_review(week: str, trades: Sequence[ReviewTrade], counted_tags: Iterable[tuple], score: Dict[str, Any],
-                 history: Sequence[Dict[str, Any]], settings: DisciplineSettings) -> Dict[str, Any]:
-    """`counted_tags`: (trade_id, tag) pairs that count under the trader's settings (dismissed ones left out)."""
+                 history: Sequence[Dict[str, Any]], settings: DisciplineSettings,
+                 accepted: Sequence[dict[str, Any]] = ()) -> Dict[str, Any]:
+    """`counted_tags`: (trade_id, tag) pairs that count under the trader's settings (dismissed ones left out).
+    `accepted`: M76 MP-5 - the week's `accepted_summary` (empty: no section, no line)."""
     by_row = {row: t for t in trades for row in t.rows}     # a tag sits on a trade row; it counts once for its decision
     by_id = {t.id: t for t in trades}
     totals = _stats(trades)
@@ -174,7 +194,7 @@ def build_review(week: str, trades: Sequence[ReviewTrade], counted_tags: Iterabl
 
     review: Dict[str, Any] = {"week": week, "totals": totals, "by_setup": by_setup, "what_worked": what_worked, "what_lost": what_lost,
               "behaviours": behaviours, "costliest": costliest, "discipline": score, "history": list(history),
-              "count_unconfirmed": settings.count_unconfirmed, "disclaimer": DISCLAIMER}
+              "count_unconfirmed": settings.count_unconfirmed, "accepted_warnings": list(accepted), "disclaimer": DISCLAIMER}
     review["lines"] = lines(review)
     return review
 
@@ -200,6 +220,9 @@ def lines(review: Dict[str, Any]) -> List[str]:
         out.append(f"Setup {g['setup']} lost {_money(abs(g['net_pnl']))} over {_n(g['closed'], 'closed trade')}.")
     for b in review["behaviours"]:
         out.append(f"Tagged {b['label']}: {_n(b['trades'], 'trade')}, net {_money(b['net_pnl'])} on the closed ones.")
+    for a in review.get("accepted_warnings") or []:
+        ended = f", {a['wins']} won and {a['losses']} lost of {a['closed']} closed, net {_money(a['net_pnl'])}" if a["closed"] else ", none closed yet"
+        out.append(f"Placed with the line \"{a['label']}\" shown: {_n(a['trades'], 'trade')}{ended}.")
     if review["costliest"]:
         c = review["costliest"]
         out.append(f"The behaviour with the largest loss this week was {c['label']} ({_money(abs(c['net_pnl']))} lost over {_n(c['closed'], 'closed trade')}).")

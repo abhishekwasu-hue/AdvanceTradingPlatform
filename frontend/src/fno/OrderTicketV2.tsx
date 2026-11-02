@@ -28,7 +28,7 @@ import { eventLine, legLiquidity, liquidityLine, marginLine, type EventRisk } fr
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
 import RiskBlockV2 from "../risk/RiskBlockV2";
 import { TicketClock, cardSurfaces, ticketBlocks, ticketSurfaces } from "./ticketMetrics";
-import { VISIBLE_LINES, askFirst, assembleLines, editField, factKey, liquidityCheck, sessionSeen, statusLines, switchesOf, type CheckDraft, type CheckLine } from "./checkCard";
+import { VISIBLE_LINES, askFirst, assembleLines, editField, factKey, liquidityCheck, sessionSeen, statusLines, switchesOf, withAccepted, type CheckDraft, type CheckLine } from "./checkCard";
 import { CheckCardV2 } from "./CheckCardV2";
 import { useCheckCard, type TicketCard } from "./useCheckCard";
 import { Combobox } from "../ui/Combobox";
@@ -301,7 +301,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
         if (first) onPlaced?.({ status: "PLACED", trade_id: first.trade_id } as OrderResult);
         return;
       }
-      const result = await api.place(askOf(target, draft, ref.current));
+      const result = await api.place(withAccepted(askOf(target, draft, ref.current), warnOn && step.kind === "review" ? lines : []));
       setStep({ kind: "done", result });
       if (result.status === "PLACED") onPlaced?.(result);
     } catch (e) {

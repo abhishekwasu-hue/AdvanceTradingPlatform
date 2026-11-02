@@ -32,7 +32,7 @@ import { riskLine, structureOf, type RiskBudget, type RiskLine } from "./insight
 import { eventLine, legLiquidity, liquidityLine, marginLine } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
 import { TicketClock, basketBlocks, basketSurfaces, cardSurfaces } from "./ticketMetrics";
-import { VISIBLE_LINES, askFirst, assembleLines, factKey, liquidityCheck, sessionSeen, switchesOf, type CheckLine } from "./checkCard";
+import { VISIBLE_LINES, askFirst, assembleLines, factKey, liquidityCheck, sessionSeen, switchesOf, withAccepted, type CheckLine } from "./checkCard";
 import { CheckCardV2 } from "./CheckCardV2";
 import { useCheckCard, type TicketCard } from "./useCheckCard";
 import { useTradeSettings } from "../settings/tradeSettings";
@@ -296,7 +296,8 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     try {
       // SX3: the strategy exit goes with the first run only (the remaining legs keep their own stops).
       const exits = step.remaining ? null : exitsAsk(exitForm);
-      const result = await api.execute({ ...basketAsk(step.legs, spot, product), basket_ref: ref.current, ...(exits ? { exits } : {}) });
+      const result = await api.execute(withAccepted({ ...basketAsk(step.legs, spot, product), basket_ref: ref.current, ...(exits ? { exits } : {}) },
+        warnOn ? lines : []));
       setStep({ kind: "done", result, legs: step.legs });
       if (result.placed > 0) onPlaced?.(result);
     } catch (e) {

@@ -97,3 +97,33 @@ async def accepted(user: User, instrument: str) -> set[str]:
     except Exception:  # noqa: BLE001
         return set()
     return {w for w, v in zip(ts.WARNING_IDS, values) if v}
+
+
+# --- M76 MP-5: accepted lines on the journal entry ----------------------------------------------------------------------
+
+LABELS: dict[str, str] = {name: label for name, label, _help, _on in ts.WARNING_TYPES}
+
+
+def clean_accepted(types: Iterable[str] | None) -> tuple[str, ...]:
+    """The accepted types the order carries: known ids only, each once, in the order sent (an unknown id - say from a
+    tab opened before a type was renamed - is dropped, never a reason to refuse the order)."""
+    return tuple(w for w in dict.fromkeys(types or ()) if w in ts.WARNING_IDS)[:len(ts.WARNING_IDS)]
+
+
+async def record_accepted(session: AsyncSession, user: User, trade_ids: Iterable[int], types: Iterable[str],
+                          at: str | None) -> None:
+    """He pressed Place with these lines shown and the order filled: each type goes on the trade's journal entry
+    (`plan_json.accepted_warnings`, with the time Place was pressed). Runs after the order, through the journal's own
+    queue (flag `discipline_engine`), only while `trade_warnings` is on. Never raises, never holds back the order."""
+    wanted, ids = clean_accepted(types), [int(t) for t in trade_ids if t]
+    if not wanted or not ids:
+        return
+    try:
+        from app.journal import capture
+        from app.platform.controls import flag_enabled
+        if not await flag_enabled(session, "trade_warnings", user.tenant_id):
+            return
+        await capture.on_accepted_warnings(session, user.tenant_id, ids, [{"id": w, "at": at} for w in wanted])
+    except Exception:  # noqa: BLE001 - the journal record never fails or delays the order
+        import logging
+        logging.getLogger(__name__).warning("Accepted warnings not journaled for user %s", user.id, exc_info=True)

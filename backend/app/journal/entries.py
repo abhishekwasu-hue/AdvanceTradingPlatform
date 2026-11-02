@@ -416,7 +416,15 @@ def plan_view(trade: TradeRecord, entry: JournalEntryRecord | None, timeframe: s
     words = [str(w) for w in (signal.get("words") or []) if w]
     return {"setup": signal.get("setup") or trade.strategy_id, "timeframe": timeframe, "area": words or None,
             "invalidation": plan.get("stop"), "target": trade.target1, "entry": plan.get("entry"),
-            "entry_source": plan.get("entry_source")}
+            "entry_source": plan.get("entry_source"),
+            # M76 MP-5: the check-card lines shown when he pressed Place (type, its name, the time) - as recorded
+            "accepted_warnings": accepted_view(plan)}
+
+
+def accepted_view(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    from app.paper.pretrade_warnings import LABELS
+    return [{"id": str(i["id"]), "label": LABELS.get(str(i["id"]), str(i["id"])), "at": i.get("at")}
+            for i in plan.get("accepted_warnings") or [] if isinstance(i, dict) and i.get("id")]
 
 
 async def deployment_timeframes(session: AsyncSession, trades: Sequence[TradeRecord]) -> dict[int, str]:

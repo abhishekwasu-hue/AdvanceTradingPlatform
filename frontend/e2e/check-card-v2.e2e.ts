@@ -41,6 +41,7 @@ test.describe("M76 MP-2: the check card on the four ticket flows (after)", () =>
     const ticket = await ticketToReview(page);
     await expect(card(ticket).locator("[data-check-clear]")).toHaveText("No warnings.");
     check(await placeAndMeasure(page, "A", ticket.locator("[data-ticket='place']"), ticket.locator("[data-ticket='result']"), seen));
+    expect(seen.orders[0]).not.toHaveProperty("accepted_warnings");                    // M76 MP-5: no line shown, the body as before
   });
 
   test("B - today's warning texts are ONE card of fact lines; Place stays on", async ({ page }) => {
@@ -56,6 +57,8 @@ test.describe("M76 MP-2: the check card on the four ticket flows (after)", () =>
     await expect.poll(() => seen.accepts.length).toBe(1);
     expect(seen.accepts[0]).toMatchObject({ underlying: "NIFTY", expiry: "2026-11-03", strike: 24500, right: "CE" });
     expect((seen.accepts[0].types as string[]).sort()).toEqual(["event", "expiry_day", "price_source"]);
+    // M76 MP-5: the same types go with the order, for its journal entry (W-4).
+    expect((seen.orders[0].accepted_warnings as string[]).sort()).toEqual(["event", "expiry_day", "price_source"]);
   });
 
   test("C - a refusal stays a block outside the card (it holds Place back, as today)", async ({ page }) => {

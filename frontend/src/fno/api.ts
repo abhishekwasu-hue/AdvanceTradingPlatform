@@ -62,6 +62,8 @@ export interface OrderAsk {
   stop_loss?: number | null;
   chain_ltp?: number | null;
   client_ref?: string | null;
+  /** M76 MP-5 (trade_warnings): the check-card types shown when he pressed Place - journaled on the fill only. */
+  accepted_warnings?: string[];
 }
 
 export interface MoneyLine { value: number | null; basis: string; estimated?: boolean; note?: string }
@@ -319,7 +321,7 @@ export const basketApi = {
   evaluate: (ask: EvaluateAsk) => request<BasketEvaluation>("/paper/fno/basket/evaluate", post(ask)),
   settings: (underlying: string) => request<BasketSettings>(`/paper/fno/basket/settings?${q({ underlying })}`),
   preview: (ask: BasketAsk) => request<BasketPreview>("/paper/fno/basket/preview", post(ask)),
-  execute: (ask: BasketAsk & { basket_ref: string; exits?: StrategyExitsAsk | null }) => request<BasketResult>("/paper/fno/basket/execute", post(ask)),
+  execute: (ask: BasketAsk & { basket_ref: string; exits?: StrategyExitsAsk | null; accepted_warnings?: string[] }) => request<BasketResult>("/paper/fno/basket/execute", post(ask)),
   brokerLink: (ask: BasketAsk) => request<BasketBrokerLink>("/paper/fno/basket/broker-link", post(ask)),
   closeFilled: (trade_ids: number[]) => request<CloseFilledResult>("/paper/fno/basket/close-filled", post({ trade_ids })),
   settlement: () => request<SettlementView>("/paper/fno/settlement"),

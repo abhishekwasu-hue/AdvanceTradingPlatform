@@ -120,6 +120,13 @@ export function editField(id: WarningId): string | null {
 
 // --- tab session: facts he already pressed Place on (amendment 5: no repeated alert for the same fact in one session) ---
 const SEEN = new Set<string>();
+/** M76 MP-5: the order body with the types of the lines shown when he pressed Place (each once; none: the body as before).
+ *  The server journals them on the fill only; no check, price or size reads them. */
+export function withAccepted<T extends object>(body: T, lines: readonly CheckLine[]): T & { accepted_warnings?: string[] } {
+  const ids = [...new Set(lines.map((l) => l.id))];
+  return ids.length ? { ...body, accepted_warnings: ids } : body;
+}
+
 export const sessionSeen = (): ReadonlySet<string> => SEEN;
 export function markSeen(lines: readonly CheckLine[]): void { lines.forEach((l) => SEEN.add(factKey(l))); }
 export function resetSessionSeen(): void { SEEN.clear(); }

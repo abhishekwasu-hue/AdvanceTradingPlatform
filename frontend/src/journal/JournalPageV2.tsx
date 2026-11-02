@@ -31,8 +31,10 @@ const OFF_TEXT = "The journal is not turned on for your account yet.";
 
 const isOff = (e: unknown) => e instanceof ApiError && e.status === 503;
 
-export default function JournalPageV2({ api = defaultApi, shareCard = false, recallOn = false, settings }: {
+export default function JournalPageV2({ api = defaultApi, shareCard = false, recallOn = false, acceptedOn = false, settings }: {
   api?: JournalApi; shareCard?: boolean; recallOn?: boolean; settings?: ReactNode;
+  /** M76 MP-5 (flag trade_warnings): the weekly review shows the check-card lines he pressed Place with. */
+  acceptedOn?: boolean;
 }) {
   const toast = useToast();
   const [target0] = useState(() => (typeof window === "undefined" ? { week: null, tradeId: null } : journalTarget(window.location.search, window.location.hash)));
@@ -116,7 +118,7 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
         {tab === "stats" && <JournalStatsV2 state={stats} onRetry={refresh} />}
         {tab === "review" && (
           <WeeklyReviewV2 state={weekState} week={week} onWeek={(o) => setWeek((w) => shiftWeek(w, o))} onRetry={refresh}
-            onOpen={(kind, id) => setSheet({ kind, id })} />
+            onOpen={(kind, id) => setSheet({ kind, id })} acceptedOn={acceptedOn} />
         )}
         {tab === "settings" && (
           <div className="space-y-space-4">

@@ -31,7 +31,7 @@ async function noSidewaysScroll(page: Page) {
   expect(r.scroll, "page wider than the screen").toBeLessThanOrEqual(r.width);
 }
 
-async function openJournal(page: Page) {
+async function openJournal(page: Page, extra: { features?: Record<string, boolean>; week?: object } = {}) {
   await page.clock.install({ time: new Date("2032-03-17T18:00:00+05:30") });
   await page.addInitScript(() => {
     try {
@@ -42,11 +42,11 @@ async function openJournal(page: Page) {
     } catch { /* storage unavailable */ }
   });
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-  await mockApi(page, { features: FEATURES, brokers: [], connections: [UPSTOX] });
+  await mockApi(page, { features: { ...FEATURES, ...extra.features }, brokers: [], connections: [UPSTOX] });
   const asked: string[] = [];
   await page.route(/\/api(?:\/v1)?\/journal\/entries(\?.*)?$/, (r) => { asked.push(r.request().url()); return r.fulfill({ json: DEMO_LIST }); });
   await page.route(/\/api(?:\/v1)?\/journal\/stats(\?.*)?$/, (r) => r.fulfill({ json: DEMO_STATS }));
-  await page.route(/\/api(?:\/v1)?\/journal\/week(\?.*)?$/, (r) => r.fulfill({ json: DEMO_WEEK }));
+  await page.route(/\/api(?:\/v1)?\/journal\/week(\?.*)?$/, (r) => r.fulfill({ json: extra.week ?? DEMO_WEEK }));
   await page.route(/\/api(?:\/v1)?\/journal\/settings$/, (r) => r.fulfill({ json: SETTINGS }));
   await page.route(/\/api(?:\/v1)?\/journal\/trades\/2$/, (r) => r.fulfill({ json: DEMO_ENTRY }));
   await page.route(/\/api(?:\/v1)?\/journal\/(trades|manual)\/\d+\/chart\?at=(entry|exit)$/, (r) => r.fulfill({ body: PNG, contentType: "image/png" }));
@@ -112,6 +112,30 @@ for (const size of SIZES) {
       await expect(review.locator("[data-week-row]")).toHaveCount(3);
       await noSidewaysScroll(page);
       await shot(page, `after-review-${size.width}`);
+    });
+
+    test("M76 MP-5: the weekly review counts the warnings he accepted (flag trade_warnings)", async ({ page }) => {
+      const rows = [
+        { id: "margin_short", label: "Margin more than available", trades: 3, closed: 2, wins: 1, losses: 1, net_pnl: 1250.5 },
+        { id: "limit_far_from_ltp", label: "Limit price far from the last price", trades: 2, closed: 2, wins: 0, losses: 2, net_pnl: -840 },
+        { id: "fo_ban", label: "F&O ban list", trades: 1, closed: 0, wins: 0, losses: 0, net_pnl: 0 },
+      ];
+      await openJournal(page, { features: { trade_warnings: true }, week: { ...DEMO_WEEK, accepted_warnings: rows } });
+      await page.locator("#journal-tab-review").click();
+      const card = page.locator("[data-block='accepted-warnings']");
+      await expect(page.locator("[data-accepted]")).toHaveCount(3);
+      await expect(page.locator("[data-weekly-review]")).toContainText("Warnings you accepted");
+      await expect(page.locator("[data-accepted='fo_ban']")).toContainText("None closed");
+      await noSidewaysScroll(page);
+      await card.scrollIntoViewIfNeeded();
+      await shot(page, `accepted-review-${size.width}`);
+    });
+
+    test("M76 MP-5: no card while trade_warnings is off", async ({ page }) => {
+      await openJournal(page, { week: { ...DEMO_WEEK, accepted_warnings: [{ id: "fo_ban", label: "F&O ban list", trades: 1, closed: 0, wins: 0, losses: 0, net_pnl: 0 }] } });
+      await page.locator("#journal-tab-review").click();
+      await expect(page.locator("[data-weekly-review]")).toBeVisible();
+      await expect(page.locator("[data-accepted]")).toHaveCount(0);
     });
   });
 }

@@ -68,7 +68,7 @@ ORIGIN_APPROVAL = "approval"       # the execution of an APPROVED entry proposal
 ORIGIN_MANUAL = "manual"
 TARGET_RULES = ("TARGET_1_REACHED", "TARGET_2_REACHED")
 
-SOURCE_LABELS = {"deployment": "Deployment signal", "tradingview": "TradingView alert", "public_api": "API signal",
+SOURCE_LABELS = {"plan": "Your trigger plan", "deployment": "Deployment signal", "tradingview": "TradingView alert", "public_api": "API signal",
                  "manual": "Manual setup", "ticket": "PAPER ticket", "requote": "Re-quoted entry", "console": "Console signal",
                  "scan": "Scan setup"}
 
@@ -530,6 +530,18 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
             raise ValueError(stale)
         if price_lookup is None:
             raise ValueError("No live price to re-quote the entry at - nothing was placed (a broker session supplies quotes)")
+        if evidence.get("trigger_plan"):
+            # M75 W-8 (M75Q-2): "ask me first" on his trigger plan - his Approve places that ONE order of the plan through
+            # the order ticket's own `place` (every check again, with this approved proposal); no re-quote of the
+            # underlying here: the ticket prices the contract itself now.
+            from app.execution import trigger_plans
+            holder = user
+            if action.owner_user_id is not None and action.owner_user_id != user.id:
+                holder = await session.get(User, action.owner_user_id)
+                if holder is None or holder.tenant_id != action.tenant_id or not holder.is_active:
+                    raise ValueError("The person this proposal is for is no longer an active member - nothing was placed")
+            await _settle(session, action, await trigger_plans.execute_approved(session, action, holder, evidence, price_lookup, now))
+            return action
         try:
             price = float(await price_lookup(symbol, exchange))
         except NoLivePrice as exc:

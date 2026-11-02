@@ -109,13 +109,15 @@ def _rank(row: PaperRestingOrderRecord) -> Tuple[int, int, int]:
 
 
 async def tenants_with_resting(session: AsyncSession, *, paper_only: bool = False) -> Set[int]:
-    """Organisations with a waiting order or an armed / exiting combined exit."""
+    """Organisations with a waiting order, an armed / exiting combined exit, or (M75 W-8) an armed / triggered plan."""
     query = select(PaperRestingOrderRecord.tenant_id).where(PaperRestingOrderRecord.status.in_((book.RESTING, book.FIRING)))
     groups = select(GroupExitRecord.tenant_id).where(GroupExitRecord.status.in_(gx.LIVE_STATUSES))
     if paper_only:
         query = query.where(PaperRestingOrderRecord.mode == "PAPER")
         groups = groups.where(GroupExitRecord.mode == "PAPER")
-    return set(await session.scalars(query.distinct())) | set(await session.scalars(groups.distinct()))
+    from app.execution.trigger_plans import tenants_with_plans       # M75 W-8: an armed or triggered plan needs its pass too
+    plans = set() if paper_only else await tenants_with_plans(session)
+    return set(await session.scalars(query.distinct())) | set(await session.scalars(groups.distinct())) | plans
 
 
 async def _resting(session: AsyncSession, tenant_id: int, purpose: str, paper_only: bool) -> List[PaperRestingOrderRecord]:
@@ -292,6 +294,15 @@ async def run_entries(session: AsyncSession, tenant_id: int, prices: PriceFn, *,
             report.errors.append(f"entry {row.id}: {type(exc).__name__}")
             await session.rollback()
             await _restore(session, row, now)
+    # M75 W-8: his trigger plans (flag `trigger_plans`) - each fires once through the same ticket `place`, after the
+    # waiting entries, while the replica lock holds (paused above: nothing fires).
+    from app.execution import trigger_plans
+    try:
+        await trigger_plans.run(session, tenant_id, prices, candles=candles, now=now)
+    except Exception as exc:  # noqa: BLE001 - plans never stop the entry pass
+        logger.exception("Trigger engine: trigger plans failed")
+        report.errors.append(f"plans: {type(exc).__name__}")
+        await session.rollback()
     await _mark_run(session, now, report)
     return report
 

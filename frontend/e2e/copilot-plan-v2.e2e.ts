@@ -57,6 +57,10 @@ function evaluation(legs: WireLeg[], spot: number) {
 interface Seen { evaluate: WireLeg[][]; orders: string[]; bodies: Record<string, unknown>[] }
 
 async function open(page: Page, theme: "light" | "dark"): Promise<Seen> {
+  return openWith(page, theme, {});
+}
+
+async function openWith(page: Page, theme: "light" | "dark", extra: Record<string, boolean>): Promise<Seen> {
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
   await page.addInitScript((t) => {
     try {
@@ -65,7 +69,7 @@ async function open(page: Page, theme: "light" | "dark"): Promise<Seen> {
     } catch { /* storage unavailable */ }
   }, theme);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-  await mockApi(page, { features: { ui_v2: true, ai_copilot: true, read_chart: true, copilot_workspace: true, paper_account: true }, brokers: CONNECTED });
+  await mockApi(page, { features: { ui_v2: true, ai_copilot: true, read_chart: true, copilot_workspace: true, paper_account: true, ...extra }, brokers: CONNECTED });
   await mockCharts(page, {});
   await mockChartReading(page);
   const seen: Seen = { evaluate: [], orders: [], bodies: [] };
@@ -187,4 +191,74 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
       });
     });
   }
+}
+
+// M75 W-8 (CW-6, flag `trigger_plans`): Save as trigger plan from the panel and his plans list, in the same tab. Every
+// field Not set; arming sends only his values to /api/trigger-plans (no order route); Pause is his tap.
+for (const [width, height] of [[390, 844], [1440, 900]] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    test.describe(`Copilot trigger plans ${width} ${theme}`, () => {
+      test.use({ viewport: { width, height }, deviceScaleFactor: 1, ...(width < 768 ? { isMobile: true, hasTouch: true } : {}) });
+
+      test(`arm a plan from the panel, then pause it (${width} ${theme})`, async ({ page }) => {
+        const plans: Record<string, unknown>[] = [];
+        const sent: Record<string, unknown>[] = [];
+        const seen = await openWith(page, theme, { trigger_plans: true });
+        await page.route(/\/api(?:\/v1)?\/trigger-plans(\/.*)?$/, async (route) => {
+          const req = route.request();
+          const url = new URL(req.url());
+          if (req.method() === "GET") return route.fulfill({ json: plans });
+          if (url.pathname.endsWith("/pause")) {
+            plans[0] = { ...plans[0], status: "PAUSED", status_words: "Paused" };
+            return route.fulfill({ json: plans[0] });
+          }
+          const body = req.postDataJSON() as Record<string, unknown>;
+          sent.push(body);
+          const row = { id: 7, name: null, underlying: "NIFTY", status: "ARMED", status_words: "Armed", condition: body.condition, orders: body.orders,
+            approval: body.approval ?? "AUTO", valid_until: body.valid_until, note: null, last_price: null };
+          plans.unshift(row);
+          return route.fulfill({ json: row });
+        });
+        const panel = page.locator("[data-plan-panel]");
+        await expect(panel).toBeVisible({ timeout: 15_000 });
+        await panel.locator("[data-option='OPTIONS']").click();
+        await panel.locator("[data-plan='spot']").fill("24500");
+        await panel.locator("[data-plan='lot-size']").fill("75");
+        await pick(page, "leg-side", "BUY");
+        await pick(page, "leg-type", "CE");
+        await panel.locator("[data-plan='leg-strike']").fill("24700");
+        await panel.locator("[data-plan='leg-expiry']").fill("2026-11-25");
+        await panel.locator("[data-plan='leg-lots']").fill("2");
+        await panel.locator("[data-plan='leg-premium']").fill("80");
+        await panel.locator("[data-plan='add-leg']").click();
+        const form = panel.locator("[data-trigger='form']");
+        await expect(form.locator("[data-trigger='save']")).toBeDisabled();
+        await expect(form.locator("[data-trigger='side']")).toHaveText(/Not set/);
+        await expect(form.locator("[data-trigger='approval']")).toHaveText(/Not set/);
+        await form.locator("[data-trigger='level']").fill("24650");
+        await pickTrigger(page, "side", "Above it");
+        await pickTrigger(page, "mode", "A touch");
+        await form.locator("[data-trigger='valid-until']").fill("2026-10-21T15:00");
+        await pickTrigger(page, "order-type", "Market");
+        await pickTrigger(page, "product", "Carry forward (NRML)");
+        await pickTrigger(page, "approval", "Ask me first");
+        await form.locator("[data-trigger='save']").click();
+        await expect(panel.locator("[data-plan-row='ARMED']")).toContainText("above 24,650");
+        expect(sent).toHaveLength(1);
+        expect(sent[0]).toMatchObject({ underlying: "NIFTY 50", approval: "APPROVAL", condition: { level: 24650, side: "ABOVE", mode: "TOUCH" },
+          orders: [{ strike: 24700, right: "CE", side: "BUY", lots: 2, order_type: "MARKET", product: "NRML", price: null }] });
+        if (OUT) await panel.locator("[data-trigger-plans]").screenshot({ path: `${OUT}/plan-trigger-${width}-${theme}.png`, animations: "disabled" });
+        await panel.locator("[data-trigger-act='pause']").click();
+        await expect(panel.locator("[data-plan-row='PAUSED']")).toBeVisible();
+        expect(seen.orders).toEqual([]);                                                   // arming a plan sends no order
+        expect(new URL(page.url()).pathname).toBe("/copilot/read");
+        if (width < 768) await noSidewaysScroll(page);
+      });
+    });
+  }
+}
+
+async function pickTrigger(page: Page, field: string, label: string): Promise<void> {
+  await page.locator(`[data-trigger-plans] [data-trigger='${field}']`).click();
+  await page.getByRole("option", { name: label, exact: true }).click();
 }

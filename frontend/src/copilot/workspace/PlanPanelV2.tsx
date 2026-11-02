@@ -16,6 +16,7 @@ import {
   type EquityDraft, type ExitDraft, type InstrumentDraft, type LegDraft, type PlanKind,
 } from "./plan";
 import { PlanPlaceV2 } from "./PlanPlaceV2";
+import { TriggerPlansV2 } from "./TriggerPlansV2";
 
 /**
  * M75 W-6 (owner order M75 CW-4, flag `copilot_workspace`): the trade plan panel beside the chart, in the same tab.
@@ -86,7 +87,9 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate }: PlanPane
   const [problem, setProblem] = useState<string | null>(null);
   const seq = useRef(0);
   const phone = useMediaQuery("(max-width: 767px)");
-  const settings = useTradeSettings(useFeatures().on("ui_v2"));
+  const features = useFeatures();
+  const settings = useTradeSettings(features.on("ui_v2"));
+  const plansOn = features.on("ui_v2") && features.on("trigger_plans");
   const asOf = useMemo(todayIst, []);
   const spot = positive(inst.spot);
   const step = positive(inst.step);
@@ -231,6 +234,8 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate }: PlanPane
 
       {/* M75 W-7 (CW-5): placing goes to the existing ticket / basket / equity ticket, each pressed by him. */}
       {kind && <PlanPlaceV2 plan={{ underlying: symbol, kind, legs, equity, exits }} />}
+      {/* M75 W-8 (CW-6, flag trigger_plans): set and wait - his condition, then these legs, then his exits. */}
+      {plansOn && (kind === "OPTIONS" || kind === "FUTURE") && <TriggerPlansV2 underlying={symbol} legs={legs} exits={exits} />}
       <Details id="copilot.plan" className="mt-0">
         <p className="text-t13 text-fg-muted">Every field stays Not set until you fill it in. The payoff, Greeks, max profit and loss, break-evens and the
           margin estimate come from the same engine as the Options Builder. The margin is ATP&apos;s estimate, never the broker&apos;s number.</p>

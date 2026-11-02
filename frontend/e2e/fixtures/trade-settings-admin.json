@@ -1506,6 +1506,32 @@
      "saved": false
     },
     {
+     "key": "automation.plan_trigger_action",
+     "label": "When a plan triggers",
+     "kind": "choice",
+     "help": "Whether a trigger plan places its orders at once or asks you first. A plan can choose for itself.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "AUTO",
+       "label": "Place at once"
+      },
+      {
+       "value": "APPROVAL",
+       "label": "Ask me first"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false
+    },
+    {
      "key": "automation.approval_entry_minutes",
      "label": "An entry request waits",
      "kind": "whole",

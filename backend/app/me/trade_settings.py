@@ -305,6 +305,10 @@ FIELDS: tuple[SettingField, ...] = (
        "ticket's Place into a request you approve.", 6, 60, 61,
        choices=(("AUTO", "Placed automatically"), ("APPROVAL", "Ask me first")), today="trading_defaults.entry_mode; bot entry_mode",
        wired=True),
+    # M75 W-8 (M75Q-2): a trigger plan's own choice wins; Not set here = the plan form asks (no ATP default).
+    _f(A, "plan_trigger_action", "When a plan triggers", "choice",
+       "Whether a trigger plan places its orders at once or asks you first. A plan can choose for itself.", 6, 60,
+       choices=(("AUTO", "Place at once"), ("APPROVAL", "Ask me first")), wired=True),
     _f(A, "approval_entry_minutes", "An entry request waits", "whole", "Minutes an entry waiting for your answer stays open.", 6, 62,
        **_count("minutes"), today="operator setting (15 minutes)", wired=True),
     _f(A, "approval_exit_minutes", "An exit request waits", "whole", "Minutes an exit waiting for your answer stays open.", 6, 62,

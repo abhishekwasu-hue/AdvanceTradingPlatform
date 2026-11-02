@@ -218,8 +218,9 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "copilot_watch": _ready("Each user turns on his own alert types with his own numbers", ALERTS),
     # M75 W-2..W-4: the chart, its reading (code annotations) and the AI card work; the plan panel and orders follow (W-6+)
     "copilot_workspace": _ready("Chart, its reading, the AI card and the trade plan panel (preview and Place through the one ticket) in the Copilot"),
-    # M75 W-8: price-level plans (touch / candle close, his window) fire once through the ticket; method conditions are W-9
-    "trigger_plans": _ready("Price-level plans fire once through the order ticket; area and BOS / CHoCH conditions follow (M75 W-9)"),
+    # M75 W-8 / W-9: price-level plans (touch / candle close, his window) and method conditions (his reading area + the
+    # reader's rejection candle, BOS / CHoCH) fire once through the ticket
+    "trigger_plans": _ready("Price-level, area and BOS / CHoCH plans fire once through the order ticket"),
     # M76 MP-0..MP-2, MP-5: the check card, the Warnings switches and the weekly "Warnings you accepted" work; the
     # structure lines (MP-3), risk preview and what-if (MP-4 / MP-6) and the workspace helpers follow
     "trade_warnings": _ready("Each user turns each warning type on or off on Settings › Trade settings › Warnings",

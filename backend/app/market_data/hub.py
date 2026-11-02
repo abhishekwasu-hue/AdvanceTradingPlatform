@@ -549,8 +549,14 @@ async def user_connection(session: Any, user: Any, now: Optional[datetime] = Non
         shown = [r for r in records if terms_for(r.broker_name).tier_a_allowed]
         if not shown:
             return None
-        ref = SessionRef.of(shown[0])
-        return UserConnection(namespace=ref.namespace, broker=ref.broker, account_label=ref.account_label, byob=True, renew=True, record=shown[0])
+        # M85 U2: a row whose market data still works without the daily login (an Upstox analytics token whose probe
+        # marked a class `works`) is not a login that ended - prices go on through it, no renew notice.
+        from app.brokers.token_lifecycle import data_is_usable
+        data_row = next((r for r in shown if data_is_usable(r, now)), None)
+        row = data_row or shown[0]
+        ref = SessionRef.of(row)
+        return UserConnection(namespace=ref.namespace, broker=ref.broker, account_label=ref.account_label, byob=True,
+                              renew=data_row is None, record=row)
     chosen, usable = await _org_choice(session, user.tenant_id, now)
     if chosen is None or getattr(chosen, "user_id", None) != user.id:
         # M71Q-2: the organisation's stream reads through the member who linked that credential; another member gets
@@ -571,8 +577,12 @@ async def connection_status(conn: UserConnection) -> HubStatus:
         found.account_label = conn.account_label if found.broker == conn.broker else found.account_label
         return found
     # A renew_needed the worker published before the user logged in again is over once the row is usable.
-    return HubStatus(namespace=conn.namespace, broker=conn.broker, state=HubState.POLLING.value if found is None else HubState.CONNECTING.value,
-                     since=_now_iso(), account_label=conn.account_label)
+    # M85 U3: a row that serves data without the daily login (analytics token) has no stream to wait for when the
+    # stream was refused - prices come by REST ("refresh every few seconds"), never "connecting" or "login ended".
+    from app.brokers.token_lifecycle import token_is_usable
+    data_only = conn.record is not None and not token_is_usable(conn.record)
+    state = HubState.POLLING.value if (found is None or data_only) else HubState.CONNECTING.value
+    return HubStatus(namespace=conn.namespace, broker=conn.broker, state=state, since=_now_iso(), account_label=conn.account_label)
 
 
 async def admit_for_user(session: Any, user: Any, conn: UserConnection, pairs: Sequence[Pair]) -> List[Pair]:

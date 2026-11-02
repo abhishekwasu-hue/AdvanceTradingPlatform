@@ -34,6 +34,7 @@ from app.brokers.token_lifecycle import (
     build_oauth_login_url,
     build_upstox_authorization_url,
     cap_expiry_at_token_exp,
+    data_is_usable,
     get_credential_record,
     load_credentials,
     mark_expired,
@@ -89,6 +90,9 @@ class BrokerTokenStatusResponse(AnalyticsTokenInfo):
     last_verified_at: Optional[str]
     # True when a LIVE deployment on this broker would be refused right now.
     needs_login: bool
+    # M85: market data works through this row without the daily login (an Upstox analytics token whose probe marked a
+    # candle class `works`) - the data pages open on it; orders, positions and funds still need the daily login.
+    data_usable: bool = False
     # True when "Login to <broker>" can be driven as a browser redirect from the UI.
     oauth_supported: bool
     # The exact redirect URI to register on the broker's developer console for that flow.
@@ -250,6 +254,7 @@ def _token_status_response(record: BrokerCredentialRecord, request: Request) -> 
         token_expires_at=record.token_expires_at.isoformat() if record.token_expires_at else None,
         last_verified_at=record.last_verified_at.isoformat() if record.last_verified_at else None,
         needs_login=not token_is_usable(record),
+        data_usable=data_is_usable(record),
         oauth_supported=record.broker_name in OAUTH_BROKERS,
         oauth_callback_url=callback_url,
         redirect_uri_mismatch=redirect_state[1] if redirect_state else None,

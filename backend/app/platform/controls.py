@@ -604,7 +604,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     # worker through the order ticket's own place (PAPER = LIVE, every check again). OFF: /api/trigger-plans/* answers
     # 404 and the worker fires no plan.
     "trigger_plans": "Trigger plans: his own set-and-wait plans (condition, orders, exits), fired once through the order ticket",
-    "study_export": "Save study: your own saved chart studies (snapshot, My studies, JSON download) - information only",
+    "study_export": "Save study: your own saved chart studies (Save study, My studies, PDF / image / CSV / JSON downloads) - information only",
     # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
     # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.

@@ -22,8 +22,8 @@ TT-12 (owner decision, 24 Oct): every limit starts OFF for every user until he s
 cap, no daily loss lockout, no entries-per-day cap and no minimum reward:risk (a minimum nobody stated is a hidden
 trading rule, CLAUDE.md section 3). A value counts only when the user set it himself: the stored JSON lists those keys
 under `_set`; a row saved before TT-12 (no `_set`) counts a stored value only when it differs from the old platform
-default (`LEGACY_DEFAULTS`, the RISK_DEFAULT_* values in `app/core/config.py`), since a save then wrote every key. The
-user may change his own settings within the bounds here and the platform's risk ceilings, or clear one (back to off).
+default (`LEGACY_DEFAULTS`, the built-ins of before TT-12; M68 PR-9 removed their operator settings), since a save then
+wrote every key. The user may change his own settings within the bounds here and the platform's risk ceilings, or clear one (back to off).
 A change that loosens a limit he set (a higher risk per trade or daily loss limit, more or unlimited entries per day,
 a lower minimum reward:risk, or clearing it) takes effect from the next IST day; a tightening - and setting a limit
 that was off - applies at once, so a limit cannot be widened in the middle of the day it protects. The cost line uses
@@ -44,7 +44,6 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import config as app_config
 from app.core.models import RiskConfig
 from app.db.models import PaperAccountRecord, RiskLockoutRecord, TradePlanRecord, TradeRecord, User
 from app.execution import india_costs
@@ -128,12 +127,19 @@ NO_LIMIT_ZERO = ("risk_per_trade_amount", "max_trades_per_day", "max_sector_pct"
                  "max_open_positions")                               # 0 means "no limit" for these
 
 
+# The platform defaults every user started with before TT-12 (24 Oct) - a read-only legacy MARKER, never applied to
+# anyone (M68 TS1-025; on the TS-7 allow-list, scripts/check_trading_literals.py). Used only to read a row saved before
+# then: a save wrote every key, so a stored value equal to one of these may never have been chosen by the user (TS-6:
+# a value he chose is kept, every other one reads "Not set"). M68 PR-9 removed the RISK_DEFAULT_* operator settings
+# these came from; the values are the built-ins those settings had.
+LEGACY_DEFAULTS: Dict[str, Any] = {"risk_per_trade_pct": 1.0, "risk_per_trade_amount": 0.0, "daily_loss_pct": 2.0,
+                                   "max_trades_per_day": 10, "min_rr": 1.5, "max_sector_pct": 0.0,
+                                   "max_correlated_risk_pct": 0.0, "max_open_positions": 0}
+
+
 def legacy_defaults() -> Dict[str, Any]:
-    """The platform defaults every user started with before TT-12 (24 Oct). Used only to read a row saved before then:
-    a save wrote every key, so a stored value equal to one of these may never have been chosen by the user."""
-    return {"risk_per_trade_pct": app_config.RISK_DEFAULT_RISK_PER_TRADE_PCT, "risk_per_trade_amount": app_config.RISK_DEFAULT_RISK_PER_TRADE_AMOUNT,
-            "daily_loss_pct": app_config.RISK_DEFAULT_DAILY_LOSS_PCT, "max_trades_per_day": app_config.RISK_DEFAULT_MAX_TRADES_PER_DAY,
-            "min_rr": app_config.RISK_DEFAULT_MIN_RR, "max_sector_pct": 0.0, "max_correlated_risk_pct": 0.0, "max_open_positions": 0}
+    """A copy of `LEGACY_DEFAULTS`: the pre-TT-12 built-ins, to read a row saved before TT-12 only."""
+    return dict(LEGACY_DEFAULTS)
 
 
 def _valid(value: Any, low: float, high: float) -> bool:

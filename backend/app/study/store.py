@@ -65,9 +65,9 @@ async def list_own(session: AsyncSession, tenant_id: int, user_id: int, *, symbo
     if symbol and symbol.strip():
         where.append(func.upper(CopilotStudyRecord.symbol).like(_like(" ".join(symbol.upper().split())), escape="\\"))
     if date_from is not None:
-        where.append(CopilotStudyRecord.created_at >= datetime.combine(date_from, time.min, IST))
+        where.append(CopilotStudyRecord.created_at >= datetime.combine(date_from, time.min, IST).astimezone(UTC))
     if date_to is not None:
-        where.append(CopilotStudyRecord.created_at < datetime.combine(date_to + timedelta(days=1), time.min, IST))
+        where.append(CopilotStudyRecord.created_at < datetime.combine(date_to + timedelta(days=1), time.min, IST).astimezone(UTC))
     total = int(await session.scalar(select(func.count()).select_from(CopilotStudyRecord).where(*where)) or 0)
     rows = await session.scalars(select(CopilotStudyRecord).where(*where)
                                  .order_by(CopilotStudyRecord.created_at.desc(), CopilotStudyRecord.id.desc())

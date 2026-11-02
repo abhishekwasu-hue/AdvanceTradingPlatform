@@ -8,7 +8,8 @@
 * Option context (section 6): the Option chain page's own read (`GET /api/option-chain/{underlying}/live`, his broker
   session, its entitlement and budget) for the default expiry - expiry, days to expiry, spot, ATM, PCR, max pain, ATM IV,
   the highest-OI strikes near spot (OI walls) and the ATM strike's OI / IV / Greeks. All as numbers, with the chain's
-  as-of time. No trade plan is part of a study yet, so "chosen strikes" print as not available.
+  as-of time. SX-6: the chosen strikes are the option legs of his open trade plan on the chain's expiry, with their OI /
+  IV / Greeks from the same chain read; no plan, or legs on another expiry, print as not available with the reason.
 Each read returns the section, or {"reason": <plain words>} - the study prints "Not available: <reason>", never a
 blank or a guess. Only the caller's own rows; nothing here places, changes or blocks an order.
 """
@@ -27,7 +28,8 @@ AI_OFF = "the AI part is off for your account"
 AI_NONE = "no AI card was read for this chart before the study was saved"
 NOT_FNO = "this instrument has no option chain"
 NO_CHAIN = "no option chain from your broker session"
-NO_PLAN_STRIKES = "no trade plan is saved with a study yet, so there are no chosen strikes"
+NO_PLAN_STRIKES = "no trade plan was open, so there are no chosen strikes"
+NO_OPTION_LEGS = "the trade plan has no option legs"
 WALLS_EACH_SIDE = 3
 CARD_TEXT_KEYS = ("story", "trend", "current_state", "rsi")
 CARD_NAMES = {"story": "Story", "trend": "Trend", "current_state": "Current state", "rsi": "RSI"}
@@ -74,7 +76,27 @@ def ai_card_part(answer: Mapping[str, Any], tf: str, made_at: Any) -> dict[str, 
             "disclaimer": answer.get("disclaimer")}
 
 
-def option_context_part(view: Mapping[str, Any]) -> dict[str, Any]:
+def chosen_part(rows: Sequence[Mapping[str, Any]], expiry: Any, legs: Sequence[Mapping[str, Any]] | None) -> tuple[list[dict[str, Any]] | None, str | None]:
+    """SX-6: (the plan's option legs on the chain's expiry with their OI / IV / Greeks, or None with the reason)."""
+    if not legs:
+        return None, NO_PLAN_STRIKES
+    options = [leg for leg in legs if leg.get("right") in ("CE", "PE")]
+    if not options:
+        return None, NO_OPTION_LEGS
+    same = [leg for leg in options if str(leg.get("expiry")) == str(expiry)]
+    if not same:
+        return None, f"the trade plan's option legs are on another expiry than the chain read ({expiry})"
+    by_strike = {_num(r.get("strike")): r for r in rows}
+    out = []
+    for leg in same:
+        row = by_strike.get(_num(leg.get("strike"))) or {}
+        side = row.get("call" if leg["right"] == "CE" else "put") or {}
+        out.append({"label": leg.get("label"), "strike": _num(leg.get("strike")), "right": leg["right"], "side": leg.get("side"),
+                    "in_chain": bool(row), **{k: _num(side.get(k)) for k in LEG_KEYS}})
+    return out, None
+
+
+def option_context_part(view: Mapping[str, Any], legs: Sequence[Mapping[str, Any]] | None = None) -> dict[str, Any]:
     """The study's copy of the Option chain page's view (`chain_view.build_view` + the route's as-of): numbers only."""
     summary: Mapping[str, Any] = view["summary"] if isinstance(view.get("summary"), Mapping) else {}
     rows = [r for r in view.get("rows") or [] if isinstance(r, Mapping) and _num(r.get("strike")) is not None]
@@ -92,10 +114,11 @@ def option_context_part(view: Mapping[str, Any]) -> dict[str, Any]:
                  + [{"side": "put", "strike": _num(r["strike"]), "oi": oi(r, "put")} for r in below[:WALLS_EACH_SIDE]])
     atm_row = next((r for r in rows if atm is not None and _num(r.get("strike")) == atm), None)
     atm_legs = None if atm_row is None else {side: {k: _num((atm_row.get(side) or {}).get(k)) for k in LEG_KEYS} for side in ("call", "put")}
+    chosen, chosen_reason = chosen_part(rows, view.get("expiry"), legs)
     return {"underlying": view.get("underlying"), "expiry": view.get("expiry"), "days_to_expiry": _num(summary.get("days_to_expiry")),
             "spot": spot, "spot_source": summary.get("spot_source"), "atm_strike": atm, "pcr_oi": _num(summary.get("pcr_oi")),
             "max_pain": _num(summary.get("max_pain")), "atm_iv": _num(summary.get("atm_iv")), "walls": walls,
-            "atm_legs": atm_legs, "chosen_strikes": None, "chosen_reason": NO_PLAN_STRIKES,
+            "atm_legs": atm_legs, "chosen_strikes": chosen, "chosen_reason": chosen_reason,
             "as_of": view.get("data_as_of") or view.get("fetched_at")}
 
 
@@ -146,7 +169,8 @@ async def ai_card_read(session: AsyncSession, user: User, symbol: str, tfs: Sequ
     return ai_card_part(W.card_of(service.as_dict(item), cached=True), tf, item.created_at)
 
 
-async def option_context_read(session: AsyncSession, user: User, exchange: str, symbol: str) -> dict[str, Any]:
+async def option_context_read(session: AsyncSession, user: User, exchange: str, symbol: str,
+                              legs: Sequence[Mapping[str, Any]] | None = None) -> dict[str, Any]:
     from fastapi import HTTPException
 
     from app.option_chain import chain_view
@@ -165,7 +189,7 @@ async def option_context_read(session: AsyncSession, user: User, exchange: str, 
         return {"reason": NO_CHAIN}
     if not view.get("rows"):
         return {"reason": NO_CHAIN}
-    return option_context_part(view)
+    return option_context_part(view, legs)
 
 
 __all__ = ["ai_card_part", "option_context_part", "pick_card", "ai_card_read", "option_context_read", "AI_OFF", "AI_NONE",

@@ -60,7 +60,7 @@ async function open(page: Page, theme: "light" | "dark"): Promise<Seen> {
   return openWith(page, theme, {});
 }
 
-async function openWith(page: Page, theme: "light" | "dark", extra: Record<string, boolean>): Promise<Seen> {
+async function openWith(page: Page, theme: "light" | "dark", extra: Record<string, boolean>, reading?: Record<string, unknown>): Promise<Seen> {
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
   await page.addInitScript((t) => {
     try {
@@ -71,7 +71,7 @@ async function openWith(page: Page, theme: "light" | "dark", extra: Record<strin
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: { ui_v2: true, ai_copilot: true, read_chart: true, copilot_workspace: true, paper_account: true, ...extra }, brokers: CONNECTED });
   await mockCharts(page, {});
-  await mockChartReading(page);
+  await mockChartReading(page, reading);
   const seen: Seen = { evaluate: [], orders: [], bodies: [] };
   await page.route(/\/api(?:\/v1)?\/options-builder\/evaluate$/, async (route) => {
     const body = route.request().postDataJSON() as { legs: WireLeg[]; spot: number };
@@ -233,6 +233,8 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
         await panel.locator("[data-plan='add-leg']").click();
         const form = panel.locator("[data-trigger='form']");
         await expect(form.locator("[data-trigger='save']")).toBeDisabled();
+        await expect(form.locator("[data-trigger='kind']")).toHaveText(/Not set/);
+        await pickTrigger(page, "kind", "A price level");
         await expect(form.locator("[data-trigger='side']")).toHaveText(/Not set/);
         await expect(form.locator("[data-trigger='approval']")).toHaveText(/Not set/);
         await form.locator("[data-trigger='level']").fill("24650");
@@ -251,6 +253,76 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
         await panel.locator("[data-trigger-act='pause']").click();
         await expect(panel.locator("[data-plan-row='PAUSED']")).toBeVisible();
         expect(seen.orders).toEqual([]);                                                   // arming a plan sends no order
+        expect(new URL(page.url()).pathname).toBe("/copilot/read");
+        if (width < 768) await noSidewaysScroll(page);
+      });
+    });
+  }
+}
+
+// M75 W-9 (CW-6 method conditions): the plan watches one of the chart reading's areas (a candle of his timeframe with the
+// reading's rejection there) - the area picked from the reading's own list, his candle timeframe, nothing pre-set.
+const W9_AREAS = [
+  { role: "supply", side: "seller", low: 24700, high: 24780, low_text: "24,700", high_text: "24,780", timeframe: "1h", state: "fresh", state_words: "untouched since it formed", tests: 0, words: "" },
+  { role: "demand", side: "buyer", low: 24000, high: 24060, low_text: "24,000", high_text: "24,060", timeframe: "1h", state: "tested", state_words: "price has come back to it", tests: 1, words: "" },
+];
+const W9_READING = {
+  ...READING_WITH_AREAS,
+  annotations: { source: "atp", source_words: "Drawn from ATP's chart readers on this chart's closed bars.", timeframe: "15m", as_of: null, last_close: 24500,
+    areas: W9_AREAS, swings: [], events: [], trend: [], next_areas: { above: W9_AREAS[0], below: W9_AREAS[1], inside: null }, divergence: null, level: null,
+    summary: [], not_given: [] },
+};
+for (const [width, height] of [[390, 844], [1440, 900]] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    test.describe(`Copilot method trigger plans ${width} ${theme}`, () => {
+      test.use({ viewport: { width, height }, deviceScaleFactor: 1, ...(width < 768 ? { isMobile: true, hasTouch: true } : {}) });
+
+      test(`arm an area plan from the reading's areas (${width} ${theme})`, async ({ page }) => {
+        const sent: Record<string, unknown>[] = [];
+        const plans: Record<string, unknown>[] = [];
+        const seen = await openWith(page, theme, { trigger_plans: true }, W9_READING);
+        await page.route(/\/api(?:\/v1)?\/trigger-plans(\/.*)?$/, async (route) => {
+          const req = route.request();
+          if (req.method() === "GET") return route.fulfill({ json: plans });
+          const body = req.postDataJSON() as Record<string, unknown>;
+          sent.push(body);
+          const row = { id: 8, name: null, underlying: "NIFTY", status: "ARMED", status_words: "Armed", condition: body.condition, orders: body.orders,
+            condition_words: "NIFTY inside the buyer area 24000 - 24060 and a 15-minute candle with the reading's rejection there",
+            approval: body.approval ?? "AUTO", valid_until: body.valid_until, note: null, last_price: null };
+          plans.unshift(row);
+          return route.fulfill({ json: row });
+        });
+        const panel = page.locator("[data-plan-panel]");
+        await expect(panel).toBeVisible({ timeout: 15_000 });
+        await panel.locator("[data-option='OPTIONS']").click();
+        await panel.locator("[data-plan='spot']").fill("24500");
+        await panel.locator("[data-plan='lot-size']").fill("75");
+        await pick(page, "leg-side", "BUY");
+        await pick(page, "leg-type", "CE");
+        await panel.locator("[data-plan='leg-strike']").fill("24100");
+        await panel.locator("[data-plan='leg-expiry']").fill("2026-11-25");
+        await panel.locator("[data-plan='leg-lots']").fill("1");
+        await panel.locator("[data-plan='leg-premium']").fill("120");
+        await panel.locator("[data-plan='add-leg']").click();
+        const form = panel.locator("[data-trigger='form']");
+        await pickTrigger(page, "kind", "Area + rejection");
+        await expect(form.locator("[data-trigger='area']")).toHaveText(/Not set/);
+        await expect(form.locator("[data-trigger='read-timeframe']")).toHaveText(/Not set/);
+        await pickTrigger(page, "area", "Buyer 24,000 - 24,060 · 1h");
+        await pickTrigger(page, "read-timeframe", "15 minutes");
+        await form.locator("[data-trigger='valid-until']").fill("2026-10-21T15:00");
+        await pickTrigger(page, "order-type", "Market");
+        await pickTrigger(page, "product", "Carry forward (NRML)");
+        await pickTrigger(page, "approval", "Place at once");
+        await expect(form.locator("[data-trigger='save']")).toBeEnabled();
+        if (OUT) await form.screenshot({ path: `${OUT}/plan-trigger-w9-form-${width}-${theme}.png`, animations: "disabled" });
+        await form.locator("[data-trigger='save']").click();
+        await expect(panel.locator("[data-plan-row='ARMED']")).toContainText("inside the buyer area 24000 - 24060");
+        expect(sent).toHaveLength(1);
+        expect(sent[0]).toMatchObject({ approval: "AUTO", condition: { kind: "AREA", timeframe_minutes: 15, area_side: "buyer", area_low: 24000, area_high: 24060, area_timeframe: "1h" } });
+        expect((sent[0].condition as Record<string, unknown>).level).toBeUndefined();
+        if (OUT) await panel.locator("[data-trigger-plans]").screenshot({ path: `${OUT}/plan-trigger-w9-${width}-${theme}.png`, animations: "disabled" });
+        expect(seen.orders).toEqual([]);
         expect(new URL(page.url()).pathname).toBe("/copilot/read");
         if (width < 768) await noSidewaysScroll(page);
       });

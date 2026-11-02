@@ -67,6 +67,7 @@ class Automation:
     scan_auto_cooldown_minutes: int | None = None
     scan_auto_arming_days: int | None = None
     plan_trigger_action: str | None = None          # M75 W-8 (M75Q-2): "When a plan triggers" - AUTO | APPROVAL, Not set = None
+    plan_broker_gtt: str | None = None              # M75 W-10 (M75Q-1): BROKER | ATP, Not set = None (ATP's engine)
 
     def scan_missing(self) -> list[str]:
         """The scanner limits he has not set (field names), in the form's order."""
@@ -99,6 +100,7 @@ async def load(session: AsyncSession, user: User | None) -> Automation:
         scan_auto_cooldown_minutes=_whole(own("scan_auto_cooldown_minutes"), 0),
         scan_auto_arming_days=_whole(own("scan_auto_arming_days"), 1),
         plan_trigger_action=own("plan_trigger_action") if own("plan_trigger_action") in ENTRY_MODES else None,
+        plan_broker_gtt=own("plan_broker_gtt") if own("plan_broker_gtt") in ("BROKER", "ATP") else None,
     )
 
 

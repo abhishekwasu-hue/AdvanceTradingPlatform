@@ -129,8 +129,10 @@ def test_the_namespace_is_read_by_one_order_path_reader():
     # app/ai/copilot_chat.py only names that tool, app/ai/tools/options_kit.py reads his saved Options values and
     # app/ai/watch.py his risk-free rate. None is an order path or imports one: the AI never places, blocks or changes an
     # order (ADR-0006; the planner modules are checked in tests/test_m72_pr1c_planner.py).
+    # M76 MP-11: app/charts/workspace_watch.py reads his own square-off time for the "N minutes before square-off" watch
+    # card - read-only, a notification only; it places, blocks or changes nothing.
     assert sorted(out.split()) == ["app/ai/copilot_chat.py", "app/ai/tools/my_data.py", "app/ai/tools/options_kit.py", "app/ai/watch.py",
-                                   "app/execution/automation.py", "app/execution/exit_settings.py", "app/execution/order_defaults.py",
+                                   "app/charts/workspace_watch.py", "app/execution/automation.py", "app/execution/exit_settings.py", "app/execution/order_defaults.py",
                                    "app/execution/position_size.py", "app/instruments/option_defaults.py", "app/main.py", "app/me/prefs.py",
                                    "app/me/trade_settings.py", "app/options_builder/routes.py", "app/paper/paper_settings.py",
                                    "app/paper/pretrade_warnings.py", "app/risk_engine/own_risk.py"]

@@ -83,7 +83,7 @@ underlying-breach exit (all `None`), and `template_exits` (omitted = the templat
 | TS1-022 | frontend/src/fno/hubModel.ts:175; frontend/src/fno/ChainActionSheetV2.tsx:78 | a leg added to the basket gets lots 1 | basket builder | user setting: Position size.lots | lots from Trade settings, else empty; **closed by PR-2**: before a basket leg got 1 lot -> after his saved lots, else an empty leg the basket asks for (numbers, save, execute wait) |
 | TS1-023 | backend/app/paper/fno_basket.py:42-43, 160-163 | `NEUTRAL_LOTS 1`, `NEUTRAL_WIDTH_STEPS 2` when the user has no options bot | basket ready-made structures | user setting: Position size.lots / Options.spread_width | read Trade settings; none -> the panel asks (no stop is set here today); **closed by PR-2**: before neutral 1 lot / width 2 -> after Trade settings lots / spread width, else his options bot's, else null: legs start empty, a spread asks for its width |
 | TS1-024 | backend/app/db/models.py:2745-2746 | `paper_sub_accounts.sizing_mode "MULTIPLIER"`, `sizing_value 1` (server defaults) | M45 paper fan-out sub-accounts | user setting: Position size.fanout (per sub-account) | migration: NOT NULL server defaults MULTIPLIER / 1 (alembic f1b3d5e7a9c2); **closed by PR-2**: before server defaults MULTIPLIER / 1 -> after nullable, no defaults; the account's own, else Position size > Extra paper accounts, else a Secondary is skipped with "Needs your setting" (Primary = the ticket's lots); migration b4e6f8a0c2d5 |
-| TS1-025 | backend/app/core/config.py:901-907; backend/app/risk_engine/by_default.py:127-160 | `RISK_DEFAULT_*` (1 % risk, ₹0, 2 % daily loss, 10 entries, R:R 1.5) kept to read rows saved before TT-12 | nobody new (legacy reading only) | delete | after TS-6 has marked those rows "saved / Not set"; removal of dead code needs the owner's ✅ (CLAUDE.md §8) |
+| TS1-025 | backend/app/core/config.py:901-907; backend/app/risk_engine/by_default.py:127-160 | `RISK_DEFAULT_*` (1 % risk, ₹0, 2 % daily loss, 10 entries, R:R 1.5) kept to read rows saved before TT-12 | nobody new (legacy reading only) | delete | after TS-6 has marked those rows "saved / Not set"; removal of dead code needs the owner's ✅ (CLAUDE.md §8) **Closed by PR-9:** before - five operator settings `RISK_DEFAULT_*` (env-overridable) fed the legacy reading; after - the settings are deleted from config.py; the pre-TT-12 built-ins stay only as the read-only marker `by_default.LEGACY_DEFAULTS` (a stored old built-in reads "Not set"; never applied), on the TS-7 allow-list; no migration, no row rewritten (M68Q-PR9-3). |
 
 ## 3. Exits
 
@@ -260,3 +260,12 @@ closes marked before / after, and its own migration where listed.
 | 9 | TS-6 one-time notice + legacy clean-up, TS-7 CI guard (allow-list = TS1-084 to 096 with their reasons) | TS1-025, TS1-084 to 096 | no |
 
 Rows kept as they are (fact / keep): TS1-016, TS1-084 to 097, TS1-101; the facts form the TS-7 allow-list.
+
+**PR-9 (TS-6, TS-7).** TS-6: the one-time notice "ATP no longer pre-sets trading values — review your Trade settings"
+(app/me/notices.py `no_presets_review`, v2 shell, link to Settings › Trade settings) for an existing user - a PAPER
+account an earlier release made (capital stored, `capital_saved` off) or a value saved in "My trading defaults"; dismissed
+or made moot by a Trade settings save; never for a new user (M68Q-PR9-1). TS-7: `scripts/check_trading_literals.py`
+(CI lint job; test backend/tests/test_trading_literals_check.py) fails on a trading literal in execution / risk / strategy
+/ ticket code outside the registry; its allow-list holds each kept value with its reason (the facts of TS1-084 to 096
+that carry a literal, the exit-only fallbacks of M68Q-6, the TS1-072 strategy suggestions, labels and display sizes) and
+two values it found that the TS-1 table did not list (M68Q-PR9-2).

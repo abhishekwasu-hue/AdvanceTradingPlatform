@@ -116,8 +116,9 @@ def trace_ids() -> Dict[str, str]:
 
 # GS-1: OAuth redirects carry one-time credentials in the query (`code`, `state`; some providers `id_token`,
 # `access_token`). uvicorn's access log prints the full path with its query, so those values are blanked there.
-# M74: the broker sign-in callbacks add Kite's `request_token` and Fyers' `auth_code`.
-_SECRET_QUERY = re.compile(r"(?<=[?&])(code|state|id_token|access_token|refresh_token|appsecret_proof|request_token|auth_code)"
+# M74: the broker sign-in callbacks add Kite's `request_token` and Fyers' `auth_code`. BRK-1 B: Dhan's TOTP login sends the
+# PIN and the current TOTP code as `pin` and `totp`.
+_SECRET_QUERY = re.compile(r"(?<=[?&])(code|state|id_token|access_token|refresh_token|appsecret_proof|request_token|auth_code|pin|totp)"
                            r"=[^&#\s]*", re.IGNORECASE)
 
 

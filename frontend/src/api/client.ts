@@ -38,6 +38,7 @@ import type {
   BacktestBarsResponse,
   BacktestResult,
   BrokerCredentialsInput,
+  BrokerSpecsReadonly,
   BrokerTokenInfo,
   UpstoxRedirectInfo,
   ChartRunResponse,
@@ -676,8 +677,8 @@ export const api = {
     return out;
   },
   // TT12-1: the signed-in user's one-time notices (src/notices/oneTimeNotices.ts; the server decides who gets one).
-  meNotices: () => request<{ notices: { id: string; text: string; link: string }[] }>("/me/notices"),
-  noticeSeen: (id: string) => request<{ notices: { id: string; text: string; link: string }[] }>(`/me/notices/${encodeURIComponent(id)}/seen`, { method: "POST" }),
+  meNotices: () => request<{ notices: { id: string; text: string; link: string; label?: string }[] }>("/me/notices"),
+  noticeSeen: (id: string) => request<{ notices: { id: string; text: string; link: string; label?: string }[] }>(`/me/notices/${encodeURIComponent(id)}/seen`, { method: "POST" }),
   previewTicket: (plan: TicketPlan) => request<TicketView>("/paper/ticket/preview", { method: "POST", body: JSON.stringify(plan) }),
   placeTicket: (plan: TicketPlan) => request<TradePlanView>("/paper/ticket", { method: "POST", body: JSON.stringify(plan) }),
   paperPlans: () => request<TradePlanView[]>("/paper/plans"),
@@ -868,11 +869,16 @@ export const api = {
   // --- Autonomous trading core ---
 
   brokerTokenStatus: () => request<BrokerTokenInfo[]>("/broker/token-status"),
+  // BRK-1 C: the values the connect guide copies into the broker (ATP's redirect address, the server IP).
+  brokerSpecs: () => request<BrokerSpecsReadonly>("/broker/specs"),
 
   upstoxRedirectUrl: () => request<UpstoxRedirectInfo>("/broker/upstox/redirect-url"),
   upstoxOAuthStart: (accountLabel = "primary") =>
     request<{ authorization_url: string }>(`/broker/upstox/oauth/start?account_label=${encodeURIComponent(accountLabel)}`),
-  // Paste-the-code daily login (Fyers, Kite): open the broker's page, then exchange the pasted code.
+  // BRK-1 B: the daily login of Kite and Fyers - the broker's page opens and returns to ATP's own callback (nothing pasted).
+  brokerOAuthStart: (name: "zerodha" | "fyers", accountLabel = "primary") =>
+    request<{ authorization_url: string }>(`/broker/${name}/oauth/start?account_label=${encodeURIComponent(accountLabel)}`),
+  // Paste-the-code daily login (Fyers, Kite) - BRK-1 B: the hidden fallback: open the broker's page, then exchange the pasted code.
   brokerLoginUrl: (name: string, accountLabel = "primary") =>
     request<BrokerLoginUrl>(`/broker/${name}/login-url?account_label=${encodeURIComponent(accountLabel)}`),
   brokerLoginCode: (name: string, code: string, accountLabel = "primary") =>

@@ -1,8 +1,7 @@
-"""Part 1B: the Kotak Neo market-data feed (SFeed `native_batch`) for the data hub - built, and OFF behind the TM-6 gate.
+"""Part 1B: the Kotak Neo market-data feed (SFeed `native_batch`) for the data hub.
 
-`stream_for(adapter)` (app/market_data/stream.py) hands out this stream only while the Kotak Neo market-data gate is
-open (app/brokers/gates.py: closed until Kotak Neo confirms its data terms in writing). With the gate closed no socket is
-ever opened; the hub reports the connection as "polling" and the adapter's REST reads refuse as well.
+`stream_for(adapter)` (app/market_data/stream.py) hands out this stream for a Kotak Neo connection like any other broker's
+feed (BRK-1, owner 2 Nov 2026: the TM-6 gate is withdrawn).
 
 The wire format is the one the official SDK `kotakneoapi` 3.0.9 speaks (websocket/feed/client.py and protocol.py, read
 23 Oct 2026):

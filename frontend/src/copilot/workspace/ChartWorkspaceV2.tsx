@@ -15,9 +15,17 @@ import { workspaceLayer } from "./annotations";
 import { AnnotationsV2 } from "./AnnotationsV2";
 import { contractEmptyNote, isContract, openingSymbol, readingKey } from "./model";
 import { PlanPanelV2 } from "./PlanPanelV2";
+import { EventsV2 } from "./EventsV2";
+import { PositionCardsV2 } from "./PositionCardsV2";
+import { PartFillsV2 } from "./PartFillsV2";
+import { WatchCardsV2 } from "./WatchCardsV2";
+import { CloseSummaryV2 } from "./CloseSummaryV2";
+import { SimilarSetupsV2 } from "./SimilarSetupsV2";
+import { TeachV2 } from "./TeachV2";
 import { Button, Sheet } from "../../components/primitives";
 import { MyStudiesV2 } from "../../study/MyStudiesV2";
 import { SaveStudySheetV2 } from "../../study/SaveStudySheetV2";
+import type { StudyPlan } from "../../study/model";
 
 /**
  * M75 W-2 (owner order M75 CW-1, flag `copilot_workspace`): the chart workspace inside the Copilot's "Read the chart"
@@ -57,8 +65,14 @@ export default function ChartWorkspaceV2() {
   const [saveOpen, setSaveOpen] = useState(false);
   const [studiesOpen, setStudiesOpen] = useState(false);
   const [saved, setSaved] = useState(0);
+  // M77 SX-6: the trade plan open beside the chart, as the study's references (null when none)
+  const [plan, setPlan] = useState<StudyPlan | null>(null);
   const cardTf = cardTimeframe(key?.tf);
+  // M75 W-9: the reading's areas a trigger plan can watch - the spot chart's only (a contract's prices are not the spot's)
+  const planAreas = pick && !isContract(pick.exchange) && read.status === "ready" ? read.read.annotations?.areas ?? [] : [];
   const card = useWorkspaceCard(pick?.symbol ?? null, cardTf, read.status === "ready");
+  // M76 MP-11 / MP-14: the reading's annotations for the watch cards, teach-on-chart and similar past setups
+  const annotations = read.status === "ready" ? read.read.annotations ?? null : null;
   const choose = (next: PickedSymbol) => {
     if (!next.symbol.trim()) return;
     const clean = { symbol: next.symbol.trim().toUpperCase(), exchange: (next.exchange || "NSE").toUpperCase(), name: next.name };
@@ -91,21 +105,38 @@ export default function ChartWorkspaceV2() {
                 className="w-full" placeholder="Search a symbol or contract" />
             </div>
           )}
+          {/* M76 MP-7 (S-3): expiries, the calendar's events and his own, on the chart's own column (information only) */}
+          {pick && !isContract(pick.exchange) && <div className={cx("mt-space-2", !inPanel && "px-space-4 md:px-0")}><EventsV2 symbol={pick.symbol} /></div>}
+          {/* M76 MP-14 (L-2): tap an annotation for its meaning; MP-11 (D-1): his watch cards, set up in place */}
+          {pick && (
+            <div className={cx("mt-space-2 space-y-space-2", !inPanel && "px-space-4 md:px-0")}>
+              <TeachV2 engine={engine} annotations={annotations} />
+              {!isContract(pick.exchange) && <WatchCardsV2 instrument={key?.instrument ?? null} tf={key?.tf ?? null} annotations={annotations} />}
+            </div>
+          )}
         </div>
         <aside aria-labelledby="copilot-workspace-reading" data-workspace-analysis={readOn ? read.status : "off"}
           className="min-w-0 rounded-panel border border-subtle bg-surface-1 p-space-4 lg:self-start">
           <h3 id="copilot-workspace-reading" className="mb-space-2 text-t14 font-semibold text-fg">The chart&apos;s reading</h3>
           <Reading state={read} readOn={readOn} hasChart={!!pick} offered={!!key} onRetry={() => setAttempt((n) => n + 1)} />
           {read.status === "ready" && <div className="mt-space-3"><AiCardV2 state={card} offered={!!cardTf} /></div>}
+          {/* M76 MP-14 (L-1): his own past trades at the same kind of area */}
+          {annotations && <div className="mt-space-3 border-t border-subtle pt-space-3"><SimilarSetupsV2 annotations={annotations} /></div>}
         </aside>
       </div>
       {/* M75 W-6 (CW-4): the trade plan panel in the same tab, for the chart's symbol (preview only). */}
       {/* M76 MP-6 (S-2): the open chart's reading, for the plan's P&L at its next areas - only on the underlying's own chart
           (a futures / option contract's areas are that contract's prices, not the spot the plan is priced at) */}
-      {pick && <PlanPanelV2 symbol={pick.symbol}
+      {/* M76 MP-10 (E-3 / E-4): his live positions on this underlying, the one-tap exits through the existing exit paths */}
+      {/* M76 MP-9 (E-2): a spread that filled only in part - per leg, with each unfilled leg's new last price (his confirm) */}
+      {pick && !isContract(pick.exchange) && <PartFillsV2 symbol={pick.symbol} />}
+      {pick && !isContract(pick.exchange) && <PositionCardsV2 symbol={pick.symbol} engine={engine} />}
+      {pick && <PlanPanelV2 symbol={pick.symbol} areas={planAreas} onPlanChange={studiesOn ? setPlan : undefined}
         annotations={read.status === "ready" && !isContract(pick.exchange) ? read.read.annotations ?? null : null} />}
+      {/* M76 MP-13 (D-3): his day in numbers, "Close summary" after the close */}
+      <CloseSummaryV2 />
       {studiesOn && pick && key && (
-        <SaveStudySheetV2 open={saveOpen} onOpenChange={setSaveOpen} instrument={key.instrument} symbol={pick.symbol} openTf={key.tf}
+        <SaveStudySheetV2 open={saveOpen} onOpenChange={setSaveOpen} instrument={key.instrument} symbol={pick.symbol} openTf={key.tf} plan={plan}
           onSaved={() => setSaved((n) => n + 1)} />
       )}
       {studiesOn && (

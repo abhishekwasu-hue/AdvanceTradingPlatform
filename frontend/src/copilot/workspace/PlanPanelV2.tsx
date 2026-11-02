@@ -3,9 +3,10 @@ import { cx } from "../../components/primitives/cx";
 import { builderApi, wireLegs } from "../../optionsBuilder/api";
 import { LegTable } from "../../optionsBuilder/LegTable";
 import { MetricsCard } from "../../optionsBuilder/MetricsCard";
-import { evaluatedById, hedgeFirst, money, rangePctFor, type Direction, type Evaluation, type Leg, type OptionKind } from "../../optionsBuilder/model";
+import { evaluatedById, hedgeFirst, money, rangePctFor, repriceModelLegs, type Direction, type Evaluation, type Leg, type OptionKind } from "../../optionsBuilder/model";
 import { PayoffCanvas } from "../../optionsBuilder/PayoffCanvas";
 import { useTradeSettings } from "../../settings/tradeSettings";
+import { studyPlanOf, type StudyPlan } from "../../study/model";
 import { Combobox } from "../../ui/Combobox";
 import { Details } from "../../ui/Details";
 import { useFeatures } from "../../ui/useFeatures";
@@ -21,6 +22,9 @@ import { RiskPreviewV2, type RiskPreviewApi } from "./RiskPreviewV2";
 import { WhatIfV2, type WhatIfApi } from "./WhatIfV2";
 import { ivPointsOf } from "./riskPreview";
 import { TriggerPlansV2 } from "./TriggerPlansV2";
+import type { PlanArea } from "./triggerPlans";
+import { atmOf, savedHelpers, solvedIvs } from "./helpers";
+import { PlanHelpersV2 } from "./PlanHelpersV2";
 
 /**
  * M75 W-6 (owner order M75 CW-4, flag `copilot_workspace`): the trade plan panel beside the chart, in the same tab.
@@ -76,6 +80,8 @@ const TYPES: { value: OptionKind; label: string }[] = [{ value: "CE", label: "Ca
 export interface PlanPanelProps {
   /** The chart's symbol (the object he opened); the plan is for it. */
   symbol: string;
+  /** M75 W-9: the open chart's reading areas (spot chart of the same symbol only) a trigger plan can watch. */
+  areas?: PlanArea[];
   /** Test hook: the builder's evaluate call. */
   evaluate?: typeof builderApi.evaluate;
   /** Test hook: the risk preview's reads (M76 MP-4). */
@@ -84,9 +90,11 @@ export interface PlanPanelProps {
   annotations?: Annotations | null;
   /** Test hook: the what-if reads (M76 MP-6). */
   whatIfApi?: WhatIfApi;
+  /** M77 SX-6: the plan as the study's references (null while no instrument type is chosen), for "Save study". */
+  onPlanChange?: (plan: StudyPlan | null) => void;
 }
 
-export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi, annotations = null, whatIfApi }: PlanPanelProps) {
+export function PlanPanelV2({ symbol, areas, evaluate = builderApi.evaluate, riskApi, annotations = null, whatIfApi, onPlanChange }: PlanPanelProps) {
   const [kind, setKind] = useState<PlanKind | null>(null);
   const [inst, setInst] = useState<InstrumentDraft>(EMPTY_INSTRUMENT);
   const [draft, setDraft] = useState<LegDraft>(EMPTY_LEG);
@@ -124,6 +132,17 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi, a
     return () => window.clearTimeout(timer);
   }, [kind, legs, spot, asOf, evaluate]);
 
+  // M77 SX-6: "Save study" reads the plan he has open - references and his own inputs only (study/model.ts)
+  useEffect(() => { onPlanChange?.(studyPlanOf(kind, legs, equity, exits)); }, [onPlanChange, kind, legs, equity, exits]);
+  useEffect(() => () => onPlanChange?.(null), [onPlanChange]);
+  // M76 MP-8: a leg a helper moved to another contract carries the model's price; the builder's own rule re-prices it once
+  // the engine has answered for that contract (a typed premium is never touched).
+  useEffect(() => {
+    if (!evaluation || evaluation.sent !== legs) return;
+    const next = repriceModelLegs(legs, evaluation);
+    if (next !== legs) setLegs(next);
+  }, [evaluation, legs]);
+
   const rows = useMemo(() => evaluatedById(legs, evaluation), [legs, evaluation]);
   const missing = kind && kind !== "EQUITY" ? legMissing(draft, inst, kind) : [];
   const entry = singleEntry(kind, legs, equity);
@@ -131,6 +150,9 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi, a
   const own = settings ? savedExits(settings.sections.flatMap((s) => s.fields)) : {};
   const hasOwn = Object.keys(own).length > 0;
   const ivPoints = ivPointsOf(settings?.sections.flatMap((s) => s.fields));
+  // M76 MP-8 (E-1): only what he saved himself (Not set = no button / an empty field)
+  const mine = savedHelpers(settings?.sections.flatMap((s) => s.fields));
+  const ivById = evaluation && evaluation.sent === legs ? solvedIvs(evaluation.sent, evaluation.evaluation.legs) : {};
   const pickKind = (k: PlanKind) => { setKind(k); setLegs([]); setDraft(EMPTY_LEG); setEvaluation(null); };
   const addLeg = () => {
     if (!kind) return;
@@ -174,12 +196,21 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi, a
             </div>
             <div className="flex flex-wrap items-center gap-space-2">
               <button type="button" className={cx(BTN, "border border-border text-fg hover:bg-surface-2")} disabled={missing.length > 0} onClick={addLeg} data-plan="add-leg">Add leg</button>
+              {mine.lots != null && draft.lots !== String(mine.lots) && (
+                <button type="button" className={cx(BTN, "border border-border text-fg hover:bg-surface-2")} onClick={() => setDraft({ ...draft, lots: String(mine.lots) })}
+                  data-plan="use-saved-lots">Use my saved lots ({mine.lots})</button>
+              )}
               {missing.length > 0 && <span className="text-t12 text-fg-muted" data-plan="leg-missing">Still Not set: {missing.join(", ")}</span>}
             </div>
           </fieldset>
           {legs.length > 0 && (
             <LegTable legs={legs} rows={rows} step={step ?? 0} compact={phone}
               onChange={(next) => setLegs(hedgeFirst(next))} onAdd={() => document.querySelector<HTMLElement>("[data-plan='leg-side']")?.focus()} />
+          )}
+          {/* M76 MP-8 (E-1): one-tap helpers - each only prepares these legs; Place stays his, through the one ticket */}
+          {legs.length > 0 && (
+            <PlanHelpersV2 legs={legs} atm={atmOf(spot, step)} step={step} ivById={ivById} savedHedgeOffset={mine.hedgeOffset}
+              onLegs={(next) => setLegs(hedgeFirst(next))} />
           )}
           {legs.length > 0 && spot == null && <p className="text-t13 text-fg-muted" data-plan="need-spot">Type the spot to see the payoff and the numbers.</p>}
           {problem && <p role="status" className="text-t13 text-fg" data-plan="problem">{problem}</p>}
@@ -258,7 +289,7 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi, a
       {/* M75 W-7 (CW-5): placing goes to the existing ticket / basket / equity ticket, each pressed by him. */}
       {kind && <PlanPlaceV2 plan={{ underlying: symbol, kind, legs, equity, exits }} />}
       {/* M75 W-8 (CW-6, flag trigger_plans): set and wait - his condition, then these legs, then his exits. */}
-      {plansOn && (kind === "OPTIONS" || kind === "FUTURE") && <TriggerPlansV2 underlying={symbol} legs={legs} exits={exits} />}
+      {plansOn && (kind === "OPTIONS" || kind === "FUTURE") && <TriggerPlansV2 underlying={symbol} legs={legs} exits={exits} areas={areas} />}
       <Details id="copilot.plan" className="mt-0">
         <p className="text-t13 text-fg-muted">Every field stays Not set until you fill it in. The payoff, Greeks, max profit and loss, break-evens and the
           margin estimate come from the same engine as the Options Builder. The margin is ATP&apos;s estimate, never the broker&apos;s number.</p>

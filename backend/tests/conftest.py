@@ -56,6 +56,21 @@ def _closed_circuit_breakers():
 
 
 @pytest.fixture(autouse=True)
+def _no_automatic_broker_login(request, monkeypatch):
+    """BRK-1 B: the worker's automatic TOTP login (app/brokers/auto_login.py) logs stored broker accounts in. Worker tests
+    never reach a broker that way; tests/test_brk1b_auto_login.py runs the real function against fake brokers."""
+    if request.module.__name__.endswith("test_brk1b_auto_login"):
+        yield
+        return
+    from app.brokers import auto_login
+
+    async def _none(session_factory, now, holidays=None):
+        return 0
+    monkeypatch.setattr(auto_login, "run_due", _none)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_instrument_master_download(monkeypatch):
     """P1 (27 Oct): a ticket that misses a contract starts an on-demand master refresh (a real Upstox download). Tests never
     download: the refresh answers as "refreshing"; tests/test_p1_master_sync.py calls the real function with a fake sync."""

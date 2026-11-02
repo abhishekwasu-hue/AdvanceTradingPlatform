@@ -668,13 +668,10 @@ async def _org_choice(session: Any, tenant_id: int, now: datetime) -> Tuple[Opti
     """(the credential the organisation's stream reads through, whether it is usable now) - None when it has none."""
     from sqlalchemy import select
 
-    from app.brokers.gates import data_sources
     from app.brokers.token_lifecycle import data_is_usable, token_is_usable
     from app.db.models import BrokerCredentialRecord
     records = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)
                                          .order_by(BrokerCredentialRecord.broker_name, BrokerCredentialRecord.account_label)))
-    # Part 1B: a broker whose market-data gate is closed (Kotak Neo, TM-6) is never the organisation's price source.
-    records = data_sources(records)
     if not records:
         return None, False
     usable = [r for r in records if token_is_usable(r, now)] or [r for r in records if data_is_usable(r, now)]

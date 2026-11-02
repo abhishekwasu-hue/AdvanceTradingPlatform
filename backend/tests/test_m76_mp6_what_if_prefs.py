@@ -36,4 +36,7 @@ def test_limits_and_strict_types():
 def test_no_order_path_reads_it():
     app = Path(__file__).resolve().parents[1] / "app"
     readers = [p for p in app.rglob("*.py") if "WhatIfPrefs" in p.read_text(encoding="utf-8") or "\"what_if\"" in p.read_text(encoding="utf-8")]
-    assert [p.relative_to(app).as_posix() for p in readers] == ["me/prefs.py"]
+    # M77 SX-6: the study's scenarios section names its rows' field "what_if" (a snapshot of his saved scenario, printed in
+    # the PDF / CSV) - a study export, not an order path.
+    assert sorted(p.relative_to(app).as_posix() for p in readers) == ["me/prefs.py", "study/csv_export.py", "study/pages.py",
+                                                                       "study/plan_sections.py"]

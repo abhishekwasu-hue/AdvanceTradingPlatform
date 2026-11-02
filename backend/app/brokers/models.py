@@ -33,6 +33,10 @@ class BrokerCredentials(BaseModel):
     # UI2-5: the OAuth login in progress for this row (Zerodha, Fyers): who started it, the SHA-256 of the one-time state
     # nonce and when it lapses. Server-written only (app/brokers/token_lifecycle.py); a client-sent value is dropped.
     oauth_pending: Optional[Dict[str, Any]] = Field(default=None, repr=False)
+    # BRK-1 B: today's automatic TOTP login for this row - the IST day, the attempts made, when the last one ran and, once
+    # it gave up, the plain reason shown as "Not working". Server-written only (app/brokers/auto_login.py); a client-sent
+    # value is dropped, and any save of new details clears it.
+    auto_login: Optional[Dict[str, Any]] = Field(default=None, repr=False)
 
 
 class BrokerProfile(BaseModel):
@@ -146,6 +150,28 @@ class BrokerOrderRequest(BaseModel):
     protection_pct: Optional[float] = None
     # An after-market order (Kotak Neo's `am` flag). Adapters that do not take one ignore it.
     after_market: bool = False
+
+
+class GttRequest(BaseModel):
+    """M75 W-10 (owner order M75 CW-6, DECISIONS 1 Nov M75Q-1 / TM-23): one broker GTT ("good till triggered") - the
+    broker watches `symbol`'s own last price and sends `order` once it crosses `trigger_price` (a single trigger; the
+    side of the cross is the trigger against `last_price`). `client_ref` is the platform's own key (the plan's order),
+    never a broker field. Every value comes from the user's own plan; nothing is pre-chosen here."""
+    symbol: str
+    exchange: str
+    trigger_price: float
+    last_price: float
+    order: BrokerOrderRequest
+    client_ref: str
+
+
+class GttStatus(BaseModel):
+    """A broker GTT as the broker states it: ACTIVE (waiting), TRIGGERED (its order was sent: `order_id`), CANCELLED,
+    REJECTED, EXPIRED. `message` is the broker's own words when it refused or ended it."""
+    gtt_id: str
+    status: str
+    order_id: Optional[str] = None
+    message: Optional[str] = None
 
 
 class BasketMargin(BaseModel):

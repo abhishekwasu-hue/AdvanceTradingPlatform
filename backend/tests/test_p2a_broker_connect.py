@@ -254,9 +254,9 @@ def _row(tenant_id: int, broker: str) -> BrokerCredentialRecord:
 # What each method needs, from the adapters' own requirements - the catalogue may ask for nothing else.
 NEEDED = {
     "upstox": {"analytics_token"},
-    "dhan": {"client_id", "access_token"},
+    "dhan": {"client_id", "pin", "totp_secret"},           # BRK-1 B: Dhan's TOTP login (the pasted token is the fallback)
     "zerodha": {"api_key", "api_secret"},
-    "fyers": {"api_key", "api_secret", "redirect_uri"},
+    "fyers": {"api_key", "api_secret"},                     # BRK-1 B: the Redirect URL is ATP's callback, never typed
     "angel_one": {"api_key", "client_id", "pin", "totp_secret"},
     "shoonya": {"client_id", "api_secret", "api_key", "totp_secret"},
     "coindcx": {"api_key", "api_secret"},
@@ -264,9 +264,11 @@ NEEDED = {
     "groww": {"api_key", "totp_secret"},
 }
 # Brokers whose official method cannot be done in one or two fields (docs/brokers/EASIEST_LOGIN.md says why).
-MORE_THAN_TWO = {"fyers": 3, "angel_one": 4, "shoonya": 4, "kotak_neo": 5}
+MORE_THAN_TWO = {"dhan": 3, "angel_one": 4, "shoonya": 4, "kotak_neo": 5}
+# BRK-1 B: the hidden fallback ways - connect fields (empty: the usual ones) and renew fields.
+FALLBACK = {"dhan": ({"client_id", "access_token"}, {"access_token"}), "zerodha": (set(), {"request_token"}),
+            "fyers": ({"api_key", "api_secret", "redirect_uri"}, {"request_token"})}
 # Part 1B: listed only with ui_v2 on for the organisation.
-UI_V2_ONLY = {"kotak_neo", "groww"}
 
 
 def test_catalog_shape_fields_only_what_the_method_needs():
@@ -275,21 +277,34 @@ def test_catalog_shape_fields_only_what_the_method_needs():
     response = client.get("/api/broker/catalog", headers=headers)
     assert response.status_code == 200
     rows = response.json()
-    assert {r["broker"] for r in rows} == set(available_brokers()) - UI_V2_ONLY      # ui_v2 off: no Kotak Neo tile
-    rows = cat.catalog()                                                             # ui_v2 on: every broker
-    assert {r["broker"] for r in rows} == set(available_brokers())
+    assert {r["broker"] for r in rows} == set(available_brokers())                  # BRK-1: every broker, every organisation
+    # BRK-1 B: the brokers whose login returns to ATP carry the callback address to copy into their app; nobody else does.
+    served = {r["broker"]: r["redirect_url"] for r in rows}
+    assert served["zerodha"].endswith("/api/broker/zerodha/oauth/callback")
+    assert served["fyers"].endswith("/api/broker/fyers/oauth/callback")
+    assert all(url is None for b, url in served.items() if b not in ("zerodha", "fyers"))
+    rows = cat.catalog()
     for row in rows:
         assert set(row) == {"broker", "name", "method", "fields", "how_to", "doc_url", "daily_renewal", "available", "renew_fields",
-                            "gates", "requires_ui_v2", "guide"}
-        assert row["requires_ui_v2"] is (row["broker"] in UI_V2_ONLY)
-        assert row["method"] in ("analytics_token", "access_token", "login_code", "totp_auto", "api_key_secret")
+                            "guide", "fallback"}
+        assert row["method"] in ("analytics_token", "access_token", "oauth_redirect", "totp_auto", "api_key_secret")
         keys = [f["key"] for f in row["fields"]]
         assert set(keys) == NEEDED[row["broker"]] and len(keys) == len(set(keys))
         assert 1 <= len(keys) <= MORE_THAN_TWO.get(row["broker"], 2)
-        for f in row["fields"] + row["renew_fields"]:
+        # BRK-1 B: one button each morning - nothing to paste - for every broker; a paste only behind the fallback link.
+        assert row["renew_fields"] == []
+        if row["broker"] in FALLBACK:
+            want_connect, want_renew = FALLBACK[row["broker"]]
+            assert row["fallback"]["label"] and {f["key"] for f in row["fallback"]["fields"]} == want_connect
+            assert {f["key"] for f in row["fallback"]["renew_fields"]} == want_renew
+        else:
+            assert row["fallback"] is None
+        extra = (row["fallback"] or {}).get("fields", []) + (row["fallback"] or {}).get("renew_fields", [])
+        for f in row["fields"] + row["renew_fields"] + extra:
             assert set(f) <= {"key", "label", "kind", "placeholder"} and f["kind"] in ("secret", "text")
             assert f["key"] in BrokerCredentials.model_fields
-        assert len(row["how_to"]) == 3 and all(s.endswith(".") and "_" not in s for s in row["how_to"])
+        # BRK-1 C: how_to is the guide's steps as plain lines (test_brk1_catalog_guides.py checks the guide).
+        assert len(row["how_to"]) >= 2 and all(s.endswith(".") and "**" not in s for s in row["how_to"])
         assert row["doc_url"].startswith("https://") and row["available"] is True
         assert row["daily_renewal"] is (row["broker"] not in ("upstox", "coindcx"))
         if not row["daily_renewal"]:
@@ -480,14 +495,12 @@ def test_totp_login_renews_with_one_click():
     assert _connect(headers, "coindcx", {}, renew=True)["message"] == "CoinDCX needs no daily login; use Connect to change its details."
 
 
-def test_kotak_neo_connects_renews_with_one_click_and_stays_practice_only(caplog):
-    """Part 1B: the TOTP login through the connect flow; the session is stored encrypted as one string; LIVE orders and
-    live prices stay off (app/brokers/gates.py) whatever the connection's state."""
+def test_kotak_neo_connects_and_renews_with_one_click(caplog):
+    """Part 1B: the TOTP login through the connect flow; the session is stored encrypted as one string. BRK-1: no per-broker
+    gate - the adapter built from the row is an ordinary adapter."""
     caplog.set_level(logging.DEBUG)
-    from app.brokers import gates
     from app.brokers.kotak_neo import decode_session
     from app.brokers.token_lifecycle import build_adapter
-    from app.core.enums import OrderSide
     headers = _org("kotak")
     fields = {"api_key": KOTAK_KEY, "mobile_number": "+91" + "9" * 10, "client_id": "KUCC1", "pin": KOTAK_MPIN, "totp_secret": KOTAK_SEED}
     out = _connect(headers, "kotak_neo", {**fields, "pin": "0000"})
@@ -498,20 +511,15 @@ def test_kotak_neo_connects_renews_with_one_click_and_stays_practice_only(caplog
     assert row.token_status == "VALID" and session["t"] == KOTAK_TRADE and session["b"] == "https://e21.kotaksecurities.com"
     assert _connect(headers, "kotak_neo", {}, renew=True) == {"status": "connected", "message": "Connected."}
     adapter = build_adapter(row)
-    with pytest.raises(gates.LiveOrdersClosed):
-        asyncio.run(adapter.exit_position("RELIANCE", "NSE", 1, OrderSide.BUY))
-    with pytest.raises(gates.MarketDataClosed):
-        asyncio.run(adapter.get_ltp_for_symbol("RELIANCE"))
+    assert adapter.name in ("kotak_neo", "groww") and not hasattr(adapter, "_order_gate") and not hasattr(adapter, "_data_gate")
     _assert_no_secret(caplog.text)
 
 
-def test_groww_connects_renews_with_one_click_and_stays_practice_only(caplog):
-    """Part 1B: Groww's TOTP key through the connect flow; the day's token is stored encrypted; LIVE orders and live
-    prices stay off (app/brokers/gates.py) whatever the connection's state."""
+def test_groww_connects_and_renews_with_one_click(caplog):
+    """Part 1B: Groww's TOTP key through the connect flow; the day's token is stored encrypted. BRK-1: no per-broker gate -
+    the adapter built from the row is an ordinary adapter."""
     caplog.set_level(logging.DEBUG)
-    from app.brokers import gates
     from app.brokers.token_lifecycle import build_adapter
-    from app.core.enums import OrderSide
     headers = _org("groww")
     out = _connect(headers, "groww", {"api_key": "x" + GROWW_KEY, "totp_secret": GROWW_SEED})
     assert out["status"] == "not_working" and "TOTP secret" in out["message"]
@@ -520,27 +528,17 @@ def test_groww_connects_renews_with_one_click_and_stays_practice_only(caplog):
     assert row.token_status == "VALID" and load_credentials(row).access_token == GROWW_TOKEN
     assert _connect(headers, "groww", {}, renew=True) == {"status": "connected", "message": "Connected."}
     adapter = build_adapter(row)
-    with pytest.raises(gates.LiveOrdersClosed):
-        asyncio.run(adapter.exit_position("RELIANCE", "NSE", 1, OrderSide.BUY))
-    with pytest.raises(gates.MarketDataClosed):
-        asyncio.run(adapter.get_ltp_for_symbol("RELIANCE"))
+    assert adapter.name in ("kotak_neo", "groww") and not hasattr(adapter, "_order_gate") and not hasattr(adapter, "_data_gate")
     _assert_no_secret(caplog.text)
 
 
-def test_the_kotak_neo_tile_is_listed_only_with_ui_v2_on():
-    from tests.test_bt1b_guard_all_reads import _flags
+def test_every_broker_tile_is_listed_without_ui_v2_and_without_gates():
+    """BRK-1 (owner 2 Nov 2026): Kotak Neo and Groww are ordinary tiles - no ui_v2-only listing, no gates, no practice note."""
     headers = _org("kotak-ui")
-    assert "kotak_neo" not in {r["broker"] for r in client.get("/api/broker/catalog", headers=headers).json()}
-    _flags(ui_v2=[_tenant(headers)])
-    try:
-        rows = {r["broker"]: r for r in client.get("/api/broker/catalog", headers=headers).json()}
-    finally:
-        _flags(ui_v2=[])
-    kotak = rows["kotak_neo"]
-    assert kotak["gates"]["live_orders"] == "closed" and kotak["gates"]["live_prices"] == "closed" and kotak["guide"]["links"]
-    groww = rows["groww"]
-    assert groww["gates"]["live_orders"] == "closed" and groww["gates"]["live_prices"] == "closed" and groww["guide"]["links"]
-    assert rows["upstox"]["gates"]["live_orders"] == "open" and rows["upstox"]["guide"] is None
+    rows = {r["broker"]: r for r in client.get("/api/broker/catalog", headers=headers).json()}
+    assert {"kotak_neo", "groww"} <= set(rows)
+    for broker in ("kotak_neo", "groww", "upstox"):
+        assert "gates" not in rows[broker] and "requires_ui_v2" not in rows[broker]
 
 
 # --- who may connect, tenancy, rate limit, removal ------------------------------------------------------------------

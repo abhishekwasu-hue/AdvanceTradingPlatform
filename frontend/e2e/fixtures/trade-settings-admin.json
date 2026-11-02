@@ -1680,6 +1680,34 @@
      "default_by": null
     },
     {
+     "key": "automation.plan_broker_gtt",
+     "label": "Simple price plans",
+     "kind": "choice",
+     "help": "Whether a simple price plan waits at your broker as a GTT order (it then fires even while ATP is down) or in ATP's trigger engine. Live accounts only; a plan that asks you first always stays with ATP.",
+     "unit": "",
+     "choices": [
+      {
+       "value": "BROKER",
+       "label": "Use my broker's GTT"
+      },
+      {
+       "value": "ATP",
+       "label": "ATP's trigger engine"
+      }
+     ],
+     "low": null,
+     "high": null,
+     "low_open": false,
+     "term": null,
+     "fact": false,
+     "wired": true,
+     "scope": "user",
+     "value": null,
+     "saved": false,
+     "default": null,
+     "default_by": null
+    },
+    {
      "key": "automation.approval_entry_minutes",
      "label": "An entry request waits",
      "kind": "whole",

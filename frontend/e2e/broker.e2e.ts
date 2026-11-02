@@ -18,7 +18,7 @@ type Conn = { broker: string; account_label: string; name: string; status: strin
 const UPSTOX_DATA: Conn = { broker: "upstox", account_label: "primary", name: "Upstox", status: "connected",
   message: "Connected for market data, charts, the scanner, the option chain and paper trading.", data_only: true, renew: false };
 const ZERODHA_LOGIN: Conn = { broker: "zerodha", account_label: "primary", name: "Zerodha (Kite)", status: "needs_login",
-  message: "Zerodha (Kite) is not logged in today; press Log in, sign in and paste the address you land on.", data_only: false, renew: true };
+  message: "Zerodha (Kite) is not logged in today; press Log in and sign in on Zerodha (Kite) - ATP finishes the login by itself.", data_only: false, renew: true };
 const DHAN_BROKEN: Conn = { broker: "dhan", account_label: "primary", name: "Dhan", status: "not_working",
   message: "Dhan did not accept this token; generate a new one and paste it here.", data_only: false, renew: true };
 const UPSTOX_LOGIN: Conn = { broker: "upstox", account_label: "primary", name: "Upstox", status: "needs_login",
@@ -72,7 +72,7 @@ for (const [label, size] of [["1440", DESKTOP], ["390", PHONE]] as const) {
       test(`looks the same (${theme})`, async ({ page }) => {
         await open(page, "/broker", { theme, session: LATER });
         await expect(page.locator("[data-broker-page]")).toBeVisible();
-        await expect(page.locator("[data-broker-tile]")).toHaveCount(7);
+        await expect(page.locator("[data-broker-tile]")).toHaveCount(9);                // BRK-1: Kotak Neo and Groww like the others
         await expect(page).toHaveScreenshot(`broker-${label}-${theme}.png`, shot);
       });
     }
@@ -125,16 +125,36 @@ test.describe("phone 390", () => {
     await page.locator("[data-broker-tile='dhan']").click();
     const sheet = page.locator("[data-broker-dialog='connect']");
     await expect(sheet).toBeVisible();
-    await expect(sheet.locator("input")).toHaveCount(2);
+    // BRK-1 B: Dhan's TOTP login - the client ID, the PIN and the TOTP secret (the pasted token is the fallback link).
+    await expect(sheet.locator("input")).toHaveCount(3);
     await expect(sheet.getByLabel("Client ID")).toBeVisible();
-    await expect(sheet.getByLabel("Access token")).toHaveAttribute("type", "password");
-    await sheet.getByText("Where do I get this?").click();
-    await expect(sheet.locator("ol li")).toHaveCount(3);
+    await expect(sheet.getByLabel("Dhan PIN")).toHaveAttribute("type", "password");
+    await expect(sheet.getByLabel("TOTP secret")).toHaveAttribute("type", "password");
+    // BRK-1 C: the guide is open on the first connect - numbered steps, each field says which step gives it.
+    await expect(sheet.locator("[data-guide-open] [data-guide-step]")).toHaveCount(9);
+    await expect(sheet.locator("[data-from-step]")).toHaveText(["From step 7", "From step 9", "From step 5"]);
     const connect = sheet.getByRole("button", { name: "Connect", exact: true });
     await expect(connect).toBeDisabled();
     await sheet.getByLabel("Client ID").fill("1000000001");
-    await sheet.getByLabel("Access token").fill("e2e-made-up-value");
+    await sheet.getByLabel("Dhan PIN").fill("000000");
+    await sheet.getByLabel("TOTP secret").fill("e2e-made-up-value");
     await connect.click();
+    await expect(sheet.getByText("Connected ✓")).toBeVisible();
+    expect(sent).toEqual([{ fields: { client_id: "1000000001", pin: "000000", totp_secret: "e2e-made-up-value" } }]);
+  });
+
+  test("BRK-1 B: Dhan's fallback link swaps in the pasted token (client ID and access token)", async ({ page }) => {
+    const sent: unknown[] = [];
+    await open(page, "/broker", { session: LATER, before: async (p) => {
+      await p.route(/\/api(?:\/v1)?\/broker\/dhan\/connect$/, (r) => { sent.push(r.request().postDataJSON()); return r.fulfill({ json: { status: "connected", message: "Connected." } }); });
+    } });
+    await page.locator("[data-broker-tile='dhan']").click();
+    const sheet = page.locator("[data-broker-dialog='connect']");
+    await sheet.getByRole("button", { name: "Paste an access token instead" }).click();
+    await expect(sheet.locator("input")).toHaveCount(2);
+    await sheet.getByLabel("Client ID").fill("1000000001");
+    await sheet.getByLabel("Access token").fill("e2e-made-up-value");
+    await sheet.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(sheet.getByText("Connected ✓")).toBeVisible();
     expect(sent).toEqual([{ fields: { client_id: "1000000001", access_token: "e2e-made-up-value" } }]);
   });
@@ -203,12 +223,18 @@ test.describe("desktop 1440", () => {
     await expect(page.locator("[data-broker-dialog='prompt']")).toHaveCount(0);   // that was this sign-in's prompt
   });
 
-  test("Zerodha: Connect saves the key, then Log in and one box for the address; Renew sends request_token", async ({ page }) => {
-    const renewed: unknown[] = [];
+  test("BRK-1 B Zerodha: Connect saves the key, then ONE Log in - Kite returns to ATP, the panel reads Connected ✓", async ({ page }) => {
+    let connected = false;
+    let started = "";
     await open(page, "/broker", { session: LATER, before: async (p) => {
-      await p.route(/\/api(?:\/v1)?\/broker\/zerodha\/connect$/, (r) => r.fulfill({ json: { status: "needs_login", message: "Saved; now press Log in, sign in to Zerodha (Kite) and paste the address you land on." } }));
-      await p.route(/\/api(?:\/v1)?\/broker\/zerodha\/login-url/, (r) => r.fulfill({ json: { broker_name: "zerodha", authorization_url: "https://kite.example/connect/login", code_param: "request_token", instructions: "" } }));
-      await p.route(/\/api(?:\/v1)?\/broker\/zerodha\/renew$/, (r) => { renewed.push(r.request().postDataJSON()); return r.fulfill({ json: { status: "connected", message: "Connected." } }); });
+      await p.route(/\/api(?:\/v1)?\/broker\/zerodha\/connect$/, (r) => r.fulfill({ json: { status: "needs_login", message: "Saved; now press Log in and sign in to Zerodha (Kite) - ATP finishes the login by itself." } }));
+      await p.route(/\/api(?:\/v1)?\/broker\/zerodha\/oauth\/start/, (r) => {
+        started = new URL(r.request().url()).searchParams.get("account_label") ?? "";
+        connected = true;                                      // the broker's callback reaches ATP while the user signs in
+        return r.fulfill({ json: { authorization_url: "https://kite.example/connect/login" } });
+      });
+      await p.route(/\/api(?:\/v1)?\/broker\/connections$/, (r) => r.fulfill({ json: connected
+        ? [{ ...ZERODHA_LOGIN, status: "connected", message: "Connected." }] : [] }));
       await p.route("https://kite.example/**", (r) => r.fulfill({ body: "login" }));
     } });
     await page.locator("[data-broker-tile='zerodha']").click();
@@ -218,14 +244,34 @@ test.describe("desktop 1440", () => {
     await panel.getByLabel("API secret").fill("made-up-secret");
     await panel.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(panel.locator("[data-note]")).toContainText("now press Log in");
+    await expect(panel.locator("input")).toHaveCount(0);                 // nothing to paste
+    await expect(panel.locator("button[type='submit']")).toHaveCount(0);   // Log in is the one button
+    const popup = page.waitForEvent("popup");
+    await panel.getByRole("button", { name: "Log in" }).click();
+    await (await popup).close();
+    expect(started).toBe("primary");
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));   // back on ATP's tab
+    await expect(panel.getByText("Connected ✓")).toBeVisible();
+  });
+
+  test("BRK-1 B Zerodha: the hidden fallback - Log in, then paste the address; Renew sends request_token", async ({ page }) => {
+    const renewed: unknown[] = [];
+    await open(page, "/broker", { session: LATER, mocks: { connections: [ZERODHA_LOGIN] }, before: async (p) => {
+      await p.route(/\/api(?:\/v1)?\/broker\/zerodha\/login-url/, (r) => r.fulfill({ json: { broker_name: "zerodha", authorization_url: "https://kite.example/connect/login", code_param: "request_token", instructions: "" } }));
+      await p.route(/\/api(?:\/v1)?\/broker\/zerodha\/renew$/, (r) => { renewed.push(r.request().postDataJSON()); return r.fulfill({ json: { status: "connected", message: "Connected." } }); });
+      await p.route("https://kite.example/**", (r) => r.fulfill({ body: "login" }));
+    } });
+    await page.locator("[data-connection='zerodha']").getByRole("button", { name: "Renew" }).click();
+    const panel = page.locator("[data-broker-dialog='connect']");
+    await panel.locator("[data-fallback-toggle]").click();
     await expect(panel.locator("input")).toHaveCount(1);
     const popup = page.waitForEvent("popup");
     await panel.getByRole("button", { name: "Log in" }).click();
     await (await popup).close();
     await panel.getByLabel("Address after login").fill("https://example.com/?request_token=abc&status=success");
-    await panel.getByRole("button", { name: "Connect", exact: true }).click();
+    await panel.getByRole("button", { name: "Renew", exact: true }).click();
     await expect(panel.getByText("Connected ✓")).toBeVisible();
-    expect(renewed).toEqual([{ fields: { request_token: "https://example.com/?request_token=abc&status=success" } }]);
+    expect(renewed).toEqual([{ fields: { request_token: "https://example.com/?request_token=abc&status=success" }, account_label: "primary" }]);
   });
 
   test("Remove asks first, names what happens, then deletes that account's details", async ({ page }) => {
@@ -250,21 +296,22 @@ test.describe("desktop 1440", () => {
     await banner.getByRole("button", { name: "Renew" }).click();
     const panel = page.locator("[data-broker-dialog='connect']");
     await expect(panel.getByRole("heading", { name: "Renew Zerodha (Kite)" })).toBeVisible();
-    await expect(panel.locator("input")).toHaveCount(1);
+    await expect(panel.locator("input")).toHaveCount(0);                 // BRK-1 B: one Log in button, nothing to paste
+    await expect(panel.getByRole("button", { name: "Log in" })).toBeVisible();
     await page.keyboard.press("Escape");
     await page.unrouteAll({ behavior: "ignoreErrors" });
     await open(page, "/", { session: LATER, mocks: { connections: [UPSTOX_DATA] } });
     await expect(page.locator("[data-renew-banner]")).toHaveCount(0);
   });
 
-  test("Advanced is collapsed; it holds the static IP and the Upstox address", async ({ page }) => {
+  test("Advanced is collapsed; it holds the static IP and no Upstox OAuth app (BRK-1 B)", async ({ page }) => {
     await open(page, "/broker", { session: LATER });
     const advanced = page.locator("[data-broker-advanced]");
     await expect(advanced).not.toHaveAttribute("open", "");
     await expect(page.getByText("Static IP (SEBI)")).toHaveCount(0);
     await advanced.locator("summary").click();
     await expect(page.getByText("Static IP (SEBI)")).toBeVisible();
-    await expect(advanced.getByRole("heading", { name: "Upstox OAuth app" })).toBeVisible();
+    await expect(advanced.getByRole("heading", { name: "Upstox OAuth app" })).toHaveCount(0);
   });
 
   test("the main screen has no technical words (only Advanced may)", async ({ page }) => {
@@ -298,22 +345,10 @@ test.describe("desktop 1440", () => {
     await expect(row.getByRole("button", { name: "Remove" })).toBeDisabled();
   });
 
-  test("Advanced: Connect another account opens the panel for that account; Log in with Upstox", async ({ page }) => {
+  test("Advanced: Connect another account opens the panel for that account (BRK-1 B: no Upstox OAuth login there)", async ({ page }) => {
     const sent: unknown[] = [];
-    let oauthLabel = "";
-    await open(page, "/broker", { session: LATER, mocks: {
-      connections: [UPSTOX_DATA],
-      brokers: [{ broker_name: "upstox", account_label: "primary", token_status: "EXPIRED", token_expires_at: null, last_verified_at: null,
-        needs_login: true, oauth_supported: true, oauth_callback_url: "https://atp.example.com/api/broker/upstox/oauth/callback" }],
-    }, before: async (p) => {
+    await open(page, "/broker", { session: LATER, mocks: { connections: [UPSTOX_DATA] }, before: async (p) => {
       await p.route(/\/api(?:\/v1)?\/broker\/dhan\/connect$/, (r) => { sent.push(r.request().postDataJSON()); return r.fulfill({ json: { status: "connected", message: "Connected." } }); });
-      await p.route(/\/api(?:\/v1)?\/broker\/upstox\/oauth\/start/, (r) => {
-        oauthLabel = new URL(r.request().url()).searchParams.get("account_label") ?? "";
-        return r.fulfill({ json: { authorization_url: "https://upstox.example/login" } });
-      });
-      await p.route("https://upstox.example/**", (r) => r.fulfill({ body: "upstox login" }));
-      await p.route(/\/api(?:\/v1)?\/broker\/upstox\/redirect-url$/, (r) => r.fulfill({ json: {
-        redirect_url: "https://atp.example.com/api/broker/upstox/oauth/callback", redirect_uri_mismatch: false, accounts: [] } }));
     } });
     await page.locator("[data-broker-advanced] summary").click();
     const another = page.locator("[data-another-account]");
@@ -322,16 +357,13 @@ test.describe("desktop 1440", () => {
     await another.getByRole("button", { name: "Connect" }).click();
     const panel = page.locator("[data-broker-dialog='connect']");
     await panel.getByLabel("Client ID").fill("1000000002");
-    await panel.getByLabel("Access token").fill("e2e-made-up-value");
+    await panel.getByLabel("Dhan PIN").fill("000000");
+    await panel.getByLabel("TOTP secret").fill("e2e-made-up-value");
     await panel.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(panel.getByText("Connected ✓")).toBeVisible();
-    expect(sent).toEqual([{ fields: { client_id: "1000000002", access_token: "e2e-made-up-value" }, account_label: "family" }]);
+    expect(sent).toEqual([{ fields: { client_id: "1000000002", pin: "000000", totp_secret: "e2e-made-up-value" }, account_label: "family" }]);
     await panel.getByRole("button", { name: "Done" }).click();
-    await expect(page.locator("[data-broker-advanced]").getByRole("textbox", { name: "Redirect URL" }))
-      .toHaveValue("https://atp.example.com/api/broker/upstox/oauth/callback");
-    await page.locator("[data-upstox-oauth='primary']").click();
-    await expect(page).toHaveURL("https://upstox.example/login");
-    expect(oauthLabel).toBe("primary");
+    await expect(page.locator("[data-upstox-oauth]")).toHaveCount(0);
   });
 
   test("M60: the v2 shell shows the same Broker page in Settings › Account & broker, the dot on the Settings entry", async ({ page }) => {

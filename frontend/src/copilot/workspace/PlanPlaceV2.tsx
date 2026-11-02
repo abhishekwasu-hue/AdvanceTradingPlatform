@@ -13,6 +13,17 @@ import { formatNumber } from "../../ui/format";
 import { useFeatures } from "../../ui/useFeatures";
 import type { TicketPrefill } from "../ticket/intent";
 import { basketLegsOf, equityTicketOf, singleLegTicket, targetArm, type PlanState } from "./place";
+import { openChart } from "../../chart/openChart";
+import { similarApi } from "./similar";
+
+/** M76 MP-14 (L-1): after a fill, the server records the open chart's area at entry on his new trades' journal entries
+ * (it reads the chart itself, as of the entry; nothing about the order changes). Best effort: a failure changes nothing. */
+function recordArea(tradeIds: (number | null | undefined)[]) {
+  const chart = openChart();
+  const ids = tradeIds.filter((t): t is number => typeof t === "number" && t > 0);
+  if (!chart || !ids.length) return;
+  similarApi.record(ids, chart.instrument, chart.tf).catch(() => undefined);   // intentional: the trade stands either way
+}
 
 // The ONE order ticket, the ONE basket and the equity ticket - loaded only when he opens them (the same parts the chain,
 // the Terminal and Positions open). Nothing here has an order path of its own.
@@ -130,11 +141,12 @@ export function PlanPlaceV2({ plan }: { plan: PlanState }) {
       <Suspense fallback={null}>
         {opened?.kind === "ticket" && (
           <OrderTicketV2 open target={opened.target} side={opened.side} prefill={opened.prefill} onClose={() => setOpened(null)}
-            onPlaced={(r) => { setPlaced(r); setArmed(null); }} />
+            onPlaced={(r) => { setPlaced(r); setArmed(null); recordArea([r.trade_id]); }} />
         )}
         {opened?.kind === "basket" && (
           <div className="rounded-panel border border-subtle" data-plan="basket">
-            <BasketPanelV2 embedded open store={opened.store} onClose={() => setOpened(null)} chain={{ symbol: plan.underlying, live: null, expiries: [] }} />
+            <BasketPanelV2 embedded open store={opened.store} onClose={() => setOpened(null)} chain={{ symbol: plan.underlying, live: null, expiries: [] }}
+              onPlaced={(r) => recordArea(r.legs.map((l) => l.trade_id))} />
           </div>
         )}
         {opened?.kind === "equity" && <div data-plan="equity-ticket"><PaperTicketCard canTrade initial={opened.initial} /></div>}

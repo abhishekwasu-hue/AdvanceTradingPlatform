@@ -229,7 +229,7 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await expect(strip.locator("[data-index='INDIA VIX']")).toContainText("No price yet");
     const first = page.locator("[data-attention]").first();
     await expect(first).toContainText("Log in to Upstox");
-    await expect(first).toContainText("we never see or store your broker password");
+    await expect(first).toContainText("Analytics Token, valid for one year");   // BRK-1: Upstox = the analytics token, no OAuth login
     await expect(first.getByRole("button", { name: "Log in" })).toHaveClass(/bg-brand/);
   });
 

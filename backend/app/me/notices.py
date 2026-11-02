@@ -12,6 +12,15 @@ way is told once. It is due only when all of these hold:
 - it was not seen yet: the mark `limits_not_set_seen_at` in the prefs namespace `notices` (app/me/prefs.py; no table, no
   migration). Dismissing sets the mark; so does saving any risk limit (app/paper/ticket_routes.py), and that save also
   writes `_set`, so the row stops qualifying.
+
+M68 TS-6 (owner order M68): "no_presets_review" - "ATP no longer pre-sets trading values — review your Trade
+settings", once, for an EXISTING user (M68's migrations kept exactly what he saved; every value he never saved is now
+"Not set"). Existing = his data holds a value from before M68 (no migration; read from what the M68 PRs left):
+- a PAPER account an earlier release made: its starting capital is stored but not marked as his own choice
+  (`capital_saved` off - the M68 PR-7 migration's mark: that capital was ATP's start value), or
+- a value he saved in the older store "My trading defaults" (prefs namespace `trading_defaults`, version > 0).
+A new user (no such footprint) never gets it. Behind `ui_v2` like the others. Seen = dismissed, or he saved his Trade
+settings (the Settings > Trade settings save route), mark `no_presets_review_seen_at`.
 Per user and tenant (the prefs and the account rows are filtered on both). Reads and one mark; places nothing.
 """
 from __future__ import annotations
@@ -35,10 +44,16 @@ LIMITS_NOT_SET = "limits_not_set"
 # users of an organisation whose risk limits row existed before the change (the M64 migration marks it) are told once;
 # dismissing it, or saving Settings > Risk limits, ends it.
 RISK_LIMITS_OFF = "risk_limits_off"
+NO_PRESETS_REVIEW = "no_presets_review"         # M68 TS-6
 TEXT = {LIMITS_NOT_SET: "Your risk limits are now OFF by default — set your own in Settings → Risk",
-        RISK_LIMITS_OFF: "Risk limits are now off by default — turn on the ones you want"}
-LINK = {LIMITS_NOT_SET: "/risk-management", RISK_LIMITS_OFF: "/settings/risk-limits"}
-MARK = {LIMITS_NOT_SET: "limits_not_set_seen_at", RISK_LIMITS_OFF: "risk_limits_off_seen_at"}
+        RISK_LIMITS_OFF: "Risk limits are now off by default — turn on the ones you want",
+        NO_PRESETS_REVIEW: "ATP no longer pre-sets trading values — review your Trade settings"}
+LINK = {LIMITS_NOT_SET: "/risk-management", RISK_LIMITS_OFF: "/settings/risk-limits",
+        NO_PRESETS_REVIEW: "/settings/trade-settings"}
+# The words of the link; a notice without one keeps the shell's "Open Risk limits" (src/notices/OneTimeNoticesV2.tsx).
+LABEL = {NO_PRESETS_REVIEW: "Open Trade settings"}
+MARK = {LIMITS_NOT_SET: "limits_not_set_seen_at", RISK_LIMITS_OFF: "risk_limits_off_seen_at",
+        NO_PRESETS_REVIEW: "no_presets_review_seen_at"}
 PAGE_FLAG = "ui_v2"
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -67,7 +82,29 @@ async def due(session: AsyncSession, user: User) -> List[Dict[str, Any]]:
     out: list[dict[str, Any]] = []
     if await _risk_limits_changed(session, user) and not await _seen(session, user, RISK_LIMITS_OFF):
         out.append({"id": RISK_LIMITS_OFF, "text": TEXT[RISK_LIMITS_OFF], "link": LINK[RISK_LIMITS_OFF]})
-    return out + await _limits_not_set(session, user)
+    return out + await _limits_not_set(session, user) + await _no_presets_review(session, user)
+
+
+async def _had_values_before_m68(session: AsyncSession, user: User) -> bool:
+    """Whether `user` existed before M68: a PAPER account an earlier release made (its capital stored, not marked as his
+    own choice - the M68 PR-7 migration's mark), or a value he saved in the older "My trading defaults" store."""
+    from sqlalchemy import select
+
+    from app.db.models import PaperAccountRecord
+    account = await session.scalar(select(PaperAccountRecord).where(PaperAccountRecord.tenant_id == user.tenant_id,
+                                                                    PaperAccountRecord.user_id == user.id))
+    if account is not None and account.starting_capital is not None and not account.capital_saved:
+        return True
+    _value, version = await prefs.read_one("trading_defaults", user, session)
+    return version > 0
+
+
+async def _no_presets_review(session: AsyncSession, user: User) -> list[dict[str, Any]]:
+    """M68 TS-6's notice (see the module docstring)."""
+    if await _seen(session, user, NO_PRESETS_REVIEW) or not await _had_values_before_m68(session, user):
+        return []
+    n = NO_PRESETS_REVIEW
+    return [{"id": n, "text": TEXT[n], "link": LINK[n], "label": LABEL[n]}]
 
 
 async def _limits_not_set(session: AsyncSession, user: User) -> list[dict[str, Any]]:
@@ -104,4 +141,4 @@ async def notice_seen(notice_id: str, user: User = Depends(get_current_user), se
     return {"notices": await due(session, user)}
 
 
-__all__ = ["router", "due", "mark_seen", "LIMITS_NOT_SET", "RISK_LIMITS_OFF", "TEXT"]
+__all__ = ["router", "due", "mark_seen", "LIMITS_NOT_SET", "RISK_LIMITS_OFF", "NO_PRESETS_REVIEW", "TEXT"]

@@ -52,7 +52,9 @@ TOKEN_DAILY_EXPIRY_IST: Dict[str, time] = {
     "upstox": time(3, 30),
     "zerodha": time(6, 0),
     "shoonya": time(6, 0),
-    "angel_one": time(5, 0),     # SmartAPI JWTs are invalidated in the early morning
+    # BRK-1 B: "The session established via SmartAPI remains active till 12 midnight" (SmartAPI docs and FAQ, checked
+    # 2026-11-02, docs/brokers/EASIEST_LOGIN.md section 5).
+    "angel_one": time(0, 0),
     "fyers": time(6, 0),
     "dhan": time(6, 0),
     # Part 1B: Kotak Neo publishes no session end time (KN-4); the conservative default until it is confirmed. A TOTP
@@ -77,6 +79,8 @@ OAUTH_BROKERS = {"upstox"}
 # browser to the redirect URL registered on its developer console (not to the platform), and the
 # operator copies the one-time code out of that address bar into the Broker page. `code_param` names the
 # query parameter that carries it. Fyers: `generate-authcode` -> `?auth_code=...`; Kite: `?request_token=...`.
+# BRK-1 B: the normal daily login for both is the callback flow below (OAUTH_CALLBACK_BROKERS: the user only signs in); this
+# paste flow stays only as the hidden fallback for an app whose Redirect URL cannot be ATP's callback.
 FYERS_AUTHORIZE_URL = "https://api-t1.fyers.in/api/v3/generate-authcode"
 KITE_AUTHORIZE_URL = "https://kite.zerodha.com/connect/login"
 LOGIN_URL_BROKERS: Dict[str, Dict[str, Any]] = {

@@ -3,8 +3,12 @@ import { Button, Dialog, Input } from "../components/primitives";
 import { cx } from "../components/primitives/cx";
 import { saveBlob } from "../journal/journalModel";
 import { formatNumber } from "../ui/format";
+import { keptCards } from "../fno/checkCardLog";
 import { studyApi } from "./api";
-import { FORMATS, NOTES_MAX, SECTIONS, STUDY_TIMEFRAMES, initialSheet, saveBody, sheetProblem, toggle, type DownloadFormat, type SectionId, type SheetState } from "./model";
+import {
+  FORMATS, NOTES_MAX, SECTIONS, STUDY_TIMEFRAMES, initialSheet, saveBody, sheetProblem, toggle,
+  type DownloadFormat, type SectionId, type SheetState, type StudyPlan,
+} from "./model";
 
 /**
  * M77 SX-7 (owner order M77 PD-1): the "Save study" sheet of the Copilot's chart workspace - in the same tab (a
@@ -21,8 +25,10 @@ export const cvdOn = () => typeof document !== "undefined" && document.documentE
 
 type Status = { kind: "idle" } | { kind: "saving" } | { kind: "done"; text: string } | { kind: "failed"; text: string };
 
-export function SaveStudySheetV2({ open, onOpenChange, instrument, symbol, openTf, onSaved }: {
+export function SaveStudySheetV2({ open, onOpenChange, instrument, symbol, openTf, onSaved, plan = null }: {
   open: boolean; onOpenChange: (open: boolean) => void; instrument: string; symbol: string; openTf: string | null; onSaved?: () => void;
+  /** M77 SX-6: the trade plan open beside the chart (references only), null when none. */
+  plan?: StudyPlan | null;
 }) {
   const [s, setS] = useState<SheetState>(() => initialSheet(openTf));
   const [status, setStatus] = useState<Status>({ kind: "idle" });
@@ -38,7 +44,7 @@ export function SaveStudySheetV2({ open, onOpenChange, instrument, symbol, openT
     if (problem) return;
     setStatus({ kind: "saving" });
     try {
-      const saved = await studyApi.save(saveBody(instrument, s));
+      const saved = await studyApi.save(saveBody(instrument, s, plan, keptCards()));
       const file = await studyApi.download(saved.id, s.format, { tf: openTf ?? undefined, cvd: cvdOn() });
       saveBlob(file.blob, file.filename);
       setStatus({ kind: "done", text: `Saved to My studies. ${file.filename} is downloading.` });

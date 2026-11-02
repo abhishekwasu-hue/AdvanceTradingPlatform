@@ -15,6 +15,8 @@ import { useNotificationReads } from "../live/useNotificationReads";
 import { formatDateTimeIST } from "../ui/format";
 import { notificationEventWords } from "../ui/notificationWords";
 import { AskAiAbout } from "../copilot/AskAiAbout";
+import { InPlaceLink } from "../inplace/InPlaceLink";
+import { copilotToolPath } from "../inplace/copilotPaths";
 
 function severityClasses(severity: NotificationSeverity): string {
   switch (severity) {
@@ -112,6 +114,11 @@ export default function NotificationsPage() {
                 {/* M72 PR-7: a Copilot watch card opens the Copilot beside the page with his own position / signal. */}
                 {n.ask && (
                   <div className="mt-1.5"><AskAiAbout ctx={{ page: "notifications", symbol: n.ask.symbol, object: n.ask.object }} label="Ask why" /></div>
+                )}
+                {/* M76 MP-11: a workspace watch card opens the Copilot's chart workspace in place (no navigation away). */}
+                {n.open_here && (
+                  <div className="mt-1.5"><InPlaceLink to={copilotToolPath("read", n.open_here.symbol)} data-open-here
+                    className="inline-flex min-h-11 items-center text-xs font-semibold text-brand hover:underline md:min-h-0">Open here</InPlaceLink></div>
                 )}
                 {!n.read && (
                   <button

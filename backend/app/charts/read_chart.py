@@ -156,22 +156,49 @@ def commitment_part(frame: pd.DataFrame, areas: Sequence[Mapping[str, Any]], ctx
     bars = gate_bars(frame)
     bounds = [(float(a["low"]), float(a["high"])) for a in areas]
     best: Optional[Dict[str, Any]] = None
-    for i, area in enumerate(bounds):
-        others = [b for j, b in enumerate(bounds) if j != i]
-        r = G.safe_evaluate(bars, area, ctx, others, start)
-        at = r.get("confirm_bar")
-        if at is None or not (start <= int(at) < len(frame)):
-            continue
-        if best is None or int(at) > best["bar"]:
-            side = r.get("side")
-            role = "demand" if side == G.BULL else "supply"
-            form = G.form_name(r.get("form"), side) or "commitment"
-            best = {"bar": int(at), "time": pal._epoch(frame["timestamp"].iloc[int(at)]), "bar_end": pal._iso(frame["bar_end"].iloc[int(at)]),
-                    "role": role, "form": form, "area": {"low": area[0], "high": area[1], "key": areas[i].get("key")},
-                    "words": _words_of(f"Commitment candle ({form}) at the {role} area {areas[i].get('low_text')} - {areas[i].get('high_text')}.")}
+    for i in range(len(bounds)):
+        found = _area_commitment(frame, bars, areas, bounds, i, ctx, start)
+        if found is not None and (best is None or found["bar"] > best["bar"]):
+            best = found
     if best is not None:
         best.pop("bar")
     return best
+
+
+def _area_commitment(frame: pd.DataFrame, bars: pd.DataFrame, areas: Sequence[Mapping[str, Any]], bounds: Sequence[tuple[float, float]],
+                     i: int, ctx: Mapping[str, Any], start: int) -> Optional[Dict[str, Any]]:
+    """The commitment candle the ported level gate marks at area `i` (the other areas as its neighbours), or None."""
+    area = bounds[i]
+    others = [b for j, b in enumerate(bounds) if j != i]
+    r = G.safe_evaluate(bars, area, ctx, others, start)
+    at = r.get("confirm_bar")
+    if at is None or not (start <= int(at) < len(frame)):
+        return None
+    side = r.get("side")
+    role = "demand" if side == G.BULL else "supply"
+    form = G.form_name(r.get("form"), side) or "commitment"
+    return {"bar": int(at), "time": pal._epoch(frame["timestamp"].iloc[int(at)]), "bar_end": pal._iso(frame["bar_end"].iloc[int(at)]),
+            "role": role, "form": form, "area": {"low": area[0], "high": area[1], "key": areas[i].get("key")},
+            "words": _words_of(f"Commitment candle ({form}) at the {role} area {areas[i].get('low_text')} - {areas[i].get('high_text')}.")}
+
+
+def area_commitment(frame: pd.DataFrame, areas: Sequence[Mapping[str, Any]], index: int, ctx: Optional[Mapping[str, Any]],
+                    known: Optional[datetime]) -> Optional[Dict[str, Any]]:
+    """M75 W-9: the commitment candle the ported level gate (unchanged) marks at ONE area - `areas[index]`, the others as
+    its neighbours, exactly as `commitment_part` reads each area - replayed over the closed bars that ended after `known`
+    (a trigger plan's armed time: never a candle from before). It carries `bar` (the frame row) and the candle's `low`,
+    `high` and `close`. None when the gate marks none there (or there is no Daily context)."""
+    if not len(frame) or not ctx or not (0 <= index < len(areas)):
+        return None
+    start = _start_after(frame, known)
+    if start >= len(frame):
+        return None
+    bounds = [(float(a["low"]), float(a["high"])) for a in areas]
+    found = _area_commitment(frame, gate_bars(frame), areas, bounds, index, ctx, start)
+    if found is not None:
+        row = frame.iloc[found["bar"]]
+        found.update(low=float(row["low"]), high=float(row["high"]), close=float(row["close"]))
+    return found
 
 
 def read_closed(frame: pd.DataFrame, tf: str, when: datetime, *, bands: Sequence[Mapping[str, Any]] = (),
@@ -312,4 +339,4 @@ async def read_chart(instrument: str = Query(..., min_length=1, max_length=100),
     return {**head, **content}
 
 
-__all__ = ["router", "FLAG", "read_closed", "closed_only", "commitment_part", "pullback_part", "structure_part", "area_part"]
+__all__ = ["router", "FLAG", "read_closed", "closed_only", "commitment_part", "area_commitment", "pullback_part", "structure_part", "area_part"]

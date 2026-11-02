@@ -63,12 +63,15 @@ def _reminders(tenant_id: int):
 def test_every_broker_has_a_login_method_from_the_token_lifecycle_sets():
     for broker in tl.PERMANENT_KEY_BROKERS:
         assert lr.login_method(broker) == "api_key"
-    for broker in tl.OAUTH_BROKERS:
+    # BRK-1 B: Upstox is the pasted Analytics Token (no Upstox OAuth flow); Zerodha and Fyers return to ATP's callback;
+    # the TOTP brokers are logged in by ATP itself before the open.
+    assert lr.login_method("UPSTOX") == "analytics"
+    for broker in tl.OAUTH_CALLBACK_BROKERS:
         assert lr.login_method(broker.upper()) == "oauth"
-    for broker in tl.LOGIN_URL_BROKERS:
-        assert lr.login_method(broker) == "login_code"
+    for broker in ("angel_one", "shoonya", "kotak_neo", "groww", "dhan"):
+        assert lr.login_method(broker) == "totp"
     assert lr.login_method("some-new-broker") == "manual"
-    assert set(lr.HOW) == {"oauth", "login_code", "api_key", "manual"}
+    assert set(lr.HOW) == {"analytics", "oauth", "totp", "login_code", "api_key", "manual"}
 
 
 def test_reminder_time_and_window_come_from_the_rule_set():
@@ -118,7 +121,7 @@ def test_one_reminder_per_day_naming_how_to_log_in():
     _run(send())                                                        # a restarted worker: no second reminder
     sent = _reminders(t["tenant_id"])
     assert len(sent) == 1 and sent[0].severity == "WARNING" and "upstox" in sent[0].title
-    assert lr.HOW["oauth"] in sent[0].message
+    assert lr.HOW["analytics"] in sent[0].message                      # BRK-1 B: Upstox is the Analytics Token
 
 
 def test_worker_raises_the_reminder_before_the_open(monkeypatch):

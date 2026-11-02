@@ -3,8 +3,11 @@
 
 * Condition (W-8 core): the underlying's price crossing HIS level - a touch, or a CLOSED candle of HIS timeframe closing
   at / beyond it (the shared rules of app/trading/trigger_rules.py, never a candle that closed before the plan was armed:
-  no look-ahead), optionally only inside HIS own time window (an operational setting, C.4). Method conditions (an area +
-  a rejection candle, BOS / CHoCH) are W-9.
+  no look-ahead), optionally only inside HIS own time window (an operational setting, C.4).
+* Method conditions (M75 W-9, app/execution/plan_conditions.py): the price inside HIS chosen area + a closed candle of
+  HIS timeframe with the reader's rejection there, or a BOS / CHoCH (up / down) on HIS timeframe - from the same ONE
+  source as the workspace's reading (the engine when it reads this chart for him, else ATP's readers; never both); the
+  trigger note says which source met it. Same armed-after rule, same fire.
 * Orders: each one his own contract, side, lots, order type, product and price - nothing is pre-chosen (M68). At fire
   time each order goes through the order ticket's OWN `place` (app/paper/fno_ticket.py): the kill switches, the order
   chokepoint (`phase0_lock.assert_paper`), the risk checks and approval-only run AGAIN then (TM-23). PAPER = LIVE: the
@@ -47,6 +50,7 @@ from app.trading.trigger_rules import ABOVE, BELOW, CLOSE, TOUCH
 logger = logging.getLogger(__name__)
 
 FLAG = "trigger_plans"
+PRICE = "PRICE"                                   # W-8's price condition (W-9's kinds: app/execution/plan_conditions.py)
 ARMED, PAUSED, TRIGGERED, DONE, EXPIRED, CANCELLED = "ARMED", "PAUSED", "TRIGGERED", "DONE", "EXPIRED", "CANCELLED"
 WATCHED = (ARMED, TRIGGERED)                      # the rows the engine visits
 EDITABLE = (ARMED, PAUSED)
@@ -74,13 +78,21 @@ class PlanError(ValueError):
 
 @dataclass
 class Condition:
-    """His own condition: the underlying crossing `level` from `side`, by touch or by a closed candle of his timeframe."""
-    level: float
-    side: str                                     # ABOVE | BELOW
-    mode: str                                     # TOUCH | CLOSE
+    """His own condition: the underlying crossing `level` from `side`, by touch or by a closed candle of his timeframe
+    (kind PRICE, W-8); or (W-9) his area + the reader's rejection candle (AREA), or a BOS / CHoCH (STRUCTURE)."""
+    level: float = 0.0
+    side: str = ""                                # ABOVE | BELOW (PRICE)
+    mode: str = ""                                # TOUCH | CLOSE (PRICE)
     timeframe_minutes: int | None = None
     window_start: str | None = None               # "HH:MM" IST, his own (operational); None = any time
     window_end: str | None = None
+    kind: str = "PRICE"                           # PRICE | AREA | STRUCTURE (a W-8 row has no kind: PRICE)
+    area_side: str | None = None                  # AREA: buyer | seller - the area he picked from the reading
+    area_low: float | None = None
+    area_high: float | None = None
+    area_timeframe: str | None = None             # AREA: the area's own timeframe (shown only; never merged)
+    event: str | None = None                      # STRUCTURE: BOS | CHOCH
+    direction: str | None = None                  # STRUCTURE: up | down
 
 
 @dataclass
@@ -99,6 +111,11 @@ class PlanOrder:
 
 
 def condition_errors(c: Condition) -> list[str]:
+    from app.execution import plan_conditions as PC
+    if c.kind not in PC.KINDS:
+        return ["Choose what the plan watches."]
+    if c.kind != PC.PRICE:
+        return _method_errors(c) + _window_errors(c)
     errors: list[str] = []
     if not (c.level > 0):
         errors.append("Set the level the plan watches.")
@@ -108,6 +125,30 @@ def condition_errors(c: Condition) -> list[str]:
         errors.append("Choose whether the plan fires on a touch or on a candle close.")
     if c.mode == CLOSE and not (c.timeframe_minutes and 1 <= c.timeframe_minutes <= MAX_TIMEFRAME):
         errors.append("A candle-close plan needs its timeframe in minutes.")
+    return errors + _window_errors(c)
+
+
+def _method_errors(c: Condition) -> list[str]:
+    """W-9: his area (side + edges from the reading) or his BOS / CHoCH + direction, and his timeframe of the reading."""
+    from app.execution import plan_conditions as PC
+    errors: list[str] = []
+    if PC.read_tf(c.timeframe_minutes) is None:
+        errors.append("Choose the candle timeframe the reading uses: 1, 3, 5, 15, 30 or 60 minutes, or daily.")
+    if c.kind == PC.AREA:
+        if c.area_side not in PC.AREA_SIDES:
+            errors.append("Pick the buyer or seller area the plan watches.")
+        if not (c.area_low and c.area_high and 0 < c.area_low <= c.area_high):
+            errors.append("Pick the area from the chart's reading.")
+    else:
+        if c.event not in PC.EVENTS:
+            errors.append("Choose a break of structure (BOS) or a change of character (CHoCH).")
+        if c.direction not in PC.DIRECTIONS:
+            errors.append("Choose up or down.")
+    return errors
+
+
+def _window_errors(c: Condition) -> list[str]:
+    errors: list[str] = []
     if (c.window_start is None) != (c.window_end is None):
         errors.append("A time window needs both its start and its end.")
     for t in (c.window_start, c.window_end):
@@ -247,6 +288,7 @@ async def _move(session: AsyncSession, row: TriggerPlanRecord, frm: Sequence[str
 
 async def pause(session: AsyncSession, user: User, plan_id: int, now: datetime | None = None) -> TriggerPlanRecord:
     row = await own(session, user, plan_id)
+    await _gtt_down(session, row, _now(now))                 # W-10: the broker GTT goes first (no fire after his tap)
     if not await _move(session, row, (ARMED,), PAUSED, _now(now)):
         raise PlanError(f"This plan is {STATUS_WORDS[row.status].lower()}: only an armed plan can be paused.")
     return row
@@ -266,6 +308,7 @@ async def resume(session: AsyncSession, user: User, plan_id: int, now: datetime 
 async def cancel(session: AsyncSession, user: User, plan_id: int, now: datetime | None = None) -> TriggerPlanRecord:
     """Cancels an armed or paused plan. A triggered plan's orders are already on their way; its exits are never touched."""
     row = await own(session, user, plan_id)
+    await _gtt_down(session, row, _now(now))                 # W-10: the broker GTT goes first (no fire after his tap)
     if not await _move(session, row, EDITABLE, CANCELLED, _now(now), finished_at=_now(now), note="Cancelled by you"):
         raise PlanError(f"This plan is {STATUS_WORDS[row.status].lower()}: it can no longer be cancelled.")
     return row
@@ -279,17 +322,50 @@ async def edit(session: AsyncSession, user: User, plan_id: int, *, condition: Co
     if row.status not in EDITABLE:
         raise PlanError(f"This plan is {STATUS_WORDS[row.status].lower()}: it can no longer be edited.")
     chosen = await _check(session, user, condition, orders, approval, valid_until, now)
+    await _gtt_down(session, row, now)                       # W-10: the old GTT goes first (never a GTT at the old level)
     if not await _move(session, row, EDITABLE, row.status, now, condition_json=json.dumps(asdict(condition)),
                        orders_json=json.dumps([asdict(o) for o in orders]), approval=chosen, valid_until=_utc(valid_until),
                        name=name or None, armed_at=now):
         raise PlanError("This plan changed meanwhile: open it again.")
+    from app.execution import broker_gtt
+    if not broker_gtt.active(row):
+        row.results_json = None                   # armed afresh: an earlier broker answer does not carry over
     return row
+
+
+async def _gtt_down(session: AsyncSession, row: TriggerPlanRecord, now: datetime) -> None:
+    """W-10: a paused, edited or cancelled plan's broker GTT is cancelled at his broker (the worker re-arms an armed plan).
+    The change goes ahead only once no GTT waits at his broker: a GTT that already triggered there moves the plan to
+    TRIGGERED (its order was sent; never placed again), and a cancel his broker did not confirm leaves the plan as it is."""
+    from app.execution import broker_gtt
+    if broker_gtt.active(row):
+        await broker_gtt.on_plan_change(session, row, now)
+        await session.flush()
+    if await broker_gtt.took_over(session, row, now):
+        raise PlanError("Your broker's GTT already triggered: its order was sent, so the plan can no longer be changed.")
+    if broker_gtt.active(row):
+        raise PlanError("Your broker did not confirm the GTT's cancel, so the plan is unchanged. Try again.")
+
+
+def condition_words(underlying: str, c: Condition) -> str:
+    """His condition in plain words for the plans list."""
+    from app.execution import plan_conditions as PC
+    if c.kind == PC.AREA:
+        tf = PC.TF_WORDS.get(PC.read_tf(c.timeframe_minutes) or "", "his")
+        return (f"{underlying} inside the {c.area_side} area {c.area_low or 0:g} - {c.area_high or 0:g} and a {tf} candle "
+                "with the reading's rejection there")
+    if c.kind == PC.STRUCTURE:
+        tf = PC.TF_WORDS.get(PC.read_tf(c.timeframe_minutes) or "", "his")
+        return f"{underlying}: {PC.EVENT_NAMES.get(c.event or '', 'structure event')} {c.direction} on the {tf} chart"
+    how = "on a touch" if c.mode == TOUCH else f"on a {c.timeframe_minutes}-minute candle close"
+    return f"{underlying} {'above' if c.side == ABOVE else 'below'} {c.level:g} ({how})"
 
 
 def view(row: TriggerPlanRecord) -> dict[str, Any]:
     c = condition_of(row)
     return {"id": row.id, "name": row.name, "underlying": row.underlying, "watch_symbol": row.watch_symbol,
-            "watch_exchange": row.watch_exchange, "condition": asdict(c), "orders": [asdict(o) for o in orders_of(row)],
+            "watch_exchange": row.watch_exchange, "condition": asdict(c),
+            "condition_words": condition_words(row.underlying, c), "orders": [asdict(o) for o in orders_of(row)],
             "approval": row.approval, "status": row.status, "status_words": STATUS_WORDS.get(row.status, row.status),
             "valid_until": _utc(row.valid_until).isoformat(), "armed_at": _utc(row.armed_at).isoformat(),
             "triggered_at": _utc(row.triggered_at).isoformat() if row.triggered_at else None,
@@ -315,6 +391,31 @@ def in_window(c: Condition, now: datetime) -> bool:
         return True
     hhmm = now.astimezone(IST).strftime("%H:%M")
     return c.window_start <= hhmm < c.window_end
+
+
+async def method_reached(session: AsyncSession, row: TriggerPlanRecord, c: Condition, now: datetime) -> bool | None:
+    """W-9: his area / structure condition from the chart's ONE reading source (app/execution/plan_conditions.py). Read
+    again only once a new candle of his timeframe can have closed. The trigger note names the source that met it."""
+    from app.execution import plan_conditions as PC
+    armed = _utc(row.armed_at)
+    if not PC.due(row.id, row.condition_json, armed, now):
+        return False
+    user = await session.get(User, row.user_id)
+    if user is None:
+        return None
+    try:
+        reading = await PC.read(session, user, row.watch_symbol, row.watch_exchange, c, armed, now)
+    except Exception as exc:  # noqa: BLE001 - no reading, no decision this pass
+        logger.info("Trigger plans: no method reading for %s (%s)", row.watch_symbol, type(exc).__name__)
+        reading = PC.Reading(None)
+    PC.seen(row.id, row.condition_json, armed, reading, c.timeframe_minutes, now)
+    if reading.last_close is not None:
+        row.last_price, row.last_checked_at = reading.last_close, now
+    if reading.hit is None:
+        return None if reading.source is None else False
+    row.trigger_price = reading.hit.price if reading.hit.price is not None else reading.last_close
+    row.note = reading.hit.words[:300]
+    return True
 
 
 async def reached(row: TriggerPlanRecord, c: Condition, prices: PriceFn, candles: CandleFn | None, now: datetime) -> bool | None:
@@ -362,7 +463,9 @@ def _label(row: TriggerPlanRecord) -> str:
 async def run(session: AsyncSession, tenant_id: int, prices: PriceFn, *, candles: CandleFn | None = None,
               now: datetime | None = None) -> dict[str, int]:
     """One pass over the organisation's plans: expire the ended ones, finish every TRIGGERED plan (a restart or an earlier
-    pass left it), then fire each ARMED plan whose condition is met - once."""
+    pass left it), then fire each ARMED plan whose condition is met - once. W-10: a plan waiting at his broker's GTT is
+    read from the broker instead (app/execution/broker_gtt.py; flag `broker_gtt`, OFF)."""
+    from app.execution import broker_gtt
     now = _now(now)
     report = {"checked": 0, "triggered": 0, "expired": 0, "done": 0}
     if not await enabled(session, tenant_id):
@@ -377,26 +480,40 @@ async def run(session: AsyncSession, tenant_id: int, prices: PriceFn, *, candles
             continue
         try:
             if row.status in (ARMED, PAUSED) and _utc(row.valid_until) <= now:
+                await broker_gtt.on_plan_change(session, row, now)        # W-10: its broker GTT goes first
+                if await broker_gtt.took_over(session, row, now) or broker_gtt.active(row):
+                    await session.commit()                                # fired at the broker / not cancelled yet: never
+                    continue                                              # expired while a GTT can still send its order
                 if await _move(session, row, (ARMED, PAUSED), EXPIRED, now, finished_at=now, note="Its validity ended before it triggered"):
                     report["expired"] += 1
                     await _notify(session, row, f"Plan expired: {_label(row)}", "Its validity ended before the condition was met. Nothing was placed.")
                     await session.commit()
                 continue
             if row.status == TRIGGERED:
-                if await fire(session, row, prices, now):
+                if broker_gtt.fired(row) or broker_gtt.active(row):        # W-10: the broker fired it; ATP never places it
+                    await broker_gtt.handle(session, row, prices, now)
+                    report["done"] += int(row.status == DONE)
+                elif await fire(session, row, prices, now):
                     report["done"] += 1
                 continue
             if row.status != ARMED:
                 continue
             report["checked"] += 1
+            if await broker_gtt.handle(session, row, prices, now):     # W-10: waiting at (or fired by) his broker's GTT
+                report["triggered"] += int(row.status != ARMED)
+                continue
             c = condition_of(row)
             if not in_window(c, now):
                 continue
-            hit = await reached(row, c, prices, candles, now)
+            if c.kind == PRICE:
+                hit = await reached(row, c, prices, candles, now)
+            else:
+                hit = await method_reached(session, row, c, now)
             if not hit:
                 await session.commit()          # the last reading only
                 continue
-            if not await _move(session, row, (ARMED,), TRIGGERED, now, triggered_at=now, trigger_price=row.trigger_price):
+            if not await _move(session, row, (ARMED,), TRIGGERED, now, triggered_at=now, trigger_price=row.trigger_price,
+                               **({"note": row.note} if c.kind != PRICE else {})):
                 continue                        # another pass / worker won: it fires, this one does not
             await session.commit()
             report["triggered"] += 1
@@ -459,6 +576,8 @@ async def fire(session: AsyncSession, row: TriggerPlanRecord, prices: PriceFn, n
     if all((results.get(str(n)) or {}).get("settled") for n in range(len(plan_orders))):
         placed = sum(1 for r in results.values() if r.get("trade_id"))
         note = f"{placed} of {len(results)} order(s) placed"
+        if row.note:                             # W-9: what met his method condition, and by which source
+            note = f"{row.note} {note}"[:300]
         if await _move(session, row, (TRIGGERED,), DONE, now, finished_at=now, note=note):
             await _notify(session, row, f"Plan triggered: {_label(row)}", f"{note}. Its exits are on the position(s).",
                           warning=placed < len(results))

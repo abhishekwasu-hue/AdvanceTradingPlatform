@@ -140,8 +140,8 @@ def test_store_route_is_race_safe(monkeypatch):
     other_headers, other = _member(headers)
     original = broker_routes._merge_with_stored
 
-    def merge_then_race(incoming, existing):
-        merged = original(incoming, existing)
+    def merge_then_race(incoming, existing, drop=()):          # BRK-1 B added `drop` (switching the login way)
+        merged = original(incoming, existing, drop)
         broker_routes._race = _take_over_row(me["tenant_id"], other["id"])
         return merged
     monkeypatch.setattr(broker_routes, "_merge_with_stored", merge_then_race)

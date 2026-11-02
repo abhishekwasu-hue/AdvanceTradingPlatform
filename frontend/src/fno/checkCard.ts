@@ -35,6 +35,8 @@ export interface ServerFinding { id: string; severity: "mistake" | "fact"; text:
 export interface ChecksAnswer {
   findings: ServerFinding[]; pending: string[]; accepted: string[]; ms: number; instrument: string; budget_ms: number;
   switches: Record<string, Switch>;
+  /** M77 SX-6: when the server checked, and its signature over this answer (kept for "Save study"). */
+  checked_at?: string; signature?: string;
 }
 
 const isId = (v: string): v is WarningId => (WARNING_IDS as readonly string[]).includes(v);

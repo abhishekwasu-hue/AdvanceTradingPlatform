@@ -216,6 +216,9 @@ def _engine_tf(tf: str) -> str:
     return "1h" if tf == "60m" else "1d" if tf == "day" else tf
 
 
+engine_tf = _engine_tf
+
+
 def engine_annotations(result: Any, *, tf: str, signal_tf: str, last_close: float | None, as_of: str | None) -> dict[str, Any]:
     """The signal engine's result in the annotation form, public parts only (see the module text). Pure; `result` is an
     `EngineResult`. Swings are drawn only on the chart of their own timeframe; the others are listed by label only."""
@@ -276,6 +279,17 @@ async def engine_reading(session: Any, user: Any, key: str, tf: str, now: dateti
     user (not installed, flag off, not the runner's user, not one of his symbols, incomplete data, a failing read) - the
     caller then draws ATP's. The request is the runner's own (`engine_read.build_request`); the engine runs once per
     (user, instrument, signal timeframe, last closed bar)."""
+    read = await engine_result(session, user, key, now)
+    if read is None:
+        return None
+    result, signal_tf, last, as_of = read
+    return engine_annotations(result, tf=tf, signal_tf=signal_tf, last_close=last, as_of=as_of)
+
+
+async def engine_result(session: Any, user: Any, key: str, now: datetime) -> tuple[Any, str, float | None, str] | None:
+    """The engine's own result for `key` (the `EngineResult`, his signal timeframe, the last close, the as-of time), read
+    and cached exactly as `engine_reading` describes; None when the engine does not read this chart for him. M75 W-9:
+    a trigger plan's method condition reads the same result (never ATP's readers beside it)."""
     from app.ai.tools import ToolContext, engine_read
     from app.engine_provider import loader
     from app.engine_provider.contract import INTERFACE_VERSION, EngineResult
@@ -314,8 +328,8 @@ async def engine_reading(session: Any, user: Any, key: str, tf: str, now: dateti
         _ENGINE_CACHE.move_to_end(ck)
         while len(_ENGINE_CACHE) > ENGINE_CACHE_SIZE:
             _ENGINE_CACHE.popitem(last=False)
-    return engine_annotations(result, tf=tf, signal_tf=cfg.signal_timeframe, last_close=last, as_of=as_of)
+    return result, str(cfg.signal_timeframe), last, as_of
 
 
-__all__ = ["FLAG", "atp_annotations", "engine_annotations", "engine_reading", "divergence_part", "next_areas", "level_part",
+__all__ = ["FLAG", "atp_annotations", "engine_annotations", "engine_reading", "engine_result", "engine_tf", "divergence_part", "next_areas", "level_part",
            "trend_part", "swings_part", "events_part", "cache_clear"]

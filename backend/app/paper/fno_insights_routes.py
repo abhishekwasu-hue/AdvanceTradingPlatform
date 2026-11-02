@@ -50,4 +50,14 @@ async def event_risk(underlying: str = Query(min_length=1, max_length=40, patter
                      until: date = Query(...),
                      user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _enabled(session, user)
-    return await fno_insights.event_risk(session, user, underlying, until)
+    return await fno_insights.event_risk(session, user, underlying, until, own_events=await own_events_for(session, user))
+
+
+async def own_events_for(session: AsyncSession, user: User) -> list[dict[str, Any]] | None:
+    """M76 MP-7 (S-3): his own event list while `copilot_workspace` is on (None while it is off: the line is as before)."""
+    from app.me.prefs import read_one
+    from app.platform.controls import flag_enabled
+    if not await flag_enabled(session, "copilot_workspace", user.tenant_id):
+        return None
+    value, _version = await read_one("own_events", user, session)
+    return list(value.get("events") or [])

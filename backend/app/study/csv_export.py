@@ -1,7 +1,8 @@
 """M77 SX-5: the study's tables as CSV (PD-1 "CSV (tables)"), rebuilt from the stored snapshot - same study = same bytes.
 
 Tables (each only when the study holds it): `structure`, `areas`, `option_context` (the summary and the OI walls),
-`ai_card`, `checklist`, and `bars-<tf>` per chart (the closed bars the chart drew). Plain numbers: no grouping, a dot
+`ai_card`, SX-6 `trade_plan` (legs, numbers, exits), `scenarios`, `pre_trade_check`, `similar_setups`, `checklist`, and
+`bars-<tf>` per chart (the closed bars the chart drew). Plain numbers: no grouping, a dot
 for decimals, a missing value is an empty cell with its row's `note` column saying "not available" where it matters;
 times in IST ISO form. One table -> one CSV; all of them -> one ZIP (fixed file times, so the bytes repeat).
 His own words (notes, checklist rules) are his data, written as they are; a cell that starts with = + - @ gets a
@@ -18,6 +19,7 @@ from typing import Any
 
 IST = timezone(timedelta(hours=5, minutes=30))
 ZIP_TIME = (1980, 1, 1, 0, 0, 0)
+SIDES = {"BUY": "long", "SELL": "short"}
 
 
 class NoSuchTable(LookupError):
@@ -95,6 +97,8 @@ def tables(snap: Mapping[str, Any]) -> dict[str, bytes]:
         rows += [["oi_wall", f"{w.get('side')} {_cell(w.get('strike'))}", w.get("oi")] for w in oc.get("walls") or []]
         for side, legs in (oc.get("atm_legs") or {}).items():
             rows += [["atm_" + side, k, v] for k, v in (legs or {}).items()]
+        for c in oc.get("chosen_strikes") or []:
+            rows += [[f"chosen {c.get('label')}", k, c.get(k)] for k in ("oi", "iv", "delta", "gamma", "theta", "vega")]
         rows.append(["summary", "as_of", _time(oc.get("as_of"))])
         out["option_context"] = _csv(["part", "item", "value"], rows)
     card = data.get("ai_card")
@@ -104,6 +108,46 @@ def tables(snap: Mapping[str, Any]) -> dict[str, bytes]:
         how = card.get("how") or {}
         rows += [["Reading as of", _time(how.get("reading_as_of"))], ["Card made", _time(how.get("made_at"))]]
         out["ai_card"] = _csv(["part", "text"], rows)
+    plan = data.get("trade_plan")
+    if plan:
+        rows = []
+        for leg in plan.get("legs") or []:
+            rows.append(["leg", leg.get("label"), "side", SIDES.get(str(leg.get("side")), leg.get("side"))])
+            rows += [["leg", leg.get("label"), k, leg.get(k)] for k in ("lots", "lot_size", "quantity", "price", "iv", "delta")]
+        eq = plan.get("equity") or {}
+        rows += [["equity", "", k, SIDES.get(str(eq.get(k)), eq.get(k)) if k == "side" else eq.get(k)] for k in ("side", "quantity", "price") if eq]
+        margin = plan.get("margin") or {}
+        rows += [["number", "", name, plan.get(k)] for k, name in (("order_value", "order_value"), ("max_profit", "max_gain"), ("max_loss", "max_loss"),
+                                                                   ("unbounded_profit", "no_fixed_gain_limit"),
+                                                                   ("unbounded_loss", "no_fixed_loss_limit"), ("net_premium", "net_premium")) if k in plan]
+        rows += [["number", "", "breakeven", b] for b in plan.get("breakevens") or []]
+        rows += [["number", "", "margin_estimate", margin.get("value")], ["number", "", "margin_basis", margin.get("basis")]]
+        rows += [["greek", "", k, v] for k, v in (plan.get("greeks") or {}).items()]
+        rows += [["exit", "", x.get("key"), x.get("text") or x.get("value")] for x in plan.get("exits") or []]
+        rows += [["trigger_plan", t.get("name") or "", f"crosses {t.get('side')} by {t.get('by')}", t.get("level")] for t in plan.get("triggers") or []]
+        spot = plan.get("spot") or {}
+        rows += [["reference", spot.get("source") or "", "price", spot.get("value")], ["reference", "", "as_of", _time(spot.get("as_of"))]]
+        if plan.get("engine_reason"):
+            rows.append(["note", "", "engine", f"not available: {plan['engine_reason']}"])
+        out["trade_plan"] = _csv(["part", "leg", "item", "value"], rows)
+    scen = data.get("scenarios")
+    if scen:
+        out["scenarios"] = _csv(["scenario", "price", "pnl_now", "pnl_at_expiry", "iv_change_pts", "days_forward", "margin_estimate"],
+                                [[r.get("name"), r.get("price"), r.get("pnl_today"), r.get("pnl_expiry"), (r.get("what_if") or {}).get("iv_change"),
+                                  (r.get("what_if") or {}).get("days"), (scen.get("margin") or {}).get("value")] for r in scen.get("rows") or []])
+    check = data.get("pre_trade_check")
+    if check:
+        out["pre_trade_check"] = _csv(["contract", "checked_at", "check", "text", "accepted", "accepted_at"],
+                                      [[c.get("contract"), _time(c.get("checked_at")), f.get("name"), f.get("text"), bool(f.get("accepted")),
+                                        _time(f.get("accepted_at"))] for c in check.get("cards") or [] for f in c.get("findings") or []])
+    similar = data.get("similar_setups")
+    if similar:
+        rows = []
+        for g in similar.get("groups") or []:
+            rows.append([g.get("holding"), "summary", "", "", g.get("count"), g.get("avg_r"), g.get("line")])
+            rows += [[g.get("holding"), "match", _time(m.get("entered_at")), _time(m.get("closed_at")), "", m.get("r"), m.get("outcome")]
+                     for m in g.get("matches") or []]
+        out["similar_setups"] = _csv(["holding", "row", "entered_at", "closed_at", "count", "r", "words"], rows)
     notes = data.get("notes") or {}
     if notes.get("checklist"):
         out["checklist"] = _csv(["rule", "answer"], [[c.get("rule"), c.get("answer")] for c in notes["checklist"]])

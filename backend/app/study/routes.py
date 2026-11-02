@@ -2,8 +2,10 @@
 places, changes or blocks an order.
 
 * `POST   /api/studies`            - save a study from REFERENCES only (instrument key, timeframes, visible ranges, ticked
-                                     sections, his title, notes and checklist answers); the server reads every number
-                                     itself (app/study/snapshot.py). Over the size bound: 413 with a plain sentence.
+                                     sections, his title, notes and checklist answers; SX-6: his open trade plan's
+                                     contracts / sides / lots / planned prices / exits and the signed check cards); the
+                                     server reads and computes every number itself (app/study/snapshot.py,
+                                     plan_sections.py). Over the size bound: 413 with a plain sentence.
 * `GET    /api/studies`            - My studies: his own, newest first; search by symbol and IST date range.
 * `GET    /api/studies/{id}`       - one of his studies with its snapshot.
 * `GET    /api/studies/{id}/json`  - the snapshot as a JSON file (same study = same bytes).
@@ -70,8 +72,59 @@ class VisibleRange(BaseModel):
         return _aware(v)
 
 
+class PlanLeg(BaseModel):
+    """One leg of his open plan: the contract, his side and lots and the price he plans it at (his own input, as typed on
+    the plan panel). The lot size, the payoff and every other number are the server's."""
+    model_config = ConfigDict(extra="ignore")
+    expiry: date
+    strike: float | None = Field(default=None, gt=0, lt=10_000_000, allow_inf_nan=False)
+    right: Literal["CE", "PE", "FUT"]
+    side: Literal["BUY", "SELL"]
+    lots: int = Field(ge=1, le=1000)
+    price: float | None = Field(default=None, gt=0, lt=10_000_000, allow_inf_nan=False)
+
+
+class PlanEquity(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    side: Literal["BUY", "SELL"] | None = None
+    quantity: int | None = Field(default=None, ge=1, le=10_000_000)
+    price: float | None = Field(default=None, gt=0, lt=10_000_000, allow_inf_nan=False)
+
+
+class PlanExits(BaseModel):
+    """The exits he set at entry, as he set them (each Not set until he fills it in)."""
+    model_config = ConfigDict(extra="ignore")
+    stop_kind: Literal["POINTS", "PCT", "RUPEES"] | None = None
+    stop: float | None = Field(default=None, gt=0, lt=10_000_000, allow_inf_nan=False)
+    target_kind: Literal["POINTS", "PCT", "RUPEES"] | None = None
+    target: float | None = Field(default=None, gt=0, lt=10_000_000, allow_inf_nan=False)
+    trail_kind: Literal["POINTS", "PCT", "ATR"] | None = None
+    trail: float | None = Field(default=None, gt=0, lt=10_000_000, allow_inf_nan=False)
+    time_minutes: int | None = Field(default=None, ge=1, le=100_000)
+    time_at: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    combined: Literal["MTM_INR", "NET_PREMIUM", "SPOT"] | None = None
+
+
+class PlanRef(BaseModel):
+    """SX-6 (M77Q-5): the plan he has open beside the chart - references and his own inputs only."""
+    model_config = ConfigDict(extra="ignore")
+    kind: Literal["OPTIONS", "FUTURE", "EQUITY"]
+    legs: list[PlanLeg] = Field(default_factory=list, max_length=12)
+    equity: PlanEquity | None = None
+    exits: PlanExits | None = None
+
+
+class CheckCard(BaseModel):
+    """SX-6 (M77Q-6): one check card answer exactly as the server returned it, with its signature (verified on save)."""
+    model_config = ConfigDict(extra="ignore")
+    instrument: str = Field(min_length=1, max_length=80)
+    findings: list[dict[str, Any]] = Field(default_factory=list, max_length=40)
+    checked_at: str = Field(min_length=1, max_length=40)
+    signature: str = Field(min_length=1, max_length=128)
+
+
 class CreateBody(BaseModel):
-    """References and his own inputs only. Unknown fields (a price, an area, a result) are dropped, never read."""
+    """References and his own inputs only. Unknown fields (an area, a result, a computed number) are dropped, never read."""
     model_config = ConfigDict(extra="ignore")
     instrument: str = Field(min_length=1, max_length=100)
     timeframes: list[Timeframe] = Field(min_length=1, max_length=S.MAX_TIMEFRAMES)
@@ -80,6 +133,8 @@ class CreateBody(BaseModel):
     notes: str | None = None                              # his own words, kept verbatim (bound checked with a plain message)
     checklist: list[bool | None] | None = Field(default=None, max_length=20)
     visible: dict[Timeframe, VisibleRange] | None = None
+    plan: PlanRef | None = None                           # SX-6: None = no trade plan was open
+    check_cards: list[CheckCard] | None = Field(default=None, max_length=24)
 
 
 async def _flags(session: AsyncSession, user: User) -> None:
@@ -121,6 +176,10 @@ async def create_study(body: CreateBody, user: User = Depends(get_current_user),
     ctx = await R._context(session, key, last) if last is not None else None
     from app.journal.settings import load as load_journal_settings
     rules = list((await load_journal_settings(session, user)).checklist_rules)
+    from app.study import plan_sections as PS
+    plan_on = bool({"trade_plan", "scenarios", "similar_setups", "option_context"} & ticked)
+    resolved = await PS.resolve_plan(session, user, exchange, symbol, body.plan.model_dump() if body.plan else None, now) if plan_on else None
+    plan_legs = (resolved or {}).get("legs") if resolved and not resolved.get("reason") else None
     inputs = S.StudyInputs(
         created_at=now, key=key, instrument_kind=await S.instrument_kind(session, exchange, symbol), timeframes=tfs,
         sections=list(body.sections) if body.sections is not None else list(S.SECTIONS), frames=frames, zones=zones,
@@ -130,7 +189,12 @@ async def create_study(body: CreateBody, user: User = Depends(get_current_user),
         title=(body.title or "").strip() or None, notes=body.notes or None, checklist_rules=rules,
         checklist_answers=list(body.checklist or []),
         ai_card=await sections.ai_card_read(session, user, symbol, tfs, now) if "ai_card" in ticked else None,
-        option_context=await sections.option_context_read(session, user, exchange, symbol) if "option_context" in ticked else None)
+        option_context=await sections.option_context_read(session, user, exchange, symbol, plan_legs) if "option_context" in ticked else None,
+        trade_plan=resolved if {"trade_plan", "scenarios"} & ticked else None,
+        what_if=await PS.what_if_read(session, user) if "scenarios" in ticked else [],
+        pre_trade_check=await PS.check_card_read(user, symbol, [c.model_dump() for c in body.check_cards or []], now)
+        if "pre_trade_check" in ticked else None,
+        similar_setups=await PS.similar_read(session, user, resolved, now) if "similar_setups" in ticked else None)
     snap = await pal._in_slot(session, user_id, S.assemble, inputs)       # the reads above are done; the build runs off-loop
     data = S.canonical(snap)
     try:

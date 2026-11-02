@@ -10,7 +10,7 @@ Neither call can hold back, change or place an order, and neither is on any exit
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -20,6 +20,7 @@ from app.auth.dependencies import require_trader
 from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
+from app.paper import pretrade_card
 from app.paper import pretrade_checks as pc
 from app.paper import pretrade_warnings as pw
 from app.paper.fno_routes import MAX_PRICE, SYMBOL, _enabled, _name
@@ -81,7 +82,9 @@ async def checks(body: CheckBody, user: User = Depends(require_trader), session:
     draft = pc.Draft(underlying, body.expiry, body.strike, body.right, body.side, body.lots, body.order_type, body.product,
                      body.price, body.ltp, body.chart_instrument, body.chart_tf)
     out = await pc.run(factory, user, draft, settings, accepted=accepted, only=body.only)
-    return {**out, "accepted": sorted(accepted), "instrument": instrument, "budget_ms": int(pc.BUDGET_S * 1000),
+    # M77 SX-6 (M77Q-6): signed, so a saved study keeps this card only as the server's own answer to him
+    checked_at = datetime.now(UTC).replace(microsecond=0).isoformat()
+    return {**out, "checked_at": checked_at, "signature": pretrade_card.sign(user, instrument, out["findings"], checked_at), "accepted": sorted(accepted), "instrument": instrument, "budget_ms": int(pc.BUDGET_S * 1000),
             "switches": {w: {"on": settings.on[w], "ask": settings.ask[w]} for w in pw.WARNING_IDS}}
 
 

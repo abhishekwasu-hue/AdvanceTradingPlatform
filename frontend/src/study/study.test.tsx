@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FORMATS, SECTIONS, initialSheet, saveBody, sheetProblem, studyFormats, timeframeWords, toggle } from "./model";
+import { FORMATS, SECTIONS, initialSheet, saveBody, sheetProblem, studyFormats, studyPlanOf, timeframeWords, toggle } from "./model";
+import { clearCards, keptCards, recordCard } from "../fno/checkCardLog";
+import { EMPTY_EQUITY, EMPTY_EXITS } from "../copilot/workspace/plan";
+import planPanelSource from "../copilot/workspace/PlanPanelV2.tsx?raw";
+import checkHookSource from "../fno/useCheckCard.ts?raw";
+import type { Leg } from "../optionsBuilder/model";
 import { MyStudiesV2 } from "./MyStudiesV2";
 import workspaceSource from "../copilot/workspace/ChartWorkspaceV2.tsx?raw";
 import sheetSource from "./SaveStudySheetV2.tsx?raw";
@@ -34,7 +39,8 @@ describe("SX-7 model", () => {
     expect(sheetProblem({ ...s, sections: ["notes"] }, "png", "15m")).toBe("An image needs the Charts section ticked.");
     expect(sheetProblem({ ...s, timeframes: ["1d"] }, "png-one", "15m")).toContain("chart you have open");
     expect(sheetProblem({ ...s, notes: "x".repeat(5001) }, "pdf", "15m")).toContain("longer than 5,000");
-    expect(sheetProblem({ ...s, sections: ["cover", "trade_plan"] }, "csv", "15m")).toBe("CSV needs a section with a table.");
+    expect(sheetProblem({ ...s, sections: ["cover"] }, "csv", "15m")).toBe("CSV needs a section with a table.");
+    expect(sheetProblem({ ...s, sections: ["cover", "trade_plan"] }, "csv", "15m")).toBeNull();     // SX-6: the plan has a table
   });
   it("sends references and his own words only - no price, no area, no result", () => {
     const body = saveBody("NSE:NIFTY 50", { ...initialSheet("15m"), title: "  My look ", notes: "Watch the area" });
@@ -89,5 +95,52 @@ describe("SX-7 in place", () => {
     const api = new Proxy({}, { get: () => () => new Promise(() => {}) }) as never;
     expect(renderToStaticMarkup(<JournalPageV2 api={api} studiesOn />)).toContain("My studies");
     expect(renderToStaticMarkup(<JournalPageV2 api={api} />)).not.toContain("My studies");
+  });
+});
+
+describe("SX-6 trade plan and check cards in the saved study", () => {
+  const leg = (over: Partial<Leg> = {}): Leg => ({
+    id: "a", direction: "BUY", option_type: "CE", strike: 24500, premium: 120, lots: 2, lot_size: 75, expiry: "2026-11-26", iv: 0.14, ...over,
+  });
+  it("sends the plan as references and his own inputs - no lot size, IV or computed number", () => {
+    const plan = studyPlanOf("OPTIONS", [leg(), leg({ id: "b", direction: "SELL", option_type: "FUT", strike: 24600, premium: 0 })],
+      EMPTY_EQUITY, { ...EMPTY_EXITS, stopKind: "POINTS", stop: "40", timeAt: "15:10", target: "abc" });
+    expect(plan).toEqual({
+      kind: "OPTIONS", exits: { stop_kind: "POINTS", stop: 40, time_at: "15:10" },
+      legs: [{ expiry: "2026-11-26", strike: 24500, right: "CE", side: "BUY", lots: 2, price: 120 },
+        { expiry: "2026-11-26", strike: null, right: "FUT", side: "SELL", lots: 2, price: null }],
+    });
+    expect(JSON.stringify(plan)).not.toMatch(/lot_size|iv|75|0\.14/);
+    expect(studyPlanOf(null, [leg()], EMPTY_EQUITY, EMPTY_EXITS)).toBeNull();
+    expect(studyPlanOf("EQUITY", [], { direction: "SELL", quantity: "10", price: "" }, EMPTY_EXITS))
+      .toEqual({ kind: "EQUITY", legs: [], equity: { side: "SELL", quantity: 10 }, exits: {} });
+  });
+  it("adds the plan and the signed cards only when a section reads them", () => {
+    const plan = studyPlanOf("OPTIONS", [leg()], EMPTY_EQUITY, EMPTY_EXITS);
+    const card = { instrument: "NIFTY|2026-11-26|24500|CE", findings: [], checked_at: "2026-11-02T04:00:00+00:00", signature: "ab" };
+    const all = saveBody("NSE:NIFTY 50", initialSheet("15m"), plan, [card]);
+    expect(all.plan).toEqual(plan);
+    expect(all.check_cards).toEqual([card]);
+    const few = saveBody("NSE:NIFTY 50", { ...initialSheet("15m"), sections: ["cover", "notes"] }, plan, [card]);
+    expect(few).not.toHaveProperty("plan");
+    expect(few).not.toHaveProperty("check_cards");
+  });
+  it("keeps only the server's signed answers, each once, newest last", () => {
+    clearCards();
+    const answer = { instrument: "NIFTY|2026-11-26|24500|CE", findings: [], pending: [], accepted: [], ms: 1, budget_ms: 300, switches: {} };
+    recordCard(answer);                                                                         // no signature: not kept
+    recordCard({ ...answer, checked_at: "2026-11-02T04:00:00+00:00", signature: "s1" });
+    recordCard({ ...answer, checked_at: "2026-11-02T04:00:00+00:00", signature: "s1" });
+    recordCard({ ...answer, checked_at: "2026-11-02T04:01:00+00:00", signature: "s2" });
+    expect(keptCards().map((c) => c.signature)).toEqual(["s1", "s2"]);
+    expect(Object.keys(keptCards()[0]).sort()).toEqual(["checked_at", "findings", "instrument", "signature"]);
+    clearCards();
+  });
+  it("is wired in place: the plan panel reports its plan, the ticket's hook keeps each signed answer", () => {
+    expect(planPanelSource).toContain("onPlanChange?.(studyPlanOf(kind, legs, equity, exits))");
+    expect(workspaceSource).toContain("onPlanChange={studiesOn ? setPlan : undefined}");
+    expect(workspaceSource).toContain("plan={plan}");
+    expect(sheetSource).toContain("saveBody(instrument, s, plan, keptCards())");
+    expect(checkHookSource.match(/recordCard\(/g)?.length).toBe(2);
   });
 });

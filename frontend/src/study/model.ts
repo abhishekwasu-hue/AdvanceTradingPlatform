@@ -4,6 +4,9 @@
  * he ticks, his title and his notes); the server reads every number itself. Nothing here is chosen for him: the
  * timeframe of his open chart is ticked because it is the chart he is studying; every section is on (PD-1: he unticks).
  */
+import type { Leg } from "../optionsBuilder/model";
+import type { SignedCard } from "../fno/checkCardLog";
+import { positive, whole, type EquityDraft, type ExitDraft, type PlanKind } from "../copilot/workspace/plan";
 import { formatNumber } from "../ui/format";
 
 export const STUDY_TIMEFRAMES = [
@@ -36,8 +39,56 @@ export const FORMATS: readonly { id: DownloadFormat; label: string; hint: string
   { id: "json", label: "JSON", hint: "For your own tools" },
 ];
 
+/**
+ * M77 SX-6 (OPEN_QUESTIONS M77Q-5): the trade plan he has open, as references and his own inputs only - each leg's
+ * contract, side, lots and the price he typed for it, the equity side / quantity / price, and the exits he set. Never a
+ * computed number: the server reads the lot sizes and works out the payoff, margin and scenarios itself.
+ */
+export interface StudyPlanLeg { expiry: string; strike: number | null; right: "CE" | "PE" | "FUT"; side: "BUY" | "SELL"; lots: number; price: number | null }
+export interface StudyPlanExits {
+  stop_kind?: string; stop?: number; target_kind?: string; target?: number; trail_kind?: string; trail?: number;
+  time_minutes?: number; time_at?: string; combined?: string;
+}
+export interface StudyPlan {
+  kind: PlanKind; legs: StudyPlanLeg[]; equity?: { side?: "BUY" | "SELL"; quantity?: number; price?: number }; exits: StudyPlanExits;
+}
+
 export interface SaveStudyBody {
   instrument: string; timeframes: string[]; sections: SectionId[]; title?: string; notes?: string;
+  plan?: StudyPlan; check_cards?: SignedCard[];
+}
+
+const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** The plan panel's state as the study's references (null while no instrument type is chosen). Pure. */
+export function studyPlanOf(kind: PlanKind | null, legs: readonly Leg[], equity: EquityDraft, exits: ExitDraft): StudyPlan | null {
+  if (!kind) return null;
+  const x: StudyPlanExits = {};
+  const stop = positive(exits.stop), target = positive(exits.target), trail = positive(exits.trail), minutes = whole(exits.timeMinutes);
+  if (exits.stopKind) x.stop_kind = exits.stopKind;
+  if (stop != null) x.stop = stop;
+  if (exits.targetKind) x.target_kind = exits.targetKind;
+  if (target != null) x.target = target;
+  if (exits.trailKind) x.trail_kind = exits.trailKind;
+  if (trail != null) x.trail = trail;
+  if (minutes != null) x.time_minutes = minutes;
+  if (HH_MM.test(exits.timeAt)) x.time_at = exits.timeAt;
+  if (exits.combined) x.combined = exits.combined;
+  if (kind === "EQUITY") {
+    const eq: NonNullable<StudyPlan["equity"]> = {};
+    const qty = whole(equity.quantity, 10_000_000), price = positive(equity.price);
+    if (equity.direction) eq.side = equity.direction;
+    if (qty != null) eq.quantity = qty;
+    if (price != null) eq.price = price;
+    return { kind, legs: [], equity: eq, exits: x };
+  }
+  return {
+    kind, exits: x,
+    legs: legs.map((l) => ({
+      expiry: l.expiry, strike: l.option_type === "FUT" ? null : l.strike, right: l.option_type, side: l.direction, lots: l.lots,
+      price: l.premium > 0 ? l.premium : null,
+    })),
+  };
 }
 export interface StudySummary {
   id: number; title: string | null; symbol: string; exchange: string; instrument_kind: string | null; timeframes: string[];
@@ -67,16 +118,23 @@ export function sheetProblem(s: SheetState, format: DownloadFormat, openTf: stri
   if (s.notes.length > NOTES_MAX) return `Your notes are longer than ${formatNumber(NOTES_MAX)} characters.`;
   if ((format === "png" || format === "png-one") && !s.sections.includes("charts")) return "An image needs the Charts section ticked.";
   if (format === "png-one" && !(openTf && s.timeframes.includes(openTf))) return "Tick the timeframe of the chart you have open for its image.";
-  if (format === "csv" && !s.sections.some((x) => x === "structure" || x === "areas" || x === "charts" || x === "notes" || x === "ai_card" || x === "option_context"))
+  if (format === "csv" && !s.sections.some((x) => x === "structure" || x === "areas" || x === "charts" || x === "notes" || x === "ai_card" || x === "option_context"
+    || x === "trade_plan" || x === "pre_trade_check" || x === "scenarios" || x === "similar_setups"))
     return "CSV needs a section with a table.";
   return null;
 }
 
-/** The request body: references and his own words only - never a number from the page. Pure. */
-export function saveBody(instrument: string, s: SheetState): SaveStudyBody {
+const PLAN_SECTIONS: readonly SectionId[] = ["trade_plan", "scenarios", "similar_setups", "option_context"];
+const MAX_CARDS = 24;
+
+/** The request body: references and his own words only - never a computed number from the page. SX-6: his open plan
+ * (only when a section that reads it is ticked) and the check cards exactly as the server signed them. Pure. */
+export function saveBody(instrument: string, s: SheetState, plan: StudyPlan | null = null, cards: readonly SignedCard[] = []): SaveStudyBody {
   const body: SaveStudyBody = { instrument, timeframes: [...s.timeframes], sections: [...s.sections] };
   if (s.title.trim()) body.title = s.title.trim().slice(0, 120);
   if (s.notes.trim()) body.notes = s.notes;
+  if (plan && s.sections.some((x) => PLAN_SECTIONS.includes(x))) body.plan = plan;
+  if (cards.length && s.sections.includes("pre_trade_check")) body.check_cards = cards.slice(-MAX_CARDS);
   return body;
 }
 

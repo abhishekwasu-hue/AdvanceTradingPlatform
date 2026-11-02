@@ -15,10 +15,10 @@ Two parts:
 
 What is read is the code the Charts page already reads (app/charts/read_chart.py, price_action_layer, zones_layer),
 unchanged; nothing here is new chart-reading logic. Reading source: "ATP structure readers" (the method engine's reading
-arrives with M75 W-3; its name, version and settings are never written here - M77Q-2). The sections whose sources are
-not built yet (trade plan, pre-trade check, scenarios, similar setups) are stored as "not available" with a plain
-reason, never blank; SX-5 adds the AI card and the option context, read when the study is saved (app/study/sections.py)
-or "not available" with their own reason. No look-ahead: a bar whose END is after the study time is never read.
+arrives with M75 W-3; its name, version and settings are never written here - M77Q-2). SX-5 adds the AI card and the
+option context, read when the study is saved (app/study/sections.py); SX-6 adds his trade plan, the pre-trade check
+card, scenarios and similar past setups (app/study/plan_sections.py). A section without its source is stored as "not
+available" with a plain reason, never blank. No look-ahead: a bar whose END is after the study time is never read.
 Read-only: nothing here places, changes or blocks an order.
 """
 from __future__ import annotations
@@ -40,6 +40,7 @@ from app.charts import read_chart as R
 from app.core import config
 from app.db.models import ChartDrawingRecord, InstrumentRecord, User
 from app.price_action.zones import chart as zone_chart
+from app.study import plan_sections as PS
 
 SCHEMA = "study/1"
 INFO_LINE = "Information and education only, not advice. Every trading decision is yours."
@@ -54,14 +55,14 @@ SECTIONS: tuple[str, ...] = ("cover", "charts", "structure", "areas", "ai_card",
 SECTION_TITLES = {"cover": "Study", "charts": "Charts", "structure": "Structure", "areas": "Areas", "ai_card": "AI explanation",
                   "option_context": "Option context", "trade_plan": "Trade plan", "pre_trade_check": "Pre-trade check",
                   "scenarios": "Scenarios", "similar_setups": "Similar past setups", "notes": "Notes and checklist"}
-# Sections whose source is not part of a saved study yet: the plain reason the study prints ("Not available: ...").
+# Sections read when the study is saved: the plain reason the study prints ("Not available: ...") when no read was given.
 NOT_BUILT = {
     "ai_card": "the AI explanation card is not saved with a study yet",
     "option_context": "the option chain is not saved with a study yet",
-    "trade_plan": "no trade plan is saved with a study yet",
-    "pre_trade_check": "no pre-trade check card is saved with a study yet",
-    "scenarios": "no trade plan is saved with a study yet, so there are no scenarios",
-    "similar_setups": "similar past setups are not saved with a study yet",
+    "trade_plan": PS.NO_PLAN,
+    "pre_trade_check": PS.NO_CARD,
+    "scenarios": PS.NO_SCENARIO_PLAN,
+    "similar_setups": PS.NO_SETUP_PLAN,
 }
 KIND_WORDS = {"EQ": "Equity", "INDEX": "Index", "FUT": "Future", "CE": "Option", "PE": "Option"}
 SOURCE_WORDS = {"lake": "market data store", "own": "your own price history", "shared": "your organisation's index history"}
@@ -105,6 +106,10 @@ class StudyInputs:
     max_bars: int = config.STUDY_CHART_MAX_BARS
     ai_card: Mapping[str, Any] | None = None             # SX-5: app/study/sections.py ai_card_read (a section, or {"reason"})
     option_context: Mapping[str, Any] | None = None      # SX-5: app/study/sections.py option_context_read
+    trade_plan: Mapping[str, Any] | None = None          # SX-6: plan_sections.resolve_plan (None: no plan was open)
+    what_if: list[dict[str, Any]] = field(default_factory=list)   # SX-6: his saved what-if scenarios (Settings what_if)
+    pre_trade_check: Mapping[str, Any] | None = None     # SX-6: plan_sections.check_card_read
+    similar_setups: Mapping[str, Any] | None = None      # SX-6: plan_sections.similar_read
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -322,7 +327,14 @@ def assemble(inputs: StudyInputs) -> dict[str, Any]:
     if "charts" in ticked:
         data["drawings"] = [_drawing(d) for d in inputs.drawings]
     not_available = {s: NOT_BUILT[s] for s in ticked if s in NOT_BUILT}
-    for name, part in (("ai_card", inputs.ai_card), ("option_context", inputs.option_context)):   # SX-5: read when saved
+    parts: list[tuple[str, Mapping[str, Any] | None]] = [("ai_card", inputs.ai_card), ("option_context", inputs.option_context),
+                                                         ("pre_trade_check", inputs.pre_trade_check),
+                                                         ("similar_setups", inputs.similar_setups)]
+    if inputs.trade_plan is not None and {"trade_plan", "scenarios"} & set(ticked):     # SX-6: numbers at the study's price
+        plan, scen = PS.plan_parts(inputs.trade_plan, ref, when, [{k: v for k, v in a.items() if not k.startswith("_")} for a in areas],
+                                   inputs.what_if)
+        parts += [("trade_plan", plan), ("scenarios", scen)]
+    for name, part in parts:                                                                # read when saved
         if name in ticked and part is not None:
             if part.get("reason"):
                 not_available[name] = str(part["reason"])

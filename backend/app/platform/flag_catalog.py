@@ -382,7 +382,7 @@ FINISH: Dict[str, str] = {
     "term_roll": "TERM-2 R1", "term_whatif": "TERM-2 R2", "term_strike_area": "TERM-2 R3", "term_margin_pair": "TERM-2 R4",
     "trade_warnings": "M76 (MP-1 .. MP-15)",
     "trade_engine": "M66 (owner only, after parity is green)", "copilot_workspace": "M75 W-2..W-6 (the Copilot trading workspace)", "trigger_plans": "M75 W-8..W-9 (trigger plans; method conditions in W-9)",
-    "study_export": "M77 (SX-6: the trade plan, check card, scenarios and similar setups sections; the structure-only shared copy)",
+    "study_export": "M77 (the structure-only shared copy)",
     "copilot_agent": "M72 PR-2 (the answer format with cards)",
     "copilot_memory": "M72 PR-11 (each user saves his own; the owner turns it on)",
     "copilot_languages": "M72 PR-10 (Marathi / Hindi answers with their filters; the owner turns it on)",

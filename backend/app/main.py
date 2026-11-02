@@ -170,6 +170,7 @@ from app.signals_feed.routes import router as signals_feed_router
 from app.strategy_engine.chart_routes import router as strategy_chart_router
 from app.strategy_engine.console_routes import router as strategy_console_router
 from app.strategy_templates.routes import router as strategy_templates_router
+from app.study.routes import router as study_router
 from app.support.desk_routes import admin_router as support_desk_admin_router
 from app.support.desk_routes import router as support_desk_router
 from app.support.routes import router as support_router
@@ -456,6 +457,7 @@ app.include_router(chart_layouts_router)  # CH5: saved multi-chart workspace lay
 app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer (flag market_zones, off by default)
 app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
 app.include_router(chart_read_router)               # AUD-T5: Read this chart as of the last closed bar, read-only (ui_v2 + read_chart)
+app.include_router(study_router)                    # M77 SX-2: saved Copilot studies (snapshot, My studies, JSON), read-only (ui_v2 + study_export)
 app.include_router(chart_trades_layer_router)  # N4 CH4a: the caller's own PAPER trades on the chart (flag chart_trades_layer, off)
 app.include_router(chart_contracts_router)  # N4 CH4b: daily contract / spread charts from the shared lake (flag chart_contracts, off)
 app.include_router(chart_futures_basis_router)  # N4 CH4c: futures basis / carry / rollover from the shared lake (flag chart_futures_basis, off)

@@ -1,0 +1,10 @@
+# ATP ORDER M85 - Upstox Analytics Token asked again every day (owner order via the overseer, filed by the overseer as M84; renumbered M85 in ATP because ATP M84 = Advanced analysis; verbatim)
+
+M84 (ATP) - Upstox: the app asks for the Analytics Token every morning (owner phone, 08:52: banner "Your Upstox login has ended. Log in again to resume live prices" -> "Renew Upstox" panel asking the Analytics Token). The token is valid for one year and is already stored; it must be asked ONCE.
+Code facts: catalog Upstox method=analytics_token, daily_renewal=False; ConnectPanel stepFor() renews Upstox by re-pasting the analytics token through /connect; LivePricesBanner shows the renew notice from the data hub; upstox_analytics.py uses the token only for endpoint classes its probe marked `works`, else falls back to the daily login token.
+U1 Root cause on production first (one line): read the stored coverage map - which class (market-data websocket authorize / quotes / history / option chain) is not `works`, and which call raised the "login ended" notice. Report the stored token's expiry date.
+U2 While the stored analytics token is valid and its class works, never show "login ended" and never ask for it again. Market data (charts, chain, scanner, watchlists, alerts, market memory) runs on it continuously.
+U3 If the live websocket does not accept the analytics token, keep live prices on the analytics token by REST polling (within the broker budget) with a quiet "prices refresh every few seconds" note, not a renew prompt.
+U4 The daily Upstox login is needed only for orders / positions / funds. Ask for it only when the user starts such an action (or on the Broker page), via the OAuth login button - never by asking the analytics token again.
+U5 Renew panel for Upstox: show "Analytics token saved, valid till <date>" with a Replace option; the token field appears only on Replace or after expiry / a real 401 re-probe.
+Tests: banner logic per state (valid analytics + no daily login => no banner; expired analytics => one notice), stepFor for Upstox. Proof: phone 390 morning flow before/after. Report in Marathi <= 25 lines.

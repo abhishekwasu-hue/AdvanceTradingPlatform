@@ -1,7 +1,7 @@
-# HANDOVER_NOW (30 Oct 2026, 14:20 IST) - owner: credit limit, no new PRs; next session continues
-Merged today: ADM-1 #711; TERM-2 #714 #715 #718 #719 #725 (R1-R4 flags OFF); CP-UX #717 #722 #724; SB-UX #721 #723 #728;
-CT-1 #720 #726 #727; docs #712 #731. In flight: #729 (CT-1 C6+C8, this handover), #730 (CT-1 C10 Ask AI) - merge when green.
-PROSE-1 #732 (draft): root + guard + 80 files done; CI red - read docs/HANDOVER_NEXT.md first.
-REV-1: plan docs/design/REV1_PLAN.md waits for the owner's approval (D1-D3); nothing built.
-Migrations since the last deploy: d0f0a1b2c3d7, d0f0a1b2c3d8, d0f0a1b2g204, e1a2c3d4f506 (one chain; after 15:30 IST).
-Owner: deploy line; PROSE-1 disclaimer default; CP1 data source; ATP_ORDERS_FULLTEXT_29OCT.md resend.
+# HANDOVER_NOW (2 Nov 2026) - main d24cb604
+Merged 1-2 Nov: M68 PR-3/7/8/8b, M71 PL-7, M72 PR-8..11, M75 W-8, M76 MP-0/3/6, M77 SX-2/SX-7, M79 port map +
+shadow export + runner, M80 #855, PAPER-NR #866. atp-private: M79 W6-W10 (#9-#11).
+Open drafts: #900 (M76-1..4), #899 (M75 W-10 GTT, flag OFF), #896 (M75 W-9).
+Not started: M85 Upstox token asked daily (overseer ID M84) -> M82 + M83 Market pulse -> M78 band labels (owner order).
+ATP M84 = Advanced analysis reads symbol/timeframe from the chart (DECISIONS 2 Nov).
+Production deploy state / pending migrations: unknown until the owner sends `health`.

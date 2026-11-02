@@ -78,6 +78,9 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Engine takeover: port engine-snapshot-v2, supersedes v1 (1 Nov) | ATP_ORDER_M79.md | M79 (with M66) | in progress |
 | - | Admin feature flags: truthful status badge (1 Nov) | ATP_ORDER_M80.md | M80 | in progress |
 | - | Copilot "Today's read" card: true state (1 Nov) | ATP_ORDER_M82.md | M82 | in progress |
+| - | Market pulse: one Read now (1 Nov, addendum to M82) | ATP_ORDER_M83.md | M83 | in progress |
+| - | Advanced analysis reads symbol / timeframe from the chart (2 Nov) | DECISIONS.md | M84 | in progress |
+| - | Upstox Analytics Token asked once (2 Nov; overseer M84) | ATP_ORDER_M85.md | M85 | in progress - next |
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

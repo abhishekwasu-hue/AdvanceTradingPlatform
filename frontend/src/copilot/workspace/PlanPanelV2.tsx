@@ -16,7 +16,9 @@ import {
   type EquityDraft, type ExitDraft, type InstrumentDraft, type LegDraft, type PlanKind,
 } from "./plan";
 import { PlanPlaceV2 } from "./PlanPlaceV2";
+import type { Annotations } from "./annotations";
 import { RiskPreviewV2, type RiskPreviewApi } from "./RiskPreviewV2";
+import { WhatIfV2, type WhatIfApi } from "./WhatIfV2";
 import { ivPointsOf } from "./riskPreview";
 import { TriggerPlansV2 } from "./TriggerPlansV2";
 
@@ -78,9 +80,13 @@ export interface PlanPanelProps {
   evaluate?: typeof builderApi.evaluate;
   /** Test hook: the risk preview's reads (M76 MP-4). */
   riskApi?: RiskPreviewApi;
+  /** M76 MP-6: the open chart's reading (its next areas), null while there is none. */
+  annotations?: Annotations | null;
+  /** Test hook: the what-if reads (M76 MP-6). */
+  whatIfApi?: WhatIfApi;
 }
 
-export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi }: PlanPanelProps) {
+export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi, annotations = null, whatIfApi }: PlanPanelProps) {
   const [kind, setKind] = useState<PlanKind | null>(null);
   const [inst, setInst] = useState<InstrumentDraft>(EMPTY_INSTRUMENT);
   const [draft, setDraft] = useState<LegDraft>(EMPTY_LEG);
@@ -89,6 +95,8 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi }:
   const [exits, setExits] = useState<ExitDraft>(EMPTY_EXITS);
   const [evaluation, setEvaluation] = useState<{ evaluation: Evaluation; sent: Leg[] } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  // M76 MP-6: the what-if scenario the payoff draws (the engine's reply for his shifts), null = today's plan
+  const [scenario, setScenario] = useState<{ evaluation: Evaluation; price: number } | null>(null);
   const seq = useRef(0);
   const phone = useMediaQuery("(max-width: 767px)");
   const features = useFeatures();
@@ -178,7 +186,8 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi }:
           {evaluation && spot != null && (
             <div className="grid gap-space-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" data-plan="numbers">
               <div className="min-w-0 md:rounded-panel md:border md:border-subtle md:p-space-2">
-                <PayoffCanvas evaluation={evaluation.evaluation} legs={legs} spot={spot} step={step ?? 1}
+                {scenario && <p className="mb-space-1 text-t12 text-fg-muted" data-plan="payoff-scenario">Payoff in your what-if scenario · marker at its price</p>}
+                <PayoffCanvas evaluation={scenario?.evaluation ?? evaluation.evaluation} legs={legs} spot={scenario?.price ?? spot} step={step ?? 1}
                   onStrikeChange={(id, strike) => setLegs((all) => all.map((l) => (l.id === id ? { ...l, strike } : l)))} />
               </div>
               <MetricsCard evaluation={evaluation.evaluation} stale={evaluation.sent !== legs} />
@@ -188,6 +197,10 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi }:
           {evaluation && spot != null && evaluation.sent === legs && (
             <RiskPreviewV2 underlying={symbol} evaluation={evaluation.evaluation} legs={legs} spot={spot} asOf={asOf} ivPoints={ivPoints}
               {...(riskApi ? { api: riskApi } : {})} />
+          )}
+          {evaluation && spot != null && evaluation.sent === legs && (
+            <WhatIfV2 base={evaluation.evaluation} legs={legs} spot={spot} asOf={asOf} annotations={annotations} onScenario={setScenario}
+              {...(whatIfApi ? { api: whatIfApi } : {})} />
           )}
         </>
       )}

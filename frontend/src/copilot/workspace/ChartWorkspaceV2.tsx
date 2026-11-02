@@ -84,7 +84,10 @@ export default function ChartWorkspaceV2() {
         </aside>
       </div>
       {/* M75 W-6 (CW-4): the trade plan panel in the same tab, for the chart's symbol (preview only). */}
-      {pick && <PlanPanelV2 symbol={pick.symbol} />}
+      {/* M76 MP-6 (S-2): the open chart's reading, for the plan's P&L at its next areas - only on the underlying's own chart
+          (a futures / option contract's areas are that contract's prices, not the spot the plan is priced at) */}
+      {pick && <PlanPanelV2 symbol={pick.symbol}
+        annotations={read.status === "ready" && !isContract(pick.exchange) ? read.read.annotations ?? null : null} />}
     </section>
   );
 }

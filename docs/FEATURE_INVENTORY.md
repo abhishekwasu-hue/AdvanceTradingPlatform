@@ -116,6 +116,7 @@ Facts from the code that the tables rely on:
 | signals_feed | Signals inbox, day-one setup card | `/api/signals`, `/api/signals/day-one` | `ui_v2`; `strategy_templates` (card) | EMPTY-BY-DEFAULT (404 until `ui_v2`) | unknown until the owner's check |
 | strategy_engine | Built-in strategies, registry, chart run | `/api/strategies` | - | WORKS | unknown until the owner's check |
 | strategy_templates | Signal templates adopted as a PAPER bot | `/api/strategy-templates` | `strategy_templates`, `screener_waves` | EMPTY-BY-DEFAULT | unknown until the owner's check |
+| study | Saved Copilot studies: snapshot, My studies, JSON and PDF download (M77 SX-2 / SX-3) | `/api/studies` | `ui_v2` + `study_export` | EMPTY-BY-DEFAULT (404 while either is off) | unknown until the owner's check |
 | support | Support bot, Help centre, Report a problem, desk | `/api/support`, `/api/ai/support`, `/api/admin/support` | `support_bot`, `help_centre` (+ `ui_v2`) | STUB (catalog: help pages not complete) | unknown until the owner's check |
 | support_resistance | S/R zone library | routes `/api/support-resistance/zones` (section 3) | - | WORKS | unknown until the owner's check |
 | tax | FY P&L / turnover report | `/api/tax` | - | WORKS | unknown until the owner's check |

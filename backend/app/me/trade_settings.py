@@ -376,6 +376,11 @@ FIELDS: tuple[SettingField, ...] = (
     _f(A, "plan_trigger_action", "When a plan triggers", "choice",
        "Whether a trigger plan places its orders at once or asks you first. A plan can choose for itself.", 6, 60,
        choices=(("AUTO", "Place at once"), ("APPROVAL", "Ask me first")), wired=True),
+    # M75 W-10 (M75Q-1 / TM-23): his own opt-in; Not set = ATP's trigger engine. LIVE accounts only, flag `broker_gtt`.
+    _f(A, "plan_broker_gtt", "Simple price plans", "choice",
+       "Whether a simple price plan waits at your broker as a GTT order (it then fires even while ATP is down) or in "
+       "ATP's trigger engine. Live accounts only; a plan that asks you first always stays with ATP.", 6, 60,
+       choices=(("BROKER", "Use my broker's GTT"), ("ATP", "ATP's trigger engine")), wired=True),
     _f(A, "approval_entry_minutes", "An entry request waits", "whole", "Minutes an entry waiting for your answer stays open.", 6, 62,
        **_count("minutes"), today="operator setting (15 minutes)", wired=True),
     _f(A, "approval_exit_minutes", "An exit request waits", "whole", "Minutes an exit waiting for your answer stays open.", 6, 62,

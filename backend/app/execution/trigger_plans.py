@@ -288,6 +288,7 @@ async def _move(session: AsyncSession, row: TriggerPlanRecord, frm: Sequence[str
 
 async def pause(session: AsyncSession, user: User, plan_id: int, now: datetime | None = None) -> TriggerPlanRecord:
     row = await own(session, user, plan_id)
+    await _gtt_down(session, row, _now(now))                 # W-10: the broker GTT goes first (no fire after his tap)
     if not await _move(session, row, (ARMED,), PAUSED, _now(now)):
         raise PlanError(f"This plan is {STATUS_WORDS[row.status].lower()}: only an armed plan can be paused.")
     return row
@@ -307,6 +308,7 @@ async def resume(session: AsyncSession, user: User, plan_id: int, now: datetime 
 async def cancel(session: AsyncSession, user: User, plan_id: int, now: datetime | None = None) -> TriggerPlanRecord:
     """Cancels an armed or paused plan. A triggered plan's orders are already on their way; its exits are never touched."""
     row = await own(session, user, plan_id)
+    await _gtt_down(session, row, _now(now))                 # W-10: the broker GTT goes first (no fire after his tap)
     if not await _move(session, row, EDITABLE, CANCELLED, _now(now), finished_at=_now(now), note="Cancelled by you"):
         raise PlanError(f"This plan is {STATUS_WORDS[row.status].lower()}: it can no longer be cancelled.")
     return row
@@ -324,7 +326,19 @@ async def edit(session: AsyncSession, user: User, plan_id: int, *, condition: Co
                        orders_json=json.dumps([asdict(o) for o in orders]), approval=chosen, valid_until=_utc(valid_until),
                        name=name or None, armed_at=now):
         raise PlanError("This plan changed meanwhile: open it again.")
+    await _gtt_down(session, row, now)
+    from app.execution import broker_gtt
+    if not broker_gtt.active(row):
+        row.results_json = None                   # armed afresh: an earlier broker answer does not carry over
     return row
+
+
+async def _gtt_down(session: AsyncSession, row: TriggerPlanRecord, now: datetime) -> None:
+    """W-10: a paused, edited or cancelled plan's broker GTT is cancelled at his broker (the worker re-arms an armed plan)."""
+    from app.execution import broker_gtt
+    if broker_gtt.active(row):
+        await broker_gtt.on_plan_change(session, row, now)
+        await session.flush()
 
 
 def condition_words(underlying: str, c: Condition) -> str:
@@ -443,7 +457,9 @@ def _label(row: TriggerPlanRecord) -> str:
 async def run(session: AsyncSession, tenant_id: int, prices: PriceFn, *, candles: CandleFn | None = None,
               now: datetime | None = None) -> dict[str, int]:
     """One pass over the organisation's plans: expire the ended ones, finish every TRIGGERED plan (a restart or an earlier
-    pass left it), then fire each ARMED plan whose condition is met - once."""
+    pass left it), then fire each ARMED plan whose condition is met - once. W-10: a plan waiting at his broker's GTT is
+    read from the broker instead (app/execution/broker_gtt.py; flag `broker_gtt`, OFF)."""
+    from app.execution import broker_gtt
     now = _now(now)
     report = {"checked": 0, "triggered": 0, "expired": 0, "done": 0}
     if not await enabled(session, tenant_id):
@@ -458,18 +474,25 @@ async def run(session: AsyncSession, tenant_id: int, prices: PriceFn, *, candles
             continue
         try:
             if row.status in (ARMED, PAUSED) and _utc(row.valid_until) <= now:
+                await broker_gtt.on_plan_change(session, row, now)        # W-10: its broker GTT goes first
                 if await _move(session, row, (ARMED, PAUSED), EXPIRED, now, finished_at=now, note="Its validity ended before it triggered"):
                     report["expired"] += 1
                     await _notify(session, row, f"Plan expired: {_label(row)}", "Its validity ended before the condition was met. Nothing was placed.")
                     await session.commit()
                 continue
             if row.status == TRIGGERED:
-                if await fire(session, row, prices, now):
+                if broker_gtt.gtts(row):                                  # W-10: the broker fired it; ATP never places it
+                    await broker_gtt.handle(session, row, prices, now)
+                    report["done"] += int(row.status == DONE)
+                elif await fire(session, row, prices, now):
                     report["done"] += 1
                 continue
             if row.status != ARMED:
                 continue
             report["checked"] += 1
+            if await broker_gtt.handle(session, row, prices, now):     # W-10: waiting at (or fired by) his broker's GTT
+                report["triggered"] += int(row.status != ARMED)
+                continue
             c = condition_of(row)
             if not in_window(c, now):
                 continue

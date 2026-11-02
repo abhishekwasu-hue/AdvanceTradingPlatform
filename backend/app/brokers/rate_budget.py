@@ -200,6 +200,8 @@ def _count_rate_limited(broker: str, method: str) -> None:
 
 
 def _is_entry(method: str, args: tuple) -> bool:
+    if method == "place_gtt":                       # M75 W-10: a GTT's order is always a new entry (never the exit share)
+        return True
     if method != "place_order" or not args:
         return False
     from app.platform.phase0_lock import is_entry_order
@@ -453,6 +455,23 @@ class RateLimitedBroker(BrokerInterface):
         exchange = self.ops.exchange_of(order_id)
         await self.ops.exit(exchange)
         return await self._ops_call(exchange, "modify_order", order_id, quantity, price, trigger_price, order_type)
+
+    # M75 W-10 (M75Q-1): a broker GTT's order is a new entry, so its create meets the same Phase 0 chokepoint; a
+    # modify / cancel / read always passes (a cancel is how a kill switch takes a GTT down - never refused).
+    @property
+    def supports_gtt(self) -> bool:  # type: ignore[override]
+        return bool(getattr(self.inner, "supports_gtt", False))
+
+    async def place_gtt(self, gtt):
+        from app.brokers.models import GttStatus
+        from app.platform import phase0_lock
+        if phase0_lock.locked(self.tenant_id):
+            return GttStatus(gtt_id="", status="REJECTED", message=phase0_lock.refused_response().message)
+        return await self._call("place_gtt", gtt)
+
+    async def modify_gtt(self, gtt_id, gtt): return await self._call("modify_gtt", gtt_id, gtt)
+    async def cancel_gtt(self, gtt_id): return await self._call("cancel_gtt", gtt_id)
+    async def get_gtt(self, gtt_id): return await self._call("get_gtt", gtt_id)
 
     async def cancel_order(self, order_id):
         if self.ops is None:

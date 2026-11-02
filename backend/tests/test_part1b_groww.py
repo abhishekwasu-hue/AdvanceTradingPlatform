@@ -287,8 +287,14 @@ def test_modify_and_cancel_carry_the_orders_segment(gates_open):
 
 
 def test_tm23_the_adapter_has_no_native_gtt_or_oco_call():
-    names = {n.lower() for n in dir(gw.GrowwBroker)}
-    assert not any(word in n for n in names for word in ("smart", "gtt", "oco"))
+    # M75 W-10: BrokerInterface now carries optional GTT methods that only raise "not offered"; Groww implements none of
+    # them and does not say it offers GTT - its own names still hold no smart / GTT / OCO call.
+    from app.brokers.base import BrokerInterface
+    own = {n.lower() for n in dir(gw.GrowwBroker) if getattr(gw.GrowwBroker, n, None) is not getattr(BrokerInterface, n, None)}
+    assert not any(word in n for n in own for word in ("smart", "gtt", "oco"))
+    assert gw.GrowwBroker.supports_gtt is False
+    for name in ("place_gtt", "modify_gtt", "cancel_gtt", "get_gtt"):
+        assert getattr(gw.GrowwBroker, name) is getattr(BrokerInterface, name)
 
 
 def test_market_data_behind_the_open_gate(gates_open):

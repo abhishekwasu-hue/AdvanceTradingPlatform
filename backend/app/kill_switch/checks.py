@@ -29,7 +29,16 @@ async def engage(
     reason: str, strategy_id: Optional[str] = None,
 ) -> KillSwitchRecord:
     """Idempotent: engaging an already-engaged switch just updates its reason/timestamp rather
-    than erroring, so a retried or overlapping "stop everything" call is always safe."""
+    than erroring, so a retried or overlapping "stop everything" call is always safe.
+    M75 W-10 (TM-23 / M75Q-1): the broker GTTs of trigger plans in this switch's scope are cancelled FIRST - a GTT fires
+    at the broker, where no ATP switch can stop it. A failure there never stops the switch from engaging."""
+    from app.execution import broker_gtt
+    try:
+        await broker_gtt.cancel_all(session, None if scope == KillSwitchScope.GLOBAL else tenant_id,
+                                    strategy_id if scope == KillSwitchScope.STRATEGY else None)
+    except Exception:  # noqa: BLE001 - the switch engages whatever the brokers answer
+        import logging
+        logging.getLogger(__name__).exception("Kill switch: cancelling broker GTTs failed")
     record = await get_switch(session, scope, tenant_id, strategy_id)
     if record is None:
         record = KillSwitchRecord(tenant_id=tenant_id, scope=scope.value, strategy_id=strategy_id)

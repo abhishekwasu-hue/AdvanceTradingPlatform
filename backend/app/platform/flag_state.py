@@ -220,6 +220,8 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "copilot_workspace": _ready("Chart, its reading, the AI card and the trade plan panel (preview and Place through the one ticket) in the Copilot"),
     # M75 W-8 / W-9: price-level plans (touch / candle close, his window) and method conditions (his reading area + the
     # reader's rejection candle, BOS / CHoCH) fire once through the ticket
+    # M75 W-10: the GTT path is built and tested on a fake broker; a filled GTT becomes a position only through TT-1 (M75Q-9)
+    "broker_gtt": _not_built("A filled broker GTT recorded as your position with its exits (the LIVE manual path)", "TT-1"),
     "trigger_plans": _ready("Price-level, area and BOS / CHoCH plans fire once through the order ticket"),
     # M76 MP-0..MP-2, MP-5: the check card, the Warnings switches and the weekly "Warnings you accepted" work; the
     # structure lines (MP-3), risk preview and what-if (MP-4 / MP-6) and the workspace helpers follow

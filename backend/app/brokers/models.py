@@ -148,6 +148,28 @@ class BrokerOrderRequest(BaseModel):
     after_market: bool = False
 
 
+class GttRequest(BaseModel):
+    """M75 W-10 (owner order M75 CW-6, DECISIONS 1 Nov M75Q-1 / TM-23): one broker GTT ("good till triggered") - the
+    broker watches `symbol`'s own last price and sends `order` once it crosses `trigger_price` (a single trigger; the
+    side of the cross is the trigger against `last_price`). `client_ref` is the platform's own key (the plan's order),
+    never a broker field. Every value comes from the user's own plan; nothing is pre-chosen here."""
+    symbol: str
+    exchange: str
+    trigger_price: float
+    last_price: float
+    order: BrokerOrderRequest
+    client_ref: str
+
+
+class GttStatus(BaseModel):
+    """A broker GTT as the broker states it: ACTIVE (waiting), TRIGGERED (its order was sent: `order_id`), CANCELLED,
+    REJECTED, EXPIRED. `message` is the broker's own words when it refused or ended it."""
+    gtt_id: str
+    status: str
+    order_id: Optional[str] = None
+    message: Optional[str] = None
+
+
 class BasketMargin(BaseModel):
     """Part 7 / TM-10: the broker's own margin for a set of orders placed together. `required` is what the broker
     would block for the whole basket WITH the hedge benefit; `without_hedge` the sum of each order alone, where the

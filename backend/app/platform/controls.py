@@ -604,6 +604,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # worker through the order ticket's own place (PAPER = LIVE, every check again). OFF: /api/trigger-plans/* answers
     # 404 and the worker fires no plan.
     "trigger_plans": "Trigger plans: his own set-and-wait plans (condition, orders, exits), fired once through the order ticket",
+    # M75 W-10 (DECISIONS 1 Nov M75Q-1 / TM-23; needs `trigger_plans`): a simple price plan may wait at his broker as a GTT
+    # when he chose so in his Trade settings - LIVE accounts only, never a plan that asks him first; any kill switch
+    # cancels the GTTs first; the Phase 0 lock refuses the create. OFF: every plan waits in ATP's trigger engine.
+    "broker_gtt": "Broker GTT: a simple price plan waits at his own broker (LIVE only, his own opt-in); kill switches cancel it first",
     "study_export": "Save study: your own saved chart studies (snapshot, My studies, JSON download) - information only",
     # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab

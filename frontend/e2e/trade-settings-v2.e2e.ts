@@ -66,9 +66,9 @@ test.describe("Settings › Trade settings 1440", () => {
     // M68 PR-3: Exits (six) are wired; M68 PR-6 / PR-3: Automation - its seven controls (the fixture's trader has the
     // scanner's Auto PAPER on) and the new-entry window (two), every one Not set
     await expect(sectionAt(page, "exits").locator("[data-input]")).toHaveCount(6);
-    await expect(sectionAt(page, "automation").locator("[data-input]")).toHaveCount(9);
-    await expect(sectionAt(page, "automation").locator("[data-field] [data-value]")).toHaveText(Array(9).fill("Not set"));
-    await expect(page.locator("[data-input]")).toHaveCount(55);
+    await expect(sectionAt(page, "automation").locator("[data-input]")).toHaveCount(11);              // M75 W-8 + W-10: When a plan triggers, Simple price plans
+    await expect(sectionAt(page, "automation").locator("[data-field] [data-value]")).toHaveText(Array(11).fill("Not set"));
+    await expect(page.locator("[data-input]")).toHaveCount(57);      // M75 W-8 + W-10: two Automation fields
     await expect(page.locator("[data-save]")).toHaveCount(7);                      // one Save per wired section
     await expect(page.getByText("Advanced (admin)")).toHaveCount(0);
     await expect(sectionAt(page, "risk_limits").getByRole("link", { name: "Risk limits" })).toHaveAttribute("href", "/settings/risk-limits");

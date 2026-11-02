@@ -57,7 +57,8 @@ export class BasketStore {
   private legs: BasketLeg[];
   private readonly listeners = new Set<() => void>();
 
-  constructor(initial: BasketLeg[] = load()) { this.legs = initial.slice(0, MAX_LEGS); }
+  /** M75 W-7: `key` null keeps a basket in memory only (the Copilot's trade plan), never touching the tab's own basket. */
+  constructor(initial: BasketLeg[] = load(), private readonly key: string | null = BASKET_KEY) { this.legs = initial.slice(0, MAX_LEGS); }
 
   readonly subscribe = (fn: () => void): (() => void) => {
     this.listeners.add(fn);
@@ -93,7 +94,7 @@ export class BasketStore {
 
   private set(next: BasketLeg[]): void {
     this.legs = next;
-    try { sessionStorage.setItem(BASKET_KEY, JSON.stringify(next)); } catch { /* intentional: storage unavailable: kept in memory */ }
+    try { if (this.key) sessionStorage.setItem(this.key, JSON.stringify(next)); } catch { /* intentional: storage unavailable: kept in memory */ }
     this.listeners.forEach((fn) => fn());
   }
 }

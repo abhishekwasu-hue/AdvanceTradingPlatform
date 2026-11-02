@@ -599,6 +599,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # M77 SX-2 (owner order M77; app/study; needs `ui_v2`): "Save study" - the server's own snapshot of a chart study
     # (bars, areas, structure, his drawings and notes), listed and searched in My studies, downloaded as JSON (PDF / PNG
     # / CSV follow in SX-3..SX-5) and part of "Download my data". Read-only. OFF: /api/studies/* answers 404.
+    # M75 W-8 (owner order M75 CW-6; needs `ui_v2`): trigger plans - "set and wait": his condition (a price level by touch
+    # or by a closed candle of his timeframe, inside his own time window) -> his order(s) -> his exits; fired once by the
+    # worker through the order ticket's own place (PAPER = LIVE, every check again). OFF: /api/trigger-plans/* answers
+    # 404 and the worker fires no plan.
+    "trigger_plans": "Trigger plans: his own set-and-wait plans (condition, orders, exits), fired once through the order ticket",
     "study_export": "Save study: your own saved chart studies (snapshot, My studies, JSON download) - information only",
     # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab

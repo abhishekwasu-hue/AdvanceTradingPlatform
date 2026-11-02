@@ -59,7 +59,7 @@ log = logging.getLogger(__name__)
 
 # Where a trade came from. API = the public REST API (an API key), WEBHOOK = a TradingView alert, PROPOSAL = a Z3
 # approval (passed by #173 once it lands), SCAN = a scan's "Then" template; MANUAL / STRATEGY are derived otherwise.
-SOURCES = ("MANUAL", "STRATEGY", "SCAN", "PROPOSAL", "WEBHOOK", "API")
+SOURCES = ("MANUAL", "STRATEGY", "SCAN", "PROPOSAL", "WEBHOOK", "API", "PLAN")      # M75 W-8: PLAN = a trigger plan fired
 
 FLAG_TTL_SECONDS = 10.0       # how long a read of the flag is trusted (an operator's switch takes effect within this)
 HOOK_TIMEOUT_SECONDS = 15.0   # one queued journal job may take this long, then it is cancelled (logged)

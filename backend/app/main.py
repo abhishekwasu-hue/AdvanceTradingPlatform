@@ -72,6 +72,7 @@ from app.db.session import init_models
 from app.decision_tools.routes import router as decision_tools_router
 from app.deployments.routes import router as deployments_router
 from app.execution.incomplete_routes import router as incomplete_orders_router
+from app.execution.trigger_plan_routes import router as trigger_plan_router
 from app.expiry_checklist.routes import router as expiry_checklist_router
 from app.exports.routes import router as exports_router
 from app.fundamentals.routes import router as fundamentals_router
@@ -459,6 +460,7 @@ app.include_router(chart_layouts_router)  # CH5: saved multi-chart workspace lay
 app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer (flag market_zones, off by default)
 app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
 app.include_router(chart_read_router)               # AUD-T5: Read this chart as of the last closed bar, read-only (ui_v2 + read_chart)
+app.include_router(trigger_plan_router)             # M75 W-8: his trigger plans (ui_v2 + trigger_plans); only the worker fires them
 app.include_router(study_router)                    # M77 SX-2: saved Copilot studies (snapshot, My studies, JSON), read-only (ui_v2 + study_export)
 app.include_router(chart_trades_layer_router)  # N4 CH4a: the caller's own PAPER trades on the chart (flag chart_trades_layer, off)
 app.include_router(chart_contracts_router)  # N4 CH4b: daily contract / spread charts from the shared lake (flag chart_contracts, off)

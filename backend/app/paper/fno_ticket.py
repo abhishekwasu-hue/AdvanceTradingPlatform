@@ -416,7 +416,8 @@ async def _price(lookup: Optional[PriceLookup], contract: Contract) -> Tuple[Opt
 
 
 async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_lookup: Optional[PriceLookup],
-                 live_only: bool = False, now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC) -> Dict[str, Any]:
+                 live_only: bool = False, now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC,
+                 approval_action_id: int | None = None) -> Dict[str, Any]:
     """Everything the confirm step shows, checked. Reads only (no entry slot is taken, nothing is stored).
 
     TT-2: `origin` is set by the server from the route - "manual" only on the ticket / basket routes, where the user
@@ -493,7 +494,9 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
 
     tenant = await session.get(Tenant, user.tenant_id)
     refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, MODE, STRATEGY_ID, user=user, reserve=False))
-    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=None, user_id=user.id)
+    # M75 W-8: a trigger plan's order approved by its owner carries its APPROVED proposal (origin "approval").
+    gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=approval_action_id,
+                                       user_id=user.id)
     if gate:
         refusals.append(plain(gate))
     direction = SignalDirection.LONG if side == "BUY" else SignalDirection.SHORT
@@ -579,15 +582,18 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
 
 
 async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_lookup: Optional[PriceLookup],
-                now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC) -> Dict[str, Any]:
+                now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC, approval_action_id: int | None = None,
+                journal_source: str = "MANUAL") -> Dict[str, Any]:
     """Checks the ticket again at the live price and places ONE PAPER order through the ordinary pipeline, or says why
-    not. Never a broker order: the mode is PAPER, asserted at the chokepoint under the Phase 0 lock."""
+    not. Never a broker order: the mode is PAPER, asserted at the chokepoint under the Phase 0 lock. M75 W-8: a trigger
+    plan's fire comes here too (journal source PLAN; an approved plan order with its proposal id) - the same checks."""
     from app.execution.signal_execution import execute_signal_for_user
     from app.platform import phase0_lock
     now = now or datetime.now(timezone.utc)
     if ask.accepted_warnings and not ask.accepted_at:
         ask.accepted_at = now.isoformat()               # M76 MP-5: the moment Place was pressed (kept by a waiting order)
-    view = await assess(session, user, ask, price_lookup=price_lookup, live_only=True, now=now, origin=origin)
+    view = await assess(session, user, ask, price_lookup=price_lookup, live_only=True, now=now, origin=origin,
+                        approval_action_id=approval_action_id)
     if not view["can_place"]:
         # M64 RM-3: a Risk limits block on a placing attempt goes to the journal's record (a preview is not logged).
         from app.risk_engine import risk_limits
@@ -617,8 +623,9 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
             # (paper_fill), so the router books it as a market fill at that price.
             idempotency_key=key, holding=order_defaults.holding_of_product(ask.product), order_style="MARKET",
             max_quantity=float(view["units"]),
-            journal_source="MANUAL", manual_contract_spec=_spec(contract), manual_contract_meta=_meta(contract, ask.side),
-            paper_execution=PAPER_EXECUTION, freeze_quantity=freeze, market_protection_pct=band, origin=origin)
+            journal_source=journal_source, manual_contract_spec=_spec(contract), manual_contract_meta=_meta(contract, ask.side),
+            paper_execution=PAPER_EXECUTION, freeze_quantity=freeze, market_protection_pct=band, origin=origin,
+            approval_action_id=approval_action_id)
     except Exception as exc:  # noqa: BLE001 - shown to the person; the order trail holds what the pipeline recorded
         logger.exception("FNO ticket order failed for user %s", user.id)
         await session.rollback()

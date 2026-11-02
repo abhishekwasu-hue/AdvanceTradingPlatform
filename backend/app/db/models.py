@@ -4017,3 +4017,41 @@ class CopilotStudyRecord(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     share_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
+class TriggerPlanRecord(Base):
+    """M75 W-8 (owner order M75 CW-6, DECISIONS 1 Nov M75Q-1 / M75Q-2): one trigger plan of one member - "set and wait":
+    a condition (the underlying's price crossing his level, by touch or by a closed candle of his timeframe, inside his
+    own time window), then his order(s), then his exits. Every value is his own (nothing pre-chosen); `approval` is his
+    per-plan choice "place at once" (AUTO) or "ask me first" (APPROVAL). The plan fires ONCE: ARMED -> TRIGGERED is a
+    conditional update; each order goes through the order ticket's own `place` with the client reference
+    `plan-<id>-<n>` (a second pass or a restart never places twice) and its target is armed on the filled position.
+    States: ARMED, PAUSED, TRIGGERED (firing / waiting for his answer), DONE, EXPIRED, CANCELLED. Exits never wait."""
+
+    __tablename__ = "trigger_plans"
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "client_ref", name="uq_trigger_plans_user_ref"),
+                      Index("ix_trigger_plans_tenant_status", "tenant_id", "status"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    underlying: Mapped[str] = mapped_column(String(40), nullable=False)
+    watch_symbol: Mapped[str] = mapped_column(String(60), nullable=False)
+    watch_exchange: Mapped[str] = mapped_column(String(10), nullable=False)
+    condition_json: Mapped[str] = mapped_column(Text, nullable=False)
+    orders_json: Mapped[str] = mapped_column(Text, nullable=False)
+    approval: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="ARMED")
+    valid_until: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    armed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+    triggered_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    trigger_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    results_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)

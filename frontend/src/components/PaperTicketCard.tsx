@@ -18,11 +18,12 @@ import { EMPTY_FORM, costRows, gauge, lockoutLine, money, pendingLine, placedMes
 const TONE = { ok: "stroke-up", warn: "stroke-warn", over: "stroke-down" } as const;
 const FIELD = "min-h-[44px] w-full rounded border border-border bg-surface-2 px-2 py-1 text-sm sm:min-h-0";
 
-export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: boolean; onPlaced?: () => void }) {
+/** M75 W-7: `initial` - the values of his own trade plan in the Copilot (absent everywhere else: today's empty form). */
+export default function PaperTicketCard({ canTrade, onPlaced, initial }: { canTrade: boolean; onPlaced?: () => void; initial?: Partial<TicketForm> }) {
   const v2 = useUiV2();                       // UX-11: the exits line and the cost basis under Details
   const [status, setStatus] = useState<PaperRiskStatus | null>(null);
   const [hidden, setHidden] = useState(false);
-  const [form, setForm] = useState<TicketForm>(EMPTY_FORM);
+  const [form, setForm] = useState<TicketForm>(() => ({ ...EMPTY_FORM, ...initial }));
   const [view, setView] = useState<TicketView | null>(null);
   const [plans, setPlans] = useState<TradePlanView[]>([]);
   const [busy, setBusy] = useState(false);

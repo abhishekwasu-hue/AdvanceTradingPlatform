@@ -14,6 +14,7 @@ import { AiCardV2, cardTimeframe, useWorkspaceCard } from "./AiCardV2";
 import { workspaceLayer } from "./annotations";
 import { AnnotationsV2 } from "./AnnotationsV2";
 import { contractEmptyNote, isContract, openingSymbol, readingKey } from "./model";
+import { PlanPanelV2 } from "./PlanPanelV2";
 
 /**
  * M75 W-2 (owner order M75 CW-1, flag `copilot_workspace`): the chart workspace inside the Copilot's "Read the chart"
@@ -82,6 +83,8 @@ export default function ChartWorkspaceV2() {
           {read.status === "ready" && <div className="mt-space-3"><AiCardV2 state={card} offered={!!cardTf} /></div>}
         </aside>
       </div>
+      {/* M75 W-6 (CW-4): the trade plan panel in the same tab, for the chart's symbol (preview only). */}
+      {pick && <PlanPanelV2 symbol={pick.symbol} />}
     </section>
   );
 }

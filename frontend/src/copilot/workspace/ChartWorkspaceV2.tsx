@@ -15,6 +15,9 @@ import { workspaceLayer } from "./annotations";
 import { AnnotationsV2 } from "./AnnotationsV2";
 import { contractEmptyNote, isContract, openingSymbol, readingKey } from "./model";
 import { PlanPanelV2 } from "./PlanPanelV2";
+import { Button, Sheet } from "../../components/primitives";
+import { MyStudiesV2 } from "../../study/MyStudiesV2";
+import { SaveStudySheetV2 } from "../../study/SaveStudySheetV2";
 
 /**
  * M75 W-2 (owner order M75 CW-1, flag `copilot_workspace`): the chart workspace inside the Copilot's "Read the chart"
@@ -49,6 +52,11 @@ export default function ChartWorkspaceV2() {
     setOpenChart(openInstrument && openTf ? { instrument: openInstrument, tf: openTf } : null);
     return () => setOpenChart(null);
   }, [openInstrument, openTf]);
+  // M77 SX-7 (flag study_export): "Save study" and "My studies" open in place over the chart (same tab, same address)
+  const studiesOn = features.on("study_export");
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [studiesOpen, setStudiesOpen] = useState(false);
+  const [saved, setSaved] = useState(0);
   const cardTf = cardTimeframe(key?.tf);
   const card = useWorkspaceCard(pick?.symbol ?? null, cardTf, read.status === "ready");
   const choose = (next: PickedSymbol) => {
@@ -60,7 +68,15 @@ export default function ChartWorkspaceV2() {
 
   return (
     <section aria-labelledby="copilot-workspace-title" data-copilot-workspace={pick ? pick.symbol : "none"} className="space-y-space-3">
-      <h2 id="copilot-workspace-title" className="text-t15 font-semibold text-fg">Chart</h2>
+      <div className="flex flex-wrap items-center justify-between gap-space-2">
+        <h2 id="copilot-workspace-title" className="text-t15 font-semibold text-fg">Chart</h2>
+        {studiesOn && (
+          <div className="flex flex-wrap gap-space-2" data-workspace-study>
+            {pick && key && <Button size="sm" variant="primary" onClick={() => setSaveOpen(true)} data-open-save-study>Save study</Button>}
+            <Button size="sm" variant="outline" onClick={() => setStudiesOpen(true)} data-open-my-studies>My studies</Button>
+          </div>
+        )}
+      </div>
       <div className="grid gap-space-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         {/* Full width on a phone: the chart leaves the page's side padding (not inside a panel, which has its own). */}
         <div className={cx("min-w-0", !inPanel && "-mx-space-4 md:mx-0")} data-workspace-chart>
@@ -85,6 +101,15 @@ export default function ChartWorkspaceV2() {
       </div>
       {/* M75 W-6 (CW-4): the trade plan panel in the same tab, for the chart's symbol (preview only). */}
       {pick && <PlanPanelV2 symbol={pick.symbol} />}
+      {studiesOn && pick && key && (
+        <SaveStudySheetV2 open={saveOpen} onOpenChange={setSaveOpen} instrument={key.instrument} symbol={pick.symbol} openTf={key.tf}
+          onSaved={() => setSaved((n) => n + 1)} />
+      )}
+      {studiesOn && (
+        <Sheet open={studiesOpen} onOpenChange={setStudiesOpen} title="My studies" wide>
+          <MyStudiesV2 refresh={saved} />
+        </Sheet>
+      )}
     </section>
   );
 }

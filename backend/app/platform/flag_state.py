@@ -224,7 +224,11 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     # structure lines (MP-3), risk preview and what-if (MP-4 / MP-6) and the workspace helpers follow
     "trade_warnings": _ready("Each user turns each warning type on or off on Settings › Trade settings › Warnings",
                              "Settings › Trade settings › Warnings"),
-    "study_export": _not_built("The Save study sheet, My studies and the PNG / CSV downloads (SX-4..SX-7)", "M77"),
+    # M77 SX-2..SX-5 + SX-7: Save study (same tab), My studies (Copilot and Journal), PDF / image / CSV / JSON downloads and
+    # the studies in "Download my data" work; the trade plan, check card, scenarios and similar setups sections print
+    # "Not available" until SX-6, and the structure-only shared copy follows
+    "study_export": _ready("Save study and My studies in the Copilot's chart workspace and the Journal; the trade plan, check card, "
+                           "scenarios and similar setups sections and the shared copy follow (M77 SX-6, share)"),
     "ai_platform_key": _setup("The platform AI key on the server, each plan's AI budget and the per-user daily cap",
                               f"{HOST}; Admin › Controls › Limits"),
 }

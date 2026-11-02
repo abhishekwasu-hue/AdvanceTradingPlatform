@@ -192,7 +192,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "read_chart": FlagInfo("Read this chart: the areas, their state, the pullback state and the commitment candle", "charts", "a Read this chart button on the Charts page toolbar", ("ui_v2", "market_zones"), "nightly zones", "ready"),
     "copilot_workspace": FlagInfo("Copilot chart workspace: a chart with its reading inside the Copilot", "charts", "a chart, a symbol search with futures and option contracts and the chart's reading in the Copilot's Read the chart tab", ("ui_v2", "read_chart"), "", "unfinished"),
     "trigger_plans": FlagInfo("Trigger plans: your own set-and-wait plans (condition, orders, exits)", "trading", "a Trigger plans list under the Copilot's trade plan panel, with Save as trigger plan", ("ui_v2",), "the trading worker", "unfinished"),
-    "study_export": FlagInfo("Save study: your own saved chart studies, My studies and the JSON download", "charts", "nothing yet (the Save study sheet and My studies come in a later step)", ("ui_v2",), "", "unfinished"),
+    "study_export": FlagInfo("Save study: your own saved chart studies, My studies and the PDF / image / CSV / JSON downloads", "charts", "a Save study and a My studies button over the Copilot's chart, and a My studies tab in the Journal", ("ui_v2",), "", "unfinished"),
     "why_no_trade": FlagInfo("Why no trade: each bot's last closed bars with the reason it did or did not trade", "trading", "a Why no trade list on each bot (Bots page)", ("ui_v2",), "", "ready"),
 }
 
@@ -382,7 +382,7 @@ FINISH: Dict[str, str] = {
     "term_roll": "TERM-2 R1", "term_whatif": "TERM-2 R2", "term_strike_area": "TERM-2 R3", "term_margin_pair": "TERM-2 R4",
     "trade_warnings": "M76 (MP-1 .. MP-15)",
     "trade_engine": "M66 (owner only, after parity is green)", "copilot_workspace": "M75 W-2..W-6 (the Copilot trading workspace)", "trigger_plans": "M75 W-8..W-9 (trigger plans; method conditions in W-9)",
-    "study_export": "M77 (SX-3..SX-7: the PDF / PNG / CSV and the Save study sheet)",
+    "study_export": "M77 (SX-6: the trade plan, check card, scenarios and similar setups sections; the structure-only shared copy)",
     "copilot_agent": "M72 PR-2 (the answer format with cards)",
     "copilot_memory": "M72 PR-11 (each user saves his own; the owner turns it on)",
     "copilot_languages": "M72 PR-10 (Marathi / Hindi answers with their filters; the owner turns it on)",

@@ -1,9 +1,12 @@
 """Phase AF: Dhan API v2 adapter.
 
 Replaces the structural stub. Dhan is JSON REST at one host; every call carries `access-token` and
-`client-id` headers. There is no exchange flow: the user generates the access token on the Dhan web
-console and stores it with the client id on the Broker page (`access_token`, `client_id`); the platform
-keeps it encrypted and re-uses it until its daily expiry.
+`client-id` headers. Two official ways to get the day's token (docs/brokers/EASIEST_LOGIN.md section 2):
+- BRK-1 B, the TOTP login (the default): the client id, the Dhan PIN and the TOTP secret are stored once (`client_id`,
+  `pin`, `totp_secret`); `authenticate()` asks Dhan's auth host for a fresh token (`POST /app/generateAccessToken` with
+  `dhanClientId`, `pin` and the current TOTP code), valid 24 hours - one click, or ATP's own morning login;
+- the fallback: the user generates the token on the Dhan web console and stores it with the client id (`access_token`,
+  `client_id`); the platform keeps it encrypted and re-uses it until its daily expiry.
 
 Identifiers: every order, quote and candle needs the numeric `securityId` plus an `exchangeSegment`
 (`NSE_EQ`, `NSE_FNO`, `IDX_I`, `BSE_EQ`, `MCX_COMM`). The public scrip master (CSV with header) is
@@ -55,6 +58,9 @@ from app.core.models import OHLCVBar
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.dhan.co/v2"
+# BRK-1 B: Dhan's TOTP token API (https://dhanhq.co/docs/v2/authentication/, checked 2026-11-02). Its parameters ride in the
+# query string, so app/core/logging_config.py blanks `pin` and `totp` in every HTTP client log line.
+TOTP_TOKEN_URL = "https://auth.dhan.co/app/generateAccessToken"
 SCRIP_MASTER_URL = "https://images.dhan.co/api-data/api-scrip-master.csv"
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -128,8 +134,8 @@ class DhanBroker(BrokerInterface):
     max_tag_length = 20
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:
-        if not (credentials.access_token and credentials.client_id):
-            raise BrokerAuthenticationError("Dhan adapter requires credentials.access_token (from the Dhan console) and client_id")
+        if not credentials.client_id or not (credentials.access_token or (credentials.pin and credentials.totp_secret)):
+            raise BrokerAuthenticationError("Dhan adapter requires client_id and either pin + totp_secret or access_token (from the Dhan console)")
         self.credentials = credentials
         # LD-7: built without a client (the app's own path), the adapter uses the process's shared connection to Dhan and
         # the shared scrip master (app/brokers/shared_http.py, _SHARED_*); an injected client (tests, tools) keeps its own.
@@ -169,7 +175,38 @@ class DhanBroker(BrokerInterface):
 
     # --- session ---------------------------------------------------------------------------------
     async def authenticate(self) -> BrokerProfile:
+        """With a stored PIN and TOTP secret, today's token comes from Dhan's TOTP login; otherwise the stored token is
+        proven. A token pasted as the fallback still works when the TOTP login is refused (it is tried once more with the
+        profile call). The PIN and the code are blanked from the HTTP client's log lines, and no error carries either."""
+        if self.credentials.pin and self.credentials.totp_secret:
+            try:
+                self._access_token = await self._totp_token()
+            except BrokerAuthenticationError:
+                if not self.credentials.access_token:
+                    raise
+                self._access_token = self.credentials.access_token
         return await self.get_profile()
+
+    async def _totp_token(self) -> str:
+        from app.brokers.totp import totp_code
+        pin = str(self.credentials.pin)
+        params = {"dhanClientId": str(self.credentials.client_id), "pin": pin, "totp": totp_code(self.credentials.totp_secret)}
+        response = await self._order_client.post(TOTP_TOKEN_URL, params=params, headers={"Accept": "application/json"})
+        try:
+            body = response.json() if response.content else {}
+        except ValueError:
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        token = body.get("accessToken")
+        if response.status_code >= 500 or response.status_code == 429:
+            raise BrokerAPIError("Dhan's login service did not answer as expected", response.status_code)
+        if response.status_code >= 400 or not isinstance(token, str) or not token:
+            # Dhan's own words only when short and free of the PIN; never the request (it carries the PIN and the code).
+            reason = str(body.get("message") or body.get("errorMessage") or body.get("remarks") or "").strip()
+            if not reason or len(reason) > 120 or pin in reason or params["totp"] in reason:
+                reason = "the PIN or the TOTP code was not accepted"
+            raise BrokerAuthenticationError(f"Dhan TOTP login refused: {reason}")
+        return token
 
     async def get_profile(self) -> BrokerProfile:
         data = await self._request("GET", "/profile") or {}

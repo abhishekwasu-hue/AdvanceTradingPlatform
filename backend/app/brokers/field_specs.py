@@ -44,7 +44,7 @@ LOGIN_TOKEN = "token"        # the person pastes a token from the broker's conso
 LOGIN_API_KEY = "api_key"    # a long-lived key; no daily login
 
 # Server-written payload entries that are never a form field (dropped if a client sends them).
-SERVER_WRITTEN_FIELDS = frozenset({"analytics_meta", "oauth_pending"})
+SERVER_WRITTEN_FIELDS = frozenset({"analytics_meta", "oauth_pending", "auto_login"})
 
 _ANY_TOKEN = r"^[\x21-\x7E]{1,4096}$"
 _REDIRECT_URL = r"^https?://[\x21-\x7E]{1,500}$"
@@ -122,25 +122,27 @@ def _totp_secret(broker: str, required_unless: Tuple[str, ...] = ()) -> FieldSpe
 
 
 BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
+    # BRK-1 B (owner: no Upstox OAuth flow; EASIEST_LOGIN.md section 1 and conflict 7): Upstox connects with the pasted
+    # Analytics Token only - read-only, valid one year, no daily login. The key / secret / redirect / code fields stay in the
+    # map only because the old Settings form and the backend OAuth routes still read them (legacy rows); no start or
+    # callback path is served from here, so no Connect flow offers an Upstox login.
     "upstox": BrokerSpec(
-        name="upstox", display_name="Upstox", tile_line="Log in once each morning", login_method=LOGIN_OAUTH,
+        name="upstox", display_name="Upstox", tile_line="Paste your Analytics Token once a year", login_method=LOGIN_TOKEN,
         console_url="https://account.upstox.com/developer/apps",
-        oauth_start_path="/api/broker/upstox/oauth/start", oauth_callback_path="/api/broker/upstox/oauth/callback",
-        login_note="Brokers end the session every trading day. Log in once each morning; we never see or store your broker password.",
+        login_note="Upstox's Analytics Token lasts one year and is read-only: market data, charts and paper trading. No daily login.",
         fields=(
-            FieldSpec("api_key", "API key", KIND_TEXT, required=True, required_unless=("analytics_token",),
-                      pattern=r"^[\x21-\x7E]{8,128}$", format_hint="8 to 128 letters, digits or symbols with no spaces", max_length=128,
-                      help="From your app in the Upstox developer console."),
-            # Not needed for a data-only connection (an analytics token alone) or with a session already on file.
-            FieldSpec("api_secret", "API secret", KIND_SECRET, required=True, required_unless=("access_token", "analytics_token"),
-                      pattern=r"^[\x21-\x7E]{4,128}$", format_hint="4 to 128 letters, digits or symbols with no spaces", max_length=128,
-                      help="Shown next to the API key in the Upstox developer console."),
-            _redirect_url("Copy this into your Upstox app's Redirect URL. ATP fills it in when you log in."),
+            FieldSpec("analytics_token", "Analytics Token", KIND_SECRET, required=True, required_unless=("api_key", "access_token"),
+                      pattern=r"^[\x21-\x7E]{1,4096}$", format_hint="letters, digits or symbols with no spaces", max_length=4096,
+                      help="Generate it in Upstox Developer Apps → Analytics. It lasts one year; used for market data only, never for orders."),
+            FieldSpec("api_key", "API key (older connections)", KIND_TEXT, pattern=r"^[\x21-\x7E]{8,128}$",
+                      format_hint="8 to 128 letters, digits or symbols with no spaces", max_length=128, advanced=True,
+                      help="Not needed with an Analytics Token. Kept only for connections saved before it."),
+            FieldSpec("api_secret", "API secret (older connections)", KIND_SECRET, pattern=r"^[\x21-\x7E]{4,128}$",
+                      format_hint="4 to 128 letters, digits or symbols with no spaces", max_length=128, advanced=True,
+                      help="Not needed with an Analytics Token. Kept only for connections saved before it."),
+            _redirect_url("Not needed with an Analytics Token. Kept only for connections saved before it."),
             _access_token(),
             _login_code(),
-            FieldSpec("analytics_token", "Analytics token (read-only, valid one year)", KIND_SECRET, pattern=r"^[\x21-\x7E]{1,4096}$",
-                      format_hint="letters, digits or symbols with no spaces", max_length=4096, advanced=True,
-                      help="Optional. Generate it in Upstox Developer Apps → Analytics. Used for market data only, never for orders."),
         ),
     ),
     "zerodha": BrokerSpec(
@@ -161,13 +163,15 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
     ),
     "fyers": BrokerSpec(
         name="fyers", display_name="Fyers", tile_line="Log in once each morning", login_method=LOGIN_OAUTH,
-        console_url="https://myapi.fyers.in/dashboard",
+        # BRK-1 B (EASIEST_LOGIN.md section 4, checked 2026-11-02): the new API dashboard; a trading app's ID ends with -200
+        # (-100 apps are data-only since 1 Apr 2026).
+        console_url="https://fyers.in/web/api-dashboard/user-apps",
         oauth_start_path="/api/broker/fyers/oauth/start", oauth_callback_path="/api/broker/fyers/oauth/callback",
         login_note="Brokers end the session every trading day. Log in once each morning; we never see or store your broker password.",
         fields=(
             FieldSpec("api_key", "App ID", KIND_TEXT, required=True, pattern=r"^[\x21-\x7E]{4,128}$",
                       format_hint="4 to 128 letters, digits or symbols with no spaces", max_length=128,
-                      help="From your app on the Fyers API dashboard.", example="like XB12345-100"),
+                      help="From your Algo trading app on the Fyers API dashboard.", example="like XB12345-200"),
             FieldSpec("api_secret", "Secret ID", KIND_SECRET, required=True, required_unless=("access_token",),
                       pattern=r"^[\x21-\x7E]{4,128}$", format_hint="4 to 128 letters, digits or symbols with no spaces", max_length=128,
                       help="Shown next to the App ID on the Fyers API dashboard."),
@@ -225,17 +229,23 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
             _access_token("Session token", by=BY_LOGIN, legacy=False),
         ),
     ),
+    # BRK-1 B (EASIEST_LOGIN.md section 2): Dhan's official TOTP token API - client ID + PIN + TOTP - so ATP logs in each
+    # morning by itself; a token pasted from web.dhan.co (24 hours) stays as the fallback.
     "dhan": BrokerSpec(
-        name="dhan", display_name="Dhan", tile_line="Paste a new access token when it ends", login_method=LOGIN_TOKEN,
+        name="dhan", display_name="Dhan", tile_line="One-click login with your stored PIN and TOTP secret", login_method=LOGIN_TOTP,
         console_url="https://web.dhan.co/",
-        login_note="Dhan's access token lasts 24 hours from when you generate it. Paste a new one when it ends.",
+        login_note="ATP logs in to Dhan for you each morning with the PIN and TOTP secret you store here, encrypted.",
         fields=(
             FieldSpec("client_id", "Client ID", KIND_TEXT, required=True, pattern=r"^[\x21-\x7E]{2,64}$",
                       format_hint="2 to 64 letters, digits or symbols with no spaces", max_length=64, help="Your Dhan client ID."),
-            FieldSpec("access_token", "Paste your Dhan access token", KIND_SECRET, required=True,
+            FieldSpec("pin", "Dhan PIN", KIND_PIN, required=True, required_unless=("access_token",), pattern=r"^[0-9]{4,8}$",
+                      format_hint="4 to 8 digits", max_length=8, help="The PIN you use to log in to Dhan."),
+            _totp_secret("Dhan", required_unless=("access_token",)),
+            FieldSpec("access_token", "Access token (instead of the TOTP login)", KIND_SECRET, entered_by=BY_LOGIN,
                       pattern=r"^[\x21-\x7E]{16,4096}$",
-                      format_hint="at least 16 letters, digits or symbols with no spaces", max_length=4096,
-                      help="Generate it on web.dhan.co under My Profile → Access DhanHQ APIs. It lasts 24 hours."),
+                      format_hint="at least 16 letters, digits or symbols with no spaces", max_length=4096, advanced=True, legacy_paste=True,
+                      help="Only if you do not use the TOTP login: generate it on web.dhan.co under My Profile → Access DhanHQ APIs. "
+                           "It lasts 24 hours."),
         ),
     ),
     "coindcx": BrokerSpec(

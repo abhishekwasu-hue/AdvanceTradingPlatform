@@ -254,9 +254,9 @@ def _row(tenant_id: int, broker: str) -> BrokerCredentialRecord:
 # What each method needs, from the adapters' own requirements - the catalogue may ask for nothing else.
 NEEDED = {
     "upstox": {"analytics_token"},
-    "dhan": {"client_id", "access_token"},
+    "dhan": {"client_id", "pin", "totp_secret"},           # BRK-1 B: Dhan's TOTP login (the pasted token is the fallback)
     "zerodha": {"api_key", "api_secret"},
-    "fyers": {"api_key", "api_secret", "redirect_uri"},
+    "fyers": {"api_key", "api_secret"},                     # BRK-1 B: the Redirect URL is ATP's callback, never typed
     "angel_one": {"api_key", "client_id", "pin", "totp_secret"},
     "shoonya": {"client_id", "api_secret", "api_key", "totp_secret"},
     "coindcx": {"api_key", "api_secret"},
@@ -264,7 +264,10 @@ NEEDED = {
     "groww": {"api_key", "totp_secret"},
 }
 # Brokers whose official method cannot be done in one or two fields (docs/brokers/EASIEST_LOGIN.md says why).
-MORE_THAN_TWO = {"fyers": 3, "angel_one": 4, "shoonya": 4, "kotak_neo": 5}
+MORE_THAN_TWO = {"dhan": 3, "angel_one": 4, "shoonya": 4, "kotak_neo": 5}
+# BRK-1 B: the hidden fallback ways - connect fields (empty: the usual ones) and renew fields.
+FALLBACK = {"dhan": ({"client_id", "access_token"}, {"access_token"}), "zerodha": (set(), {"request_token"}),
+            "fyers": ({"api_key", "api_secret", "redirect_uri"}, {"request_token"})}
 # Part 1B: listed only with ui_v2 on for the organisation.
 
 
@@ -275,15 +278,29 @@ def test_catalog_shape_fields_only_what_the_method_needs():
     assert response.status_code == 200
     rows = response.json()
     assert {r["broker"] for r in rows} == set(available_brokers())                  # BRK-1: every broker, every organisation
+    # BRK-1 B: the brokers whose login returns to ATP carry the callback address to copy into their app; nobody else does.
+    served = {r["broker"]: r["redirect_url"] for r in rows}
+    assert served["zerodha"].endswith("/api/broker/zerodha/oauth/callback")
+    assert served["fyers"].endswith("/api/broker/fyers/oauth/callback")
+    assert all(url is None for b, url in served.items() if b not in ("zerodha", "fyers"))
     rows = cat.catalog()
     for row in rows:
         assert set(row) == {"broker", "name", "method", "fields", "how_to", "doc_url", "daily_renewal", "available", "renew_fields",
-                            "guide"}
-        assert row["method"] in ("analytics_token", "access_token", "login_code", "totp_auto", "api_key_secret")
+                            "guide", "fallback"}
+        assert row["method"] in ("analytics_token", "access_token", "oauth_redirect", "totp_auto", "api_key_secret")
         keys = [f["key"] for f in row["fields"]]
         assert set(keys) == NEEDED[row["broker"]] and len(keys) == len(set(keys))
         assert 1 <= len(keys) <= MORE_THAN_TWO.get(row["broker"], 2)
-        for f in row["fields"] + row["renew_fields"]:
+        # BRK-1 B: one button each morning - nothing to paste - for every broker; a paste only behind the fallback link.
+        assert row["renew_fields"] == []
+        if row["broker"] in FALLBACK:
+            want_connect, want_renew = FALLBACK[row["broker"]]
+            assert row["fallback"]["label"] and {f["key"] for f in row["fallback"]["fields"]} == want_connect
+            assert {f["key"] for f in row["fallback"]["renew_fields"]} == want_renew
+        else:
+            assert row["fallback"] is None
+        extra = (row["fallback"] or {}).get("fields", []) + (row["fallback"] or {}).get("renew_fields", [])
+        for f in row["fields"] + row["renew_fields"] + extra:
             assert set(f) <= {"key", "label", "kind", "placeholder"} and f["kind"] in ("secret", "text")
             assert f["key"] in BrokerCredentials.model_fields
         assert len(row["how_to"]) == 3 and all(s.endswith(".") and "_" not in s for s in row["how_to"])

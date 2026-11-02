@@ -167,29 +167,40 @@ def test_each_field_is_well_formed():
             # Tokens and codes are never something the new form asks a person to type, except Dhan's token (UI-7).
             if field.kind == fs.KIND_CODE or field.key == "access_token":
                 assert field.entered_by != fs.BY_USER or name == "dhan", where
-    assert fs.BROKER_FIELD_SPECS["dhan"].get("access_token").label == "Paste your Dhan access token"
+    # BRK-1 B: Dhan logs in with its TOTP API; the pasted token is the fallback, under Advanced.
+    dhan_token = fs.BROKER_FIELD_SPECS["dhan"].get("access_token")
+    assert dhan_token.label == "Access token (instead of the TOTP login)" and dhan_token.advanced and dhan_token.accepted_from_client
 
 
 def test_the_map_agrees_with_the_login_sets_and_the_callback_routes():
     specs = fs.BROKER_FIELD_SPECS
     assert {n for n, s in specs.items() if s.login_method == fs.LOGIN_API_KEY} == tl.PERMANENT_KEY_BROKERS
     oauth = {n for n, s in specs.items() if s.login_method == fs.LOGIN_OAUTH}
-    assert oauth == tl.OAUTH_BROKERS | set(tl.LOGIN_URL_BROKERS) | set(tl.OAUTH_CALLBACK_BROKERS)
-    assert {n for n, s in specs.items() if s.login_method == fs.LOGIN_TOTP} == {"angel_one", "shoonya", "kotak_neo", "groww"}
+    # BRK-1 B: no Upstox OAuth in the map (the owner: Analytics Token only) - its backend routes stay for older rows.
+    assert oauth == set(tl.LOGIN_URL_BROKERS) | set(tl.OAUTH_CALLBACK_BROKERS)
+    assert specs["upstox"].login_method == fs.LOGIN_TOKEN and specs["upstox"].oauth_start_path is None
+    assert {n for n, s in specs.items() if s.login_method == fs.LOGIN_TOTP} == {"angel_one", "shoonya", "kotak_neo", "groww", "dhan"}
     routes = {(r.method, r.path) for r in iter_api_routes(app)}
     for name in oauth:
         assert ("GET", specs[name].oauth_start_path) in routes and ("GET", specs[name].oauth_callback_path) in routes, name
     for name, path in tl.OAUTH_CALLBACK_BROKERS.items():
         assert specs[name].oauth_callback_path == path
-    assert specs["upstox"].oauth_callback_path == broker_routes.UPSTOX_CALLBACK_PATH
+    assert specs["upstox"].oauth_callback_path is None
+    assert ("GET", broker_routes.UPSTOX_CALLBACK_PATH) in routes        # kept for older rows; no UI offers it
     for name in set(specs) - tl.PERMANENT_KEY_BROKERS:
         assert name in tl.TOKEN_DAILY_EXPIRY_IST, name
 
 
 def test_the_spec_absorbs_the_upstox_analytics_token_entry():
     field = fs.BROKER_FIELD_SPECS["upstox"].get("analytics_token")
-    assert field is not None and field.kind == fs.KIND_SECRET and not field.required and field.advanced
-    assert "Analytics" in field.help
+    # BRK-1 B: the Analytics Token is THE Upstox field (required unless an older row keeps its key / token), not advanced;
+    # the user-facing text no longer describes an Upstox OAuth login with a key and secret.
+    assert field is not None and field.kind == fs.KIND_SECRET and field.required and not field.advanced
+    assert set(field.required_unless) == {"api_key", "access_token"} and "Analytics" in field.help
+    spec = fs.BROKER_FIELD_SPECS["upstox"]
+    assert "Analytics Token" in spec.tile_line and "Log in" not in spec.tile_line and "OAuth" not in spec.login_note
+    for key in ("api_key", "api_secret", "redirect_uri"):
+        assert spec.get(key).advanced and not spec.get(key).required
 
 
 # --- GET /api/broker/specs -------------------------------------------------------------------------------------------
@@ -227,7 +238,7 @@ def test_specs_redirect_url_comes_from_the_setting(monkeypatch):
     monkeypatch.setattr(app_config, "BROKER_OAUTH_REDIRECT_BASE_URL", "https://atp.example.com")
     by_name = {b["name"]: b for b in client.get("/api/broker/specs", headers=headers).json()["brokers"]}
     assert by_name["fyers"]["readonly"]["redirect_url"] == "https://atp.example.com/api/broker/fyers/oauth/callback"
-    assert by_name["upstox"]["readonly"]["redirect_url"] == "https://atp.example.com/api/broker/upstox/oauth/callback"
+    assert by_name["upstox"]["readonly"]["redirect_url"] is None          # BRK-1 B: no Upstox OAuth offered
 
 
 # --- server validation with the same map -------------------------------------------------------------------------------
@@ -259,7 +270,7 @@ def test_bad_format_is_refused_without_echoing_the_value():
     text = _errors(_store(headers, "fyers", {"api_key": "not an app id", "api_secret": FYERS_SECRET}))
     assert "App ID does not look right" in text
     text = _errors(_store(headers, "dhan", {"client_id": "12 ab", "access_token": "too-short"}))
-    assert "Client ID" in text and "Paste your Dhan access token" in text
+    assert "Client ID" in text and "Access token (instead of the TOTP login)" in text
 
 
 def test_patterns_only_check_what_the_brokers_document():
@@ -613,7 +624,9 @@ def test_validate_credentials_unit():
     assert fs.validate_credentials("coindcx", merged, merged) == []
     bad = fs.validate_credentials("coindcx", {"api_key": COINDCX_KEY + " zz"}, merged)
     assert [e.field for e in bad] == ["api_key"] and COINDCX_KEY not in bad[0].message
-    assert fs.validate_credentials("upstox", {"api_key": UPSTOX_KEY}, {"api_key": UPSTOX_KEY})[0].message == "Upstox needs your API secret."
+    # BRK-1 B: an Upstox save needs the Analytics Token (an older row's key still counts in its place).
+    assert fs.validate_credentials("upstox", {}, {})[0].message == "Upstox needs your Analytics Token."
+    assert fs.validate_credentials("upstox", {"api_key": UPSTOX_KEY}, {"api_key": UPSTOX_KEY}) == []
 
 
 # --- security review follow-ups (UI2-5 review) ---------------------------------------------------------------------------

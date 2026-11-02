@@ -108,7 +108,7 @@ def _broker(server, **overrides):
 def test_helpers_totp_expiry_and_credential_requirements():
     assert _totp_code("123456") == "123456" and _totp_code(SECRET) == pyotp.TOTP(SECRET).now()
     assert _parse_expiry("30OCT2026") == "2026-10-30" and _parse_expiry("") is None
-    assert TOKEN_DAILY_EXPIRY_IST["angel_one"].hour == 5
+    assert TOKEN_DAILY_EXPIRY_IST["angel_one"].hour == 0          # BRK-1 B: SmartAPI sessions end at 12 midnight
     with pytest.raises(BrokerAuthenticationError):
         AngelOneBroker(BrokerCredentials(client_id="A1", pin="1"))
     with pytest.raises(BrokerAuthenticationError):

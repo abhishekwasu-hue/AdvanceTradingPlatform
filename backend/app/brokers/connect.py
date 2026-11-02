@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,8 +34,24 @@ from app.brokers import catalog as cat
 from app.brokers import upstox_analytics as ua
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import BrokerCredentials
-from app.brokers.routes import _byob, _clean_label, _code_from_paste, _ensure_holder, _probe_quietly, run_authentication, save_credentials
-from app.brokers.token_lifecycle import LOGIN_URL_BROKERS, _is_auth_failure, get_credential_record, load_credentials, token_is_usable
+from app.brokers.routes import (
+    _byob,
+    _clean_label,
+    _code_from_paste,
+    _ensure_holder,
+    _probe_quietly,
+    oauth_callback_url,
+    run_authentication,
+    save_credentials,
+)
+from app.brokers.token_lifecycle import (
+    LOGIN_URL_BROKERS,
+    OAUTH_CALLBACK_BROKERS,
+    _is_auth_failure,
+    get_credential_record,
+    load_credentials,
+    token_is_usable,
+)
 from app.core.enums import BrokerTokenStatus
 from app.core.rate_limit import user_rate_limit
 from app.db.models import BrokerCredentialRecord, User
@@ -85,6 +101,10 @@ class CatalogEntry(BaseModel):
     renew_fields: List[CatalogField] = []
     # Part 1B: the connect guide - {"points": [...], "links": [{"label", "url"}]} - or None.
     guide: Optional[Dict[str, Any]] = None
+    # BRK-1 B: the hidden fallback way - {"label", "fields", "renew_fields"} - or None (catalog.py).
+    fallback: Optional[Dict[str, Any]] = None
+    # BRK-1 B: the address of ATP's own callback, to copy into the broker app's Redirect URL (Zerodha, Fyers); else None.
+    redirect_url: Optional[str] = None
 
 
 class Connection(BaseModel):
@@ -147,6 +167,16 @@ def _clean_fields(entry: cat.BrokerEntry, raw: Dict[str, Any], allowed: Tuple[st
     return out
 
 
+def _way(entry: cat.BrokerEntry, values: Dict[str, str], *, renewing: bool) -> Tuple[Tuple[str, ...], bool]:
+    """BRK-1 B: which way the sent fields follow - (the keys that way needs, True for the fallback way). The fallback way is
+    chosen by a key only it uses (Dhan's pasted token, the pasted login address, Fyers' own Redirect URL)."""
+    main = entry.renew_keys() if renewing else entry.field_keys()
+    fallback = entry.fallback_renew_keys() if renewing else (entry.fallback_keys() or (entry.field_keys() if entry.fallback_label else ()))
+    if entry.fallback_label and any(k in values and k not in main for k in fallback):
+        return fallback, True
+    return main, False
+
+
 def _require(entry: cat.BrokerEntry, values: Dict[str, str], keys: Tuple[str, ...]) -> None:
     missing = [k for k in keys if not values.get(k)]
     if missing:
@@ -162,13 +192,16 @@ def _no_spaces(entry: cat.BrokerEntry, values: Dict[str, str], keys: Tuple[str, 
 
 # --- messages ---------------------------------------------------------------------------------------
 
-def _rejected_message(entry: cat.BrokerEntry, *, renewing: bool) -> str:
-    if entry.method == cat.LOGIN_CODE and renewing:
+def _rejected_message(entry: cat.BrokerEntry, *, renewing: bool, method: Optional[str] = None) -> str:
+    """`method`: the way this login actually went (BRK-1 B: a pasted fallback - a token, a login address - reads as that
+    way, not as the broker's usual one)."""
+    method = method or entry.method
+    if method == cat.LOGIN_CODE and renewing:
         return (f"{entry.name} did not accept that login; press Log in again and paste the new address right away, as it "
                 "works only once and only for a few minutes.")
-    if entry.method == cat.ACCESS_TOKEN:
+    if method == cat.ACCESS_TOKEN:
         return f"{entry.name} did not accept this token; generate a new one and paste it here."
-    if entry.method == cat.TOTP_AUTO:
+    if method == cat.TOTP_AUTO:
         return f"{entry.name} did not accept these details; check them, including the TOTP secret, and try again."
     return f"{entry.name} did not accept these details; check them and paste them again."
 
@@ -177,13 +210,19 @@ def _unreachable_message(entry: cat.BrokerEntry) -> str:
     return f"Could not reach {entry.name} just now; your details are saved, so try again in a minute."
 
 
-def _failure_message(entry: cat.BrokerEntry, exc: BaseException, *, renewing: bool) -> str:
+def unreachable(exc: BaseException) -> bool:
+    """A failure that says nothing about the details (network, timeout, the broker's 5xx or rate limit)."""
     if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError, OSError)):
-        return _unreachable_message(entry)
-    if isinstance(exc, BrokerAPIError) and exc.status_code is not None and (exc.status_code >= 500 or exc.status_code == 429):
+        return True
+    return isinstance(exc, BrokerAPIError) and exc.status_code is not None and (exc.status_code >= 500 or exc.status_code == 429)
+
+
+def failure_message(entry: cat.BrokerEntry, exc: BaseException, *, renewing: bool, method: Optional[str] = None) -> str:
+    """The one plain sentence for a failed login (never the broker's own text, never a value)."""
+    if unreachable(exc):
         return _unreachable_message(entry)
     if isinstance(exc, (BrokerAuthenticationError, BrokerAPIError)) or (isinstance(exc, Exception) and _is_auth_failure(exc)):
-        return _rejected_message(entry, renewing=renewing)
+        return _rejected_message(entry, renewing=renewing, method=method)
     return f"{entry.name} did not answer as expected; try again in a minute, and if it keeps failing remove and connect again."
 
 
@@ -216,12 +255,17 @@ def _analytics_state(creds: Optional[BrokerCredentials], now: datetime) -> Optio
     return "unverified"
 
 
-def _session_message(entry: cat.BrokerEntry, started: bool) -> str:
+def _session_message(entry: cat.BrokerEntry, started: bool, *, auto: bool = True) -> str:
+    """`auto` False: a TOTP-login broker whose row has no TOTP secret (a Dhan token pasted as the fallback)."""
     opening = f"Today's {entry.name} session has ended" if started else f"{entry.name} is not logged in today"
-    if entry.method == cat.ACCESS_TOKEN:
+    if entry.method == cat.ACCESS_TOKEN or (entry.method == cat.TOTP_AUTO and not auto):
         return f"{opening}; paste today's token to reconnect."
     if entry.method == cat.LOGIN_CODE:
         return f"{opening}; press Log in, sign in and paste the address you land on."
+    if entry.method == cat.OAUTH_REDIRECT:
+        return f"{opening}; press Log in and sign in on {entry.name} - ATP finishes the login by itself."
+    if entry.method == cat.TOTP_AUTO:
+        return f"{opening}; ATP logs in for you before the market opens, or press Renew to log in now."
     return f"{opening}; press Log in to start today's session."
 
 
@@ -259,6 +303,18 @@ def connection_view(record: BrokerCredentialRecord, now: Optional[datetime] = No
         return view(CONNECTED, "Connected.")
     if entry is None:
         return view(NOT_WORKING, f"{name} cannot be connected here yet; remove this connection.")
+    if entry.daily_renewal and entry.method == cat.TOTP_AUTO:
+        # BRK-1 B: today's automatic login gave up -> "Not working" with its plain reason; Renew stays as the fallback.
+        try:
+            creds = load_credentials(record)
+        except Exception:  # noqa: BLE001 - an unreadable payload (key rotated): the row cannot be used
+            return view(NOT_WORKING, f"The saved {name} details can no longer be read; remove this connection and connect again.")
+        from app.brokers import auto_login
+        failed = auto_login.failed_today(creds, now)
+        if failed:
+            return view(NOT_WORKING, failed, renew=True)
+        pasted = bool(entry.fallback_renew_fields) and not creds.totp_secret     # Dhan connected with a pasted token
+        return view(NEEDS_LOGIN, _session_message(entry, record.last_verified_at is not None, auto=not pasted), renew=True)
     if entry.daily_renewal:
         return view(NEEDS_LOGIN, _session_message(entry, record.last_verified_at is not None), renew=True)
     if record.token_status == BrokerTokenStatus.EXPIRED.value:
@@ -269,10 +325,16 @@ def connection_view(record: BrokerCredentialRecord, now: Optional[datetime] = No
 # --- routes -------------------------------------------------------------------------------------------
 
 @router.get("/catalog", response_model=List[CatalogEntry])
-async def broker_catalog(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
+async def broker_catalog(request: Request, user: User = Depends(get_current_user),
+                         session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
     """The easiest official way to connect each broker and only the fields it needs (static; see catalog.py). Every broker
-    is listed for every organisation (BRK-1: no ui_v2-only tile)."""
-    return cat.catalog()
+    is listed for every organisation (BRK-1: no ui_v2-only tile). BRK-1 B: a broker whose login returns to ATP's callback
+    carries that callback's address (`redirect_url`), the one value the user copies into the broker's app."""
+    rows = cat.catalog()
+    for row in rows:
+        path = OAUTH_CALLBACK_BROKERS.get(row["broker"]) if row["method"] == cat.OAUTH_REDIRECT else None
+        row["redirect_url"] = oauth_callback_url(request, path) if path else None
+    return rows
 
 
 @router.get("/connections", response_model=List[Connection])
@@ -355,7 +417,7 @@ async def _holder_check(session: AsyncSession, user: User, broker: str, label: s
 
 
 async def _verify(entry: cat.BrokerEntry, session: AsyncSession, user: User, record: BrokerCredentialRecord, label: str, *,
-                  renewing: bool) -> Tuple[str, str]:
+                  renewing: bool, method: Optional[str] = None) -> Tuple[str, str]:
     try:
         profile, exc = await run_authentication(session, user, record, label)
     except HTTPException:
@@ -366,31 +428,51 @@ async def _verify(entry: cat.BrokerEntry, session: AsyncSession, user: User, rec
     if exc is None:
         return CONNECTED, "Connected."
     logger.info("Broker %s login failed for tenant %s: %s", entry.broker, user.tenant_id, type(exc).__name__)
-    return NOT_WORKING, _failure_message(entry, exc, renewing=renewing)
+    return NOT_WORKING, failure_message(entry, exc, renewing=renewing, method=method)
 
 
 async def _connect_other(entry: cat.BrokerEntry, body: ConnectBody, user: User, session: AsyncSession, label: str, *,
                          renewing: bool) -> Tuple[str, str]:
     if renewing and not entry.daily_renewal:
         raise _Refusal(f"{entry.name} needs no daily login; use Connect to change its details.")
-    keys = entry.renew_keys() if renewing else entry.field_keys()
-    values = _clean_fields(entry, body.fields, keys)
+    main = entry.renew_keys() if renewing else entry.field_keys()
+    fallback = entry.fallback_renew_keys() if renewing else entry.fallback_keys()
+    values = _clean_fields(entry, body.fields, main + tuple(k for k in fallback if k not in main))
+    keys, by_fallback = _way(entry, values, renewing=renewing)
     _require(entry, values, keys)
     # A Shoonya password may contain spaces; every key, token, code and address may not.
     _no_spaces(entry, values, tuple(k for k in values if not (entry.broker == "shoonya" and k == "api_secret")))
+    # BRK-1 B: the way this login really goes, for its messages - a pasted token or login address reads as that way.
+    method = (cat.ACCESS_TOKEN if cat.ACCESS_TOKEN in values else cat.LOGIN_CODE if "request_token" in values
+              else entry.method) if by_fallback else entry.method
 
     if not renewing:
         await _holder_check(session, user, entry.broker, label, values, login=False)
-        record, _ = await save_credentials(session, user, entry.broker, label, BrokerCredentials.model_validate(values))
-        if entry.method == cat.LOGIN_CODE:
-            # The key and secret cannot be proven without a login; the next step is the broker's own login page.
+        # BRK-1 B: a connect chooses its way, so the stored fields only the other way uses go (Dhan: new TOTP details drop
+        # an old pasted token, a pasted token drops the TOTP details; Fyers: the usual way drops an app's own Redirect URL).
+        usual, alt = set(entry.field_keys()), set(entry.fallback_keys() or entry.field_keys())
+        drop = tuple(sorted((usual - alt) if by_fallback else (alt - usual)))
+        record, _ = await save_credentials(session, user, entry.broker, label, BrokerCredentials.model_validate(values), drop=drop)
+        if entry.method == cat.OAUTH_REDIRECT and not by_fallback:
+            # The key and secret cannot be proven without a login; the next step is the broker's own login page, which
+            # returns to ATP's callback by itself.
+            return NEEDS_LOGIN, f"Saved; now press Log in and sign in to {entry.name} - ATP finishes the login by itself."
+        if entry.method in (cat.LOGIN_CODE, cat.OAUTH_REDIRECT):
             return NEEDS_LOGIN, f"Saved; now press Log in, sign in to {entry.name} and paste the address you land on."
-        return await _verify(entry, session, user, record, label, renewing=False)
+        return await _verify(entry, session, user, record, label, renewing=False, method=method)
 
     existing = await _holder_check(session, user, entry.broker, label, values, login=True)
     if existing is None:
         raise _Refusal(f"Connect {entry.name} first, then log in.")
-    if entry.method == cat.LOGIN_CODE:
+    if entry.method == cat.OAUTH_REDIRECT and "request_token" not in values:
+        raise _Refusal(f"Press Log in and sign in to {entry.name}; ATP finishes the login by itself.", status=NEEDS_LOGIN)
+    if entry.method == cat.TOTP_AUTO and entry.fallback_renew_fields and not values:
+        stored = _reload_credentials(existing)
+        if stored is not None and not stored.totp_secret:
+            # A Dhan connection made with a pasted token: there is no secret to log in with.
+            raise _Refusal(f"Paste today's {entry.name} access token, or connect {entry.name} again with the TOTP login.",
+                           status=NEEDS_LOGIN)
+    if "request_token" in values:
         stored = _reload_credentials(existing)
         if stored is None or not stored.api_key or not stored.api_secret:
             raise _Refusal(f"Connect {entry.name} with its key and secret first, then log in.")
@@ -407,7 +489,7 @@ async def _connect_other(entry: cat.BrokerEntry, body: ConnectBody, user: User, 
         record, _ = await save_credentials(session, user, entry.broker, label, BrokerCredentials.model_validate(values))
     else:
         record = existing                     # a TOTP login: the stored secret makes today's code
-    return await _verify(entry, session, user, record, label, renewing=True)
+    return await _verify(entry, session, user, record, label, renewing=True, method=method)
 
 
 async def _connect_upstox(entry: cat.BrokerEntry, body: ConnectBody, user: User, session: AsyncSession,

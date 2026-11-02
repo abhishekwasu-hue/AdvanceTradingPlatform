@@ -308,7 +308,7 @@ def test_greeks_portfolio_and_preview_read_only_the_viewers_own(spy):
     assert a_cred not in built
 
     async def greeks(session, user):
-        return await trading_routes.open_position_greeks(user=user, session=session)
+        return await trading_routes.open_position_greeks(user=user, session=session, mine=False, for_underlying=None)   # direct call: no FastAPI defaults (M76 MP-4 added the Query)
     assert _outcome(b, greeks)[0] == "value"                             # no open option rows: nothing read, no A
     assert a_cred not in built
 

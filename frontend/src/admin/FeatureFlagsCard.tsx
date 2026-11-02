@@ -2,7 +2,7 @@ import { Search } from "lucide-react";
 import { useId, useState } from "react";
 import { Card } from "../components/ui";
 import type { FeatureFlags } from "../types";
-import { FLAG_FILTERS, groupFlags, statusTone, type FlagFilter } from "./flagList";
+import { FLAG_FILTERS, flagState, groupFlags, stateLine, stateTone, type FlagFilter } from "./flagList";
 import LiveOrgsBlock from "./LiveOrgsBlock";
 
 /**
@@ -11,6 +11,8 @@ import LiveOrgsBlock from "./LiveOrgsBlock";
  * unfinished / owner decision) and the switch. A flag whose dependency is off cannot be turned on here ("Needs ...
  * first"); turning one off always works. ADM-1 (owner 30 Oct): finer categories, each folded with "N of M on"; a filter
  * (On / Off / Needs setup / Owner decision); the flag name, default, needs, note and allow-list fold into Details. Admin-only: the list is served only to a SUPER_ADMIN with two-factor.
+ * M80 (owner 1 Nov): one line per row - the re-audited state chip, the reason or setup item, where to do it and the
+ * live ✓ / ✗ checks; a "Not built yet" flag's Turn on is disabled with its reason (the server refuses it too).
  */
 export interface FeatureFlagsCardProps {
   flags: FeatureFlags | null;
@@ -29,6 +31,7 @@ const TONES = {
   up: "border-up/40 text-up",
   warn: "border-warn/40 bg-warn-tint text-warn",
   brand: "border-brand/40 text-brand",
+  down: "border-down/40 text-down",
   muted: "border-border text-fg-muted",
 } as const;
 
@@ -52,7 +55,8 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
         <p className="mt-1">
           Turning a flag off with an organisation allow-list keeps it on for those organisations only (staged rollouts,
           beta access). Exits and PAPER trading are never behind a flag. A trader never sees a flag name: a page that is
-          off says "Coming soon". Status is the audit judgement - try each flag on staging first.
+          off says "Coming soon". The status is the re-audit against the code; a ✓ / ✗ is a live check of this
+          server. A feature that is not built yet cannot be turned on.
         </p>
       </details>
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -87,15 +91,30 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
                 const opensLive = !!flag.owner_only && (flag.opens_live_when_on ? !flag.on : flag.on);
                 const confirmText = flag.confirm_text ?? "ENABLE LIVE";
                 const confirmed = (typed[name] ?? "") === confirmText;
+                const state = flagState(flag);
+                const stateLabel = flag.state_label ?? flag.status_label;
+                const line = stateLine(flag);
+                // M80 F4: a feature that is not built yet cannot be turned on (the server refuses it too); off always works.
+                const notBuilt = state === "not_built";
                 return (
                   <li key={name} data-flag={name} className="grid gap-2 py-2 pl-3 text-xs md:grid-cols-[minmax(0,1fr)_auto]">
                     <div className="min-w-0 space-y-0.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-fg">{flag.plain ?? name}</span>
-                        {flag.status_label && (
-                          <span data-flag-status={flag.status} className={`rounded-full border px-2 py-0.5 ${TONES[statusTone(flag.status)]}`}>{flag.status_label}</span>
-                        )}
-                      </div>
+                      <div className="font-semibold text-fg">{flag.plain ?? name}</div>
+                      {stateLabel && (
+                        // M80 F2: one line - the state chip, then the reason (or the setup item), then where; F3 checks.
+                        <div data-flag-state-line className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span data-flag-status={flag.status} data-flag-state={state}
+                            className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 ${TONES[stateTone(state)]}`}>{stateLabel}</span>
+                          {line.reason && <span data-flag-state-reason className="min-w-0 break-words text-fg">{line.reason}</span>}
+                          {line.where && <span data-flag-state-where className="min-w-0 break-words text-fg-muted">› {line.where}</span>}
+                          {(flag.checks ?? []).map((c) => (
+                            <span key={c.id} data-flag-check={c.id} data-ok={c.ok}
+                              className={`shrink-0 whitespace-nowrap font-medium ${c.ok ? "text-up" : "text-down"}`}>
+                              <span aria-hidden>{c.ok ? "✓" : "✗"}</span> {c.label}<span className="sr-only">{c.ok ? ": yes" : ": no"}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {flag.unavailable_reason && <div data-flag-unavailable className="font-medium text-warn">{flag.unavailable_reason}</div>}
                       {blocked && <div data-flag-blocked className="font-medium text-warn">Needs {blockedBy.join(", ")} first</div>}
                       <details className="text-fg-muted" data-flag-details>
@@ -109,7 +128,7 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
                           </div>
                           {flag.fate_note && <div data-flag-fate={flag.fate}>{flag.fate_note}</div>}
                           <div>{flag.description}</div>
-                          {!flag.on && flag.fate !== "removed_from_view" && !flag.owner_only && (
+                          {!flag.on && flag.fate !== "removed_from_view" && !flag.owner_only && !notBuilt && (
                             <div className="flex flex-wrap items-center gap-2 pt-1">
                               <span>Keep it on for these organisations only:</span>
                               <input aria-label={`Allow-listed organisation ids for ${flag.plain ?? name}`} placeholder="e.g. 3, 17"
@@ -146,8 +165,8 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
                         <button type="button" disabled={busy} onClick={() => onSet(name, false)}
                           className="rounded border border-down/40 px-2 py-0.5 text-down hover:bg-down/10">Turn off</button>
                       ) : flag.fate === "removed_from_view" ? null : (
-                        <button type="button" disabled={busy || blocked} onClick={() => onSet(name, true)}
-                          title={blocked ? `Needs ${blockedBy.join(", ")} first` : undefined}
+                        <button type="button" disabled={busy || blocked || notBuilt} onClick={() => onSet(name, true)} data-flag-turn-on
+                          title={notBuilt ? `Not built yet: ${line.reason}` : blocked ? `Needs ${blockedBy.join(", ")} first` : undefined}
                           className="rounded bg-brand px-2 py-0.5 font-semibold text-on-brand hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-50">Turn on</button>
                       )}
                     </div>

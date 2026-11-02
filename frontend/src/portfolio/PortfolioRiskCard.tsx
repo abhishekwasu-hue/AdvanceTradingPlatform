@@ -38,7 +38,7 @@ export function PortfolioRiskView({ view }: { view: PortfolioRiskView }) {
             <StatTile label={t("tiles.beta")} value={<Sub main={v2 ? <Signed value={view.beta.net} kind="count" className="text-t20 sm:text-2xl" /> : signed(view.beta.net)} sub={t("ofCapital", { pct: pct(view.beta.net_pct) })} />} />
           </div>
           {view.direction.warning && (
-            <p role="note" className="text-xs text-warn" data-testid="one-sided"><strong>{t("notes.oneSided")}:</strong> {view.direction.warning}</p>
+            <p role="note" className="text-xs text-fg-muted" data-testid="one-sided"><strong>{t("notes.oneSided")}:</strong> {view.direction.warning}</p>
           )}
           <div className="overflow-x-auto">
             <div className="text-xs font-medium text-fg">{t("buckets.title")}</div>

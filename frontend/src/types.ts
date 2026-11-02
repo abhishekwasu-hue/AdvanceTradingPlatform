@@ -2906,7 +2906,9 @@ export interface TicketSizing {
   risk_pct_of_capital: number | null; gauge: number | null; within_cap: boolean; override: boolean; gauge_zone: "ok" | "override" | "over";
 }
 
-export type TicketSetup = "PULLBACK_AT_LEVEL" | "SR_FLIP" | "BREAKOUT_RETEST" | "RANGE_EDGE" | "OI_IV" | "OTHER";
+/** M76-4: his own words (free text, at most 30 characters; "" = not given). Plans stored before M76 carry a key such as
+ *  "PULLBACK_AT_LEVEL" - the server sends its label. */
+export type TicketSetup = string;
 
 /** Z5 / P1-d: the plan the ticket is built from (POST /api/paper/ticket/preview and /api/paper/ticket). */
 export interface TicketPlan {
@@ -2921,7 +2923,10 @@ export interface TicketView {
   entry: number; stop_loss: number; target: number; time_stop: string | null; invalidation: string | null;
   /** null: no minimum (TT-12, only the trader's own minimum is checked). */
   reward_risk: number | null; min_reward_risk: number | null; sizing: TicketSizing;
+  /** M76-1: his own journal checklist rules only (none saved = an empty list, no line). */
   checklist: { key: string; label: string; checked: boolean; auto: boolean }[]; checklist_complete: boolean;
+  /** Facts read against his own minimum reward:risk and his own cap (no longer checklist items). */
+  auto_checks?: { key: string; label: string; checked: boolean }[];
   costs: TicketCostLine | null; errors: string[]; refusals: string[]; warnings: string[]; can_place: boolean;
   confirm_label: string | null; as_of: string;
 }
@@ -2962,7 +2967,9 @@ export interface PaperRiskStatus {
   today: { realised: number; open_marks: number; pnl: number; worst: number; limit: number; used: number | null; entries: number; max_entries: number };
   lockout: { kind: string; reason: string; pnl: number; limit: number; locked_at: string; until: string } | null;
   overrides: { today: number; total: number }; override_max_multiple: number; override_min_reason_chars: number;
-  vix_gate: VixGateStatus; setups: Record<TicketSetup, string>; checklist: Record<string, string>; exits: string; as_of: string;
+  vix_gate: VixGateStatus;
+  /** M76-4: setup names from his own earlier plans (offered, never required); M76-1: his own checklist rules. */
+  setups: Record<string, string>; checklist: Record<string, string>; exits: string; as_of: string;
 }
 
 /** Z5 (Trade strike_breach_model): one short strike's breach chance before expiry (model estimate). */

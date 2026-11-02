@@ -1,18 +1,26 @@
 import { describe, expect, it } from "vitest";
 import type { TicketCostLine } from "../types";
-import { EMPTY_FORM, costRows, gauge, lockoutLine, money, pendingLine, placedMessage, planFromForm } from "./paperTicket";
+import { EMPTY_FORM, checklistNote, costRows, gauge, lockoutLine, money, pendingLine, placedMessage, planFromForm } from "./paperTicket";
 
 describe("plan-before-trade ticket helpers (Z5 / P1-d)", () => {
   it("builds the plan from the form, or says what is missing", () => {
     expect(planFromForm(EMPTY_FORM)).toEqual({ plan: null, missing: ["symbol", "entry", "stop", "target"] });
     const { plan } = planFromForm({ ...EMPTY_FORM, symbol: " reliance ", entry: "100", stop_loss: "98", target: "104", quantity: "", time_stop: " ",
                                     checklist: { trend_aligned: true }, override: false, override_reason: "ignored" });
-    expect(plan).toEqual({ symbol: "RELIANCE", direction: "LONG", setup: "PULLBACK_AT_LEVEL", entry: 100, stop_loss: 98, target: 104, time_stop: null,
+    // M76-4 (owner-approved): the setup is his own words; an empty form sends "" (not given), never an ATP pick.
+    expect(plan).toEqual({ symbol: "RELIANCE", direction: "LONG", setup: "", entry: 100, stop_loss: 98, target: 104, time_stop: null,
                            invalidation: null, checklist: { trend_aligned: true }, quantity: null, override: false, override_reason: null });
     expect(planFromForm({ ...EMPTY_FORM, symbol: "X", entry: "-1", stop_loss: "1", target: "2" }).missing).toEqual(["entry"]);
+    expect(planFromForm({ ...EMPTY_FORM, symbol: "X", entry: "10", stop_loss: "9", target: "12", setup: "  my retest " }).plan?.setup).toBe("my retest");
     const over = planFromForm({ ...EMPTY_FORM, symbol: "X", entry: "10", stop_loss: "9", target: "12", quantity: "50", override: true, override_reason: " because " });
     expect(over.plan?.quantity).toBe(50);
     expect(over.plan?.override_reason).toBe("because");
+  });
+
+  it("says his own checklist as a count only, and nothing without rules or when all are ticked (M76-1)", () => {
+    expect(checklistNote({})).toBeNull();
+    expect(checklistNote({ "Trend on my side": true })).toBeNull();
+    expect(checklistNote({ "Trend on my side": true, "Area marked": false, "Candle closed": true })).toBe("your checklist 2 of 3 ticked");
   });
 
   it("draws the gauge from the server's fraction and zone, never past a full arc", () => {

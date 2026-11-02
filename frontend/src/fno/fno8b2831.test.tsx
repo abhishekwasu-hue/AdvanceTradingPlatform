@@ -70,7 +70,7 @@ describe("FNO-8B-28 his own liquidity limits: the stored value", () => {
 });
 
 describe("FNO-8B-28 the liquidity line with his own limits", () => {
-  it("off (the default): the line is exactly the comparison with the chain, as before", () => {
+  it("off (the default): the line is exactly the leg's facts, as without limits (M76-2)", () => {
     const l = legLiquidity(ladder(), 24600, "CE", "24600 CE");
     expect(liquidityLine([l], true, null)).toEqual(liquidityLine([l]));
     expect(liquidityLine([l], true, { on: false, max_spread_pct: 0.5, min_oi: 1 })).toEqual(liquidityLine([l]));
@@ -79,10 +79,10 @@ describe("FNO-8B-28 the liquidity line with his own limits", () => {
   it("on: says the strike is inside his limits, naming them", () => {
     const line = liquidityLine([legLiquidity(ladder(), 24600, "CE", "24600 CE")], true, ON());
     expect(line).toMatchObject({ tone: "info", note: LIMITS_NOTE });
-    expect(line?.text).toBe("Liquidity: bid-ask gap 1.00 (1.1% of the price), open interest 2.01 L, volume 50,000 today. "
+    expect(line?.text).toBe("Liquidity: bid 90.50, ask 91.50, bid-ask gap 1.00 (1.1% of the price), open interest 2.01 L, volume 50,000 today. "
       + "Inside your own limits (bid-ask gap up to 2%, open interest at least 1 L).");
   });
-  it("on: says what is outside his limits, even where the chain comparison finds nothing thin", () => {
+  it("on: says what is outside his limits - the only case the line warns (M76-2)", () => {
     const l = legLiquidity(ladder(), 24600, "CE", "24600 CE");
     const line = liquidityLine([l], true, ON({ max_spread_pct: 0.5, min_oi: 300_000 }));
     expect(line?.tone).toBe("warn");

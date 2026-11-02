@@ -18,7 +18,7 @@ import ticketSource from "./OrderTicketV2.tsx?raw";
 import { Review } from "./OrderTicketV2";
 import type { PosLeg } from "./positionInsights";
 import {
-  CHECKS_NOTE, EVENTS_UNREAD, MIN_TO_COMPARE, NO_CHAIN, eventLine, gapPct, legLiquidity, liquidityLine, marginLine, type EventRisk,
+  CHECKS_NOTE, EVENTS_UNREAD, NO_CHAIN, eventLine, gapPct, legLiquidity, liquidityLine, marginLine, type EventRisk,
 } from "./riskParts";
 import { RiskChecksV2 } from "./RiskPartsV2";
 import riskPartsSource from "./RiskPartsV2.tsx?raw";
@@ -73,38 +73,33 @@ function ladder(): ChainRow[] {
   });
 }
 
-describe("8b-d the liquidity part", () => {
+describe("8b-d the liquidity part (M76-2, owner-approved: facts only, no comparison with other strikes)", () => {
   it("states a liquid strike's facts", () => {
     const l = legLiquidity(ladder(), 24600, "CE", "24600 CE");
-    expect(l).toMatchObject({ onScreen: true, wide: false, lowOi: false });
-    expect(liquidityLine([l])).toMatchObject({ tone: "info", text: "Liquidity: bid-ask gap 1.00 (1.1% of the price), open interest 2.01 L, volume 50,000 today." });
+    expect(l).toEqual({ label: "24600 CE", onScreen: true, bid: 90.5, ask: 91.5, ltp: 91, oi: 201_000, volume: 50_000 });
+    expect(liquidityLine([l])).toMatchObject({ tone: "info",
+      text: "Liquidity: bid 90.50, ask 91.50, bid-ask gap 1.00 (1.1% of the price), open interest 2.01 L, volume 50,000 today." });
   });
-  it("warns on a wide gap, low open interest and no trades today, compared with the chain on screen", () => {
-    const l = legLiquidity(ladder(), 25400, "CE", "25400 CE");
-    expect(l).toMatchObject({ wide: true, lowOi: true, volume: 0 });
-    const line = liquidityLine([l]);
-    expect(line?.tone).toBe("warn");
-    expect(line?.text).toContain("wider than most strikes on screen");
-    expect(line?.text).toContain("open interest 900, among the lowest on this side of the chain");
-    expect(line?.text).toContain("no trades in it today");
+  it("a wide gap, low open interest and no trades are stated as facts, never judged against the chain on screen", () => {
+    const line = liquidityLine([legLiquidity(ladder(), 25400, "CE", "25400 CE")]);
+    expect(line?.tone).toBe("info");
+    expect(line?.text).toBe("Liquidity: bid 2.00, ask 8.00, bid-ask gap 6.00 (120.0% of the price), open interest 900, no trades in it today.");
+    expect(line?.text).not.toMatch(/wider than most|among the lowest|thin/);
   });
-  it("says what is missing: no quote, a strike not on screen, no chain at all; never compares a short chain", () => {
+  it("says what is missing: no quote, a strike not on screen, no chain at all", () => {
     const rows = ladder();
     rows[0].call = leg({ ltp: 5, bid: null, ask: 6, oi: 0 });
-    expect(liquidityLine([legLiquidity(rows, 24500, "CE", "24500 CE")])?.text).toBe("Liquidity: no bid quoted right now; no open interest yet.");
+    expect(liquidityLine([legLiquidity(rows, 24500, "CE", "24500 CE")])?.text).toBe("Liquidity: no bid quoted right now, ask 6.00, no open interest yet.");
     expect(liquidityLine([legLiquidity(rows, 26000, "PE", "26000 PE")])?.text).toContain("not on the chain on screen");
     expect(liquidityLine([], false)).toMatchObject({ tone: "info", text: NO_CHAIN });
-    const short = ladder().slice(0, MIN_TO_COMPARE / 2 - 1);
-    expect(legLiquidity(short, 24500, "CE", "x")).toMatchObject({ wide: null, lowOi: null });
     expect(gapPct({ bid: 10, ask: 9 })).toBeNull();
   });
-  it("a basket names only the thin legs, or says every leg is quoted", () => {
+  it("a basket states every leg's facts, always as information", () => {
     const rows = ladder();
-    expect(liquidityLine([legLiquidity(rows, 24600, "CE", "A"), legLiquidity(rows, 24700, "PE", "B")])?.tone).toBe("info");
     const line = liquidityLine([legLiquidity(rows, 24600, "CE", "A"), legLiquidity(rows, 25400, "CE", "B")]);
-    expect(line?.tone).toBe("warn");
-    expect(line?.text.startsWith("Liquidity: B:")).toBe(true);
-    expect(line?.text).not.toContain("A:");
+    expect(line?.tone).toBe("info");
+    expect(line?.text.startsWith("Liquidity: A: bid 90.50")).toBe(true);
+    expect(line?.text).toContain(". B: bid 2.00");
   });
 });
 

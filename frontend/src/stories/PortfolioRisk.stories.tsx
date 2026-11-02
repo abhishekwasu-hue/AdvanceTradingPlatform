@@ -15,7 +15,7 @@ const frame = (child: JSX.Element) => <div className="max-w-3xl rounded-lg borde
 export const Book: Story = { render: () => frame(<PortfolioRiskView view={view} />) };
 export const OneSided: Story = {
   render: () => frame(<PortfolioRiskView view={{ ...view, direction: { bullish: 4, bearish: 0, neutral: 0,
-    warning: "All 4 directional positions are bullish: one large move against them hits them together (correlated risk, no diversification)." } }} />),
+    warning: "All 4 directional positions are bullish." } }} />),
 };
 export const CapsOff: Story = { render: () => frame(<PortfolioRiskView view={{ ...view, limits: null }} />) };
 export const Empty: Story = { render: () => frame(<PortfolioRiskView view={{ ...view, positions: 0, buckets: [] }} />) };

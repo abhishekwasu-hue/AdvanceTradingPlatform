@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useAuth } from "../../auth/AuthContext";
 import EmbeddedChartV2 from "../../chart/EmbeddedChartV2";
+import { setOpenChart } from "../../chart/openChart";
 import { ReadChartBody, useReadChart, type ReadState } from "../../chart/ReadChartV2";
 import { DEFAULT_TIMEFRAME, type TimeframeId } from "../../chart/timeframes";
 import type { LightweightEngine } from "../../charting/lightweight";
@@ -40,6 +41,13 @@ export default function ChartWorkspaceV2() {
   // M75 W-3: the reading is drawn as its annotations (one source, labelled) when the server gives them
   const read = useReadChart(engine, key?.instrument ?? "", key?.tf ?? null, readOn && !!key, attempt, workspaceLayer);
   // M75 W-4: the AI card starts by itself once the code reading is there (the server runs it once per closed bar)
+  // M76 MP-3 (M76Q-7): the open chart, for a check card opened beside it (cleared when the workspace closes)
+  const openInstrument = key?.instrument ?? null;
+  const openTf = key?.tf ?? null;
+  useEffect(() => {
+    setOpenChart(openInstrument && openTf ? { instrument: openInstrument, tf: openTf } : null);
+    return () => setOpenChart(null);
+  }, [openInstrument, openTf]);
   const cardTf = cardTimeframe(key?.tf);
   const card = useWorkspaceCard(pick?.symbol ?? null, cardTf, read.status === "ready");
   const choose = (next: PickedSymbol) => {

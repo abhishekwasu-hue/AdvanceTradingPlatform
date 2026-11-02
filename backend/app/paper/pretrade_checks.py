@@ -10,7 +10,9 @@ most `BUDGET_S` (300 ms) with the findings that are ready and the ids still `pen
 result is kept for a minute under the draft's hash, and one follow-up call (`only` = those ids) collects it. The ticket
 never waits for any of this: Place goes ahead, the card fills in after.
 
-Checks here (server facts): duplicate_order, limit_far_from_ltp, market_state, mis_cutoff. The ticket's own preview
+Checks here (server facts): duplicate_order, limit_far_from_ltp, market_state, mis_cutoff; and (M76 MP-3) one
+`structure` check that reads the workspace's reading once and gives the structure lines (app/paper/pretrade_structure.py:
+trend_conflict, counter_trend, area_conflict, strike_in_area, room - each its own switch). The ticket's own preview
 already carries expiry_day, fo_ban, price_source and own_limits (`warning_ids` beside its `warnings`), and the browser
 holds margin_short, event and liquidity_limits (the figures on its screen); the card folds all of them in, by the same
 switches.
@@ -29,6 +31,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from app.db.models import PaperRestingOrderRecord, TradeRecord, User
+from app.paper.pretrade_structure import STRUCTURE_IDS
 from app.paper.pretrade_warnings import IST, WarningSettings
 
 BUDGET_S = 0.3
@@ -48,10 +51,12 @@ class Draft:
     product: str | None
     price: float | None
     ltp: float | None
+    chart_instrument: str | None = None     # M76 MP-3: the workspace's open chart, when the ticket opens beside it
+    chart_tf: str | None = None
 
     def digest(self, user_id: int) -> str:
         raw = json.dumps([user_id, self.underlying, self.expiry.isoformat(), self.strike, self.right, self.side, self.lots,
-                          self.order_type, self.product, self.price, self.ltp])
+                          self.order_type, self.product, self.price, self.ltp, self.chart_instrument, self.chart_tf])
         return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
 
@@ -60,7 +65,8 @@ def finding(wid: str, text: str, **facts: Any) -> dict[str, Any]:
 
 
 SessionFactory = Callable[[], Any]          # an async context manager yielding an AsyncSession
-Check = Callable[[SessionFactory, User, Draft, WarningSettings, datetime], Coroutine[Any, Any, dict[str, Any] | None]]
+Check = Callable[[SessionFactory, User, Draft, WarningSettings, datetime],
+                 Coroutine[Any, Any, dict[str, Any] | list[dict[str, Any]] | None]]
 
 
 def _num(v: float) -> str:
@@ -150,15 +156,33 @@ async def check_mis_cutoff(factory: SessionFactory, user: User, d: Draft, s: War
     return finding("mis_cutoff", f"MIS · your square-off {s.square_off_time} · {int(left)} min left", minutes_left=int(left))
 
 
+async def check_structure(factory: SessionFactory, user: User, d: Draft, s: WarningSettings, now: datetime) -> list[dict[str, Any]]:
+    """M76 MP-3: the structure lines (the workspace's reading per timeframe, never merged)."""
+    from app.paper import pretrade_structure
+    return await pretrade_structure.findings(factory, user, d, s, now)
+
+
 CHECKS: dict[str, Check] = {
     "duplicate_order": check_duplicate,
     "limit_far_from_ltp": check_limit_far,
     "market_state": check_market_state,
     "mis_cutoff": check_mis_cutoff,
+    "structure": check_structure,
 }
+# A check that gives several line types (its own id is not a switch): it runs while any of them is on and not accepted.
+GROUPS: dict[str, tuple[str, ...]] = {"structure": STRUCTURE_IDS}
+
+
+def _types(check_id: str) -> tuple[str, ...]:
+    return GROUPS.get(check_id, (check_id,))
+
+
+def _rank(wid: str) -> int:
+    order = [t for c in CHECKS for t in _types(c)]
+    return order.index(wid) if wid in order else len(order)
 
 # Results of checks that ran past the budget, by (user id, draft hash): {id: finding | None}, and when they were kept.
-_LATE: dict[tuple[int, str], tuple[float, dict[str, dict[str, Any] | None], dict[str, asyncio.Task[Any]]]] = {}
+_LATE: dict[tuple[int, str], tuple[float, dict[str, Any], dict[str, asyncio.Task[Any]]]] = {}
 
 
 def _sweep() -> None:
@@ -174,8 +198,8 @@ async def run(factory: SessionFactory, user: User, d: Draft, s: WarningSettings,
     now = now or datetime.now(UTC)
     _sweep()
     key = (user.id, d.digest(user.id))
-    wanted = [w for w in (only or list(CHECKS)) if w in CHECKS and s.enabled(w) and w not in accepted]
-    results: dict[str, dict[str, Any] | None] = {}
+    wanted = [w for w in (only or list(CHECKS)) if w in CHECKS and any(s.enabled(t) and t not in accepted for t in _types(w))]
+    results: dict[str, Any] = {}
     tasks: dict[str, asyncio.Task[Any]] = {}
     kept = _LATE.get(key)
     for w in wanted:
@@ -207,6 +231,11 @@ async def run(factory: SessionFactory, user: User, d: Draft, s: WarningSettings,
                 except Exception:  # noqa: BLE001
                     store[1][w] = None
             tasks[w].add_done_callback(keep)
-    findings = [f for f in (results.get(w) for w in wanted) if f]
-    findings.sort(key=lambda f: (0 if f["severity"] == "mistake" else 1, list(CHECKS).index(f["id"])))
+    findings: list[dict[str, Any]] = []
+    for w in wanted:
+        got = results.get(w)
+        for f in (got if isinstance(got, list) else [got] if got else []):
+            if f and s.enabled(f["id"]) and f["id"] not in accepted:      # each line type by its own switch
+                findings.append(f)
+    findings.sort(key=lambda f: (0 if f["severity"] == "mistake" else 1, _rank(f["id"])))
     return {"findings": findings, "pending": pending, "ms": round((clock.perf_counter() - started) * 1000, 1)}

@@ -32,6 +32,7 @@ import { TicketClock, cardSurfaces, ticketBlocks, ticketSurfaces } from "./ticke
 import { VISIBLE_LINES, askFirst, assembleLines, editField, factKey, liquidityCheck, sessionSeen, statusLines, switchesOf, withAccepted, type CheckDraft, type CheckLine } from "./checkCard";
 import { CheckCardV2 } from "./CheckCardV2";
 import { useCheckCard, type TicketCard } from "./useCheckCard";
+import { openChart, type OpenChart } from "../chart/openChart";
 import { Combobox } from "../ui/Combobox";
 import { prefillChips, type TicketPrefill } from "../copilot/ticket/intent";
 
@@ -140,7 +141,12 @@ export function checkDraftOf(target: TicketTarget, d: Draft): CheckDraft {
   const price = Number(d.price);
   return { underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right, side: d.side, lots: d.lots ?? 0,   // Review runs only once lots is chosen (draftProblems)
     order_type: d.orderType, product: d.product, price: d.orderType === "LIMIT" && Number.isFinite(price) && price > 0 ? price : null,
-    ltp: typeof target.ltp === "number" && target.ltp > 0 ? target.ltp : null };
+    ltp: typeof target.ltp === "number" && target.ltp > 0 ? target.ltp : null, ...chartOf(openChart()) };
+}
+
+/** M76 MP-3: the workspace's open chart for the structure lines (none open: the server reads his own timeframes). */
+function chartOf(chart: OpenChart | null): Pick<CheckDraft, "chart_instrument" | "chart_tf"> {
+  return chart ? { chart_instrument: chart.instrument, chart_tf: chart.tf } : {};
 }
 
 /** M72 PR-9: a fresh draft with the user's defaults, then the values he typed to the Copilot (his message wins). */

@@ -166,6 +166,16 @@ WARNING_TYPES: tuple[tuple[str, str, str, bool], ...] = (
      "A line when the bid-ask gap or open interest is outside your own liquidity limits. None saved: no line.", True),
     ("own_limits", "Your risk limits",
      "A line when the order's max loss or size meets one of your own risk limits (information; your limits page holds back an order).", True),
+    # M76 MP-3 structure (W-1): the workspace's reading per timeframe beside the order's direction; ON as information
+    ("counter_trend", "Against the trend, no change of character",
+     "A line when a timeframe's trend runs against your order and that chart's newest BOS / CHoCH is not a CHoCH your way.", True),
+    ("trend_conflict", "Against a timeframe's trend",
+     "A line when a timeframe's trend runs against your order's direction (bullish or bearish).", True),
+    ("area_conflict", "Last close inside an area of the other side",
+     "A line when the last close sits inside a seller area for a bullish order, or a buyer area for a bearish one.", True),
+    ("strike_in_area", "Sold strike inside an area", "A line when the strike of an option you sell lies inside an area.", True),
+    ("room", "Next area of the other side",
+     "A line with the points from the last close to the next area of the other side in your order's direction.", True),
 )
 WARNING_IDS: tuple[str, ...] = tuple(t[0] for t in WARNING_TYPES)
 WARNING_FIELDS: tuple[SettingField, ...] = tuple(f for name, label, help, on in WARNING_TYPES for f in _warn(name, label, help, on)) + (

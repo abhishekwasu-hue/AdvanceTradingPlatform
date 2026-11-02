@@ -132,7 +132,7 @@ export interface CardOptions {
 }
 
 const WARNING_IDS = ["duplicate_order", "limit_far_from_ltp", "margin_short", "market_state", "expiry_day", "mis_cutoff", "fo_ban", "event",
-  "price_source", "liquidity_limits", "own_limits"];
+  "price_source", "liquidity_limits", "own_limits", "counter_trend", "trend_conflict", "area_conflict", "strike_in_area", "room"];
 
 function settingsView(saved: Record<string, boolean>) {
   const field = (key: string, start: boolean) => ({ key, label: key, kind: "switch", help: "", unit: "", choices: [], low: null, high: null, low_open: false,

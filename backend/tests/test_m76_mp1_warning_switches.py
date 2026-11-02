@@ -15,10 +15,12 @@ from app.platform import controls, flag_catalog
 # the lots-based ticket / M75 plans give first - docs/design/M76_REVIEW.md section 9).
 MISTAKES = {"duplicate_order", "limit_far_from_ltp", "margin_short"}
 FACTS = {"market_state", "expiry_day", "mis_cutoff", "fo_ban", "event", "price_source", "liquidity_limits", "own_limits"}
+# M76 MP-3: structure lines (W-1), ON as information like the facts
+STRUCTURE = {"counter_trend", "trend_conflict", "area_conflict", "strike_in_area", "room"}
 
 
 def test_one_switch_and_one_ask_me_per_type_with_the_owners_start_state():
-    assert set(ts.WARNING_IDS) == MISTAKES | FACTS
+    assert set(ts.WARNING_IDS) == MISTAKES | FACTS | STRUCTURE
     for wid in ts.WARNING_IDS:
         switch, ask = ts.BY_KEY[f"warnings.{wid}"], ts.BY_KEY[f"warnings.{wid}_ask"]
         assert switch.kind == ask.kind == "switch" and switch.section == ask.section == "warnings"

@@ -17,9 +17,12 @@ import type { LiquidityLimits } from "../settings/liquidityLimits";
 
 export type WarningId =
   | "duplicate_order" | "limit_far_from_ltp" | "margin_short" | "market_state" | "expiry_day" | "mis_cutoff" | "fo_ban"
-  | "event" | "price_source" | "liquidity_limits" | "own_limits";
+  | "event" | "price_source" | "liquidity_limits" | "own_limits"
+  // M76 MP-3: structure lines from the workspace's reading, one timeframe per line (after the facts: worst first)
+  | "counter_trend" | "trend_conflict" | "area_conflict" | "strike_in_area" | "room";
 export const WARNING_IDS: readonly WarningId[] = ["duplicate_order", "limit_far_from_ltp", "margin_short", "market_state", "expiry_day",
-  "mis_cutoff", "fo_ban", "event", "price_source", "liquidity_limits", "own_limits"];
+  "mis_cutoff", "fo_ban", "event", "price_source", "liquidity_limits", "own_limits",
+  "counter_trend", "trend_conflict", "area_conflict", "strike_in_area", "room"];
 export const MISTAKES: readonly WarningId[] = ["duplicate_order", "limit_far_from_ltp", "margin_short"];
 export const VISIBLE_LINES = 3;
 export const BUDGET_MS = 300;
@@ -135,6 +138,8 @@ export function resetSessionSeen(): void { SEEN.clear(); }
 export interface CheckDraft {
   underlying: string; expiry: string; strike: number | null; right: string; side: string; lots: number;
   order_type: string | null; product: string | null; price: number | null; ltp: number | null;
+  /** M76 MP-3 (M76Q-7): the workspace's open chart when the ticket opens beside it; absent: his signal timeframe + daily. */
+  chart_instrument?: string; chart_tf?: string;
 }
 
 export const checksApi = {

@@ -146,7 +146,7 @@ async def place(session: AsyncSession, user: User, ask: Any, *, override: Option
     if route.accounts:
         # One lot's margin, the ticket's own estimate: % of capital sizing and the per-account capital check (MB-6) use
         # it. None for a sold option or a future on PAPER (the broker's SPAN is not known): never guessed.
-        one = await fno_ticket.assess(session, user, dataclasses.replace(ask, lots=1), price_lookup=price_lookup, origin=origin)
+        one = await fno_ticket.assess(session, user, dataclasses.replace(ask, lots=1), price_lookup=price_lookup, origin=origin, margin_reader=fno_ticket.read_broker_margin)
         value = (one.get("margin") or {}).get("value")
         margin_per_lot = float(value) if value else None
     plan = fp.size(route, sizing, primary_lots=int(ask.lots), lot_size=1, margin_per_lot=margin_per_lot)
@@ -170,7 +170,7 @@ async def place(session: AsyncSession, user: User, ask: Any, *, override: Option
                              "reasons": ["the Primary account's order was not accepted"]})
             continue
         child = dataclasses.replace(ask, lots=leg.lots, client_ref=f"{ask.client_ref}-a{row.id}"[:64])
-        result = await fno_ticket.place(session, user, child, price_lookup=price_lookup, origin=origin)
+        result = await fno_ticket.place(session, user, child, price_lookup=price_lookup, origin=origin, margin_reader=fno_ticket.read_broker_margin)
         placed = result.get("status") == "PLACED"
         if row.role == fp.PRIMARY:
             primary_ok = placed

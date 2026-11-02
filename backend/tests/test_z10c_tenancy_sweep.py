@@ -113,6 +113,13 @@ A_CONTROL_EXCEPTIONS: Dict[Tuple[str, str], str] = {
         "the planted ai_actions row is not an ENTRY proposal, and recall answers only for one (404 'No such proposal', by "
         "design); the other organisation still gets 404 (AUD-T6; tests/test_aud_t6_setup_recall.py serves a real one)",
     **{key: why for why, keys in (
+        ("the sweep's world has the trigger_plans flag off, so the routes answer 404 by design; the other organisation "
+         "still gets 404 and changes nothing (M75 W-8; tests/test_m75_w8_trigger_plans.py edits, pauses and cancels a real "
+         "plan and proves another member's cancel is a 404)",
+         (("PUT", "/api/trigger-plans/{plan_id}"), ("POST", "/api/trigger-plans/{plan_id}/{action}"))),
+        ("the planted study snapshot has no charts or tables (404 'no chart' / 'no such table', by design); the other "
+         "organisation still gets 404 (M77 SX-4 / SX-5; tests/test_m77_sx4*.py / tests/test_m77_sx5*.py export real ones)",
+         (("GET", "/api/studies/{study_id}/png"), ("GET", "/api/studies/{study_id}/csv"))),
         ("a checklist answer must name one of the trader's own rules, and the planted world has none (422 by design); the "
          "other organisation still gets 404 (M62; tests/test_m62_journal_layer.py answers real rules)",
          (("PATCH", "/api/journal/trades/{trade_id}/checklist"), ("PATCH", "/api/journal/manual/{manual_id}/checklist"))),

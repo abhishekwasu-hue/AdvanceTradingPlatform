@@ -241,7 +241,8 @@ def test_every_direct_redis_write_sets_an_expiry():
     """Code that talks to Redis without cache_set is a short reviewed list, and each write there carries a TTL.
     A new file reaching for the raw client fails here until its keys are checked the same way."""
     reviewed = {"app/cache/client.py", "app/billing/service.py", "app/core/rate_limit.py", "app/observability/routes.py",
-                "app/market_data/api_budget.py", "app/brokers/broker_limits.py"}
+                "app/market_data/api_budget.py", "app/brokers/broker_limits.py",
+                "app/paper/pretrade_warnings.py"}                       # M76 MP-1: the accepted-today marks
     backend = ROOT / "backend"
     users = {str(p.relative_to(backend)) for p in (backend / "app").rglob("*.py") if "_get_client()" in p.read_text(encoding="utf-8")}
     assert users <= reviewed, users - reviewed
@@ -253,6 +254,8 @@ def test_every_direct_redis_write_sets_an_expiry():
     budget = (backend / "app/market_data/api_budget.py").read_text(encoding="utf-8")   # CH5-a: every window key expires
     assert "redis.call('expire', KEYS[i], math.ceil(tonumber(ARGV[2 * i - 1])) + 1)" in budget             # window + 1 s
     assert "seconds = QUOTE_CACHE_SECONDS if ttl is None else ttl" in budget and "cache_set(key, raw, seconds)" in budget
+    warned = (backend / "app/paper/pretrade_warnings.py").read_text(encoding="utf-8")    # M76 MP-1: every mark expires
+    assert '_get_client().set(_key(user, wid, instrument), "1", ex=ttl)' in warned
     cache = (backend / "app/cache/client.py").read_text(encoding="utf-8")
     assert "nx=True, ex=ttl_seconds" in cache and "await client.expire(key, ttl_seconds)" in cache
 

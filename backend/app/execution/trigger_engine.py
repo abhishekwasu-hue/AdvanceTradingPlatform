@@ -472,7 +472,7 @@ async def _send_entry(session: AsyncSession, row: PaperRestingOrderRecord, contr
     async def lookup(symbol: str, exchange: str = "") -> float:
         return float(contract_price)
 
-    result = await fno_ticket.place(session, user, ask, price_lookup=lookup, now=now, origin=str(payload.get("origin") or ORIGIN_AUTOMATIC))
+    result = await fno_ticket.place(session, user, ask, price_lookup=lookup, now=now, origin=str(payload.get("origin") or ORIGIN_AUTOMATIC), margin_reader=fno_ticket.read_broker_margin)
     await session.refresh(row)
     if result.get("status") == "PLACED":
         row.order_id = result.get("order_id")

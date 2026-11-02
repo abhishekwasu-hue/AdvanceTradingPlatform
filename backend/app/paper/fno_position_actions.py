@@ -241,7 +241,7 @@ async def reverse(session: AsyncSession, user: User, trade_id: int, *, client_re
         _open_checks(trade)
     lookup = await price_lookup_for_user(session, user)
     if preview:
-        view = await fno_ticket.assess(session, user, ask, price_lookup=lookup, origin=ORIGIN_MANUAL)
+        view = await fno_ticket.assess(session, user, ask, price_lookup=lookup, origin=ORIGIN_MANUAL, margin_reader=fno_ticket.read_broker_margin)
         await session.commit()
         return {"status": "PREVIEW", "warning": await _hedge_warning(session, trade), "lots": ask.lots,
                 "exit": {"trade_id": trade.id, "symbol": trade.symbol, "side": _side_words(trade)}, "entry": view}
@@ -268,7 +268,7 @@ async def reverse(session: AsyncSession, user: User, trade_id: int, *, client_re
             await session.refresh(trade)
             if not (trade.exit_reason or "").endswith(marker):          # closed by something else: no new position
                 raise HTTPException(status_code=409, detail="; ".join(outcome.warnings) or "Position could not be closed")
-    placed = await fno_ticket.place(session, user, ask, price_lookup=lookup, origin=ORIGIN_MANUAL)
+    placed = await fno_ticket.place(session, user, ask, price_lookup=lookup, origin=ORIGIN_MANUAL, margin_reader=fno_ticket.read_broker_margin)
     entry = _entry_row(None, placed)
     return {"status": "REVERSED" if entry["status"] == "PLACED" else "EXITED", "repeat": resumed, "warning": warning,
             "closed": _closed_row(trade, ask.lots), "entry": entry, "text": reverse_text(trade.symbol, entry)}

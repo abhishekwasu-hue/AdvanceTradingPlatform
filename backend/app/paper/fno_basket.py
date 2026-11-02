@@ -229,7 +229,7 @@ async def preview(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, 
     rows: List[Dict[str, Any]] = []
     for seq, (i, leg) in enumerate(hedge_first(legs), start=1):
         view = await fno_ticket.assess(session, user, _ask(leg, product), price_lookup=price_lookup, live_only=live_only, now=now,
-                                       origin=origin)
+                                       origin=origin, margin_reader=fno_ticket.read_broker_margin)
         rows.append({"seq": seq, "leg": i, "role": "hedge" if leg.side == "BUY" else "short", **view})
     refusals: List[str] = []
     room = await _room(session, user, len(legs))
@@ -337,7 +337,7 @@ async def execute_smart(session: AsyncSession, user: User, legs: Sequence[LegAsk
 
     async def place(index: int, seq: int):
         result = await fno_ticket.place(session, holder["user"], _ask(legs[index], product, f"{basket_ref}-{seq}"), price_lookup=price_lookup, now=now,
-                                        origin=origin)
+                                        origin=origin, margin_reader=fno_ticket.read_broker_margin)
         holder["user"] = await session.get(User, user_id) or holder["user"]    # a rollback in the pipeline expires it
         results[index] = result
         return result.get("status") == "PLACED", list(result.get("reasons") or []), result
@@ -464,7 +464,7 @@ async def _execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *,
                          "reasons": ["Not placed because a hedge leg did not fill: on its own this sold leg would be uncovered."]})
             continue
         result = await fno_ticket.place(session, user, _ask(leg, product, f"{basket_ref}-{seq}"), price_lookup=price_lookup, now=now,
-                                        origin=origin)
+                                        origin=origin, margin_reader=fno_ticket.read_broker_margin)
         user = await session.get(User, user_id) or user        # a rollback inside the pipeline (a repeated tap) expires it
         status = result.get("status", "FAILED")
         if status != "PLACED" and leg.side == "BUY":

@@ -23,6 +23,14 @@ const INTERVIEW_FILES = new Set([
   "./types.ts",                            // the interview payload types (InterviewQuestion.mr, ...)
 ]);
 
+// M72 PR-10 (owner order M72 CP-10, M72Q-2 confirmed 1 Nov - it supersedes EO-4 for Copilot ANSWERS only): the one place
+// that offers the Copilot's answer language (Settings > AI, flag copilot_languages). Its labels are English words; the
+// interface itself stays English everywhere.
+const ANSWER_LANGUAGE_FILES = new Set([
+  "./copilot/language/model.ts",
+  "./copilot/language/AnswerLanguageV2.tsx",
+]);
+
 const FORBIDDEN: [string, RegExp][] = [
   ["a Marathi / Hindi / Hinglish label", /\b(marathi|hindi|hinglish)\b/i],
   ["a lang attribute for Marathi / Hindi", /\blang=["'{]*\s*["'](mr|hi)["']/],
@@ -35,13 +43,13 @@ const FORBIDDEN: [string, RegExp][] = [
 describe("English only outside the strategy interview", () => {
   it("reads a sensible number of UI source files", () => {
     expect(Object.keys(SOURCES).length).toBeGreaterThan(100);
-    for (const f of INTERVIEW_FILES) expect(Object.keys(SOURCES)).toContain(f);   // a renamed interview file is noticed
+    for (const f of [...INTERVIEW_FILES, ...ANSWER_LANGUAGE_FILES]) expect(Object.keys(SOURCES)).toContain(f);   // a renamed file is noticed
   });
 
   it("no UI file outside the interview offers or shows another language", () => {
     const findings: string[] = [];
     for (const [path, text] of Object.entries(SOURCES)) {
-      if (INTERVIEW_FILES.has(path)) continue;
+      if (INTERVIEW_FILES.has(path) || ANSWER_LANGUAGE_FILES.has(path)) continue;
       text.split("\n").forEach((line, i) => {
         for (const [what, re] of FORBIDDEN) if (re.test(line)) findings.push(`${path}:${i + 1}: ${what}: ${line.trim().slice(0, 120)}`);
       });

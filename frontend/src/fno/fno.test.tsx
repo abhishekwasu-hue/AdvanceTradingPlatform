@@ -100,10 +100,14 @@ describe("FNO-1 chain action sheet: each action", () => {
     by(open.els, "data-action", "basket-sell").onClick!();
     expect(open.on.onBasket.mock.calls).toEqual([["BUY"], ["SELL"]]);
 
+    // M68 PR-2 (TS1-022): with no lots of his own a leg is added empty (the basket asks); his saved lots fill it
+    const empty = new BasketStore([]);
+    expect(basketAdd(empty, TARGET, CONTRACT, "BUY")).toEqual({ tone: "done", text: "Added to the basket: Buy NIFTY 03 NOV 24500 CE. Enter its lots in the basket." });
+    expect(empty.snapshot()[0].lots).toBeNull();
     const store = new BasketStore([]);
-    expect(basketAdd(store, TARGET, CONTRACT, "BUY")).toEqual({ tone: "done", text: "Added to the basket: Buy 1 lot of NIFTY 03 NOV 24500 CE." });
-    basketAdd(store, TARGET, CONTRACT, "BUY");
-    basketAdd(store, TARGET, CONTRACT, "SELL");
+    expect(basketAdd(store, TARGET, CONTRACT, "BUY", 1)).toEqual({ tone: "done", text: "Added to the basket: Buy 1 lot of NIFTY 03 NOV 24500 CE." });
+    basketAdd(store, TARGET, CONTRACT, "BUY", 1);
+    basketAdd(store, TARGET, CONTRACT, "SELL", 1);
     expect(store.snapshot().map((l) => [l.side, l.lots, l.price, l.label])).toEqual([["BUY", 2, 250, CONTRACT.label], ["SELL", 1, 250, CONTRACT.label]]);
     const full = new BasketStore(Array.from({ length: MAX_LEGS }, (_, i) => ({ ...store.snapshot()[0], id: `x${i}`, strike: 20000 + i })));
     expect(basketAdd(full, TARGET, CONTRACT, "BUY")?.tone).toBe("warn");
@@ -203,7 +207,7 @@ describe("FNO-1 order ticket", () => {
     expect(unitsText(1, 75)).toBe("1 lot = 75 qty (lot size 75)");
     expect(unitsText(3, 30)).toBe("3 lots = 90 qty (lot size 30)");
     expect(unitsText(2, null)).toBe("2 lots");
-    expect([clampLots(0), clampLots(2.6), clampLots(9999)]).toEqual([1, 3, 500]);
+    expect([clampLots(0), clampLots(2.6), clampLots(9999)]).toEqual([1, 3, 9999]);   // M68 PR-4: no 500 ceiling
     const { els, html, on } = ticket({ ...newDraft("BUY"), lots: 2 });
     expect(text(html)).toContain("2 lots = 150 qty (lot size 75)");
     by(els, "data-ticket", "lots-more").onClick!();
@@ -228,7 +232,7 @@ describe("FNO-1 order ticket", () => {
     expect(!has(slm.els, "data-ticket", "price") && has(slm.els, "data-ticket", "trigger")).toBe(true);
     by(slm.els, "data-helper", "Ask").onClick!();
     expect(slm.on.onDraft).toHaveBeenCalledWith({ trigger: "250.50" });
-    const mis = { product: "MIS" as const, orderType: "MARKET" as const };    // owner F1 / M68: the user picked a product and a type
+    const mis = { product: "MIS" as const, orderType: "MARKET" as const, lots: 1 };    // owner F1 / M68: the user picked a product, a type and lots
     expect(draftProblems({ ...newDraft("BUY", mis), orderType: "SL" })).toEqual(["Enter the limit price", "Enter the trigger price"]);
     expect(draftProblems(newDraft("SELL", mis))).toEqual([]);              // DEF-0 D7: only his own setting asks for a stop
     expect(draftProblems(newDraft("BUY", mis))).toEqual([]);

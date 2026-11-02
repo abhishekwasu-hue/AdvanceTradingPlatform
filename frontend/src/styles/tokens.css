@@ -121,6 +121,30 @@
   --shadow-raised: 0 8px 24px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);
 }
 
+/* M73 SL-1: the sign-in provider buttons, in each brand's own colours (Google Identity button guidelines: light fill
+   #FFFFFF / outline #747775 / text #1F1F1F, dark fill #131314 / outline #8E918F / text #E3E3E3, the four-colour "G";
+   Meta: Facebook blue #1877F2 with the white "f" and white text). Only src/auth/SocialButtons.tsx uses them. */
+:root {
+  --social-google-bg: 19 19 20;
+  --social-google-fg: 227 227 227;
+  --social-google-border: 142 145 143;
+  --social-google-hover: 35 35 37;
+  --social-google-blue: 66 133 244;
+  --social-google-red: 234 67 53;
+  --social-google-yellow: 251 188 5;
+  --social-google-green: 52 168 83;
+  --social-facebook: 24 119 242;
+  --social-facebook-hover: 22 111 229;
+  --social-facebook-fg: 255 255 255;
+}
+
+:root[data-theme="light"] {
+  --social-google-bg: 255 255 255;
+  --social-google-fg: 31 31 31;
+  --social-google-border: 116 119 117;
+  --social-google-hover: 242 242 242;
+}
+
 :root[data-motion="reduce"] { --dur-fast: 0ms; --dur-base: 0ms; }
 @media (prefers-reduced-motion: reduce) {
   :root { --dur-fast: 0ms; --dur-base: 0ms; }

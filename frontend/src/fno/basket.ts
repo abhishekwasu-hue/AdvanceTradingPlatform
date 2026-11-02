@@ -18,7 +18,8 @@ export interface BasketLeg {
   /** CE / PE, or FUT for a future (FNO-3: "Add to basket" on the futures chain). */
   right: ContractRight;
   side: Side;
-  lots: number;
+  /** M68 PR-2 (TS1-022): null until the user enters them - a leg starts with his saved lots, else empty (never 1). */
+  lots: number | null;
   /** The price the panel plans with: the chain's when the leg was added, or the user's own. Placing uses the live price. */
   price: number | null;
   /** "NIFTY 28 OCT 22800 CE" when known. */
@@ -69,7 +70,8 @@ export class BasketStore {
   add(leg: NewLeg): boolean {
     const same = this.legs.find((l) => sameContract(l, leg) && l.side === leg.side);
     if (same) {
-      this.set(this.legs.map((l) => (l === same ? { ...l, lots: l.lots + leg.lots, price: leg.price ?? l.price, iv: leg.iv ?? l.iv } : l)));
+      const lots = same.lots === null || leg.lots === null ? (same.lots ?? leg.lots) : same.lots + leg.lots;
+      this.set(this.legs.map((l) => (l === same ? { ...l, lots, price: leg.price ?? l.price, iv: leg.iv ?? l.iv } : l)));
       return true;
     }
     if (this.legs.length >= MAX_LEGS) return false;

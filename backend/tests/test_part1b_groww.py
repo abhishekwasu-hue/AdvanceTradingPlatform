@@ -9,7 +9,7 @@ import base64
 import hashlib
 import json
 import struct
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -29,6 +29,7 @@ from app.compliance.order_policy import policy_for
 from app.core.enums import OrderSide
 from app.execution import marketable_limit as ml
 from app.execution.paper_adapter import PaperExecutionAdapter
+from app.execution.paper_charges import PaperCharges
 from app.execution.router import DEFAULT_MARKET_PROTECTION_PCT
 from app.market_data import groww_feed as gf
 from app.market_data.data_terms import terms_for
@@ -485,10 +486,11 @@ def test_paper_practising_for_groww_takes_the_same_path_as_live():
     assert placed.order_type == live_order.order_type == "LIMIT" and placed.price == live_order.price == 3016.05
     assert response.status == "COMPLETE"
     assert paper.capabilities.market_orders_allowed is False and paper.capabilities.stop_market is False
-    plain = PaperExecutionAdapter(clock=lambda: datetime(2026, 10, 23, 5, 0, tzinfo=timezone.utc))
+    # M68 PR-7: a plain paper account pays the trader's own brokerage (here a ₹20 he saved; ATP sets none)
+    plain = PaperExecutionAdapter(PaperCharges(brokerage_per_order=20.0).broker(), clock=lambda: datetime(2026, 10, 23, 5, 0, tzinfo=UTC))
     plain.mark("RELIANCE", 3001.0)
     plain_response = run(plain.place_order(order))
-    # Groww's stated stock brokerage on ~6,000 of value is 0.1% = ~6 (+ GST) against the default 20 (+ GST).
+    # Groww's stated stock brokerage on ~6,000 of value is 0.1% = ~6 (+ GST) against his own 20 (+ GST).
     assert 10 < plain_response.raw["charges"] - response.raw["charges"] < 20
 
 

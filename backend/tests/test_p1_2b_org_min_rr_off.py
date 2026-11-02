@@ -82,20 +82,23 @@ def _options(cfg: RiskConfig) -> List[bool]:
 def _live(cfg: RiskConfig) -> List[bool]:
     """The live / paper path: the order router's own RiskManager on the same signals (a fresh day, nothing open)."""
     router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=cfg, product="MIS", order_style="MARKET")
-    return [router.risk_manager.validate_and_size(_signal(ts), TradingDayState()).approved for ts in ATTEMPTS]
+    return [router.risk_manager.validate_and_size(_signal(ts), TradingDayState(), requested_quantity=1).approved for ts in ATTEMPTS]
 
 
 # --- defaults -----------------------------------------------------------------------------------------------------------------
 
 def test_no_built_in_minimum():
     assert RiskConfig().min_risk_reward == 0.0
-    assert RiskSettingsRecord.__table__.c.min_risk_reward.default.arg == 0.0
+    # M68 PR-5 (TS1-053): the column is NULL = not set (no 0 sentinel default any more)
+    column = RiskSettingsRecord.__table__.c.min_risk_reward
+    assert column.nullable and (column.default is None or column.default.arg is None) and column.server_default is None
 
 
 def test_regression_no_engine_filters_by_reward_risk_when_nothing_is_set():
     cfg = RiskConfig()
     for rr in (0.01, 0.5, 1.19):
-        decision = RiskManager(cfg).validate_and_size(_signal(ATTEMPTS[0]).model_copy(update={"risk_reward": rr}), TradingDayState())
+        decision = RiskManager(cfg).validate_and_size(_signal(ATTEMPTS[0]).model_copy(update={"risk_reward": rr}), TradingDayState(),
+                                                    requested_quantity=1)   # M68 PR-2: his own size
         assert decision.approved and not any("Risk/Reward" in r for r in decision.reasons), (rr, decision.reasons)
     unset = _risk()
     assert _live(unset) == _engine(unset) == _options(unset) == [True] * len(ATTEMPTS)
@@ -171,7 +174,8 @@ def test_the_api_starts_unset_keeps_an_own_value_and_reads_an_old_row_as_unset()
     assert _live(_tenant_cfg(me["tenant_id"])) == [True] * len(ATTEMPTS)
     assert client.put("/api/risk-settings", headers=me["headers"], json={**body, "min_risk_reward": 0}).json()["min_risk_reward"] == 0.0
     assert client.put("/api/risk-settings", headers=me["headers"], json={**body, "min_risk_reward": -1}).status_code == 400
-    assert client.put("/api/risk-settings", headers=me["headers"], json={**body, "min_risk_reward": 11}).status_code == 400
+    # M68 PR-5 (TS1-050): no ATP top on his own minimum (was 10)
+    assert client.put("/api/risk-settings", headers=me["headers"], json={**body, "min_risk_reward": 11}).json()["min_risk_reward"] == 11
 
 
 def test_exits_never_pass_through_the_minimum():
@@ -223,7 +227,7 @@ def _all_paths(strategy_factory, cfg: RiskConfig) -> Dict[str, List[bool]]:
                                                implied_volatility=0.14, max_lots=1, premium_stop_pct=30.0)  # DEF-0: old 30% explicit
     return {
         "scanner": [s.is_tradeable for s in sigs],
-        "live": [s.is_tradeable and router.risk_manager.validate_and_size(s, TradingDayState()).approved for s in sigs],
+        "live": [s.is_tradeable and router.risk_manager.validate_and_size(s, TradingDayState(), requested_quantity=1).approved for s in sigs],
         "backtest": _taken(underlying_engine.run_backtest(strategy_factory(), _frame(), "NIFTY 50", "1min", cfg)),
         "options": _taken(options_engine.run_option_backtest(strategy_factory(), _frame(), "NIFTY 50", "1min", cfg, ocfg)),
     }
@@ -280,7 +284,7 @@ def _custom_paths(factory, cfg: RiskConfig) -> Dict[str, bool]:
     ocfg = options_engine.OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY,
                                                implied_volatility=0.14, max_lots=1, premium_stop_pct=30.0)  # DEF-0: old 30% explicit
     return {"scanner": sig.is_tradeable,
-            "live": sig.is_tradeable and router.risk_manager.validate_and_size(sig, TradingDayState()).approved,
+            "live": sig.is_tradeable and router.risk_manager.validate_and_size(sig, TradingDayState(), requested_quantity=1).approved,
             "backtest": underlying_engine.run_backtest(factory(), _frame(), "NIFTY 50", "1min", cfg).total_trades > 0,
             "options": len(options_engine.run_option_backtest(factory(), _frame(), "NIFTY 50", "1min", cfg, ocfg).trades) > 0}
 

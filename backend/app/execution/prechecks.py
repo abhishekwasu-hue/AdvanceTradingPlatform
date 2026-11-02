@@ -12,7 +12,8 @@ available** and **instrument/expiry valid**. This module closes the last two:
   broker would reject it anyway and the platform must say why *before* touching the broker.
 * `live_margin_cap` - how many units the account's free margin allows, from the broker's own
   margin calculator for one lot/share (Zerodha basket margin, Upstox `/charges/margin`) against
-  `MARGIN_SAFETY` of available margin. Generalises Phase F3's `written_lot_cap` (which stays
+  the share of available margin passed in (the trader's margin safety %, else all of it - M68 PR-5).
+  Generalises Phase F3's `written_lot_cap` (which stays
   strict: writing without a margin number is refused) to bought options, futures and equity.
   A bought option without a calculator answer falls back to premium x lot size, which *is* the
   exact cash the buy consumes. Equity or a future without a calculator answer is not guessed

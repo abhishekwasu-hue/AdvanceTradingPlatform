@@ -30,6 +30,9 @@ from typing import Any
 from app.core.models import RiskConfig
 
 PAGE_PATH = "/settings/risk-limits"
+# M68 PR-5 (TS1-050): a field's only top is "a finite number" (a % at most 100); ATP sets no cap of its own on a user's
+# limit. The bottoms only keep a value positive (a whole count at least 1).
+BIG = 1_000_000_000
 ADMIN_TEXT = "Ask your admin"
 EVENT_RULE_PREFIX = "RISK_LIMIT:"          # risk_events.rule_type of a Risk limits block (the hierarchy's are plain types)
 
@@ -43,6 +46,7 @@ class Field:
     high: float
     whole: bool = False
     optional: bool = False    # may stay empty while the check is on (the other field of the check is enough)
+    low_open: bool = True     # the value must be ABOVE `low` (positive); False: at least `low` (a whole count from 1)
 
 
 @dataclass(frozen=True)
@@ -57,33 +61,35 @@ class Check:
 
 CHECKS: tuple[Check, ...] = (
     Check("max_lots_per_order", "Max lots per order", "An order above this size is not placed; you are offered this size instead.",
-          (Field("max_lots_per_order", "Lots", "lots", 1, 100_000, whole=True),)),
+          (Field("max_lots_per_order", "Lots", "lots", 1, BIG, whole=True, low_open=False),)),
     Check("max_open_positions", "Max open positions", "No new entry while you hold this many. A spread counts as one position.",
-          (Field("max_open_positions", "Positions", "positions", 1, 200, whole=True),)),
+          (Field("max_open_positions", "Positions", "positions", 1, BIG, whole=True, low_open=False),)),
     Check("daily_loss", "Daily loss limit", "Once today's loss reaches it, no new entry today. Exits always work.",
-          (Field("max_daily_loss_pct", "% of account", "%", 0.1, 100, optional=True),
-           Field("daily_loss_rupees", "Rupees", "₹", 1, 1_000_000_000, optional=True)), any_field=True),
+          (Field("max_daily_loss_pct", "% of account", "%", 0, 100, optional=True),
+           Field("daily_loss_rupees", "Rupees", "₹", 0, BIG, optional=True)), any_field=True),
     Check("max_entries_per_day", "Max new entries per day", "No new entry after this many today. A spread counts as one entry.",
-          (Field("max_trades_per_day", "Entries", "entries", 1, 500, whole=True),)),
+          (Field("max_trades_per_day", "Entries", "entries", 1, BIG, whole=True, low_open=False),)),
     Check("loss_cooldown", "Cool-down after losses in a row", "After this many losses in a row, new entries pause for these minutes.",
-          (Field("max_consecutive_losses", "Losses in a row", "losses", 1, 50, whole=True),
-           Field("loss_cooldown_minutes", "Pause", "minutes", 1, 1440, whole=True, optional=True))),
+          (Field("max_consecutive_losses", "Losses in a row", "losses", 1, BIG, whole=True, low_open=False),
+           Field("loss_cooldown_minutes", "Pause", "minutes", 1, BIG, whole=True, optional=True, low_open=False))),
     Check("min_reward_risk", "Minimum reward:risk", "A trade whose target pays less than this for each rupee at risk is not placed.",
-          (Field("min_risk_reward", "Reward for 1 risk", "x", 0.1, 10),)),
+          (Field("min_risk_reward", "Reward for 1 risk", "x", 0, BIG),)),
     Check("margin_safety", "Margin safety", "Plan to use at most this share of your available margin.",
-          (Field("margin_safety_pct", "Of available margin", "%", 1, 100),)),
+          (Field("margin_safety_pct", "Of available margin", "%", 0, 100),)),
     Check("risk_sizing", "Risk-based sizing", "The size is your risk per trade divided by the stop distance, in whole lots.",
-          (Field("risk_per_trade_pct", "% of account", "%", 0.01, 100, optional=True),
-           Field("risk_per_trade_rupees", "Rupees", "₹", 1, 1_000_000_000, optional=True)), any_field=True),
+          (Field("risk_per_trade_pct", "% of account", "%", 0, 100, optional=True),
+           Field("risk_per_trade_rupees", "Rupees", "₹", 0, BIG, optional=True)), any_field=True),
     Check("portfolio_risk", "Risk across open positions", "What every open stop and the new trade could lose together stays under this.",
-          (Field("max_portfolio_risk_pct", "% of account", "%", 0.1, 100),), group="more"),
+          (Field("max_portfolio_risk_pct", "% of account", "%", 0, 100),), group="more"),
     Check("stop_cooldown", "Cool-down after a stop-out", "After a stop, new entries in the same symbol wait this long.",
-          (Field("stop_cooldown_minutes", "Wait", "minutes", 1, 1440, whole=True),), group="more"),
-    Check("drawdown", "Drawdown steps", "This far below your equity peak the size is halved; further below, new entries pause.",
-          (Field("dd_level_1_pct", "Halve size at", "%", 0.1, 100, optional=True),
-           Field("dd_level_2_pct", "Pause at", "%", 0.1, 100, optional=True)), group="more", any_field=True),
+          (Field("stop_cooldown_minutes", "Wait", "minutes", 1, BIG, whole=True, low_open=False),), group="more"),
+    # M68 PR-5 (TS1-054): the first step's cut is the trader's own (`dd_cut_pct`), no longer a fixed half.
+    Check("drawdown", "Drawdown steps", "This far below your equity peak the size is cut by your %; further below, new entries pause.",
+          (Field("dd_level_1_pct", "Cut size at", "%", 0, 100, optional=True),
+           Field("dd_cut_pct", "Cut the size by", "%", 0, 100, optional=True),
+           Field("dd_level_2_pct", "Pause at", "%", 0, 100, optional=True)), group="more", any_field=True),
     Check("event_rules", "Market event days", "Event days you or your admin listed pause or cut new entries.",
-          (Field("event_size_cut_pct", "Size cut when an event names none", "%", 1, 100, optional=True),), group="more"),
+          (Field("event_size_cut_pct", "Size cut when an event names none", "%", 0, 100, optional=True),), group="more"),
 )
 BY_ID: dict[str, Check] = {c.id: c for c in CHECKS}
 FIELD_CHECK: dict[str, str] = {f.key: c.id for c in CHECKS for f in c.fields}
@@ -167,6 +173,32 @@ def apply_switches(cfg: RiskConfig, enabled: list[str] | set[str]) -> RiskConfig
         for f in check.fields:
             update[f.key] = 0.0 if f.key == "min_risk_reward" else None
     return cfg.model_copy(update=update)
+
+
+# --- M68 PR-5: what a switched-on check still needs from the trader ---------------------------------------------------
+
+PAUSE_NEEDED = "Cool-down after losses in a row: with no minutes set, pick when the pause ends."
+DD_CUT_NEEDED = "Drawdown steps: enter how much the first step cuts the size."
+
+
+def needs_settings_of(values: dict[str, Any], enabled: list[str] | set[str] | None, pause: Any) -> list[str]:
+    """M68 PR-5 (TS1-051 / 054): the choices ATP no longer makes for a check the trader switched on - when a
+    losses-in-a-row pause with no minutes ends, and how much the first drawdown step cuts the size. `enabled` None:
+    every check whose value is set counts as on (the older Risk page, which has no switches). Pure."""
+    def on(check_id: str) -> bool:
+        return enabled is None or check_id in enabled
+    out: list[str] = []
+    if (on("loss_cooldown") and is_set("max_consecutive_losses", values.get("max_consecutive_losses"))
+            and not _has(values.get("loss_cooldown_minutes")) and pause is None):
+        out.append(PAUSE_NEEDED)
+    if on("drawdown") and _has(values.get("dd_level_1_pct")) and not _has(values.get("dd_cut_pct")):
+        out.append(DD_CUT_NEEDED)
+    return out
+
+
+def needs_settings(record: Any) -> list[str]:
+    """`needs_settings_of` for a row as it stands (the older Risk page's save)."""
+    return needs_settings_of(values_of(record), None, getattr(record, "loss_streak_pause", None))
 
 
 def events_on(record: Any) -> bool:
@@ -282,11 +314,17 @@ def view(record: Any, ceilings: dict[str, float]) -> dict[str, Any]:
             "id": c.id, "label": c.label, "help": c.help, "group": c.group, "enabled": c.id in sw["enabled"], "saved": c.id in sw["saved"],
             "fields": [{"key": f.key, "label": f.label, "unit": f.unit, "min": f.low, "max": min(f.high, _ceiling(f.key, ceilings)),
                         "ceiling": _ceiling(f.key, ceilings) if _ceiling(f.key, ceilings) < f.high else None,
-                        "whole": f.whole, "optional": f.optional, "value": values.get(f.key)} for f in c.fields],
+                        "whole": f.whole, "optional": f.optional, "min_open": f.low_open, "value": values.get(f.key)} for f in c.fields],
         })
     return {"checks": checks, "capital": getattr(record, "capital", None) if record is not None else None,
-            "loss_streak_pause": getattr(record, "loss_streak_pause", None) or "next_session",
+            # M68 PR-5 (TS1-051 / 052): null = Not set (no built-in choice is shown as if it were his).
+            "loss_streak_pause": _pick(getattr(record, "loss_streak_pause", None) if record is not None else None, ("next_session", "until_resume")),
+            "opposite_positions": _pick(getattr(record, "opposite_positions", None) if record is not None else None, ("allow", "deny")),
             "on": len(sw["enabled"]), "exits": "Exits are never checked: stops, targets and Exit now always work.", "page": PAGE_PATH}
+
+
+def _pick(value: Any, allowed: tuple[str, ...]) -> str | None:
+    return value if isinstance(value, str) and value in allowed else None
 
 
 def _ceiling(key: str, ceilings: dict[str, float]) -> float:
@@ -326,8 +364,9 @@ def plan_save(record: Any, body: dict[str, Any], ceilings: dict[str, float]) -> 
                 problems.append(f"{check.label}: enter a number.")
                 continue
             top = min(f.high, _ceiling(f.key, ceilings))
-            if raw < f.low or raw > f.high:
-                problems.append(f"{check.label}: {f.label.lower()} must be between {f.low:g} and {f.high:g}.")
+            if (raw <= f.low if f.low_open else raw < f.low) or raw > f.high:
+                problems.append(f"{check.label}: {f.label.lower()} must be {'more than' if f.low_open else 'at least'} {f.low:g}"
+                                + (f" and at most {f.high:g}." if f.high < BIG else "."))
                 continue
             if raw > top:
                 problems.append(f"{check.label}: your admin caps {f.label.lower()} at {top:g}. {ADMIN_TEXT}.")
@@ -350,11 +389,11 @@ def plan_save(record: Any, body: dict[str, Any], ceilings: dict[str, float]) -> 
         saved.add(check.id)
     lvl1, lvl2 = values.get("dd_level_1_pct"), values.get("dd_level_2_pct")
     if _has(lvl1) and _has(lvl2) and lvl1 > lvl2:
-        problems.append("Drawdown steps: the halve-size level must not be beyond the pause level.")
+        problems.append("Drawdown steps: the cut-size level must not be beyond the pause level.")
     stored = {k: values[k] for k in values}
     if "min_risk_reward" in stored:
         from app.risk_engine.routes import org_min_rr_to_store
-        stored["min_risk_reward"] = org_min_rr_to_store(float(stored["min_risk_reward"])) if _has(stored["min_risk_reward"]) else 0.0
+        stored["min_risk_reward"] = org_min_rr_to_store(float(stored["min_risk_reward"])) if _has(stored["min_risk_reward"]) else None   # TS1-053
     return stored, {"enabled": sorted(enabled), "saved": sorted(saved)}, problems
 
 
@@ -362,5 +401,5 @@ def switches_json(switches: dict[str, list[str]]) -> str:
     return json.dumps({"enabled": sorted(switches.get("enabled", [])), "saved": sorted(switches.get("saved", []))}, sort_keys=True)
 
 
-__all__ = ["CHECKS", "BY_ID", "FIELD_CHECK", "PAGE_PATH", "ADMIN_TEXT", "switches_of", "apply_switches", "derived_switches", "values_of",
+__all__ = ["needs_settings", "needs_settings_of", "PAUSE_NEEDED", "DD_CUT_NEEDED", "BIG", "CHECKS", "BY_ID", "FIELD_CHECK", "PAGE_PATH", "ADMIN_TEXT", "switches_of", "apply_switches", "derived_switches", "values_of",
            "events_on", "block", "as_text", "log_block", "view", "plan_save", "switches_json", "NO_STOP_WARNING"]

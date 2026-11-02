@@ -128,7 +128,8 @@ def test_filters_are_validated_stored_and_echoed_on_deployments(monkeypatch):
                  strike_filters={"min_oi": 100000, "max_spread_pct": 2.0, "target_delta": 0.3})
     assert ok.status_code == 201, ok.text
     body = ok.json()
-    assert body["strike_filters"] == {"min_oi": 100000.0, "max_spread_pct": 2.0, "target_delta": 0.3}
+    # M68 PR-4 (TS1-043): the tolerance and the strikes searched are his own (here: his saved 0.10 / 5), stored on the bot
+    assert body["strike_filters"] == {"min_oi": 100000.0, "max_spread_pct": 2.0, "target_delta": 0.3, "delta_tolerance": 0.1, "search_steps": 5}
     assert "filters: OI>=100000" in body["contract_rules"]
 
     # Preview: with a usable broker session the chain is fetched from it and the rationale returned.
@@ -166,13 +167,16 @@ def test_worker_trades_the_filtered_strike_and_records_why(monkeypatch):
             await session.commit()
     _run(mark())
 
+    # Every chain read through the fake broker. The worker's background market-memory / sentiment read
+    # (`sentiment.read_chain`, no expiry) also reaches it for any organisation another test left with a trader profile
+    # and a valid broker session, so the entry's own read is the one for this deployment's symbol and expiry.
+    chain_reads = []
+
     class Broker(_FakeBroker):
-        chain_calls = 0
         async def get_ltp(self, symbols):
             return {s: (24512.0 if "NIFTY 50" in s else 150.0) for s in symbols}
         async def get_option_chain(self, underlying, expiry=None):
-            Broker.chain_calls += 1
-            assert underlying == "NIFTY 50" and expiry == EXPIRY
+            chain_reads.append((underlying, expiry))
             return _chain()
     broker = Broker()
     monkeypatch.setattr(tw, "resolve_contract", lambda session, symbol, rules, direction, *, spot, today, broker="upstox", **kw:
@@ -186,7 +190,11 @@ def test_worker_trades_the_filtered_strike_and_records_why(monkeypatch):
     report = _run(worker.run_cycle(now=OPEN_NOW))
     assert report.signals_executed == 1, report.errors
     trade = _trades(t["tenant_id"])[0]
-    assert "24450 CE" in trade.symbol and trade.quantity == NIFTY_LOT and Broker.chain_calls == 1
+    own = ("NIFTY 50", EXPIRY)
+    assert "24450 CE" in trade.symbol and trade.quantity == NIFTY_LOT and chain_reads.count(own) == 1, chain_reads
+    # Any other chain read is the background read (no expiry), never a second strike-filtered read for an entry.
+    assert all(read[1] is None for read in chain_reads if read != own), chain_reads
+    assert len(_trades(t["tenant_id"])) == 1
 
     async def order():
         async with _session_factory() as session:

@@ -16,7 +16,7 @@ import { CONNECT_BROKER_PATH } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
 import { formatNumber, formatTimeIST } from "../ui/format";
 import {
-  START_BOT_PATH, LIMIT_FIELDS, LIMIT_KEYS, RISK_DEFAULTS, RISK_HELP, RISK_LABELS, SUGGESTIONS, limitsBody, perTradeText, riskErrors, riskNumbers,
+  START_BOT_PATH, LIMIT_FIELDS, LIMIT_KEYS, RISK_HELP, RISK_LABELS, SUGGESTIONS, limitsBody, perTradeText, riskErrors, riskNumbers,
   riskSentence, testSummary,
   type RiskField, type RiskForm, type StrategySuggestion,
 } from "./model";
@@ -121,17 +121,17 @@ function NumberField({ field, value, error, prefix, suffix, help, placeholder, o
 const SUFFIX: Partial<Record<RiskField, string>> = { riskPerTradePct: "%", dailyLossPct: "%", minRr: ": 1" };
 
 /** The form's starting values (TT-12): each limit the trader set himself, every other one empty ("Not set" - no number
- * is filled in for him); the starting capital from the paper account (`GET /paper/account`), or ₹1,00,000 when it is
- * not known. */
+ * is filled in for him); the starting capital from the paper account (`GET /paper/account`), else empty (M68 PR-7,
+ * TS1-067: Not set - ATP fills in no capital). */
 export function riskStart(status: PaperRiskStatus | null, startingCapital: number | null): RiskForm {
-  const capital = startingCapital !== null && startingCapital > 0 ? startingCapital : RISK_DEFAULTS.capital;
+  const capital = startingCapital !== null && startingCapital > 0 ? startingCapital : null;
   const own = (f: (typeof LIMIT_FIELDS)[number]): string => {
     const key = LIMIT_KEYS[f];
     const value = status?.settings?.[key];
     return status?.set?.includes(key) && typeof value === "number" && Number.isFinite(value) ? String(value) : "";
   };
   return {
-    capital: formatNumber(Math.round(capital)),             // "1,00,000"; the commas are read back (riskNumbers)
+    capital: capital === null ? "" : formatNumber(Math.round(capital)),     // "1,00,000"; the commas are read back (riskNumbers)
     riskPerTradePct: own("riskPerTradePct"), dailyLossPct: own("dailyLossPct"), maxTradesPerDay: own("maxTradesPerDay"), minRr: own("minRr"),
   };
 }
@@ -145,8 +145,8 @@ const notFound = (e: unknown) => e instanceof ApiError && e.status === 404;
  * nothing is sent for it. */
 export function RiskStepV2({ done, onChanged }: StepProps) {
   const [status, setStatus] = useState<PaperRiskStatus | null | "off">(null);
-  /** The paper account's starting capital, or "off" (no paper account) / null (not read): then no field. */
-  const [account, setAccount] = useState<number | "off" | null>(null);
+  /** The paper account's starting capital (null: Not set), or "off" (no paper account) / "unread": then no field. */
+  const [account, setAccount] = useState<number | null | "off" | "unread">("unread");
   const [form, setForm] = useState<RiskForm | null>(null);
   const [touched, setTouched] = useState<Partial<Record<RiskField, boolean>>>({});
   const [busy, setBusy] = useState(false);
@@ -155,7 +155,7 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
   useEffect(() => {
     let alive = true;
     const risk = api.paperRisk().then((r) => r as PaperRiskStatus | "off").catch((e: unknown) => (notFound(e) ? "off" as const : null));
-    const capital = api.paperAccount().then((a) => a.starting_capital).catch((e: unknown) => (notFound(e) ? "off" as const : null));
+    const capital = api.paperAccount().then((a) => a.starting_capital).catch((e: unknown) => (notFound(e) ? "off" as const : "unread" as const));
     void Promise.all([risk, capital]).then(([r, c]) => {
       if (!alive) return;
       setStatus(r);
@@ -176,12 +176,12 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
   }
   if (!form) return <Skeleton className="h-40" label="Loading" />;
 
-  const withCapital = typeof account === "number";            // unknown or off: no field, nothing sent for it
+  const withCapital = typeof account === "number" || account === null;      // unread or off: no field, nothing sent for it
   const errors = riskErrors(form, { capital: withCapital });
   const shown = (f: RiskField) => (touched[f] ? errors[f] : undefined);
   const n = riskNumbers(form);
   // Without the field, the limits are a share of the capital the server measures them from.
-  const basis = withCapital ? n.capital : status && typeof status === "object" ? status.capital_basis : RISK_DEFAULTS.capital;
+  const basis = withCapital ? n.capital : status && typeof status === "object" ? status.capital_basis : null;
   const sentence = errors.capital || errors.dailyLossPct ? null : riskSentence(basis, n.dailyLossPct);
   const perTrade = errors.capital || errors.riskPerTradePct ? null : perTradeText(basis, n.riskPerTradePct);
   const set = (f: RiskField) => (v: string) => { setForm({ ...form, [f]: v }); setNote(null); };
@@ -209,7 +209,7 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
       setBusy(false);
       return;
     }
-    if (typeof account === "number" && n.capital !== null && Math.round(account) !== n.capital) {
+    if (withCapital && n.capital !== null && (account === null || Math.round(account) !== n.capital)) {
       try {
         const a = await api.setPaperCapital(n.capital);
         setAccount(a.starting_capital);
@@ -233,7 +233,7 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
       </Details>
       {withCapital && (
         <div className="max-w-xs">
-          <NumberField field="capital" prefix="₹" value={form.capital} error={shown("capital")} onChange={set("capital")} onBlur={blur("capital")} />
+          <NumberField field="capital" prefix="₹" placeholder="Not set" value={form.capital} error={shown("capital")} onChange={set("capital")} onBlur={blur("capital")} />
         </div>
       )}
       <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-2">

@@ -45,6 +45,7 @@ const EXCLUDED_FILES: Record<string, string> = {
   "src/auth/SignInScreen.tsx": "AUTH - sign-in",
   "src/auth/google.ts": "AUTH - Google sign-in return",
   "src/auth/GoogleSignInButton.tsx": "AUTH - Google sign-in",
+  "src/auth/SocialButtons.tsx": "AUTH - Google / Facebook / broker sign-in start (the provider's own sign-in page, a full-page OAuth redirect)",
   "src/native/deepLinks.ts": "DEEP - a deep link opened from outside the app (notification tap, app link)",
   "src/ui/brokerSession.ts": "EXTERNAL - the broker's own login page (OAuth)",
   "src/settings/model.ts": "NAV - the Settings tab's own menu (one row per section)",
@@ -61,6 +62,7 @@ const EXCLUDED_FILES: Record<string, string> = {
  */
 const EXCLUDED_SITES: { file: string; text?: RegExp; line?: RegExp; reason: string }[] = [
   { file: "*", text: /SIGN_IN_(?:PAGE_)?PATH/, reason: "AUTH - sign in" },
+  { file: "src/settings/SignInMethodsCardV2.tsx", text: /location\.assign\(url\)/, reason: "EXTERNAL - linking a sign-in method opens the provider's own sign-in page (OAuth)" },
   { file: "src/App.tsx", text: /pathFor\("account"\)/, reason: "NAV - the account entry of the classic top bar" },
   { file: "src/App.tsx", text: /^navigate\(pathFor\(p\)\)/, reason: "NAV - the classic sidebar's handler" },
   { file: "src/shell/AppShellV2.tsx", text: /^navigate\(pathFor\(p\)\)/, reason: "NAV - the sidebar's handler" },

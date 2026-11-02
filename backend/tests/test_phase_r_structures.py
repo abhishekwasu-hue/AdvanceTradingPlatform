@@ -87,7 +87,7 @@ def test_new_structures_resolve_the_right_legs():
         _resolve(OptionStrategy.BEAR_CALL_SPREAD, SignalDirection.LONG)
     # Wingless structures ignore spread_width; winged ones still need it.
     assert _resolve(OptionStrategy.SHORT_STRADDLE, width=0).legs
-    with pytest.raises(ContractResolutionError, match="spread_width"):
+    with pytest.raises(ContractResolutionError, match="Needs your setting: Spread width"):      # M68 PR-4: his own, asked
         _resolve(OptionStrategy.IRON_BUTTERFLY, width=0)
 
     for s in (OptionStrategy.IRON_BUTTERFLY, OptionStrategy.SHORT_STRADDLE, OptionStrategy.SHORT_STRANGLE,

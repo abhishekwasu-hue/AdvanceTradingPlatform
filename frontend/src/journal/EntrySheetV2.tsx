@@ -1,4 +1,5 @@
 import { Check, ImagePlus, Trash2, X } from "lucide-react";
+import { AskAiAbout } from "../copilot/AskAiAbout";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { errorSentence } from "../api/errors";
 import { Sheet } from "../components/primitives/Dialog";
@@ -104,6 +105,8 @@ export function EntryEditorV2({ entry, api, customTags, onChanged, onRemoved, ex
       <div className="flex flex-wrap items-center justify-between gap-space-2">
         <span className="font-tabular text-t13 text-fg-muted">{formatDateTimeIST(entry.entry_time)}</span>
         <span className="flex items-center gap-space-3"><PnlV2 value={entry.pnl} paise /><RV2 value={entry.r_multiple} /></span>
+        {/* M72 PR-3: the Copilot beside the page, about this journal entry (a trade's entry: its tags too) */}
+        <AskAiAbout ctx={{ symbol: entry.symbol, object: entry.kind === "trade" ? { kind: "journal", id: entry.id } : undefined, page: "journal" }} />
       </div>
 
       <Section title="Plan (as recorded)" testId="plan">

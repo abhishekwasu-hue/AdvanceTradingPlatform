@@ -8,17 +8,18 @@ import { PaperBadge } from "../ui/PaperBadge";
 import { Details } from "../ui/Details";
 import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
-import { ORDER_TYPE_KEY, PRODUCT_KEY, orderDefaultsOf, useTradeSettings } from "../settings/tradeSettings";
+import { LOTS_KEY, ORDER_TYPE_KEY, PRODUCT_KEY, orderDefaultsOf, savedLots, useTradeSettings } from "../settings/tradeSettings";
 import { SaveAsDefault } from "../settings/SaveAsDefault";
+import { CapitalAsk, needsCapital } from "../settings/CapitalAsk";
 import { formatPrice } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
 import { fnoApi, runOnOptions, type FnoApi, type MultiExitResult, type MultiResult, type OrderPreview, type OrderResult, type PracticeAccount, type Side } from "./api";
 import {
-  MAX_LOTS, ORDER_TYPES, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
+  ORDER_TYPES, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
   blockedBy, draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
-  PRODUCT_UNSET_TEXT, ORDER_TYPE_UNSET_TEXT, firstMissing,
+  PRODUCT_UNSET_TEXT, ORDER_TYPE_UNSET_TEXT, LOTS_UNSET_TEXT, firstMissing,
 } from "./ticketModel";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
 import { riskLine, structureOf, ticketPayoffSentence, type RiskBudget, type RiskLine } from "./insights";
@@ -31,6 +32,7 @@ import { VISIBLE_LINES, askFirst, assembleLines, editField, factKey, liquidityCh
 import { CheckCardV2 } from "./CheckCardV2";
 import { useCheckCard, type TicketCard } from "./useCheckCard";
 import { Combobox } from "../ui/Combobox";
+import { prefillChips, type TicketPrefill } from "../copilot/ticket/intent";
 
 /**
  * FNO-1 (owner order section 6): the ONE order ticket - used by the option chain now, built to be opened the same way
@@ -56,6 +58,9 @@ export interface OrderTicketProps {
   /** 8b slice 4: the chain rows on screen when the ticket opened from the chain (its liquidity line); absent elsewhere
    * (the line then says bid-ask and open interest are not known here). */
   chainRows?: readonly ChainRow[] | null;
+  /** M72 PR-9 (CP-9): values the Copilot prepared from the user's own message (`copilot/ticket/intent.ts`); each shows its
+   * source and stays changeable. Absent everywhere else: today's ticket exactly. */
+  prefill?: TicketPrefill | null;
 }
 
 export type Step = { kind: "edit" } | { kind: "review"; preview: OrderPreview } | { kind: "done"; result: OrderResult }
@@ -132,12 +137,20 @@ export interface OrderTicketState {
 /** M76 MP-2: the draft the check service reads (the LTP is the one on his screen). */
 export function checkDraftOf(target: TicketTarget, d: Draft): CheckDraft {
   const price = Number(d.price);
-  return { underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right, side: d.side, lots: d.lots,
+  return { underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right, side: d.side, lots: d.lots ?? 0,   // Review runs only once lots is chosen (draftProblems)
     order_type: d.orderType, product: d.product, price: d.orderType === "LIMIT" && Number.isFinite(price) && price > 0 ? price : null,
     ltp: typeof target.ltp === "number" && target.ltp > 0 ? target.ltp : null };
 }
 
-export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, chainRows, shortcuts = true }: Omit<OrderTicketProps, "onClose"> & {
+/** M72 PR-9: a fresh draft with the user's defaults, then the values he typed to the Copilot (his message wins). */
+export function draftWithPrefill(side: Side, defaults: DraftDefaults | undefined, prefill: TicketPrefill | null | undefined): Draft {
+  const d = newDraft(side, defaults);
+  if (!prefill) return d;
+  return { ...d, ...(prefill.lots !== undefined ? { lots: clampLots(prefill.lots) } : {}),
+           ...(prefill.price !== undefined ? { price: prefill.price } : {}), ...(prefill.stopLoss !== undefined ? { stopLoss: prefill.stopLoss } : {}) };
+}
+
+export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, chainRows, shortcuts = true, prefill }: Omit<OrderTicketProps, "onClose"> & {
   shortcuts?: boolean;
 }): OrderTicketState {
   // Settings part C: the user's own lots / product / order type start a new ticket (v2 only; marked, changeable).
@@ -148,11 +161,13 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
   const defaults = useMemo<DraftDefaults | undefined>(() => {
     const mine = orderDefaultsOf(own);
     const p: DraftDefaults = { ...ticketPrefill(saved) };
+    const lots = savedLots(own);                 // M68 PR-2: his Position size > Lots first (TS-6: then the ticket lots)
+    if (lots !== null) p.lots = lots;
     if (mine.product) p.product = mine.product;
     if (mine.orderType) p.orderType = mine.orderType;
     return Object.keys(p).length ? p : undefined;
   }, [saved, own]);
-  const [draft, setDraft] = useState<Draft>(() => newDraft(side, defaults));
+  const [draft, setDraft] = useState<Draft>(() => draftWithPrefill(side, defaults, prefill));
   const [step, setStep] = useState<Step>({ kind: "edit" });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -181,7 +196,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
   // A new target or side starts a fresh ticket (and a fresh id, so a second order is never mistaken for the first).
   useEffect(() => {
     if (!open) return;
-    setDraft(newDraft(side, defaults));
+    setDraft(draftWithPrefill(side, defaults, prefill));
     setStep({ kind: "edit" });
     setProblem(null);
     setRunOn("ONE");
@@ -190,16 +205,17 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     resetChecks();
     seen.current = new Set(sessionSeen());   // facts he pressed Place on earlier in this tab session (amendment 5)
     return () => metrics.current?.closed();   // the ticket ended (closed, or a new target) after a Review without Place
-  }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults, resetChecks]);
+  }, [open, side, target?.underlying, target?.expiry, target?.strike, target?.right, defaults, prefill, resetChecks]);
 
-  // M68 TS-3: the ticket ASKS for a field that is Not set - it focuses the first one (order type, then product), and
-  // moves on to the next once he picks it. Review stays off until both are chosen.
+  // M68 TS-3: the ticket ASKS for a field that is Not set - it focuses the first one (lots, order type, then product), and
+  // moves on to the next once he picks it. Review stays off until all are chosen.
   const asking = step.kind === "edit" ? firstMissing(draft) : null;
   useEffect(() => {
     if (!open || !asking) return undefined;
     const timer = window.setTimeout(() => {
       const group = document.getElementById(`${idPrefix}-${asking}`);
-      group?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: false });
+      if (group instanceof HTMLInputElement) group.focus({ preventScroll: false });      // the lots field itself
+      else group?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: false });
     }, 0);
     return () => window.clearTimeout(timer);
   }, [open, asking, idPrefix]);
@@ -277,7 +293,6 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     if (shown) metrics.current?.placed(shown, warnOn ? { pending: checks.pending, checksMs: checks.answer?.ms ?? checks.checksMs } : undefined);   // never awaited
     if (warnOn && step.kind === "review") checks.placed(lines, checkDraftOf(target, draft));   // accepted today; fire and forget
     setBusy(true);
-    setBusy(true);
     try {
       if (runOn !== "ONE" && api.placeMulti) {
         const multi = await api.placeMulti(askOf(target, draft, ref.current), runOn);
@@ -331,8 +346,11 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
   };
 }
 
-export default function OrderTicketV2({ open, target, side, onClose, onPlaced, api = fnoApi, chainRows }: OrderTicketProps) {
-  const t = useOrderTicket({ open, target, side, onPlaced, api, chainRows });
+export default function OrderTicketV2({ open, target, side, onClose, onPlaced, api = fnoApi, chainRows, prefill }: OrderTicketProps) {
+  const t = useOrderTicket({ open, target, side, onPlaced, api, chainRows, prefill });
+  // M72 PR-9: the source of each value the Copilot prepared, shown while that field still holds it
+  const chips = prefill && t.step.kind === "edit" ? prefillChips(prefill).filter((c) =>
+    c.field === "lots" ? t.draft.lots === prefill.lots : t.draft[c.field] === prefill[c.field]) : [];
   if (!target) return null;
 
   const label = target.label ?? (target.right === "FUT" ? `${target.underlying} ${target.expiry} FUT` : `${target.underlying} ${target.strike} ${target.right}`);
@@ -351,6 +369,11 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
               <p className="text-t13 text-fg-muted font-tabular">
                 LTP <TermHint term="ltp" /> {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}
               </p>
+              {chips.length > 0 && (
+                <p className="mt-space-1 flex flex-wrap gap-space-1" data-ticket="prefill-sources">
+                  {chips.map((c) => <span key={c.field} data-prefill={c.field} className="rounded-pill bg-surface-2 px-space-2 py-space-1 text-t12 text-fg-muted">{c.text}</span>)}
+                </p>
+              )}
             </div>
             <RD.Close aria-label="Close" className="-mr-space-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg">
               <X size={18} aria-hidden />
@@ -444,18 +467,25 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                 Lots{marks.lots && <span className="ml-space-1 font-normal text-brand" data-from-defaults="lots">{FROM_DEFAULTS}</span>}
               </label>
               <div className="flex items-center gap-space-2">
-                <button type="button" aria-label="One lot less" onClick={() => onDraft({ lots: clampLots(draft.lots - 1) })} disabled={draft.lots <= 1}
+                <button type="button" aria-label="One lot less" onClick={() => draft.lots !== null && onDraft({ lots: clampLots(draft.lots - 1) })} disabled={draft.lots === null || draft.lots <= 1}
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border text-fg disabled:opacity-40" data-ticket="lots-less">
                   <Minus size={16} aria-hidden />
                 </button>
-                <input id={ids.lots} inputMode="numeric" value={draft.lots} className={cx(FIELD, "text-center")}
-                  onChange={(e) => onDraft({ lots: clampLots(Number(e.target.value || 1)) })} data-ticket="lots" />
-                <button type="button" aria-label="One lot more" onClick={() => onDraft({ lots: clampLots(draft.lots + 1) })} disabled={draft.lots >= MAX_LOTS}
+                <input id={ids.lots} inputMode="numeric" value={draft.lots ?? ""} placeholder="Lots" className={cx(FIELD, "text-center")}
+                  aria-invalid={asking === "lots" ? true : undefined}
+                  onChange={(e) => {
+                    const text = e.target.value.trim();
+                    const v = Number(text);
+                    onDraft({ lots: text === "" ? null : Number.isFinite(v) ? clampLots(v) : draft.lots });     // a letter changes nothing
+                  }} data-ticket="lots" />
+                <button type="button" aria-label="One lot more" onClick={() => onDraft({ lots: clampLots((draft.lots ?? 0) + 1) })}   // M68 PR-4 (TS1-046): no ATP lot cap
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-border text-fg disabled:opacity-40" data-ticket="lots-more">
                   <Plus size={16} aria-hidden />
                 </button>
               </div>
               <p className="mt-space-1 text-t13 text-fg font-tabular" data-ticket="units">{unitsText(draft.lots, target.lotSize)}</p>
+              {draft.lots === null && <p className="text-t12 text-fg-muted" data-ticket="lots-unset">{LOTS_UNSET_TEXT}</p>}
+              {saveDefaults && draft.lots !== null && !marks.lots && <SaveAsDefault key={draft.lots} fieldKey={LOTS_KEY} value={draft.lots} />}
             </div>
             <Segmented label="Order type" testId="order-type" id={`${idPrefix}-order-type`} asking={asking === "order-type"} value={draft.orderType}
               onChange={(v) => onDraft({ orderType: v })} options={ORDER_TYPES} />
@@ -527,7 +557,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
           </>
         )}
 
-        {step.kind === "review" && <Review preview={step.preview} budget={budget} events={events} liquidity={liquidity} card={card} />}
+        {step.kind === "review" && <Review preview={step.preview} budget={budget} events={events} liquidity={liquidity} card={card}
+          onCapitalSaved={onReviewWith ? () => onReviewWith({}) : undefined} />}
 
         {step.kind === "done" && (
           <p role="status" data-ticket="result"
@@ -557,6 +588,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
         {step.kind === "review" && (
           <>
             {(() => {
+              // M68 PR-7: the starting capital is asked above, in the confirm step itself (no second sentence here).
+              if (needsCapital(step.preview.refusals)) return null;
               // M64 RM-3: a Risk limits refusal is a block message (its numbers, Change limit, a smaller size offered).
               const block = step.preview.risk?.blocks?.[0];
               if (block && !step.preview.errors.length) {
@@ -565,7 +598,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
               const why = blockedBy(step.preview);
               return why && (
                 <p className="basis-full text-t13 text-fg" data-ticket="blocked-by">
-                  {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-ticket="change-limits">Change limit</a></>}
+                  {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-ticket="change-limits">{why.link === "/settings/trade-settings" ? "Open Trade settings" : "Change limit"}</a></>}
                 </p>
               );
             })()}
@@ -601,10 +634,12 @@ export function reviewRiskLines(p: OrderPreview, budget?: RiskBudget | null, eve
 
 /** The confirm step: every figure from the server, before anything is placed. 8b: the payoff in plain words, the risk
  * line (the max loss beside the user's own limits, information only: `can_place` alone decides the button) and Explain. */
-export function Review({ preview: p, budget, events, liquidity, card }: {
+export function Review({ preview: p, budget, events, liquidity, card, onCapitalSaved }: {
   preview: OrderPreview; budget?: RiskBudget | null; events?: EventRisk | "error" | null; liquidity?: RiskLine | null;
   /** M76 MP-2: with the check card, its lines replace "Before you place" and the warnings list (one card, amendment 5). */
   card?: TicketCard;
+  /** M68 PR-7 (TS-3, D4): his paper account has no starting capital yet - asked here; then the order is checked again. */
+  onCapitalSaved?: () => void;
 }) {
   const problems = [...p.errors, ...p.refusals];
   const payoff = ticketPayoffSentence(p);
@@ -642,6 +677,7 @@ export function Review({ preview: p, budget, events, liquidity, card }: {
         </Line>
         {p.charges && <Line label="Charges (estimate)" testId="charges">{moneyText(p.charges.total)}</Line>}
       </dl>
+      {p.charges?.words && <p className="text-t12 text-fg-muted" data-ticket="charges-words">{p.charges.words}</p>}
       {p.fill_note && p.fill_price !== null && !samePriceNote(p.fill_note) && <p className="text-t13 text-fg-muted">{p.fill_note}</p>}
       {payoff && (
         <Details id="ticket.payoff-words" label="In plain words" className="mt-0"><p data-ticket="plain-words">{payoff}</p></Details>
@@ -655,6 +691,7 @@ export function Review({ preview: p, budget, events, liquidity, card }: {
           {problems.map((r) => <li key={r}>{r}</li>)}
         </ul>
       )}
+      {onCapitalSaved && needsCapital(p.refusals) && <CapitalAsk onSaved={onCapitalSaved} />}
       {p.smart?.note && <p className="text-t13 text-fg-muted" data-ticket="slices">{p.smart.note}</p>}
       {card ? card.statuses.map((w) => <p key={w} className="text-t13 text-fg-muted" data-ticket="status">{w}</p>) : p.warnings.length > 0 && (
         <ul className="space-y-space-1 text-t13 text-fg-muted" data-ticket="warnings">

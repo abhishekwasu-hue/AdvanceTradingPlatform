@@ -8,6 +8,11 @@ from app.core.models import RiskConfig, RiskDecision, Signal
 from app.instruments.models import ContractSpec
 from app.risk_engine import risk_limits
 
+# M68 PR-2 (TS1-017): no size of the trader's own - one sentence everywhere (app/execution/position_size.py imports it;
+# defined here because the execution layer imports this module).
+NEEDS_LOTS = "Needs your setting: Lots (Settings › Trade settings › Position size) - nothing was placed"
+CASH_UNIT = 1       # fact: a cash share trades in single shares (an int, as the old organisation unit was)
+
 
 def nonfinite_levels(signal: Signal) -> str:
     """The signal's price levels that are set but not finite numbers (NaN or infinite), as "entry nan, target1 inf";
@@ -64,12 +69,16 @@ class RiskManager:
     """Every order, paper or live, must pass through here before it reaches execution.
 
     M64 (Settings > Risk limits): each check here runs only when the trader switched it on - a switched-off check reaches
-    this class as "not set" (app/risk_engine/risk_limits.apply_switches). With every check off the size is the lots the
-    trader typed (`requested_quantity`), else one lot. Every refusal is one plain sentence with its numbers (`reasons`)
-    and the same as data (`blocks`) for the block message. Exits never come here (ADR-0004)."""
+    this class as "not set" (app/risk_engine/risk_limits.apply_switches). With every check off the size is the trader's
+    own (`requested_quantity`: the order's, the bot's or his Trade settings > Position size). M68 PR-2 (TS1-017): with no
+    size of his own and no risk per trade the entry is refused with "Needs your setting: Lots" - ATP no longer picks one
+    lot. `one_lot_if_unsized` keeps the old one lot for a backtest only (a test on past prices that places nothing,
+    M68Q-PR2-1). Every refusal is one plain sentence with its numbers (`reasons`) and the same as data (`blocks`) for the
+    block message. Exits never come here (ADR-0004)."""
 
-    def __init__(self, config: RiskConfig) -> None:
+    def __init__(self, config: RiskConfig, *, one_lot_if_unsized: bool = False) -> None:
         self.config = config
+        self.one_lot_if_unsized = one_lot_if_unsized
 
     def validate_and_size(
         self, signal: Signal, state: TradingDayState, contract_spec: Optional[ContractSpec] = None,
@@ -81,7 +90,8 @@ class RiskManager:
         tenant's own configured `RiskConfig.lot_size`, so this stays fully backward compatible.
 
         DEF-0 (owner, 28 Oct): each limit applies only when the trader set it. With no risk per trade set the size is
-        not risk-based: it is `requested_quantity` (the trader's own lots, or the caller's cap) when given, else one lot.
+        not risk-based: it is `requested_quantity` (the trader's own size) when given, else - M68 PR-2 - no size at all:
+        the entry is refused with "Needs your setting: Lots" (a backtest's `one_lot_if_unsized`: one lot, as before).
         """
         if not signal.is_tradeable:
             return RiskDecision(approved=False, reasons=["This signal says no trade."])
@@ -114,18 +124,24 @@ class RiskManager:
             return self._refused(blocks)
 
         risk_amount = cfg.risk_amount()
-        unit = contract_spec.lot_size if contract_spec is not None else cfg.lot_size
+        # TS1-018: the unit is the contract's lot (a fact); a cash symbol's unit is the organisation's own saved unit, else
+        # one share (a fact: a cash share trades in single shares).
+        unit = contract_spec.lot_size if contract_spec is not None else (cfg.lot_size or CASH_UNIT)
         typed = float(requested_quantity) if requested_quantity is not None and requested_quantity > 0 else None
         warnings: list[str] = []
         if risk_amount is None:
-            # DEF-0 / M64: no risk-based sizing - the trader's own size (or one lot); the size does not depend on the stop
-            # distance (an undefined-risk structure with no stop set sizes too).
+            # DEF-0 / M64: no risk-based sizing - the trader's own size; the size does not depend on the stop distance (an
+            # undefined-risk structure with no stop set sizes too). M68 PR-2: no size of his own - nothing is placed.
+            if typed is None and not self.one_lot_if_unsized:
+                return RiskDecision(approved=False, reasons=[NEEDS_LOTS])
             quantity = typed if typed is not None else float(unit)
             return self._size_checked(quantity, unit, warnings, typed=True)
 
         if signal.direction == SignalDirection.SHORT and signal.stop_loss <= 0:
             # M64 RM-2: a short with no stop has no limit to its loss, so risk-based sizing cannot size it - the trader's
-            # own lots (or one lot) are used with a WARNING chip; never a refusal.
+            # own lots are used with a WARNING chip (M68 PR-2: none of his own - nothing is placed, "Needs your setting").
+            if typed is None and not self.one_lot_if_unsized:
+                return RiskDecision(approved=False, reasons=[NEEDS_LOTS])
             quantity = typed if typed is not None else float(unit)
             warnings.append(risk_limits.NO_STOP_WARNING.format(lots=risk_limits.lots_text(quantity / unit if unit else quantity)))
             return self._size_checked(quantity, unit, warnings, typed=True)

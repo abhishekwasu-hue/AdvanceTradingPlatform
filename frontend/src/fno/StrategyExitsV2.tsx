@@ -22,10 +22,10 @@ export function StrategyExitsV2({ form, onChange, legCount, onSaveDefaults, save
   onSaveDefaults?: () => void;
   saveNote?: string | null;
 }) {
-  const unit = unitOf(form.measure);
+  const unit = form.measure ? unitOf(form.measure) : null;       // M68 PR-3: no measure chosen yet - no unit
   const set = (patch: Partial<StrategyExitForm>) => onChange({ ...patch, fromDefaults: false });
   const errors = exitErrors(form);
-  const fields = trailFields(form.trailKind, form.measure);
+  const fields = form.measure ? trailFields(form.trailKind, form.measure) : [];
   const level = form.measure === "SPOT";
   return (
     <section aria-label="Exits for this strategy" className="space-y-space-2 rounded-control border border-subtle p-space-3" data-basket="strategy-exits">
@@ -40,11 +40,11 @@ export function StrategyExitsV2({ form, onChange, legCount, onSaveDefaults, save
 
       <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-2">
         <label className="block">
-          <span className={LABEL}>{level ? "Overall stop-loss (spot level)" : `Overall stop-loss, a loss of (${unit})`}</span>
+          <span className={LABEL}>{level ? "Overall stop-loss (spot level)" : unit ? `Overall stop-loss, a loss of (${unit})` : "Overall stop-loss"}</span>
           <input className={FIELD} inputMode="decimal" value={form.sl} onChange={(e) => set({ sl: e.target.value })} data-exits-sl autoComplete="off" />
         </label>
         <label className="block">
-          <span className={LABEL}>{level ? "Overall target (spot level)" : `Overall target, a profit of (${unit})`}</span>
+          <span className={LABEL}>{level ? "Overall target (spot level)" : unit ? `Overall target, a profit of (${unit})` : "Overall target"}</span>
           <input className={FIELD} inputMode="decimal" value={form.target} onChange={(e) => set({ target: e.target.value })} data-exits-target autoComplete="off" />
         </label>
       </div>

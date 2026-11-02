@@ -290,8 +290,8 @@ def test_the_largest_size_uses_the_organisation_s_risk_per_trade_when_it_is_larg
             return user_cap, await C.largest_risk_amount(session, user, capital, settings), cfg
     user_cap, largest, cfg = _run(go(1.5))
     assert user_cap is None and largest == 30_000.0                     # TT-12: no cap of his own; the organisation's 1.5% of 20 lakh
-    user_cap, largest, _ = _run(go(5.0))                      # above the platform ceiling (2%): clamped
-    assert largest == 40_000.0                                           # 5% clamped to the 2% ceiling
+    user_cap, largest, _ = _run(go(5.0))                      # M68 PR-5 (TS1-048): no ceiling unless an admin sets one
+    assert largest == 100_000.0                                          # his 5% of 20 lakh, not clamped
 
 
 def test_a_contract_counts_under_its_underlying_or_is_refused(monkeypatch):

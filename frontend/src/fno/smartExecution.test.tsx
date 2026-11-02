@@ -133,6 +133,6 @@ describe("his own smart-execution settings", () => {
     expect(ok.value.settlement_days_before).toBe(6);
     expect(ok.value.protection_band_pct).toBe(1.5);
     expect(smartOf({ ...smartFormOf(SMART_DEFAULTS), settlement_days_before: "2.5" }).problems[0]).toContain("whole number");
-    expect(smartOf({ ...smartFormOf(SMART_DEFAULTS), settlement_band_pct: "50" }).problems[0]).toContain("from 0 to 20");
+    expect(smartOf({ ...smartFormOf(SMART_DEFAULTS), settlement_band_pct: "150" }).problems[0]).toContain("from 0 to 100");
   });
 });

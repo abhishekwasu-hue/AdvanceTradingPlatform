@@ -6,7 +6,8 @@ import { SETTINGS_ROWS } from "./model";
 import { SETTINGS_PATH, settingsSectionAt } from "./paths";
 import { SaveAsDefault } from "./SaveAsDefault";
 import {
-  NOT_SET, changesOf, draftOf, effectiveValue, parseField, partsOf, saveAsDefault, saveTradeSettings, setCount, unsavedWords, valueWords,
+  NOT_SET, changesOf, draftOf, effectiveValue, eventActionOf, parseField, partsOf, saveAsDefault, saveTradeSettings, setCount, unsavedWords,
+  valueWords,
   type TradeField, type TradeSection, type TradeSettingsView,
 } from "./tradeSettings";
 import TradeSettingsV2 from "./TradeSettingsV2";
@@ -155,5 +156,26 @@ describe("M76 MP-1: warning switches start from the owner's state, shown beside 
     expect(unsavedWords(sw({ default: null, default_by: null }))).toBe("Not set");
     expect(effectiveValue(sw({ default: null }))).toBeNull();
     expect(unsavedWords(sw({ kind: "number", default: undefined }))).toBe("Not set");
+  });
+});
+
+describe("M68 PR-5 Risk limits for the forms", () => {
+  const field = (key: string, value: unknown, saved: boolean, scope: "user" | "organisation" = "user"): TradeField => ({
+    key, label: key, kind: scope === "organisation" ? "number" : "choice", help: "", unit: scope === "organisation" ? "%" : "",
+    choices: [{ value: "BLOCK", label: "Pause new entries" }, { value: "SIZE_CUT", label: "Cut the size" }],
+    low: 0, high: 100, low_open: true, term: null, fact: false, wired: true, scope, value, saved });
+  const view = (fields: TradeField[]): TradeSettingsView => ({ admin: false, page: "/settings/trade-settings",
+    sections: [{ id: "risk_limits", title: "Risk limits", today: null, fields }] });
+
+  it("a market event form starts from his own saved action only, else asks (TS1-058)", () => {
+    expect(eventActionOf(view([field("risk_limits.event_default_action", "BLOCK", true)]))).toBe("BLOCK");
+    expect(eventActionOf(view([field("risk_limits.event_default_action", null, false)]))).toBeUndefined();
+    expect(eventActionOf(null)).toBeUndefined();
+  });
+
+  it("a team ceiling shows read-only as his admin's value, or no ceiling (TS1-048)", () => {
+    const html = (f: TradeField) => renderToStaticMarkup(<MemoryRouter><TradeSettingsV2 initial={view([f])} /></MemoryRouter>);
+    expect(html(field("risk_limits.ceiling_risk_per_trade_pct", 2, true, "organisation"))).toContain("Your admin: 2");
+    expect(html(field("risk_limits.ceiling_risk_per_trade_pct", null, false, "organisation"))).toContain("No ceiling");
   });
 });

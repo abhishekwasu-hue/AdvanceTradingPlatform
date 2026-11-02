@@ -1,7 +1,7 @@
 import { ApiError, getToken, request, tryRefresh } from "../api/client";
 import { API_V1 } from "../api/base";
 import { apiErrorFrom, NETWORK_MESSAGE } from "../api/errors";
-import type { AnalysisItem, AnalyzeStatus, HybridPick, SharedAnalysis, StrikesAnswer } from "./types";
+import type { AnalysisItem, AnalyzeStatus, HybridOverride, SharedAnalysis, StrikesAnswer } from "./types";
 
 /**
  * Analyze a chart: the calls the page makes (backend app/chart_analyze/routes.py). JSON routes go through the shared
@@ -47,7 +47,12 @@ export const chartAnalyzeApi = {
   status: () => request<AnalyzeStatus>(`${PATH}/status`),
   list: () => request<{ items: AnalysisItem[] }>(`${PATH}/items`),
   get: (id: number) => request<AnalysisItem>(`${PATH}/items/${id}`),
-  analyze: (id: number) => request<AnalysisItem>(`${PATH}/items/${id}/analyze`, { method: "POST" }),
+  /** M84 (hybrid): `change` fills a value the analysis asked for, or changes one on a finished analysis (the answer is
+   * then a new analysis of the same picture). Empty values are left out (read from the chart). */
+  analyze: (id: number, change?: Partial<HybridOverride>) => {
+    const body = Object.fromEntries(Object.entries(change ?? {}).filter(([, v]) => typeof v === "string" && v.trim()));
+    return request<AnalysisItem>(`${PATH}/items/${id}/analyze`, Object.keys(body).length ? { method: "POST", body: JSON.stringify(body) } : { method: "POST" });
+  },
   /** The option strikes from the user's own settings for this analysis; `symbol` when the picture's symbol was not read. */
   strikes: (id: number, symbol?: string) =>
     request<StrikesAnswer>(`${PATH}/items/${id}/strikes${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ""}`),
@@ -58,14 +63,14 @@ export const chartAnalyzeApi = {
   unshare: (id: number) => request<AnalysisItem>(`${PATH}/items/${id}/share`, { method: "DELETE" }),
   /** The structure-only copy behind a link (no name, no price, no date, no picture). */
   shared: (token: string) => request<SharedAnalysis>(`${PATH}/shared/${encodeURIComponent(token)}`),
-  /** One chart: a file or a link (never both). Hybrid also sends the symbol / timeframe the user picked (M59 CR-4) -
-   * the only source of them; no price is ever sent or read from the picture. */
-  add: async (source: { file?: Blob; fileName?: string; link?: string }, mode: "image_only" | "hybrid", pick?: HybridPick): Promise<AnalysisItem> => {
+  /** One chart: a file or a link (never both). M84, hybrid: the symbol / timeframe are OPTIONAL - an empty one is read
+   * from what is printed on the chart; a typed one wins. No price is ever sent or read from the picture. */
+  add: async (source: { file?: Blob; fileName?: string; link?: string }, mode: "image_only" | "hybrid", pick?: Partial<HybridOverride>): Promise<AnalysisItem> => {
     const form = new FormData();
     form.append("mode", mode);
     if (mode === "hybrid" && pick) {
-      form.append("symbol", pick.symbol);
-      form.append("timeframe", pick.timeframe);
+      if (pick.symbol?.trim()) form.append("symbol", pick.symbol.trim());
+      if (pick.timeframe?.trim()) form.append("timeframe", pick.timeframe.trim());
     }
     if (source.file) form.append("file", source.file, source.fileName ?? "chart.png");
     else form.append("link", source.link ?? "");

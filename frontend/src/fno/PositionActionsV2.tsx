@@ -17,7 +17,8 @@ const STRONG = `${BUTTON} bg-fg text-surface-1 hover:opacity-90`;
 const SMALL = "inline-flex min-h-11 items-center rounded-control border border-border px-space-3 text-t13 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand lg:min-h-9";
 const INPUT = "h-11 w-28 rounded-control border border-border bg-surface-1 px-space-2 font-tabular text-t14 text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-9";
 
-export type PositionActionAsk = { kind: "part" | "reverse"; position: TradeRecord };
+/** `lots` (M76 MP-10 "Close half"): the lots his own tap chose, shown in the stepper; he still confirms. Absent: empty. */
+export type PositionActionAsk = { kind: "part" | "reverse"; position: TradeRecord; lots?: number };
 
 /** The line after "Exit part": the closed lots' profit / loss is the shared signed value (UX-11 U2: + ▲ / − ▼ / 0 muted). */
 export function ExitPartResultLine({ pieces }: { pieces: ReturnType<typeof exitPartPieces> }) {
@@ -42,7 +43,8 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
   const [problem, setProblem] = useState<string | null>(null);
   const stopId = useId();
   const position = ask?.position;
-  useEffect(() => { setLots(null); setStop(""); setRef(newRef()); setWarning(null); setProblem(null); }, [position?.id, ask?.kind]);
+  const asked = ask?.kind === "part" && ask.lots ? clampLots(ask.lots, openLots(ask.position)) : null;
+  useEffect(() => { setLots(asked); setStop(""); setRef(newRef()); setWarning(null); setProblem(null); }, [position?.id, ask?.kind, asked]);
   if (!ask || !position) return null;
   const held = openLots(position);
   const needsStop = ask.kind === "reverse" && reverseNeedsStop(position);

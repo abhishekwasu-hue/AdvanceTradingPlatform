@@ -16,6 +16,7 @@ import { AnnotationsV2 } from "./AnnotationsV2";
 import { contractEmptyNote, isContract, openingSymbol, readingKey } from "./model";
 import { PlanPanelV2 } from "./PlanPanelV2";
 import { EventsV2 } from "./EventsV2";
+import { PositionCardsV2 } from "./PositionCardsV2";
 import { Button, Sheet } from "../../components/primitives";
 import { MyStudiesV2 } from "../../study/MyStudiesV2";
 import { SaveStudySheetV2 } from "../../study/SaveStudySheetV2";
@@ -105,6 +106,8 @@ export default function ChartWorkspaceV2() {
       {/* M75 W-6 (CW-4): the trade plan panel in the same tab, for the chart's symbol (preview only). */}
       {/* M76 MP-6 (S-2): the open chart's reading, for the plan's P&L at its next areas - only on the underlying's own chart
           (a futures / option contract's areas are that contract's prices, not the spot the plan is priced at) */}
+      {/* M76 MP-10 (E-3 / E-4): his live positions on this underlying, the one-tap exits through the existing exit paths */}
+      {pick && !isContract(pick.exchange) && <PositionCardsV2 symbol={pick.symbol} engine={engine} />}
       {pick && <PlanPanelV2 symbol={pick.symbol}
         annotations={read.status === "ready" && !isContract(pick.exchange) ? read.read.annotations ?? null : null} />}
       {studiesOn && pick && key && (

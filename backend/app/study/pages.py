@@ -344,6 +344,57 @@ def notes(lay: Layout, snap: Mapping[str, Any]) -> None:
                   [[str(c.get("rule")), str(c.get("answer")).capitalize()] for c in checklist])
 
 
+def _na(value: Any, decimals: int = 2) -> str:
+    return format_number(value if isinstance(value, (int, float)) and not isinstance(value, bool) else None, decimals)
+
+
+def ai_card(lay: Layout, snap: Mapping[str, Any]) -> None:
+    """SX-5: the AI explanation card as the workspace showed it, and "How I worked this out"."""
+    lay.heading(S.SECTION_TITLES["ai_card"])
+    card = (snap.get("data") or {}).get("ai_card")
+    if not card:
+        lay.not_available(str((snap.get("not_available") or {}).get("ai_card") or "no AI card was saved with this study"))
+        return
+    lay.para(f"{TF_WORDS.get(str(card.get('timeframe')), str(card.get('timeframe'))).capitalize()} chart", colour=lay.pal.text_muted)
+    rows = [[str(line.get("name")), str(line.get("text"))] for line in card.get("lines") or []]
+    if rows:
+        lay.table([("Part", 0.26, "left"), ("What the card says", 0.74, "left")], rows)
+    evidence = card.get("evidence") or []
+    if evidence:
+        lay.table([("Evidence", 0.74, "left"), ("On the chart", 0.26, "left")],
+                  [[str(e.get("name")), "Present" if e.get("present") else "Not present"] for e in evidence])
+    how = card.get("how") or {}
+    lay.para("How I worked this out", size=SIZE_BODY)
+    lay.kv([("Reading as of", ist(how.get("reading_as_of"))), ("Card made", ist(how.get("made_at"))),
+            *[("Note", str(n)) for n in how.get("notes") or []]])
+    if card.get("disclaimer"):
+        lay.para(str(card["disclaimer"]), size=SIZE_SMALL, colour=lay.pal.text_muted)
+
+
+def option_context(lay: Layout, snap: Mapping[str, Any]) -> None:
+    """SX-5: the option chain at the study time, as numbers."""
+    lay.heading(S.SECTION_TITLES["option_context"])
+    oc = (snap.get("data") or {}).get("option_context")
+    if not oc:
+        lay.not_available(str((snap.get("not_available") or {}).get("option_context") or "no option chain was saved with this study"))
+        return
+    lay.kv([("Underlying", str(oc.get("underlying") or NOT_AVAILABLE)), ("Expiry", ist(oc.get("expiry"))),
+            ("Trading days to expiry", _na(oc.get("days_to_expiry"), 0)), ("Spot", price(oc.get("spot"))),
+            ("At the money strike", price(oc.get("atm_strike"))), ("Put / call ratio (OI)", _na(oc.get("pcr_oi"))),
+            ("Max pain", price(oc.get("max_pain"))), ("ATM IV (%)", _na(oc.get("atm_iv"))), ("Chain as of", ist(oc.get("as_of")))])
+    walls = oc.get("walls") or []
+    if walls:
+        lay.table([("Highest open interest near spot", 0.5, "left"), ("Strike", 0.25, "right"), ("Open interest", 0.25, "right")],
+                  [["Call side" if w.get("side") == "call" else "Put side", price(w.get("strike")), _na(w.get("oi"), 0)] for w in walls])
+    legs = oc.get("atm_legs")
+    if legs:
+        names = {"oi": "Open interest", "iv": "IV (%)", "delta": "Delta", "gamma": "Gamma", "theta": "Theta", "vega": "Vega"}
+        lay.table([("At the money strike", 0.4, "left"), ("Call", 0.3, "right"), ("Put", 0.3, "right")],
+                  [[label, _na((legs.get("call") or {}).get(k), 0 if k == "oi" else 4 if k == "gamma" else 2),
+                    _na((legs.get("put") or {}).get(k), 0 if k == "oi" else 4 if k == "gamma" else 2)] for k, label in names.items()])
+    lay.para(f"Chosen strikes: not available ({oc.get('chosen_reason') or 'no trade plan'}).", colour=lay.pal.text_muted)
+
+
 CHART_H = 620
 
 
@@ -407,6 +458,10 @@ def layout(snap: Mapping[str, Any], fp: str, *, cvd: bool = False) -> tuple[list
             areas(lay, snap)
         elif section == "notes":
             notes(lay, snap)
+        elif section == "ai_card":
+            ai_card(lay, snap)
+        elif section == "option_context":
+            option_context(lay, snap)
         else:
             lay.heading(S.SECTION_TITLES.get(section, section))
             lay.not_available(str(unavailable.get(section) or "not part of a saved study yet"))

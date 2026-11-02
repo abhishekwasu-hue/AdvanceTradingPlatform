@@ -10,6 +10,8 @@ places, changes or blocks an order.
 * `GET    /api/studies/{id}/pdf`   - the study as an A4 PDF (SX-3), rebuilt from the snapshot (same study = same bytes).
 * `GET    /api/studies/{id}/png`   - SX-4: the charts as one phone-friendly column PNG; `?tf=15m`: one chart only
                                      ("Save as image"). Rebuilt from the snapshot (same study = same bytes).
+* `GET    /api/studies/{id}/csv`   - SX-5: every table of the study as CSV files in one ZIP; `?table=areas`: that table
+                                     as one CSV (plain numbers). Same study = same bytes.
 * `DELETE /api/studies/{id}`       - deletes one of his studies.
 Self-scoped: the caller's own rows inside his organisation; another member's study is "not found".
 """
@@ -31,8 +33,9 @@ from app.core import config
 from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
+from app.study import sections, store
 from app.study import snapshot as S
-from app.study import store
+from app.study.csv_export import NoSuchTable, table_csv, zip_all
 from app.study.numfmt import format_number
 from app.study.pdf import PdfTooLarge, study_pdf
 from app.study.png import NoSuchChart, PngTooLarge, chart_png, study_png
@@ -111,6 +114,7 @@ async def create_study(body: CreateBody, user: User = Depends(get_current_user),
     tenant_id, user_id = int(user.tenant_id), int(user.id)
     now = datetime.now(UTC).replace(microsecond=0)
     tfs = S.tf_order(body.timeframes)
+    ticked = set(body.sections) if body.sections is not None else set(S.SECTIONS)
     frames = await S.frames_for(session, user, key, tfs, now)
     last = S.last_end(frames, now)
     zones = await S.zones_at(session, user, key, last or now)
@@ -124,7 +128,9 @@ async def create_study(body: CreateBody, user: User = Depends(get_current_user),
         drawings=await S.own_drawings(session, user, exchange, symbol),
         visible={tf: (r.start, r.end) for tf, r in (body.visible or {}).items()},
         title=(body.title or "").strip() or None, notes=body.notes or None, checklist_rules=rules,
-        checklist_answers=list(body.checklist or []))
+        checklist_answers=list(body.checklist or []),
+        ai_card=await sections.ai_card_read(session, user, symbol, tfs, now) if "ai_card" in ticked else None,
+        option_context=await sections.option_context_read(session, user, exchange, symbol) if "option_context" in ticked else None)
     snap = await pal._in_slot(session, user_id, S.assemble, inputs)       # the reads above are done; the build runs off-loop
     data = S.canonical(snap)
     try:
@@ -196,6 +202,24 @@ async def download_png(study_id: int, tf: Timeframe | None = None, cvd: bool = F
     except PngTooLarge as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from None
     return Response(data, media_type="image/png", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.get("/{study_id}/csv")
+async def download_csv(study_id: int, table: str | None = Query(default=None, pattern=r"^[a-z_]+(-[0-9a-z]+)?$", max_length=40),
+                       user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Response:
+    """M77 SX-5: the study's tables as CSV - one table (`table`) or all of them in a ZIP."""
+    await _flags(session, user)
+    row = await store.get_own(session, user.tenant_id, user.id, study_id)
+    snap = store.snapshot_of(row)
+    stem = store.file_name(row, "csv").removesuffix(".csv")
+    try:
+        if table is None:
+            return Response(zip_all(snap, stem), media_type="application/zip",
+                            headers={"Content-Disposition": f'attachment; filename="{stem}-tables.zip"'})
+        return Response(table_csv(snap, table), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{stem}-{table}.csv"'})
+    except NoSuchTable:
+        raise HTTPException(status_code=404, detail="This study has no such table. Save it with that section ticked.") from None
 
 
 @router.delete("/{study_id}")

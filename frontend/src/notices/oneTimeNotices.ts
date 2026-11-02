@@ -10,6 +10,8 @@ export interface OneTimeNotice {
   id: string;
   text: string;
   link: string;
+  /** M68 TS-6: the words of the link (none: "Open Risk limits", the two risk-limit notices). */
+  label?: string;
 }
 
 const dismissed = new Set<string>();

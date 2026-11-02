@@ -639,10 +639,13 @@ async def put_trade_settings(body: TradeSettingsSave, user: User = Depends(get_c
                 values[key] = float(v) if BY_KEY[key].kind == "number" else v
         try:
             await prefs.save(NAMESPACE, json.dumps({"values": values}).encode(), version, user, session)
-            return view(values, admin, await _ceilings(user, session), off)
         except HTTPException as exc:
             if exc.status_code != 409 or attempt == 3:
                 raise
+            continue
+        from app.me import notices  # M68 TS-6: saving his Trade settings makes the one-time review notice moot
+        await notices.mark_seen(session, user, notices.NO_PRESETS_REVIEW)
+        return view(values, admin, await _ceilings(user, session), off)
     raise HTTPException(status_code=409, detail={"message": "the settings changed since this edit was made"})
 
 

@@ -16,7 +16,7 @@ export function NoticeCard({ notice, onDismiss }: { notice: OneTimeNotice; onDis
         {notice.text}
         {" "}
         <InPlaceLink to={notice.link} className="whitespace-nowrap font-semibold text-brand underline-offset-2 hover:underline">
-          Open Risk limits
+          {notice.label ?? "Open Risk limits"}
         </InPlaceLink>
       </p>
       <button type="button" onClick={onDismiss} aria-label="Dismiss"
@@ -28,7 +28,7 @@ export function NoticeCard({ notice, onDismiss }: { notice: OneTimeNotice; onDis
 }
 
 /** TT12-1: the signed-in user's one-time notices in the v2 shell. Read once after sign-in, and again on a page change
- * only while one is showing, and when a risk limit is saved (setting any limit marks it seen). */
+ * only while one is showing, and when a risk limit or a Trade setting is saved (that marks its notice seen; M68 TS-6). */
 export default function OneTimeNoticesV2() {
   const { user } = useAuth();
   const { pathname } = useLocation();

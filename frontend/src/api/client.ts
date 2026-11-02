@@ -676,8 +676,8 @@ export const api = {
     return out;
   },
   // TT12-1: the signed-in user's one-time notices (src/notices/oneTimeNotices.ts; the server decides who gets one).
-  meNotices: () => request<{ notices: { id: string; text: string; link: string }[] }>("/me/notices"),
-  noticeSeen: (id: string) => request<{ notices: { id: string; text: string; link: string }[] }>(`/me/notices/${encodeURIComponent(id)}/seen`, { method: "POST" }),
+  meNotices: () => request<{ notices: { id: string; text: string; link: string; label?: string }[] }>("/me/notices"),
+  noticeSeen: (id: string) => request<{ notices: { id: string; text: string; link: string; label?: string }[] }>(`/me/notices/${encodeURIComponent(id)}/seen`, { method: "POST" }),
   previewTicket: (plan: TicketPlan) => request<TicketView>("/paper/ticket/preview", { method: "POST", body: JSON.stringify(plan) }),
   placeTicket: (plan: TicketPlan) => request<TradePlanView>("/paper/ticket", { method: "POST", body: JSON.stringify(plan) }),
   paperPlans: () => request<TradePlanView[]>("/paper/plans"),

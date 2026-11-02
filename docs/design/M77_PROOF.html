@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M77 study proof</title>
+<!-- M77 SX-8 (owner order M77 PD-5): proof of Save study (SX-1..SX-7, flag study_export). App pictures: e2e/m77-proof-v2.e2e.ts (SX8_SHOTS), every reply made up. Sample PDF: the backend builder app/study/pdf.py on the test fixtures' made-up snapshot (tests/test_m77_sx5 / sx6 parts), pages rendered with pdftoppm at 72 dpi. -->
+<style>
+:root { color-scheme: light; --bg: 247 248 250; --fg: 15 23 42; --muted: 91 100 117; --line: 227 230 235; --up: 10 125 85; --down: 210 44 61; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; } }
+:root[data-theme="dark"] { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; }
+body { margin: 0; padding: 16px; background: rgb(var(--bg)); color: rgb(var(--fg)); font: 14px/1.45 system-ui, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 28px 0 6px; } h3 { font-size: 14px; margin: 14px 0 6px; }
+p, li { color: rgb(var(--muted)); }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+.scroll { overflow-x: auto; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgb(var(--line)); vertical-align: top; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+.bad { color: rgb(var(--down)); font-weight: 600; } .good { color: rgb(var(--up)); font-weight: 600; }
+.phones { display: grid; grid-template-columns: repeat(2, minmax(0, 390px)); gap: 12px; }
+.desk { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
+.pages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+figure { margin: 0; min-width: 0; } figcaption { font-size: 12px; color: rgb(var(--muted)); margin-bottom: 4px; }
+img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-radius: 6px; display: block; }
+nav a { color: inherit; }
+@media (max-width: 640px) { .phones, .pages { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>M77: Save the Copilot study - proof</h1>
+<p>Phone 390 and desktop 1440, light and dark; made-up data only. <strong>The owner's own sample PDF from a real study is his
+step after deploy</strong> (saved from his account and attached to his private report, never to this public page).</p>
+<div class="scroll"><table><thead><tr><th>Order part</th><th>Shown below</th></tr></thead><tbody>
+<tr><td>PD-1 one Save study action, same tab; PDF / PNG / CSV (+ JSON); sections all on, he unticks; My studies with search</td><td>workspace buttons, sheet, saved state, My studies (workspace and Journal)</td></tr>
+<tr><td>PD-2 the 12 parts</td><td>sample PDF: 11 sections + the footer on every page</td></tr>
+<tr><td>PD-3 A4 portrait, print-safe, Indian numbers; phone single-column PNG</td><td>PDF pages; the phone PNG; one chart PNG</td></tr>
+<tr><td>PD-4 one chart as image, JSON, bulk export</td><td>sheet formats; Settings &gt; Account "Your data"</td></tr>
+<tr><td>PD-5 proof</td><td>this page (fixture PDF); the owner's real PDF after deploy</td></tr>
+</tbody></table></div>
+<h2>In the workspace: Save study and My studies</h2>
+<div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m77/workspace-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m77/workspace-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m77/workspace-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m77/workspace-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2>The sheet: timeframes, format, sections (all ticked)</h2>
+<div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m77/sheet-top-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m77/sheet-top-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m77/sheet-top-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m77/sheet-top-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h3>Sections, title and notes</h3>
+<div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m77/sheet-sections-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m77/sheet-sections-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m77/sheet-sections-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m77/sheet-sections-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h3>Saved: in My studies, the file downloading</h3>
+<div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m77/sheet-saved-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m77/sheet-saved-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m77/sheet-saved-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m77/sheet-saved-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2>My studies (workspace)</h2>
+<div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m77/my-studies-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m77/my-studies-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m77/my-studies-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m77/my-studies-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2>My studies (Journal tab)</h2>
+<div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m77/studies-tab-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m77/studies-tab-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m77/studies-tab-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m77/studies-tab-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2>Bulk export (Settings &gt; Account &gt; Your data)</h2>
+<div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m77/account-export-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m77/account-export-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m77/account-export-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m77/account-export-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2>Sample PDF from the builder (A4, 6 pages, every section on)</h2>
+<p>Made-up fixture snapshot (the backend tests' NIFTY BANK frames, March 2026). File: 724 KB. Sections: cover, charts, structure, areas, ai_card, option_context, trade_plan, pre_trade_check, scenarios, similar_setups, notes.</p>
+<div class="pages">
+<figure><figcaption>PDF page 1 of 6</figcaption><img src="m77/pdf-page-1.png" alt="PDF page 1 of 6" loading="lazy"></figure><figure><figcaption>PDF page 2 of 6</figcaption><img src="m77/pdf-page-2.png" alt="PDF page 2 of 6" loading="lazy"></figure><figure><figcaption>PDF page 3 of 6</figcaption><img src="m77/pdf-page-3.png" alt="PDF page 3 of 6" loading="lazy"></figure><figure><figcaption>PDF page 4 of 6</figcaption><img src="m77/pdf-page-4.png" alt="PDF page 4 of 6" loading="lazy"></figure><figure><figcaption>PDF page 5 of 6</figcaption><img src="m77/pdf-page-5.png" alt="PDF page 5 of 6" loading="lazy"></figure><figure><figcaption>PDF page 6 of 6</figcaption><img src="m77/pdf-page-6.png" alt="PDF page 6 of 6" loading="lazy"></figure>
+</div>
+<h2>PNG export: phone single column, and one chart</h2>
+<div class="phones"><figure><figcaption>Study as one phone picture</figcaption><img src="m77/study-phone.png" alt="Study as one phone picture" loading="lazy"></figure><figure><figcaption>One chart (15 min)</figcaption><img src="m77/study-chart-15m.png" alt="One chart (15 min)" loading="lazy"></figure></div>
+<h2>Seen in these pictures - open items</h2>
+<ul>
+<li>PDF page 4 opens with the AI card's "Educational only." line, cut off from its section on page 3 (the page engine keeps
+a section's last line apart).</li>
+<li>PDF page 5 continues the trade-plan table with no "Trade plan (continued)" heading.</li>
+<li>CSV ZIP (11 files) checked: structure, areas, option context, AI card, trade plan, scenarios, pre-trade check, similar setups,
+checklist, bars per timeframe.</li>
+</ul>
+
+</main>
+</body>
+</html>

@@ -586,6 +586,24 @@ class CopilotWatchPrefs(_Prefs):
         return self
 
 
+MAX_WHAT_IF_SCENARIOS = 8
+
+
+class WhatIfScenario(_Prefs):
+    """One saved what-if scenario (M76 MP-6, S-1): his own name and his own shifts. Each shift is None (not applied) until
+    he types it - no move, IV change or day count is chosen for him (M68)."""
+    name: str = Field(pattern=ANALYSIS_NAME, max_length=40)
+    spot_move: float | None = Field(default=None, ge=-100_000, le=100_000)      # points, + up / - down
+    iv_change: float | None = Field(default=None, ge=-100, le=100)              # IV points, + up / - down
+    days: int | None = Field(default=None, ge=0, le=3650)                       # calendar days forward
+
+
+class WhatIfPrefs(_Prefs):
+    """`what_if` (M76 MP-6): the user's saved what-if scenarios for the Copilot trade plan's payoff, in his order. Read by
+    the page only; no order path, worker or risk check reads it."""
+    scenarios: list[WhatIfScenario] = Field(default_factory=list, max_length=MAX_WHAT_IF_SCENARIOS)
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
@@ -593,7 +611,8 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "option_chain": OptionChainPrefs, "terminal": TerminalPrefs,
                                        "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs,
                                        "trade_settings": TradeSettingsPrefs, "ai_usage": AiUsagePrefs,
-                                       "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs, "ai_memory": AiMemoryPrefs}
+                                       "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs, "ai_memory": AiMemoryPrefs,
+                                       "what_if": WhatIfPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -728,7 +747,7 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "AiUsagePrefs", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "AiUsagePrefs", "WhatIfPrefs", "WhatIfScenario", "MAX_WHAT_IF_SCENARIOS", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
 
 
 async def own_limits(session: AsyncSession, user: User) -> Dict[str, Any]:

@@ -14,7 +14,7 @@ import type { RiskBudget, RiskLine } from "./insights";
 
 // --- events ------------------------------------------------------------------------------------------------------------
 
-export interface RiskEvent { date: string; kind: string; name: string; scope: string; rule: string | null; source: "market" | "company" }
+export interface RiskEvent { date: string; kind: string; name: string; scope: string; rule: string | null; source: "market" | "company" | "own" }
 export interface EventRisk {
   underlying: string; from: string; until: string; clipped: boolean; events: RiskEvent[]; more: number;
   calendar_empty: boolean; message: string | null; source: string; blocks: false;

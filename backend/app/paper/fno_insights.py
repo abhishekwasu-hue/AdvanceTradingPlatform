@@ -129,8 +129,30 @@ def _rule_text(action: Optional[str], size_cut_pct: Optional[float]) -> str:
     return "Your event rule that day: a smaller size."
 
 
-async def event_risk(session: AsyncSession, user: User, underlying: str, until: date, *, today: Optional[date] = None) -> Dict[str, Any]:
-    """The calendar's events from today to `until` (the contract's expiry) that apply to this underlying. Reads only."""
+OWN_EVENT_KIND = "OWN"
+
+
+def own_event_rows(own_events: Optional[List[Dict[str, Any]]], name: str, start: date, end: date) -> List[Dict[str, Any]]:
+    """M76 MP-7 (S-3): his own events (prefs `own_events`) from `start` to `end` that are for this underlying or for every
+    symbol, in the calendar's row shape (`source` "own"; his own words as the name). Pure."""
+    rows: List[Dict[str, Any]] = []
+    for e in own_events or []:
+        try:
+            day = e["date"] if isinstance(e["date"], date) else date.fromisoformat(str(e["date"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        scope = (e.get("underlying") or "").strip().upper()
+        if not (start <= day <= end) or (scope and master.underlying_of(scope) != name):
+            continue
+        rows.append({"date": day.isoformat(), "kind": OWN_EVENT_KIND, "name": str(e.get("name") or "Your event"),
+                     "scope": scope or "all symbols", "rule": None, "source": "own"})
+    return rows
+
+
+async def event_risk(session: AsyncSession, user: User, underlying: str, until: date, *, today: Optional[date] = None,
+                     own_events: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """The calendar's events from today to `until` (the contract's expiry) that apply to this underlying. Reads only.
+    M76 MP-7: `own_events` (his own list, given by the caller while `copilot_workspace` is on) join them, marked "own"."""
     from datetime import timedelta
 
     from app.db.models import CompanyRecord, EarningsCalendarEventRecord, MarketEventRecord
@@ -158,12 +180,16 @@ async def event_risk(session: AsyncSession, user: User, underlying: str, until: 
             kind = (c.event_type or "").upper()
             events.append({"date": c.event_date.isoformat(), "kind": kind, "name": COMPANY_EVENT_NAMES.get(kind, "Company event"),
                            "scope": name, "rule": None, "source": "company"})
-    events.sort(key=lambda ev: (ev["date"], ev["source"] != "market"))
+    own_rows = own_event_rows(own_events, name, start, end)
+    events.extend(own_rows)
+    events.sort(key=lambda ev: (ev["date"], {"market": 0, "company": 1}.get(ev["source"], 2)))
     calendar_rows = await session.scalar(select(MarketEventRecord.id).where(MarketEventRecord.event_date >= start, own).limit(1))
     if calendar_rows is None and company_ids:
         calendar_rows = await session.scalar(select(EarningsCalendarEventRecord.id).where(
             EarningsCalendarEventRecord.company_id.in_(company_ids), EarningsCalendarEventRecord.event_date >= start,
             visible(EarningsCalendarEventRecord, user.tenant_id)).limit(1))
+    if calendar_rows is None and own_rows:
+        calendar_rows = 0                            # his own list has entries in the window: the calendar is not empty
     return {
         "underlying": name, "from": start.isoformat(), "until": end.isoformat(), "clipped": end < until,
         "events": events[:MAX_EVENTS], "more": max(0, len(events) - MAX_EVENTS),

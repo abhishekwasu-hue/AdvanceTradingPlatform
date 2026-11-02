@@ -15,6 +15,7 @@ import { workspaceLayer } from "./annotations";
 import { AnnotationsV2 } from "./AnnotationsV2";
 import { contractEmptyNote, isContract, openingSymbol, readingKey } from "./model";
 import { PlanPanelV2 } from "./PlanPanelV2";
+import { EventsV2 } from "./EventsV2";
 import { Button, Sheet } from "../../components/primitives";
 import { MyStudiesV2 } from "../../study/MyStudiesV2";
 import { SaveStudySheetV2 } from "../../study/SaveStudySheetV2";
@@ -91,6 +92,8 @@ export default function ChartWorkspaceV2() {
                 className="w-full" placeholder="Search a symbol or contract" />
             </div>
           )}
+          {/* M76 MP-7 (S-3): expiries, the calendar's events and his own, on the chart's own column (information only) */}
+          {pick && !isContract(pick.exchange) && <div className={cx("mt-space-2", !inPanel && "px-space-4 md:px-0")}><EventsV2 symbol={pick.symbol} /></div>}
         </div>
         <aside aria-labelledby="copilot-workspace-reading" data-workspace-analysis={readOn ? read.status : "off"}
           className="min-w-0 rounded-panel border border-subtle bg-surface-1 p-space-4 lg:self-start">

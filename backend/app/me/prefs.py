@@ -604,6 +604,25 @@ class WhatIfPrefs(_Prefs):
     scenarios: list[WhatIfScenario] = Field(default_factory=list, max_length=MAX_WHAT_IF_SCENARIOS)
 
 
+MAX_OWN_EVENTS = 30
+OWN_EVENT_SCOPE = r"^[A-Za-z0-9&_\- ]{1,30}$"
+
+
+class OwnEvent(_Prefs):
+    """One event of his own list (M76 MP-7, S-3): his date, his words, and the symbol it is for (None = every symbol).
+    Information only: shown on the Copilot chart's events strip and in the check card's event line."""
+    date: date
+    name: str = Field(pattern=ANALYSIS_NAME, max_length=40)
+    underlying: str | None = Field(default=None, pattern=OWN_EVENT_SCOPE, max_length=30)
+
+
+class OwnEventsPrefs(_Prefs):
+    """`own_events` (M76 MP-7): the user's own event list, in his order; empty by default. Read by the page and by the
+    events reads only (app/paper/fno_insights.py `event_risk`, app/charts/workspace_events.py) - never by an order path,
+    worker or risk check; it never holds back an order or an exit."""
+    events: list[OwnEvent] = Field(default_factory=list, max_length=MAX_OWN_EVENTS)
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
@@ -612,7 +631,7 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs,
                                        "trade_settings": TradeSettingsPrefs, "ai_usage": AiUsagePrefs,
                                        "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs, "ai_memory": AiMemoryPrefs,
-                                       "what_if": WhatIfPrefs}
+                                       "what_if": WhatIfPrefs, "own_events": OwnEventsPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -747,7 +766,7 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "AiUsagePrefs", "WhatIfPrefs", "WhatIfScenario", "MAX_WHAT_IF_SCENARIOS", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "OwnEvent", "OwnEventsPrefs", "MAX_OWN_EVENTS", "AiUsagePrefs", "WhatIfPrefs", "WhatIfScenario", "MAX_WHAT_IF_SCENARIOS", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
 
 
 async def own_limits(session: AsyncSession, user: User) -> Dict[str, Any]:

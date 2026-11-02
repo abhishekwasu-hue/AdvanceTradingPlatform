@@ -457,6 +457,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/chart-analyze/items/{item_id}/reading.png"): ("member: ATP's reading drawn on the candles stored with the caller's own "
                                                              "hybrid analysis only (tenant and user; reads only)"),
     ("POST", "/api/chart-analyze/items/{item_id}/analyze"): S_OWN_CHART_ANALYSES,
+    ("GET", "/api/charts/workspace/events"): "member: the instrument master's expiries, the shared events calendar plus the caller's own organisation's entries, and his own event list (prefs); read-only (M76 MP-7)",
     ("POST", "/api/chart-analyze/workspace"): "self: his own workspace analyses only (the caller's items, his plan limits and AI key); the shared lake or his own private bars; read-only (M75 W-4)",
     ("GET", "/api/chart-analyze/items/{item_id}/strikes"): "member: the caller's own analysis + the caller's organisation's deployment settings (reads only)",
     ("DELETE", "/api/chart-analyze/items/{item_id}"): S_OWN_CHART_ANALYSES,

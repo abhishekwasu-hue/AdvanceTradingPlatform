@@ -42,6 +42,7 @@ from app.brokers.routes import router as broker_router
 from app.chart_analyze.routes import admin_router as chart_analyze_admin_router
 from app.chart_analyze.routes import router as chart_analyze_router
 from app.chart_analyze.workspace import router as chart_analyze_workspace_router
+from app.charts.workspace_events import router as workspace_events_router
 from app.charts.contracts import router as chart_contracts_router
 from app.charts.drawings import router as chart_drawings_router
 from app.charts.futures_basis import router as chart_futures_basis_router
@@ -477,6 +478,7 @@ app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and p
 app.include_router(system_watchlists_router)  # WL1: read-only system lists (indices, index stocks, sectors, F&O); before /{id}
 app.include_router(watchlists_router)  # AMW-2: the caller's own named watchlists (flag watchlists, off)
 app.include_router(system_watchlists_admin_router)  # WL1: the admin's view of the system lists' refresh (SUPER_ADMIN)
+app.include_router(workspace_events_router)  # M76 MP-7: expiries, calendar and his own events on the workspace chart (copilot_workspace)
 app.include_router(chart_analyze_workspace_router)  # M75 W-4: the Copilot workspace's AI card, once per closed bar (copilot_workspace)
 app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a chart image, educational reading (flag chart_analyze, off)
 app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)

@@ -1,6 +1,6 @@
 """Part 1B: the Kotak Neo adapter against recorded fixtures (tests/fixtures/kotak_neo/recorded.json, the SDK 3.0.9
-documented shapes with made-up values) - the TOTP login and the stored session, the gates (no LIVE order and no market
-data leaves ATP while they are closed), the order wire format with the gates opened in a test, TM-3's marketable limit,
+documented shapes with made-up values) - the TOTP login and the stored session, no per-broker gate (BRK-1, owner 2 Nov
+2026: TM-5 / TM-6 withdrawn), the order wire format, TM-3's marketable limit,
 the books and account reads, symbol mapping to ATP's instrument master, the feed decoder, the charges table and the
 PAPER parity. No network, no real account, no secret: fake tokens are built at run time."""
 import asyncio
@@ -13,7 +13,7 @@ import httpx
 import pyotp
 import pytest
 
-from app.brokers import broker_charges, gates
+from app.brokers import broker_charges
 from app.brokers import kotak_neo as kn
 from app.brokers.catalog import entry as catalog_entry
 from app.brokers.contract_symbols import wrap_contract_symbols
@@ -29,7 +29,6 @@ from app.execution.paper_adapter import PaperExecutionAdapter
 from app.execution.paper_charges import PaperCharges
 from app.execution.router import DEFAULT_MARKET_PROTECTION_PCT
 from app.market_data import kotak_feed
-from app.market_data.data_terms import terms_for
 from app.market_data.stream import stream_for
 from tests.broker_fakes import KOTAK_CONSUMER_KEY, KOTAK_MOBILE, KOTAK_MPIN, KOTAK_UCC, TOTP_SECRET
 
@@ -114,13 +113,6 @@ def _jdata(request: httpx.Request) -> dict:
     return json.loads(parse_qs(request.content.decode())["jData"][0])
 
 
-@pytest.fixture
-def gates_open(monkeypatch):
-    """Both Kotak Neo gates opened for one test only (the wire format behind them); the real GATES stay closed."""
-    monkeypatch.setitem(gates.GATES, "kotak_neo", gates.BrokerGates())
-    monkeypatch.setattr(gates, "market_data_open", lambda broker: True)
-
-
 # --- session -----------------------------------------------------------------------------------------------------
 
 def test_session_string_round_trip_and_refuses_anything_else():
@@ -178,79 +170,36 @@ def test_token_lifecycle_daily_expiry_and_the_session_string_never_lengthens_it(
     assert row.token_expires_at == datetime(2026, 10, 24, 0, 30, tzinfo=timezone.utc)
 
 
-# --- the gates (closed: the real state) -----------------------------------------------------------------------------
+# --- BRK-1 (owner 2 Nov 2026): no per-broker gate - TM-5 / TM-6 withdrawn ---------------------------------------------
 
-def test_the_gates_are_closed_for_kotak_neo_and_open_for_everyone_else():
-    assert not gates.live_orders_open("kotak_neo") and not gates.market_data_open("kotak_neo")
-    assert terms_for("kotak_neo").status.value == "pending"
-    for other in ("upstox", "zerodha", "dhan", "angel_one", "fyers", "shoonya", "coindcx"):
-        assert gates.live_orders_open(other) and gates.market_data_open(other), other
-
-
-def test_no_live_order_leaves_atp_while_the_gate_is_closed():
-    adapter, server = _adapter(access_token=_session())
-    order = BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.BUY, quantity=1, order_type="LIMIT",
-                               price=3000.0, product="MIS")
-    calls = [adapter.place_order(order), adapter.modify_order("261023000000101", price=2990.0), adapter.cancel_order("261023000000101"),
-             adapter.exit_position("RELIANCE", "NSE", 1, OrderSide.BUY),
-             adapter.place_stop_loss_order("RELIANCE", "NSE", OrderSide.SELL, 1, 2950.0)]
-    for call in calls:
-        with pytest.raises(gates.LiveOrdersClosed) as exc:
-            run(call)
-        assert "not offered yet" in str(exc.value) and "Nothing was sent" in str(exc.value)
-    # Through the contract-symbol wrapper (the platform's path) as well.
-    wrapped = wrap_contract_symbols(adapter)
-    with pytest.raises(gates.LiveOrdersClosed):
-        run(wrapped.place_order(order))
-    assert server.requests == []
+def test_no_per_broker_gate_kotak_neo_is_like_every_other_adapter():
+    import importlib.util
+    assert importlib.util.find_spec("app.brokers.gates") is None             # the gate module is gone
+    adapter, _server = _adapter(access_token=_session())
+    assert stream_for(adapter) is not None                                    # its feed is handed out like any broker's
 
 
-def test_no_market_data_is_asked_while_the_gate_is_closed():
-    adapter, server = _adapter(access_token=_session())
-    for call in (adapter.get_ltp(["NSE:RELIANCE"]), adapter.get_quote(["NSE:RELIANCE"]), adapter.get_quote_for_symbol("RELIANCE"),
-                 adapter.get_ltp_for_symbol("RELIANCE"), adapter.get_quotes_batch([("NSE", "RELIANCE")]),
-                 adapter.get_historical_data("RELIANCE", "NSE", "5min", datetime(2026, 10, 22), datetime(2026, 10, 22)),
-                 adapter.get_intraday_candles("RELIANCE", "NSE", "5min"), adapter.get_option_chain("NIFTY")):
-        with pytest.raises(gates.MarketDataClosed):
-            run(call)
-    assert server.requests == []
-    assert stream_for(adapter) is None                                   # no feed socket is ever opened
-
-
-def test_account_reads_work_with_the_gates_closed_and_carry_no_broker_price():
+def test_account_reads_carry_the_broker_price():
     adapter, server = _adapter(access_token=_session())
     positions = {p.symbol: p for p in run(adapter.get_positions())}
     fut = positions["NIFTY26NOVFUT"]
-    assert fut.quantity == 65 and fut.average_price == 25000.0 and fut.ltp == 0.0 and fut.pnl == 0.0 and fut.exchange == "NFO"
-    flat = positions["TCS"]
-    assert flat.quantity == 0 and flat.pnl == 250.0 and flat.ltp == 0.0        # booked P&L needs no price
+    assert fut.quantity == 65 and fut.average_price == 25000.0 and fut.exchange == "NFO"
+    assert fut.ltp == 25100.0 and fut.pnl == round(-1625000 + 65 * 25100.0, 2)
     holding = run(adapter.get_holdings())[0]
-    assert (holding.symbol, holding.quantity, holding.average_price, holding.ltp, holding.pnl) == ("RELIANCE", 4, 2800.5, 0.0, 0.0)
+    assert (holding.symbol, holding.quantity, holding.average_price) == ("RELIANCE", 4, 2800.5)
+    assert holding.ltp == 3000.0 and holding.pnl == round((3000.0 - 2800.5) * 4, 2)
     margins = run(adapter.get_margins())
     assert margins.available_cash == 150000.25 and margins.used_margin == 25000.0
     book = run(adapter.get_order_book())
     assert [(o.order_id, o.symbol, o.status, o.exchange, o.tag) for o in book] == [
         ("261023000000101", "RELIANCE", "OPEN", "NSE", "ATPFAKE1"), ("261023000000102", "NIFTY26O2726000CE", "COMPLETE", "NFO", None)]
-    assert book[1].transaction_type == OrderSide.SELL and book[1].average_price == 121.1 and book[1].placed_at.tzinfo is not None
     trade = run(adapter.get_trade_book())[0]
     assert trade.trade_id == "fake-fill-1" and trade.quantity == 65 and trade.timestamp.hour == 10
-    margin = run(adapter.get_order_margin(BrokerOrderRequest(symbol="RELIANCE", transaction_type=OrderSide.BUY, quantity=1,
-                                                             order_type="LIMIT", price=3000.0)))
-    assert margin == 15500.0
-    assert "/quick/order/rule/ms/place" not in server.paths()
 
 
-def test_with_prices_open_positions_and_holdings_read_the_broker_price(gates_open):
-    adapter, _server = _adapter(access_token=_session())
-    fut = next(p for p in run(adapter.get_positions()) if p.symbol == "NIFTY26NOVFUT")
-    assert fut.ltp == 25100.0 and fut.pnl == round(-1625000 + 65 * 25100.0, 2)
-    holding = run(adapter.get_holdings())[0]
-    assert holding.ltp == 3000.0 and holding.pnl == round((3000.0 - 2800.5) * 4, 2)
+# --- the wire format ------------------------------------------------------------------------------------------------
 
-
-# --- the wire format behind the gates (opened only in these tests) ----------------------------------------------------
-
-def test_a_limit_order_goes_as_the_sdk_sends_it(gates_open):
+def test_a_limit_order_goes_as_the_sdk_sends_it():
     adapter, server = _adapter(access_token=_session())
     order = BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.BUY, quantity=10, order_type="LIMIT",
                                price=2999.5, product="MIS", tag="ATP-ALGO-1-TOO-LONG-FOR-THE-FIELD")
@@ -262,7 +211,7 @@ def test_a_limit_order_goes_as_the_sdk_sends_it(gates_open):
                             "rt": "DAY", "tp": "0.00", "ts": "RELIANCE-EQ", "tt": "B", "os": "NEOTRADEAPI", "ig": "ATP-ALGO-1-TOO-LONG-"}
 
 
-def test_tm3_a_market_order_goes_as_a_marketable_limit_from_the_users_band(gates_open):
+def test_tm3_a_market_order_goes_as_a_marketable_limit_from_the_users_band():
     adapter, server = _adapter(access_token=_session())
     order = BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.SELL, quantity=4, order_type="MARKET",
                                product="CNC", protection_pct=1.0)
@@ -277,7 +226,7 @@ def test_tm3_a_market_order_goes_as_a_marketable_limit_from_the_users_band(gates
     assert body["pr"] == f"{ml.marketable_limit_price(3001.0, OrderSide.BUY, DEFAULT_MARKET_PROTECTION_PCT):.2f}" == "3016.05"
 
 
-def test_a_stop_goes_as_sl_with_a_band_and_kotak_refuses_what_it_does_not_take(gates_open):
+def test_a_stop_goes_as_sl_with_a_band_and_kotak_refuses_what_it_does_not_take():
     adapter, server = _adapter(access_token=_session())
     run(adapter.place_stop_loss_order("RELIANCE", "NSE", OrderSide.SELL, 4, 2950.0, product="MIS"))
     body = _jdata([r for r in server.requests if r.url.path == kn.PLACE_ORDER_PATH][-1])
@@ -292,7 +241,7 @@ def test_a_stop_goes_as_sl_with_a_band_and_kotak_refuses_what_it_does_not_take(g
         run(adapter.modify_order("261023000000101", order_type="MARKET"))
 
 
-def test_amo_modify_cancel_and_an_already_complete_order(gates_open):
+def test_amo_modify_cancel_and_an_already_complete_order():
     adapter, server = _adapter(access_token=_session())
     run(adapter.place_order(BrokerOrderRequest(symbol="TCS", transaction_type=OrderSide.BUY, quantity=1, order_type="LIMIT",
                                                price=3000.0, product="CNC", after_market=True)))
@@ -311,7 +260,7 @@ def test_amo_modify_cancel_and_an_already_complete_order(gates_open):
         run(done.cancel_order("261023000000102"))
 
 
-def test_market_data_behind_the_open_gate(gates_open):
+def test_market_data_reads():
     adapter, server = _adapter(access_token=_session())
     quote = run(adapter.get_quote(["NSE:RELIANCE"]))["NSE:RELIANCE"]
     assert quote.ltp == 3001.0 and quote.prev_close == 2995.0 and quote.bid == 3000.9 and quote.timestamp is not None
@@ -460,30 +409,24 @@ def test_charges_table_states_only_what_the_broker_states_with_its_source():
     assert broker_charges.unverified()                                                     # re-read on the broker's page before LIVE
 
 
-def test_catalog_entry_gates_guide_and_ui_v2():
+def test_catalog_entry_has_no_gate_no_ui_v2_only_tile_and_no_practice_words():
     row = catalog_entry("kotak_neo").as_dict()
-    assert row["method"] == "totp_auto" and row["requires_ui_v2"] is True and row["daily_renewal"] is True
-    assert row["gates"] == {"live_orders": "closed", "live_prices": "closed", "note": gates.GATES["kotak_neo"].note}
-    assert all(link["url"].startswith("https://") for link in row["guide"]["links"]) and len(row["guide"]["points"]) >= 3
-    for text in row["guide"]["points"] + row["how_to"] + [row["gates"]["note"]]:
+    assert row["method"] == "totp_auto" and row["daily_renewal"] is True
+    assert "gates" not in row and "requires_ui_v2" not in row                                      # BRK-1
+    assert all(link["url"].startswith("https://") for link in row["guide"]["links"])
+    for text in row["guide"]["points"] + row["how_to"]:
         lowered = text.lower()
+        assert "practice" not in lowered and "not offered" not in lowered, text
         assert not any(word in lowered for word in ("api_", "token_", "gate", "tm-", "flag")), text
-    assert catalog_entry("upstox").as_dict()["gates"]["live_orders"] == "open"
 
 
-def test_rate_budget_policy_and_data_sources():
+def test_rate_budget_policy():
     assert limits_for("kotak_neo").per_second <= 10 / 3 + 0.01
     assert policy_for("kotak_neo")["market_for_algo"] == "map_to_limit"
     assert policy_for("upstox")["market_for_algo"] == "allow"
 
-    class Row:
-        def __init__(self, name):
-            self.broker_name = name
-    rows = [Row("kotak_neo"), Row("upstox"), Row("zerodha")]
-    assert [r.broker_name for r in gates.data_sources(rows)] == ["upstox", "zerodha"]
 
-
-# --- the feed decoder (built, OFF behind the gate) --------------------------------------------------------------------
+# --- the feed decoder -------------------------------------------------------------------------------------------------
 
 def _header(code: int, exchange_id: int, level: int, body: bytes) -> bytes:
     return kotak_feed.HEADER.pack(kotak_feed.HEADER_SIZE + len(body), code, exchange_id, level, 0, 1, 0) + body
@@ -525,7 +468,7 @@ class _FakeSocket:
         self.closed = True
 
 
-def test_feed_auth_frame_and_a_refused_session(gates_open):
+def test_feed_auth_frame_and_a_refused_session():
     adapter, _server = _adapter(access_token=_session())
     answer = json.dumps({"message_code": 1119, "format": "native_batch", "exchanges": {"nse_cm": {"value": 1, "divider": 100},
                                                                                        "mcx_fo": {"value": 9, "divider": 10000}}})

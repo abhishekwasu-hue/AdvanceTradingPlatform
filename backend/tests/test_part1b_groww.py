@@ -1,6 +1,6 @@
 """Part 1B: the Groww adapter against recorded fixtures (tests/fixtures/groww/recorded.json, the shapes of Groww's
-published API reference with made-up values) - the TOTP and approval logins and the stored token, the gates (no LIVE
-order and no market data leaves ATP while they are closed), the order wire format with the gates opened in a test,
+published API reference with made-up values) - the TOTP and approval logins and the stored token, no per-broker gate
+(BRK-1, owner 2 Nov 2026: TM-5 / TM-6 withdrawn), the order wire format,
 TM-3's marketable limit, TM-23 (no native GTT / OCO call), the books and account reads, symbol mapping to ATP's
 instrument master, the per-day budget (TM-27), the charges table, the PAPER parity and the feed (NATS + protobuf).
 No network, no real account, no secret: fake tokens are built at run time."""
@@ -16,7 +16,7 @@ import httpx
 import pyotp
 import pytest
 
-from app.brokers import broker_charges, gates
+from app.brokers import broker_charges
 from app.brokers import groww as gw
 from app.brokers import rate_budget as rb
 from app.brokers.catalog import entry as catalog_entry
@@ -32,7 +32,6 @@ from app.execution.paper_adapter import PaperExecutionAdapter
 from app.execution.paper_charges import PaperCharges
 from app.execution.router import DEFAULT_MARKET_PROTECTION_PCT
 from app.market_data import groww_feed as gf
-from app.market_data.data_terms import terms_for
 from app.market_data.stream import stream_for
 from tests.broker_fakes import GROWW_API_KEY, GROWW_API_SECRET, TOTP_SECRET
 
@@ -101,13 +100,6 @@ def _sent(server, path):
     return json.loads([r for r in server.requests if r.url.path == "/v1" + path][-1].content)
 
 
-@pytest.fixture
-def gates_open(monkeypatch):
-    """Both Groww gates opened for one test only (the wire format behind them); the real GATES stay closed."""
-    monkeypatch.setitem(gates.GATES, "groww", gates.BrokerGates())
-    monkeypatch.setattr(gates, "market_data_open", lambda broker: True)
-
-
 # --- session -----------------------------------------------------------------------------------------------------
 
 def test_the_approval_checksum_is_the_sdks_sha256_of_secret_and_timestamp():
@@ -172,75 +164,35 @@ def test_token_lifecycle_ends_the_session_at_six_in_the_morning():
     assert default_token_expiry("groww", now) == datetime(2026, 10, 24, 0, 30, tzinfo=timezone.utc)
 
 
-# --- the gates (closed: the real state) -----------------------------------------------------------------------------
+# --- BRK-1 (owner 2 Nov 2026): no per-broker gate - TM-5 / TM-6 withdrawn ---------------------------------------------
 
-def test_the_gates_are_closed_for_groww():
-    assert not gates.live_orders_open("groww") and not gates.market_data_open("groww")
-    assert terms_for("groww").status.value == "pending"
-    assert "Groww" in gates.GATES["groww"].note and gates.GATES["groww"].opens_when
-
-
-def test_no_live_order_leaves_atp_while_the_gate_is_closed():
-    adapter, server = _adapter(access_token=ACCESS)
-    order = BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.BUY, quantity=1, order_type="LIMIT",
-                               price=3000.0, product="MIS")
-    calls = [adapter.place_order(order), adapter.modify_order("GFAKE0001", price=2990.0), adapter.cancel_order("GFAKE0001"),
-             adapter.exit_position("RELIANCE", "NSE", 1, OrderSide.BUY),
-             adapter.place_stop_loss_order("RELIANCE", "NSE", OrderSide.SELL, 1, 2950.0)]
-    for call in calls:
-        with pytest.raises(gates.LiveOrdersClosed) as exc:
-            run(call)
-        assert "Nothing was sent to Groww" in str(exc.value)
-    with pytest.raises(gates.LiveOrdersClosed):
-        run(wrap_contract_symbols(adapter).place_order(order))
-    assert server.requests == []
+def test_no_per_broker_gate_groww_is_like_every_other_adapter():
+    import importlib.util
+    assert importlib.util.find_spec("app.brokers.gates") is None             # the gate module is gone
+    adapter, _server = _adapter(access_token=ACCESS)
+    assert stream_for(adapter) is not None                                    # its feed is handed out like any broker's
 
 
-def test_no_market_data_is_asked_while_the_gate_is_closed():
-    adapter, server = _adapter(access_token=ACCESS)
-    for call in (adapter.get_ltp(["NSE:RELIANCE"]), adapter.get_quote(["NSE:RELIANCE"]), adapter.get_quote_for_symbol("RELIANCE"),
-                 adapter.get_ltp_for_symbol("RELIANCE"), adapter.get_quotes_batch([("NSE", "RELIANCE")]),
-                 adapter.get_historical_data("RELIANCE", "NSE", "5min", datetime(2026, 10, 22), datetime(2026, 10, 22)),
-                 adapter.get_intraday_candles("RELIANCE", "NSE", "5min"), adapter.get_option_chain("NIFTY", date(2026, 10, 27)),
-                 adapter.option_greeks("NIFTY", "NIFTY26O2726000CE", date(2026, 10, 27))):
-        with pytest.raises(gates.MarketDataClosed):
-            run(call)
-    assert server.requests == []
-    assert stream_for(adapter) is None                                   # no socket token, no socket
-
-
-def test_account_reads_work_with_the_gates_closed_and_carry_no_broker_price():
+def test_account_reads_carry_the_broker_price():
     adapter, server = _adapter(access_token=ACCESS)
     positions = {p.symbol: p for p in run(adapter.get_positions())}
     fut = positions["NIFTY26NOVFUT"]
-    assert (fut.quantity, fut.average_price, fut.ltp, fut.pnl, fut.exchange, fut.product) == (65, 25000.0, 0.0, 0.0, "NFO", "NRML")
-    flat = positions["TCS"]
-    assert flat.quantity == 0 and flat.pnl == 250.0 and flat.ltp == 0.0
+    assert (fut.quantity, fut.average_price, fut.exchange, fut.product) == (65, 25000.0, "NFO", "NRML")
+    assert fut.ltp == 25100.0 and fut.pnl == round(65 * (25100.0 - 25000.0), 2)
     holding = run(adapter.get_holdings())[0]
-    assert (holding.symbol, holding.quantity, holding.average_price, holding.ltp, holding.pnl) == ("RELIANCE", 4, 2800.5, 0.0, 0.0)
+    assert (holding.symbol, holding.quantity, holding.average_price) == ("RELIANCE", 4, 2800.5)
     margins = run(adapter.get_margins())
     assert margins.available_cash == 150000.25 and margins.used_margin == 25000.0 and margins.available_margin == 125000.25
     book = run(adapter.get_order_book())
     assert [(o.order_id, o.symbol, o.status, o.exchange, o.tag) for o in book] == [
         ("GFAKE0001", "RELIANCE", "OPEN", "NSE", "ATPFAKE1"), ("GFAKE0002", "NIFTY26O2726000CE", "COMPLETE", "NFO", None)]
-    assert book[1].transaction_type == OrderSide.SELL and book[1].average_price == 121.1 and book[1].placed_at.tzinfo is not None
     trades = run(adapter.get_trade_book())
     assert [(t.trade_id, t.order_id, t.quantity, t.price) for t in trades] == [("fake-fill-1", "GFAKE0002", 65, 121.1)]
-    margin = run(adapter.get_order_margin(BrokerOrderRequest(symbol="RELIANCE", transaction_type=OrderSide.BUY, quantity=1,
-                                                             order_type="LIMIT", price=3000.0)))
-    assert margin == 15500.0
-    assert "/v1" + gw.PLACE_ORDER_PATH not in server.paths()
 
 
-def test_with_prices_open_positions_read_the_broker_price(gates_open):
-    adapter, _server = _adapter(access_token=ACCESS)
-    fut = next(p for p in run(adapter.get_positions()) if p.symbol == "NIFTY26NOVFUT")
-    assert fut.ltp == 25100.0 and fut.pnl == round(65 * (25100.0 - 25000.0), 2)
+# --- the wire format ------------------------------------------------------------------------------------------------
 
-
-# --- the wire format behind the gates (opened only in these tests) ----------------------------------------------------
-
-def test_a_limit_order_goes_as_the_sdk_sends_it(gates_open):
+def test_a_limit_order_goes_as_the_sdk_sends_it():
     adapter, server = _adapter(access_token=ACCESS)
     order = BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.BUY, quantity=10, order_type="LIMIT",
                                price=2999.5, product="MIS", tag="ATP-ALGO-1-TOO-LONG-FOR-THE-FIELD")
@@ -251,7 +203,7 @@ def test_a_limit_order_goes_as_the_sdk_sends_it(gates_open):
         "segment": "CASH", "product": "MIS", "order_type": "LIMIT", "transaction_type": "BUY", "order_reference_id": "ATP-ALGO-1-TOO-LONG-"}
 
 
-def test_tm3_a_market_order_goes_as_a_marketable_limit_from_the_users_band(gates_open):
+def test_tm3_a_market_order_goes_as_a_marketable_limit_from_the_users_band():
     adapter, server = _adapter(access_token=ACCESS)
     order = BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.SELL, quantity=4, order_type="MARKET",
                                product="CNC", protection_pct=1.0)
@@ -264,7 +216,7 @@ def test_tm3_a_market_order_goes_as_a_marketable_limit_from_the_users_band(gates
     assert _sent(server, gw.PLACE_ORDER_PATH)["price"] == ml.marketable_limit_price(3001.0, OrderSide.BUY, DEFAULT_MARKET_PROTECTION_PCT) == 3016.05
 
 
-def test_a_stop_goes_as_sl_with_a_band_and_atp_refuses_what_it_does_not_send(gates_open):
+def test_a_stop_goes_as_sl_with_a_band_and_atp_refuses_what_it_does_not_send():
     adapter, server = _adapter(access_token=ACCESS)
     run(adapter.place_stop_loss_order("RELIANCE", "NSE", OrderSide.SELL, 4, 2950.0, product="MIS"))
     body = _sent(server, gw.PLACE_ORDER_PATH)
@@ -277,7 +229,7 @@ def test_a_stop_goes_as_sl_with_a_band_and_atp_refuses_what_it_does_not_send(gat
         run(adapter.modify_order("GFAKE0001", order_type="MARKET"))
 
 
-def test_modify_and_cancel_carry_the_orders_segment(gates_open):
+def test_modify_and_cancel_carry_the_orders_segment():
     adapter, server = _adapter(access_token=ACCESS)
     run(adapter.modify_order("GFAKE0001", price=2990.0))
     assert _sent(server, gw.MODIFY_ORDER_PATH) == {"quantity": 10, "price": 2990.0, "trigger_price": None, "groww_order_id": "GFAKE0001",
@@ -291,7 +243,7 @@ def test_tm23_the_adapter_has_no_native_gtt_or_oco_call():
     assert not any(word in n for n in names for word in ("smart", "gtt", "oco"))
 
 
-def test_market_data_behind_the_open_gate(gates_open):
+def test_market_data_reads():
     adapter, server = _adapter(access_token=ACCESS)
     quote = run(adapter.get_quote(["NSE:RELIANCE"]))["NSE:RELIANCE"]
     assert quote.ltp == 3001.0 and quote.prev_close == 2995.0 and quote.bid == 3000.9 and quote.ask == 3001.1 and quote.timestamp.year == 2026
@@ -494,19 +446,20 @@ def test_paper_practising_for_groww_takes_the_same_path_as_live():
     assert 10 < plain_response.raw["charges"] - response.raw["charges"] < 20
 
 
-def test_catalog_entry_gates_guide_and_ui_v2():
+def test_catalog_entry_has_no_gate_no_ui_v2_only_tile_and_no_practice_words():
     row = catalog_entry("groww").as_dict()
-    assert row["method"] == "totp_auto" and row["requires_ui_v2"] is True and row["daily_renewal"] is True
+    assert row["method"] == "totp_auto" and row["daily_renewal"] is True
     assert [f["key"] for f in row["fields"]] == ["api_key", "totp_secret"]
-    assert row["gates"] == {"live_orders": "closed", "live_prices": "closed", "note": gates.GATES["groww"].note}
-    assert all(link["url"].startswith("https://groww.in/") for link in row["guide"]["links"]) and len(row["guide"]["points"]) >= 3
-    for text in row["guide"]["points"] + row["how_to"] + [row["gates"]["note"]]:
+    assert "gates" not in row and "requires_ui_v2" not in row                                      # BRK-1
+    assert all(link["url"].startswith("https://groww.in/") for link in row["guide"]["links"])
+    for text in row["guide"]["points"] + row["how_to"]:
         lowered = text.lower()
+        assert "practice" not in lowered and "not offered" not in lowered, text
         assert not any(word in lowered for word in ("api_", "token_", "gate", "tm-", "flag", "nats", "jwt")), text
     assert policy_for("groww")["market_for_algo"] == "map_to_limit"
 
 
-# --- the feed (built, OFF behind the gate) ---------------------------------------------------------------------------
+# --- the feed ------------------------------------------------------------------------------------------------------------
 
 def _price_body(ltp: float, ts_millis: float, *, index: bool = False) -> bytes:
     def double(field: int, value: float) -> bytes:
@@ -557,7 +510,7 @@ class _FakeSocket:
         self.closed = True
 
 
-def test_feed_handshake_subscribe_ping_and_message(gates_open):
+def test_feed_handshake_subscribe_ping_and_message():
     adapter, server = _adapter(access_token=ACCESS)
     body = _price_body(3001.0, 1792737000000.0)
     sock = _FakeSocket([b'INFO {"server_id":"x","nonce":"abc123"}\r\n', b"PONG\r\n", b"PING\r\n",
@@ -589,7 +542,7 @@ def test_feed_handshake_subscribe_ping_and_message(gates_open):
     assert run(stream.wire_key("NIFTY", "NSE")) == "/ld/indices/nse/price.NIFTY"
 
 
-def test_feed_refusals_close_the_socket(gates_open):
+def test_feed_refusals_close_the_socket():
     adapter, _server = _adapter(access_token=ACCESS)
     refused = _FakeSocket([b'INFO {"nonce":"n"}\r\n', b"-ERR 'Authorization Violation'\r\n"])
 
@@ -602,7 +555,7 @@ def test_feed_refusals_close_the_socket(gates_open):
         run(gf.GrowwTickStream(gw.GrowwBroker(_creds())).connect_url())   # no session yet
 
 
-def test_feed_keeps_at_most_the_subscription_limit(gates_open):
+def test_feed_keeps_at_most_the_subscription_limit():
     adapter, _server = _adapter(access_token=ACCESS)
     stream = gf.GrowwTickStream(adapter)
     run(stream.set_symbols([("RELIANCE", "NSE")] * 3))

@@ -252,7 +252,7 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
         ),
     ),
     # Part 1B: the TOTP login of the official SDK (kotakneoapi 3.0.9): consumer key + mobile number + UCC + TOTP, then the
-    # MPIN. Practice mode only (app/brokers/gates.py); the session ATP gets is stored as one encrypted string.
+    # MPIN. The session ATP gets is stored as one encrypted string.
     "kotak_neo": BrokerSpec(
         name="kotak_neo", display_name="Kotak Neo", tile_line="One-click login with your stored MPIN and TOTP secret",
         login_method=LOGIN_TOTP, console_url="https://www.kotakneo.com/platform/kotak-neo-trade-api/",
@@ -275,7 +275,7 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
         ),
     ),
     # Part 1B: Groww's TOTP key (API key + TOTP secret; growwapi 1.5.0 `get_access_token(api_key, totp=...)`), or the
-    # approval key (API key + secret, approved daily on Groww). Practice mode only (app/brokers/gates.py).
+    # approval key (API key + secret, approved daily on Groww).
     "groww": BrokerSpec(
         name="groww", display_name="Groww", tile_line="One-click login with your stored TOTP secret",
         login_method=LOGIN_TOTP, console_url="https://groww.in/trade-api",

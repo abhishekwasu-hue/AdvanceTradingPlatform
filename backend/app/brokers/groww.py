@@ -15,12 +15,8 @@ API key from Groww's Trade API page (API Keys) in `Authorization: Bearer <key>`:
 The answer's `token` is the day's access token; every later call sends it as `Authorization: Bearer <token>`. ATP keeps
 it in the encrypted credential row, never logged, never returned.
 
-Gates (TM-5 / TM-6, app/brokers/gates.py): this adapter refuses every LIVE order action (place, modify, cancel, exit,
-stop) before anything is sent, and every market-data read (quotes, LTP, candles, the option chain and its Greeks, the
-streaming feed) before anything is asked, while the Groww gates are closed - the connect flow, the daily login, the
-profile check, positions, holdings, margins, the order and trade books and the instrument list work. Positions and
-holdings carry no broker price while the market-data gate is closed (0): only the user's own quantities, average prices
-and booked P&L are read.
+No per-broker gate (BRK-1, owner 2 Nov 2026: TM-5 / TM-6 withdrawn): orders and market data go through this adapter
+like every other broker, under the same platform rules (phase0_paper_only, live_trading, broker_data_terms.json).
 
 TM-3 (market orders): SEBI's retail-algo framework and the exchanges ask that API orders be protected against an open
 market price; Groww does not state in a page ATP could read whether it takes a plain MARKET order from an API client
@@ -54,7 +50,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import httpx
 
-from app.brokers import gates, master_cache
+from app.brokers import master_cache
 from app.brokers.base import BrokerCapabilities, BrokerInterface, stop_order_params
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError, BrokerOrderRejected
 from app.brokers.models import (
@@ -408,10 +404,8 @@ class GrowwBroker(BrokerInterface):
             raise BrokerAPIError(f"{exchange}:{text} is not in today's Groww instrument list")
         return found
 
-    # --- market data (gated: TM-6) -----------------------------------------------------------------------------------
+    # --- market data -----------------------------------------------------------------------------------
 
-    def _data_gate(self) -> None:
-        gates.require_market_data(self.name, DISPLAY_NAME)
 
     @staticmethod
     def quote_from(data: Dict[str, Any], symbol: str) -> Quote:
@@ -439,11 +433,9 @@ class GrowwBroker(BrokerInterface):
 
     async def get_quote(self, symbols: List[str]) -> Dict[str, Quote]:
         """One call per symbol (Groww's quote endpoint takes one instrument; LTP takes many)."""
-        self._data_gate()
         return {key: await self._quote_one(key) for key in symbols}
 
     async def get_ltp(self, symbols: List[str]) -> Dict[str, float]:
-        self._data_gate()
         wanted: Dict[str, Dict[str, List[str]]] = {}
         for key in symbols:
             exchange, plain = key.split(":", 1) if ":" in key else ("NSE", key)
@@ -462,7 +454,6 @@ class GrowwBroker(BrokerInterface):
         return out
 
     async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:
-        self._data_gate()
         return await self._quote_one(f"{exchange}:{symbol}")
 
     async def get_ltp_for_symbol(self, symbol: str, exchange: str = "NSE") -> float:
@@ -471,7 +462,6 @@ class GrowwBroker(BrokerInterface):
 
     async def get_quotes_batch(self, items: Sequence[Tuple[str, str]]) -> Optional[Dict[Tuple[str, str], Quote]]:
         """The watchlist: one LTP call per segment (a quote without depth), keyed by the pair asked for."""
-        self._data_gate()
         keys: Dict[str, Tuple[str, str]] = {}
         for exchange, symbol in items:
             try:
@@ -483,7 +473,6 @@ class GrowwBroker(BrokerInterface):
         return {keys[k]: Quote(symbol=k, ltp=v) for k, v in prices.items() if k in keys}
 
     async def get_historical_data(self, symbol: str, exchange: str, interval: str, from_date: datetime, to_date: datetime) -> List[OHLCVBar]:
-        self._data_gate()
         g_exchange, segment, trading_symbol, _token = await self.resolve(symbol, exchange)
         groww_symbol = await self._groww_symbol(exchange, trading_symbol)
 
@@ -509,12 +498,10 @@ class GrowwBroker(BrokerInterface):
         return self._groww_symbols.get(((exchange or "NSE").upper(), trading_symbol), trading_symbol)
 
     async def get_intraday_candles(self, symbol: str, exchange: str, interval: str) -> List[OHLCVBar]:
-        self._data_gate()
         return await super().get_intraday_candles(symbol, exchange, interval)
 
     async def get_option_chain(self, underlying: str, expiry: Optional[date] = None) -> OptionChain:
         """The chain with Groww's Greeks (delta, IV per strike; the rest in `option_greeks`). Groww needs the expiry."""
-        self._data_gate()
         if expiry is None:
             raise BrokerAPIError("Groww's option chain needs an expiry date")
         name = INDEX_NAMES.get(underlying.upper(), underlying.upper())
@@ -549,21 +536,18 @@ class GrowwBroker(BrokerInterface):
 
     async def option_greeks(self, underlying: str, trading_symbol: str, expiry: date, exchange: str = "NSE") -> Dict[str, float]:
         """Groww's Greeks for one option contract: {delta, gamma, theta, vega, rho, iv} as Groww sends them."""
-        self._data_gate()
         url = self._url(GREEKS_PATH.format(exchange=exchange.upper(), underlying=underlying.upper(), symbol=trading_symbol,
                                            expiry=expiry.isoformat()))
         body = await self._send("GET", url, headers=self._session_headers())
         greeks = body.get("greeks") if isinstance(body, dict) and isinstance(body.get("greeks"), dict) else body
         return {k: _num(v) for k, v in (greeks or {}).items() if k in ("delta", "gamma", "theta", "vega", "rho", "iv")}
 
-    # --- orders (gated: TM-5) ----------------------------------------------------------------------------------------
+    # --- orders ----------------------------------------------------------------------------------------
 
-    def _order_gate(self) -> None:
-        gates.require_live_orders(self.name, DISPLAY_NAME)
 
     async def _order_reference(self, g_exchange: str, segment: str, trading_symbol: str) -> Optional[float]:
         """The reference price for a marketable limit (TM-3): Groww's own last price, read only to price this one order
-        and never shown. Reached only with the LIVE-order gate open."""
+        and never shown."""
         body = await self._send("GET", self._url(LTP_PATH), headers=self._session_headers(),
                                 params={"segment": segment, "exchange_symbols": f"{g_exchange}_{trading_symbol}"})
         value = body.get(f"{g_exchange}_{trading_symbol}") if isinstance(body, dict) else None
@@ -604,7 +588,6 @@ class GrowwBroker(BrokerInterface):
         return payload, note
 
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
-        self._order_gate()
         payload, note = await self.build_order_payload(order)
         body = await self._send("POST", self._url(PLACE_ORDER_PATH), headers=self._session_headers(), json_body=payload)
         order_id = str(body.get("groww_order_id") or "") if isinstance(body, dict) else ""
@@ -614,17 +597,14 @@ class GrowwBroker(BrokerInterface):
 
     async def place_stop_loss_order(self, symbol: str, exchange: str, transaction_type: OrderSide, quantity: float, trigger_price: float,
                                     product: str = "MIS", tag: Optional[str] = None, is_option: Optional[bool] = None) -> BrokerOrderResponse:
-        self._order_gate()
         return await super().place_stop_loss_order(symbol, exchange, transaction_type, quantity, trigger_price, product, tag, is_option)
 
     async def exit_position(self, symbol: str, exchange: str, quantity: float, side: OrderSide, *, product: str = "MIS",
                             tag: Optional[str] = None) -> BrokerOrderResponse:
-        self._order_gate()
         return await super().exit_position(symbol, exchange, quantity, side, product=product, tag=tag)
 
     async def modify_order(self, order_id: str, quantity: Optional[float] = None, price: Optional[float] = None,
                            trigger_price: Optional[float] = None, order_type: Optional[str] = None) -> BrokerOrderResponse:
-        self._order_gate()
         current = next((o for o in await self._order_rows() if str(o.get("groww_order_id")) == str(order_id)), None)
         if current is None:
             raise BrokerAPIError(f"Order {order_id} is not in the Groww order list")
@@ -639,7 +619,6 @@ class GrowwBroker(BrokerInterface):
         return BrokerOrderResponse(order_id=str(order_id), status="MODIFIED", raw=body if isinstance(body, dict) else None)
 
     async def cancel_order(self, order_id: str) -> BrokerOrderResponse:
-        self._order_gate()
         current = next((o for o in await self._order_rows() if str(o.get("groww_order_id")) == str(order_id)), None)
         segment = str((current or {}).get("segment") or "CASH")
         body = await self._send("POST", self._url(CANCEL_ORDER_PATH), headers=self._session_headers(),
@@ -659,7 +638,7 @@ class GrowwBroker(BrokerInterface):
         value = _num((body or {}).get("total_requirement"), -1.0) if isinstance(body, dict) else -1.0
         return value if value >= 0 else None
 
-    # --- books and account reads (work with the gates closed) ---------------------------------------------------------
+    # --- books and account reads ---------------------------------------------------------
 
     async def _order_rows(self) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
@@ -708,18 +687,16 @@ class GrowwBroker(BrokerInterface):
         return out
 
     async def get_positions(self) -> List[BrokerPosition]:
-        """Net positions (units). While the market-data gate is closed no broker price is read into ATP: `ltp` is 0 and
-        `pnl` is the booked part only (Groww's `realised_pnl`)."""
+        """Net positions (units), marked at the broker's last price; `pnl` = Groww's `realised_pnl` + the open part."""
         body = await self._send("GET", self._url(POSITIONS_PATH), headers=self._session_headers())
-        show_prices = gates.market_data_open(self.name)
         out: List[BrokerPosition] = []
         for p in (body.get("positions") if isinstance(body, dict) else None) or []:
             exchange = SEGMENT_EXCHANGE.get((str(p.get("exchange") or "NSE").upper(), str(p.get("segment") or "CASH").upper()), "NSE")
             qty = _num(p.get("quantity"))
             avg = _num(p.get("net_price")) or _num(p.get("net_carry_forward_price"))
             booked = _num(p.get("realised_pnl"))
-            ltp = _num(p.get("ltp")) if show_prices else 0.0
-            pnl = booked + (qty * (ltp - avg) if show_prices and ltp else 0.0)
+            ltp = _num(p.get("ltp"))
+            pnl = booked + (qty * (ltp - avg) if ltp else 0.0)
             out.append(BrokerPosition(symbol=str(p.get("trading_symbol") or "").upper(), exchange=exchange,
                                       product=str(p.get("product") or "MIS"), quantity=qty, average_price=round(avg, 2),
                                       ltp=ltp, pnl=round(pnl, 2)))

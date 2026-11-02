@@ -11,11 +11,8 @@ UCC and the current six-digit TOTP gives a view token and a session id; `POST /l
 Every later call goes to that base URL with `Auth` (trade token) + `Sid` (trade session id). ATP keeps those three in
 the encrypted credential row as one session string (`encode_session`), never logged, never returned.
 
-Gates (TM-5 / TM-6, app/brokers/gates.py): this adapter refuses every LIVE order action (place, modify, cancel, exit,
-stop) before anything is sent, and every market-data read (quotes, candles, the option chain, the streaming feed) before
-anything is asked, while the Kotak Neo gates are closed - the connect flow, the daily login, the profile check, positions,
-holdings, funds and the instrument list work. Prices inside positions and holdings are left out (0) while the
-market-data gate is closed: only the user's own quantities, average prices and booked P&L are read.
+No per-broker gate (BRK-1, owner 2 Nov 2026: TM-5 / TM-6 withdrawn): orders and market data go through this adapter
+like every other broker, under the same platform rules (phase0_paper_only, live_trading, broker_data_terms.json).
 
 TM-3 (market orders): Kotak Neo's Trade API page says market orders are not allowed for retail algo trading. The adapter
 declares `market_orders_allowed=False` and `stop_market=False`; a MARKET order goes as a marketable LIMIT a protection
@@ -42,7 +39,7 @@ from urllib.parse import quote
 
 import httpx
 
-from app.brokers import gates, master_cache
+from app.brokers import master_cache
 from app.brokers.base import BrokerCapabilities, BrokerInterface, stop_order_params
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError, BrokerOrderRejected
 from app.brokers.models import (
@@ -457,10 +454,8 @@ class KotakNeoBroker(BrokerInterface):
             raise BrokerAPIError(f"{exchange}:{text} is not in today's Kotak Neo instrument list")
         return found
 
-    # --- market data (gated: TM-6) -----------------------------------------------------------------------------------
+    # --- market data -----------------------------------------------------------------------------------
 
-    def _data_gate(self) -> None:
-        gates.require_market_data(self.name, DISPLAY_NAME)
 
     async def _quotes_raw(self, pairs: Sequence[Tuple[str, str]], kind: str = "all") -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
@@ -504,15 +499,12 @@ class KotakNeoBroker(BrokerInterface):
         return out
 
     async def get_quote(self, symbols: List[str]) -> Dict[str, Quote]:
-        self._data_gate()
         return await self._keyed_quotes(symbols)
 
     async def get_ltp(self, symbols: List[str]) -> Dict[str, float]:
-        self._data_gate()
         return {k: q.ltp for k, q in (await self._keyed_quotes(symbols, "ltp")).items()}
 
     async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:
-        self._data_gate()
         key = f"{exchange}:{symbol}"
         found = (await self._keyed_quotes([key])).get(key)
         if found is None:
@@ -524,7 +516,6 @@ class KotakNeoBroker(BrokerInterface):
         return float(quote_.ltp) if quote_ is not None else 0.0
 
     async def get_quotes_batch(self, items):
-        self._data_gate()
         keys = [f"{exchange}:{symbol}" for exchange, symbol in items]
         found = {}
         for key, (exchange, symbol) in zip(keys, items):
@@ -537,7 +528,6 @@ class KotakNeoBroker(BrokerInterface):
         return {found[k]: q for k, q in quotes.items()}
 
     async def get_historical_data(self, symbol: str, exchange: str, interval: str, from_date: datetime, to_date: datetime) -> List[OHLCVBar]:
-        self._data_gate()
         segment, token, _sym = await self.resolve(symbol, exchange)
 
         def day(value: datetime) -> str:
@@ -558,11 +548,9 @@ class KotakNeoBroker(BrokerInterface):
         return bars
 
     async def get_intraday_candles(self, symbol: str, exchange: str, interval: str) -> List[OHLCVBar]:
-        self._data_gate()
         return await super().get_intraday_candles(symbol, exchange, interval)
 
     async def get_option_chain(self, underlying: str, expiry: Optional[date] = None) -> OptionChain:
-        self._data_gate()
         exchange = "bse_fo" if underlying.upper() in ("SENSEX", "BANKEX") else "nse_fo"
         params: Dict[str, Any] = {"exchange": exchange, "underlying": underlying.upper()}
         if expiry is not None:
@@ -586,14 +574,12 @@ class KotakNeoBroker(BrokerInterface):
         return OptionChain(underlying=underlying, expiry=str(common.get("expiryDt") or (expiry.isoformat() if expiry else "")),
                            underlying_ltp=None, rows=[rows[k] for k in sorted(rows)])
 
-    # --- orders (gated: TM-5) ----------------------------------------------------------------------------------------
+    # --- orders ----------------------------------------------------------------------------------------
 
-    def _order_gate(self) -> None:
-        gates.require_live_orders(self.name, DISPLAY_NAME)
 
     async def _order_reference(self, segment: str, token: str) -> Optional[float]:
         """The reference price for a marketable limit (TM-3): the broker's own last price, read only to price this one
-        order and never shown. Reached only with the LIVE-order gate open."""
+        order and never shown."""
         rows = await self._quotes_raw([(segment, token)], "ltp")
         if not rows:
             return None
@@ -638,7 +624,6 @@ class KotakNeoBroker(BrokerInterface):
         return payload, note
 
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
-        self._order_gate()
         payload, note = await self.build_order_payload(order)
         body = await self._send("POST", self.base_url + PLACE_ORDER_PATH, headers=self._session_headers(with_consumer=True), form=payload)
         order_id = str(body.get("nOrdNo") or "") if isinstance(body, dict) else ""
@@ -648,17 +633,14 @@ class KotakNeoBroker(BrokerInterface):
 
     async def place_stop_loss_order(self, symbol: str, exchange: str, transaction_type: OrderSide, quantity: float, trigger_price: float,
                                     product: str = "MIS", tag: Optional[str] = None, is_option: Optional[bool] = None) -> BrokerOrderResponse:
-        self._order_gate()
         return await super().place_stop_loss_order(symbol, exchange, transaction_type, quantity, trigger_price, product, tag, is_option)
 
     async def exit_position(self, symbol: str, exchange: str, quantity: float, side: OrderSide, *, product: str = "MIS",
                             tag: Optional[str] = None) -> BrokerOrderResponse:
-        self._order_gate()
         return await super().exit_position(symbol, exchange, quantity, side, product=product, tag=tag)
 
     async def modify_order(self, order_id: str, quantity: Optional[float] = None, price: Optional[float] = None,
                            trigger_price: Optional[float] = None, order_type: Optional[str] = None) -> BrokerOrderResponse:
-        self._order_gate()
         current = next((o for o in await self._order_book_raw() if str(o.get("nOrdNo")) == str(order_id)), None)
         if current is None:
             raise BrokerAPIError(f"Order {order_id} is not in the Kotak Neo order book")
@@ -675,7 +657,6 @@ class KotakNeoBroker(BrokerInterface):
         return BrokerOrderResponse(order_id=str((body or {}).get("nOrdNo") or order_id), status="MODIFIED", raw=body)
 
     async def cancel_order(self, order_id: str) -> BrokerOrderResponse:
-        self._order_gate()
         body = await self._send("POST", self.base_url + CANCEL_ORDER_PATH, headers=self._session_headers(with_consumer=True),
                                 form={"on": str(order_id), "am": "NO"})
         return BrokerOrderResponse(order_id=str((body or {}).get("nOrdNo") or order_id), status="CANCELLED", raw=body)
@@ -692,7 +673,7 @@ class KotakNeoBroker(BrokerInterface):
         value = _num((data or {}).get("ordMrgn"), -1.0) if isinstance(data, dict) else -1.0
         return value if value >= 0 else None
 
-    # --- books and account reads (work with the gates closed) ---------------------------------------------------------
+    # --- books and account reads ---------------------------------------------------------
 
     async def _order_book_raw(self) -> List[Dict[str, Any]]:
         body = await self._send("GET", self.base_url + ORDER_BOOK_PATH, headers=self._session_headers())
@@ -724,10 +705,8 @@ class KotakNeoBroker(BrokerInterface):
         return out
 
     async def get_positions(self) -> List[BrokerPosition]:
-        """Net positions per the SDK's documented formula (units, not lots). While the market-data gate is closed the
-        broker's last price is not read into ATP: `ltp` is 0 and `pnl` is the booked part only (a flat position)."""
+        """Net positions per the SDK's documented formula (units, not lots), marked at the broker's last price."""
         body = await self._send("GET", self.base_url + POSITIONS_PATH, headers=self._session_headers())
-        show_prices = gates.market_data_open(self.name)
         out: List[BrokerPosition] = []
         for p in (body.get("data") if isinstance(body, dict) else None) or []:
             segment = str(p.get("exSeg") or "")
@@ -744,12 +723,9 @@ class KotakNeoBroker(BrokerInterface):
                 avg = sell_amt / (sell_qty * factor) if sell_qty else 0.0
             else:
                 avg = 0.0
-            ltp = _num(p.get("ltp")) if show_prices else 0.0
+            ltp = _num(p.get("ltp"))
             booked = sell_amt - buy_amt
-            if show_prices:
-                pnl = booked + net * ltp * factor
-            else:
-                pnl = booked if net == 0 else 0.0
+            pnl = booked + net * ltp * factor
             precision = int(_num(p.get("precision"), 2.0))
             out.append(BrokerPosition(symbol=platform_symbol(str(p.get("trdSym") or p.get("sym") or ""), segment),
                                       exchange=SEGMENT_EXCHANGE.get(segment, "NSE"), product=str(p.get("prod") or "MIS"),
@@ -758,15 +734,14 @@ class KotakNeoBroker(BrokerInterface):
 
     async def get_holdings(self) -> List[BrokerHolding]:
         body = await self._send("GET", self.base_url + HOLDINGS_PATH, headers=self._session_headers())
-        show_prices = gates.market_data_open(self.name)
         out: List[BrokerHolding] = []
         for h in (body.get("data") if isinstance(body, dict) else None) or []:
             segment = str(h.get("exchangeSegment") or "nse_cm")
             qty, avg = _num(h.get("quantity")), _num(h.get("averagePrice"))
-            close = _num(h.get("closingPrice")) if show_prices else 0.0
+            close = _num(h.get("closingPrice"))
             out.append(BrokerHolding(symbol=platform_symbol(str(h.get("symbol") or h.get("displaySymbol") or ""), segment),
                                      exchange=SEGMENT_EXCHANGE.get(segment, "NSE"), quantity=qty, average_price=avg, ltp=close,
-                                     pnl=round((close - avg) * qty, 2) if show_prices and close else 0.0))
+                                     pnl=round((close - avg) * qty, 2) if close else 0.0))
         return out
 
     async def get_margins(self) -> MarginInfo:

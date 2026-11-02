@@ -83,9 +83,6 @@ class CatalogEntry(BaseModel):
     daily_renewal: bool
     available: bool
     renew_fields: List[CatalogField] = []
-    # Part 1B (TM-5 / TM-6): {"live_orders": open|closed, "live_prices": open|closed, "note": plain words}.
-    gates: Dict[str, str] = Field(default_factory=dict)
-    requires_ui_v2: bool = False
     # Part 1B: the connect guide - {"points": [...], "links": [{"label", "url"}]} - or None.
     guide: Optional[Dict[str, Any]] = None
 
@@ -273,14 +270,9 @@ def connection_view(record: BrokerCredentialRecord, now: Optional[datetime] = No
 
 @router.get("/catalog", response_model=List[CatalogEntry])
 async def broker_catalog(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
-    """The easiest official way to connect each broker and only the fields it needs (static; see catalog.py). A broker
-    added as new user-facing work (Part 1B: Kotak Neo) is listed only while `ui_v2` is on for the organisation."""
-    rows = cat.catalog()
-    if any(r.get("requires_ui_v2") for r in rows):
-        from app.platform.controls import flag_enabled
-        if not await flag_enabled(session, "ui_v2", user.tenant_id):
-            rows = [r for r in rows if not r.get("requires_ui_v2")]
-    return rows
+    """The easiest official way to connect each broker and only the fields it needs (static; see catalog.py). Every broker
+    is listed for every organisation (BRK-1: no ui_v2-only tile)."""
+    return cat.catalog()
 
 
 @router.get("/connections", response_model=List[Connection])

@@ -585,6 +585,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # ported Daily trend fold and the ported level gate's commitment candle), unchanged, as of the last closed bar.
     # Read-only, the user's own chart only. OFF: GET /api/charts/read answers 404 and the button is hidden.
     "read_chart": "Read this chart: the areas, their state, the pullback state and the commitment candle as of the last closed bar",
+    # M77 SX-2 (owner order M77; app/study; needs `ui_v2`): "Save study" - the server's own snapshot of a chart study
+    # (bars, areas, structure, his drawings and notes), listed and searched in My studies, downloaded as JSON (PDF / PNG
+    # / CSV follow in SX-3..SX-5) and part of "Download my data". Read-only. OFF: /api/studies/* answers 404.
+    "study_export": "Save study: your own saved chart studies (snapshot, My studies, JSON download) - information only",
     # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
     # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.

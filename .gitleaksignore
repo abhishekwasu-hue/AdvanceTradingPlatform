@@ -66,3 +66,4 @@ scripts/check_public_repo.py:generic-api-key:152
 399d63ef6740152dc6cfc2b49b57340d37f554c4:backend/tests/test_m73_social_login.py:generic-api-key:430
 # M77 (study routes): `key=key` (the study's own idempotency key variable, not a secret) in backend/app/study/routes.py at commit f633ec1a on its branch.
 f633ec1a7fc54fdb371b1c8700d05a4e432a7a17:backend/app/study/routes.py:generic-api-key:111
+backend/app/study/routes.py:generic-api-key:125

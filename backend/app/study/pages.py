@@ -1,9 +1,10 @@
 """M77 SX-3: the page engine - a stored study snapshot -> A4 portrait pages drawn with Pillow (150 dpi, light,
 print-safe), each with the information-only footer and "Page n of N".
 
-* Sections drawn here: 1 cover, 3 structure, 4 areas, 11 notes and checklist, 12 the footer on every page. Every other
-  ticked section prints its title and one line "Not available: <plain reason>" (charts: drawn in SX-4; AI card,
-  option context, trade plan, pre-trade check, scenarios, similar setups: their sources are not saved with a study yet).
+* Sections drawn here: 1 cover, 2 charts (SX-4: one full-width chart per timeframe studied, app/study/chart.py), 3
+  structure, 4 areas, 11 notes and checklist, 12 the footer on every page. Every other ticked section prints its title
+  and one line "Not available: <plain reason>" (AI card, option context, trade plan, pre-trade check, scenarios,
+  similar setups: their sources are not saved with a study yet).
 * Every number comes from the snapshot (the server's own reads, app/study/snapshot.py) through the one Indian number
   formatter (app/study/numfmt.py); a missing value prints "not available", never a blank, a zero or a guess.
 * Colours are the app's light tokens (app/study/palette.py): seller rows in the `down` tint, buyer rows in the `up`
@@ -26,6 +27,7 @@ from PIL import Image, ImageDraw, ImageFont
 from app.charts.read_chart import TF_WORDS
 from app.study import fonts
 from app.study import snapshot as S
+from app.study.chart import render_chart
 from app.study.numfmt import NOT_AVAILABLE, format_number
 from app.study.palette import Palette, Rgb, palette
 
@@ -38,7 +40,8 @@ SIZE_TITLE, SIZE_HEAD, SIZE_BODY, SIZE_TABLE, SIZE_SMALL = 38, 28, 20, 18, 15
 LINE_GAP = 1.38                              # line height as a multiple of the font size
 CELL_PAD = 8
 IST = timezone(timedelta(hours=5, minutes=30))
-CHARTS_LATER = "the chart pictures are added to the study PDF in a later version"
+CHARTS_LATER = "the chart pictures are added to the study PDF in a later version"   # SX-3 wording, kept (SX-4 draws them)
+CHART_CAPTION = "chart - closed bars up to"
 ROLE_WORDS = {"supply": "Seller", "demand": "Buyer"}
 DIRECTION_WORDS = {"up": "Up", "up (weak)": "Up, weakening", "down": "Down", "down (weak)": "Down, weakening", "range": "Range",
                    "none": "Not clear"}
@@ -118,12 +121,13 @@ def wrap(text: str, size: int, max_w: float) -> list[str]:
 # ---------------------------------------------------------------------------------------------------------------------
 @dataclass
 class Op:
-    kind: str                                   # text | rect | rule
+    kind: str                                   # text | rect | rule | image
     box: tuple[float, float, float, float]      # text: (x, y, size, 0); rect / rule: (x0, y0, x1, y1)
     colour: Rgb
     text: str = ""
     outline: Rgb | None = None
     align: str = "left"                         # text: left | right (x is then the right edge)
+    image: Any = None                           # image: the picture placed at (x0, y0)
 
 
 @dataclass
@@ -216,6 +220,12 @@ class Layout:
                 draw_row(header, self.pal.surface, self.pal.text_muted)
             draw_row(row, (tints[i] if tints else None), self.pal.text)
         self.gap(10)
+
+    def picture(self, img: Image.Image) -> None:
+        """A picture (a chart) full width; it never splits across pages."""
+        self.room(img.height + 10)
+        self.ops.append(Op("image", (MARGIN, self.y, MARGIN + img.width, self.y + img.height), self.pal.border, image=img))
+        self.y += img.height + 10
 
     def kv(self, rows: Sequence[tuple[str, str]]) -> None:
         self.table([("Item", 0.32, "left"), ("Value", 0.68, "left")], [list(r) for r in rows], size=SIZE_BODY)
@@ -334,6 +344,44 @@ def notes(lay: Layout, snap: Mapping[str, Any]) -> None:
                   [[str(c.get("rule")), str(c.get("answer")).capitalize()] for c in checklist])
 
 
+CHART_H = 620
+
+
+def chart_inputs(snap: Mapping[str, Any], tf: str) -> dict[str, Any]:
+    """What app/study/chart.py draws for one timeframe of the snapshot: its chart, every area (each labelled with its
+    own timeframe), his drawings, that timeframe's protected level and the reference price."""
+    data = snap.get("data") or {}
+    chart = next((c for c in data.get("charts") or [] if c.get("tf") == tf), {"tf": tf, "bars": [], "reason": R_NO_CHART})
+    row: Mapping[str, Any] = next((r for r in (data.get("structure") or {}).get("timeframes") or [] if r.get("tf") == tf), {})
+    ref = ((data.get("areas") or {}).get("reference_price") or (data.get("cover") or {}).get("reference_price") or {}).get("value")
+    return {"chart": chart, "areas": list((data.get("areas") or {}).get("rows") or []), "drawings": list(data.get("drawings") or []),
+            "protected": row.get("protected"), "reference": ref}
+
+
+R_NO_CHART = "this timeframe has no chart in the study"
+
+
+def charts(lay: Layout, snap: Mapping[str, Any]) -> None:
+    lay.room(SIZE_HEAD * LINE_GAP + 28 + SIZE_BODY * LINE_GAP + CHART_H + 10)    # the heading starts with its first chart
+    lay.heading(S.SECTION_TITLES["charts"])
+    tfs = list(snap.get("timeframes") or [])
+    if not tfs:
+        lay.not_available(R_NO_CHART)
+        return
+    for tf in tfs:
+        parts = chart_inputs(snap, tf)
+        chart = parts["chart"]
+        words = TF_WORDS.get(tf, tf).capitalize()
+        if not chart.get("bars"):
+            lay.not_available(f"{words} chart - {str(chart.get('reason') or R_NO_CHART).rstrip('.')}")
+            continue
+        lay.room(SIZE_BODY * LINE_GAP + CHART_H + 10)
+        lay.para(f"{words} {CHART_CAPTION} {ist(chart.get('as_of'))}", colour=lay.pal.text_muted)
+        img, _ = render_chart(chart, areas=parts["areas"], drawings=parts["drawings"], protected=parts["protected"],
+                              reference=parts["reference"], pal=lay.pal, width=PAGE_W - 2 * MARGIN, height=CHART_H)
+        lay.picture(img)
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Pages
 # ---------------------------------------------------------------------------------------------------------------------
@@ -352,8 +400,7 @@ def layout(snap: Mapping[str, Any], fp: str, *, cvd: bool = False) -> tuple[list
         if section == "cover":
             continue
         if section == "charts":
-            lay.heading(S.SECTION_TITLES["charts"])
-            lay.not_available(CHARTS_LATER)
+            charts(lay, snap)
         elif section == "structure":
             structure(lay, snap)
         elif section == "areas":
@@ -417,6 +464,8 @@ def render(snap: Mapping[str, Any], fp: str, *, cvd: bool = False) -> list[Rende
                 x, y, size, _ = op.box
                 tx = x - width(op.text, int(size)) if op.align == "right" else x
                 text.append((tx, y, int(size), op.text))
+            elif op.kind == "image":
+                img.paste(op.image, (math.floor(op.box[0]), math.floor(op.box[1])))
             else:
                 x0, y0, x1, y1 = op.box
                 draw.rectangle((math.floor(x0), math.floor(y0), math.ceil(x1) - 1, math.ceil(y1) - 1), fill=op.colour, outline=op.outline)
@@ -428,4 +477,4 @@ def all_text(pages: Iterable[Rendered]) -> list[str]:
     return [t for p in pages for *_, t in p.text]
 
 
-__all__ = ["DPI", "PAGE_W", "PAGE_H", "CHARTS_LATER", "Rendered", "render", "layout", "ist", "price", "wrap", "width", "all_text"]
+__all__ = ["DPI", "PAGE_W", "PAGE_H", "CHARTS_LATER", "CHART_CAPTION", "chart_inputs", "Rendered", "render", "layout", "ist", "price", "wrap", "width", "all_text"]

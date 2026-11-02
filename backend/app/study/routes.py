@@ -8,6 +8,8 @@ places, changes or blocks an order.
 * `GET    /api/studies/{id}`       - one of his studies with its snapshot.
 * `GET    /api/studies/{id}/json`  - the snapshot as a JSON file (same study = same bytes).
 * `GET    /api/studies/{id}/pdf`   - the study as an A4 PDF (SX-3), rebuilt from the snapshot (same study = same bytes).
+* `GET    /api/studies/{id}/png`   - SX-4: the charts as one phone-friendly column PNG; `?tf=15m`: one chart only
+                                     ("Save as image"). Rebuilt from the snapshot (same study = same bytes).
 * `DELETE /api/studies/{id}`       - deletes one of his studies.
 Self-scoped: the caller's own rows inside his organisation; another member's study is "not found".
 """
@@ -33,11 +35,14 @@ from app.study import snapshot as S
 from app.study import store
 from app.study.numfmt import format_number
 from app.study.pdf import PdfTooLarge, study_pdf
+from app.study.png import NoSuchChart, PngTooLarge, chart_png, study_png
 
 FLAG = "study_export"
 router = APIRouter(prefix="/api/studies", tags=["studies"])
 pdf_rate_limited = user_rate_limit("study_pdf", config.STUDY_PDF_PER_MINUTE, 60.0,
                                    "You downloaded several study PDFs just now - wait a minute, then try again.")
+png_rate_limited = user_rate_limit("study_png", config.STUDY_PDF_PER_MINUTE, 60.0,
+                                   "You downloaded several study pictures just now - wait a minute, then try again.")
 rate_limited = user_rate_limit("study_save", config.STUDY_SAVES_PER_MINUTE, 60.0,
                                "You saved several studies just now - wait a minute, then save again.")
 Timeframe = Literal["1m", "3m", "5m", "15m", "30m", "1h", "1d"]
@@ -173,6 +178,24 @@ async def download_pdf(study_id: int, cvd: bool = False, user: User = Depends(ge
     except PdfTooLarge as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from None
     return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.get("/{study_id}/png", dependencies=[Depends(png_rate_limited)])
+async def download_png(study_id: int, tf: Timeframe | None = None, cvd: bool = False, user: User = Depends(get_current_user),
+                       session: AsyncSession = Depends(get_session)) -> Response:
+    """M77 SX-4: the study's charts as a PNG - every timeframe in one phone-friendly column, or one chart (`tf`)."""
+    await _flags(session, user)
+    row = await store.get_own(session, user.tenant_id, user.id, study_id)
+    snap = store.snapshot_of(row)
+    name = store.file_name(row, "png") if tf is None else store.file_name(row, "png").removesuffix(".png") + f"-{tf}.png"
+    await session.close()                                                # the build runs in a worker thread
+    try:
+        data = await asyncio.to_thread(study_png, snap, cvd=cvd) if tf is None else await asyncio.to_thread(chart_png, snap, tf, cvd=cvd)
+    except NoSuchChart:
+        raise HTTPException(status_code=404, detail="This study has no chart for that timeframe. Save it with the Charts section ticked.") from None
+    except PngTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from None
+    return Response(data, media_type="image/png", headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @router.delete("/{study_id}")

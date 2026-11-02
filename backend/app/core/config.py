@@ -800,6 +800,8 @@ STUDY_SAVES_PER_MINUTE = _bounded_int("STUDY_SAVES_PER_MINUTE", 6, 1, 120)
 # M77 SX-3: the largest study PDF (M77Q-3: 8 MB), and how many PDFs one member may build per minute (each draws every page).
 STUDY_PDF_MAX_BYTES = _bounded_int("STUDY_PDF_MAX_BYTES", 8 * 1024 * 1024, 1024 * 1024, 32 * 1024 * 1024)
 STUDY_PDF_PER_MINUTE = _bounded_int("STUDY_PDF_PER_MINUTE", 10, 1, 120)
+# M77 SX-4: the largest study picture (M77Q-3: 4 MB) - one chart ("Save as image") or the phone single column.
+STUDY_PNG_MAX_BYTES = _bounded_int("STUDY_PNG_MAX_BYTES", 4 * 1024 * 1024, 512 * 1024, 16 * 1024 * 1024)
 
 
 # OI Banner (O2): the collector's slot and the strikes kept either side of the money (wider than any banner window,

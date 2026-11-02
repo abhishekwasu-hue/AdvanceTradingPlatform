@@ -1,9 +1,9 @@
 import { ALERTS_PATH } from "./getStarted";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { PaperBadge } from "../ui/PaperBadge";
 import { Details } from "../ui/numbersFirst";
 import { BellRing, Mail, Send, Smartphone } from "lucide-react";
 import { useEffect, useId, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { Link } from "react-router";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { currentPushEnv, pushReadiness, vapidKeyBytes } from "../alerts/push";
@@ -74,7 +74,7 @@ export function BrokerStepV2({ done, onSkip, intro }: StepProps & { onSkip: () =
       <div className="space-y-space-3">
         <p className="text-t14 text-fg">Your broker account is connected. Prices and your positions come from it.</p>
         {intro && <Details id="setup.broker">{intro}</Details>}
-        <Link to={CONNECT_BROKER_PATH} className={LINK_SECONDARY}>Open broker settings</Link>
+        <InPlaceLink to={CONNECT_BROKER_PATH} className={LINK_SECONDARY}>Open broker settings</InPlaceLink>
       </div>
     );
   }
@@ -87,7 +87,7 @@ export function BrokerStepV2({ done, onSkip, intro }: StepProps & { onSkip: () =
         <p className={P}>Want to practise first? Trade on paper: no order reaches your broker. You can connect a broker at any time.</p>
       </Details>
       <div className="flex flex-col gap-space-2 sm:flex-row">
-        <Link to={CONNECT_BROKER_PATH} className={LINK_PRIMARY}>Connect your broker</Link>
+        <InPlaceLink to={CONNECT_BROKER_PATH} className={LINK_PRIMARY}>Connect your broker</InPlaceLink>
         <ActionV2 onClick={onSkip}>I&apos;ll trade on paper first</ActionV2>
       </div>
     </div>
@@ -170,7 +170,7 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
     return (
       <div className="space-y-space-3">
         <p className="text-t14 text-fg">Your organisation sets its risk limits on the Risk page.</p>
-        <Link to="/risk-management" className={LINK_PRIMARY}>Open the Risk page</Link>
+        <InPlaceLink to="/risk-management" className={LINK_PRIMARY}>Open the Risk page</InPlaceLink>
       </div>
     );
   }
@@ -312,7 +312,7 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
         <ActionV2 busy={busy === "test"} disabled={!source || busy !== null} onClick={() => void runTest()}>Test it</ActionV2>
         {/* REV-1 M2, decision D3: no one-tap bot - the Trading bot form opens with nothing pre-chosen; he picks the
             strategy, the symbol and how it is traded there himself. */}
-        <Link to={START_BOT_PATH} className={LINK_SECONDARY} data-start-bot>Start a trading bot</Link>
+        <InPlaceLink to={START_BOT_PATH} className={LINK_SECONDARY} data-start-bot>Start a trading bot</InPlaceLink>
       </div>
       {test && <Note tone={test.tone}>{test.text}</Note>}
     </li>
@@ -353,7 +353,7 @@ export function StrategyStepV2({ onChanged }: StepProps) {
       <ul className="space-y-space-3">
         {shown.map(({ s, info }) => <SuggestionCard key={s.strategyId} s={s} info={info} source={source} onChanged={onChanged} />)}
       </ul>
-      <Link to="/strategies" className="inline-flex min-h-11 items-center text-t14 font-medium text-brand hover:underline md:min-h-0">See every strategy in the Library</Link>
+      <InPlaceLink to="/strategies" className="inline-flex min-h-11 items-center text-t14 font-medium text-brand hover:underline md:min-h-0">See every strategy in the Library</InPlaceLink>
     </div>
   );
 }
@@ -484,7 +484,7 @@ export function AlertsStepV2({ onChanged }: StepProps) {
                 {canPush && <ActionV2 busy={busy === "push-on"} disabled={busy !== null} onClick={() => void pushHere(c?.min_severity ?? "WARNING")}>
                   <BellRing size={16} aria-hidden /> Turn on here</ActionV2>}
                 {c?.enabled && <ActionV2 busy={busy === `test-${type}`} disabled={busy !== null} onClick={() => void sendTest(type)}>Send a test</ActionV2>}
-                {!c && type !== "PUSH" && <Link to={ALERTS_PATH} className={LINK_SECONDARY}>Open alert settings</Link>}
+                {!c && type !== "PUSH" && <InPlaceLink to={ALERTS_PATH} className={LINK_SECONDARY}>Open alert settings</InPlaceLink>}
               </div>
               {n && <Note tone={n.tone}>{n.text}</Note>}
             </li>

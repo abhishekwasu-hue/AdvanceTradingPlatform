@@ -125,17 +125,20 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await shot("01-idea");
 
         await idea.locator("[data-test-idea='A5']").click();
-        await expect(page).toHaveURL(/\/strategies\/test\?template=A5&timeframe=15m/);
+        // M75 NAV: it opens in place over the tab (the path stays; the panel is on top).
+        await expect(page).toHaveURL(/\?panel=test:template%3DA5%26timeframe%3D15m/);
+        const panel = page.locator("[data-inplace-panel='test']");
+        await expect(panel).toBeVisible({ timeout: 15_000 });
         await settle(page);
-        await expectChoice(page.getByRole("combobox").first(), "template-pick:A5");
-        await expectChoice(page.getByLabel("Chart timeframe"), "1d");
-        const note = page.locator("[data-template-test-note]");
+        await expectChoice(panel.getByRole("combobox").first(), "template-pick:A5");
+        await expectChoice(panel.getByLabel("Chart timeframe"), "1d");
+        const note = panel.locator("[data-template-test-note]");
         await expect(note).toContainText("Tests the idea's own strategy with the settings from the idea.");
         await expect(note).toContainText("The idea is set to 15-minute bars. Without your broker's prices today only Daily history is stored, so this test runs on Daily.");
         await shot("02-test-page");
 
-        await page.getByRole("button", { name: "Run Backtest" }).click();
-        await expect(page.getByTestId("prices-from")).toHaveText(STORED_LINE);
+        await panel.getByRole("button", { name: "Run Backtest" }).click();
+        await expect(panel.getByTestId("prices-from")).toHaveText(STORED_LINE);
         const adopt = posts.find((p) => p.url === "/strategy-templates/A5/adopt");
         expect(adopt?.body).toEqual({ timeframe: "1d", params: { retest_of: "swing", retest_max_bars: 10, vol_mult: 1.5, range_mode: "fixed" } });
         expect(posts.find((p) => p.url === "/backtest/bars")?.body).toMatchObject({ timeframe: "day" });
@@ -143,11 +146,11 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
           data_source: "lake:daily" });
         // Nothing starts: no deployment is created from the test page.
         expect(posts.some((p) => p.url.startsWith("/deployments"))).toBe(false);
-        await page.getByTestId("prices-from").scrollIntoViewIfNeeded();
+        await panel.getByTestId("prices-from").scrollIntoViewIfNeeded();
         await shot("03-template-backtest");
 
         // His own intraday pick says what it needs instead of failing later.
-        await choose(page, page.getByLabel("Chart timeframe"), "15m");
+        await choose(page, panel.getByLabel("Chart timeframe"), "15m");
         await expect(note).toContainText("15-minute bars need prices from your broker: log in on the Broker page, or pick Daily to test on ATP's stored history.");
       });
     });

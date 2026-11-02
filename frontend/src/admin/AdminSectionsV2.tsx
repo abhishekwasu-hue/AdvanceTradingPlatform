@@ -1,6 +1,5 @@
 import { Activity, Database, Eye, Lock, Search, Users } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router";
 import { Details } from "../ui/Details";
 import { CARD } from "../dashboard/CardV2";
 import { startView } from "../api/viewAs";
@@ -15,6 +14,7 @@ import {
 import { SkeletonRows } from "../components/primitives";
 import FeedStatusCard from "./FeedStatusCard";
 import { formatDateIST, formatINR, formatNumber, formatTimeIST } from "../ui/format";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 
 /**
  * MO3 addition (a): the new read-only parts of the admin console's sections. Each reads its own `/api/admin/console/*`
@@ -211,7 +211,7 @@ export function UsersPanel() {
                   <td className={`${TD} text-fg`}>{u.plan}</td>
                   <td className={`${TD} whitespace-nowrap text-fg-muted`}>{shortDate(u.signed_up_at)}</td>
                   <td className={`${TD} whitespace-nowrap text-fg-muted`}>{ago(u.last_seen_at)}</td>
-                  <td className={`${TD} text-right`}><Link to={`/admin?section=support&user=${u.id}`} className="whitespace-nowrap text-brand hover:underline">Status</Link></td>
+                  <td className={`${TD} text-right`}><InPlaceLink to={`/admin?section=support&user=${u.id}`} className="whitespace-nowrap text-brand hover:underline">Status</InPlaceLink></td>
                 </tr>
               ))}
             </tbody>

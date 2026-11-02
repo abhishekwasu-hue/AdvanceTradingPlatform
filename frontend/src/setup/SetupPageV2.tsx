@@ -1,5 +1,6 @@
 import { ChevronRight } from "lucide-react";
-import { Link, Navigate } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
+import { Navigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import type { PageProps } from "../routes";
 import { SIGN_IN_PATH } from "../ui/BrokerGate";
@@ -22,10 +23,10 @@ export default function SetupPageV2(_props: PageProps = {}) {
     <div className="mx-auto w-full max-w-[760px] space-y-space-4 md:space-y-space-6" data-page="setup-v2">
       <SetupWizardV2 />
       {user && !liveHidden && (
-        <Link to={GO_LIVE_PATH_V2} data-block="prepare-live"
+        <InPlaceLink to={GO_LIVE_PATH_V2} data-block="prepare-live"
           className="inline-flex min-h-11 items-center gap-space-1 rounded-control text-t14 font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
           Prepare for LIVE <ChevronRight size={16} aria-hidden />
-        </Link>
+        </InPlaceLink>
       )}
     </div>
   );

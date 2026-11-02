@@ -205,7 +205,10 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         }
         await shot("01-today");
         await block.getByRole("link", { name: "Watch a list on Signals" }).click();
-        await expect(page).toHaveURL(/\/signals$/);
+        // M75 NAV: it opens in place over the tab (the path stays; the panel is on top).
+        await expect(page).toHaveURL(/\/\?panel=signals$/);
+        const panel = page.locator("[data-inplace-panel='signals']");
+        await expect(panel).toBeVisible({ timeout: 15_000 });
         await expect(page.locator("[data-day-one='setup']")).toBeVisible();
       });
     });

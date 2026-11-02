@@ -1,4 +1,3 @@
-import { useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { LINK_SECONDARY } from "../dashboard/CardV2";
 import { LOCAL_INTRO_STORE, clearIntroDismissals } from "../ui/PageIntro";
@@ -12,15 +11,13 @@ import { showAllTipsAgain, skipAllTips, useTours } from "./state";
 export default function TipsButtonsV2({ onDone, className = "" }: { onDone?: () => void; className?: string }) {
   const { user } = useAuth();
   const tips = useTours(user?.id ?? null);
-  const navigate = useNavigate();
   if (!user || !tips.store) return null;
   const store = tips.store;
   const off = !!tips.marks.skip_all_at;
   const again = () => {
     void store.update(showAllTipsAgain);
     clearIntroDismissals(LOCAL_INTRO_STORE, user.id);
-    onDone?.();
-    navigate("/");
+    onDone?.();   // M75 NAV-6b: the tips replay on the tab he is on (no jump to Today); the dialog closes
   };
   const skip = () => { void store.update(skipAllTips(new Date().toISOString())); onDone?.(); };
   return (

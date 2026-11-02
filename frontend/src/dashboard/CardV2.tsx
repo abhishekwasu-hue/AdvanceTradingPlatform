@@ -1,6 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { useId, type ReactNode } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { chipClass } from "../ui/Chip";
 import { Skeleton } from "../components/primitives";
 
@@ -15,11 +15,15 @@ export const CARD = "rounded-panel border border-subtle bg-surface-1 shadow-card
 export const LINK_PRIMARY = "inline-flex h-11 shrink-0 items-center justify-center gap-space-2 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface md:h-9";
 export const LINK_SECONDARY = "inline-flex h-11 shrink-0 items-center justify-center gap-space-2 rounded-control border border-border bg-surface-1 px-space-4 text-t14 font-semibold text-fg transition-colors duration-fast hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface md:h-9";
 
+const MORE = "inline-flex h-11 items-center gap-space-1 rounded-control text-t14 font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-auto";
+
 export function CardV2({ title, count, more, children, className = "", testId, tour, badge }: {
   title: ReactNode;
   /** CT-1 C8: the screen's one mode badge (PAPER), beside the title and outside the heading's name. */
   badge?: ReactNode;
   count?: number;
+  /** M75 NAV-6a: drawn as <InPlaceLink> - the facility opens in place over the tab where a panel shows it (the real
+   * address stays in `href`); an address no panel shows navigates as before. */
   more?: { label: string; to: string };
   children: ReactNode;
   className?: string;
@@ -39,9 +43,7 @@ export function CardV2({ title, count, more, children, className = "", testId, t
         </h2>
         {badge && <span className="mr-auto flex items-center">{badge}</span>}
         {more && (
-          <Link to={more.to} className="inline-flex h-11 items-center gap-space-1 rounded-control text-t14 font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-auto">
-            {more.label} <ChevronRight size={16} aria-hidden />
-          </Link>
+          <InPlaceLink to={more.to} className={MORE}>{more.label} <ChevronRight size={16} aria-hidden /></InPlaceLink>
         )}
       </div>
       <div className="mt-space-3">{children}</div>
@@ -51,13 +53,14 @@ export function CardV2({ title, count, more, children, className = "", testId, t
 
 /** A friendly empty state with at most one action (§5 "Empty states"; UX-11 U4: one line + one action - a link or a
  * button). Shared as `EmptyState` in src/ui/numbersFirst.ts. */
+/** M75 NAV-6a: a link action is drawn as <InPlaceLink> (the facility opens in place where a panel shows it), as `more`. */
 export type EmptyAction = { label: string; to: string } | { label: string; onClick: () => void };
 export function EmptyStateV2({ text, action }: { text: string; action?: EmptyAction }) {
   return (
     <div className="flex flex-col items-start gap-space-3 py-space-2 sm:flex-row sm:items-center sm:justify-between" data-empty>
       <p className="text-t14 text-fg-muted">{text}</p>
       {action && ("to" in action
-        ? <Link to={action.to} className={LINK_SECONDARY}>{action.label}</Link>
+        ? <InPlaceLink to={action.to} className={LINK_SECONDARY}>{action.label}</InPlaceLink>
         : <button type="button" onClick={action.onClick} className={LINK_SECONDARY}>{action.label}</button>)}
     </div>
   );

@@ -208,7 +208,9 @@ test.describe("settings index behaviour", () => {
     await expect(page.locator("[data-telegram-elsewhere]")).toBeVisible();
     await expect(page.locator("#alerts").getByPlaceholder(/Bot token/)).toHaveCount(0);
     await page.locator("[data-telegram-elsewhere] a").click();
-    await expect(page).toHaveURL(/\/settings\/advanced#own-bot$/);
+    // M75 NAV-7: Advanced opens in place over Alerts, on its own-bot row (the path stays).
+    await expect(page).toHaveURL(/\/settings\/alerts\?panel=advanced::own-bot$/);
+    await expect(page.locator("[data-inplace-panel='advanced']")).toBeVisible({ timeout: 15_000 });
     await expect(page.locator("#own-bot")).toHaveAttribute("open", "");
     await expect(page.locator("#own-bot").getByPlaceholder(/Bot token/)).toBeVisible();
   });

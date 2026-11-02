@@ -93,7 +93,10 @@ test.describe("v2 risk 1440 desktop", () => {
     await expect(page.locator("form[data-block='limits']")).toHaveCount(0);
     await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(0);
     await link.click();
-    await expect(page).toHaveURL(/\/settings\/risk-limits$/);
+    // M75 NAV: it opens in place over the tab (the path stays; the panel is on top).
+    await expect(page).toHaveURL(/\/risk-management\?panel=risk-limits$/);
+    const panel = page.locator("[data-inplace-panel='risk-limits']");
+    await expect(panel).toBeVisible({ timeout: 15_000 });
     expect(writes.calls.filter((c) => c.url.startsWith("/risk-settings"))).toHaveLength(0);
   });
 

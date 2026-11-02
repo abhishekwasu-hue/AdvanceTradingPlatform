@@ -1,6 +1,7 @@
 import { ChevronRight, Plug } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useLocation } from "react-router";
+import { useLocation } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { BROKER_PATH } from "../broker/paths";
 import AlertChannelsCard from "../components/AlertChannelsCard";
@@ -42,12 +43,12 @@ function Section({ id, title, tour, children }: { id: string; title: string; tou
 export function BrokerLinkCard() {
   return (
     <Card title="Broker">
-      <Link to={BROKER_PAGE_PATH} data-broker-link
+      <InPlaceLink to={BROKER_PAGE_PATH} data-broker-link
         className="-m-1 flex min-h-11 items-center gap-3 rounded-lg p-1 text-sm font-medium text-fg hover:bg-surface-2">
         <Plug size={18} aria-hidden className="shrink-0 text-fg-muted" />
         <span className="flex-1">Connect, renew or remove your broker on the Broker page</span>
         <ChevronRight size={16} aria-hidden className="shrink-0 text-fg-muted" />
-      </Link>
+      </InPlaceLink>
     </Card>
   );
 }
@@ -90,7 +91,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="Settings"
-        actions={<Link to={GO_LIVE_PATH} className="inline-flex min-h-11 items-center gap-1 rounded-md text-sm font-medium text-brand hover:underline md:min-h-0">Prepare for LIVE <ChevronRight size={14} aria-hidden /></Link>} />
+        actions={<InPlaceLink to={GO_LIVE_PATH} className="inline-flex min-h-11 items-center gap-1 rounded-md text-sm font-medium text-brand hover:underline md:min-h-0">Prepare for LIVE <ChevronRight size={14} aria-hidden /></InPlaceLink>} />
       {/* UI2-7: Settings → Setup (the wizard), only while ui_v2 is on; off, nothing renders. P3: the go-live checklist is
           under Advanced, below. */}
       {v2 && <SetupLinkV2 />}

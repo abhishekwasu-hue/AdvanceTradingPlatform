@@ -51,7 +51,9 @@ export interface IndicatorsControl {
   groups?: readonly MenuGroup[];
 }
 export interface SettingsControl { prefs: ChartPrefs; onChange: (patch: ChartPrefsPatch) => void; error?: string | null }
-export interface SymbolControl { value: string; exchange: string; onPick: Parameters<typeof SymbolPicker>[0]["onPick"]; storageKey: string | null; label?: string; className?: string }
+export interface SymbolControl { value: string; exchange: string; onPick: Parameters<typeof SymbolPicker>[0]["onPick"]; storageKey: string | null; label?: string; className?: string;
+  /** M75 W-2: the picker's universe ("with-contracts": futures and option contracts too). */
+  universe?: Parameters<typeof SymbolPicker>[0]["universe"] }
 
 export interface ChartToolbarProps {
   mode: "full" | "compact";
@@ -172,7 +174,7 @@ function FullBar({ label, symbol, timeframe, chartType, indicators, drawing, set
   return (
     <div role="toolbar" aria-label={label} data-chart-toolbar="full" data-tour={tour}
       className={cx("relative flex flex-wrap items-center gap-x-space-2 gap-y-space-1 border-b border-subtle p-space-2", className)}>
-      {symbol && <SymbolPicker value={symbol.value} exchange={symbol.exchange} onPick={symbol.onPick} storageKey={symbol.storageKey} label={symbol.label}
+      {symbol && <SymbolPicker value={symbol.value} exchange={symbol.exchange} onPick={symbol.onPick} storageKey={symbol.storageKey} label={symbol.label} universe={symbol.universe}
         className={symbol.className ?? "w-44 min-w-[8.5rem] flex-none"} />}
       {status}
       <div className={wrapperClassName ?? "w-auto"} data-tour={tfTour}><TimeframePicker {...tf} /></div>
@@ -200,7 +202,7 @@ function PhoneBar({ label, symbol, timeframe, chartType, indicators, drawing, se
   return (
     <div role="toolbar" aria-label={label} data-chart-toolbar="phone" data-tour={tour}
       className={cx("relative flex items-center border-b border-subtle px-space-1 py-space-2", className)}>
-      {symbol && <SymbolPicker value={symbol.value} exchange={symbol.exchange} onPick={symbol.onPick} storageKey={symbol.storageKey} label={symbol.label}
+      {symbol && <SymbolPicker value={symbol.value} exchange={symbol.exchange} onPick={symbol.onPick} storageKey={symbol.storageKey} label={symbol.label} universe={symbol.universe}
         className="mr-space-1 min-w-0 flex-1" />}
       <div className="shrink-0" data-tour={tfTour}><TimeframePicker {...timeframe} compact maxFavourites={0} /></div>
       {indicators && <div className="inline-flex" data-tour="charts-indicators"><IndicatorsMenu state={indicators.state} on={indicators.on} onToggle={indicators.onToggle} groups={indicators.groups} iconOnly spread /></div>}
@@ -267,7 +269,7 @@ function CompactBar({ label, symbol, timeframe, chartType, indicators, settings,
     <div ref={ref} role="toolbar" aria-label={label} data-chart-toolbar="compact"
       className={cx("relative flex flex-wrap items-center gap-space-1 border-b border-subtle p-space-1", className)}>
       {leading}
-      {symbol && <SymbolPicker value={symbol.value} exchange={symbol.exchange} onPick={symbol.onPick} storageKey={symbol.storageKey} label={symbol.label}
+      {symbol && <SymbolPicker value={symbol.value} exchange={symbol.exchange} onPick={symbol.onPick} storageKey={symbol.storageKey} label={symbol.label} universe={symbol.universe}
         className={symbol.className ?? "min-w-[7.5rem] flex-1"} />}
       <div className={wrapperClassName ?? (symbol ? "shrink-0" : "min-w-fit flex-1")}><TimeframePicker {...timeframe} maxFavourites={maxFavourites} /></div>
       {chartType && (

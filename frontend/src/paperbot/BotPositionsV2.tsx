@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import type { PortfolioExposure, TradeRecord } from "../types";
 import { heldRows } from "../trading/model";
 import { BUTTON_SECONDARY } from "../trading/PartsV2";
@@ -59,9 +59,9 @@ export function BotPositionsV2({ positions, exposure, canTrade, onExit }: {
       </div>
       <p className="flex flex-wrap gap-space-1" data-bot-legs>
         {positions.map((p) => (
-          <Link key={p.id} to="/positions" className="rounded-pill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+          <InPlaceLink key={p.id} to="/positions" className="rounded-pill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
             <Chip tone="neutral" variant="meaning" name="bot-leg">{p.symbol}</Chip>
-          </Link>
+          </InPlaceLink>
         ))}
       </p>
       {canTrade && paper.length > 0 && (

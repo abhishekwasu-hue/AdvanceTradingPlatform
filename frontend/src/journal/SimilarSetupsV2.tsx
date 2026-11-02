@@ -1,6 +1,6 @@
 import { History } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { reasonWords } from "../signals/signalText";
 import { Details } from "../ui/Details";
 import { formatDateIST } from "../ui/format";
@@ -27,7 +27,7 @@ function MatchRow({ m, onOpenTrade }: { m: RecallMatch; onOpenTrade?: (week: str
       <span className="text-fg-muted">{m.how_closed}</span>
       {onOpenTrade
         ? <button type="button" className="ml-auto text-brand underline-offset-2 hover:underline" aria-label={label} onClick={() => onOpenTrade(m.journal_week, m.trade_id)}>Open</button>
-        : <Link to={journalLink(m)} className="ml-auto text-brand underline-offset-2 hover:underline" aria-label={label}>Open</Link>}
+        : <InPlaceLink to={journalLink(m)} className="ml-auto text-brand underline-offset-2 hover:underline" aria-label={label}>Open</InPlaceLink>}
     </li>
   );
 }

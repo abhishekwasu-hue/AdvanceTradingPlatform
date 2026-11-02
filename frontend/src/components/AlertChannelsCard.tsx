@@ -1,7 +1,7 @@
 import { errorSentence } from "../api/errors";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { BellRing, Mail, MessageSquare, Send, Webhook } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router";
 import { api } from "../api/client";
 import WebPushSection from "../alerts/WebPushSection";
 import WhatsAppSection from "../alerts/WhatsAppSection";
@@ -255,7 +255,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
             <div className="flex items-center gap-2 text-sm font-bold text-fg"><Send size={14} /> Telegram</div>
             <p className="text-xs text-fg-muted" data-telegram-elsewhere>
               {platformTelegram ? "Connected with the app's own Telegram bot. Manage it under Connect Telegram, above." : "Use Connect Telegram, above."}{" "}
-              Your organisation&apos;s own bot is under <Link to={OWN_BOT_PATH} className="text-brand hover:underline">Advanced</Link>.
+              Your organisation&apos;s own bot is under <InPlaceLink to={OWN_BOT_PATH} className="text-brand hover:underline">Advanced</InPlaceLink>.
             </p>
           </div>
           <WebPushSection channel={stored("PUSH")} deliveries={deliveries} busy={busy} run={run} test={() => test("PUSH")} />
@@ -276,7 +276,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
             </ul>
             <p className="text-xs text-fg-muted">
               These need your own mail server, SMS provider or app. Set them up under{" "}
-              <Link to={ALERT_DELIVERY_PATH} className="text-brand hover:underline" data-alert-delivery-link>Advanced</Link>.
+              <InPlaceLink to={ALERT_DELIVERY_PATH} className="text-brand hover:underline" data-alert-delivery-link>Advanced</InPlaceLink>.
             </p>
           </div>
         </div>

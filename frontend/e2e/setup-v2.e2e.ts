@@ -253,7 +253,9 @@ test.describe("setup wizard 390 x 844", () => {
     await cards.first().getByRole("button", { name: "Test it" }).click();
     await expect(cards.first()).toContainText("12 trades · 58% won · +₹4,250 on the last 30 days of NIFTY 50 prices.");
     await cards.nth(2).getByRole("link", { name: "Start a trading bot" }).click();
-    await expect(page).toHaveURL(/\/deployments$/);
+    // M75 NAV-7: the Trading bot form opens in place over the set-up (the path stays).
+    await expect(page).toHaveURL(/\/settings\/setup\?panel=bots$/);
+    await expect(page.locator("[data-inplace-panel='bots']")).toBeVisible({ timeout: 15_000 });
     expect(server.sent.filter((c) => c.method === "POST" && c.url === "/deployments")).toEqual([]);
     expect(server.sent.filter((c) => JSON.stringify(c.body ?? "").includes("LIVE"))).toEqual([]);
   });
@@ -320,8 +322,9 @@ test.describe("setup wizard 390 x 844", () => {
     await open(page);
     await expect(page.locator("[data-block='go-live']")).toHaveCount(0);
     await page.locator("[data-block='prepare-live']").click();
-    await expect(page).toHaveURL(/\/settings\/advanced#go-live$/);
-    await expect(page.locator("[data-block='go-live']")).toContainText("Go-live checklist");
+    // M75 NAV-7: Advanced opens in place on its go-live row (the path stays).
+    await expect(page).toHaveURL(/\/settings\/setup\?panel=advanced::go-live$/);
+    await expect(page.locator("[data-inplace-panel='advanced'] [data-block='go-live']")).toContainText("Go-live checklist");
     await expect(page.locator("[data-block='go-live'] [data-row='risk']")).toContainText("Risk limits set");
   });
 });

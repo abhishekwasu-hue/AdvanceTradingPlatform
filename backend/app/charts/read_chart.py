@@ -175,9 +175,12 @@ def commitment_part(frame: pd.DataFrame, areas: Sequence[Mapping[str, Any]], ctx
 
 
 def read_closed(frame: pd.DataFrame, tf: str, when: datetime, *, bands: Sequence[Mapping[str, Any]] = (),
-                areas_known: Optional[datetime] = None, ctx: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+                areas_known: Optional[datetime] = None, ctx: Optional[Mapping[str, Any]] = None,
+                mtf: Sequence[Mapping[str, Any]] | None = None) -> Dict[str, Any]:
     """The reading of `frame` (closed bars, ascending) as of `when`: structure, areas, pullback state, commitment candle
-    and the plain lines. Pure: the caller's bars, the stored areas and the Daily context are its only inputs."""
+    and the plain lines. Pure: the caller's bars, the stored areas and the Daily context are its only inputs.
+    M75 W-3: `mtf` (the top-down rows as of the same bar; given while `copilot_workspace` is on) adds `annotations` -
+    ATP's annotation set for the Copilot's chart workspace (app/charts/workspace_reading.py)."""
     frame = closed_only(frame.reset_index(drop=True), when)
     n = len(frame)
     out: Dict[str, Any] = {"tf": tf, "bars": n, "as_of": pal._iso(frame["bar_end"].iloc[-1]) if n else None,
@@ -194,6 +197,9 @@ def read_closed(frame: pd.DataFrame, tf: str, when: datetime, *, bands: Sequence
     lines += [a["words"] for a in out["areas"]] if out["areas"] else ["No stored areas near the price on this chart."]
     lines.append(out["commitment"]["words"] if out["commitment"] else "No commitment candle at an area since the areas were stored.")
     out["lines"] = lines
+    if mtf is not None:
+        from app.charts import workspace_reading as WR
+        out["annotations"] = WR.atp_annotations(frame, layer, tf, out["areas"], mtf)
     return out
 
 
@@ -255,8 +261,19 @@ async def read_chart(instrument: str = Query(..., min_length=1, max_length=100),
     known = zones.get("as_of")
     known_at = datetime.fromisoformat(known) if isinstance(known, str) else None
     ctx = await _context(session, key, last_end)
+    # M75 W-3: the workspace's annotations - the signal engine's when it reads this chart for him, else ATP's (never mixed)
+    from app.charts import workspace_reading as WR
+    from app.platform.controls import flag_enabled
+    mtf: list[dict[str, Any]] | None = None
+    engine_part: dict[str, Any] | None = None
+    if await flag_enabled(session, WR.FLAG, user.tenant_id):
+        engine_part = await WR.engine_reading(session, user, key, tf, now)
+        if engine_part is None:
+            mtf = await pal.mtf_rows(session, key, last_end, owner=user.id, private=private)
     content = await pal._in_slot(session, user.id, lambda: read_closed(frame, tf, now, bands=zones.get("bands") or [],
-                                                                          areas_known=known_at, ctx=ctx))
+                                                                          areas_known=known_at, ctx=ctx, mtf=mtf))
+    if engine_part is not None:
+        content["annotations"] = engine_part
     return {**head, **content}
 
 

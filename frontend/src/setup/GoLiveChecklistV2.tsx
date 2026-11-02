@@ -1,6 +1,6 @@
 import { ChevronRight, CircleAlert, RefreshCw, TriangleAlert } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useId, useState } from "react";
-import { Link } from "react-router";
 import { api } from "../api/client";
 import { CARD, LINK_SECONDARY } from "../dashboard/CardV2";
 import type { ReadinessChecklist } from "../types";
@@ -84,7 +84,7 @@ function OpenRow({ row, onRecheck, busy }: { row: GoLiveRow; onRecheck: () => vo
           <p className="text-t13 text-fg-muted">{row.sentence}</p>
         </div>
         {"to" in row.action ? (
-          <Link to={row.action.to} className={`self-start sm:self-auto ${LINK_SECONDARY}`}>{row.action.label}</Link>
+          <InPlaceLink to={row.action.to} className={`self-start sm:self-auto ${LINK_SECONDARY}`}>{row.action.label}</InPlaceLink>
         ) : (
           <button type="button" onClick={onRecheck} disabled={busy} className={`self-start sm:self-auto ${LINK_SECONDARY} disabled:opacity-50`}>
             <RefreshCw size={14} aria-hidden className={busy ? "animate-spin" : ""} /> {row.action.label}

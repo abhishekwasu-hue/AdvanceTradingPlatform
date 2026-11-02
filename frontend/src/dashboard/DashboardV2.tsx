@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
+import { useInPlace } from "../inplace/context";
 import { useAuth } from "../auth/AuthContext";
 import type { PageProps } from "../routes";
 import GetStartedCardV2 from "../setup/GetStartedCardV2";
@@ -76,6 +77,7 @@ export default function DashboardV2(_props: PageProps = {}) {
   const { user, loading } = useAuth();
   const features = useFeatures();
   const navigate = useNavigate();
+  const inPlace = useInPlace();   // M75 NAV-6a: Connect your broker opens the broker drawer over Today
   const { state: broker, refresh: refreshBroker, rows: brokerRows } = useBrokerSession();
   const live = !!user && !BLOCKING.has(broker.kind);
   const data = useDashboardData(live);
@@ -129,7 +131,7 @@ export default function DashboardV2(_props: PageProps = {}) {
       {broker.kind === "no-broker" && card ? (
         <GetStartedCardV2 />
       ) : BLOCKING.has(broker.kind) ? (
-        <BrokerGateView state={broker} onConnect={() => navigate(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)} onRetry={refreshBroker} />
+        <BrokerGateView state={broker} onConnect={() => inPlace.open(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)} onRetry={refreshBroker} />
       ) : (
         <>
           {/* UI-28 (owner, 29 Oct: "what the user needs must be seen first"): with a broker, the numbers - Today's P&L

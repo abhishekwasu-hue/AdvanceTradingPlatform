@@ -3,6 +3,7 @@ import type { LayerData, LayerMarker } from "../charting/engine";
 import { ZONE_COLORS } from "../charting/marketZones";
 import type { TimeframeId } from "./timeframes";
 import { areaLabelText } from "../charting/geometry";
+import type { Annotations } from "../copilot/workspace/annotations";
 
 /**
  * AUD-T5 (owner audit 28 Oct; flags `ui_v2` + `read_chart`): "Read this chart" - the server reads the open chart with
@@ -44,6 +45,8 @@ export interface ReadChart {
   pullback: { available: boolean; trend: string | null; phase: string | null; counter: string | null; as_of: string | null; words: string };
   commitment: null | { time: number; bar_end: string | null; role: ReadRole; form: string; area: { low: number; high: number; key: string | null }; words: string };
   lines: string[];
+  /** M75 W-3: the Copilot workspace's annotations (only while `copilot_workspace` is on). */
+  annotations?: Annotations;
 }
 
 export const READ_LAYER_ID = "read-chart";

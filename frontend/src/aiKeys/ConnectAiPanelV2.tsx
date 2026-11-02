@@ -1,8 +1,8 @@
 import { SETTINGS_PATH } from "../settings/paths";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import * as RD from "@radix-ui/react-dialog";
 import { AlertTriangle, CheckCircle2, KeyRound, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type ClipboardEvent } from "react";
-import { Link } from "react-router";
 import { api } from "../api/client";
 import { ApiError, friendlyError } from "../api/errors";
 import { CARD, LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
@@ -382,9 +382,9 @@ export default function ConnectAiPanelV2({ onChange }: ConnectAiPanelV2Props) {
 /** The Copilot's small chip once connected: "AI connected · Claude", linking to the panel under Settings. */
 export function ConnectAiChip({ label }: { label: string }) {
   return (
-    <Link to={SETTINGS_PATH.ai} data-ai-chip
+    <InPlaceLink to={SETTINGS_PATH.ai} data-ai-chip
       className="inline-flex min-h-11 items-center gap-space-1 rounded-pill border border-border bg-surface-1 px-space-3 text-t13 font-medium text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8">
       <CheckCircle2 size={14} aria-hidden className="shrink-0 text-up" /> AI connected · {label}
-    </Link>
+    </InPlaceLink>
   );
 }

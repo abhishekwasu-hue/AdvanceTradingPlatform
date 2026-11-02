@@ -1,6 +1,6 @@
 import { Check, X } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useId } from "react";
-import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { toast } from "../components/Toast";
 import { CARD, LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
@@ -74,14 +74,14 @@ export function GetStartedViewV2({ card, primaryNext = true, onHide }: { card: G
                   {step.title}
                   <span className="sr-only"> (done)</span>
                 </p>
-                <Link to={step.action.to} className={DONE_LINK}>{step.action.label}</Link>
+                <InPlaceLink to={step.action.to} className={DONE_LINK}>{step.action.label}</InPlaceLink>
               </div>
             ) : (
               <div className="flex min-w-0 flex-1 flex-col gap-space-2 sm:flex-row sm:items-center sm:justify-between sm:gap-space-3">
                 <p className="min-w-0 pt-space-1 text-t14 font-medium text-fg sm:pt-0">{step.title}</p>
-                <Link to={step.action.to} className={`self-start sm:self-auto ${primaryNext && step.key === next ? LINK_PRIMARY : LINK_SECONDARY}`}>
+                <InPlaceLink to={step.action.to} className={`self-start sm:self-auto ${primaryNext && step.key === next ? LINK_PRIMARY : LINK_SECONDARY}`}>
                   {step.action.label}
-                </Link>
+                </InPlaceLink>
               </div>
             )}
           </li>

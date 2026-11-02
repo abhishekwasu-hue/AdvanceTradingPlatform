@@ -1,6 +1,6 @@
 import { ArrowDownRight, ArrowUpRight, ChevronDown, RefreshCw } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { api as mainApi } from "../api/client";
 import { ApiError } from "../api/errors";
 import { BOTS_NOT_CHECKED, TEMPLATE_ID_PREFIX, botName, botStatusText, botWaitText, lastChecked } from "../paperbot/model";
@@ -127,7 +127,7 @@ export function BotsView({ bots, offers, onAlsoList, now, checked = null }: {
         ))}
       </ul>
       <div className="flex flex-wrap items-center gap-space-2">
-        <Link to="/deployments" className={LINK_SECONDARY}>Open Trading bot</Link>
+        <InPlaceLink to="/deployments" className={LINK_SECONDARY}>Open Trading bot</InPlaceLink>
         {onAlsoList && <button type="button" className={BUTTON} onClick={onAlsoList} data-day-one-also-list>Also watch a whole list</button>}
       </div>
     </section>
@@ -298,7 +298,7 @@ export function WatchView({ watch, canAct = true, busy = false, problem = null, 
       {problem && <p role="alert" className="rounded-panel border border-warn/40 bg-warn-tint px-space-4 py-space-3 text-t14 text-fg">{problem}</p>}
       {canAct && (
         <div className="flex flex-wrap items-center gap-space-2 border-t border-subtle pt-space-3">
-          <Link to={paperBotPathFor({ template: watch.template.id, timeframe: "1d", params: {} })} className={LINK_SECONDARY}>Start a trading bot with it</Link>
+          <InPlaceLink to={paperBotPathFor({ template: watch.template.id, timeframe: "1d", params: {} })} className={LINK_SECONDARY}>Start a trading bot with it</InPlaceLink>
           <button type="button" className={BUTTON} onClick={onChange} disabled={busy}>Change strategy or list</button>
           <button type="button" className={cx(BUTTON, "text-fg-muted")} onClick={onStop} disabled={busy}>Stop watching</button>
         </div>

@@ -1,4 +1,5 @@
 import { Bell, CircleHelp, LifeBuoy, MessageSquarePlus, PanelLeft, PanelLeftClose, Search, Sparkles, TriangleAlert } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Link } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
@@ -205,7 +206,7 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
             <HelpPopover title={title} className={colour ? "shrink-0" : "-ml-space-1 shrink-0"}>
               {subtitle && <p data-page-subtitle>{subtitle}</p>}
               {help && <p data-page-help={help.id}>{help.lines.join(" ")}</p>}
-              {help?.showMe && <a href={help.showMe.href} className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">{help.showMe.label ?? "Show me"}</a>}
+              {help?.showMe && <InPlaceLink to={help.showMe.href} className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">{help.showMe.label ?? "Show me"}</InPlaceLink>}
               {onTour && (
                 <button type="button" onClick={onTour} data-tour="tour-replay"
                   className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-0">
@@ -251,10 +252,10 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
           )}
           <FeedDot enabled={liveOn} status={status} />
           <span className="hidden md:contents"><ThemeToggle /></span>
-          <Link to="/notifications" title="Notifications" aria-label="Notifications" aria-current={notificationsActive ? "page" : undefined}
+          <InPlaceLink to="/notifications" title="Notifications" aria-label="Notifications" aria-current={notificationsActive ? "page" : undefined}
             className={`${iconButton} ${notificationsActive ? "bg-surface-2 text-brand" : ""}`}>
             <Bell size={20} aria-hidden />
-          </Link>
+          </InPlaceLink>
           <Link to={accountPath} title={user ? "Account" : "Sign in"} aria-label={user ? "Account" : "Sign in"} aria-current={accountActive ? "page" : undefined}
             className="flex h-11 w-11 items-center justify-center rounded-pill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-9 md:w-9">
             <span aria-hidden className={`flex h-8 w-8 items-center justify-center rounded-pill text-t12 font-semibold ${accountActive ? "bg-brand/10 text-brand" : "bg-surface-2 text-fg"}`}>
@@ -270,10 +271,10 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
               <TriangleAlert size={12} aria-hidden /> {n.text}
             </span>
           ) : (
-            <Link key={n.text} to={accountPath} title={n.title}
+            <InPlaceLink key={n.text} to={accountPath} title={n.title}
               className="inline-flex items-center rounded-pill border border-border px-space-2 py-px text-t12 font-medium text-fg hover:bg-surface-2">
               {n.text}
-            </Link>
+            </InPlaceLink>
           ))}
         </div>
       )}

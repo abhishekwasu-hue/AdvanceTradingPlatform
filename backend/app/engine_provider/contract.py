@@ -29,11 +29,14 @@ from app.signals.language import SignalStructure
 
 # The interface number. The package states the number it implements (`TradeEngineProvider.interface`); the loader
 # accepts only this one. A change here is a public PR that keeps the previous number working until the package follows.
+# M75 W-3 added optional fields only (Area.tests, EngineResult.trends / events / divergences, all empty by default), so a
+# package that does not fill them still follows interface 1 and the number stays.
 INTERFACE_VERSION = 1
 
 AreaSide = Literal["buyer", "seller"]
 SwingLabel = Literal["HH", "HL", "LH", "LL"]
 TrendSide = Literal["up", "down", "sideways", "unclear"]
+STRUCTURE_EVENT_KINDS = ("BOS", "CHOCH")
 
 
 class ContractViolation(ValueError):
@@ -169,6 +172,7 @@ class Area:
     band: the area's edges.
     timeframe: the timeframe the area belongs to.
     formed_at: the close time of the bar the area was formed on.
+    tests: optional (M75 W-3) - how many times price came back to the area; None = not given.
     """
     area_id: str
     side: AreaSide
@@ -176,11 +180,14 @@ class Area:
     band: PriceRange
     timeframe: str
     formed_at: datetime
+    tests: int | None = None
 
     def __post_init__(self) -> None:
         if self.side not in AREA_SIDES:
             raise ContractViolation(f"Area.side must be one of {AREA_SIDES}")
         _aware(self.formed_at, "Area.formed_at")
+        if self.tests is not None and (isinstance(self.tests, bool) or not isinstance(self.tests, int) or self.tests < 0):
+            raise ContractViolation("Area.tests must be a whole number >= 0 or None")
 
 
 @dataclass(frozen=True)
@@ -206,6 +213,55 @@ class HigherTimeframeSide:
     def __post_init__(self) -> None:
         if self.side not in TREND_SIDES:
             raise ContractViolation(f"HigherTimeframeSide.side must be one of {TREND_SIDES}")
+
+
+@dataclass(frozen=True)
+class TimeframeTrend:
+    """Optional (M75 W-3): the trend side (`TREND_SIDES`) the engine reads on one timeframe."""
+    side: TrendSide
+    timeframe: str
+
+    def __post_init__(self) -> None:
+        if self.side not in TREND_SIDES:
+            raise ContractViolation(f"TimeframeTrend.side must be one of {TREND_SIDES}")
+
+
+@dataclass(frozen=True)
+class StructureEvent:
+    """Optional (M75 W-3): a break of structure ("BOS") or change of character ("CHOCH") on a timeframe: its direction,
+    the close time of the bar that confirmed it and the level it broke."""
+    kind: Literal["BOS", "CHOCH"]
+    direction: Literal["up", "down"]
+    at: datetime
+    level: float
+    timeframe: str
+
+    def __post_init__(self) -> None:
+        if self.kind not in STRUCTURE_EVENT_KINDS:
+            raise ContractViolation(f"StructureEvent.kind must be one of {STRUCTURE_EVENT_KINDS}")
+        if self.direction not in ("up", "down"):
+            raise ContractViolation("StructureEvent.direction must be 'up' or 'down'")
+        _aware(self.at, "StructureEvent.at")
+
+
+@dataclass(frozen=True)
+class Divergence:
+    """Optional (M75 W-3): an RSI divergence between two swings on a timeframe - the side it favours ("buyer" /
+    "seller"), and each swing's bar time and price."""
+    side: AreaSide
+    timeframe: str
+    first_at: datetime
+    first_price: float
+    second_at: datetime
+    second_price: float
+
+    def __post_init__(self) -> None:
+        if self.side not in AREA_SIDES:
+            raise ContractViolation(f"Divergence.side must be one of {AREA_SIDES}")
+        _aware(self.first_at, "Divergence.first_at")
+        _aware(self.second_at, "Divergence.second_at")
+        if self.second_at < self.first_at:
+            raise ContractViolation("Divergence.second_at must not be before first_at")
 
 
 @dataclass(frozen=True)
@@ -258,6 +314,8 @@ class EngineResult:
     higher_side: the higher timeframe's side, if the engine reads one.
     signals: the signals on the last closed bar (usually none or one).
     data_problems: token ids of what was missing or wrong in the input; any one means no signal is acted on.
+    trends / events / divergences: optional (M75 W-3; a package that leaves them empty still follows interface 1) - the
+        trend per timeframe, the BOS / CHoCH events and the RSI divergences the engine reads.
     """
     interface: int
     version: str
@@ -266,6 +324,9 @@ class EngineResult:
     higher_side: Optional[HigherTimeframeSide] = None
     signals: tuple[Signal, ...] = ()
     data_problems: tuple[str, ...] = ()
+    trends: tuple[TimeframeTrend, ...] = ()
+    events: tuple[StructureEvent, ...] = ()
+    divergences: tuple[Divergence, ...] = ()
 
 
 # --- the provider ----------------------------------------------------------------------------------------------------

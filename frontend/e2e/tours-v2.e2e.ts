@@ -169,10 +169,10 @@ test.describe("first-time guidance", () => {
       if (title !== "Get alerts on your phone") await next(page).click();
     }
     await card(page).getByRole("button", { name: "Connect your broker" }).click();
-    await expect(page).toHaveURL(/\/broker$/);
+    // M75 NAV-6b: the broker opens in place over Today (the path stays; the drawer is on top).
+    await expect(page).toHaveURL(/\/\?panel=broker$/);
+    await expect(page.locator("[data-inplace-panel='broker']")).toBeVisible({ timeout: 15_000 });
     await expect.poll(() => server.marks.welcome_done_at).not.toBeNull();
-    // On the Broker page its own tips follow (its first visit).
-    await expect(card(page)).toHaveAttribute("data-tour-card", /^broker-/, { timeout: 10_000 });
   });
 
   test("Back goes to the previous tip; Esc closes and marks the page seen; the page still works under the tips", async ({ page }) => {
@@ -194,7 +194,10 @@ test.describe("first-time guidance", () => {
     await expect(card(page)).toBeVisible({ timeout: 15_000 });
     await page.getByRole("link", { name: "Notifications" }).click();
     await expect(card(page)).toHaveCount(0);
-    await expect(page).toHaveURL(/\/notifications$/);
+    // M75 NAV: it opens in place over the tab (the path stays; the panel is on top).
+    await expect(page).toHaveURL(/\?panel=notifications$/);
+    const panel = page.locator("[data-inplace-panel='notifications']");
+    await expect(panel).toBeVisible({ timeout: 15_000 });
   });
 
   test("the ? button replays a page's tips after they were seen", async ({ page }) => {
@@ -232,8 +235,10 @@ test.describe("first-time guidance", () => {
     await help.scrollIntoViewIfNeeded();
     await expect(help.getByText("Tips are off.")).toBeVisible();
     await help.getByRole("button", { name: "Show all tips again" }).click();
-    await expect(page).toHaveURL(/\/$/);
+    // M75 NAV-6b: he stays on the tab he is on (no jump); the welcome opens when he next opens Today.
+    await expect(page).toHaveURL(/\/settings\/help$/);
     await expect.poll(() => server.marks).toEqual({ welcome_done_at: null, skip_all_at: null, seen: {} });
+    await page.goto("/");
     await expect(card(page)).toHaveAttribute("data-tour-card", "welcome-what", { timeout: 15_000 });
   });
 

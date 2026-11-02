@@ -216,6 +216,8 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "copilot_languages": _setup("AI key with tool use", AI, ("ai_key",)),
     "copilot_ticket": _decision("Ticket preparation: the order said on by default; it ships off until you turn it on"),
     "copilot_watch": _ready("Each user turns on his own alert types with his own numbers", ALERTS),
+    # M75 W-2..W-4: the chart, its reading (code annotations) and the AI card work; the plan panel and orders follow (W-6+)
+    "copilot_workspace": _ready("Chart, its reading and the AI card in the Copilot; the trade plan panel follows (M75 W-6)"),
     "study_export": _not_built("The Save study sheet, My studies and the PNG / CSV downloads (SX-4..SX-7)", "M77"),
     "ai_platform_key": _setup("The platform AI key on the server, each plan's AI budget and the per-user daily cap",
                               f"{HOST}; Admin › Controls › Limits"),

@@ -434,7 +434,10 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await idea.scrollIntoViewIfNeeded();
         await shot("05a-idea");
         await idea.locator("[data-adopt='A5']").click();
-        await expect(page).toHaveURL(/\/deployments\?template=A5/);
+        // M75 NAV: it opens in place over the tab (the path stays; the panel is on top).
+        await expect(page).toHaveURL(/\?panel=bots:template%3DA5/);
+        const botPanel = page.locator("[data-inplace-panel='bots']");
+        await expect(botPanel).toBeVisible({ timeout: 15_000 });
         await settle(page);
         const form = page.locator("[data-block='start']");
         await expectChoice(form.getByLabel("Pick a strategy"), "template-pick:A5");

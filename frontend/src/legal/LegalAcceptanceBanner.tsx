@@ -1,6 +1,6 @@
 import { FileText } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "../components/primitives";
@@ -53,9 +53,9 @@ export default function LegalAcceptanceBanner() {
           {status.pending.map((slug, i) => (
             <span key={slug}>
               {i > 0 && ", "}
-              <Link to={legalPath(slug)} target="_blank" rel="noopener" className="text-brand underline-offset-2 hover:underline">
+              <InPlaceLink to={legalPath(slug)} newTabOtherwise rel="noopener" className="text-brand underline-offset-2 hover:underline">
                 {status.documents.find((d) => d.slug === slug)?.title ?? slug}
-              </Link>
+              </InPlaceLink>
             </span>
           ))}
           . Nothing is blocked meanwhile.

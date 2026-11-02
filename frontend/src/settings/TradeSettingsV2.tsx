@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { BUTTON_PRIMARY, FIELD, LABEL, NoteV2 } from "../trading/PartsV2";
 import { Combobox } from "../ui/Combobox";
@@ -51,7 +51,7 @@ function SectionCard({ section, admin, save, onSaved }: {
   const { main, facts, advanced } = partsOf(section, admin);
   // The section's page of today (one link, said two ways below; M75: no new click-navigation site)
   const todayLink = section.today
-    ? <Link to={section.today.path} className="font-medium text-brand hover:underline">{section.today.label}</Link> : null;
+    ? <InPlaceLink to={section.today.path} className="font-medium text-brand hover:underline">{section.today.label}</InPlaceLink> : null;
   const keys = [...main, ...advanced].filter(editable).map((f) => f.key);
   const count = setCount(section, admin);
   const set = (key: string, text: string) => { setDraft((d) => ({ ...d, [key]: text })); setNote(null); };

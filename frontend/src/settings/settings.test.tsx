@@ -213,7 +213,7 @@ describe("B3: nothing about LIVE in Phase 0", () => {
   });
 
   it("the index, the Advanced page and the Setup page gate their LIVE parts on it", () => {
-    expect(indexSource).toMatch(/!liveHidden && \(\s*<Link to=\{GO_LIVE_PATH_V2\}/);
+    expect(indexSource).toMatch(/!liveHidden && \(\s*<(?:InPlace)?Link to=\{GO_LIVE_PATH_V2\}/);
     expect(sectionSource).toMatch(/!liveHidden && \(\s*<Fold id="go-live"/);
     expect(setupPageSource).toContain("user && !liveHidden && (");
   });

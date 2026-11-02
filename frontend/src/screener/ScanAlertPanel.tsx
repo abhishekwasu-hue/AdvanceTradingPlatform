@@ -7,7 +7,7 @@
  * changes an order.
  */
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { friendlyError } from "../api/errors";
 import { Button, cx } from "../components/primitives";
 import { Details } from "../ui/Details";
@@ -128,7 +128,7 @@ export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, 
           <Details id="screener.alert.how" label="How you are told" className="mt-0">
             <p>
               In the app, on Telegram once it is connected above, and by e-mail if you set it up in{" "}
-              <Link to="/settings/alerts" className="underline">Settings › Alerts</Link>. Your scan is saved first, so the alert checks exactly what you see.
+              <InPlaceLink to="/settings/alerts" className="underline">Settings › Alerts</InPlaceLink>. Your scan is saved first, so the alert checks exactly what you see.
             </p>
           </Details>
           {done ? (

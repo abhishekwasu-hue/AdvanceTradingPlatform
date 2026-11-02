@@ -362,8 +362,11 @@ test.describe("v2 broker gate on data pages", () => {
       }
     }
     await page.getByRole("link", { name: "Connect a broker" }).click();
-    await expect(page).toHaveURL(/\/broker$/);                             // P2b: the Broker page
-    await expect(page.locator("[data-broker-gate]")).toHaveCount(0);       // the Broker page is not a data page
+    // M75 NAV: it opens in place over the tab (the path stays; the panel is on top).
+    await expect(page).toHaveURL(/\?panel=broker$/);
+    const panel = page.locator("[data-inplace-panel='broker']");
+    await expect(panel).toBeVisible({ timeout: 15_000 });
+    await expect(panel.locator("[data-broker-gate]")).toHaveCount(0);       // the Broker page is not a data page
   });
 
   test("percent-encoded and undecodable addresses are gated too (review M1)", async ({ page }) => {

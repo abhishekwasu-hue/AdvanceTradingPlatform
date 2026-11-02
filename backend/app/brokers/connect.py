@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -73,8 +73,8 @@ MAX_FIELD_LENGTH = 4096
 
 
 class ConnectBody(BaseModel):
-    fields: Dict[str, Any] = Field(default_factory=dict)
-    account_label: Optional[str] = None
+    fields: dict[str, Any] = Field(default_factory=dict)
+    account_label: str | None = None
 
 
 class ConnectResult(BaseModel):
@@ -86,14 +86,14 @@ class CatalogField(BaseModel):
     key: str
     label: str
     kind: str
-    placeholder: Optional[str] = None
+    placeholder: str | None = None
 
 
 class CatalogStep(BaseModel):
     text: str
-    url: Optional[str] = None
-    gives: Optional[str] = None
-    copy_value: Optional[str] = Field(default=None, alias="copy")
+    url: str | None = None
+    gives: str | None = None
+    copy_value: str | None = Field(default=None, alias="copy")
     where: str
 
     model_config = {"populate_by_name": True}
@@ -101,27 +101,27 @@ class CatalogStep(BaseModel):
 
 class CatalogGuide(BaseModel):
     """BRK-1 C: up-front one-line warnings, the shared SEBI info line, the numbered steps (catalog.Guide)."""
-    warnings: List[str]
+    warnings: list[str]
     info: str
-    steps: List[CatalogStep]
+    steps: list[CatalogStep]
 
 
 class CatalogEntry(BaseModel):
     broker: str
     name: str
     method: str
-    fields: List[CatalogField]
-    how_to: List[str]
+    fields: list[CatalogField]
+    how_to: list[str]
     doc_url: str
     daily_renewal: bool
     available: bool
-    renew_fields: List[CatalogField] = []
+    renew_fields: list[CatalogField] = []
     # BRK-1 C: the visible step-by-step connect guide (every broker has one).
     guide: CatalogGuide
     # BRK-1 B: the hidden fallback way - {"label", "fields", "renew_fields"} - or None (catalog.py).
-    fallback: Optional[Dict[str, Any]] = None
+    fallback: dict[str, Any] | None = None
     # BRK-1 B: the address of ATP's own callback, to copy into the broker app's Redirect URL (Zerodha, Fyers); else None.
-    redirect_url: Optional[str] = None
+    redirect_url: str | None = None
 
 
 class Connection(BaseModel):
@@ -160,10 +160,10 @@ def _label(entry: cat.BrokerEntry, key: str) -> str:
     return text[0].lower() + text[1:] if text[1:] == text[1:].lower() else text
 
 
-def _clean_fields(entry: cat.BrokerEntry, raw: Dict[str, Any], allowed: Tuple[str, ...]) -> Dict[str, str]:
+def _clean_fields(entry: cat.BrokerEntry, raw: dict[str, Any], allowed: tuple[str, ...]) -> dict[str, str]:
     """The pasted values, trimmed, for the allowed keys only. A key the method does not use, a non-text value, or a
     value that is too long or spans lines is refused with a plain sentence (which never repeats the value)."""
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for key, value in (raw or {}).items():
         if key not in allowed:
             if not allowed:
@@ -184,7 +184,7 @@ def _clean_fields(entry: cat.BrokerEntry, raw: Dict[str, Any], allowed: Tuple[st
     return out
 
 
-def _way(entry: cat.BrokerEntry, values: Dict[str, str], *, renewing: bool) -> Tuple[Tuple[str, ...], bool]:
+def _way(entry: cat.BrokerEntry, values: dict[str, str], *, renewing: bool) -> tuple[tuple[str, ...], bool]:
     """BRK-1 B: which way the sent fields follow - (the keys that way needs, True for the fallback way). The fallback way is
     chosen by a key only it uses (Dhan's pasted token, the pasted login address, Fyers' own Redirect URL)."""
     main = entry.renew_keys() if renewing else entry.field_keys()
@@ -194,13 +194,13 @@ def _way(entry: cat.BrokerEntry, values: Dict[str, str], *, renewing: bool) -> T
     return main, False
 
 
-def _require(entry: cat.BrokerEntry, values: Dict[str, str], keys: Tuple[str, ...]) -> None:
+def _require(entry: cat.BrokerEntry, values: dict[str, str], keys: tuple[str, ...]) -> None:
     missing = [k for k in keys if not values.get(k)]
     if missing:
         raise _Refusal(f"Paste your {' and '.join(_label(entry, k) for k in missing)} and try again.")
 
 
-def _no_spaces(entry: cat.BrokerEntry, values: Dict[str, str], keys: Tuple[str, ...]) -> None:
+def _no_spaces(entry: cat.BrokerEntry, values: dict[str, str], keys: tuple[str, ...]) -> None:
     """Tokens, keys and codes never contain spaces; a password (Shoonya) may, so only these keys are checked."""
     for key in keys:
         if key in values and any(c.isspace() for c in values[key]):
@@ -209,7 +209,7 @@ def _no_spaces(entry: cat.BrokerEntry, values: Dict[str, str], keys: Tuple[str, 
 
 # --- messages ---------------------------------------------------------------------------------------
 
-def _rejected_message(entry: cat.BrokerEntry, *, renewing: bool, method: Optional[str] = None) -> str:
+def _rejected_message(entry: cat.BrokerEntry, *, renewing: bool, method: str | None = None) -> str:
     """`method`: the way this login actually went (BRK-1 B: a pasted fallback - a token, a login address - reads as that
     way, not as the broker's usual one)."""
     method = method or entry.method
@@ -234,7 +234,7 @@ def unreachable(exc: BaseException) -> bool:
     return isinstance(exc, BrokerAPIError) and exc.status_code is not None and (exc.status_code >= 500 or exc.status_code == 429)
 
 
-def failure_message(entry: cat.BrokerEntry, exc: BaseException, *, renewing: bool, method: Optional[str] = None) -> str:
+def failure_message(entry: cat.BrokerEntry, exc: BaseException, *, renewing: bool, method: str | None = None) -> str:
     """The one plain sentence for a failed login (never the broker's own text, never a value)."""
     if unreachable(exc):
         return _unreachable_message(entry)
@@ -256,7 +256,7 @@ def _http_refusal(exc: HTTPException) -> str:
 
 # --- the connection view ------------------------------------------------------------------------------
 
-def _analytics_state(creds: Optional[BrokerCredentials], now: datetime) -> Optional[str]:
+def _analytics_state(creds: BrokerCredentials | None, now: datetime) -> str | None:
     """None (no analytics token), "expired", "refused" (Upstox refused it for every candle class), "works" (a candle
     class works: market data really goes through it, as the data gate requires) or "unverified"."""
     if creds is None or not creds.analytics_token:
@@ -286,19 +286,19 @@ def _session_message(entry: cat.BrokerEntry, started: bool, *, auto: bool = True
     return f"{opening}; press Log in to start today's session."
 
 
-def connection_view(record: BrokerCredentialRecord, now: Optional[datetime] = None) -> Dict[str, Any]:
+def connection_view(record: BrokerCredentialRecord, now: datetime | None = None) -> dict[str, Any]:
     """{status, message, data_only, renew} for one credential row - never a token or a secret."""
     now = now or _utcnow()
     entry = cat.entry(record.broker_name)
     name = cat.display_name(record.broker_name)
     session_ok = token_is_usable(record, now)
 
-    def view(status: str, message: str, *, data_only: bool = False, renew: bool = False) -> Dict[str, Any]:
+    def view(status: str, message: str, *, data_only: bool = False, renew: bool = False) -> dict[str, Any]:
         return {"status": status, "message": message, "data_only": data_only, "renew": renew}
 
     if record.broker_name == ua.BROKER:
         try:
-            creds: Optional[BrokerCredentials] = load_credentials(record)
+            creds: BrokerCredentials | None = load_credentials(record)
         except Exception:  # noqa: BLE001 - an unreadable payload (key rotated): the row cannot be used
             return view(NOT_WORKING, f"The saved {name} details can no longer be read; remove this connection and connect again.")
         state = _analytics_state(creds, now)
@@ -341,9 +341,9 @@ def connection_view(record: BrokerCredentialRecord, now: Optional[datetime] = No
 
 # --- routes -------------------------------------------------------------------------------------------
 
-@router.get("/catalog", response_model=List[CatalogEntry])
+@router.get("/catalog", response_model=list[CatalogEntry])
 async def broker_catalog(request: Request, user: User = Depends(get_current_user),
-                         session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
+                         session: AsyncSession = Depends(get_session)) -> list[dict[str, Any]]:
     """The easiest official way to connect each broker and only the fields it needs (static; see catalog.py). Every broker
     is listed for every organisation (BRK-1: no ui_v2-only tile). BRK-1 B: a broker whose login returns to ATP's callback
     carries that callback's address (`redirect_url`), the one value the user copies into the broker's app."""
@@ -354,8 +354,8 @@ async def broker_catalog(request: Request, user: User = Depends(get_current_user
     return rows
 
 
-@router.get("/connections", response_model=List[Connection])
-async def broker_connections(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> List[Connection]:
+@router.get("/connections", response_model=list[Connection])
+async def broker_connections(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> list[Connection]:
     """This organisation's broker connections, each with a plain-sentence status. Never returns a token or a secret."""
     records = await session.scalars(
         select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)
@@ -365,7 +365,7 @@ async def broker_connections(user: User = Depends(get_current_user), session: As
                        **connection_view(r, now)) for r in records]
 
 
-async def _checks(session: AsyncSession, user: User, session_id: Optional[int]) -> None:
+async def _checks(session: AsyncSession, user: User, session_id: int | None) -> None:
     """The same gates the existing credential route runs before storing anything (not weakened, not caught)."""
     from app.auth.scopes import has_scope, scope_denied
     from app.auth.verification import ensure_verified
@@ -379,7 +379,7 @@ async def _checks(session: AsyncSession, user: User, session_id: Optional[int]) 
              dependencies=[Depends(require_scope("brokers:write")), Depends(connect_rate_limit)])
 async def connect_broker(broker: str, body: ConnectBody, user: User = Depends(require_trader),
                          session: AsyncSession = Depends(get_session),
-                         session_id: Optional[int] = Depends(current_session_id)) -> ConnectResult:
+                         session_id: int | None = Depends(current_session_id)) -> ConnectResult:
     """Store the pasted fields (encrypted, per tenant) and check them with the broker. PAPER only - places nothing."""
     return await _connect(broker, body, user, session, session_id, renewing=False)
 
@@ -388,13 +388,13 @@ async def connect_broker(broker: str, body: ConnectBody, user: User = Depends(re
              dependencies=[Depends(require_scope("brokers:write")), Depends(connect_rate_limit)])
 async def renew_broker(broker: str, body: ConnectBody, user: User = Depends(require_trader),
                        session: AsyncSession = Depends(get_session),
-                       session_id: Optional[int] = Depends(current_session_id)) -> ConnectResult:
+                       session_id: int | None = Depends(current_session_id)) -> ConnectResult:
     """Today's login for a broker whose method renews daily: the pasted token or login address (or nothing, for a TOTP
     login), checked with the broker. PAPER only - places nothing."""
     return await _connect(broker, body, user, session, session_id, renewing=True)
 
 
-async def _connect(broker: str, body: ConnectBody, user: User, session: AsyncSession, session_id: Optional[int], *,
+async def _connect(broker: str, body: ConnectBody, user: User, session: AsyncSession, session_id: int | None, *,
                    renewing: bool) -> ConnectResult:
     entry = cat.entry(broker)
     if entry is None or not entry.as_dict()["available"]:
@@ -417,8 +417,8 @@ async def _connect(broker: str, body: ConnectBody, user: User, session: AsyncSes
     return _result(status, message)
 
 
-async def _holder_check(session: AsyncSession, user: User, broker: str, label: str, values: Dict[str, str], *,
-                        login: bool) -> Optional[BrokerCredentialRecord]:
+async def _holder_check(session: AsyncSession, user: User, broker: str, label: str, values: dict[str, str], *,
+                        login: bool) -> BrokerCredentialRecord | None:
     """BT1b, as the existing routes apply it: with `byob_data_tier` on, a connection belongs to the member who linked it.
     A login on it (renew) is theirs alone (`_ensure_holder`); storing over it is a take-over that needs a full set of
     one's own credentials including the API key (`save_credentials`) - refused up front here with a plain sentence when
@@ -434,7 +434,7 @@ async def _holder_check(session: AsyncSession, user: User, broker: str, label: s
 
 
 async def _verify(entry: cat.BrokerEntry, session: AsyncSession, user: User, record: BrokerCredentialRecord, label: str, *,
-                  renewing: bool, method: Optional[str] = None) -> Tuple[str, str]:
+                  renewing: bool, method: str | None = None) -> tuple[str, str]:
     try:
         profile, exc = await run_authentication(session, user, record, label)
     except HTTPException:
@@ -449,7 +449,7 @@ async def _verify(entry: cat.BrokerEntry, session: AsyncSession, user: User, rec
 
 
 async def _connect_other(entry: cat.BrokerEntry, body: ConnectBody, user: User, session: AsyncSession, label: str, *,
-                         renewing: bool) -> Tuple[str, str]:
+                         renewing: bool) -> tuple[str, str]:
     if renewing and not entry.daily_renewal:
         raise _Refusal(f"{entry.name} needs no daily login; use Connect to change its details.")
     main = entry.renew_keys() if renewing else entry.field_keys()
@@ -510,7 +510,7 @@ async def _connect_other(entry: cat.BrokerEntry, body: ConnectBody, user: User, 
 
 
 async def _connect_upstox(entry: cat.BrokerEntry, body: ConnectBody, user: User, session: AsyncSession,
-                          label: str) -> Tuple[str, str]:
+                          label: str) -> tuple[str, str]:
     """Either field may carry either kind of token: the claims (or, when they do not say, a read-only probe) decide
     whether it is stored as the analytics token or as the daily access token."""
     allowed = entry.field_keys() + tuple(f.key for f in cat.UPSTOX_ALTERNATIVE_FIELDS)
@@ -565,7 +565,7 @@ async def _connect_upstox(entry: cat.BrokerEntry, body: ConnectBody, user: User,
     return status, message
 
 
-def _reload_credentials(record: BrokerCredentialRecord) -> Optional[BrokerCredentials]:
+def _reload_credentials(record: BrokerCredentialRecord) -> BrokerCredentials | None:
     try:
         return load_credentials(record)
     except Exception:  # noqa: BLE001

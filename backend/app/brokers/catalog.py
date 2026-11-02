@@ -28,7 +28,7 @@ existing encrypted path unchanged.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.brokers.registry import available_brokers
 
@@ -48,10 +48,10 @@ class Field:
     key: str
     label: str
     kind: str = SECRET
-    placeholder: Optional[str] = None
+    placeholder: str | None = None
 
-    def as_dict(self) -> Dict[str, Any]:
-        out: Dict[str, Any] = {"key": self.key, "label": self.label, "kind": self.kind}
+    def as_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"key": self.key, "label": self.label, "kind": self.kind}
         if self.placeholder:
             out["placeholder"] = self.placeholder
         return out
@@ -74,21 +74,21 @@ class Step:
     step before it, see `_steps`). `gives`: the field key this step produces. `copy`: a value the user copies INTO the
     broker (COPY_REDIRECT_URL / COPY_STATIC_IP). `atp`: the step happens here in ATP (typed into the panel)."""
     text: str
-    url: Optional[str] = None
-    gives: Optional[str] = None
-    copy: Optional[str] = None
+    url: str | None = None
+    gives: str | None = None
+    copy: str | None = None
     atp: bool = False
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return {"text": self.text, "url": self.url, "gives": self.gives, "copy": self.copy,
                 "where": "atp" if self.atp else "broker"}
 
 
-def _steps(*steps: Step) -> Tuple[Step, ...]:
+def _steps(*steps: Step) -> tuple[Step, ...]:
     """A broker-side step without its own address happens on the page the step before it opened, so it carries that
     page's address: every broker-side step links to the official page it happens on."""
-    out: List[Step] = []
-    page: Optional[str] = None
+    out: list[Step] = []
+    page: str | None = None
     for st in steps:
         if not st.atp:
             page = st.url or page
@@ -102,10 +102,10 @@ class Guide:
     """BRK-1 C: the visible step-by-step guide (docs/brokers/EASIEST_LOGIN.md, checked 2026-11-02): up-front one-line
     warnings, only where true (API charges, a static IP to register, the TOTP secret and not the six-figure code, a secret
     shown only once), the shared SEBI info line, then the numbered steps."""
-    warnings: Tuple[str, ...]
-    steps: Tuple[Step, ...]
+    warnings: tuple[str, ...]
+    steps: tuple[Step, ...]
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return {"warnings": list(self.warnings), "info": SEBI_INFO, "steps": [st.as_dict() for st in self.steps]}
 
 
@@ -119,33 +119,33 @@ class BrokerEntry:
     broker: str
     name: str
     method: str
-    fields: Tuple[Field, ...]
+    fields: tuple[Field, ...]
     guide: Guide
     doc_url: str
     daily_renewal: bool
     # What POST /{broker}/renew takes each day (empty: one click, or no daily renewal at all).
-    renew_fields: Tuple[Field, ...] = field(default_factory=tuple)
+    renew_fields: tuple[Field, ...] = field(default_factory=tuple)
     # BRK-1 B: the hidden fallback way (see the module notes): the link's words, what connect takes that way (empty: the
     # usual fields) and what renew takes that way.
     fallback_label: str = ""
-    fallback_fields: Tuple[Field, ...] = field(default_factory=tuple)
-    fallback_renew_fields: Tuple[Field, ...] = field(default_factory=tuple)
+    fallback_fields: tuple[Field, ...] = field(default_factory=tuple)
+    fallback_renew_fields: tuple[Field, ...] = field(default_factory=tuple)
 
     @property
-    def how_to(self) -> Tuple[str, ...]:
+    def how_to(self) -> tuple[str, ...]:
         """The guide's steps as plain lines (for clients that read `how_to`)."""
         return tuple(plain(st.text) for st in self.guide.steps)
 
-    def field_keys(self) -> Tuple[str, ...]:
+    def field_keys(self) -> tuple[str, ...]:
         return tuple(f.key for f in self.fields)
 
-    def renew_keys(self) -> Tuple[str, ...]:
+    def renew_keys(self) -> tuple[str, ...]:
         return tuple(f.key for f in self.renew_fields)
 
-    def fallback_keys(self) -> Tuple[str, ...]:
+    def fallback_keys(self) -> tuple[str, ...]:
         return tuple(f.key for f in self.fallback_fields)
 
-    def fallback_renew_keys(self) -> Tuple[str, ...]:
+    def fallback_renew_keys(self) -> tuple[str, ...]:
         return tuple(f.key for f in self.fallback_renew_fields)
 
     def label_of(self, key: str) -> str:
@@ -154,7 +154,7 @@ class BrokerEntry:
                 return f.label
         return key.replace("_", " ")
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return {"broker": self.broker, "name": self.name, "method": self.method,
                 "fields": [f.as_dict() for f in self.fields], "how_to": list(self.how_to), "doc_url": self.doc_url,
                 "daily_renewal": self.daily_renewal, "available": self.broker in available_brokers(),
@@ -167,7 +167,7 @@ class BrokerEntry:
 
 # Upstox's second option: a pasted daily access token (for LIVE orders later). Accepted by connect / renew in place of
 # the analytics token; never asked for in the catalogue's `fields`.
-UPSTOX_ALTERNATIVE_FIELDS: Tuple[Field, ...] = (Field(ACCESS_TOKEN, "Daily access token"),)
+UPSTOX_ALTERNATIVE_FIELDS: tuple[Field, ...] = (Field(ACCESS_TOKEN, "Daily access token"),)
 
 _LOGIN_ADDRESS = Field("request_token", "Address after login", SECRET, "Paste the whole address from the browser bar")
 
@@ -320,7 +320,7 @@ _COINDCX = Guide(warnings=(
     Step("Copy the **Secret** now.", gives="api_secret"),
 ))
 
-CATALOG: Tuple[BrokerEntry, ...] = (
+CATALOG: tuple[BrokerEntry, ...] = (
     BrokerEntry(
         broker="upstox", name="Upstox", method=ANALYTICS_TOKEN,
         fields=(Field(ANALYTICS_TOKEN, "Analytics Token", SECRET, "Paste your Upstox Analytics Token"),),
@@ -421,10 +421,10 @@ CATALOG: Tuple[BrokerEntry, ...] = (
     ),
 )
 
-_BY_BROKER: Dict[str, BrokerEntry] = {e.broker: e for e in CATALOG}
+_BY_BROKER: dict[str, BrokerEntry] = {e.broker: e for e in CATALOG}
 
 
-def entry(broker: str) -> Optional[BrokerEntry]:
+def entry(broker: str) -> BrokerEntry | None:
     return _BY_BROKER.get((broker or "").lower())
 
 
@@ -433,5 +433,5 @@ def display_name(broker: str) -> str:
     return found.name if found else (broker or "").replace("_", " ").title()
 
 
-def catalog() -> List[Dict[str, Any]]:
+def catalog() -> list[dict[str, Any]]:
     return [e.as_dict() for e in CATALOG]

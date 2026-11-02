@@ -53,10 +53,11 @@ class EntryContextBody(BaseModel):
 
 def area_context(annotations: dict[str, Any] | None, chart_tf: str) -> dict[str, Any] | None:
     """The area the reading has the last close inside (None: inside no area, or no reading). Pure."""
-    inside = ((annotations or {}).get("next_areas") or {}).get("inside")
+    found = annotations or {}
+    inside = (found.get("next_areas") or {}).get("inside")
     if not isinstance(inside, dict) or inside.get("side") not in ("buyer", "seller"):
         return None
-    return {"source": str(annotations.get("source") or ""), "chart_tf": chart_tf, "tf": str(inside.get("timeframe") or ""),
+    return {"source": str(found.get("source") or ""), "chart_tf": chart_tf, "tf": str(inside.get("timeframe") or ""),
             "side": inside["side"], "state": inside.get("state") or None}
 
 

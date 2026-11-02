@@ -41,7 +41,7 @@ describe("L-1 similar past setups", () => {
     expect(renderToStaticMarkup(<SimilarSetupsV2 annotations={A} api={api} />)).toContain('data-similar="loading"');
     expect(similarSource).not.toMatch(/\b(buy|sell|target|stop-loss)\b/i);
   });
-  it("the area is recorded after a fill from the workspace, by the server, best effort (the order path unchanged)", () => {
+  it("the area is recorded after a fill from the workspace, by the server, and a failed record never stops the fill (the order path unchanged)", () => {
     expect(placeSource).toContain("onPlaced={(r) => { setPlaced(r); setArmed(null); recordArea([r.trade_id]); }}");
     expect(placeSource).toContain("onPlaced={(r) => recordArea(r.legs.map((l) => l.trade_id))}");
     expect(placeSource).toContain("similarApi.record(ids, chart.instrument, chart.tf).catch(() => undefined)");

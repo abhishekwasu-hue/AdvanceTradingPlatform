@@ -62,9 +62,10 @@ def mode_summary(rows: Sequence[TradeRecord], plans: dict[int, dict[str, Any]], 
 
     def closed_today(u: Any) -> bool:
         exits = [_utc(by_id[i].exit_time) for i in u.rows if i in by_id]
-        return u.pnl is not None and bool(exits) and all(x is not None for x in exits) and max(exits) >= start  # type: ignore[type-var]
+        known = [x for x in exits if x is not None]
+        return u.pnl is not None and bool(exits) and len(known) == len(exits) and max(known) >= start
     closed = [u for u in units if closed_today(u)]
-    legs_closed = [t for t in rows if t.exit_time is not None and t.pnl is not None and _utc(t.exit_time) >= start]  # type: ignore[operator]
+    legs_closed = [t for t in rows if t.pnl is not None and (x := _utc(t.exit_time)) is not None and x >= start]
     net = round(sum(float(t.pnl or 0.0) for t in legs_closed), 2)
     charges = round(sum(float(t.charges or 0.0) for t in legs_closed), 2)
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { ApiError, NETWORK_MESSAGE } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
+import { BROKER_PATH } from "../broker/paths";
 import type { BrokerTokenInfo } from "../types";
 
 /**
@@ -13,14 +14,18 @@ import type { BrokerTokenInfo } from "../types";
 
 /** How "Log in to <Broker>" works for a broker today (§10 login method key). */
 export type BrokerLoginMethod =
-  | "oauth"          // Upstox: the platform drives the login and captures the code (GET /broker/upstox/oauth/start)
-  | "login-link"     // Zerodha, Fyers: open the broker's login page, then paste the code it returns (login-url / login-code)
+  | "oauth"          // BRK-1 B: Zerodha, Fyers - the broker's page returns to ATP's callback (GET /broker/{name}/oauth/start)
+  | "broker-page"    // BRK-1 B: Upstox - the Analytics Token is pasted on the Broker page (no Upstox OAuth flow)
+  | "login-link"     // an older server: open the broker's login page, then paste the code it returns (login-url / login-code)
   | "authenticate";  // everyone else: the platform logs in with the stored keys (POST /broker/{name}/authenticate)
 
 const DISPLAY_NAMES: Record<string, string> = {
   upstox: "Upstox", zerodha: "Zerodha", fyers: "Fyers", angel_one: "Angel One", shoonya: "Shoonya", dhan: "Dhan",
-  coindcx: "CoinDCX",
+  coindcx: "CoinDCX", kotak_neo: "Kotak Neo", groww: "Groww",
 };
+
+/** BRK-1 B: the brokers whose daily login returns to ATP's own callback. */
+export const CALLBACK_BROKERS: ReadonlySet<string> = new Set(["zerodha", "fyers"]);
 
 /** The broker's name as a trader knows it: "angel_one" -> "Angel One". An unknown id is title-cased. */
 export function brokerDisplayName(name: string): string {
@@ -29,14 +34,14 @@ export function brokerDisplayName(name: string): string {
 
 /** Brokers the platform logs in to with a stored PIN or password plus a TOTP secret (§10, UI-6). For these the
  * "we never see or store your broker password" sentence is NEVER used: Angel One stores the PIN, Shoonya the password. */
-export const TOTP_BROKERS: ReadonlySet<string> = new Set(["angel_one", "shoonya"]);
+export const TOTP_BROKERS: ReadonlySet<string> = new Set(["angel_one", "shoonya", "kotak_neo", "groww", "dhan"]);
 
-/** The login method for a stored credential. The server's flags decide; the broker id is the fallback for an old row. */
+/** The login method for a stored credential. BRK-1 B: Upstox goes to the Broker page (Analytics Token; no Upstox OAuth),
+ * Zerodha / Fyers return to ATP's callback; the server's paste flag decides only for any other broker. */
 export function loginMethodFor(t: Pick<BrokerTokenInfo, "broker_name" | "oauth_supported" | "login_url_supported">): BrokerLoginMethod {
-  if (t.oauth_supported && t.broker_name === "upstox") return "oauth";
+  if (t.broker_name === "upstox") return "broker-page";
+  if (CALLBACK_BROKERS.has(t.broker_name)) return "oauth";
   if (t.login_url_supported) return "login-link";
-  if (t.oauth_supported === undefined && t.broker_name === "upstox") return "oauth";
-  if (t.login_url_supported === undefined && (t.broker_name === "zerodha" || t.broker_name === "fyers")) return "login-link";
   return "authenticate";
 }
 
@@ -50,8 +55,10 @@ export function loginNote(t: Pick<BrokerTokenInfo, "broker_name" | "oauth_suppor
   const name = brokerDisplayName(t.broker_name);
   if (t.broker_name === "angel_one") return `We log in to ${name} for you with the PIN and authenticator key you stored, encrypted.`;
   if (t.broker_name === "shoonya") return `We log in to ${name} for you with the password and authenticator key you stored, encrypted.`;
-  if (TOTP_BROKERS.has(t.broker_name)) return `We log in to ${name} for you with the details you stored, encrypted.`;
-  if (t.broker_name === "dhan") return `We log in with the access token you stored. If ${name} has ended it, renew it on the Broker page.`;
+  if (t.broker_name === "kotak_neo") return `We log in to ${name} for you each morning with the MPIN and authenticator key you stored, encrypted.`;
+  if (t.broker_name === "dhan") return `We log in to ${name} for you each morning with the PIN and authenticator key you stored, encrypted.`;
+  if (TOTP_BROKERS.has(t.broker_name)) return `We log in to ${name} for you each morning with the authenticator key you stored, encrypted.`;
+  if (t.broker_name === "upstox") return `${name} connects with your Analytics Token, valid for one year. Paste a new one on the Broker page.`;
   if (t.broker_name === "coindcx") return `We log in with the API key you stored. ${name} needs no daily login.`;
   if (loginMethodFor(t) === "authenticate") return `We log in to ${name} with the keys you stored, encrypted.`;
   return NEVER_STORE_PASSWORD;
@@ -102,7 +109,8 @@ export function brokerGateState(input: BrokerGateInput): BrokerGateState {
 // --- Starting a login ----------------------------------------------------------------------------------------------
 
 export interface LoginDeps {
-  upstoxOAuthStart: (accountLabel: string) => Promise<{ authorization_url: string }>;
+  /** BRK-1 B: Zerodha / Fyers - the broker's page, which returns to ATP's callback. */
+  brokerOAuthStart: (name: "zerodha" | "fyers", accountLabel: string) => Promise<{ authorization_url: string }>;
   brokerLoginUrl: (name: string, accountLabel: string) => Promise<{ authorization_url: string }>;
   authenticateBroker: (name: string, accountLabel: string) => Promise<unknown>;
   /** Opens a blank tab synchronously inside the click (a tab opened after an await is blocked as a popup). */
@@ -122,9 +130,13 @@ export type LoginOutcome =
  */
 export async function startBrokerLogin(t: BrokerTokenInfo, deps: LoginDeps): Promise<LoginOutcome> {
   const method = loginMethodFor(t);
+  if (method === "broker-page") {
+    deps.redirect(BROKER_PATH);                         // Upstox: paste the Analytics Token there (no Upstox OAuth)
+    return { kind: "redirected" };
+  }
   if (method === "oauth") {
-    const { authorization_url } = await deps.upstoxOAuthStart(label(t));
-    deps.redirect(authorization_url);
+    const { authorization_url } = await deps.brokerOAuthStart(t.broker_name as "zerodha" | "fyers", label(t));
+    deps.redirect(authorization_url);                   // back on the Broker page with the outcome
     return { kind: "redirected" };
   }
   if (method === "login-link") {
@@ -145,7 +157,7 @@ export async function startBrokerLogin(t: BrokerTokenInfo, deps: LoginDeps): Pro
 
 /** The real dependencies: the existing API client and the browser. */
 export const BROWSER_LOGIN_DEPS: LoginDeps = {
-  upstoxOAuthStart: (accountLabel) => api.upstoxOAuthStart(accountLabel),
+  brokerOAuthStart: (name, accountLabel) => api.brokerOAuthStart(name, accountLabel),
   brokerLoginUrl: (name, accountLabel) => api.brokerLoginUrl(name, accountLabel),
   authenticateBroker: (name, accountLabel) => api.authenticateBroker(name, accountLabel),
   openTab: () => window.open("about:blank", "_blank"),

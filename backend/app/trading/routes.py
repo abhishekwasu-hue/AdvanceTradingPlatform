@@ -194,7 +194,6 @@ async def open_position_greeks(
     scope of `/positions?mine=true`; `?underlying=` adds `underlying_net`, the same sums over the legs of that one
     underlying (``NIFTY 50`` and ``NIFTY`` are one underlying, instruments.master.underlying_of). Without either the answer
     is exactly as before."""
-    from app.brokers.gates import data_sources
     from app.brokers.token_lifecycle import build_adapter, token_is_usable
     from app.db.models import BrokerCredentialRecord
     from app.execution.contract_execution import ContractExecutionError
@@ -220,7 +219,7 @@ async def open_position_greeks(
     else:
         stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id,
                                                                                  BrokerCredentialRecord.user_id == user.id)))   # M71Q-2: his own
-        usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
+        usable = [r for r in stored if token_is_usable(r)]
         if rows and not usable:
             raise HTTPException(status_code=409, detail="Greeks need live premiums - no usable broker session (log in on the Broker page)")
         adapter = build_adapter(usable[0]) if usable else None

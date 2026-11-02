@@ -198,9 +198,13 @@
       "source": "SEBI retail-algo circular; broker session rules",
       "status": "enforced",
       "params": {
-        "reminder_minutes_before_open": 30
+        "reminder_minutes_before_open": 30,
+        "auto_login_minutes_before_open": 45,
+        "auto_login_retries": 1,
+        "auto_login_retry_minutes": 10
       },
       "code": [
+        "app/brokers/auto_login.py",
         "app/brokers/login_reminder.py",
         "app/brokers/routes.py",
         "app/brokers/token_lifecycle.py",
@@ -213,7 +217,11 @@
         "tests/test_d5_daily_login.py::test_reminder_time_and_window_come_from_the_rule_set",
         "tests/test_d5_daily_login.py::test_expired_or_short_session_is_reminded_a_full_day_session_is_not",
         "tests/test_d5_daily_login.py::test_one_reminder_per_day_naming_how_to_log_in",
-        "tests/test_d5_daily_login.py::test_worker_raises_the_reminder_before_the_open"
+        "tests/test_d5_daily_login.py::test_worker_raises_the_reminder_before_the_open",
+        "tests/test_brk1b_auto_login.py::test_the_totp_brokers_and_the_window_come_from_the_catalog_and_the_rule_set",
+        "tests/test_brk1b_auto_login.py::test_an_active_totp_connection_is_logged_in_before_the_open_once",
+        "tests/test_brk1b_auto_login.py::test_a_failing_login_is_retried_once_then_not_working_with_one_reminder",
+        "tests/test_brk1b_auto_login.py::test_each_connection_is_reminded_once_before_its_session_ends"
       ],
       "flag": null
     },

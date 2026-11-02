@@ -33,6 +33,10 @@ class BrokerCredentials(BaseModel):
     # UI2-5: the OAuth login in progress for this row (Zerodha, Fyers): who started it, the SHA-256 of the one-time state
     # nonce and when it lapses. Server-written only (app/brokers/token_lifecycle.py); a client-sent value is dropped.
     oauth_pending: Optional[Dict[str, Any]] = Field(default=None, repr=False)
+    # BRK-1 B: today's automatic TOTP login for this row - the IST day, the attempts made, when the last one ran and, once
+    # it gave up, the plain reason shown as "Not working". Server-written only (app/brokers/auto_login.py); a client-sent
+    # value is dropped, and any save of new details clears it.
+    auto_login: Optional[Dict[str, Any]] = Field(default=None, repr=False)
 
 
 class BrokerProfile(BaseModel):

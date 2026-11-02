@@ -24,7 +24,6 @@ from app.accounts.service import get_account
 from app.ai.regime import parse_filter, validate_filter
 from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
-from app.brokers.gates import data_sources
 from app.brokers.registry import available_brokers
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
 from app.core.enums import DeploymentStatus, ExecutionMode, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, SignalDirection, StrikeRule
@@ -901,7 +900,7 @@ async def _usable_adapter(session: AsyncSession, tenant_id: int, user: Optional[
         underlying = instrument_master.underlying_of(symbol or "")
         return await _own_adapter(session, user, underlying or (symbol or ""), "NFO")
     stored = list(await session.scalars(_reader_records(tenant_id, user)))   # M71Q-2: the previewing user's own
-    usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
+    usable = [r for r in stored if token_is_usable(r)]
     return build_adapter(usable[0]) if usable else None
 
 
@@ -920,7 +919,7 @@ async def _spot_from_broker(session: AsyncSession, tenant_id: int, symbol: str, 
             return None
     else:
         stored = list(await session.scalars(_reader_records(tenant_id, user)))   # M71Q-2: the previewing user's own
-        usable = [r for r in data_sources(stored) if token_is_usable(r)]    # Part 1B: no gated price source
+        usable = [r for r in stored if token_is_usable(r)]
         if not usable:
             return None
         adapter = None

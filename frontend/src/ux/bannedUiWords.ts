@@ -53,7 +53,6 @@ export interface Allowed { file: string; word: string; text?: string; reason: st
 
 /** Strings that may stay, each with its reason (file paths relative to src/). */
 export const ALLOWED: readonly Allowed[] = [
-  { file: "broker/BrokerAdvanced.tsx", word: "OAuth / redirect", reason: "Broker › Advanced (collapsed): the Upstox app sign-in for an API key and secret" },
   { file: "settings/model.ts", word: "bot token / chat id", reason: "search keywords for Settings › Alerts / Advanced, never shown as text" },
   { file: "signals/TryOnSymbolV2.tsx", word: "sample data", reason: "the try tool's Advanced fold, shown only to the platform admin with ui_v2 (UX3 fix 7)" },
   { file: "ui/glossary.ts", word: "OAuth / redirect", text: "Redirect URL", reason: "the glossary entry for the Redirect URL field, which sits under a broker's Advanced fold" },

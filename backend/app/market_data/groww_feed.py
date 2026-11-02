@@ -1,9 +1,8 @@
-"""Part 1B: the Groww market-data feed for the data hub - built, and OFF behind the TM-6 gate.
+"""Part 1B: the Groww market-data feed for the data hub.
 
-`stream_for(adapter)` (app/market_data/stream.py) hands out this stream only while the Groww market-data gate is open
-(app/brokers/gates.py: closed until Groww confirms its data terms in writing). With the gate closed no socket token is
-asked for and no socket is opened; the adapter's REST price reads refuse as well. TM-27: Groww's per-day caps make REST
-polling of prices impossible, so the hub streams them through this feed once the gate opens.
+`stream_for(adapter)` (app/market_data/stream.py) hands out this stream for a Groww connection like any other broker's
+feed (BRK-1, owner 2 Nov 2026: the TM-6 gate is withdrawn). TM-27: Groww's per-day caps make REST polling of prices
+impossible, so the hub streams them through this feed.
 
 The wire format is the one the official SDK `growwapi` 1.5.0 speaks (groww/feed.py, groww/nats_client.py,
 groww/constants.py, groww/proto/*.py, read 23 Oct 2026):

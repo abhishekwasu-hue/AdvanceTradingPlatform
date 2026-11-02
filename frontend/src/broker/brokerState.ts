@@ -36,10 +36,14 @@ export function needsAttention(dot: BrokerDot | null): boolean {
 export const DOT_CLASS: Record<BrokerDot, string> = { connected: "bg-up", needs_login: "bg-warn", not_working: "bg-down" };
 export const DOT_TEXT: Record<BrokerDot, string> = { connected: "connected", needs_login: "needs login", not_working: "not working" };
 
-/** The one connection that needs today's login and can be renewed here (the first one listed), or null. */
+/** The one connection that needs today's login and can be renewed here (the first one listed), or null. BRK-1 B: a
+ * connection whose automatic login did not work this morning is "not working" but still renewable (Renew is its manual
+ * fallback); a connection that needs a login comes first. */
 export function renewable(connections: readonly BrokerConnection[] | null): BrokerConnection | null {
   if (!connections) return null;
-  return connections.find((c) => c.renew && shownStatus(c) === "needs_login") ?? null;
+  return connections.find((c) => c.renew && !c.data_only && shownStatus(c) === "needs_login")
+    ?? connections.find((c) => c.renew && !c.data_only && shownStatus(c) === "not_working")
+    ?? null;
 }
 
 /**
@@ -63,13 +67,14 @@ export function bannerFor(connections: readonly BrokerConnection[] | null): Brok
   return renewable(connections);
 }
 
-/** The status words on the Broker page's row. */
+/** The status words on the Broker page's row - BRK-1 B: the same three for every broker, as GET /api/broker/connections
+ * names them (connected / needs_login / not_working). */
+export const STATUS_WORDS: Readonly<Record<BrokerConnectionStatus, string>> = {
+  connected: "Connected", needs_login: "Needs login", not_working: "Not working",
+};
+
 export function statusText(c: Pick<BrokerConnection, "status" | "data_only">): string {
-  switch (shownStatus(c)) {
-    case "connected": return "Connected";
-    case "needs_login": return "Needs today's login";
-    default: return "Not working";
-  }
+  return STATUS_WORDS[shownStatus(c)] ?? STATUS_WORDS.not_working;
 }
 
 /** "Upstox" or "Upstox (second)" - the account label only when there is more than the usual one. */
@@ -103,8 +108,15 @@ export const KNOWN_BROKERS: Readonly<Record<string, string>> = {
   kotak_neo: "Kotak Neo", groww: "Groww",
 };
 
-/** A row that cannot fix itself with Renew: not working, or needs a login it cannot renew - "Connect again" instead. */
+/** A row that may need its details again: not working, or needs a login it cannot renew - "Connect again". */
 export function needsReconnect(c: Pick<BrokerConnection, "status" | "data_only" | "renew">): boolean {
   const s = shownStatus(c);
   return s === "not_working" || (s === "needs_login" && !c.renew);
+}
+
+/** The row's Renew button: a connection with a daily login (the server's `renew`). BRK-1 B: also while it is "not
+ * working" because the automatic login did not work - Renew is then the manual fallback, next to "Connect again". Never
+ * for a data-only connection. */
+export function canRenew(c: Pick<BrokerConnection, "data_only" | "renew">): boolean {
+  return c.renew && !c.data_only;
 }

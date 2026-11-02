@@ -57,9 +57,14 @@ describe("UX3 fix 10: signal text in structure words", () => {
 });
 
 describe("UX3 fix 6: the broker panel's Advanced fold", () => {
+  // BRK-1 B: the usual Fyers connect has no Redirect URL box (ATP's callback is used); the fallback way - the app's own
+  // Redirect URL - still asks for it, so the fold is checked on that step.
+  const fyersOwn = () => stepFor(entryOf("fyers"), "connect", false, true);
+
   it("folds the Fyers Redirect URL and the TOTP secret, nothing else", () => {
     expect([...ADVANCED_FIELD_KEYS].sort()).toEqual(["redirect_uri", "totp_secret"]);
-    const fyers = splitFields(entryOf("fyers").fields, ADVANCED_FIELD_KEYS);
+    expect(entryOf("fyers").fields.map((f) => f.key)).toEqual(["api_key", "api_secret"]);
+    const fyers = splitFields(fyersOwn().fields, ADVANCED_FIELD_KEYS);
     expect(fyers.main.map((f) => f.key)).toEqual(["api_key", "api_secret"]);
     expect(fyers.advanced.map((f) => f.key)).toEqual(["redirect_uri"]);
     expect(splitFields(entryOf("angel_one").fields, ADVANCED_FIELD_KEYS).advanced.map((f) => f.key)).toEqual(["totp_secret"]);
@@ -69,7 +74,7 @@ describe("UX3 fix 6: the broker panel's Advanced fold", () => {
   });
 
   it("renders the folded field inside a closed Advanced fold, after the main fields", () => {
-    const html = panel(entryOf("fyers"), { fold: ADVANCED_FIELD_KEYS });
+    const html = panel(entryOf("fyers"), { step: fyersOwn(), fold: ADVANCED_FIELD_KEYS });
     const fold = html.match(/<details[^>]*data-advanced-fields[^>]*>[\s\S]*?<\/details>/)?.[0] ?? "";
     expect(fold).toContain('data-field="redirect_uri"');
     expect(fold).not.toMatch(/<details[^>]*\bopen\b/);
@@ -79,16 +84,16 @@ describe("UX3 fix 6: the broker panel's Advanced fold", () => {
   });
 
   it("says where the missing field is, and Connect stays off until it is filled", () => {
-    const some = panel(entryOf("fyers"), { fold: ADVANCED_FIELD_KEYS, values: { api_key: "a", api_secret: "b" } });
+    const some = panel(entryOf("fyers"), { step: fyersOwn(), fold: ADVANCED_FIELD_KEYS, values: { api_key: "a", api_secret: "b" } });
     expect(some).toContain("One more field is under Advanced.");
     expect(some).toMatch(/<button type="submit" disabled=""/);
-    const all = panel(entryOf("fyers"), { fold: ADVANCED_FIELD_KEYS, values: { api_key: "a", api_secret: "b", redirect_uri: "https://x" } });
+    const all = panel(entryOf("fyers"), { step: fyersOwn(), fold: ADVANCED_FIELD_KEYS, values: { api_key: "a", api_secret: "b", redirect_uri: "https://x" } });
     expect(all).not.toContain("One more field is under Advanced.");
     expect(all).not.toMatch(/<button type="submit" disabled=""/);
   });
 
   it("without the fold (ui_v2 off) the panel is as before", () => {
-    const html = panel(entryOf("fyers"));
+    const html = panel(entryOf("fyers"), { step: fyersOwn() });
     expect(html).not.toContain("data-advanced-fields");
     expect(html).toContain('data-field="redirect_uri"');
   });

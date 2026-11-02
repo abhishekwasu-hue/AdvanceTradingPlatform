@@ -45,7 +45,7 @@ from app.ai.regime import classify_regime, parse_filter, regime_note
 from app.alerts.dispatcher import dispatch_pending
 from app.backtest import chain_recorder
 from app.billing.service import sweep as billing_sweep
-from app.brokers import login_reminder
+from app.brokers import auto_login, login_reminder
 from app.brokers.base import BrokerInterface
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, daily_budget_for, exit_reads, limits_for
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
@@ -196,6 +196,7 @@ class CycleReport:
     lake_bars: int = 0           # B2: 1-minute bars written to the lake this cycle
     feed_bars: int = 0           # M71 PL-1b: universe-feed bars written to the data owner's private store this cycle
     login_reminders: int = 0     # D5: pre-open daily-login reminders raised this cycle
+    auto_logins: int = 0         # BRK-1 B: TOTP connections ATP logged in by itself this cycle
     oi_snapshots: int = 0        # OI Banner O2: option-chain OI slots stored this cycle
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
     news_items: int = 0          # Phase BB: new feed items stored this cycle
@@ -306,6 +307,7 @@ class TradingWorker:
         self._last_onboarding_check: Optional[datetime] = None  # C13: the first-week onboarding e-mails
         self._last_thesis_report_day = None
         self._last_login_reminder_day = None   # D5: the pre-open daily-login reminder, once per IST day
+        self._last_auto_login_check: Optional[datetime] = None   # BRK-1 B: the automatic TOTP login + per-connection reminders
         self._last_analytics_expiry_day = None  # Upstox analytics token: the 7-day / last-day expiry warning, once per IST day
         self._last_analytics_expiry_try: Optional[datetime] = None
         # Phase BB: when the news feed was last fetched (cadence 15 min, 5 min around a macro event).
@@ -787,12 +789,25 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - a report must never break trading
                         logger.exception("EOD summary failed")
                         report.errors.append(f"eod summary: {exc}")
+                # BRK-1 B (IN-SEBI.login.daily): the TOTP brokers' automatic daily login before the open (app/brokers/auto_login.py),
+                # then one reminder per connection whose session will not last the day. Own sessions (they commit); a login
+                # only - no order, no deployment change. At most once a minute; idempotent and bounded per connection per day.
+                if auto_login.in_window(now) and (self._last_auto_login_check is None
+                                                  or now - self._last_auto_login_check >= timedelta(minutes=1)):
+                    self._last_auto_login_check = now
+                    try:
+                        report.auto_logins = await auto_login.run_due(self.session_factory, now)
+                        async with self.session_factory() as own:
+                            report.login_reminders += await login_reminder.send_connection_reminders(own, now)
+                    except Exception as exc:  # noqa: BLE001 - a login or a reminder must never break trading
+                        logger.exception("Automatic broker login failed")
+                        report.errors.append(f"auto login: {type(exc).__name__}")
                 # D5 (IN-SEBI.login.daily): before the open, remind each organisation whose broker session will not last
                 # the day to log in. Read-only; once per IST day (the module also dedupes across restarts).
                 if self._last_login_reminder_day != ist_now.date() and login_reminder.in_window(now):
                     self._last_login_reminder_day = ist_now.date()
                     try:
-                        report.login_reminders = await login_reminder.send_reminders(session, now)
+                        report.login_reminders += await login_reminder.send_reminders(session, now)
                     except Exception as exc:  # noqa: BLE001 - a reminder must never break trading
                         logger.exception("Login reminder failed")
                         report.errors.append(f"login reminder: {exc}")
@@ -1036,10 +1051,8 @@ class TradingWorker:
         user = await self._acting_user(session, tenant_id, [])
         if user is None:
             return None
-        from app.brokers.gates import market_data_open
         for account in await list_accounts(session, tenant_id):
-            # Part 1B: read-only use is a price read; a broker whose market-data gate is closed (Kotak Neo) is skipped.
-            if account.status == "ACTIVE" and market_data_open(account.broker_name):
+            if account.status == "ACTIVE":
                 broker = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
                 if broker is not None:
                     return broker

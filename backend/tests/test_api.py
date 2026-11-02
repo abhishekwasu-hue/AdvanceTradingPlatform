@@ -101,7 +101,7 @@ def test_available_brokers_endpoint():
     response = client.get("/api/broker/available")
     assert response.status_code == 200
     brokers = response.json()["brokers"]
-    # Part 1B: Kotak Neo and Groww adapters (LIVE orders and live prices gated closed: app/brokers/gates.py).
+    # Part 1B: Kotak Neo and Groww adapters (BRK-1: no per-broker gate).
     assert set(brokers) == {"zerodha", "upstox", "shoonya", "angel_one", "fyers", "dhan", "coindcx", "kotak_neo", "groww"}
 
 

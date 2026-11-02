@@ -1314,11 +1314,12 @@ export interface BrokerCatalogField {
 export interface BrokerCatalogEntry {
   broker: string;
   name: string;
-  /** "analytics_token" (Upstox), "access_token" (Dhan), "login_code" (Zerodha, Fyers), "totp_auto" (Angel One,
-   * Shoonya), "api_key_secret" (CoinDCX). */
+  /** "analytics_token" (Upstox), "oauth_redirect" (Zerodha, Fyers: Log in, the broker returns to ATP by itself),
+   * "totp_auto" (Angel One, Shoonya, Kotak Neo, Groww, Dhan: ATP logs in by itself each morning), "api_key_secret"
+   * (CoinDCX). Older servers: "access_token" (Dhan), "login_code" (Zerodha, Fyers: paste the address). */
   method: string;
   fields: BrokerCatalogField[];
-  /** Three short steps: where the trader finds the fields above. */
+  /** The guide's steps as plain lines (BRK-1 C: the panel shows `guide`). */
   how_to: string[];
   doc_url: string;
   /** True when the broker ends the session every day, so the connection needs a daily renewal. */
@@ -1327,24 +1328,42 @@ export interface BrokerCatalogEntry {
   /** What POST /renew takes each day: [] is one click (or no daily renewal); `request_token` is the address the
    * trader lands on after the broker's own login (method "login_code": Zerodha, Fyers). */
   renew_fields: BrokerCatalogField[];
-  /** Part 1B: whether real orders and live prices go through this broker ("closed" until the broker confirms in
-   * writing - Kotak Neo), with the plain sentence to show while one is closed. Older servers leave it out. */
-  gates?: BrokerGates;
-  /** Part 1B: new user-facing work; the server lists it only with ui_v2 on. */
-  requires_ui_v2?: boolean;
-  /** Part 1B: a short connect guide in plain words with the broker's official links, or null. */
+  /** BRK-1 C: the visible step-by-step connect guide (every broker; older servers may leave it out). */
   guide?: BrokerGuide | null;
+  /** BRK-1 B: another official way, shown only behind its own link (Dhan's pasted token, the pasted login address of
+   * Zerodha / Fyers): the link's words, the connect fields that way ([]: the usual ones) and the renew fields. */
+  fallback?: BrokerFallback | null;
+  /** BRK-1 B: ATP's own callback address, to copy into the broker app's Redirect URL (Zerodha, Fyers); else null. */
+  redirect_url?: string | null;
 }
 
-export interface BrokerGates {
-  live_orders: "open" | "closed";
-  live_prices: "open" | "closed";
-  note: string;
+export interface BrokerFallback {
+  label: string;
+  fields: BrokerCatalogField[];
+  renew_fields: BrokerCatalogField[];
+}
+
+/** BRK-1 C: one guide step. `text` marks key words as **bold**; `url` is the official page a broker-side step happens
+ * on; `gives` the field key it produces ("From step N" under that field); `copy` a value the user copies INTO the broker. */
+export interface BrokerGuideStep {
+  text: string;
+  url: string | null;
+  gives: string | null;
+  copy: "redirect_url" | "static_ip" | null;
+  where: "broker" | "atp";
 }
 
 export interface BrokerGuide {
-  points: string[];
-  links: { label: string; url: string }[];
+  /** Up-front one-line warnings (API charges, a static IP to register, the TOTP secret, a secret shown once). */
+  warnings: string[];
+  /** The same SEBI static-IP / market-order line on every broker. */
+  info: string;
+  steps: BrokerGuideStep[];
+}
+
+/** GET /broker/specs (UI2-5), only what the connect guide reads: the values to copy into the broker. */
+export interface BrokerSpecsReadonly {
+  brokers: { name: string; readonly?: { redirect_url: string | null; server_ip: string | null } }[];
 }
 
 export type BrokerConnectionStatus = "connected" | "needs_login" | "not_working";

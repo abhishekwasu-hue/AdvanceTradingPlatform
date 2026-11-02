@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { BrokerConnection } from "../types";
 import {
-  DOT_CLASS, bannerFor, brokerDot, connectionTitle, monogram, needsAttention, promptFor, shownStatus, statusText,
+  DOT_CLASS, STATUS_WORDS, bannerFor, brokerDot, canRenew, connectionTitle, monogram, needsAttention, needsReconnect, promptFor,
+  shownStatus, statusText,
 } from "./brokerState";
 
 const conn = (over: Partial<BrokerConnection> = {}): BrokerConnection => ({
@@ -23,7 +24,7 @@ describe("P2b broker state: the four states the owner named", () => {
     expect(promptFor([NEEDS_LOGIN])).toEqual({ kind: "renew", connection: NEEDS_LOGIN });
     expect(bannerFor([NEEDS_LOGIN])).toBe(NEEDS_LOGIN);
     expect(brokerDot([NEEDS_LOGIN])).toBe("needs_login");
-    expect(statusText(NEEDS_LOGIN)).toBe("Needs today's login");
+    expect(statusText(NEEDS_LOGIN)).toBe("Needs login");                       // BRK-1 B: one of three words
   });
 
   it("connected: no prompt, no banner, green dot", () => {
@@ -89,5 +90,25 @@ describe("P2b broker state: colours and words", () => {
     expect(monogram("")).toBe("?");
     expect(monogram("Zerodha (Kite)")).toBe("Z");
     expect(monogram("Shoonya (Finvasia)")).toBe("S");
+  });
+});
+
+describe("BRK-1 B: one clear status for every broker, and Renew as the fallback of the automatic login", () => {
+  const AUTO_FAILED = conn({ broker: "angel_one", name: "Angel One", status: "not_working", renew: true,
+    message: "This morning's automatic login did not work: Angel One did not accept these details; check them, including the TOTP secret, and try again." });
+
+  it("the three words match the server's three statuses", () => {
+    expect(STATUS_WORDS).toEqual({ connected: "Connected", needs_login: "Needs login", not_working: "Not working" });
+    expect([CONNECTED, NEEDS_LOGIN, NOT_WORKING, AUTO_FAILED].map(statusText)).toEqual(["Connected", "Needs login", "Not working", "Not working"]);
+  });
+
+  it("a failed automatic login stays renewable: the banner offers Renew; a needs-login row comes first", () => {
+    expect(canRenew(AUTO_FAILED)).toBe(true);
+    expect(needsReconnect(AUTO_FAILED)).toBe(true);
+    expect(bannerFor([AUTO_FAILED])).toBe(AUTO_FAILED);
+    expect(bannerFor([AUTO_FAILED, NEEDS_LOGIN])).toBe(NEEDS_LOGIN);
+    expect(promptFor([AUTO_FAILED])).toEqual({ kind: "renew", connection: AUTO_FAILED });
+    expect(bannerFor([NOT_WORKING])).toBeNull();                                // renew false: nothing to renew
+    expect(canRenew(ANALYTICS_ONLY)).toBe(false);
   });
 });

@@ -265,10 +265,12 @@ def _token_status_response(record: BrokerCredentialRecord, request: Request) -> 
     )
 
 
-def _merge_with_stored(incoming: BrokerCredentials, existing: Optional[BrokerCredentialRecord]) -> BrokerCredentials:
+def _merge_with_stored(incoming: BrokerCredentials, existing: Optional[BrokerCredentialRecord],
+                       drop: Tuple[str, ...] = ()) -> BrokerCredentials:
     """A field left blank keeps its stored value, so pasting today's access token does not wipe the
     API key/secret saved yesterday. Values are trimmed (a pasted trailing space fails the broker
-    login). Clearing a field means deleting the credential and storing it again."""
+    login). Clearing a field means deleting the credential and storing it again - or (BRK-1 B) a connect that switches
+    the way the broker logs in, which names the stored fields of the other way in `drop`."""
     fresh = {k: v.strip() if isinstance(v, str) else v for k, v in incoming.model_dump(exclude_none=True).items()}
     fresh = {k: v for k, v in fresh.items() if v != "" and k not in SERVER_WRITTEN_FIELDS}   # server-written entries are dropped
     stored: dict = {}
@@ -282,6 +284,10 @@ def _merge_with_stored(incoming: BrokerCredentials, existing: Optional[BrokerCre
         # over it (the auth-code adapters - Fyers, Kite - skip the exchange while a token is on file,
         # so keeping the stale one would make every pasted code "fail" with yesterday's token).
         stored.pop("access_token", None)
+    # BRK-1 B: new details start a fresh automatic login - yesterday's (or this morning's) failed attempts do not stand.
+    stored.pop("auto_login", None)
+    for key in drop:
+        stored.pop(key, None)
     return BrokerCredentials(**{**stored, **fresh})
 
 
@@ -383,7 +389,8 @@ async def broker_field_specs(request: Request, user: User = Depends(get_current_
 
 
 async def save_credentials(session: AsyncSession, user: User, name: str, account_label: str,
-                           credentials: BrokerCredentials, *, validate: bool = False) -> Tuple[BrokerCredentialRecord, bool]:
+                           credentials: BrokerCredentials, *, validate: bool = False,
+                           drop: Tuple[str, ...] = ()) -> Tuple[BrokerCredentialRecord, bool]:
     """Encrypt and store this tenant's credentials for one broker account; the shared core of POST /{name}/credentials
     and P2a's POST /{name}/connect. The caller has already run the scope, verification and step-up checks. Returns the
     row and whether a new analytics token was saved (the caller probes it after the commit). Raises HTTPException
@@ -407,7 +414,7 @@ async def save_credentials(session: AsyncSession, user: User, name: str, account
     # BT1b (flag on): storing over another member's row makes it yours, so nothing of theirs is kept - no stored secret
     # and above all no stored access token (their broker session): fresh secrets are required and the row starts unproven.
     sent = _sent_values(name, credentials)
-    credentials = _merge_with_stored(BrokerCredentials(**sent), None if taking_over else existing)
+    credentials = _merge_with_stored(BrokerCredentials(**sent), None if taking_over else existing, drop)
     if taking_over and not credentials.api_key:
         raise HTTPException(status_code=400, detail=f"This {name} connection was linked by another member: enter all of your own "
                                                     "credentials (at least the API key) to replace it - nothing of theirs is kept.")

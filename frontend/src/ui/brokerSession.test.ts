@@ -48,14 +48,15 @@ describe("UI2-0 broker names and login methods (§10)", () => {
     expect(brokerDisplayName("new_broker")).toBe("New Broker");
   });
 
-  it("OAuth for Upstox, the login link for Zerodha and Fyers, authenticate for everyone else", () => {
-    expect(loginMethodFor(tokenRow("upstox"))).toBe("oauth");
-    expect(loginMethodFor(tokenRow("zerodha"))).toBe("login-link");
-    expect(loginMethodFor(tokenRow("fyers"))).toBe("login-link");
-    for (const b of ["angel_one", "shoonya", "dhan", "coindcx"]) expect(loginMethodFor(tokenRow(b)), b).toBe("authenticate");
+  it("BRK-1 B: the Broker page for Upstox (no Upstox OAuth), ATP's callback for Zerodha and Fyers, authenticate for the rest", () => {
+    expect(loginMethodFor(tokenRow("upstox"))).toBe("broker-page");
+    expect(loginMethodFor(tokenRow("upstox", { oauth_supported: true }))).toBe("broker-page");
+    expect(loginMethodFor(tokenRow("zerodha"))).toBe("oauth");
+    expect(loginMethodFor(tokenRow("fyers"))).toBe("oauth");
+    for (const b of ["angel_one", "shoonya", "dhan", "coindcx", "kotak_neo", "groww"]) expect(loginMethodFor(tokenRow(b)), b).toBe("authenticate");
     // An old row without the flags: the broker id decides.
-    expect(loginMethodFor({ broker_name: "upstox", oauth_supported: undefined as unknown as boolean, login_url_supported: undefined })).toBe("oauth");
-    expect(loginMethodFor({ broker_name: "fyers", oauth_supported: false, login_url_supported: undefined })).toBe("login-link");
+    expect(loginMethodFor({ broker_name: "upstox", oauth_supported: undefined as unknown as boolean, login_url_supported: undefined })).toBe("broker-page");
+    expect(loginMethodFor({ broker_name: "fyers", oauth_supported: false, login_url_supported: undefined })).toBe("oauth");
   });
 
   it("never promises 'we never store your password' for a TOTP broker", () => {
@@ -71,9 +72,10 @@ describe("UI2-0 broker names and login methods (§10)", () => {
     expect(loginNote(tokenRow("angel_one"))).toMatch(/PIN and authenticator key/);
   });
 
-  it("uses the 'never store your password' line for OAuth and login-link brokers", () => {
-    for (const b of ["upstox", "zerodha", "fyers"]) expect(loginNote(tokenRow(b)), b).toBe(NEVER_STORE_PASSWORD);
-    expect(loginNote(tokenRow("dhan"))).toMatch(/access token you stored/);
+  it("uses the 'never store your password' line for the brokers whose login happens on their own page", () => {
+    for (const b of ["zerodha", "fyers"]) expect(loginNote(tokenRow(b)), b).toBe(NEVER_STORE_PASSWORD);
+    expect(loginNote(tokenRow("upstox"))).toMatch(/Analytics Token/);
+    expect(loginNote(tokenRow("dhan"))).toMatch(/PIN and authenticator key you stored/);
     expect(loginNote(tokenRow("coindcx"))).toMatch(/no daily login/);
   });
 });
@@ -82,7 +84,7 @@ describe("UI2-0 'Log in to <Broker>' calls the broker's existing login path", ()
   function deps(over: Partial<LoginDeps> = {}) {
     const tab = { opener: {} as unknown, location: { href: "about:blank" }, close: vi.fn() };
     const d = {
-      upstoxOAuthStart: vi.fn(async () => ({ authorization_url: "https://upstox.example/login" })),
+      brokerOAuthStart: vi.fn(async () => ({ authorization_url: "https://kite.example/connect/login" })),
       brokerLoginUrl: vi.fn(async () => ({ authorization_url: "https://kite.example/connect" })),
       authenticateBroker: vi.fn(async () => ({})),
       openTab: vi.fn(() => tab as unknown as Window),
@@ -92,37 +94,41 @@ describe("UI2-0 'Log in to <Broker>' calls the broker's existing login path", ()
     return { d, tab };
   }
 
-  it("Upstox: OAuth start for that account, then this tab goes to Upstox", async () => {
+  it("BRK-1 B: Upstox - this tab goes to the Broker page (the Analytics Token); no Upstox OAuth is started", async () => {
     const { d } = deps();
     await expect(startBrokerLogin(tokenRow("upstox", { account_label: "second" }), d)).resolves.toEqual({ kind: "redirected" });
-    expect(d.upstoxOAuthStart).toHaveBeenCalledWith("second");
-    expect(d.redirect).toHaveBeenCalledWith("https://upstox.example/login");
+    expect(d.redirect).toHaveBeenCalledWith("/broker");
+    expect(d.brokerOAuthStart).not.toHaveBeenCalled();
     expect(d.authenticateBroker).not.toHaveBeenCalled();
     expect(d.openTab).not.toHaveBeenCalled();
   });
 
-  it("Zerodha and Fyers: a tab opened inside the click, pointed at the broker's login link; the code is pasted next", async () => {
+  it("BRK-1 B: Zerodha and Fyers - the OAuth start for that account, then this tab goes to the broker (it returns to ATP)", async () => {
     for (const b of ["zerodha", "fyers"]) {
-      const { d, tab } = deps();
-      const pending = startBrokerLogin(tokenRow(b), d);
-      expect(d.openTab, b).toHaveBeenCalledTimes(1);               // synchronously, before any await
-      await expect(pending).resolves.toEqual({ kind: "code-needed", link: "https://kite.example/connect", opened: true });
-      expect(d.brokerLoginUrl).toHaveBeenCalledWith(b, "primary");
-      expect(tab.location.href).toBe("https://kite.example/connect");
-      expect(tab.opener).toBeNull();
-      expect(d.upstoxOAuthStart).not.toHaveBeenCalled();
-      expect(d.authenticateBroker).not.toHaveBeenCalled();
+      const { d } = deps();
+      await expect(startBrokerLogin(tokenRow(b, { account_label: "desk" }), d)).resolves.toEqual({ kind: "redirected" });
+      expect(d.brokerOAuthStart).toHaveBeenCalledWith(b, "desk");
+      expect(d.redirect).toHaveBeenCalledWith("https://kite.example/connect/login");
+      expect(d.brokerLoginUrl).not.toHaveBeenCalled();
+      expect(d.openTab).not.toHaveBeenCalled();
     }
   });
 
-  it("login link with the tab blocked: the link is still offered", async () => {
-    const { d } = deps({ openTab: vi.fn(() => null) });
-    await expect(startBrokerLogin(tokenRow("zerodha"), d)).resolves.toEqual({ kind: "code-needed", link: "https://kite.example/connect", opened: false });
+  it("an older server's login link (another broker): a tab opened inside the click; the code is pasted next", async () => {
+    const { d, tab } = deps();
+    const pending = startBrokerLogin(tokenRow("other_broker", { login_url_supported: true }), d);
+    expect(d.openTab).toHaveBeenCalledTimes(1);                   // synchronously, before any await
+    await expect(pending).resolves.toEqual({ kind: "code-needed", link: "https://kite.example/connect", opened: true });
+    expect(tab.location.href).toBe("https://kite.example/connect");
+    expect(tab.opener).toBeNull();
+    const blocked = deps({ openTab: vi.fn(() => null) });
+    await expect(startBrokerLogin(tokenRow("other_broker", { login_url_supported: true }), blocked.d))
+      .resolves.toEqual({ kind: "code-needed", link: "https://kite.example/connect", opened: false });
   });
 
   it("login link failing: the blank tab is closed and the error reaches the caller", async () => {
     const { d, tab } = deps({ brokerLoginUrl: vi.fn(async () => { throw new ApiError(404, "Not found."); }) });
-    await expect(startBrokerLogin(tokenRow("fyers"), d)).rejects.toBeInstanceOf(ApiError);
+    await expect(startBrokerLogin(tokenRow("other_broker", { login_url_supported: true }), d)).rejects.toBeInstanceOf(ApiError);
     expect(tab.close).toHaveBeenCalled();
   });
 
@@ -131,7 +137,7 @@ describe("UI2-0 'Log in to <Broker>' calls the broker's existing login path", ()
       const { d } = deps();
       await expect(startBrokerLogin(tokenRow(b, { account_label: "desk" }), d)).resolves.toEqual({ kind: "logged-in" });
       expect(d.authenticateBroker, b).toHaveBeenCalledWith(b, "desk");
-      expect(d.upstoxOAuthStart).not.toHaveBeenCalled();
+      expect(d.brokerOAuthStart).not.toHaveBeenCalled();
       expect(d.brokerLoginUrl).not.toHaveBeenCalled();
       expect(d.openTab).not.toHaveBeenCalled();
     }

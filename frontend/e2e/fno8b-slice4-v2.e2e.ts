@@ -330,7 +330,7 @@ test.describe("8b slice 4 flows", () => {
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1: no product saved - pick one before Review
     await ticket.locator("[data-ticket='review']").tap();
     const checks = ticket.locator("[data-risk-checks='ticket']");
-    await expect(checks).toContainText("Liquidity: bid-ask gap");
+    await expect(checks).toContainText("Liquidity: bid 149.50, ask 150.50, bid-ask gap 1.00 (0.7% of the price), open interest 4 L");
     await expect(checks).toContainText("None of this holds back the order or any exit.");
     await expect(checks.locator("button, a, input")).toHaveCount(0);
     expect(orderCalls(seen).filter((p) => p.url.endsWith("/paper/fno/order"))).toEqual([]);
@@ -349,7 +349,7 @@ test.describe("8b slice 4 flows", () => {
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1
     await ticket.locator("[data-ticket='review']").tap();
     const checks = ticket.locator("[data-risk-checks='ticket']");
-    await expect(checks).toContainText("Liquidity: bid-ask gap");
+    await expect(checks).toContainText("Liquidity: bid 149.50, ask 150.50, bid-ask gap 1.00 (0.7% of the price), open interest 4 L");
     await expect(checks).toContainText("Outside your own limits: bid-ask gap 0.7% is above your 0.5%; open interest 4 L is below your 5 L.");
     await expect(checks).toContainText("None of this holds back the order or any exit.");
     await expect(checks.locator("button, a, input")).toHaveCount(0);
@@ -381,7 +381,7 @@ test.describe("8b slice 4 flows", () => {
     await ticket.locator("[data-ticket='product'] [data-option='NRML']").tap();   // F1
     await ticket.locator("[data-ticket='review']").tap();
     const checks = ticket.locator("[data-risk-checks='ticket']");
-    await expect(checks).toContainText("Liquidity: bid-ask gap");
+    await expect(checks).toContainText("Liquidity: bid 149.50, ask 150.50, bid-ask gap 1.00 (0.7% of the price), open interest 4 L");
     await expect(checks).not.toContainText("your own limits");
   });
 

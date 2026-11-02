@@ -69,6 +69,21 @@ export const GLOSSARY = {
   volume: { term: "Volume", definition: "How many shares or contracts traded in each bar. For an index, it is the volume of its near-month future." },
   vwap: { term: "VWAP", definition: "Volume-weighted average price: the average price of the day, weighted by how much traded at each price." },
   "win-rate": { term: "Win rate", definition: "The share of your closed trades that made a profit." },
+  // M76 MP-14 L-2: the Copilot workspace's annotations (teach-on-chart) - plain structure words, no advice.
+  "buyer-area": { term: "Buyer area", definition: "A price band where demand was strong enough before to turn the price up. The chart draws it green." },
+  "seller-area": { term: "Seller area", definition: "A price band where supply was strong enough before to turn the price down. The chart draws it red." },
+  "swing-hh": { term: "HH", definition: "Higher high: a swing high above the swing high before it." },
+  "swing-hl": { term: "HL", definition: "Higher low: a swing low above the swing low before it." },
+  "swing-lh": { term: "LH", definition: "Lower high: a swing high below the swing high before it." },
+  "swing-ll": { term: "LL", definition: "Lower low: a swing low below the swing low before it." },
+  bos: { term: "BOS", definition: "Break of structure: the price closed beyond the last swing in the trend's direction, so the trend went on." },
+  choch: { term: "CHoCH", definition: "Change of character: the price closed beyond the last swing against the trend, the first sign the trend may be turning." },
+  "area-fresh": { term: "Fresh area", definition: "An area the price has not come back to since it formed." },
+  "area-tested": { term: "Tested area", definition: "An area the price has come back to at least once since it formed." },
+  "area-flipped": { term: "Flipped area", definition: "An area the price closed through and held beyond. It now acts on the other side." },
+  "area-broken": { term: "Broken area", definition: "An area the price closed through." },
+  "rsi-divergence": { term: "RSI divergence", definition: "The price made a new swing high or low but RSI did not. It is a sign the move is losing strength." },
+  "structure-level": { term: "Structure level", definition: "The swing price beyond which the chart's structure changes." },
 } as const satisfies Record<string, GlossaryEntry>;
 
 export type GlossaryKey = keyof typeof GLOSSARY;

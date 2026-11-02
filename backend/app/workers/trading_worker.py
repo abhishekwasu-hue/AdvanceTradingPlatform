@@ -746,6 +746,15 @@ class TradingWorker:
                             await copilot_watch.run_due(own, now)
                     except Exception as exc:  # noqa: BLE001 - a card never blocks the cycle
                         logger.warning("Copilot watch failed: %s", type(exc).__name__)
+                    # M76 MP-11 (app/charts/workspace_watch.py): the workspace's watch cards (his watched areas, short strike
+                    # points, IV, his broker's margin in use, his square-off reminder). Flags ui_v2 + copilot_workspace. Its
+                    # own session; information only (no proposal, no order, nothing closed).
+                    try:
+                        from app.charts import workspace_watch
+                        async with self.session_factory() as own:
+                            await workspace_watch.run_due(own, now)
+                    except Exception as exc:  # noqa: BLE001 - a card never blocks the cycle
+                        logger.warning("Workspace watch failed: %s", type(exc).__name__)
                 # TM Part 7 (app/paper/settlement_watch.py): stock F&O positions that may settle by delivery, once a day per
                 # position for users who keep the Telegram choice on. Flags ui_v2 + smart_execution. Information only.
                 if self._last_settlement_check is None or now - self._last_settlement_check >= timedelta(minutes=SETTLEMENT_EVERY_MINUTES):

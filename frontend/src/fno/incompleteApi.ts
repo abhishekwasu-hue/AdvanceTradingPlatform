@@ -10,7 +10,13 @@ const post = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) })
 export type IncompleteAction = "complete_rest" | "close_filled" | "keep";
 export type IncompleteState = "INCOMPLETE" | "COMPLETING" | "COMPLETING_SENT" | "CLOSING" | "CLOSED" | "KEPT" | "COMPLETED";
 export interface IncompleteLeg { trade_id: number; symbol: string; side: Side; role: "hedge" | "sold"; quantity: number; entry_price: number | null; open: boolean }
-export interface IncompletePending { symbol: string; side: Side; role: "hedge" | "sold"; quantity: number }
+/** `exchange` (M76 MP-9): where the leg trades, for its new last price in the workspace (absent on an older server). */
+export interface IncompletePending { symbol: string; side: Side; role: "hedge" | "sold"; quantity: number; exchange?: string }
+
+/** M76 MP-9: what of this leg already filled (a part fill leaves its remainder pending under the same contract and side). */
+export function filledOf(item: Pick<IncompleteItem, "filled">, leg: Pick<IncompletePending, "symbol" | "side">): number {
+  return item.filled.filter((f) => f.symbol === leg.symbol && f.side === leg.side).reduce((a, f) => a + f.quantity, 0);
+}
 export interface IncompleteItem {
   group_id: string; underlying: string; strategy: string; mode: "PAPER" | "LIVE"; state: IncompleteState; message: string; failure: string;
   deadline: string | null; seconds_left: number | null; on_no_answer: "close_filled" | "keep" | null; rule: string | null;

@@ -603,6 +603,8 @@ export interface NotificationEntry {
   created_at: string;
   /** M72 PR-7: a Copilot watch card's "Ask why" context (his own object by kind and id; never a number). */
   ask?: { symbol?: string; object?: { kind: "position" | "signal"; id: number } } | null;
+  /** M76 MP-11: a workspace watch card's "Open here" - the Copilot's chart workspace in place (its symbol, or none). */
+  open_here?: { symbol?: string } | null;
 }
 
 export interface SignalHistoryEntry {

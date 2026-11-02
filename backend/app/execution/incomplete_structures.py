@@ -214,8 +214,9 @@ def _item(legs: Sequence[TradeRecord], block: Dict[str, Any], now: datetime) -> 
     seconds = max(0, int((deadline - now).total_seconds())) if deadline is not None else None
     state = block.get("state")
     actions = list(ACTIONS) if state == INCOMPLETE else []
-    pending = [{"symbol": p["key"], "side": p["side"], "role": "hedge" if p["side"] == "BUY" else "sold", "quantity": p["quantity"]}
-               for p in block.get("pending") or []]
+    # M76 MP-9: each leg still to place also says its exchange, so the workspace can show its new last price (additive)
+    pending = [{"symbol": p["key"], "side": p["side"], "role": "hedge" if p["side"] == "BUY" else "sold", "quantity": p["quantity"],
+                "exchange": str(p.get("exchange") or "NFO")} for p in block.get("pending") or []]
     return {"group_id": legs[0].leg_group_id, "underlying": _name(legs), "strategy": (legs[0].option_strategy or "").replace("_", " ").lower(),
             "mode": block.get("mode"), "state": state, "message": block.get("message"), "failure": block.get("failure"),
             "deadline": block.get("deadline"), "seconds_left": seconds if state == INCOMPLETE else None,

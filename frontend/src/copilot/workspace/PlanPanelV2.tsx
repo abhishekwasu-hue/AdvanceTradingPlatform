@@ -3,7 +3,7 @@ import { cx } from "../../components/primitives/cx";
 import { builderApi, wireLegs } from "../../optionsBuilder/api";
 import { LegTable } from "../../optionsBuilder/LegTable";
 import { MetricsCard } from "../../optionsBuilder/MetricsCard";
-import { evaluatedById, hedgeFirst, money, rangePctFor, type Direction, type Evaluation, type Leg, type OptionKind } from "../../optionsBuilder/model";
+import { evaluatedById, hedgeFirst, money, rangePctFor, repriceModelLegs, type Direction, type Evaluation, type Leg, type OptionKind } from "../../optionsBuilder/model";
 import { PayoffCanvas } from "../../optionsBuilder/PayoffCanvas";
 import { useTradeSettings } from "../../settings/tradeSettings";
 import { studyPlanOf, type StudyPlan } from "../../study/model";
@@ -23,6 +23,8 @@ import { WhatIfV2, type WhatIfApi } from "./WhatIfV2";
 import { ivPointsOf } from "./riskPreview";
 import { TriggerPlansV2 } from "./TriggerPlansV2";
 import type { PlanArea } from "./triggerPlans";
+import { atmOf, savedHelpers, solvedIvs } from "./helpers";
+import { PlanHelpersV2 } from "./PlanHelpersV2";
 
 /**
  * M75 W-6 (owner order M75 CW-4, flag `copilot_workspace`): the trade plan panel beside the chart, in the same tab.
@@ -133,6 +135,13 @@ export function PlanPanelV2({ symbol, areas, evaluate = builderApi.evaluate, ris
   // M77 SX-6: "Save study" reads the plan he has open - references and his own inputs only (study/model.ts)
   useEffect(() => { onPlanChange?.(studyPlanOf(kind, legs, equity, exits)); }, [onPlanChange, kind, legs, equity, exits]);
   useEffect(() => () => onPlanChange?.(null), [onPlanChange]);
+  // M76 MP-8: a leg a helper moved to another contract carries the model's price; the builder's own rule re-prices it once
+  // the engine has answered for that contract (a typed premium is never touched).
+  useEffect(() => {
+    if (!evaluation || evaluation.sent !== legs) return;
+    const next = repriceModelLegs(legs, evaluation);
+    if (next !== legs) setLegs(next);
+  }, [evaluation, legs]);
 
   const rows = useMemo(() => evaluatedById(legs, evaluation), [legs, evaluation]);
   const missing = kind && kind !== "EQUITY" ? legMissing(draft, inst, kind) : [];
@@ -141,6 +150,9 @@ export function PlanPanelV2({ symbol, areas, evaluate = builderApi.evaluate, ris
   const own = settings ? savedExits(settings.sections.flatMap((s) => s.fields)) : {};
   const hasOwn = Object.keys(own).length > 0;
   const ivPoints = ivPointsOf(settings?.sections.flatMap((s) => s.fields));
+  // M76 MP-8 (E-1): only what he saved himself (Not set = no button / an empty field)
+  const mine = savedHelpers(settings?.sections.flatMap((s) => s.fields));
+  const ivById = evaluation && evaluation.sent === legs ? solvedIvs(evaluation.sent, evaluation.evaluation.legs) : {};
   const pickKind = (k: PlanKind) => { setKind(k); setLegs([]); setDraft(EMPTY_LEG); setEvaluation(null); };
   const addLeg = () => {
     if (!kind) return;
@@ -184,12 +196,21 @@ export function PlanPanelV2({ symbol, areas, evaluate = builderApi.evaluate, ris
             </div>
             <div className="flex flex-wrap items-center gap-space-2">
               <button type="button" className={cx(BTN, "border border-border text-fg hover:bg-surface-2")} disabled={missing.length > 0} onClick={addLeg} data-plan="add-leg">Add leg</button>
+              {mine.lots != null && draft.lots !== String(mine.lots) && (
+                <button type="button" className={cx(BTN, "border border-border text-fg hover:bg-surface-2")} onClick={() => setDraft({ ...draft, lots: String(mine.lots) })}
+                  data-plan="use-saved-lots">Use my saved lots ({mine.lots})</button>
+              )}
               {missing.length > 0 && <span className="text-t12 text-fg-muted" data-plan="leg-missing">Still Not set: {missing.join(", ")}</span>}
             </div>
           </fieldset>
           {legs.length > 0 && (
             <LegTable legs={legs} rows={rows} step={step ?? 0} compact={phone}
               onChange={(next) => setLegs(hedgeFirst(next))} onAdd={() => document.querySelector<HTMLElement>("[data-plan='leg-side']")?.focus()} />
+          )}
+          {/* M76 MP-8 (E-1): one-tap helpers - each only prepares these legs; Place stays his, through the one ticket */}
+          {legs.length > 0 && (
+            <PlanHelpersV2 legs={legs} atm={atmOf(spot, step)} step={step} ivById={ivById} savedHedgeOffset={mine.hedgeOffset}
+              onLegs={(next) => setLegs(hedgeFirst(next))} />
           )}
           {legs.length > 0 && spot == null && <p className="text-t13 text-fg-muted" data-plan="need-spot">Type the spot to see the payoff and the numbers.</p>}
           {problem && <p role="status" className="text-t13 text-fg" data-plan="problem">{problem}</p>}

@@ -261,9 +261,12 @@ async def read_now_state(session: AsyncSession, user: User) -> dict:
     from fastapi import HTTPException
 
     from app.auth.dependencies import TRADING_ROLES
+    from app.core.enums import UserRole
     from app.market_data import live_access
     from app.market_data.reader_credential import credential_for_reader
-    if user.role not in TRADING_ROLES:
+    # DATA-FIX (owner 2 Nov): the same role rule as the endpoint's `require_trader` (ensure_role): SUPER_ADMIN always
+    # passes. Before, the card said "Your role cannot start a market read." to a SUPER_ADMIN the endpoint accepts.
+    if user.role != UserRole.SUPER_ADMIN.value and user.role not in TRADING_ROLES:
         return {"enabled": False, "broker": "role", "reason": BROKER_TEXT["role"]}
     if await live_access.byob_on(session, user.tenant_id):
         return {"enabled": False, "broker": "shared", "reason": BROKER_TEXT["shared"]}

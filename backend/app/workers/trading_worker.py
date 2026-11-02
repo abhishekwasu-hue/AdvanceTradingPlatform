@@ -1144,6 +1144,11 @@ class TradingWorker:
                             if broker is not None:
                                 break
                     if broker is None:
+                        # DATA-FIX (owner 2 Nov): the market read is read-only market data, so with no daily login it
+                        # goes through the row's Upstox analytics token when that serves data (M85) - before, only the
+                        # global cues were stored all day ("The automatic market read did not run today").
+                        broker = await self._data_only_adapter(session, tenant_id, now)
+                    if broker is None:
                         written += (await market_memory.capture_global(session, tenant_id, now=now))["globals"]
                         continue
                     result = await market_memory.capture(session, tenant_id, self.market_data_factory, broker, now=now)

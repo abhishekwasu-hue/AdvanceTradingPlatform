@@ -1,7 +1,9 @@
 import { ExternalLink, KeyRound, LogIn, Plug, TriangleAlert, UserCircle2 } from "lucide-react";
+import { useInPlace } from "../inplace/context";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { gateShowing } from "../live/gateShowing";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
 import { Button, Skeleton } from "../components/primitives";
@@ -169,10 +171,10 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
       return (
         <GateCard state={state.kind} icon={<Plug size={22} />} title="Connect your broker">
           <p>{positionsShown ? "Connect your broker to see live prices and charts." : "Connect your broker to see live prices, charts and your positions."}</p>
-          <a href={CONNECT_BROKER_PATH} onClick={(e) => { if (onConnect) { e.preventDefault(); onConnect(); } }}
+          <InPlaceLink to={CONNECT_BROKER_PATH} onClick={(e) => { if (onConnect) { e.preventDefault(); onConnect(); } }}
             className="inline-flex h-11 w-full items-center justify-center rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto">
             Connect a broker
-          </a>
+          </InPlaceLink>
           <p className="text-t12">It takes about 2 minutes.</p>
         </GateCard>
       );
@@ -282,9 +284,9 @@ export function StoredLoginAction() {
   const { busy, error, codeStep, login, submitCode } = useBrokerLogin(refresh);
   if (state.kind !== "login-needed") {
     return (
-      <Link to={CONNECT_BROKER_PATH} className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0" data-stored-login="broker-page">
+      <InPlaceLink to={CONNECT_BROKER_PATH} className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0" data-stored-login="broker-page">
         {state.kind === "no-broker" ? "Connect a broker" : "Open Broker"}
-      </Link>
+      </InPlaceLink>
     );
   }
   const t = state.broker;
@@ -330,10 +332,10 @@ export function StoredDailyNote({ state, what, onConnect, onLogin, busy = null, 
           </Button>
         )
       ) : (
-        <a href={CONNECT_BROKER_PATH} onClick={(e) => { if (onConnect) { e.preventDefault(); onConnect(); } }}
+        <InPlaceLink to={CONNECT_BROKER_PATH} onClick={(e) => { if (onConnect) { e.preventDefault(); onConnect(); } }}
           className="inline-flex h-11 w-full shrink-0 items-center justify-center rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand hover:bg-brand-strong sm:w-auto">
           Connect a broker
-        </a>
+        </InPlaceLink>
       )}
       {error && <div className="basis-full"><ErrorNote text={error} /></div>}
     </section>
@@ -347,6 +349,7 @@ export function StoredDailyNote({ state, what, onConnect, onLogin, busy = null, 
 export function BrokerGate({ children, storedDaily = null }: { children: ReactNode; storedDaily?: string | null }) {
   const { state, refresh } = useBrokerSession();
   const navigate = useNavigate();
+  const inPlace = useInPlace();   // M75 NAV-6b: Connect your broker opens the broker drawer in place
   const { busy, error, codeStep, login, submitCode } = useBrokerLogin(refresh);
   // TM Part 1: while this card asks to log in, the app's live-prices notice does not ask a second time.
   useEffect(() => {
@@ -359,7 +362,7 @@ export function BrokerGate({ children, storedDaily = null }: { children: ReactNo
   if (storedDaily && (state.kind === "login-needed" || state.kind === "no-broker")) {
     return (
       <>
-        <StoredDailyNote state={state} what={storedDaily} onConnect={() => navigate(CONNECT_BROKER_PATH)} onLogin={login}
+        <StoredDailyNote state={state} what={storedDaily} onConnect={() => inPlace.open(CONNECT_BROKER_PATH)} onLogin={login}
           busy={busy} error={error} codeStep={codeStep} onSubmitCode={submitCode} />
         {children}
       </>
@@ -369,7 +372,7 @@ export function BrokerGate({ children, storedDaily = null }: { children: ReactNo
   return (
     <BrokerGateView
       state={state}
-      onConnect={() => navigate(CONNECT_BROKER_PATH)}
+      onConnect={() => inPlace.open(CONNECT_BROKER_PATH)}
       onSignIn={() => navigate(SIGN_IN_PATH)}
       onLogin={login}
       onRetry={refresh}

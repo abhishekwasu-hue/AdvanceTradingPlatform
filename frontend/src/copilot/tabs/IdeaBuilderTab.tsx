@@ -1,7 +1,7 @@
 import { ArrowLeft, Bot, CandlestickChart, Check, Compass, History, Rocket, RotateCcw, ShieldCheck, Sparkles, ThumbsDown, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { useInPlace } from "../../inplace/InPlaceProvider";
+import { useInPlace } from "../../inplace/context";
 import { api } from "../../api/client";
 import { chartWindowUrl } from "../../components/chartHelpers";
 import { DataSourceBar, SampleChip, useCandleSource, type CandleSourceState } from "../../components/DataSource";

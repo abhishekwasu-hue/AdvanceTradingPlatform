@@ -91,6 +91,8 @@ S_OWN_ACCOUNT = "self: the caller's own account, sessions and two-factor setting
 S_OWN_AI_KEY = "self: the caller's own AI key, prefs and Vision reports (per user)"
 S_OWN_AI_LANGUAGE = "self: the caller's own AI language preference"
 S_OWN_PROFILE = "self: the caller's own trader profile"
+S_OWN_STUDIES = ("self: M77 SX-2 - saves or deletes the caller's own study (tenant and user); the server reads every number "
+                 "itself from the caller's own scope; no route names another user")
 S_OWN_COPILOT_CHAT = "self: deletes the caller's own Copilot conversation (tenant and user); no route names another user"
 S_OWN_ACK = "self: the caller's own Copilot terms acknowledgement"
 S_OWN_INTERVIEW = "self: the caller's own strategy interview; nothing deploys"
@@ -455,6 +457,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/chart-analyze/items/{item_id}/reading.png"): ("member: ATP's reading drawn on the candles stored with the caller's own "
                                                              "hybrid analysis only (tenant and user; reads only)"),
     ("POST", "/api/chart-analyze/items/{item_id}/analyze"): S_OWN_CHART_ANALYSES,
+    ("POST", "/api/chart-analyze/workspace"): "self: his own workspace analyses only (the caller's items, his plan limits and AI key); the shared lake or his own private bars; read-only (M75 W-4)",
     ("GET", "/api/chart-analyze/items/{item_id}/strikes"): "member: the caller's own analysis + the caller's organisation's deployment settings (reads only)",
     ("DELETE", "/api/chart-analyze/items/{item_id}"): S_OWN_CHART_ANALYSES,
     ("POST", "/api/chart-analyze/items/{item_id}/share"): S_OWN_CHART_ANALYSES,
@@ -476,6 +479,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
     ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
+    ("POST", "/api/studies"): S_OWN_STUDIES,
+    ("GET", "/api/studies"): "member: M77 SX-2 - the caller's own saved studies only (user_id and tenant)",
+    ("GET", "/api/studies/{study_id}"): "member: M77 SX-2 - one of the caller's own studies; another member's reads as not found",
+    ("GET", "/api/studies/{study_id}/json"): "member: M77 SX-2 - the caller's own study as a JSON file; another member's reads as not found",
+    ("GET", "/api/studies/{study_id}/pdf"): "member: M77 SX-3 - the caller's own study as a PDF; another member's reads as not found",
+    ("DELETE", "/api/studies/{study_id}"): S_OWN_STUDIES,
     ("GET", "/api/charts/read"): "member: the caller's organisation's stored zones and his own private bars only (else the shared lake); read-only (AUD-T5)",
     ("POST", "/api/screener/board/context"): S_COMPUTE,          # U5 D3a: reference data + shared closes for the caller's symbols; stores nothing
     ("GET", "/api/charts/layers/trades"): "member",             # N4 CH4a: the caller's OWN PAPER trades only (user + organisation)

@@ -28,6 +28,7 @@ from app.auth.security import verify_password_async
 from app.core import config
 from app.db.models import (
     CopilotChatTurnRecord,
+    CopilotStudyRecord,
     FeedbackRecord,
     JournalEntryRecord,
     JournalTagRecord,
@@ -47,7 +48,8 @@ _SECRET_WORDS = ("password", "secret", "encrypted", "token", "hash")
 # Each dataset: (file name, model). Only the caller's own rows (user_id) inside their organisation.
 _DATASETS = (("preferences", UserPrefsRecord), ("orders", OrderRecord), ("trades", TradeRecord), ("journal_entries", JournalEntryRecord),
              ("journal_tags", JournalTagRecord), ("ai_conversations", LlmCallRecord), ("feedback", FeedbackRecord),
-             ("copilot_conversation", CopilotChatTurnRecord))      # CP-UX CU6
+             ("copilot_conversation", CopilotChatTurnRecord),      # CP-UX CU6
+             ("studies", CopilotStudyRecord))                      # M77 SX-2: his saved studies (snapshot JSON; PDFs one at a time, M77Q-4)
 
 
 def _plain(value: Any) -> Any:
@@ -91,7 +93,7 @@ async def export_my_data(user: User = Depends(get_current_user), session: AsyncS
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("README.txt", "Your data in AIAlgoDesk, as stored on the day of this export. One JSON file per kind of "
-                                 "record; tables also as CSV. Passwords, two-factor secrets and keys are never included.\n")
+                                 "record (your saved studies in studies.json); tables also as CSV. Passwords, two-factor secrets and keys are never included.\n")
         for name, rows in data.items():
             z.writestr(f"{name}.json", json.dumps(rows, indent=2, ensure_ascii=False))
             if name != "profile":

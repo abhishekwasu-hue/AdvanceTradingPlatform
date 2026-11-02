@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button } from "../components/primitives/Button";
 import { Details } from "../ui/Details";
+import { InPlaceLink } from "../inplace/InPlaceLink";
+import { SETTINGS_PATH } from "../settings/paths";
 import { AnalysisResultView } from "./AskResultV2";
 import {
   MAX_SAVED, OC_ANALYSES_EVENT, QUESTION_MAX, askAi, defaultName, errorSentence, evaluateSpec, loadSaved, newId, saveSaved, shownResult, withAdded,
@@ -184,7 +186,7 @@ export function PlainAnswer({ response }: { response: AskResponse }) {
       {response.message && <p className="text-t14 text-fg">{response.message}</p>}
       {/* OC-3: with no AI connected, the one way to fix it, one tap away. */}
       {response.state === "ai_off" && (
-        <a href="/settings/ai" data-oc-ask-add-key className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">Add your AI key</a>
+        <InPlaceLink to={SETTINGS_PATH.ai} data-oc-ask-add-key className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">Add your AI key</InPlaceLink>
       )}
       {response.closest && (
         <div className="space-y-space-2 rounded-panel border border-subtle p-space-2">

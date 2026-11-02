@@ -4,7 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLiveLtp } from "../components/chartHelpers";
 import type { LtpResponse } from "../types";
 import { cx } from "../components/primitives/cx";
-import { useInPlace } from "../inplace/InPlaceProvider";
+import { useInPlace } from "../inplace/context";
 import ChartV2 from "./ChartV2";
 import type { LevelLine, OverlayId } from "./chartCore";
 import type { LayerBand } from "../charting/engine";
@@ -17,6 +17,8 @@ import { useChartPrefs } from "./useChartPrefs";
 import { useMarketStatus } from "./useMarketStatus";
 import { usePageVisible } from "../utils/usePageVisible";
 import { recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
+import type { SymbolUniverse } from "../ui/symbolUniverse";
+import type { LightweightEngine } from "../charting/lightweight";
 
 /**
  * UI2-4e (Charts page plan §3, CHP-10): the v2 chart inside another v2 page (the Signals detail today), the same
@@ -54,10 +56,17 @@ export interface EmbeddedChartV2Props {
   live?: (Pick<LtpResponse, "ltp" | "timestamp" | "fetched_at">) | null;
   /** CT-1 C1: given, the toolbar shows the SymbolPicker and a pick is handed to the host (which owns the symbol). */
   onSymbol?: (pick: PickedSymbol) => void;
+  /** M75 W-2: the picker's universe (the Copilot's chart workspace offers futures and option contracts too). */
+  symbolUniverse?: SymbolUniverse;
+  /** M75 W-2: the chart's engine for the host's own layers (the workspace draws the reading on it). */
+  onEngine?: (engine: LightweightEngine | null) => void;
+  /** M75 W-2: the host's own words when there are no prices (a contract: "No prices for this contract ..."). */
+  emptyNote?: string;
 }
 
 export default function EmbeddedChartV2({
-  symbol, exchange = "NSE", levels, areas, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive, onSymbol,
+  symbol, exchange = "NSE", levels, areas, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive, onSymbol, symbolUniverse,
+  onEngine, emptyNote,
 }: EmbeddedChartV2Props) {
   const { user } = useAuth();
   const [overlays, setOverlays] = useState<OverlayId[]>([]);
@@ -89,19 +98,19 @@ export default function EmbeddedChartV2({
   const inPlace = useInPlace();
   const openTo = chartTabPath(sym, exchange, timeframe);
   const openLabel = inPlace.handles(openTo) ? "Open a larger chart" : "Open in Chart tab";
-  const emptyText = data.loading ? "Loading prices…" : data.error ? "" : data.empty ?? `No prices for ${sym} on this timeframe yet.`;
+  const emptyText = data.loading ? "Loading prices…" : data.error ? "" : data.empty ?? emptyNote ?? `No prices for ${sym} on this timeframe yet.`;
 
   return (
     <section aria-label={`Chart of ${sym}`} data-embedded-chart={sym} className="overflow-hidden rounded-panel border border-subtle bg-surface-1">
       <ChartToolbar mode="compact" label={`Chart controls for ${sym}`}
-        symbol={onSymbol ? { value: sym, exchange, onPick: onSymbol, storageKey: recentKeyFor(user?.id ?? null) } : undefined}
+        symbol={onSymbol ? { value: sym, exchange, onPick: onSymbol, storageKey: recentKeyFor(user?.id ?? null), universe: symbolUniverse } : undefined}
         timeframe={{ offered: TIMEFRAMES, value: timeframe, onChange: setTimeframe,
           favourites: prefs.prefs.timeframe_favourites, onFavourites: (next) => prefs.update({ timeframe_favourites: next }) }}
         indicators={{ state: indicatorState, on: () => false, onToggle: onIndicator, groups: EMBEDDED_GROUPS }}
         settings={{ prefs: prefs.prefs, onChange: prefs.update, error: prefs.error }}
         endActions={openLink ? [{ id: "open", label: openLabel, icon: <ExternalLink size={16} aria-hidden />, to: openTo }] : []} />
       <ChartV2 candles={data.candles} timeframe={timeframe} symbol={sym} exchange={exchange} prefs={shown} overlays={overlays} live={live.ltp} marketOpen={marketOpen}
-        levels={levels} areas={areas} onLoadOlder={data.loadOlder} drawingTools={false} emptyText={emptyText}
+        levels={levels} areas={areas} onLoadOlder={data.loadOlder} drawingTools={false} emptyText={emptyText} onEngine={onEngine}
         className={className} />
       {data.error && (
         <p role="status" className="flex flex-wrap items-center gap-x-space-2 border-t border-subtle px-space-3 py-space-1 text-t13 text-fg">

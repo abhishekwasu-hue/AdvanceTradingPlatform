@@ -43,7 +43,8 @@ export function CopilotConversationRow({ busy, setBusy }: { busy: boolean; setBu
   );
 }
 
-export default function MyDataCardV2({ copilot = false }: { copilot?: boolean }) {
+/** M77 SX-2: with `study_export` the download also names the saved studies (studies.json in the same ZIP). */
+export default function MyDataCardV2({ copilot = false, studies = false }: { copilot?: boolean; studies?: boolean }) {
   const [status, setStatus] = useState<EraseStatus | null>(null);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -82,7 +83,7 @@ export default function MyDataCardV2({ copilot = false }: { copilot?: boolean })
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" disabled={busy} onClick={() => void download()} data-my-data-download
             className="min-h-11 rounded border border-border px-3 py-1.5 text-sm hover:bg-surface-2">Download my data</button>
-          <span className="text-xs text-fg-muted">A ZIP of your profile, settings, trades and journal.</span>
+          <span className="text-xs text-fg-muted">{studies ? "A ZIP of your profile, settings, trades, journal and saved studies." : "A ZIP of your profile, settings, trades and journal."}</span>
         </div>
         {copilot && <CopilotConversationRow busy={busy} setBusy={setBusy} />}
         {status?.requested ? (

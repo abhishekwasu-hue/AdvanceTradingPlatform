@@ -6,7 +6,7 @@ import { WatchlistPanel } from "../chart/WatchlistPanel";
 import type { WatchItem } from "../chart/watchlistsV2";
 import { cx } from "../components/primitives/cx";
 import { CARD } from "../dashboard/CardV2";
-import { useInPlace } from "../inplace/InPlaceProvider";
+import { useInPlace } from "../inplace/context";
 import type { PageProps } from "../routes";
 import { chartTabPath } from "../shell/shellRoutes";
 import { recentKeyFor } from "../ui/SymbolPicker";

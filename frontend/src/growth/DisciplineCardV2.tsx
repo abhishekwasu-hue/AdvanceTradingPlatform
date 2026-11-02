@@ -1,6 +1,6 @@
 import { Copy, Download, Share2 } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
 import { CARD, CardV2, LINK_SECONDARY, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { growthApi } from "./api";
 import { CARD_H, CARD_W, SHARE_FILE, cardSvg, cleanCard, resolveTokens, shareText } from "./model";
@@ -98,7 +98,7 @@ export function DisciplineCardBodyV2({ card }: { card: DisciplineCard }) {
         {canShare && <button type="button" className={BUTTON} onClick={onShare} data-share><Share2 size={16} aria-hidden />Share</button>}
         <button type="button" className={BUTTON} onClick={onDownload} data-download><Download size={16} aria-hidden />Save image</button>
         <button type="button" className={BUTTON} onClick={onCopy} data-copy><Copy size={16} aria-hidden />Copy text</button>
-        <Link to="/risk-management" className="inline-flex h-11 items-center text-t14 font-medium text-brand hover:underline md:h-9">Your own limits</Link>
+        <InPlaceLink to="/risk-management" className="inline-flex h-11 items-center text-t14 font-medium text-brand hover:underline md:h-9">Your own limits</InPlaceLink>
       </div>
       {note && <p className="mt-space-2 text-t12 text-fg-muted" role="status">{note}</p>}
     </div>

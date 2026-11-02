@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
  * the new count printed by this test (the test also fails when the count is lower, so the ratchet never goes slack).
  * `M75_NAV_DUMP=<file>` writes the current list as JSON (used to build the inventory table in the design doc).
  */
-const BASELINE = 104;
+const BASELINE = 0;
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SRC = join(ROOT, "src");
@@ -53,6 +53,7 @@ const EXCLUDED_FILES: Record<string, string> = {
   "src/ui/ComingSoon.tsx": "NAV - a 'coming soon' placeholder's way home (no tab is being worked in)",
   "src/inplace/InPlaceProvider.tsx": "INPLACE - the in-place host itself (NAV-1): it writes `?panel=` on the SAME path and Back closes; it navigates (as today, or in a new browser tab where the button did so before) only for an address no panel is registered for, with a dev warning",
   "src/inplace/PanelRouter.tsx": "INPLACE - a panel's own address (NAV-2): it moves only inside the panel; a page in the panel that goes to another address is handed to the host",
+  "src/inplace/context.ts": "INPLACE - the in-place host's hooks (NAV-6 split from InPlaceProvider): outside the host they navigate as today (or open a new browser tab / load the page where the button did so before)",
   "src/inplace/InPlaceLink.tsx": "INPLACE - the in-place link (NAV-1): the real address for a long-press / new tab; a plain click opens the panel registered for it (an area PR registers the panel when it switches a site to it)",
 };
 
@@ -79,6 +80,8 @@ const EXCLUDED_SITES: { file: string; text?: RegExp; line?: RegExp; reason: stri
   { file: "src/shell/askAiEntry.tsx", text: /^\{ id: "(?:analyze|copilot)",/, reason: "INPLACE - an Ask AI sheet row: the sheet opens it with <InPlaceLink> (NAV-2), in place" },
   { file: "src/chart/EmbeddedChartV2.tsx", text: /^\{ id: "open",/, reason: "INPLACE - a chart toolbar item: ChartToolbar draws it with <InPlaceLink> (NAV-3), the chart opens in place" },
   { file: "src/chart/ChartsPageV2.tsx", text: /^\{ id: "analyze",/, reason: "INPLACE - a chart toolbar item: ChartToolbar draws it with <InPlaceLink> (NAV-3), Analyze a chart opens in place" },
+  { file: "*", text: /^(?:more|action)=\{\{/, reason: "INPLACE - a card's \"more\" link or an empty state's action: CardV2 / EmptyStateV2 (the only renderers taking them with `to`) draw it with <InPlaceLink> (NAV-6a), the facility opens in place" },
+  { file: "src/dashboard/model.ts", text: /^\{ id: "/, reason: "INPLACE - an attention item: NeedsAttentionV2 draws its action with <InPlaceLink> (NAV-6a), the facility opens in place" },
   { file: "src/admin/ViewAsBanner.tsx", text: /./, reason: "AUTH - admin 'view as' start / stop switches the signed-in identity" },
   { file: "src/broker/BrokerPromptHost.tsx", line: /if \(!onBrokerPage\) navigate\(BROKER_PATH\)/, reason: "AUTH - the first sign-in step of a new account (not a click)" },
   { file: "src/pages/ChartWindow.tsx", text: /location\.replace\(chartWindowRedirect/, reason: "REDIRECT - an old address forwarded on load (not a click)" },

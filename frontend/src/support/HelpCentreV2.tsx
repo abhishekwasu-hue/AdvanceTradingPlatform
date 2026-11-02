@@ -1,6 +1,7 @@
 import { ChevronRight, Mail, MessageCircle, Search, TriangleAlert } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { useLocation } from "react-router";
 import { CARD } from "../dashboard/CardV2";
 import { useFeatures } from "../ui/useFeatures";
 import { PAGE_TOURS, WELCOME } from "../tours/content";
@@ -69,9 +70,9 @@ function ArticleItem({ article }: { article: HelpArticle }) {
             <p key={i} className="whitespace-pre-wrap text-t14 leading-relaxed text-fg">{line}</p>
           ))}
           {article.page && (
-            <Link to={article.page} className={`inline-flex min-h-11 items-center gap-space-1 text-t14 font-medium text-brand hover:underline md:min-h-0 ${FOCUS}`}>
+            <InPlaceLink to={article.page} className={`inline-flex min-h-11 items-center gap-space-1 text-t14 font-medium text-brand hover:underline md:min-h-0 ${FOCUS}`}>
               Open the page <ChevronRight size={14} aria-hidden />
-            </Link>
+            </InPlaceLink>
           )}
         </div>
       </details>

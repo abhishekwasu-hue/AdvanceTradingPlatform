@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { api } from "../api/client";
 import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2 } from "../trading/PartsV2";
@@ -23,8 +23,8 @@ export default function MyLimitsCardV2({ testId = "my-limits", editHere = false 
     return (
       <CardV2 title="My limits" testId={testId}>
         <p className="text-t13 text-fg-muted">Each check is a switch, off by default. Exits always work.</p>
-        <Link to={RISK_LIMITS_PATH} className="mt-space-2 inline-flex min-h-11 items-center text-t14 font-medium text-brand underline md:min-h-9"
-          data-testid="my-limits-open">Open Settings › Risk limits</Link>
+        <InPlaceLink to={RISK_LIMITS_PATH} className="mt-space-2 inline-flex min-h-11 items-center text-t14 font-medium text-brand underline md:min-h-9"
+          data-testid="my-limits-open">Open Settings › Risk limits</InPlaceLink>
       </CardV2>
     );
   }

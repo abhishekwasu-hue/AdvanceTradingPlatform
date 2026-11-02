@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from app.ai import tools
 from app.ai.tools import ToolContext, market, run_tool
@@ -114,12 +115,16 @@ def test_quote_and_option_chain(monkeypatch):
     assert c.data["top_call_oi"][0]["strike"] == 25000.0 and c.data["top_put_oi"][0]["strike"] == 23000.0
 
 
+@pytest.mark.real_paper_account          # it tests the Not set capital itself (M68 PR-7: no pre-saved capital)
 def test_backtest_runs_on_server_bars_and_flags_a_small_sample(monkeypatch):
-    _, me = _owner("hc2b3-bt@example.com")
+    headers, me = _owner("hc2b3-bt@example.com")
     _fake_frame(monkeypatch, _df(n=900, freq="1min", step=0.01))
     # M72 PR-4 (F12): no saved capital and no paper account yet = the capital is Not set - the tool asks, never assumes
     none = _call(me["id"], "run_backtest", {"strategy_id": "ema_rsi_scalper_1m", "symbol": "NIFTY", "timeframe": "1min", "days": 3})
     assert not none.ok and "capital is Not set" in none.error
+    # M68 PR-7: he saves his own starting capital (Trade settings > Paper account); his paper account then starts from it
+    saved = client.put("/api/me/trade-settings", headers=headers, json={"values": {"paper_account.capital": 1_000_000}})
+    assert saved.status_code == 200, saved.text
     _paper_account(me["id"])
     res = _call(me["id"], "run_backtest", {"strategy_id": "ema_rsi_scalper_1m", "symbol": "NIFTY", "timeframe": "1min", "days": 3})
     assert res.ok and isinstance(res.data["trades"], int) and res.data["min_trades_for_statistics"] == 30

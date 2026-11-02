@@ -1,4 +1,4 @@
-import { Suspense, createContext, lazy, useContext, useLayoutEffect, useMemo, useRef, type ComponentType, type LazyExoticComponent, type ReactNode } from "react";
+import { Suspense, lazy, useLayoutEffect, useMemo, useRef, type ComponentType, type LazyExoticComponent, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Dialog, Sheet } from "../components/primitives/Dialog";
 import { SkeletonRows } from "../components/primitives/Feedback";
@@ -7,10 +7,14 @@ import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { DEFAULT_REGISTRY } from "./panels";
 import { createInPlaceApi, handoffs, openPanels, type InPlaceApi, type NavigateFn } from "./api";
 import { InPanelContext } from "./inPanel";
+import { InPlaceContext, newBrowserTab } from "./context";
 import { PanelRouter } from "./PanelRouter";
 import { presentationFor, type PanelEntry, type PanelParams, type PanelProps, type PanelRegistry } from "./registry";
 
 export type { InPlaceApi } from "./api";
+// NAV-6 (bundle): the hooks live in the small ./context module, so a link in the classic shell's entry does not pull
+// the host (registry, panels, dialogs) into the first download; re-exported here for the existing imports.
+export { useInPlace, useInPlaceOpen } from "./context";
 
 /**
  * M75 rule 1 / NAV-1 (docs/design/M75_NO_NAVIGATION.md section 4): the one in-place host. A click opens a facility
@@ -31,12 +35,6 @@ export type { InPlaceApi } from "./api";
  *   today when no panel shows it).
  */
 
-/** A button that opened a new browser tab before still does when no panel shows its address. */
-function newBrowserTab(path: string) {
-  window.open(path, "_blank", "noopener");
-}
-
-const InPlaceContext = createContext<InPlaceApi | null>(null);
 
 function warnUnregistered(path: string) {
   if (import.meta.env.DEV) console.warn(`[in-place] no panel is registered for ${path}: navigating as before (docs/design/M75_NO_NAVIGATION.md)`);
@@ -125,27 +123,4 @@ function PanelLayer({ entry, params, phone, top, level, openers, handed, close, 
   );
   const common = { open: true, onOpenChange, title: entry.title(params), onCloseAutoFocus, wide: shape.wide };
   return shape.shell === "dialog" ? <Dialog {...common}>{body}</Dialog> : <Sheet side={shape.side} {...common}>{body}</Sheet>;
-}
-
-/**
- * The in-place API. Outside the host (the classic shell) it navigates exactly as today, so a converted button works in
- * both shells.
- */
-export function useInPlace(): InPlaceApi {
-  const ctx = useContext(InPlaceContext);
-  const navigate = useNavigate();
-  const fallback = useMemo<InPlaceApi>(() => ({
-    enabled: false,
-    stack: [],
-    handles: () => false,
-    open: (target, opts) => {
-      const path = typeof target === "string" ? target : DEFAULT_REGISTRY.get(target.kind)?.href(target.params ?? {});
-      if (!path) return;
-      if (opts?.newTab) newBrowserTab(path);
-      else navigate(path, opts?.state !== undefined ? { state: opts.state } : undefined);
-    },
-    close: () => undefined,
-    replace: () => undefined,
-  }), [navigate]);
-  return ctx ?? fallback;
 }

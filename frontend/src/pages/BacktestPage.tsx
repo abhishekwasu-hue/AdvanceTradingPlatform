@@ -1,4 +1,5 @@
 import { Details } from "../ui/Details";
+import { useAddress } from "../inplace/address";
 import { errorSentence } from "../api/errors";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
@@ -79,7 +80,8 @@ export default function BacktestPage() {
   const features = useFeatures();
   const templatesOn = uiV2 && features.on("strategy_templates");
   const [templates, setTemplates] = useState<StrategyTemplate[]>([]);
-  const [link] = useState<TemplateLink | null>(() => { try { return templateLinkFromSearch(window.location.search); } catch { return null; } });
+  const address = useAddress();   // M75 NAV-5a: the router's address (Strategies › Test in a panel has its own)
+  const [link] = useState<TemplateLink | null>(() => { try { return templateLinkFromSearch(address.search); } catch { return null; } });
   const [tplTimeframe, setTplTimeframe] = useState("");
   const [ranWith, setRanWith] = useState<{ id: string; timeframe: string } | null>(null);
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);

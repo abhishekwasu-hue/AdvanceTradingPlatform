@@ -1,6 +1,6 @@
 import { errorSentence } from "../api/errors";
 import { useId, useState, type FormEvent } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { api } from "../api/client";
 import { NEEDS_BROKER_FOR_DATA, SampleChip, useCandleSource } from "../components/DataSource";
 import { Sheet } from "../components/primitives";
@@ -148,7 +148,7 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
             {item.direction && made && !made.sample && (
               <button type="button" onClick={() => void paperTrade()} className={`${BUTTON} border border-border bg-surface-1 text-fg hover:bg-surface-2`}>Paper trade this signal</button>
             )}
-            <Link to={chartsPath(signal.symbol)} className={`${BUTTON} text-brand hover:underline`}>Open chart</Link>
+            <InPlaceLink to={chartsPath(signal.symbol)} className={`${BUTTON} text-brand hover:underline`}>Open chart</InPlaceLink>
           </div>
           {executeMsg && <p role="status" className="text-t14 text-fg-muted">{executeMsg}</p>}
         </section>

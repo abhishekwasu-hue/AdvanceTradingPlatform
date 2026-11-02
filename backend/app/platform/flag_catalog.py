@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from typing import Dict, Literal, NamedTuple, Tuple
 
+from app.platform import flag_state
+
 FlagStatus = Literal["ready", "behind_the_scenes", "unfinished", "decision"]
 FlagArea = Literal["trading", "charts", "screens", "ai", "data", "platform"]
 
@@ -188,6 +190,8 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "paper_report_card": FlagInfo("Paper report card: your own closed paper trades per bot and per strategy", "trading", "a Paper report card on the Trading bot page, with a Share image button", ("ui_v2",), "", "ready"),
     "setup_recall": FlagInfo("Similar setups: your own past trades with the same setup, and what the context said vs what happened", "trading", "a Similar setups fold on each journal trade and on each entry approval in Signals", ("ui_v2",), "", "ready"),
     "read_chart": FlagInfo("Read this chart: the areas, their state, the pullback state and the commitment candle", "charts", "a Read this chart button on the Charts page toolbar", ("ui_v2", "market_zones"), "nightly zones", "ready"),
+    "copilot_workspace": FlagInfo("Copilot chart workspace: a chart with its reading inside the Copilot", "charts", "a chart, a symbol search with futures and option contracts and the chart's reading in the Copilot's Read the chart tab", ("ui_v2", "read_chart"), "", "unfinished"),
+    "study_export": FlagInfo("Save study: your own saved chart studies, My studies and the JSON download", "charts", "nothing yet (the Save study sheet and My studies come in a later step)", ("ui_v2",), "", "unfinished"),
     "why_no_trade": FlagInfo("Why no trade: each bot's last closed bars with the reason it did or did not trade", "trading", "a Why no trade list on each bot (Bots page)", ("ui_v2",), "", "ready"),
 }
 
@@ -265,6 +269,8 @@ FLAG_GROUP: dict[str, str] = {
     "watchlists": "charts",
     "decision_tools": "charts",
     "read_chart": "charts",
+    "copilot_workspace": "charts",
+    "study_export": "charts",
     "chart_studies": "charts",
     # Screens: the screener and its builder
     "screener_v2": "screens",
@@ -373,7 +379,8 @@ FINISH: Dict[str, str] = {
     "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",
     "term_roll": "TERM-2 R1", "term_whatif": "TERM-2 R2", "term_strike_area": "TERM-2 R3", "term_margin_pair": "TERM-2 R4",
     "trade_warnings": "M76 (MP-1 .. MP-15)",
-    "trade_engine": "M66 (owner only, after parity is green)",
+    "trade_engine": "M66 (owner only, after parity is green)", "copilot_workspace": "M75 W-2..W-6 (the Copilot trading workspace)",
+    "study_export": "M77 (SX-3..SX-7: the PDF / PNG / CSV and the Save study sheet)",
     "copilot_agent": "M72 PR-2 (the answer format with cards)",
     "copilot_memory": "M72 PR-11 (each user saves his own; the owner turns it on)",
     "copilot_languages": "M72 PR-10 (Marathi / Hindi answers with their filters; the owner turns it on)",
@@ -415,13 +422,15 @@ def fate_for(name: str) -> Dict[str, str]:
 
 
 def info_for(name: str) -> Dict[str, object]:
-    """The admin list's fields for one flag (a flag missing here reads as unfinished, in Accounts and platform)."""
+    """The admin list's fields for one flag (a flag missing here reads as unfinished, in Accounts and platform). M80: plus
+    the re-audited `state` / `state_label` / `state_reason` / `state_where` / `state_order` / `probes`
+    (app/platform/flag_state.py); `status` / `status_label` stay the 22 Oct audit label for their existing readers."""
     info = FLAG_INFO.get(name) or FlagInfo(name, "platform", "", (), "", "unfinished")
     return {"plain": info.plain, "area": info.area, "area_label": AREAS[info.area],
             "group": FLAG_GROUP.get(name, info.area), "group_label": GROUPS.get(FLAG_GROUP.get(name, ""), AREAS[info.area]),
             "turns_on": info.turns_on,
             "depends_on": list(info.depends_on), "needs": info.needs, "status": info.status,
-            "status_label": STATUSES[info.status], **fate_for(name)}
+            "status_label": STATUSES[info.status], **fate_for(name), **flag_state.fields_for(name)}
 
 
 __all__ = ["AREAS", "FINISH", "FLAG_GROUP", "FLAG_INFO", "GROUPS", "KEEP_OFF", "REMOVED_FROM_VIEW", "STATUSES", "FlagInfo", "fate_for", "info_for"]

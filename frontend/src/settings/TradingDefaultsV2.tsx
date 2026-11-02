@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
-import { Link, Navigate } from "react-router";
+import { Navigate } from "react-router";
 import { ApiError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
 import { CardV2, LoadFailedV2, LoadingRowsV2 } from "../dashboard/CardV2";
@@ -281,10 +282,10 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
 
       <CardV2 title="Risk limits" testId="risk">
         <Details id="settings.risk" className="mt-0"><p className="text-t14 text-fg-muted">Your daily loss limit and the most open positions live on their own page and apply to every trade.</p></Details>
-        <Link to={RISK_LIMITS_PATH}
+        <InPlaceLink to={RISK_LIMITS_PATH}
           className="mt-space-2 inline-flex min-h-11 items-center gap-space-1 rounded-control text-t14 font-medium text-brand hover:underline md:min-h-0">
           Open Risk limits <ChevronRight size={16} aria-hidden />
-        </Link>
+        </InPlaceLink>
       </CardV2>
 
       {note && <NoteV2 kind={note.kind} testId="defaults-note">{note.text}</NoteV2>}

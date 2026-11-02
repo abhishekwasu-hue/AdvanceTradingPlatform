@@ -1,6 +1,6 @@
 import { AlarmClock, Check, ChartCandlestick, Clock, Ellipsis, TriangleAlert } from "lucide-react";
 import { Suspense, lazy, useId, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { api } from "../api/client";
 import type { LevelLine } from "../chart/chartCore";
 import type { TimeframeId } from "../chart/timeframes";
@@ -361,10 +361,10 @@ export function SignalActions({ item, now, compact = false, canTrade, chartTimef
   const decidable = canDecide(item, now);
   const id = item.action_id;
   const chart = (
-    <Link to={chartTabPath(item.symbol, item.exchange, chartTimeframe)} aria-label={compact ? `Open chart for ${item.symbol}` : undefined}
+    <InPlaceLink to={chartTabPath(item.symbol, item.exchange, chartTimeframe)} aria-label={compact ? `Open chart for ${item.symbol}` : undefined}
       className={compact ? ICON : `${BUTTON} px-space-2 text-brand hover:underline`}>
       {compact ? <ChartCandlestick size={18} aria-hidden /> : "Open chart"}
-    </Link>
+    </InPlaceLink>
   );
   if (!decidable || id === null) return <div className="flex flex-wrap gap-space-2">{chart}</div>;
   if (!canTrade) {

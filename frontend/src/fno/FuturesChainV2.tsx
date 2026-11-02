@@ -1,6 +1,6 @@
 import { ChartCandlestick, Info, ListPlus, ShoppingBasket, TriangleAlert } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { ApiError, errorSentence } from "../api/errors";
 import { watchlistsV2Api, type WatchlistV2 } from "../chart/watchlistsV2";
 import { cx } from "../components/primitives/cx";
@@ -112,9 +112,9 @@ function RowActions({ row, trading, watchlistsOn, timeframe, panel, on }: {
   const toggle = (kind: "basket" | "watchlist") => () => on.onPanel(panel?.key === key && panel.kind === kind ? null : { key, kind });
   return (
     <div className="flex flex-wrap items-center gap-space-1" data-future-actions={key}>
-      <Link to={chartTabPath(row.tradingsymbol, row.exchange, timeframe)} className={GHOST} data-action="chart" aria-label={`Chart of ${row.label}`}>
+      <InPlaceLink to={chartTabPath(row.tradingsymbol, row.exchange, timeframe)} className={GHOST} data-action="chart" aria-label={`Chart of ${row.label}`}>
         <ChartCandlestick size={14} aria-hidden />Chart
-      </Link>
+      </InPlaceLink>
       {trading && (
         <>
           <button type="button" className={cx(BTN, "bg-up text-on-brand")} onClick={() => on.onTrade(row, "BUY")} data-action="buy" aria-label={`Buy ${row.label}`}>Buy</button>
@@ -274,12 +274,12 @@ export function FuturesChainView({ data, problem, loading, trading, watchlistsOn
         <div className="flex items-center gap-space-2">
           {trading && <PaperBadge />}
           {trading && data && (
-            <Link to={basketHref(data.underlying, timeframe)} data-futures-basket
+            <InPlaceLink to={basketHref(data.underlying, timeframe)} data-futures-basket
               className="inline-flex min-h-11 items-center gap-space-1 rounded-control px-space-2 text-t13 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9"
               aria-label={`Open the basket: ${basketCount} leg${basketCount === 1 ? "" : "s"}`}>
               <ShoppingBasket size={16} aria-hidden />
               <span className={cx("rounded-pill px-space-2 text-t12", basketCount ? "bg-brand text-on-brand" : "bg-surface-2 text-fg-muted")}>{basketCount}</span>
-            </Link>
+            </InPlaceLink>
           )}
         </div>
       </div>

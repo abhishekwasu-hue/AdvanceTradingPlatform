@@ -41,6 +41,7 @@ from app.brokers.connect import router as broker_connect_router
 from app.brokers.routes import router as broker_router
 from app.chart_analyze.routes import admin_router as chart_analyze_admin_router
 from app.chart_analyze.routes import router as chart_analyze_router
+from app.chart_analyze.workspace import router as chart_analyze_workspace_router
 from app.charts.contracts import router as chart_contracts_router
 from app.charts.drawings import router as chart_drawings_router
 from app.charts.futures_basis import router as chart_futures_basis_router
@@ -171,6 +172,7 @@ from app.signals_feed.routes import router as signals_feed_router
 from app.strategy_engine.chart_routes import router as strategy_chart_router
 from app.strategy_engine.console_routes import router as strategy_console_router
 from app.strategy_templates.routes import router as strategy_templates_router
+from app.study.routes import router as study_router
 from app.support.desk_routes import admin_router as support_desk_admin_router
 from app.support.desk_routes import router as support_desk_router
 from app.support.routes import router as support_router
@@ -457,6 +459,7 @@ app.include_router(chart_layouts_router)  # CH5: saved multi-chart workspace lay
 app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer (flag market_zones, off by default)
 app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
 app.include_router(chart_read_router)               # AUD-T5: Read this chart as of the last closed bar, read-only (ui_v2 + read_chart)
+app.include_router(study_router)                    # M77 SX-2: saved Copilot studies (snapshot, My studies, JSON), read-only (ui_v2 + study_export)
 app.include_router(chart_trades_layer_router)  # N4 CH4a: the caller's own PAPER trades on the chart (flag chart_trades_layer, off)
 app.include_router(chart_contracts_router)  # N4 CH4b: daily contract / spread charts from the shared lake (flag chart_contracts, off)
 app.include_router(chart_futures_basis_router)  # N4 CH4c: futures basis / carry / rollover from the shared lake (flag chart_futures_basis, off)
@@ -472,6 +475,7 @@ app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and p
 app.include_router(system_watchlists_router)  # WL1: read-only system lists (indices, index stocks, sectors, F&O); before /{id}
 app.include_router(watchlists_router)  # AMW-2: the caller's own named watchlists (flag watchlists, off)
 app.include_router(system_watchlists_admin_router)  # WL1: the admin's view of the system lists' refresh (SUPER_ADMIN)
+app.include_router(chart_analyze_workspace_router)  # M75 W-4: the Copilot workspace's AI card, once per closed bar (copilot_workspace)
 app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a chart image, educational reading (flag chart_analyze, off)
 app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)
 app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)

@@ -1,4 +1,5 @@
 import { Bell, LifeBuoy, Menu, MessageSquarePlus, UserCircle2 } from "lucide-react";
+import { InPlaceLink } from "./inplace/InPlaceLink";
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
@@ -135,7 +136,7 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
             <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} pathname={location.pathname} initialText={feedbackDraft} />
           </Suspense>
         )}
-        <Link
+        <InPlaceLink
           to={pathFor("notifications")}
           title="Notifications"
           aria-label="Notifications"
@@ -145,7 +146,7 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
           }`}
         >
           <Bell size={18} />
-        </Link>
+        </InPlaceLink>
         <Link
           to={pathFor("account")}
           title="Account"

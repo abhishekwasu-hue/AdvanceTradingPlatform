@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useAddress } from "../inplace/address";
 import { ApiError, errorSentence } from "../api/errors";
 import { useToast } from "../components/Toast";
 import { CardV2, EmptyStateV2 } from "../dashboard/CardV2";
@@ -37,7 +38,9 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
   acceptedOn?: boolean;
 }) {
   const toast = useToast();
-  const [target0] = useState(() => (typeof window === "undefined" ? { week: null, tradeId: null } : journalTarget(window.location.search, window.location.hash)));
+  // M75 NAV-5a: the router's address (the journal in an in-place panel has its own).
+  const here = useAddress();
+  const [target0] = useState(() => journalTarget(here.search, here.hash));
   const [tab, setTab] = useState<Tab>(target0.week ? "review" : "trades");
   const [filters, setFilters] = useState<JournalFilters>({});
   const [limit, setLimit] = useState(PAGE);

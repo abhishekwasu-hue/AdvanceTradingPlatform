@@ -206,7 +206,10 @@ test.describe("Get started card 390", () => {
     await page.goto("/settings");
     await page.waitForLoadState("networkidle");
     await page.getByRole("button", { name: "Show Get started" }).click();
-    await expect(page).toHaveURL(/\/$/);
+    // M75 NAV-7: he stays on Settings (no jump); the card shows on Today.
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect.poll(() => server.stored.get_started_hidden_at).toBeNull();
+    await page.goto("/");
     await expect(card(page)).toContainText("1 of 3 done");
     expect(server.stored).toMatchObject({ get_started_hidden_at: null, get_started_shown_at: null });
   });
@@ -214,7 +217,10 @@ test.describe("Get started card 390", () => {
   test("Help with every step done shows the three ticks until hidden again", async ({ page }) => {
     const server = await open(page, { path: "/settings", done: ["broker", "paper_bot", "telegram"], stored: { get_started_hidden_at: "2026-10-20T09:00:00Z" } });
     await page.getByRole("button", { name: "Show Get started" }).click();
-    await expect(page).toHaveURL(/\/$/);
+    // M75 NAV-7: he stays on Settings (no jump); the card shows on Today.
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect.poll(() => server.stored.get_started_shown_at).not.toBeNull();
+    await page.goto("/");
     await expect(card(page)).toContainText("All set.");
     await expect(card(page).locator("[data-done='true']")).toHaveCount(3);
     expect(server.stored.get_started_shown_at).not.toBeNull();

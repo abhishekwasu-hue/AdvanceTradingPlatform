@@ -1,7 +1,7 @@
 import { CheckCircle2, FileText, FlaskConical, Pencil, Sparkles, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { useInPlace } from "../../../inplace/InPlaceProvider";
+import { useInPlace } from "../../../inplace/context";
 import { api } from "../../../api/client";
 import { Badge, Button, EmptyState, type Tone } from "../../../components/primitives";
 import type { CandleSourceState } from "../../../components/DataSource";

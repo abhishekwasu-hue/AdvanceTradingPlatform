@@ -5,9 +5,11 @@ import { FNO_STOCKS } from "../utils/fnoSymbols";
  * - "all": every index and share of the instrument list (`GET /api/instrument-master/search`), as the Charts page;
  * - "optionable": only the underlyings that have options (the option chain page, the option strikes) - the option
  *   indices and the F&O stocks, searched here with no server call. The option chain page's list (optionChain/model.ts
- *   INDEX_SYMBOLS / STOCK_SYMBOLS) is this list.
+ *   INDEX_SYMBOLS / STOCK_SYMBOLS) is this list;
+ * - "with-contracts" (M75 W-2, the Copilot's chart workspace): "all" plus the futures and option contracts of the
+ *   instrument list, each a chart of its own (where the data has its prices; the chart says when it has none).
  */
-export type SymbolUniverse = "all" | "optionable";
+export type SymbolUniverse = "all" | "optionable" | "with-contracts";
 
 export interface UniverseSymbol { symbol: string; exchange: string; name?: string | null }
 

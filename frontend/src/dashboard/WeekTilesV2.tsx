@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { fetchOverview, type MarketGroup, type MarketsOverview } from "../markets/model";
 import { Signed } from "../ui/numbersFirst";
 import { CardV2 } from "./CardV2";
@@ -44,12 +44,12 @@ export function WeekTilesView({ tiles, asOf = null, stale = false }: { tiles: re
     <CardV2 title="This week" more={{ label: "Sectors", to: "/markets?period=week" }} testId="week-tiles">
       <div className="grid grid-cols-2 gap-space-3">
         {tiles.map((t) => (
-          <Link key={t.key} to="/markets?period=week" data-week-tile={t.key}
+          <InPlaceLink key={t.key} to="/markets?period=week" data-week-tile={t.key}
             className="min-w-0 rounded-control bg-surface-2 p-space-3 hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
             <p className="truncate text-t12 font-medium text-fg-muted">{t.label}</p>
             <p className="mt-px text-t18 font-semibold tabular-nums"><Signed value={t.value} kind="pct" /></p>
             {t.caption && <p className="truncate text-t12 text-fg-muted">{t.caption}</p>}
-          </Link>
+          </InPlaceLink>
         ))}
       </div>
       <Freshness at={asOf} stale={stale} className="mt-space-2 block" />

@@ -94,7 +94,7 @@ Facts from the code that the tables rely on:
 | observability | Health probes, metrics, ops alerts, status page | `/api/admin/ops-alerts`; routes `/api/system/health/...`, `/api/status` (no router prefix) | `public_status_page`, `status_page` | INTERNAL | unknown until the owner's check |
 | option_chain | Broker option chain, OI banners / alerts, analyses, charts, Ask AI | `/api/option-chain`, `/api/admin/option-chain` | `ui_v2` (analyses, charts, ask, hub); `ai_copilot` (ON) | PARTIAL (needs the user's broker session) | unknown until the owner's check |
 | options_builder | Payoff, T+0, PoP, strike suggestions, saved strategies | `/api/options-builder`, `/api/options-builder/strategies` | `options_builder` (ON); `options_builder_saved` | WORKS (save / load off) | unknown until the owner's check |
-| paper | PAPER account, ticket, F&O orders / baskets / exits, report card | `/api/paper`, `/api/paper/fno`, `/api/paper/fno/journal` | `paper_account`, `risk_by_default`, `ui_v2`, `experience_levels`, `paper_report_card` | PARTIAL (F&O desk 404 until flags on) | unknown until the owner's check |
+| paper | PAPER account, ticket, F&O orders / baskets / exits, report card | `/api/paper`, `/api/paper/fno`, `/api/paper/fno/journal`, `/api/paper/fno/order` (M76 check card: checks / accept, flag `trade_warnings`), `/api/ui` (M76 ticket metrics, no PII) | `paper_account`, `risk_by_default`, `ui_v2`, `experience_levels`, `paper_report_card`, `trade_warnings` | PARTIAL (F&O desk 404 until flags on) | unknown until the owner's check |
 | plans | Plan registry and limits | - | `plan_limits_v2` | INTERNAL | - |
 | platform | Feature flags, controls, trader pack, readiness, system status | `/api/admin/controls`, `/api/readiness`, `/api/system`, `/api/team/members` | `phase0_paper_only` (ON), `live_trading` | WORKS | unknown until the owner's check |
 | performance | The Performance page's summary and results against backtest, over the user's OWN trades (REV-1 M2) | `/api/performance` | - | WORKS (read-only) | unknown until the owner's check |
@@ -116,6 +116,7 @@ Facts from the code that the tables rely on:
 | signals_feed | Signals inbox, day-one setup card | `/api/signals`, `/api/signals/day-one` | `ui_v2`; `strategy_templates` (card) | EMPTY-BY-DEFAULT (404 until `ui_v2`) | unknown until the owner's check |
 | strategy_engine | Built-in strategies, registry, chart run | `/api/strategies` | - | WORKS | unknown until the owner's check |
 | strategy_templates | Signal templates adopted as a PAPER bot | `/api/strategy-templates` | `strategy_templates`, `screener_waves` | EMPTY-BY-DEFAULT | unknown until the owner's check |
+| study | Saved Copilot studies: snapshot, My studies, JSON and PDF download (M77 SX-2 / SX-3) | `/api/studies` | `ui_v2` + `study_export` | EMPTY-BY-DEFAULT (404 while either is off) | unknown until the owner's check |
 | support | Support bot, Help centre, Report a problem, desk | `/api/support`, `/api/ai/support`, `/api/admin/support` | `support_bot`, `help_centre` (+ `ui_v2`) | STUB (catalog: help pages not complete) | unknown until the owner's check |
 | support_resistance | S/R zone library | routes `/api/support-resistance/zones` (section 3) | - | WORKS | unknown until the owner's check |
 | tax | FY P&L / turnover report | `/api/tax` | - | WORKS | unknown until the owner's check |

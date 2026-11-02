@@ -2,7 +2,9 @@ import { ExitAllV2, exitableRows, type ExitAllHooks } from "./ExitAllV2";
 import { AskAiAbout } from "../copilot/AskAiAbout";
 import { ArrowDownRight, ArrowUpRight, ChartCandlestick, Layers, Plus, RefreshCcw, SlidersHorizontal } from "lucide-react";
 import { Suspense, lazy, useEffect, useId, useMemo, useState, type FormEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
+import { InPlaceLink } from "../inplace/InPlaceLink";
+import { useInPlace } from "../inplace/context";
 import { api } from "../api/client";
 import { errorSentence } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
@@ -96,6 +98,7 @@ type Notice = { kind: "done" | "info" | "warn"; text: string } | null;
 export default function PositionsV2(_props: PageProps = {}) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const inPlace = useInPlace();   // M75 NAV-5b: Connect your broker opens the broker drawer in place
   const features = useFeatures();
   // Z3: "Exit now" exists only with approval-only entries or the PAPER account on (otherwise exits run automatically).
   const exitNowOn = features.on("approval_only_entries") || features.on("paper_account");
@@ -194,7 +197,7 @@ export default function PositionsV2(_props: PageProps = {}) {
       <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="positions-v2">
         <PageTitleV2 title="My positions" subtitle="What you hold now and how it is doing." />
         <div>
-          <BrokerGateView state={broker} onConnect={() => navigate(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)}
+          <BrokerGateView state={broker} onConnect={() => inPlace.open(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)}
             onLogin={login.login} onRetry={refreshBroker} busy={login.busy} error={login.error} codeStep={login.codeStep} onSubmitCode={login.submitCode}
             positionsShown={signedIn} />
         </div>
@@ -596,13 +599,13 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
           </button>
         )}
         {adjust && (
-          <Link to={adjust} data-testid="fno-adjust" className={BUTTON_SECONDARY} title="Roll the strike or add a hedge on the chain">
+          <InPlaceLink to={adjust} data-testid="fno-adjust" className={BUTTON_SECONDARY} title="Roll the strike or add a hedge on the chain">
             <SlidersHorizontal size={16} aria-hidden />Adjust
-          </Link>
+          </InPlaceLink>
         )}
-        <Link to={chartsPath(row.chartSymbol)} className={BUTTON_SECONDARY}>
+        <InPlaceLink to={chartsPath(row.chartSymbol)} className={BUTTON_SECONDARY}>
           <ChartCandlestick size={16} aria-hidden />Chart
-        </Link>
+        </InPlaceLink>
         {/* M72 PR-3: the Copilot beside the page, about this position (the server re-reads it; information only) */}
         <AskAiAbout ctx={{ symbol: position.symbol, object: { kind: "trade", id: position.id }, page: "positions" }} />
         {own && actions.fno?.alertsOn && actions.canTrade && <StructureAlertV2 legs={own} />}

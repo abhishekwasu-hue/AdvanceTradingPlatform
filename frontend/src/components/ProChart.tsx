@@ -22,7 +22,7 @@ import { SessionBreaksPrimitive } from "../charting/sessionBreaksPrimitive";
 import type { ChartType } from "../charting/workspace";
 import { Sheet } from "./primitives";
 import { InPlaceLink } from "../inplace/InPlaceLink";
-import { useInPlace } from "../inplace/InPlaceProvider";
+import { useInPlace } from "../inplace/context";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { formatCount, formatDateTimeIST, formatNumber, formatTimeIST } from "../ui/format";
 

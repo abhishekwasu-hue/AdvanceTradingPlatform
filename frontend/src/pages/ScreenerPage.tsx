@@ -6,6 +6,7 @@
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
 import { BellRing, ChevronDown, Code2, History, Layers, LayoutGrid, MoreHorizontal, Play, Save } from "lucide-react";
+import { useInPlace } from "../inplace/context";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -269,6 +270,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   // validates and gates it as usual (`/stages`); the address loses the query once it is handled.
   const location = useLocation();
   const navigate = useNavigate();
+  const inPlace = useInPlace();
   const ideaAsk = useMemo(() => ideaScanFromSearch(location.search), [location.search]);
   useEffect(() => {
     if (!registry || !ideaAsk) return undefined;
@@ -542,7 +544,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   // SCR-FIX B4: one count source - the answer's own funnel ("Matched N of 50 · K had data"), never the list's length
   const counts = shown ? tally(shown.funnel, shown.matched) : null;
   const onReadAction = (action: ReadAction) => {
-    if (action === "login" || action === "connect") navigate("/broker");
+    if (action === "login" || action === "connect") inPlace.open("/broker");   // M75 NAV-5a: the broker drawer, in place
     else if (action === "retry") void doRun();
     else document.getElementById("screener-tf")?.focus();
   };

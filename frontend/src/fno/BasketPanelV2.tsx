@@ -28,6 +28,8 @@ import {
 import { PracticeFrame } from "./OrderTicketV2";
 import { StrategyCompareV2 } from "./CompareV2";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
+import { InPlaceLink } from "../inplace/InPlaceLink";
+import { useInPlaceOpen } from "../inplace/context";
 import { riskLine, structureOf, type RiskBudget, type RiskLine } from "./insights";
 import { eventLine, legLiquidity, liquidityLine, marginLine } from "./riskParts";
 import { RiskChecksV2, useEventRisk } from "./RiskPartsV2";
@@ -111,6 +113,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   // Owner fix T1-5: the product starts from his own trading defaults (Settings -> My trading defaults), not a fixed MIS;
   // MIS only while he saved none (the line under the choice says so). His own pick in this basket stays.
   const features = useFeatures();
+  const openInPlace = useInPlaceOpen();
   const savedProduct = ticketPrefill(useTradingDefaults(open && features.on("ui_v2"), fetcher)).product ?? null;
   const [product, setProductState] = useState<Product | null>(savedProduct);
   const picked = useRef(false);
@@ -362,7 +365,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     if (!numbers || !spot) return;
     const h = builderHandoff(legs.map(strip), numbers.lot_sizes, spot, strikeStep(rows));
     if (!h || !writeHandoff(h)) { setNote({ tone: "warn", text: "Every leg needs a price before it can open in the Options Builder." }); return; }
-    window.location.assign("/option-chain/plan");
+    openInPlace("/option-chain/plan");   // M75 NAV-4: beside the basket, in place (the basket stays as it was)
   }
 
   async function brokerApp() {
@@ -873,7 +876,7 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks,
           const why = p ? basketBlockedBy(p) : null;
           return why && (
             <p className="basis-full text-t13 text-fg" data-basket="blocked-by">
-              {why.text}{why.link && <> <a href={why.link} className="font-medium text-brand underline" data-basket="change-limits">Change limit</a></>}
+              {why.text}{why.link && <> <InPlaceLink to={why.link} className="font-medium text-brand underline" data-basket="change-limits">Change limit</InPlaceLink></>}
             </p>
           );
         })()}

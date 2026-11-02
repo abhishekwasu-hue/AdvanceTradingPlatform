@@ -146,6 +146,8 @@ def test_the_server_never_reads_it_to_trade():
     # ticket product / order type the user saved there (TS-6) - his own value, never a server default.
     # M68 PR-2: the Position size reader keeps his "Lots for a new bot" (`max_lots`) the same way (TS-6); M68 PR-4: the
     # Options reader too; M68 PR-6: the Automation reader keeps an entry mode he saved there (TS-6) the same way.
-    allowed = {"prefs.py", "trade_settings.py", "order_defaults.py", "position_size.py", "option_defaults.py", "automation.py"}
+    # M68 PR-9 TS-6: the one-time notice reads only whether he ever saved a value there (an existing user) - never a value.
+    allowed = {"prefs.py", "trade_settings.py", "order_defaults.py", "position_size.py", "option_defaults.py", "automation.py",
+               "notices.py"}
     readers = [p for p in app_dir.rglob("*.py") if "trading_defaults" in p.read_text(encoding="utf-8") and p.name not in allowed]
     assert readers == [], readers

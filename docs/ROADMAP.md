@@ -284,6 +284,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | M83 | merged with M82 in #858 (1 Nov); waits for deploy + owner ✅ | Market pulse: ONE Read now refreshes every card; each card shows its own time or failure reason | ATP_ORDER_M83.md |
 | M84 | in progress (owner 2 Nov) | Analyze a chart: Advanced analysis detects symbol and timeframe from the uploaded chart; fields optional | DECISIONS 2 Nov |
 | M85 | in progress (owner order 2 Nov; overseer ID M84; the only open item of the owner order M85 -> M82 + M83 -> M78) | Upstox: Analytics Token asked once; no daily "login ended" while it works; daily login only for orders | ATP_ORDER_M85.md |
+| BRK-1 | in progress (owner order 2 Nov) | Easy login + visible step-by-step guide for every broker: gates removed, easiest official login, numbered guide in each connect panel | ATP_ORDER_BRK1.md |
 | STRAT-X | not started (owner 30 Oct: "build what you think is right") | Built-in min R:R OFF, stop / target labelled suggested; 4 new templates (PDHL, 52WH, RS vs NIFTY, weekly + daily pullback) | claude/stratx-* |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |

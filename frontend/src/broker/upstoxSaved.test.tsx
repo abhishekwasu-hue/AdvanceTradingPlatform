@@ -24,13 +24,11 @@ describe("M85 U5: Upstox renew - the analytics token is asked once", () => {
     expect(savedAnalytics(null, "upstox", "primary", NOW)).toBeNull();
   });
 
-  it("the saved view shows the date, the daily login button and Replace - no token field", () => {
-    const html = renderToStaticMarkup(
-      <UpstoxSavedView expiresAt="2027-10-20T18:30:00Z" onLogin={() => undefined} loginBusy={false} loginOpened={null} onReplace={() => undefined} />,
-    );
+  it("the saved view shows the date and Replace - no token field, no Upstox login (BRK-1: no Upstox OAuth)", () => {
+    const html = renderToStaticMarkup(<UpstoxSavedView expiresAt="2027-10-20T18:30:00Z" onReplace={() => undefined} />);
     expect(html).toContain("Analytics token saved, valid till");
     expect(html).toMatch(/2027/);
-    expect(html).toContain("data-upstox-login");
+    expect(html).not.toContain("data-upstox-login");
     expect(html).toContain("data-upstox-replace");
     expect(html).not.toContain("<input");
   });

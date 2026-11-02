@@ -71,11 +71,9 @@ export function savedAnalytics(rows: readonly BrokerTokenInfo[] | null | undefin
   return new Date(row.analytics_token_expires_at).getTime() > now.getTime() ? { expiresAt: row.analytics_token_expires_at } : null;
 }
 
-/** M85 U4/U5: the Upstox renew panel while its analytics token is valid - nothing to paste. Market data runs on the saved
- * token; the daily login (Upstox's own page, OAuth) is only for orders, positions and funds. */
-export function UpstoxSavedView({ expiresAt, onLogin, loginBusy, loginOpened, onReplace, error }: {
-  expiresAt: string; onLogin: () => void; loginBusy: boolean; loginOpened: LoginOpened | null; onReplace: () => void; error?: string | null;
-}) {
+/** M85 U5: the Upstox renew panel while its analytics token is valid - nothing to paste, nothing to log in to (BRK-1:
+ * Upstox connects with the pasted Analytics Token only, no Upstox OAuth flow). Replace shows the token field. */
+export function UpstoxSavedView({ expiresAt, onReplace }: { expiresAt: string; onReplace: () => void }) {
   return (
     <div className="space-y-space-4" data-upstox-saved>
       <div className="flex items-center gap-space-3">
@@ -86,18 +84,6 @@ export function UpstoxSavedView({ expiresAt, onLogin, loginBusy, loginOpened, on
         <CircleCheck size={18} aria-hidden className="mt-0.5 shrink-0 text-up" />
         <span>Analytics token saved, valid till <span className="font-semibold tabular-nums">{formatDateIST(expiresAt, { year: true })}</span></span>
       </p>
-      {error && <p role="alert" className="flex items-start gap-space-2 text-t14 text-fg"><TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0 text-warn" />{error}</p>}
-      <button type="button" onClick={onLogin} disabled={loginBusy} aria-busy={loginBusy || undefined} data-upstox-login
-        className={`${BTN_PRIMARY} w-full`}>
-        <ExternalLink size={16} aria-hidden /> Log in for orders
-      </button>
-      {loginOpened && (
-        <p className="text-t13 text-fg-muted">
-          {loginOpened.opened
-            ? "The Upstox login page opened in a new tab. After you sign in, come back here - it updates by itself."
-            : <>Your browser blocked the new tab. <a href={loginOpened.link} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">Open the Upstox login page</a>.</>}
-        </p>
-      )}
       <button type="button" onClick={onReplace} data-upstox-replace className={`${BTN_SECONDARY} w-full`}>Replace token</button>
     </div>
   );
@@ -394,22 +380,6 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
       .finally(() => setLoginBusy(false));
   }
 
-  // M85 U4: the daily Upstox login through Upstox's own page (OAuth) - opened inside the click, like login() above.
-  function upstoxLogin() {
-    setLoginBusy(true);
-    setResult(null);
-    let tab: Window | null = null;
-    try { tab = window.open("about:blank", "_blank"); if (tab) tab.opener = null; } catch { tab = null; }
-    api.upstoxOAuthStart(label)
-      .then(({ authorization_url }) => {
-        if (tab) tab.location.href = authorization_url;
-        setLoginOpened({ link: authorization_url, opened: !!tab });
-        onChanged?.();
-      })
-      .catch((e: unknown) => { tab?.close(); setResult({ ok: false, text: loginErrorText(e, "upstox") }); })
-      .finally(() => setLoginBusy(false));
-  }
-
   const name = entry?.name ?? "";
   const title = `${mode === "renew" ? "Renew" : "Connect"} ${name}`.trim();
   return (
@@ -417,8 +387,7 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
       {upstoxRenew && saved === undefined ? (
         <Skeleton className="h-32" label="Loading" />
       ) : upstoxRenew && saved && !replacing ? (
-        <UpstoxSavedView expiresAt={saved.expiresAt} onLogin={upstoxLogin} loginBusy={loginBusy} loginOpened={loginOpened}
-          onReplace={() => setReplacing(true)} error={result && !result.ok ? result.text : null} />
+        <UpstoxSavedView expiresAt={saved.expiresAt} onReplace={() => setReplacing(true)} />
       ) : entry && step ? (
         <ConnectPanelView entry={entry} step={step} values={values} busy={busy} result={result} note={afterSave}
           onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}

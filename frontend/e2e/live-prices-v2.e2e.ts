@@ -115,7 +115,7 @@ test.describe("M85 Upstox analytics token asked once (390)", () => {
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/m85-panel-asks-token-390-${theme}.png` });
     });
 
-    test(`after: saved token - no notice; the panel shows its date, the daily login and Replace (${theme})`, async ({ page }) => {
+    test(`after: saved token - no notice; the panel shows its date and Replace (${theme})`, async ({ page }) => {
       await open(page, theme, { state: "polling", brokers: SAVED_EXPIRED_DAILY });
       await expect(page.getByText("Loading", { exact: true })).toHaveCount(0, { timeout: 15_000 });
       await expect(page.locator("[data-live-notice]")).toHaveCount(0);
@@ -132,7 +132,7 @@ test.describe("M85 Upstox analytics token asked once (390)", () => {
       await expect(saved).toContainText("Analytics token saved, valid till");
       await expect(saved).toContainText("2027");
       await expect(dialog.locator("input")).toHaveCount(0);
-      await expect(dialog.locator("[data-upstox-login]")).toBeVisible();
+      await expect(dialog.locator("[data-upstox-login]")).toHaveCount(0);           // BRK-1: no Upstox OAuth flow
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/m85-panel-saved-390-${theme}.png` });
       await dialog.locator("[data-upstox-replace]").click();
       await expect(dialog.locator("input[data-field='analytics_token']")).toBeVisible();

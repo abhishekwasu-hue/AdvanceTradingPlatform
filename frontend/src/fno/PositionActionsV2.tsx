@@ -33,7 +33,8 @@ export function ExitPartResultLine({ pieces }: { pieces: ReturnType<typeof exitP
 export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActionsApi }: {
   ask: PositionActionAsk | null; onClose: () => void; onDone: (text: ReactNode, ok: boolean) => void; api?: PositionActionsApi;
 }) {
-  const [lots, setLots] = useState(1);
+  // M68 PR-2 (TS1-021): the lots to exit start empty and focused - he says how many (never a pre-chosen 1).
+  const [lots, setLots] = useState<number | null>(null);
   const [stop, setStop] = useState("");
   const [ref, setRef] = useState(newRef);
   const [busy, setBusy] = useState(false);
@@ -41,16 +42,18 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
   const [problem, setProblem] = useState<string | null>(null);
   const stopId = useId();
   const position = ask?.position;
-  useEffect(() => { setLots(1); setStop(""); setRef(newRef()); setWarning(null); setProblem(null); }, [position?.id, ask?.kind]);
+  useEffect(() => { setLots(null); setStop(""); setRef(newRef()); setWarning(null); setProblem(null); }, [position?.id, ask?.kind]);
   if (!ask || !position) return null;
   const held = openLots(position);
   const needsStop = ask.kind === "reverse" && reverseNeedsStop(position);
-  const copy = ask.kind === "part" ? exitPartCopy(position.symbol, lots, held) : reverseCopy(position.symbol, held, position.direction === "LONG");
+  const copy = ask.kind === "part" ? (lots === null ? { ...exitPartCopy(position.symbol, held, held), body: `How many of the ${held} lots of ${position.symbol} close now?` }
+    : exitPartCopy(position.symbol, lots, held)) : reverseCopy(position.symbol, held, position.direction === "LONG");
   const stopLabel = reverseStopLabel(position);
   const close = () => { setWarning(null); setProblem(null); onClose(); };
 
   async function go() {
     if (!ask || !position) return;
+    if (ask.kind === "part" && lots === null) { setProblem("Enter the lots to exit. Nothing has been closed."); return; }
     const stopLoss = stop.trim() === "" ? undefined : Number(stop);
     // DEF-0 D7: the stop is optional (only the trader's own setting asks for one - the server says so); a typed one must be a price
     if (needsStop && stopLoss !== undefined && (!Number.isFinite(stopLoss) || stopLoss <= 0)) {
@@ -59,7 +62,7 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
     }
     setBusy(true);
     const step = await runAction(ask.kind === "part"
-      ? { kind: "part", tradeId: position.id, symbol: position.symbol, lots, ref }
+      ? { kind: "part", tradeId: position.id, symbol: position.symbol, lots: lots as number, ref }
       : { kind: "reverse", tradeId: position.id, symbol: position.symbol, ref, stopLoss }, warning !== null, api);
     setBusy(false);
     if (step.kind === "warn") { setWarning(step.warning); return; }
@@ -74,7 +77,7 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
       footer={(
         <>
           <button type="button" onClick={close} className={QUIET}>Keep it open</button>
-          <button type="button" onClick={go} disabled={busy} data-confirm data-testid="position-action-confirm" className={STRONG}>
+          <button type="button" onClick={go} disabled={busy || (ask.kind === "part" && lots === null)} data-confirm data-testid="position-action-confirm" className={STRONG}>
             {warning ? `${copy.confirm} anyway` : copy.confirm}
           </button>
         </>
@@ -83,10 +86,10 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
         {ask.kind === "part" && (
           <div className="flex items-center gap-space-2" data-lots-stepper>
             <span className="text-t14 text-fg">Lots to exit</span>
-            <button type="button" aria-label="One lot less" onClick={() => setLots((n) => clampLots(n - 1, held))} className={SMALL}><Minus size={14} aria-hidden /></button>
-            <input aria-label="Lots to exit" inputMode="numeric" value={lots} className={`${INPUT} w-16 text-center`} data-testid="exit-part-lots"
-              onChange={(e) => setLots(clampLots(Number(e.target.value), held))} />
-            <button type="button" aria-label="One lot more" onClick={() => setLots((n) => clampLots(n + 1, held))} className={SMALL}><Plus size={14} aria-hidden /></button>
+            <button type="button" aria-label="One lot less" disabled={lots === null} onClick={() => setLots((n) => (n === null ? n : clampLots(n - 1, held)))} className={SMALL}><Minus size={14} aria-hidden /></button>
+            <input aria-label="Lots to exit" inputMode="numeric" value={lots ?? ""} placeholder="Lots" autoFocus className={`${INPUT} w-16 text-center`} data-testid="exit-part-lots"
+              onChange={(e) => { setProblem(null); setLots(e.target.value.trim() === "" ? null : clampLots(Number(e.target.value), held)); }} />
+            <button type="button" aria-label="One lot more" onClick={() => setLots((n) => clampLots((n ?? 0) + 1, held))} className={SMALL}><Plus size={14} aria-hidden /></button>
             <span className="text-t13 text-fg-muted">of {held}</span>
           </div>
         )}

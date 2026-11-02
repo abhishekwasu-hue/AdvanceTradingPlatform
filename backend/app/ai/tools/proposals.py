@@ -59,10 +59,17 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
 
-def allowed_for(question: str) -> List[str]:
+# M72 PR-10 (F17): fixed Marathi / Hindi phrases (Devanagari and romanised) that ask for the same proposals - read only when
+# the user's own answer language is Marathi / Hindi. The quote guard below is unchanged: the words must be his own,
+# never inside third-party text, and a person still approves every proposal.
+from app.ai.indic_safety import INTENT_PHRASES as INTENT_WORDS_INDIC  # noqa: E402 - the one Marathi / Hindi list
+
+
+def allowed_for(question: str, lang: str = "en") -> List[str]:
     """The proposal tools the trader's own message asks for - the request's allow-list."""
     q = _norm(question)
-    return [name for name, words in INTENT_WORDS.items() if any(w in q for w in words)]
+    words = {name: tuple(w) + (tuple(INTENT_WORDS_INDIC.get(name, ())) if lang in ("mr", "hi") else ()) for name, w in INTENT_WORDS.items()}
+    return [name for name, ws in words.items() if any(w in q for w in ws)]
 
 
 def guard(name: str, arguments: Dict, question: str, allowed: Sequence[str], untrusted_texts: Sequence[str], proposals_made: int,
@@ -75,7 +82,7 @@ def guard(name: str, arguments: Dict, question: str, allowed: Sequence[str], unt
     quote = _norm(str((arguments or {}).get("quote") or ""))
     if not quote or quote not in _norm(question):
         return "the quote is not the trader's own words"
-    if not any(w in quote for w in INTENT_WORDS.get(name, ())):
+    if not any(w in quote for w in (*INTENT_WORDS.get(name, ()), *INTENT_WORDS_INDIC.get(name, ()))):
         return "the quote does not contain the words that ask for this action"
     if any(quote in _norm(text) for text in untrusted_texts):
         return "the quoted words also appear in third-party data read in this request"

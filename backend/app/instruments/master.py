@@ -117,12 +117,35 @@ def _instrument_type(raw: Optional[str], segment: Optional[str]) -> str:
     return text or "EQ"
 
 
+CASH_TYPES = ("EQ", "INDEX")
+
+
+def _lot_of(value: Any, itype: str) -> int | None:
+    """M68 PR-2 (TS1-088): the contract's lot size from the master row. A cash share or an index trades in ones (a fact:
+    1 when the row has none). A future or an option with no usable lot size gets None - it is never assumed to be 1,
+    which would size an order 1/lot of what the exchange takes; the caller leaves that row out and flags it."""
+    try:
+        lot = int(float(value)) if value not in (None, "") else 0
+    except (TypeError, ValueError):
+        lot = 0
+    if lot >= 1:
+        return lot
+    return 1 if itype in CASH_TYPES else None
+
+
+def _flag_no_lot(count: int, broker: str) -> None:
+    if count:
+        logger.warning("Instrument master (%s): %d futures / options rows had no lot size and were left out - they cannot be "
+                       "traded until the next sync brings their lot size", broker, count)
+
+
 def parse_upstox_master(rows: Iterable[Dict[str, Any]], exchange: str) -> List[MasterRow]:
     """Upstox's per-exchange JSON: `instrument_key` (e.g. `NSE_FO|56789`), `trading_symbol`,
     `segment` (NSE_EQ/NSE_FO/NSE_INDEX/BSE_FO/...), `instrument_type` (EQ/INDEX/FUT/CE/PE),
     `expiry` (epoch ms), `strike_price`, `lot_size`, `tick_size`, `underlying_symbol`/`name`,
     `weekly`. Only the four types F&O routing needs are kept, plus equities and indices."""
     out: List[MasterRow] = []
+    skipped_no_lot = 0
     for row in rows:
         key = row.get("instrument_key")
         symbol = row.get("trading_symbol") or row.get("tradingsymbol")
@@ -150,10 +173,10 @@ def parse_upstox_master(rows: Iterable[Dict[str, Any]], exchange: str) -> List[M
             strike_value = None
         if itype in ("EQ", "INDEX", "FUT") and strike_value == 0:
             strike_value = None
-        try:
-            lot = int(float(row.get("lot_size") or 1)) or 1
-        except (TypeError, ValueError):
-            lot = 1
+        lot = _lot_of(row.get("lot_size"), itype)
+        if lot is None:
+            skipped_no_lot += 1                # M68 TS1-088: no lot size for a derivative - never assumed; the row is left out
+            continue
         try:
             tick = float(row.get("tick_size") or 0.05) or 0.05
         except (TypeError, ValueError):
@@ -164,6 +187,7 @@ def parse_upstox_master(rows: Iterable[Dict[str, Any]], exchange: str) -> List[M
             expiry=normalise_expiry(row.get("expiry")), strike=strike_value, lot_size=lot, tick_size=tick,
             weekly=bool(row.get("weekly", False)),
         ))
+    _flag_no_lot(skipped_no_lot, UPSTOX_BROKER)
     return out
 
 
@@ -171,9 +195,14 @@ def parse_broker_instruments(broker: str, instruments: Sequence[Any]) -> List[Ma
     """From an adapter's `Instrument` list (Zerodha/Shoonya), e.g. Kite's NFO dump: `name` is the
     underlying, `instrument_type` CE/PE/FUT/EQ, `expiry` ISO."""
     out: List[MasterRow] = []
+    skipped_no_lot = 0
     for i in instruments:
         itype = _instrument_type(getattr(i, "instrument_type", None), getattr(i, "segment", None))
         if itype not in ("CE", "PE", "FUT", "EQ", "INDEX"):
+            continue
+        lot = _lot_of(getattr(i, "lot_size", None), itype)
+        if lot is None:
+            skipped_no_lot += 1                # M68 TS1-088: as above
             continue
         symbol = (getattr(i, "tradingsymbol", "") or "").upper()
         underlying = getattr(i, "name", None) or symbol
@@ -186,8 +215,9 @@ def parse_broker_instruments(broker: str, instruments: Sequence[Any]) -> List[Ma
             instrument_key=str(getattr(i, "instrument_token")), tradingsymbol=symbol, name=getattr(i, "name", None),
             underlying=str(underlying).upper() if underlying else None, instrument_type=itype,
             expiry=normalise_expiry(getattr(i, "expiry", None)), strike=getattr(i, "strike", None),
-            lot_size=int(getattr(i, "lot_size", 1) or 1), tick_size=float(getattr(i, "tick_size", 0.05) or 0.05),
+            lot_size=lot, tick_size=float(getattr(i, "tick_size", 0.05) or 0.05),
         ))
+    _flag_no_lot(skipped_no_lot, broker)
     return out
 
 

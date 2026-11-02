@@ -38,7 +38,9 @@ from tests.test_fno2_basket import _condor_legs, _leg, _orders, _org_tenant, _po
 from tests.test_z3b_paper_account import _member
 from tests.test_z5_p1d_risk_by_default import _flag
 
-SETTINGS = se.SmartSettings(settlement_days_before=4, settlement_band_pct=2.0, settlement_telegram=True, protection_band_pct=0.5)
+# M68 PR-4 (TS1-045): the delivery warning is his own and OFF until he turns it on - these tests run with it on
+SETTINGS = se.SmartSettings(settlement_days_before=4, settlement_band_pct=2.0, settlement_telegram=True, protection_band_pct=0.5,
+                            settlement_warning=True)
 
 
 def _run(coro):
@@ -247,11 +249,11 @@ def test_settlement_flags_follow_the_users_settings_not_fixed_numbers():
     assert "₹1,450,000" in itm[0]["message"]
     near = [_h("CE", 3000.0, 2)]                                          # 1.7% below the strike
     assert se.settlement_flags(near, spots, TODAY, SETTINGS)[0]["state"] == "NEAR_ITM"
-    tight = se.SmartSettings(4, 1.0, True, 0.5)
+    tight = se.SmartSettings(4, 1.0, True, 0.5, settlement_warning=True)
     assert se.settlement_flags(near, spots, TODAY, tight) == []           # his band, not a constant
     far = [_h("CE", 2900.0, 6)]
     assert se.settlement_flags(far, spots, TODAY, SETTINGS) == []
-    assert se.settlement_flags(far, spots, TODAY, se.SmartSettings(7, 2.0, True, 0.5))[0]["days_to_expiry"] == 6
+    assert se.settlement_flags(far, spots, TODAY, se.SmartSettings(7, 2.0, True, 0.5, settlement_warning=True))[0]["days_to_expiry"] == 6
     assert se.settlement_flags([_h("CE", 2900.0, -1)], spots, TODAY, SETTINGS) == []          # expired
     assert se.settlement_flags([_h("CE", 2900.0, 1, underlying="NIFTY")], {"NIFTY": 30000.0}, TODAY, SETTINGS) == []  # cash-settled index
     fut = se.settlement_flags([_h("FUT", None, 0, side="BUY")], spots, TODAY, SETTINGS)
@@ -259,13 +261,18 @@ def test_settlement_flags_follow_the_users_settings_not_fixed_numbers():
     put = se.settlement_flags([_h("PE", 3000.0, 1, side="BUY")], spots, TODAY, SETTINGS)
     assert put[0]["state"] == "ITM" and put[0]["obligation"] == "deliver"
     assert se.settlement_flags([_h("CE", 2900.0, 1)], {}, TODAY, SETTINGS) == []             # no price: not judged
+    # M68 PR-4 (TS1-045): Not set / off - no warning at all; an option is judged only on his own band
+    assert se.settlement_flags([_h("CE", 2900.0, 2)], spots, TODAY, replace(SETTINGS, settlement_warning=False)) == []
+    assert se.settlement_flags([_h("CE", 2900.0, 2)], spots, TODAY, replace(SETTINGS, settlement_days_before=None)) == []
+    assert se.settlement_flags([_h("CE", 2900.0, 2)], spots, TODAY, replace(SETTINGS, settlement_band_pct=None)) == []
+    assert se.settlement_flags([_h("FUT", None, 0, side="BUY")], spots, TODAY, replace(SETTINGS, settlement_band_pct=None))[0]["state"] == "FUTURE"
 
 
 def test_the_settings_are_the_users_own_prefs_with_bounds():
     d = prefs.defaults(se.NAMESPACE)
-    # M68 PR-1 (TS1-013): the protection band has no starting value (Not set) - the rest are the settings' own
-    assert se.SmartSettings.from_prefs(d) == replace(SETTINGS, protection_band_pct=None)
-    for bad in ({"settlement_days_before": 31}, {"settlement_band_pct": -1.0}, {"protection_band_pct": 0.0}, {"other": 1}):
+    # M68 PR-1 (TS1-013) / PR-4 (TS1-045): the protection band and the delivery warning's numbers have no starting value
+    assert se.SmartSettings.from_prefs(d) == se.SmartSettings(None, None, False, None)
+    for bad in ({"settlement_days_before": -1}, {"settlement_band_pct": -1.0}, {"protection_band_pct": 0.0}, {"other": 1}):
         with pytest.raises(Exception):
             prefs.SmartExecutionPrefs.model_validate({**d, **bad})
 
@@ -438,11 +445,14 @@ def _close_rows(ids):
 
 
 def _settlement_checks(t, flagged):
+    # M68 PR-4 (TS1-045): Telegram is his own choice (Not set = off); this user turns it on
+    on = client.put("/api/me/prefs/smart_execution", headers=t["headers"], json={**prefs.defaults(se.NAMESPACE), "settlement_telegram": True})
+    assert on.status_code == 200, on.text
     out = client.get("/api/paper/fno/settlement", headers=t["headers"])
     assert out.status_code == 200, out.text
     body = out.json()
     assert [w["trade_id"] for w in body["warnings"]] == [flagged] and body["warnings"][0]["delivery_value"] == 2900.0 * 500
-    assert body["settings"] == {"days_before": 4, "band_pct": 2.0, "telegram": True}
+    assert body["settings"] == {"on": True, "days_before": 4, "band_pct": 2.0, "telegram": True}
 
     async def send():
         async with _session_factory() as session:

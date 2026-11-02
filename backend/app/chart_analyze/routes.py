@@ -4,13 +4,16 @@ caller's organisation every route below answers the platform's standard 503 with
 - `GET    /api/chart-analyze/status`              what the page needs: engine installed?, limits used, upload rules
 - `POST   /api/chart-analyze/items`               multipart: `file` (PNG / JPEG) OR `link`, and `mode` -> one stored item;
                                                   mode `hybrid` (flag chart_analyze_hybrid as well) also takes the
-                                                  `symbol` and `timeframe` the user picks - never read from the picture
+                                                  OPTIONAL `symbol` and `timeframe` the user types (M84: an empty one
+                                                  is read from the chart's printed header; his value wins)
 - `GET    /api/chart-analyze/items`               the caller's history (newest first)
 - `GET    /api/chart-analyze/items/{id}`          one item with its result
 - `GET    /api/chart-analyze/items/{id}/image`    the stored (cleaned) image, private, never cached by a proxy
 - `POST   /api/chart-analyze/items/{id}/analyze`  runs the analysis: AI only, or hybrid (M59 CR-4: ATP's own structure
                                                   reading of the stored candles for the pick, then the engine's AI part
-                                                  when it has the hybrid entry point)
+                                                  when it has the hybrid entry point). M84: an optional JSON body
+                                                  `{symbol, timeframe}` fills a value asked for, or changes one on a
+                                                  finished analysis (a new analysis of the same picture)
 - `GET    /api/chart-analyze/items/{id}/reading.png` a hybrid item's annotated chart of ATP's reading (the download),
                                                   drawn by code from the candles stored with the result
 - `GET    /api/chart-analyze/items/{id}/strikes`  the option strikes the caller's OWN deployment settings work out to
@@ -29,7 +32,7 @@ import asyncio
 import weakref
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Query, Response, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Path, Query, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,6 +81,12 @@ def _decode_gate() -> asyncio.Semaphore:
     if gate is None:
         gate = _DECODE_GATES[loop] = asyncio.Semaphore(DECODE_SLOTS)
     return gate
+
+
+class ChangeBody(BaseModel):
+    """M84: the values the user types in place on a hybrid analysis (each optional)."""
+    symbol: str | None = Field(default=None, max_length=40)
+    timeframe: str | None = Field(default=None, max_length=8)
 
 
 class SettingsBody(BaseModel):
@@ -163,12 +172,13 @@ async def add_item(file: Optional[UploadFile] = File(default=None), link: Option
     settings = await _gate(session, user)
     if mode not in service.MODES:
         raise HTTPException(status_code=422, detail={"message": "mode must be image_only or hybrid", "code": "bad_mode"})
-    pick: dict[str, str] | None = None
+    pick: dict[str, str | None] | None = None
     if mode == "hybrid":
-        # M59 CR-4: the symbol and timeframe come only from the user's pick; nothing priced is read from the picture.
+        # M84: the symbol and timeframe are optional overrides (an empty one is read from the chart's printed header);
+        # nothing priced is ever read from the picture.
         await _hybrid_gate(session, user)
         try:
-            pick = hybrid.check_pick(symbol, timeframe)
+            pick = hybrid.check_override(symbol, timeframe)
         except hybrid.PickError as exc:
             raise HTTPException(status_code=422, detail={"message": str(exc), "code": exc.code}) from None
     has_file = file is not None and bool(file.filename or file.size)
@@ -236,13 +246,20 @@ async def get_image(item_id: int, user: User = Depends(get_current_user), sessio
 
 
 @router.post("/items/{item_id}/analyze")
-async def analyze(item_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def analyze(item_id: int, body: ChangeBody | None = Body(default=None), user: User = Depends(get_current_user),
+                  session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     settings = await _gate(session, user)
+    change: dict[str, str | None] | None = None
     if (await service.own(session, user, item_id)).mode == "hybrid":
         await _hybrid_gate(session, user)
+        if body is not None:
+            try:
+                change = hybrid.check_override(body.symbol, body.timeframe)
+            except hybrid.PickError as exc:
+                raise HTTPException(status_code=422, detail={"message": str(exc), "code": exc.code}) from None
     await _rate(user, settings)
     tenant = await _tenant(session, user)
-    return service.as_dict(await service.analyze(session, user, tenant, settings, item_id))
+    return service.as_dict(await service.analyze(session, user, tenant, settings, item_id, change=change))
 
 
 @router.get("/items/{item_id}/reading.png")

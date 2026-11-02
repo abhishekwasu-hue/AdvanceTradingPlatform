@@ -124,8 +124,10 @@ def test_stt_dates_and_sides():
     sell = CO.leg_cost("2026-10-05", "sell", 40.0, 65)
     buy = CO.leg_cost("2026-10-05", "buy", 40.0, 65)
     assert sell["stt"] == pytest.approx(0.0015 * 40 * 65) and buy["stt"] == 0.0           # Rs 40 x 65 -> ~Rs 3.9
-    assert buy["stamp"] > 0 and sell["stamp"] == 0.0 and sell["brokerage"] == 20.0
-    o = CO.spread_cost("2026-10-05", 20.0, 12.0, 65, opening=True)
+    # M68 PR-7 (TS1-070): no brokerage of ATP's by default; a trader's own ₹20 is passed by the caller
+    assert buy["stamp"] > 0 and sell["stamp"] == 0.0 and sell["brokerage"] == 0.0
+    assert CO.leg_cost("2026-10-05", "sell", 40.0, 65, brokerage_per_order=20.0)["brokerage"] == 20.0
+    o = CO.spread_cost("2026-10-05", 20.0, 12.0, 65, opening=True, brokerage_per_order=20.0)
     assert o["stt"] == pytest.approx(0.0015 * 20 * 65) and o["brokerage"] == 40.0
     c = CO.spread_cost("2026-10-05", 20.0, 12.0, 65, opening=False)
     assert c["stt"] == pytest.approx(0.0015 * 12 * 65)                                     # closing: the long is sold

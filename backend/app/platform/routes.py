@@ -48,7 +48,9 @@ class TradingDisableBody(BaseModel):
 
 
 class RiskCeilingsBody(BaseModel):
-    values: Dict[str, float] = Field(default_factory=dict, max_length=10)
+    # M68 PR-5 (TS1-048): a number sets a ceiling, null clears it (no ceiling); `tenant_id` = one team, empty = every team.
+    values: dict[str, float | None] = Field(default_factory=dict, max_length=10)
+    tenant_id: int | None = None
 
 
 # LD-7: every open page polls the public status (7 queries: two controls, five holiday lists), and the answer is the same
@@ -100,15 +102,20 @@ async def put_brokers(body: BrokersBody, user: User = Depends(require_role()), s
 
 
 @admin_router.get("/risk-ceilings")
-async def get_risk_ceilings(session: AsyncSession = Depends(get_session)) -> dict:
-    """Phase V1: the hard ceilings every tenant's risk settings stay under."""
-    return await controls.risk_ceilings(session)
+async def get_risk_ceilings(tenant_id: int | None = None, session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase V1 / M68 PR-5: the ceilings a platform admin set for every organisation (no `tenant_id`) or for one team -
+    every key, null = no ceiling (the default: none)."""
+    return await controls.admin_risk_ceilings(session, tenant_id)
 
 
 @admin_router.put("/risk-ceilings")
 async def put_risk_ceilings(body: RiskCeilingsBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    if body.tenant_id is not None:
+        from app.db.models import Tenant
+        if await session.get(Tenant, body.tenant_id) is None:
+            raise HTTPException(status_code=404, detail="No such organisation")
     try:
-        return await controls.set_risk_ceilings(session, user, body.values)
+        return await controls.set_risk_ceilings(session, user, body.values, body.tenant_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -123,6 +130,68 @@ async def get_marketplace_terms(session: AsyncSession = Depends(get_session)) ->
 async def put_marketplace_terms(body: RiskCeilingsBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
     try:
         return await controls.set_marketplace_terms(session, user, body.values)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class AiPlatformLimitsBody(BaseModel):
+    """M72 PR-1b: the owner's platform-key limits in rupees. A plan's value null = clear it (Not set); `clear_cap` clears the
+    per-user daily cap. Fields left out keep their value."""
+    plan_budget_inr: dict[str, float | None] = Field(default_factory=dict, max_length=10)
+    user_daily_cap_inr: float | None = None
+    clear_cap: bool = False
+
+
+async def _ai_platform_view(session: AsyncSession) -> dict:
+    from app.ai import platform_key
+    from app.plans.registry import PLANS
+    values = await platform_key.limits(session)
+    # The key itself never leaves the host: only whether one is there and for which provider.
+    return {**values, "key_configured": platform_key.configured_provider() is not None, "provider": platform_key.configured_provider(),
+            "plans": [{"id": plan.id, "name": plan.name} for plan in PLANS.values()]}
+
+
+@admin_router.get("/ai-platform")
+async def get_ai_platform(session: AsyncSession = Depends(get_session)) -> dict:
+    """M72 PR-1b (M72Q-1): each plan's monthly platform AI budget and the per-user daily cap (None = Not set)."""
+    return await _ai_platform_view(session)
+
+
+@admin_router.put("/ai-platform")
+async def put_ai_platform(body: AiPlatformLimitsBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    from app.ai import platform_key
+    try:
+        await platform_key.set_limits(session, user, plan_budget_inr=body.plan_budget_inr, user_daily_cap_inr=body.user_daily_cap_inr,
+                                      clear_cap=body.clear_cap)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await _ai_platform_view(session)
+
+
+class AgentLimitsBody(BaseModel):
+    """M72 PR-1c (F20): the Copilot planner's limits; a value null = back to the default. Fields left out keep their value."""
+    values: dict[str, float | None] = Field(default_factory=dict, max_length=10)
+
+
+def _agent_limits_view(limits: Any) -> dict:
+    from app.ai import agent
+    return {"limits": {k: getattr(limits, k) for k in agent.LIMIT_BOUNDS},
+            "defaults": {k: getattr(agent.AgentLimits(), k) for k in agent.LIMIT_BOUNDS},
+            "bounds": {k: {"low": low, "high": high} for k, (low, high) in agent.LIMIT_BOUNDS.items()}}
+
+
+@admin_router.get("/copilot-agent-limits")
+async def get_agent_limits(session: AsyncSession = Depends(get_session)) -> dict:
+    """M72 PR-1c: the Copilot planner's steps, tool calls, seconds and tokens per step (each inside its bounds)."""
+    from app.ai import agent
+    return _agent_limits_view(await agent.admin_limits(session))
+
+
+@admin_router.put("/copilot-agent-limits")
+async def put_agent_limits(body: AgentLimitsBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    from app.ai import agent
+    try:
+        return _agent_limits_view(await agent.set_admin_limits(session, user, body.values))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

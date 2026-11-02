@@ -100,6 +100,7 @@ def _fast(monkeypatch):
 
 # --- A3: no broker session ---------------------------------------------------------------------------------------------
 
+@pytest.mark.real_position_size        # M68 PR-2: with an EMPTY Position size the exit still closes (ADR-0004)
 def test_without_a_broker_session_a_paper_stop_still_exits_on_the_stored_price_and_nothing_enters(monkeypatch, stored_tick):
     t = _tenant(_email("paper"), token_status="EXPIRED")
     dep_id = _deploy(t)

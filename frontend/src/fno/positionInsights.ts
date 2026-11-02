@@ -300,10 +300,13 @@ export function changeSide(open: readonly PosLeg[], closed: ReadonlySet<number>,
   const same = basketLegs.filter((l) => l.underlying === underlying);
   const unpriced = same.filter((l) => !(typeof l.price === "number" && l.price > 0));
   if (unpriced.length) notes.push(`${unpriced.length === 1 ? "A basket leg has" : `${unpriced.length} basket legs have`} no price: enter one in the basket to count ${unpriced.length === 1 ? "it" : "them"}.`);
-  const added = lotSize ? same.filter((l) => typeof l.price === "number" && l.price > 0) : [];
+  // M68 PR-2: a leg with no lots entered yet is left out, said so (never counted as one lot)
+  const unsized = same.filter((l) => l.lots === null);
+  if (unsized.length) notes.push(`${unsized.length === 1 ? "A basket leg has" : `${unsized.length} basket legs have`} no lots entered: enter them in the basket to count ${unsized.length === 1 ? "it" : "them"}.`);
+  const added = lotSize ? same.filter((l) => typeof l.price === "number" && l.price > 0 && l.lots !== null) : [];
   if (!lotSize && same.length) notes.push("The lot size of this contract is not known yet, so the basket legs are left out.");
   const newLegs: PayoffLeg[] = added.map((l) => ({ right: l.right, side: l.side, strike: l.right === "FUT" ? 0 : l.strike, price: l.price as number,
-    units: l.lots * (lotSize as number), expiry: l.expiry }));
+    units: (l.lots as number) * (lotSize as number), expiry: l.expiry }));
   return { legs: [...heldPayoff(kept), ...newLegs], booked: booked === null ? null : round2(booked), newPremium: netPremium(newLegs), added, notes };
 }
 

@@ -8,6 +8,8 @@ import LadderEvidence, { DisciplineWeeks } from "../progression/LadderEvidence";
 import { formatDateTimeIST, formatINR, formatNumber } from "../ui/format";
 import { Details, KeyValueTable, Signed } from "../ui/numbersFirst";
 import { useUiV2 } from "../ui/useFeatures";
+import { CapitalAsk } from "../settings/CapitalAsk";
+import { NOT_SET } from "../settings/tradeSettings";
 
 /**
  * Z3-b (beta spec, Phase 0): the signed-in user's own PAPER account - balance, equity, P&L after charges, the
@@ -15,6 +17,21 @@ import { useUiV2 } from "../ui/useFeatures";
  * the server, computed from this user's own PAPER trades. Hidden when the `paper_account` flag is off (the API answers 404).
  * N2-1 (flag `ladder_evidence`): the discipline criterion's weekly scores and the "Your figures" block, when sent.
  */
+/** PAPER-NR (owner, 1 Nov): the words beside a practice balance below zero. */
+const BELOW_ZERO = "below zero - practice only";
+
+/** PAPER-NR (2): a short practice balance never refuses a PAPER entry, so the balance may go below zero - then it is red
+ * and says so (v2 pages). */
+export function PaperBalanceTile({ balance, v2 }: { balance: number; v2: boolean }) {
+  const below = v2 && balance < 0;
+  return (
+    <StatTile label="Balance" tone={below ? "down" : "default"} valueText={formatNumber(balance, 2)} value={below
+      ? <span className="flex flex-col"><span>{formatNumber(balance, 2)}</span>
+          <span className="text-t12 font-semibold text-down" data-testid="paper-below-zero">{BELOW_ZERO}</span></span>
+      : formatNumber(balance, 2)} />
+  );
+}
+
 export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
   // UX-11 (v2 pages): numbers first - the breakdown as a key-value table and every note under one Details.
   const v2 = useUiV2();
@@ -45,15 +62,17 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
   return (
     <Card title="PAPER account" className="space-y-3">
       <div data-testid="paper-account" className="space-y-3">
+        {/* M68 PR-7 (D4): no starting capital chosen yet - ATP pre-fills none; he sets his own here (or at his first order). */}
+        {account.capital_needed && canTrade && v2 && <CapitalAsk autoFocus={false} id="paper-account-capital" onSaved={() => load()} />}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatTile label="Balance" value={formatNumber(account.balance, 2)} />
-          <StatTile label="Equity (with open marks)" value={formatNumber(account.equity, 2)} />
+          {account.balance === null ? <StatTile label="Balance" value={NOT_SET} /> : <PaperBalanceTile balance={account.balance} v2={v2} />}
+          <StatTile label="Equity (with open marks)" value={account.equity === null ? NOT_SET : formatNumber(account.equity, 2)} />
           <StatTile label="Net P&L (after charges)" value={v2 ? <Signed value={r.net} kind="count" decimals={2} /> : signedMoney(r.net)} tone={v2 ? "default" : r.net > 0 ? "up" : r.net < 0 ? "down" : "default"} />
           <StatTile label="Closed / open" value={`${account.closed_trades} / ${account.open_positions}`} />
         </div>
 {!v2 && <>
         <p className="text-xs text-fg-muted">
-          Start {formatNumber(account.starting_capital)} · gross <span className={signClass(r.gross)}>{signedMoney(r.gross)}</span> − charges {formatNumber(r.charges, 2)} = net{" "}
+          Start {account.starting_capital === null ? NOT_SET : formatNumber(account.starting_capital)} · gross <span className={signClass(r.gross)}>{signedMoney(r.gross)}</span> − charges {formatNumber(r.charges, 2)} = net{" "}
           <span className={signClass(r.net)}>{signedMoney(r.net)}</span> · open marks <span className={signClass(account.unrealised)}>{signedMoney(account.unrealised)}</span> ·
           {" "}proposals: {account.proposals.approved_by_you} approved, {account.proposals.rejected_by_you} rejected, {account.proposals.pending} waiting ·
           {" "}{account.not_taken.length} not taken (would-have records)
@@ -73,8 +92,8 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
               <button disabled={busy} onClick={() => void run(() => api.paperPause(), "New PAPER entries paused; exits keep running.")}
                       className="min-h-[44px] rounded border border-border px-2 py-1 text-fg hover:bg-surface-2 disabled:opacity-50 sm:min-h-0">Pause new PAPER entries</button>
             )}
-            {account.closed_trades + account.open_positions + account.excluded_trades === 0 && <>
-            <input type="number" min={10000} placeholder="Starting capital" value={capital} onChange={(e) => setCapital(e.target.value)}
+            {(account.capital_needed || account.closed_trades + account.open_positions + account.excluded_trades === 0) && !(account.capital_needed && v2) && <>
+            <input type="number" min={1} placeholder="Starting capital" value={capital} onChange={(e) => setCapital(e.target.value)}
                    className="min-h-[44px] w-36 rounded border border-border bg-surface-2 px-2 py-1 sm:min-h-0" aria-label="Starting capital" />
             <button disabled={busy || !capital} onClick={() => void run(() => api.setPaperCapital(Number(capital)), "Starting capital saved.")}
                     className="min-h-[44px] rounded border border-border px-2 py-1 text-fg hover:bg-surface-2 disabled:opacity-50 sm:min-h-0">Set</button>
@@ -116,6 +135,7 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
                 );
               })}
             </ul>
+            {ladder.targets_note && <p className="text-xs text-fg-muted" data-testid="ladder-targets-note">{ladder.targets_note}</p>}
             {ladder.evidence && <LadderEvidence evidence={ladder.evidence} />}
             {!v2 && <p className="text-xs text-fg-muted">Figures from your own PAPER trades, as of {formatDateTimeIST(ladder.as_of)}.</p>}
           </div>
@@ -124,7 +144,8 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
         {v2 && (
           <Details id="mytrades.paper-account">
             <KeyValueTable caption="How the net is worked out" rows={[
-              { label: "Starting capital", value: formatINR(account.starting_capital, { paise: true }) },
+              { label: "Starting capital", value: account.starting_capital === null ? NOT_SET : formatINR(account.starting_capital, { paise: true }) },
+              ...(account.charges_model ? [{ label: "Charges on a new paper trade", value: account.charges_model.words }] : []),
               { label: "Gross P&L", value: <Signed value={r.gross} paise /> },
               { label: "Charges", value: formatINR(r.charges, { paise: true }) },
               { label: "Net P&L", value: <Signed value={r.net} paise /> },

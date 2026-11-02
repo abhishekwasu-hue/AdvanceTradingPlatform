@@ -246,6 +246,7 @@ async def paper_execute(
     # M68 PR-1: the anonymous demo has no account, so no Trade settings; it places and stores nothing - its simulated fill
     # is shown at the signal's own price as a market fill (allow-list: a demo, not an order).
     router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=risk_config, product="MIS", order_style="MARKET")
+    router.risk_manager.one_lot_if_unsized = True     # M68 PR-2: the demo's simulated fill is one lot (stores nothing)
     try:
         result = await router.execute(signal, TradingDayState())
     except LiveTradingNotConfigured as exc:

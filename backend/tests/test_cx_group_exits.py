@@ -155,6 +155,7 @@ def test_a_sold_position_without_a_structure_role_is_a_short():
 
 # --- CX7: fires once, sold legs first -------------------------------------------------------------------------------------
 
+@pytest.mark.real_position_size        # M68 PR-2: with an EMPTY Position size the exit still closes (ADR-0004)
 def test_a_combined_stop_fires_once_and_closes_the_short_before_its_hedge(closes):
     t = _org()
     short, hedge = _spread(t, "CXA")
@@ -296,6 +297,7 @@ def test_an_armed_exit_whose_legs_were_all_closed_another_way_ends(closes):
 
 # --- CX5: never blocked -----------------------------------------------------------------------------------------------------
 
+@pytest.mark.real_position_size        # M68 PR-2: with an EMPTY Position size the exit still closes (ADR-0004)
 def test_the_combined_exit_closes_with_the_kill_switch_on_and_every_entry_gate_refusing(closes, monkeypatch):
     t = _org()
     short, hedge = _spread(t, "CXD")

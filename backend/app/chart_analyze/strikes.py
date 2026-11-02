@@ -27,7 +27,8 @@ from app.core.enums import ExpiryRule, InstrumentKind, OptionPosition, OptionStr
 from app.db.models import StrategyDeploymentRecord
 from app.instruments import master
 from app.instruments.contracts import ContractResolutionError, ContractRules, option_right, select_expiry, select_strike
-from app.instruments.spreads import RATIO_SHORTS, plan_side, structure_sides
+from app.instruments.option_defaults import NEEDS_PREFIX
+from app.instruments.spreads import plan_side, structure_sides
 
 IST = ZoneInfo("Asia/Kolkata")
 SOURCE = "your_settings"
@@ -83,7 +84,7 @@ def describe(dep: StrategyDeploymentRecord, side: str) -> str:
     width = int(dep.spread_width or 0)
     wing = f"{width} strike{'s' if width != 1 else ''} away"
     if strategy in (OptionStrategy.CALL_RATIO_SPREAD, OptionStrategy.PUT_RATIO_SPREAD):
-        return f"{STRUCTURE_NAMES[strategy]} · main strike {main} · {RATIO_SHORTS} × second strike {wing} · {expiry}"
+        return f"{STRUCTURE_NAMES[strategy]} · main strike {main} · {rules.ratio_shorts or '?'} × second strike {wing} · {expiry}"
     return f"{STRUCTURE_NAMES[strategy]} · main strike {main} · wing {wing} · {expiry}"
 
 
@@ -128,8 +129,10 @@ async def _legs(session: AsyncSession, dep: StrategyDeploymentRecord, side: str,
             continue
         _sides, primary_role = structure_sides(strategy, direction)
         try:
-            planned = plan_side(strategy, right, main, ladder, int(dep.spread_width or 0), primary_role)
-        except ContractResolutionError:
+            planned = plan_side(strategy, right, main, ladder, int(dep.spread_width or 0), primary_role, rules.ratio_shorts)
+        except ContractResolutionError as exc:
+            if NEEDS_PREFIX in str(exc):          # M68 PR-4: a ratio Not set on this bot
+                return {"expiry": expiry.isoformat(), "legs": None, "note": str(exc)}
             return {"expiry": expiry.isoformat(), "legs": None, "note": "The option list has no strike where the wing would sit."}
         # The main strike first, then the others, as the structure is described.
         planned = sorted(planned, key=lambda leg: leg.strike != main)

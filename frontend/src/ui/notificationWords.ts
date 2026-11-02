@@ -23,6 +23,7 @@ const EVENT_WORDS: Readonly<Record<string, string>> = {
   OI_COLLECTOR: "Open interest data",
   SETTLEMENT_WARNING: "Settlement reminder",
   STRUCTURE_INCOMPLETE: "Order only partly placed",
+  COPILOT_WATCH: "Copilot watch",
 };
 
 /** "Daily loss limit reached"; an unknown code becomes words ("NEW_KIND" -> "New kind"), never the code itself. */

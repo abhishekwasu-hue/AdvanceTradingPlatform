@@ -138,7 +138,7 @@ def test_plan_carries_the_background_and_the_high_fear_warning():
                                    last_price=24.0, change_pct=9.0, payload_json="{}", captured_at=datetime.now(UTC))))
     df = _sessions(days=5)
     candles = [{"timestamp": ts.isoformat(), "open": r.open, "high": r.high, "low": r.low, "close": r.close, "volume": r.volume} for ts, r in df.iterrows()]
-    r = client.post("/api/ai/interview/plan", headers=headers, json={"answers": {"language": "en", "experience": "new"}, "candles": candles})
+    r = client.post("/api/ai/interview/plan", headers=headers, json={"answers": {"language": "en", "experience": "new", "symbol": "NIFTY 50"}, "candles": candles})
     assert r.status_code == 200, r.text
     plan = r.json()
     background = next(s for s in plan["sections"] if s["id"] == "background")

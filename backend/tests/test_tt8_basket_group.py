@@ -131,13 +131,28 @@ def test_exits_pass_with_the_kill_switch_on_limits_hit_and_approval_only(condor)
         client.post("/api/kill-switch/tenant/disengage", headers=t["headers"])
 
 
-def test_no_price_closes_nothing_in_the_group(condor, monkeypatch):  # noqa: F811 - the fixture
+def test_legs_with_no_price_still_close_at_their_entry_price_and_say_so(condor, monkeypatch):  # noqa: F811 - the fixture
+    """M68 PR-3 (TS1-097, ADR-0004 - exits are never blocked; open question M68Q-PR3-3): before, one leg without a price
+    closed nothing (409). Now every leg closes: the leg with a live price at that price, each leg with no live and no recent
+    price at its entry price (P&L exactly 0 before charges), and each trade's reason names its own price source."""
     t, _, legs = _basket(condor, "noprice")
     from tests.test_fno2_basket import _prices
-    _prices(monkeypatch, {legs["short_put"][2]: 80.0})           # only one leg has a price now; no recent mark either
-    out = _exit(t, _by_symbol(t["tenant_id"])[legs["short_put"][2]].id, "exit-group")
-    assert out.status_code == 409 and "Nothing was closed" in out.json()["detail"]
-    assert all(tr.exit_time is None for tr in _trades(t["tenant_id"]))
+    priced = legs["short_put"][2]
+    _prices(monkeypatch, {priced: 80.0})                          # only one leg has a price now; no recent mark either
+    before = {tr.id: (tr.symbol, tr.entry_price, tr.quantity, tr.direction, tr.leg_role) for tr in _trades(t["tenant_id"])}
+    out = _exit(t, _by_symbol(t["tenant_id"])[priced].id, "exit-group")
+    assert out.status_code == 200, out.text
+    assert out.json()["status"] == "CLOSED" and len(out.json()["legs"]) == 4
+    after = _trades(t["tenant_id"])
+    assert {tr.id: (tr.symbol, tr.entry_price, tr.quantity, tr.direction, tr.leg_role) for tr in after} == before   # nothing else changed
+    for tr in after:
+        assert tr.exit_time is not None, tr.symbol
+        if tr.symbol == priced:
+            assert tr.exit_price == 80.0 and tr.exit_reason == "Exit the whole group (live price)"
+        else:
+            assert tr.exit_price == tr.entry_price, tr.symbol
+            assert tr.exit_reason == "Exit the whole group (entry price (no price was seen))", tr.exit_reason
+            assert round(tr.pnl + tr.charges, 2) == 0.0, tr.symbol          # pnl = gross - charges: the gross is exactly 0
 
 
 def test_leg_and_group_exits_are_the_callers_own(condor):  # noqa: F811 - the fixture

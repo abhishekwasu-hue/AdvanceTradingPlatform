@@ -376,7 +376,7 @@ def test_no_new_entries_after_cutoff_but_monitoring_continues(monkeypatch):
 
     report = _run(worker.run_cycle(now=datetime(2026, 9, 25, 15, 5, tzinfo=IST)))
     assert report.signals_executed == 0 and _trades(t["tenant_id"]) == []
-    assert "no new entries after" in _get(StrategyDeploymentRecord, dep_id).last_error
+    assert "No new entries after 15:00 IST (your setting)" in _get(StrategyDeploymentRecord, dep_id).last_error   # M68 PR-3: his own
 
 
 def test_square_off_flattens_open_positions_after_1515(monkeypatch):

@@ -3,7 +3,7 @@
 Limits live at scopes - GLOBAL -> TENANT -> USER -> ACCOUNT -> STRATEGY -> INSTRUMENT - and an
 order is checked against *every* limit that applies to it; when several scopes carry the same
 limit type, the strictest (smallest) wins. Each check writes a `risk_events` row (PASS, WARN at
-80% of the limit, BLOCK), so "why was this order refused" and "how close are we" are both
+the admin's own "warn at" share of the limit - M68 PR-5, TS1-059: none unless set - and BLOCK), so "why was this order refused" and "how close are we" are both
 answered from one append-only table.
 
 The evaluator runs *after* the risk engine has sized the order (it needs the quantity) and
@@ -28,11 +28,13 @@ from app.core.enums import KillSwitchScope, NotificationSeverity, NotificationTy
 from app.db.models import RiskEventRecord, RiskLimitRecord, TradeRecord, User
 from app.kill_switch.checks import engage
 from app.notifications.service import notify
+from app.risk_engine import paper_nr
 from app.trading.trade_split import not_a_split
 
 logger = logging.getLogger(__name__)
 
-WARN_FRACTION = 0.8
+# M68 PR-5 (TS1-059): the WARN notice fires at the share of a limit a platform admin set as the ceiling `warn_at_pct`
+# (app/platform/controls.py; for every organisation or one team). Not set = no WARN notice (was a fixed 80 %).
 
 CURRENCY_TYPES = {RiskLimitType.MAX_DAILY_LOSS, RiskLimitType.MAX_STRATEGY_LOSS, RiskLimitType.MAX_LOSS_PER_TRADE, RiskLimitType.MAX_ORDER_VALUE,
                   RiskLimitType.MAX_GROSS_EXPOSURE}
@@ -202,6 +204,9 @@ async def evaluate(session: AsyncSession, ctx: RiskContext, *, user: Optional[Us
         return verdict
     if not limits:
         return verdict
+    from app.platform.controls import risk_ceilings
+    warn_pct = (await risk_ceilings(session, ctx.tenant_id)).get("warn_at_pct")
+    warn_fraction = float(warn_pct) / 100.0 if warn_pct is not None else None
     by_type = strictest(limits)
     for type_name, rule in by_type.items():
         limit_type = RiskLimitType(type_name)
@@ -214,9 +219,10 @@ async def evaluate(session: AsyncSession, ctx: RiskContext, *, user: Optional[Us
             # M64 RM-3: an organisation / admin ceiling - one plain sentence with the numbers, and who can change it.
             reason = (f"Your organisation's limit on {LIMIT_WORDS.get(limit_type, 'this order')}: {label} {_fmt(limit_type, current)} "
                       f"exceeds limit {_fmt(limit_type, rule.limit_value)}. Ask your admin.")
-        elif current >= rule.limit_value * WARN_FRACTION:
+        elif warn_fraction is not None and current >= rule.limit_value * warn_fraction:
             status, action, severity = "WARN", RiskAction.WARN, NotificationSeverity.WARNING
-            reason = f"{limit_type.value} ({rule.scope.lower()}): {label} {_fmt(limit_type, current)} is within 20% of limit {_fmt(limit_type, rule.limit_value)}"
+            reason = (f"{limit_type.value} ({rule.scope.lower()}): {label} {_fmt(limit_type, current)} has reached {warn_pct:g}% "
+                      f"of limit {_fmt(limit_type, rule.limit_value)}")
         else:
             status, action, severity = "PASS", RiskAction.ALLOW, NotificationSeverity.INFO
             reason = f"{limit_type.value} ({rule.scope.lower()}): {label} {_fmt(limit_type, current)} within limit {_fmt(limit_type, rule.limit_value)}"
@@ -241,7 +247,8 @@ async def evaluate(session: AsyncSession, ctx: RiskContext, *, user: Optional[Us
 
     # Consequences: stop the strategy / the tenant so the next signal is refused at the door.
     for check in verdict.checks:
-        if check.status != "BLOCK" or user is None:
+        # PAPER-NR (4): a PAPER block refuses the order but never engages a STRATEGY / TENANT kill switch.
+        if check.status != "BLOCK" or user is None or not paper_nr.engages_kill_switch(ctx.mode):
             continue
         limit_type = RiskLimitType(check.rule.limit_type)
         try:

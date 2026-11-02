@@ -49,6 +49,7 @@ from app.brokers.models import (
     OptionChain,
     OptionChainRow,
     Quote,
+    lot_or_none,
 )
 from app.brokers.timestamps import parse_broker_timestamp
 from app.core.enums import OrderSide
@@ -283,16 +284,13 @@ class FyersBroker(BrokerInterface):
                 expiry = None
             strike, option_type, underlying = _contract_fields(row, ticker)
             instrument_type = option_type if option_type in ("CE", "PE") else ("FUT" if expiry and exchange in ("NFO", "BFO", "MCX") else ("INDEX" if ticker.upper().endswith("-INDEX") else "EQ"))
-            try:
-                lot = float(row[3] or 1)
-            except (TypeError, ValueError):
-                lot = 1.0
+            lot = lot_or_none(row[3])      # M68 TS1-088: none given = None, never 1
             try:
                 tick = float(row[4] or 0.05)
             except (TypeError, ValueError):
                 tick = 0.05
             out.append(Instrument(instrument_token=str(row[0]).strip(), exchange=exchange, tradingsymbol=symbol, name=underlying or (row[1].strip() or None),
-                                  segment=segment, instrument_type=instrument_type, lot_size=lot or 1.0, tick_size=tick or 0.05, expiry=expiry, strike=strike))
+                                  segment=segment, instrument_type=instrument_type, lot_size=lot, tick_size=tick or 0.05, expiry=expiry, strike=strike))
             tickers[(exchange, symbol)] = ticker
         return out, tickers
 

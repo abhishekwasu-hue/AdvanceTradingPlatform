@@ -84,7 +84,8 @@ export interface OrderPreview {
   stop_loss: number | null;
   margin: MoneyLine | null;
   max_loss: MoneyLine | null;
-  charges: { total: number; estimated: boolean } | null;
+  /** M68 PR-7: `words` - his own paper charges in plain words (Not set: statutory charges only). */
+  charges: { total: number; estimated: boolean; words?: string } | null;
   /** M64 RM-3: `blocks` - each Risk limits refusal as a block message (sentence, link, the smaller size offered). */
   risk: { risk_per_trade?: number; allowed_lots?: number; blocks?: RiskBlock[] };
   errors: string[];
@@ -135,8 +136,9 @@ export interface PracticeAccount {
   role: "PRIMARY" | "SECONDARY" | null;
   group_name: string | null;
   enabled: boolean;
-  sizing_mode: "FIXED" | "MULTIPLIER" | "PCT_CAPITAL";
-  sizing_value: number;
+  /** M68 PR-2 (TS1-024): null = Not set - his Trade settings > Position size > Extra paper accounts, else not placed. */
+  sizing_mode: "FIXED" | "MULTIPLIER" | "PCT_CAPITAL" | null;
+  sizing_value: number | null;
 }
 
 export interface MultiRow { account_id: number; label: string; status: string; lots: number; trade_id: number | null; reasons: string[] }
@@ -210,7 +212,7 @@ export type BasketNumbers = Evaluation & {
 };
 export type BasketEvaluation = BasketNumbers | { ok: false; errors: string[] };
 
-export interface BasketSettings { source: string | null; width_steps: number; lots: number; stop_pct: number | null; note: string }   // DEF-0: null = no stop of his own
+export interface BasketSettings { source: string | null; width_steps: number | null; lots: number | null; stop_pct: number | null; note: string }   // DEF-0: null = no stop of his own; M68 PR-2: null = no width / lots of his own
 
 export interface BasketPreviewLeg extends OrderPreview { seq: number; leg: number; role: "hedge" | "short" }
 export interface BasketPreview {

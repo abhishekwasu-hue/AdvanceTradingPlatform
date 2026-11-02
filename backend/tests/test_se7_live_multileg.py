@@ -466,7 +466,7 @@ def test_live_complete_the_rest_needs_a_broker_and_the_lock_refuses_it(monkeypat
 def test_the_answer_settings_have_bounds_and_a_safe_default():
     t = _tenant("se7-prefs@example.com")
     got = client.get("/api/me/prefs", headers=t["headers"]).json()["prefs"]["smart_execution"]
-    assert got["on_no_answer"] == "close_filled" and got["answer_minutes"] == 5
+    assert got["on_no_answer"] is None and got["answer_minutes"] is None        # M68 PR-3 (TS1-030): Not set - no timer
     base = {"settlement_days_before": 4, "settlement_band_pct": 2, "settlement_telegram": True, "protection_band_pct": 0.5}
     for bad in ({"answer_minutes": 0}, {"answer_minutes": 121}, {"on_no_answer": "unwind"}):
         assert client.put("/api/me/prefs/smart_execution", headers=t["headers"], json={**base, **bad}).status_code == 422

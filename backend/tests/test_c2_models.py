@@ -16,6 +16,7 @@ from app.backtest import engine
 from app.backtest.models import FixedPctSlippage, ModelError, ModelSet
 from app.backtest.repro import result_hash
 from app.core.enums import SignalDirection
+from app.execution.paper_charges import PaperCharges
 from app.strategy_engine.registry import registry
 from tests.test_auth_api import client
 from tests.test_deployments_api import _auth
@@ -34,6 +35,7 @@ RISK = legacy(capital=1_000_000, risk_per_trade_pct=GOLDEN["risk_per_trade_pct"]
 # the pre-C2 engine did not have - is left out of the hash. The default "next session" counter is tested in
 # tests/test_cp6_15_loss_streak.py.
 GOLDEN_RISK = RISK.model_copy(update={"loss_streak_pause": "until_resume"})
+PRE_M68_CHARGES = PaperCharges(brokerage_per_order=20.0, slippage_pct=0.02)   # M68 PR-7: the recorded goldens ran at the former ₹20 / 0.02 % - a trader who saved them
 
 
 def _run(strategy, models=None, risk=None):
@@ -41,7 +43,8 @@ def _run(strategy, models=None, risk=None):
     df = crafted_bars(208 if daily else 4, daily=daily)
     # REV-S1: the golden was recorded before the backtest took the live INTRADAY cut-off / square-off (crafted bars run
     # around the clock); it is re-run on that engine. The session rules are tested in tests/test_rev1_s1_s2_backtest_intraday.py.
-    return engine.run_backtest(strategy, df, "NIFTY 50", "day" if daily else "1min", risk or RISK, models=models, session_rules=False)
+    return engine.run_backtest(strategy, df, "NIFTY 50", "day" if daily else "1min", risk or RISK, models=models, session_rules=False,
+                               charges=PRE_M68_CHARGES)
 
 
 def _golden_hash(result):

@@ -12,7 +12,10 @@ returns today. With it ON the order is:
    touched. The model follows the task's tier (the user never picks one). The plan's AI gate and the organisation's
    data-sharing consent do not apply: the user pays and accepted their own consent (SR-3).
 2. **The organisation's own key** (`ai_provider_configs`, `app.ai.settings.provider_for`), unchanged.
-3. **The rule-based answer** - and where a feature cannot answer from rules, the one refusal `detail.code =
+3. **The platform key** (M72 PR-1b, flag `ai_platform_key`, `app.ai.platform_key`) - only when the organisation has no
+   key of its own: the operator's key on the host, inside the plan's platform budget and the per-user daily cap (both Not
+   set until the owner sets them; a cap reached = a hard stop, then the rules).
+4. **The rule-based answer** - and where a feature cannot answer from rules, the one refusal `detail.code =
    "ai_not_connected"` (`not_connected()`), on which the frontend opens the Connect AI panel.
 
 Background jobs (news classification, research jobs) never come here: they stay on the organisation's key. The AI never
@@ -215,7 +218,24 @@ async def provider_for_user(session: AsyncSession, user: User, tenant: Tenant, t
         if own is not None:
             return own
     extra: Dict[str, Any] = {"client": client} if client is not None else {}     # the exact call of today (tests swap it)
-    return await ai_settings.provider_for(session, tenant, task=task, user_id=user.id, **extra)
+    user_id = int(user.id)
+    org = await ai_settings.provider_for(session, tenant, task=task, user_id=user.id, **extra)
+    if isinstance(org, RuleBasedProvider) and not await org_has_own_key(session, int(tenant.id)):
+        # M72 PR-1b: the platform key (flag `ai_platform_key`) when the organisation has no key of its own - inside the
+        # plan's platform budget and the per-user daily cap, else the rules with the reason. None = today's answer.
+        from app.ai import platform_key
+        platform = await platform_key.provider_for(session, user_id, tenant, task, need_vision=need_vision, client=client)
+        if platform is not None:
+            return platform
+    return org
+
+
+async def org_has_own_key(session: AsyncSession, tenant_id: int) -> bool:
+    """The organisation saved a key of its own (an enabled outside provider): its own choices then stand (its budget, its
+    consent, its plan gate) and the platform key never stands in for it."""
+    from app.ai import settings as ai_settings
+    record = await ai_settings.get_config(session, tenant_id)
+    return record is not None and bool(record.enabled) and record.provider != "rule_based" and bool(record.encrypted_api_key)
 
 
 async def refuse_if_not_connected(session: AsyncSession, tenant_id: int, provider: Any) -> None:
@@ -226,11 +246,16 @@ async def refuse_if_not_connected(session: AsyncSession, tenant_id: int, provide
 
 async def mark_used(session: AsyncSession, tenant_id: int, provider: Any, error: Optional[str] = None) -> None:
     """The organisation's "last used" stamp - only for a call that ran on the organisation's key (R3)."""
-    if isinstance(provider, UserKeyProvider):
-        return
+    if isinstance(provider, UserKeyProvider) or is_platform_key(provider):
+        return                                          # neither ran on the organisation's own key
     from app.ai import settings as ai_settings
     await ai_settings.mark_used(session, tenant_id, error=error)
 
 
 def is_user_key(provider: Any) -> bool:
     return isinstance(provider, UserKeyProvider)
+
+
+def is_platform_key(provider: Any) -> bool:
+    from app.ai.platform_key import PlatformKeyProvider
+    return isinstance(provider, PlatformKeyProvider)

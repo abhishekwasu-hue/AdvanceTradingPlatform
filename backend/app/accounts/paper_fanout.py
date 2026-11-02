@@ -106,9 +106,9 @@ async def update(session: AsyncSession, user: User, row: PaperSubAccountRecord, 
         row.enabled = enabled
         changes.append("on" if enabled else "off")
     if sizing_mode is not None or sizing_value is not None:
-        mode = (sizing_mode or row.sizing_mode).upper()
+        mode = (sizing_mode or row.sizing_mode or "").upper()
         value = row.sizing_value if sizing_value is None else float(sizing_value)
-        if mode not in fp.SIZING_MODES or value <= 0:
+        if mode not in fp.SIZING_MODES or value is None or value <= 0:
             raise FanoutRefused("Sizing is FIXED lots, MULTIPLIER of the Primary's lots or PCT_CAPITAL, with a value above zero.", "bad_sizing")
         row.sizing_mode, row.sizing_value = mode, value
         changes.append(f"sizing {mode} {value:g}")
@@ -138,7 +138,10 @@ async def place(session: AsyncSession, user: User, ask: Any, *, override: Option
         raise FanoutRefused(str(exc), "bad_override") from None
     if not route.accounts and not route.skipped:
         raise FanoutRefused("No simulated account matches: give one account the Primary role first.", "no_accounts")
-    sizing = {r.id: fp.Sizing(r.sizing_mode, r.sizing_value) for r in rows}
+    # M68 PR-2 (TS1-024): the account's own sizing, else his Trade settings > Position size > Extra paper accounts.
+    from app.execution import position_size
+    mine = await position_size.load(session, user)
+    sizing = {r.id: fp.Sizing(*position_size.fanout_sizing(mine, r.sizing_mode, r.sizing_value)) for r in rows}
     margin_per_lot: Optional[float] = None
     if route.accounts:
         # One lot's margin, the ticket's own estimate: % of capital sizing and the per-account capital check (MB-6) use
@@ -147,17 +150,14 @@ async def place(session: AsyncSession, user: User, ask: Any, *, override: Option
         value = (one.get("margin") or {}).get("value")
         margin_per_lot = float(value) if value else None
     plan = fp.size(route, sizing, primary_lots=int(ask.lots), lot_size=1, margin_per_lot=margin_per_lot)
-    # MB-6 pre-send check per account (PAPER): the account's own capital must cover the estimated margin of its lots.
+    # MB-6 pre-send check per account (PAPER): the account's own capital against the estimated margin of its lots.
+    # PAPER-NR (2): paper capital never refuses a PAPER entry - the account is placed, with the margin vs capital line.
+    practice: dict[int, list[str]] = {}
     if margin_per_lot:
-        kept = []
+        from app.risk_engine import paper_nr
         for leg in plan.legs:
             need = margin_per_lot * leg.lots
-            if float(by_id[leg.account_id].capital) < need:
-                plan.skipped.append(fp.Skip(leg.account_id, f"capital {float(by_id[leg.account_id].capital):,.0f} is below the "
-                                                            f"estimated margin {need:,.0f} for {leg.lots} lot(s)"))
-            else:
-                kept.append(leg)
-        plan.legs = kept
+            practice[leg.account_id] = [paper_nr.margin_info(need, float(by_id[leg.account_id].capital))]
     rows_out: List[Dict[str, Any]] = [{"account_id": s.account_id, "label": by_id[s.account_id].label, "status": "SKIPPED",
                                        "reasons": [s.reason], "trade_id": None, "lots": 0} for s in plan.skipped]
     # The Primary first (MB-5: Secondaries only after the Primary was accepted, for entries).
@@ -180,7 +180,7 @@ async def place(session: AsyncSession, user: User, ask: Any, *, override: Option
                 trade.paper_sub_account_id = row.id
                 trade.paper_fanout_ref = ask.client_ref
         rows_out.append({"account_id": row.id, "label": row.label, "status": result.get("status"), "lots": leg.lots,
-                         "trade_id": result.get("trade_id"), "reasons": list(result.get("reasons") or [])})
+                         "trade_id": result.get("trade_id"), "reasons": practice.get(row.id, []) + list(result.get("reasons") or [])})
     summary = {"why": route.why, "override": override, "results": rows_out}
     await _alert_failures(session, user, ask.client_ref, rows_out)
     await write_audit_log(session, user.tenant_id, user.id, "paper_fanout_order",

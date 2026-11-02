@@ -431,7 +431,8 @@ async def _stored_older(session: AsyncSession, user: User, key: str, bars: list[
     # stamped in the broker's own zone (India time without bars): 15M / 1H buckets are anchored to 09:15 of the FIRST
     # bar's zone, and one frame never mixes two zones
     zone = (bars[0].timestamp.tzinfo if bars else None) or IST
-    out = [OHLCVBar(timestamp=(_as_utc(r[0]) - minute).astimezone(zone), open=r[2], high=r[3], low=r[4], close=r[5], volume=float(r[6] or 0)) for r in rows]
+    out = [OHLCVBar(timestamp=(_as_utc(r[0]) - minute).astimezone(zone), open=r[2], high=r[3], low=r[4], close=r[5],
+                    volume=float("nan") if r[6] is None else float(r[6])) for r in rows]   # M71 PL-7: missing volume = null
     first_broker = _as_utc(bars[0].timestamp) if bars else None
     return [b for b in out if first_broker is None or b.timestamp < first_broker]
 

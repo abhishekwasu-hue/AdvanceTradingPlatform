@@ -98,7 +98,7 @@ for (const width of [1440, 390]) {
 // "polling" (no notice); the renew panel shows "saved, valid till <date>" with the daily login and Replace.
 const EXPIRED_DAILY = { ...CONNECTED[0], token_status: "EXPIRED", needs_login: true };
 const ANALYTICS = { analytics_token_set: true, analytics_token_expires_at: "2027-10-20T18:30:00+00:00", analytics_token_expired: false };
-const SAVED_EXPIRED_DAILY = [{ ...EXPIRED_DAILY, ...ANALYTICS }];
+const SAVED_EXPIRED_DAILY = [{ ...EXPIRED_DAILY, ...ANALYTICS, data_usable: true }];
 // The panel tests open it from the one notice (the page's own broker card would ask instead when the row reads expired).
 const SAVED = [{ ...CONNECTED[0], ...ANALYTICS }];
 const NOT_SAVED = [{ ...CONNECTED[0], analytics_token_set: false, analytics_token_expires_at: null, analytics_token_expired: null }];

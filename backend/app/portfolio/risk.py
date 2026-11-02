@@ -138,12 +138,12 @@ def bucket_label(underlying: str, sector: Optional[str], index_underlyings: Iter
 
 
 def one_sided_warning(bullish: int, bearish: int) -> Optional[str]:
-    """Trade's rule: two or more directional positions, all on one side (neutral ones are not counted)."""
+    """Trade's rule: two or more directional positions, all on one side (neutral ones are not counted). M76-3 (owner-
+    approved, M76Q-3): a count only - no judgement clause - shown on Portfolio and never in the pre-trade card."""
     directional = bullish + bearish
     if directional >= 2 and (bullish == directional or bearish == directional):
         side = "bullish" if bullish == directional else "bearish"
-        return (f"All {directional} directional positions are {side}: one large move against them hits them together "
-                "(correlated risk, no diversification).")
+        return f"All {directional} directional positions are {side}."
     return None
 
 

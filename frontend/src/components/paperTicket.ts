@@ -9,7 +9,7 @@ export interface TicketForm {
 }
 
 export const EMPTY_FORM: TicketForm = {
-  symbol: "", direction: "LONG", setup: "PULLBACK_AT_LEVEL", entry: "", stop_loss: "", target: "", time_stop: "", invalidation: "",
+  symbol: "", direction: "LONG", setup: "", entry: "", stop_loss: "", target: "", time_stop: "", invalidation: "",
   quantity: "", checklist: {}, override: false, override_reason: "",
 };
 
@@ -28,7 +28,7 @@ export function planFromForm(form: TicketForm): { plan: TicketPlan | null; missi
   const quantity = positive(form.quantity);
   return {
     plan: {
-      symbol: form.symbol.trim().toUpperCase(), direction: form.direction, setup: form.setup, entry, stop_loss: stop, target,
+      symbol: form.symbol.trim().toUpperCase(), direction: form.direction, setup: form.setup.trim(), entry, stop_loss: stop, target,
       time_stop: form.time_stop.trim() || null, invalidation: form.invalidation.trim() || null, checklist: form.checklist,
       quantity, override: form.override, override_reason: form.override ? form.override_reason.trim() || null : null,
     },
@@ -93,4 +93,11 @@ export function pendingLine(status: Pick<PaperRiskStatus, "pending" | "labels">)
   const parts = Object.entries(status.pending.values).map(([k, v]) => `${status.labels[k as keyof typeof status.labels] ?? k} ${v === null ? "not set" : v}`);
   const day = new Date(`${status.pending.from}T00:00:00+05:30`).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
   return `Looser limits take effect on ${day} (not during the day they protect): ${parts.join(", ")}`;
+}
+
+/** M76-1: "Your checklist: 4 of 6 ticked" for a stored plan whose own rules were not all ticked; null otherwise. */
+export function checklistNote(checklist: Record<string, boolean>): string | null {
+  const ticks = Object.values(checklist);
+  if (ticks.length === 0 || ticks.every(Boolean)) return null;
+  return `your checklist ${ticks.filter(Boolean).length} of ${ticks.length} ticked`;
 }

@@ -106,6 +106,18 @@ def _open(t: dict, *, symbol="RELIANCE", stop=95.0, entry=100.0) -> int:
     return _run(go())
 
 
+def _own_rules(t: dict, rules: list) -> None:
+    """M76-1: his own journal checklist rules (M62 JN-2), saved as the journal settings page saves them."""
+    from app.journal import settings as journal_settings
+
+    async def go():
+        async with _session_factory() as session:
+            user = await session.get(User, t["user_id"])
+            await journal_settings.save(session, user, {"checklist_rules": rules})
+            await session.commit()
+    _run(go())
+
+
 def _plan(**kw) -> dict:
     body = {"symbol": "RELIANCE", "direction": "LONG", "setup": "PULLBACK_AT_LEVEL", "entry": 100.0, "stop_loss": 98.0, "target": 104.0,
             "invalidation": "Close back below the level", "checklist": {k: True for k in ("trend_aligned", "level_identified", "pullback_confirmed",
@@ -296,7 +308,10 @@ def test_ticket_preview_sizes_from_the_cap_and_shows_the_cost_line():
     assert s["suggested_quantity"] == 5000 and s["quantity"] == 5000 and s["risk_amount"] == 10_000.0 and s["gauge"] == 1.0
     assert view["reward_risk"] == 2.0 and view["can_place"] and view["confirm_label"] == "Place PAPER: BUY 5000 RELIANCE"
     assert view["costs"]["total"] > 0 and view["costs"]["break_even_move"] > 0 and view["checklist_complete"] is True
-    assert {c["key"] for c in view["checklist"] if c["auto"]} == {"rr_ok", "size_within_cap"}
+    # M76-1 (owner-approved, M76Q-3): the checklist is his own journal rules - none saved = no checklist at all; the two
+    # facts read against his own minimum and cap are `auto_checks`, no longer checklist items.
+    assert view["checklist"] == [] and {c["key"] for c in view["auto_checks"]} == {"rr_ok", "size_within_cap"}
+    assert not any("checklist" in w.lower() for w in view["warnings"])
     # The organisation's own limit is stricter: it binds (ADR-0003).
     _org(t, capital=100_000.0, risk_pct=1.0)
     s = _preview(t)["sizing"]
@@ -308,8 +323,20 @@ def test_ticket_preview_sizes_from_the_cap_and_shows_the_cost_line():
     low = _preview(t, target=102.0)
     assert not low["can_place"] and any("below your minimum" in r for r in low["refusals"])
     assert any("Time stop" in e for e in _preview(t, time_stop="16:10")["errors"])
-    skipped = _preview(t, checklist={"trend_aligned": True})
-    assert skipped["can_place"] and skipped["checklist_complete"] is False and any("discipline miss" in w for w in skipped["warnings"])
+    # M76-1: with his own rules saved, an unticked rule is one line of facts - never a block, never "a discipline miss".
+    rules = ["Trend agrees", "Area marked before entry", "Commitment candle closed"]
+    _own_rules(t, rules)
+    skipped = _preview(t, checklist={"Trend agrees": True})
+    assert [c["key"] for c in skipped["checklist"]] == rules
+    assert skipped["can_place"] and skipped["checklist_complete"] is False and "Your checklist: 1 of 3 ticked" in skipped["warnings"]
+    assert not any("discipline" in w for w in skipped["warnings"])
+    assert _preview(t, checklist={r: True for r in rules})["checklist_complete"] is True
+    # M76-4: the setup is his own words; none given is an information line, never a refusal.
+    blank = _preview(t, setup="")
+    assert blank["can_place"] and "Setup: not given" in blank["warnings"] and not any("Setup" in e for e in blank["errors"] + blank["refusals"])
+    own = _preview(t, setup="  My   area retest ")
+    assert own["can_place"] and own["setup"] == "My area retest" and own["setup_label"] == "My area retest"
+    _own_rules(t, [])
     assert any("whole number of lots" in e for e in _preview(t, quantity=0.5)["errors"])
 
 

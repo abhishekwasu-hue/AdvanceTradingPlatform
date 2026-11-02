@@ -14,8 +14,11 @@ from here, the page computes nothing:
   the wrong side of the entry;
 * **the cost line** - brokerage, STT, exchange, SEBI, stamp duty, GST, a slippage estimate, the break-even move and the
   reward:risk after costs;
-* **the checklist** - the user's ticks plus two the server fills (reward:risk and size within the cap). Skipping is
-  allowed and counted as a discipline miss (stored on the plan; the journal reads it in P1-e).
+* **the checklist** - M76-1 (M76Q-3, owner-confirmed): his OWN journal checklist rules (`journal/settings.py`
+  `checklist_rules`), ticked here; none saved = no checklist and no line. A rule left unticked is one line of facts
+  ("Your checklist: 4 of 6 ticked") - never a block, never "a discipline miss" (stored on the plan as ticked).
+* **the setup** - M76-4: his own words (free text; the ticket offers his own earlier setup names). None given is an
+  information line, never a refusal.
 
 Placing re-prices the entry at the user's own live price (as an approved proposal does, Z3-a): beyond the re-quote limit
 nothing is placed and the plan must be updated. Then one PAPER order goes through the ordinary pipeline (kill switches,
@@ -50,14 +53,16 @@ from app.risk_engine import by_default
 logger = logging.getLogger(__name__)
 PriceLookup = Callable[..., Awaitable[float]]
 
+# M76-4: the labels plans stored before M76 carry (read only - a stored plan keeps its words). A new plan's setup is his
+# own text; ATP offers no list of its own and refuses none.
 SETUPS: Dict[str, str] = {
     "PULLBACK_AT_LEVEL": "Pullback at a level", "SR_FLIP": "Support/resistance flip", "BREAKOUT_RETEST": "Breakout retest",
     "RANGE_EDGE": "Range edge", "OI_IV": "OI / IV based", "OTHER": "Other",
 }
-CHECKLIST: Dict[str, str] = {
-    "trend_aligned": "Trend aligned on the higher timeframe", "level_identified": "Level identified", "pullback_confirmed": "Pullback confirmed",
-    "commitment_candle": "Commitment candle", "no_event": "No event within the hold window", "liquidity_ok": "Liquidity OK",
-}
+SETUP_MAX_CHARS = 30                  # the stored column's width (TradePlanRecord.setup)
+SETUP_NOT_GIVEN = "Setup: not given"
+# The two facts the server reads against HIS OWN settings (his minimum reward:risk, his cap). Since M76-1 they are no
+# longer checklist items (the checklist is his own list); they stay in the view as facts.
 AUTO_CHECKS: Dict[str, str] = {"rr_ok": "Reward:risk at or above your minimum", "size_within_cap": "Size within your risk cap"}
 TIME_STOP = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 DERIVATIVE = re.compile(r"(\d(CE|PE)|FUT)$")          # an option or future trading symbol (NIFTY24OCT25000CE, ...FUT)
@@ -123,6 +128,52 @@ def _finite(value: float) -> Optional[float]:
     return value if math.isfinite(value) else None
 
 
+def setup_text(raw: str | None) -> str:
+    """M76-4: his setup as stored - his own words, trimmed, inner spaces collapsed, at most the column's width."""
+    return " ".join(str(raw or "").split())[:SETUP_MAX_CHARS]
+
+
+def setup_label(setup: str | None) -> str | None:
+    """The words shown for a setup: a pre-M76 key's stored label, else his own text (None when not given)."""
+    text = setup_text(setup)
+    return SETUPS.get(text, text) or None
+
+
+def strategy_of(setup: str | None) -> str:
+    """The order's strategy id for a ticket plan: `plan_<setup>` as before M76 (a pre-M76 key gives the same id)."""
+    slug = re.sub(r"[^a-z0-9]+", "_", setup_text(setup).lower()).strip("_")[:40]
+    return f"plan_{slug or 'other'}"
+
+
+def checklist_line(ticks: dict[str, bool]) -> str | None:
+    """M76-1: one line of facts when a rule of his own is not ticked; None with no rules or all ticked."""
+    if not ticks or all(ticks.values()):
+        return None
+    return f"Your checklist: {sum(1 for v in ticks.values() if v)} of {len(ticks)} ticked"
+
+
+async def own_checklist(session: AsyncSession, user: User) -> list[str]:
+    """M76-1: his own journal checklist rules (M62 JN-2), in his order; none saved = an empty list."""
+    from app.journal.settings import load as load_journal_settings
+    return list((await load_journal_settings(session, user)).checklist_rules)
+
+
+async def own_setups(session: AsyncSession, user: User, limit: int = 20) -> dict[str, str]:
+    """M76-4: the setup names he used on his own earlier plans (newest first) - offered, never required."""
+    rows = await session.scalars(select(TradePlanRecord.setup).where(TradePlanRecord.tenant_id == user.tenant_id,
+                                                                     TradePlanRecord.user_id == user.id)
+                                 .order_by(TradePlanRecord.id.desc()).limit(200))
+    out: dict[str, str] = {}
+    for raw in rows:
+        text = setup_text(raw)
+        label = setup_label(text)
+        if text and label and text not in out:
+            out[text] = label
+        if len(out) >= limit:
+            break
+    return out
+
+
 async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[datetime] = None) -> Dict[str, Any]:
     """Everything the ticket shows for this plan, checked: sizing, refusals, warnings, checklist, cost line. Reads only
     (a daily loss lockout seen for the first time is recorded, as the order pipeline would)."""
@@ -135,8 +186,9 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     errors: List[str] = []
     refusals: List[str] = []
     warnings: List[str] = []
-    if plan.setup not in SETUPS:
-        errors.append(f"Setup must be one of: {', '.join(SETUPS.values())}")
+    setup = setup_text(plan.setup)
+    if not setup:
+        warnings.append(SETUP_NOT_GIVEN)                                   # M76-4: information, never a refusal
     if direction not in ("LONG", "SHORT"):
         errors.append("Direction must be long or short")
     errors.extend(by_default.level_errors(direction, plan.entry, plan.stop_loss, plan.target))
@@ -219,13 +271,16 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
             else:
                 warnings.append(f"Override: {quantity:g} risks {risk_amount:,.2f}, above your cap {cap:,.2f}. It is logged and counted")
     refusals.extend(await entry_refusals(session, await session.get(Tenant, user.tenant_id), user.tenant_id, by_default.MODE,
-                                         f"plan_{plan.setup.lower()}", user=user, reserve=False))
+                                         strategy_of(plan.setup), user=user, reserve=False))
 
-    ticks = {key: bool(plan.checklist.get(key)) for key in CHECKLIST}
+    # M76-1: his own checklist rules only; none saved = no checklist, no line.
+    rules = await own_checklist(session, user)
+    ticks = {rule: bool(plan.checklist.get(rule)) for rule in rules}
     auto = {"rr_ok": rr_ok, "size_within_cap": within and quantity > 0}
-    complete = all(ticks.values()) and all(auto.values())
-    if not complete:
-        warnings.append("Checklist not complete: you may still place the trade; it is counted as a discipline miss")
+    complete = all(ticks.values())
+    line = checklist_line(ticks)
+    if line:
+        warnings.append(line)
     # M68 PR-7 (TS1-069): the cost line with HIS paper charges (Not set: statutory charges only, labelled so).
     from app.paper import paper_settings
     charges = await paper_settings.charges_for(session, user)
@@ -237,7 +292,7 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     side = "BUY" if direction == "LONG" else "SELL"
     can_place = not errors and not refusals and quantity > 0
     return {
-        "symbol": symbol, "direction": direction, "setup": plan.setup, "setup_label": SETUPS.get(plan.setup), "mode": by_default.MODE,
+        "symbol": symbol, "direction": direction, "setup": setup, "setup_label": setup_label(setup), "mode": by_default.MODE,
         "entry": plan.entry, "stop_loss": plan.stop_loss, "target": plan.target, "time_stop": plan.time_stop, "invalidation": plan.invalidation,
         "reward_risk": rr, "min_reward_risk": min_rr,
         "sizing": {"capital_basis": basis, "risk_per_trade_pct": settings.risk_per_trade_pct, "risk_per_trade_amount": settings.risk_per_trade_amount,
@@ -248,8 +303,8 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
                    "risk_pct_of_capital": round(risk_amount / basis * 100.0, 3) if basis is not None and basis > 0 else None,
                    "gauge": round(risk_amount / cap, 4) if math.isfinite(cap) and cap > 0 else None, "within_cap": within, "override": bool(plan.override),
                    "gauge_zone": "ok" if within else ("override" if risk_amount <= override_cap + 0.005 and base_cap >= user_cap else "over")},
-        "checklist": [{"key": k, "label": v, "checked": ticks[k], "auto": False} for k, v in CHECKLIST.items()]
-                     + [{"key": k, "label": v, "checked": auto[k], "auto": True} for k, v in AUTO_CHECKS.items()],
+        "checklist": [{"key": rule, "label": rule, "checked": ticks[rule], "auto": False} for rule in rules],
+        "auto_checks": [{"key": k, "label": v, "checked": auto[k]} for k, v in AUTO_CHECKS.items()],
         "checklist_complete": complete, "costs": costs, "errors": errors, "refusals": refusals, "warnings": warnings, "can_place": can_place,
         "confirm_label": f"Place PAPER: {side} {quantity:g} {symbol}" if can_place else None,
         "as_of": now.isoformat(),
@@ -259,7 +314,7 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
 def _plan_row(user: User, plan: Plan, view: Dict[str, Any]) -> TradePlanRecord:
     s = view["sizing"]
     return TradePlanRecord(tenant_id=user.tenant_id, user_id=user.id, mode=by_default.MODE, symbol=view["symbol"], direction=view["direction"],
-                           setup=plan.setup, entry=plan.entry, stop_loss=plan.stop_loss, target=plan.target, reward_risk=view["reward_risk"],
+                           setup=view["setup"], entry=plan.entry, stop_loss=plan.stop_loss, target=plan.target, reward_risk=view["reward_risk"],
                            time_stop=plan.time_stop, invalidation=(plan.invalidation or "").strip()[:300] or None,
                            checklist_json=json.dumps({c["key"]: c["checked"] for c in view["checklist"]}, sort_keys=True),
                            checklist_complete=view["checklist_complete"], quantity=s["quantity"], risk_amount=s["risk_amount"], risk_cap=s["cap"],
@@ -313,10 +368,11 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
     caps = [c for c in (s["user_cap"], s["org_cap"]) if c is not None]
     cap_amount = round(max(min(caps), s["risk_amount"] / multiplier if multiplier > 0 else 0.0), 2) if caps else None
     risk = abs(price - plan.stop_loss)
-    signal = Signal(symbol=view["symbol"], strategy_id=f"plan_{plan.setup.lower()}", strategy_name=f"PAPER ticket: {SETUPS[plan.setup]}",
+    label = setup_label(view["setup"]) or "setup not given"
+    signal = Signal(symbol=view["symbol"], strategy_id=strategy_of(view["setup"]), strategy_name=f"PAPER ticket: {label}",
                     direction=SignalDirection(view["direction"]), timestamp=now, entry=price, stop_loss=plan.stop_loss, target1=plan.target,
                     risk_reward=round(abs(plan.target - price) / risk, 2) if risk > 0 else None, score=0, grade=SignalGrade.VALID,
-                    reasons=[f"Plan #{row.id}: {SETUPS[plan.setup]}" + (f"; invalidation: {row.invalidation}" if row.invalidation else ""),
+                    reasons=[f"Plan #{row.id}: {label}" + (f"; invalidation: {row.invalidation}" if row.invalidation else ""),
                              f"From the PAPER ticket at the live price {price:g}"], timeframe_combo="plan")
     exit_rules = ExitRules(time_exit_at=plan.time_stop).to_json() if plan.time_stop else None
     if row.override:
@@ -401,7 +457,7 @@ async def plan_view(session: AsyncSession, row: TradePlanRecord) -> Dict[str, An
         except ValueError:
             return default
     return {"id": row.id, "status": row.status, "symbol": row.symbol, "direction": row.direction, "setup": row.setup,
-            "setup_label": SETUPS.get(row.setup, row.setup), "entry": row.entry, "stop_loss": row.stop_loss, "target": row.target,
+            "setup_label": setup_label(row.setup), "entry": row.entry, "stop_loss": row.stop_loss, "target": row.target,
             "reward_risk": row.reward_risk, "time_stop": row.time_stop, "invalidation": row.invalidation, "checklist": loads(row.checklist_json, {}),
             "checklist_complete": row.checklist_complete, "quantity": row.quantity, "risk_amount": row.risk_amount, "risk_cap": row.risk_cap,
             "override": row.override, "override_reason": row.override_reason, "costs": loads(row.costs_json, {}),
@@ -447,7 +503,7 @@ async def risk_status(session: AsyncSession, user: User, now: Optional[datetime]
         "lockout": locked, "overrides": await by_default.override_counts(session, user, now),
         "override_max_multiple": app_config.RISK_OVERRIDE_MAX_MULTIPLE, "override_min_reason_chars": app_config.RISK_OVERRIDE_MIN_REASON_CHARS,
         "vix_gate": await vix_gate.status(session, user.tenant_id, asked_at, viewer_id=user.id),
-        "setups": SETUPS, "checklist": CHECKLIST, "exits": "Exits are never locked: stops, targets, time stops and Exit now always work.",
+        "setups": await own_setups(session, user), "checklist": {rule: rule for rule in await own_checklist(session, user)}, "exits": "Exits are never locked: stops, targets, time stops and Exit now always work.",
         "as_of": now.isoformat(),
     }
 

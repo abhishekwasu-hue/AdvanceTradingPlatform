@@ -1,12 +1,12 @@
 import { errorSentence } from "../api/errors";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { PaperRiskStatus, TicketSetup, TicketView, TradePlanView } from "../types";
+import type { PaperRiskStatus, TicketView, TradePlanView } from "../types";
 import { Card, signClass } from "./ui";
 import { Details, TextOnDemand } from "../ui/numbersFirst";
 import { useUiV2 } from "../ui/useFeatures";
 import { CapitalAsk, needsCapital } from "../settings/CapitalAsk";
-import { EMPTY_FORM, costRows, gauge, lockoutLine, money, pendingLine, placedMessage, planFromForm, type TicketForm } from "./paperTicket";
+import { EMPTY_FORM, checklistNote, costRows, gauge, lockoutLine, money, pendingLine, placedMessage, planFromForm, type TicketForm } from "./paperTicket";
 
 /**
  * Z5 / P1-d (P1 spec 1.1, 1.2, 2.2; Phase 0): the plan-before-trade PAPER ticket and the risk-by-default strip.
@@ -95,10 +95,13 @@ export default function PaperTicketCard({ canTrade, onPlaced, initial }: { canTr
                   <option value="LONG">Long</option><option value="SHORT">Short</option>
                 </select>
               </label>
-              <label className="text-xs text-fg-muted">Setup
-                <select className={FIELD} value={form.setup} onChange={(e) => set("setup", e.target.value as TicketSetup)}>
+              {/* M76-4: his own words; his earlier setup names are offered, nothing is required. */}
+              <label className="text-xs text-fg-muted">Setup (your words)
+                <input className={FIELD} value={form.setup} maxLength={30} list="ticket-own-setups" data-testid="ticket-setup"
+                       onChange={(e) => set("setup", e.target.value)} />
+                <datalist id="ticket-own-setups">
                   {Object.entries(status.setups).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-                </select>
+                </datalist>
               </label>
               <label className="text-xs text-fg-muted">Time stop (IST)
                 <input className={FIELD} value={form.time_stop} onChange={(e) => set("time_stop", e.target.value)} placeholder="15:00" />
@@ -112,15 +115,16 @@ export default function PaperTicketCard({ canTrade, onPlaced, initial }: { canTr
                 <input className={FIELD} maxLength={300} value={form.invalidation} onChange={(e) => set("invalidation", e.target.value)} />
               </label>
             </div>
-            <fieldset className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-2">
-              <legend className="mb-1 text-xs font-semibold text-fg">Pre-trade checklist</legend>
+            {/* M76-1: his own journal checklist rules; none saved = no checklist here. */}
+            {Object.keys(status.checklist).length > 0 && <fieldset className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-2" data-testid="ticket-checklist">
+              <legend className="mb-1 text-xs font-semibold text-fg">Your checklist</legend>
               {Object.entries(status.checklist).map(([key, label]) => (
                 <label key={key} className="flex min-h-[44px] items-center gap-2 sm:min-h-0">
                   <input type="checkbox" checked={Boolean(form.checklist[key])} onChange={(e) => set("checklist", { ...form.checklist, [key]: e.target.checked })} />
                   <span>{label}</span>
                 </label>
               ))}
-            </fieldset>
+            </fieldset>}
             <label className="flex min-h-[44px] items-center gap-2 text-xs sm:min-h-0">
               <input type="checkbox" checked={form.override} onChange={(e) => set("override", e.target.checked)} />
               <span>Override my risk cap (logged and counted; at most {status.override_max_multiple}x the cap)</span>
@@ -183,7 +187,7 @@ export default function PaperTicketCard({ canTrade, onPlaced, initial }: { canTr
               {plans.slice(0, 10).map((p) => (
                 <li key={p.id} className="text-fg-muted">
                   #{p.id} {p.status === "PROPOSED" && p.proposal ? `sent for approval (proposal #${p.proposal.id}, ${p.proposal.status.toLowerCase()})` : p.status} · {p.direction} {p.symbol} {p.setup_label} · R:R {p.reward_risk ?? "-"}{p.override ? " · override" : ""}
-                  {!p.checklist_complete ? " · checklist skipped" : ""}{(p.status === "REFUSED" || p.status === "FAILED") && p.reasons[0] ? ` · ${p.reasons[0]}` : ""}
+                  {checklistNote(p.checklist) ? ` · ${checklistNote(p.checklist)}` : ""}{(p.status === "REFUSED" || p.status === "FAILED") && p.reasons[0] ? ` · ${p.reasons[0]}` : ""}
                 </li>
               ))}
             </ul>

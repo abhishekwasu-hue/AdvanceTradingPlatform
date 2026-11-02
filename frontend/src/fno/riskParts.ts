@@ -45,15 +45,11 @@ export interface LegLiquidity {
   /** false: the strike is not on the chain on screen (another expiry, or out of the strikes shown). */
   onScreen: boolean;
   bid: number | null; ask: number | null; ltp: number | null; oi: number | null; volume: number | null;
-  /** The bid-ask gap is among the widest quarter of the chain's quoted strikes (null: too few quoted to compare). */
-  wide: boolean | null;
-  /** The open interest is among the lowest quarter of this side's strikes on screen (null: too few to compare). */
-  lowOi: boolean | null;
 }
 
-/** Fewer quoted strikes than this and nothing is compared (the facts are still shown). */
-export const MIN_TO_COMPARE = 8;
-export const LIQUIDITY_NOTE = "From the chain on screen, compared with its other strikes.";
+// M76-2 (owner-approved, M76Q-3): the line states the leg's own facts (bid, ask, gap, open interest, volume) and is never
+// compared with ATP's idea of "thin" (the chain-quartile comparison is gone); it warns only against HIS OWN limits.
+export const LIQUIDITY_NOTE = "From the chain on screen.";
 export const NO_CHAIN = "Bid-ask and open interest are not known here. Open the chain to see them.";
 
 const num = (v: number | null | undefined): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -66,54 +62,31 @@ export function gapPct(leg: Pick<ChainLeg, "bid" | "ask">): number | null {
   return ((ask - bid) / ((ask + bid) / 2)) * 100;
 }
 
-/** The value at a quantile of sorted values (nearest rank). */
-function quantile(sorted: readonly number[], q: number): number {
-  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1))];
-}
-
-/** One strike's liquidity facts from the chain rows on screen, compared with the chain's other strikes. */
+/** One strike's liquidity facts from the chain rows on screen (no comparison with the chain's other strikes). */
 export function legLiquidity(rows: readonly ChainRow[] | null | undefined, strike: number, right: ContractRight, label: string): LegLiquidity {
   const row = right === "FUT" ? undefined : (rows ?? []).find((r) => Math.abs(r.strike - strike) < 1e-6);
-  if (!row || right === "FUT") return { label, onScreen: false, bid: null, ask: null, ltp: null, oi: null, volume: null, wide: null, lowOi: null };
+  if (!row || right === "FUT") return { label, onScreen: false, bid: null, ask: null, ltp: null, oi: null, volume: null };
   const leg = right === "CE" ? row.call : row.put;
-  const gaps = (rows ?? []).flatMap((r) => [gapPct(r.call), gapPct(r.put)]).filter((g): g is number => g !== null).sort((a, b) => a - b);
-  const ois = (rows ?? []).map((r) => num((right === "CE" ? r.call : r.put).oi)).filter((v): v is number => v !== null).sort((a, b) => a - b);
-  const g = gapPct(leg);
-  const oi = num(leg.oi);
-  return {
-    label, onScreen: true, bid: num(leg.bid), ask: num(leg.ask), ltp: num(leg.ltp), oi, volume: num(leg.volume),
-    wide: g === null || gaps.length < MIN_TO_COMPARE ? null : g > quantile(gaps, 0.75),
-    lowOi: oi === null || ois.length < MIN_TO_COMPARE ? null : oi === 0 || oi < quantile(ois, 0.25),
-  };
+  return { label, onScreen: true, bid: num(leg.bid), ask: num(leg.ask), ltp: num(leg.ltp), oi: num(leg.oi), volume: num(leg.volume) };
 }
 
-/** What is thin about one leg, in plain words ([] when nothing is). */
-function problems(l: LegLiquidity): string[] {
-  if (!l.onScreen) return ["not on the chain on screen, so its bid-ask and open interest are not known here"];
-  const out: string[] = [];
-  if (l.bid === null || !(l.bid > 0)) out.push("no bid quoted right now");
-  if (l.ask === null || !(l.ask > 0)) out.push("no ask quoted right now");
-  const g = gapPct(l);
-  if (g !== null && l.wide) out.push(`bid-ask gap ${formatPrice((l.ask ?? 0) - (l.bid ?? 0))} (${formatNumber(g, 1)}% of the price), wider than most strikes on screen`);
-  if (l.oi === 0) out.push("no open interest yet");
-  else if (l.oi !== null && l.lowOi) out.push(`open interest ${formatCount(l.oi)}, among the lowest on this side of the chain`);
-  if (l.volume === 0) out.push("no trades in it today");
-  return out;
-}
-
+/** One leg's liquidity facts in plain words. */
 function facts(l: LegLiquidity): string {
+  if (!l.onScreen) return "not on the chain on screen, so its bid-ask and open interest are not known here";
   const g = gapPct(l);
   const parts = [
+    l.bid !== null && l.bid > 0 ? `bid ${formatPrice(l.bid)}` : "no bid quoted right now",
+    l.ask !== null && l.ask > 0 ? `ask ${formatPrice(l.ask)}` : "no ask quoted right now",
     g !== null ? `bid-ask gap ${formatPrice((l.ask ?? 0) - (l.bid ?? 0))} (${formatNumber(g, 1)}% of the price)` : null,
-    l.oi !== null ? `open interest ${formatCount(l.oi)}` : null,
-    l.volume !== null ? `volume ${formatCount(l.volume)} today` : null,
+    l.oi === 0 ? "no open interest yet" : l.oi !== null ? `open interest ${formatCount(l.oi)}` : null,
+    l.volume === 0 ? "no trades in it today" : l.volume !== null ? `volume ${formatCount(l.volume)} today` : null,
   ].filter(Boolean);
   return parts.join(", ");
 }
 
 // FNO-8B-28: his own limits (an optional override, OFF by default; src/settings/liquidityLimits.ts). Only words: the line
 // says whether the strike is inside them; nothing reads it and it never holds back an order or an exit.
-export const LIMITS_NOTE = "From the chain on screen, compared with its other strikes and with your own limits.";
+export const LIMITS_NOTE = "From the chain on screen, compared with your own limits.";
 
 const pctWord = (v: number) => {
   const t = formatNumber(v, 2);
@@ -176,25 +149,16 @@ export function liquidityLine(items: readonly LegLiquidity[], chainKnown = true,
     return { tone: "info", note, text: own ? `${NO_CHAIN} Your own limits (${limitsText(own)}) cannot be checked here.` : NO_CHAIN };
   }
   if (!items.length) return null;
-  const base = comparedLine(items);
+  const base = factsLine(items);
   if (!own) return base;
   const w = limitWords(items, own);
-  return { tone: base.tone === "warn" || w.outside ? "warn" : "info", note, text: `${base.text} ${w.text}` };
+  return { tone: w.outside ? "warn" : "info", note, text: `${base.text} ${w.text}` };
 }
 
-function comparedLine(items: readonly LegLiquidity[]): RiskLine {
-  const thin = items.map((l) => ({ l, p: problems(l) })).filter((x) => x.p.length);
-  if (items.length === 1) {
-    const [l] = items;
-    if (thin.length) return { tone: "warn", note: LIQUIDITY_NOTE, text: `Liquidity: ${thin[0].p.join("; ")}.` };
-    const f = facts(l);
-    return { tone: "info", note: LIQUIDITY_NOTE, text: f ? `Liquidity: ${f}.` : "Liquidity: quoted on both sides." };
-  }
-  if (thin.length) {
-    return { tone: "warn", note: LIQUIDITY_NOTE, text: `Liquidity: ${thin.map((x) => `${x.l.label}: ${x.p.join("; ")}`).join(". ")}.` };
-  }
-  return { tone: "info", note: LIQUIDITY_NOTE,
-    text: "Liquidity: every leg is quoted on both sides, and none has one of the widest bid-ask gaps or the lowest open interest on screen." };
+/** The facts of each leg, never a judgement: always an information line (M76-2). */
+function factsLine(items: readonly LegLiquidity[]): RiskLine {
+  if (items.length === 1) return { tone: "info", note: LIQUIDITY_NOTE, text: `Liquidity: ${facts(items[0])}.` };
+  return { tone: "info", note: LIQUIDITY_NOTE, text: `Liquidity: ${items.map((l) => `${l.label}: ${facts(l)}`).join(". ")}.` };
 }
 
 // --- margin --------------------------------------------------------------------------------------------------------------

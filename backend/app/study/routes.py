@@ -181,7 +181,9 @@ async def create_study(body: CreateBody, user: User = Depends(get_current_user),
     resolved = await PS.resolve_plan(session, user, exchange, symbol, body.plan.model_dump() if body.plan else None, now) if plan_on else None
     plan_legs = (resolved or {}).get("legs") if resolved and not resolved.get("reason") else None
     inputs = S.StudyInputs(
-        created_at=now, key=key, instrument_kind=await S.instrument_kind(session, exchange, symbol), timeframes=tfs,
+        created_at=now,
+        key=key,  # gitleaks:allow - the study's own idempotency-key variable, not a secret
+        instrument_kind=await S.instrument_kind(session, exchange, symbol), timeframes=tfs,
         sections=list(body.sections) if body.sections is not None else list(S.SECTIONS), frames=frames, zones=zones,
         daily_context=ctx, quote=await S.live_quote(session, user, exchange, symbol),
         drawings=await S.own_drawings(session, user, exchange, symbol),

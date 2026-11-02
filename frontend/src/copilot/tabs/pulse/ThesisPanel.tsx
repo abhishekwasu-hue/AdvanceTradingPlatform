@@ -78,10 +78,10 @@ export default function ThesisPanel() {
            action={(
              <>
                {/* a native select: the default tab stays light (the Radix Select is ~17 KB) */}
-               <select aria-label={t("thesis.symbol")} className={`${fieldClass} w-40 max-sm:min-h-11 [@media(pointer:coarse)]:min-h-11`} value={symbol} onChange={(e) => setSymbol(e.target.value)}>
+               <select aria-label={t("thesis.symbol")} className={`${fieldClass} w-40 max-sm:w-36 max-sm:shrink-0 max-sm:min-h-11 [@media(pointer:coarse)]:min-h-11`} value={symbol} onChange={(e) => setSymbol(e.target.value)}>
                  {(watchlist.length ? watchlist : [symbol]).map((s) => <option key={s} value={s}>{s}</option>)}
                </select>
-               <Button size="sm" variant="ghost" icon={<RefreshCw size={13} className={busy ? "animate-spin" : ""} />} disabled={busy} onClick={() => void load(true)}>{t("thesis.rebuild")}</Button>
+               <Button size="sm" variant="ghost" className="max-sm:min-w-11 max-sm:justify-center" icon={<RefreshCw size={13} className={busy ? "animate-spin" : ""} />} disabled={busy} onClick={() => void load(true)}><span className="max-sm:sr-only">{t("thesis.rebuild")}</span></Button>
              </>
            )}>
       <p className="mb-2 text-xs text-fg-muted">{t("thesis.intro")}</p>

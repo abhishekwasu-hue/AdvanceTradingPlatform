@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { ContractFacts, PositionGroup } from "../../fno/contracts";
+import type { ContractFacts, KnownContract, PositionGroup } from "../../fno/contracts";
 import type { WaitingOrder } from "../../fno/positionActions";
 import sheetSource from "../../fno/PositionActionsV2.tsx?raw";
 import positionsSource from "../../trading/PositionsV2.tsx?raw";
@@ -13,7 +13,7 @@ import { CardsGridV2 } from "./PositionCardsV2";
 import { buildCards, distanceTo, exitLines, halfOf, positionsHere, rootOf, spotOf, stopToEntry, type FactsOf } from "./positionCards";
 
 /** M76 MP-10 (E-3 / E-4): position cards in the workspace; every exit is the existing one, never held back. */
-const fact = (symbol: string, right: "CE" | "PE" | "FUT", strike: number | null, days = 3): ContractFacts => ({
+const fact = (symbol: string, right: "CE" | "PE" | "FUT", strike: number | null, days = 3): KnownContract => ({
   symbol, exchange: "NFO", known: true, listed: true, underlying: "NIFTY", right, strike, expiry: "2031-03-27", lot_size: 75,
   label: `NIFTY 27 MAR ${strike ?? "FUT"} ${right}`, expired: false, days_left: days, spot_symbol: "NIFTY 50", spot_exchange: "NSE", roll: null, roll_note: null,
 });

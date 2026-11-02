@@ -8,7 +8,7 @@
 import { LiveBadge } from "../ui/PaperBadge";
 import { Clock, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { completeLabel, exitFilledLabel, incompleteApi, type IncompleteAction, type IncompleteApi, type IncompleteItem } from "./incompleteApi";
+import { completeLabel, exitFilledLabel, filledOf, incompleteApi, type IncompleteAction, type IncompleteApi, type IncompleteItem } from "./incompleteApi";
 import { sideWord } from "./ticketModel";
 import { formatNumber } from "../ui/format";
 
@@ -26,8 +26,10 @@ const STATE_TEXT: Record<string, string> = {
   CLOSING: "Closing the filled legs, sold legs first.",
 };
 
-export function IncompleteCardV2({ item, secondsLeft, busy, onAnswer, note }: {
+export function IncompleteCardV2({ item, secondsLeft, busy, onAnswer, note, ltp }: {
   item: IncompleteItem; secondsLeft: number | null; busy: boolean; onAnswer: (action: IncompleteAction) => void; note?: string | null;
+  /** M76 MP-9 (the workspace): each leg still to place's new last price by its symbol (null = not known); absent = not shown. */
+  ltp?: Readonly<Record<string, number | null>>;
 }) {
   const waiting = item.state === "INCOMPLETE";
   const keep = item.on_no_answer === "keep";
@@ -55,7 +57,9 @@ export function IncompleteCardV2({ item, secondsLeft, busy, onAnswer, note }: {
           <ul className="space-y-space-1 text-t14 text-fg" data-incomplete-part="pending">
             {item.pending.map((l) => (
               <li key={`${l.symbol}-${l.side}`}>{sideWord(l.side)} {l.symbol} · {formatNumber(l.quantity, 0)} qty
-                <span className="text-fg-muted"> · {l.role === "hedge" ? "hedge" : "sold leg"}</span></li>
+                <span className="text-fg-muted"> · {l.role === "hedge" ? "hedge" : "sold leg"}</span>
+                {filledOf(item, l) > 0 && <span className="text-fg-muted font-tabular" data-incomplete-part="part-fill"> · {formatNumber(filledOf(item, l), 0)} of {formatNumber(filledOf(item, l) + l.quantity, 0)} filled</span>}
+                {ltp && <span className="text-fg-muted font-tabular" data-incomplete-part="new-ltp"> · last price {typeof ltp[l.symbol] === "number" ? formatNumber(ltp[l.symbol] as number, 2) : "not known"}</span>}</li>
             ))}
           </ul>
         </div>

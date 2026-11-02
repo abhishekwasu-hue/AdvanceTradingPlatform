@@ -71,6 +71,7 @@ from app.brokers.models import (
     OptionChain,
     OptionChainRow,
     Quote,
+    lot_or_none,
 )
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.totp import totp_code
@@ -225,7 +226,7 @@ def instrument_from_row(row: Dict[str, Any]) -> Optional[Instrument]:
     expiry = _col(row, "expiry_date")[:10] or None
     return Instrument(instrument_token=token, exchange=atp_exchange, tradingsymbol=symbol.upper(),
                       name=(_col(row, "underlying_symbol") if derivative else _col(row, "name")) or None,
-                      segment=segment, instrument_type=itype, lot_size=_num(_col(row, "lot_size"), 1.0) or 1.0, tick_size=tick,
+                      segment=segment, instrument_type=itype, lot_size=lot_or_none(_col(row, "lot_size")), tick_size=tick,
                       expiry=expiry if derivative else None, strike=strike if derivative and itype in ("CE", "PE") and strike > 0 else None)
 
 

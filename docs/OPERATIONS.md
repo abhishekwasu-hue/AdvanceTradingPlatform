@@ -943,6 +943,20 @@ Never publish a listing without an attached backtest run; the API refuses the su
   budget is spent the organisation gets the rule-based answers with a note until the 1st - nothing stops, nothing is
   charged beyond the budget. New model prices: `AI_MODEL_PRICES_JSON='{"model-prefix": [input, output, cache_read]}'`
   (USD per million tokens); an unknown model is priced at the provider's most expensive row and marked estimated.
+- **Platform AI key (M72 PR-1b, flag `ai_platform_key`)**: the operator's own key answers a user-started AI call when
+  neither the user nor the organisation has a key of its own. Host only: `AI_PLATFORM_PROVIDER` (anthropic / openai) and
+  `AI_PLATFORM_API_KEY_FILE` (or `AI_PLATFORM_API_KEY`); the key is never logged or returned. Limits are Not set until the
+  owner sets them in Admin › Controls › Limits (or `AI_PLATFORM_BUDGET_INR_<PLAN>`, `AI_PLATFORM_USER_DAILY_CAP_INR`):
+  a plan with no budget, or no per-user daily cap, gets the rules. Both are checked before every call; a cap reached is a
+  hard stop, then the rules. A user may set a lower daily limit of his own in Settings › AI. Platform spend is metered on
+  the `ai_platform_*` metrics and never counts against the organisation's own-key budget.
+- **Live eval of the Copilot planner (M72Q-7, one paid run the owner starts)**: `/opt/atp/deploy/atp.sh ai-eval` runs
+  `python -m evals.planner_live` in the backend container - the 60 trader questions and the safety block through the real
+  planner, with the recorded synthetic tool results (no user data leaves) and the server's own AI key (`--key auto`: the
+  platform key, else the one organisation with a saved key; `--key org --tenant ID` picks one). It prints the eval table,
+  the score per job, the safety result, tokens and cost per answer and the total (USD and INR). No call cap; nothing is
+  written. `--offline` checks the wiring with a fake model at zero cost. Long run: start it detached
+  (`nohup ... > /tmp/atp-ai-eval.log 2>&1 &`) and read the log.
 - **Cut-off answers**: an answer the model could not finish inside its token budget is retried once with a bigger
   budget and otherwise dropped with "cut off" in the note - you never see half a sentence presented as the answer.
   Long drafts get a longer timeout (`AI_TIMEOUT_PER_1K_SECONDS`, default 8 s per 1,000 tokens of budget, on top of

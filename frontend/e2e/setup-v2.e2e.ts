@@ -219,9 +219,9 @@ test.describe("setup wizard 390 x 844", () => {
     }
     await expect(form).toContainText("leave a box empty for no limit");
     await expect(form.locator("[data-risk-sentence]")).toHaveCount(0);
-    await form.locator("[data-field='dailyLossPct']").fill("40");
+    await form.locator("[data-field='dailyLossPct']").fill("140");          // M68 PR-5 (TS1-049): no ATP cap, only "at most 100 %"
     await form.locator("[data-field='dailyLossPct']").blur();
-    await expect(form).toContainText("Daily loss limit must be between 0.1 and 20.");
+    await expect(form).toContainText("Daily loss limit must be more than 0 and at most 100.");
     await form.locator("[data-field='dailyLossPct']").fill("2");
     await expect(form.locator("[data-risk-sentence]")).toContainText("With these limits the most you can lose today is ₹2,000.");
     // A focused field hides the bottom bar (PW2); leave the field first, as a finger closing the keyboard does.

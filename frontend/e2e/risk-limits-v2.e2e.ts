@@ -79,7 +79,7 @@ test.describe("Settings › Risk limits 1440", () => {
     await expect(note(page)).toContainText("Saved.");
     expect(puts).toHaveLength(1);
     expect(puts[0].body).toEqual({ checks: { daily_loss: { enabled: true, values: { max_daily_loss_pct: 2.5, daily_loss_rupees: null } } },
-      capital: null, loss_streak_pause: "next_session" });
+      capital: null, loss_streak_pause: "next_session", opposite_positions: null });   // M68 PR-5: opposite positions Not set
   });
 
   test("a value above the admin's ceiling is marked and nothing is sent", async ({ page }) => {
@@ -107,13 +107,13 @@ test.describe("Settings › Risk limits 1440", () => {
     expect(puts[0].body.checks).toEqual({ max_entries_per_day: { enabled: true, values: { max_trades_per_day: 10 } } });
   });
 
-  test("halving the size at a larger drawdown than the pause is marked and nothing is sent; with no pause step it saves", async ({ page }) => {
+  test("cutting the size at a larger drawdown than the pause is marked and nothing is sent; with no pause step it saves", async ({ page }) => {
     const puts = await open(page);
     await toggle(page, "drawdown").click();
     await row(page, "drawdown").locator("[data-field='dd_level_1_pct']").fill("12");
     await row(page, "drawdown").locator("[data-field='dd_level_2_pct']").fill("10");
     await page.getByRole("button", { name: "Save risk limits" }).click();
-    await expect(note(page)).toHaveText("Drawdown steps: halve the size at a drawdown no larger than the one that pauses new entries (10%).");
+    await expect(note(page)).toHaveText("Drawdown steps: cut the size at a drawdown no larger than the one that pauses new entries (10%).");
     expect(puts).toHaveLength(0);
     await row(page, "drawdown").locator("[data-field='dd_level_2_pct']").fill("");
     await page.getByRole("button", { name: "Save risk limits" }).click();

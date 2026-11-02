@@ -11,8 +11,10 @@ Resolver (MB-3 / MB-4):
   switched-off account - exits are never blocked (ADR-0004);
 * a new entry skips a switched-off account with a visible reason; only accounts with a role take part.
 
-Sizing (MB-2): per account FIXED lots, MULTIPLIER x the Primary's lots (default 1) or PCT_CAPITAL (% of the account's
-capital / margin per lot); always rounded DOWN to whole lots; under one lot -> that account is skipped with a reason; each
+Sizing (MB-2): per account FIXED lots, MULTIPLIER x the Primary's lots or PCT_CAPITAL (% of the account's capital /
+margin per lot) - M68 PR-2 (TS1-024): only the user's own (the account's, else his Trade settings > Position size > Extra
+paper accounts); none = that account is skipped with "Needs your setting" (no MULTIPLIER x 1 is chosen for him), and the
+Primary with none takes the lots of the order (the ticket's lots are the Primary's); always rounded DOWN to whole lots; under one lot -> that account is skipped with a reason; each
 account's quantity is cut into freeze-limit slices (the existing `smart_execution.slice_units`). Every number comes from
 the user's settings; nothing here adds a rule of its own.
 """
@@ -41,6 +43,8 @@ FIXED = "FIXED"
 MULTIPLIER = "MULTIPLIER"
 PCT_CAPITAL = "PCT_CAPITAL"
 SIZING_MODES = (FIXED, MULTIPLIER, PCT_CAPITAL)
+NEEDS_SIZING = ("Needs your setting: Extra paper accounts: size by (Settings › Trade settings › Position size, or this "
+                "account's own size)")
 
 
 @dataclass(frozen=True)
@@ -55,8 +59,9 @@ class Account:
 
 @dataclass(frozen=True)
 class Sizing:
-    mode: str = MULTIPLIER
-    value: float = 1.0
+    """None = Not set (M68 PR-2): the account has no sizing of the user's own."""
+    mode: str | None = None
+    value: float | None = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +138,10 @@ def resolve(order_class: str, accounts: Sequence[Account], *, matrix: Optional[M
 
 def lots_for(account: Account, sizing: Sizing, *, primary_lots: int, margin_per_lot: Optional[float]) -> Tuple[int, Optional[str]]:
     """Whole lots for one account (rounded down) and, when it gets none, the reason."""
+    if sizing.mode is None or sizing.value is None:
+        if account.role == PRIMARY:
+            return primary_lots, None                  # the order's own lots are the Primary's (the ticket says so)
+        return 0, NEEDS_SIZING
     if sizing.mode not in SIZING_MODES:
         return 0, f"unknown sizing mode {sizing.mode}"
     if sizing.value <= 0:
@@ -154,7 +163,8 @@ def lots_for(account: Account, sizing: Sizing, *, primary_lots: int, margin_per_
 
 def size(route: Route, sizing: Mapping[int, Sizing], *, primary_lots: int, lot_size: int,
          freeze_qty: Optional[int] = None, margin_per_lot: Optional[float] = None) -> SizedPlan:
-    """Lots and freeze-limit slices for every routed account; accounts without a setting use MULTIPLIER x 1 (MB-2)."""
+    """Lots and freeze-limit slices for every routed account; a Secondary without a sizing of the user's own is skipped
+    with "Needs your setting" (M68 PR-2; before: MULTIPLIER x 1)."""
     from app.execution.smart_execution import slice_units
     plan = SizedPlan(skipped=list(route.skipped))
     for a in route.accounts:
@@ -172,5 +182,5 @@ def exit_quantities(held_units: Mapping[int, int]) -> Dict[int, int]:
 
 
 __all__ = ["ADJUSTMENT", "COMBINED_EXIT", "DEFAULT_MATRIX", "ENTRY", "EXIT", "EXIT_CLASSES", "FIXED", "FOLLOW_POSITIONS",
-           "Account", "Leg", "MULTIPLIER", "ORDER_CLASSES", "PCT_CAPITAL", "PRIMARY", "Route", "SECONDARY", "SIZING_MODES",
+           "Account", "Leg", "MULTIPLIER", "NEEDS_SIZING", "ORDER_CLASSES", "PCT_CAPITAL", "PRIMARY", "Route", "SECONDARY", "SIZING_MODES",
            "STOP_TARGET", "SizedPlan", "Sizing", "Skip", "exit_quantities", "lots_for", "resolve", "size"]

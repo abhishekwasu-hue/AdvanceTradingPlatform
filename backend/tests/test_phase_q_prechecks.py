@@ -187,11 +187,11 @@ def test_expired_contract_refused_in_every_mode_and_today_noted():
 def test_margin_cap_from_calculator_and_refusals():
     cap, note = _run(live_margin_cap(_Broker(per_share=500.0, available=10_000.0), product="MIS", symbol="RELIANCE", exchange="NSE",
                                      side=OrderSide.BUY, unit=1.0))
-    assert cap == 16 and "broker margin calculator" in note   # 0.8 * 10,000 / 500
+    assert cap == 20 and "broker margin calculator" in note   # M68 PR-5 (TS1-055): the whole 10,000 / 500 (no 80 % share)
 
     # Lots: the cap is a whole number of lots.
     cap, _ = _run(live_margin_cap(_Broker(per_share=100.0, available=100_000.0), product="MIS", symbol="X", exchange="NFO", side=OrderSide.BUY, unit=75.0))
-    assert cap == 750   # 80,000 / 7,500 per lot = 10 lots
+    assert cap == 975   # M68 PR-5: 100,000 / 7,500 per lot = 13 lots
 
     with pytest.raises(PreCheckRefusal, match="Insufficient margin"):
         _run(live_margin_cap(_Broker(per_share=500.0, available=300.0), product="MIS", symbol="RELIANCE", exchange="NSE", side=OrderSide.BUY, unit=1.0))
@@ -209,7 +209,7 @@ def test_margin_unknown_is_noted_not_guessed_except_bought_option_premium():
     # Bought option: premium x lot is the exact cash, so it is checked and capped.
     cap, note = _run(live_margin_cap(_Broker(per_share=None, available=30_000.0), product="MIS", symbol="NIFTY CE", exchange="NFO", side=OrderSide.BUY,
                                      unit=75.0, unit_price=120.0, exact_cash=True))
-    assert cap == 150 and "premium x lot" in note   # 24,000 / 9,000 per lot = 2 lots
+    assert cap == 225 and "premium x lot" in note   # M68 PR-5: 30,000 / 9,000 per lot = 3 lots
     with pytest.raises(PreCheckRefusal, match="Insufficient margin"):
         _run(live_margin_cap(_Broker(per_share=None, available=5_000.0), product="MIS", symbol="NIFTY CE", exchange="NFO", side=OrderSide.BUY,
                              unit=75.0, unit_price=120.0, exact_cash=True))

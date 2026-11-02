@@ -45,9 +45,10 @@ function preview(body: Record<string, unknown>) {
 
 interface Seen { posts: MockCalls["posts"]; held: number }
 
-/** F1 / M68 PR-1: with no product and no order type saved nothing is pre-selected; pick Market (when no type is picked
- * yet) and NRML so Review can be tapped. */
+/** F1 / M68 PR-1 / PR-2: with no lots, product and order type saved nothing is pre-filled; enter 1 lot (when none is
+ * entered yet), pick Market (when no type is picked yet) and NRML so Review can be tapped. */
 async function pickProduct(ticket: Locator): Promise<void> {
+  if (await ticket.locator("[data-ticket='lots']").inputValue() === "") await ticket.locator("[data-ticket='lots']").fill("1");
   if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) {
     await ticket.locator("[data-ticket='order-type'] [data-option='MARKET']").click();
   }
@@ -150,7 +151,7 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
         await sheet.locator("[data-action='buy']").click();
         const ticket = page.locator("[data-order-ticket]");
         await expect(ticket).toBeVisible();
-        await expect(ticket.locator("[data-ticket='units']")).toHaveText("1 lot = 75 qty (lot size 75)");
+        await expect(ticket.locator("[data-ticket='units']")).toHaveText("Lot size 75");      // M68 PR-2: lots asked first
         await expect(ticket).toHaveScreenshot(`order-ticket-v2-${width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
       });
     }
@@ -170,6 +171,8 @@ test.describe("Chain ticket v2 flows", () => {
     await sheet.locator("[data-action='buy']").tap();
     const ticket = page.locator("[data-order-ticket]");
     await expect(ticket.locator("[data-practice-frame]")).toContainText("PAPER");
+    await ticket.locator("[data-ticket='lots-more']").tap();                                    // M68 PR-2: from empty to 1
+    await expect(ticket.locator("[data-ticket='units']")).toHaveText("1 lot = 75 qty (lot size 75)");
     await ticket.locator("[data-ticket='lots-more']").tap();
     await expect(ticket.locator("[data-ticket='units']")).toHaveText("2 lots = 150 qty (lot size 75)");
     await ticket.getByRole("radio", { name: "Limit" }).tap();
@@ -235,7 +238,7 @@ test.describe("Chain ticket v2 flows", () => {
     const sheet = page.locator("[data-chain-actions]");
     await sheet.locator("[data-action='basket']").tap();
     await sheet.locator("[data-action='basket-sell']").tap();
-    await expect(sheet.locator("[data-action-note='done']")).toHaveText("Added to the basket: Sell 1 lot of NIFTY 03 NOV 24500 CE.");
+    await expect(sheet.locator("[data-action-note='done']")).toHaveText("Added to the basket: Sell NIFTY 03 NOV 24500 CE. Enter its lots in the basket.");   // M68 PR-2
     await expect(badge).toHaveAttribute("aria-label", "Basket: 1 leg");
     await sheet.locator("[data-action='watchlist']").tap();
     await sheet.locator("[data-watchlist='3']").tap();
@@ -368,25 +371,36 @@ test.describe("Chain ticket v2 multi-account (M45 MA-6)", () => {
   });
 });
 
-/** M68 PR-1 (TS-3): a new user (nothing saved) - the ticket pre-selects no order type and no product; it asks for each one,
- * focused and outlined, with "Save as my default"; only then is ONE PAPER order placed. Baselines (NEW):
+/** M68 PR-1 / PR-2 (TS-3, TS-7): a new user (nothing saved) - the ticket pre-fills no lots, no order type and no product;
+ * it asks for each one, focused, with "Save as my default"; only then is ONE PAPER order placed. Baselines (NEW):
  * `order-ticket-asks-v2-<width>-light.png` at 1440 and 390. */
 for (const [width, height] of [[1440, 900], [390, 844]] as const) {
   test.describe(`M68 ticket asks at ${width}`, () => {
     test.use(width === 390 ? { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width, height } });
 
-    test("a new user places a PAPER order only after choosing the order type and the product", async ({ page }) => {
+    test("a new user places a PAPER order only after choosing the lots, the order type and the product", async ({ page }) => {
       const saves: Record<string, unknown>[] = [];
       const seen = await open(page, "light", { tradeSettings: saves });
       await callCell(page).click();
       await page.locator("[data-chain-actions] [data-action='buy']").click();
       const ticket = page.locator("[data-order-ticket]");
+      // M68 PR-2 (TS1-020): the lots are asked first - empty and focused, nothing pre-filled
+      const lots = ticket.locator("[data-ticket='lots']");
+      await expect(lots).toHaveValue("");
+      await expect(lots).toBeFocused();
+      await expect(ticket.locator("[data-ticket='lots-unset']")).toHaveText("Enter the lots (none saved in your Trade settings).");
+      await expect(ticket.locator("[data-ticket='review']")).toBeDisabled();
+      if (width === 390) await expectPhoneLayout(page);
+      await expect(ticket).toHaveScreenshot(`order-ticket-asks-lots-v2-${width}-light.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+      await lots.fill("1");
       const type = ticket.locator("[data-ticket='order-type']");
       await expect(type).toHaveAttribute("data-asking", "yes");
       await expect(type.locator("[data-option='MARKET']")).toBeFocused();
       await expect(ticket.locator("[data-ticket='order-type-unset']")).toHaveText("Pick how the order is sent: Market, Limit, SL or SL-M.");
       await expect(ticket.locator("[data-ticket='review']")).toBeDisabled();
       await expect(ticket.locator("[aria-checked='true'][data-option='MARKET'], [aria-checked='true'][data-option='MIS'], [aria-checked='true'][data-option='NRML']")).toHaveCount(0);
+      await ticket.locator("[data-save-default='position_size.lots'] input").check();          // his lots, saved for next time
+      await expect(ticket.locator("[data-save-default='position_size.lots'] [data-save-default-note]")).toHaveText("Saved");
       if (width === 390) await expectPhoneLayout(page);
       await expect(ticket).toHaveScreenshot(`order-ticket-asks-v2-${width}-light.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
 
@@ -399,13 +413,65 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
       await product.locator("[data-option='NRML']").click();
       await ticket.locator("[data-save-default='order_defaults.product'] input").check();
       await expect(ticket.locator("[data-save-default='order_defaults.product'] [data-save-default-note]")).toHaveText("Saved");
-      expect(saves).toEqual([{ "order_defaults.product": "NRML" }]);
+      expect(saves).toEqual([{ "position_size.lots": 1 }, { "order_defaults.product": "NRML" }]);
       await ticket.locator("[data-ticket='review']").click();
       await ticket.locator("[data-ticket='place']").click();
       await expect(ticket.locator("[data-ticket='result']")).toContainText("Placed in practice mode");
       const placed = seen.posts.filter((p) => p.url.endsWith("/paper/fno/order"));
       expect(placed).toHaveLength(1);
       expect(placed[0].body).toMatchObject({ order_type: "MARKET", product: "NRML", lots: 1 });
+    });
+  });
+}
+
+/** M68 PR-7 (D4, TS-3): his paper account has no starting capital yet - ATP pre-fills none. The confirm step ASKS for it,
+ * focused, with "Save as my default"; once saved the order is checked again and ONE PAPER order is placed. Baselines (NEW):
+ * `order-ticket-capital-v2-<width>-light.png` at 1440 and 390. */
+const NEEDS_CAPITAL = "Needs your setting: Starting capital (Settings › Trade settings › Paper account)";
+for (const [width, height] of [[1440, 900], [390, 844]] as const) {
+  test.describe(`M68 ticket asks for the paper capital at ${width}`, () => {
+    test.use(width === 390 ? { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width, height } });
+
+    test("the first paper order asks for the starting capital, then places", async ({ page }) => {
+      const saves: Record<string, unknown>[] = [];
+      const seen = await open(page, "light", { tradeSettings: saves });
+      let capital: number | null = null;
+      const capitalPuts: unknown[] = [];
+      await page.route(/\/api(?:\/v1)?\/paper\/account$/, async (route) => {
+        if (route.request().method() !== "PUT") return route.fallback();
+        const body = route.request().postDataJSON() as { starting_capital: number };
+        capitalPuts.push(body);
+        capital = body.starting_capital;
+        return route.fulfill({ json: { starting_capital: capital, balance: capital, capital_saved: true, capital_needed: false } });
+      });
+      await page.route(/\/api(?:\/v1)?\/paper\/fno\/order\/preview$/, async (route) => {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        seen.posts.push({ url: "/api/paper/fno/order/preview", method: "POST", body });
+        const p = preview(body);
+        return route.fulfill({ json: capital === null ? { ...p, refusals: [NEEDS_CAPITAL], can_place: false } : p });
+      });
+      await callCell(page).click();
+      await page.locator("[data-chain-actions] [data-action='buy']").click();
+      const ticket = page.locator("[data-order-ticket]");
+      await pickProduct(ticket);
+      await ticket.locator("[data-ticket='review']").click();
+      await expect(ticket.locator("[data-ticket='refusals']")).toContainText("Needs your setting: Starting capital");
+      const ask = ticket.locator("[data-capital-ask]");
+      await expect(ask.locator("[data-capital-field]")).toBeFocused();
+      await expect(ask.locator("[data-capital-field]")).toHaveValue("");                        // nothing pre-filled
+      await expect(ticket.locator("[data-ticket='place']")).toBeDisabled();
+      await ask.locator("[data-capital-field]").fill("250000");
+      await ask.locator("[data-save-default='paper_account.capital'] input").check();
+      if (width === 390) await expectPhoneLayout(page);
+      await expect(ticket).toHaveScreenshot(`order-ticket-capital-v2-${width}-light.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+      await ask.locator("[data-capital-save]").click();
+      await expect(ticket.locator("[data-capital-ask]")).toHaveCount(0);
+      expect(capitalPuts).toEqual([{ starting_capital: 250000 }]);
+      expect(saves).toContainEqual({ "paper_account.capital": 250000 });
+      await expect(ticket.locator("[data-ticket='place']")).toBeEnabled();
+      await ticket.locator("[data-ticket='place']").click();
+      await expect(ticket.locator("[data-ticket='result']")).toContainText("Placed in practice mode");
+      expect(seen.posts.filter((p) => p.url.endsWith("/paper/fno/order"))).toHaveLength(1);
     });
   });
 }

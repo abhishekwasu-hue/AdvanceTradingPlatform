@@ -18,6 +18,11 @@ const semantic = {
   "surface-inset": v("surface-inset"), signal: v("signal"), armed: v("armed"),
   // UI2-0 (UI v2 §8): the subtle outline / divider colour and the warning-note background
   "border-subtle": v("border-subtle"), "warn-tint": v("warn-tint"),
+  // M73 SL-1: the sign-in provider buttons' brand colours (src/auth/SocialButtons.tsx only).
+  "social-google-bg": v("social-google-bg"), "social-google-fg": v("social-google-fg"),
+  "social-google-border": v("social-google-border"), "social-google-hover": v("social-google-hover"),
+  "social-facebook": v("social-facebook"), "social-facebook-hover": v("social-facebook-hover"),
+  "social-facebook-fg": v("social-facebook-fg"),
   // UI2-1: the backdrop behind the More sheet and the command bar (with an alpha: `bg-scrim/50`)
   scrim: v("scrim"),
   // Chart + colour order Part 3 (CC-1..CC-4): the range bar (a neutral track, an amber-yellow marker), the info and AI

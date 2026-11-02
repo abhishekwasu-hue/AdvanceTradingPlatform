@@ -9,6 +9,7 @@ import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicke
 import { Details } from "../ui/numbersFirst";
 import { formatDateIST, formatDateTimeIST } from "../ui/format";
 import { strategyDisplayName } from "../ui/strategyName";
+import { eventActionOf, useTradeSettings } from "../settings/tradeSettings";
 import {
   EVENT_KINDS, LIMIT_SCOPES, LIMIT_TYPES, checkStatus, eventAction, eventKindLabel, eventRemoveConsequence, eventScope, eventWindow,
   failedText, limitScopeLabel, limitTypeLabel, limitValueText,
@@ -48,7 +49,10 @@ export function MarketEventsV2({ user, defaultCut, nonce, onChanged }: {
   const [date, setDate] = useState(todayIST);
   const [underlying, setUnderlying] = useState("");
   const [kind, setKind] = useState("OTHER");
-  const [action, setAction] = useState<"BLOCK" | "SIZE_CUT">("SIZE_CUT");
+  // M68 PR-5 (TS1-058): no pre-picked action - his own saved starting choice (Trade settings › Risk limits), else asked
+  const [action, setAction] = useState<"BLOCK" | "SIZE_CUT" | "">("");
+  const savedAction = eventActionOf(useTradeSettings(true));
+  useEffect(() => { if (savedAction) setAction((a) => a || savedAction); }, [savedAction]);
   const [cut, setCut] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -64,6 +68,7 @@ export function MarketEventsV2({ user, defaultCut, nonce, onChanged }: {
   async function add(e: FormEvent) {
     e.preventDefault();
     if (!date) { setNotice({ kind: "warn", text: "Choose the day of the event, then add it." }); return; }
+    if (!action) { setNotice({ kind: "warn", text: "Choose what happens on that day, then add it." }); return; }
     setBusy(true); setNotice(null);
     try {
       // Today's request, unchanged: a global event only for the platform operator writing "*" as the symbol.
@@ -115,8 +120,8 @@ export function MarketEventsV2({ user, defaultCut, nonce, onChanged }: {
           <Combobox id={id} label="Kind" value={kind} onChange={setKind} options={EVENT_KINDS} />
         )}</Field>
         <Field label="What happens">{(id) => (
-          <Combobox id={id} label="What happens" value={action} onChange={(v) => setAction(v as "BLOCK" | "SIZE_CUT")}
-            options={[{ value: "SIZE_CUT", label: "Cut the size" }, { value: "BLOCK", label: "Stop new entries" }]} />
+          <Combobox id={id} label="What happens" value={action} onChange={(v) => setAction(v as "BLOCK" | "SIZE_CUT" | "")}
+            options={[{ value: "", label: "Not set" }, { value: "SIZE_CUT", label: "Cut the size" }, { value: "BLOCK", label: "Stop new entries" }]} />
         )}</Field>
         {action === "SIZE_CUT" && (
           <Field label="Size cut (%)">{(id) => (

@@ -157,7 +157,15 @@ async def system(session: AsyncSession = Depends(get_session)) -> Dict[str, Any]
     return {"checked_at": now.isoformat(), "health": health, "workers": await _workers(session, now),
             "data_feed": await _data_feed(session, now), "trade_engine": trade_engine.describe(admin=True),
             "market_feed": await feed_health.snapshot(),     # M71 PL-4: the universe feed's health (admin only)
-            "broker_calls": await broker_calls_today()}
+            "broker_calls": await broker_calls_today(),
+            "sign_in_providers": sign_in_providers()}     # M73 SL-1: which sign-in providers are live
+
+
+def sign_in_providers() -> list:
+    """M73 SL-1: every sign-in provider the server knows and whether its credentials are set (live = the button shows).
+    Names only - never a client id or a secret."""
+    from app.auth import social
+    return [{"id": p.id, "label": p.label, "kind": p.kind, "live": bool(p.configured())} for p in social.REGISTRY.values()]
 
 
 async def broker_calls_today() -> Dict[str, Any]:

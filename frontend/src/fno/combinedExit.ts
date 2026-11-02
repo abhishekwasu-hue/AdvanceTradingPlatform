@@ -65,7 +65,8 @@ export interface CombinedBody {
   target_value: number | null;
   spot_symbol?: string | null;
   spot_exchange?: "NSE" | "BSE" | null;
-  check_mode: CheckMode;
+  /** M68 PR-3 (TS1-031): left out = the server reads his own setting (₹ / premium: every price, their only check). */
+  check_mode?: CheckMode;
   timeframe_minutes?: number | null;
   client_ref: string;
   trailing?: TrailBody | null;
@@ -131,10 +132,11 @@ export function defaultMeasure(legs: readonly SheetLeg[]): Measure {
 
 export interface CombinedForm {
   ticked: number[];
-  measure: Measure;
+  /** M68 PR-3 (TS1-031): "" = not chosen yet (his own Trade settings > Exits value starts it, else the form asks). */
+  measure: Measure | "";
   sl: string;
   target: string;
-  check: CheckMode;
+  check: CheckMode | "";
   timeframe: number;
   /** CX2 (optional): the trailing kind and its two numbers - LOCK: A = the gain, B = what is kept; TRAIL: A = the move,
    * B = how far the stop shifts. */
@@ -220,7 +222,7 @@ export function trailOf(form: CombinedForm): TrailBody | null {
 /** CX2: the trailing in plain words, the same words as group_exits.trail_words (empty when none or not complete). Pure. */
 export function trailWords(form: CombinedForm, spotSymbol: string | null = null): string {
   const t = trailOf(form);
-  if (!t || trailErrors({ ...form, sl: form.sl || "1" }).length) return "";
+  if (!t || !form.measure || trailErrors({ ...form, sl: form.sl || "1" }).length) return "";
   if (t.kind === "LOCK_TRAIL" || t.kind === "BREAK_EVEN") return sxTrailWords(t, form.measure, spotSymbol);
   if (form.measure === "MTM_INR") {
     return t.kind === "LOCK"
@@ -253,6 +255,8 @@ export function formErrors(form: CombinedForm, legs: readonly SheetLeg[]): strin
   const out: string[] = [];
   const picked = legs.filter((l) => form.ticked.includes(l.id));
   if (!picked.length) out.push("Tick at least one open position.");
+  if (!form.measure) out.push("Choose what the exit watches.");                          // M68 PR-3: never pre-chosen
+  if (form.measure === "SPOT" && !form.check) out.push("Choose when the spot level counts as reached.");
   if (new Set(picked.map((l) => l.mode ?? "")).size > 1) out.push("PAPER and LIVE positions cannot share one combined exit.");
   if (form.sl.trim() && amount(form.sl) === null) out.push("The stop-loss must be a number above zero.");
   if (form.target.trim() && amount(form.target) === null) out.push("The target must be a number above zero.");
@@ -273,11 +277,12 @@ export function bodyOf(form: CombinedForm, legs: readonly SheetLeg[], ref: strin
   const first = legs.find((l) => form.ticked.includes(l.id));
   const spot = form.measure === "SPOT";
   const close = spot && form.check === "CLOSE";
+  const measure: Measure = form.measure || "MTM_INR";        // only sent once formErrors is empty (a measure is chosen)
   return {
-    scope: "SELECTED", trade_ids: legs.filter((l) => form.ticked.includes(l.id)).map((l) => l.id), measure: form.measure,
+    scope: "SELECTED", trade_ids: legs.filter((l) => form.ticked.includes(l.id)).map((l) => l.id), measure,
     sl_value: amount(form.sl), target_value: amount(form.target),
     spot_symbol: spot ? first?.spotSymbol ?? null : null, spot_exchange: spot ? first?.spotExchange ?? null : null,
-    check_mode: close ? "CLOSE" : "TOUCH", timeframe_minutes: close ? form.timeframe : null, client_ref: ref,
+    ...(spot && form.check ? { check_mode: form.check } : {}), timeframe_minutes: close ? form.timeframe : null, client_ref: ref,
     ...(trailOf(form) ? { trailing: trailOf(form) } : {}),
   };
 }
@@ -288,7 +293,7 @@ export function previewWords(form: CombinedForm, legs: readonly SheetLeg[]): str
   const sl = amount(form.sl);
   const target = amount(form.target);
   const trailing = trailWords(form, picked[0]?.spotSymbol ?? null);
-  if (!picked.length || (sl === null && target === null && !trailing)) return "";
+  if (!picked.length || !form.measure || (sl === null && target === null && !trailing)) return "";
   const parts: string[] = [];
   if (form.measure === "MTM_INR") {
     if (sl !== null) parts.push(`combined loss reaches ${formatINR(sl)}`);

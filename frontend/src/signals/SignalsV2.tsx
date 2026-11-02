@@ -1,4 +1,6 @@
 import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react";
+import { AskAiAbout } from "../copilot/AskAiAbout";
+import { signalObject } from "../copilot/askContext";
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
 import { InPlaceLink } from "../inplace/InPlaceLink";
@@ -317,6 +319,8 @@ function SignalCard({ item, now, open, canTrade, proposalAction, onOpen, onDone,
           <StatusChip item={item} now={now} />
         </div>
         <p className="text-t14 text-fg-muted">{setupWords(item.setup)} · {sourceCaption(item)}{item.mode === "LIVE" ? " · Live" : ""}</p>
+        {/* M72 PR-3: the Copilot beside the page, about this signal (no price is sent; the server re-reads it) */}
+        <AskAiAbout ctx={{ symbol: item.symbol, object: signalObject(item.id), page: "signals" }} />
         {open ? (
           <SignalDetail item={item} proposal={proposalAction} now={now} compact canTrade={canTrade} onDone={onDone} onError={onError} />
         ) : (

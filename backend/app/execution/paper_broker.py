@@ -13,17 +13,19 @@ class PaperBroker:
     """Simulates fills for paper trading using real-time/last-traded prices with a dated cost model.
 
     Charges come from `app.execution.india_costs` (rates of the trade's own date); only brokerage per order and slippage
-    are this broker's settings. `stt_pct`, `exchange_pct` and `gst_pct` are kept for callers that pass them and are no
+    are this broker's settings - the TRADER'S OWN (M68 PR-7, TS1-069: Settings > Trade settings > Paper account, read by
+    app/paper/paper_settings.py, `PaperCharges.broker()`). Not set = 0 and 0: statutory charges only, no brokerage, no
+    slippage - ATP chooses neither. `stt_pct`, `exchange_pct` and `gst_pct` are kept for callers that pass them and are no
     longer used. Only for paper P&L and backtests - never for order routing; a contract note replaces the estimate.
     """
 
     def __init__(
         self,
-        brokerage_per_order: float = 20.0,
+        brokerage_per_order: float = 0.0,
         stt_pct: float = 0.025,
         exchange_pct: float = 0.00345,
         gst_pct: float = 18.0,
-        slippage_pct: float = 0.02,
+        slippage_pct: float = 0.0,
         slippage_model=None,
     ) -> None:
         self.brokerage_per_order = brokerage_per_order

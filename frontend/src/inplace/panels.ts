@@ -2,6 +2,7 @@ import { BROKER_PATH } from "../broker/paths";
 import { LEGAL_TITLES } from "../legal/legal";
 import { SETTINGS_PATH } from "../settings/paths";
 import { chartTabPath, chartsSymbolFromPath } from "../shell/shellRoutes";
+import { askAiPath, askContextFrom } from "../copilot/askContext";
 import { copilotToolPath, signalsPanelPath } from "./copilotPaths";
 import { OPTION_CHAIN_KEYS, futuresPanelPath, optionChainPanelPath } from "./fnoPaths";
 import { createRegistry, type PanelEntry, type PanelParams, type Presentation } from "./registry";
@@ -101,7 +102,7 @@ const COPILOT_FORWARDED: Record<string, string> = {
  * a chart has its own panel; `/copilot/signals` is the Signals page (its own route). */
 export const COPILOT_PANEL: PanelEntry = {
   kind: "copilot",
-  keys: ["tab", "symbol", "action"],
+  keys: ["tab", "symbol", "action", "tf", "ctx", "from"],
   title: (p) => (p.tab ? COPILOT_TITLE[p.tab] ?? "Copilot" : "Copilot"),
   presentation: "side-wide",
   match: ({ pathname, search }) => {
@@ -111,9 +112,12 @@ export const COPILOT_PANEL: PanelEntry = {
     const m = /^\/copilot(?:\/([a-z-]+))?$/.exec(path);
     if (!m || (m[1] && !(COPILOT_TOOLS as readonly string[]).includes(m[1]))) return null;
     // NAV-5a: Signals' "Open it in Watchtower" carries the proposal (`?action=`).
-    return only({ tab: m[1], symbol: search.get("symbol")?.trim().toUpperCase(), action: search.get("action")?.trim() });
+    // M72 PR-3: "Ask AI about this" - the chat's context (symbol, timeframe, one object, the asking page)
+    const ctx = m[1] ? null : askContextFrom((k) => search.get(k));
+    return only({ tab: m[1], symbol: search.get("symbol")?.trim().toUpperCase(), action: m[1] ? search.get("action")?.trim() : undefined,
+      tf: ctx?.timeframe, ctx: ctx?.object ? `${ctx.object.kind}:${ctx.object.id}` : undefined, from: ctx?.page });
   },
-  href: (p) => copilotToolPath(p.tab, p.symbol, p.action),
+  href: (p) => (p.tab ? copilotToolPath(p.tab, p.symbol, p.action) : askAiPath(askContextFrom((k) => p[k]) ?? {})),
   enabled: (on) => on("ai_copilot"),
   load: () => import("./panels/CopilotPanel"),
 };

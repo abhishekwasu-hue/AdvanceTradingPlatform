@@ -27,7 +27,7 @@ import hashlib
 import importlib.util
 import json
 import uuid
-from datetime import timedelta
+from datetime import time, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -38,6 +38,7 @@ from app.backtest.engine import run_backtest
 from app.backtest.options_engine import OptionBacktestConfig, run_option_backtest
 from app.core.enums import OptionStrategy, SignalDirection, StrikeRule
 from app.core.models import RiskConfig
+from app.execution.paper_charges import PaperCharges
 from app.quality.lookahead import synthetic_bars
 from app.strategy_templates import compile as C
 from app.strategy_templates import exits as X
@@ -71,16 +72,18 @@ def _hash(result) -> str:
         data.pop("history", None)                             # REV-S3 added the field (None on these engine-level runs)
     if data.get("data_source") is None:
         data.pop("data_source", None)                         # M55 T3 added the field (set by the routes only)
-    if isinstance(data.get("options"), dict) and data["options"].get("engine_version") == "9-options":
-        data["options"]["engine_version"] = "8-options"      # P1-2b bumped the label; the pins were recorded under 8
+    if isinstance(data.get("options"), dict) and data["options"].get("engine_version") in ("9-options", "10-options"):
+        data["options"]["engine_version"] = "8-options"      # P1-2b / M68 PR-3 bumped the label; the pins were recorded under 8
     return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
 # DEF-0: the old built-in exit levels (bought premium floor 30%, credit target 50% / stop 100%, the short-strike breach exit)
 # set explicitly, so the runs (and the pins below) are the same as before.
-SINGLE = OptionBacktestConfig(implied_volatility=0.14, premium_stop_pct=30.0)
+# M68 PR-3 (D1): the pins were recorded with the then built-in 15:00 cut-off / 15:15 square-off - set explicitly too.
+_OLD_TIMES = {"entries_until": time(15, 0), "square_off_at": time(15, 15)}
+SINGLE = OptionBacktestConfig(implied_volatility=0.14, premium_stop_pct=30.0, **_OLD_TIMES)
 SPREAD = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2,
-                              target_credit_pct=50, stop_credit_pct=100, underlying_breach_exit=True)
+                              target_credit_pct=50, stop_credit_pct=100, underlying_breach_exit=True, **_OLD_TIMES)
 
 
 def _option_config(base: OptionBacktestConfig, **changes) -> OptionBacktestConfig:
@@ -103,6 +106,7 @@ BASE_PINS = {
 # P1-2b: the pins were recorded with the then built-in minimum reward:risk 1.2; it is stated here so they stay comparable.
 # DEF-0: the pins were recorded under the old platform risk limits too - set explicitly (tests/def0_legacy.py).
 PIN_RISK = legacy(capital=10_000_000, risk_per_trade_pct=0.5, min_risk_reward=1.2)
+PRE_M68_CHARGES = PaperCharges(brokerage_per_order=20.0, slippage_pct=0.02)   # M68 PR-7: the recorded goldens ran at the former ₹20 / 0.02 % - a trader who saved them
 
 
 def _run_pins(choice=None):
@@ -116,11 +120,11 @@ def _run_pins(choice=None):
             s = TemplateStrategy(t, C.resolve_settings(t, "15m"))
             return s.use_exits(choice) if choice is not None else s
         # REV-S1: the pins were recorded before the backtest took the live INTRADAY cut-off / square-off - re-run that way
-        out[f"{key}:underlying"] = _hash(run_backtest(strat(), df, "S", "15min", PIN_RISK, session_rules=False))
+        out[f"{key}:underlying"] = _hash(run_backtest(strat(), df, "S", "15min", PIN_RISK, session_rules=False, charges=PRE_M68_CHARGES))
         big = df.copy()
         big[["open", "high", "low", "close"]] *= 240.0
-        out[f"{key}:single"] = _hash(run_option_backtest(strat(), big, "NIFTY 50", "15min", PIN_RISK, SINGLE))
-        out[f"{key}:spread"] = _hash(run_option_backtest(strat(), big, "NIFTY 50", "15min", PIN_RISK, SPREAD))
+        out[f"{key}:single"] = _hash(run_option_backtest(strat(), big, "NIFTY 50", "15min", PIN_RISK, SINGLE, charges=PRE_M68_CHARGES))
+        out[f"{key}:spread"] = _hash(run_option_backtest(strat(), big, "NIFTY 50", "15min", PIN_RISK, SPREAD, charges=PRE_M68_CHARGES))
     return out
 
 

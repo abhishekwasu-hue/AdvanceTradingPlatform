@@ -81,7 +81,7 @@ def test_future_and_cash_use_their_own_levels():
 
 
 def test_cost_profiles_differ_by_instrument_kind():
-    pb = PaperBroker()
+    pb = PaperBroker(brokerage_per_order=20.0)      # M68 PR-7: a trader who saved a ₹20 brokerage (ATP sets none)
     day = {"entry_date": date(2025, 6, 2), "exit_date": date(2025, 6, 2)}
     equity = pb.estimate_round_trip_costs(100.0, 104.0, 100, **day)
     option = pb.estimate_round_trip_costs(120.0, 150.0, 75, "OPTION", **day)

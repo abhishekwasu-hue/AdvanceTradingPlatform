@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.ai import briefing
 from app.ai import market_memory as mm
@@ -26,10 +26,30 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+_TENANTS: list = []   # organisations these tests created; their profiles and broker sessions are removed after each test
+
+
 def _tenant(email):
     headers = {"Authorization": f"Bearer {_register(email)}"}
     me = client.get("/api/auth/me", headers=headers).json()
+    _TENANTS.append(me["tenant_id"])
     return headers, me["tenant_id"], me["id"]
+
+
+@pytest.fixture(autouse=True)
+def _clean_up_profiles_and_broker_sessions():
+    """The test DB is shared by every test file: an organisation left with a trader profile and a valid broker session is
+    read by every later trading-worker cycle's market memory (through that test's fake broker)."""
+    yield
+
+    async def go(tenant_ids):
+        async with _session_factory() as session:
+            await session.execute(delete(TraderProfileRecord).where(TraderProfileRecord.tenant_id.in_(tenant_ids)))
+            await session.execute(delete(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id.in_(tenant_ids)))
+            await session.commit()
+    if _TENANTS:
+        _run(go(list(_TENANTS)))
+        _TENANTS.clear()
 
 
 def _teammate(tenant_id: int, email: str, role: str = "USER") -> dict:

@@ -28,6 +28,17 @@ def _df(n=300, freq="5min", step=0.2):
     return pd.DataFrame({"open": base - 0.1, "high": base + 0.5, "low": base - 0.5, "close": base, "volume": 1000.0}, index=idx)
 
 
+def _paper_account(user_id):
+    """His PAPER account (the capital basis a backtest reads, DEF-0)."""
+    async def go():
+        from app.db.models import User
+        from app.paper.service import get_account
+        async with _session_factory() as session:
+            await get_account(session, await session.get(User, user_id))
+            await session.commit()
+    asyncio.run(go())
+
+
 def _call(user_id, name, args):
     async def go():
         async with _session_factory() as session:
@@ -71,7 +82,7 @@ def test_new_tools_are_registered_strict_and_take_no_client_candles():
 def test_without_a_broker_session_every_tool_fails_closed():
     _, me = _owner("hc2b3-nobroker@example.com")
     args = {"get_candles": {"symbol": "NIFTY"}, "get_quote": {"symbol": "NIFTY"}, "get_option_chain": {"underlying": "NIFTY"},
-            "get_market_regime": {"symbol": "NIFTY"}, "run_backtest": {"strategy_id": "ema_rsi_scalper_1m", "symbol": "NIFTY", "timeframe": "1min"}}
+            "get_market_regime": {"symbol": "NIFTY"}, "run_backtest": {"strategy_id": "ema_rsi_scalper_1m", "symbol": "NIFTY", "timeframe": "1min", "days": 3}}
     for name in NEW:
         res = _call(me["id"], name, args[name])
         assert not res.ok and "broker session" in res.error.lower() and res.data is None, name
@@ -106,10 +117,15 @@ def test_quote_and_option_chain(monkeypatch):
 def test_backtest_runs_on_server_bars_and_flags_a_small_sample(monkeypatch):
     _, me = _owner("hc2b3-bt@example.com")
     _fake_frame(monkeypatch, _df(n=900, freq="1min", step=0.01))
+    # M72 PR-4 (F12): no saved capital and no paper account yet = the capital is Not set - the tool asks, never assumes
+    none = _call(me["id"], "run_backtest", {"strategy_id": "ema_rsi_scalper_1m", "symbol": "NIFTY", "timeframe": "1min", "days": 3})
+    assert not none.ok and "capital is Not set" in none.error
+    _paper_account(me["id"])
     res = _call(me["id"], "run_backtest", {"strategy_id": "ema_rsi_scalper_1m", "symbol": "NIFTY", "timeframe": "1min", "days": 3})
     assert res.ok and isinstance(res.data["trades"], int) and res.data["min_trades_for_statistics"] == 30
     assert res.data["sample"] == ("insufficient" if res.data["trades"] < 30 else "ok") and "trades_list" not in res.data
-    unknown = _call(me["id"], "run_backtest", {"strategy_id": "no_such_strategy", "symbol": "NIFTY"})
+    unknown = _call(me["id"], "run_backtest", {"strategy_id": "no_such_strategy", "symbol": "NIFTY", "timeframe": "1min", "days": 3})
+    assert not _call(me["id"], "run_backtest", {"strategy_id": "ema_rsi_scalper_1m", "symbol": "NIFTY"}).ok      # no pre-chosen window
     assert not unknown.ok and "unknown or not allowed strategy" in unknown.error
 
 

@@ -193,7 +193,7 @@ def test_every_non_get_route_refuses_the_view_with_403(world, prefix):
 @pytest.mark.parametrize("path", [
     "/api/exports/trades", "/api/tax/report.csv", "/api/charts/drawings/export", "/api/broker/upstox/oauth/start",
     "/api/broker/upstox/login-url", "/api/webhooks/tradingview/token", "/api/alerts/telegram/connect", "/api/auth/google/start",
-    "/api/admin/console/system", "/api/public/v1/account",
+    "/api/auth/broker/upstox/start", "/api/admin/console/system", "/api/public/v1/account",
 ])
 def test_reads_that_act_or_hand_something_out_are_refused(world, path):
     view = _bearer(_start(world["admin"], world["target_me"]["id"])["token"])

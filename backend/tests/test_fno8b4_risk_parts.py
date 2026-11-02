@@ -178,8 +178,7 @@ def test_the_budget_carries_the_paper_balance_without_creating_an_account():
     async def accounts():
         async with _session_factory() as session:
             return await session.scalar(select(func.count()).select_from(PaperAccountRecord).where(PaperAccountRecord.user_id == t["user_id"]))
-    from app.core import config as app_config
-    start = float(app_config.PAPER_STARTING_CAPITAL)
+    start = 1_000_000.0          # M68 PR-7: the capital he saved (tests/conftest.py _saved_paper_capital); ATP sets none
     out = client.get("/api/paper/fno/risk-budget", headers=t["headers"]).json()
     assert out["paper_balance"]["amount"] == round(start, 2) and out["paper_balance"]["open_margin_counted"] is False
     assert _run(accounts()) == 0                                                   # read only: no account created

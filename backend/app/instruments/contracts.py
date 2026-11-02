@@ -45,9 +45,15 @@ class ContractRules:
     # Strategy templates section 5: False when a single option's stop is the premium stop only (the deployment's
     # stop_source PREMIUM_PCT) - the trade then carries no underlying-level stop. True (the default) = as before.
     underlying_stop: bool = True
+    # M68 PR-4 (TS1-042): a ratio spread's sold legs per bought leg - the user's own (None: Not set, no entry).
+    ratio_shorts: int | None = None
 
     @classmethod
     def from_deployment(cls, dep: StrategyDeploymentRecord) -> "ContractRules":
+        """The bot row's own rules. M68 PR-4 (TS1-035): every option / future row names its expiry, strike and side - the
+        API refuses one that does not (app/deployments/routes.py `normalised`, "Needs your setting: ..."), and every row
+        made before M68 was stored with them. The NEAREST / ATM readings below only read a row that names none (an
+        underlying bot, or a structure whose strike is its definition); they choose nothing for a new bot."""
         kind = InstrumentKind(dep.instrument_kind or "UNDERLYING")
         position = OptionPosition(dep.option_position) if dep.option_position else None
         return cls(
@@ -58,12 +64,18 @@ class ContractRules:
             premium_stop_pct=dep.premium_stop_pct,              # DEF-0 D3: None = no premium stop (no built-in 30 / 50%)
             max_lots=dep.max_lots,
             strike_filters=StrikeFilters.from_json(getattr(dep, "strike_filters", None)),
+            ratio_shorts=getattr(dep, "ratio_shorts", None),
             underlying_stop=getattr(dep, "stop_source", None) != "PREMIUM_PCT",
         )
 
     @property
     def derived(self) -> bool:
         return self.kind != InstrumentKind.UNDERLYING
+
+
+# M68 PR-4 (TS1-035): the structures whose primary strike follows the bot's own strike rule (the others name theirs:
+# a straddle / butterfly sells at the money, a strangle / condor out of the money, a CUSTOM structure per leg).
+RULE_STRIKE_STRUCTURES = frozenset({"SINGLE", "BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "CALL_RATIO_SPREAD", "PUT_RATIO_SPREAD"})
 
 
 @dataclass(frozen=True)

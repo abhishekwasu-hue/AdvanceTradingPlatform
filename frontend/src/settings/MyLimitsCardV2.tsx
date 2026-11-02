@@ -6,7 +6,7 @@ import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2 } from "../tradi
 import type { RiskConfig } from "../types";
 import { Details } from "../ui/Details";
 import {
-  LIMIT_FIELDS, NOT_SET, SWITCHES_OFF, SWITCH_FIELDS, configOf, countSet, loadSwitches, saveSwitches, textOf,
+  LIMIT_FIELDS, NOT_SET, SWITCHES_OFF, SWITCH_FIELDS, configOf, countSet, loadSwitches, saveFailedText, saveSwitches, textOf,
   type LimitsText, type MyLimitSwitches,
 } from "./myLimits";
 import { RISK_LIMITS_PATH } from "./riskLimits";
@@ -64,7 +64,8 @@ function MyLimitsEditor({ testId }: { testId: string }) {
       const n = countSet(next);
       setNote({ kind: "done", text: n ? `Saved. ${n} of your limits ${n === 1 ? "is" : "are"} on; the rest are not set.` : "Saved. All limits are off." });
     } catch (e) {
-      setNote({ kind: "warn", text: e instanceof Error ? e.message : "Could not save. Try again." });
+      // M68 PR-5: the server's own reason (e.g. the drawdown step needs its cut %), inline under the form.
+      setNote({ kind: "warn", text: saveFailedText(e) });
     } finally {
       setBusy(false);
     }
@@ -124,7 +125,7 @@ function MyLimitsEditor({ testId }: { testId: string }) {
           )}
         </div>
       )}
-      {note && <div className="mt-space-2"><NoteV2 kind={note.kind}>{note.text}</NoteV2></div>}
+      {note && <div className="mt-space-2" data-testid="my-limits-note"><NoteV2 kind={note.kind}>{note.text}</NoteV2></div>}
     </CardV2>
   );
 }

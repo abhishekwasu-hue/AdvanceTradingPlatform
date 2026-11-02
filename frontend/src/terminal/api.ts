@@ -13,7 +13,8 @@ export type FeedState = "live" | "connecting" | "reconnecting" | "renew_needed" 
 export interface TerminalStatus {
   today: { mtm: number; booked: number; note: string };
   open: { count: number; priced: number; mtm: number | null; as_of: string | null };
-  funds: { balance: number; available: number; source: string; note: string };
+  /** M68 PR-7: null while his paper starting capital is Not set (`needs_capital`). */
+  funds: { balance: number | null; available: number | null; source: string; note: string; needs_capital?: boolean };
   margin: { used: number; estimated: boolean; not_estimated: number; note: string };
   mode: { mode: "PAPER" | "LIVE"; live_allowed: boolean; message: string };
   feed: { state: FeedState; message: string; broker_name?: string };

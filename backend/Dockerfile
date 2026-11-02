@@ -26,6 +26,8 @@ COPY app ./app
 COPY alembic.ini .
 COPY alembic ./alembic
 COPY scripts ./scripts
+# M72Q-7: the eval sets and runners (synthetic public data), so the owner can run the one live planner eval on the server.
+COPY evals ./evals
 
 RUN useradd --create-home --shell /bin/bash appuser && chown -R appuser:appuser /app
 # Analyze a chart: the private data volume's mount point (docker-compose `private_data`). Created here, owned by the app

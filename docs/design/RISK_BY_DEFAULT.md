@@ -72,8 +72,8 @@ readings are not Copilot market memory (`market_memory.latest` shows SYMBOL rows
 
 The ticket takes NSE/BSE cash underlyings only in Phase 0 (no futures, options, commodities or crypto): by the instrument
 master when it knows the symbol (an NSE/BSE EQ or INDEX row), else a registry contract or an option/future-shaped symbol
-is refused. An approved ticket proposal whose time stop is no longer later than now + the lead is not placed. A time stop must
-be later than now + 5 minutes IST (`TICKET_TIME_STOP_MIN_LEAD_MINUTES`); one already past would close the position at
+is refused. An approved ticket proposal whose time stop is no longer later than now is not placed. A time stop must
+be later than now (IST; M68 PR-3 removed the 5-minute lead, TS1-033); one already past would close the position at
 once. Every stored plan carries a reason: PLACED, PROPOSED ("Sent for approval: proposal #N"; it becomes PLACED or
 FAILED when the approval runs), REFUSED or FAILED.
 

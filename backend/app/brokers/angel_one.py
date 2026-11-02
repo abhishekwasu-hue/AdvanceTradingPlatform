@@ -50,6 +50,7 @@ from app.brokers.models import (
     OptionChain,
     OptionChainRow,
     Quote,
+    lot_or_none,
 )
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.totp import totp_code
@@ -269,7 +270,7 @@ class AngelOneBroker(BrokerInterface):
                 tick = 0.05
             out.append(Instrument(instrument_token=token, exchange=exchange, tradingsymbol=symbol, name=(row.get("name") or None),
                                   segment=row.get("exch_seg"), instrument_type=(row.get("instrumenttype") or None) or ("EQ" if exchange in ("NSE", "BSE") else None),
-                                  lot_size=float(row.get("lotsize") or 1), tick_size=tick or 0.05, expiry=_parse_expiry(row.get("expiry")),
+                                  lot_size=lot_or_none(row.get("lotsize")), tick_size=tick or 0.05, expiry=_parse_expiry(row.get("expiry")),
                                   strike=strike if strike > 0 else None))
             symbol_map[(exchange, symbol)] = (token, str(row.get("symbol") or symbol))
             name = str(row.get("name") or "").upper()

@@ -5,7 +5,9 @@
 The message becomes an ENTRY proposal (source "manual") on the same approval flow as every other entry: buttons on
 Telegram / in the app, Approve places one PAPER order at the re-quoted price (Z3-a). Validation happens before anything
 is raised, as in the Trade bot: the side of the levels against the live price (long: stop below, target above; short:
-the reverse), and the reward:risk from that price, with a warning below RR_WARN (still allowed, as there).
+the reverse), and the reward:risk from that price, with a warning below the sender's OWN minimum reward:risk when he set
+one (still allowed). M68 PR-8 (TS1-080): the Trade bot's fixed 3.0 is the owner's own number - it is not imposed on
+anyone here; no minimum of his own = no warning.
 
 Differences from the Trade bot, on purpose: the underlying only (no option spreads in Phase 0), and the target is
 required (ATP's exit check needs a target level on an underlying position). Places nothing itself.
@@ -14,7 +16,14 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
-RR_WARN = 3.0
+
+def rr_warning(rr: float | None, own_min: float | None) -> str:
+    """The note under a /paper reply: the reward:risk below his own minimum (a number > 0 he set), else nothing."""
+    if rr is None or own_min is None or own_min <= 0 or rr >= own_min:
+        return ""
+    return f" Reward:risk {rr:g} is below your minimum {own_min:g} - Approve still places it."
+
+
 DIRECTIONS = {"long": "LONG", "buy": "LONG", "bullish": "LONG", "short": "SHORT", "sell": "SHORT", "bearish": "SHORT"}
 USAGE = "Usage: /paper <symbol> long|short SL <price> T <price> - e.g. /paper RELIANCE long SL 2380 T 2460"
 

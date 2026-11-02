@@ -121,12 +121,21 @@ async def run_next(session: AsyncSession, *, now: Optional[Clock] = None) -> Opt
             await _finish(session, row, "failed", clock(), "The research loop needs an AI provider (Settings > AI).")
             return sid
         frame, source, _prices = await market._backtest_frame(ToolContext(session, tid, user), spec.symbol, spec.exchange, spec.timeframe, days)
-        frame = filter_allowed(frame, holdout_start())                # the sealed holdout is cut off, never searched
+        from app.market_lake import data_use
+        windows = await data_use.windows_for(session, tid, spec.symbol, refused_only=True)   # M71 PL-7b: the tenant's own policy
+        frame = filter_allowed(frame, holdout_start(), windows)       # the sealed holdout is cut off, never searched
         if len(frame) < 50:
             await _finish(session, row, "failed", clock(), f"Only {len(frame)} bars before the sealed holdout; a study needs at least 50.",
                           data_source=source)
             return sid
-        risk = await get_tenant_risk_config(tid, session) or RiskConfig()
+        from app.paper import paper_settings
+        # M68 PR-7 (TS1-066): the organisation's capital, else his own paper capital (Not set: the study waits for it),
+        # and his paper charges - the same as his paper fills (parity).
+        risk, charges = await paper_settings.backtest_inputs(session, user, await get_tenant_risk_config(tid, session) or RiskConfig())
+        if risk.capital is None:
+            await _finish(session, row, "failed", clock(), f"{paper_settings.needs_capital()}: a study measures daily returns as a share of it.",
+                          data_source=source)
+            return sid
         inner = research_loop.llm_proposer(provider)
 
         async def propose(idea: str, history: Any) -> Any:           # each draft is a heartbeat: the study is alive
@@ -134,7 +143,8 @@ async def run_next(session: AsyncSession, *, now: Optional[Clock] = None) -> Opt
             await session.commit()
             return await inner(idea, history)
 
-        await research_loop.run_study(session, tenant_id=tid, user_id=uid, spec=spec, frame=frame, risk=risk, propose=propose, study_id=sid)
+        await research_loop.run_study(session, tenant_id=tid, user_id=uid, spec=spec, frame=frame, risk=risk, propose=propose, study_id=sid,
+                                      charges=charges, use_windows=windows)
         await _finish(session, row, "done", clock(), data_source=source, usage_json=json.dumps(metering.spent_by(provider), default=str))
     except research_loop.HoldoutError as exc:
         await session.rollback()

@@ -158,8 +158,8 @@ def test_panel_tiles_from_the_lake_events_and_seams(own_index_bars):
             session.add(MarketEventRecord(tenant_id=None, event_date=today, kind="RBI_POLICY", action="SIZE_CUT", description=f"Policy {tag}"))
             session.add(MarketEventRecord(tenant_id=t["tenant_id"], event_date=today + timedelta(days=(6 - today.weekday())), kind="RESULTS",
                                           underlying="RELIANCE", action="BLOCK", description=f"Own {tag}"))
-            session.add(MarketEventRecord(tenant_id=other["tenant_id"], event_date=today, kind="OTHER", description=f"Theirs {tag}"))
-            session.add(MarketEventRecord(tenant_id=None, event_date=today + timedelta(days=8), kind="OTHER", description=f"Next week {tag}"))
+            session.add(MarketEventRecord(tenant_id=other["tenant_id"], event_date=today, kind="OTHER", action="SIZE_CUT", description=f"Theirs {tag}"))
+            session.add(MarketEventRecord(tenant_id=None, event_date=today + timedelta(days=8), kind="OTHER", action="SIZE_CUT", description=f"Next week {tag}"))
             await session.commit()
     _run(events())
 

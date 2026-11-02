@@ -17,13 +17,15 @@ import { chipText, trailErrors, trailOf, trailWords, type CombinedExit, type Com
 const noop = () => undefined;
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, "\"").replace(/&amp;/g, "&").replace(/\s+/g, " ");
 const SPREAD: ExitLeg[] = [{ side: "SELL", underlying: "NIFTY" }, { side: "BUY", underlying: "NIFTY" }];
-const form = (over: Partial<StrategyExitForm> = {}): StrategyExitForm => ({ ...emptyForm(SPREAD), ...over });
+// M68 PR-3: the section picks no measure any more; these tests run as a user who chose the spot level for the spread.
+const form = (over: Partial<StrategyExitForm> = {}): StrategyExitForm => ({ ...emptyForm(SPREAD), measure: "SPOT", ...over });
 
 describe("SX1: the section starts empty or from the user's own defaults", () => {
-  it("defaults to the spot level for a spread and the ₹ profit / loss otherwise; no number is invented", () => {
+  it("M68 PR-3 (TS1-031): no measure is pre-chosen, for a spread or anything else; no number is invented", () => {
     expect(isSpread(SPREAD)).toBe(true);
-    expect(emptyForm(SPREAD)).toMatchObject({ measure: "SPOT", sl: "", target: "", trailKind: "NONE", fromDefaults: false });
-    expect(emptyForm([{ side: "BUY", underlying: "NIFTY" }]).measure).toBe("MTM_INR");
+    expect(emptyForm(SPREAD)).toMatchObject({ measure: "", sl: "", target: "", trailKind: "NONE", fromDefaults: false });
+    expect(emptyForm([{ side: "BUY", underlying: "NIFTY" }]).measure).toBe("");
+    expect(exitErrors({ ...emptyForm(SPREAD), sl: "100" })).toContain("Choose what the strategy exit watches.");
     expect(prefillForm(null, SPREAD)).toEqual(emptyForm(SPREAD));
     expect(hasExits(emptyForm(SPREAD))).toBe(false);
     expect(exitsAsk(emptyForm(SPREAD))).toBeNull();                       // empty: no strategy exit at all

@@ -195,7 +195,7 @@ async def _paper_checks(session: AsyncSession, row: ExecutionIntentRecord, owner
     refused = await caps.entry_refusals(session, owner, caps.candidate_of(row.symbol, signal.entry, signal.stop_loss), now)
     if refused:
         return "refuse", "; ".join(refused), None
-    late = await auto_paper.window_reason(session, now, row.exchange or "NSE")      # review of X2 (M2): the entry window
+    late = await auto_paper.window_reason(session, now, row.exchange or "NSE", owner)   # X2 (M2) / M68 PR-3: his own window
     if late:
         return "propose", late, None
     limit = await auto_paper.limit_reason(session, row, now)

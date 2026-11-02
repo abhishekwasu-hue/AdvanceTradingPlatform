@@ -3,6 +3,7 @@ need review like any other business rule, and there are three of them. `tenants.
 id; a SUPER_ADMIN changes it (Phase B3). An unknown id falls back to `free` so a typo in the DB
 can only ever *restrict* a tenant, never unlock live trading by accident.
 """
+import math
 import os
 from dataclasses import dataclass
 from typing import Dict
@@ -91,6 +92,21 @@ PLANS: Dict[str, Plan] = {
 }
 
 DEFAULT_PLAN_ID = "free"
+
+
+def platform_ai_budget_inr(plan_id: str) -> float | None:
+    """M72 PR-1b (M72Q-1): the operator's monthly budget in rupees for the PLATFORM AI key (app/ai/platform_key.py) on one
+    plan, from `AI_PLATFORM_BUDGET_INR_<PLAN>` on the host. No number lives in code: unset, empty or not a number = Not set
+    (None), and a plan with no budget set never reaches the platform key (the Free plan included). The owner's value in
+    Admin (platform control `ai_platform_limits`) comes before this one."""
+    raw = os.environ.get(f"AI_PLATFORM_BUDGET_INR_{(plan_id or '').upper()}", "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    return value if math.isfinite(value) and value >= 0 else None
 
 
 def get_plan(plan_id: str) -> Plan:

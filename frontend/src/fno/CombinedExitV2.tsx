@@ -12,7 +12,7 @@ import { formatNumber } from "../ui/format";
 import { OptionCards } from "../ui/OptionCards";
 import { Signed } from "../ui/Signed";
 import {
-  MEASURES, TIMEFRAMES, active, amount, bodyOf, chipText, combinedApi, defaultMeasure, exitShortCopy, failText, formErrors,
+  MEASURES, TIMEFRAMES, active, amount, bodyOf, chipText, combinedApi, exitShortCopy, failText, formErrors,
   newRef, previewWords, sheetLegs, staleText, trailLabels, trailOf, type CombinedApi, type CombinedExit, type CombinedForm,
   type CombinedPreview, type SheetLeg, type TrailKind,
 } from "./combinedExit";
@@ -20,6 +20,7 @@ import type { ContractFacts } from "./contracts";
 import { groupExitApi, runExit, type GroupExitApi } from "./groupExits";
 import { STRATEGY_TRAILS } from "./strategyExits";
 import { Combobox } from "../ui/Combobox";
+import { exitDefaultsOf, useTradeSettings, type ExitDefaults } from "../settings/tradeSettings";
 
 /**
  * CX6 (owner, 24 Oct): "Set combined stop-loss" on the positions panel (Terminal and My trades), the sheet (tick boxes per
@@ -199,7 +200,7 @@ const TRAIL_CHOICES: readonly { key: TrailKind; label: string; hint: string }[] 
 /** CX2: the optional "Trailing" part of the sheet. Empty boxes until the user types; nothing is suggested. */
 function TrailingPartV2({ form, set }: { form: CombinedForm; set: (patch: Partial<CombinedForm>) => void }) {
   const kind = form.trailKind ?? "NONE";
-  const labels = kind === "NONE" ? null : trailLabels(kind, form.measure);
+  const labels = kind === "NONE" || !form.measure ? null : trailLabels(kind, form.measure);
   return (
     <div className="space-y-space-1" data-trailing>
       <OptionCards name="combined-trailing" legend="Trailing (optional)" options={TRAIL_CHOICES} value={kind} dataAttr="data-trail-kind"
@@ -239,10 +240,11 @@ function TrailingPartV2({ form, set }: { form: CombinedForm; set: (patch: Partia
 /** The sheet on a phone: from the bottom, at most 85% of the screen, scrolling inside. */
 function BottomSheet(props: ComponentProps<typeof Dialog>) { return <Sheet side="bottom" {...props} />; }
 
-const EMPTY_FORM: CombinedForm = { ticked: [], measure: "MTM_INR", sl: "", target: "", check: "TOUCH", timeframe: 15 };
+const EMPTY_FORM: CombinedForm = { ticked: [], measure: "", sl: "", target: "", check: "", timeframe: 15 };
 
-/** The sheet's first form: every leg ticked with its default measure, or the exit being edited. Pure. */
-export function startForm(legs: readonly SheetLeg[], editing: CombinedExit | null): CombinedForm {
+/** The sheet's first form: every leg ticked, the measure and the check from his own Trade settings > Exits (M68 PR-3,
+ * TS1-031: Not set = not chosen, the form asks), or the exit being edited. Pure. */
+export function startForm(legs: readonly SheetLeg[], editing: CombinedExit | null, own: ExitDefaults = {}): CombinedForm {
   if (editing) {
     return {
       ...EMPTY_FORM, ticked: editing.legs.map((l) => l.trade_id), measure: editing.measure,
@@ -252,7 +254,7 @@ export function startForm(legs: readonly SheetLeg[], editing: CombinedExit | nul
   }
   // Every open position of one kind ticked (PAPER and LIVE never share one exit): the kind of the first one.
   const same = legs.filter((l) => (l.mode ?? "") === (legs[0]?.mode ?? ""));
-  return { ...EMPTY_FORM, ticked: same.map((l) => l.id), measure: defaultMeasure(same) };
+  return { ...EMPTY_FORM, ticked: same.map((l) => l.id), measure: own.combinedMeasure ?? "", check: own.combinedCheck ?? "" };
 }
 
 /** CX2: the trailing of an exit being edited, as the form holds it. Pure. */
@@ -279,7 +281,8 @@ export function CombinedExitSheetV2({ open, legs, editing, onClose, onDone, api 
   const shown = editing ? editLegs(editing) : legs;
   // A phone gets a bottom sheet (its own scroll, the confirm always on screen); a wider screen the centred dialog.
   const phone = useMediaQuery("(max-width: 639px)");
-  const [form, setForm] = useState<CombinedForm>(() => startForm(shown, editing));
+  const own = exitDefaultsOf(useTradeSettings(open));
+  const [form, setForm] = useState<CombinedForm>(() => startForm(shown, editing, own));
   const [preview, setPreview] = useState<CombinedPreview | null>(null);
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -289,7 +292,7 @@ export function CombinedExitSheetV2({ open, legs, editing, onClose, onDone, api 
   // A new opening starts from the positions on screen (or the exit being edited) with a new reference.
   useEffect(() => {
     if (!open) return;
-    setForm(startForm(editing ? editLegs(editing) : legs, editing));
+    setForm(startForm(editing ? editLegs(editing) : legs, editing, own));
     setPreview(null); setError(null); ref.current = newRef();
   }, [opening]);                                                         // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -318,7 +321,7 @@ export function CombinedExitSheetV2({ open, legs, editing, onClose, onDone, api 
     try {
       const saved = editing
         ? await api.edit(editing.id, { version: editing.version, sl_value: amount(form.sl), target_value: amount(form.target), trailing: trailOf(form),
-          ...(editing.measure === "SPOT" ? { check_mode: form.check, timeframe_minutes: form.check === "CLOSE" ? form.timeframe : null } : {}) })
+          ...(editing.measure === "SPOT" ? { check_mode: form.check || editing.check_mode, timeframe_minutes: form.check === "CLOSE" ? form.timeframe : null } : {}) })
         : await api.create(bodyOf(form, shown, ref.current));
       onDone(`${editing ? "Combined exit changed" : "Combined exit set"}: ${saved.words}`, true);
     } catch (e) {

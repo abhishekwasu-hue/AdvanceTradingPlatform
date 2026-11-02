@@ -12,7 +12,7 @@ from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest
 from app.compliance.order_policy import apply_entry_policy
 from app.core.enums import ExecutionMode, OrderSide, SignalDirection
 from app.core.models import RiskConfig, Signal, Trade
-from app.execution.paper_broker import PaperBroker
+from app.execution.paper_charges import STATUTORY_ONLY, PaperCharges
 from app.execution.tagging import LEG_ENTRY, LEG_STOP, build_order_tag, client_order_id
 from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
@@ -131,7 +131,7 @@ class OrderRouter:
         exchange: str = "NSE", product: str | None = None, place_protective_stop: bool = True,
         algo_id: str | None = None, order_style: str | None = None, market_protection_pct: float | None = None,
         is_option: Optional[bool] = None, paper_execution: str = "direct", freeze_quantity: Optional[int] = None,
-        order_ref: int | None = None,
+        order_ref: int | None = None, paper_charges: PaperCharges | None = None,
     ) -> None:
         self.mode = mode
         # M55 S4: the `orders` row this execution belongs to - its entry and protective stop carry client order ids
@@ -158,7 +158,8 @@ class OrderRouter:
         self.market_protection_pct = market_protection_pct
         self.is_option = is_option
         self.risk_manager = RiskManager(risk_config)
-        self.paper_broker = PaperBroker()
+        # M68 PR-7 (TS1-069): a PAPER fill pays the trader's own brokerage / slippage (None: statutory charges only).
+        self.paper_broker = (paper_charges or STATUTORY_ONLY).broker()
         # M55 S3: the paper venue a PAPER entry fills on (None: a PaperExecutionAdapter over `paper_broker` per entry).
         self.paper_venue: BrokerInterface | None = None
         self.broker = broker

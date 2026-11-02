@@ -22,7 +22,7 @@ def test_put_then_get_risk_settings_round_trips():
     custom = RiskConfig(
         capital=250_000.0, risk_per_trade_pct=1.0, max_daily_loss_pct=2.0,
         max_trades_per_day=10, max_open_positions=2, max_consecutive_losses=3,
-        min_risk_reward=1.5, lot_size=25,
+        min_risk_reward=1.5, lot_size=25, loss_streak_pause="next_session",   # M68 PR-5 (TS1-051): asked, never pre-picked
     )
     put_response = client.put("/api/risk-settings", headers=headers, json=custom.model_dump())
     assert put_response.status_code == 200

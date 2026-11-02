@@ -1,6 +1,8 @@
 import asyncio
 from datetime import datetime, timezone
 
+import pytest
+
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import Signal
 from app.db.models import TradeRecord, User
@@ -149,6 +151,7 @@ def test_global_kill_switch_blocks_every_tenant_including_anonymous(monkeypatch)
     assert resumed.json()["executed"] is True
 
 
+@pytest.mark.real_position_size        # M68 PR-2: with an EMPTY Position size the exit still closes (ADR-0004)
 def test_emergency_exit_engages_switch_and_closes_priced_positions():
     token = _register("aldo@example.com")
     headers = {"Authorization": f"Bearer {token}"}

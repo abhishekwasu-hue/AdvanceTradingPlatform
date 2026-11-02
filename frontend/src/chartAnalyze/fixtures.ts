@@ -126,7 +126,7 @@ export function fixtureHybrid(withAi = true): HybridResult {
     contract_version: 1, mode: "hybrid", method: withAi ? "code_ai" : "code",
     label: withAi ? "Advanced analysis (code + AI)" : "Advanced analysis (code)", disclaimer: DISCLAIMER,
     pick: { symbol: "DEMO", timeframe: "1h" },
-    side_by_side_note: "ATP does not know your picture's price scale, so nothing is drawn on it. ATP's reading is drawn on its own chart of the stored candles for the symbol and timeframe you picked, shown beside your chart.",
+    side_by_side_note: "ATP does not know your picture's price scale, so nothing is drawn on it. ATP's reading is drawn on its own chart of the stored candles for this symbol and timeframe, shown beside your chart.",
     reading: {
       symbol: "DEMO", timeframe: "1h", timeframe_label: "1-hour", as_of: "2026-01-01T10:00:00+00:00", last_close: 106.2, bars,
       table: [

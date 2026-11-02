@@ -279,6 +279,12 @@ def test_the_copilot_backtest_tools_run_on_stored_history_without_a_broker(store
                 user = await session.get(User, me["id"])
                 return await run_tool(name, args, ToolContext(session, user.tenant_id, user, datetime.now(timezone.utc)))
         return _run(go())
+    async def account():                      # M72 PR-4 (F12): the capital basis is his own PAPER account (DEF-0)
+        from app.paper.service import get_account
+        async with _session_factory() as session:
+            await get_account(session, await session.get(User, me["id"]))
+            await session.commit()
+    _run(account())
     res = call("run_backtest", {"strategy_id": "swing_ema_pullback_d", "symbol": SYM, "timeframe": "day", "days": 60})
     assert res.ok and res.source == "lake:daily" and res.data["prices"] == bar_source.STORED_WORDS
     assert res.data["prices_line"].startswith("Prices from ATP's stored")

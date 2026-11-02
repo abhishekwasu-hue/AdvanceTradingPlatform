@@ -54,13 +54,14 @@ describe("8b-b Trade this setup: the existing ticket / basket, pre-filled from h
     expect(t.stopsToSet).toBe(0);
   });
 
-  it("settings without lots or a stop start at 1 lot and ask him for the exit level - nothing is made up", () => {
+  it("settings without lots or a stop leave the lots empty (M68 PR-2: the basket asks) and ask him for the exit level - nothing is made up", () => {
     const t = setupTrade({ ...ITEM, lots: null, stop_pct: null }, "NIFTY", "2026-11-03", live.rows);
     if (t.kind !== "basket") throw new Error(t.kind);
-    expect(t.legs.map((l) => l.lots)).toEqual([1, 1]);
+    expect(t.legs.map((l) => l.lots)).toEqual([null, null]);
     expect(t.legs[0].stopLoss).toBeNull();
     expect(setupTradeNote(t)).toContain("Set the exit level of the short leg in the basket");
-    expect(setupTradeNote(t)).toContain("each leg starts at 1 lot");
+    expect(setupTradeNote(t)).toContain("enter each leg's lots in the basket");
+    expect(setupTradeNote(t)).not.toContain("1 lot");
   });
 
   it("one leg opens the order ticket on that strike and side; a ratio leg keeps its ratio", () => {

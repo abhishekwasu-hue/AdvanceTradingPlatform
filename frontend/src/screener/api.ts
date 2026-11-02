@@ -86,10 +86,11 @@ export interface ScanAlertInput { name: string; screen_id: number; symbols: stri
 
 export const screenerApi = {
   registry: () => request<{ version: string; timeframes: string[]; entries: Registry }>("/screener/registry"),
-  validate: (source: string, baseTf: string) =>
-    request<ValidateResponse>("/screener/validate", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf }) }),
-  run: (source: string, baseTf: string, symbols: string[], exchange = "NSE") =>
-    request<RunResponse>("/screener/run", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, symbols, exchange }) }),
+  /** M72 PR-6: `params` - the $parameter values the trader typed (the Copilot's screen draft); omitted = none. */
+  validate: (source: string, baseTf: string, params?: Record<string, number>) =>
+    request<ValidateResponse>("/screener/validate", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, ...(params ? { params } : {}) }) }),
+  run: (source: string, baseTf: string, symbols: string[], exchange = "NSE", params?: Record<string, number>) =>
+    request<RunResponse>("/screener/run", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, symbols, exchange, ...(params ? { params } : {}) }) }),
   /** Owner order 23 Oct: one batch of a larger universe - its broker calls take tokens from the session's shared API
    * budget, and the answer says how many it made (`budget`), so the page paces the next batch. */
   runBatch: (source: string, baseTf: string, symbols: string[], exchange = "NSE") =>

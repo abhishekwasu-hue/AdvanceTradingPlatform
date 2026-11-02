@@ -187,14 +187,19 @@ export const dismissChip = (stored: SetupStored, nowIso: string): SetupStored =>
 
 // --- Step 2: risk limits ------------------------------------------------------------------------------------------------
 
-/** TT-12 (owner decision, 24 Oct): no limit is filled in for the trader - every limit is off until he sets his own. Only
- * the paper account's starting capital starts from a value (his account's, else ₹1,00,000). */
-export const RISK_DEFAULTS = { capital: 100_000 } as const;
+/** TT-12 (owner decision, 24 Oct): no limit is filled in for the trader - every limit is off until he sets his own.
+ * M68 PR-7 (TS1-067, D4): nor is the starting capital - the field shows his account's own, else it is empty ("Not set";
+ * the server and this step no longer disagree: no ₹1,00,000 here, no ₹10,00,000 there). */
+export const RISK_DEFAULTS = {} as const;
 
-/** The server's bounds (backend `risk_engine/by_default.py` BOUNDS); the paper capital's own (PAPER_MIN / MAX_CAPITAL). */
+/** The server's bounds (backend `risk_engine/by_default.py` BOUNDS). M68 PR-7 (TS1-068): the paper capital has no floor
+ * or ceiling of ATP's - any amount above 0 (the low bound 1 is "a rupee or more"; 1e12 is only "a finite number"). M68 PR-5
+ * (TS1-049): only "a real number of the right sign" - a % above 0 and at most 100, a count or minimum finite; no ATP caps. */
 export const RISK_BOUNDS = {
-  capital: [10_000, 1_000_000_000], riskPerTradePct: [0.05, 5], dailyLossPct: [0.1, 20], maxTradesPerDay: [0, 500], minRr: [0, 10],
+  capital: [1, 1_000_000_000_000], riskPerTradePct: [0, 100], dailyLossPct: [0, 100], maxTradesPerDay: [0, 1_000_000_000], minRr: [0, 1_000_000_000],
 } as const;
+/** The limits that must be above their bottom (a % of 0 is no limit, left empty instead). */
+const ABOVE_LOW: ReadonlySet<string> = new Set(["riskPerTradePct", "dailyLossPct"]);
 
 export type RiskField = keyof typeof RISK_BOUNDS;
 export type RiskForm = Record<RiskField, string>;
@@ -233,21 +238,27 @@ export function perTradeText(capital: number | null, riskPct: number | null): st
   return `At most ${rupees((capital * riskPct) / 100)} on one trade.`;
 }
 
-/** What is wrong with each field, in plain words (empty = all good). A limit may be left empty (not set = no limit); the
- * capital may not. `capital: false` = the capital field is not shown. */
+/** What is wrong with each field, in plain words (empty = all good). A limit may be left empty (not set = no limit); so
+ * may the capital (M68 PR-7: Not set - nothing is sent for it). `capital: false` = the capital field is not shown. */
 export function riskErrors(form: RiskForm, opts: { capital?: boolean } = {}): Partial<Record<RiskField, string>> {
   const out: Partial<Record<RiskField, string>> = {};
   for (const field of Object.keys(RISK_BOUNDS) as RiskField[]) {
     if (field === "capital" && opts.capital === false) continue;
     const [low, high] = RISK_BOUNDS[field];
     const raw = form[field].trim().replace(/,/g, "");
-    if (!raw && field !== "capital") continue;
+    if (!raw) continue;
     const v = Number(raw);
     const whole = field === "maxTradesPerDay" || field === "capital";
     const show = (n: number) => (field === "capital" ? rupees(n) : String(n));
     if (!raw || !Number.isFinite(v)) out[field] = `Enter a number for ${RISK_LABELS[field].toLowerCase()}.`;
     else if (whole && !Number.isInteger(v)) out[field] = `Enter a whole number for ${RISK_LABELS[field].toLowerCase()}.`;
-    else if (v < low || v > high) out[field] = `${RISK_LABELS[field]} must be between ${show(low)} and ${show(high)}.`;
+    else if (field === "capital" && v <= 0) out[field] = "Starting capital must be more than ₹0.";
+    else if (field === "capital") { /* M68 PR-7: no ATP floor or ceiling */ }
+    else if (ABOVE_LOW.has(field) && (v <= low || v > high)) out[field] = `${RISK_LABELS[field]} must be more than ${show(low)} and at most ${show(high)}.`;
+    else if (v < low || v > high) {
+      out[field] = high >= 1_000_000_000 ? `${RISK_LABELS[field]} must be at least ${show(low)}.`
+        : `${RISK_LABELS[field]} must be between ${show(low)} and ${show(high)}.`;
+    }
   }
   return out;
 }
@@ -301,11 +312,11 @@ export const SUGGESTIONS: readonly StrategySuggestion[] = [
 export const START_BOT_PATH = "/deployments";
 
 /** The deployment "Start on Paper Autopilot" created before REV-1 M2 (D3). Kept as a helper; the Setup step no longer
- * starts a bot in one tap. Always PAPER: this screen never offers LIVE. */
+ * starts a bot in one tap. Always PAPER: this screen never offers LIVE. M68 PR-4 (TS1-040): the pre-chosen contract (a
+ * bought ATM option at the nearest expiry) is gone - the option's side, expiry and strike are his own (the server takes
+ * his Trade settings › Options and asks for one that is Not set). */
 export function paperDeployment(s: StrategySuggestion): DeploymentCreateRequest & { mode: "PAPER" } {
-  const contract: ContractRules = s.option
-    ? { instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0 }
-    : { instrument_kind: "UNDERLYING" };
+  const contract: ContractRules = s.option ? { instrument_kind: "OPTION" } : { instrument_kind: "UNDERLYING" };
   return {
     strategy_id: s.strategyId, symbol: s.symbol, exchange: "NSE", timeframe: s.timeframe, mode: "PAPER",
     holding: s.timeframe === "day" ? "SWING" : "INTRADAY", ...contract,

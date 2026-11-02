@@ -93,7 +93,7 @@ export function EventsV2({ symbol, api = eventsApi }: { symbol: string; api?: Ev
             <button type="button" className={cx(BTN, "border border-border text-fg hover:bg-surface-2")} disabled={!own} onClick={add} data-own-add>Add</button>
           </div>
           {note && <p role="status" className="text-t12 text-fg" data-own-note>{note}</p>}
-          <p className="text-t12 text-fg-muted">Information only. An event never holds back an order or an exit.</p>
+          <p className="text-t12 text-fg-muted">An event never holds back an order or an exit.</p>
         </div>
       </Details>
     </div>

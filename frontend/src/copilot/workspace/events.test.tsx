@@ -61,7 +61,7 @@ describe("the strip", () => {
   it("renders his list section and nothing that places or holds back an order", () => {
     const html = renderToStaticMarkup(<EventsV2 symbol="NIFTY" api={api} />);
     expect(html).toContain("Your events");
-    expect(html).toContain("Information only. An event never holds back an order or an exit.");
+    expect(html).toContain("An event never holds back an order or an exit.");
     for (const s of [source, rulesSource]) {
       expect(s).not.toMatch(/\/order|placeOrder|exit-now|basket\/execute|fno\/order/);
       expect(s).not.toMatch(/\b(buy|sell)\b/i);

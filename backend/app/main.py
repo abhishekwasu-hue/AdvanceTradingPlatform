@@ -42,7 +42,6 @@ from app.brokers.routes import router as broker_router
 from app.chart_analyze.routes import admin_router as chart_analyze_admin_router
 from app.chart_analyze.routes import router as chart_analyze_router
 from app.chart_analyze.workspace import router as chart_analyze_workspace_router
-from app.charts.workspace_events import router as workspace_events_router
 from app.charts.contracts import router as chart_contracts_router
 from app.charts.drawings import router as chart_drawings_router
 from app.charts.futures_basis import router as chart_futures_basis_router
@@ -51,6 +50,7 @@ from app.charts.price_action_layer import router as chart_price_action_layer_rou
 from app.charts.read_chart import router as chart_read_router
 from app.charts.studies import router as chart_studies_router
 from app.charts.trades_layer import router as chart_trades_layer_router
+from app.charts.workspace_events import router as workspace_events_router
 from app.charts.zones_layer import router as chart_zones_layer_router
 from app.compliance.routes import router as compliance_router
 from app.context_panel.routes import router as context_panel_router

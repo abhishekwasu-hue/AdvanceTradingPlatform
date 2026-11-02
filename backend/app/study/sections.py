@@ -141,8 +141,8 @@ async def ai_card_read(session: AsyncSession, user: User, symbol: str, tfs: Sequ
     hit = pick_card(rows, picks)
     if hit is None:
         return {"reason": AI_NONE}
-    row, tf = hit
-    item: Any = row
+    picked, tf = hit                       # not `row`: that name is the loop's ChartAnalysisRecord above (mypy)
+    item: Any = picked
     return ai_card_part(W.card_of(service.as_dict(item), cached=True), tf, item.created_at)
 
 

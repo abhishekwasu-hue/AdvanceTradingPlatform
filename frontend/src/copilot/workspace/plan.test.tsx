@@ -36,7 +36,7 @@ describe("W-6: nothing is filled in for him (M68)", () => {
     expect(html).toContain('data-plan-panel="none"');
     expect(html).toContain('data-plan="ask-kind"');
     expect(html).not.toContain('aria-checked="true"');
-    expect(html).toContain("Preview only: this panel places no order.");
+    expect(html).not.toContain('data-plan="place"');                     // W-7: nothing to place before he picks one
   });
 });
 
@@ -50,7 +50,7 @@ describe("W-6: the legs are the Options Builder's (the same numbers for the same
     const fut = legOf({ ...EMPTY_LEG, direction: "BUY", expiry: "2026-11-25", lots: "1", premium: "24550" }, INST, "FUTURE");
     expect(fut).toMatchObject({ option_type: "FUT", premium: 24550, strike: 24550 });
   });
-  it("the panel reuses the builder's engine call and parts, and calls no order route", () => {
+  it("the panel reuses the builder's engine call and parts, and calls no order route itself (W-7's PlanPlaceV2 does, on his tap)", () => {
     for (const part of ["builderApi.evaluate", "<LegTable", "<PayoffCanvas", "<MetricsCard", "wireLegs(sent)"]) expect(panelSource).toContain(part);
     for (const route of ["/paper/fno/order", "/paper/ticket", "fnoApi", "basketApi", ".place("]) expect(panelSource).not.toContain(route);
   });

@@ -15,6 +15,7 @@ import {
   equityValue, exitLines, legMissing, legOf, positive, savedExits, singleEntry,
   type EquityDraft, type ExitDraft, type InstrumentDraft, type LegDraft, type PlanKind,
 } from "./plan";
+import { PlanPlaceV2 } from "./PlanPlaceV2";
 
 /**
  * M75 W-6 (owner order M75 CW-4, flag `copilot_workspace`): the trade plan panel beside the chart, in the same tab.
@@ -22,7 +23,8 @@ import {
  * entry - every one of them Not set until he fills it in (M68); nothing is chosen for him, and "Use my saved exits" is
  * his own tap. The numbers are the Options Builder's engine (`builderApi.evaluate`): the same payoff, Greeks, max loss /
  * profit, break-evens and margin estimate the builder shows for the same legs (`LegTable`, `PayoffCanvas`,
- * `MetricsCard` reused). Preview only: this panel places no order and calls no order route (ADR-0006).
+ * `MetricsCard` reused). This panel itself calls no order route; W-7's `PlanPlaceV2` hands the plan to the existing
+ * ticket / basket, where he reviews and presses Place himself (ADR-0006).
  */
 const FIELD = "h-11 w-full min-w-0 rounded-control border border-border bg-surface-2 px-space-2 text-t14 text-fg font-tabular focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9";
 const SEG = "min-h-11 rounded-control px-space-3 text-t13 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9";
@@ -127,7 +129,6 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate }: PlanPane
     <section aria-labelledby="copilot-plan-title" data-plan-panel={kind ?? "none"} className="min-w-0 space-y-space-3 rounded-panel border border-subtle bg-surface-1 p-space-4">
       <header className="flex flex-wrap items-baseline justify-between gap-space-2">
         <h3 id="copilot-plan-title" className="text-t14 font-semibold text-fg">Trade plan · <span className="font-tabular">{symbol}</span></h3>
-        <span className="text-t12 text-fg-muted">Preview</span>
       </header>
 
       <div role="radiogroup" aria-label="Instrument" className="flex flex-wrap gap-space-1" data-plan="kind">
@@ -228,7 +229,8 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate }: PlanPane
         </fieldset>
       )}
 
-      <p className="text-t12 text-fg-muted" data-plan="preview-only">Preview only: this panel places no order.</p>
+      {/* M75 W-7 (CW-5): placing goes to the existing ticket / basket / equity ticket, each pressed by him. */}
+      {kind && <PlanPlaceV2 plan={{ underlying: symbol, kind, legs, equity, exits }} />}
       <Details id="copilot.plan" className="mt-0">
         <p className="text-t13 text-fg-muted">Every field stays Not set until you fill it in. The payoff, Greeks, max profit and loss, break-evens and the
           margin estimate come from the same engine as the Options Builder. The margin is ATP&apos;s estimate, never the broker&apos;s number.</p>

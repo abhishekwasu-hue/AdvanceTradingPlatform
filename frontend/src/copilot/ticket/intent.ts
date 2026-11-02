@@ -11,7 +11,7 @@ import type { ContractRight, Side } from "../../fno/api";
  * he typed one that is on it. Nothing here places, previews or changes an order.
  */
 export type PrefillField = "lots" | "price" | "stopLoss";
-export type PrefillSource = "typed" | "object";
+export type PrefillSource = "typed" | "object" | "plan";
 export interface TicketPrefill {
   lots?: number;
   price?: string;
@@ -90,7 +90,7 @@ export function matchExpiry(words: string | null, expiries: readonly string[]): 
 }
 
 const FIELD_WORDS: Record<PrefillField, string> = { lots: "lots", price: "limit price", stopLoss: "stop-loss" };
-const SOURCE_WORDS: Record<PrefillSource, string> = { typed: "from your message", object: "from what you asked about" };
+const SOURCE_WORDS: Record<PrefillSource, string> = { typed: "from your message", object: "from what you asked about", plan: "from your trade plan" };
 
 /** The source chips the ticket shows: "2 lots from your message". */
 export function prefillChips(p: TicketPrefill): { field: PrefillField; text: string }[] {

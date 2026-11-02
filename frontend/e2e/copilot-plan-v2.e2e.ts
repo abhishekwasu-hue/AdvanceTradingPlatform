@@ -13,6 +13,23 @@ const OUT = process.env.W6_OUT;
 const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_status: "VALID", token_expires_at: null, last_verified_at: null,
   needs_login: false, oauth_supported: true, oauth_callback_url: null, login_url_supported: false, code_param: null }];
 
+const CONTRACT = { underlying: "NIFTY", tradingsymbol: "NIFTY26N2524700CE", exchange: "NFO", instrument_key: "NSE_FO|1", expiry: "2026-11-25",
+  strike: 24700, right: "CE", lot_size: 75, tick_size: 0.05, label: "NIFTY 25 NOV 24700 CE", freeze_quantity: null };
+
+/** The ticket's confirm step as the server answers it (made up). */
+function preview(body: Record<string, unknown>) {
+  const lots = Number(body.lots ?? 1);
+  const units = lots * 75;
+  return {
+    mode: "PAPER", practice: "Practice mode (PAPER): no real order is sent and no money moves.", contract: CONTRACT, label: CONTRACT.label,
+    side: body.side, lots, lot_size: 75, units, order_type: body.order_type, product: body.product, price: 85, price_source: "live", fill_price: 84.5,
+    fill_note: "Fills at the live price 84.50", stop_loss: body.stop_loss ?? null,
+    margin: { value: 120000, basis: "A sold option: ATP's estimate.", estimated: true },
+    max_loss: { value: 6000, basis: "At your stop-loss." }, charges: { total: 42.5, estimated: true },
+    risk: { risk_per_trade: 50000, allowed_lots: 4 }, errors: [], refusals: [], warnings: [], can_place: true, confirm_label: null, as_of: "2026-10-19T05:30:00+00:00",
+  };
+}
+
 interface WireLeg { direction: "BUY" | "SELL"; option_type: "CE" | "PE" | "FUT"; strike: number; premium: number; lots: number; lot_size: number; expiry: string }
 
 /** A made-up engine reply with the shape the server returns: the expiry payoff of the legs sent. */
@@ -37,7 +54,7 @@ function evaluation(legs: WireLeg[], spot: number) {
   };
 }
 
-interface Seen { evaluate: WireLeg[][]; orders: string[] }
+interface Seen { evaluate: WireLeg[][]; orders: string[]; bodies: Record<string, unknown>[] }
 
 async function open(page: Page, theme: "light" | "dark"): Promise<Seen> {
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
@@ -48,17 +65,32 @@ async function open(page: Page, theme: "light" | "dark"): Promise<Seen> {
     } catch { /* storage unavailable */ }
   }, theme);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-  await mockApi(page, { features: { ui_v2: true, ai_copilot: true, read_chart: true, copilot_workspace: true }, brokers: CONNECTED });
+  await mockApi(page, { features: { ui_v2: true, ai_copilot: true, read_chart: true, copilot_workspace: true, paper_account: true }, brokers: CONNECTED });
   await mockCharts(page, {});
   await mockChartReading(page);
-  const seen: Seen = { evaluate: [], orders: [] };
+  const seen: Seen = { evaluate: [], orders: [], bodies: [] };
   await page.route(/\/api(?:\/v1)?\/options-builder\/evaluate$/, async (route) => {
     const body = route.request().postDataJSON() as { legs: WireLeg[]; spot: number };
     seen.evaluate.push(body.legs);
     return route.fulfill({ json: evaluation(body.legs, body.spot) });
   });
+  // W-7: the ONE ticket's routes, made up (contract read, Review = preview, Place = order) and the resting exit.
   await page.route(/\/api(?:\/v1)?\/paper\//, async (route) => {
-    if (route.request().method() !== "GET") seen.orders.push(route.request().url());
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith("/paper/fno/contract")) {
+      return route.fulfill({ json: { ...CONTRACT, strike: Number(url.searchParams.get("strike")), right: url.searchParams.get("right"), expiry: url.searchParams.get("expiry") } });
+    }
+    if (/risk-budget|event-risk/.test(url.pathname)) return route.fulfill({ status: 404, json: { detail: "Not found" } });
+    if (request.method() === "GET") return route.fallback();
+    const body = request.postDataJSON() as Record<string, unknown>;
+    seen.orders.push(url.pathname);
+    seen.bodies.push(body);
+    if (url.pathname.endsWith("/order/preview")) return route.fulfill({ json: preview(body) });
+    if (url.pathname.endsWith("/paper/fno/order")) {
+      return route.fulfill({ json: { ...preview(body), status: "PLACED", reasons: [], order_id: 9, trade_id: 41, filled: { price: 84.5, quantity: 150, lots: 2 } } });
+    }
+    if (url.pathname.endsWith("/resting/exit")) return route.fulfill({ json: { id: 5, kind: "TARGET", status: "RESTING", ...body } });
     return route.fallback();
   });
   await page.goto("/copilot/read?symbol=NIFTY%2050");
@@ -120,7 +152,38 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
         await expect(panel.locator("[data-exit='target']")).toContainText("at 42.5");
         if (width < 768) await noSidewaysScroll(page);
         if (OUT) { await panel.scrollIntoViewIfNeeded(); await panel.screenshot({ path: `${OUT}/plan-leg-${width}-${theme}.png`, animations: "disabled" }); }
-        expect(seen.orders).toEqual([]);                                                    // preview only: no order route
+        expect(seen.orders).toEqual([]);                                                    // nothing is sent before his own taps
+
+        // W-7: "Review and place" opens the ONE ticket with his plan's numbers; Review and Sell are his taps.
+        await panel.locator("[data-plan='review-place']").click();
+        const ticket = page.getByRole("dialog");
+        await expect(ticket).toContainText("from your trade plan", { timeout: 10_000 });
+        await expect(ticket.locator("[data-ticket='lots']")).toHaveValue("2");
+        expect(seen.orders).toEqual([]);                                                    // opening the ticket sends nothing
+        if (await ticket.locator("[data-ticket='order-type'] [aria-checked='true']").count() === 0) await ticket.locator("[data-ticket='order-type'] [data-option='LIMIT']").click();
+        await ticket.locator("[data-ticket='product'] [data-option='NRML']").click();
+        if (OUT) await page.screenshot({ path: `${OUT}/plan-ticket-${width}-${theme}.png`, animations: "disabled" });
+        await ticket.locator("[data-ticket='review']").click();
+        await ticket.locator("[data-ticket='place']").click();
+        await expect.poll(() => seen.orders.length).toBe(2);
+        expect(seen.orders[0]).toMatch(/\/paper\/fno\/order\/preview$/);                  // Review = the confirm step first
+        expect(seen.orders[1]).toMatch(/\/paper\/fno\/order$/);                           // then the ONE order route
+        const placedBody = seen.bodies[1];
+        expect(placedBody).toMatchObject({ side: "SELL", lots: 2, right: "CE", strike: 24700, stop_loss: 125 });
+        expect(Object.keys(placedBody)).not.toContain("mode");                             // PAPER = LIVE: no mode in the body
+        await page.keyboard.press("Escape");
+        // the status, the fill and the position in the same panel; his target armed only on his tap, from the fill
+        const placed = panel.locator("[data-plan='placed']");
+        await expect(placed).toHaveAttribute("data-status", "PLACED");
+        await expect(placed).toContainText("2 lots at 84.50");
+        await expect(panel.locator("[data-plan='arm-target']")).toContainText("42.25");
+        expect(seen.orders.filter((o) => o.endsWith("/resting/exit"))).toEqual([]);
+        await panel.locator("[data-plan='arm-target'] [data-option='LIMIT']").click();
+        await panel.locator("[data-plan='arm']").click();
+        await expect(panel.locator("[data-plan='armed']")).toContainText("Target armed at 42.25");
+        expect(seen.bodies.at(-1)).toEqual({ trade_id: 41, kind: "TARGET", order_type: "LIMIT", level: 42.25, client_ref: "plan-41-target" });
+        expect(new URL(page.url()).pathname).toBe("/copilot/read");                        // never left the tab
+        if (OUT) await panel.screenshot({ path: `${OUT}/plan-placed-${width}-${theme}.png`, animations: "disabled" });
       });
     });
   }

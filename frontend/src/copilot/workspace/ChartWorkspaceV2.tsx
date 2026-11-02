@@ -50,6 +50,8 @@ export default function ChartWorkspaceV2() {
     return () => setOpenChart(null);
   }, [openInstrument, openTf]);
   const cardTf = cardTimeframe(key?.tf);
+  // M75 W-9: the reading's areas a trigger plan can watch - the spot chart's only (a contract's prices are not the spot's)
+  const planAreas = pick && !isContract(pick.exchange) && read.status === "ready" ? read.read.annotations?.areas ?? [] : [];
   const card = useWorkspaceCard(pick?.symbol ?? null, cardTf, read.status === "ready");
   const choose = (next: PickedSymbol) => {
     if (!next.symbol.trim()) return;
@@ -84,7 +86,7 @@ export default function ChartWorkspaceV2() {
         </aside>
       </div>
       {/* M75 W-6 (CW-4): the trade plan panel in the same tab, for the chart's symbol (preview only). */}
-      {pick && <PlanPanelV2 symbol={pick.symbol} />}
+      {pick && <PlanPanelV2 symbol={pick.symbol} areas={planAreas} />}
     </section>
   );
 }

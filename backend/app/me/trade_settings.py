@@ -185,6 +185,13 @@ WARNING_FIELDS: tuple[SettingField, ...] = tuple(f for name, label, help, on in 
     SettingField(W, "mis_minutes", "Intraday close near: within", "whole",
                  "Minutes before your square-off time when an MIS order gets the line.", 1, unit="minutes", low=1, high=BIG,
                  flag="trade_warnings", order="M76", wired=True),
+    # M76 MP-4 (W-3, M76Q-5): the IV row of the trade plan's risk preview. A figure, not a warning; Not set = no IV row.
+    # In the Warnings section with the section's flag (`trade_warnings`); the row itself is in the workspace
+    # (`copilot_workspace`), so it shows when both are on.
+    SettingField(W, "iv_rise_pct", "IV rise for the risk preview", "number",
+                 "The trade plan shows the change in its value today if IV rises this many points (15 % to 20 % is 5), from "
+                 "the Options Builder's model. Margin under that IV is not known.", 1, unit="IV points", low=0.0, high=100.0,
+                 low_open=True, flag="trade_warnings", order="M76", wired=True),
     SettingField(W, "blocks", "What holds back an order", "fact",
                  "Exchange rules (tick size, an expired contract) and your own risk limits hold back an order. A warning never does: "
                  "Place stays on.", 1, flag="trade_warnings", order="M76"),

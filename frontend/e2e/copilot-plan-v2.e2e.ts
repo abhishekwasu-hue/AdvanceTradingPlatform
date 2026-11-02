@@ -262,3 +262,69 @@ async function pickTrigger(page: Page, field: string, label: string): Promise<vo
   await page.locator(`[data-trigger-plans] [data-trigger='${field}']`).click();
   await page.getByRole("option", { name: label, exact: true }).click();
 }
+
+// M76 MP-4 (W-3, flag `copilot_workspace`): the risk preview under the plan's numbers - rupees and points, break-even
+// distance, his PAPER balance after the margin estimate, his book's Greeks after the trade (his own legs, this
+// underlying), and the IV row from his saved IV rise (the builder asked once more with IV + his points). Read-only.
+const BOOK = { as_of: "", spot: { "NIFTY 50": 24500 }, legs: [], groups: [], skipped: [],
+  net: { net_delta: -40, net_gamma: 0, net_theta: 100, net_vega: 50 },
+  underlying_net: { underlying: "NIFTY", legs: 3, net_delta: -30, net_gamma: 0, net_theta: 80, net_vega: 20 } };
+const IV_SETTINGS = { admin: false, page: "/settings/trade-settings", sections: [{ id: "warnings", title: "Warnings", today: null, fields: [
+  { key: "warnings.iv_rise_pct", label: "IV rise for the risk preview", kind: "number", help: "", unit: "IV points", choices: [], low: 0, high: 100,
+    low_open: true, term: null, fact: false, wired: true, scope: "user", value: 5, saved: true, default: null, default_by: null }] }] };
+
+for (const [width, height] of [[390, 844], [1440, 900]] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    test.describe(`Copilot risk preview ${width} ${theme}`, () => {
+      test.use({ viewport: { width, height }, deviceScaleFactor: 1, ...(width < 768 ? { isMobile: true, hasTouch: true } : {}) });
+
+      test(`figures after the trade, no order route (${width} ${theme})`, async ({ page }) => {
+        const seen = await open(page, theme);
+        const asked: { iv_shift: number; spot: number }[] = [];
+        const greeks: string[] = [];
+        await page.route(/\/api(?:\/v1)?\/options-builder\/evaluate$/, async (route) => {
+          const body = route.request().postDataJSON() as { legs: WireLeg[]; spot: number; iv_shift: number };
+          asked.push({ iv_shift: body.iv_shift, spot: body.spot });
+          const ev = evaluation(body.legs, body.spot);
+          const lift = body.iv_shift > 0 ? -1200 : 0;
+          const min = Math.min(...(ev.at_expiry as number[]));
+          return route.fulfill({ json: { ...ev, today: ev.today.map((v) => v + lift), extremes: { ...ev.extremes, max_loss: min, unbounded_loss: false },
+            margin: { value: 45000, estimated: true, basis: "Defined risk", note: "ATP's estimate, never the broker's number." } } });
+        });
+        await page.route(/\/api(?:\/v1)?\/positions\/greeks/, (r) => { greeks.push(r.request().url()); return r.fulfill({ json: BOOK }); });
+        await page.route(/\/api(?:\/v1)?\/paper\/fno\/risk-budget/, (r) => r.fulfill({ json: { capital: 200000, per_trade: null, daily: null, source: "paper",
+          paper_balance: { amount: 200000, source: "paper", open_margin_counted: false } } }));
+        await page.route(/\/api(?:\/v1)?\/me\/trade-settings$/, (r) => r.fulfill({ json: IV_SETTINGS }));
+        await page.reload();
+        await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
+        const panel = page.locator("[data-plan-panel]");
+        await expect(panel).toBeVisible({ timeout: 15_000 });
+        await panel.locator("[data-option='OPTIONS']").click();
+        await panel.locator("[data-plan='spot']").fill("24500");
+        await panel.locator("[data-plan='lot-size']").fill("75");
+        await panel.locator("[data-plan='step']").fill("50");
+        await pick(page, "leg-side", "SELL");
+        await pick(page, "leg-type", "CE");
+        await panel.locator("[data-plan='leg-strike']").fill("24700");
+        await panel.locator("[data-plan='leg-expiry']").fill("2026-11-25");
+        await panel.locator("[data-plan='leg-lots']").fill("2");
+        await panel.locator("[data-plan='leg-premium']").fill("85");
+        await panel.locator("[data-plan='add-leg']").click();
+        const risk = panel.locator("[data-plan='risk-preview']");
+        await expect(risk).toBeVisible({ timeout: 10_000 });
+        await expect(risk.locator("[data-risk-row='breakevens']")).toContainText("24,785.00");
+        await expect(risk.locator("[data-risk-row='breakevens']")).toContainText("+285.00 points from spot");
+        await expect(risk.locator("[data-risk-row='margin_after']")).toContainText("₹1,55,000");
+        await expect(risk.locator("[data-risk-row='book']")).toContainText("Now Δ −40.00");
+        await expect(risk.locator("[data-risk-row='same_underlying']")).toContainText("3 open option legs now");
+        await expect(risk.locator("[data-risk-row='iv']")).toContainText("−₹1,200 today");
+        await expect(risk.locator("[data-risk-row='iv']")).toContainText("Margin under this IV: not known.");
+        expect(asked.map((a) => a.iv_shift)).toContain(0.05);                             // his 5 IV points
+        expect(greeks.at(-1)).toMatch(/mine=true&underlying=NIFTY\+50$/);
+        expect(seen.orders).toEqual([]);                                                   // read-only
+        if (width < 768) await noSidewaysScroll(page);
+        if (OUT) await risk.screenshot({ path: `${OUT}/mp4-risk-${width}-${theme}.png`, animations: "disabled" });
+      });
+    });
+  }
+}

@@ -16,6 +16,8 @@ import {
   type EquityDraft, type ExitDraft, type InstrumentDraft, type LegDraft, type PlanKind,
 } from "./plan";
 import { PlanPlaceV2 } from "./PlanPlaceV2";
+import { RiskPreviewV2, type RiskPreviewApi } from "./RiskPreviewV2";
+import { ivPointsOf } from "./riskPreview";
 import { TriggerPlansV2 } from "./TriggerPlansV2";
 
 /**
@@ -74,9 +76,11 @@ export interface PlanPanelProps {
   symbol: string;
   /** Test hook: the builder's evaluate call. */
   evaluate?: typeof builderApi.evaluate;
+  /** Test hook: the risk preview's reads (M76 MP-4). */
+  riskApi?: RiskPreviewApi;
 }
 
-export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate }: PlanPanelProps) {
+export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate, riskApi }: PlanPanelProps) {
   const [kind, setKind] = useState<PlanKind | null>(null);
   const [inst, setInst] = useState<InstrumentDraft>(EMPTY_INSTRUMENT);
   const [draft, setDraft] = useState<LegDraft>(EMPTY_LEG);
@@ -118,6 +122,7 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate }: PlanPane
   const lines = exitLines(exits, entry);
   const own = settings ? savedExits(settings.sections.flatMap((s) => s.fields)) : {};
   const hasOwn = Object.keys(own).length > 0;
+  const ivPoints = ivPointsOf(settings?.sections.flatMap((s) => s.fields));
   const pickKind = (k: PlanKind) => { setKind(k); setLegs([]); setDraft(EMPTY_LEG); setEvaluation(null); };
   const addLeg = () => {
     if (!kind) return;
@@ -178,6 +183,11 @@ export function PlanPanelV2({ symbol, evaluate = builderApi.evaluate }: PlanPane
               </div>
               <MetricsCard evaluation={evaluation.evaluation} stale={evaluation.sent !== legs} />
             </div>
+          )}
+          {/* M76 MP-4 (W-3): figures after the trade, read-only, under the builder's numbers. */}
+          {evaluation && spot != null && evaluation.sent === legs && (
+            <RiskPreviewV2 underlying={symbol} evaluation={evaluation.evaluation} legs={legs} spot={spot} asOf={asOf} ivPoints={ivPoints}
+              {...(riskApi ? { api: riskApi } : {})} />
           )}
         </>
       )}

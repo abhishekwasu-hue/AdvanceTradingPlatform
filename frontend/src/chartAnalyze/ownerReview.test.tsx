@@ -60,3 +60,17 @@ describe("Analyze a chart - owner review 3 Nov", () => {
     expect(distancePct(null, 99, 101)).toBeNull();
   });
 });
+
+import { readingOverlay } from "./HybridResultV2";
+import { fixtureHybrid } from "./fixtures";
+
+describe("CA-Q1: ATP's reading on ATP's own chart", () => {
+  it("the reading's protected level, break, swings and areas become chart lines and bands (same values as the picture)", () => {
+    const r = fixtureHybrid(false).reading;
+    const { levels, areas } = readingOverlay(r);
+    if (r.protected != null) expect(levels).toContainEqual({ price: r.protected, title: "Protected", tone: "neutral" });
+    expect(levels.length).toBe((r.protected != null ? 1 : 0) + (r.last_break ? 1 : 0) + r.levels.length);
+    expect(areas.map((a) => [a.low, a.high])).toEqual(r.areas.map((a) => [a.low, a.high]));
+    for (const [i, a] of areas.entries()) expect(a.role).toBe(r.areas[i].where === "above" ? "supply" : r.areas[i].where === "below" ? "demand" : "neutral");
+  });
+});

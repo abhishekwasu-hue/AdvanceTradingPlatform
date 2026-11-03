@@ -251,7 +251,7 @@ def _alert(raw: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _recognised(raw: Any) -> Dict[str, Optional[str]]:
+def _recognised(raw: Any) -> Dict[str, Any]:
     raw = raw if isinstance(raw, dict) else {}
     symbol = text(raw.get("symbol"), 40).upper()
     exchange = str(raw.get("exchange") or "").strip().upper()

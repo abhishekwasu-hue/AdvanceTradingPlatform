@@ -34,10 +34,17 @@ export function heldOn(positions: readonly TradeRecord[] | null | undefined, fac
   return out;
 }
 
+/** A basket leg as a new leg (its id is the basket's own, never drawn). */
+function withoutId(leg: BasketLeg): NewLeg {
+  const copy: Partial<BasketLeg> = { ...leg };
+  delete copy.id;
+  return copy as NewLeg;
+}
+
 export function payoffScope({ underlying, expiry, held, basket }: {
   underlying: string; expiry: string | null; held: readonly PosLeg[]; basket: readonly BasketLeg[];
 }): PayoffScope {
-  const mine = basket.filter((l) => l.underlying.toUpperCase() === underlying.toUpperCase()).map(({ id: _id, ...rest }) => rest as NewLeg);
+  const mine = basket.filter((l) => l.underlying.toUpperCase() === underlying.toUpperCase()).map(withoutId);
   const expiries = [...new Set([...held.map((l) => l.expiry), ...mine.map((l) => l.expiry)])].sort();
   const pick = expiry && expiries.includes(expiry) ? expiry : expiries[0] ?? null;
   const onPick = <T extends { expiry: string }>(legs: readonly T[]) => legs.filter((l) => l.expiry === pick);

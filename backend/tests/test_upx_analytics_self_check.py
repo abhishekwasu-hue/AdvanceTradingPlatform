@@ -5,7 +5,7 @@
   HEAL_INTERVAL_SECONDS per row): when Upstox accepts it again the connection reads Connected with nothing pasted.
 """
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.brokers import upstox_analytics as ua
 from app.brokers.connect import connection_view
@@ -43,7 +43,7 @@ def test_a_saved_token_refused_overnight_heals_itself_without_pasting(monkeypatc
     monkeypatch.setattr(ua, "_client", lambda: _mock_client(refused, seen))
     bearer = _register("upx-heal@example.com")
     tenant_id = _tenant_of(bearer)
-    token = _jwt(datetime.now(timezone.utc) + timedelta(days=300))
+    token = _jwt(datetime.now(UTC) + timedelta(days=300))
     res = client.post("/api/broker/upstox/credentials", headers={"Authorization": f"Bearer {bearer}"},
                       json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "analytics_token": token})
     assert res.status_code == 204, res.text

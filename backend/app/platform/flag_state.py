@@ -186,7 +186,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "chart_analyze_strikes": _decision("Strikes next to a setup read close to advice (kept off)"),
     "chart_analyze_share": _decision("Download only, no share link (kept off)"),
     "chart_analyze_hybrid": _decision("Advanced analysis waits for your ✅"),
-    "chart_reader": _not_built("The Copilot cards (Abhi's method, Book strategies); the server side is built", "M86 W3"),
+    "chart_reader": _setup("Private package and the chart-read key on the server", HOST),
     "chart_studies": _ready(),
     "chart_price_action": _ready(),
     "ai_multiview": _ready(),

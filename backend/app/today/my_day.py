@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, cast
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -296,7 +296,8 @@ async def build(session: AsyncSession, me: Viewer, now: datetime) -> Dict[str, A
                 zones[key] = await _safely(session, f"zones {key}", _zone_rows(session, me, key, now), READ_FAILED)
             rows = zones[key]
             area = nearest_area(rows, ref, since) if rows and rows is not READ_FAILED else None
-            area_line = (area_text(area, frm) if area else "Structure areas could not be read just now." if rows is READ_FAILED
+            # AUD-G1.6: reference_of returns a "strike" / "stop" label whenever ref is set (cast below is type-only)
+            area_line = (area_text(area, cast(str, frm)) if area else "Structure areas could not be read just now." if rows is READ_FAILED
                          else f"No structure areas stored for {name} yet.")
             if area and area["change"]:
                 line = f"{name} area {area['range_text']} {area['change']['words']} since the last session."

@@ -2,7 +2,7 @@
 the API, and the severity floor that decides what gets queued."""
 import json
 import re
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, EmailStr, Field, HttpUrl, TypeAdapter, ValidationError, field_validator, model_validator
 
@@ -11,6 +11,9 @@ from app.core.enums import AlertChannelType, NotificationSeverity
 from app.db.models import AlertChannelRecord
 from app.secrets_store.encryption import decrypt_text, encrypt_text
 from app.secrets_store.envelope import PURPOSE_ALERT_CHANNEL
+
+if TYPE_CHECKING:     # AUD-G1.6: imported lazily at run time (parse_config); named here for the ChannelConfig type only
+    from app.alerts.signed_webhooks import SignedWebhookConfig
 
 SEVERITY_RANK = {NotificationSeverity.INFO.value: 0, NotificationSeverity.WARNING.value: 1, NotificationSeverity.CRITICAL.value: 2,
                  NotificationSeverity.EMERGENCY.value: 3}
@@ -395,7 +398,7 @@ class WhatsAppConfig(BaseModel):
 
 
 DLT_FIELDS: Tuple[str, ...] = ("dlt_entity_id", "dlt_template_id", "sender_id")
-ChannelConfig = Union[TelegramConfig, EmailConfig, WebhookConfig, PushConfig, SmsConfig, WhatsAppConfig, FcmConfig]
+ChannelConfig = Union[TelegramConfig, EmailConfig, WebhookConfig, PushConfig, SmsConfig, WhatsAppConfig, FcmConfig, "SignedWebhookConfig"]
 
 SECRET_FIELDS = {AlertChannelType.TELEGRAM.value: ("bot_token", "inbound_secret"), AlertChannelType.EMAIL.value: ("password",),
                  AlertChannelType.WEBHOOK.value: ("secret",), AlertChannelType.SMS.value: ("headers",),

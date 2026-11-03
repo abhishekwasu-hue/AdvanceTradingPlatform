@@ -96,7 +96,7 @@ class ChartIndicators(_Prefs):
 # TF-1 (owner 25 Oct): the timeframes a chart can show (the candle route's ids, frontend src/chart/timeframes.ts) and
 # the starred favourites shown as one-click buttons beside the timeframe dropdown (default 5m, 15m, 1H, D).
 ChartTimeframe = Literal["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"]
-DEFAULT_TIMEFRAME_FAVOURITES: Tuple[str, ...] = ("5min", "15min", "60min", "day")
+DEFAULT_TIMEFRAME_FAVOURITES: Tuple[ChartTimeframe, ...] = ("5min", "15min", "60min", "day")
 
 
 def _unique_favourites(value: List[str]) -> List[str]:

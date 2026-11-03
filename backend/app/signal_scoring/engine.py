@@ -59,8 +59,9 @@ def _support_resistance_component(signal: Signal, zones: List[SRZone]) -> Tuple[
     if not candidates:
         return 30.0, f"No {wanted_kind.lower()} zone identified near this entry"
 
-    nearest = min(candidates, key=lambda z: abs(z.mid - signal.entry))
-    distance_pct = abs(nearest.mid - signal.entry) / signal.entry * 100
+    entry = signal.entry                # AUD-G1.6: the checked value, so the lambda below sees it as a float
+    nearest = min(candidates, key=lambda z: abs(z.mid - entry))
+    distance_pct = abs(nearest.mid - entry) / entry * 100
     if distance_pct > 1.0:
         return 30.0, f"Nearest {wanted_kind.lower()} zone is {distance_pct:.2f}% away - not a tight confluence"
     return float(nearest.strength_score), (

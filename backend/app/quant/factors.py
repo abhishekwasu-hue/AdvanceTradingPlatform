@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, cast
 
 import numpy as np
 import pandas as pd
@@ -192,8 +192,9 @@ def score_universe(inputs: Sequence[FactorInputs], weights: Optional[Dict[str, f
     for r in rows:
         available = {f: w for f, w in weights_used.items() if r.z.get(f) is not None}
         total = sum(available.values())
-        r.composite = round(sum(w * r.z[f] for f, w in available.items()) / total, 4) if total > 0 else None
-    ranked = sorted([r for r in rows if r.composite is not None], key=lambda r: -r.composite)
+        # AUD-G1.6: `available` holds only the factors whose z is set, and `ranked` only rows with a composite (casts are type-only)
+        r.composite = round(sum(w * cast(float, r.z[f]) for f, w in available.items()) / total, 4) if total > 0 else None
+    ranked = sorted([r for r in rows if r.composite is not None], key=lambda r: -cast(float, r.composite))
     for i, r in enumerate(ranked, start=1):
         r.rank = i
     k = max(1, int(round(len(ranked) * BUCKET_FRACTION))) if len(ranked) >= 3 else 0

@@ -27,7 +27,7 @@ def test_one_long_sentence_still_cuts_at_a_word():
 
 def test_ca_q3_choch_and_last_price_are_kept():
     """Owner CA-Q3: the CHoCH line (with its price) and the chart's last price survive the contract."""
-    from tests.chart_analyze_fakes import WIDTH, HEIGHT, answer
+    from tests.chart_analyze_fakes import HEIGHT, WIDTH, answer
     raw = answer("none")
     raw["annotations"]["choch"] = {"x0": 100, "y0": 50, "x1": 300, "y1": 50, "price": 2290, "note": "close above the last lower high"}
     raw["recognised"]["last_price"] = "2,407.5"

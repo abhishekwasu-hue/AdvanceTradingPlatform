@@ -212,7 +212,14 @@ async function settle(page: Page) {
 
 async function shot(page: Page, name: string) {
   if (!SHOTS) return;
-  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true, animations: "disabled" });
+  // Not `fullPage: true`: in this (mobile-emulation) project a full-page capture flips the window to 1 px wide for a moment,
+  // which crosses the phone breakpoint and remounts the grid (a maximised panel was lost, M58 double-click test). Grow the
+  // viewport to the page's height instead - the width never changes - then put it back.
+  const view = page.viewportSize();
+  const height = await page.evaluate(() => document.documentElement.scrollHeight);
+  if (view && height > view.height) await page.setViewportSize({ width: view.width, height });
+  await page.screenshot({ path: `${SHOTS}/${name}.png`, animations: "disabled" });
+  if (view && height > view.height) await page.setViewportSize(view);
 }
 
 async function noSidewaysScroll(page: Page) {

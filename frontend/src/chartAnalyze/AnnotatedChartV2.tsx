@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { HALO, HALO_ALPHA, legendFor, shapesFor, type Shape, type Token } from "./shapes";
+import { HALO, HALO_ALPHA, labelSize, legendFor, shapesFor, type Shape, type Swatch, type Token } from "./shapes";
 import type { Annotations } from "./types";
 import { SubTabs } from "../ui/SubTabs";
 
@@ -10,16 +10,17 @@ import { SubTabs } from "../ui/SubTabs";
 
 const colour = (token: Token, alpha = 1) => `rgb(var(--${token}) / ${alpha})`;
 const halo = colour(HALO, HALO_ALPHA);
-const label = (token: Token) => ({ fill: colour(token), stroke: halo, strokeWidth: 3, paintOrder: "stroke" as const });
+const label = (token: Token, k = 1) => ({ fill: colour(token), stroke: halo, strokeWidth: 3 * k, paintOrder: "stroke" as const });
 
-function ShapeSvg({ s }: { s: Shape }) {
+function ShapeSvg({ s, fs = 12 }: { s: Shape; fs?: number }) {
+  const k = fs / 12;
   const dash = "dashed" in s && s.dashed ? "6 4" : undefined;
   if (s.kind === "rect") {
     return (
       <g>
         <rect x={s.x} y={s.y} width={s.w} height={s.h} style={{ fill: colour(s.token, s.fillAlpha), stroke: colour(s.token, 0.9) }}
           strokeWidth={1} strokeDasharray={dash} />
-        {s.label && <text x={s.x + 4} y={s.y + 13} fontSize={12} style={label(s.token)}>{s.label}</text>}
+        {s.label && <text x={s.x + 4 * k} y={s.y + 13 * k} fontSize={fs} style={label(s.token, k)}>{s.label}</text>}
       </g>
     );
   }
@@ -28,7 +29,9 @@ function ShapeSvg({ s }: { s: Shape }) {
       <g>
         <line x1={s.x0} y1={s.y0} x2={s.x1} y2={s.y1} style={{ stroke: halo }} strokeWidth={(s.width ?? 1.5) + 3} />
         <line x1={s.x0} y1={s.y0} x2={s.x1} y2={s.y1} style={{ stroke: colour(s.token) }} strokeWidth={s.width ?? 1.5} strokeDasharray={dash} />
-        {s.label && <text x={Math.min(s.x0, s.x1) + 4} y={Math.min(s.y0, s.y1) - 4} fontSize={12} style={label(s.token)}>{s.label}</text>}
+        {s.label && (s.labelAt === "end"
+          ? <text x={Math.max(s.x0, s.x1) - 4 * k} y={Math.min(s.y0, s.y1) - 4 * k} fontSize={fs} textAnchor="end" style={label(s.token, k)}>{s.label}</text>
+          : <text x={Math.min(s.x0, s.x1) + 4 * k} y={Math.min(s.y0, s.y1) - 4 * k} fontSize={fs} style={label(s.token, k)}>{s.label}</text>)}
       </g>
     );
   }
@@ -37,11 +40,11 @@ function ShapeSvg({ s }: { s: Shape }) {
       <g>
         <circle cx={s.x} cy={s.y} r={s.r} style={{ fill: "none", stroke: halo }} strokeWidth={5} />
         <circle cx={s.x} cy={s.y} r={s.r} style={{ fill: "none", stroke: colour(s.token) }} strokeWidth={2} />
-        {s.label && <text x={s.x + s.r + 3} y={s.y - s.r} fontSize={12} style={label(s.token)}>{s.label}</text>}
+        {s.label && <text x={s.x + s.r + 3 * k} y={s.y - s.r} fontSize={fs} style={label(s.token, k)}>{s.label}</text>}
       </g>
     );
   }
-  return <text x={s.x - 8} y={s.y} fontSize={12} fontWeight={700} style={label(s.token)}>{s.text}</text>;
+  return <text x={s.x - 8 * k} y={s.y} fontSize={fs} fontWeight={700} style={label(s.token, k)}>{s.text}</text>;
 }
 
 export function Overlay({ src, width, height, annotations, alt }: { src: string; width: number; height: number; annotations: Annotations; alt: string }) {
@@ -51,7 +54,7 @@ export function Overlay({ src, width, height, annotations, alt }: { src: string;
       <img src={src} alt={alt} width={width} height={height} className="block h-auto w-full" />
       <svg viewBox={`0 0 ${width} ${height}`} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden
         preserveAspectRatio="none" data-shapes={shapes.length}>
-        {shapes.map((s, i) => <ShapeSvg key={i} s={s} />)}
+        {shapes.map((s, i) => <ShapeSvg key={i} s={s} fs={labelSize(width)} />)}
       </svg>
     </div>
   );
@@ -64,11 +67,17 @@ export function Legend({ annotations }: { annotations: Annotations }) {
     <ul className="flex flex-wrap gap-x-space-4 gap-y-space-1 text-t12 text-fg-muted" aria-label="What the drawing shows">
       {rows.map((r) => (
         <li key={r.text} className="inline-flex items-center gap-space-1">
-          <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-pill" style={{ background: colour(r.token) }} />{r.text}
+          <SwatchMark swatch={r.swatch} token={r.token} />{r.text}
         </li>
       ))}
     </ul>
   );
+}
+
+function SwatchMark({ swatch, token }: { swatch: Swatch; token: Token }) {
+  if (swatch === "box") return <span aria-hidden className="inline-block h-2.5 w-3.5 rounded-sm border" style={{ background: colour(token, 0.25), borderColor: colour(token) }} />;
+  if (swatch === "dot") return <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-pill border-2" style={{ borderColor: colour(token) }} />;
+  return <span aria-hidden className={`inline-block w-4 border-t-2 ${swatch === "dashed" ? "border-dashed" : ""}`} style={{ borderColor: colour(token) }} />;
 }
 
 /** Original and annotated: side by side from md up, two tabs on a phone. */
@@ -107,7 +116,7 @@ export function StructureSketch({ width, height, annotations }: { width: number;
         style={{ aspectRatio: `${Math.max(1, width)} / ${Math.max(1, height)}` }}>
         <svg viewBox={`0 0 ${width} ${height}`} className="absolute inset-0 h-full w-full" role="img"
           aria-label="The structure the method sees, drawn without the chart" preserveAspectRatio="none" data-shapes={shapes.length}>
-          {shapes.map((s, i) => <ShapeSvg key={i} s={s} />)}
+          {shapes.map((s, i) => <ShapeSvg key={i} s={s} fs={labelSize(width)} />)}
         </svg>
       </div>
       <Legend annotations={annotations} />

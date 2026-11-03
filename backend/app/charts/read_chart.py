@@ -310,8 +310,9 @@ async def read_chart(instrument: str = Query(..., min_length=1, max_length=100),
         return {**head, **read_closed(pd.DataFrame(columns=pal.FRAME_COLS), tf, now)}
     head["instrument"] = key
     private = await own_bars.scope_for(session, user, key)          # DATA-H: his own private bars, only his
-    try:
-        frame, _source = await pal.load_frame(session, key, tf, now - timedelta(days=pal.DEFAULT_DAYS[tf]), now, private=private)
+    try:                                                            # owner 3 Nov: and his provisional Daily bar
+        frame, _source = await pal.load_frame(session, key, tf, now - timedelta(days=pal.DEFAULT_DAYS[tf]), now, private=private,
+                                              provisional=True)
     except pal.WindowTooLarge as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     frame = closed_only(frame, now)
@@ -331,7 +332,7 @@ async def read_chart(instrument: str = Query(..., min_length=1, max_length=100),
     if await flag_enabled(session, WR.FLAG, user.tenant_id):
         engine_part = await WR.engine_reading(session, user, key, tf, now)
         if engine_part is None:
-            mtf = await pal.mtf_rows(session, key, last_end, owner=user.id, private=private)
+            mtf = await pal.mtf_rows(session, key, last_end, owner=user.id, private=private, provisional=True)
     content = await pal._in_slot(session, user.id, lambda: read_closed(frame, tf, now, bands=zones.get("bands") or [],
                                                                           areas_known=known_at, ctx=ctx, mtf=mtf))
     if engine_part is not None:

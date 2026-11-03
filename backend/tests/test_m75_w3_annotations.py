@@ -269,7 +269,7 @@ def test_route_adds_annotations_only_with_the_workspace_flag(member, monkeypatch
     shift = pd.Timestamp(now) - pd.Timestamp(F["bar_end"].iloc[-1]) - pd.Timedelta(minutes=30)
     recent = F.assign(timestamp=F["timestamp"] + shift, bar_end=F["bar_end"] + shift)
 
-    async def load(session, key, tf, start, end, max_bars=None, private=None):
+    async def load(session, key, tf, start, end, max_bars=None, private=None, provisional=False):
         return recent, "lake:15m"
 
     async def zones(**kw):
@@ -278,7 +278,7 @@ def test_route_adds_annotations_only_with_the_workspace_flag(member, monkeypatch
     async def ctx(session, key, today, *a, **k):
         return dict(CTX)
 
-    async def rows(session, key, when, daily=None, *, owner, private=None):
+    async def rows(session, key, when, daily=None, *, owner, private=None, provisional=False):
         seen["mtf"] = (key, when)
         return MTF
     from app.screener.then import trend

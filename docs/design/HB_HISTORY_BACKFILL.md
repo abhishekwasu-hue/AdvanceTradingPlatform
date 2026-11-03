@@ -127,6 +127,25 @@ background task (a slow archive never delays a trading cycle): today's three fil
 the next night. A second replica or a manual run in progress is kept out by the lock; stopping the worker cancels
 the task (the interrupted day is retried next time). Turning the flag on after 19:00 still runs that night.
 
+**Earlier tries (owner order 3 Nov).** On a trading day the same job (today + the catch-up, same lock) is also tried
+from `HISTORY_BACKFILL_FIRST_TRY_IST` (17:30) and again every `HISTORY_BACKFILL_RETRY_MINUTES` (30) until the day's
+cash AND index files are `done` - then no more tries that day. If they are still not in by `HISTORY_BACKFILL_HOUR_IST`,
+the once-a-night run follows as before. A weekend / holiday gets only the night run. `HISTORY_BACKFILL_FIRST_TRY_IST=off`
+restores the night run alone.
+
+### Provisional Daily bar (owner order 3 Nov)
+From `DAILY_PROVISIONAL_AT_IST` (15:45; `off` disables it) on a trading day the worker writes TODAY's Daily bar of each
+index in `LAKE_BACKFILL_INDICES` (`backend/app/market_lake/provisional_daily.py`): from the history owner's own broker
+session (the broker's Daily candle, else its 1-minute bars of the day), else from his stored 1-minute bars - the
+continuous session only, and only when the bars run from the open to the close. No bar on a holiday, without data, or
+once NSE's index file of the day is stored; one bar per index per day (re-runs skip it). An index still without a bar is
+tried again every `HISTORY_BACKFILL_RETRY_MINUTES` until `HISTORY_BACKFILL_HOUR_IST`.
+It lives in the owner's PRIVATE store (`md_tenant_candles`, timeframe `dayprov`, source `broker:<broker>[-1m]:u<id>` or
+`broker:store1m:u<id>`), never the shared lake: the shared reads serve licensed sources only and a broker's Daily row
+is never served to another organisation (docs/COMPLIANCE_IN.md "Data licences"). The chart layer, "Read this chart" and
+the Copilot's store read append it to the holder's Daily frame only AFTER the last stored bar, so NSE's index file wins
+as soon as it lands; the Copilot calls it "provisional close", never "official close".
+
 ### Admin (SUPER_ADMIN with an MFA session, audit-logged)
 `GET /api/admin/history-backfill/progress` (per segment: files by status, first / last day done, rows; the files that
 need attention), `POST .../upload` (segment, trade_date, file, optional `force`: the manual fallback when a file is

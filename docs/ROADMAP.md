@@ -226,7 +226,8 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | AUD-T4..T9 | in progress | T4 #695 (`paper_report_card`), T6 #703 (`setup_recall`), T7 #688 (`cost_meter`), T8 #691 (`status_page`, migration d0f0a1b2c3d8), T5 #707 (`read_chart`; full reader lifecycle waits for P5-1) merged; T9 pricing waits for the owner | - |
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | FN0 | in progress | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
-| FN1-FN7 | not started | after FN0, in order; max 3 in progress | - |
+| FN1 | in review | definition of done D1-D7 in docs/WORKING_RULES.md §4; per-feature list docs/FN1_CHECKLIST.md (every flag in one row, test_fn1_checklist.py) + the owner's read-only production check block; nothing ticked until FN7 | - |
+| FN2-FN7 | not started | after FN1, in order; max 3 in progress | - |
 | P2-1 | in progress | table sent (docs/design/P2_1_FLAG_AUDIT.md: 26 unfinished flags, finish 10 / keep OFF 15 / remove 1); owner ✅ 26 Oct (FA-1..3 defaults); next: apply in the catalog / admin list (build PR) | #556 |
 | P2-2 | not started | Copilot jobs 1-8 + own key + tools end to end (parts built, flags) | - |
 | P2-3 | not started | templates / ideas / wave templates from the Paper bot (parts built) | - |

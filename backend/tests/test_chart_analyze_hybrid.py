@@ -289,7 +289,7 @@ def test_no_stored_candles_is_a_plain_failure():
     who = _hybrid_owner("empty")
     item = _add(who, symbol=EMPTY_SYMBOL, timeframe="1h").json()
     body = client.post(f"{BASE}/items/{item['id']}/analyze", headers=who["headers"]).json()
-    assert body["status"] == "failed" and body["error"].startswith(f"ATP has no stored 1-hour candles for {EMPTY_SYMBOL} yet")
+    assert body["status"] == "failed" and body["error"] == f"ATP does not hold candles for {EMPTY_SYMBOL} yet, so this chart can be read with AI only."
     assert body["pick"] == {"symbol": EMPTY_SYMBOL, "timeframe": "1h"}          # kept for another try
 
 
@@ -386,3 +386,12 @@ def test_facts_are_generic_and_carry_no_picture():
     facts = hybrid.facts(r, width=960, height=540)
     assert "image" not in json.dumps(facts) and facts["chart"] == {"width": 960, "height": 540}
     assert asyncio.iscoroutinefunction(hybrid.read)
+
+
+def test_unavailable_names_the_timeframes_atp_holds():
+    """Owner 3 Nov: a positive line - which timeframes the advanced analysis works on for the symbol."""
+    from app.chart_analyze.hybrid import unavailable_message
+    assert unavailable_message("GLENMARK", "1h", ["15m", "1d"]) == (
+        "Advanced analysis for GLENMARK works on 15-minute and Daily candles. Pick one of these and upload a chart of the "
+        "same timeframe - or read this 1-hour chart with AI only.")
+    assert unavailable_message("GLENMARK", "1h", ["1d"]).startswith("Advanced analysis for GLENMARK works on Daily candles. Pick that timeframe")

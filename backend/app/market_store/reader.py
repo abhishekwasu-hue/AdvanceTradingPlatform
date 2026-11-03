@@ -195,8 +195,29 @@ def _week_closed(week_first: pd.Timestamp, last_day: date, holidays: set[date]) 
     return day <= last_day
 
 
+async def _with_provisional(session: AsyncSession, symbol: str, df: pd.DataFrame, first: date, last: date,
+                            scope: Any) -> tuple[pd.DataFrame, bool]:
+    """Owner 3 Nov: the holder's own provisional Daily bar(s) (app/market_lake/provisional_daily.py) of sessions after the
+    frame's last stored bar, up to `last` - never replacing a stored bar (NSE's file wins once it lands), never for a
+    SharedScope (own_bars.provisional_rows). (frame, whether any was added)."""
+    from types import SimpleNamespace
+
+    from app.ai.tools.copilot import lake_key
+    from app.backtest import bar_source
+    from app.market_lake import own_bars
+    from app.market_lake.bhavcopy_backfill import bar_end
+    after_day = df.index[-1].tz_convert(IST).date() if len(df) else first - timedelta(days=1)
+    rows = await own_bars.provisional_rows(session, scope, lake_key(symbol), bar_end(after_day), bar_end(last))
+    if not rows:
+        return df, False
+    extra = bar_source.to_frame([SimpleNamespace(ts=r[0], open=r[2], high=r[3], low=r[4], close=r[5], volume=r[6]) for r in rows])
+    return (pd.concat([df, extra]) if len(df) else extra), True
+
+
 async def read_eod(session: AsyncSession, symbol: str, exchange: str, interval: str, start: datetime, end: datetime, *,
-                   now: datetime | None = None, holidays: set[date] | None = None) -> BarsResult:
+                   now: datetime | None = None, holidays: set[date] | None = None, provisional: Any = None) -> BarsResult:
+    """Daily / Weekly from the NSE files (see the module docstring). Owner 3 Nov: `provisional` - the reader's own
+    private scope (the Copilot's read only): his provisional bar of a session NSE's file does not hold yet is read too."""
     from app.backtest import bar_source
     interval = canonical(interval)
     now = now or datetime.now(UTC)
@@ -212,6 +233,9 @@ async def read_eod(session: AsyncSession, symbol: str, exchange: str, interval: 
     df = await _eod_frame(session, sym, first, last) if first <= last else empty_frame()
     if len(df):
         df = df[[d <= last for d in df.index.tz_convert(IST).date]]      # never a bar of a session not closed yet
+    added = False
+    if provisional is not None and first <= last:
+        df, added = await _with_provisional(session, sym, df, first, last, provisional)
     if df.empty:
         out.gaps.append(await _queue(sym, interval, Gap(_utc(start), _utc(end), COLD, NOT_STORED)))
         return out
@@ -229,7 +253,7 @@ async def read_eod(session: AsyncSession, symbol: str, exchange: str, interval: 
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
     out.frame = df[["open", "high", "low", "close", "volume"]].astype(float)
-    out.source = bar_source.LAKE_SOURCE
+    out.source = bar_source.LAKE_SOURCE + ("+provisional" if added else "")
     return out
 
 
@@ -498,14 +522,15 @@ async def top_up(stored: _Stored, *, rest: RestSource | None, budgeted: Any = No
 
 async def read_bars(session: AsyncSession, symbol: str, interval: str, start: datetime, end: datetime, *, user: Any = None,
                     purpose: str = "feature", exchange: str = "NSE", rest: RestSource | None = None,
-                    now: datetime | None = None, dh3: bool = True) -> BarsResult:
+                    now: datetime | None = None, dh3: bool = True, provisional: Any = None) -> BarsResult:
     """One (symbol, interval) store-first read over [start, end]: the own store, then only the newest missing bars by
     REST through `rest` (the reader's own session; Daily / Weekly never), never the full history. `purpose` labels the
     read in the log (screener / backtest / chart ...). `dh3`: the closing-auction flags applied on read (True, the
-    charts' and the screener's mode) or the rows as stored (False, the engine's mode)."""
+    charts' and the screener's mode) or the rows as stored (False, the engine's mode). `provisional` (Daily / Weekly; the
+    Copilot only): the reader's own private scope, so his provisional Daily bar is read too (`read_eod`)."""
     name = canonical(interval)
     if name in (DAILY, WEEKLY):
-        got = await read_eod(session, symbol, exchange, name, start, end, now=now)
+        got = await read_eod(session, symbol, exchange, name, start, end, now=now, provisional=provisional)
     else:
         got = await read_intraday(session, symbol, exchange, name, start, end, user=user, rest=rest, now=now, dh3=dh3)
     logger.debug("market_store %s %s:%s %s -> %s (%d bars, %d REST)", purpose, exchange, symbol, name, got.source or "cold",

@@ -77,7 +77,8 @@ def render(reading: dict[str, Any], *, width: int = WIDTH, height: int = HEIGHT)
     canvas.text(left, 12, title, TITLE)
     canvas.text(left + 8 * SCALE * (len(title) + 2), 12, "ATP READING OF THE STORED CANDLES", MUTED)
     for i in range(1, 6):
-        canvas.hline(left, right, top + (bottom - top) * i // 6, GRID)
+        gy = top + (bottom - top) * i // 6
+        canvas.hline(left, right, gy, GRID)
 
     # the areas of interest first (under everything), then the candles, then the lines and the labels on top
     edges = {"above": (AREA_ABOVE, AREA_ABOVE_EDGE), "below": (AREA_BELOW, AREA_BELOW_EDGE), "inside": (AREA_INSIDE, AREA_INSIDE_EDGE)}
@@ -88,7 +89,8 @@ def render(reading: dict[str, Any], *, width: int = WIDTH, height: int = HEIGHT)
         canvas.rect(left, y_hi, right, max(y_hi, y_lo), fill)
         canvas.hline(left, right, y_hi, edge, dash=4)
         canvas.hline(left, right, y_lo, edge, dash=4)
-        labels.append(((y_hi + y_lo) // 2, f"AREA {_fmt(a['low'])}-{_fmt(a['high'])}", edge))
+        band = _fmt(a["low"]) if _fmt(a["low"]) == _fmt(a["high"]) else f"{_fmt(a['low'])}-{_fmt(a['high'])}"
+        labels.append(((y_hi + y_lo) // 2, f"AREA {band}", edge))
     canvas.vline(right, top, bottom, AXIS)
     canvas.hline(left, right, bottom, AXIS)
 
@@ -136,6 +138,12 @@ def render(reading: dict[str, Any], *, width: int = WIDTH, height: int = HEIGHT)
         used.append(ly)
         canvas.rect(right + 3, ly - 1, width - 2, ly + 5 * SCALE, LABEL_BG)
         canvas.text(right + 5, ly, text[:18], color)
+    # owner audit (3 Nov): the price scale on every grid line, drawn last on its own backing so no line crosses it
+    for i in range(1, 6):
+        gy = top + (bottom - top) * i // 6
+        scale = _fmt(lo + (hi - lo) * (6 - i) / 6)
+        canvas.rect(left + 2, gy - 3 - 7 * SCALE, left + 6 + 8 * SCALE * len(scale), gy - 2, LABEL_BG)
+        canvas.text(left + 4, gy - 2 - 7 * SCALE, scale, MUTED)
     canvas.text(left, height - 18, "EDUCATIONAL ONLY - REFERENCE, NOT ADVICE. NO ORDER IS PLACED.", MUTED)
     return canvas.png()
 

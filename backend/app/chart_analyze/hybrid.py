@@ -356,6 +356,35 @@ def _plain(exc: HTTPException) -> str:
     return "ATP's structure reading could not be made for this symbol and timeframe. Try another timeframe, or use AI only."
 
 
+def unavailable_message(symbol: str, tf: str, have: list[str]) -> str:
+    """Owner 3 Nov: the pick's timeframe has no stored candles - say what ATP DOES hold for the symbol, so the user picks
+    that timeframe (and uploads a chart of it), never only what is missing."""
+    if have:
+        words = [tf_label(t) for t in have]
+        listed = words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+        return (f"Advanced analysis for {symbol} works on {listed} candles. Pick {'that timeframe' if len(words) == 1 else 'one of these'} "
+                f"and upload a chart of the same timeframe - or read this {tf_label(tf).lower()} chart with AI only.")
+    return f"ATP does not hold candles for {symbol} yet, so this chart can be read with AI only."
+
+
+async def _stored_timeframes(session: AsyncSession, user: User, key: str, when: datetime, *, skip: str) -> list[str]:
+    """The pick timeframes (TIMEFRAMES order) with stored candles for `key` in their usual window, `skip` left out."""
+    from app.charts import price_action_layer as pal
+    from app.market_lake import own_bars
+    private = await own_bars.scope_for(session, user, key)
+    out: list[str] = []
+    for t in TIMEFRAMES:
+        if t == skip:
+            continue
+        try:
+            frame, _src = await pal.load_frame(session, key, t, when - timedelta(days=pal.DEFAULT_DAYS[t]), when, private=private)
+        except Exception:  # noqa: BLE001 - a probe that cannot read a timeframe just does not list it
+            continue
+        if len(frame):
+            out.append(t)
+    return out
+
+
 async def read(session: AsyncSession, user: User, pick: dict[str, str], *, now: datetime | None = None) -> dict[str, Any]:
     """ATP's reading of the stored candles for the pick, as of the current minute (closed candles only). The session is
     released while the layer builds (its build slot), so nothing read before may be used lazily after."""
@@ -373,8 +402,8 @@ async def read(session: AsyncSession, user: User, pick: dict[str, str], *, now: 
     except HTTPException as exc:
         raise ReadingUnavailable(_plain(exc)) from None
     if not layer.get("bars"):
-        raise ReadingUnavailable(f"ATP has no stored {tf_label(tf).lower()} candles for {pick['symbol']} yet. "
-                                 "Pick another timeframe, or use AI only.")
+        have = await _stored_timeframes(session, user, key, when, skip=tf)
+        raise ReadingUnavailable(unavailable_message(pick["symbol"], tf, have))
     begin = when - timedelta(days=pal.DEFAULT_DAYS[tf])
     try:
         frame, _src = await pal.load_frame(session, key, tf, begin, when, private=await own_bars.scope_for(session, user, key))
@@ -392,4 +421,4 @@ async def read(session: AsyncSession, user: User, pick: dict[str, str], *, now: 
 
 
 __all__ = ["TIMEFRAMES", "LABEL_CODE", "LABEL_CODE_AI", "LABEL_AI_ONLY", "OFF_MESSAGE", "PickError", "ReadingUnavailable", "check_pick",
-           "check_override", "stored_override", "stored_read", "READ_KEY", "NEEDS_KEY", "off_detail", "build_reading", "facts", "result", "stored_pick", "summary", "read", "PICK_KEY"]
+           "check_override", "stored_override", "unavailable_message", "stored_read", "READ_KEY", "NEEDS_KEY", "off_detail", "build_reading", "facts", "result", "stored_pick", "summary", "read", "PICK_KEY"]

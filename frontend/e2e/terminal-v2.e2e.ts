@@ -212,7 +212,14 @@ async function settle(page: Page) {
 
 async function shot(page: Page, name: string) {
   if (!SHOTS) return;
-  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true, animations: "disabled" });
+  // Not `fullPage: true`: in this (mobile-emulation) project a full-page capture flips the window to 1 px wide for a moment,
+  // which crosses the phone breakpoint and remounts the grid (a maximised panel was lost, M58 double-click test). Grow the
+  // viewport to the page's height instead - the width never changes - then put it back.
+  const view = page.viewportSize();
+  const height = await page.evaluate(() => document.documentElement.scrollHeight);
+  if (view && height > view.height) await page.setViewportSize({ width: view.width, height });
+  await page.screenshot({ path: `${SHOTS}/${name}.png`, animations: "disabled" });
+  if (view && height > view.height) await page.setViewportSize(view);
 }
 
 async function noSidewaysScroll(page: Page) {
@@ -426,7 +433,7 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
       test(`tabs one at a time, the short status bar (${theme})`, async ({ page }) => {
         await open(page, theme);
         await expect(page.locator("[data-terminal-grid]")).toHaveCount(0);
-        await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Chart$/, /^Chain$/, /^Basket$/, /^Positions\s*2$/, /^Orders$/]);
+        await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Chart$/, /^Chain$/, /^Basket$/, /^Positions\s*2$/, /^Orders$/, /^Payoff$/, /^Bots$/]);
         await expect(page.locator("[data-block='terminal-status'][data-compact]")).toBeVisible();
         await expect(page.locator("[data-status='margin']")).toHaveCount(0);
         await shot(page, `terminal-${size.width}-${theme}`);
@@ -441,7 +448,7 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
 
     test("no sideways scroll and 44 px targets on every tab; a chain price opens the one ticket as a sheet", async ({ page }) => {
       await open(page, "light");
-      for (const tab of ["chart", "chain", "basket", "positions", "orders"]) {     // TERM-2 step 3 tabs
+      for (const tab of ["chart", "chain", "basket", "positions", "orders", "payoff", "bots"]) {     // TERM-2 step 3 tabs + M63 I-5
         await page.locator(`[data-tab='${tab}']`).tap();
         await expect(page.locator(`[data-phone-panel='${tab}']`)).toBeVisible();
         await settle(page);
@@ -741,6 +748,112 @@ test.describe("v2 terminal TERM-2 step 4 (R1-R4) 390", () => {
   }
 });
 
+// --- M63 I-5: the Bots & signals and Payoff panels (read only) --------------------------------------------------------
+
+const FACT = (p: (typeof POSITIONS)[number], strike: number) => ({ symbol: p.symbol, exchange: "NFO", known: true, listed: true, underlying: "NIFTY",
+  right: "CE", strike, expiry: "2026-11-03", lot_size: 75, label: `NIFTY 03 NOV ${strike} CE`, expired: false, days_left: 5,
+  spot_symbol: "NIFTY 50", spot_exchange: "NSE", roll: null, roll_note: null });
+const BOTS = [
+  { id: 7, strategy_id: "orb_15m_5m", symbol: "NIFTY 50", instrument_kind: "OPTION", holding: "INTRADAY", mode: "PAPER", status: "ACTIVE", pause_reason: null,
+    last_evaluated_at: NOW, last_signal_at: "2026-10-27T04:33:00Z", last_error: null, consecutive_failures: 0, open_positions: 0, wait_reason: null },
+  { id: 6, strategy_id: "swing_breakout_d", symbol: "RELIANCE", instrument_kind: "EQUITY", holding: "SWING", mode: "PAPER", status: "PAUSED", pause_reason: null,
+    last_evaluated_at: NOW, last_signal_at: null, last_error: null, consecutive_failures: 0, open_positions: 0, wait_reason: null },
+];
+const WAITING = [
+  { id: "action:31", at: "2026-10-27T04:40:00Z", symbol: "NIFTY 50", exchange: "NSE", direction: "SHORT", setup: "Rejection at the seller area",
+    entry: 24480, stop: 24560, target: 24300, rr: 2.2, source: { kind: "autopilot", name: "Deployment #7" }, mode: "PAPER", status: "waiting",
+    expires_at: "2026-10-27T05:05:00Z", snoozed_until: null, reasons: [], action_id: 31, outcome: null },
+];
+/** His bots, his waiting signals and what his two open legs are (so they are drawn on the payoff). */
+async function m63Routes(page: Page) {
+  await page.route(/\/api(?:\/v1)?\/deployments(\?.*)?$/, (r) => r.fulfill({ json: BOTS }));
+  await page.route(/\/api(?:\/v1)?\/signals\/feed\?/, (r) => r.fulfill({ json: { tab: "waiting", source: "all", symbol: null, items: WAITING, next_cursor: null,
+    counts: { waiting: 1, today: 1 }, as_of: NOW, since: null, sources: {} } }));
+  await page.route(/\/api(?:\/v1)?\/paper\/fno\/contracts$/, (r) => r.fulfill({ json: { items: [FACT(POSITIONS[0], 25000), FACT(POSITIONS[1], 25100)] } }));
+}
+
+/** The payoff and bots panels' content (the same on the grid and on a phone tab); nothing in them places an order. */
+async function expectPayoff(payoff: ReturnType<Page["locator"]>) {
+  await expect(payoff.locator("[data-compare-chart] [data-curve]")).toHaveCount(2);          // his positions and his basket
+  await expect(payoff.locator("[data-compare-figures] thead th")).toHaveText(["Figure", "Your positions", "Your basket"]);
+  await expect(payoff.locator("[data-figure-row='Max profit'] td").first()).toHaveText("₹3,000.00");
+  await expect(payoff.locator("[data-figure-row='Max loss'] td").first()).toHaveText("₹4,500.00");
+  await expect(payoff.locator("[data-figure-row='Breakevens'] td").first()).toHaveText("25,040");
+  await expect(payoff.locator("[data-figure-row='Margin']")).toHaveCount(0);
+  await expect(payoff.locator("[data-payoff='expiry']")).toHaveText("At expiry 3 Nov");
+  await expect(payoff.locator("[data-panel-body='payoff'] button")).toHaveCount(0);
+}
+
+async function expectBots(bots: ReturnType<Page["locator"]>) {
+  await expect(bots.locator("[data-bot]")).toHaveCount(2);
+  await expect(bots.locator("[data-bot='7']")).toContainText("Opening Range Breakout");
+  await expect(bots.locator("[data-bot='7'] [data-chip='bot-status']")).toHaveText("Running");
+  await expect(bots.locator("[data-bot='6'] [data-chip='bot-status']")).toHaveText("Paused");
+  await expect(bots.locator("[data-signal='action:31']")).toContainText("Rejection at the seller area");
+  await expect(bots.locator("[data-signal='action:31'] a")).toHaveAttribute("href", "/signals?proposal=31");
+  await expect(bots).not.toContainText(/24,?480|24,?560|24,?300|Deployment #7/);              // no price, no internal name
+  await expect(bots.locator("[data-panel-body='bots'] button")).toHaveCount(0);
+  await expect(bots.getByRole("link", { name: "Open Signals" })).toBeVisible();
+  await expect(bots.getByRole("link", { name: "Open Trading bot" })).toBeVisible();
+}
+
+test.describe("v2 terminal M63 I-5 panels 1440", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  for (const theme of THEMES) {
+    test(`Bots & signals and Payoff from the Panels menu: read only, his own (${theme})`, async ({ page }) => {
+      await open(page, theme, { basket: BASKET, routes: m63Routes });
+      await page.locator("[data-terminal='panels'] summary").click();
+      for (const id of ["payoff", "bots"]) await page.locator(`[data-panel-toggle='${id}']`).check();
+      await page.locator("[data-terminal='panels'] summary").click();
+      await settle(page);
+      const payoff = page.locator("[data-panel='payoff']");
+      const bots = page.locator("[data-panel='bots']");
+      await expectPayoff(payoff);
+      await expectBots(bots);
+      // M63 review: no empty band - both sit directly under Positions & orders, at most one grid gutter below it.
+      const gutter = await page.locator("[data-terminal-grid]").evaluate((g) => parseFloat(getComputedStyle(g).rowGap) || 0);
+      const above = await page.locator("[data-panel='positions']").boundingBox();
+      for (const p of [payoff, bots]) {
+        const box = await p.boundingBox();
+        expect(above && box).toBeTruthy();
+        const gap = (box?.y ?? 0) - ((above?.y ?? 0) + (above?.height ?? 0));
+        expect(gap).toBeGreaterThanOrEqual(0);
+        expect(gap).toBeLessThanOrEqual(gutter + 1);
+      }
+      // The two new panels fit the text budget. (The Basket panel with two legs reads three visible lines today - not
+      // part of this item; the budget test above checks the empty default layout.)
+      expect((await textBudgetProblems(page)).filter((p) => !p.startsWith("Basket:"))).toEqual([]);
+      await noSidewaysScroll(page);
+      await payoff.scrollIntoViewIfNeeded();
+      await shot(page, `m63-after-1440-${theme}`);
+    });
+  }
+});
+
+test.describe("v2 terminal M63 I-5 panels 390", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  for (const theme of THEMES) {
+    test(`the Payoff and Bots tabs, last: read only, his own (${theme})`, async ({ page }) => {
+      await open(page, theme, { basket: BASKET, routes: m63Routes });
+      await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Chart$/, /^Chain$/, /^Basket\s*2$/, /^Positions\s*2$/, /^Orders$/, /^Payoff$/, /^Bots$/]);
+      await page.locator("[data-tab='payoff']").tap();
+      await settle(page);
+      await expectPayoff(page.locator("[data-phone-panel='payoff']"));
+      expect(await textBudgetProblems(page)).toEqual([]);
+      await expectPhoneLayout(page);
+      await shot(page, `m63-after-390-${theme}-payoff`);
+      await page.locator("[data-tab='bots']").tap();
+      await settle(page);
+      await expectBots(page.locator("[data-phone-panel='bots']"));
+      expect(await textBudgetProblems(page)).toEqual([]);
+      await expectPhoneLayout(page);
+      await shot(page, `m63-after-390-${theme}-bots`);
+    });
+  }
+});
+
 // M58 (T4): the lines between panels grow one panel and shrink its neighbour; the limit shows inline; the Panels dialog's
 // width / height steppers (saved with "Save as mine"); double-click a line = the ready sizes, a title = maximise.
 for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]) {
@@ -862,7 +975,7 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
 
 // M75 NAV-3 (docs/design/M75_NO_NAVIGATION.md, the Terminal / charts rows): the Terminal's chart and chain links open in
 // place - the PATH stays /terminal while the panel is open, and closing it returns to the Terminal as it was.
-// (The bots panel's "Open Signals" / "Open Trading bot" links are hidden in every layout today: src/inplace/terminalChartsNav.test.tsx.)
+// (The bots panel's "Open Signals" / "Open Trading bot" links: src/inplace/terminalChartsNav.test.tsx; its content: the M63 I-5 tests above.)
 for (const size of [{ width: 390, height: 844, shape: "bottom", phone: true }, { width: 1440, height: 900, shape: "right", phone: false }] as const) {
   test.describe(`v2 terminal ${size.width}: links open in place (M75 NAV-3)`, () => {
     test.use(size.phone ? { viewport: { width: size.width, height: size.height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 }
@@ -1001,7 +1114,7 @@ test.describe("v2 terminal 390: the Watchlist tab (UX-3)", () => {
   for (const theme of THEMES) {
     test(`the Watchlist tab first; a row opens the Chart tab on its symbol (${theme})`, async ({ page }) => {
       await open(page, theme, { features: WL_ON, routes: listRoutes });
-      await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Watchlist$/, /^Chart$/, /^Chain$/, /^Basket$/, /^Positions\s*2$/, /^Orders$/]);
+      await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Watchlist$/, /^Chart$/, /^Chain$/, /^Basket$/, /^Positions\s*2$/, /^Orders$/, /^Payoff$/, /^Bots$/]);
       await expect(page.locator("[data-tab='chart']")).toHaveAttribute("aria-selected", "true");
       await page.locator("[data-tab='watchlist']").tap();
       await expect(page.locator("[data-phone-panel='watchlist'] [data-row]")).toHaveCount(3);

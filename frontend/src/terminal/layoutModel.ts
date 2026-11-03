@@ -51,8 +51,9 @@ export interface TerminalPrefs {
 export interface PanelInfo { label: string; minW: number; minH: number; w: number; h: number }
 
 export const PANEL_IDS: readonly PanelId[] = ["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"];
-/** T2/T3 build them; until then hidden (R6, FN0 25 Oct): never in the Panels menu, never opened, a stored open one reads closed. */
-export const HIDDEN_PANELS: ReadonlySet<PanelId> = new Set<PanelId>(["bots", "payoff"]);
+/** A panel not built yet is hidden (R6, FN0 25 Oct): never in the Panels menu, never opened, a stored open one reads
+ * closed. M63 I-5 built the last two (Bots & signals, Payoff), so none is hidden now; the rule stays for the next one. */
+export const HIDDEN_PANELS: ReadonlySet<PanelId> = new Set<PanelId>();
 /** The panels the "Panels" menu offers. */
 export const CHOOSER_PANEL_IDS: readonly PanelId[] = PANEL_IDS.filter((id) => !HIDDEN_PANELS.has(id));
 
@@ -176,14 +177,34 @@ export function firstFree(panels: readonly PanelPlace[], w: number, h: number, e
   return null;
 }
 
-/** Open a panel: at its last place when that is free, else the first free place at its usual size (then its minimum). */
+/** The highest row `place` can take in its own columns without passing through an open panel (its own row at most). */
+export function liftedY(panels: readonly PanelPlace[], place: PanelPlace): number {
+  const shown = panels.filter((x) => x.open && x.id !== place.id);
+  let y = place.y;
+  while (y > 0 && !shown.some((s) => overlaps(s, { ...place, y: y - 1, open: true }))) y -= 1;
+  return y;
+}
+
+/** Open a panel: at its last place when that is free (moved up to close any empty band above it), else directly under
+ * the lowest open panel, else the first free place at its usual size (then its minimum). */
 export function openPanel(panels: readonly PanelPlace[], id: PanelId): PanelPlace[] {
   if (HIDDEN_PANELS.has(id)) return [...panels];
   const info = PANELS[id];
   const known = panels.find((x) => x.id === id);
   if (known?.open) return [...panels];
   const others = panels.filter((x) => x.id !== id);
-  if (known && layoutProblem([...others, { ...known, open: true }]) === null) return panels.map((x) => (x.id === id ? { ...x, open: true } : x));
+  // M63 review: an opened panel never leaves an empty band above it - its stored place (a preset's spare row far below)
+  // moves up in its own columns until it meets an open panel or the top (the panels already open never move).
+  if (known && layoutProblem([...others, { ...known, open: true }]) === null) {
+    const up = liftedY(others, known);
+    return panels.map((x) => (x.id === id ? { ...x, y: up, open: true } : x));
+  }
+  // No free stored place: directly under the lowest open panel, in its own columns, else full width.
+  const bottom = others.filter((x) => x.open).reduce((b, x) => Math.max(b, x.y + x.h), 0);
+  for (const [x, w] of [[known?.x ?? 0, known?.w ?? info.w], [0, COLUMNS]]) {
+    const place: PanelPlace = { ...(known ?? { id, symbol: null }), id, x, y: bottom, w, h: known?.h ?? info.h, open: true };
+    if (layoutProblem([...others, place]) === null) return known ? panels.map((q) => (q.id === id ? place : q)) : [...panels, place];
+  }
   for (const [w, h] of [[info.w, info.h], [info.minW, info.minH]]) {
     const at = firstFree(panels, w, h, id);
     if (at) {
@@ -623,12 +644,14 @@ export function forSave(prefs: TerminalPrefs): TerminalPrefs {
 
 // --- the phone ---------------------------------------------------------------------------------------------------------
 
-/** Phone (360 / 390): the panels as tabs, one at a time (T1). "bots" stays a type but no tab until T2/T3 (HIDDEN_PANELS). */
-export type PhoneTab = "watchlist" | "chart" | "chain" | "basket" | "order" | "positions" | "orders" | "bots";
+/** Phone (360 / 390): the panels as tabs, one at a time (T1); one row that scrolls sideways (PhoneTabsV2). */
+export type PhoneTab = "watchlist" | "chart" | "chain" | "basket" | "order" | "positions" | "orders" | "payoff" | "bots";
 export const PHONE_TABS: readonly { key: PhoneTab; label: string }[] = [
   // TERM-2 step 3: Chart · Chain · Basket · Positions · Orders; a price opens the order ticket as a bottom sheet.
   { key: "chart", label: "Chart" }, { key: "chain", label: "Chain" }, { key: "basket", label: "Basket" },
   { key: "positions", label: "Positions" }, { key: "orders", label: "Orders" },
+  // M63 I-5: the two read-only panels, last (the trading tabs keep their places).
+  { key: "payoff", label: "Payoff" }, { key: "bots", label: "Bots" },
 ];
 /** UX-3: the Watchlist tab (first, as the panel is docked left) - only while the `watchlists` feature is on. */
 export const WATCHLIST_TAB: { key: PhoneTab; label: string } = { key: "watchlist", label: "Watchlist" };

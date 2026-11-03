@@ -772,7 +772,8 @@ def _close_head(symbol: str, d: Dict[str, Any], tf: str) -> str:
     source; without a stored Daily bar, the close of the chart's own last closed bar."""
     oc = d.get("official_close") or {}
     if oc.get("close") is not None:
-        return f"{symbol} last closed at {_f(oc['close'])} on {day_words(oc.get('date'))} (official close, {oc.get('source')})."
+        kind = "provisional close" if oc.get("provisional") else "official close"       # owner 3 Nov: never "official" before NSE's file
+        return f"{symbol} last closed at {_f(oc['close'])} on {day_words(oc.get('date'))} ({kind}, {oc.get('source')})."
     if d.get("last_close") is not None:
         return f"{symbol} last closed at {_f(d['last_close'])}."
     return f"{symbol}:"
@@ -833,7 +834,8 @@ def chart_headline(symbol: str, tf: str, res: ToolResult, zones: ToolResult, liv
     # itself - trend, areas, breaks - stays on closed bars).
     ref = extra["live_price"] if extra["live_price"] is not None else price
     area = nearest_area(float(ref), bands) if isinstance(ref, (int, float)) and ref > 0 else None
-    return {"symbol": symbol, "price": price, "price_label": "Last close", **extra, "as_of": oc.get("date") or d.get("as_of"),
+    label = "Provisional close" if oc.get("provisional") and oc.get("close") is not None else "Last close"
+    return {"symbol": symbol, "price": price, "price_label": label, **extra, "as_of": oc.get("date") or d.get("as_of"),
             "trend": trend if trend in ("up", "down", "sideways") else None, "timeframe": TF_LABELS.get(tf, tf), "area": area,
             "chart": {"symbol": INDEX_NAMES.get(symbol, symbol), "exchange": exchange_of(symbol), "timeframe": CHART_TF.get(tf, "day")}}
 

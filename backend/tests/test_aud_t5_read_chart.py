@@ -141,7 +141,7 @@ def test_route_404_while_off_and_self_scoped(member, monkeypatch):
     forming = recent.iloc[[-1]].assign(timestamp=pd.Timestamp(now) - pd.Timedelta(minutes=5), bar_end=pd.Timestamp(now) + pd.Timedelta(minutes=10))
     served = pd.concat([recent, forming], ignore_index=True)
 
-    async def load(session, key, tf, start, end, max_bars=None, private=None):
+    async def load(session, key, tf, start, end, max_bars=None, private=None, provisional=False):
         seen["load"] = (key, tf, end, private)
         return served, "lake:15m"
 

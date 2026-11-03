@@ -24,7 +24,7 @@ import {
   type Layout, type PanelId, type PanelPlace, type PhoneTab, type TerminalPrefs,
 } from "./layoutModel";
 import {
-  ChainPanelV2, ChartPanelV2, OrderPanelV2, OrdersPanelV2, PlaceholderPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
+  ChainPanelV2, ChartPanelV2, OrderPanelV2, OrdersPanelV2, BotsPanelV2, PayoffPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
 } from "./PanelsV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { chartLiveOf, useTerminalSpot } from "./spot";
@@ -196,8 +196,10 @@ export default function TerminalClassicV2({ terminal = defaultTerminalApi }: Pag
         fnoOn={features.on("paper_account")} combined={combined} onChanged={afterOrder} />;
       case "orders": return <OrdersPanelV2 read={asRead(ordersL)} terminal={terminal} />;
       case "basket": return <SpreadBuilderV2 underlying={underlying} legs={legs} spot={spot?.ltp ?? null} product={savedProduct} onOpen={trading.openBasket} />;
-      case "bots": return <PlaceholderPanelV2 kind="bots" />;
-      case "payoff": return <PlaceholderPanelV2 kind="payoff" />;
+      // M63 I-5: the same two read-only panels as the Terminal (terminal/PanelsV2.tsx).
+      case "bots": return <BotsPanelV2 enabled={signedIn} />;
+      case "payoff": return <PayoffPanelV2 underlying={underlying} expiry={live?.expiry ?? null} positions={dataOf(positionsL) ?? null}
+        basket={legs} spot={spot?.ltp ?? null} fnoOn={features.on("paper_account") && canTrade} />;
       default: return null;
     }
   }
@@ -306,6 +308,7 @@ export default function TerminalClassicV2({ terminal = defaultTerminalApi }: Pag
             {tab === "order" && panel("order")}
             {tab === "positions" && panel("positions")}
             {tab === "orders" && panel("orders")}
+            {tab === "payoff" && panel("payoff")}
             {tab === "bots" && panel("bots")}
           </section>
         </div>

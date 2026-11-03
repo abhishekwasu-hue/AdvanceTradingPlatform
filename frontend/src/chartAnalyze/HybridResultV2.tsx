@@ -22,6 +22,7 @@ const TONE = { up: "bg-up-tint text-up", down: "bg-down-tint text-down", sideway
 const TREND_WORD = { up: "Up", down: "Down", sideways: "Sideways" } as const;
 const KEEP = new Set(["disclaimer"]);
 const num = (v: number | null | undefined) => (v == null ? EMPTY : formatNumber(v, 2));
+const band = (lo: number | null | undefined, hi: number | null | undefined) => (lo != null && hi != null && formatNumber(lo, 2) === formatNumber(hi, 2) ? num(lo) : `${num(lo)} – ${num(hi)}`);
 
 export function trendText(row: HybridRow): string {
   if (!row.trend) return "Not read yet";
@@ -54,7 +55,7 @@ function AreaList({ title, areas, tone }: { title: string; areas: HybridArea[]; 
         <ul className="mt-space-1 space-y-space-1">
           {areas.map((a) => (
             <li key={`${a.low}-${a.high}`} className="font-tabular" data-area={a.where}>
-              <span className={cx("block break-words text-t12 font-semibold md:whitespace-nowrap md:text-t13", tone === "up" ? "text-up" : "text-down")}>{num(a.low)} – {num(a.high)}</span>
+              <span className={cx("block break-words text-t12 font-semibold md:whitespace-nowrap md:text-t13", tone === "up" ? "text-up" : "text-down")}>{band(a.low, a.high)}</span>
               <span className="block text-t12 text-fg-muted">{areaNote(a)}</span>
             </li>
           ))}
@@ -180,7 +181,7 @@ export default function HybridResultV2({ result, userImageSrc, readingSrc, image
           <h4 className="text-t13 font-semibold text-fg">Areas of interest nearby</h4>
           {r.zones_note ? <p className="mt-space-1 text-t13 text-fg-muted">{r.zones_note}</p> : (
             <>
-              {inside.length > 0 && <p className="mt-space-1 text-t13 text-fg">At the price: <span className="font-tabular">{num(inside[0].low)} – {num(inside[0].high)}</span></p>}
+              {inside.length > 0 && <p className="mt-space-1 text-t13 text-fg">At the price: <span className="font-tabular">{band(inside[0].low, inside[0].high)}</span></p>}
               <div className="mt-space-1 grid grid-cols-2 gap-space-3 md:max-w-3xl">
                 <AreaList title="Above" areas={above} tone="down" />
                 <AreaList title="Below" areas={below} tone="up" />

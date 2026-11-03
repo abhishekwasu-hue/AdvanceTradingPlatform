@@ -110,12 +110,12 @@ describe("UX-3: a row drives the Terminal's one active symbol", () => {
 describe("UX-3 on a phone: a Watchlist tab first, only with the flag", () => {
   it("the tabs", () => {
     expect(phoneTabs(false)).toBe(PHONE_TABS);
-    expect(phoneTabs(true).map((t) => t.label)).toEqual(["Watchlist", "Chart", "Chain", "Basket", "Positions", "Orders"]);
+    expect(phoneTabs(true).map((t) => t.label)).toEqual(["Watchlist", "Chart", "Chain", "Basket", "Positions", "Orders", "Payoff", "Bots"]);
     const on = renderToStaticMarkup(<PhoneTabsV2 tab="chart" onTab={() => undefined} watchlists />);
-    expect(on.match(/role="tab"/g)).toHaveLength(6);
+    expect(on.match(/role="tab"/g)).toHaveLength(8);
     expect(on).toContain('id="terminal-tab-watchlist"');
     const off = renderToStaticMarkup(<PhoneTabsV2 tab="chart" onTab={() => undefined} />);
-    expect(off.match(/role="tab"/g)).toHaveLength(5);
+    expect(off.match(/role="tab"/g)).toHaveLength(7);
     expect(off).not.toContain("terminal-tab-watchlist");
   });
 });

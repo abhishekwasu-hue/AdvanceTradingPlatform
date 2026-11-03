@@ -32,7 +32,7 @@ import {
   saveOver, sizePanel, switchTo, withoutWatchlist, type Layout, type PanelId, type PanelPlace, type PhoneTab, type SizeResult, type TerminalPrefs,
 } from "./layoutModel";
 import {
-  ChartPanelV2, OrderPanelV2, OrdersPanelV2, PlaceholderPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
+  ChartPanelV2, OrderPanelV2, OrdersPanelV2, BotsPanelV2, PayoffPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
 } from "./PanelsV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { TerminalWatchlistV2 } from "./TerminalWatchlistV2";
@@ -246,8 +246,10 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       // UX-3: the Charts watchlist panel as it is; a row with options becomes the active symbol (on a phone: the Chart tab).
       case "watchlist": return <TerminalWatchlistV2 underlying={underlying} spotSymbol={spotSymbol} touch={narrow} liveTicks={features.on("data_hub")}
         onUnderlying={(v) => { setUnderlying(v); if (narrow) setTab("chart"); }} />;
-      case "bots": return <PlaceholderPanelV2 kind="bots" />;
-      case "payoff": return <PlaceholderPanelV2 kind="payoff" />;
+      // M63 I-5: his bots and waiting signals; the payoff of his positions and basket on the one symbol + expiry (read only).
+      case "bots": return <BotsPanelV2 enabled={signedIn} />;
+      case "payoff": return <PayoffPanelV2 underlying={underlying} expiry={live?.expiry ?? chain.expiry ?? null} positions={dataOf(positionsL) ?? null}
+        basket={legs} spot={spot?.ltp ?? null} fnoOn={features.on("paper_account") && canTrade} />;
       default: return null;
     }
   }
@@ -362,6 +364,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
             {tab === "order" && panel("order")}
             {tab === "positions" && panel("positions")}
             {tab === "orders" && panel("orders")}
+            {tab === "payoff" && panel("payoff")}
             {tab === "bots" && panel("bots")}
           </section>
         </div>

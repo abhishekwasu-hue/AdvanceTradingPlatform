@@ -203,10 +203,22 @@ def distinct_bars(rows: Sequence[RowTuple]) -> int:
     return len({_utc(r[0]) for r in rows})
 
 
+def newest_bar(rows: Sequence[RowTuple]) -> Optional[datetime]:
+    return max((_utc(r[0]) for r in rows), default=None)
+
+
 def prefer_own(shared: Sequence[RowTuple], own: Sequence[RowTuple]) -> bool:
     """The member's own bars are read instead of the shared lake's when they hold MORE bars of the window (a tie keeps
-    the shared lake). One source per read: bars of two sources are never mixed in one frame."""
-    return bool(own) and distinct_bars(own) > distinct_bars(shared)
+    the shared lake) - but never when they end before the shared lake's newest bar: an own history that stopped (e.g.
+    his broker Daily history ending 30 Oct) never hides the shared lake's newer bars (the NSE index file's 2 Nov; owner
+    3 Nov, the Copilot card read the Daily structure to 30 Oct while the official close was 2 Nov). One source per
+    read: bars of two sources are never mixed in one frame."""
+    if not own:
+        return False
+    own_last, shared_last = newest_bar(own), newest_bar(shared)
+    if own_last is not None and shared_last is not None and own_last < shared_last:
+        return False
+    return distinct_bars(own) > distinct_bars(shared)
 
 
 async def history_owner(session: AsyncSession) -> Optional[Scope]:
@@ -246,5 +258,5 @@ async def official_close(session: AsyncSession, key: str, scope: Optional[Scope]
     return {"close": round(float(pick[1]), 2), "date": _utc(pick[0]).astimezone(IST).date().isoformat(), "source": whose}
 
 
-__all__ = ["Scope", "SharedScope", "SHARED_OFF_LINE", "is_shared", "shared_scope", "shared_off", "has_rows", "scope_for", "flags", "apply_flags", "fetch_rows", "probe", "distinct_bars", "prefer_own",
+__all__ = ["Scope", "SharedScope", "SHARED_OFF_LINE", "is_shared", "shared_scope", "shared_off", "has_rows", "scope_for", "flags", "apply_flags", "fetch_rows", "probe", "distinct_bars", "newest_bar", "prefer_own",
            "history_owner", "official_close"]

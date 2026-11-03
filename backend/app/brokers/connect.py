@@ -313,7 +313,7 @@ def connection_view(record: BrokerCredentialRecord, now: datetime | None = None)
         if state == "refused":
             return view(NOT_WORKING, "Upstox no longer accepts this Analytics Token; generate a new one in Upstox Developer Apps and paste it here.")
         if state == "unverified":
-            return view(NOT_WORKING, "Upstox has not confirmed the Analytics Token yet; press Connect again in a minute.")
+            return view(NOT_WORKING, "Upstox has not confirmed the Analytics Token yet; ATP checks it again by itself - nothing to paste.")
         return view(NEEDS_LOGIN, "Today's Upstox token has ended; paste your Analytics Token to stay connected for a year.", renew=True)
 
     if session_ok:

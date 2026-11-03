@@ -173,7 +173,7 @@ export default function MarketPulseTab() {
             <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
               {snaps.map((s) => (
                 <span key={s.symbol} className="rounded-lg border border-border bg-surface-2/70 px-2 py-1 text-fg">
-                  {s.symbol} <b className={(s.change_pct ?? 0) > 0 ? "text-up" : (s.change_pct ?? 0) < 0 ? "text-down" : "text-fg"}>{formatPct(s.change_pct ?? 0)}</b>
+                  {s.symbol} <b className={(s.change_pct ?? 0) > 0 ? "text-up" : (s.change_pct ?? 0) < 0 ? "text-down" : "text-fg"}>{formatPct(s.change_pct ?? 0)}</b> <span className="text-fg-muted">{t("pulse.sinceOpen")}</span>
                 </span>
               ))}
               {vix != null && <span className="rounded-lg border border-border bg-surface-2/70 px-2 py-1 text-fg">India VIX <b>{formatNumber(vix, 1)}</b></span>}

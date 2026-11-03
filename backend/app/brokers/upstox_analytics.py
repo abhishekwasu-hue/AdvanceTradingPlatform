@@ -62,6 +62,7 @@ PROBE_INSTRUMENT = "NSE_INDEX|Nifty 50"      # a known liquid instrument: every 
 PROBE_TIMEOUT_SECONDS = 8.0
 PROBE_DEADLINE_SECONDS = 20.0                 # the whole probe; classes still running then are left `unverified`
 REPROBE_COOLDOWN_SECONDS = 600
+HEAL_INTERVAL_SECONDS = 3600                  # a saved token with a class not `works` is checked again by itself this often
 
 # The analytics token's label, hint and kind for the Connect flow live in Upstox's entry of the broker field map
 # (app/brokers/field_specs.py, UI2-5).
@@ -437,7 +438,12 @@ def apply_probe(credentials: BrokerCredentials, results: Dict[str, Dict[str, Any
     now = now or _utcnow()
     meta = dict(credentials.analytics_meta or new_meta(credentials.analytics_token or "", now))
     coverage = dict(meta.get("coverage") or {})
-    coverage.update(results)
+    for cls, result in results.items():
+        # A call that does not settle it (429, 5xx, a timeout) never undoes a class that worked: one bad moment at Upstox
+        # must not turn a saved token into "paste it again" (owner 3 Nov). A 401 / 403 does count (refused).
+        if result.get("status") == UNVERIFIED and (coverage.get(cls) or {}).get("status") == WORKS:
+            continue
+        coverage[cls] = result
     meta["coverage"] = {c: coverage.get(c) or {"status": UNVERIFIED} for c in CLASSES}
     meta["probed_at"] = now.isoformat()
     credentials.analytics_meta = meta
@@ -479,6 +485,40 @@ async def refresh_coverage(session: AsyncSession, record: Any, *, classes: Optio
     except Exception:  # noqa: BLE001 - a detached record is fine; the row is written
         pass
     return public_view(creds, now)
+
+
+async def heal_coverage(session: AsyncSession, now: Optional[datetime] = None) -> int:
+    """The saved token checks itself again: every Upstox row whose analytics token is unexpired but has a class that is
+    not `works` (a refusal or an unsettled call, e.g. Upstox busy overnight), last checked at least HEAL_INTERVAL_SECONDS
+    ago, is probed again for those classes only (read-only GETs). Nothing to paste: a token Upstox accepts again works
+    again by itself. Returns how many rows were checked; one row's failure never stops the others."""
+    from app.brokers.token_lifecycle import load_credentials
+    from app.db.models import BrokerCredentialRecord
+    now = now or _utcnow()
+    ids = list(await session.scalars(select(BrokerCredentialRecord.id).where(BrokerCredentialRecord.broker_name == BROKER)
+                                     .order_by(BrokerCredentialRecord.id)))
+    checked = 0
+    for record_id in ids:
+        try:
+            record = await session.get(BrokerCredentialRecord, record_id)
+            if record is None:
+                continue
+            creds = load_credentials(record)
+            if not creds.analytics_token or is_expired(creds, now):
+                continue
+            meta = creds.analytics_meta or {}
+            open_classes = [c for c in CLASSES if ((meta.get("coverage") or {}).get(c) or {}).get("status") != WORKS]
+            if not open_classes:
+                continue
+            last = meta.get("probed_at")
+            if last and (now - datetime.fromisoformat(last)).total_seconds() < HEAL_INTERVAL_SECONDS:
+                continue
+            await refresh_coverage(session, record, classes=open_classes, now=now)
+            checked += 1
+        except Exception as exc:  # noqa: BLE001 - one row (unreadable payload, network) never stops the others
+            logger.warning("Upstox analytics self-check failed for credential %s: %s", record_id, type(exc).__name__)
+            await session.rollback()
+    return checked
 
 
 # --- re-probe after a refusal seen in a real data call -------------------------------------------

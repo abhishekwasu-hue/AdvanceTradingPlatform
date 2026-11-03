@@ -163,6 +163,7 @@ export const COPILOT_EN = {
     noRead: "no market data read yet",
     holidays: "Holidays: {{list}}",
     hiddenStale: "The last market read is old, so its prices are hidden; the read above describes that older data.",
+    sinceOpen: "since today's open",
     hiddenPlaceholder: "Every symbol showed the same change - placeholder figures, hidden until the next real read.",
     global: "Global cues",
     mood: { POSITIVE: "supportive", NEGATIVE: "under pressure", MIXED: "mixed" },

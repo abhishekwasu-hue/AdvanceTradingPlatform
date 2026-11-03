@@ -71,6 +71,21 @@ def _no_automatic_broker_login(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_analytics_self_check(request, monkeypatch):
+    """UPX-Q1: the worker re-checks a saved Upstox Analytics Token whose classes are not all `works` (real Upstox GETs).
+    Worker tests never reach Upstox that way; tests/test_upx_analytics_self_check.py runs the real function on a mock."""
+    if request.module.__name__.endswith("test_upx_analytics_self_check"):
+        yield
+        return
+    from app.brokers import upstox_analytics
+
+    async def _none(session, now=None):
+        return 0
+    monkeypatch.setattr(upstox_analytics, "heal_coverage", _none)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_instrument_master_download(monkeypatch):
     """P1 (27 Oct): a ticket that misses a contract starts an on-demand master refresh (a real Upstox download). Tests never
     download: the refresh answers as "refreshing"; tests/test_p1_master_sync.py calls the real function with a fake sync."""

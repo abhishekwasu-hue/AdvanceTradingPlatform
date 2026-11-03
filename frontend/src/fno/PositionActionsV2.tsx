@@ -152,7 +152,7 @@ export function WaitingOrdersV2({ api = positionActionsApi, onChanged, refresh =
         {rows.map((o) => (
           <li key={o.id} className="py-space-1" data-waiting={o.id}>
             <div className="flex flex-wrap items-center gap-space-2">
-              <span className="min-w-0 flex-1 text-t13 text-fg">{waitingLine(o)}</span>
+              <span className="min-w-0 grow basis-full text-t13 text-fg sm:basis-0" data-waiting-line>{waitingLine(o)}</span>
               <span className="text-t12 text-fg-muted">{o.status_words}</span>
               {o.status === "RESTING" && (
                 <>

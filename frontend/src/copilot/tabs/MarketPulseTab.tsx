@@ -235,7 +235,7 @@ export default function MarketPulseTab() {
                  <div className="flex overflow-hidden rounded-md border border-border text-xs" role="group" aria-label={t("pulse.day.mode")}>
                    {(["PAPER", "LIVE"] as const).map((m) => (
                      <button key={m} onClick={() => setMode(m)} aria-pressed={shownMode === m}
-                             className={`px-2 py-0.5 ${shownMode === m ? "bg-ai/15 text-fg" : "text-fg-muted hover:text-fg"}`}>{m}</button>
+                             className={`inline-flex items-center px-2 py-0.5 max-sm:min-h-11 [@media(pointer:coarse)]:min-h-11 ${shownMode === m ? "bg-ai/15 text-fg" : "text-fg-muted hover:text-fg"}`}>{m}</button>
                    ))}
                  </div>
                )}>

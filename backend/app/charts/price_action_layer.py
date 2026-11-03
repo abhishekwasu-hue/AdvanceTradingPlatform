@@ -63,7 +63,9 @@ Timeframe = Literal["1m", "3m", "5m", "15m", "30m", "1h", "1d"]
 LAKE_LABELS = {"1m": ("1m",), "3m": ("3m",), "5m": ("5m",), "15m": ("15m",), "30m": ("30m",), "1h": ("60m", "1h"), "1d": ("1d", "day"),
                "1w": ("1w", "week")}
 # CH3b top-down panel: each timeframe's own history as of the same `at` (the weekly from daily bars when the lake has none)
-MTF_DAYS = {"1w": 3650, "1d": 1095, "1h": 180, "15m": 45}
+# Owner audit (3 Nov): 1h was 180 - floored to the month (`_anchor`) its window passed REBUILD_MAX_DAYS, so a 1-hour row
+# rebuilt from 1-minute bars was always refused ("Data not ready: 1-hour"). 140 + the month floor stays inside the cap.
+MTF_DAYS = {"1w": 3650, "1d": 1095, "1h": 140, "15m": 45}
 INTRADAY_MINUTES = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60}
 # history read by default (about 800-1,100 bars of a regular NSE session) and the most a request may ask for
 DEFAULT_DAYS = {"1m": 3, "3m": 7, "5m": 15, "15m": 45, "30m": 90, "1h": 180, "1d": 1095}
@@ -380,13 +382,16 @@ async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, 
 
 async def _load_frame(session: AsyncSession, key: str, tf: str, start: datetime, end: datetime, max_bars: int | None,
                       private: tuple[int, int] | None, provisional: bool) -> tuple[pd.DataFrame, str | None]:
-    from app.market_lake.own_bars import is_shared, prefer_own
+    from app.market_lake.own_bars import is_shared, prefer_own, stitch
     whose = "shared" if is_shared(private) else "own"         # M55 T4: the owner's index intraday rows read by another reader
     for label in LAKE_LABELS[tf]:
         rows = await _fetch(session, key, label, start, end, (max_bars or MAX_BARS) * ROWS_PER_BAR)
         own = await _own(session, private, key, label, start, end, (max_bars or MAX_BARS) * ROWS_PER_BAR)
         if prefer_own(rows, own):
             return await asyncio.to_thread(_to_frame, own, tf, key, end, False), f"{whose}:{label}"
+        joined = stitch(rows, own) if not is_shared(private) else []
+        if joined:
+            return await asyncio.to_thread(_to_frame, joined, tf, key, end, False), f"own+lake:{label}"
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, False), f"lake:{label}"
     if tf == "1w":

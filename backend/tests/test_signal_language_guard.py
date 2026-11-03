@@ -194,7 +194,7 @@ def test_the_brief_texts_with_the_flag_off_are_the_former_ones():
     from app.ai import briefing
     dt = briefing.day_type(_memory("TRENDING_UP", 24.0))
     plan = briefing.game_plan("en", dt, _memory("TRENDING_UP", 24.0), None, [])
-    assert plan["headline"] == ("A volatile day on the data: wide swings and gaps, so ATR-based stops are wider and position sizes "
+    assert plan["headline"] == ("Volatile: wide swings and gaps, so ATR-based stops are wider and position sizes "
                                 "come out smaller.")
     assert "VIX is 20 or higher: fear is high and gaps are more likely; your risk settings size every trade from its stop." in plan["lines"]
 

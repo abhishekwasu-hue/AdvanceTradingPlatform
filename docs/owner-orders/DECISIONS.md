@@ -256,3 +256,4 @@
 | 2026-11-03 | CA-D1 (owner): the Analyze-a-chart story is told by structure (swings, areas, breaks) only - no month, date, day or clock words (OWNER_RULES C.4). |
 | 2026-11-03 | CA-D2 (owner): the volume evidence of a single stock reads the stock's own volume bars on the chart; FUT near-month volume stays the rule for indices. |
 | 2026-11-03 | CA-D3 (owner): method words in the Analyze-a-chart result (CHoCH, handover, LTF, commitment candle, ...) carry a (?) plain-English explanation. |
+| 2026-11-03 | CA-Q1/Q2/Q3 (owner "Do remaining job" on the defaults): advanced reading drawn on ATP's own chart; the Copilot tab that holds Market pulse / Today's read is named for what it shows; the annotated upload gains a CHoCH mark, price-axis labels, the RSI-pane divergence, numbered level markers and distance in %. |

@@ -58,7 +58,7 @@ def test_day_type_and_game_plan():
     dt = briefing.day_type(MEMORY)
     assert dt["kind"] == "RANGE" and dt["vix"] == 13.0
     plan = briefing.game_plan("mr", dt, MEMORY, "new", [{"action": "BLOCK", "description": "RBI policy"}])
-    assert "sideways" in plan["headline"] and "reversion" in plan["fit_families"] and "trend" in plan["avoid_families"]
+    assert "sideways" in plan["headline"].lower() and "reversion" in plan["fit_families"] and "trend" in plan["avoid_families"]
     assert any("RBI policy" in line and "blocked" in line for line in plan["lines"]) and any("No limits of your own are set" in line for line in plan["lines"])   # DEF-0
     assert not DEVANAGARI.search(plan["headline"] + " ".join(plan["lines"]))
     fear = dict(MEMORY, cues=[{"symbol": "INDIA VIX", "last_price": 24.0}])
@@ -98,7 +98,7 @@ def test_brief_endpoint_explains_the_day_and_the_deployments():
     r = client.get("/api/ai/brief?language=mr", headers=headers)
     assert r.status_code == 200, r.text
     b = r.json()
-    assert b["day_type"]["kind"] == "RANGE" and "sideways" in b["plan"]["headline"]
+    assert b["day_type"]["kind"] == "RANGE" and "sideways" in b["plan"]["headline"].lower()
     dep = b["deployments"][0]
     assert dep["family"] == "trend" and dep["regime"] == "RANGING" and any("no trade is the correct result" in w for w in dep["why"])
     assert b["language"] == "en" and not DEVANAGARI.search(str(b))

@@ -25,7 +25,7 @@ describe("CU4 + M60: one Copilot", () => {
   it("M60: four tabs at most - Ask, Read the chart, Analyze a chart (with chart_analyze on), Coach - each a link with its own address", () => {
     const html = render(<CopilotTabsV2 active="ask" />);
     // Without chart_analyze (no flags in this render) the Analyze a chart tab is left out.
-    expect(text(html)).toBe("Ask Read the chart Coach");
+    expect(text(html)).toBe("Ask Market today Coach");
     expect([...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1])).toEqual(["/copilot", "/copilot/read", "/copilot/coach"]);
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
     expect(html).toMatch(/<a[^>]*aria-current="page"[^>]*data-copilot-tab="ask"/);

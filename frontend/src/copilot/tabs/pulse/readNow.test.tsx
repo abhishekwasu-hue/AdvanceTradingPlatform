@@ -61,7 +61,7 @@ describe("M82: the Today's read card shows the true state", () => {
   });
 
   it("the card's headline is the brief's reason line; the per-card Refresh is gone", () => {
-    expect(pulseSource).toContain("<p className=\"mt-2 text-lg font-semibold leading-snug text-fg\">{brief.plan.headline}</p>");
+    expect(pulseSource).toContain("<p className=\"mt-2 text-lg font-semibold leading-snug text-fg\">{shownHeadline(brief.plan.headline, brief.read)}</p>");
     expect(pulseSource).not.toContain('t("states.refresh")');
   });
 });

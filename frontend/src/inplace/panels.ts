@@ -90,7 +90,7 @@ export const AI_KEY_PANEL: PanelEntry = {
 const COPILOT_TOOLS = ["market-pulse", "strategy-lab", "idea-builder", "ask", "watchtower", "news-radar", "coach", "read"] as const;
 const COPILOT_TITLE: Record<string, string> = {
   "market-pulse": "Market Pulse", "strategy-lab": "Strategy Lab", "idea-builder": "Idea Builder", ask: "Ask the Copilot",
-  watchtower: "Watchtower", "news-radar": "News Radar", coach: "Coach", read: "Read the chart",
+  watchtower: "Watchtower", "news-radar": "News Radar", coach: "Coach", read: "Market today",
 };
 /** Old addresses the v2 shell forwards to a Copilot tool (shell/aliases.ts V2_MOVED); the Coach only while the Copilot
  * is on, which this panel needs anyway. */

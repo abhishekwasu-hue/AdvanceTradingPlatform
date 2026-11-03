@@ -18,7 +18,7 @@ export const COPILOT_EN = {
     label: "Copilot",
     ask: "Ask",
     // M60: the four tabs - Ask · Read the chart · Analyze a chart · Coach (the older names stay for their bodies).
-    read: "Read the chart",
+    read: "Market today",   // owner 3 Nov (CA-Q2): named for what it shows - Market pulse and Today's read
     analyze: "Analyze a chart",
     coach: "Coach",
     coachGuide: "Guide",
@@ -151,7 +151,7 @@ export const COPILOT_EN = {
     todayRead: "Today's read",
     // M83: the tab's one "Read now" (sticky header)
     header: {
-      title: "Market pulse",
+      title: "Market data",
       readNow: "Read now",
       reading: "Reading the market...",
       result: "Read at {{time}}: {{symbols}} symbols, {{cues}} India cues, {{globals}} global cues stored.",

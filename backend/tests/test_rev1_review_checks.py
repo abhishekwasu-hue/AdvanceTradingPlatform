@@ -44,7 +44,10 @@ def test_ten_checks_one_line_each_in_order():
     assert all(status != "FAIL" for status, _, _ in lines)
 
 
-def test_the_review_findings_warn_and_nothing_is_written_or_printed_personal():
+def test_the_review_findings_warn_and_nothing_is_written_or_printed_personal(monkeypatch):
+    # CI shares one database across the suite (thousands of organisations): print every id, so this test's own
+    # organisation is always in the line instead of hidden behind "and N more" (the asserts stay exact).
+    monkeypatch.setattr(rc, "SHOWN_IDS", 10**6)
     _, a_id, tenant = _run(_register_user_and_get_id("rev1-checks-a@example.com"))
     ids = {}
 

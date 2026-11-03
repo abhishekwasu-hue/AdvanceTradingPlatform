@@ -29,7 +29,7 @@ describe("Analyze a chart - labels never cover each other (CA-Q3)", () => {
   for (const width of [640, 1600]) {
     it(`no two label boxes overlap and every label stays inside the image (width ${width})`, () => {
       const labels = labelsAt(width);
-      expect(labels.map((l) => l.text)).toEqual(expect.arrayContaining(["HL", "HH", "LH", "Seller area · fresh", "Trigger", "Commitment"]));
+      expect(labels.map((l) => l.text)).toEqual(expect.arrayContaining(["HL", "HH", "LH", "2 · Seller area · fresh", "Trigger ≈ 120.50", "Commitment", "CHoCH ≈ 126.00"]));
       for (let i = 0; i < labels.length; i++) {
         expect(labels[i].box.y).toBeGreaterThanOrEqual(0);
         expect(labels[i].box.y + labels[i].box.h).toBeLessThanOrEqual(FIXTURE_HEIGHT);
@@ -42,11 +42,11 @@ describe("Analyze a chart - labels never cover each other (CA-Q3)", () => {
     const r = fixtureResult("formed");
     const shapes = shapesFor(r.annotations, r.image.width);
     const fs = labelSize(r.image.width);
-    const usual = layoutLabels(shapes.filter((s) => s.kind === "rect"), FIXTURE_HEIGHT, fs).find((l) => l.text.startsWith("Seller"));
+    const usual = layoutLabels(shapes.filter((s) => s.kind === "rect"), FIXTURE_HEIGHT, fs).find((l) => l.text.includes("Seller area"));
     const hh = layoutLabels(shapes.filter((s) => s.kind === "text"), FIXTURE_HEIGHT, fs).find((l) => l.text === "HH");
     expect(usual && hh && boxOverlap(usual.box, hh.box)).toBeGreaterThan(0);          // where they were both drawn before
     const all = labelsAt(r.image.width);
-    const a = all.find((l) => l.text.startsWith("Seller")), b = all.find((l) => l.text === "HH");
+    const a = all.find((l) => l.text.includes("Seller area")), b = all.find((l) => l.text === "HH");
     expect(a && b && boxOverlap(a.box, b.box)).toBe(0);
   });
 

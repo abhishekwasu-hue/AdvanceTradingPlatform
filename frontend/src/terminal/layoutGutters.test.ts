@@ -4,8 +4,10 @@ import {
   presetLayout, resetEdge, resizeAcrossEdge, sizePanel, type Gutter, type PanelId, type PanelPlace,
 } from "./layoutModel";
 
-/** M58 (T4): the lines between panels, the Panels dialog's sizes, maximise - the layout model's pure functions. */
+/** M58 (T4): the lines between panels, the Panels dialog's sizes, maximise - the layout model's pure functions.
+ * UX-3 + TA-4 (PR 8): Option seller = Watchlist 3 · Chart 4 · Chain 5 over Positions & orders 9 · Basket 3. */
 const seller = () => presetLayout("option_seller").panels;
+const ROW_LINE = "watchlist|chart-1|chain|positions|basket";
 const at = (panels: readonly PanelPlace[], id: PanelId) => panels.find((p) => p.id === id)!;
 const line = (panels: readonly PanelPlace[], ids: string): Gutter => {
   const g = gutters(panels).find((x) => [...x.before, ...x.after].join("|") === ids);
@@ -17,16 +19,17 @@ describe("M58 T4-1: the gutters of a layout", () => {
   it("every shared edge of the Option seller layout, full length", () => {
     const list = gutters(seller());
     expect(list.map((g) => `${g.axis}@${g.at}:${[...g.before, ...g.after].join("|")}`)).toEqual([
-      "x@4:chart-1|chain", "x@9:chain|basket", "y@12:chart-1|chain|basket|positions",
+      "x@3:watchlist|chart-1", "x@7:chart-1|chain", "x@9:positions|basket", `y@12:${ROW_LINE}`,
     ]);
     expect(line(seller(), "chart-1|chain")).toMatchObject({ from: 0, to: 12 });
-    expect(line(seller(), "chart-1|chain|basket|positions")).toMatchObject({ from: 0, to: 12 });
+    expect(line(seller(), "positions|basket")).toMatchObject({ from: 12, to: 20 });
+    expect(line(seller(), ROW_LINE)).toMatchObject({ from: 0, to: 12 });
     expect(gutterLabel(line(seller(), "chart-1|chain"))).toBe("Resize Chart and Option chain");
-    expect(gutterLabel(line(seller(), "chart-1|chain|basket|positions"))).toBe("Resize Chart, Option chain, Basket and Positions & orders");
+    expect(gutterLabel(line(seller(), ROW_LINE))).toBe("Resize Watchlist, Chart, Option chain, Positions & orders and Basket");
   });
 
   it("closed panels have no gutter; panels that only touch at a corner have none", () => {
-    expect(gutters(seller().map((p) => (p.id === "basket" ? { ...p, open: false } : p))).some((g) => g.after.includes("basket"))).toBe(false);
+    expect(gutters(seller().map((p) => (p.id === "basket" ? { ...p, open: false } : p))).some((g) => [...g.before, ...g.after].includes("basket"))).toBe(false);
     const corner: PanelPlace[] = [
       { id: "chart-1", x: 0, y: 0, w: 6, h: 6, open: true }, { id: "chain", x: 6, y: 6, w: 6, h: 6, open: true },
     ];
@@ -39,19 +42,20 @@ describe("M58 T4-1 / T4-2: dragging a gutter grows one panel and shrinks its nei
     const r = resizeAcrossEdge(seller(), line(seller(), "chart-1|chain"), 1);
     expect(r.limit).toBeNull();
     expect(r.moved).toBe(1);
-    expect(at(r.panels, "chart-1")).toMatchObject({ x: 0, w: 5 });
-    expect(at(r.panels, "chain")).toMatchObject({ x: 5, w: 4 });
-    expect(at(r.panels, "basket")).toMatchObject({ x: 9, w: 3 });                  // not on this line: unchanged
+    expect(at(r.panels, "chart-1")).toMatchObject({ x: 3, w: 5 });
+    expect(at(r.panels, "chain")).toMatchObject({ x: 8, w: 4 });
+    expect(at(r.panels, "watchlist")).toMatchObject({ x: 0, w: 3 });               // not on this line: unchanged
+    expect(at(r.panels, "basket")).toMatchObject({ x: 9, w: 3 });
     expect(layoutProblem(r.panels)).toBeNull();
     const back = resizeAcrossEdge(r.panels, line(r.panels, "chart-1|chain"), -2);
     expect(at(back.panels, "chart-1").w).toBe(3);
-    expect(at(back.panels, "chain")).toMatchObject({ x: 3, w: 6 });
+    expect(at(back.panels, "chain")).toMatchObject({ x: 6, w: 6 });
   });
 
   it("the horizontal line moves every panel above it and the one below it", () => {
-    const r = resizeAcrossEdge(seller(), line(seller(), "chart-1|chain|basket|positions"), -2);
-    for (const id of ["chart-1", "chain", "basket"] as const) expect(at(r.panels, id).h).toBe(10);
-    expect(at(r.panels, "positions")).toMatchObject({ y: 10, h: 10 });
+    const r = resizeAcrossEdge(seller(), line(seller(), ROW_LINE), -2);
+    for (const id of ["watchlist", "chart-1", "chain"] as const) expect(at(r.panels, id).h).toBe(10);
+    for (const id of ["positions", "basket"] as const) expect(at(r.panels, id)).toMatchObject({ y: 10, h: 10 });
   });
 
   it("stops at the neighbour's minimum width and says why (never a silent refusal)", () => {
@@ -67,13 +71,13 @@ describe("M58 T4-1 / T4-2: dragging a gutter grows one panel and shrinks its nei
   });
 
   it("stops at a minimum height and at the tallest height, with the reason", () => {
-    const g = line(seller(), "chart-1|chain|basket|positions");
+    const g = line(seller(), ROW_LINE);
     const down = resizeAcrossEdge(seller(), g, 6);                                   // positions 8 high, min 5
     expect(down.moved).toBe(3);
     expect(down.limit).toMatchObject({ kind: "min", panel: "positions", text: "Positions & orders cannot be shorter than 5 rows." });
-    const up = resizeAcrossEdge(seller(), g, -10);                                   // the chart's min height is 6
+    const up = resizeAcrossEdge(seller(), g, -10);                                   // the watchlist's and the chart's min height is 6
     expect(up.moved).toBe(-6);
-    expect(up.limit).toMatchObject({ kind: "min", panel: "chart-1" });
+    expect(up.limit).toMatchObject({ kind: "min", panel: "watchlist" });
     const tall: PanelPlace[] = [{ id: "chart-1", x: 0, y: 0, w: 12, h: MAX_HEIGHT - 1, open: true }, { id: "positions", x: 0, y: MAX_HEIGHT - 1, w: 12, h: 12, open: true }];
     const r = resizeAcrossEdge(tall, line(tall, "chart-1|positions"), 3);
     expect(r.moved).toBe(1);
@@ -82,9 +86,9 @@ describe("M58 T4-1 / T4-2: dragging a gutter grows one panel and shrinks its nei
 
   it("a move or a corner resize that cannot be applied says why", () => {
     expect(placeLimit(seller(), "positions", "move", 0, 11)?.text).toBe("Another panel is in the way.");
-    expect(placeLimit(seller(), "positions", "move", 1, 12)?.text).toBe("This is the edge of the grid.");
+    expect(placeLimit(seller(), "basket", "move", 10, 12)?.text).toBe("This is the edge of the grid.");
     expect(placeLimit(seller(), "positions", "move", 0, 13)).toBeNull();
-    expect(placeLimit(seller(), "chart-1", "resize", 5, 12)?.text).toMatch(/^Another panel is in the way\. Drag the line/);
+    expect(placeLimit(seller(), "chart-1", "resize", 6, 12)?.text).toMatch(/^Another panel is in the way\. Drag the line/);
     expect(placeLimit(seller(), "chart-1", "resize", 2, 12)?.text).toBe("Chart cannot be narrower than 3 columns.");
   });
 });
@@ -94,33 +98,34 @@ describe("M58 T4-3: the Panels dialog's sizes", () => {
     const w = sizePanel(seller(), "chart-1", "w", 5);
     expect(w.limit).toBeNull();
     expect(at(w.panels, "chart-1").w).toBe(5);
-    expect(at(w.panels, "chain")).toMatchObject({ x: 5, w: 4 });
+    expect(at(w.panels, "chain")).toMatchObject({ x: 8, w: 4 });
     const basket = sizePanel(seller(), "basket", "w", 4);                           // no line on its right: its left line moves
     expect(at(basket.panels, "basket")).toMatchObject({ x: 8, w: 4 });
-    expect(at(basket.panels, "chain").w).toBe(4);
+    expect(at(basket.panels, "positions").w).toBe(8);
     const h = sizePanel(seller(), "positions", "h", 10);                             // nothing below: it grows down
     expect(at(h.panels, "positions")).toMatchObject({ y: 12, h: 10 });
+    expect(at(h.panels, "basket")).toMatchObject({ y: 12, h: 8 });
     expect(at(h.panels, "chart-1").h).toBe(12);
   });
 
   it("below the minimum or past the neighbour's minimum: the reason", () => {
     expect(sizePanel(seller(), "chain", "w", 2).limit?.text).toBe("Option chain cannot be narrower than 3 columns.");
-    const far = sizePanel(seller(), "chart-1", "w", 12);
-    expect(at(far.panels, "chart-1").w).toBe(6);
+    const far = sizePanel(seller(), "chart-1", "w", 12);                            // the chain and the watchlist at their smallest
+    expect(at(far.panels, "chart-1").w).toBe(7);
     expect(far.limit?.kind).toBe("min");
     expect(layoutProblem(far.panels)).toBeNull();
   });
 
   it("Equal widths: a row of side-by-side panels shares the 12 columns", () => {
     const r = equalWidths(seller());
-    expect(["chart-1", "chain", "basket"].map((id) => at(r.panels, id as PanelId))).toMatchObject([{ x: 0, w: 4 }, { x: 4, w: 4 }, { x: 8, w: 4 }]);
-    expect(at(r.panels, "positions")).toMatchObject({ x: 0, w: 12 });
+    expect(["watchlist", "chart-1", "chain"].map((id) => at(r.panels, id as PanelId))).toMatchObject([{ x: 0, w: 4 }, { x: 4, w: 4 }, { x: 8, w: 4 }]);
+    expect(["positions", "basket"].map((id) => at(r.panels, id as PanelId))).toMatchObject([{ x: 0, w: 6 }, { x: 6, w: 6 }]);
     expect(r.limit).toBeNull();
     expect(layoutProblem(r.panels)).toBeNull();
   });
 
   it("Fit to screen: the panels fill the width and the rows the screen shows, each kept at its minimum", () => {
-    const narrow = seller().map((p) => (p.id === "basket" ? { ...p, open: false } : p.id === "positions" ? { ...p, w: 9 } : p));
+    const narrow = seller().map((p) => (p.id === "basket" ? { ...p, open: false } : p));
     const r = fitToScreen(narrow, 16);
     expect(r.limit).toBeNull();
     expect(Math.max(...r.panels.filter((p) => p.open).map((p) => p.x + p.w))).toBe(COLUMNS);
@@ -136,8 +141,8 @@ describe("M58 T4-4: reset a line, maximise and restore", () => {
   it("a double-click on a line puts the two panels back to the ready sizes", () => {
     const moved = resizeAcrossEdge(seller(), line(seller(), "chart-1|chain"), 2).panels;
     const r = resetEdge(moved, line(moved, "chart-1|chain"), "option_seller");
-    expect(at(r.panels, "chart-1")).toMatchObject({ x: 0, w: 4 });
-    expect(at(r.panels, "chain")).toMatchObject({ x: 4, w: 5 });
+    expect(at(r.panels, "chart-1")).toMatchObject({ x: 3, w: 4 });
+    expect(at(r.panels, "chain")).toMatchObject({ x: 7, w: 5 });
     expect(r.moved).toBe(-2);
     expect(r.limit).toBeNull();
   });
@@ -147,8 +152,8 @@ describe("M58 T4-4: reset a line, maximise and restore", () => {
     const view = maximiseView(base, "chain");
     expect(at(view, "chain")).toMatchObject({ x: 0, y: 1, w: COLUMNS });
     expect(at(view, "chain").h).toBeGreaterThanOrEqual(19);
-    for (const id of ["chart-1", "basket", "positions"] as const) expect(at(view, id)).toMatchObject({ y: 0, h: 1 });
-    expect(["chart-1", "basket", "positions"].map((id) => at(view, id as PanelId).w).reduce((a, b) => a + b)).toBe(COLUMNS);
+    for (const id of ["watchlist", "chart-1", "basket", "positions"] as const) expect(at(view, id)).toMatchObject({ y: 0, h: 1 });
+    expect(["watchlist", "chart-1", "basket", "positions"].map((id) => at(view, id as PanelId).w).reduce((a, b) => a + b)).toBe(COLUMNS);
     expect(layoutProblem(view)).toBeNull();
     expect(base).toEqual(seller());                                                 // restore = the layout as it was
     expect(maximiseView(base, "order")).toEqual(base);                               // a closed panel: nothing to maximise

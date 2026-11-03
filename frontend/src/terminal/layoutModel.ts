@@ -19,7 +19,7 @@ export const NAMESPACE = "terminal";
 /** The same rule as the server (app/me/prefs.py TERMINAL_LAYOUT_NAME). */
 export const NAME_RULE = /^[A-Za-z0-9][A-Za-z0-9 &()+\-/.,:']{0,39}$/;
 
-export type PanelId = "chart-1" | "chart-2" | "chart-3" | "chart-4" | "chain" | "order" | "positions" | "orders" | "basket" | "bots" | "payoff";
+export type PanelId = "watchlist" | "chart-1" | "chart-2" | "chart-3" | "chart-4" | "chain" | "order" | "positions" | "orders" | "basket" | "bots" | "payoff";
 export type PresetId = "option_seller" | "quick_trade" | "multi_chart";
 
 export interface PanelPlace {
@@ -50,13 +50,15 @@ export interface TerminalPrefs {
 
 export interface PanelInfo { label: string; minW: number; minH: number; w: number; h: number }
 
-export const PANEL_IDS: readonly PanelId[] = ["chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"];
+export const PANEL_IDS: readonly PanelId[] = ["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"];
 /** T2/T3 build them; until then hidden (R6, FN0 25 Oct): never in the Panels menu, never opened, a stored open one reads closed. */
 export const HIDDEN_PANELS: ReadonlySet<PanelId> = new Set<PanelId>(["bots", "payoff"]);
 /** The panels the "Panels" menu offers. */
 export const CHOOSER_PANEL_IDS: readonly PanelId[] = PANEL_IDS.filter((id) => !HIDDEN_PANELS.has(id));
 
 export const PANELS: Record<PanelId, PanelInfo> = {
+  // UX-3 (owner 25 Oct, UX2 plan PR 8): the trader's watchlists (src/chart/WatchlistPanel.tsx) docked left in every preset.
+  watchlist: { label: "Watchlist", minW: 2, minH: 6, w: 3, h: 12 },
   "chart-1": { label: "Chart", minW: 3, minH: 6, w: 6, h: 10 },
   "chart-2": { label: "Chart 2", minW: 3, minH: 6, w: 6, h: 8 },
   "chart-3": { label: "Chart 3", minW: 3, minH: 6, w: 6, h: 8 },
@@ -80,23 +82,28 @@ const p = (id: PanelId, x: number, y: number, w: number, h: number, open = true,
 export const PRESETS: Record<PresetId, { name: string; description: string; panels: PanelPlace[] }> = {
   // TERM-2 step 3 (owner 30 Oct): chart | chain | basket above the one bottom panel (Positions · Orders · Alerts). A price
   // on the chain opens the action sheet; Buy / Sell there open the one order ticket.
+  // UX-3 + TA-4 (UX2 plan PR 8): the watchlist docked left in every preset. Option seller = Watchlist · Chart · Chain, then
+  // the one bottom panel (Positions · Orders · Alerts) with the basket compact beside it. The watchlist needs 3 columns to
+  // show a symbol, its price and change; the chain keeps 5 so OI change and IV stay on screen (owner fix T1-3,
+  // chainHiddenColumns); that leaves the chart 4 of the 12 columns - "Chart largest" (TA-4) is an owner decision in the
+  // PR 8 report.
   option_seller: {
     name: "Option seller",
-    description: "The chart, the option chain and your basket side by side; positions, orders and alerts below.",
-    panels: [p("chart-1", 0, 0, 4, 12), p("chain", 4, 0, 5, 12), p("basket", 9, 0, 3, 12), p("positions", 0, 12, 12, 8),
+    description: "Your watchlist, the chart and the option chain side by side; positions, orders and alerts below, with your basket beside them.",
+    panels: [p("watchlist", 0, 0, 3, 12), p("chart-1", 3, 0, 4, 12), p("chain", 7, 0, 5, 12), p("positions", 0, 12, 9, 8), p("basket", 9, 12, 3, 8),
       p("order", 0, 20, 4, 11, false), p("orders", 8, 20, 4, 7, false), p("bots", 0, 31, 6, 6, false), p("payoff", 6, 31, 6, 6, false)],
   },
   quick_trade: {
     name: "Quick trade",
-    description: "The option chain with the order panel beside it; positions, orders and alerts below.",
-    panels: [p("chain", 0, 0, 7, 12), p("order", 7, 0, 5, 12), p("positions", 0, 12, 12, 8),
+    description: "Your watchlist, the option chain and the order panel beside it; positions, orders and alerts below.",
+    panels: [p("watchlist", 0, 0, 3, 12), p("chain", 3, 0, 5, 12), p("order", 8, 0, 4, 12), p("positions", 0, 12, 12, 8),
       p("chart-1", 0, 20, 6, 10, false), p("basket", 6, 20, 3, 7, false), p("orders", 9, 20, 3, 7, false)],
   },
   multi_chart: {
     name: "Multi-chart",
-    description: "Four charts at once, with your positions below.",
-    panels: [p("chart-1", 0, 0, 6, 8, true, "NIFTY 50"), p("chart-2", 6, 0, 6, 8, true, "NIFTY BANK"),
-      p("chart-3", 0, 8, 6, 8, true, "NIFTY FIN SERVICE"), p("chart-4", 6, 8, 6, 8, true, "NIFTY IT"),
+    description: "Your watchlist and four charts at once, with your positions below.",
+    panels: [p("watchlist", 0, 0, 2, 16), p("chart-1", 2, 0, 5, 8, true, "NIFTY 50"), p("chart-2", 7, 0, 5, 8, true, "NIFTY BANK"),
+      p("chart-3", 2, 8, 5, 8, true, "NIFTY FIN SERVICE"), p("chart-4", 7, 8, 5, 8, true, "NIFTY IT"),
       p("positions", 0, 16, 12, 5), p("order", 8, 21, 4, 11, false)],
   },
 };
@@ -191,6 +198,20 @@ export function openPanel(panels: readonly PanelPlace[], id: PanelId): PanelPlac
 export function closePanel(panels: readonly PanelPlace[], id: PanelId): PanelPlace[] {
   if (panels.filter((x) => x.open).length <= 1) return [...panels];
   return panels.map((x) => (x.id === id ? { ...x, open: false } : x));
+}
+
+/**
+ * UX-3: while the `watchlists` feature is off the watchlist panel is not shown: it reads closed and its columns go to the
+ * open panels right next to it (those whose rows sit inside its rows), so no empty space is left. Pure; nothing is saved.
+ */
+export function withoutWatchlist(panels: readonly PanelPlace[]): PanelPlace[] {
+  const wl = panels.find((q) => q.id === "watchlist");
+  if (!wl || !wl.open) return [...panels];
+  return panels.map((q) => {
+    if (q.id === "watchlist") return { ...q, open: false };
+    const beside = q.open && q.x === wl.x + wl.w && q.y >= wl.y && q.y + q.h <= wl.y + wl.h;
+    return beside ? { ...q, x: wl.x, w: q.w + wl.w } : q;
+  });
 }
 
 /** The panels in reading order (top to bottom, then left to right) - the keyboard and screen-reader order. */
@@ -428,10 +449,11 @@ export function equalWidths(panels: readonly PanelPlace[]): SizeResult {
 
 /**
  * T4-4: double-click a gutter - the panels on it go back to their sizes in the ready layout (`preset`). When the ready
- * layout does not have one of them, the line goes back to where the ready layout has it.
+ * layout does not have one of them, the line goes back to where the ready layout has it. `ready`: the ready layout as
+ * shown, when it differs from the preset (UX-3: without the watchlist while `watchlists` is off).
  */
-export function resetEdge(panels: readonly PanelPlace[], g: Gutter, preset: PresetId): SizeResult {
-  const base = PRESETS[preset].panels;
+export function resetEdge(panels: readonly PanelPlace[], g: Gutter, preset: PresetId, ready?: readonly PanelPlace[]): SizeResult {
+  const base = ready ?? PRESETS[preset].panels;
   const ids = [...g.before, ...g.after];
   const b0 = base.find((x) => x.id === g.before[0]) ?? null;
   const a0 = base.find((x) => x.id === g.after[0]) ?? null;
@@ -602,9 +624,12 @@ export function forSave(prefs: TerminalPrefs): TerminalPrefs {
 // --- the phone ---------------------------------------------------------------------------------------------------------
 
 /** Phone (360 / 390): the panels as tabs, one at a time (T1). "bots" stays a type but no tab until T2/T3 (HIDDEN_PANELS). */
-export type PhoneTab = "chart" | "chain" | "basket" | "order" | "positions" | "orders" | "bots";
+export type PhoneTab = "watchlist" | "chart" | "chain" | "basket" | "order" | "positions" | "orders" | "bots";
 export const PHONE_TABS: readonly { key: PhoneTab; label: string }[] = [
   // TERM-2 step 3: Chart · Chain · Basket · Positions · Orders; a price opens the order ticket as a bottom sheet.
   { key: "chart", label: "Chart" }, { key: "chain", label: "Chain" }, { key: "basket", label: "Basket" },
   { key: "positions", label: "Positions" }, { key: "orders", label: "Orders" },
 ];
+/** UX-3: the Watchlist tab (first, as the panel is docked left) - only while the `watchlists` feature is on. */
+export const WATCHLIST_TAB: { key: PhoneTab; label: string } = { key: "watchlist", label: "Watchlist" };
+export const phoneTabs = (watchlists: boolean): readonly { key: PhoneTab; label: string }[] => (watchlists ? [WATCHLIST_TAB, ...PHONE_TABS] : PHONE_TABS);

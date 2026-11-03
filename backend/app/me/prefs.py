@@ -96,7 +96,7 @@ class ChartIndicators(_Prefs):
 # TF-1 (owner 25 Oct): the timeframes a chart can show (the candle route's ids, frontend src/chart/timeframes.ts) and
 # the starred favourites shown as one-click buttons beside the timeframe dropdown (default 5m, 15m, 1H, D).
 ChartTimeframe = Literal["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"]
-DEFAULT_TIMEFRAME_FAVOURITES: Tuple[str, ...] = ("5min", "15min", "60min", "day")
+DEFAULT_TIMEFRAME_FAVOURITES: Tuple[ChartTimeframe, ...] = ("5min", "15min", "60min", "day")
 
 
 def _unique_favourites(value: List[str]) -> List[str]:
@@ -376,8 +376,8 @@ TERMINAL_MAX_HEIGHT = 32
 TERMINAL_LAYOUT_ID = r"^[a-z0-9]{4,16}$"
 TERMINAL_LAYOUT_NAME = r"^[A-Za-z0-9][A-Za-z0-9 &()+\-/.,:']{0,39}$"
 TerminalPreset = Literal["option_seller", "quick_trade", "multi_chart"]
-TerminalPanelId = Literal["chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"]
-TERMINAL_PANEL_IDS: Tuple[str, ...] = ("chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket",
+TerminalPanelId = Literal["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"]
+TERMINAL_PANEL_IDS: Tuple[str, ...] = ("watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket",
                                        "bots", "payoff")
 TERMINAL_UNDERLYING = r"^[A-Z0-9&_\- ]{1,30}$"
 

@@ -1,5 +1,5 @@
 import { PageTabs } from "../ui/PageTabs";
-import { PHONE_TABS, type PhoneTab } from "./layoutModel";
+import { phoneTabs, type PhoneTab } from "./layoutModel";
 
 /**
  * Trading Terminal T1 on a phone (360 / 390): the panels as tabs - Chart · Chain · Order · Positions · Orders · Bots - one
@@ -7,10 +7,12 @@ import { PHONE_TABS, type PhoneTab } from "./layoutModel";
  * tab scrolled into view and an edge fade where more tabs sit; every tab a 44 px target. Tab ids `terminal-tab-<key>`,
  * the panel `terminal-panel-<key>`.
  */
-export function PhoneTabsV2({ tab, onTab, counts = {} }: {
+export function PhoneTabsV2({ tab, onTab, counts = {}, watchlists = false }: {
   tab: PhoneTab; onTab: (tab: PhoneTab) => void; counts?: Partial<Record<PhoneTab, number>>;
+  /** UX-3: the Watchlist tab first, while the `watchlists` feature is on. */
+  watchlists?: boolean;
 }) {
-  const items = PHONE_TABS.map((t) => {
+  const items = phoneTabs(watchlists).map((t) => {
     const n = counts[t.key];
     const shown = typeof n === "number" && n > 0;
     return {

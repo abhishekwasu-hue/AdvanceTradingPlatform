@@ -772,7 +772,9 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
       expect(g.width).toBeLessThanOrEqual(8);
       const chart0 = await box(page, "chart-1"), chain0 = await box(page, "chain");
       expect(g.height).toBeGreaterThanOrEqual(chart0.height - 1);                 // full length
-      const col = (chain0.x + chain0.width - chart0.x + 8) / 9;                   // 4 + 5 columns
+      // The horizontal line under the top row: the top panels, Positions & orders and the basket share it.
+      await expect(line(page, "chart-1|chain|positions|basket")).toHaveCSS("cursor", "row-resize");
+      const col = (chain0.x + chain0.width - chart0.x + 8) / 12;                  // 7 + 5 columns (UX-3 off here: the chart has the watchlist's 2)
       await gutter.hover();
       await shotView(page, `m58-${size.width}-hover`);
       await page.mouse.down();
@@ -794,8 +796,6 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
       const chain2 = await box(page, "chain");
       expect(chain2.width).toBeGreaterThan(col * 2.5);
       expect(chain2.width).toBeLessThan(col * 3.5);
-      // The horizontal line under the top row: the top panels and Positions & orders share it.
-      await expect(line(page, "chart-1|chain|basket|positions")).toHaveCSS("cursor", "row-resize");
       // Double-click the line: Chart and Option chain go back to the ready sizes.
       await gutter.dblclick();
       await expect.poll(async () => Math.round((await box(page, "chart-1")).width)).toBe(Math.round(chart0.width));
@@ -814,7 +814,7 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
       await page.locator("[data-panel-handle='chain']").dblclick();
       await expect(page.locator("[data-panel='chain']")).toHaveAttribute("data-maximised", "true");
       for (const id of ["chart-1", "basket", "positions"]) await expect(page.locator(`[data-panel='${id}']`)).toHaveAttribute("data-collapsed", "true");
-      expect((await box(page, "chain")).width).toBeGreaterThan(chart0.width * 2.5);
+      expect((await box(page, "chain")).width).toBeGreaterThan(chart0.width * 1.5);
       await expect(page.locator("[data-gutter-ids]")).toHaveCount(0);
       await shot(page, `m58-${size.width}-maximised`);
       await page.locator("[data-panel-handle='chain']").dblclick();
@@ -827,21 +827,22 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
       await settle(page);
       await page.locator("[data-terminal='panels'] summary").click();
       const width = page.locator("[data-size='chart-1:w']");
-      await expect(width).toHaveText("4");
+      await expect(width).toHaveText("7");
       await expect(page.locator("[data-size-min='chart-1:w']")).toContainText("min 3");
       await page.locator("[data-size-step='chart-1:w:+1']").click();
-      await expect(width).toHaveText("5");
+      await expect(width).toHaveText("8");
       await expect(page.locator("[data-size='chain:w']")).toHaveText("4");             // the neighbour gave a column
       await shotView(page, `m58-${size.width}-dialog`);
       await page.locator("[data-size-step='chain:w:-1']").click();                       // 3: its smallest
       await expect(page.locator("[data-size-step='chain:w:-1']")).toBeDisabled();
       await page.locator("[data-terminal='equal-widths']").click();
-      for (const id of ["chart-1", "chain", "basket"]) await expect(page.locator(`[data-size='${id}:w']`)).toHaveText("4");
+      // UX-3 + TA-4: two rows - Chart | Option chain, and Positions & orders | Basket - each shares the 12 columns.
+      for (const id of ["chart-1", "chain", "positions", "basket"]) await expect(page.locator(`[data-size='${id}:w']`)).toHaveText("6");
       await page.locator("[data-terminal='fit']").click();
-      await expect(page.locator("[data-size='positions:w']")).toHaveText("12");
+      await expect(page.locator("[data-size='positions:w']")).toHaveText("6");
       await page.locator("[data-size-step='chart-1:h:+1']").click();
       await page.locator("[data-size-step='chart-1:w:+1']").click();
-      await expect(width).toHaveText("5");
+      await expect(width).toHaveText("7");
       const height = await page.locator("[data-size='chart-1:h']").textContent();
       await page.locator("[data-terminal='panels'] summary").click();
       await page.locator("[data-terminal='save']").click();
@@ -849,11 +850,11 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
       await page.locator("[data-terminal='ask-ok']").click();
       await expect(page.locator("[data-note='terminal-layout'], [data-testid='terminal-layout']").first()).toContainText("Saved as");
       const saved = seen.puts.at(-1)?.body as { layouts: Record<string, { panels: { id: string; w: number }[] }>; active: string };
-      expect(saved.layouts[saved.active].panels.find((p) => p.id === "chart-1")?.w).toBe(5);
+      expect(saved.layouts[saved.active].panels.find((p) => p.id === "chart-1")?.w).toBe(7);
       await page.reload();
       await settle(page);
       await page.locator("[data-terminal='panels'] summary").click();
-      await expect(page.locator("[data-size='chart-1:w']")).toHaveText("5");
+      await expect(page.locator("[data-size='chart-1:w']")).toHaveText("7");
       await expect(page.locator("[data-size='chart-1:h']")).toHaveText(height ?? "");
     });
   });
@@ -907,3 +908,109 @@ for (const size of [{ width: 390, height: 844, shape: "bottom", phone: true }, {
     });
   });
 }
+
+// UX-3 + TA-4 (UX2 plan PR 8): with `watchlists` on, the Charts watchlist panel is docked left in the Option seller layout;
+// a row with options becomes the one active symbol (chart, chain, basket follow); any other row opens on Charts in place.
+const WL_ON = { ...ON, watchlists: true };
+const MY_LIST = [{ id: 7, name: "My list", version: 1, items: [
+  { symbol: "NIFTY 50", exchange: "NSE_INDEX" }, { symbol: "NIFTY BANK", exchange: "NSE_INDEX" }, { symbol: "NIFTY IT", exchange: "NSE_INDEX" },
+] }];
+const listRoutes = async (page: Page) => {
+  await page.route(/\/api(?:\/v1)?\/watchlists$/, (r) => (r.request().method() === "GET" ? r.fulfill({ json: MY_LIST }) : r.fallback()));
+};
+const wlRow = (page: Page, scope: string, symbol: string) =>
+  page.locator(`${scope} [data-watchlist] [data-row]`).filter({ hasText: symbol }).locator("button:not([data-handle]):not([aria-label^='Remove'])").first();
+
+test.describe("v2 terminal 1440: the watchlist panel (UX-3 + TA-4)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  for (const theme of THEMES) {
+    test(`docked left: Watchlist · Chart · Chain, Positions & orders with the basket beside them (${theme})`, async ({ page }) => {
+      await open(page, theme, { features: WL_ON, routes: listRoutes });
+      const ids = ["watchlist", "chart-1", "chain", "positions", "basket"];
+      await expect(page.locator("[data-terminal-grid] [data-panel]")).toHaveCount(ids.length);
+      const boxes = Object.fromEntries(await Promise.all(ids.map(async (id) => [id, (await page.locator(`[data-panel='${id}']`).boundingBox())!] as const)));
+      expect(boxes.watchlist.x).toBeLessThan(boxes["chart-1"].x);
+      expect(boxes["chart-1"].x).toBeLessThan(boxes.chain.x);
+      expect(boxes.watchlist.width).toBeGreaterThan(250);                              // 3 of 12 columns: symbol, price and change readable
+      expect(boxes.positions.y).toBeGreaterThan(boxes.chain.y + boxes.chain.height - 1);
+      expect(boxes.basket.x).toBeGreaterThan(boxes.positions.x + boxes.positions.width - 1);
+      const chain = page.locator("[data-panel='chain']");
+      for (const col of ["call-oi_change", "call-iv", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();   // T1-3
+      await expect(page.locator("[data-panel='watchlist'] [data-row]")).toHaveCount(3);
+      // OWNER_RULES D.3: no cut-off text in the narrow panel - each name whole on its own line, the list chooser in full.
+      const names = page.locator("[data-panel='watchlist'] [data-row] [data-row-name]");
+      await expect(names).toHaveText(["NIFTY 50", "NIFTY BANK", "NIFTY IT"]);
+      for (const el of await names.all()) {
+        const m = await el.evaluate((n) => ({ sw: n.scrollWidth, cw: n.clientWidth }));
+        expect(m.sw).toBeLessThanOrEqual(m.cw);
+      }
+      await expect(page.locator("[data-panel='watchlist'] [data-row] [data-price-line]")).toHaveCount(3);
+      const picker = page.locator("[data-panel='watchlist'] #watchlist-pick");
+      await expect(picker.locator("option:checked")).toHaveText("My list (3)");
+      const fits = await picker.evaluate((sel) => {
+        const s = sel as HTMLSelectElement;
+        const c = document.createElement("canvas").getContext("2d")!;
+        const st = getComputedStyle(s);
+        c.font = `${st.fontWeight} ${st.fontSize} ${st.fontFamily}`;
+        const text = c.measureText(s.options[s.selectedIndex].text).width;
+        const room = s.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight) - 24;   // 24: the arrow
+        return text <= room;
+      });
+      expect(fits).toBe(true);
+      await noSidewaysScroll(page);
+      await shot(page, `ux2-pr8-1440-${theme}`);
+    });
+  }
+
+  test("a row with options switches the Terminal's symbol; a row without opens on Charts in place; close and reopen the panel", async ({ page }) => {
+    await open(page, "light", { features: WL_ON, routes: listRoutes });
+    const bar = page.locator("[data-block='terminal-context']");
+    await expect(bar).toHaveAttribute("data-symbol", "NIFTY");
+    await wlRow(page, "[data-panel='watchlist']", "NIFTY BANK").click();
+    await expect(bar).toHaveAttribute("data-symbol", "BANKNIFTY");
+    await expect(page.locator("[data-panel='chart-1']")).toContainText("NIFTY BANK");
+    await expect(wlRow(page, "[data-panel='watchlist']", "NIFTY BANK")).toHaveAttribute("aria-current", "true");
+    await wlRow(page, "[data-panel='watchlist']", "NIFTY IT").click();
+    await expect(page.locator("[data-inplace-panel='chart']")).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/terminal");
+    await expect(bar).toHaveAttribute("data-symbol", "BANKNIFTY");                     // no options: the Terminal stays
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-inplace-panel='chart']")).toHaveCount(0);
+    await page.locator("[data-panel-close='watchlist']").click();
+    await expect(page.locator("[data-panel='watchlist']")).toHaveCount(0);
+    await page.locator("[data-terminal='panels'] summary").click();
+    await page.locator("[data-panel-toggle='watchlist']").check();
+    await expect(page.locator("[data-panel='watchlist']")).toBeVisible();
+  });
+
+  test("with `watchlists` off: no watchlist panel, no menu entry, the chart takes its columns", async ({ page }) => {
+    await open(page, "light");
+    await expect(page.locator("[data-panel='watchlist']")).toHaveCount(0);
+    await page.locator("[data-terminal='panels'] summary").click();
+    await expect(page.locator("[data-panel-toggle='watchlist']")).toHaveCount(0);
+    const chart = (await page.locator("[data-panel='chart-1']").boundingBox())!;
+    const grid = (await page.locator("[data-terminal-grid]").boundingBox())!;
+    expect(Math.abs(chart.x - grid.x)).toBeLessThan(2);
+  });
+});
+
+test.describe("v2 terminal 390: the Watchlist tab (UX-3)", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  for (const theme of THEMES) {
+    test(`the Watchlist tab first; a row opens the Chart tab on its symbol (${theme})`, async ({ page }) => {
+      await open(page, theme, { features: WL_ON, routes: listRoutes });
+      await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Watchlist$/, /^Chart$/, /^Chain$/, /^Basket$/, /^Positions\s*2$/, /^Orders$/]);
+      await expect(page.locator("[data-tab='chart']")).toHaveAttribute("aria-selected", "true");
+      await page.locator("[data-tab='watchlist']").tap();
+      await expect(page.locator("[data-phone-panel='watchlist'] [data-row]")).toHaveCount(3);
+      await expectPhoneLayout(page);
+      await noSidewaysScroll(page);
+      await shot(page, `ux2-pr8-390-${theme}`);
+      await wlRow(page, "[data-phone-panel='watchlist']", "NIFTY BANK").tap();
+      await expect(page.locator("[data-tab='chart']")).toHaveAttribute("aria-selected", "true");
+      await expect(page.locator("[data-block='terminal-context']")).toHaveAttribute("data-symbol", "BANKNIFTY");
+    });
+  }
+});

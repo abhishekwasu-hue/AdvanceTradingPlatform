@@ -1,14 +1,14 @@
-from typing import List
+from typing import List, Tuple
 
 import pandas as pd
 
 from app.core.resampling import resample_ohlc
 from app.indicators.vwap import session_vwap
 from app.price_action.models import SwingPoint
-from app.support_resistance.models import SRZone
+from app.support_resistance.models import SRKind, SRZone
 
 
-def _level_zone(kind: str, price: float, buffer: float, timeframe: str, source: str, score: int) -> SRZone:
+def _level_zone(kind: SRKind, price: float, buffer: float, timeframe: str, source: str, score: int) -> SRZone:
     return SRZone(
         kind=kind, lower=price - buffer, upper=price + buffer, mid=price,
         strength_score=score, timeframe=timeframe, source=source,
@@ -67,7 +67,7 @@ def pivot_levels(df: pd.DataFrame) -> List[SRZone]:
     pp = (prev["high"] + prev["low"] + prev["close"]) / 3
     day_range = prev["high"] - prev["low"]
 
-    levels = [
+    levels: List[Tuple[str, float, SRKind]] = [
         ("PP", pp, "RESISTANCE"),
         ("R1", 2 * pp - prev["low"], "RESISTANCE"),
         ("R2", pp + day_range, "RESISTANCE"),
@@ -90,7 +90,7 @@ def fibonacci_levels(df: pd.DataFrame, alternating_swings: List[SwingPoint]) -> 
         return []
 
     diff = recent_high.price - recent_low.price
-    kind = "SUPPORT" if recent_low.timestamp < recent_high.timestamp else "RESISTANCE"
+    kind: SRKind = "SUPPORT" if recent_low.timestamp < recent_high.timestamp else "RESISTANCE"
 
     zones = []
     for ratio in (0.236, 0.382, 0.5, 0.618, 0.786):
@@ -106,6 +106,6 @@ def vwap_zone(df: pd.DataFrame) -> List[SRZone]:
     if pd.isna(latest_vwap):
         return []
     latest_close = df["close"].iloc[-1]
-    kind = "SUPPORT" if latest_close >= latest_vwap else "RESISTANCE"
+    kind: SRKind = "SUPPORT" if latest_close >= latest_vwap else "RESISTANCE"
     buffer = latest_vwap * 0.001
     return [_level_zone(kind, latest_vwap, buffer, "session", "vwap", 50)]

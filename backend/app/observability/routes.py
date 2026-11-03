@@ -12,7 +12,7 @@
 import asyncio
 import time
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy import func, select, text
@@ -151,13 +151,14 @@ async def dependencies(response: Response, session: AsyncSession = Depends(get_s
     the per-broker circuit breakers (Phase G2) and how many organisations currently have LIVE
     entries blocked pending reconciliation (Phase G1). Same status code rules as /health/deep."""
     body = await deep_health(response, session)
-    body["checks"]["broker_circuits"] = {name: b.snapshot() for name, b in all_breakers().items()}
+    checks = cast(Dict[str, Any], body["checks"])   # AUD-G1.6: deep_health builds "checks" as a dict (type-only)
+    checks["broker_circuits"] = {name: b.snapshot() for name, b in all_breakers().items()}
     try:
-        body["checks"]["broker_uncertain_tenants"] = int(
+        checks["broker_uncertain_tenants"] = int(
             await session.scalar(select(func.count()).select_from(Tenant).where(Tenant.broker_uncertain_since.is_not(None))) or 0
         )
     except Exception:  # noqa: BLE001 - database down is already reported above
-        body["checks"]["broker_uncertain_tenants"] = None
+        checks["broker_uncertain_tenants"] = None
     if body["status"] == "ok" and any(b.state.value != "CLOSED" for b in all_breakers().values()):
         body["status"] = "degraded"
     return body

@@ -70,6 +70,11 @@
 #                                                  M62 JN-1: creates the missing journal rows of closed trades from the
 #                                                  trade rows (organisations the flag is on for, or only ID); a re-run
 #                                                  creates none. Never changes a flag, a trade or an order
+#   /opt/atp/deploy/atp.sh review-checks           REV-1, read-only: the full review's ten live checks, one line each
+#                                                  (ok | WARN | FAIL name: reason) - byob flag, shared-symbol open trades,
+#                                                  trade rows, AI scan-read order words, risk limits at 0, members per
+#                                                  organisation, strategy ids, ai_one_key, news rows, six flags. Counts
+#                                                  only; nothing written, nothing restarted
 #   /opt/atp/deploy/atp.sh schedule | releases | help
 #
 #   --dry-run (anywhere, or ATP_DRY_RUN=1): prints every step it would take; changes nothing on the host.
@@ -3027,6 +3032,24 @@ cmd_journal_backfill() {
   esac
 }
 
+# REV-1 (docs/design/REV1_PLAN.md "Needs live check"): the ten read-only live checks of the full review
+# (backend app/platform/review_checks.py), run in the backend container. One line per check: ok | WARN | FAIL
+# <name>: <reason>. A read-only transaction, SELECTs only - nothing is written, nothing restarts. Counts, organisation
+# ids, flag names and strategy ids only; no personal data, no AI text, no secret.
+cmd_review_checks() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  [ $# -eq 0 ] || die "usage: atp.sh review-checks" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would print the ten review checks (read-only; nothing written)\n'; return 0; fi
+  check_tools
+  local rc=0
+  dc exec -T backend python -m app.platform.review_checks || rc=$?
+  case "$rc" in
+    0) ;;
+    1) die "at least one review check could not run (the FAIL line above says which)" 1 ;;
+    *) die "the review checks did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
 # DATA-H DH2: during a deploy, the backfill runs only when a window is missing (a new host, a new index, a stopped
 # run) and for at most 120 s; nothing missing -> it exits at once. Never fails the deploy (the worker's daily pass and
 # `lake-backfill` finish the rest).
@@ -3077,6 +3100,7 @@ main() {
     import-trade-data) cmd_import_trade_data "$@" ;;
     journal-status) cmd_journal_status "$@" ;;
     journal-backfill) cmd_journal_backfill "$@" ;;
+    review-checks)  cmd_review_checks "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac

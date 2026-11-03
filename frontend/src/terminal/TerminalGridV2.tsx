@@ -51,10 +51,12 @@ const gutterKey = (g: Gutter) => `${g.axis}:${[...g.before, ...g.after].join("|"
 const same = (a: readonly PanelPlace[], b: readonly PanelPlace[]) =>
   a.length === b.length && a.every((q, i) => q.id === b[i].id && q.x === b[i].x && q.y === b[i].y && q.w === b[i].w && q.h === b[i].h && q.open === b[i].open);
 
-export function TerminalGridV2({ panels, preset, onChange, onClose, render, title }: {
+export function TerminalGridV2({ panels, preset, ready, onChange, onClose, render, title }: {
   panels: readonly PanelPlace[];
   /** The ready layout the working one came from: a double-click on a line puts its sizes back (T4-4). */
   preset: PresetId;
+  /** The ready layout as shown, when it is not the preset's own panels (UX-3: the watchlist off). */
+  ready?: readonly PanelPlace[];
   onChange: (panels: PanelPlace[]) => void;
   onClose: (id: PanelId) => void;
   render: (place: PanelPlace) => ReactNode;
@@ -163,7 +165,7 @@ export function TerminalGridV2({ panels, preset, onChange, onClose, render, titl
   }
 
   function reset(gutter: Gutter) {
-    const r = resetEdge(panels, gutter, preset);
+    const r = resetEdge(panels, gutter, preset, ready);
     showLimit(r.limit, gutter);
     if (!same(r.panels, panels)) {
       onChange(r.panels);

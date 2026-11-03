@@ -110,7 +110,8 @@ def desired_ranges(current: str, listing: Optional[date], changes: Sequence[Symb
     if not chain:
         return []
     chain.reverse()                     # oldest first
-    out, start = [], listing
+    out: List[Tuple[str, Optional[date], Optional[date]]] = []
+    start = listing
     for change in chain:
         if start is not None and change.effective <= start:
             continue                    # a change dated before the listing we hold belongs to an earlier life of the symbol

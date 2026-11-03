@@ -3,7 +3,7 @@ from typing import List
 import pandas as pd
 
 from app.price_action.models import SwingPoint
-from app.support_resistance.models import SRZone
+from app.support_resistance.models import SRKind, SRZone
 
 
 def build_swing_zones(
@@ -16,7 +16,7 @@ def build_swing_zones(
     """
     avg_volume = df["volume"].mean()
 
-    def cluster_and_score(prices: List[float], kind: str) -> List[SRZone]:
+    def cluster_and_score(prices: List[float], kind: SRKind) -> List[SRZone]:
         prices = sorted(prices)
         clusters: List[List[float]] = []
         current: List[float] = []

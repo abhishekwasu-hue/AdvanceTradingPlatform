@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+SRKind = Literal["SUPPORT", "RESISTANCE"]   # AUD-G1.6: the zone side, for the builders' own annotations
+
 
 class SRZone(BaseModel):
     kind: Literal["SUPPORT", "RESISTANCE"]

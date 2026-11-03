@@ -42,6 +42,7 @@ Run these as the `atp` user on the server (`ssh atp@<SERVER_IP>`). Each one is s
 | The 500-user load test against this server (its own copy of the stack, section 12a) | `/opt/atp/deploy/ci/loadtest_500.sh` |
 | The 500-session load test against the production stack itself, in NSE market hours, with memory sampled (section 12b) | `/opt/atp/deploy/atp.sh loadtest` |
 | Remove a load-test run's synthetic organisation by hand (section 12b) | `/opt/atp/deploy/atp.sh loadtest-cleanup --list` |
+| The full review's ten live checks, one `ok` / `WARN` / `FAIL` line each (read-only, counts only; REV-1, docs/design/REV1_PLAN.md) | `/opt/atp/deploy/atp.sh review-checks` |
 
 Exit codes:
 

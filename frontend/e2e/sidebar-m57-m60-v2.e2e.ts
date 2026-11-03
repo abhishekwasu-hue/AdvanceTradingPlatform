@@ -137,6 +137,21 @@ test.describe("M57 tablet 768", () => {
   });
 });
 
+test.describe("SB-1 touch tablet 820", () => {
+  test.use({ viewport: { width: 820, height: 1180 }, isMobile: true, hasTouch: true });
+  test("the show / hide button and every rail icon are 44 px targets on touch", async ({ page }) => {
+    await open(page, "/", "light", FULL, (p) => prefsServer(p, { sidebar: "rail" }));
+    await expect(page.getByRole("complementary", { name: "Navigation" })).toHaveAttribute("data-sidebar-mode", "rail");
+    const toggle = (await page.getByRole("button", { name: "Show menu" }).and(page.locator("[data-menu-toggle]")).boundingBox())!;
+    expect(Math.min(toggle.width, toggle.height)).toBeGreaterThanOrEqual(44);
+    const links = page.locator("aside[data-sidebar-mode='rail'] [data-nav-key]");
+    expect(await links.count()).toBeGreaterThan(0);
+    for (const box of await links.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON() as DOMRect))) {
+      expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+    }
+  });
+});
+
 test.describe("M60 + M57 phone 390", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 

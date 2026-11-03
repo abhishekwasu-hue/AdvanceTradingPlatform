@@ -195,7 +195,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UX-14 | folded into UI-28 (U4 palette = colour_v3; owner ✅ 30 Oct) | Session B: "Professional palette" (ATP_ORDER_UX14.md): colour_v3 token set behind its flag, CI contrast for every pair, ONE comparison page (Today, Terminal, Screener, My trades, Signals; 390 + desktop, dark + light); owner 28 Oct: ON by default ("Keep Default on always"), the flag kept to turn it off (Admin -> Features) | - |
 | UX-15 | merged - deploy + owner check | Session B: Positions tab to the broker standard (owner 28 Oct), #639: standard columns and definitions, total P&L first, one amber chip for a missing price / stop, no theory text on screen; Terminal + My trades | - |
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
-| SB-1 | not started | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | - |
+| SB-1 | in review (the button, icon rail and per-user memory were built in M57 U7-1; SB-1 adds the 44 px touch target on a tablet) | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | claude/sb1-sidebar-touch |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
 | CP-V | in progress | review done twice (CP_V_REVIEW.md 24 Oct, CP_V_SPEC.md 26 Oct); fixed spec ✅ 26 Oct (CPV-15..17 defaults); build after DATA-H | #555 |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |

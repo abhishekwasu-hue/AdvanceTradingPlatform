@@ -171,7 +171,8 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
               aria-label={menu.mode === "expanded" ? "Hide menu" : "Show menu"} aria-keyshortcuts={SIDEBAR_SHORTCUT}
               aria-expanded={menu.mode === "expanded"}
               title={`${menu.mode === "expanded" ? "Hide menu" : "Show menu"} (${SIDEBAR_SHORTCUT})`}
-              className={`${iconButton} -ml-space-2 hidden shrink-0 md:flex`}>
+              // SB-1: a touch tablet keeps the 44 px target (iconButton drops to 36 px from md for the mouse).
+              className={`${iconButton} -ml-space-2 hidden shrink-0 md:flex md:[@media(pointer:coarse)]:h-11 md:[@media(pointer:coarse)]:w-11`}>
               {menu.mode === "expanded" ? <PanelLeftClose size={18} aria-hidden /> : <PanelLeft size={18} aria-hidden />}
             </button>
             {/* M57 U7-2: on a phone the same button opens every page as a sheet. It takes the section chip's place (CA7: the

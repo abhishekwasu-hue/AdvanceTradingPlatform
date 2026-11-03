@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { fixtureResult } from "./fixtures";
-import { labelSize, legendFor, shapesFor } from "./shapes";
+import { areaNumber, distancePct, labelSize, legendFor, shapesFor } from "./shapes";
 import { wordsUsed } from "./wordsUsed";
 import ResultViewV2 from "./ResultViewV2";
 
@@ -37,5 +37,26 @@ describe("Analyze a chart - owner review 3 Nov", () => {
     const html = renderToStaticMarkup(<ResultViewV2 result={fixtureResult("formed")} imageSrc={null} />);
     expect(html).toContain("Price now");
     expect(html).not.toMatch(/>Trending</);
+  });
+
+  it("CA-Q3: CHoCH line and setup labels carry their price; areas are numbered and the list matches", () => {
+    const r = fixtureResult("formed");
+    const labels = shapesFor(r.annotations, 640).map((s) => ("label" in s ? s.label : undefined)).filter(Boolean);
+    expect(labels).toContain("CHoCH ≈ 126.00");
+    expect(labels).toContain("Invalidation ≈ 101.00");
+    expect(labels).toContain("1 · Buyer area · tested");
+    expect(legendFor(r.annotations).map((x) => x.text)).toContain("CHoCH (change of character)");
+    expect(areaNumber(r.annotations, 98, 101)).toBe(1);
+    expect(areaNumber(r.annotations, 120.5, 120.5)).toBeNull();
+    const html = renderToStaticMarkup(<ResultViewV2 result={r} imageSrc={null} />);
+    expect(html).toContain("data-level-number");
+    expect(html).toContain("14.4% below");                     // 101 vs the last price 118
+  });
+
+  it("CA-Q3: distance in % of the last price", () => {
+    expect(distancePct(100, 102, 104)).toBe("2.0% above");
+    expect(distancePct(100, 95, 98)).toBe("2.0% below");
+    expect(distancePct(100, 99, 101)).toBe("at the price");
+    expect(distancePct(null, 99, 101)).toBeNull();
   });
 });

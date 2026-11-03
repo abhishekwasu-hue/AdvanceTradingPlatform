@@ -16,7 +16,7 @@ export function fixtureResult(status: SetupStatus): AnalysisResult {
   return {
     contract_version: 1, mode: "image_only", label: IMAGE_ONLY_LABEL, disclaimer: DISCLAIMER, approximate_prices: true,
     coordinate_space: "image_pixels", image: { width: FIXTURE_WIDTH, height: FIXTURE_HEIGHT },
-    recognised: { symbol: "DEMO", exchange: "NSE", timeframe: "15m", first_bar: "made-up start", last_bar: "made-up end" },
+    recognised: { symbol: "DEMO", exchange: "NSE", timeframe: "15m", first_bar: "made-up start", last_bar: "made-up end", last_price: 118 },
     story: ["Made-up story: the drawn candles rise, pause and rise again.", "Made-up story, part two."],
     trend: { side: "up", text: "made-up higher highs and higher lows" },
     current_state: { phase: status === "none" ? "range" : "pullback", text: "made-up current state" },
@@ -51,6 +51,7 @@ export function fixtureResult(status: SetupStatus): AnalysisResult {
       rsi_divergence: status === "formed" ? { kind: "bullish", price: { x0: 120, y0: 250, x1: 330, y1: 262 }, rsi: null, note: "made-up" } : null,
       commitment_candle: status === "none" ? null : { x: 300, y: 200, note: "made-up" },
       ltf_choch: forming ? { x: 560, y: 180, note: "made-up" } : null,
+      choch: status === "none" ? null : { x0: 330, y0: 120, x1: 520, y1: 120, price: 126, note: "made-up" },
       setup_lines: status === "none" ? [] : [{ kind: "trigger", y: 150, price: 120.5 }, { kind: "invalidation", y: 270, price: 101 }, { kind: "next_area", y: 40, price: 140 }],
     },
   };

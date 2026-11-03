@@ -1,3 +1,4 @@
+import { formatNumber } from "../ui/format";
 import type { AnalysisResult, Annotations } from "./types";
 
 /**
@@ -24,13 +25,34 @@ export type Shape =
 
 export const STATE_WORD: Record<string, string> = { fresh: "fresh", tested: "tested", broken: "broken", flipped: "flipped" };
 
+/** Owner CA-Q3: "≈ 2,295" beside a drawn level (image-only prices are read from the axis, so always approximate). */
+export function approxPrice(p: number | null | undefined): string {
+  return p == null ? "" : ` ≈ ${formatNumber(p, p >= 1000 ? 0 : 2)}`;
+}
+
+/** Owner CA-Q3: the number an area carries on the chart (1, 2, ...) - the Key levels list shows the same number. */
+export function areaNumber(a: Annotations, low: number | null, high: number | null): number | null {
+  if (low == null && high == null) return null;
+  const i = a.areas.findIndex((x) => x.price_low === low && x.price_high === high);
+  return i < 0 ? null : i + 1;
+}
+
+/** Owner CA-Q3: how far a level is from the last price, in % of that price ("2.1% above"). */
+export function distancePct(last: number | null | undefined, low: number | null, high: number | null): string | null {
+  if (last == null || last <= 0 || (low == null && high == null)) return null;
+  const lo = Math.min(low ?? high ?? 0, high ?? low ?? 0), hi = Math.max(low ?? high ?? 0, high ?? low ?? 0);
+  if (last >= lo && last <= hi) return "at the price";
+  const gap = last < lo ? lo - last : last - hi;
+  return `${formatNumber((gap / last) * 100, 1)}% ${last < lo ? "above" : "below"}`;
+}
+
 export function shapesFor(a: Annotations, width: number): Shape[] {
   const out: Shape[] = [];
-  for (const area of a.areas) {
+  for (const [n, area] of a.areas.entries()) {
     const x = Math.min(area.x0, area.x1), y = Math.min(area.y0, area.y1);
     out.push({ kind: "rect", x, y, w: Math.abs(area.x1 - area.x0), h: Math.max(1, Math.abs(area.y1 - area.y0)),
       token: area.side === "buyer" ? "up" : "down", fillAlpha: area.state === "broken" ? 0.06 : 0.16, dashed: area.state === "broken",
-      label: `${area.side === "buyer" ? "Buyer" : "Seller"} area · ${STATE_WORD[area.state] ?? area.state}` });
+      label: `${n + 1} · ${area.side === "buyer" ? "Buyer" : "Seller"} area · ${STATE_WORD[area.state] ?? area.state}` });
   }
   for (const line of a.lines) {
     out.push({ kind: "line", x0: line.x0, y0: line.y0, x1: line.x1, y1: line.y1, token: "fg-muted", label: line.name || undefined });
@@ -39,7 +61,7 @@ export function shapesFor(a: Annotations, width: number): Shape[] {
   for (const s of a.setup_lines) {
     const token: Token = s.kind === "invalidation" ? "down" : s.kind === "next_area" ? "up" : "fg";
     const word = s.kind === "invalidation" ? "Invalidation" : s.kind === "next_area" ? "Next area" : "Trigger";
-    out.push({ kind: "line", x0: 0, y0: s.y, x1: width, y1: s.y, token, dashed: true, label: word, labelAt: "end" });
+    out.push({ kind: "line", x0: 0, y0: s.y, x1: width, y1: s.y, token, dashed: true, label: `${word}${approxPrice(s.price)}`, labelAt: "end" });
   }
   if (a.rsi_divergence) {
     const d = a.rsi_divergence;
@@ -50,6 +72,7 @@ export function shapesFor(a: Annotations, width: number): Shape[] {
     out.push({ kind: "dot", x: s.x, y: s.y, token: s.label === "HH" || s.label === "HL" ? "up" : "down", r: 3 });
     out.push({ kind: "text", x: s.x, y: s.label === "HH" || s.label === "LH" ? s.y - 8 : s.y + 16, token: "fg", text: s.label });
   }
+  if (a.choch) out.push({ kind: "line", x0: a.choch.x0, y0: a.choch.y0, x1: a.choch.x1, y1: a.choch.y1, token: "fg", width: 2, label: `CHoCH${approxPrice(a.choch.price)}`, labelAt: "end" });
   if (a.commitment_candle) out.push({ kind: "dot", x: a.commitment_candle.x, y: a.commitment_candle.y, token: "fg", r: 9, label: "Commitment" });
   if (a.ltf_choch) out.push({ kind: "dot", x: a.ltf_choch.x, y: a.ltf_choch.y, token: "fg", r: 6, label: "Lower-timeframe change" });
   return out;
@@ -74,6 +97,7 @@ export function legendFor(a: Annotations): { token: Token; text: string; swatch:
   if (a.setup_lines.some((s) => s.kind === "invalidation")) rows.push({ token: "down", text: "Invalidation", swatch: "dashed" });
   if (a.setup_lines.some((s) => s.kind === "next_area")) rows.push({ token: "up", text: "Next area", swatch: "dashed" });
   if (a.rsi_divergence) rows.push({ token: "warn", text: "RSI divergence", swatch: "line" });
+  if (a.choch) rows.push({ token: "fg", text: "CHoCH (change of character)", swatch: "line" });
   if (a.swings.length) rows.push({ token: "fg", text: "Swings: HH / HL / LH / LL", swatch: "dot" });
   return rows;
 }

@@ -9,6 +9,7 @@ import type { AlertTarget } from "./AlertDialogV2";
 import { PRINT_HIDE } from "./printResult";
 import { guardResult } from "./signalLanguage";
 import { wordsUsed } from "./wordsUsed";
+import { areaNumber, distancePct } from "./shapes";
 import StrikesSectionV2, { type StrikesState } from "./StrikesSectionV2";
 import type { AnalysisResult, PriceRef } from "./types";
 
@@ -37,6 +38,16 @@ export function price(value: number | null | undefined, approximate: boolean): s
   if (value == null) return "";
   const text = formatNumber(value, 2, { trim: true });
   return approximate ? `≈ ${text}` : text;
+}
+
+/** Owner CA-Q3: the level's number on the annotated chart, so the list and the picture match. */
+function LevelName({ n, name }: { n: number | null; name: string }) {
+  return <>{n != null && <span className="mr-space-1 inline-flex h-5 min-w-5 items-center justify-center rounded-pill bg-surface-2 px-1 text-t12 font-semibold text-fg" data-level-number>{n}</span>}{name}</>;
+}
+
+/** Owner CA-Q3: how far the level is from the chart's last price, in %. */
+function Away({ text }: { text: string | null }) {
+  return text ? <span className="block text-t12 font-normal text-fg-muted" data-level-distance>{text}</span> : null;
 }
 
 function band(low: number | null, high: number | null, approximate: boolean): string {
@@ -242,9 +253,10 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
             <tbody>
               {result.key_levels.map((lv, i) => (
                 <tr key={i} className="border-t border-subtle">
-                  <td className="py-space-2 text-fg">{lv.name || (lv.kind === "area" ? "Area" : "Line")}</td>
+                  <td className="py-space-2 text-fg"><LevelName n={areaNumber(result.annotations, lv.price_low, lv.price_high)} name={lv.name || (lv.kind === "area" ? "Area" : "Line")} /></td>
                   <td className="text-fg-muted">{lv.kind === "area" ? `${lv.side === "seller" ? "Seller" : "Buyer"} area` : "Line"}</td>
-                  {!shared && <td className="pr-space-6 text-right font-tabular text-fg">{band(lv.price_low, lv.price_high, approx)}</td>}
+                  {!shared && <td className="pr-space-6 text-right font-tabular text-fg">{band(lv.price_low, lv.price_high, approx)}
+                    <Away text={distancePct(result.recognised.last_price, lv.price_low, lv.price_high)} /></td>}
                   <td className="text-fg-muted">{lv.state ?? "-"}</td>
                   {!shared && <td className="text-right" {...{ [PRINT_HIDE]: "" }}><Button size="sm" variant="ghost" onClick={() => onAlert(areaTarget(lv.price_low, lv.price_high, lv.name || "this level"))}>Set an alert</Button></td>}
                 </tr>
@@ -255,9 +267,10 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
             {result.key_levels.map((lv, i) => (
               <li key={i} className="flex items-center justify-between gap-space-3 rounded-control bg-surface-2 p-space-3">
                 <div className="min-w-0">
-                  <p className="text-t14 font-medium text-fg">{lv.name || (lv.kind === "area" ? "Area" : "Line")}</p>
+                  <p className="text-t14 font-medium text-fg"><LevelName n={areaNumber(result.annotations, lv.price_low, lv.price_high)} name={lv.name || (lv.kind === "area" ? "Area" : "Line")} /></p>
                   <p className="text-t12 text-fg-muted">{shared ? (lv.kind === "area" ? `${lv.side === "seller" ? "Seller" : "Buyer"} area` : "Line")
-                    : band(lv.price_low, lv.price_high, approx)}{lv.state ? ` · ${lv.state}` : ""}</p>
+                    : band(lv.price_low, lv.price_high, approx)}{lv.state ? ` · ${lv.state}` : ""}
+                    {!shared && <Away text={distancePct(result.recognised.last_price, lv.price_low, lv.price_high)} />}</p>
                 </div>
                 {!shared && <Button className="h-11" variant="ghost" {...{ [PRINT_HIDE]: "" }} aria-label={`Set an alert on ${lv.name || "this level"}`} icon={<Bell size={16} aria-hidden />}
                   onClick={() => onAlert(areaTarget(lv.price_low, lv.price_high, lv.name || "this level"))} />}

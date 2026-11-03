@@ -1114,7 +1114,7 @@ test.describe("v2 terminal 390: the Watchlist tab (UX-3)", () => {
   for (const theme of THEMES) {
     test(`the Watchlist tab first; a row opens the Chart tab on its symbol (${theme})`, async ({ page }) => {
       await open(page, theme, { features: WL_ON, routes: listRoutes });
-      await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Watchlist$/, /^Chart$/, /^Chain$/, /^Basket$/, /^Positions\s*2$/, /^Orders$/]);
+      await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Watchlist$/, /^Chart$/, /^Chain$/, /^Basket$/, /^Positions\s*2$/, /^Orders$/, /^Payoff$/, /^Bots$/]);
       await expect(page.locator("[data-tab='chart']")).toHaveAttribute("aria-selected", "true");
       await page.locator("[data-tab='watchlist']").tap();
       await expect(page.locator("[data-phone-panel='watchlist'] [data-row]")).toHaveCount(3);

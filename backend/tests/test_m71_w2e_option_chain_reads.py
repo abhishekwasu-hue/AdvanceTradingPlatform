@@ -92,6 +92,10 @@ def test_flag_off_reads_the_broker_on_every_refresh_exactly_as_before(monkeypatc
 
 
 def test_flag_on_paces_the_call_and_a_second_refresh_in_the_window_makes_no_broker_call(monkeypatch):
+    # Both refreshes stand on ONE instant (as the flag on / off test below): the IV is solved with the time to expiry from
+    # each answer's valuation instant, so two requests a moment apart may round an IV differently (186.23 vs 186.22).
+    instant = datetime.now(UTC)
+    monkeypatch.setattr(analyses_routes, "request_time", lambda: instant)
     name = _name()
     broker = _ChainBroker({name: _chain(name)})
     _install(monkeypatch, broker)

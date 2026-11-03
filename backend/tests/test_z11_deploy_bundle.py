@@ -464,6 +464,9 @@ with open(os.environ["FAKE_STATE"]) as fh:
     st = json.load(fh)
 args = sys.argv[1:]
 url = [a for a in args if a.startswith("http")][-1]
+if os.environ.get("FAKE_CURL_LOG"):                  # P3-3: every URL asked, one per line (own file: never races the state file)
+    with open(os.environ["FAKE_CURL_LOG"], "a") as fh:
+        fh.write(url + "\n")
 if url.startswith("https://api.github.com/"):        # A3: the public GitHub API the deploy gate reads (no token)
     gh = st["github"]
     gh["calls"].append(url)
@@ -643,7 +646,8 @@ class Host:
     def run(self, *args, extra_env=None, timeout=120):
         env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}", "FAKE_STATE": str(self.state_path), "ATP_DIR": str(self.dir),
                "ATP_HEALTH_TIMEOUT": "2", "ATP_POLL_SECONDS": "1", "ATP_FILES_BACKUP_DIR": str(self.files_dir), "HOME": str(self.tmp),
-               "FAKE_BACKUP_PASS": SECRETS["BACKUP_ENCRYPTION_PASSPHRASE"], **(extra_env or {})}
+               "FAKE_BACKUP_PASS": SECRETS["BACKUP_ENCRYPTION_PASSPHRASE"], "FAKE_CURL_LOG": str(self.tmp / "curl.log"),
+               **(extra_env or {})}
         env.pop("ATP_DRY_RUN", None)
         res = subprocess.run(["bash", str(ATP_SH), *args], env=env, capture_output=True, text=True, timeout=timeout)
         self.load()
@@ -822,6 +826,95 @@ def test_rollback_with_restore_db_keeps_the_live_database_and_needs_the_typed_na
     assert restore < stop < swap                                                   # restored beside the live DB, then swapped
     assert host.state["running"]["backend"] == {"release": host.sha_a[:12], "ahead": ""}
     assert not (host.dir / ".deploy/db_ahead").exists()
+
+
+def _curl_urls(host):
+    log = host.tmp / "curl.log"
+    return log.read_text().splitlines() if log.exists() else []
+
+
+def _release_c(host):
+    """A third merged release C on top of B (no migration of its own: its head is B's)."""
+    _git(host.work, "checkout", "-q", "main")
+    (host.work / "README.md").write_text("release C\n")
+    _git(host.work, "commit", "-q", "-am", "release C")
+    _git(host.work, "push", "-q", "origin", "main")
+    sha_c = _git(host.work, "rev-parse", "HEAD")
+    host.load(); host.state["heads"][sha_c[:12]] = "rev2"; host.state["heads"]["latest"] = "rev2"; host.save()
+    return sha_c
+
+
+def _on(host, sha):
+    """Every place a rollback must agree on: the recorded release, the checkout, the API and the worker images."""
+    assert (host.dir / ".deploy/current").read_text().strip() == sha
+    assert _git(host.dir, "rev-parse", "HEAD") == sha
+    assert host.state["running"]["backend"]["release"] == sha[:12] and host.state["running"]["worker"]["release"] == sha[:12]
+
+
+def test_p3_3_rollback_end_to_end_step_by_step_and_to_a_named_release(host):
+    """P3-3: deploy A -> B (migrates) -> C, then `rollback` twice (C -> B -> A), forward to C, `rollback --to A`.
+    Each rollback reuses the images (no build), restarts API then worker, records the release, and runs health
+    against the API (deep health and the health endpoint) before it says "rolled back"; `releases` shows it."""
+    _deploy_a_then_migrating_b(host)
+    sha_c = _release_c(host)
+    assert host.run("deploy").returncode == 0
+    _on(host, sha_c)
+
+    for frm, to in ((sha_c, host.sha_b), (host.sha_b, host.sha_a)):
+        calls_from, urls_from = len(host.state["calls"]), len(_curl_urls(host))
+        res = host.run("rollback")
+        assert res.returncode == 0, res.all
+        _on(host, to)
+        later = host.calls(calls_from)
+        assert not any(" build" in c for c in later)                                       # the release's own images, kept
+        api = next(i for i, c in enumerate(later) if "up -d --no-deps --no-build backend" in c)
+        worker = next(i for i, c in enumerate(later) if "up -d --no-deps --no-build worker" in c)
+        assert api < worker
+        urls = _curl_urls(host)[urls_from:]
+        assert any(u.endswith("/api/system/health/deep") for u in urls) and any(u.endswith("/api/system/health") for u in urls)
+        out = res.stdout
+        assert out.index("==> health") < out.index("health: OK") < out.index("rolled back to " + to[:12])
+        last = (host.dir / ".deploy/releases.log").read_text().splitlines()[-1].split()
+        assert last[1:4] == ["rollback", to, frm]
+    assert host.state["running"]["backend"]["ahead"] == "rev2"                              # A on B's additive schema
+    assert host.state["databases"]["advance_trading_platform"]["rev"] == "rev2"             # never downgraded
+    rel = host.run("releases")
+    assert rel.returncode == 0 and rel.stdout.count(" rollback ") == 2 and f"running: {host.sha_a[:12]}" in rel.stdout
+
+    assert host.run("deploy").returncode == 0                                              # forward again: A -> C
+    _on(host, sha_c)
+    before = len(host.state["calls"])
+    for bad, why in ((["--to", host.sha_a, "--restore-db"], "one release at a time"), (["--to", "0" * 40], "unknown commit"),
+                     (["--to"], "--to needs a commit"), (["--to", sha_c], "already running")):
+        res = host.run("rollback", *bad)
+        assert res.returncode == 2 and why in res.all, (bad, res.all)
+    assert host.mutating(before) == []
+    _on(host, sha_c)
+    res = host.run("rollback", "--to", host.sha_a)                                         # two releases back in one step
+    assert res.returncode == 0 and "rolled back to " + host.sha_a[:12] in res.stdout, res.all
+    _on(host, host.sha_a)
+    assert host.state["running"]["backend"]["ahead"] == "rev2"
+
+
+def test_p3_3_a_rolled_back_api_that_fails_health_stops_without_recording_the_rollback(host):
+    """P3-3 audit: when the rolled-back API never passes deep health, rollback exits 1 before the worker restart,
+    the checkout goes back and .deploy/current still names the newer release. What runs then is pinned here as it is
+    today: the API on the older image (not put back, unlike a failed deploy), the worker untouched."""
+    _deploy_a_then_migrating_b(host)
+    host.state["bad_releases"] = [host.sha_a[:12]]; host.save()
+    before = len(host.state["calls"])
+    res = host.run("rollback")
+    assert res.returncode == 1 and "the rolled-back API is not healthy" in res.all
+    assert (host.dir / ".deploy/current").read_text().strip() == host.sha_b
+    assert _git(host.dir, "rev-parse", "HEAD") == host.sha_b and "checkout put back to " + host.sha_b[:12] in res.all
+    assert not any("up -d --no-deps --no-build worker" in c for c in host.calls(before))
+    assert host.state["running"]["worker"]["release"] == host.sha_b[:12]
+    assert host.state["running"]["backend"]["release"] == host.sha_a[:12]                  # the gap (owner decision P3-3-Q1)
+    assert (host.dir / ".deploy/releases.log").read_text().splitlines()[-1].split()[1] == "deploy"
+    host.state["bad_releases"] = []; host.save()
+    res = host.run("rollback")                                                              # fixed image: the same command again
+    assert res.returncode == 0, res.all
+    _on(host, host.sha_a)
 
 
 def test_dry_run_changes_nothing(host):

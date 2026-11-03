@@ -239,7 +239,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | M45 | in progress | MA-1a #568, MA-1b #569, MA-2 #571 merged; MA-3/4/5 PAPER fan-out, one exit, checks + alerts + retry (migration f1b3d5e7a9c2) #576; MA-6 ticket "Run on" + practice accounts page in review; then flag decision + deploy (owner's one command); LIVE fan-out only on the owner's LIVE words | MA-6 PR |
 | P3-1 | waiting for owner | the R2 bucket + key escrow, then the restore drill | - |
 | P3-2 | not started (parallel) | monitoring + alerts (parts built, row 17) | - |
-| P3-3 | not started (parallel) | rollback test of `atp.sh` | - |
+| P3-3 | in review | rollback test of `atp.sh`: audit done (real-container rehearsal already green on main in staging-stack.yml `rollback`); added hermetic A->B->C rollback / `--to` / failed-health tests (per PR) + the one-command rollback in HOSTINGER_RUNBOOK section 9; owner decision P3-3-Q1 (failed-health rollback leaves the API on the older image) | - |
 | P3-4 | not started (parallel) | security + DPDP checklist | - |
 | P3-5 | waiting for owner | the lawyer's text | - |
 | TP-1 | not started | starts only after Phase 1 is complete | - |

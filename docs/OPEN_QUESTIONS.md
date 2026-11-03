@@ -497,3 +497,8 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 ## AG-1 multiple agents (owner 3 Nov)
 - AG-Q1: how many agents at once? Default: up to 4 in parallel, only for independent work, each in its own worktree;
   the main session reviews and integrates every result.
+## P3-3 rollback test of `atp.sh`
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| P3-3-Q1 | When the rolled-back API never passes deep health, `rollback` exits 1 with the API left on the older image (worker, checkout and `.deploy/current` stay on the newer release); a failed `deploy` instead puts the previous API back. Should `rollback` also put the newer API back? (With `--restore-db` the database is already swapped and API + worker are stopped at that point.) | Keep as is (no deploy-behaviour change without the owner): the message is explicit, the runbook (section 9) says to run `atp.sh deploy <N>` or rollback again; pinned by `test_p3_3_a_rolled_back_api_that_fails_health_stops_without_recording_the_rollback`. | `deploy/atp.sh:1510` | open |

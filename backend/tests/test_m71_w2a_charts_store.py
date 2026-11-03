@@ -55,6 +55,12 @@ def _recent_rows(sessions=2, upto=None):
     return [r for d in days for r in _minutes(d, end.astimezone(IST))], days
 
 
+# _behind_1h: a 1H read tops up only up to the newest CLOSED 1H bar (R.last_closed_end(now, 60)). The two top-up tests
+# therefore put the store two hours behind THAT bar, not behind the last closed minute: in a session's first hour the
+# newest closed 1H bar is still the previous session's close, so a store "two hours behind the last minute" (= the full
+# previous session) is not behind at all and no top-up is due - the tests failed whenever the suite ran in that hour.
+
+
 def _patch(monkeypatch, spy):
     monkeypatch.setattr(candles_store, "build_adapter", lambda record: spy)
     monkeypatch.setattr(candles_routes, "build_adapter", lambda record: spy)
@@ -105,8 +111,8 @@ def test_only_the_newest_bars_are_topped_up_once_and_a_reload_makes_zero_history
     _store_credentials(me)
     hol = _holidays()
     now = datetime.now(UTC)
-    last = R.last_closed_end(now, 1, hol)
-    rows, days = _recent_rows(upto=last - timedelta(hours=2))                     # the store is two hours behind
+    last = R.last_closed_end(now, 60, hol)
+    rows, days = _recent_rows(upto=last - timedelta(hours=2))                     # two hours behind the newest closed 1H bar
     sym = _sym("B")
     _store_minutes(f"NSE:{sym}", rows, me["tenant_id"], f"broker:upstox:u{me['id']}")
     spy = Spy(day=last.astimezone(IST).date())
@@ -125,7 +131,7 @@ def test_a_budget_refusal_is_a_plain_gap_and_the_stored_bars_still_show(monkeypa
     headers, me = _owner("m71-w2a-budget@example.com")
     _store_credentials(me)
     hol = _holidays()
-    last = R.last_closed_end(datetime.now(UTC), 1, hol)
+    last = R.last_closed_end(datetime.now(UTC), 60, hol)                           # the bar a 1H read wants (see _behind_1h)
     rows, _days = _recent_rows(upto=last - timedelta(hours=2))
     sym = _sym("C")
     _store_minutes(f"NSE:{sym}", rows, me["tenant_id"], f"broker:upstox:u{me['id']}")

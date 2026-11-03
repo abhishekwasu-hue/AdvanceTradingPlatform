@@ -310,6 +310,7 @@ class TradingWorker:
         self._last_auto_login_check: Optional[datetime] = None   # BRK-1 B: the automatic TOTP login + per-connection reminders
         self._last_analytics_expiry_day = None  # Upstox analytics token: the 7-day / last-day expiry warning, once per IST day
         self._last_analytics_expiry_try: Optional[datetime] = None
+        self._last_analytics_heal: Optional[datetime] = None  # the saved token's own re-check (rows throttle themselves)
         # Phase BB: when the news feed was last fetched (cadence 15 min, 5 min around a macro event).
         self._last_news_fetch: Optional[datetime] = None
         # Phase L: last regime per deployment (for the monitoring agent) and which deployments the
@@ -830,6 +831,18 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - a reminder must never break trading
                         logger.exception("Analytics token expiry warning failed")
                         report.errors.append(f"analytics token expiry: {exc}")
+                # Upstox analytics token: a saved token whose last check did not come back `works` checks itself again
+                # (read-only GETs, each row at most once per HEAL_INTERVAL_SECONDS) - never "paste it again" for a busy
+                # moment at Upstox (owner 3 Nov). Its own session (it commits); looked at every 15 minutes.
+                if self._last_analytics_heal is None or now - self._last_analytics_heal >= timedelta(minutes=15):
+                    self._last_analytics_heal = now
+                    try:
+                        from app.brokers import upstox_analytics
+                        async with self.session_factory() as own:
+                            await upstox_analytics.heal_coverage(own, now)
+                    except Exception as exc:  # noqa: BLE001 - a self-check must never break trading
+                        logger.exception("Analytics token self-check failed")
+                        report.errors.append(f"analytics token self-check: {exc}")
                 # Phase BD-2: the Friday thesis scoreboard (flag market_thesis per tenant, idempotent per ISO week).
                 if thesis_module.report_due(now) and self._last_thesis_report_day != ist_now.date():
                     self._last_thesis_report_day = ist_now.date()

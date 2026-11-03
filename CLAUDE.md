@@ -51,7 +51,7 @@ docs/WORKING_RULES.md. Begin each report with "Rules re-read: CLAUDE.md, roadmap
 - Self-review every diff; tests for everything (no look-ahead; parity scan = backtest = live). UI: before / after
   screenshots, in ONE comparison page per milestone.
 - Read by grep + line ranges, never a whole large file.
-- Agents: at most 2 at a time; mechanical work on the sonnet helpers in .claude/agents/; design, review, trading logic
+- Agents: several in parallel for independent work, always (owner AG-1; default cap 4, OPEN_QUESTIONS AG-Q1); mechanical work on the sonnet helpers in .claude/agents/; design, review, trading logic
   and order paths on the main model; each agent writes only to its own folder.
 - Tests: only the touched tests locally; CI runs the full suites; long output to a file; re-run only a failing test.
 - No polling; background runs. At most 10 images viewed per PR.

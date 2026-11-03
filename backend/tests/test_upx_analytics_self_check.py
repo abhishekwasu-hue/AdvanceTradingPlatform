@@ -57,17 +57,21 @@ def test_a_saved_token_refused_overnight_heals_itself_without_pasting(monkeypatc
     async def heal(at):
         async with _session_factory() as session:
             return await ua.heal_coverage(session, at)
+    def probed_at():
+        return load_credentials(asyncio.run(_record(tenant_id))).analytics_meta["probed_at"]
+    # (other tests' Upstox rows share this database and may be checked too: the assertions read THIS row only)
     soon = probed + timedelta(seconds=ua.HEAL_INTERVAL_SECONDS - 60)
     asyncio.run(heal(soon))
-    assert not seen and connection_view(asyncio.run(_record(tenant_id)), soon)["status"] == "not_working"
+    assert probed_at() == probed.isoformat()                                # not yet due: this row untouched
+    assert connection_view(asyncio.run(_record(tenant_id)), soon)["status"] == "not_working"
     seen.clear()
     later = probed + timedelta(seconds=ua.HEAL_INTERVAL_SECONDS + 60)
     asyncio.run(heal(later))
     assert seen and {r.method for r in seen} == {"GET"}                      # read-only
+    assert probed_at() == later.isoformat()
     healed = asyncio.run(_record(tenant_id))
     view = connection_view(healed, later)
     assert view["status"] == "connected" and view["data_only"] is True       # nothing pasted
     assert load_credentials(healed).analytics_token == token                  # the same saved token
-    seen.clear()
     asyncio.run(heal(later + timedelta(hours=5)))                             # every class works: nothing to check
-    assert not seen
+    assert probed_at() == later.isoformat()

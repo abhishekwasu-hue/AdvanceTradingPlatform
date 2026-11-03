@@ -110,7 +110,7 @@ function CannotRead({ text }: { text: string | null | undefined }) {
   );
 }
 
-/** The header chips: label (AI only / Advanced analysis (code+AI)), cached, and the symbol read. */
+/** The header chips: label (AI only / Advanced analysis (code + AI)), cached, and the symbol read. */
 function ResultChips({ result, symbol }: { result: ReaderResult; symbol?: string }) {
   return (
     <>

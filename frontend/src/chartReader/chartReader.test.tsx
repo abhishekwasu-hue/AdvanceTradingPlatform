@@ -50,7 +50,7 @@ describe("Abhi's method card", () => {
     expect(html).toContain('data-chip="commitment-no"');
     expect(html).toContain("Example area of interest");
     expect(html).toContain("Watch next");
-    expect(html).toContain("Advanced analysis (code+AI)");
+    expect(html).toContain("Advanced analysis (code + AI)");
     expect(html).toContain("$0.07");
     expect(html).toContain("Read again");
     expect(html).not.toContain('data-chip="reader-cached"');

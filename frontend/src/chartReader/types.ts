@@ -16,11 +16,16 @@ export interface ReaderStrategy {
 /** GET /api/chart-reader/strategies. `default` is "ABHI" (listed first, name "Abhi's method"). */
 export interface ReaderStrategies {
   available: boolean;
-  reason: string | null;
+  /** One plain line when the reader is not available (not installed / not connected), else null. */
+  message: string | null;
   default: string;
   model: string;
   effort: string;
   estimate_usd: number;
+  /** The estimate when the paired chart is attached (a strategy with two-chart conditions, stored candles). */
+  estimate_usd_two_chart?: number;
+  /** The estimate for one uploaded chart picture. */
+  estimate_usd_upload?: number;
   strategies: ReaderStrategy[];
 }
 
@@ -86,7 +91,7 @@ export interface ReaderResult<R = AbhiRead | BookRead> {
   cached: boolean;
   estimate_usd: number;
   cost_usd: number;
-  label: "Advanced analysis (code+AI)" | "AI only" | string;
+  label: "Advanced analysis (code + AI)" | "AI only" | string;
   error?: string;
   category?: string;
 }

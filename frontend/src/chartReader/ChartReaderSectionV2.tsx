@@ -22,6 +22,8 @@ export const READER_FLAG = "chart_reader";
 export const NOT_AVAILABLE = "The chart reader is not available right now.";
 export const NEED_SYMBOL = "Type a symbol first.";
 export const NEED_CHART = "Add a chart above first.";
+/** The M59 product label of a stored-candles read, as the API returns it (app/chart_analyze/hybrid.py LABEL_CODE_AI). */
+export const LAKE_LABEL = "Advanced analysis (code + AI)";
 
 interface BookEntry { key: number; strategy: string; title: string; symbol?: string; request: ReaderRequest; state: ReadState }
 
@@ -127,13 +129,18 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
         {header}
         <div role="status" className="mt-space-2 rounded-control bg-warn-tint p-space-3 text-t14 text-fg" data-testid="reader-unavailable">
           <p className="font-semibold">{NOT_AVAILABLE}</p>
-          {list.reason ? <p className="mt-space-1 text-t12 text-fg-muted">{guardText(list.reason)}</p> : null}
+          {list.message ? <p className="mt-space-1 text-t12 text-fg-muted">{guardText(list.message)}</p> : null}
         </div>
       </section>
     );
   }
 
   const bookOptions = list.strategies.filter((s) => s.id !== list.default);
+  // The API's own estimate for what this read sends: one uploaded picture, or the stored-candles charts (plus the
+  // paired chart for a strategy with two-chart conditions).
+  const estimateFor = (twoChart: boolean) => (source === "upload" ? list.estimate_usd_upload
+    : twoChart ? list.estimate_usd_two_chart : undefined) ?? list.estimate_usd;
+  const picked = list.strategies.find((s) => s.id === pick);
   const sourceOption = (value: ReaderSource, title: string, line: string, disabled: boolean) => (
     <label className={`flex min-h-11 items-start gap-space-3 rounded-control border p-space-3 ${disabled ? "border-subtle opacity-70" : `cursor-pointer ${source === value ? "border-brand bg-surface-2" : "border-subtle"}`}`}
       data-testid={`reader-source-${value}`}>
@@ -150,7 +157,7 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
         <fieldset className="mt-space-3">
           <legend className="mb-space-2 text-t12 font-medium text-fg-muted">Read from</legend>
           <div className="grid gap-space-2 sm:grid-cols-2">
-            {sourceOption("lake", "ATP's stored candles", "Advanced analysis (code+AI)", false)}
+            {sourceOption("lake", "ATP's stored candles", LAKE_LABEL, false)}
             {sourceOption("upload", "Your chart picture", itemId ? "AI only" : NEED_CHART, !itemId)}
           </div>
         </fieldset>
@@ -164,7 +171,7 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
         )}
       </section>
 
-      <AbhiCard state={abhi} estimateUsd={list.estimate_usd} symbol={abhiSymbol} onRead={() => void readAbhi()}
+      <AbhiCard state={abhi} estimateUsd={estimateFor(false)} symbol={abhiSymbol} onRead={() => void readAbhi()}
         disabled={Boolean(blocked) || abhi.phase === "loading"} disabledReason={blocked ?? undefined} />
 
       {bookOptions.length > 0 && (
@@ -179,7 +186,7 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
             <Button className="h-11 w-full sm:w-auto md:h-9" disabled={!pick || Boolean(blocked)} reason={blocked ?? (pick ? undefined : "Choose a strategy first.")}
               onClick={readBook} data-testid="reader-book-read">Read this strategy</Button>
           </div>
-          <p className="mt-space-2 font-tabular text-t12 text-fg-muted">{estimateText(list.estimate_usd)}</p>
+          <p className="mt-space-2 font-tabular text-t12 text-fg-muted">{estimateText(estimateFor(Boolean(picked?.two_chart)))}</p>
         </section>
       )}
 

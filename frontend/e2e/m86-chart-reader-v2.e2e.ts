@@ -97,7 +97,7 @@ async function readAll(page: Page, calls: Calls) {
   await expect(abhi.locator('[data-chip="momentum-yes"]')).toBeVisible();
   await expect(abhi.locator('[data-chip="commitment-no"]')).toBeVisible();
   await expect(abhi).toContainText("Example area of interest");
-  await expect(abhi.locator('[data-chip="reader-label"]')).toHaveText("Advanced analysis (code+AI)");
+  await expect(abhi.locator('[data-chip="reader-label"]')).toHaveText("Advanced analysis (code + AI)");
   await expect(abhi.getByTestId("reader-cost")).toContainText("Cost $0.07");
   await expect(abhi).not.toContainText("Placeholder: each swing");         // evidence behind (?)
 
@@ -106,6 +106,7 @@ async function readAll(page: Page, calls: Calls) {
   await pickOption(page, pick, "DEMO_ONE");
   await page.getByTestId("reader-book-read").click();
   await pickOption(page, pick, "DEMO_TWO");
+  await expect(page.getByTestId("reader-books")).toContainText("est. $0.08 per read");   // the paired chart's estimate
   await page.getByTestId("reader-book-read").click();
   const books = page.getByTestId("reader-book");
   await expect(books).toHaveCount(2);
@@ -159,7 +160,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
     });
 
     test("not available: the reason in plain words, no read button", async ({ page }) => {
-      const list: ReaderStrategies = fixtureStrategies({ available: false, reason: "Example reason: switched off for now." });
+      const list: ReaderStrategies = fixtureStrategies({ available: false, message: "Example reason: switched off for now." });
       await open(page, { list });
       await page.goto("/chart-analyze");
       await expect(page.getByTestId("reader-unavailable")).toContainText("The chart reader is not available right now.");

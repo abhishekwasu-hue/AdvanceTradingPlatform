@@ -9,7 +9,8 @@ export const DEMO_SYMBOL = "DEMO";
 
 export function fixtureStrategies(over: Partial<ReaderStrategies> = {}): ReaderStrategies {
   return {
-    available: true, reason: null, default: "ABHI", model: "demo-model", effort: "high", estimate_usd: 0.07,
+    available: true, message: null, default: "ABHI", model: "demo-model", effort: "high", estimate_usd: 0.07,
+    estimate_usd_two_chart: 0.08, estimate_usd_upload: 0.06,
     strategies: [
       { id: "ABHI", name: "Abhi's method", book: "", author: "", edition: "", two_chart: false, sides: ["buyer", "seller"] },
       { id: "DEMO_ONE", name: "Example strategy one", book: "Example Book One", author: "A. Writer", edition: "1901", two_chart: false, sides: ["long"] },
@@ -56,7 +57,7 @@ function base(strategy: { id: string; name: string; independent_book_strategy?: 
   return {
     status: "ok", strategy, prompt_version: "demo_v1", removed: [], time_flags: [], two_chart_conditions: [],
     second_chart_missing: false, usage: { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 0, model: "demo-model" },
-    cached: false, estimate_usd: 0.07, cost_usd: 0.068, label: "Advanced analysis (code+AI)",
+    cached: false, estimate_usd: 0.07, cost_usd: 0.068, label: "Advanced analysis (code + AI)",
   };
 }
 

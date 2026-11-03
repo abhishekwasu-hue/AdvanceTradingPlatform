@@ -107,3 +107,63 @@ export function legendFor(a: Annotations): { token: Token; text: string; swatch:
 export function labelSize(width: number): number {
   return Math.max(12, Math.round(width / 55));
 }
+
+/** One label as drawn: the text, its anchor point (x at the start or the end of the text, y on the baseline), and
+ * the box it is estimated to cover in image pixels. */
+export interface PlacedLabel {
+  text: string; token: Token; bold: boolean; anchor: "start" | "end"; x: number; y: number;
+  box: { x: number; y: number; w: number; h: number };
+}
+
+/** The estimated box of a text: width 0.6 x font size per character, height one font size (baseline at 0.8 of it). */
+function boxAt(text: string, x: number, y: number, anchor: "start" | "end", fs: number): PlacedLabel["box"] {
+  const w = 0.6 * fs * text.length;
+  return { x: anchor === "end" ? x - w : x, y: y - 0.8 * fs, w, h: fs };
+}
+
+export function boxOverlap(a: PlacedLabel["box"], b: PlacedLabel["box"]): number {
+  const dx = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const dy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return dx > 0 && dy > 0 ? dx * dy : 0;
+}
+
+/** How many steps a label may be moved up, and down, to clear the labels placed before it. */
+export const LABEL_STEPS = 4;
+const OUTSIDE = 1e9;     // a spot out of the image is taken only when no spot inside it is left
+
+/**
+ * Owner CA-Q3: on a crowded chart the labels were drawn over each other. Every label (an area's, a line's, a mark's
+ * and the swing words) gets its usual spot; a label that would cover one placed before it is moved up or down -
+ * alternately, one step (fs + 2) at a time, at most LABEL_STEPS each way, never out of the image - to the first free
+ * spot (if none is free, the spot that covers the least). Lines, boxes and dots never move. Deterministic: the
+ * on-screen SVG and the exported PNG both draw exactly these positions.
+ */
+export function layoutLabels(shapes: Shape[], height: number, fs: number): PlacedLabel[] {
+  const k = fs / 12;
+  const want: Omit<PlacedLabel, "box">[] = [];
+  for (const s of shapes) {
+    if (s.kind === "text") want.push({ text: s.text, token: s.token, bold: true, anchor: "start", x: s.x - 8 * k, y: s.y });
+    else if (!s.label) continue;
+    else if (s.kind === "rect") want.push({ text: s.label, token: s.token, bold: false, anchor: "start", x: s.x + 4 * k, y: s.y + 13 * k });
+    else if (s.kind === "dot") want.push({ text: s.label, token: s.token, bold: false, anchor: "start", x: s.x + s.r + 3 * k, y: s.y - s.r });
+    else if (s.labelAt === "end") want.push({ text: s.label, token: s.token, bold: false, anchor: "end", x: Math.max(s.x0, s.x1) - 4 * k, y: Math.min(s.y0, s.y1) - 4 * k });
+    else want.push({ text: s.label, token: s.token, bold: false, anchor: "start", x: Math.min(s.x0, s.x1) + 4 * k, y: Math.min(s.y0, s.y1) - 4 * k });
+  }
+  const step = fs + 2;
+  const placed: PlacedLabel[] = [];
+  for (const l of want) {
+    let best: PlacedLabel = { ...l, box: boxAt(l.text, l.x, l.y, l.anchor, fs) };
+    let bestCost = Infinity;
+    for (let i = 0; i <= 2 * LABEL_STEPS; i++) {
+      const dy = i === 0 ? 0 : (i % 2 ? -1 : 1) * Math.ceil(i / 2) * step;
+      const box = boxAt(l.text, l.x, l.y + dy, l.anchor, fs);
+      const inside = box.y >= 0 && box.y + box.h <= height;
+      if (!inside && i > 0) continue;
+      const cost = placed.reduce((sum, p) => sum + boxOverlap(box, p.box), 0) + (inside ? 0 : OUTSIDE);
+      if (cost < bestCost) { best = { ...l, y: l.y + dy, box }; bestCost = cost; }
+      if (cost === 0 && inside) break;
+    }
+    placed.push(best);
+  }
+  return placed;
+}

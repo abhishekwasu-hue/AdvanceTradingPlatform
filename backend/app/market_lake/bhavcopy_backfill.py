@@ -500,6 +500,34 @@ def nightly_due(now: datetime, last_day: Optional[date]) -> Optional[date]:
     return ist.date()
 
 
+def early_due(now: datetime, last_day: date | None, last_try: datetime | None) -> date | None:
+    """Owner 3 Nov: the IST date an EARLY try of the nightly job is due for - from HISTORY_BACKFILL_FIRST_TRY_IST up to
+    HISTORY_BACKFILL_HOUR_IST (from then `nightly_due` runs it as before), at most every HISTORY_BACKFILL_RETRY_MINUTES,
+    and not once the day's files are done (`last_day`). None when the setting is off. The caller skips a non-trading day."""
+    first = config.HISTORY_BACKFILL_FIRST_TRY_IST
+    ist = now.astimezone(IST)
+    if first is None or last_day == ist.date() or ist.time() < first or ist.hour >= config.HISTORY_BACKFILL_HOUR_IST:
+        return None
+    if last_try is not None and last_try.astimezone(IST).date() == ist.date() and \
+            now - last_try < timedelta(minutes=config.HISTORY_BACKFILL_RETRY_MINUTES):
+        return None
+    return ist.date()
+
+
+async def trading_day(session: AsyncSession, day: date) -> bool:
+    """Whether `day` is an NSE trading day by the stored holiday calendar (weekends never are)."""
+    from app.market_data.calendar import is_trading_day
+    return is_trading_day(day, await load_holidays(session, "NSE", day.year))
+
+
+async def day_files_done(session_factory, day: date) -> bool:
+    """Whether the cash and the index files of `day` are both loaded (`done`)."""
+    async with session_factory() as session:
+        done = set(await session.scalars(select(F.segment).where(F.trade_date == day, F.status == "done",
+                                                                 F.segment.in_(GATED_SEGMENTS))))
+    return set(GATED_SEGMENTS) <= done
+
+
 async def run_nightly(session_factory, fetcher: Fetcher, *, now: Optional[datetime] = None) -> BackfillSummary:
     """After the close: today's files plus a catch-up of the last HISTORY_BACKFILL_CATCHUP_DAYS (a late or blocked file is
     picked up the next night). Weekends are probed with the cash file - a special session (budget day, Muhurat) has one."""

@@ -133,7 +133,15 @@ async def store_frame(session: AsyncSession | None, tenant_id: int, symbol: str,
         rest = await own_rest(session, user, sym, ex, broker=broker)
     first = end.astimezone(IST).date() - timedelta(days=days)
     start = datetime.combine(first, datetime.min.time(), IST).astimezone(UTC)
-    got = await read_bars(session, sym, name, start, end, user=user, purpose="copilot", exchange=ex, rest=rest, now=now)
+    provisional = None
+    if name in (DAILY, WEEKLY) and user is not None and getattr(user, "tenant_id", None) == tenant_id:
+        # owner 3 Nov: his own provisional Daily bar until NSE's file lands (never another member's, never shared)
+        from app.ai.tools.copilot import lake_key
+        from app.market_lake import own_bars
+        scope = await own_bars.scope_for(session, user, lake_key(sym))
+        provisional = None if own_bars.is_shared(scope) else scope
+    got = await read_bars(session, sym, name, start, end, user=user, purpose="copilot", exchange=ex, rest=rest, now=now,
+                          provisional=provisional)
     if not got.served:
         return None
     return StoredFrame(got.frame, got.source, got.gap_lines(), got.rest_calls)

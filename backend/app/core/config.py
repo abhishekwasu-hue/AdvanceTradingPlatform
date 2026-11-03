@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import time as _clock_time
 from typing import List, Optional
 
 from dotenv import load_dotenv
@@ -346,6 +347,32 @@ HISTORY_BACKFILL_ARCHIVE_DIR = os.environ.get("HISTORY_BACKFILL_ARCHIVE_DIR", ""
 # Nightly EOD job (trading worker): once per IST day from this hour, today's files plus a catch-up of the last N days.
 HISTORY_BACKFILL_HOUR_IST = int(os.environ.get("HISTORY_BACKFILL_HOUR_IST", "19") or 19)
 HISTORY_BACKFILL_CATCHUP_DAYS = int(os.environ.get("HISTORY_BACKFILL_CATCHUP_DAYS", "7") or 7)
+
+
+def _ist_clock(name: str, default: str) -> _clock_time | None:
+    """An operational HH:MM (IST) setting as a datetime.time; "off" / "" = None (the step does not run). A bad value is
+    reported loudly and the default is used (never silently dropped)."""
+    raw = os.environ.get(name, default).strip().lower()
+    if raw in ("", "off", "none", "false"):
+        return None
+    try:
+        hh, mm = (int(x) for x in raw.split(":"))
+        return _clock_time(hh, mm)
+    except ValueError:
+        logging.getLogger(__name__).error("%s=%r is not HH:MM - the default %s is used", name, raw, default)
+        hh, mm = (int(x) for x in default.split(":"))
+        return _clock_time(hh, mm)
+
+
+# Owner order (3 Nov): NSE's evening files are looked for from this IST time on a trading day (not only from
+# HISTORY_BACKFILL_HOUR_IST), again every HISTORY_BACKFILL_RETRY_MINUTES until the day's cash + index files are done;
+# from HISTORY_BACKFILL_HOUR_IST the old once-a-night run (with its catch-up) still follows if they are not. "off": only that run.
+HISTORY_BACKFILL_FIRST_TRY_IST = _ist_clock("HISTORY_BACKFILL_FIRST_TRY_IST", "17:30")
+HISTORY_BACKFILL_RETRY_MINUTES = max(5, int(os.environ.get("HISTORY_BACKFILL_RETRY_MINUTES", "30") or 30))
+# Owner order (3 Nov): from this IST time on a trading day the worker writes TODAY's provisional Daily bar of the
+# backfilled indices (LAKE_BACKFILL_INDICES) into the history owner's PRIVATE store (app/market_lake/provisional_daily.py),
+# read until NSE's index file for the day lands. Operational time only (never reading logic). "off": not written.
+DAILY_PROVISIONAL_AT_IST = _ist_clock("DAILY_PROVISIONAL_AT_IST", "15:45")
 # HB2 (docs/design/HB2_INTRADAY_HISTORY.md): the owner's 1-minute history, captured after the close and backfilled from
 # the OWNER's own broker session (Tier A, read-only candle endpoints) into the owner's private store (md_tenant_candles,
 # HISTORY_OWNER_TENANT_ID confirmed by HISTORY_OWNER_TENANT_NAME) - only while the `history_intraday` flag is on.

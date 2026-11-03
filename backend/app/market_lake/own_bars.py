@@ -35,7 +35,11 @@ RowTuple = Tuple[Any, ...]              # (ts, version, open, high, low, close, 
 PARTITION = 5000
 DROP_KINDS = ("post_close",)
 EXTREME_KINDS = ("auction_high", "auction_low")
-DAILY_LABELS = ("day", "1d", "1w", "week")
+# Owner order (3 Nov; app/market_lake/provisional_daily.py): today's PROVISIONAL Daily bar of an index, written after the
+# close from the holder's own broker session (or his stored 1-minute bars) until NSE's index file for the day lands. Its
+# own label, so no Daily read sees it by accident: only `provisional_rows` / `official_close` read it, for the holder.
+PROVISIONAL_LABEL = "dayprov"
+DAILY_LABELS = ("day", "1d", "1w", "week", PROVISIONAL_LABEL)
 SHARED_TAG = "shared-index-intraday"
 SEED_PREFIX = "seed:"          # M71 PL-7: rows seeded from the owner's private data (app.market_lake.seed_import)
 SHARED_OFF_LINE = ("Longer intraday index history is not shared while each organisation brings its own broker data, so "
@@ -79,7 +83,7 @@ async def has_rows(session: AsyncSession, scope: Optional[Scope], key: str) -> b
     """Whether the member sees any private bar of `key` (one indexed lookup)."""
     if scope is None:
         return False
-    return (await session.scalar(select(MdTenantCandleRecord.ts).where(*_scoped(scope, key, ("day", "1d", "1m"))).limit(1))) is not None
+    return (await session.scalar(select(MdTenantCandleRecord.ts).where(*_scoped(scope, key, ("day", "1d", "1m", PROVISIONAL_LABEL))).limit(1))) is not None
 
 
 async def scope_for(session: AsyncSession, user: Any, key: str) -> Optional[Scope]:
@@ -221,6 +225,26 @@ def prefer_own(shared: Sequence[RowTuple], own: Sequence[RowTuple]) -> bool:
     return distinct_bars(own) > distinct_bars(shared)
 
 
+async def provisional_rows(session: AsyncSession, scope: Scope | None, key: str, after: datetime, end: datetime) -> list[RowTuple]:
+    """The holder's own provisional Daily rows of `key` with END in (after, end], one per END (as `fetch_rows`: the chart
+    layer's point-in-time rule) - empty without a private scope and ALWAYS for a `SharedScope` (licence: a broker's Daily
+    row of one session is never served to another reader, docs/COMPLIANCE_IN.md "Data licences")."""
+    if scope is None or is_shared(scope) or after >= end:
+        return []
+    return await fetch_rows(session, scope, key, PROVISIONAL_LABEL, after, end, dh3=False)
+
+
+def provisional_words(source: str | None) -> str:
+    """Where a provisional Daily bar came from, in plain words (its source label says which)."""
+    from app.market_lake.provisional_daily import FROM_BROKER_MINUTES, FROM_STORED_MINUTES, how_of
+    how = how_of(source or "")
+    if how == FROM_STORED_MINUTES:
+        return "built from your stored 1-minute bars; NSE's index close file is not in yet"
+    if how == FROM_BROKER_MINUTES:
+        return "built from your broker's 1-minute bars; NSE's index close file is not in yet"
+    return "your broker's Daily candle; NSE's index close file is not in yet"
+
+
 async def history_owner(session: AsyncSession) -> Optional[Scope]:
     """(tenant_id, user_id) of HB2's owner (HISTORY_OWNER_TENANT_ID confirmed by HISTORY_OWNER_TENANT_NAME, the pinned
     HISTORY_OWNER_USER_ID or the lowest-id active OWNER) - None when it is not configured."""
@@ -253,10 +277,19 @@ async def official_close(session: AsyncSession, key: str, scope: Optional[Scope]
     pick, whose = shared, "NSE index close file"
     if own is not None and (shared is None or _utc(own[0]) > _utc(shared[0])):
         pick, whose = own, "your broker's Daily history"
+    # Owner order (3 Nov): a provisional bar (the holder's own; never through a SharedScope) newer than every stored Daily
+    # bar is the last close until NSE's file lands - and it is never called official: it comes back labelled provisional.
+    prov = None
+    if scope is not None and not is_shared(scope):
+        prov = (await session.execute(select(MdTenantCandleRecord.ts, MdTenantCandleRecord.close, MdTenantCandleRecord.source).where(
+            *_scoped(scope, key, (PROVISIONAL_LABEL,))).order_by(MdTenantCandleRecord.ts.desc(), MdTenantCandleRecord.version.desc()).limit(1))).first()
+    if prov is not None and (pick is None or _utc(prov[0]) > _utc(pick[0])):
+        return {"close": round(float(prov[1]), 2), "date": _utc(prov[0]).astimezone(IST).date().isoformat(),
+                "source": provisional_words(prov[2]), "provisional": True}
     if pick is None:
         return None
     return {"close": round(float(pick[1]), 2), "date": _utc(pick[0]).astimezone(IST).date().isoformat(), "source": whose}
 
 
 __all__ = ["Scope", "SharedScope", "SHARED_OFF_LINE", "is_shared", "shared_scope", "shared_off", "has_rows", "scope_for", "flags", "apply_flags", "fetch_rows", "probe", "distinct_bars", "newest_bar", "prefer_own",
-           "history_owner", "official_close"]
+           "history_owner", "official_close", "PROVISIONAL_LABEL", "provisional_rows", "provisional_words"]

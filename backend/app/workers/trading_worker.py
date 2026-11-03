@@ -205,6 +205,7 @@ class CycleReport:
     breakout_fitness_started: bool = False   # U6 BK5: the nightly breakout-fitness task was started this cycle
     intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
     lake_backfill_started: bool = False      # DATA-H: the owner's index-history pass was started this cycle
+    provisional_daily_started: bool = False  # owner 3 Nov: today's provisional Daily bar pass was started this cycle
     chain_history_started: bool = False      # TM 9.4: an owner chain-history slot was started this cycle
     market_backfill_started: bool = False    # M71 PL-1c: the paced backfill / gap-drain task was started this cycle
 
@@ -337,6 +338,12 @@ class TradingWorker:
         # HB1: the nightly EOD bhavcopy job (IST date of the last start) and its background task.
         self._last_history_eod_day = None
         self._history_eod_task: Optional["asyncio.Task[None]"] = None
+        self._history_eod_try_at: datetime | None = None    # owner 3 Nov: the last early try for the evening files
+        # Owner 3 Nov: today's provisional Daily bar of the indices (app/market_lake/provisional_daily.py) - the IST date
+        # whose pass finished, its task and the time of the last try.
+        self._last_provisional_day: date | None = None
+        self._provisional_task: asyncio.Task[None] | None = None
+        self._provisional_try_at: datetime | None = None
         self._last_market_zones_day = None    # Z7a-2: the IST date the nightly market-zones job last COMPLETED
         self._market_zones_task: Optional["asyncio.Task[None]"] = None
         self._last_breakout_fitness_day: Optional[date] = None  # U6 BK5: the IST date the nightly breakout-fitness pass last COMPLETED
@@ -406,6 +413,8 @@ class TradingWorker:
         self._stop.set()
         if self._history_eod_task is not None and not self._history_eod_task.done():
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
+        if self._provisional_task is not None and not self._provisional_task.done():
+            self._provisional_task.cancel()          # owner 3 Nov: one bar per index, each written in its own transaction
         if self._market_zones_task is not None and not self._market_zones_task.done():
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
         if self._lake_backfill_task is not None and not self._lake_backfill_task.done():
@@ -980,6 +989,15 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
                         logger.exception("Index history pass not started")
                         report.errors.append(f"index history: {exc}")
+                        await session.rollback()
+                # Owner 3 Nov: today's provisional Daily bar of the indices - from DAILY_PROVISIONAL_AT_IST on a trading day,
+                # NSE closed, into the history owner's private store until NSE's index file lands; its own task.
+                if not nse.is_open:
+                    try:
+                        report.provisional_daily_started = await self._maybe_start_provisional_daily(session, now)
+                    except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                        logger.exception("Provisional Daily pass not started")
+                        report.errors.append(f"provisional daily: {exc}")
                         await session.rollback()
                 # M71 PL-1c: the gap queue (any time) and the one-time universe backfill (NSE closed), paced through the
                 # owner session's rate budget; one background task, never per request.
@@ -1777,16 +1795,26 @@ class TradingWorker:
 
     async def _maybe_start_history_eod(self, session: AsyncSession, now: datetime) -> bool:
         """HB1: starts the nightly bhavcopy job (today's files + the catch-up window) when it is due and the flag is on.
-        One task per worker; the backfill's advisory lock keeps a second replica (or a manual run) out."""
+        One task per worker; the backfill's advisory lock keeps a second replica (or a manual run) out.
+        Owner 3 Nov: on a trading day the same job is also tried earlier - from HISTORY_BACKFILL_FIRST_TRY_IST, again
+        every HISTORY_BACKFILL_RETRY_MINUTES - and the day counts as done as soon as its cash + index files are; else
+        the once-a-night run from HISTORY_BACKFILL_HOUR_IST follows as before."""
         from app.market_lake import bhavcopy_backfill
         from app.platform.controls import flag_enabled
 
-        day = bhavcopy_backfill.nightly_due(now, self._last_history_eod_day)
+        cutoff = bhavcopy_backfill.nightly_due(now, self._last_history_eod_day)
+        early = None if cutoff is not None else bhavcopy_backfill.early_due(now, self._last_history_eod_day, self._history_eod_try_at)
+        day = cutoff or early
         if day is None or (self._history_eod_task is not None and not self._history_eod_task.done()):
             return False
+        if early is not None and not await bhavcopy_backfill.trading_day(session, early):
+            return False                                 # a holiday / weekend: only the night run probes it, as before
         if not await flag_enabled(session, bhavcopy_backfill.FLAG):
             return False                                 # asked again next cycle: turning the flag on tonight still runs
-        self._last_history_eod_day = day                 # started: the next run is tomorrow
+        if cutoff is not None:
+            self._last_history_eod_day = day             # started: the next run is tomorrow
+        else:
+            self._history_eod_try_at = now               # an early try: the next one after the retry interval
 
         async def run() -> None:
             from app.market_lake.nse_fetch import PoliteFetcher
@@ -1794,6 +1822,8 @@ class TradingWorker:
             try:
                 summary = await bhavcopy_backfill.run_nightly(self.session_factory, fetcher, now=now)
                 logger.info("History EOD job: %s", summary.as_dict())
+                if early is not None and await bhavcopy_backfill.day_files_done(self.session_factory, early):
+                    self._last_history_eod_day = early   # the day's cash + index files are in: no more tries today
             except bhavcopy_backfill.BackfillConfigError as exc:
                 logger.warning("History EOD job did not run: %s", exc)
             except Exception:  # noqa: BLE001 - market data history; never reaches trading
@@ -1863,6 +1893,35 @@ class TradingWorker:
                 logger.exception("Index history pass failed")
 
         self._lake_backfill_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_provisional_daily(self, session: AsyncSession, now: datetime) -> bool:
+        """Owner 3 Nov: starts today's provisional Daily pass (app/market_lake/provisional_daily.py) from
+        DAILY_PROVISIONAL_AT_IST (NSE closed) when the history owner is configured. The day is finished when every index
+        has its bar (or NSE's file, or it is a holiday); an unfinished day is tried again every
+        HISTORY_BACKFILL_RETRY_MINUTES until HISTORY_BACKFILL_HOUR_IST (NSE's evening file normally lands by then)."""
+        from app.market_lake import own_bars, provisional_daily
+
+        day = provisional_daily.due(now, self._last_provisional_day)
+        if day is None or (self._provisional_task is not None and not self._provisional_task.done()):
+            return False
+        last = self._provisional_try_at
+        if last is not None and last.astimezone(IST).date() == day and now - last < timedelta(minutes=app_config.HISTORY_BACKFILL_RETRY_MINUTES):
+            return False
+        if await own_bars.history_owner(session) is None:
+            return False
+        self._provisional_try_at = now
+        cutoff = now.astimezone(IST).hour >= app_config.HISTORY_BACKFILL_HOUR_IST
+
+        async def run() -> None:
+            try:
+                result = await provisional_daily.run_pass(self.session_factory, now=now)
+                if result.complete or cutoff:
+                    self._last_provisional_day = day
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("Provisional Daily pass failed")
+
+        self._provisional_task = asyncio.get_running_loop().create_task(run())
         return True
 
     def _maybe_start_market_backfill(self, now: datetime, *, nse_open: bool) -> bool:

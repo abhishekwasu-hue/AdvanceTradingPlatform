@@ -501,6 +501,7 @@ def test_nightly_job_fetches_today_and_catches_up_and_the_worker_gates_it(monkey
     from app.workers.trading_worker import TradingWorker
 
     monkeypatch.setattr(config, "HISTORY_BACKFILL_CATCHUP_DAYS", 3)
+    monkeypatch.setattr(config, "HISTORY_BACKFILL_FIRST_TRY_IST", None)     # the night run alone (owner 3 Nov early tries: test_provisional_daily)
     now = datetime(2012, 3, 7, 19, 30, tzinfo=IST)                          # Wednesday evening
     assert hb1.nightly_due(now.replace(hour=18), None) is None
     assert hb1.nightly_due(now, None) == date(2012, 3, 7) and hb1.nightly_due(now, date(2012, 3, 7)) is None

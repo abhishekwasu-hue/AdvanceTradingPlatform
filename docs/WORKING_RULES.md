@@ -41,6 +41,37 @@ every 2 hours, draft PRs only, merge only on Abhi's "Merge", no LIVE / VPS / sec
   `mtime=0`, loaded by the test) or generated deterministically from the pinned source commit - never committed as big
   plain JSON. The fixture folder's README says how to regenerate them.
 
+## 4. Definition of done for a feature (FN1, owner order P2-F, 25 Oct)
+Source: docs/owner-orders/ATP_ORDER_P2F_FUNCTIONAL.md (FN1). A user-facing feature is done only when ALL seven hold.
+The per-feature list is docs/FN1_CHECKLIST.md; FN7 ticks it, one proof page per feature. This adds to the roadmap's R2
+"done" (merged + flag decided + deployed + checked on the real site + owner's ✅); it does not replace it.
+Chart-reader features (P5-1) are outside FN1: they stay hidden with an honest status (FN7).
+- **D1 e2e journey test.** A Playwright spec in `frontend/e2e/` walks the feature's main journey (the one named in
+  the checklist) from the first screen to the result, and passes in CI. Today every spec runs on the mocked server
+  (`e2e/mockApi.ts`), so D1 proves the code path only; D2 is the proof on real data.
+- **D2 production, own broker data, phone + desktop.** On production, signed in as a user with his own broker
+  connected, the main journey works at phone width (390) and desktop width (1440): the figures come from that broker
+  connection (no SAMPLE stamp, no "–" where a price belongs). Evidence: one screenshot per width (FN7 adds a short
+  recording). The build container cannot reach production, so the owner takes this check (OWNER_RULES A.2).
+- **D3 help behind (?).** The page states its help line (`PageIntro`), which the v2 shell puts behind the (?) beside
+  the page title (`frontend/src/shell/pageHelp.tsx`, closed by default); no theory text on the page itself (PROSE-1).
+- **D4 flag ON or removed.** Every flag of the feature is ON for users, or the feature is removed from view (code
+  kept, flag OFF, off the admin turn-on list - as P2-1 FA-2). The admin flag list (M80 states,
+  `backend/app/platform/flag_state.py`) shows no "Not built yet" for it. Turning a flag ON stays the owner's switch.
+- **D5 logs + error alerts.** A failure of the journey writes a server log line with the request id (the same id the
+  user's error sentence carries, `frontend/src/api/errors.ts`), and a failure that stops the feature for users reaches
+  the operator through the server checks (`backend/app/observability/ops_alerts.py`, Admin › System › Alerts) - or,
+  for the user's own alerts, through his alert channel with a delivery record.
+- **D6 no open sev-1 / sev-2 bug.** sev-1: money or safety at risk, or nothing works - a wrong, duplicate or
+  unintended order, an exit blocked or delayed (ADR-0004), LIVE reachable without the owner's switch, one user seeing
+  another's data, a secret exposed, data lost, or the main journey failing for every user. sev-2: the main journey
+  failing for some users, brokers or devices (for example phone only), or a wrong figure shown (price, P&L, quantity,
+  margin) with no workaround. Open bugs are read from the ATP GitHub issues, the owner's reports in
+  docs/owner-orders/INBOX.md not yet fixed, and Admin › Support tickets.
+- **D7 plain error messages with the reason.** Every error the journey can show is one sentence with the reason and
+  what to do (`errorSentence` / `friendlyError` in `frontend/src/api/errors.ts`): never a status code alone, a stack, a
+  flag name or a bare "Not found"; a server error adds only its reference.
+
 ## Queue notes from Abhi (order)
 - **IBKR adapter (MASTER v1.2 §2)** comes after the Indian PAPER go-live and crypto Phase 1. The design PR comes first
   (ADR-0018 IBKR transports). The spec is in `docs/specs/IBKR_ADAPTER_SPEC.md`.

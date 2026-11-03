@@ -938,6 +938,26 @@ test.describe("v2 terminal 1440: the watchlist panel (UX-3 + TA-4)", () => {
       const chain = page.locator("[data-panel='chain']");
       for (const col of ["call-oi_change", "call-iv", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();   // T1-3
       await expect(page.locator("[data-panel='watchlist'] [data-row]")).toHaveCount(3);
+      // OWNER_RULES D.3: no cut-off text in the narrow panel - each name whole on its own line, the list chooser in full.
+      const names = page.locator("[data-panel='watchlist'] [data-row] [data-row-name]");
+      await expect(names).toHaveText(["NIFTY 50", "NIFTY BANK", "NIFTY IT"]);
+      for (const el of await names.all()) {
+        const m = await el.evaluate((n) => ({ sw: n.scrollWidth, cw: n.clientWidth }));
+        expect(m.sw).toBeLessThanOrEqual(m.cw);
+      }
+      await expect(page.locator("[data-panel='watchlist'] [data-row] [data-price-line]")).toHaveCount(3);
+      const picker = page.locator("[data-panel='watchlist'] #watchlist-pick");
+      await expect(picker.locator("option:checked")).toHaveText("My list (3)");
+      const fits = await picker.evaluate((sel) => {
+        const s = sel as HTMLSelectElement;
+        const c = document.createElement("canvas").getContext("2d")!;
+        const st = getComputedStyle(s);
+        c.font = `${st.fontWeight} ${st.fontSize} ${st.fontFamily}`;
+        const text = c.measureText(s.options[s.selectedIndex].text).width;
+        const room = s.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight) - 24;   // 24: the arrow
+        return text <= room;
+      });
+      expect(fits).toBe(true);
       await noSidewaysScroll(page);
       await shot(page, `ux2-pr8-1440-${theme}`);
     });

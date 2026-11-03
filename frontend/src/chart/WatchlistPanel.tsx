@@ -57,6 +57,10 @@ export interface WatchlistPanelProps {
   touch?: boolean;
   /** TM Part 1 (flag `data_hub`): prices move with the live ticks of the user's own broker connection. */
   liveTicks?: boolean;
+  /** UX-3 (the Terminal's docked panel): a narrow column - the list chooser takes the full width with its actions below,
+   * and each row shows the full symbol on its own line with the price and change below it (no exchange line), so no
+   * name is cut. Charts and the Watchlist page leave it off (their layout is unchanged). */
+  narrow?: boolean;
   className?: string;
 }
 
@@ -147,7 +151,7 @@ function Change({ row }: { row: QuoteRow | undefined }) {
 
 /** FNO-4: a row's name and second line - a contract as traders write it ("NIFTY 28 OCT 22800 CE", "6 days left · OI
  * 12.5 L"), anything else as before (symbol, exchange). */
-export function RowName({ item, facts, q }: { item: WatchItem; facts: ContractFacts | undefined; q: QuoteRow | undefined }) {
+export function RowName({ item, facts, q, narrow = false }: { item: WatchItem; facts: ContractFacts | undefined; q: QuoteRow | undefined; narrow?: boolean }) {
   if (known(facts)) {
     return (
       <span className="min-w-0 flex-1 py-space-1" data-contract={facts.right}>
@@ -156,6 +160,8 @@ export function RowName({ item, facts, q }: { item: WatchItem; facts: ContractFa
       </span>
     );
   }
+  // UX-3 narrow: the whole symbol, wrapped between words if it must (never cut); the exchange line is left out.
+  if (narrow) return <span className="block min-w-0 break-words font-semibold leading-tight" data-row-name>{item.symbol}</span>;
   return (
     <span className="min-w-0 flex-1">
       <span className="block truncate font-semibold">{item.symbol}</span>
@@ -207,11 +213,11 @@ export function ExpiredRows({ rows, facts, listName, inList, onRoll, onRemove, i
   );
 }
 
-function Price({ q }: { q: QuoteRow | undefined }) {
+function Price({ q, inline = false }: { q: QuoteRow | undefined; inline?: boolean }) {
   // UX-7: a new price shows a short up / down tint.
   const flash = useTickFlash(q && !q.missing ? q.ltp : null);
   return (
-    <span className="text-right">
+    <span className={inline ? "flex items-baseline justify-between gap-space-2" : "text-right"} data-price-line={inline ? "" : undefined}>
       <span data-flash={flash ?? undefined} className={cx("block rounded-control px-space-1 tabular-nums transition-colors duration-base", flashClass(flash))}
         title={q?.missing ? q.error ?? undefined : undefined}>
         {q && !q.missing && q.ltp != null ? formatPrice(q.ltp) : EMPTY}
@@ -221,7 +227,7 @@ function Price({ q }: { q: QuoteRow | undefined }) {
   );
 }
 
-export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, systemKey = null, onSystemKey, storageKey, onClose, touch = false, className, liveTicks = false }: WatchlistPanelProps) {
+export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, systemKey = null, onSystemKey, storageKey, onClose, touch = false, className, liveTicks = false, narrow = false }: WatchlistPanelProps) {
   const store = useMemo(() => new WatchlistsStore(), []);
   const state = useSyncExternalStore(store.subscribe, store.getState);
   useEffect(() => { void store.load(); }, [store]);
@@ -361,13 +367,13 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
 
   return (
     <section aria-label="Watchlist" data-watchlist className={cx("flex min-h-0 flex-col text-t14 text-fg", className)}>
-      <div className="flex items-center gap-space-1 border-b border-subtle p-space-2">
+      <div className={cx("flex items-center gap-space-1 border-b border-subtle p-space-2", narrow && "flex-wrap")} data-narrow={narrow ? "" : undefined}>
         {hasSystem && !state.off ? (
           <>
             <button type="button" aria-expanded={browsing} aria-label={`Choose a list. Shown: ${currentName}`} onClick={openBrowser}
-              className={cx("flex h-11 min-w-0 flex-1 items-center gap-space-1 rounded-control border border-border bg-surface-2 px-space-2 text-left text-t14 font-semibold text-fg", !touch && "md:h-9", focus)}>
+              className={cx("flex h-11 min-w-0 flex-1 items-center gap-space-1 rounded-control border border-border bg-surface-2 px-space-2 text-left text-t14 font-semibold text-fg", !touch && "md:h-9", narrow && "basis-full", focus)}>
               {systemSummary && <Lock size={12} aria-hidden className="shrink-0 text-fg-muted" />}
-              <span className="min-w-0 flex-1 truncate">{currentName}{!namesCount(currentName) && <> <span className="font-normal text-fg-muted">({currentCount})</span></>}</span>
+              <span className={cx("min-w-0 flex-1", narrow ? "break-words" : "truncate")} data-list-name>{currentName}{!namesCount(currentName) && <> <span className="font-normal text-fg-muted">({currentCount})</span></>}</span>
               <ChevronDown size={14} aria-hidden className="shrink-0 text-fg-muted" />
             </button>
             <button type="button" aria-label="New list" title="New list" className={iconBtn} onClick={() => startNaming("new")}><Plus size={16} aria-hidden /></button>
@@ -378,7 +384,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
           <>
             <label className="sr-only" htmlFor="watchlist-pick">Watchlist</label>
             <select id="watchlist-pick" value={list?.id ?? ""} onChange={(e) => onListId(Number(e.target.value))}
-              className={cx("h-11 min-w-0 flex-1 rounded-control border border-border bg-surface-2 px-space-2 text-t14 font-semibold text-fg", !touch && "md:h-9", focus)}>
+              className={cx("h-11 min-w-0 flex-1 rounded-control border border-border bg-surface-2 px-space-2 text-t14 font-semibold text-fg", !touch && "md:h-9", narrow && "basis-full", focus)}>
               {state.lists.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.items.length})</option>)}
             </select>
             <button type="button" aria-label="New list" title="New list" className={iconBtn} onClick={() => startNaming("new")}><Plus size={16} aria-hidden /></button>
@@ -440,7 +446,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
         <SystemListView summary={systemSummary} list={sys.list} rows={systemRows} total={systemList?.items.length ?? systemSummary.count} matching={matching.length}
           query={rowQuery} onQuery={setRowQuery} sort={sort} onSort={setSort} quotes={priced} quotesFailed={quotes.failed}
           current={(i) => i.symbol === symbol && i.exchange === exchange} onOpen={onOpen} onCopy={() => void copyList()} copying={copying}
-          onRetry={() => sys.retry(systemSummary.key)} touch={touch} field={field} textBtn={textBtn} />
+          onRetry={() => sys.retry(systemSummary.key)} touch={touch} field={field} textBtn={textBtn} narrow={narrow} />
       )}
 
       {list && !state.off && !browsing && (
@@ -466,9 +472,10 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
                       <GripVertical size={14} aria-hidden />
                     </button>
                     <button type="button" aria-current={current ? "true" : undefined} onClick={() => onOpen(item)}
-                      className={cx("flex min-w-0 flex-1 items-center gap-space-2 rounded-control px-space-1 text-left hover:bg-surface-2", touch ? "min-h-11" : "min-h-11 md:min-h-9", focus)}>
-                      <RowName item={item} facts={facts.get(itemKey(item))} q={q} />
-                      <Price q={q} />
+                      className={cx("flex min-w-0 flex-1 rounded-control px-space-1 text-left hover:bg-surface-2", touch ? "min-h-11" : "min-h-11 md:min-h-9",
+                        narrow ? "flex-col justify-center gap-px py-space-1" : "items-center gap-space-2", focus)}>
+                      <RowName item={item} facts={facts.get(itemKey(item))} q={q} narrow={narrow} />
+                      <Price q={q} inline={narrow} />
                     </button>
                     <button type="button" aria-label={`Remove ${item.symbol}`} title="Remove from this list" className={iconBtn}
                       onClick={() => void store.edit(list.id, { kind: "remove", item })}>
@@ -514,12 +521,14 @@ export interface SystemListViewProps {
   touch: boolean;
   field: string;
   textBtn: string;
+  /** UX-3: the Terminal's narrow column (see WatchlistPanelProps.narrow). */
+  narrow?: boolean;
 }
 
 /** WL1: one read-only system list - "read-only" and "Copy to my list" on top, a search and a sort, then the rows (no
  * handle, no remove: the list is the exchange's, rebuilt by the server). */
 export function SystemListView({ summary, list, rows, total, matching, query, onQuery, sort, onSort, quotes, quotesFailed, current, onOpen, onCopy,
-  copying, onRetry, touch, field, textBtn }: SystemListViewProps) {
+  copying, onRetry, touch, field, textBtn, narrow = false }: SystemListViewProps) {
   return (
     <div data-system-list={summary.key} className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-space-2 border-b border-subtle px-space-3 py-space-2">
@@ -559,12 +568,15 @@ export function SystemListView({ summary, list, rows, total, matching, query, on
             return (
               <li key={itemKey(item)} data-row className={cx("flex items-center rounded-control", on && "bg-surface-2")}>
                 <button type="button" aria-current={on ? "true" : undefined} onClick={() => onOpen({ symbol: item.symbol, exchange: item.exchange })}
-                  className={cx("flex min-w-0 flex-1 items-center gap-space-2 rounded-control px-space-2 text-left hover:bg-surface-2", touch ? "min-h-11" : "min-h-11 md:min-h-9", focus)}>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">{item.symbol}</span>
-                    <span className="block truncate text-t12 text-fg-muted">{item.name ? `${item.exchange} · ${item.name}` : item.exchange}</span>
-                  </span>
-                  <Price q={q} />
+                  className={cx("flex min-w-0 flex-1 rounded-control px-space-2 text-left hover:bg-surface-2", touch ? "min-h-11" : "min-h-11 md:min-h-9",
+                    narrow ? "flex-col justify-center gap-px py-space-1" : "items-center gap-space-2", focus)}>
+                  {narrow ? <span className="block min-w-0 break-words font-semibold leading-tight" data-row-name>{item.symbol}</span> : (
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold">{item.symbol}</span>
+                      <span className="block truncate text-t12 text-fg-muted">{item.name ? `${item.exchange} · ${item.name}` : item.exchange}</span>
+                    </span>
+                  )}
+                  <Price q={q} inline={narrow} />
                 </button>
               </li>
             );

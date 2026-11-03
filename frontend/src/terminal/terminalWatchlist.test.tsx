@@ -8,6 +8,10 @@ import { markedItem, watchlistTarget } from "./TerminalWatchlistV2";
 import pageSource from "./TerminalPageV2.tsx?raw";
 import classicSource from "./TerminalClassicV2.tsx?raw";
 import panelSource from "./TerminalWatchlistV2.tsx?raw";
+import sharedSource from "../chart/WatchlistPanel.tsx?raw";
+import chartsSource from "../chart/ChartsPageV2.tsx?raw";
+import pageWatchSource from "../watchlist/WatchlistPageV2.tsx?raw";
+import { RowName } from "../chart/WatchlistPanel";
 
 /** UX-3 + TA-4 (UX2 plan PR 8): the watchlist as a Terminal panel, docked left in every preset. */
 const open = (panels: readonly PanelPlace[]) => panels.filter((p) => p.open);
@@ -113,5 +117,25 @@ describe("UX-3 on a phone: a Watchlist tab first, only with the flag", () => {
     const off = renderToStaticMarkup(<PhoneTabsV2 tab="chart" onTab={() => undefined} />);
     expect(off.match(/role="tab"/g)).toHaveLength(5);
     expect(off).not.toContain("terminal-tab-watchlist");
+  });
+});
+
+describe("UX-3: the narrow panel never cuts a name (OWNER_RULES D.3)", () => {
+  it("a row's name is the whole symbol on its own line, no exchange line, wrapped never truncated", () => {
+    const html = renderToStaticMarkup(<RowName item={{ symbol: "NIFTY FIN SERVICE", exchange: "NSE_INDEX" }} facts={undefined} q={undefined} narrow />);
+    expect(html).toContain("NIFTY FIN SERVICE");
+    expect(html).toContain("break-words");
+    expect(html).not.toContain("truncate");
+    expect(html).not.toContain("NSE_INDEX");
+    const wide = renderToStaticMarkup(<RowName item={{ symbol: "NIFTY BANK", exchange: "NSE_INDEX" }} facts={undefined} q={undefined} />);
+    expect(wide).toContain("NSE_INDEX");                                           // Charts / Watchlist page: as before
+  });
+
+  it("the Terminal asks for the narrow layout on the desktop grid only (the phone tab keeps the full-width rows)", () => {
+    expect(panelSource).toMatch(/touch=\{touch\} narrow=\{!touch\}/);
+    expect(sharedSource).toMatch(/narrow && "basis-full"/);                         // the list chooser takes the full width
+    expect(sharedSource).toMatch(/narrow \? "break-words" : "truncate"/);
+    expect(chartsSource).not.toMatch(/narrow=/);                                    // Charts lays the panel out as before
+    expect(pageWatchSource).not.toMatch(/narrow=/);
   });
 });

@@ -63,7 +63,7 @@ export function TerminalWatchlistV2({ underlying, spotSymbol, onUnderlying, touc
     <div data-panel-body="watchlist" className="flex h-full min-h-0 flex-col">
       <WatchlistPanel symbol={mark.symbol} exchange={mark.exchange} onOpen={open} listId={view.watchlist_id} onListId={(id) => keep({ watchlist_id: id })}
         systemKey={view.watchlist_system} onSystemKey={(key) => keep({ watchlist_system: key })}
-        storageKey={recentKeyFor(userId)} touch={touch} className="flex-1" liveTicks={liveTicks} />
+        storageKey={recentKeyFor(userId)} touch={touch} narrow={!touch} className="flex-1" liveTicks={liveTicks} />
     </div>
   );
 }

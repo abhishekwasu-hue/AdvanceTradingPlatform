@@ -215,7 +215,8 @@ def prefer_own(shared: Sequence[RowTuple], own: Sequence[RowTuple]) -> bool:
     read: bars of two sources are never mixed in one frame."""
     if not own:
         return False
-    if shared and newest_bar(own) < newest_bar(shared):
+    own_last, shared_last = newest_bar(own), newest_bar(shared)
+    if own_last is not None and shared_last is not None and own_last < shared_last:
         return False
     return distinct_bars(own) > distinct_bars(shared)
 

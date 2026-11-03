@@ -51,8 +51,9 @@ export interface TerminalPrefs {
 export interface PanelInfo { label: string; minW: number; minH: number; w: number; h: number }
 
 export const PANEL_IDS: readonly PanelId[] = ["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"];
-/** T2/T3 build them; until then hidden (R6, FN0 25 Oct): never in the Panels menu, never opened, a stored open one reads closed. */
-export const HIDDEN_PANELS: ReadonlySet<PanelId> = new Set<PanelId>(["bots", "payoff"]);
+/** A panel not built yet is hidden (R6, FN0 25 Oct): never in the Panels menu, never opened, a stored open one reads
+ * closed. M63 I-5 built the last two (Bots & signals, Payoff), so none is hidden now; the rule stays for the next one. */
+export const HIDDEN_PANELS: ReadonlySet<PanelId> = new Set<PanelId>();
 /** The panels the "Panels" menu offers. */
 export const CHOOSER_PANEL_IDS: readonly PanelId[] = PANEL_IDS.filter((id) => !HIDDEN_PANELS.has(id));
 
@@ -623,12 +624,14 @@ export function forSave(prefs: TerminalPrefs): TerminalPrefs {
 
 // --- the phone ---------------------------------------------------------------------------------------------------------
 
-/** Phone (360 / 390): the panels as tabs, one at a time (T1). "bots" stays a type but no tab until T2/T3 (HIDDEN_PANELS). */
-export type PhoneTab = "watchlist" | "chart" | "chain" | "basket" | "order" | "positions" | "orders" | "bots";
+/** Phone (360 / 390): the panels as tabs, one at a time (T1); one row that scrolls sideways (PhoneTabsV2). */
+export type PhoneTab = "watchlist" | "chart" | "chain" | "basket" | "order" | "positions" | "orders" | "payoff" | "bots";
 export const PHONE_TABS: readonly { key: PhoneTab; label: string }[] = [
   // TERM-2 step 3: Chart · Chain · Basket · Positions · Orders; a price opens the order ticket as a bottom sheet.
   { key: "chart", label: "Chart" }, { key: "chain", label: "Chain" }, { key: "basket", label: "Basket" },
   { key: "positions", label: "Positions" }, { key: "orders", label: "Orders" },
+  // M63 I-5: the two read-only panels, last (the trading tabs keep their places).
+  { key: "payoff", label: "Payoff" }, { key: "bots", label: "Bots" },
 ];
 /** UX-3: the Watchlist tab (first, as the panel is docked left) - only while the `watchlists` feature is on. */
 export const WATCHLIST_TAB: { key: PhoneTab; label: string } = { key: "watchlist", label: "Watchlist" };

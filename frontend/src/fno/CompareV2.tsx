@@ -35,8 +35,9 @@ export interface CompareColumn {
   legs: PayoffLeg[];
   /** What closing legs books now (added to every price at expiry). */
   shift: number;
-  /** Pre-formatted: "₹12,400", "From your broker", "Working out…", "–". */
-  margin: string;
+  /** Pre-formatted: "₹12,400", "From your broker", "Working out…", "–". Left out on every column: no Margin row (the
+   * Terminal's Payoff panel: the margin is the basket panel's and the status bar's). */
+  margin?: string;
   pop: number | null;
   extra?: { label: string; value: string }[];
   /** A plain reason the column is incomplete. */
@@ -69,8 +70,10 @@ export function figureRows(columns: readonly CompareColumn[]): FigureRow[] {
     { label: "Max loss", values: columns.map((c) => maxLossText(c.legs, c.shift)) },
     { label: "Breakevens", values: columns.map((c) => outcome(c.legs, c.shift)?.breakevens.map(levelText).join(" · ") || "–") },
     { label: "Net premium", values: columns.map((c) => premiumText(netPremium(c.legs))) },
-    { label: "Margin", values: columns.map((c) => c.margin), sub: "ATP's estimate, not your broker's number" },
   ];
+  if (columns.some((c) => c.margin !== undefined)) {
+    rows.push({ label: "Margin", values: columns.map((c) => c.margin ?? "–"), sub: "ATP's estimate, not your broker's number" });
+  }
   if (columns.some((c) => c.pop !== null)) {
     rows.push({ label: "Probability of profit", values: columns.map((c) => (c.pop === null ? "–" : `${formatNumber(c.pop * 100, 1)}%`)), sub: "Model estimate" });
   }
@@ -85,42 +88,63 @@ export function CompareView({ columns, underlying, spot, testId }: { columns: re
   const rows = figureRows(columns);
   return (
     <section aria-label="Side by side" className="space-y-space-3" data-compare={testId}>
-      <div className="flex flex-wrap gap-x-space-4 gap-y-space-1" aria-hidden>
-        {columns.map((c, i) => (
-          <span key={c.name} className="inline-flex items-center gap-space-2 text-t13 text-fg">
-            <span className={cx("h-1 w-5 rounded-pill", TONES[i % TONES.length].swatch)} />{c.name}
-          </span>
-        ))}
-      </div>
+      <CompareLegend columns={columns} />
       <CompareChart columns={columns} xs={xs} spot={spot} underlying={underlying} />
-      <ul className="space-y-space-2" data-compare-sentences>
-        {columns.map((c) => (
-          <li key={c.name} className="rounded-control bg-surface-2 px-space-3 py-space-2 text-t14 text-fg">
-            <span className="block text-t12 font-semibold text-fg-muted">{c.name}: in plain words</span>
-            {xs.length ? payoffSentence(sentenceInput(c.legs, c.shift, xs), underlying) : "The numbers show once a change is picked."}
-            {c.note && <span className="mt-space-1 block text-t12 text-fg-muted">{c.note}</span>}
-          </li>
-        ))}
-      </ul>
-      <table className="w-full table-fixed text-t13" data-compare-figures>
-        <thead>
-          <tr className="text-left text-t12 text-fg-muted">
-            <th scope="col" className="w-[34%] py-space-1 font-medium"><span className="sr-only">Figure</span></th>
-            {columns.map((c) => <th key={c.name} scope="col" className="py-space-1 text-right font-semibold text-fg">{c.name}</th>)}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-subtle">
-          {rows.map((r) => (
-            <tr key={r.label} data-figure-row={r.label}>
-              <th scope="row" className="py-space-2 pr-space-2 text-left align-top font-normal text-fg-muted">
-                {r.label}{r.sub && <span className="block text-t12">{r.sub}</span>}
-              </th>
-              {r.values.map((v, i) => <td key={columns[i].name} className="break-words py-space-2 pl-space-2 text-right align-top font-tabular text-fg">{v}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <CompareSentences columns={columns} xs={xs} underlying={underlying} />
+      <CompareFigures columns={columns} rows={rows} />
     </section>
+  );
+}
+
+/** Each column's name beside its line's colour (decorative: the chart and the table name them too). */
+export function CompareLegend({ columns }: { columns: readonly CompareColumn[] }) {
+  return (
+    <div className="flex flex-wrap gap-x-space-4 gap-y-space-1" aria-hidden>
+      {columns.map((c, i) => (
+        <span key={c.name} className="inline-flex items-center gap-space-2 text-t13 text-fg">
+          <span className={cx("h-1 w-5 rounded-pill", TONES[i % TONES.length].swatch)} />{c.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Each column's payoff in plain words (and its note). */
+export function CompareSentences({ columns, xs, underlying }: { columns: readonly CompareColumn[]; xs: readonly number[]; underlying: string }) {
+  return (
+    <ul className="space-y-space-2" data-compare-sentences>
+      {columns.map((c) => (
+        <li key={c.name} className="rounded-control bg-surface-2 px-space-3 py-space-2 text-t14 text-fg">
+          <span className="block text-t12 font-semibold text-fg-muted">{c.name}: in plain words</span>
+          {xs.length ? payoffSentence(sentenceInput(c.legs, c.shift, xs), underlying) : "The numbers show once a change is picked."}
+          {c.note && <span className="mt-space-1 block text-t12 text-fg-muted">{c.note}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The figures table: one row per figure, one column per side. */
+export function CompareFigures({ columns, rows }: { columns: readonly CompareColumn[]; rows: readonly FigureRow[] }) {
+  return (
+    <table className="w-full table-fixed text-t13" data-compare-figures>
+      <thead>
+        <tr className="text-left text-t12 text-fg-muted">
+          <th scope="col" className="w-[34%] py-space-1 font-medium"><span className="sr-only">Figure</span></th>
+          {columns.map((c) => <th key={c.name} scope="col" className="py-space-1 text-right font-semibold text-fg">{c.name}</th>)}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-subtle">
+        {rows.map((r) => (
+          <tr key={r.label} data-figure-row={r.label}>
+            <th scope="row" className="py-space-2 pr-space-2 text-left align-top font-normal text-fg-muted">
+              {r.label}{r.sub && <span className="block text-t12">{r.sub}</span>}
+            </th>
+            {r.values.map((v, i) => <td key={columns[i].name} className="break-words py-space-2 pl-space-2 text-right align-top font-tabular text-fg">{v}</td>)}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -128,7 +152,8 @@ const W = 640;
 const H = 200;
 const PAD = 8;
 
-function CompareChart({ columns, xs, spot, underlying }: { columns: readonly CompareColumn[]; xs: readonly number[]; spot: number | null; underlying: string }) {
+/** Every column's outcome at expiry on one scale (also the Terminal's Payoff panel, terminal/PanelsV2.tsx). */
+export function CompareChart({ columns, xs, spot, underlying }: { columns: readonly CompareColumn[]; xs: readonly number[]; spot: number | null; underlying: string }) {
   const series = columns.map((c) => (oneExpiry(c.legs) && xs.length ? xs.map((x) => pnlAt(c.legs, x, c.shift)) : null));
   const all = series.flatMap((s) => s ?? []);
   if (!xs.length || !all.length) {
@@ -195,7 +220,7 @@ function useSpot(item: WatchItem | null, on: boolean, quotes: Quotes): number | 
 }
 
 /** The engine's answer for `ask` (null legs: nothing to ask), the newest only. */
-function useEvaluation(ask: BasketAsk | null, api: Evaluate): { out: BasketEvaluation | null; busy: boolean } {
+export function useEvaluation(ask: BasketAsk | null, api: Evaluate): { out: BasketEvaluation | null; busy: boolean } {
   const [state, setState] = useState<{ out: BasketEvaluation | null; busy: boolean }>({ out: null, busy: false });
   const key = ask ? JSON.stringify(ask) : "";
   const seq = useRef(0);

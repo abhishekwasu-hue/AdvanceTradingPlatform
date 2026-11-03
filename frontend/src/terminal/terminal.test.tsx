@@ -7,7 +7,7 @@ import {
   firstFree, forSave, layoutFor, layoutProblem, movePanel, nameProblem, openPanel, presetLayout, readPrefs, readingOrder, remove, rename,
   resetToPreset, resizePanel, saveAs, saveOver, switchTo, type Layout, type TerminalPrefs,
 } from "./layoutModel";
-import { BasketPanelBodyV2, ChainPanelV2, OrdersPanelV2, PlaceholderPanelV2, chainProblem, exitAllConfirmText, exitAllConsequence, exitAllPlan, legFigures } from "./PanelsV2";
+import { BasketPanelBodyV2, BotsViewV2, ChainPanelV2, OrdersPanelV2, PAYOFF_NEEDS_SPOT, PayoffViewV2, chainProblem, exitAllConfirmText, exitAllConsequence, exitAllPlan, legFigures } from "./PanelsV2";
 import { chartLiveOf, pickSpot } from "./spot";
 import { SpreadBuilderV2, placementOrder, unhedgedSells } from "./SpreadBuilderV2";
 import embeddedSource from "../chart/EmbeddedChartV2.tsx?raw";
@@ -26,7 +26,10 @@ import exitAllSource from "../trading/ExitAllV2.tsx?raw";
 import { ExitAllV2, exitableRows } from "../trading/ExitAllV2";
 import listSource from "../trading/PositionsV2.tsx?raw";
 import basketSource from "../fno/BasketPanelV2.tsx?raw";
-import type { TradeRecord } from "../types";
+import type { Deployment, TradeRecord } from "../types";
+import type { SignalFeedItem } from "../signals/feed";
+import type { PosLeg } from "../fno/positionInsights";
+import { heldSide, payoffScope } from "./payoffModel";
 import type { OptionChainData } from "../optionChain/useOptionChain";
 import { strategyDisplayName } from "../ui/strategyName";
 import { formatPrice, formatTimeIST } from "../ui/format";
@@ -276,9 +279,10 @@ describe("status bar", () => {
 
 describe("phone tabs", () => {
   it("T1-1: the shared PageTabs - one scrolling row, one selected, 44 px targets, the tab ids the panel names", () => {
-    expect(PHONE_TABS.map((t) => t.label)).toEqual(["Chart", "Chain", "Basket", "Positions", "Orders"]);   // TERM-2 step 3
+    // TERM-2 step 3, then M63 I-5 (Payoff, Bots last)
+    expect(PHONE_TABS.map((t) => t.label)).toEqual(["Chart", "Chain", "Basket", "Positions", "Orders", "Payoff", "Bots"]);
     const html = renderToStaticMarkup(<PhoneTabsV2 tab="basket" onTab={() => undefined} counts={{ positions: 3 }} />);
-    expect(html.match(/role="tab"/g)).toHaveLength(5);
+    expect(html.match(/role="tab"/g)).toHaveLength(7);
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
     expect(html).toContain('data-level="primary"');                     // PageTabs, not the old 2 x 3 grid
     expect(html).toContain('data-mode="scroll"');                       // one row, never wrapped (W0-1)
@@ -290,12 +294,67 @@ describe("phone tabs", () => {
 });
 
 describe("panels: plain words", () => {
-  it("the later parts say so in plain words, with no part numbers", () => {
-    const bots = text(renderToStaticMarkup(<MemoryRouter><PlaceholderPanelV2 kind="bots" /></MemoryRouter>));
-    const payoff = text(renderToStaticMarkup(<MemoryRouter><PlaceholderPanelV2 kind="payoff" /></MemoryRouter>));
-    expect(bots).toContain("Coming in a later update");
-    expect(payoff).toContain("Coming in a later update");
-    for (const t of [bots, payoff]) expect(t).not.toMatch(/\bT[0-9]\b|flag|terminal/);
+  it("M63 I-5 Bots & signals: his bots (running first) and the waiting signals in structure words, read only, links to the pages", () => {
+    const bot = (id: number, status: string, mode = "PAPER") => ({ id, strategy_id: "orb_15m_5m", symbol: "NIFTY 50", instrument_kind: "OPTION", holding: "INTRADAY",
+      mode, status, pause_reason: null, last_signal_at: null, last_evaluated_at: null, last_error: null, open_positions: 0 }) as unknown as Deployment;
+    const signal = { id: "action:7", at: "2026-10-27T04:40:00Z", symbol: "RELIANCE", exchange: "NSE", direction: "LONG", setup: "Pullback to the buyer area",
+      entry: 2900, stop: 2850, target: 3000, rr: 2, source: { kind: "autopilot", name: "Deployment #4" }, mode: "PAPER", status: "waiting",
+      expires_at: null, snoozed_until: null, reasons: [], action_id: 7, outcome: null } as SignalFeedItem;
+    const html = renderToStaticMarkup(<MemoryRouter><BotsViewV2 now={new Date("2026-10-27T04:45:00Z")}
+      bots={{ status: "ok", value: [bot(1, "PAUSED"), bot(2, "ACTIVE", "LIVE"), bot(3, "STOPPED")] }} signals={{ status: "ok", value: [signal] }} /></MemoryRouter>);
+    const t = text(html);
+    expect(html.match(/data-bot="\d+"/g)).toEqual(['data-bot="2"', 'data-bot="1"']);    // running first; a stopped bot is not listed
+    expect(t).toContain("Opening Range Breakout");
+    expect(t).toContain("Running");
+    expect(t).toContain("Paused");
+    expect(html).toContain('data-chip="bot-live"');
+    expect(t).toContain("Pullback to the buyer area");
+    expect(html).toContain('href="/signals?proposal=7"');
+    expect(t).not.toMatch(/2,?900|2,?850|3,?000|Deployment #4|\bbuy\b|\bsell\b|target|stop-?loss/i);   // no price, no call word
+    expect(html).not.toMatch(/<button/);                                                                 // read only
+    expect(t).toContain("Open Signals");
+    expect(t).toContain("Open Trading bot");
+    const empty = text(renderToStaticMarkup(<MemoryRouter><BotsViewV2 now={new Date()} bots={{ status: "ok", value: [] }} signals={{ status: "error" }} /></MemoryRouter>));
+    expect(empty).toContain("No bot is running.");
+    expect(empty).toContain("We could not load your signals.");
+    expect(empty).not.toMatch(/Coming in a later update|\bT[0-9]\b|flag|terminal/);
+  });
+
+  it("M63 I-5 Payoff: his positions and basket on the one underlying + expiry, exact at expiry, read only", () => {
+    const leg = (id: number, strike: number, side: "BUY" | "SELL", entry: number, expiry = "2026-11-03"): PosLeg => ({
+      id, label: `NIFTY ${strike} CE`, symbol: `NIFTY${strike}CE`, exchange: "NFO", underlying: "NIFTY", spotSymbol: "NIFTY 50", spotExchange: "NSE",
+      expiry, strike, right: "CE", side, units: 75, lotSize: 75, entry, ltp: null, exitLevel: null, profitLevel: null });
+    const basketLeg = (id: string, expiry: string, underlying = "NIFTY") =>
+      ({ id, underlying, expiry, strike: 24500, right: "PE", side: "SELL", lots: 1, price: 90, label: null }) as BasketLeg;
+    const held = [leg(41, 25000, "SELL", 120), leg(42, 25100, "BUY", 80), leg(43, 25200, "SELL", 60, "2026-11-10")];
+    const scope = payoffScope({ underlying: "NIFTY", expiry: "2026-11-03", held, basket: [basketLeg("b1", "2026-11-03"), basketLeg("b2", "2026-11-03", "BANKNIFTY")] });
+    expect(scope.expiry).toBe("2026-11-03");
+    expect(scope.held.map((l) => l.id)).toEqual([41, 42]);
+    expect(scope.basket).toHaveLength(1);                                    // another underlying's leg is not his basket here
+    expect(scope.otherExpiry).toBe(1);                                       // counted, not drawn
+    // The context bar's expiry holds none of his legs: the nearest of his own.
+    expect(payoffScope({ underlying: "NIFTY", expiry: "2026-10-27", held, basket: [] }).expiry).toBe("2026-11-03");
+    expect(payoffScope({ underlying: "NIFTY", expiry: "2026-11-03", held: [], basket: [] }).expiry).toBeNull();
+
+    const html = renderToStaticMarkup(<MemoryRouter><PayoffViewV2 underlying="NIFTY" expiry="2026-11-03" spot={24480} otherExpiry={1}
+      columns={[{ name: "Your positions", legs: heldSide(scope), shift: 0, pop: null }]} /></MemoryRouter>);
+    const t = text(html);
+    expect(html).toContain("data-compare-chart");
+    expect(html).toMatch(/data-figure-row="Max profit"[\s\S]*?₹3,000/);
+    expect(html).toMatch(/data-figure-row="Max loss"[\s\S]*?₹4,500/);
+    expect(html).toMatch(/data-figure-row="Breakevens"[\s\S]*?25,040/);
+    expect(html).not.toContain('data-figure-row="Margin"');                  // the margin is the basket panel's
+    expect(t).toContain("At expiry 3 Nov");
+    expect(html).not.toMatch(/<button/);                                     // read only
+    expect(text(renderToStaticMarkup(<MemoryRouter><PayoffViewV2 underlying="NIFTY" expiry={null} spot={null} columns={[]} /></MemoryRouter>)))
+      .toContain("No open position or basket leg on NIFTY yet.");
+  });
+
+  it("M63 I-5 Payoff: a basket still being worked out is listed, not drawn as a flat line", () => {
+    const html = renderToStaticMarkup(<MemoryRouter><PayoffViewV2 underlying="NIFTY" expiry="2026-11-03" spot={null}
+      columns={[{ name: "Your basket", legs: [], shift: 0, pop: null, note: PAYOFF_NEEDS_SPOT }]} /></MemoryRouter>);
+    expect(html).not.toContain("data-curve");
+    expect(text(html)).toContain(PAYOFF_NEEDS_SPOT);
   });
 
   it("the chain without a broker asks to connect it; an empty basket says how to fill it", () => {
@@ -505,22 +564,23 @@ describe("owner fixes T1-2 .. T1-7", () => {
   });
 });
 
-describe("unbuilt panels stay hidden (R6, FN0 25 Oct)", () => {
-  it("Bots & signals and Payoff are never in the Panels menu, never on the phone, never opened, and a stored open one reads closed", () => {
-    expect([...HIDDEN_PANELS].sort()).toEqual(["bots", "payoff"]);
-    expect(CHOOSER_PANEL_IDS).not.toContain("bots");
-    expect(CHOOSER_PANEL_IDS).not.toContain("payoff");
-    expect(CHOOSER_PANEL_IDS.length).toBe(PANEL_IDS.length - 2);
-    expect(PHONE_TABS.map((t) => t.key)).not.toContain("bots");
+describe("M63 I-5: Bots & signals and Payoff are built, so they are offered (R6: only an unbuilt panel is hidden)", () => {
+  it("in the Panels menu and on the phone (last), they open, a stored open one stays open; closed in every preset", () => {
+    expect([...HIDDEN_PANELS]).toEqual([]);
+    expect(CHOOSER_PANEL_IDS).toEqual(PANEL_IDS);
+    expect(PHONE_TABS.slice(-2).map((t) => t.key)).toEqual(["payoff", "bots"]);
+    for (const id of PRESET_IDS) {
+      for (const p of PRESETS[id].panels.filter((x) => x.id === "bots" || x.id === "payoff")) expect(p.open).toBe(false);
+    }
     const base = PRESETS.option_seller.panels;
-    expect(openPanel(base, "bots")).toEqual([...base]);
-    expect(openPanel(base, "payoff")).toEqual([...base]);
+    expect(openPanel(base, "bots").find((x) => x.id === "bots")?.open).toBe(true);
+    expect(openPanel(base, "payoff").find((x) => x.id === "payoff")?.open).toBe(true);
     const stored = { layouts: { mine: { name: "Mine", underlying: null, panels: [
       { id: "chart-1", x: 0, y: 0, w: 6, h: 8, open: true }, { id: "bots", x: 6, y: 0, w: 6, h: 6, open: true },
       { id: "payoff", x: 0, y: 8, w: 6, h: 6, open: true }] } }, active: "mine" };
     const read = readPrefs(stored);
     const panels = read.layouts.mine.panels;
-    expect(panels.filter((x) => x.open).map((x) => x.id)).toEqual(["chart-1"]);
+    expect(panels.filter((x) => x.open).map((x) => x.id)).toEqual(["chart-1", "bots", "payoff"]);
   });
 });
 

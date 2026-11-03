@@ -1,4 +1,16 @@
-import { Bot, ChevronDown, ChevronRight, LineChart, ShoppingBasket } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, ShoppingBasket } from "lucide-react";
+import { usePolled, type Loadable } from "../dashboard/useDashboardData";
+import { basketApi, type BasketApi } from "../fno/api";
+import { basketAsk, lotsProblems } from "../fno/basketModel";
+import {
+  COMPARE_NEEDS_LOTS, CompareChart, CompareFigures, CompareLegend, CompareSentences, basketColumn, figureRows, useEvaluation, type CompareColumn,
+} from "../fno/CompareV2";
+import { priceGrid } from "../fno/positionInsights";
+import { botName, botState, botStatusText, botWhat, lastSignal, sortBots } from "../paperbot/model";
+import { fetchFeed, sourceCaption, type SignalFeedItem } from "../signals/feed";
+import { Direction, StatusChip } from "../signals/SignalPartsV2";
+import { setupWords } from "../signals/signalText";
+import { heldOn, heldSide, payoffScope } from "./payoffModel";
 import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
@@ -26,7 +38,7 @@ import type { RollAsk } from "../fno/roll";
 import type { MyDayArea } from "../dashboard/myDay";
 import { closedText, exitConfirmText, failedText, heldRows } from "../trading/model";
 import { NoteV2 } from "../trading/PartsV2";
-import type { PortfolioExposure, TradeRecord } from "../types";
+import type { Deployment, PortfolioExposure, TradeRecord } from "../types";
 import { EMPTY, formatCount, formatCountChange, formatDateIST, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
 import { Chip } from "../ui/Chip";
 import { Signed } from "../ui/Signed";
@@ -46,7 +58,10 @@ import { Details } from "../ui/numbersFirst";
  *   ADR-0004).
  * - Orders: his own orders (read only), Open / Executed / Rejected, each with its trail.
  * - Basket: his basket's legs; "Review and place" opens the existing basket panel (src/fno/BasketPanelV2.tsx).
- * - Bots & signals, Payoff: plain-word placeholders until their parts are built.
+ * - Bots & signals (M63 I-5): his running / paused bots and the signals waiting for him, read only, with links to the
+ *   Trading bot and Signals pages (which keep pause, stop, approve and skip).
+ * - Payoff (M63 I-5): the payoff at expiry of his open positions and his basket on the one underlying, read only (the
+ *   "Compare a change" chart and figures, fno/CompareV2.tsx).
  */
 
 export type Read<T> = { status: "loading" } | { status: "error"; message?: string } | { status: "ok"; value: T };
@@ -469,25 +484,157 @@ export function BasketPanelBodyV2({ underlying, legs, onOpen }: { underlying: st
   );
 }
 
-// --- Later parts ---------------------------------------------------------------------------------------------------------
+// --- Bots & signals (M63 I-5) --------------------------------------------------------------------------------------------
 
-export function PlaceholderPanelV2({ kind }: { kind: "bots" | "payoff" }) {
-  if (kind === "bots") {
+/** The waiting signals the panel lists (the rest are on the Signals page). */
+export const SIGNALS_SHOWN = 5;
+const BOTS_MS = 30_000;
+
+/** His own bots (running and paused, `GET /api/deployments`) and the signals waiting for him (`GET /api/signals/feed`,
+ * tab "waiting"), read only: the names, status and words of the Trading bot and Signals pages (paperbot/model.ts,
+ * signals/SignalPartsV2.tsx), no price, no call word. Pause, stop, approve and skip stay on those pages - the links open
+ * them in place. Read only while the panel is shown. */
+export function BotsPanelV2({ enabled = true, loadBots = () => api.listDeployments(), loadSignals = loadWaiting }: {
+  enabled?: boolean; loadBots?: () => Promise<Deployment[]>; loadSignals?: () => Promise<SignalFeedItem[]>;
+}) {
+  const [bots] = usePolled(loadBots, () => BOTS_MS, enabled);
+  const [signals] = usePolled(loadSignals, () => BOTS_MS, enabled);
+  return <BotsViewV2 bots={asRead(bots)} signals={asRead(signals)} now={new Date()} />;
+}
+
+const loadWaiting = () => fetchFeed({ tab: "waiting", limit: SIGNALS_SHOWN }).then((f) => f.items);
+
+const asRead = <T,>(l: Loadable<T>): Read<T> =>
+  l.status === "loading" ? { status: "loading" } : l.status === "error" ? { status: "error" } : { status: "ok", value: l.data };
+
+const SUBHEAD = "flex items-baseline justify-between gap-space-2 text-t13 font-semibold text-fg";
+
+/** The panel's content (no state: the tests render it). */
+export function BotsViewV2({ bots, signals, now }: { bots: Read<Deployment[]>; signals: Read<SignalFeedItem[]>; now: Date }) {
+  const shownBots = bots.status === "ok" ? sortBots(bots.value) : [];
+  const shownSignals = signals.status === "ok" ? signals.value.slice(0, SIGNALS_SHOWN) : [];
+  return (
+    <div className="space-y-space-3" data-panel-body="bots">
+      <section aria-label="Your bots" data-bots-list>
+        <h3 className={SUBHEAD}><span className="inline-flex items-center gap-space-2"><Bot size={16} aria-hidden className="text-brand" />Your bots</span>
+          {bots.status === "ok" && <span className="font-tabular text-fg-muted" data-bots-count>{shownBots.length}</span>}</h3>
+        {bots.status === "loading" ? <LoadingRowsV2 rows={2} />
+          : bots.status === "error" ? <EmptyText testId="bots-error">We could not load your bots. We will try again in a moment.</EmptyText>
+          : !shownBots.length ? <EmptyText testId="bots-empty">No bot is running. Start one on the Trading bot page.</EmptyText>
+          : (
+            <ul className="divide-y divide-subtle text-t13">
+              {shownBots.map((d) => (
+                <li key={d.id} data-bot={d.id} data-bot-state={botState(d)} className="flex items-center justify-between gap-space-2 py-space-1">
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold text-fg">{botName(d, NO_NAMES)}</span>
+                    <span className="block truncate text-t12 text-fg-muted">{botWhat(d)} · {lastSignal(d.last_signal_at, now.getTime())}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-space-1">
+                    {d.mode === "LIVE" && <Chip variant="solid" name="bot-live">Live</Chip>}
+                    <Chip tone={botState(d) === "running" ? "neutral" : "warn"} name="bot-status">{botStatusText(d)}</Chip>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+      </section>
+      <section aria-label="Signals waiting for you" data-bots-signals>
+        <h3 className={SUBHEAD}>Waiting for you
+          {signals.status === "ok" && <span className="font-tabular text-fg-muted" data-signals-count>{shownSignals.length}</span>}</h3>
+        {signals.status === "loading" ? <LoadingRowsV2 rows={2} />
+          : signals.status === "error" ? <EmptyText testId="signals-error">We could not load your signals. We will try again in a moment.</EmptyText>
+          : !shownSignals.length ? <EmptyText testId="signals-empty">No signal is waiting for you.</EmptyText>
+          : (
+            <ul className="divide-y divide-subtle text-t13">
+              {shownSignals.map((s) => (
+                <li key={s.id} data-signal={s.id}>
+                  <InPlaceLink to={signalPath(s)}
+                    className="flex min-h-11 items-center justify-between gap-space-2 py-space-1 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand lg:min-h-9">
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-space-2"><span className="truncate font-semibold text-fg">{s.symbol}</span><Direction value={s.direction} className="text-t12" /></span>
+                      <span className="block truncate text-t12 text-fg-muted">{setupWords(s.setup)} · {sourceCaption(s)}</span>
+                    </span>
+                    <StatusChip item={s} now={now} />
+                  </InPlaceLink>
+                </li>
+              ))}
+            </ul>
+          )}
+      </section>
+      <div className="flex flex-wrap gap-x-space-4">
+        <InPlaceLink to="/signals" className={LINK}>Open Signals</InPlaceLink>
+        <InPlaceLink to="/deployments" className={LINK}>Open Trading bot</InPlaceLink>
+      </div>
+    </div>
+  );
+}
+
+const NO_NAMES: ReadonlyMap<string, string> = new Map();
+
+/** The signal on the Signals page (`?proposal=<id>` selects it, signals/feed.ts itemForProposal); else the page. */
+export const signalPath = (s: Pick<SignalFeedItem, "action_id">): string => (s.action_id ? `/signals?proposal=${s.action_id}` : "/signals");
+
+// --- Payoff (M63 I-5) ----------------------------------------------------------------------------------------------------
+
+/** The payoff at expiry of his open positions and his basket on the Terminal's one underlying, on one scale - the
+ * "Compare a change" chart, figures and plain words (fno/CompareV2.tsx), read only: no order button here. The positions
+ * are drawn exactly from his own legs (fno/positionInsights.ts); the basket's lot sizes and probability come from the
+ * basket's own engine read (`POST /api/paper/fno/basket/evaluate`, which only computes). What is drawn: payoffModel.ts. */
+export function PayoffPanelV2({ underlying, expiry, positions, basket, spot, fnoOn, api: evaluator = basketApi }: {
+  underlying: string; expiry: string | null; positions: readonly TradeRecord[] | null; basket: readonly BasketLeg[]; spot: number | null;
+  /** The PAPER account on and signed in (his F&O positions are looked up, as on the Positions panel). */
+  fnoOn: boolean;
+  api?: Pick<BasketApi, "evaluate">;
+}) {
+  const list = useMemo(() => (positions ? [...positions] : null), [positions]);
+  const fno = useFnoPositions(list, fnoOn);
+  const held = useMemo(() => heldOn(list, fno.facts, underlying), [list, fno.facts, underlying]);
+  const scope = useMemo(() => payoffScope({ underlying, expiry, held, basket }), [underlying, expiry, held, basket]);
+  const lotsMissing = lotsProblems(scope.basket).length > 0;
+  const ask = scope.basket.length && !lotsMissing && spot ? basketAsk(scope.basket, spot, null) : null;
+  const ev = useEvaluation(ask, evaluator);
+  const columns: CompareColumn[] = [];
+  if (scope.held.length) columns.push({ name: "Your positions", legs: heldSide(scope), shift: 0, pop: null });
+  if (scope.basket.length) {
+    const choice = { key: "basket", name: "Your basket", legs: scope.basket, problem: lotsMissing ? COMPARE_NEEDS_LOTS : null };
+    columns.push(!spot && !lotsMissing
+      ? { name: "Your basket", legs: [], shift: 0, pop: null, note: PAYOFF_NEEDS_SPOT }
+      : { ...basketColumn(choice, ev.out, ev.busy), margin: undefined });
+  }
+  return <PayoffViewV2 underlying={underlying} expiry={scope.expiry} columns={columns} spot={spot} otherExpiry={scope.otherExpiry} />;
+}
+
+export const PAYOFF_NEEDS_SPOT = "The basket's numbers show once the price of the underlying is known.";
+
+/** The panel's content (no state: the tests render it). */
+export function PayoffViewV2({ underlying, expiry, columns, spot, otherExpiry = 0 }: {
+  underlying: string; expiry: string | null; columns: readonly CompareColumn[]; spot: number | null; otherExpiry?: number;
+}) {
+  if (!columns.length) {
     return (
-      <div className="space-y-space-2" data-panel-body="bots">
-        <p className="flex items-center gap-space-2 text-t14 font-semibold text-fg"><Bot size={16} aria-hidden className="text-brand" />Coming in a later update</p>
-        <p className={MUTED}>Your running bots and the signals waiting for you will show here, with pause and exit for each bot. Until then, use the Signals and Trading bot pages.</p>
-        <div className="flex flex-wrap gap-x-space-4">
-          <InPlaceLink to="/signals" className={LINK}>Open Signals</InPlaceLink>
-          <InPlaceLink to="/deployments" className={LINK}>Open Trading bot</InPlaceLink>
-        </div>
+      <div className="space-y-space-2" data-panel-body="payoff">
+        <EmptyText testId="payoff-empty">No open position or basket leg on {underlying} yet. Tap a price on the option chain to add one.</EmptyText>
       </div>
     );
   }
+  const xs = priceGrid(columns.map((c) => c.legs), spot);
+  // A side still being worked out (or missing its lots) has no legs yet: it is not drawn as a flat line.
+  const drawn = columns.filter((c) => c.legs.length > 0);
+  const notes = columns.filter((c) => c.note).map((c) => `${c.name}: ${c.note}`);
   return (
-    <div className="space-y-space-2" data-panel-body="payoff">
-      <p className="flex items-center gap-space-2 text-t14 font-semibold text-fg"><LineChart size={16} aria-hidden className="text-brand" />Coming in a later update</p>
-      <Details id="terminal.payoff" className="mt-0"><p>The payoff of your basket and your open positions, with what-if, will show here. Until then, the basket shows its payoff before you place it.</p></Details>
+    <div className="space-y-space-2" data-panel-body="payoff" data-payoff-expiry={expiry ?? ""}>
+      <div className="flex flex-wrap items-center justify-between gap-space-2">
+        <CompareLegend columns={drawn} />
+        {expiry && <span className="text-t12 text-fg-muted font-tabular" data-payoff="expiry">At expiry {formatDateIST(expiry, { year: false })}</span>}
+      </div>
+      <CompareChart columns={drawn} xs={xs} spot={spot} underlying={underlying} />
+      {notes.map((n) => <EmptyText key={n} testId="payoff-note">{n}</EmptyText>)}
+      <CompareFigures columns={columns} rows={figureRows(columns)} />
+      <Details id="terminal.payoff" label="In plain words" className="mt-0">
+        <CompareSentences columns={columns} xs={xs} underlying={underlying} />
+        {otherExpiry > 0 && <p data-payoff="other-expiry">{otherExpiry} of your legs on {underlying} expire on another day and are not drawn here.</p>}
+        <p>Read only: nothing here places or changes an order. Your positions are drawn at their entry prices.</p>
+      </Details>
     </div>
   );
 }

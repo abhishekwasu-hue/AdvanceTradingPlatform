@@ -84,6 +84,13 @@ export const GLOSSARY = {
   "area-broken": { term: "Broken area", definition: "An area the price closed through." },
   "rsi-divergence": { term: "RSI divergence", definition: "The price made a new swing high or low but RSI did not. It is a sign the move is losing strength." },
   "structure-level": { term: "Structure level", definition: "The swing price beyond which the chart's structure changes." },
+  // Owner CA-D3 (3 Nov): the method words of Analyze a chart, each behind a "?".
+  handover: { term: "Handover", definition: "Inside an area, control passes from the side that was pushing to the other side." },
+  "commitment-candle": { term: "Commitment candle", definition: "A strong candle that closes firmly away from an area, showing one side has taken control." },
+  ltf: { term: "LTF", definition: "Lower timeframe: a smaller timeframe than the chart's own, used to see the turn inside an area." },
+  invalidation: { term: "Invalidation", definition: "The price where the read is proven wrong." },
+  impulse: { term: "Impulse", definition: "A strong, fast leg of the price in one direction with little overlap between candles." },
+  pullback: { term: "Pullback", definition: "A slower move against the last impulse, before the trend may go on." },
 } as const satisfies Record<string, GlossaryEntry>;
 
 export type GlossaryKey = keyof typeof GLOSSARY;

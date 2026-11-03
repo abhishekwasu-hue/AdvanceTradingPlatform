@@ -20,7 +20,9 @@ const PRINT_CSS = `
   @page { margin: 12mm; }
   html, body { background: rgb(var(--surface-1)); }
   body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  section, li, tr, figure { break-inside: avoid; }
+  /* Owner review (3 Nov): whole sections moved to a new page and left half pages blank - only small blocks stay whole. */
+  li, tr, figure, dl > div { break-inside: avoid; }
+  h2, h3 { break-after: avoid; }
 `;
 
 function loaded(link: HTMLLinkElement): Promise<void> {

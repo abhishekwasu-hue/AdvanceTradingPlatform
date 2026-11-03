@@ -8,6 +8,7 @@ import AnnotatedChartV2, { StructureSketch } from "./AnnotatedChartV2";
 import type { AlertTarget } from "./AlertDialogV2";
 import { PRINT_HIDE } from "./printResult";
 import { guardResult } from "./signalLanguage";
+import { wordsUsed } from "./wordsUsed";
 import StrikesSectionV2, { type StrikesState } from "./StrikesSectionV2";
 import type { AnalysisResult, PriceRef } from "./types";
 
@@ -56,7 +57,7 @@ function Ref({ label, value, approximate }: { label: string; value: PriceRef; ap
 
 const SIDE_TEXT = { bull_put: "Bull put side", bear_call: "Bear call side", none: "No side" } as const;
 const TREND_TEXT: Record<string, string> = { up: "Up", down: "Down", sideways: "Sideways", unclear: "Unclear" };
-const PHASE_TEXT: Record<string, string> = { pullback: "Pullback in progress", handover: "Handover", commitment: "Commitment", trending: "Trending",
+const PHASE_TEXT: Record<string, string> = { pullback: "Pullback in progress", handover: "Handover", commitment: "Commitment", trending: "Moving, no pullback yet",
   range: "Range", unclear: "Unclear" };
 
 export function statusText(r: AnalysisResult): string {
@@ -102,6 +103,7 @@ const noop = () => undefined;
 export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, imageNote, imageSrc, onAlert = noop, onExport = noop, onDelete = noop, actions = true,
   onShare, shareLive, shared = false, onPdf, strikes, onStrikesSymbol, exporting, deleting }: ResultViewProps) {
   const result = guardResult(raw);
+  const words = wordsUsed(result);
   const approx = result.approximate_prices;
   const label = result.label || itemLabel || null;
   const disclaimer = result.disclaimer || itemDisclaimer || FALLBACK_DISCLAIMER;
@@ -156,7 +158,7 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
         <dl className="mt-space-3 grid gap-space-3 sm:grid-cols-3">
           <div><dt className="text-t12 text-fg-muted">Trend side</dt><dd className="text-t14 font-semibold text-fg">{TREND_TEXT[result.trend.side] ?? result.trend.side}</dd>
             <dd className="text-t12 text-fg-muted">{result.trend.text}</dd></div>
-          <div><dt className="text-t12 text-fg-muted">Now</dt><dd className="text-t14 font-semibold text-fg">{PHASE_TEXT[result.current_state.phase] ?? result.current_state.phase}</dd>
+          <div><dt className="text-t12 text-fg-muted">Price now</dt><dd className="text-t14 font-semibold text-fg">{PHASE_TEXT[result.current_state.phase] ?? result.current_state.phase}</dd>
             <dd className="text-t12 text-fg-muted">{result.current_state.text}</dd></div>
           <div><dt className="text-t12 text-fg-muted">RSI divergence</dt><dd className="text-t14 font-semibold text-fg">{result.rsi.divergence === "none" ? "None" : result.rsi.divergence === "bullish" ? "Bullish" : "Bearish"}</dd>
             <dd className="text-t12 text-fg-muted">{result.rsi.text}</dd></div>
@@ -266,6 +268,18 @@ export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, i
       )}
 
       {strikes && <StrikesSectionV2 state={strikes} onSymbol={onStrikesSymbol} />}
+
+      {words.length > 0 && (
+        <Section title="Words used" id="ca-words">
+          <Details id="chart-analyze.words" label="What these words mean">
+            <dl className="space-y-space-2" data-testid="words-used">
+              {words.map((w) => (
+                <div key={w.term}><dt className="text-t14 font-semibold text-fg">{w.term}</dt><dd className="text-t12 text-fg-muted">{w.definition}</dd></div>
+              ))}
+            </dl>
+          </Details>
+        </Section>
+      )}
 
       <p className="rounded-panel border border-subtle bg-surface-2 p-space-4 text-t12 text-fg-muted" data-testid="disclaimer" role="note">{disclaimer}</p>
     </div>

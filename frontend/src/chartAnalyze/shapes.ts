@@ -18,7 +18,7 @@ export const HALO_ALPHA = 0.85;
 
 export type Shape =
   | { kind: "rect"; x: number; y: number; w: number; h: number; token: Token; fillAlpha: number; label?: string; dashed?: boolean }
-  | { kind: "line"; x0: number; y0: number; x1: number; y1: number; token: Token; dashed?: boolean; label?: string; width?: number }
+  | { kind: "line"; x0: number; y0: number; x1: number; y1: number; token: Token; dashed?: boolean; label?: string; width?: number; labelAt?: "end" }
   | { kind: "dot"; x: number; y: number; token: Token; r: number; label?: string }
   | { kind: "text"; x: number; y: number; token: Token; text: string };
 
@@ -39,7 +39,7 @@ export function shapesFor(a: Annotations, width: number): Shape[] {
   for (const s of a.setup_lines) {
     const token: Token = s.kind === "invalidation" ? "down" : s.kind === "next_area" ? "up" : "fg";
     const word = s.kind === "invalidation" ? "Invalidation" : s.kind === "next_area" ? "Next area" : "Trigger";
-    out.push({ kind: "line", x0: 0, y0: s.y, x1: width, y1: s.y, token, dashed: true, label: word });
+    out.push({ kind: "line", x0: 0, y0: s.y, x1: width, y1: s.y, token, dashed: true, label: word, labelAt: "end" });
   }
   if (a.rsi_divergence) {
     const d = a.rsi_divergence;
@@ -60,15 +60,26 @@ export function resultShapes(result: AnalysisResult): Shape[] {
 }
 
 /** The legend rows the overlay shows (only what is on the chart). */
-export function legendFor(a: Annotations): { token: Token; text: string }[] {
-  const rows: { token: Token; text: string }[] = [];
-  if (a.areas.some((x) => x.side === "buyer")) rows.push({ token: "up", text: "Buyer area" });
-  if (a.areas.some((x) => x.side === "seller")) rows.push({ token: "down", text: "Seller area" });
-  if (a.lines.length) rows.push({ token: "fg-muted", text: "Line and its touches" });
-  if (a.setup_lines.some((s) => s.kind === "trigger")) rows.push({ token: "fg", text: "Trigger" });
-  if (a.setup_lines.some((s) => s.kind === "invalidation")) rows.push({ token: "down", text: "Invalidation" });
-  if (a.setup_lines.some((s) => s.kind === "next_area")) rows.push({ token: "up", text: "Next area" });
-  if (a.rsi_divergence) rows.push({ token: "warn", text: "RSI divergence" });
-  if (a.swings.length) rows.push({ token: "fg", text: "Swings: HH / HL / LH / LL" });
+export type Swatch = "box" | "dashed" | "line" | "dot";
+
+/** The legend rows the overlay shows (only what is on the chart). Owner review (3 Nov): each row's swatch has the
+ * drawn shape (a box for an area, a dashed line for a setup line), so a seller area and the invalidation - both red,
+ * by meaning - are never told apart by colour alone. */
+export function legendFor(a: Annotations): { token: Token; text: string; swatch: Swatch }[] {
+  const rows: { token: Token; text: string; swatch: Swatch }[] = [];
+  if (a.areas.some((x) => x.side === "buyer")) rows.push({ token: "up", text: "Buyer area", swatch: "box" });
+  if (a.areas.some((x) => x.side === "seller")) rows.push({ token: "down", text: "Seller area", swatch: "box" });
+  if (a.lines.length) rows.push({ token: "fg-muted", text: "Line and its touches", swatch: "line" });
+  if (a.setup_lines.some((s) => s.kind === "trigger")) rows.push({ token: "fg", text: "Trigger", swatch: "dashed" });
+  if (a.setup_lines.some((s) => s.kind === "invalidation")) rows.push({ token: "down", text: "Invalidation", swatch: "dashed" });
+  if (a.setup_lines.some((s) => s.kind === "next_area")) rows.push({ token: "up", text: "Next area", swatch: "dashed" });
+  if (a.rsi_divergence) rows.push({ token: "warn", text: "RSI divergence", swatch: "line" });
+  if (a.swings.length) rows.push({ token: "fg", text: "Swings: HH / HL / LH / LL", swatch: "dot" });
   return rows;
+}
+
+/** Owner review (3 Nov): the labels were drawn at 12 image pixels, unreadable once a wide screenshot is scaled to a
+ * phone. The label size grows with the image's width (one size for the screen and the download). */
+export function labelSize(width: number): number {
+  return Math.max(12, Math.round(width / 55));
 }

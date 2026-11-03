@@ -81,10 +81,32 @@ def text(value: Any, limit: int = TEXT_MAX) -> str:
     """One clean line of the engine's text (or ''), filtered for advice."""
     if not isinstance(value, str):
         return ""
-    out = " ".join(value.replace("\x00", " ").split())
+    out = _no_internal_words(" ".join(value.replace("\x00", " ").split()))
     if len(out) > limit:
-        out = out[:limit].rsplit(" ", 1)[0].rstrip(" ,.;:-") + "..."
+        out = _shorten(out, limit)
     return _screen(out) if out else ""
+
+
+# Owner review (3 Nov, GLENMARK): the engine's own input words ("no FACTS or OHLC text") are not for the user. A sentence
+# that names them is dropped; the rest of the text stays.
+_INTERNAL = re.compile(r"\b(FACTS|OHLC)\b")
+_SENTENCE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _no_internal_words(out: str) -> str:
+    if not _INTERNAL.search(out):
+        return out
+    return " ".join(s for s in _SENTENCE.split(out) if not _INTERNAL.search(s))
+
+
+def _shorten(out: str, limit: int) -> str:
+    """Owner review (3 Nov): a text over its limit ends at its last whole sentence that fits (never mid-sentence);
+    only when no sentence fits in half the limit is it cut at a word with "..."."""
+    head = out[:limit]
+    ends = [m.end() for m in re.finditer(r"[.!?](?=\s|$)", head)]
+    if ends and ends[-1] >= limit // 2:
+        return head[:ends[-1]]
+    return head.rsplit(" ", 1)[0].rstrip(" ,.;:-") + "..."
 
 
 def _enum(value: Any, allowed: tuple, default: Optional[str]) -> Optional[str]:
@@ -229,7 +251,7 @@ def _recognised(raw: Any) -> Dict[str, Optional[str]]:
     return {"symbol": symbol if re.fullmatch(r"[A-Z0-9 &._:-]{1,40}", symbol) else None,
             "exchange": exchange if re.fullmatch(r"[A-Z]{2,10}", exchange) else None,
             "timeframe": tf if tf and _TIMEFRAME.match(tf) else None,
-            "first_bar": text(raw.get("first_bar"), 40) or None, "last_bar": text(raw.get("last_bar"), 40) or None}
+            "first_bar": text(raw.get("first_bar"), 60) or None, "last_bar": text(raw.get("last_bar"), 60) or None}
 
 
 def validate(raw: Any, *, mode: str, width: int, height: int) -> Dict[str, Any]:

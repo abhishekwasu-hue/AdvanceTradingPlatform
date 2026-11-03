@@ -1,4 +1,4 @@
-import { HALO, HALO_ALPHA, type Shape, type Token } from "./shapes";
+import { HALO, HALO_ALPHA, labelSize, type Shape, type Token } from "./shapes";
 
 /**
  * Analyze a chart: "Download / share the result image" - the user's own (stored, cleaned) image with the same overlay
@@ -24,12 +24,13 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): st
   return lines;
 }
 
-export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], colour: (t: Token, a?: number) => string): void {
+export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], colour: (t: Token, a?: number) => string, fs = 12): void {
   ctx.save();
-  ctx.font = "12px sans-serif";
+  const k = fs / 12;
+  ctx.font = `${fs}px sans-serif`;
   const halo = colour(HALO, HALO_ALPHA);
   const text = (t: string, x: number, y: number, token: Token) => {
-    ctx.save(); ctx.setLineDash([]); ctx.lineWidth = 3; ctx.strokeStyle = halo; ctx.strokeText(t, x, y); ctx.restore();
+    ctx.save(); ctx.setLineDash([]); ctx.lineWidth = 3 * k; ctx.strokeStyle = halo; ctx.strokeText(t, x, y); ctx.restore();
     ctx.fillStyle = colour(token); ctx.fillText(t, x, y);
   };
   for (const s of shapes) {
@@ -40,7 +41,7 @@ export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], colou
       ctx.strokeStyle = colour(s.token, 0.9);
       ctx.lineWidth = 1;
       ctx.strokeRect(s.x, s.y, s.w, s.h);
-      if (s.label) text(s.label, s.x + 4, s.y + 13, s.token);
+      if (s.label) text(s.label, s.x + 4 * k, s.y + 13 * k, s.token);
     } else if (s.kind === "line") {
       const dash = s.dashed ? [6, 4] : [];
       ctx.setLineDash([]);
@@ -51,18 +52,20 @@ export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], colou
       ctx.strokeStyle = colour(s.token);
       ctx.lineWidth = s.width ?? 1.5;
       ctx.beginPath(); ctx.moveTo(s.x0, s.y0); ctx.lineTo(s.x1, s.y1); ctx.stroke();
-      if (s.label) text(s.label, Math.min(s.x0, s.x1) + 4, Math.min(s.y0, s.y1) - 4, s.token);
+      if (s.label && s.labelAt === "end") {
+        ctx.save(); ctx.textAlign = "right"; text(s.label, Math.max(s.x0, s.x1) - 4 * k, Math.min(s.y0, s.y1) - 4 * k, s.token); ctx.restore();
+      } else if (s.label) text(s.label, Math.min(s.x0, s.x1) + 4 * k, Math.min(s.y0, s.y1) - 4 * k, s.token);
     } else if (s.kind === "dot") {
       for (const [stroke, width] of [[halo, 5], [colour(s.token), 2]] as const) {
         ctx.strokeStyle = stroke;
         ctx.lineWidth = width;
         ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.stroke();
       }
-      if (s.label) text(s.label, s.x + s.r + 3, s.y - s.r, s.token);
+      if (s.label) text(s.label, s.x + s.r + 3 * k, s.y - s.r, s.token);
     } else {
-      ctx.font = "bold 12px sans-serif";
-      text(s.text, s.x - 8, s.y, s.token);
-      ctx.font = "12px sans-serif";
+      ctx.font = `bold ${fs}px sans-serif`;
+      text(s.text, s.x - 8 * k, s.y, s.token);
+      ctx.font = `${fs}px sans-serif`;
     }
   }
   ctx.restore();
@@ -75,20 +78,22 @@ export async function renderResultPng(input: ExportInput, colour: (t: Token, a?:
   const canvas = document.createElement("canvas");
   const probe = canvas.getContext("2d");
   if (!probe) throw new Error("This browser cannot draw the image.");
-  probe.font = "13px sans-serif";
+  const fs = labelSize(input.width);
+  const cap = Math.max(13, Math.round(fs * 0.9));          // owner review (3 Nov): the caption grows with the image too
+  probe.font = `${cap}px sans-serif`;
   const captions = [...(input.label ? wrap(probe, input.label, input.width - 24) : []), ...wrap(probe, input.disclaimer, input.width - 24)];
-  const band = 16 + captions.length * 18;
+  const band = Math.round(cap * 1.3) + captions.length * Math.round(cap * 1.4);
   canvas.width = input.width;
   canvas.height = input.height + band;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("This browser cannot draw the image.");
   ctx.drawImage(input.image, 0, 0, input.width, input.height);
-  drawShapes(ctx, input.shapes, colour);
+  drawShapes(ctx, input.shapes, colour, fs);
   ctx.fillStyle = "rgb(255 255 255)";   // the caption band is always light, so the export reads the same in any theme
   ctx.fillRect(0, input.height, input.width, band);
   ctx.fillStyle = "rgb(15 23 42)";
-  ctx.font = "13px sans-serif";
-  captions.forEach((line, i) => ctx.fillText(line, 12, input.height + 22 + i * 18));
+  ctx.font = `${cap}px sans-serif`;
+  captions.forEach((line, i) => ctx.fillText(line, 12, input.height + Math.round(cap * 1.7) + i * Math.round(cap * 1.4)));
   return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("The image could not be made."))), "image/png"));
 }
 

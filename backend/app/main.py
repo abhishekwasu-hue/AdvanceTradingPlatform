@@ -42,6 +42,8 @@ from app.brokers.routes import router as broker_router
 from app.chart_analyze.routes import admin_router as chart_analyze_admin_router
 from app.chart_analyze.routes import router as chart_analyze_router
 from app.chart_analyze.workspace import router as chart_analyze_workspace_router
+from app.chart_reader.routes import admin_router as chart_reader_admin_router
+from app.chart_reader.routes import router as chart_reader_router
 from app.charts.contracts import router as chart_contracts_router
 from app.charts.drawings import router as chart_drawings_router
 from app.charts.futures_basis import router as chart_futures_basis_router
@@ -488,6 +490,8 @@ app.include_router(workspace_recall_router)  # M76 MP-14: area context at entry 
 app.include_router(chart_analyze_workspace_router)  # M75 W-4: the Copilot workspace's AI card, once per closed bar (copilot_workspace)
 app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a chart image, educational reading (flag chart_analyze, off)
 app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)
+app.include_router(chart_reader_router)  # M86 W1: the book-knowledge chart reader (flag chart_reader, off; the private reader)
+app.include_router(chart_reader_admin_router)  # M86 W1: the chart reader's settings (SUPER_ADMIN)
 app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)
 app.include_router(signals_day_one_router)  # Signals day one: the setup card + his adopted watch (ui_v2 + strategy_templates)
 app.include_router(me_account_router)  # AUD-G1.1: the caller's own data export and "Delete my account"

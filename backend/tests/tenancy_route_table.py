@@ -158,6 +158,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/admin/billing/{tenant_id}/payment"): "admin",
     ("GET", "/api/admin/chart-analyze/settings"): "admin",   # Analyze a chart: sizes, retention, plan limits, cost caps
     ("PUT", "/api/admin/chart-analyze/settings"): "admin",
+    ("GET", "/api/admin/chart-reader/settings"): "admin",   # M86 W1: the chart reader: model, effort, key names, timeframes, pair, prices
+    ("PUT", "/api/admin/chart-reader/settings"): "admin",
     # MO3 (a): the admin console's read-only sections (app/admin/console.py).
     ("GET", "/api/admin/console/ai-cost"): "admin",
     ("GET", "/api/admin/console/diagnostics"): "admin",
@@ -463,6 +465,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/workspace/close-summary"): "member: his own trades, journal entries and journal settings of today (tenant and user); read-only (M76 MP-13)",
     ("POST", "/api/charts/workspace/entry-context"): "self: his own trades only (tenant and user; another's is 404); writes the area context on his own journal entries, never a trade or an order (M76 MP-14)",
     ("GET", "/api/charts/workspace/similar"): "member: his own closed trades and journal entries (tenant and user); read-only (M76 MP-14)",
+    ("GET", "/api/chart-reader/strategies"): "member: the reader's strategy labels, the platform's model / effort / estimate and the caller's own cap and spend today (M86)",
+    ("POST", "/api/chart-reader/read"): ("self: one read of ATP's chart of the shared lake (or his own private bars) or of the caller's own uploaded "
+                                         "chart item (tenant and user); writes only his own usage row and a cache entry; read-only (M86)"),
     ("POST", "/api/chart-analyze/workspace"): "self: his own workspace analyses only (the caller's items, his plan limits and AI key); the shared lake or his own private bars; read-only (M75 W-4)",
     ("GET", "/api/chart-analyze/items/{item_id}/strikes"): "member: the caller's own analysis + the caller's organisation's deployment settings (reads only)",
     ("DELETE", "/api/chart-analyze/items/{item_id}"): S_OWN_CHART_ANALYSES,

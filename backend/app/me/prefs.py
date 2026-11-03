@@ -528,6 +528,14 @@ class AiUsagePrefs(_Prefs):
     daily_cap_inr: float | None = Field(default=None, gt=0, lt=1e7, allow_inf_nan=False)
 
 
+class ChartReaderPrefs(_Prefs):
+    """`chart_reader` (M86 W4): the user's OWN daily cost cap in USD for chart reads (app/chart_reader/service.py). None =
+    Not set: no cap (OFF by default, the owner's risk rule - ATP never chooses a cap for him). A read whose estimate would
+    take today's spend past it is refused with one plain sentence; a cached read costs nothing and is never refused. Read
+    by the chart reader's service only; no order path, worker or risk check imports it."""
+    chart_reader_daily_cap_usd: float | None = Field(default=None, gt=0, lt=1e6, allow_inf_nan=False)
+
+
 class AiPrefs(_Prefs):
     """`ai` (M72 PR-10, CP-10, M72Q-2): the language the Copilot planner ANSWERS in (English / Marathi / Hindi; the
     interface stays English) and whether the Copilot shows the browser's speech input (off by default). Read only while
@@ -697,7 +705,7 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "trade_settings": TradeSettingsPrefs, "ai_usage": AiUsagePrefs,
                                        "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs, "ai_memory": AiMemoryPrefs,
                                        "what_if": WhatIfPrefs, "own_events": OwnEventsPrefs,
-                                       "workspace_watch": WorkspaceWatchPrefs}
+                                       "workspace_watch": WorkspaceWatchPrefs, "chart_reader": ChartReaderPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 

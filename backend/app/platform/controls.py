@@ -520,6 +520,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # AI part, when it has one, reads only those facts. No price is read from the picture. Acts only while
     # chart_analyze (and the price-action layer) are on too; OFF until the owner's ✅. Places no orders.
     "chart_analyze_hybrid": "Analyze a chart: advanced analysis - ATP's own structure reading of the stored candles for the symbol and timeframe you pick, drawn beside your chart (places no orders)",
+    # M86 W1 (owner order ATP_ORDER_M86; docs/design/M86_PLAN.md): the book-knowledge chart reader in the Copilot - ATP's
+    # own rendered charts of the stored candles (or his own uploaded chart) read by the private package's reader
+    # in Abhi's method or one independent book strategy; the model and effort are platform
+    # settings, the API key a server secret, his own daily cost cap OFF by default. Read-only (ADR-0006). OFF:
+    # /api/chart-reader/* answers 503.
+    "chart_reader": "Chart reader: the private reader's reading of a chart in the method or one book strategy (read-only, places no orders)",
     # N4 CH6 (docs/design/CHARTING.md): ScreenQL expressions drawn as chart studies, computed by the screener's own runtime
     # from the shared lake bars as of a time (lines for numbers, marks for conditions). OFF: GET /api/charts/studies
     # answers 503 and the chart shows no study panel. Reference only - places no orders.
@@ -697,6 +703,9 @@ ENGINE_MISSING_REASON = "The chart analysis engine (private package) is not inst
 # unavailable whatever its stored state (admin / owner only; OFF by default).
 TRADE_ENGINE_FLAGS = ("trade_engine",)
 TRADE_ENGINE_MISSING_REASON = "The signal engine (private package) is not installed on this server, so this feature is unavailable."
+# M86 W1: the chart reader of the private package (app/chart_reader/loader.py); without it `chart_reader` is unavailable.
+CHART_READER_FLAGS = ("chart_reader",)
+CHART_READER_MISSING_REASON = "The chart reader (private package) is not installed on this server, so this feature is unavailable."
 
 
 def engine_missing_flags() -> Dict[str, str]:
@@ -708,6 +717,9 @@ def engine_missing_flags() -> Dict[str, str]:
         missing.update({name: ENGINE_MISSING_REASON for name in ENGINE_FLAGS})
     if trade_engine.load() is None:
         missing.update({name: TRADE_ENGINE_MISSING_REASON for name in TRADE_ENGINE_FLAGS})
+    from app.chart_reader import loader as chart_reader
+    if chart_reader.load() is None:
+        missing.update({name: CHART_READER_MISSING_REASON for name in CHART_READER_FLAGS})
     return missing
 
 

@@ -14,6 +14,7 @@ import { chartAnalyzeApi, errorCode, isFeatureOff } from "./api";
 import { ENGINE_ADMIN_TITLE, ENGINE_USER_LINE, ENGINE_USER_TITLE, engineAudience } from "./engineWords";
 import { renderResultPng, shareOrDownload } from "./exportImage";
 import { printResult, printTitle } from "./printResult";
+import ChartReaderSectionV2 from "../chartReader/ChartReaderSectionV2";
 import HybridResultV2 from "./HybridResultV2";
 import ResultViewV2 from "./ResultViewV2";
 import ShareDialogV2 from "./ShareDialogV2";
@@ -542,6 +543,9 @@ export default function ChartAnalyzePageV2() {
           </div>
         </section>
       )}
+
+      {/* M86 W3: the chart reader (flag chart_reader; nothing shows while it is off). Reads only on the user's action. */}
+      <ChartReaderSectionV2 itemId={current?.id ?? null} symbol={current?.hybrid?.pick?.symbol ?? current?.pick?.symbol ?? current?.summary?.symbol ?? null} />
 
       <section className={card} aria-labelledby="ca-history">
         <h2 id="ca-history" className="text-t15 font-semibold text-fg">Your analyses</h2>

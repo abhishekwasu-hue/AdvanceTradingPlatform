@@ -164,6 +164,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "chart_analyze_strikes": FlagInfo("Analyze a chart: the option strikes your own options bots would use at the setup", "charts", "a strikes block on the Analyze a chart result", ("chart_analyze",), "an options trading bot", "unfinished"),
     "chart_analyze_share": FlagInfo("Analyze a chart: share a structure-only copy of an analysis with your organisation", "charts", "a Share button on the Analyze a chart result", ("chart_analyze",), "", "unfinished"),
     "chart_analyze_hybrid": FlagInfo("Analyze a chart: advanced analysis - ATP's own structure reading of the symbol and timeframe you pick, drawn beside your chart", "charts", "an Advanced analysis choice on the Analyze a chart page", ("chart_analyze", "chart_price_action"), "stored candles for the symbol; areas of interest need the market zones", "unfinished"),
+    "chart_reader": FlagInfo("Chart reader: a reading of a chart in the method or one book strategy, by the private reader", "ai", "Abhi's method and Book strategies cards in the Copilot's Analyze a chart panel", (), "the private package's chart reader and the reader's API key on the server", "unfinished"),
     "chart_studies": FlagInfo("Screen formulas drawn on the chart", "screens", "a chart layer", ("screener_v2",), "", "ready"),
     "chart_price_action": FlagInfo("Swings, legs and trend drawn on the chart", "charts", "a chart layer", (), "", "ready"),
     "ai_multiview": FlagInfo("Technical, options, news and macro views of a symbol", "ai", "a Copilot view", ("ai_copilot",), "", "ready"),
@@ -264,6 +265,7 @@ FLAG_GROUP: dict[str, str] = {
     "chart_analyze_strikes": "charts",
     "chart_analyze_share": "charts",
     "chart_analyze_hybrid": "charts",
+    "chart_reader": "charts",                 # M86 W1 (the same group as Analyze a chart)
     "chart_price_action": "charts",
     "chart_trades_layer": "charts",
     "chart_contracts": "charts",
@@ -385,6 +387,7 @@ FINISH: Dict[str, str] = {
     "trade_warnings": "M76 (MP-1 .. MP-15)",
     "trade_engine": "M66 (owner only, after parity is green)", "copilot_workspace": "M75 W-2..W-6 (the Copilot trading workspace)", "trigger_plans": "M75 W-8..W-9 (trigger plans; method conditions in W-9)", "broker_gtt": "TT-1 (the LIVE manual path records a filled GTT with its exits; M75Q-9)",
     "study_export": "M77 (SX-6: the trade plan, check card, scenarios and similar setups sections; the structure-only shared copy)",
+    "chart_reader": "M86 W3 (the Copilot cards) and the proof on real charts",
     "copilot_agent": "M72 PR-2 (the answer format with cards)",
     "copilot_memory": "M72 PR-11 (each user saves his own; the owner turns it on)",
     "copilot_languages": "M72 PR-10 (Marathi / Hindi answers with their filters; the owner turns it on)",

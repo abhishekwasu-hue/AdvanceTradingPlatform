@@ -29,12 +29,13 @@ import { defaultTerminalApi, type TerminalApi } from "./api";
 import {
   CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_HEIGHT, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, activeKey, chainHiddenColumns,
   changed, closePanel, equalWidths, fitToScreen, isPreset, layoutFor, nameProblem, openPanel, readingOrder, remove, rename, resetToPreset, saveAs,
-  saveOver, sizePanel, switchTo, type Layout, type PanelId, type PanelPlace, type PhoneTab, type SizeResult, type TerminalPrefs,
+  saveOver, sizePanel, switchTo, withoutWatchlist, type Layout, type PanelId, type PanelPlace, type PhoneTab, type SizeResult, type TerminalPrefs,
 } from "./layoutModel";
 import {
   ChartPanelV2, OrderPanelV2, OrdersPanelV2, PlaceholderPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
 } from "./PanelsV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
+import { TerminalWatchlistV2 } from "./TerminalWatchlistV2";
 import { chartLiveOf, useTerminalSpot } from "./spot";
 import BasketPanelV2 from "../fno/BasketPanelV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
@@ -145,7 +146,10 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const [ticket, setTicket] = useState<{ target: TicketTarget; side: Side } | null>(null);
   const confirmBox = useConfirm();   // UI-28 U3.3: the in-app confirm (never the browser's)
 
-  const openIds = useMemo(() => new Set(working.panels.filter((x) => x.open).map((x) => x.id)), [working.panels]);
+  // UX-3: the watchlist panel only while `watchlists` is on (the Charts panel's own flag); off, its columns go to its neighbour.
+  const watchOn = features.on("watchlists");
+  const shownPanels = useMemo(() => (watchOn ? working.panels : withoutWatchlist(working.panels)), [watchOn, working.panels]);
+  const openIds = useMemo(() => new Set(shownPanels.filter((x) => x.open).map((x) => x.id)), [shownPanels]);
   const wants = (id: PanelId, phoneTab: PhoneTab) => (narrow ? tab === phoneTab : openIds.has(id));
 
   // His own figures (TT-15): the status bar, his positions and his orders. The chain of the underlying the panels follow.
@@ -206,6 +210,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const chartSymbol = (place: PanelPlace) => place.symbol ?? spotSymbolOf(underlying);
   const title = (place: PanelPlace) => (place.id.startsWith("chart-") ? `${PANELS[place.id].label} · ${chartSymbol(place)}` : PANELS[place.id].label);
   const setPanels = (panels: PanelPlace[]) => setWorking((w) => ({ ...w, panels }));
+  // The ONE active symbol (the context bar and the watchlist panel change it the same way).
+  const setUnderlying = (v: string) => setWorking((w) => ({ ...w, underlying: v === DEFAULT_UNDERLYING ? null : v }));
   const setChartSymbol = (id: PanelId, symbol: string | null) => setWorking((w) => ({ ...w, panels: w.panels.map((x) => (x.id === id ? { ...x, symbol } : x)) }));
 
   function panel(id: PanelId, place?: PanelPlace): ReactNode {
@@ -237,6 +243,9 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       // exits, one Place) - the server's one calculation, rendered once; the spread builder's own figures are gone.
       case "basket": return <BasketPanelV2 embedded open onClose={() => undefined} onPlaced={() => { afterOrder(); writePending(null); }} onNumbers={(n) => setBreakevens(n?.breakevens ?? null)}
         chain={{ symbol: underlying, live, expiries: expiryList, loadChain: (e) => api.optionChainLive(underlying, e) }} />;
+      // UX-3: the Charts watchlist panel as it is; a row with options becomes the active symbol (on a phone: the Chart tab).
+      case "watchlist": return <TerminalWatchlistV2 underlying={underlying} spotSymbol={spotSymbol} touch={narrow} liveTicks={features.on("data_hub")}
+        onUnderlying={(v) => { setUnderlying(v); if (narrow) setTab("chart"); }} />;
       case "bots": return <PlaceholderPanelV2 kind="bots" />;
       case "payoff": return <PlaceholderPanelV2 kind="payoff" />;
       default: return null;
@@ -286,7 +295,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       {confirmBox.dialog}
       {/* TERM-2 step 5: one line; every order is still shown to you before it is placed (the ticket's Review step). */}
       <PageIntro id="terminal" lines={["One symbol and expiry for the chart, chain, basket and your positions."]} />
-      <ContextBarV2 symbol={underlying} onSymbol={(v) => setWorking((w) => ({ ...w, underlying: v === DEFAULT_UNDERLYING ? null : v }))}
+      <ContextBarV2 symbol={underlying} onSymbol={setUnderlying}
         chain={chain} spot={spot} prevClose={strip.prevClose} vix={strip.vix} mode={modeChip(dataOf(statusL) ?? null)} compact={narrow} />
       {/* CT-1 T3: the layout controls only where the grid renders (from 1024 px); phone and tablet show the tabs. */}
       {!narrow && <div className="flex flex-wrap items-center gap-space-2" role="toolbar" aria-label="Terminal" data-block="terminal-toolbar">
@@ -298,8 +307,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
                 .map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
                 ...(count > 0 ? Object.entries(prefs.layouts).map(([id, l]) => ({ value: id, label: l.name, group: "Your layouts" })) : [])]} />
           </div>
-          {!narrow && <PanelsMenu panels={working.panels} onToggle={(id, on) => setPanels(on ? openPanel(working.panels, id) : closePanel(working.panels, id))}
-            onPanels={setPanels} />}
+          {!narrow && <PanelsMenu panels={shownPanels} onToggle={(id, on) => setPanels(on ? openPanel(shownPanels, id) : closePanel(shownPanels, id))}
+            onPanels={setPanels} ids={watchOn ? CHOOSER_PANEL_IDS : CHOOSER_PANEL_IDS.filter((id) => id !== "watchlist")} />}
           <button type="button" className={BUTTON} onClick={save} disabled={L.busy || (!!own && !dirty)} data-terminal="save">
             <Save size={16} aria-hidden />{own ? "Save" : "Save as mine"}
           </button>
@@ -342,9 +351,10 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
 
       {narrow ? (
         <div className="space-y-space-3" data-tour="terminal-panels">
-          <PhoneTabsV2 tab={tab} onTab={setTab} counts={{ basket: legs.length, positions: dataOf(positionsL)?.length ?? 0 }} />
+          <PhoneTabsV2 tab={tab} onTab={setTab} watchlists={watchOn} counts={{ basket: legs.length, positions: dataOf(positionsL)?.length ?? 0 }} />
           <section id={`terminal-panel-${tab}`} role="tabpanel" aria-labelledby={`terminal-tab-${tab}`} data-phone-panel={tab}
             className="rounded-panel border border-subtle bg-surface-1 p-space-3">
+            {tab === "watchlist" && watchOn && <div className="h-[28rem]">{panel("watchlist")}</div>}
             {tab === "chart" && <div className="h-[22rem]">{panel("chart-1")}</div>}
             {tab === "chain" && panel("chain")}
             {/* TERM-2 step 3: the one basket has its own tab on a phone. */}
@@ -357,7 +367,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
         </div>
       ) : (
         <div data-tour="terminal-panels">
-          <TerminalGridV2 panels={working.panels} preset={working.preset} onChange={setPanels} onClose={(id) => setPanels(closePanel(working.panels, id))}
+          <TerminalGridV2 panels={shownPanels} preset={working.preset} ready={watchOn ? undefined : withoutWatchlist(PRESETS[working.preset].panels)} onChange={setPanels} onClose={(id) => setPanels(closePanel(shownPanels, id))}
             render={(place) => panel(place.id, place)} title={title} />
         </div>
       )}
@@ -376,8 +386,10 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
  * and "Equal widths". A change applies at once and is kept with "Save as mine" / "Save" like any other layout change; a
  * change that cannot be applied says why here.
  */
-function PanelsMenu({ panels, onToggle, onPanels }: {
+function PanelsMenu({ panels, onToggle, onPanels, ids = CHOOSER_PANEL_IDS }: {
   panels: readonly PanelPlace[]; onToggle: (id: PanelId, on: boolean) => void; onPanels: (panels: PanelPlace[]) => void;
+  /** The panels offered (UX-3: no Watchlist while `watchlists` is off). */
+  ids?: readonly PanelId[];
 }) {
   const open = new Set(panels.filter((x) => x.open).map((x) => x.id));
   const [note, setNote] = useState<string | null>(null);
@@ -385,14 +397,14 @@ function PanelsMenu({ panels, onToggle, onPanels }: {
     if (r.moved !== 0) onPanels(r.panels);
     setNote(r.limit?.text ?? null);
   };
-  const sized = readingOrder(panels).filter((q) => CHOOSER_PANEL_IDS.includes(q.id));
+  const sized = readingOrder(panels).filter((q) => ids.includes(q.id));
   return (
     <details className="relative" data-terminal="panels">
       <summary className={cx(BUTTON, "cursor-pointer list-none")}><LayoutPanelTop size={16} aria-hidden />Panels</summary>
       <div className="absolute left-0 z-20 mt-space-1 flex items-start gap-space-3 rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
         <fieldset className="w-52 shrink-0 space-y-px">
           <legend className="sr-only">Show panels</legend>
-          {CHOOSER_PANEL_IDS.map((id) => (
+          {ids.map((id) => (
             <label key={id} className="flex min-h-9 cursor-pointer items-center gap-space-2 rounded-control px-space-2 text-t14 text-fg hover:bg-surface-2">
               <input type="checkbox" checked={open.has(id)} onChange={(e) => onToggle(id, e.target.checked)} data-panel-toggle={id}
                 disabled={open.has(id) && open.size <= 1} className="h-4 w-4 accent-brand" />

@@ -376,8 +376,8 @@ TERMINAL_MAX_HEIGHT = 32
 TERMINAL_LAYOUT_ID = r"^[a-z0-9]{4,16}$"
 TERMINAL_LAYOUT_NAME = r"^[A-Za-z0-9][A-Za-z0-9 &()+\-/.,:']{0,39}$"
 TerminalPreset = Literal["option_seller", "quick_trade", "multi_chart"]
-TerminalPanelId = Literal["chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"]
-TERMINAL_PANEL_IDS: Tuple[str, ...] = ("chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket",
+TerminalPanelId = Literal["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"]
+TERMINAL_PANEL_IDS: Tuple[str, ...] = ("watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket",
                                        "bots", "payoff")
 TERMINAL_UNDERLYING = r"^[A-Z0-9&_\- ]{1,30}$"
 

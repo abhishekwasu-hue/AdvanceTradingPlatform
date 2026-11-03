@@ -64,9 +64,11 @@ describe("layout model: presets", () => {
     }
     const open = (id: (typeof PRESET_IDS)[number]) => presetLayout(id).panels.filter((p) => p.open).map((p) => p.id);
     // TERM-2 step 3: chart | chain | basket, and chain | order - each above the one bottom panel (positions & orders).
-    expect(open("option_seller")).toEqual(["chart-1", "chain", "basket", "positions"]);
-    expect(open("quick_trade")).toEqual(["chain", "order", "positions"]);
-    expect(open("multi_chart")).toEqual(["chart-1", "chart-2", "chart-3", "chart-4", "positions"]);
+    // UX-3 (PR 8): the watchlist docked left and open in every preset.
+    expect(open("option_seller")).toEqual(["watchlist", "chart-1", "chain", "positions", "basket"]);
+    expect(open("quick_trade")).toEqual(["watchlist", "chain", "order", "positions"]);
+    expect(open("multi_chart")).toEqual(["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "positions"]);
+    for (const id of PRESET_IDS) expect(presetLayout(id).panels.find((p) => p.id === "watchlist"), id).toMatchObject({ x: 0, y: 0, open: true });
   });
 
   it("a preset is a fresh copy every time (editing one never changes the preset)", () => {
@@ -89,7 +91,7 @@ describe("layout model: move, resize, open, close", () => {
   });
 
   it("a resize keeps the panel's minimum and refuses an overlap", () => {
-    expect(resizePanel(seller(), "chart-1", 5, 11)).toBeNull();                    // into the chain
+    expect(resizePanel(seller(), "chart-1", 6, 12)).toBeNull();                    // into the chain
     const small = resizePanel(seller(), "chart-1", 1, 1);
     expect(small?.find((p) => p.id === "chart-1")).toMatchObject({ w: PANELS["chart-1"].minW, h: PANELS["chart-1"].minH });
   });
@@ -98,19 +100,19 @@ describe("layout model: move, resize, open, close", () => {
     // A closed panel reopens at its last place ("bots" / "payoff" are hidden until T2/T3, so "basket" closed first).
     const opened = openPanel(closePanel(seller(), "basket"), "basket");
     expect(layoutProblem(opened)).toBeNull();
-    expect(opened.find((p) => p.id === "basket")).toMatchObject({ open: true, x: 9, y: 0 });
+    expect(opened.find((p) => p.id === "basket")).toMatchObject({ open: true, x: 9, y: 12 });
     const chart2 = openPanel(seller(), "chart-2");                                // never in the preset: added at a free place
     expect(chart2.find((p) => p.id === "chart-2")).toMatchObject({ open: true });
     expect(layoutProblem(chart2)).toBeNull();
     const closed = closePanel(seller(), "chain");
-    expect(closed.find((p) => p.id === "chain")).toMatchObject({ open: false, x: 4, y: 0 });
+    expect(closed.find((p) => p.id === "chain")).toMatchObject({ open: false, x: 7, y: 0 });
     const one = [{ id: "chart-1" as const, x: 0, y: 0, w: 6, h: 6, open: true }];
     expect(closePanel(one, "chart-1")[0].open).toBe(true);
     expect(firstFree(seller(), 12, 6)).toEqual({ x: 0, y: 20 });
   });
 
   it("reading order is top to bottom, then left to right", () => {
-    expect(readingOrder(seller()).map((p) => p.id)).toEqual(["chart-1", "chain", "basket", "positions"]);
+    expect(readingOrder(seller()).map((p) => p.id)).toEqual(["watchlist", "chart-1", "chain", "positions", "basket"]);
   });
 });
 
@@ -356,7 +358,7 @@ describe("navigation behind the `terminal` flag (TT-18)", () => {
   });
 
   it("every panel has a label; ids match the server's allow-list order", () => {
-    expect(PANEL_IDS).toEqual(["chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"]);
+    expect(PANEL_IDS).toEqual(["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"]);
     for (const id of PANEL_IDS) expect(PANELS[id].label).toMatch(/^[A-Z]/);
   });
 });

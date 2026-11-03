@@ -20,7 +20,7 @@ import { useMediaQuery } from "../utils/useMediaQuery";
 import { defaultTerminalApi, type TerminalApi } from "./api";
 import {
   CHOOSER_PANEL_IDS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, UNDERLYINGS, activeKey, changed, closePanel,
-  isPreset, layoutFor, nameProblem, openPanel, remove, rename, resetToPreset, saveAs, saveOver, switchTo,
+  isPreset, layoutFor, nameProblem, openPanel, remove, rename, resetToPreset, saveAs, saveOver, switchTo, withoutWatchlist,
   type Layout, type PanelId, type PanelPlace, type PhoneTab, type TerminalPrefs,
 } from "./layoutModel";
 import {
@@ -134,7 +134,9 @@ export default function TerminalClassicV2({ terminal = defaultTerminalApi }: Pag
   const [ticket, setTicket] = useState<{ target: TicketTarget; side: Side } | null>(null);
   const confirmBox = useConfirm();   // UI-28 U3.3: the in-app confirm (never the browser's)
 
-  const openIds = useMemo(() => new Set(working.panels.filter((x) => x.open).map((x) => x.id)), [working.panels]);
+  // UX-3: the watchlist panel belongs to the current Terminal only; here it reads closed and its columns go to its neighbour.
+  const shownPanels = useMemo(() => withoutWatchlist(working.panels), [working.panels]);
+  const openIds = useMemo(() => new Set(shownPanels.filter((x) => x.open).map((x) => x.id)), [shownPanels]);
   const wants = (id: PanelId, phoneTab: PhoneTab) => (narrow ? tab === phoneTab : openIds.has(id));
   const chainWanted = wants("chain", "chain") || wants("order", "order") || openIds.has("chain");
 
@@ -255,7 +257,7 @@ export default function TerminalClassicV2({ terminal = defaultTerminalApi }: Pag
               options={[...PRESET_IDS.map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
                 ...(count > 0 ? Object.entries(prefs.layouts).map(([id, l]) => ({ value: id, label: l.name, group: "Your layouts" })) : [])]} />
           </div>
-          {!narrow && <PanelsMenu panels={working.panels} onToggle={(id, on) => setPanels(on ? openPanel(working.panels, id) : closePanel(working.panels, id))} />}
+          {!narrow && <PanelsMenu panels={shownPanels} onToggle={(id, on) => setPanels(on ? openPanel(shownPanels, id) : closePanel(shownPanels, id))} />}
           <button type="button" className={BUTTON} onClick={save} disabled={L.busy || (!!own && !dirty)} data-terminal="save">
             <Save size={16} aria-hidden />{own ? "Save" : "Save as mine"}
           </button>
@@ -309,7 +311,7 @@ export default function TerminalClassicV2({ terminal = defaultTerminalApi }: Pag
         </div>
       ) : (
         <div data-tour="terminal-panels">
-          <TerminalGridV2 panels={working.panels} preset={working.preset} onChange={setPanels} onClose={(id) => setPanels(closePanel(working.panels, id))}
+          <TerminalGridV2 panels={shownPanels} preset={working.preset} ready={withoutWatchlist(PRESETS[working.preset].panels)} onChange={setPanels} onClose={(id) => setPanels(closePanel(shownPanels, id))}
             render={(place) => panel(place.id, place)} title={title} />
         </div>
       )}
@@ -330,7 +332,7 @@ function PanelsMenu({ panels, onToggle }: { panels: readonly PanelPlace[]; onTog
       <summary className={cx(BUTTON, "cursor-pointer list-none")}><LayoutPanelTop size={16} aria-hidden />Panels</summary>
       <fieldset className="absolute left-0 z-20 mt-space-1 w-60 space-y-px rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
         <legend className="sr-only">Show panels</legend>
-        {CHOOSER_PANEL_IDS.map((id) => (
+        {CHOOSER_PANEL_IDS.filter((id) => id !== "watchlist").map((id) => (
           <label key={id} className="flex min-h-9 cursor-pointer items-center gap-space-2 rounded-control px-space-2 text-t14 text-fg hover:bg-surface-2">
             <input type="checkbox" checked={open.has(id)} onChange={(e) => onToggle(id, e.target.checked)} data-panel-toggle={id}
               disabled={open.has(id) && open.size <= 1} className="h-4 w-4 accent-brand" />

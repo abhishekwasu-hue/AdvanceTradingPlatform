@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { orderGroup, statusWords, terminalApi, type TerminalStatus } from "./api";
 import {
   CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_PRESET, EMPTY_PREFS, MAX_LAYOUTS, HIDDEN_PANELS, PANELS, PANEL_IDS, PHONE_TABS, PRESETS, PRESET_IDS, activeKey, changed, closePanel,
-  firstFree, forSave, layoutFor, layoutProblem, movePanel, nameProblem, openPanel, presetLayout, readPrefs, readingOrder, remove, rename,
+  firstFree, forSave, layoutFor, layoutProblem, liftedY, movePanel, nameProblem, openPanel, presetLayout, readPrefs, readingOrder, remove, rename,
   resetToPreset, resizePanel, saveAs, saveOver, switchTo, type Layout, type TerminalPrefs,
 } from "./layoutModel";
 import { BasketPanelBodyV2, BotsViewV2, ChainPanelV2, OrdersPanelV2, PAYOFF_NEEDS_SPOT, PayoffViewV2, chainProblem, exitAllConfirmText, exitAllConsequence, exitAllPlan, legFigures } from "./PanelsV2";
@@ -97,6 +97,23 @@ describe("layout model: move, resize, open, close", () => {
     expect(resizePanel(seller(), "chart-1", 6, 12)).toBeNull();                    // into the chain
     const small = resizePanel(seller(), "chart-1", 1, 1);
     expect(small?.find((p) => p.id === "chart-1")).toMatchObject({ w: PANELS["chart-1"].minW, h: PANELS["chart-1"].minH });
+  });
+
+  it("M63 review: a panel opened from the menu sits directly under the lowest open panel, in its own columns - no empty band", () => {
+    const base = seller();
+    const bottom = Math.max(...base.filter((p) => p.open).map((p) => p.y + p.h));          // Positions & orders ends here
+    const both = openPanel(openPanel(base, "bots"), "payoff");
+    expect(layoutProblem(both)).toBeNull();
+    expect(both.find((p) => p.id === "bots")).toMatchObject({ open: true, x: 0, y: bottom, w: 6 });
+    expect(both.find((p) => p.id === "payoff")).toMatchObject({ open: true, x: 6, y: bottom, w: 6 });   // side by side
+    for (const p of base.filter((q) => q.open)) expect(both.find((q) => q.id === p.id)).toEqual(p);   // the open ones never move
+    // A stored place that overlaps an open panel: directly under the lowest one, full width when its columns do not fit.
+    const blocked = base.map((p) => (p.id === "bots" ? { ...p, x: 0, y: 4, w: 12 } : p));
+    expect(openPanel(blocked, "bots").find((p) => p.id === "bots")).toMatchObject({ open: true, x: 0, y: bottom, w: 12 });
+    // A panel never placed before (no stored place): under the lowest open panel at its usual size.
+    const noBots = base.filter((p) => p.id !== "bots");
+    expect(openPanel(noBots, "bots").find((p) => p.id === "bots")).toMatchObject({ open: true, x: 0, y: bottom });
+    expect(liftedY(base, { id: "bots", x: 0, y: 31, w: 6, h: 6, open: false })).toBe(bottom);
   });
 
   it("opening a closed panel finds a free place; closing keeps its place; the last open panel stays", () => {

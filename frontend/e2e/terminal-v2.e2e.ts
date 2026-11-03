@@ -804,6 +804,16 @@ test.describe("v2 terminal M63 I-5 panels 1440", () => {
       const bots = page.locator("[data-panel='bots']");
       await expectPayoff(payoff);
       await expectBots(bots);
+      // M63 review: no empty band - both sit directly under Positions & orders, at most one grid gutter below it.
+      const gutter = await page.locator("[data-terminal-grid]").evaluate((g) => parseFloat(getComputedStyle(g).rowGap) || 0);
+      const above = await page.locator("[data-panel='positions']").boundingBox();
+      for (const p of [payoff, bots]) {
+        const box = await p.boundingBox();
+        expect(above && box).toBeTruthy();
+        const gap = (box?.y ?? 0) - ((above?.y ?? 0) + (above?.height ?? 0));
+        expect(gap).toBeGreaterThanOrEqual(0);
+        expect(gap).toBeLessThanOrEqual(gutter + 1);
+      }
       // The two new panels fit the text budget. (The Basket panel with two legs reads three visible lines today - not
       // part of this item; the budget test above checks the empty default layout.)
       expect((await textBudgetProblems(page)).filter((p) => !p.startsWith("Basket:"))).toEqual([]);

@@ -18,7 +18,9 @@ const STATE: Record<string, GlossaryKey> = { fresh: "area-fresh", tested: "area-
 export function teachArea(a: AnnotationArea): Teach {
   const side = glossary(a.side === "buyer" ? "buyer-area" : "seller-area");
   const stateKey = a.state ? STATE[a.state] : undefined;
-  const state = a.state_words ? `${stateKey ? glossary(stateKey).term : "State"}: ${a.state_words}` : stateKey ? glossary(stateKey).definition : null;
+  // The reading's own words, unless they only repeat the state's name ("tested") - then the glossary's meaning of it.
+  const words = a.state_words && a.state_words.trim().toLowerCase() !== (a.state ?? "").toLowerCase() ? a.state_words : null;
+  const state = words ? `${stateKey ? glossary(stateKey).term : "State"}: ${words}` : stateKey ? glossary(stateKey).definition : null;
   return { kind: "area", title: `${annotationAreaLabel(a)} · ${a.low_text} - ${a.high_text}`, meaning: side.definition, state };
 }
 

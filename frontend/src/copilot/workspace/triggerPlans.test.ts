@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+import cardSource from "./DryRunCardV2.tsx?raw";
+import { DryRunCardV2 } from "./DryRunCardV2";
 import plansSource from "./TriggerPlansV2.tsx?raw";
 import { EMPTY_EXITS, legOf } from "./plan";
 import {
-  EMPTY_TRIGGER, READ_TIMEFRAMES, areaChoices, conditionRequest, conditionText, istInstant, planRequest, statusTone, triggerMissing,
-  type PlanArea, type PlanView, type TriggerDraft,
+  EMPTY_TRIGGER, MAX_DRY_SESSIONS, READ_TIMEFRAMES, areaChoices, conditionRequest, conditionText, dryLines, dryMissing, dryOrderLine,
+  dryRunRequest, drySessions, dryTone, istInstant, planRequest, statusTone, triggerMissing,
+  type DryRow, type DryRunView, type PlanArea, type PlanView, type TriggerDraft,
 } from "./triggerPlans";
 
 /**
@@ -88,5 +92,67 @@ describe("W-9: method conditions are his own", () => {
     const view = { underlying: "NIFTY", condition_words: "NIFTY: break of structure up on the 15-minute chart", condition: { side: "ABOVE", level: 0 } } as unknown as PlanView;
     expect(conditionText(view)).toBe("NIFTY: break of structure up on the 15-minute chart");
     expect(plansSource).toContain('data-trigger="no-areas"');
+  });
+});
+
+/**
+ * M76 MP-12 (owner order M76 D-2): the dry run - his N (Not set until he types it, bounded as the server), only his
+ * condition needed, his legs sent once the order fields are set, ONE compact card (triggered sessions first, at most three
+ * lines visible, the rest behind More) and no action on it: the form never reaches an order route.
+ * backend/tests/test_m76_mp12_dry_run.py proves the server: nothing written or sent, no look-ahead, the live evaluator.
+ */
+const row = (session: string, state: DryRow["state"], at: string | null = null): DryRow => ({
+  session, state, state_words: state === "TRIGGERED" ? "Would have triggered" : "Not met", armed_at: `${session}T00:00:00+05:30`, at,
+  price: at ? 24701.5 : null, source: "bars", source_words: "the stored one-minute candles", words: "", candles: 10,
+});
+const VIEW: DryRunView = {
+  dry_run: true, placed: 0, condition_words: "NIFTY above 24700 (on a touch)", timeframe: "1m", sessions_asked: 5,
+  sessions: [row("2026-10-26", "NOT_MET"), row("2026-10-27", "TRIGGERED", "2026-10-27T04:00:00+00:00"), row("2026-10-28", "NOT_MET"),
+    row("2026-10-29", "TRIGGERED", "2026-10-29T05:00:00+00:00"), row("2026-10-30", "NOT_MET")],
+  triggered: 2, reads: 0, cut: false, note: null, once: "A plan fires once.",
+  on_trigger: { choice: "AUTO", ask_first: false, words: "Would place at once.", orders: [
+    { label: "NIFTY 24700 CE", side: "BUY", lots: 2, fill_price: 80, can_place: true, errors: [], refusals: [], warnings: ["This contract expires today."] }] },
+};
+
+describe("MP-12: the dry run", () => {
+  it("N is his own: Not set until typed, a whole number within the server's bound", () => {
+    expect(drySessions("")).toBeNull();
+    expect(drySessions("0")).toBeNull();
+    expect(drySessions("2.5")).toBeNull();
+    expect(drySessions(String(MAX_DRY_SESSIONS + 1))).toBeNull();
+    expect(drySessions("5")).toBe(5);
+  });
+  it("needs only his condition and N - no leg, validity, order type or product", () => {
+    expect(dryMissing(EMPTY_TRIGGER, "")).toEqual(["What the plan watches", "Sessions"]);
+    expect(dryMissing({ ...EMPTY_TRIGGER, kind: "PRICE", level: "24700", side: "ABOVE", mode: "TOUCH" }, "3")).toEqual([]);
+    expect(dryMissing({ ...EMPTY_TRIGGER, kind: "STRUCTURE" }, "3")).toEqual(["BOS or CHoCH", "Up or down", "Candle timeframe"]);
+  });
+  it("the request carries his condition, his legs once the order fields are set, and his own choice", () => {
+    const bare = dryRunRequest("NIFTY 50", { ...FULL, orderType: null }, [LEG], EMPTY_EXITS, 3);
+    expect(bare).toEqual({ sessions: 3, underlying: "NIFTY 50", condition: conditionRequest(FULL), orders: [], approval: null });
+    const full = dryRunRequest("NIFTY 50", { ...FULL, validUntil: "" }, [LEG], EMPTY_EXITS, 3);
+    expect(full.orders).toEqual(planRequest("NIFTY 50", FULL, [LEG], EMPTY_EXITS, "x").orders);
+    expect(full).not.toHaveProperty("client_ref");
+    expect(full).not.toHaveProperty("valid_until");
+  });
+  it("one compact card: triggered sessions first, three lines visible, the rest behind More; colour by meaning", () => {
+    expect(dryLines(VIEW).map((r) => r.session)).toEqual(["2026-10-29", "2026-10-27", "2026-10-30", "2026-10-28", "2026-10-26"]);
+    expect([dryTone("TRIGGERED"), dryTone("NOT_MET"), dryTone("NO_READING")]).toEqual(["up", "muted", "warn"]);
+    const html = renderToStaticMarkup(DryRunCardV2({ view: VIEW }));
+    expect(html.match(/data-trigger="dry-card"/g)).toHaveLength(1);
+    expect(html).toContain("2 would have triggered");
+    expect(html).toContain("Nothing placed (PAPER)");
+    expect(html).toContain('data-details="copilot.trigger.dry"');
+    expect(html.indexOf("Would have triggered")).toBeLessThan(html.indexOf("Not met"));
+  });
+  it("an order line is the ticket's own first refusal, else Ready with its warning count", () => {
+    expect(dryOrderLine(VIEW.on_trigger!.orders[0])).toEqual({ ok: true, text: "Ready · 1 warning" });
+    expect(dryOrderLine({ ...VIEW.on_trigger!.orders[0], can_place: false, refusals: ["Entries are paused."] })).toEqual({ ok: false, text: "Entries are paused." });
+  });
+  it("the card has no action and the form calls only the plan routes", () => {
+    expect(cardSource).not.toContain("<button");
+    expect(cardSource).not.toContain("request(");
+    expect(plansSource).toContain('"/trigger-plans/dry-run"');
+    for (const route of ["/paper/fno/order", "/paper/ticket", "fnoApi", "basketApi"]) expect(cardSource + plansSource).not.toContain(route);
   });
 });

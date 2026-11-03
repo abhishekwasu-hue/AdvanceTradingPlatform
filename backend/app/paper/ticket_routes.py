@@ -38,7 +38,7 @@ class PlanBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     symbol: str = Field(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9&._\- ]+$")
     direction: Literal["LONG", "SHORT"]
-    setup: Literal["PULLBACK_AT_LEVEL", "SR_FLIP", "BREAKOUT_RETEST", "RANGE_EDGE", "OI_IV", "OTHER"]
+    setup: str = Field(default="", max_length=ticket.SETUP_MAX_CHARS)   # M76-4: his own words (none = an information line)
     entry: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     stop_loss: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     target: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)

@@ -73,3 +73,14 @@ describe("L-2 teach-on-chart", () => {
     expect(workspaceSource).toContain("<TeachV2 engine={engine} annotations={annotations} />");
   });
 });
+
+describe("M76 MP-14 teach-on-chart: no repeated state", () => {
+  it("state words that only repeat the state's name give the glossary meaning instead", async () => {
+    const { teachArea } = await import("./teach");
+    const base = { side: "buyer", low_text: "24,000.00", high_text: "24,060.00", timeframe: "15m", state: "tested" } as never;
+    const t = teachArea({ ...(base as object), state_words: "tested" } as never);
+    expect(t.state ?? "").not.toMatch(/:\s*tested$/i);
+    const own = teachArea({ ...(base as object), state_words: "tested twice, held" } as never);
+    expect(own.state).toMatch(/tested twice, held/);
+  });
+});

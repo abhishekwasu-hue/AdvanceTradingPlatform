@@ -495,6 +495,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/trigger-plans"): "member: M75 W-8 - the caller's own trigger plans only (trigger_plans.list_for_user: tenant and user)",
     ("POST", "/api/trigger-plans"): "trader: M75 W-8 - creates a plan owned by the caller in his own organisation",
     ("PUT", "/api/trigger-plans/{plan_id}"): "trader: M75 W-8 - edits one of the caller's own plans (trigger_plans.own: tenant and user); another member's reads as not found",
+    ("POST", "/api/trigger-plans/dry-run"): "trader: M76 MP-12 - a read-only dry run of the caller's own saved plan (trigger_plans.own: tenant and user) or of his draft; writes nothing (rolled back)",
     ("POST", "/api/trigger-plans/{plan_id}/{action}"): "trader: M75 W-8 - pause / resume / cancel one of the caller's own plans (trigger_plans.own); another member's reads as not found",
     ("DELETE", "/api/studies/{study_id}"): S_OWN_STUDIES,
     ("GET", "/api/charts/read"): "member: the caller's organisation's stored zones and his own private bars only (else the shared lake); read-only (AUD-T5)",

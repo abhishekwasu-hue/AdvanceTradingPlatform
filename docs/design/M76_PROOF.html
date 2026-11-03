@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M76 workspace proof</title>
+<!-- M76 MP-15 (owner order M76 F): proof of the Copilot workspace facilities (MP-0..MP-14, flag copilot_workspace / trade_warnings). Every reply is made up (mocked API); no real account, price or id. Specs: e2e/m76-proof-v2.e2e.ts (MP15_SHOTS), check-card-v2 / check-card-structure-v2 / ticket-metrics-baseline-v2 (TICKET_SHOTS_DIR, TICKET_METRICS_OUT), copilot-plan-v2 (W6_OUT), journal-v2 (JOURNAL_SHOTS). -->
+<style>
+:root { color-scheme: light; --bg: 247 248 250; --fg: 15 23 42; --muted: 91 100 117; --line: 227 230 235; --up: 10 125 85; --down: 210 44 61; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; } }
+:root[data-theme="dark"] { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; }
+body { margin: 0; padding: 16px; background: rgb(var(--bg)); color: rgb(var(--fg)); font: 14px/1.45 system-ui, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 28px 0 6px; } h3 { font-size: 14px; margin: 14px 0 6px; }
+p, li { color: rgb(var(--muted)); }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+.scroll { overflow-x: auto; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgb(var(--line)); vertical-align: top; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+.bad { color: rgb(var(--down)); font-weight: 600; } .good { color: rgb(var(--up)); font-weight: 600; }
+.phones { display: grid; grid-template-columns: repeat(2, minmax(0, 390px)); gap: 12px; }
+.desk { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
+.pages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+figure { margin: 0; min-width: 0; } figcaption { font-size: 12px; color: rgb(var(--muted)); margin-bottom: 4px; }
+img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-radius: 6px; display: block; }
+nav a { color: inherit; }
+@media (max-width: 640px) { .phones, .pages { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>M76: Copilot workspace facilities - proof</h1>
+<p>Phone 390 and desktop 1440, light and dark. Made-up data only. Every facility informs or prepares; nothing here places,
+holds back or changes an order by itself, and no exit gets an extra step. The specs assert that no order route is called
+while a facility is only looked at.</p>
+<nav><p><a href="#metrics">Metrics</a> · <a href="#card">Check card</a> · <a href="#risk">Risk preview</a> ·
+<a href="#whatif">What-if</a> · <a href="#events">Events</a> · <a href="#helpers">Plan helpers</a> · <a href="#fills">Part fills</a> ·
+<a href="#positions">Position cards</a> · <a href="#watch">Watch cards</a> · <a href="#summary">Close summary</a> ·
+<a href="#recall">Similar setups / teach</a> · <a href="#journal">Journal</a> · <a href="#open">Open items</a></p></nav>
+<div class="scroll"><table><thead><tr><th>Item</th><th>Order part</th><th>Shown below</th></tr></thead><tbody>
+<tr><td>MP-0 / MP-2 / MP-3</td><td>W-1, W-2, A (one check card, structure lines)</td><td>before / after review step; card; structure card; metrics</td></tr>
+<tr><td>MP-4</td><td>W-3 risk preview</td><td>risk preview under the plan</td></tr>
+<tr><td>MP-5</td><td>W-4 accepted warnings in the journal</td><td>weekly review card</td></tr>
+<tr><td>MP-6</td><td>S-1 / S-2 what-if, P&amp;L at the next areas</td><td>payoff with the scenario, what-if panel</td></tr>
+<tr><td>MP-7</td><td>S-3 events</td><td>dated chips under the chart (his own event marked); the check card's event line (flow B)</td></tr>
+<tr><td>MP-8</td><td>E-1 helpers</td><td>"Change the plan" after Mirror</td></tr>
+<tr><td>MP-9</td><td>E-2 part fills + re-price</td><td>incomplete order card with the new last price</td></tr>
+<tr><td>MP-10</td><td>E-3 / E-4 position cards, one-tap exits</td><td>basket + single position cards</td></tr>
+<tr><td>MP-11</td><td>D-1 watch cards</td><td>set-up in place; a raised card in Notifications with Open here</td></tr>
+<tr><td>MP-12</td><td>D-2 trigger-plan dry run</td><td class="bad">not built yet (not in MP-7..MP-14) - no picture</td></tr>
+<tr><td>MP-13</td><td>D-3 close summary</td><td>"So far today" card</td></tr>
+<tr><td>MP-14</td><td>L-1 similar setups, L-2 teach-on-chart</td><td>both, beside the chart</td></tr>
+</tbody></table></div>
+
+<h2 id="metrics">Metrics before / after (MP-0 baseline vs the one card)</h2>
+<div class='scroll'><table><thead><tr><th>Flow (phone 390)</th><th class='n'>Warning surfaces</th><th class='n'>Lines</th><th class='n'>Lines visible</th><th class='n'>Open to Place, ms (median)</th><th class='n'>Review to Place, ms (median)</th><th class='n'>Runs</th></tr></thead><tbody><tr><td>A - option chain ticket, nothing to warn about</td><td class='n'>0 / 0</td><td class='n'>0 / 0</td><td class='n'>0 / 0</td><td class='n'>478 / 561</td><td class='n'>104 / 159</td><td class='n'>3 / 3</td></tr>
+<tr><td>B - option chain ticket with warning texts</td><td class='n'>2 / 1</td><td class='n'>3 / 3</td><td class='n'>3 / 3</td><td class='n'>482 / 647</td><td class='n'>175 / 218</td><td class='n'>3 / 3</td></tr>
+<tr><td>C - refused at 5 lots, Back, 4 lots, Place</td><td class='n'>0 / 0</td><td class='n'>0 / 0</td><td class='n'>0 / 0</td><td class='n'>737 / 762</td><td class='n'>79 / 92</td><td class='n'>3 / 3</td></tr>
+<tr><td>D - basket (bull put spread)</td><td class='n'>0 / 0</td><td class='n'>0 / 0</td><td class='n'>0 / 0</td><td class='n'>425 / 417</td><td class='n'>116 / 102</td><td class='n'>3 / 3</td></tr></tbody></table></div><p>Each cell: before (MP-0 baseline, today's ticket: e2e/ticket-metrics-baseline-v2.e2e.ts) / after (the one check card: e2e/check-card-v2.e2e.ts), the same four flows, every reply made up (mocked API). The times are the browser's own cost on this container, not the real site: the site's check-call p50 / p95 come from the route histogram after deploy. Place was never held back in any run (outcome: placed).</p>
+<h2 id="card">Check card on the ticket (MP-0 before, MP-2 / MP-3 after)</h2>
+<h3>Before: the review step with today's separate warning texts</h3><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/review-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/review-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/review-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/review-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h3>After: one check card (fact lines, Accept and continue = Place, Edit)</h3><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/card-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/card-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/card-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/card-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h3>After: structure lines from the reading (W-1)</h3><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/structure-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/structure-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/structure-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/structure-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2 id="risk">Risk preview (MP-4)</h2><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/mp4-risk-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/mp4-risk-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/mp4-risk-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/mp4-risk-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2 id="whatif">What-if (MP-6)</h2><h3>Payoff with the scenario line</h3><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/mp6-payoff-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/mp6-payoff-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/mp6-payoff-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/mp6-payoff-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div><h3>What-if panel: his shifts, P&amp;L at the next areas, a saved scenario</h3><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/mp6-whatif-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/mp6-whatif-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/mp6-whatif-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/mp6-whatif-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2 id="events">Events under the chart (MP-7)</h2><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/events-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/events-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/events-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/events-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2 id="helpers">Plan helpers (MP-8): prepare the plan only</h2><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/helpers-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/helpers-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/helpers-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/helpers-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2 id="fills">Part fills and the re-price helper (MP-9)</h2><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/part-fills-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/part-fills-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/part-fills-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/part-fills-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2 id="positions">Position cards and one-tap exits (MP-10)</h2><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/positions-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/positions-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/positions-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/positions-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2 id="watch">Watch cards (MP-11)</h2><h3>Set up in place (his numbers; nothing pre-set)</h3><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/watch-setup-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/watch-setup-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/watch-setup-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/watch-setup-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div><h3>A raised card in Notifications, with Open here (opens the workspace in place)</h3><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/watch-card-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/watch-card-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/watch-card-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/watch-card-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2 id="summary">Close summary (MP-13)</h2><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/close-summary-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/close-summary-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/close-summary-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/close-summary-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2 id="recall">Similar past setups and teach-on-chart (MP-14)</h2><h3>Similar past setups</h3><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/similar-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/similar-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/similar-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/similar-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div><h3>Teach-on-chart: a tap on an area</h3><div class="phones">
+<figure><figcaption>Phone 390 - light</figcaption><img src="m76/teach-390-light.png" alt="Phone 390 - light" loading="lazy"></figure>
+<figure><figcaption>Phone 390 - dark</figcaption><img src="m76/teach-390-dark.png" alt="Phone 390 - dark" loading="lazy"></figure>
+</div>
+<div class="desk">
+<figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/teach-1440-light.png" alt="Desktop 1440 - light" loading="lazy"></figure>
+<figure><figcaption>Desktop 1440 - dark</figcaption><img src="m76/teach-1440-dark.png" alt="Desktop 1440 - dark" loading="lazy"></figure>
+</div>
+<h2 id="journal">Accepted warnings in the weekly review (MP-5, light)</h2><div class="phones"><figure><figcaption>Phone 390 - light</figcaption><img src="m76/accepted-review-390.png" alt="Phone 390 - light" loading="lazy"></figure></div><div class="desk"><figure><figcaption>Desktop 1440 - light</figcaption><img src="m76/accepted-review-1440.png" alt="Desktop 1440 - light" loading="lazy"></figure></div>
+<h2 id="open">Seen in these pictures - open items</h2>
+<ul>
+<li>MP-12 (trigger-plan dry run, D-2) is not built yet, so it has no picture.</li>
+<li>Waiting orders inside the position cards (phone 390): the order line wraps into a narrow column beside Waiting / Modify /
+Cancel (the shared WaitingOrdersV2 row, also used on Positions and the Terminal).</li>
+<li>Teach-on-chart on an area repeats its state ("Tested area: tested").</li>
+<li>Outside M76, lower on the same Copilot page at 390: Market pulse's PAPER / LIVE switch (24 px high) and the thesis Symbol
+picker (36 px) are under the 44 px touch size; the M76 spec checks the M76 parts only.</li>
+</ul>
+
+</main>
+</body>
+</html>

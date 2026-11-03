@@ -37,7 +37,7 @@ export const PORTFOLIO_RISK_EN = {
     betaUnknown: "Beta unknown (counted as 1): {{names}}",
     notWeighted: "Options and structures are not beta-weighted: {{names}}",
     atEntry: "Valued at the entry price (no mark yet): {{names}}",
-    oneSided: "One-sided book",
+    oneSided: "Direction",            // M76-3: a count only (information, no judgement)
   },
   footer: "Numbers of your own PAPER book, for your own decision. Not a recommendation; nothing here places or closes an order.",
 } as const;

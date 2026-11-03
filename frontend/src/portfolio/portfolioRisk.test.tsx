@@ -72,8 +72,10 @@ describe("the card (server sample)", () => {
   });
 
   it("shows the one-sided warning and an empty book", () => {
-    const warned = { ...view, direction: { ...view.direction, warning: "All 3 directional positions are bullish: one large move against them hits them together (correlated risk, no diversification)." } };
+    const warned = { ...view, direction: { ...view.direction, warning: "All 3 directional positions are bullish." } };
     expect(renderToStaticMarkup(<PortfolioRiskView view={warned} />)).toContain('data-testid="one-sided"');
+    // M76-3 (owner-approved): a count only, information tone, no judgement clause.
+    expect(renderToStaticMarkup(<PortfolioRiskView view={warned} />)).toContain('class="text-xs text-fg-muted" data-testid="one-sided"');
     expect(text(renderToStaticMarkup(<PortfolioRiskView view={{ ...view, positions: 0, buckets: [], limits: null }} />))).toContain("No open PAPER positions.");
   });
 

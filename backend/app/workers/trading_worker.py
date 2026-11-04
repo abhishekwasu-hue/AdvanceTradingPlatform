@@ -330,6 +330,7 @@ class TradingWorker:
         self._then_warm_task: Optional["asyncio.Task[None]"] = None
         # M66 EN-3a: the signal engine runner (signals only) as one background task per worker, its own session.
         self._engine_task: Optional[asyncio.Task[None]] = None
+        self._preopen_task: Optional[asyncio.Task[None]] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
@@ -431,6 +432,8 @@ class TradingWorker:
             self._vision_task.cancel()               # BYOK-V2: a claimed row is closed as "interrupted" by the next drain
         if self._engine_task is not None and not self._engine_task.done():
             self._engine_task.cancel()               # M66 EN-3a: an unfinished bar is retried within its grace window
+        if self._preopen_task is not None and not self._preopen_task.done():
+            self._preopen_task.cancel()              # the day's claimed row stays "running"; the next day sends again
         if self._breakout_fitness_task is not None and not self._breakout_fitness_task.done():
             self._breakout_fitness_task.cancel()     # U6 BK5: resumable - stored templates are skipped next time
 
@@ -660,6 +663,8 @@ class TradingWorker:
                 # M66 EN-3a (flag trade_engine, owner only): the private signal engine on each closed signal-timeframe bar
                 # (+ a small delay), signals only, into the signals table - a background task with its own session.
                 self._spawn_engine_runner(now)
+                # Pre-open charts (owner 4 Nov, flag preopen_charts, owner only): once a trading day inside the send window.
+                self._spawn_preopen_charts(now)
                 # PW5: snoozed proposals whose time is up are announced once more (in-app, push, Telegram) before the
                 # outbox drain, market open or not - a snooze "until 09:00" must ring at 09:00.
                 try:
@@ -2072,6 +2077,24 @@ class TradingWorker:
             self._engine_task = asyncio.get_running_loop().create_task(run())
         except RuntimeError:
             self._engine_task = None
+
+    def _spawn_preopen_charts(self, now: datetime) -> None:
+        """Pre-open charts (app/workers/preopen_charts.py) as a background task with its own session, one at a time per
+        worker, only inside its send window (no database read outside it). Charts only: no order, no exit."""
+        from app.workers import preopen_charts
+        if preopen_charts.in_window(now) is None or (self._preopen_task is not None and not self._preopen_task.done()):
+            return
+
+        async def run() -> None:
+            try:
+                await preopen_charts.run_due(self.session_factory, now)
+            except Exception:  # noqa: BLE001 - charts only; never reaches trading
+                logger.exception("Pre-open charts failed")
+
+        try:
+            self._preopen_task = asyncio.get_running_loop().create_task(run())
+        except RuntimeError:
+            self._preopen_task = None
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own

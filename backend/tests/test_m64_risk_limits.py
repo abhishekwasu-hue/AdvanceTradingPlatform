@@ -243,12 +243,17 @@ def test_a_daily_loss_hit_stops_entries_logs_the_block_and_never_an_exit():
         "daily_loss": {"enabled": True, "values": {"daily_loss_rupees": 1000}}}})
     assert saved.status_code == 200, saved.text
     now = datetime.now(UTC)
+    # The loss belongs to TODAY (IST): just after IST midnight "now - 5 minutes" is yesterday, and yesterday's loss rightly
+    # does not count (CI run 41885048955 at 00:0x IST) - the trade is kept inside today's IST day, asserts unchanged.
+    from zoneinfo import ZoneInfo
+    day_start = datetime.now(ZoneInfo("Asia/Kolkata")).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+    loss_entry, loss_exit = max(now - timedelta(minutes=20), day_start), max(now - timedelta(minutes=5), day_start)
 
     async def seed():
         async with _session_factory() as session:
             session.add(TradeRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode="PAPER", symbol="LOSS1", strategy_id="s", direction="LONG",
-                                    entry_time=now - timedelta(minutes=20), entry_price=100.0, quantity=10, stop_loss=98.0, target1=110.0,
-                                    exit_time=now - timedelta(minutes=5), exit_price=-100.0, exit_reason="Stop Loss", pnl=-2_000.0))
+                                    entry_time=loss_entry, entry_price=100.0, quantity=10, stop_loss=98.0, target1=110.0,
+                                    exit_time=loss_exit, exit_price=-100.0, exit_reason="Stop Loss", pnl=-2_000.0))
             open_trade = TradeRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode="PAPER", symbol="OPEN1", strategy_id="s",
                                      direction="LONG", entry_time=now - timedelta(days=2), entry_price=100.0, quantity=1, stop_loss=98.0,
                                      target1=110.0)

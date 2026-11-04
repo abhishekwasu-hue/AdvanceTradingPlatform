@@ -115,8 +115,33 @@ export function fixtureSharedResult(): AnalysisResult {
   };
 }
 
-/** M59 CR-4: a made-up "Advanced analysis" result - ATP's reading of made-up stored candles for the made-up DEMO 1-hour. */
+/** M59 CR-4 / ADV-2: a made-up "Advanced analysis" result - ATP's reading of made-up candles for the made-up DEMO 1-hour,
+ * with the ADV-2 fields (source, candles read, swings, state, protected %, higher degree, scenarios, what to watch,
+ * distance %). `fixtureHybridOld` is the same result as stored before ADV-2 (none of those fields). */
 export function fixtureHybrid(withAi = true): HybridResult {
+  const old = fixtureHybridOld(withAi);
+  const r = old.reading;
+  return {
+    ...old,
+    reading: {
+      ...r,
+      areas: r.areas.map((a) => ({ ...a, distance_pct: a.distance == null ? null : Math.round(a.distance / 106.2 * 10000) / 100 })),
+      source: "stored+broker", bars_read: 480,
+      swings: [{ label: "LL", price: 99.4, time: r.bars[8].t }, { label: "HH", price: 111.8, time: r.bars[18].t },
+        { label: "HL", price: 101.25, time: r.bars[28].t }, { label: "HH", price: 108.6, time: r.bars[36].t }],
+      state: { phase: "pullback", text: "Up · pullback running" },
+      protected_distance_pct: 4.66,
+      higher_degree: { trend: "sideways", text: "Daily range between 99.40 and 111.80" },
+      scenarios: { main: "The made-up pullback reaches 102.30 – 103.60; a handover there and a commitment candle continue the up structure toward 108.60.",
+        other: "A 1-hour close below 101.25 ends the up structure (change of character); next area 99.40." },
+      watch: [{ when: "Price at 102.30 – 103.60", meaning: "handover · commitment" },
+        { when: "1-hour close below 101.25", meaning: "structure changes" }, { when: "Close above 108.60", meaning: "new HH" }],
+    },
+  };
+}
+
+/** The made-up "Advanced analysis" result as stored before ADV-2: no source, swings, state, scenarios or watch. */
+export function fixtureHybridOld(withAi = true): HybridResult {
   const bars = Array.from({ length: 40 }, (_, i) => {
     const o = 100 + Math.sin(i / 4) * 6 + i * 0.2;
     const c = o + (i % 3 === 0 ? -1.2 : 1.1);

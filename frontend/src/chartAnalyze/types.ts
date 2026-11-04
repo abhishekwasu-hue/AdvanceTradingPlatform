@@ -165,7 +165,11 @@ export interface HybridStatus {
 export type HybridTrend = "up" | "down" | "sideways";
 export interface HybridBreak { label: string; price: number; direction: "up" | "down" | null; time: number | null }
 export interface HybridRow { tf: string; label: string; ready: boolean; trend: HybridTrend | null; weak: boolean; protected: number | null; last_break: HybridBreak | null }
-export interface HybridArea { where: "above" | "below" | "inside"; low: number; high: number; distance: number | null; state: string | null; timeframe: string | null }
+export interface HybridArea { where: "above" | "below" | "inside"; low: number; high: number; distance: number | null; state: string | null; timeframe: string | null;
+  /** ADV-2 B: distance / last close x 100 (2 decimals); absent on results stored before ADV-2. */
+  distance_pct?: number | null }
+export type HybridSource = "stored" | "broker" | "stored+broker";
+export interface HybridSwing { label: "HH" | "HL" | "LH" | "LL" | "H" | "L"; price: number; time: number | null }
 export interface HybridBar { t: number; o: number; h: number; l: number; c: number }
 
 export interface HybridReading {
@@ -183,6 +187,15 @@ export interface HybridReading {
   trigger_candle: (HybridBar & { index: number }) | null;
   zones_note: string | null;
   checklist: { name: string; present: boolean; reason: string }[];
+  /** ADV-2 A / D (docs/design/ADV2_SPEC.md): all optional - results stored before ADV-2 have none of them. */
+  source?: HybridSource | null;
+  bars_read?: number | null;
+  swings?: HybridSwing[] | null;
+  state?: { phase: string; text: string } | null;
+  protected_distance_pct?: number | null;
+  higher_degree?: { trend: HybridTrend | null; text: string } | null;
+  scenarios?: { main: string; other: string } | null;
+  watch?: { when: string; meaning: string }[] | null;
 }
 
 export interface HybridResult {

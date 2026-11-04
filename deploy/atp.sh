@@ -70,6 +70,11 @@
 #                                                  M62 JN-1: creates the missing journal rows of closed trades from the
 #                                                  trade rows (organisations the flag is on for, or only ID); a re-run
 #                                                  creates none. Never changes a flag, a trade or an order
+#   /opt/atp/deploy/atp.sh runner-settings show    The signal engine runner settings (read-only): per organisation the
+#                                                  user's e-mail, the symbols, trade_engine / preopen_charts ON or OFF.
+#   /opt/atp/deploy/atp.sh runner-settings set <e-mail> NIFTY,BANKNIFTY
+#                                                  Stores whose pre-open charts / engine signals and which symbols
+#                                                  (validated; other stored values kept; turns no flag on; no order).
 #   /opt/atp/deploy/atp.sh review-checks           REV-1, read-only: the full review's ten live checks, one line each
 #                                                  (ok | WARN | FAIL name: reason) - byob flag, shared-symbol open trades,
 #                                                  trade rows, AI scan-read order words, risk limits at 0, members per
@@ -3036,6 +3041,20 @@ cmd_journal_backfill() {
 # (backend app/platform/review_checks.py), run in the backend container. One line per check: ok | WARN | FAIL
 # <name>: <reason>. A read-only transaction, SELECTs only - nothing is written, nothing restarts. Counts, organisation
 # ids, flag names and strategy ids only; no personal data, no AI text, no secret.
+cmd_runner_settings() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  case "${1:-}" in
+    show) [ $# -eq 1 ] || die "usage: atp.sh runner-settings show" 2 ;;
+    set)  [ $# -eq 3 ] || die "usage: atp.sh runner-settings set <e-mail> <SYMBOL,SYMBOL,...>" 2
+          [[ "$3" =~ ^[A-Za-z0-9_,\ ]+$ ]] || die "the symbols are names separated by commas (e.g. NIFTY,BANKNIFTY)" 2 ;;
+    *)    die "usage: atp.sh runner-settings show | set <e-mail> <SYMBOL,SYMBOL,...>" 2 ;;
+  esac
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would run runner-settings %s\n' "$1"; return 0; fi
+  check_tools
+  dc exec -T backend python -m app.workers.runner_settings "$@" \
+    || die "the runner settings command did not finish (the line above says why; is the backend running? $ATP_DIR/deploy/atp.sh health)" 1
+}
+
 cmd_review_checks() {
   [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
   [ $# -eq 0 ] || die "usage: atp.sh review-checks" 2
@@ -3101,6 +3120,7 @@ main() {
     journal-status) cmd_journal_status "$@" ;;
     journal-backfill) cmd_journal_backfill "$@" ;;
     review-checks)  cmd_review_checks "$@" ;;
+    runner-settings) cmd_runner_settings "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac

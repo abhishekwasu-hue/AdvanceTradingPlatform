@@ -114,7 +114,7 @@ async def run_tenant(session: Any, cfg: Any, user: User, engine: Any, module: An
     chat, token, reason = await _telegram_target(session, user)
     if chat is None or not token:
         return {"sent": 0, "reason": reason or "no_telegram"}
-    ctx = SimpleNamespace(session=session, user=user, tenant_id=user.tenant_id, now=now)
+    ctx: Any = SimpleNamespace(session=session, user=user, tenant_id=user.tenant_id, now=now)   # the fields build_request reads
     out: dict[str, Any] = {"sent": 0, "symbols": {}}
     try:
         for watch in cfg.symbols:

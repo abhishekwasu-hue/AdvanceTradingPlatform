@@ -30,7 +30,7 @@ import pandas as pd
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chart_analyze import HYBRID_FLAG, contract
+from app.chart_analyze import HYBRID_FLAG, contract, hybrid_depth
 from app.db.models import User
 
 TIMEFRAMES = ("5m", "15m", "1h", "1d")
@@ -56,6 +56,7 @@ MIN_BARS = 30                     # the bars a timeframe's structure needs befor
 PICK_KEY = "_pick"                # the user's own values stored with a hybrid row until its result replaces it (no new column)
 READ_KEY = "_read"                # M84: what the chart showed (as printed and as mapped), once the picture was read
 NEEDS_KEY = "_needs"              # M84: the values still to ask for, each with its exact reason
+SOURCES = ("stored", "broker", "stored+broker")   # ADV-2 A: where a reading's candles came from (`reading.source`)
 BREAK_WORDS = {"BOS": "Swing break", "CHOCH": "Break against the trend", "MSS": "Break against the trend",
                "REVERSAL_CONFIRMED": "Trend turned", "RECOVERY": "Trend recovered"}
 
@@ -175,7 +176,7 @@ def _areas(bands: list[dict[str, Any]], price: float | None) -> list[dict[str, A
             where, distance = "above", round(low - price, 2)
         else:
             where, distance = "below", round(price - high, 2)
-        out.append({"where": where, "low": low, "high": high, "distance": distance,
+        out.append({"where": where, "low": low, "high": high, "distance": distance, "distance_pct": hybrid_depth.pct(distance, price),
                     "state": str(b.get("state") or "") or None, "timeframe": str(b.get("timeframe") or "") or None})
     out.sort(key=lambda a: (a["distance"] is None, a["distance"] or 0.0))
     return out[:MAX_AREAS]
@@ -193,40 +194,44 @@ def _levels(layer: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _checklist(tf: str, chart_row: dict[str, Any], rows: list[dict[str, Any]], areas: list[dict[str, Any]],
                trigger: dict[str, Any] | None, zones_note: str | None, price: float | None) -> list[dict[str, Any]]:
-    """ATP's facts, each present or absent with its plain reason - listed, never scored or weighed."""
+    """ATP's facts, each present or absent with its plain reason - listed, never scored or weighed. ADV-2 (owner 4 Nov): a
+    reason is always a fact; a check with no fact to give (nothing read for it) is left out of the list, never shown as
+    a negative placeholder. `zones_note` stays in the signature for the callers; it is no longer a reason."""
     word = tf_label(tf)
     trend = chart_row["trend"]
-    trend_text = {"up": "Up", "down": "Down", "sideways": "Sideways"}.get(trend or "", "Not read yet")
     brk = chart_row["last_break"]
     above = sum(1 for a in areas if a["where"] == "above")
     below = sum(1 for a in areas if a["where"] == "below")
     inside = [a for a in areas if a["where"] == "inside"]
     others = [r for r in rows if r["tf"] != tf]
-    not_ready = [r["label"] for r in others if not r["ready"]]
-    return [
-        {"name": f"Trend on the {word} chart", "present": trend in ("up", "down"),
-         "reason": trend_text + (" (weak)" if chart_row["weak"] else "")},
-        {"name": "Protected level", "present": chart_row["protected"] is not None,
-         "reason": f"{chart_row['protected']:,.2f}" if chart_row["protected"] is not None else "Not formed yet"},
-        {"name": "Last break of structure", "present": brk is not None,
-         "reason": f"{brk['label']} at {brk['price']:,.2f}" if brk else "None in the candles read"},
-        {"name": "Trigger candle marked", "present": trigger is not None,
-         "reason": "The candle of the last break is marked on ATP's chart" if trigger else
-         ("Older than the candles drawn" if brk else "No break to mark")},
-        {"name": "Area of interest nearby", "present": bool(areas),
-         "reason": zones_note or (f"{above} above, {below} below" + (f", {len(inside)} at the price" if inside else "")
-                                  if areas else "None stored near the price")},
-        {"name": "Price inside an area of interest", "present": bool(inside),
-         "reason": (f"{inside[0]['low']:,.2f} – {inside[0]['high']:,.2f}" if inside else
-                    ("Last close not known" if price is None else "Between areas"))},
-        {"name": "Higher and lower timeframes read", "present": bool(others) and not not_ready,
-         "reason": "Data not ready: " + ", ".join(not_ready) if not_ready else ", ".join(r["label"] for r in others) or "None"},
-    ]
+    ready = [r["label"] for r in others if r["ready"]]
+    out: list[dict[str, Any]] = []
+    if trend in ("up", "down", "sideways"):
+        out.append({"name": f"Trend on the {word} chart", "present": trend in ("up", "down"),
+                    "reason": {"up": "Up", "down": "Down", "sideways": "Sideways"}[trend] + (" (weak)" if chart_row["weak"] else "")})
+    if chart_row["protected"] is not None:
+        out.append({"name": "Protected level", "present": True, "reason": f"{chart_row['protected']:,.2f}"})
+    if brk is not None:
+        out.append({"name": "Last break of structure", "present": True, "reason": f"{brk['label']} at {brk['price']:,.2f}"})
+        out.append({"name": "Trigger candle marked", "present": trigger is not None,
+                    "reason": "The candle of the last break is marked on ATP's chart" if trigger else "The last break is older than the candles drawn"})
+    if areas:
+        out.append({"name": "Area of interest nearby", "present": True,
+                    "reason": f"{above} above, {below} below" + (f", {len(inside)} at the price" if inside else "")})
+        if inside:
+            out.append({"name": "Price inside an area of interest", "present": True, "reason": f"{inside[0]['low']:,.2f} – {inside[0]['high']:,.2f}"})
+        elif price is not None:
+            out.append({"name": "Price inside an area of interest", "present": False, "reason": "Between areas"})
+    if ready:
+        out.append({"name": "Higher and lower timeframes read", "present": len(ready) == len(others), "reason": ", ".join(ready) + " read"})
+    return out
 
 
 def build_reading(pick: dict[str, str], layer: dict[str, Any], bands: list[dict[str, Any]], frame: pd.DataFrame,
-                  zones_note: str | None = None) -> dict[str, Any]:
-    """The reading (pure): the layer and the zones of the stored candles -> what the page and the chart show."""
+                  zones_note: str | None = None, source: str = "stored") -> dict[str, Any]:
+    """The reading (pure): the layer and the zones of the candles read -> what the page and the chart show. ADV-2:
+    `source` ("stored" | "broker" | "stored+broker": where the candles came from), `bars_read` (the picked timeframe's)
+    and the depth fields (app/chart_analyze/hybrid_depth.py); every older field is kept."""
     tf = pick["timeframe"]
     state = layer.get("structure_state") or {}
     price = _num(layer.get("last_close"))
@@ -249,11 +254,13 @@ def build_reading(pick: dict[str, str], layer: dict[str, Any], bands: list[dict[
                 trigger = {"index": i, **b}
                 break
     areas = _areas(bands, price)
+    deep = hybrid_depth.depth(layer if chart_row["ready"] else {}, tf_label(tf), chart_row["protected"], areas, price)
     return {"symbol": pick["symbol"], "timeframe": tf, "timeframe_label": tf_label(tf), "instrument": layer.get("instrument"),
-            "as_of": layer.get("as_of"), "last_close": price, "source": "stored candles", "bars": bars,
+            "as_of": layer.get("as_of"), "last_close": price, "source": source if source in SOURCES else "stored",
+            "bars_read": int(layer.get("bars") or 0), "bars": bars,
             "table": rows, "areas": areas, "levels": _levels(layer), "protected": chart_row["protected"], "last_break": brk,
             "trigger_candle": trigger, "zones_note": zones_note,
-            "checklist": _checklist(tf, chart_row, rows, areas, trigger, zones_note, price)}
+            "checklist": _checklist(tf, chart_row, rows, areas, trigger, zones_note, price), **deep}
 
 
 def facts(reading: dict[str, Any], *, width: int, height: int) -> dict[str, Any]:
@@ -385,10 +392,35 @@ async def _stored_timeframes(session: AsyncSession, user: User, key: str, when: 
     return out
 
 
+def no_session_message(symbol: str, tf: str, have: list[str]) -> str:
+    """ADV-2 A: too few stored candles for the pick and no broker session of the user's own - ONE positive sentence: what
+    works now, and what makes this timeframe work (the style of `unavailable_message`)."""
+    word = tf_label(tf)
+    if have:
+        words = [tf_label(t) for t in have]
+        listed = words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+        return (f"Advanced analysis for {symbol} works on {listed} candles now, and on {word} candles too once you log in to your "
+                f"broker on the Broker page - or read this chart with AI only.")
+    return (f"Advanced analysis for {symbol} on {word} candles works once you log in to your broker on the Broker page - until then, "
+            f"read this chart with AI only.")
+
+
+def source_of(kinds: list[str]) -> str:
+    """"stored" | "broker" | "stored+broker" from the kinds of the timeframes read."""
+    seen = set(kinds) & {"stored", "broker"}
+    return "stored+broker" if len(seen) == 2 else (seen.pop() if seen else "stored")
+
+
 async def read(session: AsyncSession, user: User, pick: dict[str, str], *, now: datetime | None = None) -> dict[str, Any]:
-    """ATP's reading of the stored candles for the pick, as of the current minute (closed candles only). The session is
-    released while the layer builds (its build slot), so nothing read before may be used lazily after."""
+    """ATP's reading of the candles for the pick, as of the current minute (closed candles only). The session is
+    released while the layer builds (its build slot), so nothing read before may be used lazily after.
+    ADV-2 A: per timeframe (the picked one and the top-down rows) the stored candles when they hold at least MIN_BARS,
+    else the user's own broker candles of the same window (app/chart_analyze/hybrid_sources.py, read only). Too few
+    stored candles for the pick and no broker session of his own: ReadingUnavailable with one positive sentence.
+    ADV-2 B: no bands from the zones job (or zones off) -> the bands of this read, computed on the spot."""
     from app.ai.tools.copilot import lake_key
+    from app.chart_analyze import hybrid_sources as hs
+    from app.charts import price_action_concepts as PC
     from app.charts import price_action_layer as pal
     from app.charts import zones_layer as zl
     from app.market_lake import own_bars
@@ -396,29 +428,75 @@ async def read(session: AsyncSession, user: User, pick: dict[str, str], *, now: 
     key = lake_key(pick["symbol"])
     tf = pick["timeframe"]
     when = (now or datetime.now(UTC)).replace(second=0, microsecond=0)
+    owner = user.id                                   # read now: the build slots close the session
     try:
         layer = await pal.price_action_layer(instrument=key, tf=cast(pal.Timeframe, tf), at=when, start=None, degree=pal.DEFAULT_DEGREE, debug=False, mtf=True,
                                              user=user, session=session)
     except HTTPException as exc:
         raise ReadingUnavailable(_plain(exc)) from None
-    if not layer.get("bars"):
-        have = await _stored_timeframes(session, user, key, when, skip=tf)
-        raise ReadingUnavailable(unavailable_message(pick["symbol"], tf, have))
+    private = await own_bars.scope_for(session, user, key)
     begin = when - timedelta(days=pal.DEFAULT_DAYS[tf])
     try:
-        frame, _src = await pal.load_frame(session, key, tf, begin, when, private=await own_bars.scope_for(session, user, key))
+        frame, _src = await pal.load_frame(session, key, tf, begin, when, private=private)
     except pal.WindowTooLarge:
         frame = pd.DataFrame(columns=pal.FRAME_COLS)
+    own = hs.OwnBrokerBars(session, user, pick["symbol"], key, when)
+    stored_bars = int(layer.get("bars") or 0)
+    kinds: list[str] = []
+    chart_frame: pd.DataFrame | None = None
+    if stored_bars < MIN_BARS:
+        try:
+            broker = await own.frame(tf, begin)
+        except hs.NoSession:
+            have = await _stored_timeframes(session, user, key, when, skip=tf)
+            raise ReadingUnavailable(no_session_message(pick["symbol"], tf, have)) from None
+        if len(broker) > stored_bars:
+            chart_frame = frame = broker
+        elif not stored_bars:
+            have = await _stored_timeframes(session, user, key, when, skip=tf)
+            raise ReadingUnavailable(unavailable_message(pick["symbol"], tf, have))
+    kinds.append("broker" if chart_frame is not None else "stored")
+    rows = [r for r in layer.get("mtf") or [] if isinstance(r, dict)]
+    redo: dict[int, tuple[str, pd.DataFrame]] = {}
+    for i, r in enumerate(rows):
+        t, bars = str(r.get("tf") or ""), int(r.get("bars") or 0)
+        if t == tf or t not in pal.MTF_DAYS:
+            continue                                  # the picked timeframe's row is the chart's own (build_reading)
+        if bars < MIN_BARS and not own.no_session:
+            try:
+                got = await own.frame(t, when - timedelta(days=pal.MTF_DAYS[t]))
+            except hs.NoSession:
+                got = pd.DataFrame(columns=pal.FRAME_COLS)
+            if len(got) > bars:
+                redo[i] = (t, got)
+                kinds.append("broker")
+                continue
+        if bars:
+            kinds.append("stored")
+    if chart_frame is not None or redo:
+        def build_rows() -> tuple[dict[str, Any] | None, dict[int, dict[str, Any]]]:
+            content = pal.build(chart_frame, tf, pal.DEFAULT_DEGREE, False, None) if chart_frame is not None else None
+            return content, {i: PC.mtf_row(f, t, own.source) for i, (t, f) in redo.items()}
+        try:
+            content, rebuilt = await pal._in_slot(session, owner, build_rows)
+        except HTTPException as exc:
+            raise ReadingUnavailable(_plain(exc)) from None
+        rows = [rebuilt.get(i, r) for i, r in enumerate(rows)]
+        layer = {**(layer if content is None else {**content, "instrument": layer.get("instrument") or key, "source": own.source}), "mtf": rows}
     bands: list[dict[str, Any]] = []
     zones_note: str | None = None
+    zones_off = False
     try:
         zones = await zl.market_zones_layer(instrument=key, at=when, price=layer.get("last_close"), family="all", max_bands=zchart.MAX_BANDS,
                                             user=user, session=session)
         bands = [b for b in zones.get("bands") or [] if isinstance(b, dict)]
     except HTTPException:
-        zones_note = ZONES_OFF
-    return build_reading(pick, layer, bands, frame, zones_note)
+        zones_off = True
+    if not bands:
+        bands = await hs.read_time_bands(session, user, key, when, layer.get("last_close"), private=private, own=own, min_bars=MIN_BARS)
+        zones_note = ZONES_OFF if zones_off and not bands else None
+    return build_reading(pick, layer, bands, frame, zones_note, source_of(kinds))
 
 
 __all__ = ["TIMEFRAMES", "LABEL_CODE", "LABEL_CODE_AI", "LABEL_AI_ONLY", "OFF_MESSAGE", "PickError", "ReadingUnavailable", "check_pick",
-           "check_override", "stored_override", "unavailable_message", "stored_read", "READ_KEY", "NEEDS_KEY", "off_detail", "build_reading", "facts", "result", "stored_pick", "summary", "read", "PICK_KEY"]
+           "check_override", "stored_override", "unavailable_message", "no_session_message", "source_of", "SOURCES", "stored_read", "READ_KEY", "NEEDS_KEY", "off_detail", "build_reading", "facts", "result", "stored_pick", "summary", "read", "PICK_KEY"]

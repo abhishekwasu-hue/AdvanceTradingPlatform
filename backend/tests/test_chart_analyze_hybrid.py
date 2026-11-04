@@ -289,7 +289,9 @@ def test_no_stored_candles_is_a_plain_failure():
     who = _hybrid_owner("empty")
     item = _add(who, symbol=EMPTY_SYMBOL, timeframe="1h").json()
     body = client.post(f"{BASE}/items/{item['id']}/analyze", headers=who["headers"]).json()
-    assert body["status"] == "failed" and body["error"] == f"ATP does not hold candles for {EMPTY_SYMBOL} yet, so this chart can be read with AI only."
+    # ADV-2 A: no stored candles and no broker session of the user's own - one positive sentence (what makes it work)
+    assert body["status"] == "failed" and body["error"] == hybrid.no_session_message(EMPTY_SYMBOL, "1h", [])
+    assert body["error"].startswith(f"Advanced analysis for {EMPTY_SYMBOL} on 1-hour candles works once you log in to your broker")
     assert body["pick"] == {"symbol": EMPTY_SYMBOL, "timeframe": "1h"}          # kept for another try
 
 

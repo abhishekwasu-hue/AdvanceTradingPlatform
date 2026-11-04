@@ -201,7 +201,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",
     "frontend/e2e/fixtures/actions.json": "49e8cbfacbd96f95bc73a90691ae343bd487140c7ba30b5954031a1a2d96e547",
     "frontend/e2e/fixtures/actions_proposed.json": "7ab4b210c637af15cc426efabca6f83fb94a5ff0b86879d1dd539019d99f91c9",
-    "frontend/e2e/fixtures/brief.json": "f0791d9852a6412195c3735959059e32f526477c8b78746e176504b443324aa9",
+    "frontend/e2e/fixtures/brief.json": "7830c82fc42e22cd3a206dcbc1416ed9371a558a89eceba51cb8d273d864681e",
     "frontend/e2e/fixtures/coach.json": "27695969bdfbc8781b68e088fcc86315926ab34a4e9e68350e05a3e1a04bd814",
     "frontend/e2e/fixtures/copilot_reply.json": "9d0013cced7fe29e99d3c2c25e231d96bee15cbd4960f169194abc1247d77bcd",
     # UI2-2: hand-written, made-up dashboard replies for the v2 dashboard screenshots (frontend/e2e/dashboard-v2.e2e.ts)

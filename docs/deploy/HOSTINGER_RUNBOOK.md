@@ -27,6 +27,7 @@ Run these as the `atp` user on the server (`ssh atp@<SERVER_IP>`). Each one is s
 | See the steps without changing anything | add `--dry-run` to any command, e.g. `/opt/atp/deploy/atp.sh deploy --dry-run` |
 | Go back one release (code only, when every migration in between is rollback-safe) | `/opt/atp/deploy/atp.sh rollback` |
 | Go back one release and put the database back to the backup taken just before that release migrated it | `/opt/atp/deploy/atp.sh rollback --restore-db` |
+| Go straight back to an older release deployed here (code only) | `/opt/atp/deploy/atp.sh rollback --to <sha>` |
 | Back up now (database and files), copy to R2, then verify | `/opt/atp/deploy/atp.sh backup --verify` |
 | Prove the newest R2 backup restores (scratch database, row counts, audit chain) | `/opt/atp/deploy/atp.sh restore-check` |
 | The last good backup, local and off-site, as one JSON line (exit 1 when older than `BACKUP_MAX_AGE_HOURS`) | `/opt/atp/deploy/atp.sh backup-status` |
@@ -587,6 +588,24 @@ There is no staging host: `.github/workflows/deploy-staging.yml` runs only when 
 `backend-lookahead` and `frontend` checks before merging, so a red PR cannot reach main at all.
 
 ## 9. Rollback, and when a migration makes it unsafe
+
+**The one command (as root on the server, detached like the deploy line; P3-3):**
+
+```
+su - atp -c "nohup sh -c '/opt/atp/deploy/atp.sh rollback && /opt/atp/deploy/atp.sh releases' > /tmp/atp-rollback.log 2>&1 &"
+```
+
+Then `tail -n 15 /tmp/atp-rollback.log`. Expect `health: OK`, `rolled back to <N-1>`, and `running: <N-1>` under the
+release table. `rollback` runs the full health check itself before it says `rolled back`. Exit 1 with `the
+rolled-back API is not healthy`: `.deploy/current` still names N and the worker still runs N, but the API runs N-1's
+image; run `atp.sh deploy <N>` to go forward again, or the same rollback line again once the cause is fixed.
+`--restore-db` asks you to type the database name, so it is never run detached: run
+`/opt/atp/deploy/atp.sh rollback --restore-db` in the terminal as `atp`.
+
+How it is proven without a server: `backend/tests/test_z11_deploy_bundle.py` runs this `atp.sh` against a fake host
+(fake `docker` / `curl` on PATH) on every PR - deploy A, B, C, `rollback` twice, `rollback --to`, `--restore-db`,
+refusals, a failed health after rollback; and the CI staging stack's `rollback` job (`deploy/ci/rollback_rehearsal.sh`,
+section 8a) runs the real bundle with real containers on every main commit, which `deploy` requires before it ships.
 
 - `rollback` starts the previous release's images, which are still on the server, so nothing is rebuilt. The
   session gate (section 8, step 5) applies.

@@ -117,7 +117,7 @@ def risk_line(lang: str, cfg: RiskConfig, saved: bool) -> str:
 # Handover 11l (flag `signal_language_v2`): the two plan texts that used stop wording, in the signal language. The brief
 # is a public-style surface (no security names, no prices, no buy / sell / target / stop wording); the risk line is the
 # user's own settings record and is unchanged.
-VOLATILE_HEADLINE_V2 = ("A volatile day on the data: wide swings and gaps, so the risk distances your settings work out are wider "
+VOLATILE_HEADLINE_V2 = ("Volatile: wide swings and gaps, so the risk distances your settings work out are wider "
                         "and position sizes come out smaller.")
 HIGH_VIX_LINE_V2 = "India VIX is in its high-fear band: gaps are more likely; your own risk settings size every position."
 
@@ -126,12 +126,13 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
               cfg: Optional[RiskConfig] = None, cfg_saved: bool = False, freshness: Optional[dict] = None,
               signal_v2: bool = False, read_label: Optional[str] = None) -> dict:
     kind = dt["kind"]
-    # P0.8-D: the day described by the data - never "buy the pullbacks", "sell the rallies" or "stay out".
+    # Owner 3 Nov: plain structure words, no strategy-template jargon and no "day" framing (OWNER_RULES C.4).
+    # P0.8-D: the market described by the data - never "buy the pullbacks", "sell the rallies" or "stay out".
     headlines = {
-        "TREND_UP": "A trending-up day on the data: higher highs and higher lows; trend-family templates' filters are open, reversal ones mostly closed.",
-        "TREND_DOWN": "A trending-down day on the data: lower highs and lower lows; trend-family templates' filters are open, reversal ones mostly closed.",
-        "RANGE": "A sideways day on the data: trend-family templates fit it poorly; range and reversion templates' filters are open.",
-        "VOLATILE": "A volatile day on the data: wide swings and gaps, so ATR-based stops are wider and position sizes come out smaller.",
+        "TREND_UP": "Trending up: higher highs and higher lows.",
+        "TREND_DOWN": "Trending down: lower highs and lower lows.",
+        "RANGE": "Sideways: price is moving inside a range, with no clear trend.",
+        "VOLATILE": "Volatile: wide swings and gaps, so ATR-based stops are wider and position sizes come out smaller.",
         # M82 R3: never "needs a broker session" here - the brief replaces this with the exact reason (`read_state`).
         "UNKNOWN": "No market read stored yet.",
     }

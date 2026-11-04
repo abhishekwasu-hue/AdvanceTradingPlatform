@@ -184,7 +184,7 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   { ...item("strategy-builder", "Build a strategy", "Strategies", "/strategies/build", Pencil, { keywords: ["strategy builder", "create", "build"] }), section: "build" },
   { ...item("backtest", "Test a strategy", "Strategies", "/strategies/test", History, { keywords: ["backtest", "backtesting", "test"] }), section: "build" },
   // M60 defaults 1 and 3: two AI Copilot tabs found on their own, and the standalone Analyze a chart page (kept).
-  { ...item("copilot-read", "Read the chart", "AI Copilot", "/copilot/read", ScanEye,
+  { ...item("copilot-read", "Market today", "AI Copilot", "/copilot/read", ScanEye,
     { flag: "ai_copilot", keywords: ["brief", "market pulse", "copilot brief"] }), section: "learn" },
   { ...item("copilot-coach", "Coach", "AI Copilot", "/copilot/coach", GraduationCap,
     { flag: "ai_copilot", keywords: ["coach and guide", "trade coach", "guide", "review", "copilot review"] }), section: "learn" },

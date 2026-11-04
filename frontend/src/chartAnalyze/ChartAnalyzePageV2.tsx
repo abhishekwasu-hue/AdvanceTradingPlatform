@@ -519,7 +519,7 @@ export default function ChartAnalyzePageV2() {
       </section>
 
       {current && current.mode === "hybrid" && current.hybrid && (
-        <HybridResultV2 result={current.hybrid} userImageSrc={imageSrc} readingSrc={readingSrc} imageNote={imageNote}
+        <HybridResultV2 liveChart result={current.hybrid} userImageSrc={imageSrc} readingSrc={readingSrc} imageNote={imageNote}
           readLine={<ChartReadLine key={current.id} result={current.hybrid} timeframes={timeframes} running={phase === "analysing"} onRun={(c) => void retry(c)} />}
           onDownload={() => void downloadReading()} onDelete={() => setConfirmDelete(true)} downloading={busy === "export"} deleting={busy === "delete"} />
       )}

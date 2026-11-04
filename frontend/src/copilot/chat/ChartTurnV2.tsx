@@ -48,7 +48,7 @@ export function ChartTurnV2({ chart }: { chart: ChartTurnState }) {
   const { item, imageSrc } = chart;
   return (
     <div className="space-y-space-3" data-chart-turn="done" data-item={item.id}>
-      {item.hybrid && <HybridResultV2 result={item.hybrid} userImageSrc={imageSrc} readingSrc={chart.readingSrc ?? null} actions={false} />}
+      {item.hybrid && <HybridResultV2 liveChart result={item.hybrid} userImageSrc={imageSrc} readingSrc={chart.readingSrc ?? null} actions={false} />}
       {item.result && (
         <ResultViewV2 result={item.result} itemLabel={item.label} itemDisclaimer={item.disclaimer} imageSrc={imageSrc} actions={false} onAlert={setAlertTarget} />
       )}

@@ -1,4 +1,4 @@
-import { HALO, HALO_ALPHA, labelSize, type Shape, type Token } from "./shapes";
+import { HALO, HALO_ALPHA, labelSize, layoutLabels, type Shape, type Token } from "./shapes";
 
 /**
  * Analyze a chart: "Download / share the result image" - the user's own (stored, cleaned) image with the same overlay
@@ -24,15 +24,14 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): st
   return lines;
 }
 
-export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], colour: (t: Token, a?: number) => string, fs = 12): void {
+/** The overlay on the canvas: the shapes, then every label at the position layoutLabels gives - the very positions the
+ * on-screen SVG draws (owner CA-Q3: no two labels cover each other). `height` is the image's height (not the canvas's,
+ * which also holds the caption band). */
+export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], colour: (t: Token, a?: number) => string, fs = 12,
+  height: number = ctx.canvas.height): void {
   ctx.save();
   const k = fs / 12;
-  ctx.font = `${fs}px sans-serif`;
   const halo = colour(HALO, HALO_ALPHA);
-  const text = (t: string, x: number, y: number, token: Token) => {
-    ctx.save(); ctx.setLineDash([]); ctx.lineWidth = 3 * k; ctx.strokeStyle = halo; ctx.strokeText(t, x, y); ctx.restore();
-    ctx.fillStyle = colour(token); ctx.fillText(t, x, y);
-  };
   for (const s of shapes) {
     ctx.setLineDash("dashed" in s && s.dashed ? [6, 4] : []);
     if (s.kind === "rect") {
@@ -41,7 +40,6 @@ export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], colou
       ctx.strokeStyle = colour(s.token, 0.9);
       ctx.lineWidth = 1;
       ctx.strokeRect(s.x, s.y, s.w, s.h);
-      if (s.label) text(s.label, s.x + 4 * k, s.y + 13 * k, s.token);
     } else if (s.kind === "line") {
       const dash = s.dashed ? [6, 4] : [];
       ctx.setLineDash([]);
@@ -52,21 +50,20 @@ export function drawShapes(ctx: CanvasRenderingContext2D, shapes: Shape[], colou
       ctx.strokeStyle = colour(s.token);
       ctx.lineWidth = s.width ?? 1.5;
       ctx.beginPath(); ctx.moveTo(s.x0, s.y0); ctx.lineTo(s.x1, s.y1); ctx.stroke();
-      if (s.label && s.labelAt === "end") {
-        ctx.save(); ctx.textAlign = "right"; text(s.label, Math.max(s.x0, s.x1) - 4 * k, Math.min(s.y0, s.y1) - 4 * k, s.token); ctx.restore();
-      } else if (s.label) text(s.label, Math.min(s.x0, s.x1) + 4 * k, Math.min(s.y0, s.y1) - 4 * k, s.token);
     } else if (s.kind === "dot") {
       for (const [stroke, width] of [[halo, 5], [colour(s.token), 2]] as const) {
         ctx.strokeStyle = stroke;
         ctx.lineWidth = width;
         ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.stroke();
       }
-      if (s.label) text(s.label, s.x + s.r + 3 * k, s.y - s.r, s.token);
-    } else {
-      ctx.font = `bold ${fs}px sans-serif`;
-      text(s.text, s.x - 8 * k, s.y, s.token);
-      ctx.font = `${fs}px sans-serif`;
     }
+  }
+  ctx.setLineDash([]);
+  for (const l of layoutLabels(shapes, height, fs)) {
+    ctx.font = `${l.bold ? "bold " : ""}${fs}px sans-serif`;
+    ctx.textAlign = l.anchor === "end" ? "right" : "left";
+    ctx.lineWidth = 3 * k; ctx.strokeStyle = halo; ctx.strokeText(l.text, l.x, l.y);
+    ctx.fillStyle = colour(l.token); ctx.fillText(l.text, l.x, l.y);
   }
   ctx.restore();
 }
@@ -88,7 +85,7 @@ export async function renderResultPng(input: ExportInput, colour: (t: Token, a?:
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("This browser cannot draw the image.");
   ctx.drawImage(input.image, 0, 0, input.width, input.height);
-  drawShapes(ctx, input.shapes, colour, fs);
+  drawShapes(ctx, input.shapes, colour, fs, input.height);
   ctx.fillStyle = "rgb(255 255 255)";   // the caption band is always light, so the export reads the same in any theme
   ctx.fillRect(0, input.height, input.width, band);
   ctx.fillStyle = "rgb(15 23 42)";

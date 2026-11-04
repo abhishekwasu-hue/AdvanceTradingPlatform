@@ -203,7 +203,7 @@ test.describe("v2 copilot - one Copilot (CU4) and the kept conversation (CU6)", 
   test("CU4 + M60: the tab bar - Ask, Read the chart, Coach (Analyze a chart with chart_analyze on) - every target at least 44 px", async ({ page }) => {
     await open(page, "light");
     const tabs = page.locator("[data-copilot-tabs='v2'] a");
-    await expect(tabs).toHaveText(["Ask", "Read the chart", "Coach"]);
+    await expect(tabs).toHaveText(["Ask", "Market today", "Coach"]);
     await expect(page.locator("[data-copilot-tab='ask']")).toHaveAttribute("aria-current", "page");
     await expect(page.locator("[data-copilot-tab='build']")).toHaveCount(0);       // Strategies › Build is the one builder
     for (const box of await Promise.all((await tabs.all()).map((t) => t.boundingBox()))) expect(box!.height).toBeGreaterThanOrEqual(44);

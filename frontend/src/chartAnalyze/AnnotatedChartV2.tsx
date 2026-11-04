@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { HALO, HALO_ALPHA, labelSize, legendFor, shapesFor, type Shape, type Swatch, type Token } from "./shapes";
+import { HALO, HALO_ALPHA, labelSize, layoutLabels, legendFor, shapesFor, type Shape, type Swatch, type Token } from "./shapes";
 import type { Annotations } from "./types";
 import { SubTabs } from "../ui/SubTabs";
 
@@ -12,16 +12,13 @@ const colour = (token: Token, alpha = 1) => `rgb(var(--${token}) / ${alpha})`;
 const halo = colour(HALO, HALO_ALPHA);
 const label = (token: Token, k = 1) => ({ fill: colour(token), stroke: halo, strokeWidth: 3 * k, paintOrder: "stroke" as const });
 
-function ShapeSvg({ s, fs = 12 }: { s: Shape; fs?: number }) {
-  const k = fs / 12;
+/** A shape without its label: the labels are drawn last, at the positions layoutLabels gives (owner CA-Q3). */
+function ShapeSvg({ s }: { s: Shape }) {
   const dash = "dashed" in s && s.dashed ? "6 4" : undefined;
   if (s.kind === "rect") {
     return (
-      <g>
-        <rect x={s.x} y={s.y} width={s.w} height={s.h} style={{ fill: colour(s.token, s.fillAlpha), stroke: colour(s.token, 0.9) }}
-          strokeWidth={1} strokeDasharray={dash} />
-        {s.label && <text x={s.x + 4 * k} y={s.y + 13 * k} fontSize={fs} style={label(s.token, k)}>{s.label}</text>}
-      </g>
+      <rect x={s.x} y={s.y} width={s.w} height={s.h} style={{ fill: colour(s.token, s.fillAlpha), stroke: colour(s.token, 0.9) }}
+        strokeWidth={1} strokeDasharray={dash} />
     );
   }
   if (s.kind === "line") {
@@ -29,9 +26,6 @@ function ShapeSvg({ s, fs = 12 }: { s: Shape; fs?: number }) {
       <g>
         <line x1={s.x0} y1={s.y0} x2={s.x1} y2={s.y1} style={{ stroke: halo }} strokeWidth={(s.width ?? 1.5) + 3} />
         <line x1={s.x0} y1={s.y0} x2={s.x1} y2={s.y1} style={{ stroke: colour(s.token) }} strokeWidth={s.width ?? 1.5} strokeDasharray={dash} />
-        {s.label && (s.labelAt === "end"
-          ? <text x={Math.max(s.x0, s.x1) - 4 * k} y={Math.min(s.y0, s.y1) - 4 * k} fontSize={fs} textAnchor="end" style={label(s.token, k)}>{s.label}</text>
-          : <text x={Math.min(s.x0, s.x1) + 4 * k} y={Math.min(s.y0, s.y1) - 4 * k} fontSize={fs} style={label(s.token, k)}>{s.label}</text>)}
       </g>
     );
   }
@@ -40,11 +34,25 @@ function ShapeSvg({ s, fs = 12 }: { s: Shape; fs?: number }) {
       <g>
         <circle cx={s.x} cy={s.y} r={s.r} style={{ fill: "none", stroke: halo }} strokeWidth={5} />
         <circle cx={s.x} cy={s.y} r={s.r} style={{ fill: "none", stroke: colour(s.token) }} strokeWidth={2} />
-        {s.label && <text x={s.x + s.r + 3 * k} y={s.y - s.r} fontSize={fs} style={label(s.token, k)}>{s.label}</text>}
       </g>
     );
   }
-  return <text x={s.x - 8 * k} y={s.y} fontSize={fs} fontWeight={700} style={label(s.token, k)}>{s.text}</text>;
+  return null;     // a swing word is a label: drawn with the others
+}
+
+/** The shapes, then every label (areas', lines', marks' and the swing words) where no two cover each other - the same
+ * positions the exported PNG uses (exportImage.drawShapes). */
+function Drawing({ shapes, height, fs }: { shapes: Shape[]; height: number; fs: number }) {
+  const k = fs / 12;
+  return (
+    <>
+      {shapes.map((s, i) => <ShapeSvg key={i} s={s} />)}
+      {layoutLabels(shapes, height, fs).map((l, i) => (
+        <text key={`label-${i}`} x={l.x} y={l.y} fontSize={fs} fontWeight={l.bold ? 700 : undefined}
+          textAnchor={l.anchor === "end" ? "end" : undefined} style={label(l.token, k)}>{l.text}</text>
+      ))}
+    </>
+  );
 }
 
 export function Overlay({ src, width, height, annotations, alt }: { src: string; width: number; height: number; annotations: Annotations; alt: string }) {
@@ -54,7 +62,7 @@ export function Overlay({ src, width, height, annotations, alt }: { src: string;
       <img src={src} alt={alt} width={width} height={height} className="block h-auto w-full" />
       <svg viewBox={`0 0 ${width} ${height}`} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden
         preserveAspectRatio="none" data-shapes={shapes.length}>
-        {shapes.map((s, i) => <ShapeSvg key={i} s={s} fs={labelSize(width)} />)}
+        <Drawing shapes={shapes} height={height} fs={labelSize(width)} />
       </svg>
     </div>
   );
@@ -116,7 +124,7 @@ export function StructureSketch({ width, height, annotations }: { width: number;
         style={{ aspectRatio: `${Math.max(1, width)} / ${Math.max(1, height)}` }}>
         <svg viewBox={`0 0 ${width} ${height}`} className="absolute inset-0 h-full w-full" role="img"
           aria-label="The structure the method sees, drawn without the chart" preserveAspectRatio="none" data-shapes={shapes.length}>
-          {shapes.map((s, i) => <ShapeSvg key={i} s={s} fs={labelSize(width)} />)}
+          <Drawing shapes={shapes} height={height} fs={labelSize(width)} />
         </svg>
       </div>
       <Legend annotations={annotations} />

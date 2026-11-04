@@ -1,10 +1,17 @@
 import { CheckCircle2, CircleSlash, Download, Eye, Trash2 } from "lucide-react";
-import { Fragment, type ReactNode } from "react";
+import { Fragment, lazy, Suspense, type ReactNode } from "react";
 import { Button, Skeleton } from "../components/primitives";
 import { cx } from "../components/primitives/cx";
 import { EMPTY, formatNumber } from "../ui/format";
 import { guardDeep, guardText } from "./signalLanguage";
 import type { HybridArea, HybridResult, HybridRow } from "./types";
+import type { LevelLine } from "../chart/chartCore";
+import type { TimeframeId } from "../chart/timeframes";
+import type { LayerBand } from "../charting/engine";
+import { Details } from "../ui/Details";
+
+// Owner CA-Q1: the chart core loads only where the live chart is shown (the pages), never in a static render.
+const EmbeddedChartV2 = lazy(() => import("../chart/EmbeddedChartV2"));
 
 /**
  * M59 CR-4: the hybrid result - "Advanced analysis (code + AI)", or "(code)" when the engine has no AI part.
@@ -91,9 +98,25 @@ export interface HybridResultProps {
   deleting?: boolean;
   /** M84: "Read from your chart: NIFTY 50 · 15m", with Change and Re-run in place (ChartReadV2). */
   readLine?: ReactNode;
+  /** Owner CA-Q1 (3 Nov): ATP's reading drawn on ATP's own chart (zoom, scroll, price axis) - the pages pass true;
+   * the drawn picture stays for the download and behind "The picture". */
+  liveChart?: boolean;
 }
 
-export default function HybridResultV2({ result, userImageSrc, readingSrc, imageNote, onDownload, onDelete, downloading, deleting, actions = true, readLine }: HybridResultProps) {
+const LIVE_TF: Record<string, TimeframeId> = { "5m": "5min", "15m": "15min", "1h": "60min", "1d": "day" };
+
+/** Owner CA-Q1: the reading's lines and areas in the chart core's own shapes (the same values the picture draws). */
+export function readingOverlay(r: HybridResult["reading"]): { levels: LevelLine[]; areas: LayerBand[] } {
+  const levels: LevelLine[] = [];
+  if (r.protected != null) levels.push({ price: r.protected, title: "Protected", tone: "neutral" });
+  if (r.last_break) levels.push({ price: r.last_break.price, title: `Break${r.last_break.label ? ` (${r.last_break.label})` : ""}`, tone: r.last_break.direction === "down" ? "down" : r.last_break.direction === "up" ? "up" : "neutral" });
+  for (const lv of r.levels) levels.push({ price: lv.price, title: lv.kind === "swing high" ? "Swing high" : "Swing low", tone: "neutral" });
+  const areas: LayerBand[] = r.areas.map((a) => ({ low: a.low, high: a.high, role: a.where === "above" ? "supply" : a.where === "below" ? "demand" : "neutral",
+    label: `Area ${band(a.low, a.high)}`, opacity: 0.16 }));
+  return { levels, areas };
+}
+
+export default function HybridResultV2({ result, userImageSrc, readingSrc, imageNote, onDownload, onDelete, downloading, deleting, actions = true, readLine, liveChart = false }: HybridResultProps) {
   const r = result.reading;
   const ai = result.ai ? guardDeep(result.ai, KEEP) : null;
   const title = `${r.symbol} ${r.timeframe_label}`;
@@ -119,9 +142,21 @@ export default function HybridResultV2({ result, userImageSrc, readingSrc, image
           </figure>
           <figure className="min-w-0" data-figure="atp">
             <figcaption className="mb-space-1 text-t13 font-semibold text-fg">ATP&apos;s reading of {title}</figcaption>
-            {readingSrc ? <img src={readingSrc} alt={`ATP's reading of ${title}, drawn on the stored candles`} className="w-full rounded-control border border-subtle" />
+            {liveChart && LIVE_TF[r.timeframe] ? (
+              <>
+                <Suspense fallback={<Skeleton className="aspect-video w-full" label="Loading ATP's chart" />}>
+                  <EmbeddedChartV2 symbol={r.symbol} timeframe={LIVE_TF[r.timeframe]} className="h-72 md:h-80" {...readingOverlay(r)} />
+                </Suspense>
+                {readingSrc && (
+                  <Details id="chart-analyze.reading-picture" label="The picture (for the download)">
+                    <img src={readingSrc} alt={`ATP's reading of ${title}, drawn on the stored candles`} className="w-full rounded-control border border-subtle" />
+                    <Legend />
+                  </Details>
+                )}
+              </>
+            ) : readingSrc ? <img src={readingSrc} alt={`ATP's reading of ${title}, drawn on the stored candles`} className="w-full rounded-control border border-subtle" />
               : <Skeleton className="aspect-video w-full" label="Loading ATP's chart" />}
-            <Legend />
+            {!(liveChart && LIVE_TF[r.timeframe]) && <Legend />}
           </figure>
         </div>
         <p className="mt-space-2 text-t12 text-fg-muted" data-testid="side-by-side-note">{result.side_by_side_note}</p>

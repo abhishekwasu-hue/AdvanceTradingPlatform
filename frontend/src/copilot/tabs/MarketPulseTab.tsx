@@ -12,7 +12,7 @@ import MemoryPanel from "./pulse/MemoryPanel";
 import ThesisPanel from "./pulse/ThesisPanel";
 import { ageText, money, Panel, Stagger, StaggerItem, TabSkeleton } from "./shared";
 import { strategyDisplayName } from "../../ui/strategyName";
-import { formatDateTimeIST, formatNumber, formatPct, formatTimeIST } from "../../ui/format";
+import { formatDateIST, formatDateTimeIST, formatNumber, formatPct, formatTimeIST } from "../../ui/format";
 
 // M82 R3: the broker's own renew panel, opened right on the card (its own chunk, loaded only when it is opened).
 const ConnectPanel = lazy(() => import("../../broker/ConnectPanel"));
@@ -133,6 +133,17 @@ function YourDay({ day }: { day: BriefDay }) {
   );
 }
 
+/** Owner 3 Nov: a holiday reads "Sun 8 Nov", never "2026-11-08". */
+export function holidayWord(iso: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? formatDateIST(`${iso}T12:00:00+05:30`, { weekday: true, year: false }) : iso;
+}
+
+/** Owner 3 Nov: the headline does not repeat the session label its badge already shows ("Last session, Tue 3 Nov: ..."). */
+export function shownHeadline(headline: string, read: BriefRead | null | undefined): string {
+  const label = read && read.state !== "none" ? read.label : null;
+  return label && headline.startsWith(`${label}: `) ? headline.slice(label.length + 2) : headline;
+}
+
 export default function MarketPulseTab() {
   const t = useCopilotT();
   const { brief, briefError, briefLoading, reloadBrief, reading } = useCopilotData();
@@ -160,11 +171,11 @@ export default function MarketPulseTab() {
               {t("pulse.todayRead")}{brief.day_type.symbol ? ` · ${brief.day_type.symbol}` : ""}
               {brief.read && brief.read.state !== "none" ? <ReadState read={brief.read} /> : <DataStamp data={data} />}
             </div>
-            <p className="mt-2 text-lg font-semibold leading-snug text-fg">{brief.plan.headline}</p>
+            <p className="mt-2 text-lg font-semibold leading-snug text-fg">{shownHeadline(brief.plan.headline, brief.read)}</p>
             <p className="mt-2 text-xs text-fg-muted">
               {brief.session.text}
               {data.age_minutes != null ? ` · ${t("pulse.readAgo", { age: ageText(data.age_minutes) })}` : brief.read ? "" : ` · ${t("pulse.noRead")}`}
-              {brief.session.holidays_next_7_days.length ? ` · ${t("pulse.holidays", { list: brief.session.holidays_next_7_days.join(", ") })}` : ""}
+              {brief.session.holidays_next_7_days.length ? ` · ${t("pulse.holidays", { list: brief.session.holidays_next_7_days.map(holidayWord).join(", ") })}` : ""}
             </p>
             {brief.read?.state === "none" && <ReadState read={brief.read} />}
             {!data.figures_shown && data.state !== "none" && (

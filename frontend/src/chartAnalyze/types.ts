@@ -23,6 +23,8 @@ export interface Annotations {
   commitment_candle: (Point & { note: string }) | null;
   ltf_choch: (Point & { note: string }) | null;
   setup_lines: { kind: "trigger" | "invalidation" | "next_area"; y: number; price: number | null; note?: string }[];
+  /** Owner CA-Q3: the broken swing level of the latest CHoCH (absent on results stored before it). */
+  choch?: (Segment & { price: number | null; note: string }) | null;
 }
 
 export interface AnalysisResult {
@@ -33,7 +35,7 @@ export interface AnalysisResult {
   approximate_prices: boolean;
   coordinate_space: "image_pixels" | "time_price";
   image: { width: number; height: number };
-  recognised: { symbol: string | null; exchange: string | null; timeframe: string | null; first_bar: string | null; last_bar: string | null };
+  recognised: { symbol: string | null; exchange: string | null; timeframe: string | null; first_bar: string | null; last_bar: string | null; last_price?: number | null };
   story: string[];
   trend: { side: "up" | "down" | "sideways" | "unclear"; text: string };
   current_state: { phase: string; text: string };

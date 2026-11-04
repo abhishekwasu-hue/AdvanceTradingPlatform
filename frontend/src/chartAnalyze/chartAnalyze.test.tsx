@@ -91,10 +91,10 @@ describe("Analyze a chart: the overlay", () => {
     expect(shapes.filter((s) => s.kind === "rect")).toHaveLength(2);
     expect(shapes.filter((s) => s.kind === "text").map((s) => (s as { text: string }).text)).toEqual(["HL", "HH", "LH"]);
     const setup = shapes.filter((s) => s.kind === "line" && s.dashed);
-    expect(setup.map((s) => (s as { label?: string }).label)).toEqual(["Trigger", "Invalidation", "Next area"]);
+    expect(setup.map((s) => (s as { label?: string }).label)).toEqual(["Trigger ≈ 120.50", "Invalidation ≈ 101.00", "Next area ≈ 140.00"]);
     for (const s of setup) if (s.kind === "line") expect([s.x0, s.x1]).toEqual([0, r.image.width]);
     const buyer = shapes.find((s) => s.kind === "rect" && s.token === "up");
-    expect(buyer).toMatchObject({ x: 100, y: 240, w: 500, h: 30, label: "Buyer area · tested" });
+    expect(buyer).toMatchObject({ x: 100, y: 240, w: 500, h: 30, label: "1 · Buyer area · tested" });
     expect(shapes.some((s) => s.kind === "line" && s.token === "warn")).toBe(true);    // the RSI divergence
   });
 

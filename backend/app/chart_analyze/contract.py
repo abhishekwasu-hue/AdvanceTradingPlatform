@@ -225,8 +225,16 @@ def _annotations(raw: Any, space: _Space) -> Dict[str, Any]:
         y = space.y(s.get("y")) if isinstance(s, dict) else None
         if kind and y is not None:
             setup_lines.append({"kind": kind, "y": y, "price": price(s.get("price")), "note": text(s.get("note"), SHORT_MAX)})
+    # Owner CA-Q3 (3 Nov): the CHoCH - the broken swing level drawn as a short line, with its price.
+    choch = None
+    ch = raw.get("choch") if isinstance(raw.get("choch"), dict) else None
+    if ch is not None:
+        seg = space.segment(ch)
+        if seg:
+            choch = {**seg, "price": price(ch.get("price")), "note": text(ch.get("note"), SHORT_MAX)}
     return {"swings": swings, "areas": areas, "lines": lines, "rsi_divergence": divergence,
-            "commitment_candle": mark(raw.get("commitment_candle")), "ltf_choch": mark(raw.get("ltf_choch")), "setup_lines": setup_lines}
+            "commitment_candle": mark(raw.get("commitment_candle")), "ltf_choch": mark(raw.get("ltf_choch")), "setup_lines": setup_lines,
+            "choch": choch}
 
 
 def _alert(raw: Any) -> Optional[Dict[str, Any]]:
@@ -243,7 +251,7 @@ def _alert(raw: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _recognised(raw: Any) -> Dict[str, Optional[str]]:
+def _recognised(raw: Any) -> Dict[str, Any]:
     raw = raw if isinstance(raw, dict) else {}
     symbol = text(raw.get("symbol"), 40).upper()
     exchange = str(raw.get("exchange") or "").strip().upper()
@@ -251,7 +259,8 @@ def _recognised(raw: Any) -> Dict[str, Optional[str]]:
     return {"symbol": symbol if re.fullmatch(r"[A-Z0-9 &._:-]{1,40}", symbol) else None,
             "exchange": exchange if re.fullmatch(r"[A-Z]{2,10}", exchange) else None,
             "timeframe": tf if tf and _TIMEFRAME.match(tf) else None,
-            "first_bar": text(raw.get("first_bar"), 60) or None, "last_bar": text(raw.get("last_bar"), 60) or None}
+            "first_bar": text(raw.get("first_bar"), 60) or None, "last_bar": text(raw.get("last_bar"), 60) or None,
+            "last_price": price(raw.get("last_price"))}      # owner CA-Q3: the distance of each level in %
 
 
 def validate(raw: Any, *, mode: str, width: int, height: int) -> Dict[str, Any]:

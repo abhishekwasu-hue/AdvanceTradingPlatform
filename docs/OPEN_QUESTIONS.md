@@ -493,3 +493,12 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | FN1-3 | Rows 19, 22, 34 wait for the FN0 table decisions (keep OFF / keep one scanner / Factor Lab + Contract specs to Advanced). | The FN0 bracket defaults: keep OFF, one scanner, move to Advanced - built only after the owner's ✅ on the FN0 table. | docs/FN1_CHECKLIST.md | open |
 | PDQ-1 | Owner 3 Nov (Daily bar at ~15:45): the provisional bar is built from the history owner's broker session, so by the data licence (M55Q-1: never his broker Daily rows to another organisation) it lives in HIS private store and only he sees it before NSE's file lands; other organisations still see the Daily bar after the evening NSE file (now looked for from 17:30). Share it with everyone? | Keep it owner-only (licence) until the lawyer answer on M55Q-1. | `market_lake/provisional_daily.py` | open |
 | PDQ-2 | Owner 3 Nov: which reads use the provisional Daily bar? | The chart layer (chart + Copilot structure card), "Read this chart" and the Copilot store read only; backtests, the screener, the engine / strategy bars, execution plan checks and the ticket's check card keep the NSE files only (no change to any order path). | `charts/price_action_layer.load_frame(provisional=)` | open |
+
+## AG-1 multiple agents (owner 3 Nov)
+- AG-Q1: how many agents at once? Default: up to 4 in parallel, only for independent work, each in its own worktree;
+  the main session reviews and integrates every result.
+## P3-3 rollback test of `atp.sh`
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| P3-3-Q1 | When the rolled-back API never passes deep health, `rollback` exits 1 with the API left on the older image (worker, checkout and `.deploy/current` stay on the newer release); a failed `deploy` instead puts the previous API back. Should `rollback` also put the newer API back? (With `--restore-db` the database is already swapped and API + worker are stopped at that point.) | Keep as is (no deploy-behaviour change without the owner): the message is explicit, the runbook (section 9) says to run `atp.sh deploy <N>` or rollback again; pinned by `test_p3_3_a_rolled_back_api_that_fails_health_stops_without_recording_the_rollback`. | `deploy/atp.sh:1510` | open |

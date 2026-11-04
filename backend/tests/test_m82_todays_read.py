@@ -126,7 +126,7 @@ def test_closed_market_shows_the_last_session_read_with_its_date():
     read = b["read"]
     assert read["state"] == "last_session" and read["label"] == "Last session, Fri 30 Oct" and read["read_date"] == "2026-10-30"
     assert read["reason"] is None and b["day_type"]["kind"] == "TREND_UP"
-    assert b["plan"]["headline"].startswith("Last session, Fri 30 Oct: A trending-up day")
+    assert b["plan"]["headline"].startswith("Last session, Fri 30 Oct: Trending up")
     _no_broker_words(b)
 
 

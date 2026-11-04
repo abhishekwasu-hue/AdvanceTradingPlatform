@@ -55,6 +55,7 @@ export interface Allowed { file: string; word: string; text?: string; reason: st
 export const ALLOWED: readonly Allowed[] = [
   { file: "settings/model.ts", word: "bot token / chat id", reason: "search keywords for Settings › Alerts / Advanced, never shown as text" },
   { file: "signals/TryOnSymbolV2.tsx", word: "sample data", reason: "the try tool's Advanced fold, shown only to the platform admin with ui_v2 (UX3 fix 7)" },
+  { file: "broker/UpstoxOrderLogin.tsx", word: "OAuth / redirect", text: "Redirect URL", reason: "UPX-OL: the exact name of the field in Upstox's own Developer Apps page, which the trader fills in once" },
   { file: "ui/glossary.ts", word: "OAuth / redirect", text: "Redirect URL", reason: "the glossary entry for the Redirect URL field, which sits under a broker's Advanced fold" },
 ];
 

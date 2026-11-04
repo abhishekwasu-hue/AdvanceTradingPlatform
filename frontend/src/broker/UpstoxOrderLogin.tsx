@@ -2,6 +2,7 @@ import { ExternalLink, TriangleAlert } from "lucide-react";
 import { useId, useState } from "react";
 import { api, ApiError } from "../api/client";
 import UpstoxRedirectUrl from "../components/UpstoxRedirectUrl";
+import { Details } from "../ui/Details";
 import { failureText } from "./ConnectPanel";
 import { BTN_PRIMARY, BTN_SECONDARY, ResponsiveDialog } from "./parts";
 
@@ -72,10 +73,13 @@ export default function UpstoxOrderLogin({ open, onOpenChange, accountLabel = "p
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange} title="Upstox login for orders" marker="upstox-order-login">
       <div className="space-y-space-4" data-upstox-order-login>
-        <ul className="space-y-space-1 text-t14 text-fg">
-          <li><span className="font-semibold">Analytics Token</span>: charts and market data, saved once a year. It cannot place orders.</li>
-          <li><span className="font-semibold">Upstox login</span>: needed for orders. Upstox ends it every morning, so log in once each trading day.</li>
-        </ul>
+        <p className="text-t14 font-semibold text-fg">Once each trading day, before orders.</p>
+        <Details id="broker.upstox-order-login" label="Analytics Token or Upstox login?">
+          <ul className="space-y-space-1">
+            <li><span className="font-semibold text-fg">Analytics Token</span>: charts and market data, saved once a year. It cannot place orders.</li>
+            <li><span className="font-semibold text-fg">Upstox login</span>: needed for orders. Upstox ends it every morning.</li>
+          </ul>
+        </Details>
 
         {keys ? (
           <div className="space-y-space-3" data-upstox-keys>

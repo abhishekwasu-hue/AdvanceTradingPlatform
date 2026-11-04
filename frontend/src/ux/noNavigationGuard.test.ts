@@ -87,6 +87,7 @@ const EXCLUDED_SITES: { file: string; text?: RegExp; line?: RegExp; reason: stri
   { file: "src/pages/ChartWindow.tsx", text: /location\.replace\(chartWindowRedirect/, reason: "REDIRECT - an old address forwarded on load (not a click)" },
   { file: "src/pages/ChartWorkspace.tsx", text: /location\.replace\(workspaceRedirect/, reason: "REDIRECT - an old address forwarded on load (not a click)" },
   { file: "src/components/BrokerTokenBanner.tsx", text: /window\.open\("about:blank"|location\.href = authorization_url/, reason: "EXTERNAL - the broker's login page" },
+  { file: "src/broker/UpstoxOrderLogin.tsx", text: /window\.open\("about:blank"|location\.href = authorization_url/, reason: "EXTERNAL - Upstox's login page (UPX-OL)" },
   { file: "src/broker/ConnectPanel.tsx", text: /window\.open\("about:blank"|location\.href = authorization_url/, reason: "EXTERNAL - the broker's login page" },
   { file: "src/alerts/TelegramConnectV2.tsx", text: /window\.open\(|location\.href = made\.url/, reason: "EXTERNAL - Telegram" },
   { file: "src/admin/AlertsPanelV2.tsx", text: /window\.open\(url/, reason: "EXTERNAL - Telegram" },

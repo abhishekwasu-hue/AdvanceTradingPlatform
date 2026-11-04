@@ -221,6 +221,20 @@ def assemble(native: Dict[str, Tuple[str, List[RowTuple]]], m1: List[RowTuple], 
             df = resample_closed(m1f[m1f["close_at"] > pd.Timestamp(starts[tf])], INTRADAY_MINUTES[tf], now, sess)
             if len(df):
                 raw[tf] = df
+    return frames_from(raw, s, now, extend_to)
+
+
+def plan_starts(key: str, s: ZoneSettings, now: datetime) -> Dict[str, datetime]:
+    """{timeframe: the start of its read} for every frame the settings use (warm-up included) - what `load_frames` reads.
+    ADV-2 B: a read-time caller (app/chart_analyze/hybrid_sources.py) reads the same windows."""
+    return _plan_reads(s, exchange_session(key), now, None)
+
+
+def frames_from(raw: Dict[str, pd.DataFrame], s: ZoneSettings, now: datetime, extend_to: Optional[Dict[str, datetime]] = None) -> Frames:
+    """START-labelled frames per timeframe (columns FRAME_COLUMNS, closed bars only) -> the history and dynamic frames
+    the snapshot takes (`max_bars_per_frame`, the recent window per dynamic timeframe). Pure. ADV-2 B: also the
+    read-time areas of a symbol the job holds no snapshot of (the same frames, the same settings)."""
+    plan = needed_days(s)
     out = Frames()
     for tf, df in raw.items():
         df = df.tail(s.max_bars_per_frame).reset_index(drop=True)

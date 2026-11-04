@@ -9,6 +9,7 @@ import BrokerAdvanced from "./BrokerAdvanced";
 import { ASK_OWNER, KNOWN_BROKERS, canChangeBrokers, canRenew, connectionTitle, needsReconnect, shownStatus, statusText } from "./brokerState";
 import { SIGN_IN_PAGE_PATH } from "./paths";
 import ConnectPanel, { failureText, type PanelMode } from "./ConnectPanel";
+import UpstoxOrderLogin from "./UpstoxOrderLogin";
 import { BTN_PRIMARY, BTN_SECONDARY, BrokerLogo, ResponsiveDialog, StatusDot } from "./parts";
 import { useBrokerCatalog } from "./useBrokerCatalog";
 import { useBrokerConnections } from "./useBrokerConnections";
@@ -38,8 +39,10 @@ export function loginOutcome(search: string): { ok: boolean; text: string } | nu
   return null;
 }
 
-export function ConnectionRow({ c, canChange = true, onRenew, onRemove, onReconnect }: {
+export function ConnectionRow({ c, canChange = true, onRenew, onRemove, onReconnect, onOrderLogin }: {
   c: BrokerConnection; canChange?: boolean; onRenew?: () => void; onRemove?: () => void; onReconnect?: () => void;
+  /** Owner 4 Nov: Upstox's daily login for orders (the Analytics Token is data only). */
+  onOrderLogin?: () => void;
 }) {
   const status = shownStatus(c);
   const reconnect = needsReconnect(c);
@@ -60,6 +63,10 @@ export function ConnectionRow({ c, canChange = true, onRenew, onRemove, onReconn
         {/* BRK-1 B: a "not working" row with a daily login (its automatic login did not work) keeps Renew as the fallback. */}
         {canRenew(c) && (
           <button type="button" onClick={onRenew} disabled={!canChange} className={status === "connected" ? BTN_SECONDARY : BTN_PRIMARY}>Renew</button>
+        )}
+        {c.broker === "upstox" && onOrderLogin && (
+          <button type="button" onClick={onOrderLogin} disabled={!canChange} data-upstox-order-login-open
+            className={c.data_only ? BTN_PRIMARY : BTN_SECONDARY}>{c.data_only ? "Log in for orders" : "Upstox login"}</button>
         )}
         {reconnect && (
           <button type="button" onClick={onReconnect} disabled={!canChange} className={canRenew(c) ? BTN_SECONDARY : BTN_PRIMARY}>Connect again</button>
@@ -116,6 +123,7 @@ export default function BrokerPage() {
   const catalog = useBrokerCatalog();
   const [panel, setPanel] = useState<{ broker: string; mode: PanelMode; label?: string } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [orderLogin, setOrderLogin] = useState<string | null>(null);     // the Upstox account whose order login is open
   const [removing, setRemoving] = useState<BrokerConnection | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -178,6 +186,7 @@ export default function BrokerPage() {
               <ConnectionRow key={`${c.broker}/${c.account_label}`} c={c} canChange={canChange}
                 onRenew={() => openPanel(c.broker, "renew", c.account_label)}
                 onReconnect={() => openPanel(c.broker, "connect", c.account_label)}
+                onOrderLogin={() => setOrderLogin(c.account_label || "primary")}
                 onRemove={() => { setRemoveError(null); setRemoving(c); }} />
             ))}
           </ul>
@@ -218,6 +227,8 @@ export default function BrokerPage() {
 
       <ConnectPanel broker={panel?.broker ?? null} mode={panel?.mode ?? "connect"} accountLabel={panel?.label}
         open={panelOpen} onOpenChange={setPanelOpen} onChanged={refresh} />
+      <UpstoxOrderLogin open={orderLogin !== null} onOpenChange={(o) => { if (!o) setOrderLogin(null); }}
+        accountLabel={orderLogin ?? "primary"} onChanged={refresh} />
       <RemoveDialog c={removing} open={removing !== null} onOpenChange={(o) => { if (!o) setRemoving(null); }}
         onConfirm={() => void confirmRemove()} busy={removeBusy} error={removeError} />
     </div>

@@ -1,6 +1,7 @@
 import { errorSentence } from "../api/errors";
 import { ExternalLink, KeyRound, LogIn, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
+import UpstoxOrderLogin from "../broker/UpstoxOrderLogin";
 import { api } from "../api/client";
 import type { BrokerTokenInfo } from "../types";
 import { formatDateTimeIST } from "../ui/format";
@@ -9,7 +10,7 @@ import { formatDateTimeIST } from "../ui/format";
  * "Is my broker session alive today?" - the one thing an operator must check every trading
  * morning. Indian retail broker tokens (Upstox 03:30 IST, Kite/Fyers 06:00 IST) expire daily with
  * no refresh token, so LIVE deployments cannot run until someone logs in again. For Upstox the
- * button leads to the Broker page (BRK-1 B: the Analytics Token, no Upstox OAuth); Fyers and Kite send the browser to the redirect URL
+ * button leads to the Broker page (UPX-OL: "Log in for orders", Upstox's daily login - never the Analytics Token); Fyers and Kite send the browser to the redirect URL
  * registered on the broker's console instead, so the banner opens their login page and takes the
  * pasted one-time code (or the whole redirected address) and finishes the login in one step.
  */
@@ -39,6 +40,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
   const [busy, setBusy] = useState(false);
   const [codes, setCodes] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, { ok: boolean; text: string; link?: string }>>({});
+  const [upstoxLogin, setUpstoxLogin] = useState<string | null>(null);   // the Upstox account whose order login is open
 
   useEffect(() => {
     api.brokerTokenStatus().then(setTokens).catch((e) => setError(errorSentence(e)));
@@ -117,9 +119,13 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
               )}
             </div>
             <div className="flex items-center gap-3">
-              {/* BRK-1 B (owner: no Upstox OAuth flow): Upstox connects with the Analytics Token on the Broker page. */}
-              {t.broker_name === "upstox" && (
-                <span className="text-fg-muted">Paste your Analytics Token on the Broker page.</span>
+              {/* Owner 4 Nov (UPX-OL): the Analytics Token (one year) is data only and is never asked for here; orders need
+                  Upstox's daily login - "Log in for orders", opened here in place (M75 rule 1). */}
+              {t.broker_name === "upstox" && !ok && (
+                <button type="button" onClick={() => setUpstoxLogin(t.account_label ?? "primary")} data-upstox-order-login-open
+                  className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1">
+                  <LogIn size={12} aria-hidden /> Log in for orders
+                </button>
               )}
               {t.login_url_supported && (
                 <button
@@ -163,6 +169,9 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
           </div>
         );
       })}
+      <UpstoxOrderLogin open={upstoxLogin !== null} onOpenChange={(o) => { if (!o) setUpstoxLogin(null); }}
+        accountLabel={upstoxLogin ?? "primary"}
+        onChanged={() => { api.brokerTokenStatus().then(setTokens).catch((e) => setError(errorSentence(e))); }} />
     </div>
   );
 }

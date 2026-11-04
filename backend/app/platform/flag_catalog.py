@@ -154,6 +154,9 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "trade_engine": FlagInfo("Signal engine from the private package (admin / owner only; places no orders)", "trading",
                              "nothing yet: the engine's signals and card come in later steps", (),
                              "the private engine package on the server", "unfinished"),
+    "preopen_charts": FlagInfo("Pre-open charts (Daily / 1H / 15M) on Telegram from the private package (admin / owner only; places no orders)",
+                               "trading", "nothing in the app: the charts go to the runner user's own Telegram chat", (),
+                               "the private engine package and the signal engine runner settings", "ready"),
     "strategy_templates": FlagInfo("Ready strategy templates adopted as paper strategies", "trading", "templates in the trading bot form", ("ui_v2",), "", "unfinished"),
     "screener_rankings": FlagInfo("Rank a universe 0-100", "screens", "rankings", ("screener_v2",), "", "ready"),
     "screener_backtest": FlagInfo("Back-test a screen over time", "screens", "screen backtest", ("screener_v2",), "", "ready"),
@@ -252,6 +255,7 @@ FLAG_GROUP: dict[str, str] = {
     "setup_recall": "paper",
     "why_no_trade": "paper",
     "trade_engine": "paper",
+    "preopen_charts": "paper",
     "cost_meter": "paper",
     "strategy_templates": "paper",
     # Backtests

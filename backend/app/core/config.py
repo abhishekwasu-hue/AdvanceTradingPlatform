@@ -373,6 +373,11 @@ HISTORY_BACKFILL_RETRY_MINUTES = max(5, int(os.environ.get("HISTORY_BACKFILL_RET
 # backfilled indices (LAKE_BACKFILL_INDICES) into the history owner's PRIVATE store (app/market_lake/provisional_daily.py),
 # read until NSE's index file for the day lands. Operational time only (never reading logic). "off": not written.
 DAILY_PROVISIONAL_AT_IST = _ist_clock("DAILY_PROVISIONAL_AT_IST", "15:45")
+# Pre-open charts (owner 4 Nov, app/workers/preopen_charts.py, flag preopen_charts): when ATP's job sends the Daily / 1H /
+# 15M pre-open charts (the Trade pre-open ran at 09:00 IST) and for how long a late worker may still send them that day.
+# Operational time only (never reading logic). "off": not sent.
+PREOPEN_CHARTS_AT_IST = _ist_clock("PREOPEN_CHARTS_AT_IST", "09:00")
+PREOPEN_CHARTS_WINDOW_MINUTES = max(1, min(240, int(os.environ.get("PREOPEN_CHARTS_WINDOW_MINUTES", "60") or 60)))
 # HB2 (docs/design/HB2_INTRADAY_HISTORY.md): the owner's 1-minute history, captured after the close and backfilled from
 # the OWNER's own broker session (Tier A, read-only candle endpoints) into the owner's private store (md_tenant_candles,
 # HISTORY_OWNER_TENANT_ID confirmed by HISTORY_OWNER_TENANT_NAME) - only while the `history_intraday` flag is on.

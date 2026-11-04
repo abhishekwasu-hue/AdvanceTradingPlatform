@@ -226,6 +226,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (engine_missing_flags). OFF by default, not in the trader pack. EN-1 is the boundary only: no signal path reads this flag
     # yet to produce signals, and nothing here places, blocks or changes an order (PAPER only).
     "trade_engine": "Signal engine (admin / owner only): needs the private engine package on the server; PAPER only, places no orders",
+    # Owner 4 Nov (app/workers/preopen_charts.py): ATP's job sends the Daily / 1H / 15M pre-open charts of the engine runner's
+    # symbols to the runner user's own Telegram chat, once a trading day. Admin / owner only; needs the private package.
+    "preopen_charts": "Pre-open charts on Telegram (admin / owner only): Daily / 1H / 15M of the signal engine's symbols, once a trading day; places no orders",
     # Master Order 4 slice 3 (app/growth; needs `ui_v2`): the plan page with a usage meter (what the user's plan includes
     # and how much of it he used, from the existing limits and counters), the "my discipline this week" share card (his
     # own discipline facts only: no security names, no prices, no call words) and the admin Business view's activation
@@ -701,7 +704,7 @@ ENGINE_MISSING_REASON = "The chart analysis engine (private package) is not inst
 
 # M66 EN-1: the signal engine of the private package (app/engine_provider/loader.py); without it `trade_engine` is
 # unavailable whatever its stored state (admin / owner only; OFF by default).
-TRADE_ENGINE_FLAGS = ("trade_engine",)
+TRADE_ENGINE_FLAGS = ("trade_engine", "preopen_charts")
 TRADE_ENGINE_MISSING_REASON = "The signal engine (private package) is not installed on this server, so this feature is unavailable."
 # M86 W1: the chart reader of the private package (app/chart_reader/loader.py); without it `chart_reader` is unavailable.
 CHART_READER_FLAGS = ("chart_reader",)

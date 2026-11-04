@@ -21,6 +21,9 @@ function niftyHybrid(adv2: boolean): HybridResult {
   const h = adv2 ? fixtureHybrid(false) : fixtureHybridOld(false);
   const reading = { ...h.reading, symbol: "NIFTY 50", last_close: 24101, protected: 23980, levels: [{ kind: "swing high" as const, price: 24260 }, { kind: "swing low" as const, price: 23930 }],
     last_break: h.reading.last_break ? { ...h.reading.last_break, price: 24150 } : null,
+    // the checklist's facts carry the same prices as the structure above (owner review of the proof sheet)
+    checklist: h.reading.checklist.map((c) => (c.name === "Protected level" ? { ...c, reason: "23,980.00" }
+      : c.name === "Last break of structure" ? { ...c, reason: "Swing break at 24,150.00" } : c)),
     table: h.reading.table.map((row) => (row.tf === "1h" ? { ...row, protected: 23980, last_break: row.last_break ? { ...row.last_break, price: 24150 } : null }
       : row.tf === "15m" ? { ...row, protected: 24140, last_break: row.last_break ? { ...row.last_break, price: 24122 } : null } : row)),
     areas: [{ where: "above" as const, low: 24300, high: 24340, distance: 199, state: "fresh", timeframe: "1h", ...(adv2 ? { distance_pct: 0.83 } : {}) },

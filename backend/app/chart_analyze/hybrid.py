@@ -43,8 +43,9 @@ METHOD_CODE, METHOD_CODE_AI = "code", "code_ai"
 OFF_MESSAGE = "Advanced analysis is not switched on for your organisation yet. Use AI only for now."
 ADMIN_WHERE = "Admin > Feature flags > Charts and tools"
 ADMIN_NEEDS = ("chart_analyze", "chart_price_action", "market_zones (for the areas of interest)")
-SIDE_BY_SIDE = ("ATP does not know your picture's price scale, so nothing is drawn on it. ATP's reading is drawn on its "
-                "own chart of the stored candles for this symbol and timeframe, shown beside your chart.")
+# Owner 4 Nov (ADV-2): a positive sentence - what ATP does, never what it cannot.
+SIDE_BY_SIDE = ("ATP draws its reading on its own chart of this symbol and timeframe, beside your chart; your picture stays "
+                "exactly as you added it.")
 NOT_SHAREABLE = "Only an AI only analysis can be shared for now."
 STRUCTURE_OFF = "ATP's structure reading is not switched on for your organisation yet. Use AI only for now."
 ZONES_OFF = "Areas of interest are not switched on for your organisation yet."

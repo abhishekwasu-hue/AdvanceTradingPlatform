@@ -37,7 +37,7 @@ export default function ChatBubbleV2({ on, signedIn, section }: { on: (flag: str
     <>
       <button type="button" onClick={() => setOpen(true)} aria-label={symbol ? `Chat with the Copilot about ${symbol}` : "Chat with the Copilot"}
         data-chat-bubble
-        className="fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] right-space-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-brand text-white shadow-lg hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 md:bottom-space-6 md:right-space-6">
+        className="fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] right-space-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-brand text-on-brand shadow-lg hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 md:bottom-space-6 md:right-space-6">
         <MessageCircle size={22} aria-hidden />
       </button>
       <Sheet side={phone ? "bottom" : "right"} open={open} onOpenChange={setOpen} title={symbol ? `Copilot · ${symbol}` : "Copilot"}>

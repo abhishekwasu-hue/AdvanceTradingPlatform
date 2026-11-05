@@ -26,6 +26,8 @@ esac
 FILES="$FILES ${COMPOSE_OVERLAYS:-}"
 COMPOSE="docker compose $FILES -p $PROJECT"
 TIMEOUT="${DEPLOY_TIMEOUT:-120}"
+# OPS-SHARE: the hostinger overlay puts Caddy on the external host-wide network; compose needs it to exist.
+case "$FILES" in *hostinger*) docker network inspect "${SHARED_EDGE_NETWORK:-edge}" >/dev/null 2>&1 || docker network create "${SHARED_EDGE_NETWORK:-edge}" >/dev/null ;; esac
 log() { printf '%s deploy[%s]: %s\n' "$(date -u +%H:%M:%S)" "$ENV_NAME" "$*"; }
 
 # P0.1: fetch everything, then check the ref out detached - `origin/main`, a branch, a tag or a SHA all work

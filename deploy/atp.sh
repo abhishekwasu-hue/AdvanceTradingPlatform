@@ -601,6 +601,16 @@ check_tools() {
   ok "tools present, docker compose $v"
 }
 
+# OPS-SHARE: the host-wide Docker network Caddy shares with other projects on this server (docker-compose.hostinger.yml
+# `shared_edge`, external). Compose refuses to start Caddy without it, so it is created here when missing (idempotent).
+ensure_shared_network() {
+  local net; net="$(env_get SHARED_EDGE_NETWORK | grep . || echo edge)"
+  if docker network inspect "$net" >/dev/null 2>&1; then ok "shared network $net present"; return 0; fi
+  if [ "$DRY_RUN" = "1" ]; then info "would create the shared network $net"; return 0; fi
+  docker network create "$net" >/dev/null || die "could not create the shared Docker network $net" 1
+  ok "shared network $net created"
+}
+
 check_repo() {
   [ -d "$ATP_DIR/.git" ] || die "$ATP_DIR is not a git clone - run the install block (runbook section 3)" 10
   local dirty
@@ -1191,6 +1201,7 @@ cmd_deploy() {
   check_repo
   check_env record
   report_settings
+  ensure_shared_network
 
   step "release"
   printf '    + git -C %s fetch -q --tags origin\n' "$ATP_DIR"
@@ -1395,6 +1406,7 @@ cmd_rollback() {
   check_tools
   check_repo
   check_env
+  ensure_shared_network
   local cur line target backup rev_before rev_after mode="release"
   cur="$(current_sha)"
   [ -n "$cur" ] || die "no release recorded in $STATE_DIR/current - nothing to roll back" 2

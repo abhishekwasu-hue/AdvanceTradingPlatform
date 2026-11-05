@@ -343,7 +343,7 @@ export function AboutChip({ ctx, onClear }: { ctx: AskContext; onClear: () => vo
   );
 }
 
-export function CopilotChatV2({ context = null }: { context?: AskContext | null }) {
+export function CopilotChatV2({ context = null, starters = [] }: { context?: AskContext | null; starters?: readonly string[] }) {
   const t = useCopilotT();
   // M72 PR-3 (F8): the context the page was opened with rides on every question until the user drops it
   const contextKey = JSON.stringify(context);
@@ -468,6 +468,15 @@ export function CopilotChatV2({ context = null }: { context?: AskContext | null 
   return (
     <>
       <PageIntro id="copilot-chat" title={t("chat.introTitle")} lines={[t("chat.intro1"), t("chat.intro2")]} />
+      {/* CH-1: the chat bubble's ready questions about the page's symbol, until the first question is asked */}
+      {starters.length > 0 && turns.length === 0 && (
+        <div className="flex flex-wrap gap-space-2" data-chat-starters>
+          {starters.map((q) => (
+            <button key={q} type="button" disabled={busy} onClick={() => void ask(q)}
+              className="inline-flex min-h-11 items-center rounded-pill border border-border bg-surface-1 px-space-3 text-left text-t13 text-fg hover:bg-surface-2 md:min-h-9">{q}</button>
+          ))}
+        </div>
+      )}
       <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={placement} onDraft={setDraft} onAsk={(q) => void ask(q)}
         strip={strip} keyOpen={keyOpen} onKeyOpen={setKeyOpen} onAttach={canAttach ? (source) => void attachChart(source) : undefined}
         connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined}
@@ -482,9 +491,9 @@ function Waiting() {
   return <p className="text-t20 font-semibold text-fg md:text-t24">{t("chat.topLine")}</p>;
 }
 
-export default function CopilotChatGate({ context = null }: { context?: AskContext | null }) {
+export default function CopilotChatGate({ context = null, starters = [] }: { context?: AskContext | null; starters?: readonly string[] }) {
   const t = useCopilotT();
   const { user } = useAuth();
   if (!user) return <p className="text-t14 text-fg-muted">{t("shell.signIn")}</p>;
-  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 context={context} /></FirstUseModal>;
+  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 context={context} starters={starters} /></FirstUseModal>;
 }

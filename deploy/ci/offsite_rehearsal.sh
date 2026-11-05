@@ -52,6 +52,7 @@ pass() { RESULTS+=("| $1 | PASS | $2 |"); printf '    PASS  %s: %s\n' "$1" "$2";
 fail() { RESULTS+=("| $1 | **FAIL** | $2 |"); printf '    FAIL  %s: %s\n' "$1" "$2"; FAILED=1; }
 
 dcp() {
+  docker network inspect "${SHARED_EDGE_NETWORK:-edge}" >/dev/null 2>&1 || docker network create "${SHARED_EDGE_NETWORK:-edge}" >/dev/null   # OPS-SHARE
   (cd "$CLONE" && docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml \
     -f deploy/compose.release.yml -p atp "$@")
 }

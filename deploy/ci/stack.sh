@@ -43,7 +43,11 @@ step() { printf '\n==> %s\n' "$*"; }
 [ "$PROJECT" != "atp" ] || die "refusing: 'atp' is the production compose project" 2
 case "$PROJECT" in *[!a-z0-9_-]*|"") die "ATP_CI_PROJECT must be lowercase letters, digits, - or _" 2 ;; esac
 
+# OPS-SHARE: Caddy (docker-compose.hostinger.yml) is also on the external host-wide network; compose needs it to exist.
+shared_network() { docker network inspect "${SHARED_EDGE_NETWORK:-edge}" >/dev/null 2>&1 || docker network create "${SHARED_EDGE_NETWORK:-edge}" >/dev/null; }
+
 dc() {
+  shared_network
   (cd "$ROOT" && docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f docker-compose.prod.yml \
     -f docker-compose.hostinger.yml -f deploy/compose.release.yml -f deploy/ci/compose.ci.yml -p "$PROJECT" "$@")
 }

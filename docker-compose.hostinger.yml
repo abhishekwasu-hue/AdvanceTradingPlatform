@@ -116,8 +116,14 @@ services:
     <<: *small
     volumes: !override
       - ./deploy/${CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
+      - ${CADDY_SITES_DIR:-/etc/atp/caddy-sites}:/etc/caddy/sites:ro   # OPS-SHARE: other projects' site files
       - caddy_data:/data
       - caddy_config:/config
+    # OPS-SHARE: also on the host-wide shared network, so it can reach other projects' containers by name.
+    # deploy/atp.sh creates the network before compose needs it.
+    networks:
+      - edge
+      - shared_edge
 
   backup:
     environment:
@@ -169,3 +175,10 @@ services:
       - backups:/backups:ro
       - ${OFFSITE_LOCAL_DIR:-/var/backups/atp-offsite}:/offsite_local
       - ${OFFSITE_RESTORE_DIR:-/var/backups/atp-restore-test}:/restore
+
+# OPS-SHARE: the host-wide network other projects on this server join (BagMitra's EDGE_NETWORK). External, so
+# compose never removes it; deploy/atp.sh creates it if missing.
+networks:
+  shared_edge:
+    external: true
+    name: ${SHARED_EDGE_NETWORK:-edge}

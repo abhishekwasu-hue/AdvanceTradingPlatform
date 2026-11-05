@@ -296,6 +296,22 @@ A new engine version = a new tag (or commit sha) in `ATP_PRIVATE_REF`, then the 
   - through public DNS with the certificate verified (a WARN only - DNS and certificates are not part of a release, so
     they never fail a deploy or a rollback): the apex health address and the www redirect.
 
+## 5a. Another project on this server (OPS-SHARE, owner 5 Nov)
+
+ATP's Caddy also serves other projects on this host (today BagMitra, on its own subdomain), without any change
+to the tracked `deploy/Caddyfile` - `check_repo` refuses to deploy over an edited tracked file.
+
+- `deploy/Caddyfile` ends with `import /etc/caddy/sites/*.caddy`. The host folder `CADDY_SITES_DIR` (default
+  `/etc/atp/caddy-sites`) is mounted read-only there; one file per project, e.g. `bagmitra.caddy` with its site block.
+  No file there = only a warning in Caddy's log, ATP unchanged.
+- Caddy also joins the external Docker network `SHARED_EDGE_NETWORK` (default `edge`); `atp.sh deploy` / `rollback`
+  create it when missing. The other project's API joins the same network and is reached by its container name. The
+  ATP API is never on that network, so forwarded headers are still trusted from ATP's own `edge` subnet only.
+- Changing only a site file: `docker exec atp-caddy-1 caddy validate --config /etc/caddy/Caddyfile` then
+  `docker exec atp-caddy-1 caddy reload --config /etc/caddy/Caddyfile` (no ATP restart).
+- A rollback to a release older than OPS-SHARE takes the import away (the other project goes offline, ATP is fine);
+  deploy again to bring it back.
+
 ## 6. R2 off-site backups (owner blocker)
 
 Everything that goes to R2 is encrypted and sealed on this server first (AES-256 with `BACKUP_ENCRYPTION_PASSPHRASE`,

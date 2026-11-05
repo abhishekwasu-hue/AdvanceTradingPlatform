@@ -84,5 +84,6 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Upstox Analytics Token asked once (2 Nov; overseer M84) | ATP_ORDER_M85.md | M85 | in progress - next |
 | - | Easy login + step-by-step guide for every broker (2 Nov) | ATP_ORDER_BRK1.md | BRK-1 | in progress |
 | - | Hide theory text (30 Oct) | ../reviews/PROSE_INVENTORY.md | PROSE-1 | in progress |
+| - | Other projects on the ATP host share its Caddy (5 Nov) | ../deploy/HOSTINGER_RUNBOOK.md 5a | OPS-SHARE | in progress |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

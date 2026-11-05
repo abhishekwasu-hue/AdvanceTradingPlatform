@@ -50,3 +50,10 @@ www.{$DOMAIN} {
 		-Server
 	}
 }
+
+# OPS-SHARE (owner 5 Nov): other projects on this host (e.g. BagMitra) are served by this same Caddy. Each one is ONE
+# file on the host in CADDY_SITES_DIR (default /etc/atp/caddy-sites, mounted read-only at /etc/caddy/sites), for example
+# bagmitra.caddy holding its site block; this repository never carries another project's domain. A glob with no
+# matching file only logs a warning, so a host without such files runs exactly as before. The other project's
+# containers join the shared Docker network SHARED_EDGE_NETWORK (default `edge`) that Caddy is also on.
+import /etc/caddy/sites/*.caddy

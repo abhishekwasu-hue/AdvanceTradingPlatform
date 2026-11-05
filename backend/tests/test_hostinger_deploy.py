@@ -225,9 +225,31 @@ def test_forwarded_headers_are_trusted_from_the_caddy_network_only():
     subnet = cfg["networks"]["edge"]["ipam"]["config"][0]["subnet"]
     assert services["backend"]["environment"]["FORWARDED_ALLOW_IPS"] == f"127.0.0.1,{subnet}"
     assert "*" not in services["backend"]["environment"]["FORWARDED_ALLOW_IPS"]
-    assert set(services["caddy"]["networks"]) == {"edge"}                       # Caddy reaches the API only over edge
+    # Caddy reaches the API only over edge; OPS-SHARE adds the host-wide shared network (other projects' containers),
+    # which the API is never on, so forwarded headers still come only from the edge subnet.
+    assert set(services["caddy"]["networks"]) == {"edge", "shared_edge"}
+    assert cfg["networks"]["shared_edge"]["external"] is True
+    assert "shared_edge" not in services["backend"]["networks"] and "shared_edge" not in services["frontend"]["networks"]
     assert set(services["backend"]["networks"]) == {"default", "edge"} and set(services["frontend"]["networks"]) == {"default", "edge"}
     for name in ("worker", "postgres", "redis", "backup", "offsite"):            # nothing else sits on the trusted range
         assert "edge" not in (services[name].get("networks") or {}), name
     assert "${FORWARDED_ALLOW_IPS" in yaml.safe_load((ROOT / "docker-compose.yml").read_text())["services"]["backend"]["environment"]["FORWARDED_ALLOW_IPS"]
     assert "FORWARDED_ALLOW_IPS:-127.0.0.1" in (ROOT / "backend/scripts/serve_api.sh").read_text()  # local default
+
+
+def test_other_projects_sites_are_imported_from_the_host_only():
+    """OPS-SHARE (owner 5 Nov): another project on this host (BagMitra) is served by ATP's Caddy through one site file
+    per project on the host, never through a change to the tracked Caddyfile (check_repo refuses a dirty checkout)."""
+    domain = (ROOT / "deploy/Caddyfile").read_text()
+    assert domain.rstrip().endswith("import /etc/caddy/sites/*.caddy")   # a glob: no file on the host = only a warning
+    config_lines = [line for line in domain.splitlines() if not line.lstrip().startswith("#")]
+    assert not any("bagmitra" in line.lower() for line in config_lines)  # no other project's site in this repository
+    compose = (ROOT / "docker-compose.hostinger.yml").read_text()
+    assert "${CADDY_SITES_DIR:-/etc/atp/caddy-sites}:/etc/caddy/sites:ro" in compose
+    assert "name: ${SHARED_EDGE_NETWORK:-edge}" in compose and "external: true" in compose
+    atp = (ROOT / "deploy/atp.sh").read_text()
+    assert "ensure_shared_network() {" in atp
+    deploy = atp.split("cmd_deploy() {", 1)[1].split('step "release"', 1)[0]
+    rollback = atp.split("cmd_rollback() {", 1)[1].split("local cur line target", 1)[0]
+    assert "ensure_shared_network" in deploy and "ensure_shared_network" in rollback
+

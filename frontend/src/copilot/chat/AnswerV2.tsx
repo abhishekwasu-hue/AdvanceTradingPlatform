@@ -15,6 +15,7 @@ import {
 import CostChip from "../components/CostChip";
 import { RichText, headingId } from "./RichText";
 import { DraftCardsV2 } from "./DraftCardV2";
+import { draftStartReady, START_LABEL } from "../strategyDraft";
 import { StructureCardV2 } from "./StructureCardV2";
 
 /** CU3: the answer's ONE action (and the strategy card's second, outlined, "test it" button). */
@@ -228,8 +229,9 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
       {(answer.action || chart || (answer.followup && onAsk)) && (
         <div className="flex flex-col gap-space-2 sm:flex-row sm:flex-wrap" data-actions>
           {answer.action ? (
-            <InPlaceLink to={answer.action.to} state={actionState(answer)} data-action={answer.draft ? "draft" : "page"} className={PRIMARY}>
-              {answer.action.label}
+            <InPlaceLink to={answer.action.to} state={actionState(answer)} data-action={answer.draft ? "draft" : "page"} className={PRIMARY}
+              data-start={draftStartReady(answer.draft) || undefined}>
+              {draftStartReady(answer.draft) ? START_LABEL : answer.action.label}
             </InPlaceLink>
           ) : chart ? (
             <InPlaceLink to={chartTabPath(chart.symbol, chart.exchange, chart.timeframe)} data-action="chart" className={PRIMARY}>

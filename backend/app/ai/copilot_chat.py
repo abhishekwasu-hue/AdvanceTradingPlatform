@@ -1737,6 +1737,10 @@ def _test_lines(answer: Answer, data: Dict[str, Any], partial: bool = False) -> 
         answer.unknowns.append(sb.NO_BACKTEST)
         return
     trades, need = int(whole.get("trades") or 0), data.get("min_trades_for_statistics")
+    if isinstance(answer.draft, dict):
+        # CH-3 (owner 5 Nov): the draft was run on past data in this answer - the page offers "Start this strategy" only then.
+        answer.draft["tested"] = {"symbol": data.get("symbol"), "timeframe": tf, "from_day": whole.get("from_day"), "to_day": whole.get("to_day"),
+                                  "trades": trades, "net_pnl": whole.get("net_pnl"), "max_drawdown": whole.get("max_drawdown")}
     lines = [TEST_PARTIAL] if partial else []
     lines.append(f"{data.get('symbol')}{chart}, {whole.get('from_day')} to {whole.get('to_day')} ({_f(whole.get('bars'), 0)} candles).")
     if data.get("prices"):                 # owner order 23 Oct: where the prices came from, in plain words

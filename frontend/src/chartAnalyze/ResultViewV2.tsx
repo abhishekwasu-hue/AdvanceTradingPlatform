@@ -56,7 +56,7 @@ function band(low: number | null, high: number | null, approximate: boolean): st
   return `${price(low, approximate)} – ${price(high, false)}`;
 }
 
-function Ref({ label, value, approximate }: { label: string; value: PriceRef; approximate: boolean }) {
+export function Ref({ label, value, approximate }: { label: string; value: PriceRef; approximate: boolean }) {
   if (!value.text && value.price == null) return null;
   return (
     <div className="flex flex-col gap-space-1 border-t border-subtle py-space-2 first:border-t-0 sm:flex-row sm:gap-space-3">
@@ -66,12 +66,12 @@ function Ref({ label, value, approximate }: { label: string; value: PriceRef; ap
   );
 }
 
-const SIDE_TEXT = { bull_put: "Bull put side", bear_call: "Bear call side", none: "No side" } as const;
+export const SIDE_TEXT = { bull_put: "Bull put side", bear_call: "Bear call side", none: "No side" } as const;
 const TREND_TEXT: Record<string, string> = { up: "Up", down: "Down", sideways: "Sideways", unclear: "Unclear" };
-const PHASE_TEXT: Record<string, string> = { pullback: "Pullback in progress", handover: "Handover", commitment: "Commitment", trending: "Moving, no pullback yet",
+export const PHASE_TEXT: Record<string, string> = { pullback: "Pullback in progress", handover: "Handover", commitment: "Commitment", trending: "Moving, no pullback yet",
   range: "Range", unclear: "Unclear" };
 
-export function statusText(r: AnalysisResult): string {
+export function statusText(r: Pick<AnalysisResult, "setup">): string {
   if (r.setup.status === "formed") return "Formed";
   if (r.setup.status === "forming") return `Forming — waiting for ${r.setup.waiting_for ?? "the condition below"}`;
   return "No setup";

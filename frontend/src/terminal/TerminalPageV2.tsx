@@ -18,7 +18,8 @@ import type { PageProps } from "../routes";
 import { NoteV2 } from "../trading/PartsV2";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
-import { useHasAskAiEntry, useRegisterAskAi } from "../shell/askAiEntry";
+import { analyzeTimeframe, useHasAskAiEntry, useRegisterAskAi } from "../shell/askAiEntry";
+import { DEFAULT_TIMEFRAME } from "../chart/timeframes";
 import { NARROW_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { useSearchParams } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
@@ -175,7 +176,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   // AN-1: the shell's Ask AI offers "Analyze this chart" for the Terminal's main chart (its symbol; the timeframe is
   // picked on Analyze a chart). Outside the shell nothing is registered.
   const shellAsk = useHasAskAiEntry();
-  useRegisterAskAi(shellAsk && spotSymbol ? { symbol: spotSymbol, analyze: { symbol: spotSymbol } } : null);
+  const [mainTf, setMainTf] = useState<string | undefined>(() => analyzeTimeframe(DEFAULT_TIMEFRAME));
+  useRegisterAskAi(shellAsk && spotSymbol ? { symbol: spotSymbol, analyze: { symbol: spotSymbol, timeframe: mainTf } } : null);
   const spot = useTerminalSpot({ symbol: spotSymbol, hub: features.on("data_hub"), enabled: signedIn, chain: live });
   // The chain page's own column choice (one setting for both).
   const [columns, setColumns] = useState<ColumnPrefs>(() => readColumns());
@@ -229,7 +231,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
         const main = id === "chart-1";
         return <ChartPanelV2 symbol={main ? spotSymbol : sym} onSymbol={main || narrow ? undefined : (s) => setChartSymbol(id, s)}
           live={(main ? spotSymbol : sym).toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot) : undefined}
-          levels={main ? levels : undefined} />;
+          levels={main ? levels : undefined} onTimeframe={main ? (tf) => setMainTf(analyzeTimeframe(tf)) : undefined} />;
       }
       // TERM-2 step 2: the Option chain page's own chain (summary strip, columns menu, ChainTableV2), not a copy.
       case "chain": return <TerminalChainV2 symbol={underlying} chain={chain} spot={spot} prevClose={strip.prevClose} prefs={columns}

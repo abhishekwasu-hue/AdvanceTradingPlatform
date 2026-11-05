@@ -1,3 +1,4 @@
+import type { TimeframeId } from "../chart/timeframes";
 import { Bot, ChevronDown, ChevronRight, ShoppingBasket } from "lucide-react";
 import { usePolled, type Loadable } from "../dashboard/useDashboardData";
 import { basketApi, type BasketApi } from "../fno/api";
@@ -75,8 +76,10 @@ export function EmptyText({ children, testId }: { children: ReactNode; testId?: 
 
 // --- Chart ---------------------------------------------------------------------------------------------------------------
 
-export function ChartPanelV2({ symbol, onSymbol, live, levels }: {
+export function ChartPanelV2({ symbol, onSymbol, live, levels, onTimeframe }: {
   symbol: string; onSymbol?: (symbol: string | null) => void;
+  /** AN-1: the chart's timeframe as the trader changes it (the Terminal hands it to Ask AI's "Analyze this chart"). */
+  onTimeframe?: (tf: TimeframeId) => void;
   /** TERM-2 step 2: his legs, breakevens and own spot stops drawn on the chart (terminal/chartLevels.ts). */
   levels?: readonly LevelLine[];
   /** T1-3: the page's one spot when this chart shows the underlying (undefined: the chart reads its own price). */
@@ -99,7 +102,7 @@ export function ChartPanelV2({ symbol, onSymbol, live, levels }: {
         </form>
       )}
       <div className="min-h-0 flex-1 [&>section]:flex [&>section]:h-full [&>section]:flex-col">
-        <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" live={live} levels={levels} />
+        <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" live={live} levels={levels} onTimeframe={onTimeframe} />
       </div>
     </div>
   );

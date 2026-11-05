@@ -100,7 +100,10 @@ describe("Advanced analysis: the result", () => {
   });
 
   it("with the engine's AI part: its reading; without it: code only and no AI wording", () => {
-    expect(render(true)).toContain("AI reading of these facts");
+    const withAi = render(true);
+    expect(withAi).toContain("AI study of this structure");
+    // ADV-3: the whole study - state, setup (status, side, trigger / invalidation / next areas), evidence, both scenarios
+    for (const part of ["data-ai-setup", "data-ai-scenarios", "Main scenario", "Other scenario", "Trigger"]) expect(withAi).toContain(part);
     const code = render(false);
     expect(code).toContain("Advanced analysis (code)");
     expect(code).not.toMatch(/\bAI\b/);

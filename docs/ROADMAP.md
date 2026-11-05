@@ -197,7 +197,8 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | UI-H-TF | in progress | TF-1 one timeframe control everywhere (grouped dropdown + custom interval + starred favourites; phone dropdown + 3 favourites); shared component replaces TimeframeTabs | - |
 | SB-1 | in review (the button, icon rail and per-user memory were built in M57 U7-1; SB-1 adds the 44 px touch target on a tablet) | desktop sidebar show / hide button (collapsed = icon rail), remembered per user; after the limit resets | #910 |
 | PRE-1 | in review | pre-open Daily / 1H / 15M charts from ATP's own job (owner "Default yes" 4 Nov): Trade's pre-open chart code in atp-private + gap band, official close, phase in the title; flag `preopen_charts` OFF, owner turns it on | atp-private #15, #914 |
-| AN-1 | in review | Analyze a chart from a symbol picked by search (ATP draws its own chart; AI only and Advanced both stay); "Analyze this chart" in Ask AI on Charts and the Terminal (owner "Default yes" 5 Nov) | #916 |
+| AN-1 | in review | Analyze a chart from a symbol picked by search (ATP draws its own chart; AI only and Advanced both stay); "Analyze this chart" in Ask AI on Charts and the Terminal (owner "Default yes" 5 Nov) | #916 merged |
+| ADV-3 | in review | Advanced analysis = code + AI (owner 5 Nov): atp-private #17 hybrid entry point (the AI study on ATP's reading, only the reading's prices) + the full AI study block in the result; Terminal "Analyze this chart" carries its timeframe | atp-private #17, #917 |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
 | CP-V | in progress | review done twice (CP_V_REVIEW.md 24 Oct, CP_V_SPEC.md 26 Oct); fixed spec ✅ 26 Oct (CPV-15..17 defaults); build after DATA-H | #555 |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |

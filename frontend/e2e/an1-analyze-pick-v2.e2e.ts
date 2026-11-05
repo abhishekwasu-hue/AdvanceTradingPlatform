@@ -78,3 +78,30 @@ test.describe("AN-1 pick a symbol, 390 x 844", () => {
     expect(posts[0].body).not.toContain('name="link"');
   });
 });
+
+test.describe("ADV-3 AI study on ATP's reading, 390 x 844", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: SHOTS ? 2 : 1 });
+
+  test("Advanced analysis shows the AI's whole study: state, setup, evidence, scenarios, what to watch", async ({ page }) => {
+    const { fixtureHybrid, fixtureItem } = await import("../src/chartAnalyze/fixtures");
+    const h = fixtureHybrid(true);
+    const item = { ...fixtureItem(9, null), mode: "hybrid", status: "done", result: null, hybrid: h, label: h.label, summary: { setup_status: null, trend: "up", symbol: h.reading.symbol } };
+    await open(page, "/chart-analyze");
+    await page.unroute(/\/api(?:\/v1)?\/chart-analyze\/.*/);
+    await page.route(/\/api(?:\/v1)?\/chart-analyze\/.*/, async (route: Route) => {
+      const p = new URL(route.request().url()).pathname.replace(/^\/api(?:\/v1)?\/chart-analyze/, "");
+      if (p === "/status") return route.fulfill({ json: fixtureStatus({ modes: { image_only: true, hybrid: true } }) });
+      if (p === "/items") return route.fulfill({ json: { items: [item] } });
+      if (p === "/items/9") return route.fulfill({ json: item });
+      return route.fulfill({ status: 404, json: { detail: "Not found" } });
+    });
+    await page.reload();
+    await page.getByRole("region", { name: "Your analyses" }).getByRole("button", { name: new RegExp(h.reading.symbol) }).click();
+    const study = page.locator("[data-block='hy-ai']");
+    await expect(study).toContainText("AI study of this structure");
+    await expect(study.locator("[data-ai-setup]")).toBeVisible();
+    await expect(study.locator("[data-ai-scenarios]")).toContainText("Main scenario");
+    await expectPhoneLayout(page);
+    if (SHOTS) { await study.scrollIntoViewIfNeeded(); await study.screenshot({ path: `${SHOTS}/adv3-ai-study-390-dark.png` }); }
+  });
+});

@@ -6,7 +6,7 @@ import { CardV2 } from "../dashboard/CardV2";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FIELD, LABEL, NoteV2 } from "../trading/PartsV2";
 import type { CustomStrategyConfig, CustomStrategyResponse } from "../types";
 import {
-  answerProblem, askKind, draftConfig, DRAFT_TIMEFRAMES, openAsks, saveLine, type DraftValues, type StrategyDraft,
+  answerProblem, askKind, draftConfig, DRAFT_TIMEFRAMES, openAsks, saveLine, testedLine, type DraftValues, type StrategyDraft,
 } from "../copilot/strategyDraft";
 import { Combobox } from "../ui/Combobox";
 import { Details } from "../ui/Details";
@@ -118,11 +118,12 @@ export default function CopilotDraftV2({ draft, onSaved, onDiscard, save = api.c
         )}
 
         <div className="space-y-space-2">
+          {draft.tested && <p className="text-t13 text-fg" data-tested-line>{testedLine(draft.tested)}</p>}
           <p className="text-t13 text-fg-muted" data-save-line>{saveLine(draft, values)}</p>
           <div className="flex flex-col gap-space-2 sm:flex-row">
             <button type="button" className={`${BUTTON_PRIMARY} w-full sm:w-auto`} disabled={busy || !config || !!minRrProblem}
               aria-busy={busy || undefined} onClick={() => void onSave()}>
-              Save as my strategy
+              {draft.tested ? "Save and go to Start" : "Save as my strategy"}
             </button>
             <button type="button" className={`${BUTTON_SECONDARY} w-full sm:w-auto`} onClick={onDiscard}>Discard the draft</button>
           </div>

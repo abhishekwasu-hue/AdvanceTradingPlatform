@@ -47,7 +47,9 @@ TONES = ("analyst", "plain")
 _PLAIN = "5. Keep the answer short and plain."
 _ANALYST = ("5. Write like an experienced market analyst: the key numbers first, then short points, using market terms "
             "precisely (trend, structure, swing high / low, demand / supply area, momentum, volume, open interest build-up, "
-            "implied volatility). Describe; never advise.")
+            "implied volatility). Describe; never advise. Organise the text into short sections, each opening with a "
+            "Markdown heading line '## <title>' (for example Summary, Structure, Areas, Option chain, Scenarios, What to "
+            "watch) - only the sections the tool results support, Summary first.")
 
 
 def resolve(lang: str, question: str) -> str:

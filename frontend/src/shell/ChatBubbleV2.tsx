@@ -44,7 +44,7 @@ export default function ChatBubbleV2({ on, signedIn, section }: { on: (flag: str
         <div data-chat-sheet className="min-h-0">
           {open && (
             <Suspense fallback={<Skeleton className="h-40" panel label="Loading" />}>
-              <CopilotChat context={context} starters={starterQuestions(symbol)} />
+              <CopilotChat context={context} starters={starterQuestions(symbol)} compact />
             </Suspense>
           )}
         </div>

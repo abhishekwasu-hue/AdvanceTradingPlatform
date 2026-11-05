@@ -80,6 +80,9 @@ export interface ChatViewProps {
   onAttach?: (source: ChartSource) => void;
   /** M72 PR-3 (CP-3): what the next question is about ("Ask AI about this"), with a way to drop it. */
   about?: ReactNode;
+  /** CH-1b: the chat bubble's compact chat - the conversation and the ask box only (no numbers strip, job buttons or
+   * Advanced), the ask box kept at the foot of the sheet. */
+  compact?: boolean;
 }
 
 export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, onAttach }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk" | "onAttach"> & { placeholder?: string }) {
@@ -161,14 +164,14 @@ export function NumbersStrip({ strip, home, nowMs }: { strip: Loadable<MarketStr
   );
 }
 
-export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about }: ChatViewProps) {
+export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about, compact = false }: ChatViewProps) {
   const t = useCopilotT();
   const line = marketLineText(home);
   const chips = home ? quickChips(home.jobs) : [];
   const empty = turns.length === 0;
   const aiOff = needsKey(home);
   const composer = <Composer draft={draft} busy={busy} placement={placement} onDraft={onDraft} onAsk={onAsk} onAttach={onAttach}
-    placeholder={placement === "bottom" ? t("chat.placeholderShort") : home?.top_line} />;
+    placeholder={placement === "bottom" || compact ? t("chat.placeholderShort") : home?.top_line} />;
   return (
     <div className="space-y-space-4" data-page="copilot-v2" data-placement={placement}>
       <header className="flex items-center justify-between gap-space-2">
@@ -203,9 +206,9 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
 
       {aiOff && connect && keyOpen && <div data-connect-slot>{connect}</div>}
 
-      <NumbersStrip strip={strip} home={home} nowMs={Date.now()} />
+      {!compact && <NumbersStrip strip={strip} home={home} nowMs={Date.now()} />}
 
-      {chips.length > 0 && (
+      {!compact && chips.length > 0 && (
         <nav aria-label={t("chat.quick")} data-quick-chips data-tour="copilot-jobs" className="grid grid-cols-2 gap-space-2 sm:flex sm:flex-wrap">
           {chips.map((c) => (
             <button key={c.id} type="button" className={`${CHIP} justify-center font-medium sm:justify-start`} disabled={busy} onClick={() => onAsk(c.question)} data-quick={c.id}>
@@ -216,7 +219,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
       )}
 
       {about}
-      {placement === "inline" && composer}
+      {placement === "inline" && !compact && composer}
 
       {!empty && (
         <ol className="space-y-space-4" aria-live="polite" data-conversation>
@@ -265,7 +268,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
       )}
 
       {/* CU2: every job and the older Copilot pages fold under one closed "Advanced" (nothing removed; each still opens). */}
-      <div data-tour="copilot-more"><Details id="copilot.chat.advanced" label="Advanced">
+      {!compact && <div data-tour="copilot-more"><Details id="copilot.chat.advanced" label="Advanced">
         {home && (
           <section aria-labelledby="copilot-can-do" data-can-do>
             <h2 id="copilot-can-do" className="mb-space-1 font-semibold text-fg-muted">{t("chat.canDo")}</h2>
@@ -294,11 +297,13 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
             ))}
           </ul>
         </nav>
-      </Details></div>
+      </Details></div>}
 
       <p className="text-t12 text-fg-muted" data-disclaimer>{home?.disclaimer ?? t("chat.disclaimer")}</p>
 
-      {placement === "bottom" && (
+      {compact ? (
+        <div className="sticky bottom-0 z-10 -mx-space-1 border-t border-subtle bg-surface-1 px-space-1 pb-space-1 pt-space-2" data-compact-composer>{composer}</div>
+      ) : placement === "bottom" && (
         <>
           <div aria-hidden className="h-20" />
           {composer}
@@ -343,7 +348,7 @@ export function AboutChip({ ctx, onClear }: { ctx: AskContext; onClear: () => vo
   );
 }
 
-export function CopilotChatV2({ context = null, starters = [] }: { context?: AskContext | null; starters?: readonly string[] }) {
+export function CopilotChatV2({ context = null, starters = [], compact = false }: { context?: AskContext | null; starters?: readonly string[]; compact?: boolean }) {
   const t = useCopilotT();
   // M72 PR-3 (F8): the context the page was opened with rides on every question until the user drops it
   const contextKey = JSON.stringify(context);
@@ -467,7 +472,7 @@ export function CopilotChatV2({ context = null, starters = [] }: { context?: Ask
 
   return (
     <>
-      <PageIntro id="copilot-chat" title={t("chat.introTitle")} lines={[t("chat.intro1"), t("chat.intro2")]} />
+      {!compact && <PageIntro id="copilot-chat" title={t("chat.introTitle")} lines={[t("chat.intro1"), t("chat.intro2")]} />}
       {/* CH-1: the chat bubble's ready questions about the page's symbol, until the first question is asked */}
       {starters.length > 0 && turns.length === 0 && (
         <div className="flex flex-wrap gap-space-2" data-chat-starters>
@@ -477,7 +482,7 @@ export function CopilotChatV2({ context = null, starters = [] }: { context?: Ask
           ))}
         </div>
       )}
-      <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={placement} onDraft={setDraft} onAsk={(q) => void ask(q)}
+      <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={compact ? "inline" : placement} compact={compact} onDraft={setDraft} onAsk={(q) => void ask(q)}
         strip={strip} keyOpen={keyOpen} onKeyOpen={setKeyOpen} onAttach={canAttach ? (source) => void attachChart(source) : undefined}
         connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined}
         about={about ? <AboutChip ctx={about} onClear={() => setAbout(null)} /> : undefined} />
@@ -491,9 +496,9 @@ function Waiting() {
   return <p className="text-t20 font-semibold text-fg md:text-t24">{t("chat.topLine")}</p>;
 }
 
-export default function CopilotChatGate({ context = null, starters = [] }: { context?: AskContext | null; starters?: readonly string[] }) {
+export default function CopilotChatGate({ context = null, starters = [], compact = false }: { context?: AskContext | null; starters?: readonly string[]; compact?: boolean }) {
   const t = useCopilotT();
   const { user } = useAuth();
   if (!user) return <p className="text-t14 text-fg-muted">{t("shell.signIn")}</p>;
-  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 context={context} starters={starters} /></FirstUseModal>;
+  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 context={context} starters={starters} compact={compact} /></FirstUseModal>;
 }

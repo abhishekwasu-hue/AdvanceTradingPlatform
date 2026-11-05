@@ -65,9 +65,17 @@ export const chartAnalyzeApi = {
   shared: (token: string) => request<SharedAnalysis>(`${PATH}/shared/${encodeURIComponent(token)}`),
   /** One chart: a file or a link (never both). M84, hybrid: the symbol / timeframe are OPTIONAL - an empty one is read
    * from what is printed on the chart; a typed one wins. No price is ever sent or read from the picture. */
-  add: async (source: { file?: Blob; fileName?: string; link?: string }, mode: "image_only" | "hybrid", pick?: Partial<HybridOverride>): Promise<AnalysisItem> => {
+  add: async (source: { file?: Blob; fileName?: string; link?: string; atp?: { symbol: string; timeframe: string } }, mode: "image_only" | "hybrid",
+    pick?: Partial<HybridOverride>): Promise<AnalysisItem> => {
     const form = new FormData();
     form.append("mode", mode);
+    if (source.atp) {
+      // AN-1: a symbol and timeframe picked by search - ATP draws its own chart; no picture, no link.
+      form.append("symbol", source.atp.symbol.trim().toUpperCase());
+      form.append("timeframe", source.atp.timeframe);
+      const picked = await authed(`${PATH}/items`, { method: "POST", body: form });
+      return picked.json() as Promise<AnalysisItem>;
+    }
     if (mode === "hybrid" && pick) {
       if (pick.symbol?.trim()) form.append("symbol", pick.symbol.trim());
       if (pick.timeframe?.trim()) form.append("timeframe", pick.timeframe.trim());

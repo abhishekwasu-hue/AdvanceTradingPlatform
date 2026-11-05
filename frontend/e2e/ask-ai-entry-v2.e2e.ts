@@ -49,7 +49,8 @@ test.describe("CT-1 C10 one Ask AI entry, 390 x 844", () => {
     await page.locator("[data-ask-ai-open]").click();
     const sheet = page.getByRole("dialog", { name: "Ask AI" });
     await expect(sheet.locator("[data-ask-context]")).toContainText("NIFTY 50");
-    await expect(sheet.locator("[data-ask-option]")).toHaveCount(3);       // read, analyze, copilot
+    await expect(sheet.locator("[data-ask-option]")).toHaveCount(4);       // read, analyze this chart (AN-1), analyze an image, copilot
+    await expect(sheet.locator("[data-ask-option='analyze_this']")).toHaveAttribute("href", /\/chart-analyze\?symbol=NIFTY(\+|%20)50&tf=/);
     await expect(sheet.getByRole("link", { name: /Ask the Copilot about NIFTY 50/ })).toHaveAttribute("href", "/copilot?symbol=NIFTY%2050");
     await expectPhoneLayout(page);
     await sheet.locator("[data-ask-option='read']").click();
@@ -64,7 +65,7 @@ test.describe("CT-1 C10 one Ask AI entry, 390 x 844", () => {
     await open(page, "/charts", { ui_v2: true, chart_workspace: true, chart_analyze: true });
     await page.locator("[data-ask-ai-open]").click();
     const sheet = page.getByRole("dialog", { name: "Ask AI" });
-    await expect(sheet.locator("[data-ask-option]")).toHaveCount(1);
+    await expect(sheet.locator("[data-ask-option]")).toHaveCount(2);       // AN-1: this chart, and an image
     await expect(sheet.locator("[data-ask-option='analyze']")).toHaveAttribute("href", "/chart-analyze");
     await page.keyboard.press("Escape");
     await page.unrouteAll({ behavior: "ignoreErrors" });

@@ -20,6 +20,9 @@ export interface AskAiPageContext {
   expiry?: string | null;
   /** Charts: the reading is offered (flag `read_chart` and a timeframe the server reads); `on` while it is drawn. */
   read?: { on: boolean; toggle: () => void };
+  /** AN-1: the chart on screen can be analysed (Analyze a chart, ATP's own chart of it): its symbol and, when Analyze
+   * reads it, its timeframe ("5m" / "15m" / "1h" / "1d"; else the trader picks one there). */
+  analyze?: { symbol: string; timeframe?: string };
   /** The option chain page: what the chain's Ask AI needs. */
   chain?: { symbol: string; expiry: string | null; refreshKey?: number | string };
 }
@@ -64,7 +67,7 @@ export function useRegisterAskAi(ctx: AskAiPageContext | null): void {
   }, [set, key]);
 }
 
-export type AskAiOptionId = "read" | "chain" | "analyze" | "copilot";
+export type AskAiOptionId = "read" | "chain" | "analyze_this" | "analyze" | "copilot";
 
 export interface AskAiOption {
   id: AskAiOptionId;
@@ -73,6 +76,18 @@ export interface AskAiOption {
   hint: string;
   /** A link (Analyze, Copilot); the others act inside the sheet or on the page. */
   to?: string;
+}
+
+/** AN-1: Analyze a chart with the chart on screen filled in (the trader picks the mode and presses Analyze). */
+export function analyzePath(symbol: string, timeframe?: string): string {
+  const q = new URLSearchParams({ symbol });
+  if (timeframe) q.set("tf", timeframe);
+  return `/chart-analyze?${q.toString()}`;
+}
+
+/** Analyze a chart's timeframes for a chart timeframe id (5min / 15min / 60min / day); none for the others. */
+export function analyzeTimeframe(chartTf: string | null | undefined): string | undefined {
+  return ({ "5min": "5m", "15min": "15m", "60min": "1h", day: "1d" } as Record<string, string>)[chartTf ?? ""];
 }
 
 /** The Copilot's address with the symbol on screen. */
@@ -95,6 +110,10 @@ export function askAiOptions(ctx: AskAiPageContext | null, on: (flag: string) =>
     });
   }
   if (ctx?.chain) out.push({ id: "chain", label: "Ask about this chain", hint: "Type a question; the answer is worked out from the live chain" });
+  if (ctx?.analyze?.symbol && on("chart_analyze") && current !== "chart-analyze") {
+    out.push({ id: "analyze_this", label: "Analyze this chart", hint: `${ctx.analyze.symbol}: AI only or Advanced analysis, on ATP's own chart`,
+      to: analyzePath(ctx.analyze.symbol, ctx.analyze.timeframe) });
+  }
   if (on("chart_analyze") && current !== "chart-analyze") {
     out.push({ id: "analyze", label: "Analyze a chart image", hint: "Upload a screenshot of any chart", to: "/chart-analyze" });
   }

@@ -2,6 +2,9 @@ import { ImagePlus, Link2, TriangleAlert, Upload } from "lucide-react";
 import { ComingSoon } from "../ui/ComingSoon";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent } from "react";
 import { useSearchParams } from "react-router";
+import { useOptionalAuth } from "../auth/AuthContext";
+import { Combobox } from "../ui/Combobox";
+import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
 import { friendlyError } from "../api/errors";
 import { Button, Dialog, Skeleton } from "../components/primitives";
 import { Details } from "../ui/Details";
@@ -129,6 +132,11 @@ export default function ChartAnalyzePageV2() {
   const shareOn = on && features.on(SHARE_FLAG);
   const [params, setParams] = useSearchParams();
   const sharedToken = params.get("shared");
+  const auth = useOptionalAuth();
+  // AN-1 (owner 5 Nov): a symbol and timeframe picked by search - ATP draws its own chart (no picture). Charts and the
+  // Terminal open this page with ?symbol=&tf= filled; the trader still picks the mode and presses Analyze.
+  const [atpSymbol, setAtpSymbol] = useState(() => (params.get("symbol") ?? "").trim().toUpperCase().slice(0, 40));
+  const [atpTf, setAtpTf] = useState(() => params.get("tf") ?? "");
   const [sharing, setSharing] = useState(false);
   const [filter, setFilter] = useState<HistoryFilter>("all");
   const [status, setStatus] = useState<AnalyzeStatus | null>(null);
@@ -187,6 +195,7 @@ export default function ChartAnalyzePageV2() {
     if (!f) { setProblem({ message: "Choose a PNG or JPEG image.", code: "image_rejected" }); return; }
     setProblem(null);
     setLink("");
+    setAtpSymbol("");
     setFile(f);
     setPreview(URL.createObjectURL(f));
   }, []);
@@ -264,13 +273,19 @@ export default function ChartAnalyzePageV2() {
   const analyze = async () => {
     setProblem(null);
     setNotice(null);
-    if (!file && !link.trim()) { setProblem({ message: "Add a chart first: choose an image, paste one, or paste a link.", code: "one_source" }); return; }
+    const fromAtp = !file && !link.trim() && Boolean(atpSymbol.trim());
+    if (fromAtp && !atpTf) { setProblem({ message: `Pick the timeframe for ${atpSymbol.trim().toUpperCase()}.`, code: "one_source" }); return; }
+    if (!file && !link.trim() && !fromAtp) {
+      setProblem({ message: "Add a chart first: choose an image, paste one, paste a link, or pick a symbol.", code: "one_source" });
+      return;
+    }
     const hybridMode = mode === "hybrid" && hybridOn;
     let item: AnalysisItem;
     setPhase("adding");
     try {
-      item = await chartAnalyzeApi.add(file ? { file, fileName: file.name } : { link: link.trim() }, hybridMode ? "hybrid" : "image_only",
-        hybridMode ? { symbol: symbol.trim().toUpperCase(), timeframe } : undefined);      // M84: both optional
+      item = await chartAnalyzeApi.add(fromAtp ? { atp: { symbol: atpSymbol, timeframe: atpTf } } : file ? { file, fileName: file.name } : { link: link.trim() },
+        hybridMode ? "hybrid" : "image_only",
+        hybridMode && !fromAtp ? { symbol: symbol.trim().toUpperCase(), timeframe } : undefined);      // M84: both optional
     } catch (e) {
       setPhase("idle");
       setProblem(problemFrom(e));
@@ -448,10 +463,23 @@ export default function ChartAnalyzePageV2() {
           <div className="flex items-center gap-space-2">
             <Link2 size={16} aria-hidden className="shrink-0 text-fg-muted" />
             <input id={linkId} type="url" inputMode="url" value={link} placeholder="https://www.tradingview.com/x/..." autoComplete="off" spellCheck={false}
-              onChange={(e) => { setLink(e.target.value); if (e.target.value) { setFile(null); setPreview(null); } }}
+              onChange={(e) => { setLink(e.target.value); if (e.target.value) { setFile(null); setPreview(null); setAtpSymbol(""); } }}
               className="h-11 w-full min-w-0 rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9" />
           </div>
         </div>
+        {timeframes.length > 0 && (
+          <div className="mt-space-3" data-testid="atp-pick">
+            <p className="mb-space-1 text-t12 font-medium text-fg-muted">Or pick a symbol</p>
+            <div className="grid gap-space-2 sm:grid-cols-2">
+              <SymbolPicker label="Symbol" value={atpSymbol} exchange="NSE" placeholder="Search a symbol" storageKey={recentKeyFor(auth?.user?.id)}
+                className="min-w-0 w-full" onClear={() => setAtpSymbol("")}
+                onPick={(s) => { setAtpSymbol(s.symbol.toUpperCase()); setFile(null); setPreview(null); setLink(""); }} />
+              <Combobox id={`${linkId}-atp-tf`} label="Timeframe" value={atpTf} onChange={setAtpTf} className="w-full"
+                options={timeframes.map((t) => ({ value: t.id, label: t.label }))} />
+            </div>
+            {atpSymbol && <p className="mt-space-1 text-t12 text-fg-muted" data-testid="atp-pick-note">ATP draws its own chart of {atpSymbol} for this analysis.</p>}
+          </div>
+        )}
 
         <fieldset className="mt-space-4" data-testid="mode-picker">
           <legend className="mb-space-2 text-t12 font-medium text-fg-muted">Mode</legend>

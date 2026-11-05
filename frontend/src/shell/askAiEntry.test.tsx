@@ -10,7 +10,7 @@ import { OptionChainView } from "../optionChain/OptionChainPageV2";
 import chainSource from "../optionChain/OptionChainPageV2.tsx?raw";
 import shellSource from "./AppShellV2.tsx?raw";
 import { AskAiSheetBody, contextChips } from "./AskAiSheetV2";
-import { AskAiProvider, askAiOptions, copilotPath, type AskAiPageContext } from "./askAiEntry";
+import { AskAiProvider, analyzeTimeframe, askAiOptions, copilotPath, type AskAiPageContext } from "./askAiEntry";
 import TopBarV2 from "./TopBarV2";
 
 /** CT-1 C10: one Ask AI entry in the shell; the page hands it its context; each flag gates what it gated before. */
@@ -115,5 +115,25 @@ describe("CT-1 C10 the pages use the shell's entry", () => {
     expect(chartsSource).toMatch(/read: readOn && readTf && onChartTab \? \{ on: reading, toggle:/);
     expect(renderToStaticMarkup(<ReadChartPanel state={{ status: "loading" }} onHide={noop} />)).toContain("Hide the reading");
     expect(renderToStaticMarkup(<ReadChartPanel state={{ status: "loading" }} />)).not.toContain("Hide the reading");
+  });
+});
+
+describe("AN-1: Analyze this chart (Charts and the Terminal)", () => {
+  const all = () => true;
+  it("offers Analyze this chart with the chart's symbol and timeframe, before the image analysis", () => {
+    const opts = askAiOptions({ symbol: "NIFTY", analyze: { symbol: "NIFTY", timeframe: "15m" } }, all, "charts");
+    const ids = opts.map((o) => o.id);
+    expect(ids.indexOf("analyze_this")).toBeLessThan(ids.indexOf("analyze"));
+    expect(opts.find((o) => o.id === "analyze_this")?.to).toBe("/chart-analyze?symbol=NIFTY&tf=15m");
+  });
+  it("without a timeframe the trader picks one there; never on Analyze a chart itself or with the flag off", () => {
+    expect(askAiOptions({ analyze: { symbol: "BANKNIFTY" } }, all, "terminal").find((o) => o.id === "analyze_this")?.to)
+      .toBe("/chart-analyze?symbol=BANKNIFTY");
+    expect(askAiOptions({ analyze: { symbol: "NIFTY" } }, all, "chart-analyze").some((o) => o.id === "analyze_this")).toBe(false);
+    expect(askAiOptions({ analyze: { symbol: "NIFTY" } }, (f) => f !== "chart_analyze", "charts").some((o) => o.id === "analyze_this")).toBe(false);
+  });
+  it("maps the chart's timeframes Analyze a chart reads", () => {
+    expect([analyzeTimeframe("5min"), analyzeTimeframe("15min"), analyzeTimeframe("60min"), analyzeTimeframe("day")]).toEqual(["5m", "15m", "1h", "1d"]);
+    expect(analyzeTimeframe("week")).toBeUndefined();
   });
 });

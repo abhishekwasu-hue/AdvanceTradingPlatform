@@ -18,6 +18,7 @@ import type { PageProps } from "../routes";
 import { NoteV2 } from "../trading/PartsV2";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
+import { useHasAskAiEntry, useRegisterAskAi } from "../shell/askAiEntry";
 import { NARROW_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { useSearchParams } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
@@ -171,6 +172,10 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const strip = useStripFigures(underlying, signedIn);
   // T1-3: one spot for the chain and the chart (the same read, the same time).
   const spotSymbol = spotSymbolOf(underlying);
+  // AN-1: the shell's Ask AI offers "Analyze this chart" for the Terminal's main chart (its symbol; the timeframe is
+  // picked on Analyze a chart). Outside the shell nothing is registered.
+  const shellAsk = useHasAskAiEntry();
+  useRegisterAskAi(shellAsk && spotSymbol ? { symbol: spotSymbol, analyze: { symbol: spotSymbol } } : null);
   const spot = useTerminalSpot({ symbol: spotSymbol, hub: features.on("data_hub"), enabled: signedIn, chain: live });
   // The chain page's own column choice (one setting for both).
   const [columns, setColumns] = useState<ColumnPrefs>(() => readColumns());

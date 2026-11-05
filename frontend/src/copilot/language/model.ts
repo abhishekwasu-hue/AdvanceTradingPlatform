@@ -7,14 +7,19 @@ import { useFeatures } from "../../ui/useFeatures";
  * the interface stays English) and the browser's speech input in the Copilot box (off until he turns it on). Stored in his
  * own `user_prefs` namespace `ai` (backend app/me/prefs.py AiPrefs). Numbers and symbols in an answer stay as in the data.
  */
-export type AnswerLanguage = "en" | "mr" | "hi";
-export interface AiPrefs { language: AnswerLanguage; voice: boolean }
-export const DEFAULT_AI_PREFS: AiPrefs = { language: "en", voice: false };
+export type AnswerLanguage = "auto" | "en" | "mr" | "hi";
+/** CH-1 (owner 5 Nov): the answer's register - an experienced analyst's (default) or the earlier plain one. */
+export type AnswerTone = "analyst" | "plain";
+export interface AiPrefs { language: AnswerLanguage; voice: boolean; tone: AnswerTone }
+export const DEFAULT_AI_PREFS: AiPrefs = { language: "auto", voice: false, tone: "analyst" };
 export const LANGUAGE_CHOICES: readonly { value: AnswerLanguage; label: string }[] = [
-  { value: "en", label: "English" }, { value: "mr", label: "Marathi" }, { value: "hi", label: "Hindi" },
+  { value: "auto", label: "Same as my question" }, { value: "en", label: "English" }, { value: "mr", label: "Marathi" }, { value: "hi", label: "Hindi" },
 ];
-/** The speech recogniser's language for his answer language (Indian English, Marathi, Hindi). */
-export const SPEECH_LANG: Record<AnswerLanguage, string> = { en: "en-IN", mr: "mr-IN", hi: "hi-IN" };
+export const TONE_CHOICES: readonly { value: AnswerTone; label: string }[] = [
+  { value: "analyst", label: "Market analyst" }, { value: "plain", label: "Simple words" },
+];
+/** The speech recogniser's language for his answer language (Indian English, Marathi, Hindi; "auto": Indian English). */
+export const SPEECH_LANG: Record<AnswerLanguage, string> = { auto: "en-IN", en: "en-IN", mr: "mr-IN", hi: "hi-IN" };
 
 export const aiPrefsApi = {
   read: () => request<{ prefs: Record<string, unknown> }>("/me/prefs").then((r) => ({ ...DEFAULT_AI_PREFS, ...(r.prefs.ai as Partial<AiPrefs> | undefined) })),

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Skeleton } from "../../components/primitives";
 import { Details } from "../../ui/Details";
 import { useFeatures } from "../../ui/useFeatures";
-import { LANGUAGE_CHOICES, aiPrefsApi, speechRecogniser, type AiPrefs } from "./model";
+import { LANGUAGE_CHOICES, TONE_CHOICES, aiPrefsApi, speechRecogniser, type AiPrefs } from "./model";
 
 /**
  * M72 PR-10 (Settings › AI, flag `copilot_languages`): "Copilot answers" - the language the Copilot answers in and the
@@ -46,6 +46,17 @@ export function AnswerLanguageForm({ prefs, busy, speech, note, onSave }: { pref
           {LANGUAGE_CHOICES.map((c) => (
             <label key={c.value} className={`${ROW} rounded-control border px-space-3 ${prefs.language === c.value ? "border-brand" : "border-border"}`}>
               <input type="radio" name="copilot-language" className={BOX} checked={prefs.language === c.value} onChange={() => onSave({ ...prefs, language: c.value })} />
+              {c.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="space-y-space-1" disabled={busy}>
+        <legend className="text-t13 font-medium text-fg-muted">The Copilot writes like</legend>
+        <div role="radiogroup" aria-label="Answer style" className="flex flex-wrap gap-space-2" data-answer-tone>
+          {TONE_CHOICES.map((c) => (
+            <label key={c.value} className={`${ROW} rounded-control border px-space-3 ${prefs.tone === c.value ? "border-brand" : "border-border"}`}>
+              <input type="radio" name="copilot-tone" className={BOX} checked={prefs.tone === c.value} onChange={() => onSave({ ...prefs, tone: c.value })} />
               {c.label}
             </label>
           ))}

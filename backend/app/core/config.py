@@ -115,6 +115,9 @@ ACTIVATION_FIRST_SESSION_HOURS = _env_int_in("ACTIVATION_FIRST_SESSION_HOURS", 3
 # CP-UX CU6 (owner order 30 Oct): how many turns of a person's Copilot conversation the server keeps so it is still there
 # after a reload (the newest ones; older turns are deleted as new ones are written). The page shows the same number.
 COPILOT_CHAT_KEEP = _env_int_in("COPILOT_CHAT_KEEP", 20, 1, 200)
+# CH-2 (owner 5 Nov): how many named conversations ("New chat") a person keeps; the least recently used go first.
+# COPILOT_CHAT_KEEP is then the number of turns kept per conversation.
+COPILOT_CHAT_SESSIONS_KEEP = _env_int_in("COPILOT_CHAT_SESSIONS_KEEP", 50, 1, 500)
 
 # Fernet key for encrypting broker credentials at rest. Must be set via env in any real
 # deployment - a process-local fallback is generated here only so the app still runs for local

@@ -10,13 +10,15 @@ import voiceSource from "./VoiceButtonV2.tsx?raw";
 /** M72 PR-10 (CP-10): the answer language (UI stays English) and the opt-in speech input. */
 
 describe("M72 PR-10 Copilot languages and voice", () => {
-  it("English by default, voice off; the choices are English words", () => {
-    expect(DEFAULT_AI_PREFS).toEqual({ language: "en", voice: false });
-    expect(LANGUAGE_CHOICES.map((c) => c.label)).toEqual(["English", "Marathi", "Hindi"]);
-    for (const c of LANGUAGE_CHOICES) expect(c.label).toMatch(/^[A-Za-z]+$/);     // no Devanagari in the interface
-    expect(SPEECH_LANG).toEqual({ en: "en-IN", mr: "mr-IN", hi: "hi-IN" });
+  it("CH-1 (owner 5 Nov): the question's own language and an analyst's register by default, voice off; English words", () => {
+    expect(DEFAULT_AI_PREFS).toEqual({ language: "auto", voice: false, tone: "analyst" });
+    expect(LANGUAGE_CHOICES.map((c) => c.label)).toEqual(["Same as my question", "English", "Marathi", "Hindi"]);
+    for (const c of LANGUAGE_CHOICES) expect(c.label).toMatch(/^[A-Za-z ]+$/);     // no Devanagari in the interface
+    expect(SPEECH_LANG).toEqual({ auto: "en-IN", en: "en-IN", mr: "mr-IN", hi: "hi-IN" });
     const html = renderToStaticMarkup(<AnswerLanguageForm prefs={DEFAULT_AI_PREFS} busy={false} speech={false} note={null} onSave={() => undefined} />);
-    expect(html).toMatch(/checked=""[^>]*\/?>English|value="en"/);
+    expect(html).toContain("Same as my question");
+    expect(html).toContain("Market analyst");
+    expect(html).toContain("Simple words");
     expect(html).toContain("This browser has no speech input.");
   });
 
@@ -28,7 +30,7 @@ describe("M72 PR-10 Copilot languages and voice", () => {
     expect(withSpoken("Explain", "open interest")).toBe("Explain open interest");
     expect(withSpoken("Explain", "  ")).toBe("Explain");
     expect(renderToStaticMarkup(<VoiceButtonV2 prefs={null} draft="" onDraft={() => undefined} />)).toBe("");
-    expect(renderToStaticMarkup(<VoiceButtonV2 prefs={{ language: "mr", voice: false }} draft="" onDraft={() => undefined} />)).toBe("");
+    expect(renderToStaticMarkup(<VoiceButtonV2 prefs={{ language: "mr", voice: false, tone: "analyst" }} draft="" onDraft={() => undefined} />)).toBe("");
     expect(voiceSource).not.toMatch(/onAsk|submit\(/);
   });
 

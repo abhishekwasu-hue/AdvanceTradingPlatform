@@ -295,7 +295,7 @@ def _verify(answer: Parsed, allowed: set, by_call: Dict[str, set], from_question
 
 
 async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str = "en", limits: Optional[AgentLimits] = None,
-                    context: dict[str, Any] | None = None, memory: dict[str, Any] | None = None) -> AgentAnswer:
+                    context: dict[str, Any] | None = None, memory: dict[str, Any] | None = None, tone: str = "plain") -> AgentAnswer:
     """`context` (M72 PR-3): what the page asked from, as the SERVER read it for this user (`app.ai.ask_context.resolve`);
     the model gets it as data and its numbers count as read (call id "context")."""
     limits = limits or AgentLimits()
@@ -312,8 +312,10 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
         await ctx.session.commit()
         return AgentAnswer(REFUSALS[kind], "refused", "refused", refused_run.id, refused=kind)
     # M72 PR-10 (CP-10): English unless the caller passes the user's own answer language (Copilot chat, flag copilot_languages)
-    from app.ai.languages import system_for
-    system = system_for(SYSTEM, lang)
+    from app.ai.languages import filter_lang, resolve, system_for, with_tone
+    asked = resolve(lang, question)                     # CH-1: "auto" -> the question's own language
+    system = with_tone(system_for(SYSTEM, asked), tone)  # CH-1: the analyst register (chat), else the plain one
+    lang = filter_lang(asked)
     prompt_version = PROMPT_VERSION if system == SYSTEM else version_of("agent", system)
     allowed_proposals = await available(ctx, proposals.allowed_for(question, lang))      # N3 S9: flagged tools only while on
     tools = specs(await available(ctx, names("read", agent=True)) + allowed_proposals)

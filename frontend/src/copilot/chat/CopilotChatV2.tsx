@@ -24,6 +24,7 @@ import FirstUseModal from "../components/FirstUseModal";
 import { useCopilotT } from "../i18n";
 import { COPILOT_TABS, copilotPath } from "../tabs";
 import { AnswerV2 } from "./AnswerV2";
+import { ChatSessionsV2 } from "./ChatSessionsV2";
 import { TicketPrepV2 } from "../ticket/TicketPrepV2";
 import { useAiPrefs } from "../language/model";
 import { VoiceButtonV2 } from "../language/VoiceButtonV2";
@@ -31,7 +32,7 @@ import { AttachMenu, imageFrom } from "./ChartAttachV2";
 import {
   chartQuestion, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
   hybridPick, restoredTurns, settled, withChart, withTurn,
-  type ChartSource, type ChatAnswer, type ChatHome, type Turn,
+  type ChartSource, type ChatAnswer, type ChatHome, type Conversation, type ConversationTarget, type Turn,
 } from "./model";
 import { chartAnalyzeApi, isFeatureOff } from "../../chartAnalyze/api";
 import { engineAudience } from "../../chartAnalyze/engineWords";
@@ -80,6 +81,9 @@ export interface ChatViewProps {
   onAttach?: (source: ChartSource) => void;
   /** M72 PR-3 (CP-3): what the next question is about ("Ask AI about this"), with a way to drop it. */
   about?: ReactNode;
+  /** CH-1b: the chat bubble's compact chat - the conversation and the ask box only (no numbers strip, job buttons or
+   * Advanced), the ask box kept at the foot of the sheet. */
+  compact?: boolean;
 }
 
 export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, onAttach }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk" | "onAttach"> & { placeholder?: string }) {
@@ -161,14 +165,14 @@ export function NumbersStrip({ strip, home, nowMs }: { strip: Loadable<MarketStr
   );
 }
 
-export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about }: ChatViewProps) {
+export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about, compact = false }: ChatViewProps) {
   const t = useCopilotT();
   const line = marketLineText(home);
   const chips = home ? quickChips(home.jobs) : [];
   const empty = turns.length === 0;
   const aiOff = needsKey(home);
   const composer = <Composer draft={draft} busy={busy} placement={placement} onDraft={onDraft} onAsk={onAsk} onAttach={onAttach}
-    placeholder={placement === "bottom" ? t("chat.placeholderShort") : home?.top_line} />;
+    placeholder={placement === "bottom" || compact ? t("chat.placeholderShort") : home?.top_line} />;
   return (
     <div className="space-y-space-4" data-page="copilot-v2" data-placement={placement}>
       <header className="flex items-center justify-between gap-space-2">
@@ -203,9 +207,9 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
 
       {aiOff && connect && keyOpen && <div data-connect-slot>{connect}</div>}
 
-      <NumbersStrip strip={strip} home={home} nowMs={Date.now()} />
+      {!compact && <NumbersStrip strip={strip} home={home} nowMs={Date.now()} />}
 
-      {chips.length > 0 && (
+      {!compact && chips.length > 0 && (
         <nav aria-label={t("chat.quick")} data-quick-chips data-tour="copilot-jobs" className="grid grid-cols-2 gap-space-2 sm:flex sm:flex-wrap">
           {chips.map((c) => (
             <button key={c.id} type="button" className={`${CHIP} justify-center font-medium sm:justify-start`} disabled={busy} onClick={() => onAsk(c.question)} data-quick={c.id}>
@@ -216,7 +220,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
       )}
 
       {about}
-      {placement === "inline" && composer}
+      {placement === "inline" && !compact && composer}
 
       {!empty && (
         <ol className="space-y-space-4" aria-live="polite" data-conversation>
@@ -265,7 +269,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
       )}
 
       {/* CU2: every job and the older Copilot pages fold under one closed "Advanced" (nothing removed; each still opens). */}
-      <div data-tour="copilot-more"><Details id="copilot.chat.advanced" label="Advanced">
+      {!compact && <div data-tour="copilot-more"><Details id="copilot.chat.advanced" label="Advanced">
         {home && (
           <section aria-labelledby="copilot-can-do" data-can-do>
             <h2 id="copilot-can-do" className="mb-space-1 font-semibold text-fg-muted">{t("chat.canDo")}</h2>
@@ -294,11 +298,13 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
             ))}
           </ul>
         </nav>
-      </Details></div>
+      </Details></div>}
 
       <p className="text-t12 text-fg-muted" data-disclaimer>{home?.disclaimer ?? t("chat.disclaimer")}</p>
 
-      {placement === "bottom" && (
+      {compact ? (
+        <div className="sticky bottom-0 z-10 -mx-space-1 border-t border-subtle bg-surface-1 px-space-1 pb-space-1 pt-space-2" data-compact-composer>{composer}</div>
+      ) : placement === "bottom" && (
         <>
           <div aria-hidden className="h-20" />
           {composer}
@@ -343,7 +349,7 @@ export function AboutChip({ ctx, onClear }: { ctx: AskContext; onClear: () => vo
   );
 }
 
-export function CopilotChatV2({ context = null }: { context?: AskContext | null }) {
+export function CopilotChatV2({ context = null, starters = [], compact = false }: { context?: AskContext | null; starters?: readonly string[]; compact?: boolean }) {
   const t = useCopilotT();
   // M72 PR-3 (F8): the context the page was opened with rides on every question until the user drops it
   const contextKey = JSON.stringify(context);
@@ -356,6 +362,11 @@ export function CopilotChatV2({ context = null }: { context?: AskContext | null 
   const [busy, setBusy] = useState(false);
   const [keep, setKeep] = useState(DEFAULT_KEEP);
   const next = useRef(1);
+  // CH-2: the conversation on screen (null: none yet, or "New chat" pressed - the next question starts a new one)
+  const [convo, setConvo] = useState<Conversation | null>(null);
+  const fresh = useRef(false);
+  const target = (): ConversationTarget => (fresh.current || !convo ? { newChat: fresh.current } : { sessionId: convo.id });
+  const opened = (answer: ChatAnswer) => { if (answer.conversation) { setConvo(answer.conversation); fresh.current = false; } };
   const placement = usePlacement();
   const features = useFeatures();
   const oneKey = features.on("ui_v2") && features.on("ai_one_key");
@@ -384,6 +395,7 @@ export function CopilotChatV2({ context = null }: { context?: AskContext | null 
       const restored = restoredTurns(h, t("chat.unreadable"));
       setKeep(h.keep);
       setTurns((now) => (now.length ? now : restored));
+      setConvo((now) => now ?? h.session ?? null);
       next.current = Math.max(next.current, restored.length + 1);
     }).catch(() => { /* intentional: nothing kept or not reachable: the page starts empty */ });
     return () => { live = false; };
@@ -414,7 +426,8 @@ export function CopilotChatV2({ context = null }: { context?: AskContext | null 
     setDraft("");
     setBusy(true);
     try {
-      const answer: ChatAnswer = await chatApi.ask(question, about);
+      const answer: ChatAnswer = await chatApi.ask(question, about, target());
+      opened(answer);
       setTurns((all) => settled(all, id, answer, null));
     } catch (e) {
       setTurns((all) => settled(all, id, null, friendlyError(e, t) || t("chat.failed")));
@@ -453,8 +466,8 @@ export function CopilotChatV2({ context = null }: { context?: AskContext | null 
       // AI words come only when the user taps "Explain in words" (an ordinary question of his own)
       const question = readingQuestion(done);
       if (question) {
-        const answer = await chatApi.askRules(question).catch(() => null);   // intentional: the optional structure card is skipped; the reading above already shows
-        if (answer) setTurns((all) => settled(all, id, answer, null));
+        const answer = await chatApi.askRules(question, target()).catch(() => null);   // intentional: the optional structure card is skipped; the reading above already shows
+        if (answer) { opened(answer); setTurns((all) => settled(all, id, answer, null)); }
       }
     } catch (e) {
       if (isFeatureOff(e)) show({ status: "unavailable", engine: { installed: false } });
@@ -465,10 +478,40 @@ export function CopilotChatV2({ context = null }: { context?: AskContext | null 
     }
   }
 
+  // CH-2: "New chat" clears the screen; an earlier conversation is read back from the server.
+  function newChat() {
+    fresh.current = true;
+    setConvo(null);
+    setTurns([]);
+    setDraft("");
+  }
+  async function openConversation(sessionId: number) {
+    try {
+      const h = await chatApi.history(sessionId);
+      const restored = restoredTurns(h, t("chat.unreadable"));
+      fresh.current = false;
+      setConvo(h.session ?? null);
+      setKeep(h.keep);
+      setTurns(restored);
+      next.current = Math.max(next.current, restored.length + 1);
+    } catch { /* intentional: the list stays; the conversation on screen is unchanged */ }
+  }
+
   return (
     <>
-      <PageIntro id="copilot-chat" title={t("chat.introTitle")} lines={[t("chat.intro1"), t("chat.intro2")]} />
-      <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={placement} onDraft={setDraft} onAsk={(q) => void ask(q)}
+      {!compact && <PageIntro id="copilot-chat" title={t("chat.introTitle")} lines={[t("chat.intro1"), t("chat.intro2")]} />}
+      <ChatSessionsV2 current={convo} busy={busy} onNew={newChat} onOpen={(sid) => void openConversation(sid)}
+        onRenamed={(c) => setConvo((now) => (now?.id === c.id ? c : now))} onDeleted={(sid) => { if (convo?.id === sid) newChat(); }} />
+      {/* CH-1: the chat bubble's ready questions about the page's symbol, until the first question is asked */}
+      {starters.length > 0 && turns.length === 0 && (
+        <div className="flex flex-wrap gap-space-2" data-chat-starters>
+          {starters.map((q) => (
+            <button key={q} type="button" disabled={busy} onClick={() => void ask(q)}
+              className="inline-flex min-h-11 items-center rounded-pill border border-border bg-surface-1 px-space-3 text-left text-t13 text-fg hover:bg-surface-2 md:min-h-9">{q}</button>
+          ))}
+        </div>
+      )}
+      <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={compact ? "inline" : placement} compact={compact} onDraft={setDraft} onAsk={(q) => void ask(q)}
         strip={strip} keyOpen={keyOpen} onKeyOpen={setKeyOpen} onAttach={canAttach ? (source) => void attachChart(source) : undefined}
         connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined}
         about={about ? <AboutChip ctx={about} onClear={() => setAbout(null)} /> : undefined} />
@@ -482,9 +525,9 @@ function Waiting() {
   return <p className="text-t20 font-semibold text-fg md:text-t24">{t("chat.topLine")}</p>;
 }
 
-export default function CopilotChatGate({ context = null }: { context?: AskContext | null }) {
+export default function CopilotChatGate({ context = null, starters = [], compact = false }: { context?: AskContext | null; starters?: readonly string[]; compact?: boolean }) {
   const t = useCopilotT();
   const { user } = useAuth();
   if (!user) return <p className="text-t14 text-fg-muted">{t("shell.signIn")}</p>;
-  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 context={context} /></FirstUseModal>;
+  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 context={context} starters={starters} compact={compact} /></FirstUseModal>;
 }

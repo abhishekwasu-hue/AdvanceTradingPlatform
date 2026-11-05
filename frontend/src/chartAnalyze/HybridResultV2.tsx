@@ -1,8 +1,9 @@
-import { CheckCircle2, Download, Eye, Trash2 } from "lucide-react";
+import { Check, CheckCircle2, Download, Eye, Trash2, X } from "lucide-react";
 import { Fragment, lazy, Suspense, type ReactNode } from "react";
 import { Button, Skeleton } from "../components/primitives";
 import { cx } from "../components/primitives/cx";
 import { formatNumber } from "../ui/format";
+import { PHASE_TEXT, Ref, SIDE_TEXT, statusText } from "./ResultViewV2";
 import { guardDeep, guardText } from "./signalLanguage";
 import type { HybridArea, HybridResult, HybridRow, HybridTrend } from "./types";
 import type { LevelLine } from "../chart/chartCore";
@@ -354,19 +355,47 @@ export default function HybridResultV2({ result, userImageSrc, readingSrc, image
       )}
 
       {ai && (
-        <Block title="AI reading of these facts" id="hy-ai">
+        // ADV-3 (owner 5 Nov): the AI's study on ATP's reading - the Method Pack's setup, evidence, scenarios and what to
+        // wait for. Its prices are the reading's own (any other price was removed by the private provider), so exact.
+        <Block title="AI study of this structure" id="hy-ai">
           <div className="space-y-space-2 text-t14 text-fg">{ai.story.map((p, i) => <p key={i}>{p}</p>)}</div>
+          {ai.current_state?.text && (
+            <p className="mt-space-3 text-t14 text-fg" data-ai-state><span className="font-semibold">{PHASE_TEXT[ai.current_state.phase] ?? ai.current_state.phase}: </span>{ai.current_state.text}</p>
+          )}
+          <div className="mt-space-3 rounded-control border border-subtle p-space-3" data-ai-setup>
+            <div className="flex flex-wrap items-center gap-space-2">
+              <span className="rounded-pill bg-surface-2 px-space-3 py-space-1 text-t12 font-semibold text-fg">{statusText(ai)}</span>
+              <span className="text-t14 text-fg">{SIDE_TEXT[ai.setup.side]}</span>
+              {ai.setup.label && <span className="rounded-pill border border-subtle px-space-2 py-space-1 text-t12 text-fg">Label {ai.setup.label}</span>}
+            </div>
+            <dl className="mt-space-2">
+              <Ref label="Trigger" value={ai.setup.trigger} approximate={false} />
+              <Ref label="Invalidation" value={ai.setup.invalidation} approximate={false} />
+              {ai.setup.next_areas.map((n, i) => <Ref key={i} label={i === 0 ? "Next areas" : ""} value={n} approximate={false} />)}
+            </dl>
+          </div>
+          {ai.evidence.length > 0 && (
+            <ul className="mt-space-3 divide-y divide-subtle" aria-label="Evidence the AI lists" data-ai-evidence>
+              {ai.evidence.map((e) => (
+                <li key={e.name} className="flex items-start gap-space-3 py-space-2" data-present={e.present}>
+                  {e.present ? <Check size={16} aria-label="present" className="mt-0.5 shrink-0 text-up" /> : <X size={16} aria-label="absent" className="mt-0.5 shrink-0 text-fg-muted" />}
+                  <span className="min-w-0"><span className="block text-t14 font-medium text-fg">{e.name}</span>
+                    {e.reason && <span className="block text-t12 text-fg-muted">{e.reason}</span>}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <dl className="mt-space-3 space-y-space-2 text-t14" data-ai-scenarios>
+            <div><dt className="text-t12 font-medium text-fg-muted">Main scenario</dt><dd className="text-fg">{ai.scenarios.primary}</dd></div>
+            <div><dt className="text-t12 font-medium text-fg-muted">Other scenario</dt><dd className="text-fg">{ai.scenarios.alternative}</dd></div>
+          </dl>
           {ai.what_to_wait_for?.condition && (
             <p className="mt-space-3 flex items-start gap-space-2 text-t14 text-fg">
               <Eye size={16} aria-hidden className="mt-0.5 shrink-0 text-fg-muted" />
               <span><span className="font-semibold">What to watch: </span>{ai.what_to_wait_for.condition}</span>
             </p>
           )}
-          <details className="mt-space-3 text-t14 text-fg">
-            <summary className="cursor-pointer text-t13 font-medium text-fg-muted">Scenarios</summary>
-            <p className="mt-space-2">{ai.scenarios.primary}</p>
-            <p className="mt-space-1 text-fg-muted">{ai.scenarios.alternative}</p>
-          </details>
+          <Details id="chart-analyze.ai-study"><p>The AI wrote this study from ATP&apos;s own reading above; every price in it is one of that reading&apos;s prices. These are conditions the method watches, not an instruction to trade.</p></Details>
         </Block>
       )}
       {result.notes.length > 0 && (

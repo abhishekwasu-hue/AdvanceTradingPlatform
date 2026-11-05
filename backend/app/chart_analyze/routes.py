@@ -182,8 +182,17 @@ async def add_item(file: Optional[UploadFile] = File(default=None), link: Option
         except hybrid.PickError as exc:
             raise HTTPException(status_code=422, detail={"message": str(exc), "code": exc.code}) from None
     has_file = file is not None and bool(file.filename or file.size)
-    if has_file == bool((link or "").strip()):
-        raise HTTPException(status_code=422, detail={"message": "Send one chart: an image file or a link.", "code": "one_source"})
+    has_link = bool((link or "").strip())
+    # AN-1 (owner 5 Nov): a symbol and timeframe picked by search, with no picture - ATP draws its own candle chart.
+    atp_chart = not has_file and not has_link and bool((symbol or "").strip()) and bool((timeframe or "").strip())
+    if not atp_chart and has_file == has_link:
+        raise HTTPException(status_code=422, detail={"message": "Send one chart: an image file, a link, or a symbol and timeframe.",
+                                                     "code": "one_source"})
+    if atp_chart and pick is None:
+        try:
+            pick = hybrid.check_override(symbol, timeframe)
+        except hybrid.PickError as exc:
+            raise HTTPException(status_code=422, detail={"message": str(exc), "code": exc.code}) from None
     await _rate(user, settings)
     tenant = await _tenant(session, user)
     # Early, unlocked: a refused user costs nothing. Then the read transaction ends here, so no connection or lock is held
@@ -192,7 +201,9 @@ async def add_item(file: Optional[UploadFile] = File(default=None), link: Option
     await session.commit()          # ends the read-only transaction (nothing written); loaded objects stay usable
     source_host: Optional[str] = None
     try:
-        if has_file and file is not None:
+        if atp_chart and pick is not None:
+            raw, source = await _atp_picture(session, user, pick), "atp"
+        elif has_file and file is not None:
             raw = await _read_upload(file, settings)
             source = "upload"
         else:
@@ -212,6 +223,23 @@ async def add_item(file: Optional[UploadFile] = File(default=None), link: Option
         raise HTTPException(status_code=503, detail={"message": "Chart storage is not available on this server. Ask the administrator.",
                                                      "code": "storage_unavailable"}) from None
     return service.as_dict(row)
+
+
+async def _atp_picture(session: AsyncSession, user: User, pick: dict[str, str | None]) -> bytes:
+    """AN-1: ATP's own candle chart of the picked symbol / timeframe (the stored candles, else the user's own broker
+    candles - the Advanced analysis' own read), drawn plain: candles, price scale and the title only, no reading on it,
+    so "AI only" reads the picture as it would read an upload. Unreadable -> 422 with the read's own sentence."""
+    from app.chart_analyze import reading_png
+    try:
+        reading = await hybrid.read(session, user, {"symbol": str(pick["symbol"]), "timeframe": str(pick["timeframe"])})
+    except hybrid.ReadingUnavailable as exc:
+        raise HTTPException(status_code=422, detail={"message": str(exc), "code": "reading_unavailable"}) from None
+    plain = {"bars": reading.get("bars") or [], "symbol": reading.get("symbol"), "timeframe_label": reading.get("timeframe_label")}
+    try:
+        return await run_in_threadpool(reading_png.render, plain)
+    except ValueError:
+        raise HTTPException(status_code=422, detail={"message": "ATP holds no candles of this symbol and timeframe yet.",
+                                                     "code": "reading_unavailable"}) from None
 
 
 async def _decode(raw: bytes, settings: Dict[str, Any]) -> imaging.CleanImage:

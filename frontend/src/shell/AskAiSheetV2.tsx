@@ -16,6 +16,7 @@ const AskAi = lazy(() => import("../optionChain/AskAiV2").then((m) => ({ default
 const ICONS: Record<AskAiOptionId, ReactNode> = {
   read: <ScanText size={18} aria-hidden />,
   chain: <Table2 size={18} aria-hidden />,
+  analyze_this: <ScanSearch size={18} aria-hidden />,
   analyze: <ScanSearch size={18} aria-hidden />,
   copilot: <MessagesSquare size={18} aria-hidden />,
 };

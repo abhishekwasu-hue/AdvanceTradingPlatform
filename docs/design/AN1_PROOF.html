@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AN-1 proof</title>
+<style>
+:root{--bg:#0b0e14;--fg:#e6e8ee;--muted:#9aa3b2;--card:#141925;--line:#263042}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;padding:16px}
+h1{font-size:20px;margin:0 0 4px}p{color:var(--muted);margin:0 0 16px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}
+figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px}
+figcaption{font-weight:600;margin-bottom:6px}img{width:100%;height:auto;border-radius:4px}
+@media (max-width:640px){.row{grid-template-columns:1fr}}
+</style></head><body>
+<h1>AN-1: analyze a picked symbol (phone 390, dark)</h1>
+<p>Owner 5 Nov "Default yes, but 1. Give Both options as it is". Mocked made-up data; before = main before AN-1.</p>
+<h2>Charts: Ask AI</h2>
+<div class="row">
+<figure><figcaption>Before</figcaption><img src="an1/an1-BEFORE-charts-askai-390-dark.png" alt="Charts Ask AI before"></figure>
+<figure><figcaption>After: "Analyze this chart" (symbol and timeframe filled)</figcaption><img src="an1/an1-charts-askai-390-dark.png" alt="Charts Ask AI after"></figure>
+</div>
+<h2>Analyze a chart</h2>
+<div class="row">
+<figure><figcaption>Before: image or link only</figcaption><img src="an1/an1-BEFORE-analyze-390-dark.png" alt="Analyze before"></figure>
+<figure><figcaption>After: "Or pick a symbol" + timeframe; both modes stay</figcaption><img src="an1/an1-analyze-pick-390-dark.png" alt="Analyze after"></figure>
+</div>
+<p>Terminal: the shell's Ask AI offers the same "Analyze this chart" for the Terminal's main chart symbol (the timeframe is picked on Analyze a chart).</p>
+</body></html>

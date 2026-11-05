@@ -17,7 +17,7 @@ import { hubViewOf, readCarry } from "../fno/hubModel";
 import { HubTabsView, useHubInfo } from "../fno/SymbolHubTabsV2";
 import { pathFor, type PageProps } from "../routes";
 import { chartsPath } from "../shell/shellRoutes";
-import { useHasAskAiEntry, useRegisterAskAi } from "../shell/askAiEntry";
+import { analyzeTimeframe, useHasAskAiEntry, useRegisterAskAi } from "../shell/askAiEntry";
 import { PageIntro } from "../ui/PageIntro";
 import { SubTabs } from "../ui/SubTabs";
 import { recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
@@ -160,6 +160,7 @@ export default function ChartsPageV2(_props: PageProps) {
   useRegisterAskAi(shellAsk ? {
     symbol, timeframe: onChartTab ? timeframeLabel(timeframe) : undefined,
     read: readOn && readTf && onChartTab ? { on: reading, toggle: () => setReading((v) => !v) } : undefined,
+    analyze: onChartTab && symbol ? { symbol, timeframe: analyzeTimeframe(timeframe) } : undefined,      // AN-1
   } : null);
 
   // CHP-2: a tool picked and not yet placed stays picked when the symbol (and so the drawing controller) changes.

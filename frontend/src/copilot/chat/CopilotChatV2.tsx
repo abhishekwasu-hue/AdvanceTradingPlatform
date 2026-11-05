@@ -24,6 +24,7 @@ import FirstUseModal from "../components/FirstUseModal";
 import { useCopilotT } from "../i18n";
 import { COPILOT_TABS, copilotPath } from "../tabs";
 import { AnswerV2 } from "./AnswerV2";
+import { ChatSessionsV2 } from "./ChatSessionsV2";
 import { TicketPrepV2 } from "../ticket/TicketPrepV2";
 import { useAiPrefs } from "../language/model";
 import { VoiceButtonV2 } from "../language/VoiceButtonV2";
@@ -31,7 +32,7 @@ import { AttachMenu, imageFrom } from "./ChartAttachV2";
 import {
   chartQuestion, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
   hybridPick, restoredTurns, settled, withChart, withTurn,
-  type ChartSource, type ChatAnswer, type ChatHome, type Turn,
+  type ChartSource, type ChatAnswer, type ChatHome, type Conversation, type ConversationTarget, type Turn,
 } from "./model";
 import { chartAnalyzeApi, isFeatureOff } from "../../chartAnalyze/api";
 import { engineAudience } from "../../chartAnalyze/engineWords";
@@ -361,6 +362,11 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
   const [busy, setBusy] = useState(false);
   const [keep, setKeep] = useState(DEFAULT_KEEP);
   const next = useRef(1);
+  // CH-2: the conversation on screen (null: none yet, or "New chat" pressed - the next question starts a new one)
+  const [convo, setConvo] = useState<Conversation | null>(null);
+  const fresh = useRef(false);
+  const target = (): ConversationTarget => (fresh.current || !convo ? { newChat: fresh.current } : { sessionId: convo.id });
+  const opened = (answer: ChatAnswer) => { if (answer.conversation) { setConvo(answer.conversation); fresh.current = false; } };
   const placement = usePlacement();
   const features = useFeatures();
   const oneKey = features.on("ui_v2") && features.on("ai_one_key");
@@ -389,6 +395,7 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
       const restored = restoredTurns(h, t("chat.unreadable"));
       setKeep(h.keep);
       setTurns((now) => (now.length ? now : restored));
+      setConvo((now) => now ?? h.session ?? null);
       next.current = Math.max(next.current, restored.length + 1);
     }).catch(() => { /* intentional: nothing kept or not reachable: the page starts empty */ });
     return () => { live = false; };
@@ -419,7 +426,8 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
     setDraft("");
     setBusy(true);
     try {
-      const answer: ChatAnswer = await chatApi.ask(question, about);
+      const answer: ChatAnswer = await chatApi.ask(question, about, target());
+      opened(answer);
       setTurns((all) => settled(all, id, answer, null));
     } catch (e) {
       setTurns((all) => settled(all, id, null, friendlyError(e, t) || t("chat.failed")));
@@ -458,8 +466,8 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
       // AI words come only when the user taps "Explain in words" (an ordinary question of his own)
       const question = readingQuestion(done);
       if (question) {
-        const answer = await chatApi.askRules(question).catch(() => null);   // intentional: the optional structure card is skipped; the reading above already shows
-        if (answer) setTurns((all) => settled(all, id, answer, null));
+        const answer = await chatApi.askRules(question, target()).catch(() => null);   // intentional: the optional structure card is skipped; the reading above already shows
+        if (answer) { opened(answer); setTurns((all) => settled(all, id, answer, null)); }
       }
     } catch (e) {
       if (isFeatureOff(e)) show({ status: "unavailable", engine: { installed: false } });
@@ -470,9 +478,30 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
     }
   }
 
+  // CH-2: "New chat" clears the screen; an earlier conversation is read back from the server.
+  function newChat() {
+    fresh.current = true;
+    setConvo(null);
+    setTurns([]);
+    setDraft("");
+  }
+  async function openConversation(sessionId: number) {
+    try {
+      const h = await chatApi.history(sessionId);
+      const restored = restoredTurns(h, t("chat.unreadable"));
+      fresh.current = false;
+      setConvo(h.session ?? null);
+      setKeep(h.keep);
+      setTurns(restored);
+      next.current = Math.max(next.current, restored.length + 1);
+    } catch { /* intentional: the list stays; the conversation on screen is unchanged */ }
+  }
+
   return (
     <>
       {!compact && <PageIntro id="copilot-chat" title={t("chat.introTitle")} lines={[t("chat.intro1"), t("chat.intro2")]} />}
+      <ChatSessionsV2 current={convo} busy={busy} onNew={newChat} onOpen={(sid) => void openConversation(sid)}
+        onRenamed={(c) => setConvo((now) => (now?.id === c.id ? c : now))} onDeleted={(sid) => { if (convo?.id === sid) newChat(); }} />
       {/* CH-1: the chat bubble's ready questions about the page's symbol, until the first question is asked */}
       {starters.length > 0 && turns.length === 0 && (
         <div className="flex flex-wrap gap-space-2" data-chat-starters>

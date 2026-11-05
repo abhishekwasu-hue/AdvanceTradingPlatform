@@ -67,7 +67,18 @@ export interface ChatHome {
 }
 /** CU6: one stored turn of the conversation (oldest first). `answer` null: the stored card could not be read. */
 export interface StoredTurn { id: number; question: string; answer: ChatAnswer | null; at: string | null }
-export interface ChatHistory { turns: StoredTurn[]; keep: number }
+export interface ChatHistory { turns: StoredTurn[]; keep: number; session?: Conversation | null }
+/** CH-2: one named conversation of the person ("New chat"); its title is the first question until renamed. */
+export interface Conversation { id: number; title: string }
+export interface ConversationItem extends Conversation { turns: number; updated_at: string | null }
+/** CH-2: which conversation a question goes into - one of his own, a new one, or (neither) the most recently used one. */
+export interface ConversationTarget { sessionId?: number | null; newChat?: boolean }
+
+/** CH-2: the request body's conversation fields. */
+export function conversationBody(target?: ConversationTarget | null): { session_id?: number; new_chat?: true } {
+  if (target?.newChat) return { new_chat: true };
+  return target?.sessionId ? { session_id: target.sessionId } : {};
+}
 export interface WorkedStep {
   tool: string; label: string; ok: boolean; as_of: string | null; source: string | null;
   numbers: { label: string; value: number }[]; note: string | null; args: Record<string, unknown>;
@@ -81,6 +92,8 @@ export type AnswerBlock =
   | { type: "chart"; title: string; chart: AnalysisChart };
 export interface ChatAnswer {
   job: AnswerJob | "refuse" | "help"; job_number: number | null; title: string;
+  /** CH-2: the conversation the turn went into (sent back with the answer; not part of the stored card). */
+  conversation?: Conversation | null;
   summary: string[]; answer: string; sections: { title: string; lines: string[] }[]; blocks: AnswerBlock[]; unknowns: string[];
   worked: WorkedStep[]; action: { label: string; to: string } | null; refused: RefusalKind | null; starters: string[];
   concepts: { id: string; title: string }[]; notes: string[]; disclaimer: string; source: "rules" | "ai"; tool_calls: string[];
@@ -196,12 +209,18 @@ export function actionState(answer: Pick<ChatAnswer, "draft">): { copilotDraft: 
 export const chatApi = {
   home: () => request<ChatHome>("/ai/chat/home"),
   /** M72 PR-3: `context` - where the question was asked from (ids and words only; the server re-reads the object). */
-  ask: (message: string, context?: AskContext | null) =>
-    request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify(context ? { message, context } : { message }) }),
+  ask: (message: string, context?: AskContext | null, target?: ConversationTarget | null) =>
+    request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message, ...(context ? { context } : {}), ...conversationBody(target) }) }),
   /** M59 CR-2: the rule answer only (its structure card), never the AI wording - no metered AI call the user did not ask for. */
-  askRules: (message: string) => request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message, wording: false }) }),
+  askRules: (message: string, target?: ConversationTarget | null) =>
+    request<ChatAnswer>("/ai/chat", { method: "POST", body: JSON.stringify({ message, wording: false, ...conversationBody(target) }) }),
   /** CU6: the person's own conversation, oldest turn first. */
-  history: () => request<ChatHistory>("/ai/chat/history"),
+  history: (sessionId?: number | null) => request<ChatHistory>(sessionId ? `/ai/chat/history?session_id=${sessionId}` : "/ai/chat/history"),
+  /** CH-2: the person's own conversations, most recently used first. */
+  sessions: () => request<{ sessions: ConversationItem[]; keep: number }>("/ai/chat/sessions"),
+  renameSession: (id: number, title: string) =>
+    request<Conversation>(`/ai/chat/sessions/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
+  deleteSession: (id: number) => request<{ deleted: number }>(`/ai/chat/sessions/${id}`, { method: "DELETE" }),
   /** CU6: Settings → My data, "Delete my Copilot conversation". */
   forget: () => request<{ deleted: number }>("/ai/chat/history", { method: "DELETE" }),
 };

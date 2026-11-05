@@ -27,6 +27,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.security import verify_password_async
 from app.core import config
 from app.db.models import (
+    CopilotChatSessionRecord,
     CopilotChatTurnRecord,
     CopilotStudyRecord,
     FeedbackRecord,
@@ -49,6 +50,7 @@ _SECRET_WORDS = ("password", "secret", "encrypted", "token", "hash")
 _DATASETS = (("preferences", UserPrefsRecord), ("orders", OrderRecord), ("trades", TradeRecord), ("journal_entries", JournalEntryRecord),
              ("journal_tags", JournalTagRecord), ("ai_conversations", LlmCallRecord), ("feedback", FeedbackRecord),
              ("copilot_conversation", CopilotChatTurnRecord),      # CP-UX CU6
+             ("copilot_conversations", CopilotChatSessionRecord),  # CH-2: the named conversations (titles)
              ("studies", CopilotStudyRecord))                      # M77 SX-2: his saved studies (snapshot JSON; PDFs one at a time, M77Q-4)
 
 

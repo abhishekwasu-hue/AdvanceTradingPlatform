@@ -3972,6 +3972,23 @@ class ActivationEventRecord(Base):
     reached_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
 
 
+class CopilotChatSessionRecord(Base):
+    """CH-2 (owner 5 Nov, "Ho finish all job"): one named Copilot conversation of a person ("New chat"), like a chat
+    session - its title (the first question, renamable) and when it was last used. Per user and tenant; at most
+    `config.COPILOT_CHAT_SESSIONS_KEEP` per person (the least recently used go). Deleting it deletes its turns. Goes with
+    the account and with "Delete my Copilot conversation"; part of "Download my data". Never read by a trading decision."""
+
+    __tablename__ = "copilot_chat_sessions"
+    __table_args__ = (Index("ix_copilot_chat_sessions_user_id", "user_id", "updated_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)    # the pair index above
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
 class CopilotChatTurnRecord(Base):
     """CP-UX CU6 (owner order 30 Oct): one turn of a person's Copilot conversation - the question he asked and the answer
     card the page showed (JSON, the route's own answer without the admin-only diagnostics) - so the conversation is still
@@ -3985,6 +4002,9 @@ class CopilotChatTurnRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)    # the pair index above
+    # CH-2: the conversation the turn belongs to (NULL: a turn written before CH-2 or by an older release; adopted into
+    # "Earlier conversation" the next time the person's conversations are read).
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("copilot_chat_sessions.id", ondelete="CASCADE"), nullable=True, index=True)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)

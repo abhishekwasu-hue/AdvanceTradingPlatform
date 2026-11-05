@@ -201,6 +201,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | AN-1 | in review | Analyze a chart from a symbol picked by search (ATP draws its own chart; AI only and Advanced both stay); "Analyze this chart" in Ask AI on Charts and the Terminal (owner "Default yes" 5 Nov) | #916 merged |
 | ADV-3 | in review | Advanced analysis = code + AI (owner 5 Nov): atp-private #17 hybrid entry point (the AI study on ATP's reading, only the reading's prices) + the full AI study block in the result; Terminal "Analyze this chart" carries its timeframe | atp-private #17, #917 |
 | CH-1 | in review | The Copilot chat on every page (round button, same chat, page symbol, ready questions); analyst register by default; answers in the question's language (owner "Default yes" 5 Nov) | (this PR) |
+| CH-2 | in review | Claude-like Copilot chat sessions: New chat, the list of his conversations, open / rename / delete; migration f2c4a6e8b012 (owner "Ho finish all job" 5 Nov) | (this PR) |
 | DATA-H | in progress | market-lake history backfill + daily append + auction-close rule + health + honest "history loading" (DH1-DH6) | - |
 | CP-V | in progress | review done twice (CP_V_REVIEW.md 24 Oct, CP_V_SPEC.md 26 Oct); fixed spec ✅ 26 Oct (CPV-15..17 defaults); build after DATA-H | #555 |
 | P1-1 | done (✅ 24 Oct) | owner deploys; check on production | #447 |

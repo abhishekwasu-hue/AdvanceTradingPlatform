@@ -47,6 +47,18 @@ class ChatBody(BaseModel):
     # M72 PR-3 (CP-3): where the question was asked from - page, symbol, timeframe, one object by kind + id. The server
     # re-reads the object for this user (404 when it is not his); no number about it comes from the client.
     context: ChatContext | None = None
+    # CH-2: the conversation this question goes into (one of the caller's own; 404 otherwise). `new_chat` starts a new
+    # one titled by this question; neither = the most recently used conversation (the behaviour before CH-2).
+    session_id: int | None = Field(default=None, ge=1)
+    new_chat: bool = False
+
+
+class SessionTitle(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+
+
+def _not_found() -> HTTPException:
+    return HTTPException(status_code=404, detail="Conversation not found")
 
 
 async def _flags(session: AsyncSession, user: User) -> None:
@@ -203,6 +215,11 @@ async def chat_ask(body: ChatBody, user: User = Depends(require_ai_acknowledged)
     await _flags(session, user)
     tenant_id, user_id, admin = int(user.tenant_id), int(user.id), user.role == UserRole.SUPER_ADMIN.value   # read before any tool runs
     context = await ask_context.resolve(session, tenant_id, user_id, body.context)      # 404: an object that is not his
+    if body.session_id is not None and not body.new_chat:
+        try:
+            await chat_history.current(session, tenant_id, user_id, body.session_id)          # CH-2: 404 before any tool runs
+        except chat_history.NotYours:
+            raise _not_found() from None
     token = chat.CONTEXT_SYMBOL.set(ask_context.symbol_of(context))
     try:
         result = await _chat_ask(body, session, tenant_id, user_id, admin, context)
@@ -227,7 +244,7 @@ async def _chat_ask(body: ChatBody, session: AsyncSession, tenant_id: int, user_
             run_info = planned.pop("agent")                  # the run's audit id: admin diagnostics only, never the user's view
             await ai_resolve.mark_used(session, tenant_id, provider)
             planned["ai"], planned["usage"] = ai_state, metering.spent_by(provider)
-            await chat_history.remember(session, tenant_id, user_id, body.message, planned)
+            planned["conversation"] = await _remember(session, tenant_id, user_id, body, planned)
             await session.commit()
             if admin:
                 planned["diagnostics"] = {"agent": run_info}
@@ -262,19 +279,73 @@ async def _chat_ask(body: ChatBody, session: AsyncSession, tenant_id: int, user_
         from app.ai import metering
         result["usage"] = metering.spent_by(provider)
     # CU6: the turn is kept for the person (the newest COPILOT_CHAT_KEEP), so the conversation is there after a reload.
-    await chat_history.remember(session, tenant_id, user_id, body.message, result)
+    result["conversation"] = await _remember(session, tenant_id, user_id, body, result)
     await session.commit()
     if admin:
         result["diagnostics"] = {**out.diagnostics, **(await _regime_diagnostic(run, out))}
     return result
 
 
+async def _remember(session: AsyncSession, tenant_id: int, user_id: int, body: ChatBody, answer: dict[str, Any]) -> dict[str, Any]:
+    """CH-2: the turn into its conversation; the conversation ({"id", "title"}) goes back with the answer (not stored)."""
+    try:
+        return await chat_history.remember(session, tenant_id, user_id, body.message, answer,
+                                           session_id=None if body.new_chat else body.session_id, new=body.new_chat)
+    except chat_history.NotYours:                     # deleted in another tab while the answer was being made: a new one
+        return await chat_history.remember(session, tenant_id, user_id, body.message, answer, new=True)
+
+
 @router.get("/chat/history")
-async def chat_history_read(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
-    """CU6: the person's own conversation, oldest turn first (at most `keep` turns)."""
+async def chat_history_read(session_id: int | None = None, user: User = Depends(get_current_user),
+                            session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """CU6: the person's own conversation, oldest turn first (at most `keep` turns). CH-2: `?session_id=` one of his
+    conversations (404 otherwise); none = the most recently used one. `session` names it once there is one."""
     await _flags(session, user)
     tenant_id, user_id = int(user.tenant_id), int(user.id)
-    return {"turns": await chat_history.recent(session, tenant_id, user_id), "keep": chat_history.keep()}
+    try:
+        convo = await chat_history.current(session, tenant_id, user_id, session_id)
+        turns = await chat_history.recent(session, tenant_id, user_id, convo["id"]) if convo else []
+    except chat_history.NotYours:
+        raise _not_found() from None
+    await session.commit()                            # loose turns adopted into "Earlier conversation"
+    out: dict[str, Any] = {"turns": turns, "keep": chat_history.keep()}
+    if convo:
+        out["session"] = convo
+    return out
+
+
+@router.get("/chat/sessions")
+async def chat_sessions_list(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """CH-2: the person's own conversations, most recently used first (id, title, turns, updated_at)."""
+    await _flags(session, user)
+    out = await chat_history.sessions(session, int(user.tenant_id), int(user.id))
+    await session.commit()
+    return {"sessions": out, "keep": chat_history.sessions_keep()}
+
+
+@router.patch("/chat/sessions/{session_id}")
+async def chat_session_rename(session_id: int, body: SessionTitle, user: User = Depends(get_current_user),
+                              session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """CH-2: rename one of the caller's own conversations (404 for any other)."""
+    await _flags(session, user)
+    try:
+        out = await chat_history.rename(session, int(user.tenant_id), int(user.id), session_id, body.title)
+    except chat_history.NotYours:
+        raise _not_found() from None
+    await session.commit()
+    return out
+
+
+@router.delete("/chat/sessions/{session_id}")
+async def chat_session_delete(session_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """CH-2: delete one of the caller's own conversations and its turns (404 for any other). Works whatever the flags
+    are (deleting one's own data is never switched off)."""
+    try:
+        deleted = await chat_history.drop(session, int(user.tenant_id), int(user.id), session_id)
+    except chat_history.NotYours:
+        raise _not_found() from None
+    await session.commit()
+    return {"deleted": deleted}
 
 
 @router.delete("/chat/history")

@@ -113,7 +113,7 @@ describe("M59 CR-2: the chart attach in the Ask box", () => {
     expect(chatSource).not.toMatch(/placeOrder|exitNow|cancelOrder/);
     // M59 CR-2: after the analysis only the rule answer is asked (no AI wording); the AI words only on the user's tap
     const flow = chatSource.slice(chatSource.indexOf("async function attachChart"), chatSource.indexOf("return (\n    <>\n      <PageIntro"));
-    expect(flow).toContain("chatApi.askRules(question)");
+    expect(flow).toContain("chatApi.askRules(question, target())");
     expect(flow).not.toMatch(/chatApi\.ask\(/);
   });
 });

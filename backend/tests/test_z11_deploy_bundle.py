@@ -88,6 +88,10 @@ if argv[:2] == ["image", "rm"]:
     if argv[-1] in st["images"]:
         st["images"].remove(argv[-1])
     finish()
+if argv[:2] == ["network", "inspect"]:      # OPS-SHARE: the shared network Caddy joins (atp.sh ensure_shared_network)
+    rc = 0 if argv[2] in st.setdefault("networks", []) else 1; finish()
+if argv[:2] == ["network", "create"]:
+    st.setdefault("networks", []).append(argv[2]); finish()
 if argv[0] != "compose":
     rc = 2; finish()
 

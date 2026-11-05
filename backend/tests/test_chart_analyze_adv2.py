@@ -198,8 +198,12 @@ def test_too_few_stored_candles_read_the_users_own_broker_candles_and_never_writ
     assert sorted(c["timeframe"] for c in calls) == ["1min", "day"] and not any(c["forming"] for c in calls)
     assert {c["symbols"][0] for c in calls} == {SHORT} and {c["exchange"] for c in calls} == {"NSE"}
     assert _run(_count(f"NSE:{SHORT}")) == before                    # the shared lake is never written from broker candles
+    # no bar after the last closed one: every drawn bar starts before the broker's last closed minute ends. (Not the
+    # reading's as_of - that is the read time, and MINUTES is built when this module loads, so during market hours the
+    # read can be minutes later than the fixture's last bar: main CI run 41985059191 failed that way.)
     last_end = max(pd.Timestamp(b["timestamp"]) for b in MINUTES) + pd.Timedelta(minutes=1)
-    assert pd.Timestamp(reading["as_of"]) <= last_end                # no bar after the last closed one
+    last_start = pd.Timestamp(max(b["t"] for b in reading["bars"]), unit="s", tz="UTC")
+    assert reading["bars"] and last_start < last_end
 
 
 def test_enough_stored_candles_stay_stored_and_the_short_rows_come_from_the_broker(monkeypatch):

@@ -1230,6 +1230,39 @@ async def idea_to_scan(body: IdeaBody, user: User = Depends(require_trader), ses
             "not_supported": draft.unsupported, "edits": [f.as_dict() for f in feedback], "disclaimer": idea.DISCLAIMER}
 
 
+RUNS_LIST_MAX = 50            # FN2-i: the most past runs one list call returns
+RUNS_PREVIEW = 5              # FN2-i: matched symbols shown per past run in the list (the full list comes from /runs/{id})
+
+
+@router.get("/runs")
+async def list_runs(screen_id: Optional[int] = None, limit: int = 20, user: User = Depends(get_current_user),
+                    session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """FN2-i: the caller's own earlier runs, newest first - only runs this user started in this organisation (never another
+    member's). `screen_id` narrows to one saved screen of the organisation (404 when it is not one). No results body:
+    the list carries counts and the first few matches; GET /runs/{id} reopens one."""
+    await _flag(session, user)
+    if screen_id is not None:
+        await _owned(session, user, screen_id)
+    limit = max(1, min(limit, RUNS_LIST_MAX))
+    query = (select(ScreenRunRecord, ScreenRecord.name)
+             .outerjoin(ScreenRecord, (ScreenRecord.id == ScreenRunRecord.screen_id) & (ScreenRecord.tenant_id == ScreenRunRecord.tenant_id))
+             .where(ScreenRunRecord.tenant_id == user.tenant_id, ScreenRunRecord.user_id == user.id))
+    if screen_id is not None:
+        query = query.where(ScreenRunRecord.screen_id == screen_id)
+    rows = (await session.execute(query.order_by(ScreenRunRecord.id.desc()).limit(limit))).all()
+    out: List[Dict[str, Any]] = []
+    for row, screen_name in rows:
+        try:
+            results = json.loads(row.result_json or "[]")
+        except ValueError:
+            results = []
+        matches = [str(r.get("symbol")) for r in results if isinstance(r, dict) and r.get("matched")]
+        out.append({"run_id": row.id, "screen_id": row.screen_id, "screen_name": screen_name, "base_tf": row.base_tf,
+                    "scanned": row.scanned, "matched": row.matched, "first_matches": matches[:RUNS_PREVIEW],
+                    "created_at": row.created_at.isoformat() if row.created_at else None})
+    return {"runs": out, "disclaimer": DISCLAIMER}
+
+
 @router.get("/runs/{run_id}")
 async def get_run(run_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)

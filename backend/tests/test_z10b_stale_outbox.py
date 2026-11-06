@@ -97,7 +97,7 @@ def test_bars_are_counted_on_the_exchange_clock():
     assert closed_bars_after(daily, "1d", ist(date(2026, 3, 15), 12, 0)) == 3     # the weekend adds nothing
     assert closed_bars_after(daily, "1d", ist(date(2026, 3, 13), 15, 31), holidays={date(2026, 3, 12)}) == 2
     assert closed_bars_after(utc(ist(TUE, 0, 0)), "1d", ist(TUE, 15, 31)) == 0    # a broker's midnight label is the same day
-    assert closed_bars_after(BAR, "1w", ist(TUE, 12, 0)) is None
+    assert closed_bars_after(BAR, "2h", ist(TUE, 12, 0)) is None                  # FN2-f: weeks / months are counted now
 
 
 def test_the_badge_has_the_bt1_shape_and_fails_closed():
@@ -107,7 +107,7 @@ def test_the_badge_has_the_bt1_shape_and_fails_closed():
     assert stale["alerts_suppressed"] and stale["stale"] and "more than 3 newer 5m bar" in stale["stale_reason"]
     assert alert_badge(None, "5m", ist(TUE, 9, 36))["alerts_suppressed"]          # unknown time = stale
     assert alert_badge(BAR, None, ist(TUE, 9, 36))["alerts_suppressed"]
-    assert alert_badge(BAR, "1w", ist(TUE, 9, 36))["alerts_suppressed"]
+    assert alert_badge(BAR, "2h", ist(TUE, 9, 36))["alerts_suppressed"]          # a timeframe it cannot judge
     assert not alert_badge(BAR, "5m", ist(date(2026, 3, 20), 9, 36), max_bars=0)["alerts_suppressed"]   # G1 limit off = off here too
     assert alert_badge(BAR, "5m", ist(TUE, 9, 41), max_bars=0)["stale"] is False
 

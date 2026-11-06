@@ -210,6 +210,15 @@ async def screen_rule_checks(session: AsyncSession, user: User, ast: Any, fire_o
     await _venue_check(session, user, ast, exchange)
 
 
+def _period_check(base_tf: str, fire_on: str) -> None:
+    """FN2-f: weekly and monthly rules run at their bar close (the period's last trading session); never intrabar."""
+    from app.alerts.barclose import PERIOD_INTRABAR_REFUSAL
+    from app.alerts.periods import PERIODS
+    if base_tf in PERIODS and fire_on == "intrabar":
+        why = PERIOD_INTRABAR_REFUSAL
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[str, Any]:
     if body.kind == "screen":
         if body.screen_id is None:
@@ -221,12 +230,14 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
         if not symbols or any(not SYMBOL.fullmatch(s) for s in symbols):
             raise HTTPException(status_code=422, detail="a screen rule needs 1-50 valid symbols to run the screen on")
+        _period_check(screen.base_tf, body.fire_on)
         await screen_rule_checks(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange,
                                  json.loads(screen.params_json or "{}"))
         return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
                 "exchange": body.exchange}
     if not body.symbol or not body.condition:
         raise HTTPException(status_code=422, detail="an instrument rule needs a symbol and a condition")
+    _period_check(body.base_tf, body.fire_on)
     from app.screener import compile_screen, nodes
     ast, validated = compile_screen(body.condition, base_tf=body.base_tf)
     from app.screener import amw_functions as amw_gate

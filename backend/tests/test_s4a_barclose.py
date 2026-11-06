@@ -43,7 +43,8 @@ def test_expected_bar_follows_the_exchange_clock():
     monday = date(2026, 3, 9)
     assert expected_bar(ist(monday, 8, 0), "1d") == utc(ist(date(2026, 3, 6), 9, 15))          # over the weekend
     assert expected_bar(ist(monday, 16, 0), "1d", holidays={monday}) == utc(ist(date(2026, 3, 6), 9, 15))
-    assert expected_bar(ist(TUE, 12, 0), "1w") is None and expected_bar(ist(TUE, 12, 0), "1M") is None
+    # FN2-f: a week / month bar closes at its last session (tests/test_fn2f_period_barclose.py); an unknown timeframe: None
+    assert expected_bar(ist(TUE, 12, 0), "1w") == utc(ist(date(2026, 3, 2), 0, 0)) and expected_bar(ist(TUE, 12, 0), "2h") is None
 
 
 def _bars(start: datetime, closes, minutes=5) -> pd.DataFrame:

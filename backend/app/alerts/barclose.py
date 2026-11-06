@@ -5,7 +5,8 @@ order, and never fires on a bar that is still forming.
 Each worker cycle, for every active rule whose organisation has `screener_v2` on:
 1. `expected_bar` - the start of the latest fully closed bar of the rule's timeframe on the exchange clock (NSE
    09:15-15:30 IST; intraday buckets start at the open and the day's last bucket may be short; a daily bar closes at
-   15:30 on a trading day). Weekly / monthly rules wait for a later step (SC-10).
+   15:30 on a trading day). FN2-f: a weekly / monthly bar (Monday-Sunday / calendar month, labelled by its first day,
+   as the screener buckets them) closes at the close of its last trading session (`app/alerts/periods.py`).
 2. Already evaluated on that bar (`last_bar_at`) -> nothing to do. Looked less than `RETRY_SECONDS` ago -> wait.
 3. Server bars through the organisation's broker session (`fetch`), trimmed to closed bars. A symbol whose data has
    not reached the expected bar is skipped this round (never evaluated on stale data); when no symbol is current the
@@ -41,12 +42,12 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.alerts import staleness
+from app.alerts import periods, staleness
 from app.db.models import AlertRuleRecord, ScreenRecord
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, is_trading_day
 from app.screener import compile_screen, nodes
 from app.screener.panel import FLAG as VECTOR_FLAG
-from app.screener.runtime import SymbolData, bar_close, closed_only, run_screen
+from app.screener.runtime import SymbolData, bar_close, closed_only, resample, run_screen
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,10 @@ RETRY_SECONDS = 60
 TIME_BUDGET_SECONDS = 10.0                     # per worker cycle; rules left over are simply still due next cycle
 MAX_SYMBOLS = 50
 INTRADAY = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60}
-SUPPORTED = set(INTRADAY) | {"1d"}
+SUPPORTED = set(INTRADAY) | {"1d"} | set(periods.PERIODS)
+# FN2-f: weekly / monthly rules read Daily bars and build their own bar once the period's last session has closed (the
+# screener's `resample` keeps a period only after a later session, which would fire a week late); bar close only
+PERIOD_INTRABAR_REFUSAL = "weekly and monthly rules fire on bar close only, not intrabar"
 
 # fetch(session, tenant_id, symbols, exchange, base_tf, lookback[, forming=True]) -> (universe, per-symbol problems, data
 # source); `forming` is passed only for intrabar rules, so a bar-close fetch keeps the six-argument shape.
@@ -102,6 +106,9 @@ def expected_bar(now: datetime, tf: str, holidays: Iterable[date] = ()) -> Optio
     if tf not in SUPPORTED:
         return None
     hol = set(holidays)
+    if tf in periods.PERIODS:                                              # FN2-f: the period's last session has closed
+        got = periods.latest_closed(now, tf, hol)
+        return got[0] if got else None
     until = _utc(now).astimezone(IST)
     day = until.date()
     for _ in range(15):                                                    # walk back over weekends and holidays
@@ -121,8 +128,9 @@ def expected_bar(now: datetime, tf: str, holidays: Iterable[date] = ()) -> Optio
 
 def forming_bar(now: datetime, tf: str, holidays: Iterable[date] = ()) -> Optional[datetime]:
     """Start (UTC) of the `tf` bar forming at `now` - only inside the session of a trading day; None otherwise (and for
-    an unsupported timeframe). A daily bar is labelled by its session open, like `expected_bar`."""
-    if tf not in SUPPORTED:
+    an unsupported timeframe, and for a week / month: those fire on bar close only). A daily bar is labelled by its
+    session open, like `expected_bar`."""
+    if tf not in SUPPORTED or tf in periods.PERIODS:
         return None
     at = _utc(now).astimezone(IST)
     open_, close = _session_bounds(at.date())
@@ -137,16 +145,30 @@ def forming_bar(now: datetime, tf: str, holidays: Iterable[date] = ()) -> Option
 
 def closed_frame(df: pd.DataFrame, tf: str, expected: datetime) -> Optional[pd.DataFrame]:
     """`df` trimmed to bars that had closed by the expected bar; None when the data has not reached it. Daily bars are
-    matched by IST date (brokers label them at midnight or at the open)."""
+    matched by IST date (brokers label them at midnight or at the open); weeks / months by the IST date of their first day."""
     if df is None or df.empty:
         return None
-    if tf == "1d":
+    if tf == "1d" or tf in periods.PERIODS:
         want = expected.astimezone(IST).date()
         dates = pd.Index([ts.astimezone(IST).date() for ts in df.index])
         kept = df[dates <= want]
         return kept if len(kept) and kept.index[-1].astimezone(IST).date() == want else None
     kept = df[df.index <= pd.Timestamp(expected)]
     return kept if len(kept) and kept.index[-1] == pd.Timestamp(expected) else None
+
+
+def period_frame(daily: Optional[pd.DataFrame], tf: str, expected: datetime, last: date,
+                 exchange: Optional[str] = None) -> Optional[pd.DataFrame]:
+    """FN2-f: the weekly / monthly bars through the period labelled `expected`, built from Daily bars up to `last` - the
+    period's last trading session. None when the Daily data has not reached that session (the rule waits; never a
+    partial week or month). Later sessions are cut first, so nothing after the period's close is read."""
+    if daily is None or daily.empty:
+        return None
+    upto = daily[[ts.astimezone(IST).date() <= last for ts in daily.index]]
+    if upto.empty or upto.index[-1].astimezone(IST).date() != last:
+        return None
+    # every session of the period is in (the cut ends at its last session), so the period's bucket is complete
+    return closed_frame(resample(upto, "1d", tf, keep_forming=True, exchange=exchange), tf, expected)
 
 
 @dataclass
@@ -206,12 +228,14 @@ def _values(frame: pd.DataFrame) -> Dict[str, Any]:
 
 async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbols: List[str], bar: datetime, lookback: Dict[str, int],
                             fetch: Fetch, cache: CycleCache, forming: bool = False, per_user: bool = False,
-                            store: bool = False) -> Tuple[List[SymbolData], Dict[str, str]]:
+                            store: bool = False, period_last: Optional[date] = None) -> Tuple[List[SymbolData], Dict[str, str]]:
     """The symbols whose bars reach `bar` (closed, or forming for an intrabar rule), fetching only what the cycle cache
     does not already hold. `per_user` (BT1b): fetched through the rule creator's own session, cached per user. `store`
     (M71 W2-D, flag `market_store_reads`): store-first as the rule creator (his own stored bars and session, M71Q-2),
-    cached per user."""
+    cached per user. FN2-f: a weekly / monthly rule fetches Daily bars and builds its bar with `period_frame` (`period_last`:
+    the period's last session)."""
     exchange, tf = rule.exchange or "NSE", rule.base_tf
+    fetch_tf = "1d" if tf in periods.PERIODS else tf
     owner = rule.created_by if per_user or store else None
     extra: Dict[str, Any] = {"user_id": owner} if per_user or store else {}
     if store:
@@ -229,14 +253,19 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
                 merged[t] = max(merged.get(t, 0), bars)
         lookback = merged
         if forming:
-            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback, forming=True, **extra)
+            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, fetch_tf, lookback, forming=True, **extra)
         else:
-            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback, **extra)
+            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, fetch_tf, lookback, **extra)
         cache.fetched_symbols += len(missing)
         got = {d.symbol: d for d in universe}
         for sym in missing:
             data = got.get(sym)
-            frame = closed_frame(data.frames.get(tf, pd.DataFrame()), tf, bar) if data is not None else None
+            if data is None:
+                frame = None
+            elif tf in periods.PERIODS and period_last is not None:
+                frame = period_frame(data.frames.get("1d"), tf, bar, period_last, data.exchange or exchange)
+            else:
+                frame = closed_frame(data.frames.get(tf, pd.DataFrame()), tf, bar)
             kept: Dict[str, pd.DataFrame] = {tf: frame} if frame is not None else {}
             daily = data.frames.get("1d") if data is not None and tf != "1d" else None
             if frame is not None and daily is not None:               # U6 BK1: daily context, sessions closed by this bar's close
@@ -284,7 +313,10 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     now = _utc(now)
     intrabar = rule.fire_on == "intrabar"
     if rule.base_tf not in SUPPORTED:
-        rule.last_problem = f"{rule.base_tf} rules are not evaluated yet (weekly / monthly come later)"
+        rule.last_problem = f"{rule.base_tf} rules are not evaluated"
+        return "unsupported", 0
+    if intrabar and rule.base_tf in periods.PERIODS:
+        rule.last_problem = PERIOD_INTRABAR_REFUSAL
         return "unsupported", 0
     if intrabar and not intrabar_enabled:
         rule.last_problem = "intrabar alerts are off for this organisation (flag screener_intrabar)"
@@ -358,8 +390,9 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
         if clock:                                                 # U6 BK2: session functions on the NSE clock only (BK2-5)
             rule.last_problem = clock
             return "unsupported", 0
+        period_last = periods.last_session(bar.astimezone(IST).date(), rule.base_tf, holidays) if rule.base_tf in periods.PERIODS else None
         current, problems = await _current_universe(session, rule, symbols, bar, validated.fetch_lookback, fetch, cache, forming=intrabar,
-                                                    per_user=per_user, store=store_reads)
+                                                    per_user=per_user, store=store_reads, period_last=period_last)
         if current and await staleness.guard_on(session, rule.tenant_id, cache.stale_guard):
             fresh, stale = _fresh_only(current, rule.base_tf, now, holidays)
             cache.suppressed_symbols += len(current) - len(fresh)
@@ -579,4 +612,4 @@ def with_today(daily: pd.DataFrame, intraday: Optional[pd.DataFrame], today: dat
     return pd.concat([daily, pd.DataFrame([row], index=pd.DatetimeIndex([label]))])
 
 
-__all__ = ["CycleCache", "expected_bar", "forming_bar", "INTRABAR_FLAG", "closed_frame", "evaluate_rule", "run_due", "server_fetch", "with_today", "Outcome", "SUPPORTED", "RETRY_SECONDS"]
+__all__ = ["CycleCache", "expected_bar", "period_frame", "PERIOD_INTRABAR_REFUSAL", "forming_bar", "INTRABAR_FLAG", "closed_frame", "evaluate_rule", "run_due", "server_fetch", "with_today", "Outcome", "SUPPORTED", "RETRY_SECONDS"]

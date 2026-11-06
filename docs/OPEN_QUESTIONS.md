@@ -502,3 +502,10 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
 | P3-3-Q1 | When the rolled-back API never passes deep health, `rollback` exits 1 with the API left on the older image (worker, checkout and `.deploy/current` stay on the newer release); a failed `deploy` instead puts the previous API back. Should `rollback` also put the newer API back? (With `--restore-db` the database is already swapped and API + worker are stopped at that point.) | Keep as is (no deploy-behaviour change without the owner): the message is explicit, the runbook (section 9) says to run `atp.sh deploy <N>` or rollback again; pinned by `test_p3_3_a_rolled_back_api_that_fails_health_stops_without_recording_the_rollback`. | `deploy/atp.sh:1510` | open |
+
+## Roadmap truth audit (6 Nov 2026)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| RT6-1 | UI-H: Wave 0 merged (#510) and the page waves were done inside UX-2 / UI-28; mark UI-H superseded? (W0-4 ISO dates has no commit) | Yes, superseded; W0-4 stays a small UI-H-BUG item | docs/ROADMAP.md | open |
+| RT6-2 | CP-V: only the spec (#555) merged; `copilot_chart_read` never built. Superseded by M59 CR-4 + M72 PR-5 (chart attach + Advanced analysis)? | Yes, superseded; no new build | docs/ROADMAP.md | open |

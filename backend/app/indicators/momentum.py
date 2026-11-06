@@ -33,3 +33,18 @@ def stochastic(df: pd.DataFrame, period: int = 14, smooth: int = 3, d: int = 3) 
     k = raw.rolling(window=smooth, min_periods=smooth).mean()
     d_line = k.rolling(window=d, min_periods=d).mean()
     return pd.DataFrame({"k": k, "d": d_line}, index=df.index)
+
+
+# FN2-a (part 2): the stochastic RSI
+@prefix_cached
+def stoch_rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    """Stochastic RSI (Chande and Kroll, "The New Technical Trader", 1994), scaled 0-100: where RSI(period) sits in its own
+    range over the last `period` bars, 100 x (RSI - lowest RSI) / (highest RSI - lowest RSI). This is the %K line
+    unsmoothed (TradingView's "Stoch RSI" smooths it with a 3-bar SMA: SMA(StochRSI(14), 3) in ScreenQL). A window
+    without range (the RSI did not move) has no value (NaN), as the stochastic. The first value needs 2 x period bars
+    (RSI from bar `period`, then `period` RSI values). Causal: bar t reads bars <= t only."""
+    r = rsi(close, period)
+    lowest = r.rolling(window=period, min_periods=period).min()
+    highest = r.rolling(window=period, min_periods=period).max()
+    span = (highest - lowest).where(lambda s: s > 0)
+    return 100.0 * ((r - lowest) / span)                      # the ratio first: the top of the range is exactly 100

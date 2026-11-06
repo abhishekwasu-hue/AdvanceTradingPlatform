@@ -90,6 +90,12 @@ FUNCTION_CASES = [
     "PctChange(close, 5)", "ZScore(close, 20)", "ZScore(volume, 50)", "Lag(close, 3)", "EMA(PctChange(close, 1), 10)",
     "SMA(close - open, 10)", "close[2] / close - 1", "Max(close, 20)[3]",
     "StDev(close, 20)", "StDev(volume, 1)", "StDev(close - open, 5)", "StDev(RSI(14), 10)",            # AMW-3 (population stdev)
+    "CCI(20)", "CCI(3)", "MFI(14)", "MFI(2)", "WilliamsR(14)", "WilliamsR(1)", "OBV()", "SMA(OBV(), 10)", "OBV()[2]",  # FN2-a
+    "AroonUp(25)", "AroonUp(1)", "AroonDown(14)", "CrossAbove(AroonUp(14), AroonDown(14))",
+    # FN2-a (part 2)
+    "KeltnerUpper(20, 2)", "KeltnerMid(10, 1.5)", "KeltnerLower(5, 1.5)", "StochRSI(14)", "StochRSI(3)", "TMA(close, 10)",
+    "TMA(close, 1)", "TMA(volume, 7)", "TMA(RSI(14), 4)", "IchimokuTenkan(9)", "IchimokuKijun(26)", "IchimokuSpanA(9, 26, 26)",
+    "IchimokuSpanA(3, 5, 1)", "IchimokuSpanB(52, 26)", "IchimokuSpanB(10, 3)",
 ]
 
 
@@ -164,6 +170,32 @@ def test_seeded_fuzz_same_matches_and_reasons(gaps):
             got = run_screen(ast, validated, data, base_tf="1d", check_history=check, vectorized=True)
             assert _as_tuples(got) == _as_tuples(want), text
     assert covered == 60                                                       # the fuzz only uses vectorised functions
+
+
+FN2A_SCALARS = ["CCI({p})", "MFI({p})", "WilliamsR({p})", "AroonUp({p})", "AroonDown({p})"]
+
+
+@pytest.mark.parametrize("gaps", [0.0, 0.01])
+def test_seeded_fuzz_fn2a_indicators_same_matches_and_reasons(gaps):
+    """FN2-a: screens over CCI / MFI / Williams %R / OBV / Aroon give the same matches and reasons on both paths."""
+    rng = random.Random(20261106)
+    data = _mixed_universe(gaps)
+    for _ in range(30):
+        def one():
+            kind = rng.random()
+            if kind < 0.6:
+                return f"{rng.choice(FN2A_SCALARS).format(p=rng.choice([2, 5, 14, 20]))} {rng.choice(['>', '<', '>='])} {rng.choice([-150, -80, -20, 0, 30, 50, 70, 100])}"
+            if kind < 0.8:
+                return f"OBV() {rng.choice(['>', '<'])} SMA(OBV(), {rng.choice([5, 20])})"
+            return f"CrossAbove(AroonUp({rng.choice([5, 14])}), AroonDown({rng.choice([5, 14])}))"
+        text = f" {rng.choice(['AND', 'OR'])} ".join(f"({one()})" for _ in range(rng.randint(1, 4)))
+        ast, validated = compile_screen(text, base_tf="1d", cost_cap=1e9)
+        assert validated.ok, (text, validated.problems)
+        assert panel.supported(ast, validated, "1d"), text
+        for check in (True, False):
+            want = run_screen(ast, validated, data, base_tf="1d", check_history=check)
+            got = run_screen(ast, validated, data, base_tf="1d", check_history=check, vectorized=True)
+            assert _as_tuples(got) == _as_tuples(want), text
 
 
 @pytest.mark.parametrize("text", ["close > SMA(close, 5)@1w", "Rank(close) <= 3", "Trend() == \"UPTREND\"", "close > VWAP()",

@@ -48,15 +48,27 @@ LEVELS: Dict[str, Tuple[str, str]] = {
     "VWAP": (REFL, "VWAP"), "SessionVWAP": (REFL, "SessionVWAP"), "DayOpen": (REFL, "DayOpen"), "PDC": (REFL, "PDC"),
     "PDH": (REFL, "PDL"), "PDL": (REFL, "PDH"), "ORHigh": (REFL, "ORLow"), "ORLow": (REFL, "ORHigh"),
     "BBUpper": (REFL, "BBLower"), "BBLower": (REFL, "BBUpper"), "BBMid": (REFL, "BBMid"),
+    # FN2-a (part 2): the true range reads the same on reflected bars, so the Keltner bands swap like Bollinger's; the
+    # Ichimoku lines are midpoints of the highest high and the lowest low (they swap too), so each is its own mirror; the
+    # stochastic RSI of 100 - RSI is 100 minus the stochastic RSI
+    "KeltnerUpper": (REFL, "KeltnerLower"), "KeltnerLower": (REFL, "KeltnerUpper"), "KeltnerMid": (REFL, "KeltnerMid"),
+    "IchimokuTenkan": (REFL, "IchimokuTenkan"), "IchimokuKijun": (REFL, "IchimokuKijun"),
+    "IchimokuSpanA": (REFL, "IchimokuSpanA"), "IchimokuSpanB": (REFL, "IchimokuSpanB"), "StochRSI": (COMP, "StochRSI"),
     "SwingHigh": (REFL, "SwingLow"), "SwingLow": (REFL, "SwingHigh"),
     "PriorSwingHigh": (REFL, "PriorSwingLow"), "PriorSwingLow": (REFL, "PriorSwingHigh"),     # idea library IDEA-14
     "RSI": (COMP, "RSI"), "ATR": (INV, "ATR"), "ADX": (INV, "ADX"), "MedianRange": (INV, "MedianRange"),
     "PlusDI": (INV, "MinusDI"), "MinusDI": (INV, "PlusDI"), "RelVolume": (INV, "RelVolume"),
     "RelVolumeTOD": (INV, "RelVolumeTOD"),
     "IsFnO": (INV, "IsFnO"), "IndexMember": (INV, "IndexMember"),
+    # FN2-a: CCI reads the typical price against its own average (the deviation's sign flips, its size does not); OBV
+    # adds the volume on the other side of each close change; the highest high of reflected bars is the lowest low
+    "CCI": (NEG, "CCI"), "OBV": (NEG, "OBV"), "AroonUp": (INV, "AroonDown"), "AroonDown": (INV, "AroonUp"),
 }
+# FN2-a: Williams %R on reflected bars is -100 minus its value (the close's distance from the lowest low instead of the
+# highest high), i.e. minus (WilliamsR + 100) on the real bars: the NEG class of that expression.
+OFFSET_NEG: Dict[str, float] = {"WilliamsR": 100.0}
 # Linear in their first argument (an average, a lag): the class passes through. Max / Min swap when it is reversed.
-LINEAR = {"SMA": "SMA", "EMA": "EMA", "Lag": "Lag"}
+LINEAR = {"SMA": "SMA", "EMA": "EMA", "Lag": "Lag", "TMA": "TMA"}
 EXTREMES = {"Max": "Min", "Min": "Max", "Greatest": "Least", "Least": "Greatest"}
 # Breakout screens and other filters with a side argument (the first one): the side swaps, the result is a condition.
 SIDE_SWAP = {"up": "down", "down": "up", "above": "below", "below": "above", "bullish": "bearish", "bearish": "bullish",
@@ -79,6 +91,7 @@ SIDED_LEVELS = {"ChannelLine"}
 NOT_SYMMETRIC: Dict[str, str] = {
     "ATRPercentile": "ATR as a percentage of the close depends on the price level",
     "Supertrend": "not checked on reflected prices",
+    "MFI": "money flow is the typical price times volume, so it depends on the price level",
 }
 PATTERN_SWAP = {"bullish_engulfing": "bearish_engulfing", "bearish_engulfing": "bullish_engulfing", "morning_star": "evening_star",
                 "evening_star": "morning_star", "bullish_pin_bar": "bearish_pin_bar", "bearish_pin_bar": "bullish_pin_bar",
@@ -157,6 +170,8 @@ def _call(node: n.Call) -> Rewritten:  # noqa: C901 - one switch over the rule t
     if name in LEVELS:
         cls, other = LEVELS[name]
         return cls, _same_call(node, other, _kept(list(node.args)))
+    if name in OFFSET_NEG:
+        return NEG, n.Binary("+", _same_call(node, name, _kept(list(node.args))), n.Num(OFFSET_NEG[name]))
     if name in LINEAR or name in EXTREMES:
         if not node.args:
             raise NoMirror(_part(node), "no argument")

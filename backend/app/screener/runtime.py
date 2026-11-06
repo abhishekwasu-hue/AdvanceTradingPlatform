@@ -24,14 +24,23 @@ from pandas.tseries.offsets import DateOffset
 
 from app.indicators.directional import adx as _adx
 from app.indicators.momentum import rsi as _rsi
+from app.indicators.momentum import stoch_rsi as _stoch_rsi
 from app.indicators.momentum import stochastic as _stochastic
+from app.indicators.oscillators import aroon as _aroon
+from app.indicators.oscillators import cci as _cci
+from app.indicators.oscillators import williams_r as _williams_r
 from app.indicators.trend import ema as _ema
 from app.indicators.trend import hma as _hma
+from app.indicators.trend import ichimoku as _ichimoku
 from app.indicators.trend import macd as _macd
 from app.indicators.trend import parabolic_sar as _psar
+from app.indicators.trend import tma as _tma
 from app.indicators.trend import wma as _wma
 from app.indicators.volatility import atr as _atr
+from app.indicators.volatility import keltner as _keltner
 from app.indicators.volatility import supertrend_dir as _supertrend_dir
+from app.indicators.volume import mfi as _mfi
+from app.indicators.volume import obv as _obv
 from app.screener import nodes as n
 from app.screener import reasons
 from app.screener.registry import FUNCTIONS, RETEST_WAVE_OF
@@ -377,9 +386,26 @@ class _Eval:
             "StochD": lambda: _stochastic(f, win(0, 14), win(1, 3), win(2, 3))["d"],
             "PSAR": lambda: _psar(f, num(0, 0.02), num(1, 0.02), num(2, 0.2))["sar"],
             "PSARDir": lambda: _psar(f, num(0, 0.02), num(1, 0.02), num(2, 0.2))["dir"],
+            # FN2-a: CCI, MFI, Williams %R, OBV and the Aroon lines (app/indicators/oscillators.py, volume.py)
+            "CCI": lambda: _cci(f, win(0, 20)),
+            "MFI": lambda: _mfi(f, win(0, 14)),
+            "WilliamsR": lambda: _williams_r(f, win(0, 14)),
+            "OBV": lambda: _obv(f),
+            "AroonUp": lambda: _aroon(f, win(0, 25))["up"],
+            "AroonDown": lambda: _aroon(f, win(0, 25))["down"],
             "BBUpper": lambda: _operand(f, "BB_UPPER", win(0, 20), num(1, 2.0)),
             "BBMid": lambda: _operand(f, "BB_MID", win(0, 20), num(1, 2.0)),
             "BBLower": lambda: _operand(f, "BB_LOWER", win(0, 20), num(1, 2.0)),
+            # FN2-a (part 2): Keltner, stochastic RSI, TMA and Ichimoku (app/indicators; the spans as of `shift` bars before)
+            "KeltnerUpper": lambda: _keltner(f, win(0, 20), num(1, 2.0))["upper"],
+            "KeltnerMid": lambda: _keltner(f, win(0, 20), num(1, 2.0))["mid"],
+            "KeltnerLower": lambda: _keltner(f, win(0, 20), num(1, 2.0))["lower"],
+            "StochRSI": lambda: _stoch_rsi(f["close"].astype(float), win(0, 14)),
+            "TMA": lambda: _tma(self.series(args[0], tf), win(1)),
+            "IchimokuTenkan": lambda: _ichimoku(f, tenkan=win(0, 9))["tenkan"],
+            "IchimokuKijun": lambda: _ichimoku(f, kijun=win(0, 26))["kijun"],
+            "IchimokuSpanA": lambda: _ichimoku(f, tenkan=win(0, 9), kijun=win(1, 26), shift=win(2, 26))["span_a"],
+            "IchimokuSpanB": lambda: _ichimoku(f, span_b=win(0, 52), shift=win(1, 26))["span_b"],
             "DayOpen": lambda: _operand(f, "DAY_OPEN"),
             "PDH": lambda: _operand(f, "PDH"),
             "PDL": lambda: _operand(f, "PDL"),

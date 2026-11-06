@@ -101,9 +101,26 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "StochD": ["StochD(14, 3, 3)"],
     "PSAR": ["PSAR(0.02, 0.02, 0.2)", "PSAR()@1h"],
     "PSARDir": ["PSARDir(0.02, 0.02, 0.2)"],
+    # FN2-a: CCI, MFI, Williams %R, OBV and the Aroon lines
+    "CCI": ["CCI(20)", "CCI(14)@1h"],
+    "MFI": ["MFI(14)", "MFI(10)@1h"],
+    "WilliamsR": ["WilliamsR(14)", "WilliamsR(10)@1h"],
+    "OBV": ["OBV()", "OBV()@1h", "OBV() - SMA(OBV(), 20)"],
+    "AroonUp": ["AroonUp(25)", "AroonUp(14)@1h"],
+    "AroonDown": ["AroonDown(25)", "AroonDown(14)@1h"],
     "BBUpper": ["BBUpper(20, 2)"],
     "BBMid": ["BBMid(20, 2)"],
     "BBLower": ["BBLower(20, 2)"],
+    # FN2-a (part 2): Keltner, stochastic RSI, TMA, Ichimoku (the leading spans as computed `shift` bars before)
+    "KeltnerUpper": ["KeltnerUpper(20, 2)", "KeltnerUpper(10, 1.5)@1h"],
+    "KeltnerMid": ["KeltnerMid(20, 2)", "KeltnerMid(10, 2)@1h"],
+    "KeltnerLower": ["KeltnerLower(20, 2)", "KeltnerLower(10, 1.5)@1h"],
+    "StochRSI": ["StochRSI(14)", "StochRSI(5)@1h"],
+    "TMA": ["TMA(close, 10)", "TMA(close, 7)@1h"],
+    "IchimokuTenkan": ["IchimokuTenkan(9)", "IchimokuTenkan(9)@1h"],
+    "IchimokuKijun": ["IchimokuKijun(26)", "IchimokuKijun(10)@1h"],
+    "IchimokuSpanA": ["IchimokuSpanA(9, 26, 26)", "IchimokuSpanA(3, 6, 5)@1h"],
+    "IchimokuSpanB": ["IchimokuSpanB(52, 26)", "IchimokuSpanB(8, 5)@1h"],
     "DayOpen": ["DayOpen()"],
     "PDH": ["PDH()"],
     "PDL": ["PDL()"],
@@ -484,7 +501,7 @@ def _on_zone_frame(fn: Callable[[pd.DataFrame], List[Dict[str, Any]]], f: pd.Dat
 
 
 def _register_indicators() -> None:
-    from app.indicators import directional, momentum, trend, volatility, vwap
+    from app.indicators import directional, momentum, oscillators, trend, volatility, volume, vwap
     close = lambda f: f["close"]                                                         # noqa: E731
     for name, fn in {
         "sma_10": lambda f: trend.sma(close(f), 10),
@@ -503,6 +520,17 @@ def _register_indicators() -> None:
         "parabolic_sar_default": lambda f: trend.parabolic_sar(f),
         "stochastic_14_3_3": lambda f: momentum.stochastic(f, 14, 3, 3),
         "supertrend_dir_10_3": lambda f: volatility.supertrend_dir(f, 10, 3.0),
+        # FN2-a
+        "cci_20": lambda f: oscillators.cci(f, 20),
+        "williams_r_14": lambda f: oscillators.williams_r(f, 14),
+        "aroon_25": lambda f: oscillators.aroon(f, 25),
+        "obv": lambda f: volume.obv(f),
+        "mfi_14": lambda f: volume.mfi(f, 14),
+        # FN2-a (part 2)
+        "keltner_20_2": lambda f: volatility.keltner(f, 20, 2.0),
+        "stoch_rsi_14": lambda f: momentum.stoch_rsi(close(f), 14),
+        "tma_10": lambda f: trend.tma(close(f), 10),
+        "ichimoku_default": lambda f: trend.ichimoku(f),
     }.items():
         register(f"indicator.{name}", fn, group="indicator")
     for name, fn in {
@@ -632,8 +660,8 @@ def indicator_functions() -> List[str]:
     shipped through their modules)."""
     import inspect
 
-    from app.indicators import directional, momentum, trend, volatility, vwap
-    return sorted(f"{mod.__name__.rsplit('.', 1)[-1]}.{name}" for mod in (trend, momentum, volatility, directional, vwap)
+    from app.indicators import directional, momentum, oscillators, trend, volatility, volume, vwap
+    return sorted(f"{mod.__name__.rsplit('.', 1)[-1]}.{name}" for mod in (trend, momentum, volatility, directional, vwap, oscillators, volume)
                   for name, fn in inspect.getmembers(mod, inspect.isfunction) if fn.__module__ == mod.__name__ and not name.startswith("_"))
 
 

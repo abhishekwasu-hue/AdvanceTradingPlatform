@@ -1817,6 +1817,25 @@ while it is off for the organisation the tool is neither offered to the model no
   reason (possibly the broker's error text), and a failed tool's error, go to the proposal guard as third-party text;
   a background run's failure is logged; a CREATE_ALERT proposal's notification is addressed to the asker.
 
+## FN2-a part 2 (built): Keltner, Stoch RSI, TMA, Ichimoku (behind `screener_v2`)
+- **Functions.** `KeltnerUpper / KeltnerMid / KeltnerLower(n=20, k=2)`, `StochRSI(n=14)`, `TMA(x, n)`,
+  `IchimokuTenkan(n=9)`, `IchimokuKijun(n=26)`, `IchimokuSpanA(tenkan=9, kijun=26, shift=26)`,
+  `IchimokuSpanB(n=52, shift=26)`. Code: app/indicators (`keltner`, `stoch_rsi`, `tma`, `ichimoku`), all causal.
+- **Definitions.** Keltner as TradingView `ta.kc`: EMA(close, n) +/- k x the n-bar EMA of the true range; `k` is read
+  once (literal or parameter), like Bollinger's. StochRSI is the unsmoothed %K, 0-100, of RSI(n) over n bars (no range:
+  missing); it needs 2 x n bars; `SMA(StochRSI(14), 3)` is TradingView's smoothed line. TMA is SMA(SMA(x, (n + 1) // 2),
+  n // 2 + 1): triangular weights over exactly n bars.
+- **Ichimoku is causal.** A chart draws the leading spans `shift` bars ahead. A screen reads only closed bars, so the
+  span value on bar t is the one computed on bar t - shift (shifted forward): the cloud the chart draws over bar t, never
+  a value from a later bar. A test changes every bar after t - shift and checks the spans on bar t do not move.
+  TradingView draws the spans `shift - 1` bars ahead, so its cloud matches `shift` one larger. The lagging span (Chikou,
+  the close drawn `shift` bars back) is left out: on any bar it is a future close.
+- **Everywhere else.** The vectorised panel runs all nine (bit-for-bit parity tests); mirrors: Keltner bands swap like
+  Bollinger's, the Ichimoku lines and spans are their own mirror, StochRSI mirrors to 100 minus, TMA passes through
+  like SMA; causal harness cases with `@1h` variants; drawn as series.
+- **Tests.** tests/test_fn2a2_indicators.py (plain-Python references, prefixes, the spans' no-look-ahead, history needs,
+  validator), plus the runtime, panel, mirror and Z10-a coverage suites.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

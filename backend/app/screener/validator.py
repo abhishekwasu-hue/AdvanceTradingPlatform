@@ -446,6 +446,7 @@ class _Checker:
         if spec.window_sum:                                           # U6 BK1: e.g. ATR warm-up + percentile lookback
             window = sum(windows)
         window *= dict(spec.window_bars).get(own_tf, 1)               # U6 BK1: weeks -> daily bars
+        window *= spec.window_mult                                    # FN2-a: StochRSI(n) reads 2 x n bars
         min_bars = spec.min_bars + (self.choice_bars(node, spec) if spec.choice_extra_bars else 0)
         if spec.name == "Pattern" and self.arg_value(node, spec, "name") in NEUTRAL_PATTERNS \
                 and self.arg_value(node, spec, "confirm") not in (None, "any"):

@@ -205,9 +205,10 @@ async def _rule_source(session: AsyncSession, rule: AlertRuleRecord) -> Tuple[An
         if screen is None or screen.archived or screen.tenant_id != rule.tenant_id:
             raise ValueError("the rule's screen is gone or archived")
         ast, validated = compile_screen(json.loads(screen.ast_json), base_tf=rule.base_tf)
-        if getattr(rule, "universe_key", None):           # FN2-h: the screener's own list resolver, read at evaluation time (the list may have changed)
+        list_key: Optional[str] = getattr(rule, "universe_key", None)
+        if list_key:           # FN2-h: the screener's own list resolver, read at evaluation time (the list may have changed)
             from app.screener.universes import symbols_of
-            found = await symbols_of(session, rule.universe_key)
+            found = await symbols_of(session, list_key)
             if found is None:
                 raise ValueError("the rule's list is gone")
             symbols = list(found["symbols"])

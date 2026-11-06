@@ -137,9 +137,9 @@ def test_privacy_notice_covers_the_dpdp_items_with_the_platforms_own_settings():
     policy = load_policy()
     assert f"Sign-in attempts (IP address, browser): {policy.login_events_days} days" in body
     assert f"Sessions: {policy.sessions_days} days" in body
-    from app.compliance import golive, rules
-    hours = rules.load().param(golive.RULE, "dpdp_breach_notify_hours")
-    assert f"target of {hours} hours" in body and "Data Protection Board of India" in body
+    # P3-4-B15: DPDP Rule 7(1) - the user is told "without delay" (no hour count), and the Board is told too.
+    assert "we will tell you without delay" in body and "Data Protection Board of India without delay" in body
+    assert "{{" not in body and "hours from the time" not in body
     # No invented company facts: the company, its address and the grievance officer are placeholders until registration.
     assert {"COMPANY NAME", "REGISTERED ADDRESS", "GRIEVANCE OFFICER NAME", "GRIEVANCE OFFICER EMAIL"} <= set(
         client.get("/api/legal/documents/privacy").json()["open_placeholders"])

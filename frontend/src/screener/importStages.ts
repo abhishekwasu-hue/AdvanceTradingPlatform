@@ -6,7 +6,7 @@
  */
 import {
   newBlock, OPS, stageText, type FormulaStage, type Op, type Operand, type ParamValue, type Registry, type SeriesRef, type Stage,
-  type Timeframe, TIMEFRAMES,
+  type Timeframe, MAX_BARS_AGO, TIMEFRAMES,
 } from "./model";
 
 /** The JSON form of a ScreenQL node (`nodes.to_json` on the server). */
@@ -35,13 +35,17 @@ function tfOf(node: AstNode): Timeframe | null | undefined {
   return (TIMEFRAMES as readonly string[]).includes(node.tf) ? (node.tf as Timeframe) : undefined;
 }
 
-/** A field or a call with literal arguments and no offset -> a SeriesRef (undefined when the builder cannot hold it). */
-function seriesOf(reg: Registry, node: AstNode | undefined): SeriesRef | undefined {
-  if (!node || node.offset || (node.k !== "Field" && node.k !== "Call") || !node.name) return undefined;
+/** A field or a call with literal arguments -> a SeriesRef (undefined when the builder cannot hold it). An offset only
+ * where the block has a "bars ago" control (FN2-b: the indicator block's two sides, `withOffset`), 1 to MAX_BARS_AGO. */
+function seriesOf(reg: Registry, node: AstNode | undefined, withOffset = false): SeriesRef | undefined {
+  if (!node || (node.k !== "Field" && node.k !== "Call") || !node.name) return undefined;
+  const offset = node.offset ?? 0;
+  if (offset && (!withOffset || !Number.isInteger(offset) || offset < 1 || offset > MAX_BARS_AGO)) return undefined;
   const e = reg[node.name];
   const tf = tfOf(node);
   if (!e || tf === undefined || (node.kwargs && Object.keys(node.kwargs).length)) return undefined;
-  if (node.k === "Field") return { fn: node.name, params: {}, tf };
+  const at = offset ? { offset } : {};
+  if (node.k === "Field") return { fn: node.name, params: {}, tf, ...at };
   const params: Record<string, ParamValue> = {};
   const args = node.args ?? [];
   if (args.length > e.args.length) return undefined;
@@ -52,18 +56,18 @@ function seriesOf(reg: Registry, node: AstNode | undefined): SeriesRef | undefin
     else if (a.k === "Field" && a.name && !a.offset && !a.tf) params[e.args[i]] = a.name;
     else return undefined;
   }
-  return { fn: node.name, params, tf };
+  return { fn: node.name, params, tf, ...at };
 }
 
 function operandOf(reg: Registry, node: AstNode | undefined): Operand | undefined {
   if (node?.k === "Num" && typeof node.v === "number") return { kind: "value", value: node.v };
-  const ref = seriesOf(reg, node);
+  const ref = seriesOf(reg, node, true);
   return ref ? { kind: "series", ref } : undefined;
 }
 
 function candidate(reg: Registry, ast: AstNode): Stage | undefined {
   if (ast.k === "Compare" && ast.op && ast.op in CMP) {
-    const left = seriesOf(reg, ast.left);
+    const left = seriesOf(reg, ast.left, true);
     const right = operandOf(reg, ast.right);
     if (left && right && left.fn !== "Rank" && left.fn !== "PercentileRank") {
       return { ...(newBlock(reg, "indicator") as Stage & { kind: "indicator" }), left, op: CMP[ast.op], right };
@@ -74,7 +78,7 @@ function candidate(reg: Registry, ast: AstNode): Stage | undefined {
     }
   }
   if (ast.k === "Call" && (ast.name === "CrossAbove" || ast.name === "CrossBelow") && !ast.offset && !ast.tf) {
-    const left = seriesOf(reg, ast.args?.[0]);
+    const left = seriesOf(reg, ast.args?.[0], true);
     const right = operandOf(reg, ast.args?.[1]);
     const op = (ast.name === "CrossAbove" ? "crosses above" : "crosses below") as Op;
     if (left && right && OPS.includes(op)) return { ...(newBlock(reg, "indicator") as Stage & { kind: "indicator" }), left, op, right };

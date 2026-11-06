@@ -591,6 +591,50 @@
   {
    "stage": {
     "left": {
+     "fn": "RSI",
+     "params": {
+      "n": 14
+     },
+     "tf": "15m",
+     "offset": 3
+    },
+    "op": ">",
+    "right": {
+     "kind": "value",
+     "value": 60
+    },
+    "kind": "indicator"
+   },
+   "text": "RSI(14)[3]@15m > 60"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "close",
+     "params": {},
+     "tf": null,
+     "offset": 1
+    },
+    "op": "crosses above",
+    "right": {
+     "kind": "series",
+     "ref": {
+      "fn": "EMA",
+      "params": {
+       "x": "close",
+       "n": 20
+      },
+      "tf": null,
+      "offset": 1
+     }
+    },
+    "kind": "indicator"
+   },
+   "text": "CrossAbove(close[1], EMA(close, 20)[1])"
+  },
+  {
+   "stage": {
+    "left": {
      "fn": "Supertrend",
      "params": {
       "n": 10,

@@ -44,6 +44,30 @@ export function timeframeWords(tf: string, plain: boolean): string {
 export const DEFAULT_WINDOW = 20;
 export const DEFAULT_OR_MINUTES = 15;
 export const DEFAULT_TOLERANCE_PCT = 0.5;
+/** FN2-b: the most bars back a "bars ago" can read - the server's MAX_OFFSET (backend/app/screener/validator.py; a
+ * test keeps the two equal). */
+export const MAX_BARS_AGO = 500;
+
+/** A usable "bars ago" (a whole number, 1 to MAX_BARS_AGO), else 0 - the current bar. */
+export function barsAgo(s: { offset?: number }): number {
+  const n = s.offset;
+  return typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= MAX_BARS_AGO ? n : 0;
+}
+
+/** What was typed in a "bars ago" field: blank -> 0 (the current bar), 1 to MAX_BARS_AGO -> that number, else null. */
+export function parseBarsAgo(text: string): number | null {
+  const t = text.trim();
+  if (t === "" || t === "0") return 0;
+  if (!/^\d{1,4}$/.test(t)) return null;
+  const n = Number(t);
+  return n >= 1 && n <= MAX_BARS_AGO ? n : null;
+}
+
+/** "3 bars ago", "1 bar ago"; "" for the current bar. */
+export function barsAgoWords(n: number): string {
+  return n > 0 ? `${n} ${n === 1 ? "bar" : "bars"} ago` : "";
+}
+
 /** The fields a series argument (SMA's x) can take in the indicator block. */
 export const SERIES_FIELDS = ["close", "open", "high", "low", "volume"] as const;
 /** The levels a `level` argument (ReversalAt, RealBreak) can take. */
@@ -61,7 +85,9 @@ export type ParamKind =
   | { kind: "series"; name: string; options: readonly string[] } // a field (SMA of close) or a level (ReversalAt at PDH())
   | { kind: "text"; name: string };                          // free text (IndexMember's index name)
 
-export interface SeriesRef { fn: string; params: Record<string, ParamValue>; tf: Timeframe | null }
+/** `offset` (FN2-b): how many bars back the series is read - `RSI(14)[3]` is RSI three bars ago; absent or 0 = the current
+ * bar. Only the indicator block sets it (its left and right side). */
+export interface SeriesRef { fn: string; params: Record<string, ParamValue>; tf: Timeframe | null; offset?: number }
 export type Operand = { kind: "value"; value: number } | { kind: "series"; ref: SeriesRef };
 export const OPS = [">", ">=", "<", "<=", "crosses above", "crosses below"] as const;
 export type Op = (typeof OPS)[number];
@@ -153,9 +179,17 @@ export function defaultParams(e: RegistryEntry): Record<string, ParamValue> {
   return out;
 }
 
-export function seriesRef(reg: Registry, fn: string, tf: Timeframe | null = null): SeriesRef {
+export function seriesRef(reg: Registry, fn: string, tf: Timeframe | null = null, offset = 0): SeriesRef {
   const e = reg[fn];
-  return { fn, params: e ? defaultParams(e) : {}, tf };
+  const ref: SeriesRef = { fn, params: e ? defaultParams(e) : {}, tf };
+  return offset > 0 ? { ...ref, offset } : ref;
+}
+
+/** The series read `n` bars back (0 or blank: the current bar, and no `offset` key at all). */
+export function withBarsAgo(s: SeriesRef, n: number): SeriesRef {
+  const rest: SeriesRef = { ...s };
+  delete rest.offset;
+  return n > 0 ? { ...rest, offset: n } : rest;
 }
 
 let seq = 0;
@@ -198,10 +232,12 @@ function argText(kind: ParamKind | undefined, v: ParamValue): string {
   return /^-?\d+(\.\d+)?$/.test(v) && kind?.kind !== "select" ? v : JSON.stringify(v);
 }
 
-/** `RSI(14)@15m`, `SMA(close, 20)`, `close@1d`, `IsFnO()`. */
+/** `RSI(14)@15m`, `SMA(close, 20)`, `close@1d`, `IsFnO()`; FN2-b: `RSI(14)[3]@15m` three bars ago (the server's
+ * canonical order: offset, then timeframe - nodes.py `_suffix`). */
 export function seriesText(reg: Registry, s: SeriesRef): string {
   const e = reg[s.fn];
-  const suffix = s.tf ? `@${s.tf}` : "";
+  const back = barsAgo(s);
+  const suffix = (back ? `[${back}]` : "") + (s.tf ? `@${s.tf}` : "");
   if (!e || e.field) return `${s.fn}${suffix}`;
   const kinds = paramKinds(e);
   const args = e.args.map((a, i) => argText(kinds[i], s.params[a] ?? defaultParams(e)[a]));
@@ -315,8 +351,9 @@ const OP_WORDS: Record<Op, string> = {
 
 function seriesWords(reg: Registry, s: SeriesRef): string {
   const e = reg[s.fn];
-  const base = !e || e.field ? s.fn : seriesText(reg, { ...s, tf: null });
-  return s.tf ? `${base} on ${s.tf}` : base;
+  const base = !e || e.field ? s.fn : seriesText(reg, { ...withBarsAgo(s, 0), tf: null });
+  const back = barsAgo(s);
+  return `${base}${s.tf ? ` on ${s.tf}` : ""}${back ? ` ${barsAgoWords(back)}` : ""}`;
 }
 
 /** The plain-English line on a stage: "RSI(14) on 15m above 60", "Trend(3) is UPTREND", "any of: ...". */

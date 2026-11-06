@@ -83,3 +83,16 @@ def bollinger(close: pd.Series, period: int = 20, k: float = 2.0) -> pd.DataFram
     mid = close.rolling(window=period, min_periods=period).mean()
     sd = close.rolling(window=period, min_periods=period).std(ddof=1)
     return pd.DataFrame({"mid": mid, "upper": mid + k * sd, "lower": mid - k * sd}, index=close.index)
+
+
+# FN2-a (part 2): the Keltner channel
+@prefix_cached
+def keltner(df: pd.DataFrame, period: int = 20, k: float = 2.0) -> pd.DataFrame:
+    """Keltner channel as TradingView's `ta.kc(close, period, k)`: the middle line is EMA(close, period), the bands are k
+    times the `period`-bar EMA of the true range above and below it. The true range's first bar is its high - low (as
+    `atr` here; TradingView leaves that one bar out), so the first few band values differ slightly until that bar's
+    weight has decayed. NaN until `period` bars. Causal: bar t reads bars <= t only."""
+    from app.indicators.trend import ema
+    mid = ema(df["close"].astype(float), period)
+    width = true_range(df).ewm(span=period, adjust=False, min_periods=period).mean()
+    return pd.DataFrame({"mid": mid, "upper": mid + k * width, "lower": mid - k * width}, index=df.index)

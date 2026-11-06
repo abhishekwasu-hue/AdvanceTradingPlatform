@@ -150,6 +150,13 @@ CASES_5M = [
     # idea library IDEA-12 / IDEA-14: the channel's trend-side line and the swings before the latest one
     'ChannelLine("up")', 'ChannelLine("down", 2, 2)', 'ReversalAt(ChannelLine("up", 2, 1), "bullish")', 'PriorSwingHigh(0)',
     'PriorSwingLow(1, "two")', 'PriorSwingHigh(0) > SwingHigh(0)',
+    # FN2-a: CCI and OBV change sign, Williams %R reads -100 minus itself, the Aroon lines swap
+    "CCI(20)", "CCI(5) > 100", "OBV()", "OBV() > SMA(OBV(), 20)", "WilliamsR(14)", "WilliamsR(14) < -80", "AroonUp(25)",
+    "AroonDown(14)", "AroonUp(14) > AroonDown(14)",
+    # FN2-a (part 2): Keltner bands swap, Ichimoku lines are their own mirror, StochRSI is 100 minus, TMA passes through
+    "KeltnerUpper(20, 2)", "KeltnerMid(20, 2)", "KeltnerLower(10, 1.5)", "close > KeltnerUpper(20, 2)", "StochRSI(14)",
+    "StochRSI(14) < 20", "TMA(close, 10)", "TMA(high, 5)", "IchimokuTenkan(9)", "IchimokuKijun(26)", "IchimokuSpanA(9, 26, 26)",
+    "IchimokuSpanB(52, 26)", "close > Greatest(IchimokuSpanA(), IchimokuSpanB())",
 ]
 CASES_1D = ['NewHighBreakout("up", 4, 0, 0)', "SwingDirection(1)", 'SwingBreakout("up", 1, 0)', "close@1w > SMA(close, 5)@1w",
             'DowTrend(0)@1w != "DOWN"', 'SwingBreakType("up", 1, 0) == "BOS"']
@@ -172,7 +179,7 @@ def test_every_mirror_rule_has_an_exactness_case():
     named = set(mr.FIELD_RULES) | set(mr.LEVELS) | set(mr.LINEAR) | set(mr.EXTREMES) | set(mr.SIDED_FILTERS) | set(mr.CATEGORIES)
     named |= mr.SIDED_LEVELS
     named |= {"Count", "CountStreak", "CrossAbove", "CrossBelow", "ZScore", "PctChange", "RealBreak", "ReversalAt", "SwingZoneStrength",
-              "SwingZoneDistance", "Pattern"}
+              "SwingZoneDistance", "Pattern"} | set(mr.OFFSET_NEG)
     covered = {getattr(node, "name", None) for text in CASES_5M + CASES_1D for node in n.walk(parse(text))}
     assert named - REFERENCE - NOT_IN_SYNTHETIC_BARS - covered == set()
     swaps = {f'Pattern("{k}")' for k in mr.PATTERN_SWAP if k.startswith("bullish") or k in ("doji", "inside_bar", "morning_star")}
@@ -187,6 +194,7 @@ def test_every_mirror_rule_has_an_exactness_case():
     ("Supertrend(10, 3) < close", "not checked"),
     ('Pattern("hammer")', "no mirrored twin"),
     ("PCR() > 1", "no mirror rule"),
+    ("MFI(14) < 20", "price level"),                                         # FN2-a
     ("close + close > open", "not symmetric"),
 ])
 def test_asymmetric_logic_has_no_mirror_and_says_why(text, why):
@@ -198,6 +206,13 @@ def test_a_screen_that_reads_both_sides_alike_is_its_own_mirror():
     got = mr.mirror(parse("high - low < Min(high - low, 6)[1]"))                # Crabel NR7: a range, no direction
     assert got.symmetric and got.text is None and "its own mirror" in got.reason
     assert mr.mirror(parse("RSI(14) <= 30")).text == "RSI(14) >= 70"
+
+
+def test_fn2a_mirror_texts():
+    assert mr.mirror(parse("CCI(20) < -100")).text == "CCI(20) > 100"
+    assert mr.mirror(parse("AroonUp(25) > 70")).text == "AroonDown(25) > 70"
+    assert mr.mirror(parse("OBV() > SMA(OBV(), 20)")).text == "OBV() < SMA(OBV(), 20)"
+    assert mr.mirror(parse("WilliamsR(14) < -80")).text == "WilliamsR(14) + 100 > 80"     # oversold <-> overbought (> -20)
     assert mr.mirror(parse("RSI(2) < $rsi_max")).text == "RSI(2) > 100 - $rsi_max"
 
 

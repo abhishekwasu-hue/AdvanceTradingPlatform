@@ -27,6 +27,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from app.indicators import oscillators, volume
 from app.screener import nodes as n
 from app.screener import reasons
 from app.screener.runtime import Match, ScreenRuntimeError, SymbolData, _as_bool, _cross, _Eval, bool_frame, last_match, time_of_day
@@ -37,7 +38,10 @@ logger = logging.getLogger(__name__)
 FLAG = "screener_vectorized"      # operator flag (off by default): the routes and the bar-close engine opt in with it
 FUNCTIONS = frozenset({"SMA", "EMA", "RSI", "ATR", "ADX", "PlusDI", "MinusDI", "Max", "Min", "Greatest", "Least", "Count", "CountStreak",
                        "Abs", "Round", "Floor", "Ceil", "Sqrt",
-                       "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag", "StDev", "TimeOfDay"})
+                       "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag", "StDev", "TimeOfDay",
+                       "CCI", "MFI", "WilliamsR", "OBV", "AroonUp", "AroonDown",
+                       "KeltnerUpper", "KeltnerMid", "KeltnerLower", "StochRSI", "TMA", "IchimokuTenkan", "IchimokuKijun",
+                       "IchimokuSpanA", "IchimokuSpanB"})
 MIN_GROUP = 2                     # a symbol alone in its index group gains nothing from stacking: per-symbol path
 _COLUMNS = ("open", "high", "low", "close", "volume", "oi")
 
@@ -382,7 +386,35 @@ def _rsi(close: np.ndarray, period: int) -> np.ndarray:
     with np.errstate(invalid="ignore", divide="ignore"):
         rs = avg_gain / _nan_zero(avg_loss)
         result = 100 - (100 / (1 + rs))
-    return np.where(avg_loss != 0, result, 100.0)
+    result = np.where(avg_loss != 0, result, 100.0)
+    return np.where((avg_loss == 0) & (avg_gain == 0), 50.0, result)   # REV-B5: a flat period is the neutral 50
+
+
+# FN2-a (part 2): Keltner, stochastic RSI, TMA and Ichimoku per column, step for step as app/indicators
+def _keltner(f: Panel, period: int, k: float) -> Dict[str, np.ndarray]:
+    mid = _ewm_mean(f["close"].to_numpy(dtype=float), span=period, min_periods=period)
+    width = _ewm_mean(_true_range(f), span=period, min_periods=period)
+    return {"mid": mid, "upper": mid + k * width, "lower": mid - k * width}
+
+
+def _stoch_rsi(close: np.ndarray, period: int) -> np.ndarray:
+    r = _rsi(close, period)
+    lowest, highest = _rolling_extreme(r, period, np.minimum), _rolling_extreme(r, period, np.maximum)
+    with np.errstate(invalid="ignore"):
+        span = highest - lowest
+        return 100.0 * ((r - lowest) / np.where(span > 0, span, np.nan))  # no range: missing, as the stochastic
+
+
+def _midpoint(f: Panel, period: int) -> np.ndarray:
+    high, low = f["high"].to_numpy(dtype=float), f["low"].to_numpy(dtype=float)
+    return (_rolling_extreme(high, period, np.maximum) + _rolling_extreme(low, period, np.minimum)) / 2.0
+
+
+def _shifted(x: np.ndarray, k: int) -> np.ndarray:
+    out = np.full(x.shape, np.nan)
+    if k < len(x):
+        out[k:] = x[:len(x) - k]
+    return out
 
 
 def _streak(cond: np.ndarray) -> np.ndarray:
@@ -444,12 +476,21 @@ class _PanelEval(_Eval):
             self._memo[key] = _adx(self.panel, period)
         return self._memo[key]
 
+    def aroon(self, period: int) -> Dict[str, np.ndarray]:
+        key = f"aroon:{period}"                                  # AroonUp and AroonDown share one pass
+        if key not in self._memo:
+            self._memo[key] = oscillators._aroon(self.panel["high"].to_numpy(), self.panel["low"].to_numpy(), period)
+        return self._memo[key]
+
     def call(self, node: n.Call, tf: str) -> Any:
         name, args = node.name, node.args
         f = self.panel
 
         def win(i: int, default: int = 0) -> int:
             return int(self.ev(args[i], tf)) if len(args) > i else default
+
+        def num(i: int, default: float) -> float:
+            return float(self.ev(args[i], tf)) if len(args) > i else default
 
         def zscore() -> pd.DataFrame:
             x, w = self.values(args[0], tf), win(1)
@@ -483,8 +524,26 @@ class _PanelEval(_Eval):
             "Lag": lambda: self.series(args[0], tf).shift(win(1)),
             # AMW-3: the population standard deviation (ddof 0) and the session-time window (one row per bar, all symbols)
             "StDev": lambda: self.wrap(_rolling_std(self.values(args[0], tf), win(1), ddof=0)),
+            # FN2-a: the same cores as app/indicators/oscillators.py and volume.py, on the stacked columns (pandas windows
+            # run column by column, so each column is the per-symbol series bit for bit)
+            "CCI": lambda: oscillators._cci(f["high"], f["low"], f["close"], win(0, 20)),
+            "MFI": lambda: volume._mfi(f["high"], f["low"], f["close"], f["volume"], win(0, 14)),
+            "WilliamsR": lambda: oscillators._williams_r(f["high"], f["low"], f["close"], win(0, 14)),
+            "OBV": lambda: volume._obv(f["close"], f["volume"]),
+            "AroonUp": lambda: self.wrap(self.aroon(win(0, 25))["up"]),
+            "AroonDown": lambda: self.wrap(self.aroon(win(0, 25))["down"]),
             "TimeOfDay": lambda: self.wrap(np.repeat(time_of_day(f.index, str(self.ev(args[0], tf)), str(self.ev(args[1], tf)))[:, None],
                                                      len(self.columns), axis=1)),
+            # FN2-a (part 2): the same values as the per-symbol path (runtime.py -> app/indicators)
+            "KeltnerUpper": lambda: self.wrap(_keltner(f, win(0, 20), num(1, 2.0))["upper"]),
+            "KeltnerMid": lambda: self.wrap(_keltner(f, win(0, 20), num(1, 2.0))["mid"]),
+            "KeltnerLower": lambda: self.wrap(_keltner(f, win(0, 20), num(1, 2.0))["lower"]),
+            "StochRSI": lambda: self.wrap(_stoch_rsi(f["close"].to_numpy(dtype=float), win(0, 14))),
+            "TMA": lambda: self.wrap(_rolling_mean(_rolling_mean(self.values(args[0], tf), (win(1) + 1) // 2), win(1) // 2 + 1)),
+            "IchimokuTenkan": lambda: self.wrap(_midpoint(f, win(0, 9))),
+            "IchimokuKijun": lambda: self.wrap(_midpoint(f, win(0, 26))),
+            "IchimokuSpanA": lambda: self.wrap(_shifted((_midpoint(f, win(0, 9)) + _midpoint(f, win(1, 26))) / 2.0, win(2, 26))),
+            "IchimokuSpanB": lambda: self.wrap(_shifted(_midpoint(f, win(0, 52)), win(1, 26))),
         }
         if name not in impl:
             raise ScreenRuntimeError(f"{name} has no vectorised form")

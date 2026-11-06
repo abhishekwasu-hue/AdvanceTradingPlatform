@@ -404,6 +404,50 @@ def test_tpl1_indicator_functions():
     assert up.iloc[:3].isna().all() and up.iloc[3:].tolist() == [1.0, 1.0, 1.0]
 
 
+def test_fn2a1_indicator_functions():
+    # deeper checks (reference parity, truncation, edge cases, units) are in tests/test_fn2a1_indicators.py
+    d = _sym([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vol=[10.0, 20.0, 30.0, 40.0, 50.0, 60.0])   # high = close + 1, low = close - 1
+    up_line = _ev("CCI(3)", d)                                     # a straight line: TP - mean = 1, mean deviation 2/3
+    assert up_line.iloc[:2].isna().all() and up_line.iloc[2:].tolist() == pytest.approx([100.0] * 4)
+    assert _ev("CCI()", d).isna().all()                            # 20 bars of warm-up
+    assert _ev("WilliamsR(3)", d).iloc[2:].tolist() == pytest.approx([-25.0] * 4) and np.isnan(_ev("WilliamsR(3)", d).iloc[1])
+    assert _ev("MFI(2)", d).iloc[2:].tolist() == [100.0] * 4 and _ev("MFI(2)", d).iloc[:2].isna().all()   # only rising flow
+    assert _ev("OBV()", d).tolist() == [0.0, 20.0, 50.0, 90.0, 140.0, 200.0]
+    assert _ev("AroonUp(3)", d).iloc[3:].tolist() == [100.0] * 3 and _ev("AroonDown(3)", d).iloc[3:].tolist() == [0.0] * 3
+    assert np.isnan(_ev("AroonUp(3)", d).iloc[2])                  # n + 1 bars
+    down = _sym([6.0, 5.0, 4.0, 3.0], vol=[10.0, 20.0, 30.0, 40.0])
+    assert _ev("OBV()", down).tolist() == [0.0, -20.0, -50.0, -90.0] and _ev("MFI(2)", down).iloc[-1] == 0.0
+    assert _ev("CCI(3)", down).iloc[-1] == pytest.approx(-100.0) and _ev("WilliamsR(3)", down).iloc[-1] == pytest.approx(-75.0)
+
+
+def test_fn2a1_indicators_are_in_the_vectorised_engine():
+    from app.screener import panel
+    assert {"CCI", "MFI", "WilliamsR", "OBV", "AroonUp", "AroonDown"} <= panel.FUNCTIONS
+
+def test_fn2a2_keltner_stoch_rsi_tma_ichimoku():
+    # deeper checks (plain-Python references, truncation, the spans' no-look-ahead, history needs) are in
+    # tests/test_fn2a2_indicators.py
+    flat = _sym([10.0] * 8)                                        # high 11, low 9: true range 2 on every bar
+    assert np.isnan(_ev("KeltnerUpper(3, 2)", flat).iloc[1]) and _ev("KeltnerUpper(3, 2)", flat).iloc[2:].tolist() == [14.0] * 6
+    assert _ev("KeltnerMid(3, 2)", flat).iloc[-1] == 10.0 and _ev("KeltnerLower(3, 2)", flat).iloc[-1] == 6.0
+    d = _sym([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])                      # high = close + 1, low = close - 1
+    tma = _ev("TMA(close, 3)", d)                                  # weights 1, 2, 1
+    assert np.isnan(tma.iloc[1]) and tma.iloc[2] == 2.0 and tma.iloc[-1] == 5.0
+    assert _ev("IchimokuTenkan(3)", d).iloc[-1] == 5.0 and _ev("IchimokuKijun(2)", d).iloc[-1] == 5.5
+    span_a = _ev("IchimokuSpanA(2, 3, 2)", d)                      # bar 5 reads bar 3: ((5 + 2) / 2 + (5 + 1) / 2) / 2
+    assert span_a.iloc[:4].isna().all() and span_a.iloc[-1] == 3.25
+    span_b = _ev("IchimokuSpanB(3, 2)", d)
+    assert span_b.iloc[:4].isna().all() and span_b.iloc[-1] == 3.0
+    assert _ev("StochRSI(3)", d).isna().all()                      # only gains: the RSI has no range
+    z = _sym([10.0, 11.0, 10.5, 12.0, 11.0, 13.0, 12.5, 12.0, 14.0, 13.0])
+    from app.indicators.momentum import rsi
+    r = rsi(z.frames["5m"]["close"], 3)
+    lo, hi = r.rolling(3).min(), r.rolling(3).max()
+    want = 100 * ((r - lo) / (hi - lo))
+    got = _ev("StochRSI(3)", z)
+    assert got.iloc[:5].isna().all() and got.iloc[5:].tolist() == pytest.approx(want.iloc[5:].tolist())
+
+
 def test_tpl2_moving_average_and_breakout_companions():
     """Strategy templates step 2: MA(x, n, type) is exactly SMA / EMA / WMA / HMA; RangeBreakoutRef / LineBreakoutRef give
     the breakout's prices on its signal bars only (R2), held_level holds the level forward, the stop references are the

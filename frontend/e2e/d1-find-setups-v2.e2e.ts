@@ -4,6 +4,7 @@ import { F, api, mockDashboard } from "./dashboardMocks";
 import { expectComboValue } from "./combobox";
 import { mockApi } from "./mockApi";
 import { closeScreenerMore, openListPicker, screenerTool } from "./screenerTools";
+import { expectPhoneLayout } from "./phoneLayout";
 
 /**
  * Day-one fix 4 (docs/design/DAY_ONE_TRADER_TEST.md finding 8): Find setups in a trader's words. On open the page offers
@@ -232,4 +233,41 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
       });
     });
   }
+}
+
+// FN1 row 23 / P2-1 `strategy_lab_pine`: a short Pine script is translated, and a line outside the subset gets a plain,
+// line-numbered error. The reply is the backend's own translation of the script (e2e/fixtures/pine_translate.json,
+// made with app/lab/pine); nothing runs and nothing is stored.
+const PINE = JSON.parse(readFileSync(new URL("./fixtures/pine_translate.json", import.meta.url), "utf8")) as { source: string; translation: Record<string, unknown> };
+
+for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, height: 900, phone: false }]) {
+  test.describe(`Strategy Lab (Pine) ${size.width}`, () => {
+    test.use({ viewport: { width: size.width, height: size.height }, isMobile: size.phone, hasTouch: size.phone, deviceScaleFactor: 1 });
+
+    test("a short Pine script is translated; an unsupported line gets a plain error with its line number", async ({ page }) => {
+      await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+      await mockWorld(page);
+      const sent: string[] = [];
+      await page.route(api("/lab/pine/templates$"), (route) => route.fulfill({ json: { templates: [], note: "" } }));
+      await page.route(api("/lab/pine/translate$"), (route) => {
+        sent.push(route.request().postData() ?? "");
+        return route.fulfill({ json: PINE.translation });
+      });
+      await page.goto("/screener");
+      await settle(page);
+      await screenerTool(page, "screener-advanced");
+      await screenerTool(page, "pine-open");
+      const panel = page.getByTestId("pine-panel");
+      await expect(panel).toBeVisible();
+      await panel.getByLabel("Your Pine script").fill(PINE.source);
+      await panel.getByTestId("pine-translate").click();
+      await expect.poll(() => sent.length).toBe(1);
+      expect(JSON.parse(sent[0])).toMatchObject({ source: PINE.source });
+      await expect(panel.getByTestId("pine-signals")).toContainText("crosses above the EMA of the close over 50 bars");
+      const diagnostics = panel.getByTestId("pine-diagnostics");
+      await expect(diagnostics).toContainText("Line 8");
+      await expect(diagnostics).toContainText("this signal has no condition, so it would fire on every bar");
+      if (size.phone) await expectPhoneLayout(page);
+    });
+  });
 }

@@ -234,6 +234,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/thesis_report.json": "e85180cb3f957bf048f9bffe63e3237bb760333376e255f1ae76f6d9df2e287d",
     "frontend/e2e/fixtures/trading_v2.json": "c9fc66383c29a2a5dc38d9de57bff8d27b9ba75b74578fa839b2eb420a73afef",
     "frontend/e2e/fixtures/mytrades_cards_v2.json": "4d0ba8e0bd9fcf0e3117746ad9169e832f209600858c79df807b8ff92a8fa82d",
+    "frontend/e2e/fixtures/pine_translate.json": "69f37bc0618c634b2c3710e93109cbf681c98195a37f41dc9bb0566342dbb2ff",
     "frontend/e2e/fixtures/copilot_chat_v2.json": "dc55ede37eeabdddbb6a23f0f4210fe6ae8350f816d3426373abcf5c0f079182",
     # M68 PR-0: Settings > Trade settings - the registry's own replies (backend/app/me/trade_settings.py view(); synthetic)
     "frontend/e2e/fixtures/trade-settings-user.json": "b23c314b416367c7a90d0f1fbe20ab4606e0d0bd3dfb619a71ff04e9e91a959d",

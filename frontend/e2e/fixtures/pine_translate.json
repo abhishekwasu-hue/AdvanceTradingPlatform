@@ -1,0 +1,145 @@
+{
+ "_note": "Made-up: the backend's own /lab/pine/translate answer (app/lab/pine) on this short made-up script.",
+ "source": "//@version=5\nindicator(\"EMA cross\", overlay=true)\nfast = input.int(20, \"Fast EMA\", minval=1)\nslow = input.int(50, \"Slow EMA\", minval=1)\nlongSignal = ta.crossover(ta.ema(close, fast), ta.ema(close, slow))\nplotshape(longSignal)\nalertcondition(longSignal, \"EMA cross up\")\nstrategy.entry(\"L\", strategy.long)\n",
+ "translation": {
+  "ok": true,
+  "complete": false,
+  "refused": false,
+  "version": "5",
+  "script_kind": "indicator",
+  "title": "EMA cross",
+  "primary": 0,
+  "signals": [
+   {
+    "index": 0,
+    "kind": "marker",
+    "label": "plotshape on line 6",
+    "line": 6,
+    "ok": true,
+    "text": "CrossAbove(EMA(close, $fast), EMA(close, $slow))",
+    "params": {
+     "fast": 20,
+     "slow": 50
+    },
+    "words": "The EMA of the close over 20 bars crosses above the EMA of the close over 50 bars",
+    "problems": []
+   },
+   {
+    "index": 1,
+    "kind": "alert",
+    "label": "EMA cross up",
+    "line": 7,
+    "ok": true,
+    "text": "CrossAbove(EMA(close, $fast), EMA(close, $slow))",
+    "params": {
+     "fast": 20,
+     "slow": 50
+    },
+    "words": "The EMA of the close over 20 bars crosses above the EMA of the close over 50 bars",
+    "problems": []
+   },
+   {
+    "index": 2,
+    "kind": "long_entry",
+    "label": "Long-side condition (L)",
+    "line": 8,
+    "ok": false,
+    "text": null,
+    "params": {},
+    "words": "",
+    "problems": [
+     "not translated: the condition on line 8 is outside the subset"
+    ]
+   }
+  ],
+  "params": {
+   "fast": {
+    "name": "fast",
+    "type": "int",
+    "default": 20,
+    "min": 1.0,
+    "max": null,
+    "title": "Fast EMA",
+    "line": 3,
+    "options": []
+   },
+   "slow": {
+    "name": "slow",
+    "type": "int",
+    "default": 50,
+    "min": 1.0,
+    "max": null,
+    "title": "Slow EMA",
+    "line": 4,
+    "options": []
+   }
+  },
+  "diagnostics": [
+   {
+    "line": 8,
+    "col": 1,
+    "severity": "error",
+    "code": "no_condition",
+    "message": "this signal has no condition, so it would fire on every bar",
+    "alternative": "put it inside `if cond`, or give it when=cond"
+   }
+  ],
+  "constructs": [
+   {
+    "line": 2,
+    "construct": "indicator()",
+    "status": "supported",
+    "maps_to": "the script's name (metadata only)"
+   },
+   {
+    "line": 3,
+    "construct": "input.int()",
+    "status": "supported",
+    "maps_to": "$fast"
+   },
+   {
+    "line": 4,
+    "construct": "input.int()",
+    "status": "supported",
+    "maps_to": "$slow"
+   },
+   {
+    "line": 5,
+    "construct": "close",
+    "status": "supported",
+    "maps_to": "close"
+   },
+   {
+    "line": 5,
+    "construct": "ta.ema()",
+    "status": "supported",
+    "maps_to": "EMA(source, length)"
+   },
+   {
+    "line": 5,
+    "construct": "ta.crossover()",
+    "status": "supported",
+    "maps_to": "CrossAbove(a, b)"
+   },
+   {
+    "line": 6,
+    "construct": "plotshape()",
+    "status": "supported",
+    "maps_to": "a marker signal"
+   },
+   {
+    "line": 7,
+    "construct": "alertcondition()",
+    "status": "supported",
+    "maps_to": "an alert signal"
+   },
+   {
+    "line": 8,
+    "construct": "strategy.entry()",
+    "status": "supported",
+    "maps_to": "a long-side signal"
+   }
+  ],
+  "note": "Translated from the Pine Script subset; the script itself is never run. Values follow ATP's own indicator code, so they match ATP's charts, screens and backtests and converge to, but are not promised to equal, TradingView's."
+ }
+}

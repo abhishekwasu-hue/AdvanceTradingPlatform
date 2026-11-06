@@ -552,6 +552,12 @@ class _Eval:
             "Min": lambda: self.series(args[0], tf).rolling(win(1)).min(),
             "Greatest": lambda: pd.concat([self.series(a, tf) for a in args], axis=1).max(axis=1, skipna=False),
             "Least": lambda: pd.concat([self.series(a, tf) for a in args], axis=1).min(axis=1, skipna=False),
+            # FN2-c: the math functions (a missing value stays missing; Sqrt of a negative is missing)
+            "Abs": lambda: self.series(args[0], tf).abs(),
+            "Round": lambda: self.series(args[0], tf).round(int(num(1, 0))),
+            "Floor": lambda: np.floor(self.series(args[0], tf)),
+            "Ceil": lambda: np.ceil(self.series(args[0], tf)),
+            "Sqrt": lambda: np.sqrt(self.series(args[0], tf).where(lambda s: s >= 0)),
             "Count": lambda: _as_bool(self.ev(args[1], tf), f.index).astype(float).rolling(win(0)).sum(),
             "CountStreak": lambda: _streak(_as_bool(self.ev(args[0], tf), f.index)),
             "CrossAbove": lambda: _cross(self.series(args[0], tf), self.series(args[1], tf), above=True),

@@ -51,6 +51,27 @@ def test_moving_windows():
     assert np.isnan(_ev("ZScore(close, 3)", _sym([5, 5, 5])).iloc[-1])                      # zero spread: NaN, not inf
 
 
+def test_math_functions_per_bar():
+    """FN2-c: Abs / Round / Floor / Ceil / Sqrt per bar; a missing value stays missing; Sqrt of a negative is missing."""
+    d = _sym([10.26, 9.74, 12.5, 11.0])
+    assert list(_ev("Abs(close - open)", d)) == [0.5, 0.5, 0.5, 0.5]
+    assert list(_ev("Abs(open - close)", d)) == [0.5, 0.5, 0.5, 0.5]
+    assert list(_ev("Round(close, 1)", d)) == [10.3, 9.7, 12.5, 11.0]
+    assert list(_ev("Round(close)", d)) == [10.0, 10.0, 12.0, 11.0]                # half to even, as numpy and pandas
+    assert list(_ev("Floor(close)", d)) == [10.0, 9.0, 12.0, 11.0]
+    assert list(_ev("Ceil(close)", d)) == [11.0, 10.0, 13.0, 11.0]
+    assert list(_ev("Sqrt(volume)", d)) == [10.0, 10.0, 10.0, 10.0]
+    neg = _ev("Sqrt(close - 11)", d)
+    assert np.isnan(neg.iloc[1]) and round(neg.iloc[2], 6) == round(1.5 ** 0.5, 6)
+    assert np.isnan(_ev("Abs(Lag(close, 1))", d).iloc[0])                           # missing stays missing
+
+
+def test_math_functions_are_in_the_vectorised_engine():
+    """FN2-c: the panel engine (app/screener/panel.py) runs them too (its parity fuzz compares it with this runtime)."""
+    from app.screener import panel
+    assert {"Abs", "Round", "Floor", "Ceil", "Sqrt"} <= panel.FUNCTIONS
+
+
 def test_oscillators_and_vwap_match_the_indicator_library():
     from app.indicators.directional import adx
     from app.indicators.momentum import rsi

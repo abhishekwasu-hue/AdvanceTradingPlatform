@@ -1,5 +1,5 @@
 import { ExternalLink } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useLiveLtp } from "../components/chartHelpers";
 import type { LtpResponse } from "../types";
@@ -12,6 +12,7 @@ import { ChartToolbar } from "./ChartToolbar";
 import { toggle as toggleIndicator } from "./indicatorsModel";
 import { chartTabPath, marketChip, offeredTimeframes } from "./chartsPage";
 import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, type TimeframeId } from "./timeframes";
+import { EMBED_HINT_TEXT, useEmbedActivation } from "./embedActivation";
 import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs } from "./useChartPrefs";
 import { useMarketStatus } from "./useMarketStatus";
@@ -31,6 +32,9 @@ import type { LightweightEngine } from "../charting/lightweight";
  * still no lower pane here), the chart settings and "Open in Chart tab"; with `onSymbol` also the SymbolPicker (a host
  * that lets the trader change the symbol, e.g. the Terminal on a phone). Every older prop works as before. The timeframe
  * control stays the shared <TimeframePicker> (TF-1), drawn by ChartToolbar.
+ * P1-4 (2.3): on a touch screen it works like a map embed (embedActivation.ts): a vertical swipe scrolls the page until a
+ * tap activates the chart (an outline; then ChartV2 captures every touch); a tap outside or 3 s idle deactivates it; the
+ * first time, the hint "Tap to move the chart".
  */
 const TIMEFRAMES = offeredTimeframes(null);
 const NO_PANES = { volume: false, rsi: false };
@@ -98,6 +102,8 @@ export default function EmbeddedChartV2({
   const inPlace = useInPlace();
   const openTo = chartTabPath(sym, exchange, timeframe);
   const openLabel = inPlace.handles(openTo) ? "Open a larger chart" : "Open in Chart tab";
+  const box = useRef<HTMLDivElement>(null);
+  const activation = useEmbedActivation(box);
   const emptyText = data.loading ? "Loading prices…" : data.error ? "" : data.empty ?? emptyNote ?? `No prices for ${sym} on this timeframe yet.`;
 
   return (
@@ -109,9 +115,20 @@ export default function EmbeddedChartV2({
         indicators={{ state: indicatorState, on: () => false, onToggle: onIndicator, groups: EMBEDDED_GROUPS }}
         settings={{ prefs: prefs.prefs, onChange: prefs.update, error: prefs.error }}
         endActions={openLink ? [{ id: "open", label: openLabel, icon: <ExternalLink size={16} aria-hidden />, to: openTo }] : []} />
-      <ChartV2 candles={data.candles} timeframe={timeframe} symbol={sym} exchange={exchange} prefs={shown} overlays={overlays} live={live.ltp} marketOpen={marketOpen}
-        levels={levels} areas={areas} onLoadOlder={data.loadOlder} drawingTools={false} emptyText={emptyText} onEngine={onEngine}
-        className={className} />
+      {/* a column that fills a flex host (the Terminal's panel), so a host's `flex-1` on the chart still works */}
+      <div ref={box} data-chart-active={activation.active ? "on" : "off"} {...activation.handlers}
+           className="relative flex min-h-0 flex-1 flex-col">
+        <ChartV2 candles={data.candles} timeframe={timeframe} symbol={sym} exchange={exchange} prefs={shown} overlays={overlays} live={live.ltp} marketOpen={marketOpen}
+          levels={levels} areas={areas} onLoadOlder={data.loadOlder} drawingTools={false} emptyText={emptyText} onEngine={onEngine}
+          captureTouch={activation.active} className={className} />
+        {/* the outline over the canvases (an inset ring on this box would sit under the chart's own background) */}
+        {activation.active && <span data-chart-outline aria-hidden className="pointer-events-none absolute inset-0 z-20 ring-2 ring-inset ring-brand" />}
+        {activation.hint && data.candles.length > 0 && (
+          <p data-chart-hint aria-hidden className="pointer-events-none absolute inset-x-0 bottom-space-6 z-20 flex justify-center">
+            <span className="rounded-pill bg-surface-3 px-space-3 py-space-1 text-t12 font-semibold text-fg shadow-raised">{EMBED_HINT_TEXT}</span>
+          </p>
+        )}
+      </div>
       {data.error && (
         <p role="status" className="flex flex-wrap items-center gap-x-space-2 border-t border-subtle px-space-3 py-space-1 text-t13 text-fg">
           {data.error}

@@ -507,8 +507,8 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 
 | # | Question | Provisional default | Where | Status |
 |---|---|---|---|---|
-| RT6-1 | UI-H: Wave 0 merged (#510) and the page waves were done inside UX-2 / UI-28; mark UI-H superseded? (W0-4 ISO dates has no commit) | Yes, superseded; W0-4 stays a small UI-H-BUG item | docs/ROADMAP.md | open |
-| RT6-2 | CP-V: only the spec (#555) merged; `copilot_chart_read` never built. Superseded by M59 CR-4 + M72 PR-5 (chart attach + Advanced analysis)? | Yes, superseded; no new build | docs/ROADMAP.md | open |
-| RT6-3 | `chart_contracts` (P2-1 finish): FN1 row 6 needs an option contract chart with OI; option bars download only with `HISTORY_BACKFILL_FO_OPTIONS=true` (code default false; production value not known). Turn it on? | Yes (no migration); work after DATA-H | backend/app/core/config.py | open |
-| RT6-4 | `strategy_templates` (P2-3): done without the wave (G) family, which stays hidden with `screener_waves` until P5-1? | Yes | docs/design/P2_1_FLAG_AUDIT.md | open |
-| RT6-5 | `chart_analyze` (P2-5): ON as a beta, or hidden with an honest status until P5-1 (FN1 row 31, FN7)? | Hidden until P5-1 | docs/design/P2_1_FLAG_AUDIT.md | open |
+| RT6-1 | UI-H: Wave 0 merged (#510) and the page waves were done inside UX-2 / UI-28; mark UI-H superseded? (W0-4 ISO dates has no commit) | Yes, superseded; W0-4 stays a small UI-H-BUG item | docs/ROADMAP.md | decided 6 Nov (default; DECISIONS) |
+| RT6-2 | CP-V: only the spec (#555) merged; `copilot_chart_read` never built. Superseded by M59 CR-4 + M72 PR-5 (chart attach + Advanced analysis)? | Yes, superseded; no new build | docs/ROADMAP.md | decided 6 Nov (default; DECISIONS) |
+| RT6-3 | `chart_contracts` (P2-1 finish): FN1 row 6 needs an option contract chart with OI; option bars download only with `HISTORY_BACKFILL_FO_OPTIONS=true` (code default false; production value not known). Turn it on? | Yes (no migration); work after DATA-H | backend/app/core/config.py | decided 6 Nov (default; DECISIONS) |
+| RT6-4 | `strategy_templates` (P2-3): done without the wave (G) family, which stays hidden with `screener_waves` until P5-1? | Yes | docs/design/P2_1_FLAG_AUDIT.md | decided 6 Nov (default; DECISIONS) |
+| RT6-5 | `chart_analyze` (P2-5): ON as a beta, or hidden with an honest status until P5-1 (FN1 row 31, FN7)? | Hidden until P5-1 | docs/design/P2_1_FLAG_AUDIT.md | decided 6 Nov (default; DECISIONS) |

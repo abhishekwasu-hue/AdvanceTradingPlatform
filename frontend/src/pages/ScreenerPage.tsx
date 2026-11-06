@@ -195,7 +195,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   }, [universeV2, watchlistsOn, toast]);
   // FN2-g: a list saved from the matches shows in "My watchlists" at once (a failed re-read keeps the lists shown).
   const reloadMyLists = useCallback(() => {
-    watchlistsApi.list().then((l) => { if (isWatchlists(l)) setMyLists(l); }).catch(() => undefined);
+    watchlistsApi.list().then((l) => { if (isWatchlists(l)) setMyLists(l); }).catch(() => undefined);   // intentional: a failed re-read keeps the lists shown
   }, []);
   const builtinDefault = universesDone && !serverHasDefault(universes);
   const chosenKey = choice.startsWith("sys:") ? choice.slice(4) : null;

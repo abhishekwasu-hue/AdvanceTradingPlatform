@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 FLAG = "screener_vectorized"      # operator flag (off by default): the routes and the bar-close engine opt in with it
 FUNCTIONS = frozenset({"SMA", "EMA", "RSI", "ATR", "ADX", "PlusDI", "MinusDI", "Max", "Min", "Greatest", "Least", "Count", "CountStreak",
+                       "Abs", "Round", "Floor", "Ceil", "Sqrt",
                        "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag", "StDev", "TimeOfDay"})
 MIN_GROUP = 2                     # a symbol alone in its index group gains nothing from stacking: per-symbol path
 _COLUMNS = ("open", "high", "low", "close", "volume", "oi")
@@ -467,6 +468,12 @@ class _PanelEval(_Eval):
             "Min": lambda: self.wrap(_rolling_extreme(self.values(args[0], tf), win(1), np.minimum)),
             "Greatest": lambda: self.wrap(_extreme([self.values(a, tf) for a in args], np.maximum)),
             "Least": lambda: self.wrap(_extreme([self.values(a, tf) for a in args], np.minimum)),
+            # FN2-c: the math functions, the same values as the per-symbol path (runtime.py)
+            "Abs": lambda: self.wrap(np.abs(self.values(args[0], tf))),
+            "Round": lambda: self.wrap(np.round(self.values(args[0], tf), int(self.ev(args[1], tf)) if len(args) > 1 else 0)),
+            "Floor": lambda: self.wrap(np.floor(self.values(args[0], tf))),
+            "Ceil": lambda: self.wrap(np.ceil(self.values(args[0], tf))),
+            "Sqrt": lambda: self.wrap(_sqrt(self.values(args[0], tf))),
             "Count": lambda: self.wrap(_rolling_count(self.flags(args[1], tf).astype(float), win(0))),
             "CountStreak": lambda: self.wrap(_streak(self.flags(args[0], tf))),
             "CrossAbove": lambda: _cross(self.series(args[0], tf), self.series(args[1], tf), above=True),  # type: ignore[arg-type]
@@ -482,6 +489,12 @@ class _PanelEval(_Eval):
         if name not in impl:
             raise ScreenRuntimeError(f"{name} has no vectorised form")
         return impl[name]()
+
+
+def _sqrt(x: np.ndarray) -> np.ndarray:
+    """FN2-c: square root per bar and symbol; a negative value gives NaN (as the per-symbol path's `where(s >= 0)`)."""
+    with np.errstate(invalid="ignore"):
+        return np.where(x >= 0, np.sqrt(np.where(x >= 0, x, np.nan)), np.nan)
 
 
 def _extreme(arrays: List[np.ndarray], op: Callable[..., Any]) -> np.ndarray:

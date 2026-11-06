@@ -286,6 +286,13 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("Min", "factor", NUM, "same", (_X, _N), doc="lowest x over n bars"),
     Spec("Greatest", "factor", NUM, "same", (_X,), varargs=True, timeframed=False, doc="largest of the arguments"),
     Spec("Least", "factor", NUM, "same", (_X,), varargs=True, timeframed=False, doc="smallest of the arguments"),
+    # FN2-c (Chartink-class math): per bar, on the value of x; a missing x stays missing
+    Spec("Abs", "factor", NUM, "same", (_X,), doc="absolute value of x"),
+    Spec("Round", "factor", NUM, "same", (_X, Arg("digits", NUM, 0, False, literal_only=True, bounds=(0, 6))),
+         doc="x rounded to `digits` decimals (default 0)"),
+    Spec("Floor", "factor", NUM, "same", (_X,), doc="the largest whole number not above x"),
+    Spec("Ceil", "factor", NUM, "same", (_X,), doc="the smallest whole number not below x"),
+    Spec("Sqrt", "factor", NUM, "ratio", (_X,), doc="square root of x (missing where x is negative)"),
     Spec("Count", "factor", NUM, "count", (_N, Arg("cond", BOOL)), doc="bars in the last n where cond held"),
     Spec("CountStreak", "factor", NUM, "count", (Arg("cond", BOOL),), cost=2.0, doc="consecutive bars, up to now, where cond held"),
     Spec("CrossAbove", "filter", BOOL, None, (Arg("a", NUM), Arg("b", NUM)), same_unit_args=(0, 1), extra_bars=1, doc="a crossed above b on this bar"),

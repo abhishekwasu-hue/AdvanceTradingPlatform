@@ -209,7 +209,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P1-2 | in review | notice (TT12-1) added; owner: "Merge" after green CI, then deploy (no migration) | #494 |
 | P1-2b | in review | org min R:R OFF (0 = not set; an old stored 1.2 = not set), parity tests live / paper / both backtests; owner: "Merge" after green CI, then deploy (no migration) | #497 |
 | P1-3 | waiting for owner | deploy, universe sync ON, "Enable trader features"; then day-one test on production | #470 |
-| P1-4 | in progress | audit #906; 2.5 view memory on the Charts page built (6 Nov); next: 2.3 tap-to-activate embedded charts + pinch / long-press e2e; phone recording | row 18 |
+| P1-4 | in progress | audit #906; 2.5 view memory (6 Nov, #922); 2.3 embedded charts: tap to activate + first-time hint + touch e2e (6 Nov); next: phone recording | row 18 |
 | P1-5 | waiting for owner | `data_hub` ON via "Enable trader features" after the deploy; API-call numbers before / after | - |
 | P1-6 | in progress | TF-1 one timeframe control #540 merged 26 Oct. T1 + fixes ✅ (25 Oct): #510 + #493 merged; `terminal` ON by default merged (#533, T-D1), live after the deploy; the two unbuilt panels hidden (#539). Owner TL-1..TL-4 (25 Oct: chart panel never navigates; 45/35/20 layout + gutters; compact chain + column picker; compact order panel) with T2. T2 target 29 Oct: TT-1 LIVE sender (own PR; LIVE switch stays the owner's), TT-9 partial exit + reverse, TT-10 modify / cancel (PAPER). T3 target 2 Nov | #493 |
 | P1-6c | in review | PR 1-3 merged (#524, #527, #529, #553); CX2 trailing (LOCK / TRAIL) merged via #603 27 Oct with the owner review F2-F7 (stop in force = engine state, signed P&L, shared option cards, one-line dialogs); owner ✅ on shots with fixes; waits for deploy + owner check | #601, #603 |
@@ -234,7 +234,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P1-7 | waiting for owner | `smart_execution` ON ("Enable trader features"); check the basket confirm on production | #468, #474 |
 | FN0 | merged #538 + #542 (docs); waits for owner ✅ on the table (audit 6 Nov) | functional audit (no code), merged with P2-1: feature + flag table with status, evidence and fix item | - |
 | FN1 | in review | definition of done D1-D7 in docs/WORKING_RULES.md §4; per-feature list docs/FN1_CHECKLIST.md (every flag in one row, test_fn1_checklist.py) + the owner's read-only production check block; nothing ticked until FN7 | - |
-| FN2-FN7 | not started | after FN1, in order; max 3 in progress | - |
+| FN2-FN7 | in progress | FN2 gap audit docs/design/FN2_GAP_AUDIT.md (6 Nov: 7 built behind flags, 7 partial, PR list a-k); FN2-c math functions built (6 Nov); FN6 note docs/design/FN6_SEBI_ALGO_NOTE.md delivered (G1 hosting model is an owner + lawyer decision before LIVE) |
 | P2-1 | merged (apply step #598 + #855); waits for deploy + owner ✅ (audit 6 Nov) | table sent (docs/design/P2_1_FLAG_AUDIT.md: 26 unfinished flags, finish 10 / keep OFF 15 / remove 1); owner ✅ 26 Oct (FA-1..3 defaults); next: apply in the catalog / admin list (build PR) | #556 |
 | P2-2 | not started | Copilot jobs 1-8 + own key + tools end to end (parts built, flags) | - |
 | P2-3 | not started | templates / ideas / wave templates from the Paper bot (parts built) | - |
@@ -247,7 +247,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P3-1 | waiting for owner | the R2 bucket + key escrow, then the restore drill | - |
 | P3-2 | not started (parallel) | monitoring + alerts (parts built, row 17) | - |
 | P3-3 | in review | rollback test of `atp.sh`: audit done (real-container rehearsal already green on main in staging-stack.yml `rollback`); added hermetic A->B->C rollback / `--to` / failed-health tests (per PR) + the one-command rollback in HOSTINGER_RUNBOOK section 9; owner decision P3-3-Q1 (failed-health rollback leaves the API on the older image) | - |
-| P3-4 | not started (parallel) | security + DPDP checklist | - |
+| P3-4 | in progress | checklist docs/design/P3_4_SECURITY_DPDP_CHECKLIST.md (6 Nov: 49 rows - 18 done, 23 partial, 6 missing; DPDP Rule 4 from ~13/14 Nov 2026, most duties ~May 2027); next: breach runbook + erasure gaps |
 | P3-5 | waiting for owner | the lawyer's text | - |
 | TP-1 | not started | starts only after Phase 1 is complete | - |
 | BR-0 | waiting | gate only: SCR-FIX (in progress), AP-FIX, CP-FIX, DATA-H backfill, P5-1; BR filed 28 Oct, plan only | - |

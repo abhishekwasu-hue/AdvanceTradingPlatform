@@ -83,6 +83,10 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "PctChange": ["PctChange(close, 5)"],
     "ZScore": ["ZScore(close, 20)"],
     "Lag": ["Lag(close, 3)"],
+    # FN2-c: the math functions read only the bar they are on
+    "Abs": ["Abs(close - open)", "Abs(close - open)@1h"], "Round": ["Round(close, 1)", "Round(close)@1h"],
+    "Floor": ["Floor(close)", "Floor(close)@1h"], "Ceil": ["Ceil(close)", "Ceil(close)@1h"],
+    "Sqrt": ["Sqrt(volume)", "Sqrt(volume)@1h"],
     "Supertrend": ["Supertrend(10, 3)", "Supertrend(10, 3)@1h"],
     # TPL-1: the add-indicator work
     "SupertrendDir": ["SupertrendDir(10, 3)", "SupertrendDir(7, 2)@1h"],

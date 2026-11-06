@@ -864,7 +864,8 @@ breakout screens could not open in the builder (TX1-7, LG1-7).
   breakout cards with the flag on.
 - **No new ScreenQL function**, no migration, no order path.
 - **Not in this step (Phase 0 freeze):** the Fundamental / Ownership / Events / F&O tabs (their data is not on the run
-  path yet), a visual editor for arithmetic and offsets, the QueryDrawer.
+  path yet), a visual editor for arithmetic, the QueryDrawer. (Offsets on the indicator block's two sides came later, in
+  FN2-b: a "bars ago" field under the block's options; other offsets stay in the formula block.)
 
 ## Z7a-3 (built): market-zone functions `NearZone`, `ZoneRole`, `ZoneState`, `ZoneStrength`
 

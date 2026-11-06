@@ -414,6 +414,11 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
                 # closed) - one batched read for the rule's symbols over the zone calls' own window, only when the cycle
                 # has not evaluated this same screen already (an error here is this rule's problem: the try below)
                 await zone_gate.attach_zones(session, rule.tenant_id, rule.exchange or "NSE", current, now, ast, rule.base_tf, params)
+            from app.screener import reference as reference_gate
+            if reference_gate.calls(ast):
+                # FN2-d: Sector / Industry / IndexMember / IsFnO as the screen run reads them - the classification alive on
+                # `now`'s exchange date, the bar that just closed (no look-ahead: never a later reclassification)
+                await reference_gate.attach(session, current, reference_gate.run_date(now))
             # CPU-bound (a breakout / session screen over 1m bars can take a fraction of a second per symbol): run it in a
             # worker thread so one rule never stalls the worker's event loop (U6 BK2 review M3). It reads only the frames.
             # Inside the try: a screen that fails at run time is this rule's problem, not the cycle's.

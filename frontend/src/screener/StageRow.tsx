@@ -6,6 +6,8 @@
  * the funnel counts top-level stages). The advanced fold shows the block in plain words (its ScreenQL behind "Advanced").
  * U2 (flag `screener_builder_u2`): the formula block - a condition in ScreenQL text (offsets, arithmetic), the form that
  * holds what the other blocks cannot, so Legends and breakout screens open in the builder.
+ * FN2-b: each side of the indicator block can be read some bars back ("bars ago", ScreenQL `x[n]`), set under the
+ * block's options and shown in its sentence once set; blank is the current bar.
  *
  * Keyboard: the handle moves the stage with Alt+Up / Alt+Down and keeps the focus as the stage moves; every control is
  * a native button, input or select.
@@ -14,11 +16,11 @@ import { Braces, ChevronDown, Copy, Filter, GripVertical, Layers, LineChart, Lis
 import { useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { cx } from "../components/primitives";
 import {
-  defaultParams, duplicateStage, indicatorNames, isCategory, isFilter, namesWhere, newBlock, OPS, paramKinds, RANK_FNS, RANK_OPS,
+  barsAgo, defaultParams, duplicateStage, indicatorNames, isCategory, isFilter, namesWhere, newBlock, OPS, paramKinds, RANK_FNS, RANK_OPS,
   seriesRef, stageSummary, stageText, type GroupStage, type IndicatorStage, type Op, type Operand, type ParamValue,
-  type Registry, type SeriesRef, type Stage, type StageKind, type TrailRow,
+  type Registry, type SeriesRef, type Stage, type StageKind, type TrailRow, withBarsAgo,
 } from "./model";
-import { NumberInline, SelectInline, TextAreaInline, TextInline } from "./ParamInline";
+import { BarsAgoInline, NumberInline, SelectInline, TextAreaInline, TextInline } from "./ParamInline";
 import { SurvivorTrail } from "./SurvivorTrail";
 import { TimeframeChip } from "./TimeframeChip";
 
@@ -58,7 +60,7 @@ function SeriesEditor({ value, registry, label, names, onChange }: { value: Seri
     // SCR-FIX D2: one unit on a wide screen; on a phone a long call may wrap instead of pushing the page sideways
     <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-0.5 sm:flex-nowrap">
       <SelectInline label={`${label} indicator`} mono={false} value={value.fn} options={names ?? indicatorNames(registry)}
-                    onChange={(fn) => onChange(seriesRef(registry, String(fn), value.tf))} />
+                    onChange={(fn) => onChange(seriesRef(registry, String(fn), value.tf, barsAgo(value)))} />
       {kinds.length > 0 && <span className="font-mono text-t13 text-fg-muted" aria-hidden>(</span>}
       {kinds.map((k, i) => {
         const v = value.params[k.name] ?? (entry ? defaultParams(entry)[k.name] : 0);
@@ -85,11 +87,20 @@ function IndicatorBody({ stage, registry, scanTf, onChange }: { stage: Indicator
     <>
       <SeriesEditor value={stage.left} registry={registry} label="Left" onChange={(left) => onChange({ ...stage, left })} />
       <TimeframeChip value={stage.left.tf} scanTf={scanTf} label="Timeframe of the left side" onChange={(tf) => onChange({ ...stage, left: { ...stage.left, tf } })} />
+      {/* FN2-b: a side read some bars back shows it in the sentence (set and cleared here or under the block's options) */}
+      {barsAgo(stage.left) > 0 && (
+        <BarsAgoInline value={barsAgo(stage.left)} label="Left side, bars ago" testId="bars-ago-left-inline"
+                       onChange={(n) => onChange({ ...stage, left: withBarsAgo(stage.left, n) })} />
+      )}
       <SelectInline label="Comparison" mono={false} value={stage.op} options={OPS.map((o) => o)} format={(o) => OP_LABEL[o as Op]}
                     onChange={(op) => onChange({ ...stage, op: op as Op })} />
       {stage.right.kind === "value"
         ? <NumberInline value={stage.right.value} label="Compared with" onChange={(value) => setRight({ kind: "value", value })} />
         : <SeriesEditor value={stage.right.ref} registry={registry} label="Right" onChange={(ref) => setRight({ kind: "series", ref })} />}
+      {stage.right.kind === "series" && barsAgo(stage.right.ref) > 0 && (
+        <BarsAgoInline value={barsAgo(stage.right.ref)} label="Right side, bars ago" testId="bars-ago-right-inline"
+                       onChange={(n) => stage.right.kind === "series" && setRight({ kind: "series", ref: withBarsAgo(stage.right.ref, n) })} />
+      )}
     </>
   );
 }
@@ -342,6 +353,19 @@ function CompareWith({ stage, registry, scanTf, onChange }: { stage: IndicatorSt
         <TimeframeChip value={stage.right.ref.tf} scanTf={scanTf} label="Timeframe of the right side"
                        onChange={(tf) => stage.right.kind === "series" && setRight({ kind: "series", ref: { ...stage.right.ref, tf } })} />
       )}
+      {/* FN2-b: "n bars ago" for each side - blank is the current bar */}
+      <span className="inline-flex flex-wrap items-center gap-1" data-testid="bars-ago">
+        <span>Left side</span>
+        <BarsAgoInline value={barsAgo(stage.left)} label="Left side, bars ago" testId="bars-ago-left"
+                       onChange={(n) => onChange({ ...stage, left: withBarsAgo(stage.left, n) })} />
+        {stage.right.kind === "series" && (
+          <>
+            <span className="ml-2">Right side</span>
+            <BarsAgoInline value={barsAgo(stage.right.ref)} label="Right side, bars ago" testId="bars-ago-right"
+                           onChange={(n) => stage.right.kind === "series" && setRight({ kind: "series", ref: withBarsAgo(stage.right.ref, n) })} />
+          </>
+        )}
+      </span>
     </>
   );
 }

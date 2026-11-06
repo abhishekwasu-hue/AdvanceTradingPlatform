@@ -18,6 +18,10 @@ Telegram approver) go too. When they are the only member left (every other membe
 own personal data goes with them: its alert channels, its broker credentials, and its name (sign-up sets it to the
 e-mail) becomes "Erased organisation <id>". A name that is the erased e-mail is replaced in any organisation. Trades,
 orders, broker accounts and audit rows are never touched here: they follow the regulatory retention period.
+
+P3-4 (Copilot memory): the Copilot conversation (sessions and turns), the Copilot memory and every other `user_prefs`
+row of the member go with the account, as do their own AI provider keys. A broker credential (e.g. an Upstox Analytics
+Token) belongs to the organisation and goes only with the last member (above).
 """
 import logging
 from dataclasses import dataclass, field
@@ -61,6 +65,7 @@ from app.db.models import (
     TenantInviteRecord,
     User,
     UserAiKeyRecord,
+    UserPrefsRecord,
     UserSessionRecord,
     UserVisionPrefsRecord,
     VisionReportRecord,
@@ -244,6 +249,9 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
     # CP-UX CU6: their Copilot conversation (questions and answer cards kept across reloads).
     from app.ai.chat_history import forget as forget_copilot_conversation
     await forget_copilot_conversation(session, user.tenant_id, user.id)
+    # P3-4: every other `user_prefs` row of theirs too (chart / AI language / alert and risk settings, internal marks);
+    # the Copilot memory is one of them, and `forget` above already removed it.
+    await session.execute(delete(UserPrefsRecord).where(UserPrefsRecord.user_id == user.id, UserPrefsRecord.tenant_id == user.tenant_id))
     # Analyze a chart: their chart images (files) and analyses go with the account.
     from app.chart_analyze.service import erase_user as erase_chart_analyses
     await erase_chart_analyses(session, user)

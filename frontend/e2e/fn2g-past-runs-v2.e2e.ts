@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page, type Route } from "@playwright/t
 import { readFileSync } from "node:fs";
 import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
+import { expectPhoneLayout } from "./phoneLayout";
 import { screenerTool } from "./screenerTools";
 
 /**
@@ -146,8 +147,9 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
       await page.getByTestId("save-matches-save").click();
       await expect(page.getByTestId("save-matches-problem")).toHaveText('You already have a list named "Breakouts today". Pick another name.');
       expect(world.created).toHaveLength(1);
-      // no sideways scroll on a phone (the page's other controls are checked by their own specs)
+      // no sideways scroll on a phone, and every control on the page after a run is a 44 px+ touch target
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      if (size.phone) await expectPhoneLayout(page);
 
       // FN2-i: "Past runs" lists his own runs in words; one reopens with its stored results
       await screenerTool(page, "past-runs-open");

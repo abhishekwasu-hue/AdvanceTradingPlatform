@@ -164,9 +164,9 @@ It holds:
 5. The business contact information of a person who can answer the user's questions on our behalf:
    [GRIEVANCE OFFICER NAME], [GRIEVANCE OFFICER EMAIL].
 
-Known gap: the privacy notice (backend/app/legal/content/privacy.md, breach paragraph) says a "target of
-{{breach_notify_hours}} hours" for user notices; S2 Rule 7(1) says "without delay" (checklist row D17, build item
-P3-4-B15 fixes the wording). There is no in-app tool yet to send one notice to a list of affected users (P3-4-B15).
+The privacy notice (backend/app/legal/content/privacy.md, breach paragraph) says the user and the Data Protection
+Board are told "without delay" (S2 Rule 7(1); checklist row D17, P3-4-B15 wording fix). Known gap: there is no in-app
+tool yet to send one notice to a list of affected users (P3-4-B15).
 
 ### 7.2 Data Protection Board - first intimation, without delay (S2 Rule 7(2)(a))
 

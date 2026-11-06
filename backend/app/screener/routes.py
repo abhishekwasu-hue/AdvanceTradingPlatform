@@ -39,6 +39,7 @@ from app.screener import fundamentals as fundamentals_gate
 from app.screener import legends as lg
 from app.screener import ownership as ownership_gate
 from app.screener import ranking as ranking_gate  # registers the `legends` template source (U7 LG1)
+from app.screener import reference as reference_gate
 from app.screener import taxonomy as tx
 from app.screener import venues as venue_gate
 from app.screener import waves as waves_gate
@@ -81,6 +82,9 @@ async def run_allowed(session: AsyncSession, user: User) -> None:
 # U7 LG3: and the point-in-time fundamentals. N3 S8a: and the ownership patterns and events known by each bar's close.
 # N3 S7a: and the ranking systems a RankScore names (loaded by the route, with the sectors a sector-neutral one needs).
 RUN_PROVIDES: frozenset = frozenset({"zones", "fundamentals", "ownership", "rankings"})
+# FN2-d: `load_universe` also loads the current reference data of these "reference" functions (app/screener/reference);
+# a caller that runs through it passes missing_data(..., reference=True). McapBucket has no source and stays refused.
+RUN_REFERENCE: frozenset = reference_gate.LOADED
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
@@ -936,6 +940,8 @@ async def load_universe(session: AsyncSession, user: User, ast: Any, validated: 
         await fundamentals_gate.attach(session, universe, datetime.now(UTC), tenant_id=user.tenant_id)
     if ownership_gate.flagged_calls(ast):         # N3 S8a: the shareholding patterns and events known by each bar's close
         await ownership_gate.attach(session, universe, exchange, datetime.now(UTC), viewer=user.tenant_id)
+    if reference_gate.calls(ast):                 # FN2-d: Sector / Industry / IndexMember / IsFnO - the current classification
+        await reference_gate.attach(session, universe)
     systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
     return universe, fetch_problems, data_source, systems
 
@@ -956,12 +962,18 @@ async def rank_systems(session: AsyncSession, tenant_id: int, ast: Any, params: 
     return systems
 
 
-def missing_data(ast: Any) -> List[str]:
-    """Functions in the screen whose data the run path does not load (`Spec.needs` not in RUN_PROVIDES)."""
+def missing_data(ast: Any, *, reference: bool = False) -> List[str]:
+    """Functions in the screen whose data the run path does not load (`Spec.needs` not in RUN_PROVIDES). `reference`
+    (FN2-d): the caller runs through `load_universe`, which loads the current reference data of RUN_REFERENCE's
+    functions - they count as loaded. Off (history, chart studies, the library): refused as before, since those read past
+    bars and the current classification would be look-ahead there."""
     out: List[str] = []
     for node in nodes.walk(ast):
         spec = FUNCTIONS.get(getattr(node, "name", "")) if isinstance(node, nodes.Call) else None
-        if spec and any(need not in RUN_PROVIDES for need in spec.needs) and spec.name not in out:
+        if spec is None or spec.name in out:
+            continue
+        loaded = RUN_PROVIDES | ({"reference"} if reference and spec.name in RUN_REFERENCE else set())
+        if any(need not in loaded for need in spec.needs):
             out.append(spec.name)
     return out
 
@@ -1010,10 +1022,10 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     await _gate(session, user, ast, validated, params, body.exchange)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
-    missing = missing_data(ast)
+    missing = missing_data(ast, reference=True)        # FN2-d: load_universe loads Sector / Industry / IndexMember / IsFnO
     if missing:
         raise HTTPException(status_code=422, detail={"message": f"{', '.join(m + '()' for m in missing)} need data the screener run does not load "
-                                                                "yet (sector / index / F&O lists or the option chain); a run uses bars only",
+                                                                "yet (market-cap buckets or the option chain)",
                                                      "problems": [{"message": f"{m}() needs data the run does not load yet", "pos": None} for m in missing]})
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
     # Z10-d: same matches, less time. LD-7: read before the fetch, while this request still holds its connection (read

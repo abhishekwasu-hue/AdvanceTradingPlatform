@@ -784,7 +784,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
                 <label className="block">
                   <span className="sr-only">Scan name</span>
                   <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Untitled scan"
-                         className="w-full rounded-control border border-transparent bg-transparent px-1 text-t18 font-semibold text-fg hover:border-border focus:border-border focus:outline-none focus:ring-2 focus:ring-brand" />
+                         className="min-h-11 w-full rounded-control border border-transparent bg-transparent px-1 text-t18 font-semibold text-fg hover:border-border focus:border-border focus:outline-none focus:ring-2 focus:ring-brand md:min-h-0" />
                 </label>
                 {registry ? (
                   <FunnelCanvas stages={stages} registry={registry} scanTf={scanTf} universe={symbols.length} funnel={shown?.funnel ?? null}

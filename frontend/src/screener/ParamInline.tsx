@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cx } from "../components/primitives";
 import { Combobox } from "../ui/Combobox";
-import type { ParamValue } from "./model";
+import { MAX_BARS_AGO, parseBarsAgo, type ParamValue } from "./model";
 
 const chip = "rounded-control px-1 font-mono font-tabular text-t13 text-fg underline decoration-border decoration-dotted underline-offset-4 "
   + "hover:bg-surface-2 hover:decoration-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
@@ -85,15 +85,16 @@ export interface SelectInlineProps {
   format?: (v: ParamValue) => string;   // the words shown for a value (an operator reads "above", not ">")
   searchable?: boolean;                 // a filter box above the rows (default: lists longer than 12)
   onChange: (v: ParamValue) => void;
+  triggerClassName?: string;            // extra classes for the trigger (a phone size for a picker that stands on its own)
 }
 
 /** SCR-FIX D8: the shared picker (src/ui/Combobox.tsx) as a word in the sentence - as wide as the chosen value, a list
  * under it with a mouse, a bottom sheet with 44 px rows on a phone. Long lists (the indicators) get a filter box. */
-export function SelectInline({ value, options, label, mono = true, format = String, searchable, onChange }: SelectInlineProps) {
+export function SelectInline({ value, options, label, mono = true, format = String, searchable, onChange, triggerClassName }: SelectInlineProps) {
   const rows = options.map((o) => ({ value: String(o), label: format(o) }));
   return (
     <Combobox variant="inline" label={label} value={String(value)} options={rows} searchable={searchable ?? options.length > 12}
-              triggerClassName={mono ? "font-mono font-tabular" : undefined}
+              triggerClassName={cx(mono && "font-mono font-tabular", triggerClassName) || undefined}
               onChange={(v) => {
                 const picked = options.find((o) => String(o) === v);
                 if (picked !== undefined) onChange(picked);
@@ -149,5 +150,50 @@ export function TextAreaInline({ value, label, placeholder = "type a value", onC
       }}
       className="block w-full min-w-0 max-w-full resize-y break-words rounded-control border border-border bg-surface-inset px-1 py-0.5 font-mono text-t13 text-fg placeholder:text-fg-muted/60 focus:outline-none focus:ring-2 focus:ring-brand"
     />
+  );
+}
+
+export interface BarsAgoInlineProps {
+  value: number;                 // 0: the current bar
+  label: string;                 // accessible name: "Left side, bars ago"
+  testId?: string;
+  onChange: (n: number) => void;
+}
+
+/** FN2-b: how many bars back a side of the indicator block is read. Blank is the current bar; 1 to MAX_BARS_AGO a bar
+ * before it (ScreenQL `x[n]`). Commits on Enter or leaving; a value out of range is marked and not applied; Escape
+ * cancels. 44 px tall on a phone. */
+export function BarsAgoInline({ value, label, testId, onChange }: BarsAgoInlineProps) {
+  const shown = value > 0 ? String(value) : "";
+  const [text, setText] = useState(shown);
+  const [bad, setBad] = useState(false);
+  useEffect(() => { setText(shown); setBad(false); }, [shown]);
+  const commit = () => {
+    const n = parseBarsAgo(text);
+    if (n === null) { setBad(true); return; }
+    setBad(false);
+    if (n !== value) onChange(n);
+    else setText(shown);
+  };
+  return (
+    <span className="inline-flex items-center gap-1" data-testid={testId}>
+      <input
+        aria-label={label}
+        aria-invalid={bad || undefined}
+        title={bad ? `A whole number of bars, 1 to ${MAX_BARS_AGO}; blank is the current bar` : undefined}
+        inputMode="numeric"
+        value={text}
+        placeholder="now"
+        onChange={(e) => { setText(e.target.value); setBad(false); }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit(); }
+          if (e.key === "Escape") { e.preventDefault(); setText(shown); setBad(false); }
+        }}
+        className={cx("h-11 w-14 rounded-control border bg-surface-inset px-1 font-mono font-tabular text-t13 text-fg placeholder:text-fg-muted/60 focus:outline-none focus:ring-2 md:h-7",
+          bad ? "border-warn focus:ring-warn" : "border-border focus:ring-brand")}
+      />
+      <span className="text-t12 text-fg-muted">{value === 1 ? "bar ago" : "bars ago"}</span>
+    </span>
   );
 }

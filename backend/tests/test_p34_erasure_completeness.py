@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 
+from app.ai import memory as copilot_memory
 from app.alerts.channels import FcmConfig, FcmDevice, TelegramApprover, TelegramConfig, decrypt_raw, encrypt_config
 from app.chart_analyze import storage
 from app.db.models import (
@@ -15,6 +16,8 @@ from app.db.models import (
     AlertDeliveryRecord,
     BrokerAccountRecord,
     BrokerCredentialRecord,
+    CopilotChatSessionRecord,
+    CopilotChatTurnRecord,
     JournalAttachmentRecord,
     JournalEntryRecord,
     JournalManualTradeRecord,
@@ -25,6 +28,8 @@ from app.db.models import (
     Tenant,
     TradeRecord,
     User,
+    UserAiKeyRecord,
+    UserPrefsRecord,
 )
 from app.retention.service import erase_user
 from app.secrets_store.envelope import ensure_tenant_key
@@ -227,3 +232,65 @@ async def _raw_approver_emails(tenant_id: int):
         record = await session.scalar(select(AlertChannelRecord).where(AlertChannelRecord.tenant_id == tenant_id,
                                                                        AlertChannelRecord.channel_type == "TELEGRAM"))
         return decrypt_raw(record)
+
+
+# P3-4: the Copilot memory (user_prefs `ai_memory`), every other user_prefs row, the Copilot conversation and the
+# member's own AI keys go with the account; the other member's rows and the organisation's broker credential stay.
+_PREF_NAMESPACES = (copilot_memory.PREFS, "chart", "ai", "signals_day_one")
+
+
+def _seed_ai_data(tenant_id: int, user_id: int) -> None:
+    async def go():
+        async with _session_factory() as session:
+            for ns in _PREF_NAMESPACES:
+                session.add(UserPrefsRecord(tenant_id=tenant_id, user_id=user_id, namespace=ns, value_json='{"instruments": ["NIFTY"]}',
+                                            version=1, updated_at=NOW))
+            chat = CopilotChatSessionRecord(tenant_id=tenant_id, user_id=user_id, title="my question")
+            session.add(chat)
+            await session.flush()
+            session.add(CopilotChatTurnRecord(tenant_id=tenant_id, user_id=user_id, session_id=chat.id, question="my question",
+                                              answer_json="{}"))
+            session.add(UserAiKeyRecord(tenant_id=tenant_id, user_id=user_id, provider="anthropic", encrypted_key="ciphertext",
+                                        key_hint="...abcd"))
+            await session.commit()
+    _run(go())
+
+
+def _ai_counts(user_id: int) -> dict:
+    return {"prefs": _count(UserPrefsRecord, user_id=user_id),
+            "memory": _count(UserPrefsRecord, user_id=user_id, namespace=copilot_memory.PREFS),
+            "chat_sessions": _count(CopilotChatSessionRecord, user_id=user_id),
+            "chat_turns": _count(CopilotChatTurnRecord, user_id=user_id),
+            "ai_keys": _count(UserAiKeyRecord, user_id=user_id)}
+
+
+def test_member_erasure_removes_copilot_memory_all_prefs_conversation_and_ai_keys(monkeypatch):
+    monkeypatch.setattr(storage, "delete", lambda path: True)
+    owner_headers, owner = _owner(_email("aiowner"))
+    _, member = _join(owner_headers, _email("aimember"), role="USER")
+    tid = owner["tenant_id"]
+    for person in (owner, member):
+        _seed_ai_data(tid, person["id"])
+    _seed_broker(tid, owner["id"])
+    seeded = {"prefs": len(_PREF_NAMESPACES), "memory": 1, "chat_sessions": 1, "chat_turns": 1, "ai_keys": 1}
+    assert _ai_counts(member["id"]) == seeded
+
+    assert client.delete(f"/api/team/members/{member['id']}", headers=owner_headers).status_code == 204
+    assert client.post(f"/api/team/members/{member['id']}/erase", json={}, headers=owner_headers).status_code == 204
+
+    assert _ai_counts(member["id"]) == {k: 0 for k in seeded}
+    assert _ai_counts(owner["id"]) == seeded                               # another member's rows are untouched
+    assert _count(BrokerCredentialRecord, tenant_id=tid) == 1              # the organisation's credential stays with it
+
+
+def test_sole_member_erasure_removes_copilot_memory_and_the_organisations_analytics_token(monkeypatch):
+    monkeypatch.setattr(storage, "delete", lambda path: True)
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {_register(_email('aisole'), PASSWORD)}"}).json()
+    tid, uid = me["tenant_id"], me["id"]
+    _seed_ai_data(tid, uid)
+    _seed_broker(tid, uid)                                                 # an Upstox credential (Analytics Token) of the org
+
+    _erase(uid)
+
+    assert _ai_counts(uid) == {"prefs": 0, "memory": 0, "chat_sessions": 0, "chat_turns": 0, "ai_keys": 0}
+    assert _count(BrokerCredentialRecord, tenant_id=tid) == 0

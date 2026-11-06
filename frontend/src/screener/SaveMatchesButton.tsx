@@ -62,7 +62,7 @@ export function SaveMatchesButton({ results, scanName, create = watchlistsV2Api.
         New watchlist with {symbols.length} matched {symbols.length === 1 ? "symbol" : "symbols"}
       </label>
       <input id={inputId} value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoFocus
-             aria-invalid={problem ? true : undefined} data-testid="save-matches-name" className={cx(fieldClass, "h-11 md:h-9")} />
+             aria-invalid={problem ? true : undefined} data-testid="save-matches-name" className={cx(fieldClass, "min-h-11 md:min-h-9")} />
       {problem && <p role="alert" className="text-t13 text-warn" data-testid="save-matches-problem">{problem}</p>}
       <div className="flex flex-wrap gap-2">
         <Button type="submit" size="v2" variant="primary" loading={busy} data-testid="save-matches-save">Save</Button>

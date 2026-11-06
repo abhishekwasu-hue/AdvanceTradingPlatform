@@ -99,8 +99,7 @@ def facts() -> Dict[str, Dict[str, object]]:
     ruleset = rules.load()
     return {
         "retention": {k: v for k, v in policy.items() if isinstance(v, int) and not isinstance(v, bool)},
-        "compliance": {"breach_notify_hours": ruleset.param(golive.RULE, "dpdp_breach_notify_hours"),
-                       "log_retention_days": ruleset.param(golive.RULE, "log_retention_days")},
+        "compliance": {"log_retention_days": ruleset.param(golive.RULE, "log_retention_days")},
     }
 
 

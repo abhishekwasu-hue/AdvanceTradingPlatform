@@ -127,6 +127,27 @@ for (const width of [1440, 390] as const) {
       await expect(root(page)).toHaveAttribute("data-latest-visible", "yes");
     });
 
+    test("P1-4 (2.5): the view is remembered per symbol and timeframe across a reload; Reset forgets it", async ({ page }) => {
+      await open(page);
+      await inView(page, root(page));
+      const { plot } = await plotBox(page);
+      const c = { x: plot.x + plot.width * 0.3, y: plot.y + plot.height / 3 };
+      await drag(page, c, { x: c.x + plot.width * 0.5, y: c.y + 90 });
+      await expect(root(page)).toHaveAttribute("data-autoscale", "off");
+      await expect(root(page)).toHaveAttribute("data-latest-visible", "no");
+      await expect.poll(() => page.evaluate(() => localStorage.getItem("atp_chart_view:1") ?? "")).toContain("autoScale\":false");
+      await page.reload();
+      await expect(page.getByText("Loading prices…")).toHaveCount(0);
+      await expect(root(page)).toHaveAttribute("data-autoscale", "off");               // the same view, not a fresh fit
+      await expect(root(page)).toHaveAttribute("data-latest-visible", "no");
+      await button(page, "Reset").click();
+      await expect(root(page)).toHaveAttribute("data-autoscale", "on");
+      await page.reload();
+      await expect(page.getByText("Loading prices…")).toHaveCount(0);
+      await expect(root(page)).toHaveAttribute("data-autoscale", "on");
+      await expect(root(page)).toHaveAttribute("data-latest-visible", "yes");
+    });
+
     test("the controls: plain tooltips, 44 px targets on the phone, inside the price pane", async ({ page }) => {
       await open(page, "dark");
       await expect(button(page, "Auto")).toHaveAttribute("title", "Fit prices to the screen");

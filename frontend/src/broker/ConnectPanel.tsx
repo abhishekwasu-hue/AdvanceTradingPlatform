@@ -9,6 +9,7 @@ import { formatDateIST } from "../ui/format";
 import { BTN_PRIMARY, BTN_SECONDARY, BrokerLogo, ResponsiveDialog } from "./parts";
 import { entryFor, useBrokerCatalog } from "./useBrokerCatalog";
 import { Skeleton } from "../components/primitives";
+import UpstoxOrderLogin from "./UpstoxOrderLogin";
 
 /**
  * P2b: the Connect panel - a small modal on a wide screen, a sheet on a phone. It holds ONLY:
@@ -428,7 +429,10 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
   // M85: the saved Upstox analytics token (renew only); undefined = not read yet, null = none valid.
   const [saved, setSaved] = useState<{ expiresAt: string } | null | undefined>(undefined);
   const [replacing, setReplacing] = useState(false);
-  const upstoxRenew = mode === "renew" && entry?.method === "analytics_token";
+  // Owner 6 Nov ("analytics token expire zalyashivay magu naye, yethe normal loginchich card open vhayla pahije"): every
+  // Upstox panel - Connect, Connect again or Renew, from any page - first reads the saved Analytics Token; while it is
+  // valid the normal Upstox login card opens instead of the token field (Replace stays one tap away).
+  const upstoxRenew = entry?.method === "analytics_token";
   // BRK-1 C: the exact values the guide's Copy buttons copy (ATP's redirect address for this broker, the server IP).
   const [copyValues, setCopyValues] = useState<CopyValues>({});
   const needsCopy = !!entry?.guide?.steps.some((st) => st.copy);
@@ -533,12 +537,14 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
 
   const name = entry?.name ?? "";
   const title = `${mode === "renew" ? "Renew" : "Connect"} ${name}`.trim();
+  if (upstoxRenew && saved && !replacing) {
+    return <UpstoxOrderLogin open={open} onOpenChange={onOpenChange} accountLabel={label} onChanged={onChanged}
+      savedUntil={saved.expiresAt} onReplaceToken={() => setReplacing(true)} />;
+  }
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange} title={title} marker="connect">
       {upstoxRenew && saved === undefined ? (
         <Skeleton className="h-32" label="Loading" />
-      ) : upstoxRenew && saved && !replacing ? (
-        <UpstoxSavedView expiresAt={saved.expiresAt} onReplace={() => setReplacing(true)} />
       ) : entry && step ? (
         <ConnectPanelView entry={entry} step={step} values={values} busy={busy} result={result} note={afterSave}
           onChange={(key, value) => setValues((v) => ({ ...v, [key]: value }))}

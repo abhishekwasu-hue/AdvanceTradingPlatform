@@ -2,6 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { BrokerTokenInfo } from "../types";
 import { UpstoxSavedView, savedAnalytics } from "./ConnectPanel";
+import panelSource from "./ConnectPanel.tsx?raw";
+import loginSource from "./UpstoxOrderLogin.tsx?raw";
 
 const NOW = new Date("2026-11-02T03:30:00Z");
 const row = (over: Partial<BrokerTokenInfo> = {}): BrokerTokenInfo => ({
@@ -31,5 +33,11 @@ describe("M85 U5: Upstox renew - the analytics token is asked once", () => {
     expect(html).not.toContain("data-upstox-login");
     expect(html).toContain("data-upstox-replace");
     expect(html).not.toContain("<input");
+  });
+
+  it("owner 6 Nov: every Upstox panel (Connect, Connect again, Renew) opens the normal login card while the token is valid", () => {
+    expect(panelSource).toContain('const upstoxRenew = entry?.method === "analytics_token";');
+    expect(panelSource).toMatch(/if \(upstoxRenew && saved && !replacing\) \{\s*return <UpstoxOrderLogin /);
+    expect(loginSource).toContain("onReplaceToken");
   });
 });

@@ -80,9 +80,10 @@ export interface IdeaResponse {
 /** S3a alert rules (POST /api/alerts/rules) as the Screener's "Tell me when it matches" reads them: screen rules only. */
 export interface ScanAlertRule {
   id: number; name: string; kind: "screen" | "instrument"; screen_id: number | null; base_tf: string; status: "active" | "paused";
-  symbols?: string[]; fire_on?: "bar_close" | "intrabar";
+  symbols?: string[]; fire_on?: "bar_close" | "intrabar"; universe_key?: string | null;
 }
-export interface ScanAlertInput { name: string; screen_id: number; symbols: string[]; fire_on: "bar_close" | "intrabar" }
+/** FN2-h: exactly one of `symbols` (1-50) or `universe_key` (a screener list, resolved when the rule is checked). */
+export interface ScanAlertInput { name: string; screen_id: number; symbols?: string[]; universe_key?: string; fire_on: "bar_close" | "intrabar" }
 
 export const screenerApi = {
   registry: () => request<{ version: string; timeframes: string[]; entries: Registry }>("/screener/registry"),

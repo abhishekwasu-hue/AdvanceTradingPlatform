@@ -48,6 +48,7 @@ class RuleBody(BaseModel):
     digest_every: Literal["hourly", "eod"] = "hourly"
     expires_at: Optional[datetime] = None
     symbols: List[str] = Field(default_factory=list, max_length=50, description="screen rules: the symbols the screen runs on")
+    universe_key: Optional[str] = Field(default=None, min_length=1, max_length=80, description="screen rules: a screener list key instead of symbols")
     exchange: str = Field(default="NSE", pattern=r"^[A-Z]{2,10}$")
     fire_on: Literal["bar_close", "intrabar"] = Field(default="bar_close", description="intrabar needs the screener_intrabar flag")
 
@@ -75,7 +76,7 @@ def _rule_dict(r: AlertRuleRecord) -> Dict[str, Any]:
             "base_tf": r.base_tf, "priority": r.priority, "cooldown_minutes": r.cooldown_minutes, "mode": r.mode, "digest_every": r.digest_every,
             "status": r.status, "expires_at": r.expires_at.isoformat() if r.expires_at else None,
             "symbols": json.loads(r.universe_json) if r.universe_json else ([r.symbol] if r.symbol else []), "exchange": r.exchange,
-            "fire_on": r.fire_on,
+            "universe_key": r.universe_key, "fire_on": r.fire_on,
             "last_bar_at": r.last_bar_at.isoformat() if r.last_bar_at else None, "last_problem": r.last_problem}
 
 
@@ -228,12 +229,19 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         if screen is None:
             raise HTTPException(status_code=404, detail="Screen not found")
         symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
-        if not symbols or any(not SYMBOL.fullmatch(s) for s in symbols):
+        if body.universe_key and symbols:
+            raise HTTPException(status_code=422, detail="give either symbols or a list, not both")
+        if body.universe_key:
+            from app.screener.universes import symbols_of
+            if await symbols_of(session, body.universe_key) is None:
+                raise HTTPException(status_code=422, detail="unknown list")
+        elif not symbols or any(not SYMBOL.fullmatch(s) for s in symbols):
             raise HTTPException(status_code=422, detail="a screen rule needs 1-50 valid symbols to run the screen on")
         _period_check(screen.base_tf, body.fire_on)
         await screen_rule_checks(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange,
                                  json.loads(screen.params_json or "{}"))
-        return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
+        return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf,
+                "universe_json": None if body.universe_key else json.dumps(symbols), "universe_key": body.universe_key,
                 "exchange": body.exchange}
     if not body.symbol or not body.condition:
         raise HTTPException(status_code=422, detail="an instrument rule needs a symbol and a condition")
@@ -255,7 +263,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
     _ownership_check(ast)
     await _venue_check(session, user, ast, body.exchange)
     return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf,
-            "universe_json": None, "exchange": body.exchange}
+            "universe_json": None, "universe_key": None, "exchange": body.exchange}
 
 
 async def _own_rules_only(session: AsyncSession, user: User) -> bool:

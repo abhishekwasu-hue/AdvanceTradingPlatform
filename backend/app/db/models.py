@@ -3671,6 +3671,7 @@ class AlertRuleRecord(Base):
     # this rule was evaluated on, when the engine last looked (data not in yet -> retried after a pause), and why it
     # last could not evaluate.
     universe_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    universe_key: Mapped[str | None] = mapped_column(String(80), nullable=True)   # FN2-h: a screener list key instead of typed symbols
     exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE", server_default="NSE")
     last_bar_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)

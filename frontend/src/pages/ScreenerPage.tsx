@@ -547,9 +547,13 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
       id: "screener-advanced", onClick: () => setAdvanced((v) => !v), ghost: true, keepOpen: true, expanded: advancedOpen,
       content: <>Advanced <ChevronDown size={14} aria-hidden className={cx("transition-transform", advancedOpen && "rotate-180")} /></>,
     },
-    universeV2 && { id: "past-runs-open", onClick: () => setPastRunsOpen(true), content: <><History size={14} aria-hidden /> Past runs</> },
     ideaOn && scanVersions.length > 0 && { id: "scan-versions-open", onClick: () => setVersionsOpen(true), content: <><History size={14} aria-hidden /> Versions ({scanVersions.length})</> },
   ] as (HeaderTool | false | null | undefined)[]).filter((t): t is HeaderTool => !!t);
+  // FN2-i: "Past runs" joins "More tools" when that menu is already there (it never adds the menu by itself: the page's
+  // first screen stays as it is for a trader without the other tools)
+  if (universeV2 && headerTools.length > 0) {
+    headerTools.push({ id: "past-runs-open", onClick: () => setPastRunsOpen(true), content: <><History size={14} aria-hidden /> Past runs</> });
+  }
   // SCR-FIX B4: one count source - the answer's own funnel ("Matched N of 50 · K had data"), never the list's length
   const counts = shown ? tally(shown.funnel, shown.matched) : null;
   const onReadAction = (action: ReadAction) => {

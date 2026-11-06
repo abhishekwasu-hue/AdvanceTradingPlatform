@@ -205,7 +205,7 @@ async def _rule_source(session: AsyncSession, rule: AlertRuleRecord) -> Tuple[An
         if screen is None or screen.archived or screen.tenant_id != rule.tenant_id:
             raise ValueError("the rule's screen is gone or archived")
         ast, validated = compile_screen(json.loads(screen.ast_json), base_tf=rule.base_tf)
-        if rule.universe_key:           # FN2-h: the screener's own list resolver, read at evaluation time (the list may have changed)
+        if getattr(rule, "universe_key", None):           # FN2-h: the screener's own list resolver, read at evaluation time (the list may have changed)
             from app.screener.universes import symbols_of
             found = await symbols_of(session, rule.universe_key)
             if found is None:
@@ -260,7 +260,7 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
                 merged[t] = max(merged.get(t, 0), bars)
         lookback = merged
         size = len(missing)
-        if rule.universe_key:            # FN2-h: a list is fetched in the screener's batches (one broker's per-second share each)
+        if getattr(rule, "universe_key", None):            # FN2-h: a list is fetched in the screener's batches (one broker's per-second share each)
             from app.screener.universes import _broker_name, batch_plan
             size = max(1, int(batch_plan(await _broker_name(session, rule.tenant_id))["size"] or 1))
         universe, problems = [], {}

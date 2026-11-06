@@ -7,7 +7,7 @@ bar. Nothing here looks past `now`: a period counts as closed only once its last
 """
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Iterable, Optional, Tuple
 
 from app.market_data.calendar import IST, MARKET_CLOSE, is_trading_day
@@ -18,7 +18,7 @@ MAX_PERIODS_BACK = 12
 
 
 def _utc(dt: datetime) -> datetime:
-    return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def period_start(day: date, tf: str) -> date:
@@ -47,7 +47,7 @@ def last_session(day: date, tf: str, holidays: Iterable[date] = ()) -> Optional[
 
 def label(day: date, tf: str) -> datetime:
     """The bar label (UTC) of the period that holds `day`: its first day at 00:00 exchange time, as `resample` labels it."""
-    return datetime.combine(period_start(day, tf), time.min, IST).astimezone(timezone.utc)
+    return datetime.combine(period_start(day, tf), time.min, IST).astimezone(UTC)
 
 
 def _closed(session_day: date, at: datetime) -> bool:

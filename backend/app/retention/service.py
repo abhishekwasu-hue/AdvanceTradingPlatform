@@ -21,7 +21,7 @@ orders, broker accounts and audit rows are never touched here: they follow the r
 """
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Dict, Optional
 
 from sqlalchemy import delete, func, or_, select, update
@@ -140,7 +140,7 @@ def _rules(now: datetime, policy: RetentionPolicy):
 
 
 async def preview_retention(session: AsyncSession, now: Optional[datetime] = None, policy: Optional[RetentionPolicy] = None) -> RetentionReport:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     policy = policy or load_policy()
     report = RetentionReport(started_at=now, dry_run=True)
     for table, model, predicate in _rules(now, policy):
@@ -159,7 +159,7 @@ async def _zone_run_ids(session: AsyncSession, now: datetime, policy: RetentionP
 async def run_retention(session: AsyncSession, now: Optional[datetime] = None, policy: Optional[RetentionPolicy] = None) -> RetentionReport:
     """Deletes up to `policy.batch_size` eligible rows per table, commits, and audits the run.
     Returns the report even when the policy is disabled (with nothing deleted)."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     policy = policy or load_policy()
     report = RetentionReport(started_at=now, dry_run=False)
     if not policy.enabled:

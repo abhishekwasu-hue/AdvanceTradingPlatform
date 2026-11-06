@@ -12,7 +12,7 @@ Flags off: everything above is unchanged (the existing S3/S4 suites run with bot
 """
 import asyncio
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Dict, List
 
 import httpx
@@ -46,7 +46,7 @@ def ist(d: date, hh: int, mm: int) -> datetime:
 
 
 def utc(dt: datetime) -> datetime:
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 BAR = utc(ist(TUE, 9, 30))
@@ -287,7 +287,7 @@ def _flush(tid: int, now: datetime) -> Dict[str, int]:
     return _run(go())
 
 
-REAL_CLOCK = datetime(2026, 6, 1, tzinfo=timezone.utc)
+REAL_CLOCK = datetime(2026, 6, 1, tzinfo=UTC)
 
 
 def _dispatch(tid: int, http, now: datetime):
@@ -297,7 +297,7 @@ def _dispatch(tid: int, http, now: datetime):
         async with _session_factory() as session:
             await session.execute(update(AlertDeliveryRecord).where(AlertDeliveryRecord.tenant_id == tid,
                                                                     AlertDeliveryRecord.next_attempt_at > REAL_CLOCK)
-                                  .values(next_attempt_at=datetime(2026, 1, 1, tzinfo=timezone.utc)))
+                                  .values(next_attempt_at=datetime(2026, 1, 1, tzinfo=UTC)))
             await session.commit()
             return await dispatcher.dispatch_pending(session, client=http, now=now, tenant_id=tid)
     return _run(go())
@@ -485,7 +485,7 @@ def test_a_worker_killed_mid_send_leaves_a_lease_and_the_row_is_sent_again_once_
         _dispatch(ctx["tid"], None, BAR)
     row = _rows(ctx["tid"])[0]
     assert row.status == "PENDING" and row.attempts == 1 and row.claimed_by.startswith(dispatcher.WORKER_ID + ":")
-    lease = row.lease_until.replace(tzinfo=timezone.utc) if row.lease_until.tzinfo is None else row.lease_until
+    lease = row.lease_until.replace(tzinfo=UTC) if row.lease_until.tzinfo is None else row.lease_until
     assert lease == BAR + timedelta(seconds=dispatcher.LEASE_SECONDS)
 
     monkeypatch.setattr(dispatcher, "send_via_channel", real)

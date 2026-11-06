@@ -35,7 +35,7 @@ import json
 import logging
 import time as time_module
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 import pandas as pd
@@ -78,7 +78,7 @@ Fetch = Callable[..., Awaitable[Tuple[List[SymbolData], Dict[str, str], str]]]
 
 def _utc(dt: datetime) -> datetime:
     """Aware UTC - what the engine stores (a naive value read back from the database is UTC)."""
-    return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def _session_bounds(day: date) -> Tuple[datetime, datetime]:
@@ -116,11 +116,11 @@ def expected_bar(now: datetime, tf: str, holidays: Iterable[date] = ()) -> Optio
             if tf == "1d":
                 open_, close = _session_bounds(day)
                 if until >= close:
-                    return open_.astimezone(timezone.utc)
+                    return open_.astimezone(UTC)
             else:
                 bar = _last_intraday_bar(day, INTRADAY[tf], until)
                 if bar is not None:
-                    return bar.astimezone(timezone.utc)
+                    return bar.astimezone(UTC)
         day -= timedelta(days=1)
         until = datetime.combine(day, MARKET_CLOSE, IST)                   # an earlier day: all of it had closed
     return None
@@ -137,10 +137,10 @@ def forming_bar(now: datetime, tf: str, holidays: Iterable[date] = ()) -> Option
     if not is_trading_day(at.date(), set(holidays)) or not (open_ <= at < close):
         return None
     if tf == "1d":
-        return open_.astimezone(timezone.utc)
+        return open_.astimezone(UTC)
     step = INTRADAY[tf] * 60
     start = open_ + timedelta(seconds=((at - open_).total_seconds() // step) * step)
-    return start.astimezone(timezone.utc)
+    return start.astimezone(UTC)
 
 
 def closed_frame(df: pd.DataFrame, tf: str, expected: datetime) -> Optional[pd.DataFrame]:
@@ -451,7 +451,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     """Every active rule of every organisation with the flag on, oldest-evaluated first, within `budget_seconds` (the
     rest wait for the next cycle). Commits once at the end."""
     from app.platform.controls import flag_enabled
-    now = _utc(now or datetime.now(timezone.utc))
+    now = _utc(now or datetime.now(UTC))
     if holidays is None:
         from app.market_data.calendar import load_holidays
         holidays = await load_holidays(session, "NSE")
@@ -553,7 +553,7 @@ async def _server_fetch(session: AsyncSession, tenant_id: int, symbols: list[str
                                                     **paced())
     if base_tf != "1d" or not universe:
         return universe, problems, source
-    now_ist = datetime.now(timezone.utc).astimezone(IST)
+    now_ist = datetime.now(UTC).astimezone(IST)
     today = now_ist.date()
     # M71 W2-D: a closed session the NSE files already hold is the exchange's own bar - kept, not rebuilt; and before the
     # day's close (or on a day without a session) a bar-close rule's today bar cannot be complete (`with_today`
@@ -607,7 +607,7 @@ def with_today(daily: pd.DataFrame, intraday: Optional[pd.DataFrame], today: dat
            "volume": part["volume"].sum()}
     if "oi" in part.columns:
         row["oi"] = part["oi"].iloc[-1]
-    label = pd.Timestamp(datetime.combine(today, time(9, 15), IST)).tz_convert(daily.index.tz or timezone.utc) if len(daily) else \
+    label = pd.Timestamp(datetime.combine(today, time(9, 15), IST)).tz_convert(daily.index.tz or UTC) if len(daily) else \
         pd.Timestamp(datetime.combine(today, time(9, 15), IST))
     return pd.concat([daily, pd.DataFrame([row], index=pd.DatetimeIndex([label]))])
 

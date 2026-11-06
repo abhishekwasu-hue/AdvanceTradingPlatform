@@ -28,7 +28,7 @@ security and system notifications are never held back here, and nothing in this 
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Dict, Iterable, MutableMapping, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,7 +47,7 @@ _MAX_DAYS = 40                                              # walk at most this 
 
 
 def _utc(dt: datetime) -> datetime:
-    return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def max_stale_bars() -> int:

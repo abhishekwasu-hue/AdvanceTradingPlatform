@@ -1,7 +1,7 @@
 """FN2-f: weekly (1w) and monthly (1M) alert rules run at their bar close - the close of the period's LAST trading
 session on the exchange calendar (weekends and holidays skipped) - on a bar built from Daily bars that reach that session.
 Never a partial week or month, never a session after the period (no look-ahead), never intrabar."""
-from datetime import date, timedelta, timezone
+from datetime import UTC, date, timedelta
 
 import pandas as pd
 
@@ -109,7 +109,7 @@ def test_a_weekly_rule_fires_once_at_the_weeks_close():
     fetch.frames["TCS"] = pd.concat([_daily(days, closes), _daily([date(2026, 3, 16)], [50.0])])  # plus a later session
     assert _evaluate(rid, ist(FRI, 15, 33), fetch) == (("done", 1), None)
     ev = _events(rid)
-    assert len(ev) == 1 and ev[0].bar_time.replace(tzinfo=timezone.utc) == utc(ist(MON, 0, 0))
+    assert len(ev) == 1 and ev[0].bar_time.replace(tzinfo=UTC) == utc(ist(MON, 0, 0))
     assert ev[0].values_json and '"close": 105.0' in ev[0].values_json
     assert _evaluate(rid, ist(SAT, 12, 0), fetch)[0] == ("skipped", 0)                         # the same week: once only
 
@@ -120,7 +120,7 @@ def test_a_monthly_rule_runs_on_the_month_close():
     days = _sessions(date(2026, 2, 2), date(2026, 3, 31))
     fetch = DailyFetch({"TCS": _daily(days, [99.0] * (len(days) - 1) + [101.0])})
     assert _evaluate(rid, ist(date(2026, 3, 31), 15, 31), fetch) == (("done", 1), None)
-    assert _events(rid)[0].bar_time.replace(tzinfo=timezone.utc) == utc(ist(date(2026, 3, 1), 0, 0))
+    assert _events(rid)[0].bar_time.replace(tzinfo=UTC) == utc(ist(date(2026, 3, 1), 0, 0))
 
 
 def test_weekly_intrabar_is_refused_by_the_engine_and_the_api():

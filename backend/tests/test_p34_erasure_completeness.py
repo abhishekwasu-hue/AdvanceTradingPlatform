@@ -4,7 +4,7 @@ broker credentials. Trades and broker accounts stay (regulatory retention)."""
 import asyncio
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 
@@ -31,7 +31,7 @@ from app.secrets_store.envelope import ensure_tenant_key
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_team_api import _join, _owner
 
-NOW = datetime.now(timezone.utc)
+NOW = datetime.now(UTC)
 PASSWORD = "S3cur3Pass!"
 
 

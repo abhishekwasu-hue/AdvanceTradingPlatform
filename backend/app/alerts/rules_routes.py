@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Literal, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -210,6 +210,15 @@ async def screen_rule_checks(session: AsyncSession, user: User, ast: Any, fire_o
     await _venue_check(session, user, ast, exchange)
 
 
+def _period_check(base_tf: str, fire_on: str) -> None:
+    """FN2-f: weekly and monthly rules run at their bar close (the period's last trading session); never intrabar."""
+    from app.alerts.barclose import PERIOD_INTRABAR_REFUSAL
+    from app.alerts.periods import PERIODS
+    if base_tf in PERIODS and fire_on == "intrabar":
+        why = PERIOD_INTRABAR_REFUSAL
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[str, Any]:
     if body.kind == "screen":
         if body.screen_id is None:
@@ -221,12 +230,14 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
         if not symbols or any(not SYMBOL.fullmatch(s) for s in symbols):
             raise HTTPException(status_code=422, detail="a screen rule needs 1-50 valid symbols to run the screen on")
+        _period_check(screen.base_tf, body.fire_on)
         await screen_rule_checks(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange,
                                  json.loads(screen.params_json or "{}"))
         return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
                 "exchange": body.exchange}
     if not body.symbol or not body.condition:
         raise HTTPException(status_code=422, detail="an instrument rule needs a symbol and a condition")
+    _period_check(body.base_tf, body.fire_on)
     from app.screener import compile_screen, nodes
     ast, validated = compile_screen(body.condition, base_tf=body.base_tf)
     from app.screener import amw_functions as amw_gate
@@ -279,7 +290,7 @@ async def build_rule(session: AsyncSession, user: User, body: RuleBody) -> Alert
     if body.fire_on == "intrabar" and not await flag_enabled(session, INTRABAR_FLAG, user.tenant_id):
         raise HTTPException(status_code=409, detail="Intrabar alerts are off for this organisation; bar-close rules work as before")
     target = await _checked(session, user, body)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     row = AlertRuleRecord(tenant_id=user.tenant_id, created_by=user.id, name=body.name.strip(), kind=body.kind, priority=body.priority,
                           cooldown_minutes=body.cooldown_minutes, mode=body.mode, digest_every=body.digest_every, status="active",
                           expires_at=body.expires_at, created_at=now, updated_at=now, fire_on=body.fire_on, **target)
@@ -299,7 +310,7 @@ async def set_rule_status(rule_id: int, action: Literal["pause", "resume"], user
                           session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
     row = await _owned(session, user, rule_id)
-    row.status, row.updated_at = ("paused" if action == "pause" else "active"), datetime.now(timezone.utc)
+    row.status, row.updated_at = ("paused" if action == "pause" else "active"), datetime.now(UTC)
     await session.commit()
     return _rule_dict(row)
 
@@ -335,7 +346,7 @@ async def put_policy(body: PolicyBody, user: User = Depends(require_trader), ses
         session.add(row)
     for k, v in body.model_dump().items():
         setattr(row, k, v)
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(UTC)
     await session.commit()
     return body.model_dump()
 
@@ -374,7 +385,7 @@ async def retry_delivery(delivery_id: int, user: User = Depends(require_trader),
         raise HTTPException(status_code=404, detail="Delivery not found")
     if row.status not in RETRYABLE:
         raise HTTPException(status_code=409, detail=f"Only failed deliveries can be retried (this one is {row.status})")
-    row.status, row.attempts, row.reason_code, row.next_attempt_at = "PENDING", 0, None, datetime.now(timezone.utc)
+    row.status, row.attempts, row.reason_code, row.next_attempt_at = "PENDING", 0, None, datetime.now(UTC)
     row.lease_until = None                                # Z10-b: the idempotency key stays, so a receiver can drop a repeat
     await session.commit()
     return {"id": row.id, "status": row.status}

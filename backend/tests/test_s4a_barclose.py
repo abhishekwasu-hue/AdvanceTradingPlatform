@@ -4,7 +4,7 @@ one evaluation per bar, matches recorded with trigger values, screen rules over 
 today's daily bar built from intraday bars."""
 import asyncio
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 from sqlalchemy import select, update
@@ -30,7 +30,7 @@ def ist(d: date, hh: int, mm: int) -> datetime:
 
 
 def utc(dt: datetime) -> datetime:
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 def test_expected_bar_follows_the_exchange_clock():
@@ -43,7 +43,8 @@ def test_expected_bar_follows_the_exchange_clock():
     monday = date(2026, 3, 9)
     assert expected_bar(ist(monday, 8, 0), "1d") == utc(ist(date(2026, 3, 6), 9, 15))          # over the weekend
     assert expected_bar(ist(monday, 16, 0), "1d", holidays={monday}) == utc(ist(date(2026, 3, 6), 9, 15))
-    assert expected_bar(ist(TUE, 12, 0), "1w") is None and expected_bar(ist(TUE, 12, 0), "1M") is None
+    # FN2-f: a week / month bar closes at its last session (tests/test_fn2f_period_barclose.py); an unknown timeframe: None
+    assert expected_bar(ist(TUE, 12, 0), "1w") == utc(ist(date(2026, 3, 2), 0, 0)) and expected_bar(ist(TUE, 12, 0), "2h") is None
 
 
 def _bars(start: datetime, closes, minutes=5) -> pd.DataFrame:
@@ -107,7 +108,7 @@ def test_an_instrument_rule_fires_once_per_closed_bar_and_never_on_the_forming_b
     fetch = FakeFetch({"TCS": _bars(ist(TUE, 9, 15), [99, 105, 50])})
     assert _evaluate(rid, ist(TUE, 9, 27), fetch) == (("done", 1), None)
     ev = _events(rid)
-    assert len(ev) == 1 and ev[0].bar_time.replace(tzinfo=timezone.utc) == utc(ist(TUE, 9, 20))
+    assert len(ev) == 1 and ev[0].bar_time.replace(tzinfo=UTC) == utc(ist(TUE, 9, 20))
     assert json.loads(ev[0].values_json) == {"as_of": pd.Timestamp(utc(ist(TUE, 9, 20))).isoformat(), "close": 105.0, "volume": 1000.0}
     assert _evaluate(rid, ist(TUE, 9, 28), fetch)[0] == ("skipped", 0) and fetch.calls == 1          # same bar: nothing to do
 
@@ -116,7 +117,7 @@ def test_an_instrument_rule_fires_once_per_closed_bar_and_never_on_the_forming_b
     assert _evaluate(rid, ist(TUE, 9, 36) + timedelta(seconds=30), fetch)[0] == ("waiting", 0) and fetch.calls == 2
     fetch.frames["TCS"] = _bars(ist(TUE, 9, 15), [99, 105, 50, 101, 40])
     assert _evaluate(rid, ist(TUE, 9, 37) + timedelta(seconds=30), fetch) == (("done", 1), None)
-    assert [e.bar_time.replace(tzinfo=timezone.utc) for e in _events(rid)] == [utc(ist(TUE, 9, 20)), utc(ist(TUE, 9, 30))]
+    assert [e.bar_time.replace(tzinfo=UTC) for e in _events(rid)] == [utc(ist(TUE, 9, 20)), utc(ist(TUE, 9, 30))]
 
 
 def test_a_screen_rule_runs_on_its_own_symbols_and_reports_a_missing_screen():

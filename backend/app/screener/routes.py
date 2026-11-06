@@ -16,7 +16,7 @@ import logging
 import math
 import time
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
@@ -365,7 +365,7 @@ async def _apply(session: AsyncSession, user: User, row: ScreenRecord, body: Scr
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     row.name, row.source_text, row.ast_json = body.name.strip(), nodes.to_text(ast), json.dumps(nodes.to_json(ast))
     row.ast_version, row.base_tf, row.params_json = nodes.VERSION, body.base_tf, json.dumps(body.params)
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(UTC)
 
 
 @router.post("/screens", status_code=201)
@@ -422,7 +422,7 @@ async def archive_screen(screen_id: int, user: User = Depends(require_trader), s
     """Archived, never hard-deleted: earlier runs keep pointing at it."""
     await _flag(session, user)
     row = await _owned(session, user, screen_id)
-    row.archived, row.updated_at = True, datetime.now(timezone.utc)
+    row.archived, row.updated_at = True, datetime.now(UTC)
     await session.commit()
     return _screen_dict(row)
 
@@ -505,7 +505,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     if store and not include_forming:
         return await _store_frames(session, tenant_id, symbols, exchange, base_tf, lookback, now, user_id=user_id, tier_out=tier_out,
                                    release=release, budget_out=budget_out)
-    now_utc = now or datetime.now(timezone.utc)
+    now_utc = now or datetime.now(UTC)
     daily_tf = nodes.TF_MINUTES["1d"]
     want = _FETCH[base_tf]
     attach_daily = want != "day" and any(nodes.TF_MINUTES.get(tf, 0) >= daily_tf for tf in lookback)
@@ -613,7 +613,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         # Timed by the data (the stalest symbol's newest bar); nothing read = age unknown = stale.
         oldest = min(newest) if newest else None
         tier_out["data_tier"] = own.badge(timeframe=_FETCH_TF[interval] if oldest is not None else None, last_bar_start=oldest,
-                                          now=now or datetime.now(timezone.utc))
+                                          now=now or datetime.now(UTC))
         if held:
             tier_out["held_back"] = len(held)
     if budget_out is not None:
@@ -671,7 +671,7 @@ async def _store_frames(session: AsyncSession, tenant_id: int, symbols: list[str
     from app.market_data.live_access import load_user
     from app.market_store import reader as ms
     from app.screener.universes import batch_wait_seconds
-    now_utc = now or datetime.now(timezone.utc)
+    now_utc = now or datetime.now(UTC)
     daily_tf = nodes.TF_MINUTES["1d"]
     want = _FETCH[base_tf]
     syms = list(dict.fromkeys(s.strip().upper() for s in symbols if s and s.strip()))
@@ -835,7 +835,7 @@ def _symbol_frames(bars: Any, interval: str, base_tf: str, include_forming: bool
         df.index = df.index.tz_localize("UTC")
     fetched_tf = _FETCH_TF[interval]
     if not include_forming:
-        df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc), exchange)  # never the bar still forming
+        df = closed_only(df, fetched_tf, now or datetime.now(UTC), exchange)  # never the bar still forming
     if today is not None and fetched_tf == "1d":
         df = _with_today(df, today)
     if df.empty:
@@ -866,7 +866,7 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
     from app.core.models import OHLCVBar
     from app.market_data.calendar import IST
     from app.market_data.service import HISTORY_CACHE_TTL_SECONDS
-    session_day = (now or datetime.now(timezone.utc)).astimezone(IST).date().isoformat()
+    session_day = (now or datetime.now(UTC)).astimezone(IST).date().isoformat()
     scope = f"{getattr(service, 'cache_namespace', None) or 'shared'}:{getattr(getattr(service, 'broker', None), 'name', 'broker')}"
     span = int(getattr(service, "lookback_days", 0) or 0)
     for data in universe:
@@ -890,7 +890,7 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
             continue
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
-        df = closed_only(df, "1d", now or datetime.now(timezone.utc))
+        df = closed_only(df, "1d", now or datetime.now(UTC))
         if not df.empty:
             data.frames["1d"] = df
 
@@ -931,11 +931,11 @@ async def load_universe(session: AsyncSession, user: User, ast: Any, validated: 
             raise
         universe, fetch_problems, data_source = stored
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
-        await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
+        await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, datetime.now(UTC), ast, base_tf, params)
     if fundamentals_gate.flagged_calls(ast):      # U7 LG3: the reported figures as known by each bar's close (point in time)
-        await fundamentals_gate.attach(session, universe, datetime.now(timezone.utc), tenant_id=user.tenant_id)
+        await fundamentals_gate.attach(session, universe, datetime.now(UTC), tenant_id=user.tenant_id)
     if ownership_gate.flagged_calls(ast):         # N3 S8a: the shareholding patterns and events known by each bar's close
-        await ownership_gate.attach(session, universe, exchange, datetime.now(timezone.utc), viewer=user.tenant_id)
+        await ownership_gate.attach(session, universe, exchange, datetime.now(UTC), viewer=user.tenant_id)
     systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
     return universe, fetch_problems, data_source, systems
 
@@ -949,7 +949,7 @@ async def rank_systems(session: AsyncSession, tenant_id: int, ast: Any, params: 
     systems, _ = await ranking_gate.resolve(session, tenant_id, ranking_gate.names_in(ast, params))
     if any(s.sector_neutral for s in systems.values()) and universe:
         from app.market_data.calendar import IST
-        today = datetime.now(timezone.utc).astimezone(IST).date()
+        today = datetime.now(UTC).astimezone(IST).date()
         ranges = await ranking_gate.sector_ranges(session, [d.symbol for d in universe], today, today)
         for d in universe:
             d.sector = ranking_gate.sector_on(ranges.get(d.symbol, []), today)
@@ -1228,6 +1228,39 @@ async def idea_to_scan(body: IdeaBody, user: User = Depends(require_trader), ses
     await session.commit()
     return {"ok": text is not None, "text": text, "base_tf": base_tf, "stages": stages, "parts": parts,
             "not_supported": draft.unsupported, "edits": [f.as_dict() for f in feedback], "disclaimer": idea.DISCLAIMER}
+
+
+RUNS_LIST_MAX = 50            # FN2-i: the most past runs one list call returns
+RUNS_PREVIEW = 5              # FN2-i: matched symbols shown per past run in the list (the full list comes from /runs/{id})
+
+
+@router.get("/runs")
+async def list_runs(screen_id: Optional[int] = None, limit: int = 20, user: User = Depends(get_current_user),
+                    session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """FN2-i: the caller's own earlier runs, newest first - only runs this user started in this organisation (never another
+    member's). `screen_id` narrows to one saved screen of the organisation (404 when it is not one). No results body:
+    the list carries counts and the first few matches; GET /runs/{id} reopens one."""
+    await _flag(session, user)
+    if screen_id is not None:
+        await _owned(session, user, screen_id)
+    limit = max(1, min(limit, RUNS_LIST_MAX))
+    query = (select(ScreenRunRecord, ScreenRecord.name)
+             .outerjoin(ScreenRecord, (ScreenRecord.id == ScreenRunRecord.screen_id) & (ScreenRecord.tenant_id == ScreenRunRecord.tenant_id))
+             .where(ScreenRunRecord.tenant_id == user.tenant_id, ScreenRunRecord.user_id == user.id))
+    if screen_id is not None:
+        query = query.where(ScreenRunRecord.screen_id == screen_id)
+    rows = (await session.execute(query.order_by(ScreenRunRecord.id.desc()).limit(limit))).all()
+    out: List[Dict[str, Any]] = []
+    for row, screen_name in rows:
+        try:
+            results = json.loads(row.result_json or "[]")
+        except ValueError:
+            results = []
+        matches = [str(r.get("symbol")) for r in results if isinstance(r, dict) and r.get("matched")]
+        out.append({"run_id": row.id, "screen_id": row.screen_id, "screen_name": screen_name, "base_tf": row.base_tf,
+                    "scanned": row.scanned, "matched": row.matched, "first_matches": matches[:RUNS_PREVIEW],
+                    "created_at": row.created_at.isoformat() if row.created_at else None})
+    return {"runs": out, "disclaimer": DISCLAIMER}
 
 
 @router.get("/runs/{run_id}")

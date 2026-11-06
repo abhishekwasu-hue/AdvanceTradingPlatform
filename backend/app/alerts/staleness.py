@@ -28,11 +28,12 @@ security and system notifications are never held back here, and nothing in this 
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Dict, Iterable, MutableMapping, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.alerts import periods
 from app.core.enums import NotificationType
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, is_trading_day
 
@@ -41,12 +42,12 @@ REASON = "stale_data"
 # Notification types the gate may hold back: alerts computed from market data. Everything else always goes out.
 SUPPRESSIBLE = frozenset({NotificationType.SCREEN_ALERT.value})
 INTRADAY_MINUTES = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60}
-SUPPORTED = frozenset(INTRADAY_MINUTES) | {"1d"}
+SUPPORTED = frozenset(INTRADAY_MINUTES) | {"1d"} | frozenset(periods.PERIODS)   # FN2-f: weeks and months too
 _MAX_DAYS = 40                                              # walk at most this many calendar days forward
 
 
 def _utc(dt: datetime) -> datetime:
-    return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def max_stale_bars() -> int:
@@ -59,6 +60,8 @@ def closed_bars_after(bar_start: datetime, tf: str, now: datetime, holidays: Ite
     stops at `cap`). None for a timeframe the engine does not evaluate."""
     if tf not in SUPPORTED:
         return None
+    if tf in periods.PERIODS:                                # FN2-f: a week / month closes at its last session
+        return periods.closed_after(bar_start, tf, now, holidays, cap=cap)
     start = _utc(bar_start).astimezone(IST)
     until = _utc(now).astimezone(IST)
     hol = set(holidays)

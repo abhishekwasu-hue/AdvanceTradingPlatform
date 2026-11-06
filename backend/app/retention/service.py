@@ -11,10 +11,17 @@ replaces the personal data on it - email, password, MFA secret - with inert valu
 session, and rewrites the email on that user's login attempts. The audit trail keeps the old
 email only inside earlier rows' hash-chained `detail` text, which cannot be edited without
 breaking the chain; the erasure row itself records the user id, not the email.
+
+P3-4-B9 (erasure completeness): the member's own journal (entries, tags, outside-ATP trades, images, settings), their
+own Telegram link and their own entries inside the organisation's shared alert channels (phones, signed webhooks,
+Telegram approver) go too. When they are the only member left (every other member already erased), the organisation's
+own personal data goes with them: its alert channels, its broker credentials, and its name (sign-up sets it to the
+e-mail) becomes "Erased organisation <id>". A name that is the erased e-mail is replaced in any organisation. Trades,
+orders, broker accounts and audit rows are never touched here: they follow the regulatory retention period.
 """
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Dict, Optional
 
 from sqlalchemy import delete, func, or_, select, update
@@ -24,14 +31,23 @@ from app.audit.log import write_audit_log
 from app.auth.sessions import revoke_all_sessions
 from app.db.models import (
     AiCandidateRecord,
+    AlertChannelRecord,
     AlertDeliveryRecord,
+    BrokerAccountRecord,
+    BrokerCredentialRecord,
     FeedbackRecord,
+    JournalAttachmentRecord,
+    JournalEntryRecord,
+    JournalManualTradeRecord,
+    JournalSettingsRecord,
+    JournalTagRecord,
     LlmCallRecord,
     LoginEventRecord,
     MarketSnapshotRecord,
     MdTenantChainSnapshotRecord,
     MfaBackupCodeRecord,
     NewsEventRecord,
+    NotificationLinkRecord,
     NotificationRecord,
     OIAlertLogRecord,
     OIBannerStateRecord,
@@ -41,6 +57,7 @@ from app.db.models import (
     PasswordResetRecord,
     ScreenEvidenceRecord,
     StrikeOISnapshotRecord,
+    Tenant,
     TenantInviteRecord,
     User,
     UserAiKeyRecord,
@@ -53,6 +70,9 @@ from app.retention.policy import RetentionPolicy, load_policy
 logger = logging.getLogger(__name__)
 
 ERASED_EMAIL_DOMAIN = "erased.invalid"
+ERASED_TENANT_NAME = "Erased organisation {id}"
+# P3-4-B9: shared organisation channels that hold one entry per member (`user_id`): the list key in their config.
+_PER_MEMBER_CHANNEL_LISTS = {"FCM": "devices", "SIGNED_WEBHOOK": "endpoints", "TELEGRAM": "approvers"}
 SCRUB_MARKERS = ("[erased]", "[expired]")       # H-C1 e: llm_calls text replaced by erasure / by age
 
 
@@ -120,7 +140,7 @@ def _rules(now: datetime, policy: RetentionPolicy):
 
 
 async def preview_retention(session: AsyncSession, now: Optional[datetime] = None, policy: Optional[RetentionPolicy] = None) -> RetentionReport:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     policy = policy or load_policy()
     report = RetentionReport(started_at=now, dry_run=True)
     for table, model, predicate in _rules(now, policy):
@@ -139,7 +159,7 @@ async def _zone_run_ids(session: AsyncSession, now: datetime, policy: RetentionP
 async def run_retention(session: AsyncSession, now: Optional[datetime] = None, policy: Optional[RetentionPolicy] = None) -> RetentionReport:
     """Deletes up to `policy.batch_size` eligible rows per table, commits, and audits the run.
     Returns the report even when the policy is disabled (with nothing deleted)."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     policy = policy or load_policy()
     report = RetentionReport(started_at=now, dry_run=False)
     if not policy.enabled:
@@ -237,5 +257,73 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
                                                                               FeedbackRecord.tenant_id == user.tenant_id)))
     await forget_tickets(session, feedback_ids)
     await session.execute(delete(FeedbackRecord).where(FeedbackRecord.user_id == user.id, FeedbackRecord.tenant_id == user.tenant_id))
+    # P3-4-B9: their journal, their own Telegram link and their entries in the organisation's shared channels.
+    await _erase_journal(session, user)
+    await session.execute(delete(NotificationLinkRecord).where(NotificationLinkRecord.user_id == user.id,
+                                                               NotificationLinkRecord.tenant_id == user.tenant_id))
+    sole = await _is_sole_member(session, user)
+    if sole:
+        await _erase_sole_organisation_data(session, user.tenant_id)
+    else:
+        await _drop_member_from_shared_channels(session, user)
+    tenant = await session.get(Tenant, user.tenant_id)
+    if tenant is not None and (sole or (tenant.name or "").strip().lower() == (old_email or "").strip().lower()):
+        tenant.name = ERASED_TENANT_NAME.format(id=tenant.id)
     await write_audit_log(session, user.tenant_id, actor_id, "user_erased", f"user #{user.id}{(': ' + reason) if reason else ''}")
     return placeholder
+
+
+async def _is_sole_member(session: AsyncSession, user: User) -> bool:
+    """P3-4-B9: no other member of the organisation is left whose personal data is not already erased."""
+    others = await session.scalar(select(func.count()).select_from(User).where(
+        User.tenant_id == user.tenant_id, User.id != user.id, User.email.notlike(f"%@{ERASED_EMAIL_DOMAIN}")))
+    return not others
+
+
+async def _erase_journal(session: AsyncSession, user: User) -> None:
+    """P3-4-B9: the member's own journal - entries, tags, outside-ATP trades, attached images (files too) and settings.
+    The trades the entries describe stay (regulatory retention)."""
+    from app.chart_analyze import storage
+    mine = {"user_id": user.id, "tenant_id": user.tenant_id}
+    paths = list(await session.scalars(select(JournalAttachmentRecord.image_path).filter_by(**mine)))
+    for model in (JournalAttachmentRecord, JournalTagRecord, JournalEntryRecord, JournalManualTradeRecord, JournalSettingsRecord):
+        await session.execute(delete(model).filter_by(**mine))
+    for path in paths:
+        storage.delete(path)
+
+
+async def _erase_sole_organisation_data(session: AsyncSession, tenant_id: int) -> None:
+    """P3-4-B9: the last member leaves - the organisation's alert channels (chat ids, addresses, phones, bot tokens) and
+    broker credentials (keys, tokens) go. Broker accounts stay (orders point at them); only their link to the deleted
+    credential is cleared, as the foreign key's ON DELETE SET NULL does."""
+    channel_ids = list(await session.scalars(select(AlertChannelRecord.id).where(AlertChannelRecord.tenant_id == tenant_id)))
+    if channel_ids:
+        await session.execute(delete(AlertDeliveryRecord).where(AlertDeliveryRecord.channel_id.in_(channel_ids)))
+        await session.execute(delete(AlertChannelRecord).where(AlertChannelRecord.id.in_(channel_ids)))
+    credential_ids = list(await session.scalars(select(BrokerCredentialRecord.id).where(BrokerCredentialRecord.tenant_id == tenant_id)))
+    if credential_ids:
+        await session.execute(update(BrokerAccountRecord).where(BrokerAccountRecord.credential_id.in_(credential_ids)).values(credential_id=None))
+        await session.execute(delete(BrokerCredentialRecord).where(BrokerCredentialRecord.id.in_(credential_ids)))
+
+
+async def _drop_member_from_shared_channels(session: AsyncSession, user: User) -> None:
+    """P3-4-B9: other members remain - the organisation keeps its channels, but this member's own phones, signed
+    webhooks and Telegram approver entry are taken out of them."""
+    import json
+
+    from app.alerts.channels import decrypt_raw
+    from app.secrets_store.encryption import encrypt_text
+    from app.secrets_store.envelope import PURPOSE_ALERT_CHANNEL, ensure_tenant_key
+    records = list(await session.scalars(select(AlertChannelRecord).where(
+        AlertChannelRecord.tenant_id == user.tenant_id, AlertChannelRecord.channel_type.in_(list(_PER_MEMBER_CHANNEL_LISTS)))))
+    if not records:
+        return
+    await ensure_tenant_key(session, user.tenant_id)
+    for record in records:
+        raw = decrypt_raw(record)       # a config that cannot be read fails the erasure (retried) rather than keep the data
+        key = _PER_MEMBER_CHANNEL_LISTS[record.channel_type]
+        entries = raw.get(key) or []
+        kept = [e for e in entries if not (isinstance(e, dict) and e.get("user_id") == user.id)]
+        if len(kept) != len(entries):
+            raw[key] = kept
+            record.encrypted_config = encrypt_text(json.dumps(raw), record.tenant_id, PURPOSE_ALERT_CHANNEL)

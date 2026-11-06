@@ -912,6 +912,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/screener/rankings/{system_id}"): "trader",
     ("POST", "/api/screener/rankings/{system_id}/archive"): "trader",
     ("POST", "/api/screener/rankings/run"): "trader",         # N3 S7a: bars through the caller's organisation / own session
+    ("GET", "/api/screener/runs"): ("member: FN2-i - the caller's own past screener runs only (tenant and user); a screen_id "
+                                    "that is not the organisation's answers 404"),
     ("GET", "/api/screener/runs/{run_id}"): "member",
     ("GET", "/api/screener/screens"): "member",
     ("POST", "/api/screener/screens"): "trader",

@@ -132,7 +132,8 @@ test.describe("M85 Upstox analytics token asked once (390)", () => {
       await expect(saved).toContainText("Analytics token saved, valid till");
       await expect(saved).toContainText("2027");
       await expect(dialog.locator("input")).toHaveCount(0);
-      await expect(dialog.locator("[data-upstox-login]")).toHaveCount(0);           // BRK-1: no Upstox OAuth flow
+      // Owner 6 Nov: while the token is valid the normal Upstox login card opens (never the token field)
+      await expect(dialog.locator("[data-upstox-login]")).toBeVisible();
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/m85-panel-saved-390-${theme}.png` });
       await dialog.locator("[data-upstox-replace]").click();
       await expect(dialog.locator("input[data-field='analytics_token']")).toBeVisible();

@@ -3,6 +3,7 @@ import { useId, useState } from "react";
 import { api, ApiError } from "../api/client";
 import UpstoxRedirectUrl from "../components/UpstoxRedirectUrl";
 import { Details } from "../ui/Details";
+import { formatDateIST } from "../ui/format";
 import { failureText } from "./ConnectPanel";
 import { BTN_PRIMARY, BTN_SECONDARY, ResponsiveDialog } from "./parts";
 
@@ -22,8 +23,12 @@ export function needsAppKeys(e: unknown): boolean {
   return e instanceof ApiError && (e.status === 400 || e.status === 404) && /api[ _]?key|api_secret|secret/i.test(`${e.detail ?? ""} ${e.body ?? ""}`);
 }
 
-export default function UpstoxOrderLogin({ open, onOpenChange, accountLabel = "primary", onChanged }: {
+export default function UpstoxOrderLogin({ open, onOpenChange, accountLabel = "primary", onChanged, savedUntil, onReplaceToken }: {
   open: boolean; onOpenChange: (open: boolean) => void; accountLabel?: string; onChanged?: () => void;
+  /** Owner 6 Nov: opened from a Connect / Renew panel while the saved Analytics Token is valid - its expiry (ISO). */
+  savedUntil?: string;
+  /** Owner 6 Nov: the token field only on this tap (the token is never asked for while it is valid). */
+  onReplaceToken?: () => void;
 }) {
   const ids = useId();
   const [keys, setKeys] = useState(false);              // the one-time API key / secret step is shown
@@ -122,6 +127,14 @@ export default function UpstoxOrderLogin({ open, onOpenChange, accountLabel = "p
           <button type="button" onClick={() => { setKeys(true); setError(null); }} className={`${BTN_SECONDARY} w-full`} data-change-keys>
             Change the API key / secret
           </button>
+        )}
+        {savedUntil && (
+          <p className="text-t13 text-fg-muted" data-upstox-saved>
+            Analytics token saved, valid till <span className="font-semibold tabular-nums text-fg">{formatDateIST(savedUntil, { year: true })}</span>.
+            {onReplaceToken && (
+              <> <button type="button" onClick={onReplaceToken} data-upstox-replace className="font-medium text-brand hover:underline">Replace token</button></>
+            )}
+          </p>
         )}
       </div>
     </ResponsiveDialog>

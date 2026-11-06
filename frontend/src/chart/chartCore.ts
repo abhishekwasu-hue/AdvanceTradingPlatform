@@ -22,6 +22,7 @@ import { DEFAULT_SETTINGS, closes, ema, rsi, sma, vwap, type Series } from "../u
 import { chartFontSize } from "../theme";
 import { CHART_FONT_FAMILY, DEFAULT_INTERACTION, baseChartOptions, interactionOptions, trackingOptions, type InteractionState } from "./chartOptions";
 import { INITIAL_VIEW, PriceDrag, latestVisible, sameView, shiftWheelPosition, type Readout, type ViewState } from "./gestures";
+import { SAVE_DELAY_MS, type ViewMemory } from "./viewMemory";
 import { applyChartTheme, candleOptions, chartThemeOptions, type ChartPalette } from "./chartTheme";
 import { DAILY_OR_LONGER, type ChartBar, type TimeframeId } from "./timeframes";
 
@@ -180,6 +181,10 @@ export class ChartCore {
   private barIndex = new Map<number, number>();
   private syncQueued = false;
   private removed = false;
+  /** P1-4 (2.5, R9): this user's remembered views; a save only after the trader moved the chart himself. */
+  private memory: ViewMemory | null = null;
+  private touched = false;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly element: HTMLElement, private opts: ChartCoreOptions) {
     const theme = chartThemeOptions(opts.palette, opts.grid);
@@ -249,6 +254,7 @@ export class ChartCore {
   /** A press on the chart at (x, y) of the plot element. Starts a price drag when it is on the price plot, the chart
    * is not suspended (a drawing drag) and, for a finger, the chart captures vertical drags. True: the drag is tracked. */
   pressPlot(x: number, y: number, pointerType = "mouse", pointerId = 1): boolean {
+    this.touched = true;                                       // P1-4 (2.5): his own move; the view may be remembered
     if (this.dragPointer !== null) { this.releasePointer(); return false; }      // a second finger: a pinch, not a pan
     if (this.interaction.suspended || (pointerType === "touch" && !this.interaction.vertTouchDrag)) return false;
     if (!this.inPricePlot(x, y) || !this.priceDrag.begin(x, y)) return false;
@@ -277,8 +283,41 @@ export class ChartCore {
     this.syncView();
   }
 
-  /** "Reset": auto price, the default zoom, the latest bar. */
+  /** P1-4 (2.5): remember this chart's zoom per user, symbol, exchange and timeframe (null: nothing is remembered). */
+  setViewMemory(memory: ViewMemory | null): void {
+    this.memory = memory;
+  }
+
+  private scheduleSave(): void {
+    if (!this.memory || !this.touched || !this.key || this.data.length === 0) return;
+    if (this.saveTimer !== null) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.saveNow(), SAVE_DELAY_MS);
+  }
+
+  private saveNow(): void {
+    this.saveTimer = null;
+    if (!this.memory || !this.touched || this.removed) return;
+    const ts = this.chart.timeScale();
+    this.memory.save(this.key, { barSpacing: Number(ts.options().barSpacing), position: ts.scrollPosition(),
+                                 autoScale: !!this.chart.priceScale("right").options().autoScale });
+  }
+
+  /** The remembered view of this chart key, put back (true), or nothing remembered (false). */
+  private restoreView(key: string): boolean {
+    const saved = this.memory?.load(key);
+    if (!saved) return false;
+    const ts = this.chart.timeScale();
+    ts.applyOptions({ barSpacing: saved.barSpacing });
+    ts.scrollToPosition(saved.position, false);
+    this.chart.priceScale("right").setAutoScale(saved.autoScale);
+    return true;
+  }
+
+  /** "Reset": auto price, the default zoom, the latest bar - and the remembered view of this chart is forgotten. */
   resetView(): void {
+    if (this.saveTimer !== null) { clearTimeout(this.saveTimer); this.saveTimer = null; }
+    this.touched = false;
+    if (this.key) this.memory?.forget(this.key);
     this.chart.priceScale("right").setAutoScale(true);
     this.chart.timeScale().resetTimeScale();
     this.scrollToLatest();
@@ -294,6 +333,7 @@ export class ChartCore {
 
   /** Shift + wheel pans time where the browser does not turn it into a sideways wheel. True: handled here. */
   wheel(e: { shiftKey: boolean; deltaX: number; deltaY: number; deltaMode?: number }): boolean {
+    this.touched = true;
     if (this.interaction.suspended) return false;
     const ts = this.chart.timeScale();
     const position = shiftWheelPosition(e, ts.scrollPosition(), ts.options().barSpacing);
@@ -318,6 +358,7 @@ export class ChartCore {
       this.insets = insets;
       this.opts.onInsets?.(insets);
     }
+    this.scheduleSave();                                       // P1-4 (2.5): debounced, only after his own move
   }
 
   /** One sync per frame (a pan fires the range event many times a frame); at once where there are no frames (tests). */
@@ -361,6 +402,7 @@ export class ChartCore {
       window.removeEventListener("pointercancel", up);
     };
     const down = (e: PointerEvent) => {
+      this.touched = true;                                     // P1-4 (2.5): any press (a pinch, a press off the plot) counts
       if (e.defaultPrevented || e.button !== 0) return;
       const p = local(e);
       if (!this.pressPlot(p.x, p.y, e.pointerType, e.pointerId)) return;
@@ -543,10 +585,14 @@ export class ChartCore {
   setData(bars: ChartBar[], key: string): void {
     const prevFirst = this.data[0]?.timestamp;
     const keep = key === this.key && this.data.length > 0 ? this.chart.timeScale().getVisibleLogicalRange() : null;
+    if (key !== this.key) {                                   // another chart: a pending save belongs to the old one
+      if (this.saveTimer !== null) this.saveNow();
+      this.touched = false;
+    }
     this.data = bars;
     this.key = key;
     this.render();
-    if (bars.length > 0 && !keep) this.chart.timeScale().fitContent();
+    if (bars.length > 0 && !keep && !this.restoreView(key)) this.chart.timeScale().fitContent();
     const added = keep ? bars.findIndex((b) => b.timestamp === prevFirst) : -1;
     if (keep && added > 0) this.chart.timeScale().setVisibleLogicalRange({ from: keep.from + added, to: keep.to + added });
     this.queueSync();                                                         // a new bar may be past the screen
@@ -594,6 +640,7 @@ export class ChartCore {
   }
 
   remove(): void {
+    if (this.saveTimer !== null) this.saveNow();               // a pending save is kept, not lost with the chart
     this.removed = true;
     for (const u of this.unsubs) u();
     this.engine.dispose();

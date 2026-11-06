@@ -25,6 +25,9 @@ from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker
 from tests.test_z3_approval_entries import _actions, _email, _flag_for, _orders, _price, _propose, _shift_expiry
 
+# Entries are held while Redis is unreachable (M55 A18): these tests need it, as in CI.
+pytestmark = pytest.mark.usefixtures("redis_required")
+
 BACKEND = Path(__file__).resolve().parents[1]
 pytestmark = [pytest.mark.real_automation,                    # M68: each user's own (empty) Automation settings
               pytest.mark.usefixtures("no_open_positions_from_earlier_tests", "owner_switched_live_on")]

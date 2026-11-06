@@ -98,6 +98,8 @@ Chart-reader features (P5-1) are outside FN1: they stay hidden with an honest st
    writes only to its own folder.
 5. Tests: only the tests touching the change locally; CI runs the full suites. Long output to a file, show only the
    failure summary. Re-run only the single failing test, never a whole suite for a flake.
+   Backend tests need a reachable Redis, as in CI (`redis-server --daemonize yes --save ""`): without it new entries are
+   held (M55 A18) and the entry tests stop with the `redis_required` reason (tests/conftest.py).
 6. No polling: long runs in the background; wait for the completion notice.
 7. Images: view at most 10 per PR; galleries ≤ 20 named charts per fix; one screenshot comparison page per milestone.
 8. Reports ≤ 25 lines, 3 parts: (1) roadmap items changed (ID, old -> new status); (2) max 3 owner decisions, each with a

@@ -8,6 +8,7 @@
 import asyncio
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import select
 
 from app.core.enums import SignalDirection
@@ -17,6 +18,9 @@ from app.strategy_engine.registry import registry
 from app.workers import trading_worker as tw
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import BAR_TS, OPEN_NOW, STRATEGY, _deploy, _FakeBroker, _signal, _tenant, _trades, _worker
+
+# Entries are held while Redis is unreachable (M55 A18): these tests need it, as in CI.
+pytestmark = pytest.mark.usefixtures("redis_required")
 
 LATER = OPEN_NOW + timedelta(minutes=5)
 NEW_BAR = BAR_TS + timedelta(minutes=5)

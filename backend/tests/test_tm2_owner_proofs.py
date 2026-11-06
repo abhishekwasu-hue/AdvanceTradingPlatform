@@ -31,6 +31,9 @@ from tests.test_fno1_chain_ticket import _contract, _expiry, _org_tenant, _price
 from tests.test_tm2_trigger_engine import _arm, _entries, _exits, _open_trade, _ref, _rest, _row, _run, _trade
 from tests.test_z5_p1d_risk_by_default import _flag
 
+# Entries are held while Redis is unreachable (M55 A18): these tests need it, as in CI.
+pytestmark = pytest.mark.usefixtures("redis_required")
+
 BACKEND = Path(__file__).resolve().parents[1]
 MIGRATION = BACKEND / "alembic" / "versions" / "7e2a4c6b8d10_tm2_paper_resting_orders.py"
 

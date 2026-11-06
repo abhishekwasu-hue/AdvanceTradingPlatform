@@ -140,5 +140,5 @@ Questions for the lawyer:
   https://kite.trade/forum/discussion/15912/preparing-to-comply-with-sebis-retail-algo-rules-static-ip-ratelimits-order-types
 - [S9] Leads only, **unconfirmed** (secondary): the July 29 2025 SEBI circular number; the BSE notices 20250506-3,
   20250829-12, 20250922-19 and 20250930-66 as summarised at https://teamleaseregtech.com/updates/article/49769/bse-issued-an-adherence-reminder-on-retail-algo-trading-regulations/
-  and https://rhnvrm.github.io/stock-market-circulars/ ; NSE circular NSE/MSD/67753 (29 Apr 2025, items 8.1.1.12 and 8.1.2 (point 1)
+  and https://rhnvrm.github.io/stock-market-circulars/ ; NSE circular NSE/MSD/67753 (29 Apr 2025, clause 8.1.1 item 12 and clause 8.1.2 item 1
   on market / IOC orders) is quoted from [S6] Q11 and was not read in full.

@@ -5,7 +5,7 @@
  *
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
-import { BellRing, ChevronDown, Code2, History, Layers, LayoutGrid, MoreHorizontal, Play, Save } from "lucide-react";
+import { BellRing, ChevronDown, Code2, History, Layers, LayoutGrid, ListOrdered, MoreHorizontal, Play, Save } from "lucide-react";
 import { useInPlace } from "../inplace/context";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -63,6 +63,9 @@ const ScanVersionsPanel = lazy(() => import("../screener/ScanVersionsPanel"));
 const ScanAlertPanel = lazy(() => import("../screener/ScanAlertPanel"));
 // FN2-i (behind `ui_v2`): the trader's own past runs, one reopened with its stored results.
 const PastRunsPanel = lazy(() => import("../screener/PastRunsPanel"));
+const ScreenHistoryPanel = lazy(() => import("../screener/ScreenHistoryPanel"));
+// FN2-k (behind `ui_v2` and `screener_rankings`): rank the list's symbols 0-100 by a ranking system.
+const RankingsPanel = lazy(() => import("../screener/RankingsPanel"));
 // M49 U6: the old Custom scan (indicator, structure and option-chain filters) inside the Conditions block, on request.
 const CustomScanner = lazy(() => import("./ScannerPage"));
 
@@ -140,6 +143,11 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   const [alertOpen, setAlertOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [pastRunsOpen, setPastRunsOpen] = useState(false);
+  // FN2-j (flags `screener_history`, `screener_backtest`; behind `ui_v2`): "Look back" on the scan.
+  const historyOn = features.on("screener_history");
+  const backtestOn = historyOn && features.on("screener_backtest");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [rankingsOpen, setRankingsOpen] = useState(false);
   const [ideaReads, setIdeaReads] = useState<Record<string, string>>({});     // a scan from an idea: block -> its plain words
   // LAB-18 (AMW-7): the saved scan's versions on the server; the device history is uploaded once first (`synced`).
   const [scanVersions, setScanVersions] = useState<ServerVersion[]>([]);
@@ -553,6 +561,14 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   // first screen stays as it is for a trader without the other tools)
   if (universeV2 && headerTools.length > 0) {
     headerTools.push({ id: "past-runs-open", onClick: () => setPastRunsOpen(true), content: <><History size={14} aria-hidden /> Past runs</> });
+    // FN2-k: "Rankings" joins the same menu, and only with the flag on
+    if (features.on("screener_rankings")) {
+      headerTools.push({ id: "rankings-open", onClick: () => setRankingsOpen(true), content: <><ListOrdered size={14} aria-hidden /> Rankings</> });
+    }
+  }
+  // FN2-j: like Past runs, "Look back" joins "More tools" only when that menu is already there (the first screen stays as it was)
+  if (universeV2 && historyOn && headerTools.length > 0) {
+    headerTools.push({ id: "screen-history-open", onClick: () => setHistoryOpen(true), content: <><History size={14} aria-hidden /> {backtestOn ? "Look back and backtest" : "Look back"}</> });
   }
   // SCR-FIX B4: one count source - the answer's own funnel ("Matched N of 50 · K had data"), never the list's length
   const counts = shown ? tally(shown.funnel, shown.matched) : null;
@@ -619,6 +635,28 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
           {pastRunsOpen && (
             <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
               <PastRunsPanel tfWords={(tf) => timeframeWords(tf, true)} canSave={watchlistsOn} onSaved={reloadMyLists} />
+            </Suspense>
+          )}
+        </Dialog>
+      )}
+
+      {universeV2 && historyOn && (
+        <Dialog open={historyOpen} onOpenChange={setHistoryOpen} title="Look back"
+                description="When this screen matched in the past, and how its matches moved afterwards.">
+          {historyOpen && (
+            <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
+              <ScreenHistoryPanel source={text} symbols={symbols} scanTf={scanTf} listName={universe.name} historyOn={historyOn} backtestOn={backtestOn} />
+            </Suspense>
+          )}
+        </Dialog>
+      )}
+
+      {universeV2 && features.on("screener_rankings") && (
+        <Dialog open={rankingsOpen} onOpenChange={setRankingsOpen} title="Rankings"
+                description="Order the symbols of your list from 0 to 100 by a ranking system.">
+          {rankingsOpen && (
+            <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
+              <RankingsPanel symbols={symbols} />
             </Suspense>
           )}
         </Dialog>

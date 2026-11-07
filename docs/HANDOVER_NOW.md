@@ -1,9 +1,10 @@
-# HANDOVER_NOW (3 Nov 2026, evening)
-Merged today: #903 (M76-1..4, MP-12 dry run, MP-14/15, SX-8, T-RS design), #904 (proof follow-ups), #905 (stale chart Daily:
-own_bars.prefer_own never picks an older own history; Upstox token self-check; pulse chips "since today's open").
-Owner: turned byob_data_tier OFF (market read works again); deploy after main CI of #905 goes green; then check a new
-"Read the NIFTY chart" (last close 23,440.80 on 2 Nov) and the card's live price.
-In progress (this branch, agents): ROADMAP_TRUTH_3NOV audit (which rows are really open), the w2a charts_store top-up
-test that failed once on main, P1-4 chart-core audit.
-Owner decisions open: T-RS A/B/C, AUD-T9 pricing, BRK1Q-1..4 (defaults: not built / unchanged). No migration pending.
-CI: ccr-* branches run only by workflow_dispatch; a new dispatch cancels the running one.
+# HANDOVER_NOW (7 Nov 2026)
+Owner: credit limit near - finish open work only, no new work.
+Merged 6-7 Nov: #922-#933 (FN2-a..k minus e-proof, FN2-e PCR / OI from stored snapshots same-session, P2-3 templates,
+P3-4 D8/D11/D25/B7, chart reader key passthrough, Copilot "Last close · date"). Open: #934 chart reader on each user's
+OWN Claude key (owner decision 7 Nov) - merge when CI is green.
+Deploy: last run by owner = d6bbaeb (or 3ed1e9e); next block pinned to main tip after #934, tail -n 80 to see NIFTY
+lake rows. Migrations a7d3e9b1c4f6 + b3d5f7a9c1e4 apply in the deploy if not yet applied.
+Open data check: NIFTY stored Daily looks stuck at 30 Oct (card 23,053.10 vs strip 25,030); FINNIFTY D/W one session
+short - read the deploy health rows first.
+Owner-only: R2 keys, Telegram token, lawyer items (notice languages), FN7 phone proof, LIVE.

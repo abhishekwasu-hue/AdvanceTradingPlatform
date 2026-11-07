@@ -205,7 +205,15 @@ async def _rule_source(session: AsyncSession, rule: AlertRuleRecord) -> Tuple[An
         if screen is None or screen.archived or screen.tenant_id != rule.tenant_id:
             raise ValueError("the rule's screen is gone or archived")
         ast, validated = compile_screen(json.loads(screen.ast_json), base_tf=rule.base_tf)
-        symbols = [str(s).upper() for s in json.loads(rule.universe_json or "[]")][:MAX_SYMBOLS]
+        list_key: Optional[str] = getattr(rule, "universe_key", None)
+        if list_key:           # FN2-h: the screener's own list resolver, read at evaluation time (the list may have changed)
+            from app.screener.universes import symbols_of
+            found = await symbols_of(session, list_key)
+            if found is None:
+                raise ValueError("the rule's list is gone")
+            symbols = list(found["symbols"])
+        else:
+            symbols = [str(s).upper() for s in json.loads(rule.universe_json or "[]")][:MAX_SYMBOLS]
         params = json.loads(screen.params_json or "{}")
     else:
         ast, validated = compile_screen(rule.condition_text or "", base_tf=rule.base_tf)
@@ -252,10 +260,17 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
             for t, bars in (cache.frames[key(sym)][0] if key(sym) in cache.frames else {}).items():
                 merged[t] = max(merged.get(t, 0), bars)
         lookback = merged
-        if forming:
-            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, fetch_tf, lookback, forming=True, **extra)
-        else:
-            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, fetch_tf, lookback, **extra)
+        size = len(missing)
+        if getattr(rule, "universe_key", None):            # FN2-h: a list is fetched in the screener's batches (one broker's per-second share each)
+            from app.screener.universes import _broker_name, batch_plan
+            size = max(1, int(batch_plan(await _broker_name(session, rule.tenant_id))["size"] or 1))
+        universe, problems = [], {}
+        for i in range(0, len(missing), size):
+            part = missing[i:i + size]
+            kw = {"forming": True} if forming else {}
+            got_part, part_problems, _source = await fetch(session, rule.tenant_id, part, exchange, fetch_tf, lookback, **kw, **extra)
+            universe.extend(got_part)
+            problems.update(part_problems)
         cache.fetched_symbols += len(missing)
         got = {d.symbol: d for d in universe}
         for sym in missing:

@@ -623,7 +623,8 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
             <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
               <ScanAlertPanel name={name} symbols={symbols.slice(0, RUN_MAX)} scanTf={scanTf} screenId={savedId} save={saveNow}
                               intrabar={features.on("screener_intrabar")}
-                              universeName={universeV2 ? universe.name : undefined} universeTotal={symbols.length} />
+                              universeName={universeV2 ? universe.name : undefined} universeTotal={symbols.length}
+                              universeKey={universeV2 && chosenKey && needsList && lists[chosenKey] && lists[chosenKey] !== "failed" && !universe.builtin ? chosenKey : undefined} />
             </Suspense>
           )}
         </Dialog>

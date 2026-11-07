@@ -10,11 +10,14 @@ import { LibraryFold, LibraryMainChips, LibraryMoreSettings, SettingList } from 
 import { PageFootnote } from "../ui/PageFootnote";
 import { PageHeader } from "../ui/PageHeader";
 import { RichText } from "../ui/RichText";
+import { useFeatures } from "../ui/useFeatures";
 import { stripMarkdown } from "../ui/stripMarkdown";
 import { CATEGORY_LABEL, categoryLabel, firstSentence, libraryCardSettings } from "../ui/strategyLabels";
 
 // UI2-3 (UI v2 §3 M6): the signal generator lives in each strategy's drawer ("Try it on a symbol"), its own chunk.
 const TryOnSymbolV2 = lazy(() => import("../signals/TryOnSymbolV2"));
+// P2-3: the templates section (flag `strategy_templates`), below the strategies.
+import TemplateLibrarySection from "../strategyTemplates/TemplateLibrarySection";
 
 /**
  * M49 U3 (owner-approved mockup docs/ui/U3_LIBRARY.html), behind `ui_v2`: the Strategy Library. Each card is the name,
@@ -54,6 +57,7 @@ export default function StrategyLibraryV2() {
   const [query, setQuery] = useState("");
   const [chosen, setChosen] = useState<string | null>(null);
   const [trying, setTrying] = useState<StrategyInfo | null>(null);
+  const templatesOn = useFeatures().on("strategy_templates");
 
   useEffect(() => {
     api.listStrategies().then(setStrategies).catch((e) => { setStrategies([]); setError(errorSentence(e)); });
@@ -64,7 +68,8 @@ export default function StrategyLibraryV2() {
   return (
     <>
       <LibraryView strategies={strategies} error={error} inUse={inUse} category={category} query={query} chosen={chosen}
-        onCategory={setCategory} onQuery={setQuery} onChoose={setChosen} onTry={setTrying} />
+        onCategory={setCategory} onQuery={setQuery} onChoose={setChosen} onTry={setTrying}
+        after={templatesOn ? <TemplateLibrarySection /> : undefined} />
       {trying && <Suspense fallback={null}><TryOnSymbolV2 strategy={trying} onClose={() => setTrying(null)} /></Suspense>}
     </>
   );
@@ -90,10 +95,12 @@ export interface LibraryViewProps {
   onQuery: (q: string) => void;
   onChoose: (id: string) => void;
   onTry: (s: StrategyInfo) => void;
+  /** A separate section below the strategies (the templates), above the footnote. */
+  after?: ReactNode;
 }
 
 /** The page itself, from its state (rendered as is by the tests). */
-export function LibraryView({ strategies, error, inUse, category, query, chosen, onCategory, onQuery, onChoose, onTry }: LibraryViewProps) {
+export function LibraryView({ strategies, error, inUse, category, query, chosen, onCategory, onQuery, onChoose, onTry, after }: LibraryViewProps) {
   const all = strategies ?? [];
   const loading = strategies === null;
   const categories = [...CATEGORIES, ...new Set(all.map((s) => s.category).filter((c) => !CATEGORIES.includes(c)))];
@@ -172,6 +179,8 @@ export function LibraryView({ strategies, error, inUse, category, query, chosen,
 
         {picked && <Detail s={picked} used={used(picked)} onTry={() => onTry(picked)} />}
       </div>
+
+      {after}
 
       <PageFootnote />
     </div>

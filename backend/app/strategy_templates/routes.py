@@ -83,6 +83,23 @@ def _param(spec: Any) -> Dict[str, Any]:
     return out
 
 
+def _reads(template: Template, default_timeframe: Optional[str]) -> Dict[str, Optional[str]]:
+    """The sentence a signal of this template says, per side, built from the template's own tokens with the default
+    settings. None for a side the template does not use, when no timeframe can run, or when the sentence fails the guard."""
+    out: Dict[str, Optional[str]] = {"long": None, "short": None}
+    if default_timeframe is None:
+        return out
+    try:
+        _, settings = ids.adopt(template, default_timeframe, template.sides_default, {})
+    except TemplateError:
+        return out
+    sides = ("long", "short") if template.sides_default == "both" else (template.sides_default,)
+    for side in sides:
+        text = library.signal_text(template, settings, side)
+        out[side] = text if text and not language.guard(text) else None
+    return out
+
+
 def _card(template: Template, available: bool) -> Dict[str, Any]:
     runnable = [tf for tf in template.allowed_timeframes if tf in ENGINE_LABEL]      # TPL-Q7: weekly is scans only
     return {
@@ -91,6 +108,7 @@ def _card(template: Template, available: bool) -> Dict[str, Any]:
         "style": template.style,
         "timeframes": [{"value": tf, "label": language.TIMEFRAME_WORDS[tf]} for tf in runnable],
         "default_timeframe": runnable[0] if runnable else None, "sides_default": template.sides_default,
+        "reads": _reads(template, runnable[0] if runnable else None),
         "params": [_param(p) for p in template.params],
         "rules": [c.message for c in template.constraints],
         "available": available,

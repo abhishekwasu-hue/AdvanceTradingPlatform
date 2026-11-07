@@ -455,6 +455,10 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("ChainBias", "classifier", CAT, None, (), cost=2.0, timeframed=False,
          values=("BULLISH", "BEARISH", "NEUTRAL", "CONFLICTING"), doc="option-chain bias: BULLISH / BEARISH / NEUTRAL / CONFLICTING", needs=("option_chain",)),
     Spec("MaxPainDistancePct", "factor", NUM, "pct", (), cost=2.0, timeframed=False, doc="|underlying - max pain| as % of the underlying", needs=("option_chain",)),
+    # FN2-e: the near-month future's open interest stored with the same chain snapshot (the OI collector's reading)
+    Spec("FuturesOI", "factor", NUM, "contracts", (), cost=2.0, timeframed=False, needs=("option_chain",),
+         doc="open interest of the underlying's near-month future, from the stored option-chain snapshot read at or before"
+             " the bar's close (not evaluated when that snapshot has none)"),
     Spec("Sector", "classifier", CAT, None, (), timeframed=False, doc="NSE sector (as of the run date)", needs=("reference",)),
     Spec("Industry", "classifier", CAT, None, (), timeframed=False, doc="NSE industry (as of the run date)", needs=("reference",)),
     Spec("McapBucket", "classifier", CAT, None, (), timeframed=False, doc="AMFI large / mid / small", needs=("reference",)),

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select, union_all
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -235,6 +235,27 @@ async def holder_day(session: AsyncSession, tenant_id: int, user_id: int, underl
     return out
 
 
+async def holder_latest_many(session: AsyncSession, tenant_id: int, user_id: int, cuts: Dict[str, datetime]) -> Dict[str, List[StoredChain]]:
+    """FN2-e: for each underlying, `user_id`'s own stored chains (every expiry) of his newest slot whose chain was read
+    (`captured_at`) at or before that underlying's cut - never a read after it; empty when there is none. One statement
+    for the slots (UNION ALL) and one for their rows, whatever the number of underlyings."""
+    out: Dict[str, List[StoredChain]] = {u: [] for u in cuts}
+    if not cuts:
+        return out
+    own = _holder_only(tenant_id, user_id)
+    at = {u: _utc(c).astimezone(timezone.utc) for u, c in cuts.items()}
+    parts = [select(R.underlying, func.max(R.slot_start)).where(own, R.underlying == u, R.captured_at <= at[u]).group_by(R.underlying) for u in at]
+    newest = {u: s for u, s in (await session.execute(parts[0] if len(parts) == 1 else union_all(*parts))).all() if s is not None}
+    if not newest:
+        return out
+    query = select(R).where(own, or_(*[and_(R.underlying == u, R.slot_start == s) for u, s in newest.items()]))
+    for row in await session.scalars(query.order_by(R.underlying, R.expiry)):
+        if row.underlying in out and _utc(row.captured_at) <= at[row.underlying]:
+            out[row.underlying].append(StoredChain(row.underlying, row.expiry, _utc(row.slot_start), _utc(row.captured_at), row.spot,
+                                                   decode(row.payload, row.codec)))
+    return out
+
+
 async def holder_underlyings(session: AsyncSession, tenant_id: int, user_id: int, day: date) -> List[str]:
     """The underlyings `user_id` has own stored chains of on `day` (names only)."""
     query = select(R.underlying).where(_holder_only(tenant_id, user_id), R.trade_date == day).group_by(R.underlying).order_by(R.underlying)
@@ -310,4 +331,4 @@ async def totals(session: AsyncSession, tenant_id: int) -> Dict[str, Any]:
 
 
 __all__ = ["CODEC", "FIELD_NAMES", "encode", "decode", "write", "WriteResult", "exists", "slot_start", "StoredChain", "read_range",
-           "read_day", "count", "coverage", "holder_day", "holder_underlyings", "expected_slots", "gap_ranges", "day_slots", "totals"]
+           "read_day", "count", "coverage", "holder_day", "holder_latest_many", "holder_underlyings", "expected_slots", "gap_ranges", "day_slots", "totals"]

@@ -23,7 +23,8 @@ export interface RegistryEntry {
   varargs: boolean;
   timeframed: boolean;
   cross_sectional?: boolean;
-  needs?: string[];          // data beyond bars ("reference", "option_chain"); the run path does not load it yet
+  needs?: string[];          // data beyond bars ("reference", "option_chain") the builder does not offer
+  loaded?: boolean;          // FN2-e: its data comes from a family the run loads (`loads`, e.g. the stored option chain)
   field: boolean;
   doc: string;
 }
@@ -115,9 +116,20 @@ export interface FunnelResult {
   passes?: Record<string, boolean[]>;
 }
 
-/** Can this entry be the subject of an indicator block? A number per symbol per bar, with arguments the builder can edit. */
+/** FN2-e: the registry as the builder offers it - an entry whose data families (`needs`) are all in `loads` (what the
+ * server's run loads for the builder, e.g. the stored option chain) is offered and marked `loaded`; the rest stay hidden. */
+export function offeredRegistry(reg: Registry, loads: readonly string[]): Registry {
+  const out: Registry = {};
+  for (const [name, e] of Object.entries(reg)) {
+    out[name] = e.needs?.length && e.needs.every((n) => loads.includes(n)) ? { ...e, needs: [], loaded: true } : e;
+  }
+  return out;
+}
+
+/** Can this entry be the subject of an indicator block? A number per symbol per bar, with arguments the builder can edit.
+ * FN2-e: a loaded data number without a timeframe (PCR, MaxPainDistancePct, FuturesOI) is one too - on the last bar. */
 export function isIndicator(e: RegistryEntry | undefined): boolean {
-  if (!e || e.needs?.length || e.returns !== "num" || e.kind !== "factor" || e.varargs || e.cross_sectional || !e.timeframed) return false;
+  if (!e || e.needs?.length || e.returns !== "num" || e.kind !== "factor" || e.varargs || e.cross_sectional || (!e.timeframed && !e.loaded)) return false;
   return e.args.every((a) => {
     const t = e.types?.[a];
     return t === "window" || t === "num" || (t === "str" && (e.choices[a]?.length ?? 0) > 0);
@@ -237,7 +249,7 @@ function argText(kind: ParamKind | undefined, v: ParamValue): string {
 export function seriesText(reg: Registry, s: SeriesRef): string {
   const e = reg[s.fn];
   const back = barsAgo(s);
-  const suffix = (back ? `[${back}]` : "") + (s.tf ? `@${s.tf}` : "");
+  const suffix = (back ? `[${back}]` : "") + (s.tf && e?.timeframed !== false ? `@${s.tf}` : "");   // FN2-e: never @tf on PCR()
   if (!e || e.field) return `${s.fn}${suffix}`;
   const kinds = paramKinds(e);
   const args = e.args.map((a, i) => argText(kinds[i], s.params[a] ?? defaultParams(e)[a]));

@@ -141,7 +141,8 @@ def test_last_bar_only_functions_cannot_be_read_back_in_time():
     inner = {"Trend": 'Trend(3) == "UPTREND"', "StructureEvent": 'StructureEvent(3) == "BOS_BULLISH"', "PatternBullish": "PatternBullish()",
              "PatternBearish": "PatternBearish()", "NearSupport": "NearSupport(0.5)", "NearResistance": "NearResistance(0.5)",
              "Rank": "Rank(close) <= 5", "PercentileRank": "PercentileRank(close) > 50", "PCR": "PCR() > 1", "ChainBias": 'ChainBias() == "BULLISH"',
-             "MaxPainDistancePct": "MaxPainDistancePct() < 2", "Sector": 'Sector() == "IT"', "Industry": 'Industry() == "x"',
+             "MaxPainDistancePct": "MaxPainDistancePct() < 2", "FuturesOI": "FuturesOI() > 0", "Sector": 'Sector() == "IT"',
+             "Industry": 'Industry() == "x"',
              "McapBucket": 'McapBucket() == "large"', "IndexMember": 'IndexMember("NIFTY 50")', "IsFnO": "IsFnO()",
              "RankScore": 'RankScore("platform:Momentum") > 50'}
     assert set(inner) == set(LAST_BAR_ONLY)

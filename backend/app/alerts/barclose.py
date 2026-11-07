@@ -434,6 +434,13 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
                 # FN2-d: Sector / Industry / IndexMember / IsFnO as the screen run reads them - the classification alive on
                 # `now`'s exchange date, the bar that just closed (no look-ahead: never a later reclassification)
                 await reference_gate.attach(session, current, reference_gate.run_date(now))
+            from app.screener import chains as chain_gate
+            if chain_gate.calls(ast):
+                # FN2-e: PCR / ChainBias / MaxPainDistancePct / FuturesOI from the stored chain snapshot read at or before
+                # the bar that just closed (never a later one; never a live chain call); with byob_data_tier the rule
+                # creator's own stored reads only. A symbol without one is not evaluated (its reason), never a match.
+                await chain_gate.attach(session, current, tenant_id=rule.tenant_id, user_id=rule.created_by, own=per_user,
+                                        base_tf=rule.base_tf, now=now)
             # CPU-bound (a breakout / session screen over 1m bars can take a fraction of a second per symbol): run it in a
             # worker thread so one rule never stalls the worker's event loop (U6 BK2 review M3). It reads only the frames.
             # Inside the try: a screen that fails at run time is this rule's problem, not the cycle's.

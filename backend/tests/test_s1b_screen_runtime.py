@@ -190,6 +190,7 @@ def test_strategy_builder_and_scanner_entries_match_their_source():
     assert round(_ev("MaxPainDistancePct()", d), 6) == round(abs(101.0 - a.max_pain) / 101.0 * 100, 6)
     bare = SymbolData("S", {"5m": f})
     assert np.isnan(_ev("PCR()", bare)) and _ev('ChainBias() == "BULLISH"', bare) is False         # no chain: never a match
+    assert np.isnan(_ev("FuturesOI()", d))       # FN2-e: a chain supplied as one object carries no near-month future (NaN, never 0)
 
 
 def test_price_action_series_s5a():

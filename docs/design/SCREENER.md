@@ -808,6 +808,8 @@ with the indicator block, and the result table.
     need the reference lists; PCR, ChainBias, MaxPainDistancePct need the option chain) are not offered: the run path
     loads bars only, so they would read empty and remove every symbol. A screen that uses one anyway (typed, or
     saved earlier) is refused by `/run` with the reason, never answered with a silent "nothing matched" (SC-18).
+    FN2-e: the option-chain functions are offered again - the run and the bar-close alerts read the stored chain
+    snapshots (section "FN2-e" below); the registry endpoint lists the families it loads in `loads`.
   - **Category**: a classifier is / is not one value (`==`, `!=`) or one of several (`IN (...)`, `NOT (... IN ...)`).
     Values with a fixed set are toggle chips (the last one cannot be switched off); the others are typed. A category
     with no value, or a blank text argument, is a problem on its block before anything runs (it would otherwise run
@@ -1835,6 +1837,27 @@ while it is off for the organisation the tool is neither offered to the model no
   like SMA; causal harness cases with `@1h` variants; drawn as series.
 - **Tests.** tests/test_fn2a2_indicators.py (plain-Python references, prefixes, the spans' no-look-ahead, history needs,
   validator), plus the runtime, panel, mirror and Z10-a coverage suites.
+
+## FN2-e (built): the option chain and futures OI on the run and alert paths (behind `screener_v2`)
+- **Functions.** `PCR()`, `ChainBias()`, `MaxPainDistancePct()` and the new `FuturesOI()` (the near-month future's open
+  interest stored with the chain). Code: app/screener/chains.py; readers `snapshots.latest_chains_many` (the
+  organisation's OI collector slots) and `chain_store.holder_latest_many` (with `byob_data_tier`: the user's own reads).
+- **Source.** Only the STORED snapshots, batched (one read for the whole universe); never a live chain call per symbol.
+  The symbol's F&O underlying (`NIFTY 50` -> NIFTY). Expiry: the nearest one present in the snapshot.
+- **No look-ahead.** Each symbol's cut is its last bar's close (never later than the run's clock): only a snapshot
+  read at or before it is loaded, and a bar sees it only when the bar closed at or after it was read. The functions
+  stay last-bar-only (the validator refuses reading them back in time).
+- **Same session only.** The snapshot must also be read on the bar's own IST session date; an earlier session's chain
+  never answers ("option chain last read on <date>", not evaluated) - FuturesOI too.
+- **Not evaluated, with the reason.** No snapshot at or before the bar, a symbol that is not an underlying, or
+  `FuturesOI()` with no future in the snapshot (own reads carry none): the row says why; never a pass or a 0.
+- **Where.** `/run` and the Copilot's run (they go through `load_universe`); bar-close and intrabar alert rules (the
+  rule creator's own reads with the own-broker tier). History, chart studies and the library still refuse them (they
+  read past bars). Venues: NSE and BSE carry `option_chain` too (index and F&O-stock underlyings). The builder offers
+  them (`loads` on the registry endpoint), without a timeframe.
+- **Not built.** Futures OI from the own broker's stored BARS: the market store keeps no open interest (a migration
+  and a recorder change), and reading each future's bars live would be a broker call per symbol.
+- **Tests.** tests/test_fn2e_chain_run.py, frontend src/screener/model.test.ts.
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the

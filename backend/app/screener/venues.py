@@ -11,7 +11,9 @@ What a venue lacks, by source (provisional, OPEN_QUESTIONS S8-7):
 * reference lists and classification (sector, industry, index membership, F&O list): the U1 masters cover NSE and BSE
   cash equities;
 * shareholding patterns and the event calendar (`ownership`): companies are keyed by their NSE symbol - NSE only;
-* option chains: the equity-derivatives venues (NFO, BFO) and MCX options;
+* option chains: the equity-derivatives venues (NFO, BFO) and MCX options; FN2-e: and the NSE / BSE cash venues, whose
+  index and F&O-stock symbols are the chains' underlyings (read from the stored chain snapshots; a symbol with none is
+  not evaluated, with the reason);
 * market zones and ranking systems: computed from bars, so wherever bars are.
 Crypto (H) is listed for completeness: the screener does not run on it yet (no crypto exchange on the run path), and
 funding, open interest and liquidations have no feed.
@@ -40,8 +42,8 @@ class Venue:
 
 
 VENUES: Tuple[Venue, ...] = (
-    Venue("NSE", "NSE cash equities", ("NSE",), BAR_FIELDS, frozenset({"zones", "rankings", "reference", "ownership"}), "NSE"),
-    Venue("BSE", "BSE cash equities", ("BSE",), BAR_FIELDS, frozenset({"zones", "rankings", "reference"}), "NSE",
+    Venue("NSE", "NSE cash equities", ("NSE",), BAR_FIELDS, frozenset({"zones", "rankings", "reference", "ownership", "option_chain"}), "NSE"),
+    Venue("BSE", "BSE cash equities", ("BSE",), BAR_FIELDS, frozenset({"zones", "rankings", "reference", "option_chain"}), "NSE",
           note="ownership and events are keyed by NSE symbol"),
     Venue("NFO", "NSE equity derivatives", ("NFO",), BAR_FIELDS | {"oi"}, frozenset({"zones", "rankings", "option_chain"}), "NSE"),
     Venue("BFO", "BSE equity derivatives", ("BFO",), BAR_FIELDS | {"oi"}, frozenset({"zones", "rankings", "option_chain"}), "NSE"),

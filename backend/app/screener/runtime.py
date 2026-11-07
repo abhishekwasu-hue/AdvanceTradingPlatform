@@ -78,6 +78,7 @@ class SymbolData:
     zones: Optional[Any] = None                            # Z7a-3: app.price_action.zones.read.ZoneTimeline for the zone functions
     ownership: Optional[Any] = None                        # N3 S8a: app.screener.ownership.Ownership (point in time)
     fundamentals: Optional[Any] = None                     # U7 LG3: app.fundamentals.pit versions (point in time) for the fundamentals functions
+    chains: Optional[Any] = None                           # FN2-e: app.screener.chains.ChainTimeline (stored snapshots, point in time)
 
 
 @dataclass
@@ -571,9 +572,11 @@ class _Eval:
             "ReturnOnCapital": lambda: _fundamental(self.data, f, tf, "roc"),
             "GrahamNumber": lambda: _fundamental(self.data, f, tf, "graham_number"),
             "NCAVPerShare": lambda: _fundamental(self.data, f, tf, "ncav"),
-            "PCR": lambda: _chain(self.data.option_chain, "pcr"),
-            "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
-            "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
+            # FN2-e: the stored snapshot read at or before each bar's close when the run loaded them (app/screener/chains.py)
+            "PCR": lambda: _chain_on(self.data, f, tf, "pcr"),
+            "ChainBias": lambda: _chain_on(self.data, f, tf, "bias"),
+            "MaxPainDistancePct": lambda: _chain_on(self.data, f, tf, "max_pain_distance_pct"),
+            "FuturesOI": lambda: _chain_on(self.data, f, tf, "future_oi"),
             "Max": lambda: self.series(args[0], tf).rolling(win(1)).max(),
             "Min": lambda: self.series(args[0], tf).rolling(win(1)).min(),
             "Greatest": lambda: pd.concat([self.series(a, tf) for a in args], axis=1).max(axis=1, skipna=False),
@@ -1264,6 +1267,17 @@ def _near_zone(f: pd.DataFrame, kind: str, tolerance_pct: float, window: int) ->
     if not tolerance_pct > 0:
         return False
     return _check_structure_filter(StructureFilter(filter_type=StructureFilterType(kind), tolerance_pct=tolerance_pct), f, window)[0]
+
+
+def _chain_on(data: SymbolData, f: pd.DataFrame, tf: str, what: str) -> Any:
+    """FN2-e: a run that loaded the stored snapshots reads them point in time (`chains.series`); a chain supplied as
+    one object (the AI scanner, tests) keeps the earlier last-bar value. FuturesOI has no value in a bare chain."""
+    if data.chains is not None:
+        from app.screener.chains import series
+        return series(data, f, tf, what)
+    if what == "future_oi":
+        return np.nan
+    return _chain(data.option_chain, what)
 
 
 def _chain(chain: Any, what: str) -> Any:

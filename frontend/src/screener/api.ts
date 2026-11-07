@@ -86,7 +86,7 @@ export interface ScanAlertRule {
 export interface ScanAlertInput { name: string; screen_id: number; symbols?: string[]; universe_key?: string; fire_on: "bar_close" | "intrabar" }
 
 export const screenerApi = {
-  registry: () => request<{ version: string; timeframes: string[]; entries: Registry }>("/screener/registry"),
+  registry: () => request<{ version: string; timeframes: string[]; entries: Registry; loads?: string[] }>("/screener/registry"),
   /** M72 PR-6: `params` - the $parameter values the trader typed (the Copilot's screen draft); omitted = none. */
   validate: (source: string, baseTf: string, params?: Record<string, number>) =>
     request<ValidateResponse>("/screener/validate", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, ...(params ? { params } : {}) }) }),

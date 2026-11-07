@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   blockProblems, defaultParams, duplicateStage, isCategory, isLive, isFilter, LEVEL_FIELDS, namesWhere, newBlock, whyChips, indicatorNames, isIndicator, moveStage, newStage, paramKinds, parseSymbols, screenText,
   runBlocker, runStamp, sameRun, stageAt, stageSpans, stageSummary, stageText, trail, type IndicatorStage, type Registry, type Stage,
+  offeredRegistry, seriesText, type RegistryEntry,
 } from "./model";
 import contract from "./builderTexts.json";
 
@@ -284,5 +285,24 @@ describe("D2 review: blocks that cannot run yet, NOT spans", () => {
     const byId = Object.fromEntries(stageSpans(FULL, [a, not]).map((sp) => [sp.id, text.slice(sp.start, sp.end)]));
     expect(byId).toEqual({ a: "RSI(14) > 60", n: 'NOT (Pattern("doji") AND RSI(14) < 30)', b: 'Pattern("doji")', c: "RSI(14) < 30" });
     expect(stageAt(FULL, [a, not], text.indexOf("doji"))).toBe("b");
+  });
+});
+
+describe("FN2-e: the builder offers the stored option chain", () => {
+  const FULL = contract.registry as unknown as Registry;
+  const PCR: RegistryEntry = { kind: "factor", returns: "num", unit: "ratio", args: [], types: {}, defaults: {}, choices: {}, values: [], varargs: false,
+    timeframed: false, needs: ["option_chain"], field: false, doc: "" };
+  const reg: Registry = { ...REG, PCR, ChainBias: FULL.ChainBias, IsFnO: FULL.IsFnO };
+  it("un-hides only the families the run loads (`loads`), without a timeframe", () => {
+    expect(isIndicator(reg.PCR)).toBe(false);
+    expect(isCategory(reg.ChainBias)).toBe(false);
+    const offered = offeredRegistry(reg, ["option_chain"]);
+    expect(isIndicator(offered.PCR)).toBe(true);
+    expect(indicatorNames(offered)).toContain("PCR");
+    expect(isCategory(offered.ChainBias)).toBe(true);
+    expect(isFilter(offered.IsFnO)).toBe(false);                                   // the reference lists stay off the builder
+    expect(offeredRegistry(reg, []).PCR.needs).toEqual(["option_chain"]);           // nothing loaded: hidden as before
+    expect(isIndicator(offered.Rank)).toBe(false);                                   // other untimed numbers stay out
+    expect(seriesText(offered, { fn: "PCR", params: {}, tf: "5m" })).toBe("PCR()");  // never PCR()@5m
   });
 });

@@ -20,7 +20,7 @@ import { screenerApi, type IdeaResponse, type PreviewResponse, type RunResponse,
 import { FreshnessPill } from "../screener/FreshnessPill";
 import { PlainTimeframes } from "../screener/TimeframeChip";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
-import { blockProblems, parseSymbols, runBlocker, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, timeframeWords, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
+import { blockProblems, offeredRegistry, parseSymbols, runBlocker, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, timeframeWords, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
 import { nothingRead, tally, unreadReason, unreadRows } from "../screener/readCounts";
 import { UnreadNote } from "../screener/UnreadNote";
@@ -180,7 +180,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   useEffect(() => { if (hasStages) setConditionsOpen(true); }, [hasStages]);
 
   useEffect(() => {
-    screenerApi.registry().then((r) => setRegistry(r.entries))
+    screenerApi.registry().then((r) => setRegistry(offeredRegistry(r.entries, r.loads ?? [])))   // FN2-e: the stored option chain
       .catch((e: unknown) => setLoadError(e instanceof ApiError && e.status === 404 ? SCREENER_OFF : errorText(e)));
     screenerApi.taxonomy().then((t) => setTaxonomy(isTaxonomy(t) ? t : null)).catch(() => setTaxonomy(null));
     screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));

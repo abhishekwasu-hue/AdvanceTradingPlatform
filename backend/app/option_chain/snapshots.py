@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from sqlalchemy import or_, select, union_all
+from sqlalchemy import and_, func, or_, select, union_all
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -262,6 +262,39 @@ async def day_chains_many(session: AsyncSession, underlyings: Sequence[str], day
     return out
 
 
+async def latest_chains_many(session: AsyncSession, cuts: Dict[str, datetime], *, tenant_id: int) -> Dict[str, Optional[SlotChain]]:
+    """FN2-e: for each underlying, this organisation's newest stored slot whose chain was read (`captured_at`) at or
+    before that underlying's cut - never a slot read after it - or None. Two statements for the slots (each
+    underlying's newest slot, joined with UNION ALL) and one for their strikes, whatever the number of underlyings."""
+    out: Dict[str, Optional[SlotChain]] = {u: None for u in cuts}
+    if not cuts:
+        return out
+    scope = await tenant_scope(session, OISnapshotRecord.tenant_id, tenant_id)
+    at = {u: _utc(c).astimezone(timezone.utc) for u, c in cuts.items()}
+    R = OISnapshotRecord
+    parts = [select(R.underlying, func.max(R.slot_start)).where(scope, R.underlying == u, R.captured_at <= at[u]).group_by(R.underlying)
+             for u in at]
+    newest = {u: s for u, s in (await session.execute(parts[0] if len(parts) == 1 else union_all(*parts))).all() if s is not None}
+    if not newest:
+        return out
+    raw: Dict[str, List[OISnapshotRecord]] = {u: [] for u in newest}
+    for snap in await session.scalars(select(R).where(scope, or_(*[and_(R.underlying == u, R.slot_start == s) for u, s in newest.items()]))):
+        if snap.underlying in raw and _utc(snap.captured_at) <= at[snap.underlying]:
+            raw[snap.underlying].append(snap)
+    chosen = {u: _one_per_slot(rows)[-1] for u, rows in raw.items() if rows}
+    strikes: Dict[int, List[OptionChainRow]] = {s.id: [] for s in chosen.values()}
+    if strikes:
+        for r in await session.scalars(select(StrikeOISnapshotRecord).where(StrikeOISnapshotRecord.snapshot_id.in_(list(strikes)))
+                                       .order_by(StrikeOISnapshotRecord.snapshot_id, StrikeOISnapshotRecord.strike)):
+            strikes[r.snapshot_id].append(OptionChainRow(strike=r.strike, call_oi=r.call_oi, put_oi=r.put_oi, call_ltp=r.call_ltp,
+                                                         put_ltp=r.put_ltp, call_iv=r.call_iv, put_iv=r.put_iv))
+    for u, s in chosen.items():
+        out[u] = SlotChain(_utc(s.slot_start), _utc(s.captured_at), OptionChain(underlying=u, expiry=s.expiry.isoformat() if s.expiry else "",
+                                                                             underlying_ltp=s.underlying_price, rows=strikes[s.id]),
+                           s.future_price, s.future_oi)
+    return out
+
+
 @dataclass(frozen=True)
 class SessionClose:
     """OC5: one earlier trading day - its spot readings in slot order (they stand in for the day's candle) and its last
@@ -425,4 +458,4 @@ async def baselines(session: AsyncSession, underlying: str, day: date, *, tenant
 
 __all__ = ["collect", "CollectResult", "day_chains", "replay", "entry_json", "staleness", "latest_capture", "strike_series",
            "baselines", "recent_session_closes", "SessionClose", "settings_for", "settings_rows_many", "resolve_settings", "day_chains_many", "latest_captures", "enabled_underlyings", "normalise_underlying", "platform_layer", "IST", "DEFAULT_KEY",
-           "legacy_owner", "tenant_scope", "session_marks"]
+           "legacy_owner", "tenant_scope", "session_marks", "latest_chains_many"]

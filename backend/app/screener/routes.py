@@ -34,6 +34,7 @@ from app.db.models import ScreenRecord, ScreenRunRecord, User
 from app.db.session import get_session, release_connection
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import amw_functions as amw_gate
+from app.screener import chains as chain_gate
 from app.screener import compile_screen, nodes, reasons
 from app.screener import fundamentals as fundamentals_gate
 from app.screener import legends as lg
@@ -85,6 +86,10 @@ RUN_PROVIDES: frozenset = frozenset({"zones", "fundamentals", "ownership", "rank
 # FN2-d: `load_universe` also loads the current reference data of these "reference" functions (app/screener/reference);
 # a caller that runs through it passes missing_data(..., reference=True). McapBucket has no source and stays refused.
 RUN_REFERENCE: frozenset = reference_gate.LOADED
+# FN2-e: and the stored option-chain snapshots of these "option_chain" functions (app/screener/chains), read at or before
+# each symbol's last bar close; a caller that runs through `load_universe` passes missing_data(..., chain=True).
+RUN_CHAIN: frozenset = chain_gate.LOADED
+BUILDER_LOADS = ("option_chain",)
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
@@ -172,7 +177,9 @@ async def registry(user: User = Depends(get_current_user), session: AsyncSession
             entries = amw_gate.hide(entries)
         if waves_gate.FLAG in off:                # wave templates R7: RetestEntry without its wave choices
             entries = waves_gate.hide(entries)
-    return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries}
+    # FN2-e: the data families (`needs`) the run loads that the builder may offer - the option chain, from the stored
+    # snapshots (the other families stay off the builder as before)
+    return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries, "loads": list(BUILDER_LOADS)}
 
 
 async def _flags_off(session: AsyncSession, user: User) -> set:
@@ -942,6 +949,10 @@ async def load_universe(session: AsyncSession, user: User, ast: Any, validated: 
         await ownership_gate.attach(session, universe, exchange, datetime.now(UTC), viewer=user.tenant_id)
     if reference_gate.calls(ast):                 # FN2-d: Sector / Industry / IndexMember / IsFnO - the current classification
         await reference_gate.attach(session, universe)
+    if chain_gate.calls(ast):                     # FN2-e: the stored chain snapshot read at or before each symbol's last bar close
+        from app.market_data import live_access
+        await chain_gate.attach(session, universe, tenant_id=user.tenant_id, user_id=user.id,
+                                own=await live_access.byob_on(session, user.tenant_id), base_tf=base_tf, now=datetime.now(UTC))
     systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
     return universe, fetch_problems, data_source, systems
 
@@ -962,17 +973,19 @@ async def rank_systems(session: AsyncSession, tenant_id: int, ast: Any, params: 
     return systems
 
 
-def missing_data(ast: Any, *, reference: bool = False) -> List[str]:
+def missing_data(ast: Any, *, reference: bool = False, chain: bool = False) -> List[str]:
     """Functions in the screen whose data the run path does not load (`Spec.needs` not in RUN_PROVIDES). `reference`
     (FN2-d): the caller runs through `load_universe`, which loads the current reference data of RUN_REFERENCE's
     functions - they count as loaded. Off (history, chart studies, the library): refused as before, since those read past
-    bars and the current classification would be look-ahead there."""
+    bars and the current classification would be look-ahead there. `chain` (FN2-e): the same for RUN_CHAIN's functions
+    (the stored chain snapshot of each symbol's last bar; a symbol without one is not evaluated, with the reason)."""
     out: List[str] = []
     for node in nodes.walk(ast):
         spec = FUNCTIONS.get(getattr(node, "name", "")) if isinstance(node, nodes.Call) else None
         if spec is None or spec.name in out:
             continue
-        loaded = RUN_PROVIDES | ({"reference"} if reference and spec.name in RUN_REFERENCE else set())
+        loaded = (RUN_PROVIDES | ({"reference"} if reference and spec.name in RUN_REFERENCE else set())
+                  | ({"option_chain"} if chain and spec.name in RUN_CHAIN else set()))
         if any(need not in loaded for need in spec.needs):
             out.append(spec.name)
     return out
@@ -1022,10 +1035,11 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     await _gate(session, user, ast, validated, params, body.exchange)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
-    missing = missing_data(ast, reference=True)        # FN2-d: load_universe loads Sector / Industry / IndexMember / IsFnO
+    # FN2-d: load_universe loads Sector / Industry / IndexMember / IsFnO; FN2-e: and the stored option-chain snapshots
+    missing = missing_data(ast, reference=True, chain=True)
     if missing:
         raise HTTPException(status_code=422, detail={"message": f"{', '.join(m + '()' for m in missing)} need data the screener run does not load "
-                                                                "yet (market-cap buckets or the option chain)",
+                                                                "yet (market-cap buckets)",
                                                      "problems": [{"message": f"{m}() needs data the run does not load yet", "pos": None} for m in missing]})
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
     # Z10-d: same matches, less time. LD-7: read before the fetch, while this request still holds its connection (read

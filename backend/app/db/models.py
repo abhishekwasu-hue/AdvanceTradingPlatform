@@ -2659,6 +2659,23 @@ class UserAiKeyRecord(Base):
     last_test_error: Mapped[str | None] = mapped_column(String(200), nullable=True)   # sanitised, never the key
 
 
+class UserNomineeRecord(Base):
+    """P3-4-B10 (DPDP s.14, privacy notice): the one person a user names to use their rights if they die or cannot act.
+    One row per user. The contact is personal data of a third person: it is exported, erased with the user and never logged."""
+
+    __tablename__ = "user_nominees"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    relationship_to_user: Mapped[str] = mapped_column(String(60), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
 class UserVisionPrefsRecord(Base):
     """BYOK-V1: one user's "Vision chart review" settings - on/off, the provider their charts go to, daily and monthly
     spend caps in USD (hard stop), which charts to audit and where reports go. Vision only comments (ADR-0006)."""

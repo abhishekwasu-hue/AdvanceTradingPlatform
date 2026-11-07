@@ -92,7 +92,7 @@ export function HeadlineRow({ h }: { h: AnswerHeadline }) {
   return (
     <dl className="grid grid-cols-2 gap-space-3 md:flex md:flex-wrap md:items-end md:gap-space-6" data-headline={h.symbol}>
       <div className="min-w-0">
-        <dt className="text-t12 font-medium uppercase text-fg-muted">{h.symbol} · {h.price_label}</dt>
+        <dt className="text-t12 font-medium uppercase text-fg-muted">{h.symbol} · {h.price_label}{stampText(h.as_of) ? ` · ${stampText(h.as_of)}` : ""}</dt>
         <dd className="font-tabular text-t20 font-semibold text-fg md:text-t24" data-headline-price>{formatPrice(h.price)}</dd>
       </div>
       {h.live_price != null && (

@@ -111,3 +111,42 @@ def test_register_document_names_every_processor():
         assert p.name in doc, p.name
     assert "to be confirmed" in doc.lower()
     assert not re.search(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", doc)          # no IP address in a public repo
+
+
+# --- P3-4-B7: the rest of the personal-data tables in the export ---------------------------------------------------
+
+def test_export_has_login_events_sessions_and_consents_only_his_own_and_no_secrets():
+    from datetime import UTC, datetime, timedelta
+
+    from app.db.models import AiAcknowledgementRecord, LoginEventRecord, NotificationRecord, UserSessionRecord
+    mine, me = _user("exp-a")
+    other, them = _user("exp-b")
+
+    async def seed():
+        async with _session_factory() as s:
+            now = datetime.now(UTC)
+            for u, tag in ((me, "MINE"), (them, "THEIRS")):
+                s.add(LoginEventRecord(user_id=u["id"], tenant_id=u["tenant_id"], email=f"{tag}@example.com", success=True, reason="", ip_address=f"10.0.0.{1 if tag == 'MINE' else 2}", user_agent=tag))
+                s.add(AiAcknowledgementRecord(tenant_id=u["tenant_id"], user_id=u["id"], kind="copilot_terms", version=f"v-{tag}", text_sha256="a" * 64))
+                s.add(NotificationRecord(tenant_id=u["tenant_id"], user_id=u["id"], event_type="x", title=f"T-{tag}", message=""))
+                s.add(UserSessionRecord(user_id=u["id"], tenant_id=u["tenant_id"], refresh_token_hash=f"RT{tag}".ljust(64, "0"), previous_token_hash=f"PT{tag}".ljust(64, "0"),
+                                        user_agent=f"UA-{tag}", expires_at=now + timedelta(days=1)))
+            await s.commit()
+    asyncio.run(seed())
+    z = _zip(mine)
+    names = z.namelist()
+    for f in ("login_events", "sessions", "consents", "notifications", "deployments", "risk_limits", "alert_channels", "broker_accounts",
+              "linked_logins", "api_keys", "watchlists"):
+        assert f"{f}.json" in names and f"{f}.csv" in names, f
+    logins = json.loads(z.read("login_events.json"))
+    assert logins and all(r["user_id"] == me["id"] for r in logins) and "THEIRS" not in json.dumps(logins)
+    sessions = json.loads(z.read("sessions.json"))
+    assert any(r["user_agent"] == "UA-MINE" for r in sessions) and "UA-THEIRS" not in json.dumps(sessions)
+    consents = json.loads(z.read("consents.json"))
+    assert "v-MINE" in [r["version"] for r in consents] and "v-THEIRS" not in json.dumps(consents)
+    assert all(r["user_id"] == me["id"] for r in consents)
+    assert "T-MINE" in [r["title"] for r in json.loads(z.read("notifications.json"))]
+    everything = " ".join(z.read(n).decode() for n in names)
+    for secret in ("refresh_token_hash", "previous_token_hash", "encrypted_config", "key_hash", "password_hash", "RTMINE", "PTMINE", "RTTHEIRS"):
+        assert secret not in everything, secret
+    assert "THEIRS" not in everything

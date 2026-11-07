@@ -474,7 +474,7 @@ export default function ChartAnalyzePageV2() {
               <SymbolPicker label="Symbol" value={atpSymbol} exchange="NSE" placeholder="Search a symbol" storageKey={recentKeyFor(auth?.user?.id)}
                 className="min-w-0 w-full" onClear={() => setAtpSymbol("")}
                 onPick={(s) => { setAtpSymbol(s.symbol.toUpperCase()); setFile(null); setPreview(null); setLink(""); }} />
-              <Combobox id={`${linkId}-atp-tf`} label="Timeframe" value={atpTf} onChange={setAtpTf} className="w-full"
+              <Combobox id={`${linkId}-atp-tf`} label="Timeframe" placeholder="Choose timeframe" value={atpTf} onChange={setAtpTf} className="w-full"
                 options={timeframes.map((t) => ({ value: t.id, label: t.label }))} />
             </div>
             {atpSymbol && <p className="mt-space-1 text-t12 text-fg-muted" data-testid="atp-pick-note">ATP draws its own chart of {atpSymbol} for this analysis.</p>}

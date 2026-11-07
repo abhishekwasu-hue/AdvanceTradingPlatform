@@ -94,8 +94,8 @@ services:
       # OPS_ALERT_EMAIL is empty; ERROR_TRACKER_DSN empty = no error tracker.
       OPS_ALERT_TELEGRAM_CHAT_ID: ${OPS_ALERT_TELEGRAM_CHAT_ID:-}
       OPS_ALERT_EMAIL: ${OPS_ALERT_EMAIL:-}
-      # M86 chart reader: the reader's API key (app/chart_reader/settings.py names CHART_READ_API_KEY). Empty = the
-      # reader says "not connected". The owner's own .env line; a paid API - each read is metered and capped per user.
+      # M86 chart reader: NOT used for reads since the owner's decision of 7 Nov (each user reads with his own Claude key,
+      # app/chart_reader/service.own_key); kept for the admin settings view only.
       CHART_READ_API_KEY: ${CHART_READ_API_KEY:-}
       OPS_ALERT_AFTER_CHECKS: ${OPS_ALERT_AFTER_CHECKS:-2}
       OPS_ALERT_REPEAT_HOURS: ${OPS_ALERT_REPEAT_HOURS:-6}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import { friendlyError } from "../api/errors";
 import { isFeatureOff } from "../chartAnalyze/api";
 import { guardText } from "../chartAnalyze/signalLanguage";
@@ -130,6 +131,12 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
         <div role="status" className="mt-space-2 rounded-control bg-warn-tint p-space-3 text-t14 text-fg" data-testid="reader-unavailable">
           <p className="font-semibold">{NOT_AVAILABLE}</p>
           {list.message ? <p className="mt-space-1 text-t12 text-fg-muted">{guardText(list.message)}</p> : null}
+          {list.installed && list.connected === false && (
+            <InPlaceLink to="/settings/ai" data-testid="reader-connect-key"
+                  className="mt-space-2 inline-flex min-h-11 items-center rounded-control px-space-1 text-t14 font-semibold text-brand hover:underline md:min-h-9">
+              Connect my Claude key
+            </InPlaceLink>
+          )}
         </div>
       </section>
     );

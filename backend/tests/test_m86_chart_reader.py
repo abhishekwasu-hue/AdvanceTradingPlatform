@@ -124,6 +124,9 @@ def _set_reader_settings(**values) -> None:
     _run(go())
 
 
+_REAL_OWN_KEY_RECORD = service.own_key_record
+
+
 @pytest.fixture(autouse=True)
 def _reader(monkeypatch):
     store: dict[str, str] = {}
@@ -135,13 +138,22 @@ def _reader(monkeypatch):
         store[key] = value
     monkeypatch.setattr(cache_client, "cache_get", get)
     monkeypatch.setattr(cache_client, "cache_set", put)
-    monkeypatch.setenv("CHART_READ_API_KEY", "test-key-not-real")
+    # owner 7 Nov: each user's reads run on that user's OWN Claude key - stood in here by a switch
+    own = {"on": True}
+
+    async def key_record(session, user):
+        return object() if own["on"] else None
+
+    async def key(session, user):
+        return "test-key-not-real" if own["on"] else None
+    monkeypatch.setattr(service, "own_key_record", key_record)
+    monkeypatch.setattr(service, "own_key", key)
     fake_client = FakeClient()
     monkeypatch.setattr(service, "make_client", lambda key: fake_client)
     reader = FakeReader()
     loader.set_for_tests(reader)
     _set_reader_settings(timeframes=["15m", "1h"], pair={SYMBOL: PAIR_SYMBOL})
-    yield {"reader": reader, "client": fake_client, "cache": store}
+    yield {"reader": reader, "client": fake_client, "cache": store, "own": own}
     loader.reset_for_tests()
     _set_reader_settings()
 
@@ -362,14 +374,25 @@ def test_a_failed_read_writes_an_error_row_and_a_plain_line(_reader, caplog):
 # --- refusals ---------------------------------------------------------------------------------------------------------------
 
 def test_missing_key_is_a_plain_not_connected_refusal(_reader, monkeypatch):
-    monkeypatch.delenv("CHART_READ_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    _reader["own"]["on"] = False                                   # the user has no own Claude key
+    monkeypatch.setenv("CHART_READ_API_KEY", "server-key-not-real")  # a server key is never used (owner 7 Nov)
     who = _user("nokey")
     got = _read(who)
     assert got.status_code == 503 and got.json()["detail"] == {"message": service.NOT_CONNECTED, "code": "not_connected"}
     assert client.get(f"{BASE}/strategies", headers=who["headers"]).json()["connected"] is False
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "fallback-not-real")                      # the fallback name works
+    _reader["own"]["on"] = True                                    # his own key connected
     assert _read(who).status_code == 200
+
+
+def test_own_key_record_is_none_without_a_saved_claude_key():
+    """The real lookup (not the switch above): a user with no saved Claude key has none - no server key stands in."""
+    who = _user("nokeyrow")
+
+    async def go():
+        async with _session_factory() as session:
+            from app.db.models import User as _U
+            return await _REAL_OWN_KEY_RECORD(session, await session.get(_U, who["user_id"]))
+    assert _run(go()) is None
 
 
 def test_unknown_strategy_and_bad_bodies(_reader):

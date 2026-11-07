@@ -61,7 +61,7 @@ async def _tenant(session: AsyncSession, user: User) -> Tenant:
 async def strategies(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     settings = await _gate(session, user)
     reader = loader.load()
-    connected = service.api_key(settings) is not None
+    connected = await service.own_key_record(session, user) is not None      # owner 7 Nov: the user's own Claude key
     charts = len(settings["timeframes"])
     now = datetime.now(UTC)
     out: dict[str, Any] = {

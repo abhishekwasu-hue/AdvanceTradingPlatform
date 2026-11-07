@@ -59,7 +59,10 @@ SOURCES = ("lake", "upload")
 LABEL_LAKE = hybrid.LABEL_CODE_AI          # the M59 wording, one label for the product: "Advanced analysis (code + AI)"
 LABEL_UPLOAD = hybrid.LABEL_AI_ONLY        # "AI only"
 UPLOAD_INSTRUMENT = "Uploaded chart"
-NOT_CONNECTED = "The chart reader is not connected on this server yet. The administrator adds its API key."
+NOT_CONNECTED = "The chart reader reads with your own Claude key. Connect it in Settings > AI; nothing runs until you press Read."
+# Owner decision (7 Nov, "(b) user chi swatahchi AI key, pratyek user swatahchi key vaparel"): every user's reads run on that
+# user's OWN Claude key (Settings > AI, consent accepted) - never a server key; the user's own-key caps apply.
+OWN_KEY_PROVIDER = "anthropic"
 FAILED = "The chart reader could not finish this read. Try again in a minute."
 
 
@@ -87,6 +90,33 @@ def api_key(settings: dict[str, Any]) -> str | None:
         if value and value.strip():
             return value.strip()
     return None
+
+
+async def own_key_record(session: AsyncSession, user: User) -> Any | None:
+    """The caller's own Claude key row (consent accepted), or None. A read-only support view never opens a user's key."""
+    from app.ai import byok
+    from app.auth import view_as
+    if view_as.active():
+        return None
+    record = await byok.get_key(session, user, OWN_KEY_PROVIDER)
+    if record is None or not await byok.consent_accepted(session, user, OWN_KEY_PROVIDER):
+        return None
+    return record
+
+
+async def own_key(session: AsyncSession, user: User) -> str | None:
+    """The caller's own Claude key in plain text for one read (never logged, never stored), or None. Refused with the
+    user's own-key cap message when that cap is reached."""
+    from app.ai import byok
+    from app.secrets_store.envelope import ensure_tenant_key
+    record = await own_key_record(session, user)
+    if record is None:
+        return None
+    blocked = await byok.cap_block(session, user, await byok.get_prefs(session, user))
+    if blocked:
+        raise refused(429, "own_key_cap", f"Your own AI key's {blocked}. It opens again when the day or month rolls over.")
+    await ensure_tenant_key(session, user.tenant_id)
+    return byok.open_key(record, user=user)
 
 
 def make_client(key: str) -> Any:
@@ -328,7 +358,7 @@ async def read(session: AsyncSession, user: User, tenant: Tenant, settings: dict
     ids = {s["id"] for s in strategy_labels(reader)} | {reader.ABHI}
     if strategy not in ids:
         raise refused(422, "unknown_strategy", "Pick one of the listed strategies.")
-    key = api_key(settings)
+    key = await own_key(session, user)
     if key is None:
         raise refused(503, "not_connected", NOT_CONNECTED)
     two_chart = bool(reader.two_chart_conditions(strategy))

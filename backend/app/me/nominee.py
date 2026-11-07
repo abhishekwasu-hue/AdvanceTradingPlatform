@@ -104,7 +104,7 @@ async def put_nominee(body: NomineeIn, user: User = Depends(get_current_user),
 async def delete_nominee(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     result = await session.execute(delete(UserNomineeRecord).where(
         UserNomineeRecord.user_id == user.id, UserNomineeRecord.tenant_id == user.tenant_id))
-    if result.rowcount:
+    if getattr(result, "rowcount", 0):
         await write_audit_log(session, user.tenant_id, user.id, "nominee_removed", f"user #{user.id}")
         await session.commit()
     return {"nominee": None}

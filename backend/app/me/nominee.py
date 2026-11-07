@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -34,8 +34,8 @@ _PHONE = re.compile(r"^\+?[0-9][0-9 \-]{5,18}[0-9]$")
 class NomineeIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     relationship: str = Field(min_length=1, max_length=60)
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = Field(default=None, max_length=20)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=20)
 
     @field_validator("name", "relationship")
     @classmethod
@@ -64,26 +64,26 @@ class NomineeIn(BaseModel):
         return v or None
 
 
-def _out(row: Optional[UserNomineeRecord]) -> Dict[str, Any]:
+def _out(row: UserNomineeRecord | None) -> dict[str, Any]:
     if row is None:
         return {"nominee": None}
     return {"nominee": {"name": row.name, "relationship": row.relationship_to_user, "email": row.email, "phone": row.phone,
                         "updated_at": row.updated_at.isoformat() if row.updated_at else None}}
 
 
-async def _mine(session: AsyncSession, user: User) -> Optional[UserNomineeRecord]:
+async def _mine(session: AsyncSession, user: User) -> UserNomineeRecord | None:
     return await session.scalar(select(UserNomineeRecord).where(
         UserNomineeRecord.user_id == user.id, UserNomineeRecord.tenant_id == user.tenant_id))
 
 
 @router.get("")
-async def get_nominee(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def get_nominee(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     return _out(await _mine(session, user))
 
 
 @router.put("")
 async def put_nominee(body: NomineeIn, user: User = Depends(get_current_user),
-                      session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+                      session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     if not body.email and not body.phone:
         raise HTTPException(status_code=422, detail="Give an e-mail or a phone number for your nominee")
     row = await _mine(session, user)
@@ -101,7 +101,7 @@ async def put_nominee(body: NomineeIn, user: User = Depends(get_current_user),
 
 
 @router.delete("")
-async def delete_nominee(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def delete_nominee(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     result = await session.execute(delete(UserNomineeRecord).where(
         UserNomineeRecord.user_id == user.id, UserNomineeRecord.tenant_id == user.tenant_id))
     if result.rowcount:

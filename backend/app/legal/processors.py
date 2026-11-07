@@ -11,7 +11,7 @@ the code cannot see per user (the e-mail sender, the hosting, the back-up store)
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,9 +62,9 @@ PROCESSORS: tuple[Processor, ...] = (
 )
 
 
-async def used_keys(session: AsyncSession, user: User) -> Dict[str, str]:
+async def used_keys(session: AsyncSession, user: User) -> dict[str, str]:
     """Key -> a short note, for the services the user's own rows show. Nothing secret is read."""
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     brokers = sorted({b for b in await session.scalars(select(BrokerCredentialRecord.broker_name).where(
         BrokerCredentialRecord.user_id == user.id, BrokerCredentialRecord.tenant_id == user.tenant_id))}
         | {b for b in await session.scalars(select(BrokerAccountRecord.broker_name).where(
@@ -94,7 +94,7 @@ async def used_keys(session: AsyncSession, user: User) -> Dict[str, str]:
     return out
 
 
-async def summary(session: AsyncSession, user: User) -> List[Dict[str, Any]]:
+async def summary(session: AsyncSession, user: User) -> list[dict[str, Any]]:
     """The `processors.json` rows: every third party by name and purpose, and whether this user's records show its use."""
     used = await used_keys(session, user)
     return [{"name": p.name, "purpose": p.purpose, "data_shared": p.data,

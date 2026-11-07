@@ -37,9 +37,11 @@ from app.db.models import (
     OrderRecord,
     TradeRecord,
     User,
+    UserNomineeRecord,
     UserPrefsRecord,
 )
 from app.db.session import get_session
+from app.legal import processors as processor_register
 from app.platform import controls
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -51,7 +53,8 @@ _DATASETS = (("preferences", UserPrefsRecord), ("orders", OrderRecord), ("trades
              ("journal_tags", JournalTagRecord), ("ai_conversations", LlmCallRecord), ("feedback", FeedbackRecord),
              ("copilot_conversation", CopilotChatTurnRecord),      # CP-UX CU6
              ("copilot_conversations", CopilotChatSessionRecord),  # CH-2: the named conversations (titles)
-             ("studies", CopilotStudyRecord))                      # M77 SX-2: his saved studies (snapshot JSON; PDFs one at a time, M77Q-4)
+             ("studies", CopilotStudyRecord),
+             ("nominee", UserNomineeRecord))                       # P3-4-B10: the person he named under the right to nominate                      # M77 SX-2: his saved studies (snapshot JSON; PDFs one at a time, M77Q-4)
 
 
 def _plain(value: Any) -> Any:
@@ -95,11 +98,14 @@ async def export_my_data(user: User = Depends(get_current_user), session: AsyncS
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("README.txt", "Your data in AIAlgoDesk, as stored on the day of this export. One JSON file per kind of "
-                                 "record (your saved studies in studies.json); tables also as CSV. Passwords, two-factor secrets and keys are never included.\n")
+                                 "record (your saved studies in studies.json, your nominee in nominee.json); tables also as CSV. "
+                                 "processors.json names the other companies that handle your data and which of them your account uses. Passwords, two-factor secrets and keys are never included.\n")
         for name, rows in data.items():
             z.writestr(f"{name}.json", json.dumps(rows, indent=2, ensure_ascii=False))
             if name != "profile":
                 z.writestr(f"{name}.csv", _csv(rows))
+        # P3-4-B7 (DPDP s.11(1)): who else processes his data - every third party by name and purpose, and which ones he uses.
+        z.writestr("processors.json", json.dumps(await processor_register.summary(session, user), indent=2, ensure_ascii=False))
     await write_audit_log(session, user.tenant_id, user.id, "my_data_exported", f"user #{user.id}: {sum(len(v) for v in data.values())} rows")
     await session.commit()
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d")

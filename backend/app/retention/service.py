@@ -258,6 +258,9 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
     # M77 SX-2: their saved studies (snapshots with their own notes).
     from app.study.store import erase_user as erase_studies
     await erase_studies(session, user.tenant_id, user.id)
+    # P3-4-B10: the nominee they named (a third person's contact) goes with the account.
+    from app.db.models import UserNomineeRecord
+    await session.execute(delete(UserNomineeRecord).where(UserNomineeRecord.user_id == user.id, UserNomineeRecord.tenant_id == user.tenant_id))
     # PW6: the "Send feedback" messages they wrote (free text) go with the account too.
     # C12: and the support-ticket state of those messages (platform_controls rows keyed by the message id).
     from app.support.desk import forget as forget_tickets

@@ -112,6 +112,7 @@ from app.marketplace.routes import admin_router as marketplace_admin_router
 from app.marketplace.routes import router as marketplace_router
 from app.markets.routes import router as markets_router
 from app.me.account import router as me_account_router
+from app.me.nominee import router as me_nominee_router
 from app.me.notices import router as me_notices_router
 from app.me.prefs import router as me_prefs_router
 from app.me.setup import router as me_setup_router
@@ -494,6 +495,7 @@ app.include_router(chart_reader_router)  # M86 W1: the book-knowledge chart read
 app.include_router(chart_reader_admin_router)  # M86 W1: the chart reader's settings (SUPER_ADMIN)
 app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)
 app.include_router(signals_day_one_router)  # Signals day one: the setup card + his adopted watch (ui_v2 + strategy_templates)
+app.include_router(me_nominee_router)  # P3-4-B10: the caller's own nominee (DPDP right to nominate)
 app.include_router(me_account_router)  # AUD-G1.1: the caller's own data export and "Delete my account"
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
 app.include_router(cost_meter_router)  # AUD-T7: the cost-of-trading meter on My trades (flags ui_v2 + cost_meter)

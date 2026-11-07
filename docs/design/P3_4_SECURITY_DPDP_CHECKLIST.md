@@ -106,7 +106,7 @@ Security Logging and Alerting Failures, Mishandling of Exceptional Conditions.
 | P3-4-B5 | "Withdraw consent" control per consent, recorded and audited | S |
 | P3-4-B8 | Verified e-mail change (right to correction) | M |
 | P3-4-B10 | Nominee form (right to nominate) | S |
-| P3-4-B7 | Export: add missing tables + list of processors | S |
+| P3-4-B7 | Export: add missing tables + list of processors | S - **done**: export adds login_events, sessions, consents, notifications, deployments, risk_limits, alert_channels, broker_accounts, linked_logins, api_keys, watchlists, chart_layouts, chart_drawings, custom_strategies, trade_plans, signal_history, paper_account, vision_prefs, experience_opt_outs (JSON + CSV; his rows and his tenant only; newest 10000 per file; token hashes, encrypted configs and key hashes excluded by column name) `backend/app/me/account.py`; test `backend/tests/test_p34_nominee_processors.py::test_export_has_login_events_sessions_and_consents_only_his_own_and_no_secrets`; processors.json was already done (D8) |
 | P3-4-B19 | Erasure ledger replayed after restore; backup period in the notice | M |
 | P3-4-B21 + B22 | Processor register: vendor, data, location, contract/DPA status | S |
 | P3-4-B18 | Retention floors to 365 d for what the lawyer calls processing logs | S |

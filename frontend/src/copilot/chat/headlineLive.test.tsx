@@ -23,4 +23,8 @@ describe("DATA-FIX D1: the chart card shows the live price while the market is o
     const html = renderToStaticMarkup(<HeadlineRow h={base} />);
     expect(html).not.toContain("data-headline-live");
   });
+  it("the last close says its date, so an older stored close is never read as today's (owner, 7 Nov)", () => {
+    const html = renderToStaticMarkup(<HeadlineRow h={base} />);
+    expect(html).toMatch(/NIFTY · Last close · 30 Oct/);
+  });
 });

@@ -13,6 +13,8 @@ export interface StrategyTemplate {
   difficulty: "Beginner" | "Intermediate" | "Advanced"; style: string;
   timeframes: TemplateChoice[]; default_timeframe: string | null; sides_default: "long" | "short" | "both";
   params: TemplateSetting[]; rules: string[]; available: boolean;
+  /** The sentence a signal of this template says, per side, from the template's own data (null: none for that side). Absent from an older server. */
+  reads?: { long: string | null; short: string | null };
 }
 export interface TemplateAdoption {
   template_id: string; name: string; strategy_id: string;

@@ -76,6 +76,21 @@ def _store(rows, source="nse_bhav:cm", key=KEY, tenant_id=None):
     _run(go())
 
 
+def _store_legacy(rows, source, key=KEY):
+    """M86 D4: the shared lake now refuses broker-session rows (ingest.SharedLakeRefused) - a row written before that
+    guard is inserted directly, to prove the readers still never use it."""
+    from datetime import UTC, datetime
+    async def go():
+        async with _session_factory() as session:
+            await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key == key))
+            now = datetime.now(UTC)
+            for d, o, h, lo, c, v in rows:
+                session.add(MdCandleRecord(instrument_key=key, timeframe="day", ts=bar_end(d), source=source, version=1, open=o,
+                                           high=h, low=lo, close=c, volume=v, ingested_at=now))
+            await session.commit()
+    _run(go())
+
+
 def _clear(key=KEY):
     async def go():
         async with _session_factory() as session:
@@ -171,7 +186,7 @@ def test_no_broker_stored_history_then_plain_messages(stored_on):
 def test_only_licensed_daily_sources_are_read_never_the_private_store_or_broker_rows(monkeypatch, stored_on):
     me = _me(_auth("bsh-licence@example.com"))
     rows = _rows(_days(40, _today() - timedelta(days=1)))
-    _store(rows, source="broker:upstox")                              # another organisation's broker wrote it
+    _store_legacy(rows, source="broker:upstox")                              # another organisation's broker wrote it
     with pytest.raises(HTTPException) as exc:
         _resolve(me["tenant_id"])
     assert "not stored" in exc.value.detail
@@ -191,7 +206,7 @@ def test_only_licensed_daily_sources_are_read_never_the_private_store_or_broker_
     assert "not stored" in exc.value.detail
     monkeypatch.setattr(config, "BACKTEST_STORED_SOURCES", ("nse_bhav:", "r2:", "broker:"))
     assert _resolve(me["tenant_id"]).kind == "stored"                 # allowed by the operator's setting: read
-    _store(rows, source="broker:upstox")
+    _store_legacy(rows, source="broker:upstox")
     with pytest.raises(HTTPException) as exc:                         # a setting never widens past the licensed sources
         _resolve(me["tenant_id"])
     assert "not stored" in exc.value.detail

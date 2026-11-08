@@ -344,7 +344,7 @@ def test_a_confirmed_setup_becomes_one_one_click_intent_then_a_paper_proposal(mo
     t, rule_id = _setup("oneclick")
     calls = []
     report = _runner(fetch=_fetch(calls=calls))
-    assert report.submitted == 1 and calls and calls[0][2] == "5m" and calls[0][3] is None
+    assert report.submitted == 1 and calls and calls[0][2] == "5m" and calls[0][3] == t["user_id"]   # M86 D4: the owner's own session
     [intent] = _rows(ExecutionIntentRecord, t["tenant_id"])
     assert intent.status == intents.QUEUED and intent.requested_mode == "ONE_CLICK" and intent.user_id == t["user_id"]
     assert intent.source == "scan" and intent.symbol == "GATEDEMO" and intent.direction == "LONG"

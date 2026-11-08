@@ -518,8 +518,30 @@ class JournalManualTradeRecord(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     checklist_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # M88: the file import this entry came from (`journal_imports.id`); null = typed in by hand
+    import_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class JournalImportRecord(Base):
+    """M88: one file of outside-ATP trades the trader imported into his journal (a broker tradebook or his own sheet).
+    It holds only the file's name, its SHA-256 (the same file is not imported twice), the layout it was read as and the
+    counts; the trades themselves are ordinary manual entries (`journal_manual_trades.import_id`). Personal."""
+
+    __tablename__ = "journal_imports"
+    __table_args__ = (UniqueConstraint("user_id", "file_hash", name="uq_journal_import_user_hash"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    layout: Mapped[str] = mapped_column(String(30), nullable=False)
+    rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    imported: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 class JournalAttachmentRecord(Base):

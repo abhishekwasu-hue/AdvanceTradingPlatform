@@ -33,7 +33,7 @@ import { VoiceButtonV2 } from "../language/VoiceButtonV2";
 import { AttachMenu, imageFrom } from "./ChartAttachV2";
 import {
   chartQuestion, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
-  hybridPick, restoredTurns, settled, withChart, withTurn,
+  hybridPick, restoredTurns, settled, stampText, withChart, withTurn,
   type ChartSource, type ChatAnswer, type ChatHome, type Conversation, type ConversationTarget, type Turn,
 } from "./model";
 import { chartAnalyzeApi, isFeatureOff } from "../../chartAnalyze/api";
@@ -58,7 +58,7 @@ const ChartTurnV2 = lazy(() => import("./ChartTurnV2"));
  */
 
 const BUTTON = "inline-flex h-11 shrink-0 items-center justify-center gap-space-2 rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-50";
-const CHIP = "inline-flex min-h-11 items-center rounded-pill border border-border bg-surface-1 px-space-3 text-left text-t13 text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9";
+const CHIP = "inline-flex min-h-11 items-center rounded-pill border border-border bg-surface-1 px-space-3 text-left text-t13 text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50 md:min-h-9";
 const SMALL_CHIP = "inline-flex min-h-11 items-center gap-space-1 rounded-pill border border-border bg-surface-1 px-space-3 text-t13 font-medium text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8";
 
 export interface ChatViewProps {
@@ -231,6 +231,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
         <ol className="space-y-space-4" aria-live="polite" data-conversation>
           {turns.map((turn) => (
             <li key={turn.id} className="space-y-space-2" data-turn={turn.id}>
+              {turn.at && <p className="text-right text-t12 text-fg-muted" data-turn-at>{t("chat.askedEarlier")}{stampText(turn.at) ? ` · ${stampText(turn.at)}` : ""}</p>}
               <p className="ml-auto w-fit max-w-full rounded-panel bg-surface-2 px-space-4 py-space-2 text-t14 text-fg">
                 <span className="sr-only">{t("chat.youAsked")}: </span>{turn.question}
               </p>
@@ -367,6 +368,17 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
   const [busy, setBusy] = useState(false);
   const [keep, setKeep] = useState(DEFAULT_KEEP);
   const next = useRef(1);
+  // Owner 8 Nov: the asked turn is brought into view as soon as it is on screen ("Reading ATP's data…"), not only once
+  // its answer is back - else, in a conversation already open, the screen keeps showing the chips and the OLDEST kept
+  // answer under them (an earlier read with its own close and date) for the whole read, and a tap looks like nothing.
+  const reveal = useRef<number | null>(null);
+  useEffect(() => {
+    if (reveal.current === null) return;
+    const el = document.querySelector(`[data-turn='${reveal.current}']`);
+    if (!el) return;
+    reveal.current = null;
+    el.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [turns]);
   // CH-2: the conversation on screen (null: none yet, or "New chat" pressed - the next question starts a new one)
   const [convo, setConvo] = useState<Conversation | null>(null);
   const fresh = useRef(false);
@@ -427,6 +439,7 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
 
   async function ask(question: string) {
     const id = next.current++;
+    reveal.current = id;
     setTurns((all) => withTurn(all, { id, question, answer: null, error: null }, home?.keep ?? keep));
     setDraft("");
     setBusy(true);
@@ -446,6 +459,7 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
   // analyse, Image only); the result is this turn; then the Copilot's own reading of the symbol the picture shows.
   async function attachChart(source: ChartSource) {
     const id = next.current++;
+    reveal.current = id;
     setTurns((all) => withTurn(all, { id, question: chartQuestion(source), answer: null, error: null, chart: { status: "working", step: "adding" } }, home?.keep ?? keep));
     setBusy(true);
     const show = (chart: Parameters<typeof withChart>[2]) => setTurns((all) => withChart(all, id, chart));

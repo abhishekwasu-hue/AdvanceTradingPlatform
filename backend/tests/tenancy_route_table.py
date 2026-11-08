@@ -663,6 +663,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/journal/manual"): "member: the caller's own manual journal entries only",
     ("GET", "/api/journal/manual/{manual_id}"): "member: the caller's own manual journal entry only",
     ("DELETE", "/api/journal/manual/{manual_id}"): S_OWN_JOURNAL_LAYER,
+    # M88: the import reads only the uploaded file and the caller's own manual entries / imports; it writes his own rows
+    ("POST", "/api/journal/import/preview"): "self: any member may preview a file of his own trades; it reads only his own journal entries",
+    ("POST", "/api/journal/import"): S_OWN_JOURNAL_LAYER,
+    ("GET", "/api/journal/manual/{manual_id}/trade-chart"): "member: the chart of the caller's own manual entry only (Daily bars from the shared EOD files)",
+    ("GET", "/api/journal/manual/{manual_id}/trade-chart.png"): "member: the chart image of the caller's own manual entry only",
     ("GET", "/api/journal/attachments/{attachment_id}"): "member: the caller's own journal image only",
     ("DELETE", "/api/journal/attachments/{attachment_id}"): S_OWN_JOURNAL_LAYER,
     # M62 JN-3: the caller's own journal list, statistics and export (his ATP trades and his own outside-ATP entries)

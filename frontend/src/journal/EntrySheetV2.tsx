@@ -14,6 +14,7 @@ import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import type { JournalApi } from "./api";
 import { TAG_HELP, minutesText, tagLabel } from "./format";
 import { OwnImageV2, PnlV2, RV2, TEXTAREA } from "./JournalPartsV2";
+import { TradeChartV2 } from "./TradeChartV2";
 import type { EntryKind, JournalEntryFull, TagStatus } from "./types";
 
 /**
@@ -192,6 +193,12 @@ export function EntryEditorV2({ entry, api, customTags, onChanged, onRemoved, ex
       </Section>
 
       <Section title="Charts" testId="charts">
+        {entry.kind === "manual" && entry.charts.trade && (
+          <div className="mb-space-3">
+            <TradeChartV2 api={api} path={entry.charts.trade} imagePath={entry.charts.trade_image}
+              fileName={`${entry.symbol.replace(/\s+/g, "-")}-trade-${entry.id}.png`} />
+          </div>
+        )}
         <div className="grid gap-space-3 md:grid-cols-1">
           <figure>
             <figcaption className="mb-space-1 text-t13 text-fg-muted">At entry</figcaption>
@@ -261,7 +268,7 @@ export function EntrySheetV2({ target, api, customTags, onClose, onChanged, extr
   }, [api, target, round]);
   const title = state.status === "ok"
     ? <span className="flex flex-wrap items-center gap-space-2">{state.entry.symbol}
-      {state.entry.manual && <span className={chipClass({ tone: "warn" })}>Outside ATP</span>}</span>
+      {state.entry.manual && <span className={chipClass({ tone: "warn" })}>{state.entry.imported ? "Imported" : "Outside ATP"}</span>}</span>
     : "Journal entry";
   return (
     <Sheet open={target !== null} onOpenChange={(o) => { if (!o) onClose(); }} side={phone ? "bottom" : "right"} title={title}>

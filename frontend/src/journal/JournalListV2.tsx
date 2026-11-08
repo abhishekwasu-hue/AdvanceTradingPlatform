@@ -1,4 +1,4 @@
-import { FileDown, Plus, SlidersHorizontal } from "lucide-react";
+import { FileDown, FileUp, Plus, SlidersHorizontal } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { CardV2, EmptyStateV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { BUTTON_SECONDARY, FIELD, LABEL } from "../trading/PartsV2";
@@ -145,9 +145,11 @@ export function ExportButtonsV2({ onExport, busy }: { onExport: (format: "csv" |
   );
 }
 
-export function JournalListV2({ state, filters, onFilters, onOpen, onAddManual, onRetry, onMore, api, exportButtons }: {
+export function JournalListV2({ state, filters, onFilters, onOpen, onAddManual, onImport, onRetry, onMore, api, exportButtons }: {
   state: ListState; filters: JournalFilters; onFilters: (f: JournalFilters) => void; onOpen: (r: JournalListRow) => void;
   onAddManual: () => void; onRetry: () => void; onMore: () => void; api: Pick<JournalApi, "image">; exportButtons: ReactNode;
+  /** M88: "Import from a file" beside "Add a trade done outside ATP". */
+  onImport?: () => void;
 }) {
   const phone = useMediaQuery(PHONE_QUERY);
   const [choices, setChoices] = useState<{ setups: string[]; tags: string[] }>({ setups: [], tags: [] });
@@ -162,9 +164,16 @@ export function JournalListV2({ state, filters, onFilters, onOpen, onAddManual, 
       title="Your trades">
       <div className="space-y-space-4">
         <div className="flex flex-wrap items-center justify-between gap-space-2">
-          <button type="button" className={BUTTON_SECONDARY} onClick={onAddManual} data-add-manual>
-            <Plus size={16} aria-hidden />Add a trade done outside ATP
-          </button>
+          <span className="flex flex-wrap gap-space-2">
+            <button type="button" className={BUTTON_SECONDARY} onClick={onAddManual} data-add-manual>
+              <Plus size={16} aria-hidden />Add a trade done outside ATP
+            </button>
+            {onImport && (
+              <button type="button" className={BUTTON_SECONDARY} onClick={onImport} data-import-trades>
+                <FileUp size={16} aria-hidden />Import from a file
+              </button>
+            )}
+          </span>
           {exportButtons}
         </div>
         {/* a phone: the filters fold behind one button (the list comes first) */}

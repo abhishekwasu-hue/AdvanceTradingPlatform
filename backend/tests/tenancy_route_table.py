@@ -675,6 +675,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
                                  "id; prices come only from the caller's own broker connection"),
     ("POST", "/api/market-data/candles"): S_OWN_MARKET_DATA,
     ("GET", "/api/market-data/data-tier"): "member",
+    # M86 D2: shared end-of-day reads (NSE bhavcopy rows only) for a signed-in member without a broker
+    ("GET", "/api/market-data/eod/closes"): "member",
+    ("GET", "/api/market-data/eod/bars"): "member",
+    ("GET", "/api/market-data/eod/chain"): "member",
     ("GET", "/api/market-data/history"): "member",
     ("GET", "/api/market-data/ltp"): "member",
     ("POST", "/api/market-data/quotes"): S_OWN_MARKET_DATA,

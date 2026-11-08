@@ -1,0 +1,128 @@
+{
+ "episode": "E6",
+ "lang": "en",
+ "title": "Find setups 6: Building blocks, problems, and the close",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `verify` marks a line written for shipped behaviour to check on the live site before recording.",
+ "intro": {
+  "kicker": "ATP education",
+  "title": "Find setups 6: Building blocks, problems, and the close",
+  "lines": [
+   "Episode 6 of 6"
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "outro": {
+  "title": "Thank you for watching",
+  "lines": [
+   "Next: the following episode of Find setups.",
+   "The written guide has every step and every block."
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "scenes": [
+  {
+   "n": 14,
+   "title": "Function families",
+   "target_s": 40,
+   "lines": [
+    {
+     "shot": "s14.groups",
+     "text": "Find setups has 169 building blocks in 18 groups, from price and moving averages to structure, breakouts and company data."
+    },
+    {
+     "shot": "s14.groups",
+     "text": "Some groups show only when your administrator switches them on, and some are reached only through the Formula block under Advanced."
+    },
+    {
+     "shot": "s14.groups",
+     "text": "For example: moving averages such as SMA and EMA, oscillators such as RSI, market structure with swings and breaks, candle patterns, and RSI divergence."
+    },
+    {
+     "shot": "s14.list",
+     "text": "In a row, tap the function's name to see the list, and search it."
+    },
+    {
+     "shot": "s14.list",
+     "text": "The written guide lists every block with its settings."
+    },
+    {
+     "shot": "s14.list",
+     "text": "Each block starts with a default setting. Change it to your own."
+    },
+    {
+     "shot": "s14.list",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 18,
+   "title": "Troubleshooting",
+   "target_s": 50,
+   "lines": [
+    {
+     "shot": "s18.why",
+     "text": "Something not working? Start with the line beside Run: it names the reason."
+    },
+    {
+     "shot": "s18.table",
+     "text": "When a stock could not be read, its row gives the reason and one button: Log in, Retry, or Try another timeframe."
+    },
+    {
+     "shot": "s18.table",
+     "text": "Matched 0 of 50 does not mean something is broken. No stock met all the conditions on the last closed candle. Loosen, or switch off, the condition that removes the most."
+    },
+    {
+     "shot": "s18.table",
+     "text": "Find setups missing, or showing Coming soon? It is not switched on for your organisation yet. Ask your administrator."
+    },
+    {
+     "shot": "s18.table",
+     "text": "The broker's request limit was reached? Wait a minute, then press Retry."
+    },
+    {
+     "shot": "s18.table",
+     "text": "Results differ from a live chart? The scan uses closed candles; a live chart also shows the forming one."
+    },
+    {
+     "shot": "s18.table",
+     "text": "The time pill turned amber? The results are older than two candles of your timeframe. Press Run again for newer candles."
+    },
+    {
+     "shot": "s18.table",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 19,
+   "title": "Close",
+   "target_s": 30,
+   "lines": [
+    {
+     "shot": "s19.close",
+     "text": "That is Find setups: a list, a chart, a scan, a run, and the results."
+    },
+    {
+     "shot": "s19.close",
+     "text": "Conditions on data, for your own study and your own decision."
+    },
+    {
+     "shot": "s19.close",
+     "text": "A match is information, not a signal and not advice. Scans and alerts never place, change or cancel an order."
+    },
+    {
+     "shot": "s19.close",
+     "text": "Keep the written guide beside you: it has every step, every block and every message."
+    },
+    {
+     "shot": "s19.close",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  }
+ ]
+}

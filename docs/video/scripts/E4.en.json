@@ -1,0 +1,134 @@
+{
+ "episode": "E4",
+ "lang": "en",
+ "title": "Find setups 4: Run, results, and the data",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `verify` marks a line written for shipped behaviour to check on the live site before recording.",
+ "intro": {
+  "kicker": "ATP education",
+  "title": "Find setups 4: Run, results, and the data",
+  "lines": [
+   "Episode 4 of 6"
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "outro": {
+  "title": "Thank you for watching",
+  "lines": [
+   "Next: the following episode of Find setups.",
+   "The written guide has every step and every block."
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "scenes": [
+  {
+   "n": 11,
+   "title": "Run",
+   "target_s": 35,
+   "lines": [
+    {
+     "shot": "s11.why",
+     "text": "Step five: run. Is Run greyed out? The reason sits beside it, for example Pick a scan first."
+    },
+    {
+     "shot": "s11.ready",
+     "text": "With conditions in place and no red line under any block, Run is ready."
+    },
+    {
+     "shot": "s11.run",
+     "text": "Press Run. On a phone, it sits in the bar at the bottom."
+    },
+    {
+     "shot": "s11.done",
+     "text": "For a long list, a progress line shows while it runs. Then the results header appears."
+    },
+    {
+     "shot": "s11.done",
+     "text": "While it runs, the button beside the progress line ends the run early; the stocks already read stay shown."
+    },
+    {
+     "shot": "s11.done",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 12,
+   "title": "Read the results",
+   "target_s": 50,
+   "lines": [
+    {
+     "shot": "s12.header",
+     "text": "Read the header: Matched N of M. N is green when above zero, and amber when zero."
+    },
+    {
+     "shot": "s12.pill",
+     "text": "The time pill says when it ran. Hover over it, or long-press on a phone, to see where the data came from."
+    },
+    {
+     "shot": "s12.table",
+     "text": "The table lists the matches first. Each row says Matched, Did not match, or Could not be read, with the reason."
+    },
+    {
+     "shot": "s12.table",
+     "text": "Could not be read is never counted as did not match."
+    },
+    {
+     "shot": "s12.table",
+     "text": "Auto-refresh runs the same scan again every minute while the page is open. Export downloads the table as a spreadsheet file."
+    },
+    {
+     "shot": "s12.hidden",
+     "text": "The stocks that did not match are counted here; one tap lists them."
+    },
+    {
+     "shot": "s12.hidden",
+     "text": "Save matches as a watchlist keeps them under My watchlists."
+    },
+    {
+     "shot": "s12.chart",
+     "text": "Show on chart opens the matched chart in place, with only the scan's own conditions drawn."
+    },
+    {
+     "shot": "s12.chart",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 13,
+   "title": "Where the data comes from",
+   "target_s": 50,
+   "lines": [
+    {
+     "shot": "s13.card",
+     "text": "Where does the data come from? With your own broker connected: every timeframe, from your broker, paced inside its limits."
+    },
+    {
+     "shot": "s13.card",
+     "text": "Without a broker: Daily, Weekly and Monthly from ATP's stored end-of-day history. These candles carry the label Last close, with the date.",
+     "verify": "verify after M90 deploy"
+    },
+    {
+     "shot": "s13.banner",
+     "text": "The page says it at the top: Daily scans run on the last close from the end-of-day files; intraday scans need your broker.",
+     "verify": "verify after M90 deploy"
+    },
+    {
+     "shot": "s13.pill",
+     "text": "After a run, the time pill shows the source: your broker, or the stored end-of-day history."
+    },
+    {
+     "shot": "s13.card",
+     "text": "There is no shared live data. Live data for you comes only from your own broker."
+    },
+    {
+     "shot": "s13.card",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  }
+ ]
+}

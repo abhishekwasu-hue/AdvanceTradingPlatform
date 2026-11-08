@@ -6,7 +6,8 @@ Copilot STRATEGY INTERVIEW, which is trilingual (English + Marathi + Hindi). Thi
 repository - backend, frontend, templates, notification texts, docs, scripts, configs - and fails on any Devanagari
 character (U+0900-U+097F, U+A8E0-U+A8FF) outside the allow-list below.
 
-The allow-list is explicit and narrow: the interview's own files and named test fixtures of the interview, nothing else.
+The allow-list is explicit and narrow: the interview's own files, named test fixtures of the interview, and the
+Marathi scripts of the M92 tutorial videos (docs/video/scripts, owner order M92), nothing else.
 A test that needs non-English text (to prove it is withheld or answered in English) writes it with \\u escapes, which
 this check does not flag. To add an entry, the owner's approval is needed (docs/journal/PLAN.md OD-2).
 
@@ -43,6 +44,16 @@ ALLOWED_FILES: Dict[str, str] = {
     "backend/tests/test_phase_ap_interview.py": "interview test fixture (Marathi prompts and plan lines)",
     "backend/tests/test_phase_aq_advisor.py": "interview test fixture (the options round in Marathi)",
     "frontend/e2e/fixtures/interview_plan.json": "interview e2e fixture (a plan with its Marathi lines)",
+    # M92 owner order (the "Find setups" tutorial videos: "one script file per episode in Marathi and English"): the
+    # Marathi voice-over scripts and the Marathi education line / word list the video build checks them against - video
+    # sources, never shown in the app
+    "docs/video/scripts/E1.mr.json": "M92 tutorial video E1: the Marathi voice-over script",
+    "docs/video/scripts/E2.mr.json": "M92 tutorial video E2: the Marathi voice-over script",
+    "docs/video/scripts/E3.mr.json": "M92 tutorial video E3: the Marathi voice-over script",
+    "docs/video/scripts/E4.mr.json": "M92 tutorial video E4: the Marathi voice-over script",
+    "docs/video/scripts/E5.mr.json": "M92 tutorial video E5: the Marathi voice-over script",
+    "docs/video/scripts/E6.mr.json": "M92 tutorial video E6: the Marathi voice-over script",
+    "docs/video/scripts/rules.json": "M92 tutorial videos: the Marathi education line and the words a script never uses",
 }
 
 # The interview namespace of the frontend: Devanagari only as the value of a key of these objects.

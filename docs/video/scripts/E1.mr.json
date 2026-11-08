@@ -1,0 +1,192 @@
+{
+ "episode": "E1",
+ "lang": "mr",
+ "title": "Find setups 1: हे काय आहे, आणि पानाची ओळख",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `verify` marks a line written for shipped behaviour to check on the live site before recording.",
+ "intro": {
+  "kicker": "ATP शिक्षण",
+  "title": "Find setups 1: हे काय आहे, आणि पानाची ओळख",
+  "lines": [
+   "भाग 1 / 6"
+  ],
+  "foot": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+ },
+ "outro": {
+  "title": "पाहिल्याबद्दल धन्यवाद",
+  "lines": [
+   "पुढे: Find setups चा पुढचा भाग.",
+   "लेखी मार्गदर्शकात प्रत्येक टप्पा आणि प्रत्येक ब्लॉक दिला आहे."
+  ],
+  "foot": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+ },
+ "scenes": [
+  {
+   "n": 1,
+   "title": "स्क्रीनर म्हणजे काय",
+   "target_s": 30,
+   "lines": [
+    {
+     "shot": "s01.flow",
+     "text": "Find setups तुमची यादी तुम्ही निवडलेल्या अटींवर तपासते, आणि तेही फक्त बंद झालेल्या कॅन्डल्सवर."
+    },
+    {
+     "shot": "s01.flow",
+     "text": "पाच टप्पे: यादी निवडा, चार्ट निवडा, स्कॅन निवडा, Run करा, आणि निकाल वाचा."
+    },
+    {
+     "shot": "s01.funnel",
+     "text": "Run दाबल्यावर प्रत्येक अट यादी लहान करत जाते. सगळ्या अटी पूर्ण करणारा स्टॉकच match ठरतो."
+    },
+    {
+     "shot": "s01.funnel",
+     "text": "या चित्रातील आकडे काल्पनिक आहेत."
+    },
+    {
+     "shot": "s01.funnel",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 2,
+   "title": "हे काय करत नाही",
+   "target_s": 25,
+   "lines": [
+    {
+     "shot": "s02.red",
+     "text": "आता, हे काय करत नाही. Match म्हणजे फक्त माहिती; तो ट्रेडचा सिग्नल नाही आणि सल्लाही नाही."
+    },
+    {
+     "shot": "s02.red",
+     "text": "हे स्टॉक्सना चांगले किंवा वाईट ठरवत नाही, आणि किंमत पुढे काय करेल याबद्दल काहीही सांगत नाही."
+    },
+    {
+     "shot": "s02.red",
+     "text": "हे कधीही ऑर्डर टाकत नाही, बदलत नाही किंवा रद्द करत नाही. प्रत्येक निर्णय तुमचाच."
+    },
+    {
+     "shot": "s02.red",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 3,
+   "title": "साइन इन",
+   "target_s": 30,
+   "lines": [
+    {
+     "shot": "s03.screen",
+     "text": "फोन किंवा कॉम्प्युटरवर ATP ची वेबसाइट उघडा. Sign in स्क्रीन दिसेल."
+    },
+    {
+     "shot": "s03.screen",
+     "text": "तुमच्या टीमने सुरू केली असतील, तर Continue with Google सारखी साइन-इन बटणे वर दिसतात."
+    },
+    {
+     "shot": "s03.email",
+     "text": "किंवा इथे तुमचा ईमेल टाइप करा."
+    },
+    {
+     "shot": "s03.password",
+     "text": "मग तुमचा पासवर्ड."
+    },
+    {
+     "shot": "s03.submit",
+     "text": "Sign in दाबा. ॲप Today पानावर उघडते."
+    },
+    {
+     "shot": "s03.help",
+     "text": "पासवर्ड विसरलात? Forgot password वर टॅप करा; ATP रिसेट लिंक पाठवते."
+    },
+    {
+     "shot": "s03.help",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 4,
+   "title": "Find setups उघडा",
+   "target_s": 30,
+   "lines": [
+    {
+     "shot": "s04.menu",
+     "text": "कॉम्प्युटरवर डावीकडच्या मेनूत Find खाली Find setups आहे. फोनवर खालच्या बारमध्ये त्यावर टॅप करा."
+    },
+    {
+     "shot": "s04.more",
+     "text": "बारमध्ये नसेल, तर More वर टॅप करा आणि शोध बॉक्समध्ये scan टाइप करा."
+    },
+    {
+     "shot": "s04.search",
+     "text": "उघडण्यासाठी Find setups वर टॅप करा."
+    },
+    {
+     "shot": "s04.page",
+     "text": "पान उघडते: Find setups. तुम्ही निवडलेले सेटअप्स तुमच्या यादीत शोधा."
+    },
+    {
+     "shot": "s04.page",
+     "text": "त्याऐवजी Coming soon दिसले, तर तुमच्या संस्थेसाठी स्क्रीनर अजून सुरू झालेला नाही. तुमच्या ॲडमिनिस्ट्रेटरला विचारा."
+    },
+    {
+     "shot": "s04.page",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 5,
+   "title": "पानाची ओळख",
+   "target_s": 45,
+   "lines": [
+    {
+     "shot": "s05.overview",
+     "text": "आता पानाची वरपासून खालपर्यंत ओळख."
+    },
+    {
+     "shot": "s05.list",
+     "text": "Your list: कोणते स्टॉक्स स्कॅन होतात. दुसरी यादी निवडायला Change दाबा."
+    },
+    {
+     "shot": "s05.chart",
+     "text": "Chart: एका कॅन्डलचा आकार, उदाहरणार्थ Daily."
+    },
+    {
+     "shot": "s05.start",
+     "text": "Start a scan: सुरुवातीचे तीन मार्ग. Ready scan, Template, किंवा तुमचे स्वतःचे शब्द."
+    },
+    {
+     "shot": "s05.conditions",
+     "text": "Conditions: चालू स्कॅनच्या अटी. स्कॅन निवडल्यावर हा भाग उघडतो."
+    },
+    {
+     "shot": "s05.results",
+     "text": "Results: पहिल्या Run पर्यंत रिकामे."
+    },
+    {
+     "shot": "s05.more",
+     "text": "More tools मध्ये कमी वापरली जाणारी साधने आहेत."
+    },
+    {
+     "shot": "s05.tools",
+     "text": "Browse all screens, Past runs, Rankings, Look back आणि Advanced. प्रत्येक साधन सुरू केलेले असेल तरच दिसते."
+    },
+    {
+     "shot": "s05.overview",
+     "text": "Your list, Chart, Start a scan, Conditions, Results. पुढचा भाग यादीपासून सुरू होतो."
+    },
+    {
+     "shot": "s05.overview",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  }
+ ]
+}

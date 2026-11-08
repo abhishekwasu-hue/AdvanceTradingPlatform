@@ -1,0 +1,152 @@
+{
+ "episode": "E5",
+ "lang": "en",
+ "title": "Find setups 5: Three examples and an alert",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `verify` marks a line written for shipped behaviour to check on the live site before recording.",
+ "intro": {
+  "kicker": "ATP education",
+  "title": "Find setups 5: Three examples and an alert",
+  "lines": [
+   "Episode 5 of 6"
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "outro": {
+  "title": "Thank you for watching",
+  "lines": [
+   "Next: the following episode of Find setups.",
+   "The written guide has every step and every block."
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "scenes": [
+  {
+   "n": 15,
+   "title": "Example 1: a ready template",
+   "target_s": 45,
+   "lines": [
+    {
+     "shot": "s15.list",
+     "text": "Example one: a ready template. The list is NIFTY 50 stocks, and the chart is Daily."
+    },
+    {
+     "shot": "s15.template",
+     "text": "In Start a scan, tap Template, then Momentum."
+    },
+    {
+     "shot": "s15.conds",
+     "text": "Two conditions fill in: RSI 14 above 60, and the close above its 20-bar EMA. These numbers are example settings, not recommendations."
+    },
+    {
+     "shot": "s15.run",
+     "text": "Press Run."
+    },
+    {
+     "shot": "s15.result",
+     "text": "The header shows Matched N of 50. The count beside each condition shows how many stayed in after it."
+    },
+    {
+     "shot": "s15.chart",
+     "text": "Show on chart, on a match, explains why it matched, condition by condition."
+    },
+    {
+     "shot": "s15.chart",
+     "text": "Read Why it matched: the RSI value, and the close against the average, at the matched candle."
+    },
+    {
+     "shot": "s15.chart",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 16,
+   "title": "Example 2: build your own",
+   "target_s": 55,
+   "lines": [
+    {
+     "shot": "s16.list",
+     "text": "Example two: build your own. Pick a list, here F and O stocks, on Daily."
+    },
+    {
+     "shot": "s16.blank",
+     "text": "Tap Template, then Blank: I add conditions."
+    },
+    {
+     "shot": "s16.category",
+     "text": "Pick Category and add it. Choose Trend, keep is, and tick UPTREND."
+    },
+    {
+     "shot": "s16.filter",
+     "text": "Pick Filter and add NearSupport."
+    },
+    {
+     "shot": "s16.pattern",
+     "text": "Add one more Filter: PatternBullish."
+    },
+    {
+     "shot": "s16.conds",
+     "text": "Three conditions, and all of them must pass."
+    },
+    {
+     "shot": "s16.run",
+     "text": "Name the scan, save it, and press Run."
+    },
+    {
+     "shot": "s16.empty",
+     "text": "If one condition removes every stock, a note says so. Loosen it, or disable it for a moment, to see which part removes the stocks."
+    },
+    {
+     "shot": "s16.empty",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 17,
+   "title": "Example 3: a group and an alert",
+   "target_s": 55,
+   "lines": [
+    {
+     "shot": "s17.group",
+     "text": "Example three uses a group. Pick Group and add it."
+    },
+    {
+     "shot": "s17.any",
+     "text": "A group of Any of these passes when any one of its blocks passes: either, or."
+    },
+    {
+     "shot": "s17.any",
+     "text": "With Extra screen functions switched on, you can add RsiDivergence as a filter, and a volume condition, the same way."
+    },
+    {
+     "shot": "s17.open",
+     "text": "After a run, press Tell me when it matches."
+    },
+    {
+     "shot": "s17.dialog",
+     "text": "Keep When the bar closes, the recommended choice, because the bar is final."
+    },
+    {
+     "shot": "s17.dialog",
+     "text": "Connect Telegram in the same window if you want the message there."
+    },
+    {
+     "shot": "s17.create",
+     "text": "Press Turn on the alert."
+    },
+    {
+     "shot": "s17.done",
+     "text": "The alert is on. An alert only tells you; it never places or changes an order."
+    },
+    {
+     "shot": "s17.done",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  }
+ ]
+}

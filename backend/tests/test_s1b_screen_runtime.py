@@ -51,6 +51,27 @@ def test_moving_windows():
     assert np.isnan(_ev("ZScore(close, 3)", _sym([5, 5, 5])).iloc[-1])                      # zero spread: NaN, not inf
 
 
+def test_math_functions_per_bar():
+    """FN2-c: Abs / Round / Floor / Ceil / Sqrt per bar; a missing value stays missing; Sqrt of a negative is missing."""
+    d = _sym([10.26, 9.74, 12.5, 11.0])
+    assert list(_ev("Abs(close - open)", d)) == [0.5, 0.5, 0.5, 0.5]
+    assert list(_ev("Abs(open - close)", d)) == [0.5, 0.5, 0.5, 0.5]
+    assert list(_ev("Round(close, 1)", d)) == [10.3, 9.7, 12.5, 11.0]
+    assert list(_ev("Round(close)", d)) == [10.0, 10.0, 12.0, 11.0]                # half to even, as numpy and pandas
+    assert list(_ev("Floor(close)", d)) == [10.0, 9.0, 12.0, 11.0]
+    assert list(_ev("Ceil(close)", d)) == [11.0, 10.0, 13.0, 11.0]
+    assert list(_ev("Sqrt(volume)", d)) == [10.0, 10.0, 10.0, 10.0]
+    neg = _ev("Sqrt(close - 11)", d)
+    assert np.isnan(neg.iloc[1]) and round(neg.iloc[2], 6) == round(1.5 ** 0.5, 6)
+    assert np.isnan(_ev("Abs(Lag(close, 1))", d).iloc[0])                           # missing stays missing
+
+
+def test_math_functions_are_in_the_vectorised_engine():
+    """FN2-c: the panel engine (app/screener/panel.py) runs them too (its parity fuzz compares it with this runtime)."""
+    from app.screener import panel
+    assert {"Abs", "Round", "Floor", "Ceil", "Sqrt"} <= panel.FUNCTIONS
+
+
 def test_oscillators_and_vwap_match_the_indicator_library():
     from app.indicators.directional import adx
     from app.indicators.momentum import rsi
@@ -169,6 +190,7 @@ def test_strategy_builder_and_scanner_entries_match_their_source():
     assert round(_ev("MaxPainDistancePct()", d), 6) == round(abs(101.0 - a.max_pain) / 101.0 * 100, 6)
     bare = SymbolData("S", {"5m": f})
     assert np.isnan(_ev("PCR()", bare)) and _ev('ChainBias() == "BULLISH"', bare) is False         # no chain: never a match
+    assert np.isnan(_ev("FuturesOI()", d))       # FN2-e: a chain supplied as one object carries no near-month future (NaN, never 0)
 
 
 def test_price_action_series_s5a():
@@ -381,6 +403,50 @@ def test_tpl1_indicator_functions():
     assert _ev("PSARDir()", s).iloc[1:].tolist() == [1.0, 1.0, 1.0] and np.isnan(_ev("PSARDir()", s).iloc[0])
     up = _ev("SupertrendDir(3, 1)", d)
     assert up.iloc[:3].isna().all() and up.iloc[3:].tolist() == [1.0, 1.0, 1.0]
+
+
+def test_fn2a1_indicator_functions():
+    # deeper checks (reference parity, truncation, edge cases, units) are in tests/test_fn2a1_indicators.py
+    d = _sym([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vol=[10.0, 20.0, 30.0, 40.0, 50.0, 60.0])   # high = close + 1, low = close - 1
+    up_line = _ev("CCI(3)", d)                                     # a straight line: TP - mean = 1, mean deviation 2/3
+    assert up_line.iloc[:2].isna().all() and up_line.iloc[2:].tolist() == pytest.approx([100.0] * 4)
+    assert _ev("CCI()", d).isna().all()                            # 20 bars of warm-up
+    assert _ev("WilliamsR(3)", d).iloc[2:].tolist() == pytest.approx([-25.0] * 4) and np.isnan(_ev("WilliamsR(3)", d).iloc[1])
+    assert _ev("MFI(2)", d).iloc[2:].tolist() == [100.0] * 4 and _ev("MFI(2)", d).iloc[:2].isna().all()   # only rising flow
+    assert _ev("OBV()", d).tolist() == [0.0, 20.0, 50.0, 90.0, 140.0, 200.0]
+    assert _ev("AroonUp(3)", d).iloc[3:].tolist() == [100.0] * 3 and _ev("AroonDown(3)", d).iloc[3:].tolist() == [0.0] * 3
+    assert np.isnan(_ev("AroonUp(3)", d).iloc[2])                  # n + 1 bars
+    down = _sym([6.0, 5.0, 4.0, 3.0], vol=[10.0, 20.0, 30.0, 40.0])
+    assert _ev("OBV()", down).tolist() == [0.0, -20.0, -50.0, -90.0] and _ev("MFI(2)", down).iloc[-1] == 0.0
+    assert _ev("CCI(3)", down).iloc[-1] == pytest.approx(-100.0) and _ev("WilliamsR(3)", down).iloc[-1] == pytest.approx(-75.0)
+
+
+def test_fn2a1_indicators_are_in_the_vectorised_engine():
+    from app.screener import panel
+    assert {"CCI", "MFI", "WilliamsR", "OBV", "AroonUp", "AroonDown"} <= panel.FUNCTIONS
+
+def test_fn2a2_keltner_stoch_rsi_tma_ichimoku():
+    # deeper checks (plain-Python references, truncation, the spans' no-look-ahead, history needs) are in
+    # tests/test_fn2a2_indicators.py
+    flat = _sym([10.0] * 8)                                        # high 11, low 9: true range 2 on every bar
+    assert np.isnan(_ev("KeltnerUpper(3, 2)", flat).iloc[1]) and _ev("KeltnerUpper(3, 2)", flat).iloc[2:].tolist() == [14.0] * 6
+    assert _ev("KeltnerMid(3, 2)", flat).iloc[-1] == 10.0 and _ev("KeltnerLower(3, 2)", flat).iloc[-1] == 6.0
+    d = _sym([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])                      # high = close + 1, low = close - 1
+    tma = _ev("TMA(close, 3)", d)                                  # weights 1, 2, 1
+    assert np.isnan(tma.iloc[1]) and tma.iloc[2] == 2.0 and tma.iloc[-1] == 5.0
+    assert _ev("IchimokuTenkan(3)", d).iloc[-1] == 5.0 and _ev("IchimokuKijun(2)", d).iloc[-1] == 5.5
+    span_a = _ev("IchimokuSpanA(2, 3, 2)", d)                      # bar 5 reads bar 3: ((5 + 2) / 2 + (5 + 1) / 2) / 2
+    assert span_a.iloc[:4].isna().all() and span_a.iloc[-1] == 3.25
+    span_b = _ev("IchimokuSpanB(3, 2)", d)
+    assert span_b.iloc[:4].isna().all() and span_b.iloc[-1] == 3.0
+    assert _ev("StochRSI(3)", d).isna().all()                      # only gains: the RSI has no range
+    z = _sym([10.0, 11.0, 10.5, 12.0, 11.0, 13.0, 12.5, 12.0, 14.0, 13.0])
+    from app.indicators.momentum import rsi
+    r = rsi(z.frames["5m"]["close"], 3)
+    lo, hi = r.rolling(3).min(), r.rolling(3).max()
+    want = 100 * ((r - lo) / (hi - lo))
+    got = _ev("StochRSI(3)", z)
+    assert got.iloc[:5].isna().all() and got.iloc[5:].tolist() == pytest.approx(want.iloc[5:].tolist())
 
 
 def test_tpl2_moving_average_and_breakout_companions():

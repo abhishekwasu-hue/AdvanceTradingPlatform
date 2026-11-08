@@ -29,7 +29,7 @@ from tests.test_trading_worker import (
     _worker,
 )
 
-pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests", "redis_required")   # Redis: entries are held without it (M55 A18)
 
 
 def _notes(tenant_id: int):

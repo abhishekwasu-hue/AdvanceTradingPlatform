@@ -808,6 +808,8 @@ with the indicator block, and the result table.
     need the reference lists; PCR, ChainBias, MaxPainDistancePct need the option chain) are not offered: the run path
     loads bars only, so they would read empty and remove every symbol. A screen that uses one anyway (typed, or
     saved earlier) is refused by `/run` with the reason, never answered with a silent "nothing matched" (SC-18).
+    FN2-e: the option-chain functions are offered again - the run and the bar-close alerts read the stored chain
+    snapshots (section "FN2-e" below); the registry endpoint lists the families it loads in `loads`.
   - **Category**: a classifier is / is not one value (`==`, `!=`) or one of several (`IN (...)`, `NOT (... IN ...)`).
     Values with a fixed set are toggle chips (the last one cannot be switched off); the others are typed. A category
     with no value, or a blank text argument, is a problem on its block before anything runs (it would otherwise run
@@ -864,7 +866,8 @@ breakout screens could not open in the builder (TX1-7, LG1-7).
   breakout cards with the flag on.
 - **No new ScreenQL function**, no migration, no order path.
 - **Not in this step (Phase 0 freeze):** the Fundamental / Ownership / Events / F&O tabs (their data is not on the run
-  path yet), a visual editor for arithmetic and offsets, the QueryDrawer.
+  path yet), a visual editor for arithmetic, the QueryDrawer. (Offsets on the indicator block's two sides came later, in
+  FN2-b: a "bars ago" field under the block's options; other offsets stay in the formula block.)
 
 ## Z7a-3 (built): market-zone functions `NearZone`, `ZoneRole`, `ZoneState`, `ZoneStrength`
 
@@ -1815,6 +1818,46 @@ while it is off for the organisation the tool is neither offered to the model no
 - Review of S9: `run_screen` (live) stores its run in a session of its own, shielded from the tool timeout; a symbol's
   reason (possibly the broker's error text), and a failed tool's error, go to the proposal guard as third-party text;
   a background run's failure is logged; a CREATE_ALERT proposal's notification is addressed to the asker.
+
+## FN2-a part 2 (built): Keltner, Stoch RSI, TMA, Ichimoku (behind `screener_v2`)
+- **Functions.** `KeltnerUpper / KeltnerMid / KeltnerLower(n=20, k=2)`, `StochRSI(n=14)`, `TMA(x, n)`,
+  `IchimokuTenkan(n=9)`, `IchimokuKijun(n=26)`, `IchimokuSpanA(tenkan=9, kijun=26, shift=26)`,
+  `IchimokuSpanB(n=52, shift=26)`. Code: app/indicators (`keltner`, `stoch_rsi`, `tma`, `ichimoku`), all causal.
+- **Definitions.** Keltner as TradingView `ta.kc`: EMA(close, n) +/- k x the n-bar EMA of the true range; `k` is read
+  once (literal or parameter), like Bollinger's. StochRSI is the unsmoothed %K, 0-100, of RSI(n) over n bars (no range:
+  missing); it needs 2 x n bars; `SMA(StochRSI(14), 3)` is TradingView's smoothed line. TMA is SMA(SMA(x, (n + 1) // 2),
+  n // 2 + 1): triangular weights over exactly n bars.
+- **Ichimoku is causal.** A chart draws the leading spans `shift` bars ahead. A screen reads only closed bars, so the
+  span value on bar t is the one computed on bar t - shift (shifted forward): the cloud the chart draws over bar t, never
+  a value from a later bar. A test changes every bar after t - shift and checks the spans on bar t do not move.
+  TradingView draws the spans `shift - 1` bars ahead, so its cloud matches `shift` one larger. The lagging span (Chikou,
+  the close drawn `shift` bars back) is left out: on any bar it is a future close.
+- **Everywhere else.** The vectorised panel runs all nine (bit-for-bit parity tests); mirrors: Keltner bands swap like
+  Bollinger's, the Ichimoku lines and spans are their own mirror, StochRSI mirrors to 100 minus, TMA passes through
+  like SMA; causal harness cases with `@1h` variants; drawn as series.
+- **Tests.** tests/test_fn2a2_indicators.py (plain-Python references, prefixes, the spans' no-look-ahead, history needs,
+  validator), plus the runtime, panel, mirror and Z10-a coverage suites.
+
+## FN2-e (built): the option chain and futures OI on the run and alert paths (behind `screener_v2`)
+- **Functions.** `PCR()`, `ChainBias()`, `MaxPainDistancePct()` and the new `FuturesOI()` (the near-month future's open
+  interest stored with the chain). Code: app/screener/chains.py; readers `snapshots.latest_chains_many` (the
+  organisation's OI collector slots) and `chain_store.holder_latest_many` (with `byob_data_tier`: the user's own reads).
+- **Source.** Only the STORED snapshots, batched (one read for the whole universe); never a live chain call per symbol.
+  The symbol's F&O underlying (`NIFTY 50` -> NIFTY). Expiry: the nearest one present in the snapshot.
+- **No look-ahead.** Each symbol's cut is its last bar's close (never later than the run's clock): only a snapshot
+  read at or before it is loaded, and a bar sees it only when the bar closed at or after it was read. The functions
+  stay last-bar-only (the validator refuses reading them back in time).
+- **Same session only.** The snapshot must also be read on the bar's own IST session date; an earlier session's chain
+  never answers ("option chain last read on <date>", not evaluated) - FuturesOI too.
+- **Not evaluated, with the reason.** No snapshot at or before the bar, a symbol that is not an underlying, or
+  `FuturesOI()` with no future in the snapshot (own reads carry none): the row says why; never a pass or a 0.
+- **Where.** `/run` and the Copilot's run (they go through `load_universe`); bar-close and intrabar alert rules (the
+  rule creator's own reads with the own-broker tier). History, chart studies and the library still refuse them (they
+  read past bars). Venues: NSE and BSE carry `option_chain` too (index and F&O-stock underlyings). The builder offers
+  them (`loads` on the registry endpoint), without a timeframe.
+- **Not built.** Futures OI from the own broker's stored BARS: the market store keeps no open interest (a migration
+  and a recorder change), and reading each future's bars live would be a broker call per symbol.
+- **Tests.** tests/test_fn2e_chain_run.py, frontend src/screener/model.test.ts.
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the

@@ -540,8 +540,9 @@ class AiPrefs(_Prefs):
     """`ai` (M72 PR-10, CP-10, M72Q-2): the language the Copilot planner ANSWERS in (English / Marathi / Hindi; the
     interface stays English) and whether the Copilot shows the browser's speech input (off by default). Read only while
     the flag `copilot_languages` is on (app/ai/languages.py); no order path, worker or risk check imports it."""
-    language: Literal["en", "mr", "hi"] = "en"
+    language: Literal["auto", "en", "mr", "hi"] = "auto"      # CH-1 (owner 5 Nov): "auto" = the question's own language
     voice: bool = False
+    tone: Literal["analyst", "plain"] = "analyst"             # CH-1: an analyst's register by default; "plain" = the earlier one
 
 
 MemorySymbol = Annotated[str, StringConstraints(min_length=1, max_length=30, pattern=r"^[A-Za-z0-9][A-Za-z0-9 &._:-]{0,29}$")]

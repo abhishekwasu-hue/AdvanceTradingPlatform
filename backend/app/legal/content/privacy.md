@@ -1,7 +1,7 @@
 ---
 slug: privacy
 title: Privacy notice
-version: 2026-10-12
+version: 2026-11-06
 ---
 > **Draft — to be reviewed by a lawyer before launch.** Text in [SQUARE BRACKETS] is a placeholder that the company fills in once it is registered.
 
@@ -75,7 +75,7 @@ Passwords are stored only as salted hashes. Broker credentials and AI keys are e
 
 ## If a data breach happens
 
-If a breach affects your personal data, we will tell you and the Data Protection Board of India what happened, what data was involved, what we are doing about it and what you can do to protect yourself. Our breach runbook sets a target of {{compliance.breach_notify_hours}} hours from the time we become aware of a breach to notify.
+If a breach affects your personal data, we will tell you without delay, through your account or the contact details you registered with us: what happened, what data was involved, what we are doing about it and what you can do to protect yourself. We also tell the Data Protection Board of India without delay.
 
 ## Children
 

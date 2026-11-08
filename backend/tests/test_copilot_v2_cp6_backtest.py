@@ -215,6 +215,8 @@ def test_on_his_ask_a_complete_draft_is_tested_exactly_as_built_and_every_line_i
     assert {"Your draft on past data", "Is it enough to judge?", "Did it hold over time?", "How I tested it"} <= set(titles)
     assert not out.diagnostics.get("dropped_lines") and not findings("\n".join(out.lines()))
     assert out.followup is None and out.draft["complete"] is True and out.action["to"] == "/deployments"
+    # CH-3: the answer marks the draft as tested (the page offers "Start it on paper" only then)
+    assert out.draft["tested"]["symbol"] == "NIFTY" and isinstance(out.draft["tested"]["trades"], int)
     text = "\n".join(out.lines())
     assert "Past results do not say what happens next" in text and "This counts as one try" in text
 
@@ -225,7 +227,8 @@ def test_without_the_ask_the_test_is_offered_as_a_follow_up_that_rebuilds_the_sa
     assert out.followup == {"label": "Test it on past data", "question": TEST}
     assert sb.test_asked(out.followup["question"]) and chat.route(out.followup["question"]) == "strategy"
     again, _ = _answer(out.followup["question"])
-    assert {k: v for k, v in again.draft.items() if k != "idea"} == {k: v for k, v in out.draft.items() if k != "idea"}
+    assert {k: v for k, v in again.draft.items() if k not in ("idea", "tested")} == {k: v for k, v in out.draft.items() if k != "idea"}
+    assert "tested" not in out.draft and "tested" in again.draft          # CH-3: only the answer that ran the test is marked
     long_idea = FULL + " " + "x" * (chat.MAX_MESSAGE - len(FULL) - 3)
     assert _answer(long_idea)[0].followup is None                       # the follow-up must fit the question box
 

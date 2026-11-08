@@ -32,6 +32,8 @@ export interface ScanAlertPanelProps {
   /** Owner order 23 Oct (ui_v2): the universe the scan runs on, and how many stocks it holds (an alert watches up to 50). */
   universeName?: string;
   universeTotal?: number;
+  /** FN2-h: the screener list key the scan runs on; offers "Run on the whole list" (the rule reads the list when it checks). */
+  universeKey?: string;
   api?: ScanAlertApi;
   initialRules?: ScanAlertRule[];
 }
@@ -54,10 +56,13 @@ export function ruleLine(r: ScanAlertRule): string {
   return `${r.status === "active" ? "On" : "Paused"} · ${whenLine(r.base_tf, r.fire_on ?? "bar_close")} · ${n} ${n === 1 ? "symbol" : "symbols"}`;
 }
 
-export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, intrabar = false, universeName, universeTotal, api = scanAlertsApi,
+export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, intrabar = false, universeName, universeTotal, universeKey, api = scanAlertsApi,
   initialRules }: ScanAlertPanelProps) {
   const [rules, setRules] = useState<ScanAlertRule[]>(initialRules ?? []);
   const [fireOn, setFireOn] = useState<"bar_close" | "intrabar">("bar_close");
+  // FN2-f: weekly and monthly alerts run when the period's last session closes - never on a forming bar
+  const canIntrabar = intrabar && scanTf !== "1w" && scanTf !== "1M";
+  const [wholeList, setWholeList] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -79,7 +84,7 @@ export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, 
       const saved = await save();
       if (saved == null) return;
       setId(saved);
-      const rule = await api.create({ name: name.trim() || "My scan", screen_id: saved, symbols, fire_on: fireOn });
+      const rule = await api.create({ name: name.trim() || "My scan", screen_id: saved, ...(wholeList && universeKey ? { universe_key: universeKey } : { symbols }), fire_on: canIntrabar ? fireOn : "bar_close" });
       setRules((all) => [rule, ...all.filter((r) => r.id !== rule.id)]);
       setDone(true);
     } catch (e) {
@@ -102,7 +107,7 @@ export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, 
       ) : (
         <>
           <p className="text-fg">
-            ATP {whenLine(scanTf, fireOn)} for “{name.trim() || "My scan"}” on {universeName ? <>{universeName} ({symbols.length} {symbols.length === 1 ? "stock" : "stocks"})</>
+            ATP {whenLine(scanTf, canIntrabar ? fireOn : "bar_close")} for “{name.trim() || "My scan"}” on {universeName ? <>{universeName} ({symbols.length} {symbols.length === 1 ? "stock" : "stocks"})</>
               : <>your {symbols.length} {symbols.length === 1 ? "symbol" : "symbols"}</>}, and tells you when one matches.
           </p>
           {universeName && universeTotal != null && universeTotal > symbols.length && (
@@ -110,13 +115,19 @@ export default function ScanAlertPanel({ name, symbols, scanTf, screenId, save, 
               An alert watches up to {symbols.length} stocks, so this one watches the first {symbols.length} of the {universeTotal} in {universeName}.
             </p>
           )}
+          {universeKey && universeName && (
+            <label className="flex items-start gap-2" data-testid="scan-alert-whole-list">
+              <input type="checkbox" checked={wholeList} onChange={(e) => setWholeList(e.target.checked)} className="mt-0.5 accent-[rgb(var(--signal))]" />
+              <span className="text-fg">Run on the whole list ({universeName})</span>
+            </label>
+          )}
           <fieldset className="space-y-2">
             <legend className="text-t12 text-fg-muted">When to check</legend>
             <label className="flex items-start gap-2">
               <input type="radio" name="scan-alert-when" checked={fireOn === "bar_close"} onChange={() => setFireOn("bar_close")} className="mt-0.5 accent-[rgb(var(--signal))]" />
               <span><span className="text-fg">When the bar closes</span> <span className="text-t12 text-fg-muted">(recommended: the bar is final)</span></span>
             </label>
-            {intrabar && (
+            {canIntrabar && (
               <label className="flex items-start gap-2">
                 <input type="radio" name="scan-alert-when" checked={fireOn === "intrabar"} onChange={() => setFireOn("intrabar")} className="mt-0.5 accent-[rgb(var(--signal))]" />
                 <span><span className="text-fg">While the bar is forming</span> <span className="text-t12 text-fg-muted">(earlier, but it can change before the close)</span></span>

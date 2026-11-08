@@ -2429,7 +2429,16 @@
     "read_as": [],
     "ready_made": [],
     "complete": true,
-    "mode": "PAPER"
+    "mode": "PAPER",
+    "tested": {
+     "symbol": "NIFTY",
+     "timeframe": "15min",
+     "from_day": "1 Jul 2026",
+     "to_day": "22 Sep 2026",
+     "trades": 51,
+     "net_pnl": 99919.16,
+     "max_drawdown": 2765.33
+    }
    },
    "followup": null,
    "tool_calls": [

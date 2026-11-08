@@ -24,14 +24,23 @@ from pandas.tseries.offsets import DateOffset
 
 from app.indicators.directional import adx as _adx
 from app.indicators.momentum import rsi as _rsi
+from app.indicators.momentum import stoch_rsi as _stoch_rsi
 from app.indicators.momentum import stochastic as _stochastic
+from app.indicators.oscillators import aroon as _aroon
+from app.indicators.oscillators import cci as _cci
+from app.indicators.oscillators import williams_r as _williams_r
 from app.indicators.trend import ema as _ema
 from app.indicators.trend import hma as _hma
+from app.indicators.trend import ichimoku as _ichimoku
 from app.indicators.trend import macd as _macd
 from app.indicators.trend import parabolic_sar as _psar
+from app.indicators.trend import tma as _tma
 from app.indicators.trend import wma as _wma
 from app.indicators.volatility import atr as _atr
+from app.indicators.volatility import keltner as _keltner
 from app.indicators.volatility import supertrend_dir as _supertrend_dir
+from app.indicators.volume import mfi as _mfi
+from app.indicators.volume import obv as _obv
 from app.screener import nodes as n
 from app.screener import reasons
 from app.screener.registry import FUNCTIONS, RETEST_WAVE_OF
@@ -69,6 +78,7 @@ class SymbolData:
     zones: Optional[Any] = None                            # Z7a-3: app.price_action.zones.read.ZoneTimeline for the zone functions
     ownership: Optional[Any] = None                        # N3 S8a: app.screener.ownership.Ownership (point in time)
     fundamentals: Optional[Any] = None                     # U7 LG3: app.fundamentals.pit versions (point in time) for the fundamentals functions
+    chains: Optional[Any] = None                           # FN2-e: app.screener.chains.ChainTimeline (stored snapshots, point in time)
 
 
 @dataclass
@@ -377,9 +387,26 @@ class _Eval:
             "StochD": lambda: _stochastic(f, win(0, 14), win(1, 3), win(2, 3))["d"],
             "PSAR": lambda: _psar(f, num(0, 0.02), num(1, 0.02), num(2, 0.2))["sar"],
             "PSARDir": lambda: _psar(f, num(0, 0.02), num(1, 0.02), num(2, 0.2))["dir"],
+            # FN2-a: CCI, MFI, Williams %R, OBV and the Aroon lines (app/indicators/oscillators.py, volume.py)
+            "CCI": lambda: _cci(f, win(0, 20)),
+            "MFI": lambda: _mfi(f, win(0, 14)),
+            "WilliamsR": lambda: _williams_r(f, win(0, 14)),
+            "OBV": lambda: _obv(f),
+            "AroonUp": lambda: _aroon(f, win(0, 25))["up"],
+            "AroonDown": lambda: _aroon(f, win(0, 25))["down"],
             "BBUpper": lambda: _operand(f, "BB_UPPER", win(0, 20), num(1, 2.0)),
             "BBMid": lambda: _operand(f, "BB_MID", win(0, 20), num(1, 2.0)),
             "BBLower": lambda: _operand(f, "BB_LOWER", win(0, 20), num(1, 2.0)),
+            # FN2-a (part 2): Keltner, stochastic RSI, TMA and Ichimoku (app/indicators; the spans as of `shift` bars before)
+            "KeltnerUpper": lambda: _keltner(f, win(0, 20), num(1, 2.0))["upper"],
+            "KeltnerMid": lambda: _keltner(f, win(0, 20), num(1, 2.0))["mid"],
+            "KeltnerLower": lambda: _keltner(f, win(0, 20), num(1, 2.0))["lower"],
+            "StochRSI": lambda: _stoch_rsi(f["close"].astype(float), win(0, 14)),
+            "TMA": lambda: _tma(self.series(args[0], tf), win(1)),
+            "IchimokuTenkan": lambda: _ichimoku(f, tenkan=win(0, 9))["tenkan"],
+            "IchimokuKijun": lambda: _ichimoku(f, kijun=win(0, 26))["kijun"],
+            "IchimokuSpanA": lambda: _ichimoku(f, tenkan=win(0, 9), kijun=win(1, 26), shift=win(2, 26))["span_a"],
+            "IchimokuSpanB": lambda: _ichimoku(f, span_b=win(0, 52), shift=win(1, 26))["span_b"],
             "DayOpen": lambda: _operand(f, "DAY_OPEN"),
             "PDH": lambda: _operand(f, "PDH"),
             "PDL": lambda: _operand(f, "PDL"),
@@ -545,13 +572,21 @@ class _Eval:
             "ReturnOnCapital": lambda: _fundamental(self.data, f, tf, "roc"),
             "GrahamNumber": lambda: _fundamental(self.data, f, tf, "graham_number"),
             "NCAVPerShare": lambda: _fundamental(self.data, f, tf, "ncav"),
-            "PCR": lambda: _chain(self.data.option_chain, "pcr"),
-            "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
-            "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
+            # FN2-e: the stored snapshot read at or before each bar's close when the run loaded them (app/screener/chains.py)
+            "PCR": lambda: _chain_on(self.data, f, tf, "pcr"),
+            "ChainBias": lambda: _chain_on(self.data, f, tf, "bias"),
+            "MaxPainDistancePct": lambda: _chain_on(self.data, f, tf, "max_pain_distance_pct"),
+            "FuturesOI": lambda: _chain_on(self.data, f, tf, "future_oi"),
             "Max": lambda: self.series(args[0], tf).rolling(win(1)).max(),
             "Min": lambda: self.series(args[0], tf).rolling(win(1)).min(),
             "Greatest": lambda: pd.concat([self.series(a, tf) for a in args], axis=1).max(axis=1, skipna=False),
             "Least": lambda: pd.concat([self.series(a, tf) for a in args], axis=1).min(axis=1, skipna=False),
+            # FN2-c: the math functions (a missing value stays missing; Sqrt of a negative is missing)
+            "Abs": lambda: self.series(args[0], tf).abs(),
+            "Round": lambda: self.series(args[0], tf).round(int(num(1, 0))),
+            "Floor": lambda: np.floor(self.series(args[0], tf)),
+            "Ceil": lambda: np.ceil(self.series(args[0], tf)),
+            "Sqrt": lambda: np.sqrt(self.series(args[0], tf).where(lambda s: s >= 0)),
             "Count": lambda: _as_bool(self.ev(args[1], tf), f.index).astype(float).rolling(win(0)).sum(),
             "CountStreak": lambda: _streak(_as_bool(self.ev(args[0], tf), f.index)),
             "CrossAbove": lambda: _cross(self.series(args[0], tf), self.series(args[1], tf), above=True),
@@ -1232,6 +1267,17 @@ def _near_zone(f: pd.DataFrame, kind: str, tolerance_pct: float, window: int) ->
     if not tolerance_pct > 0:
         return False
     return _check_structure_filter(StructureFilter(filter_type=StructureFilterType(kind), tolerance_pct=tolerance_pct), f, window)[0]
+
+
+def _chain_on(data: SymbolData, f: pd.DataFrame, tf: str, what: str) -> Any:
+    """FN2-e: a run that loaded the stored snapshots reads them point in time (`chains.series`); a chain supplied as
+    one object (the AI scanner, tests) keeps the earlier last-bar value. FuturesOI has no value in a bare chain."""
+    if data.chains is not None:
+        from app.screener.chains import series
+        return series(data, f, tf, what)
+    if what == "future_oi":
+        return np.nan
+    return _chain(data.option_chain, what)
 
 
 def _chain(chain: Any, what: str) -> Any:

@@ -159,3 +159,20 @@ def test_a_template_runs_through_the_backtest_route():
     other = _org("backtest-off")
     assert client.post("/api/backtest", headers=other["headers"],
                        json={"strategy_id": sid, "symbol": "nifty", "base_timeframe": "15min", "candles": candles}).status_code == 404
+
+
+def test_every_card_reads_in_guarded_words_from_its_own_data():
+    from app.strategy_templates import language
+    org = _org("reads", FLAG)
+    cards = client.get("/api/strategy-templates", headers=org["headers"]).json()["templates"]
+    assert cards
+    for card in cards:
+        assert set(card["reads"]) == {"long", "short"}, card["id"]
+        for side, text in card["reads"].items():
+            if text is not None:
+                assert language.guard(text) == [], (card["id"], side, text)
+        if card["sides_default"] == "long":
+            assert card["reads"]["short"] is None
+        if card["sides_default"] == "short":
+            assert card["reads"]["long"] is None
+    assert any(c["reads"]["long"] for c in cards)

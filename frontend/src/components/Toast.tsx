@@ -91,7 +91,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                  className={`pointer-events-auto flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg backdrop-blur ${cls}`}>
               <Icon size={16} className={`mt-0.5 shrink-0 ${iconCls}`} aria-hidden="true" />
               <span className="flex-1 break-words">{t.text}</span>
-              <button onClick={() => dismiss(t.id)} aria-label="Dismiss" className="rounded p-0.5 opacity-70 hover:opacity-100"><X size={14} /></button>
+              <button onClick={() => dismiss(t.id)} aria-label="Dismiss" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded p-0.5 opacity-70 hover:opacity-100 md:min-h-0 md:min-w-0"><X size={14} /></button>
             </div>
           );
         })}

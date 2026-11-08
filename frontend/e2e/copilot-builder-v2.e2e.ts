@@ -263,9 +263,27 @@ test.describe("Copilot strategy builder behaviour", () => {
     await expect(tested.locator("[data-section='Did it hold over time?']")).toContainText("Nothing was tuned on this data");
     await expect(tested.locator("[data-unknowns]")).toContainText("Past results do not say what happens next");
     await expect(tested.locator("[data-followup]")).toHaveCount(0);
-    await expect(tested.locator("a[data-action='draft']")).toHaveText("Review it on the Trading bot page");   // he still reviews and starts it
+    // CH-3: a complete draft tested on past data offers "Start this strategy" (the Trading bot panel: he saves and starts it)
+    await expect(tested.locator("a[data-action='draft']")).toHaveText("Start this strategy");
     expect(server.saved).toEqual([]);
     expect(server.deployments).toEqual([]);
+  });
+
+  test("CH-3: Start this strategy - the tested draft in the Trading bot panel, saved by his tap, picked in the start form; nothing starts by itself", async ({ page }) => {
+    const server = await open(page);
+    await askComplete(page);
+    await pressTest(page);
+    await page.locator("[data-answer='strategy'] a[data-start]").last().click();
+    const card = page.locator("[data-inplace-panel='bots'] [data-block='copilot-draft']");
+    await expect(card).toBeVisible();
+    await expect(card.locator("[data-tested-line]")).toHaveText(
+      "Tested on past data (NIFTY, 1 Jul 2026 to 22 Sep 2026): 51 trades, net after costs 99,919.16. Past results do not say what happens next.");
+    await card.getByRole("button", { name: "Save and go to Start" }).click();
+    await expect(page.locator("[data-note='draft-saved']")).toContainText("press Start on paper");
+    const form = page.locator("[data-block='start']");
+    await expectChoice(form.getByLabel("Pick a strategy"), "custom:9");
+    expect(server.saved).toHaveLength(1);
+    expect(server.deployments).toEqual([]);                           // Start on paper stays his own press
   });
 
   test("discarding the draft leaves the page as it was", async ({ page }) => {

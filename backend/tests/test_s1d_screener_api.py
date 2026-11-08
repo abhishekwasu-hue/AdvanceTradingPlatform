@@ -149,8 +149,10 @@ def test_a_run_on_server_bars_is_stored_and_reproducible(flag_on, monkeypatch):
     assert "results" not in preview and "matched" not in preview and "passes" not in preview["funnel"]
     assert all(set(s) == {"text", "survivors"} for s in preview["funnel"]["stages"])
     assert len(_run(rows())) == 1                                                                 # a live count while editing is not stored
-    refused = client.post("/api/screener/run", json={"source": "close > 1 AND IsFnO()", "symbols": ["UP"]}, headers=headers)
-    assert refused.status_code == 422 and "IsFnO()" in refused.text                              # bars only: never a silent "nothing matched"
+    # FN2-d: IsFnO / Sector / IndexMember run on the reference data (tests/test_fn2d_reference_run.py); McapBucket has no
+    # source and is refused - never a silent "nothing matched"
+    refused = client.post("/api/screener/run", json={"source": 'close > 1 AND McapBucket() == "large"', "symbols": ["UP"]}, headers=headers)
+    assert refused.status_code == 422 and "McapBucket()" in refused.text
     weekly = client.post("/api/screener/run", json={"source": "close > close[1]", "base_tf": "1w", "symbols": ["UP"]}, headers=headers).json()
     assert weekly["matched"] == ["UP"]                                                            # weekly bars resampled from server daily bars
     assert parse(body["text"]) == parse(made["text"]) and n.VERSION == stored["version"]

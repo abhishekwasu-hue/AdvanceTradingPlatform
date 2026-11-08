@@ -37,6 +37,7 @@ import { V2_ALIASES, routerPath, shellKeyFromPath, shellTitle, v2RedirectFor } f
 import SidebarV2 from "./SidebarV2";
 import TopBarV2, { type TopBarV2Props } from "./TopBarV2";
 import AskAiSheetV2 from "./AskAiSheetV2";
+import ChatBubbleV2 from "./ChatBubbleV2";
 import { AskAiProvider, useAskAiOptions } from "./askAiEntry";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { usePaperOnly } from "../setup/paperOnly";
@@ -259,6 +260,8 @@ export default function AppShellV2() {
             onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined}
             paperOnly={frontPaperOnly || liveHidden} onTour={replayTour}
             menu={{ mode: sidebar.mode, onToggle: toggleSidebar, onOpenSheet: openMenuSheet, sheetOpen: moreOpen && sheetAll }} />
+          {/* CH-1 (owner 5 Nov): the Copilot's chat on every page, from a round button in the corner. */}
+          <ChatBubbleV2 on={features.on} signedIn={!!user} section={key} />
           <PwaBanners />
           <LegalAcceptanceBanner />
           {/* TT12-1: one-time notices (the server decides who; seen once per user, stored in his prefs). */}

@@ -192,5 +192,5 @@ const KINDS: StageKind[] = ["indicator", "filter", "category", "rank", "group"];
 
 function KindPicker({ value, onChange, formula }: { value: StageKind; onChange: (k: StageKind) => void; formula: boolean }) {
   const kinds: StageKind[] = formula ? [...KINDS, "formula"] : KINDS;
-  return <SelectInline label="Kind of condition to add" mono={false} value={value} options={kinds} format={(k) => KIND_LABEL[k as StageKind]} onChange={(k) => onChange(k as StageKind)} />;
+  return <SelectInline label="Kind of condition to add" mono={false} triggerClassName="min-h-11 md:min-h-0" value={value} options={kinds} format={(k) => KIND_LABEL[k as StageKind]} onChange={(k) => onChange(k as StageKind)} />;
 }

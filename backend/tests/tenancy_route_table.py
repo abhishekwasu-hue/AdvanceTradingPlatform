@@ -249,6 +249,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/ai/chat/home"): "member",
     ("GET", "/api/ai/chat/history"): "member: the caller's own Copilot conversation (tenant and user)",
     ("DELETE", "/api/ai/chat/history"): S_OWN_COPILOT_CHAT,
+    ("GET", "/api/ai/chat/sessions"): "member: the caller's own Copilot conversations (tenant and user)",
+    ("PATCH", "/api/ai/chat/sessions/{session_id}"): "self: renames one of the caller's own Copilot conversations (404 for any other)",
+    ("DELETE", "/api/ai/chat/sessions/{session_id}"): S_OWN_COPILOT_CHAT,
     ("PUT", "/api/ai/byok/key"): S_OWN_AI_KEY,
     ("DELETE", "/api/ai/byok/key/{provider}"): S_OWN_AI_KEY,
     ("PUT", "/api/ai/byok/prefs"): S_OWN_AI_KEY,
@@ -704,6 +707,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/me/erase"): "member: AUD-G1.1 - the caller's own Delete my account request only",
     ("POST", "/api/me/erase"): "self: AUD-G1.1 - asks to erase the caller's own account (password + ERASE); no route names another user",
     ("DELETE", "/api/me/erase"): "self: AUD-G1.1 - cancels the caller's own request only; no route names another user",
+    ("GET", "/api/me/nominee"): "member: P3-4-B10 - the caller's own nominee row only (user and tenant); no route names another user",
+    ("PUT", "/api/me/nominee"): "self: P3-4-B10 - saves the caller's own nominee; no route names another user",
+    ("DELETE", "/api/me/nominee"): "self: P3-4-B10 - removes the caller's own nominee only; no route names another user",
     ("PUT", "/api/me/prefs/{namespace}"): S_OWN_PREFS,
     # UI2-7: the caller's own setup wizard progress (the `setup` preferences plus steps worked out from their own rows)
     ("GET", "/api/me/setup"): "member: the caller's own setup progress only (tenant and user)",
@@ -909,6 +915,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/screener/rankings/{system_id}"): "trader",
     ("POST", "/api/screener/rankings/{system_id}/archive"): "trader",
     ("POST", "/api/screener/rankings/run"): "trader",         # N3 S7a: bars through the caller's organisation / own session
+    ("GET", "/api/screener/runs"): ("member: FN2-i - the caller's own past screener runs only (tenant and user); a screen_id "
+                                    "that is not the organisation's answers 404"),
     ("GET", "/api/screener/runs/{run_id}"): "member",
     ("GET", "/api/screener/screens"): "member",
     ("POST", "/api/screener/screens"): "trader",

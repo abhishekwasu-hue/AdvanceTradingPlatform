@@ -5,7 +5,7 @@
  *
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
-import { BellRing, ChevronDown, Code2, History, Layers, LayoutGrid, MoreHorizontal, Play, Save } from "lucide-react";
+import { BellRing, ChevronDown, Code2, History, Layers, LayoutGrid, ListOrdered, MoreHorizontal, Play, Save } from "lucide-react";
 import { useInPlace } from "../inplace/context";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -20,7 +20,7 @@ import { screenerApi, type IdeaResponse, type PreviewResponse, type RunResponse,
 import { FreshnessPill } from "../screener/FreshnessPill";
 import { PlainTimeframes } from "../screener/TimeframeChip";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
-import { blockProblems, parseSymbols, runBlocker, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, timeframeWords, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
+import { blockProblems, offeredRegistry, parseSymbols, runBlocker, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, timeframeWords, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
 import { nothingRead, tally, unreadReason, unreadRows } from "../screener/readCounts";
 import { UnreadNote } from "../screener/UnreadNote";
@@ -33,6 +33,7 @@ import { stagesFromServer, type ServerStage } from "../screener/importStages";
 import { isMirrors, isWatchLists, mirrorsByScreen, type MirrorsResponse, type WatchListsResponse } from "../screener/library";
 import { LibraryTools } from "../screener/LibraryTools";
 import { WatchlistPicker } from "../screener/WatchlistPicker";
+import { SaveMatchesButton } from "../screener/SaveMatchesButton";
 import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
 import "../screener/screener.css";
 import { useFeatures } from "../ui/useFeatures";
@@ -60,6 +61,11 @@ const IdeaPanel = lazy(() => import("../screener/IdeaPanel"));
 // Handover 11j steps 6-7 (same flags): the saved scan's versions (LAB-18: kept on the server) and "Tell me when it matches".
 const ScanVersionsPanel = lazy(() => import("../screener/ScanVersionsPanel"));
 const ScanAlertPanel = lazy(() => import("../screener/ScanAlertPanel"));
+// FN2-i (behind `ui_v2`): the trader's own past runs, one reopened with its stored results.
+const PastRunsPanel = lazy(() => import("../screener/PastRunsPanel"));
+const ScreenHistoryPanel = lazy(() => import("../screener/ScreenHistoryPanel"));
+// FN2-k (behind `ui_v2` and `screener_rankings`): rank the list's symbols 0-100 by a ranking system.
+const RankingsPanel = lazy(() => import("../screener/RankingsPanel"));
 // M49 U6: the old Custom scan (indicator, structure and option-chain filters) inside the Conditions block, on request.
 const CustomScanner = lazy(() => import("./ScannerPage"));
 
@@ -136,6 +142,12 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   const dishOn = features.on("growth_v2") && features.on("ui_v2");
   const [alertOpen, setAlertOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const [pastRunsOpen, setPastRunsOpen] = useState(false);
+  // FN2-j (flags `screener_history`, `screener_backtest`; behind `ui_v2`): "Look back" on the scan.
+  const historyOn = features.on("screener_history");
+  const backtestOn = historyOn && features.on("screener_backtest");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [rankingsOpen, setRankingsOpen] = useState(false);
   const [ideaReads, setIdeaReads] = useState<Record<string, string>>({});     // a scan from an idea: block -> its plain words
   // LAB-18 (AMW-7): the saved scan's versions on the server; the device history is uploaded once first (`synced`).
   const [scanVersions, setScanVersions] = useState<ServerVersion[]>([]);
@@ -168,7 +180,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   useEffect(() => { if (hasStages) setConditionsOpen(true); }, [hasStages]);
 
   useEffect(() => {
-    screenerApi.registry().then((r) => setRegistry(r.entries))
+    screenerApi.registry().then((r) => setRegistry(offeredRegistry(r.entries, r.loads ?? [])))   // FN2-e: the stored option chain
       .catch((e: unknown) => setLoadError(e instanceof ApiError && e.status === 404 ? SCREENER_OFF : errorText(e)));
     screenerApi.taxonomy().then((t) => setTaxonomy(isTaxonomy(t) ? t : null)).catch(() => setTaxonomy(null));
     screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));
@@ -189,6 +201,10 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
     watchlistsApi.list().then((l) => { if (alive) setMyLists(isWatchlists(l) ? l : null); }).catch((e) => { if (alive) toast.error(errorText(e)); });
     return () => { alive = false; };
   }, [universeV2, watchlistsOn, toast]);
+  // FN2-g: a list saved from the matches shows in "My watchlists" at once (a failed re-read keeps the lists shown).
+  const reloadMyLists = useCallback(() => {
+    watchlistsApi.list().then((l) => { if (isWatchlists(l)) setMyLists(l); }).catch(() => undefined);   // intentional: a failed re-read keeps the lists shown
+  }, []);
   const builtinDefault = universesDone && !serverHasDefault(universes);
   const chosenKey = choice.startsWith("sys:") ? choice.slice(4) : null;
   const needsList = !!chosenKey && !(chosenKey === DEFAULT_KEY && builtinDefault);
@@ -541,6 +557,19 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
     },
     ideaOn && scanVersions.length > 0 && { id: "scan-versions-open", onClick: () => setVersionsOpen(true), content: <><History size={14} aria-hidden /> Versions ({scanVersions.length})</> },
   ] as (HeaderTool | false | null | undefined)[]).filter((t): t is HeaderTool => !!t);
+  // FN2-i: "Past runs" joins "More tools" when that menu is already there (it never adds the menu by itself: the page's
+  // first screen stays as it is for a trader without the other tools)
+  if (universeV2 && headerTools.length > 0) {
+    headerTools.push({ id: "past-runs-open", onClick: () => setPastRunsOpen(true), content: <><History size={14} aria-hidden /> Past runs</> });
+    // FN2-k: "Rankings" joins the same menu, and only with the flag on
+    if (features.on("screener_rankings")) {
+      headerTools.push({ id: "rankings-open", onClick: () => setRankingsOpen(true), content: <><ListOrdered size={14} aria-hidden /> Rankings</> });
+    }
+  }
+  // FN2-j: like Past runs, "Look back" joins "More tools" only when that menu is already there (the first screen stays as it was)
+  if (universeV2 && historyOn && headerTools.length > 0) {
+    headerTools.push({ id: "screen-history-open", onClick: () => setHistoryOpen(true), content: <><History size={14} aria-hidden /> {backtestOn ? "Look back and backtest" : "Look back"}</> });
+  }
   // SCR-FIX B4: one count source - the answer's own funnel ("Matched N of 50 · K had data"), never the list's length
   const counts = shown ? tally(shown.funnel, shown.matched) : null;
   const onReadAction = (action: ReadAction) => {
@@ -594,7 +623,41 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
             <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
               <ScanAlertPanel name={name} symbols={symbols.slice(0, RUN_MAX)} scanTf={scanTf} screenId={savedId} save={saveNow}
                               intrabar={features.on("screener_intrabar")}
-                              universeName={universeV2 ? universe.name : undefined} universeTotal={symbols.length} />
+                              universeName={universeV2 ? universe.name : undefined} universeTotal={symbols.length}
+                              universeKey={universeV2 && chosenKey && needsList && lists[chosenKey] && lists[chosenKey] !== "failed" && !universe.builtin ? chosenKey : undefined} />
+            </Suspense>
+          )}
+        </Dialog>
+      )}
+
+      {universeV2 && (
+        <Dialog open={pastRunsOpen} onOpenChange={setPastRunsOpen} title="Past runs"
+                description="Your earlier runs, newest first. Open one to see what matched then.">
+          {pastRunsOpen && (
+            <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
+              <PastRunsPanel tfWords={(tf) => timeframeWords(tf, true)} canSave={watchlistsOn} onSaved={reloadMyLists} />
+            </Suspense>
+          )}
+        </Dialog>
+      )}
+
+      {universeV2 && historyOn && (
+        <Dialog open={historyOpen} onOpenChange={setHistoryOpen} title="Look back"
+                description="When this screen matched in the past, and how its matches moved afterwards.">
+          {historyOpen && (
+            <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
+              <ScreenHistoryPanel source={text} symbols={symbols} scanTf={scanTf} listName={universe.name} historyOn={historyOn} backtestOn={backtestOn} />
+            </Suspense>
+          )}
+        </Dialog>
+      )}
+
+      {universeV2 && features.on("screener_rankings") && (
+        <Dialog open={rankingsOpen} onOpenChange={setRankingsOpen} title="Rankings"
+                description="Order the symbols of your list from 0 to 100 by a ranking system.">
+          {rankingsOpen && (
+            <Suspense fallback={<SkeletonRows rows={2} label="Loading" />}>
+              <RankingsPanel symbols={symbols} />
             </Suspense>
           )}
         </Dialog>
@@ -760,7 +823,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
                 <label className="block">
                   <span className="sr-only">Scan name</span>
                   <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Untitled scan"
-                         className="w-full rounded-control border border-transparent bg-transparent px-1 text-t18 font-semibold text-fg hover:border-border focus:border-border focus:outline-none focus:ring-2 focus:ring-brand" />
+                         className="min-h-11 w-full rounded-control border border-transparent bg-transparent px-1 text-t18 font-semibold text-fg hover:border-border focus:border-border focus:outline-none focus:ring-2 focus:ring-brand md:min-h-0" />
                 </label>
                 {registry ? (
                   <FunnelCanvas stages={stages} registry={registry} scanTf={scanTf} universe={symbols.length} funnel={shown?.funnel ?? null}
@@ -858,6 +921,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
               </p>
             )}
             <EvidencePanel evidenceId={evidence?.id ?? null} symbol={evidence?.symbol} onClose={() => setEvidence(null)} />
+            {run && !running && watchlistsOn && <SaveMatchesButton results={run.results} scanName={name} onSaved={reloadMyLists} />}
             {run && ideaOn && (
               <Button size="v2" className="w-full sm:w-auto" onClick={() => setAlertOpen(true)} disabled={!text} data-testid="scan-alert-open">
                 <BellRing size={16} aria-hidden /> Tell me when it matches

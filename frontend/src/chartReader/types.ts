@@ -18,6 +18,9 @@ export interface ReaderStrategies {
   available: boolean;
   /** One plain line when the reader is not available (not installed / not connected), else null. */
   message: string | null;
+  /** The private reader is installed on this server / the caller has his own Claude key (owner 7 Nov: own key only). */
+  installed?: boolean;
+  connected?: boolean;
   default: string;
   model: string;
   effort: string;

@@ -66,6 +66,8 @@ class Spec:
     # Strategy templates step 5 (C2): (named argument, bars by its swing degree) - a named swing degree needs that history
     # too (RetestEntry's own `degree` is the wave degree; `swing=` is the swing breakout's degree)
     kwarg_degree_bars: Tuple[Tuple[str, Tuple[int, ...]], ...] = ()
+    # FN2-a: the window argument counts this many times (StochRSI(n): n bars of RSI warm-up, then n RSI values)
+    window_mult: int = 1
 
 
 def _wave_values(name: str) -> Tuple[str, ...]:
@@ -286,6 +288,13 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("Min", "factor", NUM, "same", (_X, _N), doc="lowest x over n bars"),
     Spec("Greatest", "factor", NUM, "same", (_X,), varargs=True, timeframed=False, doc="largest of the arguments"),
     Spec("Least", "factor", NUM, "same", (_X,), varargs=True, timeframed=False, doc="smallest of the arguments"),
+    # FN2-c (Chartink-class math): per bar, on the value of x; a missing x stays missing
+    Spec("Abs", "factor", NUM, "same", (_X,), doc="absolute value of x"),
+    Spec("Round", "factor", NUM, "same", (_X, Arg("digits", NUM, 0, False, literal_only=True, bounds=(0, 6))),
+         doc="x rounded to `digits` decimals (default 0)"),
+    Spec("Floor", "factor", NUM, "same", (_X,), doc="the largest whole number not above x"),
+    Spec("Ceil", "factor", NUM, "same", (_X,), doc="the smallest whole number not below x"),
+    Spec("Sqrt", "factor", NUM, "ratio", (_X,), doc="square root of x (missing where x is negative)"),
     Spec("Count", "factor", NUM, "count", (_N, Arg("cond", BOOL)), doc="bars in the last n where cond held"),
     Spec("CountStreak", "factor", NUM, "count", (Arg("cond", BOOL),), cost=2.0, doc="consecutive bars, up to now, where cond held"),
     Spec("CrossAbove", "filter", BOOL, None, (Arg("a", NUM), Arg("b", NUM)), same_unit_args=(0, 1), extra_bars=1, doc="a crossed above b on this bar"),
@@ -336,6 +345,23 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
              " down move; start / step / max are the acceleration factor's"),
     Spec("PSARDir", "factor", NUM, "sign", _PSAR_ARGS, min_bars=2, ordered_args=(("start", "max", True), ("step", "max", True)),
          doc="the parabolic SAR's direction: +1 while the SAR is below price, -1 while above; a change of sign is a flip"),
+    # FN2-a (Chartink-class indicators, app/indicators/oscillators.py and volume.py): true per-bar series on closed bars
+    Spec("CCI", "factor", NUM, "index", (Arg("n", "window", 20, False),),
+         doc="commodity channel index of the typical price (high + low + close) / 3: (TP - its n-bar average) / (0.015 x"
+             " the mean deviation); unbounded, missing when the n bars have no deviation"),
+    Spec("MFI", "factor", NUM, "index", (Arg("n", "window", 14, False),), extra_bars=1,
+         doc="money flow index (0-100): the RSI of the typical price weighted by volume over n bars (only rising flow ="
+             " 100, no rise and no fall = 50)"),
+    Spec("WilliamsR", "factor", NUM, "index", (Arg("n", "window", 14, False),),
+         doc="Williams %R (-100 to 0): -100 x (highest high - close) / (highest high - lowest low) over n bars (missing"
+             " when the n bars have no range)"),
+    Spec("OBV", "factor", NUM, "volume", (),
+         doc="on-balance volume: the running total of volume, added on a higher close and subtracted on a lower one; its"
+             " level depends on where the bars start, so compare it with itself (its average, its value bars ago)"),
+    Spec("AroonUp", "factor", NUM, "index", (Arg("n", "window", 25, False),), extra_bars=1,
+         doc="Aroon up (0-100): 100 x (n - bars since the highest high of the last n + 1 bars) / n"),
+    Spec("AroonDown", "factor", NUM, "index", (Arg("n", "window", 25, False),), extra_bars=1,
+         doc="Aroon down (0-100): 100 x (n - bars since the lowest low of the last n + 1 bars) / n"),
     Spec("DayOpen", "factor", NUM, "price", (), doc="the session's opening price"),
     Spec("PDH", "factor", NUM, "price", (), cost=1.5, doc="previous session high"),
     Spec("PDL", "factor", NUM, "price", (), cost=1.5, doc="previous session low"),
@@ -429,6 +455,10 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("ChainBias", "classifier", CAT, None, (), cost=2.0, timeframed=False,
          values=("BULLISH", "BEARISH", "NEUTRAL", "CONFLICTING"), doc="option-chain bias: BULLISH / BEARISH / NEUTRAL / CONFLICTING", needs=("option_chain",)),
     Spec("MaxPainDistancePct", "factor", NUM, "pct", (), cost=2.0, timeframed=False, doc="|underlying - max pain| as % of the underlying", needs=("option_chain",)),
+    # FN2-e: the near-month future's open interest stored with the same chain snapshot (the OI collector's reading)
+    Spec("FuturesOI", "factor", NUM, "contracts", (), cost=2.0, timeframed=False, needs=("option_chain",),
+         doc="open interest of the underlying's near-month future, from the stored option-chain snapshot read at or before"
+             " the bar's close (not evaluated when that snapshot has none)"),
     Spec("Sector", "classifier", CAT, None, (), timeframed=False, doc="NSE sector (as of the run date)", needs=("reference",)),
     Spec("Industry", "classifier", CAT, None, (), timeframed=False, doc="NSE industry (as of the run date)", needs=("reference",)),
     Spec("McapBucket", "classifier", CAT, None, (), timeframed=False, doc="AMFI large / mid / small", needs=("reference",)),
@@ -729,6 +759,32 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          needs=("ownership",), flag=OWNERSHIP_FLAG,
          doc="calendar days from the bar's date to the next known event of that kind (0 = that day); ex_date from the lake's"
              " corporate actions" + _ODOC),
+    # FN2-a (part 2): Keltner channel, stochastic RSI, triangular MA and Ichimoku - per-bar series on closed bars, causal
+    # (app/indicators; tests/test_fn2a2_indicators.py). Ichimoku's leading spans are the values computed `shift` bars
+    # before (the cloud the chart draws over the bar), never a later bar's; the lagging span (a future close) is left out.
+    # Span A's history need adds its three windows (window_sum): tenkan more than the max(tenkan, kijun) + shift it reads.
+    Spec("KeltnerUpper", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)),
+         doc="upper Keltner channel: EMA(close, n) + k x the n-bar EMA of the true range (TradingView ta.kc)"),
+    Spec("KeltnerMid", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)),
+         doc="middle Keltner line: EMA(close, n) (k does not change it)"),
+    Spec("KeltnerLower", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)),
+         doc="lower Keltner channel: EMA(close, n) - k x the n-bar EMA of the true range (TradingView ta.kc)"),
+    Spec("StochRSI", "factor", NUM, "index", (Arg("n", "window", 14, False),), window_mult=2,
+         doc="stochastic RSI %K (0-100), unsmoothed: 100 x (RSI(n) - its lowest over n bars) / (its highest - its lowest)"
+             " (missing when the RSI did not move; SMA(StochRSI(n), 3) is the smoothed line; needs 2 x n bars)"),
+    Spec("TMA", "factor", NUM, "same", (_X, _N), doc="triangular moving average of x over n bars: SMA(SMA(x, (n + 1) / 2), n / 2 + 1)"
+                                                     " (whole halves), weights 1, 2, .., 2, 1"),
+    Spec("IchimokuTenkan", "factor", NUM, "price", (Arg("n", "window", 9, False),),
+         doc="Ichimoku conversion line (tenkan-sen): (highest high + lowest low) / 2 over n bars"),
+    Spec("IchimokuKijun", "factor", NUM, "price", (Arg("n", "window", 26, False),),
+         doc="Ichimoku base line (kijun-sen): (highest high + lowest low) / 2 over n bars"),
+    Spec("IchimokuSpanA", "factor", NUM, "price", (Arg("tenkan", "window", 9, False), Arg("kijun", "window", 26, False),
+                                                   Arg("shift", "window", 26, False)), window_sum=True,
+         doc="Ichimoku leading span A: (tenkan line + kijun line) / 2 computed `shift` bars before - the cloud edge drawn over"
+             " this bar (never a later bar's value)"),
+    Spec("IchimokuSpanB", "factor", NUM, "price", (Arg("n", "window", 52, False), Arg("shift", "window", 26, False)), window_sum=True,
+         doc="Ichimoku leading span B: (highest high + lowest low) / 2 over n bars, computed `shift` bars before - the cloud"
+             " edge drawn over this bar (never a later bar's value)"),
     # M55 T5: the ported level gate (scan Then, app/price_action/level_gate) as a causal series - strategy template A1
     Spec("AreaGate", "filter", BOOL, None, (_SIDE,), kwargs=_GATE_KWARGS, cost=6.0, min_bars=1, min_sessions=_GATE_SESSIONS,
          timeframes=_GATE_TFS, doc=_GATE_DOC),
@@ -750,7 +806,8 @@ BREAKOUT_BK4_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS
 # repeated on every earlier bar, so a function that reads a history (READS_HISTORY) would count, average or compare
 # today's answer as if it had held all along. The validator refuses that combination.
 LAST_BAR_ONLY = frozenset(name for name, spec in FUNCTIONS.items() if not spec.timeframed and not spec.varargs)
-READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag", "StDev"})
+READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag", "StDev",
+                           "TMA"})
 AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == AMW_FLAG)
 WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WAVES_FLAG)
 

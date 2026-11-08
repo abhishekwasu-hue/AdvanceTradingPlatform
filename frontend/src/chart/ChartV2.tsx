@@ -9,6 +9,7 @@ import type { LightweightEngine } from "../charting/lightweight";
 import { THEME_EVENT, useAppearance } from "../theme";
 import type { LtpResponse } from "../types";
 import { ChartCore, OVERLAYS_V2, OVERLAY_LABELS_V2, type ChartTypeV2, type LevelLine, type OverlayId, type PlotInsets } from "./chartCore";
+import { ViewMemory } from "./viewMemory";
 import { ChartReadout, ChartViewControls } from "./ChartViewControls";
 import { INITIAL_VIEW, type Readout, type ViewState } from "./gestures";
 import { LiveChip } from "./LiveChip";
@@ -64,6 +65,9 @@ export interface ChartV2Props {
   /** PR 2: a one-finger vertical drag moves the chart instead of the page (the Charts page in full screen). Off, a
    * vertical swipe scrolls the page, as before; a mouse drag moves the price either way. */
   captureTouch?: boolean;
+  /** P1-4 (2.5): the signed-in user whose zoom per symbol, exchange and timeframe is remembered on this device and
+   * restored on open ("Reset" forgets it). Left out (an embedded preview, a backtest): nothing is remembered. */
+  rememberViewFor?: number | string | null;
   className?: string;
 }
 
@@ -108,7 +112,7 @@ export function BandTip({ tip, width }: { tip: BandTipState; width: number }) {
 
 export default function ChartV2({
   candles, timeframe, symbol, exchange = "NSE", chartType = "candles", prefs = DEFAULT_CHART_PREFS, overlays = NO_OVERLAYS, live,
-  marketOpen, livePush = false, levels = NO_LEVELS, areas = NO_AREAS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, className = "h-[480px]",
+  marketOpen, livePush = false, levels = NO_LEVELS, areas = NO_AREAS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, rememberViewFor = null, className = "h-[480px]",
 }: ChartV2Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<HTMLDivElement>(null);
@@ -148,6 +152,9 @@ export default function ChartV2({
   }, [core, theme, prefs.grid, up, down]);
 
   useEffect(() => { core?.setInteraction({ vertTouchDrag: captureTouch }); }, [core, captureTouch]);
+  // P1-4 (2.5): before the data effect below, so the first bars already open on the remembered view.
+  useEffect(() => { core?.setViewMemory(rememberViewFor === null || rememberViewFor === undefined ? null : new ViewMemory(String(rememberViewFor))); },
+            [core, rememberViewFor]);
 
   const { volume, rsi } = prefs.indicators;
   useEffect(() => { core?.setPanes({ volume, rsi }); }, [core, volume, rsi]);

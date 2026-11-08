@@ -9,7 +9,7 @@ import answerSource from "./chat/AnswerV2.tsx?raw";
 import { AnswerV2 } from "./chat/AnswerV2";
 import { actionState, type ChatAnswer } from "./chat/model";
 import {
-  answerProblem, askKind, draftConfig, draftFromState, formSymbol, openAsks, saveLine, targetPair, type StrategyDraft,
+  answerProblem, askKind, draftConfig, draftFromState, draftStartReady, formSymbol, openAsks, saveLine, START_LABEL, targetPair, testedLine, type StrategyDraft,
 } from "./strategyDraft";
 
 /**
@@ -140,6 +140,21 @@ describe("job 6: the chat answer and the review card", () => {
     expect(actionState(answer)).toEqual({ copilotDraft: COMPLETE });
     expect(actionState({ draft: null })).toBeUndefined();
     expect(answerSource).toContain("state={actionState(answer)}");
+  });
+
+  it("CH-3: 'Start it on paper' only for a complete draft tested on past data in that answer; the card says the test's facts", () => {
+    const tested = { symbol: "NIFTY", timeframe: "15min", from_day: "1 Jul 2026", to_day: "22 Sep 2026", trades: 51, net_pnl: 99919.16, max_drawdown: 2765.33 };
+    expect(draftStartReady(COMPLETE)).toBe(false);
+    expect(draftStartReady({ ...COMPLETE, tested })).toBe(true);
+    expect(draftStartReady({ ...COMPLETE, tested, asks: [{ key: "target_rr", label: "Your profit objective" }] })).toBe(false);
+    expect(draftStartReady({ ...COMPLETE, tested, complete: false })).toBe(false);
+    const html = renderToStaticMarkup(<MemoryRouter><AnswerV2 answer={{ ...answer, draft: { ...COMPLETE, tested } }} /></MemoryRouter>);
+    expect(text(html)).toContain(START_LABEL);
+    expect(html).toContain('data-start="true"');
+    expect(testedLine(tested)).toBe("Tested on past data (NIFTY, 1 Jul 2026 to 22 Sep 2026): 51 trades, net after costs 99,919.16. Past results do not say what happens next.");
+    expect(testedLine({ ...tested, trades: 1, net_pnl: null, from_day: null })).toBe("Tested on past data (NIFTY): 1 trade. Past results do not say what happens next.");
+    // the card's save is still his own tap; it never starts a bot (Start on paper is the form's own press)
+    expect(code(cardSource)).not.toMatch(/createDeployment/);
   });
 
   it("CP6-2: a complete draft offers the test on past data as one button that only asks the Copilot (nothing runs by itself)", () => {

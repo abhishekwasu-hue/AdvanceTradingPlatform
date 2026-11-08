@@ -27,18 +27,40 @@ from app.auth.dependencies import get_current_user
 from app.auth.security import verify_password_async
 from app.core import config
 from app.db.models import (
+    AiAcknowledgementRecord,
+    AlertChannelRecord,
+    ApiKeyRecord,
+    BrokerAccountRecord,
+    ChartDrawingRecord,
+    ChartLayoutRecord,
+    CopilotChatSessionRecord,
     CopilotChatTurnRecord,
     CopilotStudyRecord,
+    CustomStrategyRecord,
+    ExperienceOptOutRecord,
     FeedbackRecord,
     JournalEntryRecord,
     JournalTagRecord,
     LlmCallRecord,
+    LoginEventRecord,
+    NotificationRecord,
     OrderRecord,
+    PaperAccountRecord,
+    RiskLimitRecord,
+    SignalHistoryRecord,
+    StrategyDeploymentRecord,
+    TradePlanRecord,
     TradeRecord,
     User,
+    UserIdentityRecord,
+    UserNomineeRecord,
     UserPrefsRecord,
+    UserSessionRecord,
+    UserVisionPrefsRecord,
+    WatchlistRecord,
 )
 from app.db.session import get_session
+from app.legal import processors as processor_register
 from app.platform import controls
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -49,7 +71,24 @@ _SECRET_WORDS = ("password", "secret", "encrypted", "token", "hash")
 _DATASETS = (("preferences", UserPrefsRecord), ("orders", OrderRecord), ("trades", TradeRecord), ("journal_entries", JournalEntryRecord),
              ("journal_tags", JournalTagRecord), ("ai_conversations", LlmCallRecord), ("feedback", FeedbackRecord),
              ("copilot_conversation", CopilotChatTurnRecord),      # CP-UX CU6
-             ("studies", CopilotStudyRecord))                      # M77 SX-2: his saved studies (snapshot JSON; PDFs one at a time, M77Q-4)
+             ("copilot_conversations", CopilotChatSessionRecord),  # CH-2: the named conversations (titles)
+             ("studies", CopilotStudyRecord),
+             ("nominee", UserNomineeRecord))                       # P3-4-B10: the person he named under the right to nominate                      # M77 SX-2: his saved studies (snapshot JSON; PDFs one at a time, M77Q-4)
+# P3-4-B7 (DPDP s.11(1)): the rest of his personal-data tables. (file name, model, owner column). Same filter as above (his rows,
+# his organisation) and the same secret-by-name rule in `_row` (token hashes, encrypted configs, key hashes never leave).
+# Unlike the first group these can grow without bound (login events, notifications, signal history), so each file keeps the
+# newest `_EXTRA_ROW_CAP` rows.
+_EXTRA_ROW_CAP = 10000
+_EXTRA_DATASETS = (("login_events", LoginEventRecord, "user_id"), ("sessions", UserSessionRecord, "user_id"),
+                   ("consents", AiAcknowledgementRecord, "user_id"), ("notifications", NotificationRecord, "user_id"),
+                   ("deployments", StrategyDeploymentRecord, "created_by"), ("risk_limits", RiskLimitRecord, "created_by"),
+                   ("alert_channels", AlertChannelRecord, "created_by"), ("broker_accounts", BrokerAccountRecord, "user_id"),
+                   ("linked_logins", UserIdentityRecord, "user_id"), ("api_keys", ApiKeyRecord, "user_id"),
+                   ("watchlists", WatchlistRecord, "user_id"), ("chart_layouts", ChartLayoutRecord, "user_id"),
+                   ("chart_drawings", ChartDrawingRecord, "user_id"), ("custom_strategies", CustomStrategyRecord, "user_id"),
+                   ("trade_plans", TradePlanRecord, "user_id"), ("signal_history", SignalHistoryRecord, "user_id"),
+                   ("paper_account", PaperAccountRecord, "user_id"), ("vision_prefs", UserVisionPrefsRecord, "user_id"),
+                   ("experience_opt_outs", ExperienceOptOutRecord, "user_id"))
 
 
 def _plain(value: Any) -> Any:
@@ -84,6 +123,13 @@ async def collect(session: AsyncSession, user: User) -> Dict[str, List[Dict[str,
         if hasattr(model, "tenant_id"):
             q = q.where(model.tenant_id == user.tenant_id)
         data[name] = [_row(r) for r in await session.scalars(q.order_by(model.id))]
+    for extra_name, extra_model, owner in _EXTRA_DATASETS:
+        em: Any = extra_model
+        q = select(em).where(getattr(em, owner) == user.id)
+        if hasattr(em, "tenant_id"):
+            q = q.where(em.tenant_id == user.tenant_id)
+        newest = list(await session.scalars(q.order_by(em.id.desc()).limit(_EXTRA_ROW_CAP)))
+        data[extra_name] = [_row(r) for r in reversed(newest)]
     return data
 
 
@@ -93,11 +139,14 @@ async def export_my_data(user: User = Depends(get_current_user), session: AsyncS
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("README.txt", "Your data in AIAlgoDesk, as stored on the day of this export. One JSON file per kind of "
-                                 "record (your saved studies in studies.json); tables also as CSV. Passwords, two-factor secrets and keys are never included.\n")
+                                 "record (your saved studies in studies.json, your nominee in nominee.json, your sign-ins in login_events.json, your devices in sessions.json, your consents in consents.json); tables also as CSV. "
+                                 "processors.json names the other companies that handle your data and which of them your account uses. Passwords, two-factor secrets and keys are never included.\n")
         for name, rows in data.items():
             z.writestr(f"{name}.json", json.dumps(rows, indent=2, ensure_ascii=False))
             if name != "profile":
                 z.writestr(f"{name}.csv", _csv(rows))
+        # P3-4-B7 (DPDP s.11(1)): who else processes his data - every third party by name and purpose, and which ones he uses.
+        z.writestr("processors.json", json.dumps(await processor_register.summary(session, user), indent=2, ensure_ascii=False))
     await write_audit_log(session, user.tenant_id, user.id, "my_data_exported", f"user #{user.id}: {sum(len(v) for v in data.values())} rows")
     await session.commit()
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d")

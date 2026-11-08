@@ -2659,6 +2659,23 @@ class UserAiKeyRecord(Base):
     last_test_error: Mapped[str | None] = mapped_column(String(200), nullable=True)   # sanitised, never the key
 
 
+class UserNomineeRecord(Base):
+    """P3-4-B10 (DPDP s.14, privacy notice): the one person a user names to use their rights if they die or cannot act.
+    One row per user. The contact is personal data of a third person: it is exported, erased with the user and never logged."""
+
+    __tablename__ = "user_nominees"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    relationship_to_user: Mapped[str] = mapped_column(String(60), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
 class UserVisionPrefsRecord(Base):
     """BYOK-V1: one user's "Vision chart review" settings - on/off, the provider their charts go to, daily and monthly
     spend caps in USD (hard stop), which charts to audit and where reports go. Vision only comments (ADR-0006)."""
@@ -3671,6 +3688,7 @@ class AlertRuleRecord(Base):
     # this rule was evaluated on, when the engine last looked (data not in yet -> retried after a pause), and why it
     # last could not evaluate.
     universe_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    universe_key: Mapped[str | None] = mapped_column(String(80), nullable=True)   # FN2-h: a screener list key instead of typed symbols
     exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE", server_default="NSE")
     last_bar_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
@@ -3972,6 +3990,23 @@ class ActivationEventRecord(Base):
     reached_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
 
 
+class CopilotChatSessionRecord(Base):
+    """CH-2 (owner 5 Nov, "Ho finish all job"): one named Copilot conversation of a person ("New chat"), like a chat
+    session - its title (the first question, renamable) and when it was last used. Per user and tenant; at most
+    `config.COPILOT_CHAT_SESSIONS_KEEP` per person (the least recently used go). Deleting it deletes its turns. Goes with
+    the account and with "Delete my Copilot conversation"; part of "Download my data". Never read by a trading decision."""
+
+    __tablename__ = "copilot_chat_sessions"
+    __table_args__ = (Index("ix_copilot_chat_sessions_user_id", "user_id", "updated_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)    # the pair index above
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
 class CopilotChatTurnRecord(Base):
     """CP-UX CU6 (owner order 30 Oct): one turn of a person's Copilot conversation - the question he asked and the answer
     card the page showed (JSON, the route's own answer without the admin-only diagnostics) - so the conversation is still
@@ -3985,6 +4020,9 @@ class CopilotChatTurnRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)    # the pair index above
+    # CH-2: the conversation the turn belongs to (NULL: a turn written before CH-2 or by an older release; adopted into
+    # "Earlier conversation" the next time the person's conversations are read).
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("copilot_chat_sessions.id", ondelete="CASCADE"), nullable=True, index=True)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)

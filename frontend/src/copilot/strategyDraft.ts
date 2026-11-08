@@ -1,4 +1,5 @@
 import type { Condition, ConditionOperator, CustomStrategyConfig, IndicatorName, Operand } from "../types";
+import { formatNumber } from "../ui/format";
 
 /**
  * Item 5 (owner's handover), job 6: the Copilot's DRAFT paper strategy and its rules on the page. The server
@@ -43,6 +44,27 @@ export interface StrategyDraft {
   ready_made: string[];
   complete: boolean;
   mode: "PAPER";
+  /** CH-3: present only on the answer that ran this draft on past data (ATP's backtest engine). */
+  tested?: DraftTest | null;
+}
+export interface DraftTest {
+  symbol: string | null; timeframe: string | null; from_day: string | null; to_day: string | null;
+  trades: number; net_pnl: number | null; max_drawdown: number | null;
+}
+
+/** CH-3 (owner 5 Nov, "Default yes"): "Start this strategy" only for a complete draft that was tested on past data in this
+ * answer; before that the answer's own label (review / edit on the Trading bot page). Mode-neutral (owner 5 Nov: "Start it on
+ * paper he button barobar nahi"): the same start path; the mode is his account's own (PAPER while LIVE is off). */
+export const START_LABEL = "Start this strategy";
+export function draftStartReady(draft: StrategyDraft | null | undefined): boolean {
+  return !!draft && draft.complete && draft.asks.length === 0 && !!draft.tested;
+}
+
+/** CH-3: the tested line on the draft card - the facts of the test, never a judgement. */
+export function testedLine(t: DraftTest): string {
+  const where = [t.symbol, t.from_day && t.to_day ? `${t.from_day} to ${t.to_day}` : null].filter(Boolean).join(", ");
+  const net = t.net_pnl === null ? "" : `, net after costs ${formatNumber(t.net_pnl, 2, { trim: true })}`;
+  return `Tested on past data${where ? ` (${where})` : ""}: ${t.trades} ${t.trades === 1 ? "trade" : "trades"}${net}. Past results do not say what happens next.`;
 }
 
 /** Where the Copilot hands the draft over: the Trading bot page, with the draft in the navigation state (never a URL). */

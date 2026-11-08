@@ -1,5 +1,5 @@
-import { CircleHelp, History, LineChart, ListChecks, Sparkles } from "lucide-react";
-import { lazy, Suspense } from "react";
+import { Check, CircleHelp, Copy, History, LineChart, ListChecks, Sparkles } from "lucide-react";
+import { lazy, Suspense, useId, useState } from "react";
 import { InPlaceLink } from "../../inplace/InPlaceLink";
 import { chartTabPath } from "../../shell/shellRoutes";
 import { isTimeframe } from "../../chart/timeframes";
@@ -13,8 +13,9 @@ import {
   type AnswerBlock, type AnswerChip, type AnswerHeadline, type ChatAnswer,
 } from "./model";
 import CostChip from "../components/CostChip";
-import { RichText } from "./RichText";
+import { RichText, headingId } from "./RichText";
 import { DraftCardsV2 } from "./DraftCardV2";
+import { draftStartReady, START_LABEL } from "../strategyDraft";
 import { StructureCardV2 } from "./StructureCardV2";
 
 /** CU3: the answer's ONE action (and the strategy card's second, outlined, "test it" button). */
@@ -91,7 +92,7 @@ export function HeadlineRow({ h }: { h: AnswerHeadline }) {
   return (
     <dl className="grid grid-cols-2 gap-space-3 md:flex md:flex-wrap md:items-end md:gap-space-6" data-headline={h.symbol}>
       <div className="min-w-0">
-        <dt className="text-t12 font-medium uppercase text-fg-muted">{h.symbol} · {h.price_label}</dt>
+        <dt className="text-t12 font-medium uppercase text-fg-muted">{h.symbol} · {h.price_label}{stampText(h.as_of) ? ` · ${stampText(h.as_of)}` : ""}</dt>
         <dd className="font-tabular text-t20 font-semibold text-fg md:text-t24" data-headline-price>{formatPrice(h.price)}</dd>
       </div>
       {h.live_price != null && (
@@ -132,8 +133,43 @@ export function HeadlineRow({ h }: { h: AnswerHeadline }) {
  * refusal shows its plain sentence and what to ask instead. Every word and number comes from the server; the page
  * footer carries the one disclaimer (`disclaimer` shows the answer's own line where the card stands alone).
  */
+/** CH-1b: the "## " section headings of an answer's text, in order (its index). */
+export function answerIndex(lines: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    for (const row of line.split("\n")) {
+      const m = /^\s*#{1,3}\s+(.+?)\s*$/.exec(row);
+      if (m) out.push(m[1].replace(/\*\*/g, ""));
+    }
+  }
+  return out;
+}
+
+/** CH-1b: the answer as plain text for Copy - its lines (headings kept as "## "), then the disclaimer. */
+export function answerPlainText(answer: Pick<ChatAnswer, "summary" | "disclaimer">): string {
+  const body = answer.summary.map((l) => l.replace(/\*\*/g, "").trim()).filter(Boolean).join("\n\n");
+  return answer.disclaimer ? `${body}\n\n${answer.disclaimer}` : body;
+}
+
+function CopyAnswer({ text }: { text: string }) {
+  const [done, setDone] = useState<boolean | null>(null);
+  const copy = () => {
+    const clip = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+    if (!clip) { setDone(false); return; }
+    clip.writeText(text).then(() => setDone(true), () => setDone(false));
+  };
+  return (
+    <button type="button" onClick={copy} data-copy-answer aria-label="Copy this answer"
+      className="inline-flex min-h-11 items-center gap-space-1 rounded-pill border border-border px-space-3 text-t13 font-medium text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9">
+      {done ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
+      {done ? "Copied" : done === false ? "Copy not allowed here" : "Copy"}
+    </button>
+  );
+}
+
 export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAnswer; onAsk?: (q: string) => void; disclaimer?: boolean }) {
   const t = useCopilotT();
+  const anchor = `ans${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const used = toolsUsedLine(answer);
   const adminNotSetUp = notSetUpLine(answer);
   const parts = answerParts(answer);
@@ -150,9 +186,18 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
       {card && answer.headline_line && <p className="text-t15 font-semibold text-fg" data-headline-line>{answer.headline_line}</p>}
       {card ? <StructureCardV2 card={card} /> : (
         <div className="space-y-space-1" data-summary>
+          {(() => {
+            // CH-1b: an answer written in sections opens with its index (jump to a section)
+            const index = answerIndex(answer.summary);
+            return index.length >= 3 ? (
+              <nav aria-label="Sections of this answer" data-answer-index className="mb-space-2 flex flex-wrap gap-space-2">
+                {index.map((h) => <a key={h} href={`#${headingId(anchor, h)}`} className={CHIP_ACTION}>{h}</a>)}
+              </nav>
+            ) : null;
+          })()}
           {answer.summary.map((line, i) => i === 0 && answer.headline_line
             ? <p key={i} className="text-t15 font-semibold text-fg" data-headline-line>{line}</p>
-            : <RichText key={i} source={line} />)}
+            : <RichText key={i} source={line} anchorPrefix={anchor} />)}
         </div>
       )}
       {chart && (
@@ -184,8 +229,9 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
       {(answer.action || chart || (answer.followup && onAsk)) && (
         <div className="flex flex-col gap-space-2 sm:flex-row sm:flex-wrap" data-actions>
           {answer.action ? (
-            <InPlaceLink to={answer.action.to} state={actionState(answer)} data-action={answer.draft ? "draft" : "page"} className={PRIMARY}>
-              {answer.action.label}
+            <InPlaceLink to={answer.action.to} state={actionState(answer)} data-action={answer.draft ? "draft" : "page"} className={PRIMARY}
+              data-start={draftStartReady(answer.draft) || undefined}>
+              {draftStartReady(answer.draft) ? START_LABEL : answer.action.label}
             </InPlaceLink>
           ) : chart ? (
             <InPlaceLink to={chartTabPath(chart.symbol, chart.exchange, chart.timeframe)} data-action="chart" className={PRIMARY}>
@@ -259,6 +305,8 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
         </Details>
       )}
       {disclaimer && <p className="text-t12 text-fg-muted" data-disclaimer>{answer.disclaimer}</p>}
+      {/* CH-1b: copy the whole answer (its text and disclaimer) */}
+      {answer.summary.length > 0 && <div className="flex justify-end"><CopyAnswer text={answerPlainText(answer)} /></div>}
     </article>
   );
 }

@@ -114,6 +114,7 @@ DRAWN_AS: Dict[str, str] = {
     **{name: "box" for name in BREAKOUT_ARGS if name not in ("SwingBreakType", "RangeExpansion")},
     "RangeExpansion": "bars",                                  # B13 marks the expansion bar (no base to box)
     "Greatest": "series", "Least": "series",                   # drawn as their arguments' lines
+    "Abs": "series", "Round": "series", "Floor": "series", "Ceil": "series", "Sqrt": "series",   # FN2-c: numbers
     "SwingBreakType": "strip",
     **{name: "band" for name in ZONE_CALLS},
     **{name: "overlay" for name in CROSS_CALLS},

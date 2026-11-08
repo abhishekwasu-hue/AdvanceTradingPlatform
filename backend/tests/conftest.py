@@ -45,6 +45,21 @@ def _connection_lock_of_this_event_loop(dbapi_connection, connection_record, con
         dbapi_connection._execute_mutex = asyncio.Lock()
 
 
+@pytest.fixture
+def redis_required():
+    """New automated / resting entries are held while Redis is unreachable (M55 A18: the worker's replica lock and the
+    trigger engine's entry pause), so a test of an entry needs a reachable Redis, as in CI (service redis:7). Without it
+    the test stops here with the plain reason instead of a misleading 'RESTING == REJECTED' or 'filled == 0'."""
+    import redis
+
+    from app.core.config import REDIS_URL
+    try:
+        redis.Redis.from_url(REDIS_URL, socket_connect_timeout=0.5).ping()
+    except Exception as exc:  # noqa: BLE001 - any failure to reach it is the same plain reason
+        pytest.fail(f"Redis at {REDIS_URL} is not reachable ({exc.__class__.__name__}): start redis-server first - entry tests "
+                    "need it (CI runs it as a service)", pytrace=False)
+
+
 @pytest.fixture(autouse=True)
 def _closed_circuit_breakers():
     reset_all()

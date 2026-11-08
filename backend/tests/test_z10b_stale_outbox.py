@@ -12,7 +12,7 @@ Flags off: everything above is unchanged (the existing S3/S4 suites run with bot
 """
 import asyncio
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Dict, List
 
 import httpx
@@ -46,7 +46,7 @@ def ist(d: date, hh: int, mm: int) -> datetime:
 
 
 def utc(dt: datetime) -> datetime:
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 BAR = utc(ist(TUE, 9, 30))
@@ -97,7 +97,7 @@ def test_bars_are_counted_on_the_exchange_clock():
     assert closed_bars_after(daily, "1d", ist(date(2026, 3, 15), 12, 0)) == 3     # the weekend adds nothing
     assert closed_bars_after(daily, "1d", ist(date(2026, 3, 13), 15, 31), holidays={date(2026, 3, 12)}) == 2
     assert closed_bars_after(utc(ist(TUE, 0, 0)), "1d", ist(TUE, 15, 31)) == 0    # a broker's midnight label is the same day
-    assert closed_bars_after(BAR, "1w", ist(TUE, 12, 0)) is None
+    assert closed_bars_after(BAR, "2h", ist(TUE, 12, 0)) is None                  # FN2-f: weeks / months are counted now
 
 
 def test_the_badge_has_the_bt1_shape_and_fails_closed():
@@ -107,7 +107,7 @@ def test_the_badge_has_the_bt1_shape_and_fails_closed():
     assert stale["alerts_suppressed"] and stale["stale"] and "more than 3 newer 5m bar" in stale["stale_reason"]
     assert alert_badge(None, "5m", ist(TUE, 9, 36))["alerts_suppressed"]          # unknown time = stale
     assert alert_badge(BAR, None, ist(TUE, 9, 36))["alerts_suppressed"]
-    assert alert_badge(BAR, "1w", ist(TUE, 9, 36))["alerts_suppressed"]
+    assert alert_badge(BAR, "2h", ist(TUE, 9, 36))["alerts_suppressed"]          # a timeframe it cannot judge
     assert not alert_badge(BAR, "5m", ist(date(2026, 3, 20), 9, 36), max_bars=0)["alerts_suppressed"]   # G1 limit off = off here too
     assert alert_badge(BAR, "5m", ist(TUE, 9, 41), max_bars=0)["stale"] is False
 
@@ -287,7 +287,7 @@ def _flush(tid: int, now: datetime) -> Dict[str, int]:
     return _run(go())
 
 
-REAL_CLOCK = datetime(2026, 6, 1, tzinfo=timezone.utc)
+REAL_CLOCK = datetime(2026, 6, 1, tzinfo=UTC)
 
 
 def _dispatch(tid: int, http, now: datetime):
@@ -297,7 +297,7 @@ def _dispatch(tid: int, http, now: datetime):
         async with _session_factory() as session:
             await session.execute(update(AlertDeliveryRecord).where(AlertDeliveryRecord.tenant_id == tid,
                                                                     AlertDeliveryRecord.next_attempt_at > REAL_CLOCK)
-                                  .values(next_attempt_at=datetime(2026, 1, 1, tzinfo=timezone.utc)))
+                                  .values(next_attempt_at=datetime(2026, 1, 1, tzinfo=UTC)))
             await session.commit()
             return await dispatcher.dispatch_pending(session, client=http, now=now, tenant_id=tid)
     return _run(go())
@@ -485,7 +485,7 @@ def test_a_worker_killed_mid_send_leaves_a_lease_and_the_row_is_sent_again_once_
         _dispatch(ctx["tid"], None, BAR)
     row = _rows(ctx["tid"])[0]
     assert row.status == "PENDING" and row.attempts == 1 and row.claimed_by.startswith(dispatcher.WORKER_ID + ":")
-    lease = row.lease_until.replace(tzinfo=timezone.utc) if row.lease_until.tzinfo is None else row.lease_until
+    lease = row.lease_until.replace(tzinfo=UTC) if row.lease_until.tzinfo is None else row.lease_until
     assert lease == BAR + timedelta(seconds=dispatcher.LEASE_SECONDS)
 
     monkeypatch.setattr(dispatcher, "send_via_channel", real)

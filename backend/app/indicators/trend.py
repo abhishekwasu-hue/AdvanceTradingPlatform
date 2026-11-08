@@ -94,3 +94,44 @@ def parabolic_sar(df: pd.DataFrame, start: float = 0.02, step: float = 0.02, max
         sar[i] = result
         direction[i] = 1.0 if below else -1.0
     return pd.DataFrame({"sar": sar, "dir": direction}, index=df.index)
+
+
+# FN2-a (part 2): the triangular moving average and the Ichimoku lines (Chikou left out: it is the close plotted
+# `shift` bars back, so on any bar it would be a future close)
+@prefix_cached
+def tma(series: pd.Series, period: int) -> pd.Series:
+    """Triangular moving average: the simple average of a simple average, SMA(SMA(x, (n + 1) // 2), n // 2 + 1) - the two
+    windows span exactly n bars and weigh them 1, 2, .., 2, 1 (the usual two-pass definition, e.g. MetaStock's
+    triangular moving average: Mov(Mov(x, n/2), n/2 + 1) for an even n, Mov(Mov(x, (n+1)/2), (n+1)/2) for an odd one).
+    NaN until `period` bars, and wherever a window holds a NaN. Causal: bar t reads bars t - period + 1 .. t."""
+    if period < 1:
+        raise ValueError("TMA needs a period of at least 1")
+    return sma(sma(series, (period + 1) // 2), period // 2 + 1)
+
+
+def _midpoint(df: pd.DataFrame, period: int) -> pd.Series:
+    """(highest high + lowest low) / 2 over the last `period` bars (NaN until `period` bars)."""
+    highest = df["high"].astype(float).rolling(window=period, min_periods=period).max()
+    lowest = df["low"].astype(float).rolling(window=period, min_periods=period).min()
+    return (highest + lowest) / 2.0
+
+
+@prefix_cached
+def ichimoku(df: pd.DataFrame, tenkan: int = 9, kijun: int = 26, span_b: int = 52, shift: int = 26) -> pd.DataFrame:
+    """Ichimoku Kinko Hyo (Hosoda; the standard 9 / 26 / 52 / 26 settings, e.g. StockCharts ChartSchool "Ichimoku
+    Cloud"), causal. Columns:
+
+    * `tenkan` - the conversion line, (highest high + lowest low) / 2 over `tenkan` bars;
+    * `kijun`  - the base line, the same over `kijun` bars;
+    * `span_a` - leading span A, (tenkan + kijun) / 2;
+    * `span_b` - leading span B, the midpoint over `span_b` bars.
+
+    A chart plots both leading spans `shift` bars ahead of the bar they are computed on. A screen reads a bar, never a
+    future one, so here the cloud on bar t is the one the chart draws over bar t: span_a / span_b computed on bar
+    t - shift (shifted forward; NaN for the first `shift` bars). TradingView draws them `shift - 1` bars ahead (it counts
+    the current bar as one), so its cloud over a bar is this one with `shift` one larger. The lagging span (Chikou: the
+    close plotted `shift` bars back) is left out: on any bar it is a close `shift` bars in the future."""
+    tenkan_line = _midpoint(df, tenkan)
+    kijun_line = _midpoint(df, kijun)
+    return pd.DataFrame({"tenkan": tenkan_line, "kijun": kijun_line, "span_a": ((tenkan_line + kijun_line) / 2.0).shift(shift),
+                         "span_b": _midpoint(df, span_b).shift(shift)}, index=df.index)

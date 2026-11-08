@@ -234,7 +234,7 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
             // NAV-1 (owner 30 Oct, "the AI button is far too small"): a filled, bold "AI" pill on a phone ("Ask AI" from md
             // up) with a gentle pulse that stops under prefers-reduced-motion (no flashing).
             <button type="button" onClick={onAskAi} title="Ask AI" aria-label="Ask AI" aria-haspopup="dialog" aria-expanded={askAiOpen} data-ask-ai-open
-              className="inline-flex h-10 shrink-0 items-center gap-0.5 rounded-pill bg-brand px-1.5 text-t14 font-bold text-on-brand md:mr-space-1 md:px-space-3 shadow-sm transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 motion-safe:animate-pulse md:h-9 md:gap-space-2 md:text-t14">
+              className="inline-flex min-h-11 shrink-0 items-center gap-0.5 rounded-pill bg-brand px-1.5 text-t14 font-bold text-on-brand md:mr-space-1 md:px-space-3 shadow-sm transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 motion-safe:animate-pulse md:min-h-9 md:gap-space-2 md:text-t14">
               <Sparkles size={16} aria-hidden /><span className="md:hidden">AI</span><span className="hidden md:inline">Ask AI</span>
             </button>
           )}

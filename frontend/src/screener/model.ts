@@ -23,7 +23,8 @@ export interface RegistryEntry {
   varargs: boolean;
   timeframed: boolean;
   cross_sectional?: boolean;
-  needs?: string[];          // data beyond bars ("reference", "option_chain"); the run path does not load it yet
+  needs?: string[];          // data beyond bars ("reference", "option_chain") the builder does not offer
+  loaded?: boolean;          // FN2-e: its data comes from a family the run loads (`loads`, e.g. the stored option chain)
   field: boolean;
   doc: string;
 }
@@ -44,6 +45,30 @@ export function timeframeWords(tf: string, plain: boolean): string {
 export const DEFAULT_WINDOW = 20;
 export const DEFAULT_OR_MINUTES = 15;
 export const DEFAULT_TOLERANCE_PCT = 0.5;
+/** FN2-b: the most bars back a "bars ago" can read - the server's MAX_OFFSET (backend/app/screener/validator.py; a
+ * test keeps the two equal). */
+export const MAX_BARS_AGO = 500;
+
+/** A usable "bars ago" (a whole number, 1 to MAX_BARS_AGO), else 0 - the current bar. */
+export function barsAgo(s: { offset?: number }): number {
+  const n = s.offset;
+  return typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= MAX_BARS_AGO ? n : 0;
+}
+
+/** What was typed in a "bars ago" field: blank -> 0 (the current bar), 1 to MAX_BARS_AGO -> that number, else null. */
+export function parseBarsAgo(text: string): number | null {
+  const t = text.trim();
+  if (t === "" || t === "0") return 0;
+  if (!/^\d{1,4}$/.test(t)) return null;
+  const n = Number(t);
+  return n >= 1 && n <= MAX_BARS_AGO ? n : null;
+}
+
+/** "3 bars ago", "1 bar ago"; "" for the current bar. */
+export function barsAgoWords(n: number): string {
+  return n > 0 ? `${n} ${n === 1 ? "bar" : "bars"} ago` : "";
+}
+
 /** The fields a series argument (SMA's x) can take in the indicator block. */
 export const SERIES_FIELDS = ["close", "open", "high", "low", "volume"] as const;
 /** The levels a `level` argument (ReversalAt, RealBreak) can take. */
@@ -61,7 +86,9 @@ export type ParamKind =
   | { kind: "series"; name: string; options: readonly string[] } // a field (SMA of close) or a level (ReversalAt at PDH())
   | { kind: "text"; name: string };                          // free text (IndexMember's index name)
 
-export interface SeriesRef { fn: string; params: Record<string, ParamValue>; tf: Timeframe | null }
+/** `offset` (FN2-b): how many bars back the series is read - `RSI(14)[3]` is RSI three bars ago; absent or 0 = the current
+ * bar. Only the indicator block sets it (its left and right side). */
+export interface SeriesRef { fn: string; params: Record<string, ParamValue>; tf: Timeframe | null; offset?: number }
 export type Operand = { kind: "value"; value: number } | { kind: "series"; ref: SeriesRef };
 export const OPS = [">", ">=", "<", "<=", "crosses above", "crosses below"] as const;
 export type Op = (typeof OPS)[number];
@@ -89,9 +116,20 @@ export interface FunnelResult {
   passes?: Record<string, boolean[]>;
 }
 
-/** Can this entry be the subject of an indicator block? A number per symbol per bar, with arguments the builder can edit. */
+/** FN2-e: the registry as the builder offers it - an entry whose data families (`needs`) are all in `loads` (what the
+ * server's run loads for the builder, e.g. the stored option chain) is offered and marked `loaded`; the rest stay hidden. */
+export function offeredRegistry(reg: Registry, loads: readonly string[]): Registry {
+  const out: Registry = {};
+  for (const [name, e] of Object.entries(reg)) {
+    out[name] = e.needs?.length && e.needs.every((n) => loads.includes(n)) ? { ...e, needs: [], loaded: true } : e;
+  }
+  return out;
+}
+
+/** Can this entry be the subject of an indicator block? A number per symbol per bar, with arguments the builder can edit.
+ * FN2-e: a loaded data number without a timeframe (PCR, MaxPainDistancePct, FuturesOI) is one too - on the last bar. */
 export function isIndicator(e: RegistryEntry | undefined): boolean {
-  if (!e || e.needs?.length || e.returns !== "num" || e.kind !== "factor" || e.varargs || e.cross_sectional || !e.timeframed) return false;
+  if (!e || e.needs?.length || e.returns !== "num" || e.kind !== "factor" || e.varargs || e.cross_sectional || (!e.timeframed && !e.loaded)) return false;
   return e.args.every((a) => {
     const t = e.types?.[a];
     return t === "window" || t === "num" || (t === "str" && (e.choices[a]?.length ?? 0) > 0);
@@ -153,9 +191,17 @@ export function defaultParams(e: RegistryEntry): Record<string, ParamValue> {
   return out;
 }
 
-export function seriesRef(reg: Registry, fn: string, tf: Timeframe | null = null): SeriesRef {
+export function seriesRef(reg: Registry, fn: string, tf: Timeframe | null = null, offset = 0): SeriesRef {
   const e = reg[fn];
-  return { fn, params: e ? defaultParams(e) : {}, tf };
+  const ref: SeriesRef = { fn, params: e ? defaultParams(e) : {}, tf };
+  return offset > 0 ? { ...ref, offset } : ref;
+}
+
+/** The series read `n` bars back (0 or blank: the current bar, and no `offset` key at all). */
+export function withBarsAgo(s: SeriesRef, n: number): SeriesRef {
+  const rest: SeriesRef = { ...s };
+  delete rest.offset;
+  return n > 0 ? { ...rest, offset: n } : rest;
 }
 
 let seq = 0;
@@ -198,10 +244,12 @@ function argText(kind: ParamKind | undefined, v: ParamValue): string {
   return /^-?\d+(\.\d+)?$/.test(v) && kind?.kind !== "select" ? v : JSON.stringify(v);
 }
 
-/** `RSI(14)@15m`, `SMA(close, 20)`, `close@1d`, `IsFnO()`. */
+/** `RSI(14)@15m`, `SMA(close, 20)`, `close@1d`, `IsFnO()`; FN2-b: `RSI(14)[3]@15m` three bars ago (the server's
+ * canonical order: offset, then timeframe - nodes.py `_suffix`). */
 export function seriesText(reg: Registry, s: SeriesRef): string {
   const e = reg[s.fn];
-  const suffix = s.tf ? `@${s.tf}` : "";
+  const back = barsAgo(s);
+  const suffix = (back ? `[${back}]` : "") + (s.tf && e?.timeframed !== false ? `@${s.tf}` : "");   // FN2-e: never @tf on PCR()
   if (!e || e.field) return `${s.fn}${suffix}`;
   const kinds = paramKinds(e);
   const args = e.args.map((a, i) => argText(kinds[i], s.params[a] ?? defaultParams(e)[a]));
@@ -315,8 +363,9 @@ const OP_WORDS: Record<Op, string> = {
 
 function seriesWords(reg: Registry, s: SeriesRef): string {
   const e = reg[s.fn];
-  const base = !e || e.field ? s.fn : seriesText(reg, { ...s, tf: null });
-  return s.tf ? `${base} on ${s.tf}` : base;
+  const base = !e || e.field ? s.fn : seriesText(reg, { ...withBarsAgo(s, 0), tf: null });
+  const back = barsAgo(s);
+  return `${base}${s.tf ? ` on ${s.tf}` : ""}${back ? ` ${barsAgoWords(back)}` : ""}`;
 }
 
 /** The plain-English line on a stage: "RSI(14) on 15m above 60", "Trend(3) is UPTREND", "any of: ...". */

@@ -20,6 +20,7 @@ import { useFeatures } from "../ui/useFeatures";
 import { supportAccess, type SupportAccess } from "../api/viewAs";
 import { formatDateTimeIST } from "../ui/format";
 import MyDataCardV2 from "../settings/MyDataCardV2";
+import NomineeCardV2 from "../settings/NomineeCardV2";
 import { SkeletonRows } from "../components/primitives";
 import { Details } from "../ui/Details";
 import { toast } from "../components/Toast";
@@ -200,6 +201,7 @@ export default function AccountPage() {
         <Details id="account.sessions" className="mt-2"><p>For your safety you are asked to sign in again after a while, even on a device you use every day.</p></Details>
       </Card>
       <MyDataCardV2 copilot={v2} studies={studies} />
+      {v2 && <NomineeCardV2 />}
       {v2 && <SupportAccessCard />}
     </div>
   );

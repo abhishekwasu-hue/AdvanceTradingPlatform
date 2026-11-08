@@ -16,7 +16,7 @@ import logging
 import math
 import time
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
@@ -34,11 +34,13 @@ from app.db.models import ScreenRecord, ScreenRunRecord, User
 from app.db.session import get_session, release_connection
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import amw_functions as amw_gate
+from app.screener import chains as chain_gate
 from app.screener import compile_screen, nodes, reasons
 from app.screener import fundamentals as fundamentals_gate
 from app.screener import legends as lg
 from app.screener import ownership as ownership_gate
 from app.screener import ranking as ranking_gate  # registers the `legends` template source (U7 LG1)
+from app.screener import reference as reference_gate
 from app.screener import taxonomy as tx
 from app.screener import venues as venue_gate
 from app.screener import waves as waves_gate
@@ -81,6 +83,13 @@ async def run_allowed(session: AsyncSession, user: User) -> None:
 # U7 LG3: and the point-in-time fundamentals. N3 S8a: and the ownership patterns and events known by each bar's close.
 # N3 S7a: and the ranking systems a RankScore names (loaded by the route, with the sectors a sector-neutral one needs).
 RUN_PROVIDES: frozenset = frozenset({"zones", "fundamentals", "ownership", "rankings"})
+# FN2-d: `load_universe` also loads the current reference data of these "reference" functions (app/screener/reference);
+# a caller that runs through it passes missing_data(..., reference=True). McapBucket has no source and stays refused.
+RUN_REFERENCE: frozenset = reference_gate.LOADED
+# FN2-e: and the stored option-chain snapshots of these "option_chain" functions (app/screener/chains), read at or before
+# each symbol's last bar close; a caller that runs through `load_universe` passes missing_data(..., chain=True).
+RUN_CHAIN: frozenset = chain_gate.LOADED
+BUILDER_LOADS = ("option_chain",)
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
@@ -168,7 +177,9 @@ async def registry(user: User = Depends(get_current_user), session: AsyncSession
             entries = amw_gate.hide(entries)
         if waves_gate.FLAG in off:                # wave templates R7: RetestEntry without its wave choices
             entries = waves_gate.hide(entries)
-    return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries}
+    # FN2-e: the data families (`needs`) the run loads that the builder may offer - the option chain, from the stored
+    # snapshots (the other families stay off the builder as before)
+    return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries, "loads": list(BUILDER_LOADS)}
 
 
 async def _flags_off(session: AsyncSession, user: User) -> set:
@@ -365,7 +376,7 @@ async def _apply(session: AsyncSession, user: User, row: ScreenRecord, body: Scr
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     row.name, row.source_text, row.ast_json = body.name.strip(), nodes.to_text(ast), json.dumps(nodes.to_json(ast))
     row.ast_version, row.base_tf, row.params_json = nodes.VERSION, body.base_tf, json.dumps(body.params)
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(UTC)
 
 
 @router.post("/screens", status_code=201)
@@ -422,7 +433,7 @@ async def archive_screen(screen_id: int, user: User = Depends(require_trader), s
     """Archived, never hard-deleted: earlier runs keep pointing at it."""
     await _flag(session, user)
     row = await _owned(session, user, screen_id)
-    row.archived, row.updated_at = True, datetime.now(timezone.utc)
+    row.archived, row.updated_at = True, datetime.now(UTC)
     await session.commit()
     return _screen_dict(row)
 
@@ -505,7 +516,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     if store and not include_forming:
         return await _store_frames(session, tenant_id, symbols, exchange, base_tf, lookback, now, user_id=user_id, tier_out=tier_out,
                                    release=release, budget_out=budget_out)
-    now_utc = now or datetime.now(timezone.utc)
+    now_utc = now or datetime.now(UTC)
     daily_tf = nodes.TF_MINUTES["1d"]
     want = _FETCH[base_tf]
     attach_daily = want != "day" and any(nodes.TF_MINUTES.get(tf, 0) >= daily_tf for tf in lookback)
@@ -613,7 +624,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         # Timed by the data (the stalest symbol's newest bar); nothing read = age unknown = stale.
         oldest = min(newest) if newest else None
         tier_out["data_tier"] = own.badge(timeframe=_FETCH_TF[interval] if oldest is not None else None, last_bar_start=oldest,
-                                          now=now or datetime.now(timezone.utc))
+                                          now=now or datetime.now(UTC))
         if held:
             tier_out["held_back"] = len(held)
     if budget_out is not None:
@@ -671,7 +682,7 @@ async def _store_frames(session: AsyncSession, tenant_id: int, symbols: list[str
     from app.market_data.live_access import load_user
     from app.market_store import reader as ms
     from app.screener.universes import batch_wait_seconds
-    now_utc = now or datetime.now(timezone.utc)
+    now_utc = now or datetime.now(UTC)
     daily_tf = nodes.TF_MINUTES["1d"]
     want = _FETCH[base_tf]
     syms = list(dict.fromkeys(s.strip().upper() for s in symbols if s and s.strip()))
@@ -835,7 +846,7 @@ def _symbol_frames(bars: Any, interval: str, base_tf: str, include_forming: bool
         df.index = df.index.tz_localize("UTC")
     fetched_tf = _FETCH_TF[interval]
     if not include_forming:
-        df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc), exchange)  # never the bar still forming
+        df = closed_only(df, fetched_tf, now or datetime.now(UTC), exchange)  # never the bar still forming
     if today is not None and fetched_tf == "1d":
         df = _with_today(df, today)
     if df.empty:
@@ -866,7 +877,7 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
     from app.core.models import OHLCVBar
     from app.market_data.calendar import IST
     from app.market_data.service import HISTORY_CACHE_TTL_SECONDS
-    session_day = (now or datetime.now(timezone.utc)).astimezone(IST).date().isoformat()
+    session_day = (now or datetime.now(UTC)).astimezone(IST).date().isoformat()
     scope = f"{getattr(service, 'cache_namespace', None) or 'shared'}:{getattr(getattr(service, 'broker', None), 'name', 'broker')}"
     span = int(getattr(service, "lookback_days", 0) or 0)
     for data in universe:
@@ -890,7 +901,7 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
             continue
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
-        df = closed_only(df, "1d", now or datetime.now(timezone.utc))
+        df = closed_only(df, "1d", now or datetime.now(UTC))
         if not df.empty:
             data.frames["1d"] = df
 
@@ -931,11 +942,17 @@ async def load_universe(session: AsyncSession, user: User, ast: Any, validated: 
             raise
         universe, fetch_problems, data_source = stored
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
-        await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
+        await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, datetime.now(UTC), ast, base_tf, params)
     if fundamentals_gate.flagged_calls(ast):      # U7 LG3: the reported figures as known by each bar's close (point in time)
-        await fundamentals_gate.attach(session, universe, datetime.now(timezone.utc), tenant_id=user.tenant_id)
+        await fundamentals_gate.attach(session, universe, datetime.now(UTC), tenant_id=user.tenant_id)
     if ownership_gate.flagged_calls(ast):         # N3 S8a: the shareholding patterns and events known by each bar's close
-        await ownership_gate.attach(session, universe, exchange, datetime.now(timezone.utc), viewer=user.tenant_id)
+        await ownership_gate.attach(session, universe, exchange, datetime.now(UTC), viewer=user.tenant_id)
+    if reference_gate.calls(ast):                 # FN2-d: Sector / Industry / IndexMember / IsFnO - the current classification
+        await reference_gate.attach(session, universe)
+    if chain_gate.calls(ast):                     # FN2-e: the stored chain snapshot read at or before each symbol's last bar close
+        from app.market_data import live_access
+        await chain_gate.attach(session, universe, tenant_id=user.tenant_id, user_id=user.id,
+                                own=await live_access.byob_on(session, user.tenant_id), base_tf=base_tf, now=datetime.now(UTC))
     systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
     return universe, fetch_problems, data_source, systems
 
@@ -949,19 +966,27 @@ async def rank_systems(session: AsyncSession, tenant_id: int, ast: Any, params: 
     systems, _ = await ranking_gate.resolve(session, tenant_id, ranking_gate.names_in(ast, params))
     if any(s.sector_neutral for s in systems.values()) and universe:
         from app.market_data.calendar import IST
-        today = datetime.now(timezone.utc).astimezone(IST).date()
+        today = datetime.now(UTC).astimezone(IST).date()
         ranges = await ranking_gate.sector_ranges(session, [d.symbol for d in universe], today, today)
         for d in universe:
             d.sector = ranking_gate.sector_on(ranges.get(d.symbol, []), today)
     return systems
 
 
-def missing_data(ast: Any) -> List[str]:
-    """Functions in the screen whose data the run path does not load (`Spec.needs` not in RUN_PROVIDES)."""
+def missing_data(ast: Any, *, reference: bool = False, chain: bool = False) -> List[str]:
+    """Functions in the screen whose data the run path does not load (`Spec.needs` not in RUN_PROVIDES). `reference`
+    (FN2-d): the caller runs through `load_universe`, which loads the current reference data of RUN_REFERENCE's
+    functions - they count as loaded. Off (history, chart studies, the library): refused as before, since those read past
+    bars and the current classification would be look-ahead there. `chain` (FN2-e): the same for RUN_CHAIN's functions
+    (the stored chain snapshot of each symbol's last bar; a symbol without one is not evaluated, with the reason)."""
     out: List[str] = []
     for node in nodes.walk(ast):
         spec = FUNCTIONS.get(getattr(node, "name", "")) if isinstance(node, nodes.Call) else None
-        if spec and any(need not in RUN_PROVIDES for need in spec.needs) and spec.name not in out:
+        if spec is None or spec.name in out:
+            continue
+        loaded = (RUN_PROVIDES | ({"reference"} if reference and spec.name in RUN_REFERENCE else set())
+                  | ({"option_chain"} if chain and spec.name in RUN_CHAIN else set()))
+        if any(need not in loaded for need in spec.needs):
             out.append(spec.name)
     return out
 
@@ -1010,10 +1035,11 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     await _gate(session, user, ast, validated, params, body.exchange)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
-    missing = missing_data(ast)
+    # FN2-d: load_universe loads Sector / Industry / IndexMember / IsFnO; FN2-e: and the stored option-chain snapshots
+    missing = missing_data(ast, reference=True, chain=True)
     if missing:
         raise HTTPException(status_code=422, detail={"message": f"{', '.join(m + '()' for m in missing)} need data the screener run does not load "
-                                                                "yet (sector / index / F&O lists or the option chain); a run uses bars only",
+                                                                "yet (market-cap buckets)",
                                                      "problems": [{"message": f"{m}() needs data the run does not load yet", "pos": None} for m in missing]})
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
     # Z10-d: same matches, less time. LD-7: read before the fetch, while this request still holds its connection (read
@@ -1228,6 +1254,39 @@ async def idea_to_scan(body: IdeaBody, user: User = Depends(require_trader), ses
     await session.commit()
     return {"ok": text is not None, "text": text, "base_tf": base_tf, "stages": stages, "parts": parts,
             "not_supported": draft.unsupported, "edits": [f.as_dict() for f in feedback], "disclaimer": idea.DISCLAIMER}
+
+
+RUNS_LIST_MAX = 50            # FN2-i: the most past runs one list call returns
+RUNS_PREVIEW = 5              # FN2-i: matched symbols shown per past run in the list (the full list comes from /runs/{id})
+
+
+@router.get("/runs")
+async def list_runs(screen_id: Optional[int] = None, limit: int = 20, user: User = Depends(get_current_user),
+                    session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """FN2-i: the caller's own earlier runs, newest first - only runs this user started in this organisation (never another
+    member's). `screen_id` narrows to one saved screen of the organisation (404 when it is not one). No results body:
+    the list carries counts and the first few matches; GET /runs/{id} reopens one."""
+    await _flag(session, user)
+    if screen_id is not None:
+        await _owned(session, user, screen_id)
+    limit = max(1, min(limit, RUNS_LIST_MAX))
+    query = (select(ScreenRunRecord, ScreenRecord.name)
+             .outerjoin(ScreenRecord, (ScreenRecord.id == ScreenRunRecord.screen_id) & (ScreenRecord.tenant_id == ScreenRunRecord.tenant_id))
+             .where(ScreenRunRecord.tenant_id == user.tenant_id, ScreenRunRecord.user_id == user.id))
+    if screen_id is not None:
+        query = query.where(ScreenRunRecord.screen_id == screen_id)
+    rows = (await session.execute(query.order_by(ScreenRunRecord.id.desc()).limit(limit))).all()
+    out: List[Dict[str, Any]] = []
+    for row, screen_name in rows:
+        try:
+            results = json.loads(row.result_json or "[]")
+        except ValueError:
+            results = []
+        matches = [str(r.get("symbol")) for r in results if isinstance(r, dict) and r.get("matched")]
+        out.append({"run_id": row.id, "screen_id": row.screen_id, "screen_name": screen_name, "base_tf": row.base_tf,
+                    "scanned": row.scanned, "matched": row.matched, "first_matches": matches[:RUNS_PREVIEW],
+                    "created_at": row.created_at.isoformat() if row.created_at else None})
+    return {"runs": out, "disclaimer": DISCLAIMER}
 
 
 @router.get("/runs/{run_id}")

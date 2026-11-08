@@ -143,9 +143,16 @@ describe("Tell me when it matches", () => {
     expect(t).toContain("it never places or changes an order");
   });
 
+  it("FN2-h: offers the whole list only when the scan runs on a list", () => {
+    expect(render()).not.toContain("Run on the whole list");
+    expect(render({ universeName: "NIFTY 50", universeKey: "nifty50" })).toContain("Run on the whole list (NIFTY 50)");
+  });
+
   it("needs symbols; offers the forming bar only with its flag; shows no other scan's alerts", () => {
     expect(render({ symbols: [] })).toContain("Add the symbols to watch in the Universe column first");
     expect(render({ intrabar: true })).toContain("While the bar is forming");
+    expect(render({ intrabar: true, scanTf: "1w" })).not.toContain("While the bar is forming");     // FN2-f: bar close only
+    expect(render({ intrabar: true, scanTf: "1M" })).toContain("checks each time a monthly bar closes");
     expect(render({ screenId: 10 })).not.toContain("Alerts on this scan");
     expect(render({ screenId: undefined })).not.toContain("Alerts on this scan");
     expect(whenLine("15m", "intrabar")).toBe("checks while each 15-minute bar is forming");

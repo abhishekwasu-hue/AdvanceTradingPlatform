@@ -356,6 +356,22 @@ def review_trades(trades: Sequence[TradeRecord]) -> List[Any]:
     return out
 
 
+def manual_review_trades(rows: Sequence[Any]) -> List[Any]:
+    """M88: his outside-ATP entries of the week as review decisions - P&L, charges and holding time from what he
+    recorded, and the risk from his own stop only (no stop: no R). They count in the totals and setups, never in the
+    discipline score (no detector reads them)."""
+    from app.journal import entries
+    from app.journal.review import ReviewTrade
+    out = []
+    for m in rows:
+        entry_time, exit_time = _utc(m.entry_time), _utc(m.exit_time)
+        risk = entries._risk(m.direction, float(m.entry_price), float(m.stop_loss) if m.stop_loss is not None else None, float(m.quantity))
+        out.append(ReviewTrade(id=m.id, setup=m.setup or "", unit=f"m:{m.id}", pnl=entries.manual_pnl(m), charges=float(m.charges or 0.0),
+                               risk=risk, holding_minutes=(exit_time - entry_time).total_seconds() / 60.0 if exit_time and entry_time else None,
+                               manual=True))
+    return out
+
+
 def accepted_of(trades: Sequence[Any], entries: dict[int, JournalEntryRecord]) -> list[dict[str, Any]]:
     """M76 MP-5: the week's "warnings you accepted and their outcomes" from each entry's `plan_json.accepted_warnings`."""
     from app.journal.review import accepted_summary
@@ -368,6 +384,7 @@ def accepted_of(trades: Sequence[Any], entries: dict[int, JournalEntryRecord]) -
 async def weekly_review(session: AsyncSession, user: User, label: Optional[str] = None, *, history_weeks: int = 4,
                         now: Optional[datetime] = None) -> Dict[str, Any]:
     """The week's review from the journal, with the trader's own previous `history_weeks` weeks for comparison."""
+    from app.journal import entries
     from app.journal.review import _stats, build_review
     from app.journal.score import counted
     data = await refresh_week(session, user, label, now=now)
@@ -378,10 +395,11 @@ async def weekly_review(session: AsyncSession, user: User, label: Optional[str] 
     for _ in range(max(0, history_weeks)):
         week = previous_week(week)
         past = await refresh_week(session, user, week, now=now)
-        stats = _stats(review_trades(past["trades"]))
+        stats = _stats(review_trades(past["trades"]) + manual_review_trades(await entries.manual_in(session, user, past["start"], past["end"])))
         history.append({"week": week, "score": past["score"]["score"], "trades": stats["trades"], "net_pnl": stats["net_pnl"],
                         "avg_r": stats["avg_r"], "win_rate": stats["win_rate"]})
     trades = review_trades(data["trades"])
+    trades += manual_review_trades(await entries.manual_in(session, user, data["start"], data["end"]))   # M88: outside ATP too
     review = build_review(data["week"], trades, [(t.trade_id, t.tag) for t in live], data["score"], history, s,
                           accepted=accepted_of(trades, data["entries"]))
     review.update(start=data["start"].isoformat(), end=data["end"].isoformat())

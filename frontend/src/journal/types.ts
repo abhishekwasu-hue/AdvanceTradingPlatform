@@ -285,7 +285,10 @@ export interface JournalEntryFull {
   user_tags: string[];
   checklist: ChecklistItem[];
   attachments: JournalAttachment[];
-  charts: { entry: string; exit: string | null };
+  /** M88: an outside-ATP entry also has its own chart (entry and exit marked) and that chart as an image. */
+  charts: { entry: string; exit: string | null; trade?: string; trade_image?: string };
+  /** M88: a manual entry that came from a file he imported. */
+  imported?: boolean;
 }
 
 /** POST /journal/manual: a trade done outside ATP, as the trader records it. */
@@ -313,3 +316,41 @@ export interface AcceptedWarningRow { id: string; label: string; trades: number;
 
 export type JournalWeekV2 = Omit<JournalWeek, "entries"> & { entries: (JournalEntry & Partial<JournalEntryFull>)[]; manual_entries?: JournalEntryFull[];
   accepted_warnings?: AcceptedWarningRow[] };
+
+/** M88: one column of an import and the file's header it is read from (null: not in this file). */
+export type ImportMapping = Record<string, string | null>;
+
+/** M88: one round-trip trade an import would add. */
+export interface ImportTrade {
+  symbol: string; exchange: string | null; instrument_kind: string; direction: "LONG" | "SHORT"; quantity: number;
+  entry_time: string; entry_price: number; exit_time: string | null; exit_price: number | null; charges: number;
+  pnl: number | null; stop_loss: number | null; rows: number[]; date_only: boolean; duplicate: boolean;
+}
+
+/** M88: POST /journal/import/preview - what importing the file would add; nothing is stored. */
+export interface ImportPreview {
+  file: { name: string; size: number; hash: string };
+  layout: { id: string; label: string };
+  shape: "fills" | "trades";
+  pairing: string | null;
+  headers: string[];
+  mapping: ImportMapping;
+  fields: { key: string; label: string }[];
+  counts: { rows: number; problems: number; trades: number; duplicates: number; to_import: number; open: number; date_only: number };
+  problems: { row: number; reason: string }[];
+  trades: ImportTrade[];
+  already_imported: { at: string; file_name: string; trades_left: number } | null;
+  limits: { max_bytes: number; max_rows: number; max_trades: number };
+}
+
+/** M88: POST /journal/import. */
+export interface ImportResult { imported: number; duplicates: number; problems: number; import_id: number; already_imported: boolean; entry_ids: number[] }
+
+/** M88: GET /journal/manual/{id}/trade-chart - the candles around his outside trade with its entry and exit marked. */
+export interface TradeChartMark { kind: "entry" | "exit"; label: string; at: string; price: number; side: "BUY" | "SELL"; bar: string | null }
+export interface TradeChart {
+  symbol: string; exchange: string; direction: "LONG" | "SHORT"; timeframe: string; timeframe_label: string; note: string;
+  candles: { timestamp: string; open: number; high: number; low: number; close: number; volume: number }[];
+  marks: TradeChartMark[]; levels: { kind: string; label: string; price: number }[];
+  missing: boolean; missing_text: string | null; image: string;
+}

@@ -44,6 +44,7 @@ from app.journal.settings import DisciplineSettings, clean_label
 
 MANUAL_SOURCE = "OUTSIDE_ATP"          # how a manual entry is marked everywhere it is shown
 MANUAL_LABEL = "Manual - done outside ATP"
+IMPORTED_LABEL = "Imported - done outside ATP"   # M88: a manual entry that came from a file he imported
 NOTES_MAX = 5000                       # the same limit as PATCH /api/trades/{id}/journal
 KINDS = ("UNDERLYING", "OPTION", "FUTURE")
 FUTURE_SLACK = timedelta(minutes=5)    # a manual trade cannot be entered in the future (clock skew allowed)
@@ -459,7 +460,8 @@ def manual_payload(row: JournalManualTradeRecord, s: DisciplineSettings, *, atta
         fills.append({"leg": "EXIT", "side": "SELL" if row.direction == "LONG" else "BUY", "price": float(row.exit_price),
                       "quantity": float(row.quantity), "at": _iso(exit_time), "reason": row.exit_reason})
     return {
-        "kind": "manual", "id": row.id, "manual": True, "trade_id": None, "source": MANUAL_SOURCE, "source_label": MANUAL_LABEL,
+        "kind": "manual", "id": row.id, "manual": True, "trade_id": None, "source": MANUAL_SOURCE,
+        "source_label": IMPORTED_LABEL if row.import_id is not None else MANUAL_LABEL, "imported": row.import_id is not None,
         "symbol": row.symbol, "exchange": row.exchange, "mode": None, "direction": row.direction, "setup": row.setup,
         "instrument_kind": row.instrument_kind, "entry_time": _iso(entry_time), "exit_time": _iso(exit_time),
         "plan_view": {"setup": row.setup, "timeframe": row.timeframe, "area": [row.area] if row.area else None,
@@ -472,7 +474,9 @@ def manual_payload(row: JournalManualTradeRecord, s: DisciplineSettings, *, atta
         "notes": row.notes, "tags": [], "user_tags": _loads(row.user_tags_json, []), "checklist": checklist_view(row.checklist_json, s),
         "attachments": [attachment_dict(a) for a in attachments],
         "charts": {"entry": f"/api/journal/manual/{row.id}/chart?at=entry",
-                   "exit": f"/api/journal/manual/{row.id}/chart?at=exit" if row.exit_time is not None else None},
+                   "exit": f"/api/journal/manual/{row.id}/chart?at=exit" if row.exit_time is not None else None,
+                   # M88: the trade on its own chart (entry and exit marked), in place, and as an image
+                   "trade": f"/api/journal/manual/{row.id}/trade-chart", "trade_image": f"/api/journal/manual/{row.id}/trade-chart.png"},
         "created_at": _iso(row.created_at),
     }
 

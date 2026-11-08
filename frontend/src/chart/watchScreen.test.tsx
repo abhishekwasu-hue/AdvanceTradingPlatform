@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ScreenLegend, overlayLayers, type ScreenOverlayState } from "./ScreenOverlay";
+import { CHART_PANEL } from "../inplace/panels";
 import { WatchScreenBar, type WatchScreenState } from "./WatchScreenBar";
 import { SystemListView } from "./WatchlistPanel";
 import {
@@ -217,5 +218,12 @@ describe("C1 the overlay on the chart", () => {
     expect(screenParam("?exchange=BSE")).toBe("?exchange=BSE");
     expect(withScreen("/charts/AAA", { screenId: 4 })).toBe("/charts/AAA?wscreen=4");
     expect(withScreen("/charts/AAA?exchange=BSE", null)).toBe("/charts/AAA?exchange=BSE");
+  });
+  it("an in-place chart keeps the screen in its panel address; an older address reads as before", () => {
+    const m = (path: string) => { const u = new URL(path, "http://x"); return CHART_PANEL.match({ pathname: u.pathname, search: u.searchParams, hash: "" }); };
+    expect(m("/charts/AAA?exchange=BSE&wscreen=4")).toEqual({ symbol: "AAA", exchange: "BSE", wscreen: "4" });
+    expect(m("/charts/AAA?wscreen=x")).toEqual({ symbol: "AAA" });
+    expect(CHART_PANEL.href({ symbol: "AAA", wscreen: "4" })).toBe("/charts/AAA?wscreen=4");
+    expect(CHART_PANEL.href({ symbol: "AAA", exchange: "BSE" })).toBe("/charts/AAA?exchange=BSE");
   });
 });

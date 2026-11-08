@@ -1,11 +1,12 @@
-import { ExternalLink } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { ExternalLink, Filter } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useLiveLtp } from "../components/chartHelpers";
 import type { LtpResponse } from "../types";
 import { cx } from "../components/primitives/cx";
 import { useInPlace } from "../inplace/context";
 import ChartV2 from "./ChartV2";
+import { ScreenLegend, useScreenOverlay } from "./ScreenOverlay";
 import type { LevelLine, OverlayId } from "./chartCore";
 import type { LayerBand } from "../charting/engine";
 import { ChartToolbar } from "./ChartToolbar";
@@ -67,11 +68,13 @@ export interface EmbeddedChartV2Props {
   onEngine?: (engine: LightweightEngine | null) => void;
   /** M75 W-2: the host's own words when there are no prices (a contract: "No prices for this contract ..."). */
   emptyNote?: string;
+  /** M91 C1: the watchlist's chosen screen (his own saved screen) drawn on the chart with its legend and one toggle. */
+  screenId?: number | null;
 }
 
 export default function EmbeddedChartV2({
   symbol, exchange = "NSE", levels, areas, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive, onSymbol, symbolUniverse,
-  onEngine, emptyNote,
+  onEngine, emptyNote, screenId = null,
 }: EmbeddedChartV2Props) {
   const { user } = useAuth();
   const [overlays, setOverlays] = useState<OverlayId[]>([]);
@@ -109,6 +112,12 @@ export default function EmbeddedChartV2({
   const openLabel = inPlace.handles(openTo) ? "Open a larger chart" : "Open in Chart tab";
   const box = useRef<HTMLDivElement>(null);
   const activation = useEmbedActivation(box);
+  // M91 C1: the watchlist's screen on this chart (its own engine handle; the host's onEngine still gets it too)
+  const [engine, setEngine] = useState<LightweightEngine | null>(null);
+  const takeEngine = useCallback((e: LightweightEngine | null) => { setEngine(e); onEngine?.(e); }, [onEngine]);
+  const [screenShown, setScreenShown] = useState(true);
+  const screen = useScreenOverlay(engine, { screenId, symbol: sym, exchange, timeframe, candles: data.candles, on: screenShown && screenId != null });
+  const allLevels = useMemo(() => (screenId != null && screen.levels.length ? [...(levels ?? []), ...screen.levels] : levels), [levels, screen.levels, screenId]);
   const emptyText = data.loading ? "Loading prices…" : data.error ? "" : data.empty ?? emptyNote ?? `No prices for ${sym} on this timeframe yet.`;
 
   return (
@@ -119,12 +128,18 @@ export default function EmbeddedChartV2({
           favourites: prefs.prefs.timeframe_favourites, onFavourites: (next) => prefs.update({ timeframe_favourites: next }) }}
         indicators={{ state: indicatorState, on: () => false, onToggle: onIndicator, groups: EMBEDDED_GROUPS }}
         settings={{ prefs: prefs.prefs, onChange: prefs.update, error: prefs.error }}
-        endActions={openLink ? [{ id: "open", label: openLabel, icon: <ExternalLink size={16} aria-hidden />, to: openTo }] : []} />
+        endActions={[
+          ...(screenId != null ? [{ id: "screen-overlay", label: "Screen overlay", title: screenShown ? "Hide the screen overlay" : "Show the screen overlay",
+            moreLabel: screenShown ? "Hide the screen overlay" : "Show the screen overlay", pressed: screenShown, testId: "screen-overlay-button",
+            icon: <Filter size={16} aria-hidden />, onClick: () => setScreenShown((v) => !v) }] : []),
+          ...(openLink ? [{ id: "open", label: openLabel, icon: <ExternalLink size={16} aria-hidden />, to: openTo }] : []),
+        ]} />
       {/* a column that fills a flex host (the Terminal's panel), so a host's `flex-1` on the chart still works */}
       <div ref={box} data-chart-active={activation.active ? "on" : "off"} {...activation.handlers}
            className="relative flex min-h-0 flex-1 flex-col">
         <ChartV2 candles={data.candles} timeframe={timeframe} symbol={sym} exchange={exchange} prefs={shown} overlays={overlays} live={live.ltp} marketOpen={marketOpen}
-          levels={levels} areas={areas} onLoadOlder={data.loadOlder} drawingTools={false} emptyText={emptyText} onEngine={onEngine}
+          levels={allLevels} areas={areas} markers={screenId != null ? screen.markers : undefined} onLoadOlder={data.loadOlder} drawingTools={false}
+          emptyText={emptyText} onEngine={takeEngine}
           captureTouch={activation.active} className={className} />
         {/* the outline over the canvases (an inset ring on this box would sit under the chart's own background) */}
         {activation.active && <span data-chart-outline aria-hidden className="pointer-events-none absolute inset-0 z-20 ring-2 ring-inset ring-brand" />}
@@ -134,6 +149,7 @@ export default function EmbeddedChartV2({
           </p>
         )}
       </div>
+      {screenId != null && screenShown && <ScreenLegend state={screen} onShowTf={setTimeframe} />}
       {data.error && (
         <p role="status" className="flex flex-wrap items-center gap-x-space-2 border-t border-subtle px-space-3 py-space-1 text-t13 text-fg">
           {data.error}

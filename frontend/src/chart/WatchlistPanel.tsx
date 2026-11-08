@@ -9,6 +9,7 @@ import { SymbolPicker } from "../ui/SymbolPicker";
 import { useLiveTicks } from "../live/liveTicks";
 import { SkeletonRows } from "../components/primitives/Feedback";
 import { flashClass, useTickFlash } from "../ui/useTickFlash";
+import { useFeatures } from "../ui/useFeatures";
 import {
   contractItems, contractSubline, contractsApi, contractsKey, holdsTarget, known, rollEdit, splitExpired, type ContractFacts, type KnownContract,
 } from "../fno/contracts";
@@ -383,10 +384,11 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
   const currentCount = systemSummary?.count ?? list?.items.length ?? 0;
 
   // M91: the list's Screen (W1-W4). Only the list on screen is checked; the flag off (503) hides the row.
-  const choices = useScreenChoices();
+  const choices = useScreenChoices(useFeatures().on("watchlist_screen"));
   const listKey = ref ? listKeyOf(ref) : list ? listKeyOf({ kind: "own", id: list.id }) : null;
-  const choice = (listKey && choices.lists[listKey]) || NO_CHOICE;
-  const screen = choices.screens?.find((x) => x.id === choice.screen_id) ?? null;
+  const stored = (listKey && choices.lists[listKey]) || NO_CHOICE;
+  const screen = choices.screens?.find((x) => x.id === stored.screen_id) ?? null;
+  const choice = screen ? stored : NO_CHOICE;            // a screen since archived or deleted reads as None
   const screenRows = useMemo(() => (systemList ? systemList.items : live), [systemList, live]);
   const screenShown = !state.off && !browsing && !!listKey && !choices.off && choices.screens !== null && (!!list || !!systemSummary);
   const watch = useWatchScreen({ listKey: listKey ?? "", listName: currentName, items: screenRows, choice, screen, active: screenShown });

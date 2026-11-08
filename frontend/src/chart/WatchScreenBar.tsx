@@ -16,13 +16,16 @@ const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:rin
 
 const tabHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
 
-/** His own screens and every list's choice, read once per panel. 503 (the flag off) or any failure: `off` - no row. */
-export function useScreenChoices(api: Pick<WatchScreenApi, "screens" | "settings" | "save"> = watchScreenApi) {
+/** His own screens and every list's choice, read once per panel - only while the flag `watchlist_screen` is on (`enabled`). Off,
+ * a 503 or any failure: `off` - no row, the panel exactly as before. */
+export function useScreenChoices(enabled: boolean, api: Pick<WatchScreenApi, "screens" | "settings" | "save"> = watchScreenApi) {
   const [screens, setScreens] = useState<OwnScreen[] | null>(null);
   const [lists, setLists] = useState<Record<string, ListChoice>>({});
   const [off, setOff] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
+    if (!enabled) { setOff(true); return undefined; }
+    setOff(false);
     let live = true;
     Promise.all([api.screens(), api.settings()]).then(([s, c]) => {
       if (!live) return;
@@ -30,7 +33,7 @@ export function useScreenChoices(api: Pick<WatchScreenApi, "screens" | "settings
       setLists(c?.lists && typeof c.lists === "object" ? c.lists : {});
     }, () => { if (live) setOff(true); });
     return () => { live = false; };
-  }, [api]);
+  }, [api, enabled]);
   const choose = useCallback(async (key: string, choice: ListChoice) => {
     const before = lists[key];
     setLists((m) => { const next = { ...m }; if (choice.screen_id == null) delete next[key]; else next[key] = choice; return next; });
@@ -108,33 +111,31 @@ export function WatchScreenBar({ listKey, screens, choice, onChoose, state, item
   const unusable = state.screen && !state.screen.usable ? state.screen.why : null;
   return (
     <div data-watch-screen={listKey} className="space-y-space-1 border-b border-subtle px-space-2 py-space-2">
-      <div className="flex flex-wrap items-center gap-space-1">
+      <div className="flex items-center gap-space-1">
         <label htmlFor={id} className="shrink-0 px-space-1 text-t12 font-semibold text-fg-muted">Screen</label>
         <select id={id} value={choice.screen_id ?? ""} className={field} data-testid="watch-screen-pick"
           onChange={(e) => onChoose(e.target.value ? { ...NO_CHOICE, ...choice, screen_id: Number(e.target.value) } : NO_CHOICE)}>
           <option value="">None</option>
           {screens.map((s) => <option key={s.id} value={s.id} disabled={!s.usable}>{s.name}{s.usable ? "" : " (not for lists)"}</option>)}
         </select>
-        {chosen && (
-          <>
-            <button type="button" aria-pressed={choice.matches_only} onClick={() => onChoose({ ...choice, matches_only: !choice.matches_only })}
-              className={chip(choice.matches_only)} data-testid="watch-screen-only">
-              <Filter size={14} aria-hidden />Matches only
-            </button>
-            <button type="button" aria-expanded={alerts} aria-label="Alert on new matches" title="Alert on new matches"
-              onClick={() => setAlerts((v) => !v)} className={cx(chip(choice.alert), "px-space-2")} data-testid="watch-screen-alerts">
-              <Bell size={14} aria-hidden /><span className="sr-only md:not-sr-only">{choice.alert ? "On" : "Off"}</span>
-            </button>
-          </>
-        )}
       </div>
       {chosen && !unusable && (
-        <p className="flex flex-wrap items-center gap-x-space-2 px-space-1 text-t12 text-fg-muted" role="status" data-testid="watch-screen-count">
-          <span className="font-semibold text-fg tabular-nums">{countText(items, state.matched)}</span>
-          {state.checking && <span>Checking…</span>}
-          {state.outcome?.slowed && <span className="text-warn">Slowed by broker limit</span>}
-          {state.failed && <span className="text-fg">Could not be checked just now. It tries again at the next bar.</span>}
-        </p>
+        <div className="flex flex-wrap items-center gap-space-1">
+          <p className="flex min-w-0 flex-1 flex-wrap items-center gap-x-space-2 px-space-1 text-t12 text-fg-muted" role="status" data-testid="watch-screen-count">
+            <span className="whitespace-nowrap font-semibold text-fg tabular-nums">{countText(items, state.matched)}</span>
+            {state.checking && <span>Checking…</span>}
+            {state.outcome?.slowed && <span className="text-warn">Slowed by broker limit</span>}
+            {state.failed && <span className="text-fg">Could not be checked just now. It tries again at the next bar.</span>}
+          </p>
+          <button type="button" aria-pressed={choice.matches_only} onClick={() => onChoose({ ...choice, matches_only: !choice.matches_only })}
+            className={chip(choice.matches_only)} data-testid="watch-screen-only">
+            <Filter size={14} aria-hidden />Matches only
+          </button>
+          <button type="button" aria-expanded={alerts} aria-label="Alert on new matches" title="Alert on new matches"
+            onClick={() => setAlerts((v) => !v)} className={chip(choice.alert)} data-testid="watch-screen-alerts">
+            <Bell size={14} aria-hidden /><span>{choice.alert ? "On" : "Off"}</span>
+          </button>
+        </div>
       )}
       {unusable && <p className="px-space-1 text-t12 text-fg-muted">{unusable}</p>}
       {chosen && alerts && (

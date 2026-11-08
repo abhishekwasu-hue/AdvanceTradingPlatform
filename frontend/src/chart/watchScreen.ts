@@ -173,17 +173,7 @@ export function markOf(state: RowState): { sign: string; label: string; tone: "u
 /** C1: the screen chosen for the list a chart was opened from (null: none, nothing drawn). */
 export interface ScreenFrom { symbol: string; exchange: string; screenId: number; screenName: string; listKey: string }
 
-/** C1: the address parameter that carries the screen to the Charts page (the chart reads it; another pick drops it). */
-export const SCREEN_PARAM = "wscreen";
-/** A chart address (`/charts/X?exchange=..`) with the screen added. */
-export function withScreen(path: string, from?: Pick<ScreenFrom, "screenId"> | null): string {
-  if (!from) return path;
-  return `${path}${path.includes("?") ? "&" : "?"}${SCREEN_PARAM}=${encodeURIComponent(String(from.screenId))}`;
-}
-export function screenParam(query: string, from?: Pick<ScreenFrom, "screenId"> | null): string {
-  if (!from) return query;
-  return `${query}${query ? "&" : "?"}${SCREEN_PARAM}=${encodeURIComponent(String(from.screenId))}`;
-}
+export { SCREEN_PARAM, screenIdOf, screenParam, withScreen } from "./screenParam";
 
 // ------------------------------------------------------------------------------------------- W3: when a list is checked
 export interface CheckerTarget { listKey: string; listName: string; screenId: number; items: readonly WatchItem[] }

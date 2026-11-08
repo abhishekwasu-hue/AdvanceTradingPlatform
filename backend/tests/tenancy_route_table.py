@@ -493,6 +493,18 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
     ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
+    # M88-R: the shared daily market report - one stored report of the shared EOD files, the same for every member (no
+    # tenant data, no AI call on read); its admin card is SUPER_ADMIN with two-factor
+    ("GET", "/api/daily-report/latest"): "member: M88-R - the one shared stored report built from the shared EOD files; no organisation data",
+    ("GET", "/api/daily-report/{report_id}/pdf"): "member: M88-R - the shared stored report as a PDF; no organisation data",
+    # M89: his own "Daily market report on Telegram" choice, and the Stop button's signed link under the message
+    ("GET", "/api/daily-report/telegram"): "member: M89 - the caller's own Telegram choice for the daily report and whether his own chat is connected",
+    ("PUT", "/api/daily-report/telegram"): "self: M89 - turns the daily report on Telegram on / off for the caller only (his own prefs row)",
+    ("GET", "/api/daily-report/telegram/stop"): "public: M89 Stop button - a page with one button; the signed token in the link is the credential",
+    ("POST", "/api/daily-report/telegram/stop"): "public: M89 Stop button - the signed token (organisation and user) is the credential; it only turns that user's report off",
+    ("GET", "/api/admin/daily-report"): "admin",
+    ("PUT", "/api/admin/daily-report/settings"): "admin",
+    ("POST", "/api/admin/daily-report/run"): "admin",
     ("POST", "/api/studies"): S_OWN_STUDIES,
     ("GET", "/api/studies"): "member: M77 SX-2 - the caller's own saved studies only (user_id and tenant)",
     ("GET", "/api/studies/{study_id}"): "member: M77 SX-2 - one of the caller's own studies; another member's reads as not found",

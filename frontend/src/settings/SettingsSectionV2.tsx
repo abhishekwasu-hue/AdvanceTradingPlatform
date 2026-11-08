@@ -15,6 +15,7 @@ import PhonePushV2 from "../alerts/PhonePushV2";
 import SignedWebhooksV2 from "../alerts/SignedWebhooksV2";
 import { isNativeApp } from "../native/platform";
 import RhythmTelegramV2 from "../rhythm/RhythmTelegramV2";
+import DailyReportTelegramV2 from "../dailyReport/DailyReportTelegramV2";
 import CopilotWatchV2 from "../copilot/watch/CopilotWatchV2";
 import AnswerLanguageV2 from "../copilot/language/AnswerLanguageV2";
 import CopilotMemoryV2 from "../copilot/memory/CopilotMemoryV2";
@@ -118,6 +119,7 @@ function AlertsSection() {
   const phone = isNativeApp() && mobilePush;
   // AUD-G2.5: the member's own signed webhooks (flag alert_webhooks; this section is ui_v2 only).
   const webhooks = useFeatures().on("alert_webhooks");
+  const report = useFeatures().on("shared_daily_report");
   const [telegramChanged, setTelegramChanged] = useState(0);
   return (
     <div id="alerts" className="space-y-space-4">
@@ -133,6 +135,12 @@ function AlertsSection() {
       {rhythm && (
         <div id="daily-briefs" className="scroll-mt-20">
           <Card title="Daily briefs on Telegram"><RhythmTelegramV2 key={telegramChanged} /></Card>
+        </div>
+      )}
+      {/* M89: the shared daily market report on his own Telegram (ON by default; hidden while the flag is off). */}
+      {report && (
+        <div id="daily-report" className="scroll-mt-20">
+          <Card title="Daily market report"><DailyReportTelegramV2 key={telegramChanged} /></Card>
         </div>
       )}
       {watch && (

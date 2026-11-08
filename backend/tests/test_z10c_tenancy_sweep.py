@@ -109,6 +109,10 @@ A_CONTROL_EXCEPTIONS: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/fno/group-exits/{exit_id}/edit"):
         "the planted row is not an ARMED combined exit, and only an armed one can be edited (422 'has ended', by design); "
         "the other organisation still gets 404 and changes nothing (CX; tests/test_cx_api.py edits a real one)",
+    ("GET", "/api/daily-report/{report_id}/pdf"):
+        "report_id names the ONE shared stored daily report (platform data from the shared EOD files, no tenant row); the "
+        "sweep's world has the shared_daily_report flag off, so it answers 404 by design (M88-R; "
+        "tests/test_m88r_daily_report.py downloads a real one)",
     ("GET", "/api/setup-recall/proposals/{action_id}"):
         "the planted ai_actions row is not an ENTRY proposal, and recall answers only for one (404 'No such proposal', by "
         "design); the other organisation still gets 404 (AUD-T6; tests/test_aud_t6_setup_recall.py serves a real one)",

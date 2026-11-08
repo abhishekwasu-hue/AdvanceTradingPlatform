@@ -319,6 +319,13 @@ class DailyRhythmPrefs(_Prefs):
     weekly: bool = True
 
 
+class DailyReportPrefs(_Prefs):
+    """`daily_report` (owner order M89): whether the stored shared daily market report (M88-R) also goes to the user's own
+    Telegram chat. ON by default (owner decision TG2) - it only reaches a user who connected Telegram; he turns it off
+    here (Settings > Alerts) or with the Stop button under the message. Read by the report's Telegram send only."""
+    telegram: bool = True
+
+
 MAX_MIN_OI = 1_000_000_000
 
 
@@ -699,7 +706,7 @@ class WorkspaceWatchPrefs(_Prefs):
 
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
-                                       "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs,
+                                       "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs, "daily_report": DailyReportPrefs,
                                        "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs,
                                        "option_chain": OptionChainPrefs, "terminal": TerminalPrefs,
                                        "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs,
@@ -841,7 +848,7 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "WorkspaceWatchPrefs", "WatchedArea", "MAX_WATCHED_AREAS", "OwnEvent", "OwnEventsPrefs", "MAX_OWN_EVENTS", "AiUsagePrefs", "WhatIfPrefs", "WhatIfScenario", "MAX_WHAT_IF_SCENARIOS", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "WorkspaceWatchPrefs", "WatchedArea", "MAX_WATCHED_AREAS", "OwnEvent", "OwnEventsPrefs", "MAX_OWN_EVENTS", "AiUsagePrefs", "WhatIfPrefs", "WhatIfScenario", "MAX_WHAT_IF_SCENARIOS", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "DailyReportPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
 
 
 async def own_limits(session: AsyncSession, user: User) -> Dict[str, Any]:

@@ -283,11 +283,12 @@ test.describe("Option chain v2 states", () => {
     await expectPhoneLayout(page);
   });
 
-  test("no broker: only the 'Connect your broker' card, never a chain or sample data", async ({ page }) => {
+  test("no broker (M86): one connect line, no live chain read, the end-of-day chain or its plain line, never sample data", async ({ page }) => {
     const calls = await open(page, "light", { options: { features: { ui_v2: true }, brokers: [] } });
-    await expect(page.locator("[data-broker-gate='no-broker']")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Connect your broker" })).toBeVisible();
-    await expect(page.locator("[data-page='option-chain-v2']")).toHaveCount(0);
+    await expect(page.locator("[data-no-broker='page'] [data-connect-live]")).toHaveCount(1);
+    await expect(page.locator("[data-broker-gate]")).toHaveCount(0);
+    // No end-of-day options file in this made-up world: one plain line where the chain goes.
+    await expect(page.locator("[data-eod-chain='none']")).toBeVisible();
     expect(calls.live).toEqual([]);
     await expect(page.getByText(/sample/i)).toHaveCount(0);
   });

@@ -145,9 +145,11 @@ describe("UI2-2 router wiring (UI v2 §12: PageV2 ?? Page)", () => {
     for (const p of ["/settings", "/orders", "/positions/results", "/copilot/coach"]) expect(shellGates(p, OWN_BROKER_STATES), p).toBe(false);
   });
 
-  it("signed out goes to the sign-in page (UI-14); no broker shows the gate's 'Connect your broker' and nothing else", () => {
+  it("signed out goes to the sign-in page (UI-14); M86: no broker shows the page on the last close with one connect button", () => {
     expect(dashboardSource).toContain("<Navigate to={SIGN_IN_PATH} replace />");
-    expect(dashboardSource).toMatch(/BLOCKING[^\n]*"no-broker"/);
+    expect(dashboardSource).not.toMatch(/BLOCKING[^\n]*"no-broker"/);
+    expect(dashboardSource).toMatch(/BLOCKING[^\n]*"signed-out"/);
+    expect(dashboardSource).toContain('connect={broker.kind === "no-broker"}');
   });
 });
 

@@ -6,6 +6,7 @@ import { gateShowing } from "../live/gateShowing";
 import { useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
+import { NoBrokerLine } from "./ConnectLive";
 import { Button, Skeleton } from "../components/primitives";
 import type { BrokerTokenInfo } from "../types";
 import {
@@ -349,7 +350,9 @@ export function StoredDailyNote({ state, what, onConnect, onLogin, busy = null, 
 /** M85: the data pages that need the daily login itself (holdings and funds), not only market data. */
 export const DAILY_LOGIN_PATHS: readonly string[] = ["/portfolio"];
 
-export function BrokerGate({ children, storedDaily = null }: { children: ReactNode; storedDaily?: string | null }) {
+export function BrokerGate({ children, storedDaily = null, noBrokerEod = null }: { children: ReactNode; storedDaily?: string | null;
+  /** M86 D2: with no broker stored, the page's content on the last end-of-day close under one connect line (this sentence). */
+  noBrokerEod?: string | null }) {
   const { pathname } = useLocation();
   const dataOnly = !DAILY_LOGIN_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const { state, refresh } = useBrokerSession({ dataOnly });
@@ -361,6 +364,16 @@ export function BrokerGate({ children, storedDaily = null }: { children: ReactNo
     gateShowing.set(state.kind === "login-needed");
     return () => gateShowing.set(false);
   }, [state.kind]);
+
+  // M86 D2 / D3: no broker stored - the page on the last end-of-day close, under ONE line with the in-place connect button.
+  if (noBrokerEod && state.kind === "no-broker") {
+    return (
+      <>
+        <NoBrokerLine testId="page" className="mb-space-4 rounded-panel border border-subtle bg-surface-1 px-space-4 py-space-2">{noBrokerEod}</NoBrokerLine>
+        {children}
+      </>
+    );
+  }
 
   // Day-one fix 2: a page that works on stored Daily history shows its content under a one-tap renew line instead of
   // the full gate while only the broker login (or the broker) is missing.

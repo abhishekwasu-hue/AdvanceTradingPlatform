@@ -161,11 +161,12 @@ export function leadersAndLaggards<T extends { name: string; change: PeriodValue
   return { leaders, laggards };
 }
 
-/** "At the close of 21 Oct 2026" / "Over the week to 21 Oct 2026" - what the moves stand on. */
+/** "Last close · 21 Oct 2026" / "Over the week to 21 Oct 2026" - what the moves stand on. */
 export function asOfText(asOf: string | null, period: Period): string {
   if (!asOf) return "";
   const day = formatDateIST(asOf);
-  return period === "day" ? `At the close of ${day}` : period === "week" ? `Over the week to ${day}` : `Over the month to ${day}`;
+  // M86 D2: the day's numbers are the last end-of-day close - the app's one "Last close · <date>" label.
+  return period === "day" ? `Last close · ${day}` : period === "week" ? `Over the week to ${day}` : `Over the month to ${day}`;
 }
 
 /**

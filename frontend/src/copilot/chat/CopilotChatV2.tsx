@@ -2,6 +2,8 @@ import { SETTINGS_PATH } from "../../settings/paths";
 import { askContextLabel, type AskContext } from "../askContext";
 import { KeyRound, Paperclip, SendHorizontal, Sparkles, X } from "lucide-react";
 import { IndexCell } from "../../dashboard/MarketStripV2";
+import { ConnectLiveButton } from "../../ui/ConnectLive";
+import { useNoBroker } from "../../ui/noBroker";
 import { vixBand } from "../../dashboard/model";
 import type { MarketStrip } from "../../dashboard/types";
 import { stripDelay, usePolled, type Loadable } from "../../dashboard/useDashboardData";
@@ -135,6 +137,7 @@ export function NumbersStrip({ strip, home, nowMs }: { strip: Loadable<MarketStr
   const vix = data?.indices.find((i) => i.key === "INDIA VIX") ?? null;
   const band = vixBand(vix?.ltp);
   const fii = home?.market_line.fii_net_crore ?? null;
+  const noBroker = useNoBroker();
   return (
     <section aria-label={t("chat.numbers")} data-numbers-strip data-tour="copilot-market" className={`${CARD} space-y-space-3 p-space-3 md:p-space-4`}>
       <div className="grid grid-cols-3 gap-space-2 md:gap-space-4">
@@ -161,6 +164,8 @@ export function NumbersStrip({ strip, home, nowMs }: { strip: Loadable<MarketStr
         </span>
       </div>
       {strip.status === "error" && <p className="text-t13 text-fg-muted">{t("chat.numbersError")}</p>}
+      {/* M86 D3: no broker stored - the prices above are the last close; one in-place button for live prices. */}
+      {noBroker && <ConnectLiveButton />}
     </section>
   );
 }

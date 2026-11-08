@@ -2,6 +2,9 @@ import { ArrowDown, ArrowUp, ChevronDown, Copy, GripVertical, Lock, PanelRightCl
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from "react";
 import { cx } from "../components/primitives/cx";
 import { EMPTY, formatDateIST, formatPct, formatPrice } from "../ui/format";
+import { NoBrokerLine } from "../ui/ConnectLive";
+import { lastCloseText } from "../ui/lastClose";
+import { type EodQuotesReply, withEodFallback } from "./eodQuotes";
 import { SymbolPicker } from "../ui/SymbolPicker";
 import { useLiveTicks } from "../live/liveTicks";
 import { SkeletonRows } from "../components/primitives/Feedback";
@@ -62,15 +65,18 @@ export interface WatchlistPanelProps {
    * name is cut. Charts and the Watchlist page leave it off (their layout is unchanged). */
   narrow?: boolean;
   className?: string;
+  /** M86 D3: false where the page already has its one "Connect your broker for live prices" button (Charts). */
+  connectButton?: boolean;
 }
 
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
 /** The prices of the first 50 rows (QuotePoller: a reorder asks for nothing new; a changed set waits out the 10 s). */
 function useQuotes(items: readonly WatchItem[], live = false) {
-  const [quotes, setQuotes] = useState<{ rows: Map<string, QuoteRow>; failed: boolean }>({ rows: new Map(), failed: false });
-  const poller = useMemo(() => new QuotePoller(watchlistsV2Api.quotes, {
-    data: (reply) => setQuotes({ rows: new Map(reply.items.map((r) => [itemKey(r), r])), failed: false }),
+  const [quotes, setQuotes] = useState<{ rows: Map<string, QuoteRow>; failed: boolean; eodAsOf?: string | null }>({ rows: new Map(), failed: false });
+  // M86 D2: without a broker of his own the rows carry the last end-of-day close (chart/eodQuotes.ts) and its date.
+  const poller = useMemo(() => new QuotePoller(withEodFallback(watchlistsV2Api.quotes), {
+    data: (reply: EodQuotesReply) => setQuotes({ rows: new Map(reply.items.map((r) => [itemKey(r), r])), failed: false, eodAsOf: reply.eod_as_of }),
     error: () => setQuotes((q) => ({ ...q, failed: true })),
   }), []);
   useEffect(() => () => poller.close(), [poller]);
@@ -227,7 +233,7 @@ function Price({ q, inline = false }: { q: QuoteRow | undefined; inline?: boolea
   );
 }
 
-export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, systemKey = null, onSystemKey, storageKey, onClose, touch = false, className, liveTicks = false, narrow = false }: WatchlistPanelProps) {
+export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, systemKey = null, onSystemKey, storageKey, onClose, touch = false, className, liveTicks = false, narrow = false, connectButton = true }: WatchlistPanelProps) {
   const store = useMemo(() => new WatchlistsStore(), []);
   const state = useSyncExternalStore(store.subscribe, store.getState);
   useEffect(() => { void store.load(); }, [store]);
@@ -429,6 +435,11 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
           {state.note && <p className="text-fg-muted">{state.note}</p>}
           {notice && <p className="text-fg-muted">{notice}</p>}
         </div>
+      )}
+
+      {/* M86 D2 / D3: the prices are the last end-of-day close - one line with its date and the one connect button. */}
+      {quotes.eodAsOf !== undefined && !quotes.failed && (
+        <NoBrokerLine testId="watchlist" button={connectButton} className="border-b border-subtle px-space-3 py-space-2">{lastCloseText(quotes.eodAsOf)}</NoBrokerLine>
       )}
 
       {!state.loaded && <SkeletonRows label="Loading your watchlists…" />}

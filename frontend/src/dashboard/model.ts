@@ -6,6 +6,7 @@ import { paperOnlyFrom } from "../setup/paperOnly";
 import { pauseReasonDetail } from "../ui/pauseReason";
 import { reasonWords, setupWords } from "../signals/signalText";
 import { EMPTY, formatDateIST, formatLots, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
+import { lastCloseText } from "../ui/lastClose";
 import { LEVELS, VIX_BANDS, vixLevel, type VixLevel } from "../ui/levels";
 import { botDisplayName, strategyDisplayName } from "../ui/strategyName";
 import type { OiBannerResponse } from "../oi/types";
@@ -154,6 +155,7 @@ export function vixNote(v: number | null | undefined): string | null {
 /** The small line under an index: where a remembered price is from, or that there is none. */
 export function indexCaption(index: StripIndex, nowMs: number): string | null {
   if (index.missing || index.ltp === null) return "No price yet";
+  if (index.source === "eod") return lastCloseText(index.as_of);
   if (index.source !== "memory") return null;
   const at = toMs(index.as_of);
   if (!Number.isFinite(at)) return "Last known level";

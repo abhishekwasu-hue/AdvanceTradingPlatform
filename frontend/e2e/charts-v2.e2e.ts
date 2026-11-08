@@ -12,7 +12,7 @@ test.afterEach(async ({ page }, testInfo) => { await warnOnManySolidBrand(page, 
 
 /**
  * UI2-4b2 (UI v2 proposal §6, Charts page plan §3): the v2 Charts page with the `ui_v2` flag on.
- * - Baselines `charts-v2-<width>-<theme>.png` at 1440 and 390, and the broker gate `charts-v2-gate-1440-light.png`.
+ * - Baselines `charts-v2-<width>-<theme>.png` at 1440 and 390, and (M86) the no-broker chart on D `charts-v2-gate-1440-light.png`.
  *   The old pages' baselines are untouched: with the flag off nothing changes (the last test, and mobile.e2e.ts).
  * - Every timeframe loads, full screen enters and leaves, no grid by default, the gate with no broker, the chart theme
  *   saved on the server and read back after a reload, and the chart built once (React wiring).
@@ -169,14 +169,14 @@ test.describe("v2 Charts 1440 desktop", () => {
     });
   }
 
-  test("the broker gate with no broker stored: the gate card, no chart, no candles asked for", async ({ page }) => {
+  test("no broker stored (M86): the chart on D from NSE's end-of-day files under one line, never the gate", async ({ page }) => {
     const calls = await open(page, "light", { brokers: [] });
-    const gate = page.locator("[data-broker-gate='no-broker']");
-    await expect(gate).toBeVisible();
-    await expect(gate.getByRole("heading", { name: "Connect your broker" })).toBeVisible();
-    await expect(page.locator("canvas")).toHaveCount(0);
-    await expect(page.locator("[data-page='charts-v2']")).toHaveCount(0);
-    expect(calls.candles).toEqual([]);
+    await expect(page.locator("[data-broker-gate]")).toHaveCount(0);
+    await expect(page.locator("[data-no-broker='page']")).toContainText("last close from NSE's end-of-day files");
+    await expect(page.locator("[data-page='charts-v2']")).toBeVisible();
+    // Without a broker an intraday chart has no bars: the chart opens on D (the saved view is not changed).
+    await expect.poll(() => calls.candles.map((c) => c.timeframe)).toContain("day");
+    expect(calls.candles.at(-1)?.timeframe).toBe("day");
     await expect(page.getByText(/sample/i)).toHaveCount(0);
     await expect(page).toHaveScreenshot("charts-v2-gate-1440-light.png", SHOT);
   });

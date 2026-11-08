@@ -6,5 +6,5 @@ import { useFeatures } from "../../ui/useFeatures";
 /** NAV-2: a page in a panel keeps the broker gate the shell puts in front of its full route (the same decision). */
 export function RouteGate({ path, children }: { path: string; children: ReactNode }) {
   const gate = brokerGateFor(new URL(path, "http://app.invalid").pathname, useFeatures().on);
-  return gate ? <BrokerGate storedDaily={gate.storedDaily}>{children}</BrokerGate> : <>{children}</>;
+  return gate ? <BrokerGate storedDaily={gate.storedDaily} noBrokerEod={gate.noBrokerEod}>{children}</BrokerGate> : <>{children}</>;
 }

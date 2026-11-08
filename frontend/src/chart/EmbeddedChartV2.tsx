@@ -14,6 +14,7 @@ import { chartTabPath, marketChip, offeredTimeframes } from "./chartsPage";
 import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, type TimeframeId } from "./timeframes";
 import { EMBED_HINT_TEXT, useEmbedActivation } from "./embedActivation";
 import { useChartCandles } from "./useChartCandles";
+import { useNoBroker } from "../ui/noBroker";
 import { useChartPrefs } from "./useChartPrefs";
 import { useMarketStatus } from "./useMarketStatus";
 import { usePageVisible } from "../utils/usePageVisible";
@@ -78,8 +79,12 @@ export default function EmbeddedChartV2({
   // The price pane alone: in a chart this small a lower pane would sit under the library's attribution mark.
   const shown = useMemo(() => ({ ...prefs.prefs, indicators: NO_PANES }), [prefs.prefs]);
   const [own, setOwn] = useState<TimeframeId>(given ?? DEFAULT_TIMEFRAME);
-  const timeframe = onTimeframe && given ? given : own;
-  const setTimeframe = (tf: TimeframeId) => { setOwn(tf); onTimeframe?.(tf); };
+  // M86 D2: without a broker an intraday chart has no bars - D (NSE's end-of-day files) until a timeframe is picked here.
+  const noBroker = useNoBroker();
+  const [picked, setPicked] = useState(false);
+  const chosen = onTimeframe && given ? given : own;
+  const timeframe: TimeframeId = noBroker && !picked && !DAILY_OR_LONGER.has(chosen) ? "day" : chosen;
+  const setTimeframe = (tf: TimeframeId) => { setPicked(true); setOwn(tf); onTimeframe?.(tf); };
   // UI2-4e review: nothing is read while the browser tab is hidden (one refresh when it shows again), as the cells do.
   const visible = usePageVisible();
   const { status, at } = useMarketStatus();

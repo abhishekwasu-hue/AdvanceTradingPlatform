@@ -1,3 +1,5 @@
+import EodChainV2 from "./EodChainV2";
+import { useNoBroker } from "../ui/noBroker";
 import { Activity, CalendarDays, ChartColumn, Sparkles, Table2 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -97,7 +99,7 @@ export default function OptionChainPageV2(_props: PageProps) {
   const [autoTrade] = useState(() => params.get(TRADE_PARAM) === "1");
   const market = useMarketStatus();
   const marketOpen = market.status?.sessions?.NSE?.is_open ?? null;
-  const chain = useOptionChain(symbol, marketOpen, carried.expiry);
+  const chain = useOptionChain(symbol, marketOpen, carried.expiry, useNoBroker());
   const [prefs, setPrefs] = useState<ColumnPrefs>(() => readColumns());
   // FNO-3: the address follows the symbol and the expiry on screen, so the hub's tabs (and a reload) keep them.
   const expiry = chain.expiry;
@@ -148,6 +150,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   const expiryId = useId();
 
   const live = chain.live;
+  const noBroker = useNoBroker();
   // T1-3 on this page (owner 25 Oct): the spot card reads the same feed and time as the chart (src/terminal/spot.ts).
   const spot = useTerminalSpot({ symbol, hub: useFeatures().on("data_hub"), enabled: true, chain: live ?? null });
   const notes = chainNotes(live, marketOpen, (iso) => formatTimeIST(iso));
@@ -232,7 +235,9 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         </section>
       )}
 
-      {view === "chain" && <section aria-label="Chain" data-block="chain" data-tour="oc-chain" className="relative">
+      {/* M86 D2: no broker stored - the last end-of-day chain from NSE's F&O file (read only), or one plain line. */}
+      {view === "chain" && noBroker && <section aria-label="Chain" data-block="chain"><EodChainV2 symbol={symbol} /></section>}
+      {view === "chain" && !noBroker && <section aria-label="Chain" data-block="chain" data-tour="oc-chain" className="relative">
         {/* The toggle sits in the gap above the chain, centred over the strike column, so the chain does not move. */}
         <ChainLadderV2 symbol={symbol} live={live} loading={chain.loading} problem={chain.problem} problemReason={chain.problemReason} prefs={prefs} centreSuffix={trading.centreSuffix}
           onPick={(row) => setPicked(row.strike)} onPickLeg={trading.onPickLeg} held={trading.held} setup={marks.size ? marks : undefined}

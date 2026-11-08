@@ -4,7 +4,8 @@
  */
 
 /** Where an index's level came from: the broker session now, or the organisation's market memory (the last reading). */
-export type StripSource = "live" | "memory";
+/** M86 D2: "eod" - the last close from NSE's end-of-day files (`as_of` is its trade date). */
+export type StripSource = "live" | "memory" | "eod";
 
 export interface StripIndex {
   /** The broker's trading symbol ("NIFTY 50", "NIFTY BANK", "INDIA VIX"). */

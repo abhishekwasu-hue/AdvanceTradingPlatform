@@ -35,8 +35,8 @@ import { PAGE_FLAGS } from "../shell/pageFlags";
  *
  * P3 (the owner's "simple front page"): the Get started card (three steps: broker, trading bot, Telegram; src/setup) replaces
  * UI2-7's Setup chip, the same card as today's dashboard. Nothing here opens the four-step setup wizard any more (it stays
- * at Settings → Setup). With no broker stored and the card showing, the card takes the gate's place (its first step is
- * "Connect your broker"), so the trader sees one card, not two.
+ * at Settings → Setup). M86 D2: with no broker stored the page shows the strip on the last end-of-day close (NSE's
+ * files) with ONE in-place "Connect your broker for live prices" button, and the card leads its own first step.
  *
  * Order, top to bottom: greeting, Get started (until its steps are done), market strip, My day (AUD-T1, flag
  * `my_day_card`), Needs attention, the daily brief
@@ -55,7 +55,8 @@ import { PAGE_FLAGS } from "../shell/pageFlags";
  * the alerts list, the go-live checklist, "Engines behind this console" and the signed-out tiles.
  */
 
-const BLOCKING: ReadonlySet<BrokerGateState["kind"]> = new Set(["loading", "signed-out", "no-broker", "unavailable"]);
+// M86 D2: "no-broker" is not blocking - the page shows the last end-of-day close in the strip with one connect button.
+const BLOCKING: ReadonlySet<BrokerGateState["kind"]> = new Set(["loading", "signed-out", "unavailable"]);
 
 /** The time, re-read every minute (the greeting and "first one expires in 8 min"). */
 function useNow(stepMs = 60_000): number {
@@ -128,19 +129,18 @@ export default function DashboardV2(_props: PageProps = {}) {
         <h1 className="mt-px text-t20 font-semibold tracking-tight text-fg md:text-t24">{hello.hello}</h1>
       </header>
 
-      {broker.kind === "no-broker" && card ? (
-        <GetStartedCardV2 />
-      ) : BLOCKING.has(broker.kind) ? (
+      {BLOCKING.has(broker.kind) ? (
         <BrokerGateView state={broker} onConnect={() => inPlace.open(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)} onRetry={refreshBroker} />
       ) : (
         <>
           {/* UI-28 (owner, 29 Oct: "what the user needs must be seen first"): with a broker, the numbers - Today's P&L
               and the market strip - open the page; the remaining setup steps follow them. */}
           <MarketStripV2 strip={data.strip} oi={oiLines(dataOf(data.oi))} marketText={strip ? marketLabel(strip.market, now) : null}
-            broker={brokerChip(broker, brokerRows)} pnl={todayPnl(exposure)} nowMs={now} sparks={sparks} />
+            broker={brokerChip(broker, brokerRows)} pnl={todayPnl(exposure)} nowMs={now} sparks={sparks}
+            connect={broker.kind === "no-broker"} />
           {/* AUD-T1: My day in one card, under the market strip (flag my_day_card, off by default). */}
           {features.on("my_day_card") && <MyDayCardV2 />}
-          <GetStartedCardV2 primaryNext={false} />
+          <GetStartedCardV2 primaryNext={broker.kind === "no-broker"} />
           {/* Item 1: at the Large / Extra large text sizes the two columns start only on a wider screen (2xl). */}
           <div className={`grid grid-cols-1 gap-space-4 ${big ? "2xl:grid-cols-3 2xl:items-start 2xl:gap-space-6" : "lg:grid-cols-3 lg:items-start lg:gap-space-6"}`}>
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:col-span-2 2xl:space-y-space-6" : "lg:col-span-2 lg:space-y-space-6"}`}>

@@ -40,8 +40,9 @@ describe("day-one fix 2: pages keep their Daily content before the broker login"
     // M75 NAV-2: one decision for the tab and the same page in an in-place panel (shell/pagesV2.ts brokerGateFor).
     const shell = readFileSync("src/shell/AppShellV2.tsx", "utf8");
     expect(shell).toContain("const gate = brokerGateFor(location.pathname, features.on);");
-    expect(shell).toContain("<BrokerGate storedDaily={gate.storedDaily}>");
-    expect(readFileSync("src/shell/pagesV2.ts", "utf8")).toContain('return { storedDaily: stored ? storedDailyFor(pathname) : null };');
+    expect(shell).toContain("<BrokerGate storedDaily={gate.storedDaily} noBrokerEod={gate.noBrokerEod}>");
+    // M86 D2: the no-broker sentence rides along; the stored-Daily one still only with stored history on.
+    expect(readFileSync("src/shell/pagesV2.ts", "utf8")).toContain('return { storedDaily: stored ? storedDailyFor(pathname) : null, noBrokerEod: noBrokerEod(pathname) };');
     expect(readFileSync("src/shell/pagesV2.ts", "utf8")).toContain('const stored = on("backtest_stored_history");');
   });
 });

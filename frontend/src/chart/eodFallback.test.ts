@@ -4,13 +4,13 @@ import { eodApi } from "../api/eod";
 import { noBrokerEodFor } from "../ui/dataPages";
 import { lastCloseText } from "../ui/lastClose";
 import { candlesWithEod } from "./eodCandles";
-import { eodQuotes, withEodFallback } from "./eodQuotes";
+import { eodQuotes, resetEodCache, withEodFallback } from "./eodQuotes";
 
 /** M86 D2: a user without a broker sees the last end-of-day close (NSE's files) on charts and watchlists. */
 const NO_BROKER = new ApiError(409, "No broker session with a valid token.");
 const bar = (day: string, close: number) => ({ timestamp: `${day}T00:00:00+05:30`, open: close - 1, high: close + 2, low: close - 3, close, volume: 10 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); resetEodCache(); });   // M90: the last closes are kept a few minutes
 
 describe("M86 words", () => {
   it("Last close with its date, or alone", () => {

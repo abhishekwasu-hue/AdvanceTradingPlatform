@@ -37,14 +37,20 @@ export interface QuoteRow {
   error?: string | null;
   /** FNO-4: a contract's open interest when the broker's quote carries it. */
   oi?: number | null;
+  /** Not fetched this time: the rate budget was in use (`budget_used`) or the broker answered 429 (`slowed`, M90 B5). */
+  budget_used?: boolean;
+  slowed?: boolean;
 }
-export interface QuotesReply { items: QuoteRow[]; fetched_at?: string; warnings?: string[] }
+/** M90 B5: `slowed` - the broker answered "too many requests"; the panel polls more slowly and says so. */
+export interface QuotesReply { items: QuoteRow[]; fetched_at?: string; warnings?: string[]; slowed?: boolean }
 
-/** The server's limits (AMW-2, CHP-7) and the quote budget: one batch for the first 50 rows every 10 s. */
+/** The server's limits (AMW-2, CHP-7) and the quote budget. M90 B4: every row is priced - one request (one batch
+ * quote call at the broker) per QUOTE_BATCH rows every 10 s; a 429 doubles the wait, up to QUOTE_SLOW_MAX_MS. */
 export const MAX_ITEMS = 500;
 export const NAME_MAX = 60;
-export const QUOTE_ROWS = 50;
+export const QUOTE_BATCH = 500;
 export const QUOTE_POLL_MS = 10_000;
+export const QUOTE_SLOW_MAX_MS = 60_000;
 
 export const CHANGED_ELSEWHERE = "This list changed on another device. The latest version is shown.";
 export const MERGED = "This list also changed on another device. Both changes are kept.";
@@ -149,8 +155,26 @@ export function applyEdit(list: WatchlistV2, edit: ListEdit): WatchlistV2 {
 const sameList = (a: WatchlistV2, b: WatchlistV2) =>
   a.name === b.name && a.items.length === b.items.length && a.items.every((x, i) => same(x, b.items[i]));
 
-/** The rows that get a live price: the first QUOTE_ROWS (one batch call). */
-export const quoteItems = (items: readonly WatchItem[]): WatchItem[] => items.slice(0, QUOTE_ROWS);
+/** The rows that get a price: all of them (M90 B4: one request per QUOTE_BATCH rows, `quoteBatches`). */
+export const quoteItems = (items: readonly WatchItem[]): WatchItem[] => [...items];
+
+/** M90 B4: the rows split into the requests of one poll - one per QUOTE_BATCH rows (500 rows = 1, 501 = 2). */
+export function quoteBatches(items: readonly WatchItem[], size = QUOTE_BATCH): WatchItem[][] {
+  const out: WatchItem[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/** M90 B5: a new reply's rows, keeping the last price of a row this reply did not fetch (budget used / slowed). */
+export function keepPrices(prev: ReadonlyMap<string, QuoteRow>, rows: readonly QuoteRow[]): Map<string, QuoteRow> {
+  const out = new Map<string, QuoteRow>();
+  for (const r of rows) {
+    const key = itemKey(r);
+    const old = prev.get(key);
+    out.set(key, r.missing && (r.slowed || r.budget_used) && old && !old.missing ? old : r);
+  }
+  return out;
+}
 
 /** Up, down or flat, for the sign and the arrow next to the colour (colour is never the only signal); null: no change known. */
 /** TM Part 1 (flag `data_hub`): the polled rows with each symbol's newest live tick on top - the last price from the
@@ -354,13 +378,13 @@ export class WatchlistsStore {
 
 const tabHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
 
-/** The poll's identity: the set of rows that get a price (first QUOTE_ROWS), in any order - a reorder inside them asks
- * for nothing new. */
+/** The poll's identity: the set of rows that get a price, in any order - a reorder asks for nothing new. */
 export const quoteKey = (items: readonly WatchItem[]): string => quoteItems(items).map(itemKey).sort().join("|");
 
 /**
- * The batch quote poll for one panel: one request for the first QUOTE_ROWS rows, then one every QUOTE_POLL_MS after
- * each answer; a turn while the tab is hidden is skipped (no request). `update(items)` restarts it only when the set of
+ * The batch quote poll for one panel: one request per QUOTE_BATCH rows (M90 B4: every row), then again QUOTE_POLL_MS
+ * after each answer - twice as long after a "slowed" answer, up to QUOTE_SLOW_MAX_MS (M90 B5); a turn while the tab is
+ * hidden is skipped (no request). Only a mounted panel's own list is polled: a list not on screen is never fetched. `update(items)` restarts it only when the set of
  * priced rows changes, and then not sooner than QUOTE_POLL_MS after the last request (the route allows 30 a minute per
  * user), so adding, removing or reordering rows in a burst costs no extra requests. A superseded request is aborted.
  */
@@ -378,14 +402,21 @@ export class QuotePoller {
     if (key === this.key) return;
     this.halt();
     this.key = key;
-    const first = quoteItems(items);
-    if (first.length === 0) { this.halt = () => undefined; return; }
+    const batches = quoteBatches(quoteItems(items));
+    if (batches.length === 0) { this.halt = () => undefined; return; }
     const abort = new AbortController();
     let stop: () => void = () => undefined;
+    let pace = QUOTE_POLL_MS;
+    const loadAll = async (): Promise<QuotesReply> => {
+      const replies: QuotesReply[] = [];
+      for (const batch of batches) replies.push(await this.load(batch, abort.signal));
+      return replies.length === 1 ? replies[0] : { ...replies[0], items: replies.flatMap((r) => r.items), slowed: replies.some((r) => r.slowed) || undefined };
+    };
     const start = () => {
       stop = startPolling<QuotesReply>({
-        load: () => { this.lastAt = this.now(); return this.load(first, abort.signal); },
-        delay: () => QUOTE_POLL_MS, hidden: this.hidden, onData: this.on.data, onError: this.on.error,
+        load: () => { this.lastAt = this.now(); return loadAll(); },
+        delay: () => pace, hidden: this.hidden, onError: this.on.error,
+        onData: (reply) => { pace = reply.slowed ? Math.min(QUOTE_SLOW_MAX_MS, pace * 2) : QUOTE_POLL_MS; this.on.data(reply); },
       });
     };
     const wait = Math.max(0, this.lastAt + QUOTE_POLL_MS - this.now());

@@ -166,7 +166,7 @@ test.describe("The scan universe, 1440", () => {
     await addStarter(page);
     await runButton(page).click();
     const progress = page.getByTestId("scan-progress");
-    await expect(progress).toContainText(/Scanning (40|80|120) of 500 stocks/);                 // progress, and the results so far
+    await expect(progress).toContainText(/(40|80|120) \/ 500 done/);                 // M90: "120 / 500 done" (was "Scanning 120 of 500 stocks"); the results so far
     await expect(page.getByRole("cell", { name: "STOCK001" })).toBeVisible();
     await expect.poll(() => runs.length, { timeout: 15_000 }).toBe(13);
     expect(runs.every((r) => r.batch === true && r.symbols.length <= 40)).toBe(true);

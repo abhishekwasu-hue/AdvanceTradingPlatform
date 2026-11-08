@@ -184,5 +184,7 @@ def test_the_run_route_returns_a_batch_budget(flag_on, monkeypatch):
     assert len(body["matched"]) == 3
     plain = client.post("/api/screener/run", json={"source": "close > 1", "symbols": ["AAA"]}, headers=headers).json()
     assert "budget" not in plain                                                  # an ordinary run: as before
-    assert client.post("/api/screener/run", json={"source": "close > 1", "symbols": ["A"] * 51, "batch": True},
-                       headers=headers).status_code == 422                        # a batch never exceeds the run cap
+    from app.screener.routes import MAX_REQUEST_SYMBOLS
+    # M90 B3: no fixed 50 - only the request body's ceiling (a watchlist's 500) is refused (was ["A"] * 51 before M90)
+    assert client.post("/api/screener/run", json={"source": "close > 1", "symbols": [f"S{i}" for i in range(MAX_REQUEST_SYMBOLS + 1)],
+                                                  "batch": True}, headers=headers).status_code == 422

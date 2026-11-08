@@ -265,6 +265,7 @@ class KotakNeoBroker(BrokerInterface):
     daily_days_per_request = 365         # the per-interval range limits are not published in figures: conservative
     native_intervals = frozenset(INTERVAL_MAP)           # SCR-FIX A1: 1 / 3 / 5 / 10 / 15 / 30 / 60 min, day, week
     multi_quote = True
+    quote_batch_max = QUOTE_BATCH   # M90 B4: instruments one multi-quote call serves
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:
         if not credentials.api_key:

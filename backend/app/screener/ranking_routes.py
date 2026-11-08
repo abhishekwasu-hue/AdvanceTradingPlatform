@@ -27,7 +27,12 @@ from app.db.session import get_session
 from app.platform.controls import require_flag
 from app.screener import ranking as RK
 from app.screener.routes import FLAG as SCREENER_FLAG
-from app.screener.routes import MAX_SYMBOLS, fetch_frames, run_rate_limit, store_first
+from app.screener.routes import fetch_frames, run_rate_limit, store_first
+from app.screener.universes import BATCH_MAX
+
+# M90: these routes read every symbol they are given in one request (no `pending` hand-back), so they keep the broker's
+# per-request read as their list size (the Screener's own run route has no fixed size - app/screener/routes.py).
+MAX_SYMBOLS = BATCH_MAX
 
 router = APIRouter(prefix="/api/screener/rankings", tags=["screener"])
 

@@ -34,8 +34,13 @@ from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.parser import ScreenQLSyntaxError, parse
-from app.screener.routes import DISCLAIMER, FLAG, GALLERY_FLAG, MAX_SYMBOLS, _cost_cap, _gate, _owned, charge_runs, fetch_frames, missing_data, store_first
+from app.screener.routes import DISCLAIMER, FLAG, GALLERY_FLAG, _cost_cap, _gate, _owned, charge_runs, fetch_frames, missing_data, store_first
 from app.screener.runtime import SymbolData, run_screen
+from app.screener.universes import BATCH_MAX
+
+# M90: these routes read every symbol they are given in one request (no `pending` hand-back), so they keep the broker's
+# per-request read as their list size (the Screener's own run route has no fixed size - app/screener/routes.py).
+MAX_SYMBOLS = BATCH_MAX
 
 router = APIRouter(prefix="/api/screener/library", tags=["screener"])
 library_rate_limit = user_rate_limit("screener_library", limit=20, window_seconds=60)

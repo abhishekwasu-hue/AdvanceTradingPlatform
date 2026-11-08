@@ -258,6 +258,7 @@ class GrowwBroker(BrokerInterface):
     daily_days_per_request = 90          # history per call is not published in figures (GW-6): conservative
     native_intervals = frozenset(INTERVAL_MAP) - {"1hour", "4hour"}   # SCR-FIX A1: ATP names only (4 hours: from 60min)
     multi_quote = True
+    quote_batch_max = LTP_BATCH     # M90 B4: instruments one multi-quote call serves
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:
         if not credentials.api_key:

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors";
 import {
-  CHANGED_ELSEWHERE, DELETED_ELSEWHERE, MERGED, QUOTE_POLL_MS, QUOTE_ROWS, QuotePoller, SWITCHED_OFF, WatchlistConflict, WatchlistsStore, applyEdit,
+  CHANGED_ELSEWHERE, DELETED_ELSEWHERE, MERGED, QUOTE_BATCH, QUOTE_POLL_MS, QuotePoller, SWITCHED_OFF, WatchlistConflict, WatchlistsStore, applyEdit,
   conflictFrom, direction, moveItem, quoteItems, quoteKey, watchlistError, type QuotesReply, type WatchItem, type WatchlistV2, type WatchlistsApi,
 } from "./watchlistsV2";
 
@@ -237,15 +237,16 @@ describe("UI2-4c batch quote poll", () => {
   const poller = (load: (items: WatchItem[], signal: AbortSignal) => Promise<QuotesReply>, hidden = () => false, error = () => {}) =>
     new QuotePoller(load, { data: () => {}, error }, hidden, () => Date.now());
 
-  it("one batch for the first 50 rows now, then every 10 s after each answer; close stops it", async () => {
+  // M90 B4: every row is priced (was "the first 50 rows" before M90)
+  it("one batch for every row now, then every 10 s after each answer; close stops it", async () => {
     vi.useFakeTimers();
     const items = Array.from({ length: 70 }, (_, i) => it_(`S${i}`));
     const load = vi.fn(async (_: WatchItem[], __: AbortSignal) => reply);
     const p = poller(load);
     p.update(items);
     expect(load).toHaveBeenCalledTimes(1);
-    expect(load.mock.calls[0][0]).toHaveLength(QUOTE_ROWS);
-    expect(load.mock.calls[0][0][QUOTE_ROWS - 1].symbol).toBe("S49");
+    expect(load.mock.calls[0][0]).toHaveLength(70);
+    expect(load.mock.calls[0][0][69].symbol).toBe("S69");
     await vi.advanceTimersByTimeAsync(QUOTE_POLL_MS - 1);
     expect(load).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
@@ -254,7 +255,8 @@ describe("UI2-4c batch quote poll", () => {
     await vi.advanceTimersByTimeAsync(QUOTE_POLL_MS * 3);
     expect(load).toHaveBeenCalledTimes(2);
     expect(QUOTE_POLL_MS).toBe(10_000);
-    expect(quoteItems(items)).toHaveLength(50);
+    expect(quoteItems(items)).toHaveLength(70);
+    expect(QUOTE_BATCH).toBe(500);
   });
 
   it("review: reordering asks for nothing; a burst of adds and removes waits out the 10 s and then asks once", async () => {

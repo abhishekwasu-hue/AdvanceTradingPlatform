@@ -213,6 +213,7 @@ class ZerodhaBroker(BrokerInterface):
         )
 
     multi_quote = True
+    quote_batch_max = 500           # M90 B4: instruments one multi-quote call serves (the route sends one call per this many)
 
     async def get_quotes_batch(self, items):
         """UI2-4a2-pre: one Kite `/quote` call for the whole list (Kite serves up to 500 instruments per call), with

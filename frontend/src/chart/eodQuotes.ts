@@ -1,5 +1,5 @@
 import { ApiError } from "../api/client";
-import { EOD_MAX_SYMBOLS, eodApi } from "../api/eod";
+import { EOD_MAX_SYMBOLS, type EodClose, eodApi } from "../api/eod";
 import type { QuoteRow, QuotesReply, WatchItem } from "./watchlistsV2";
 
 /**
@@ -20,9 +20,22 @@ export function withEodFallback(quotes: (items: WatchItem[], signal?: AbortSigna
   };
 }
 
-export async function eodQuotes(items: readonly WatchItem[], signal?: AbortSignal): Promise<EodQuotesReply> {
-  const nse = [...new Set(items.filter((i) => i.exchange.toUpperCase() === "NSE").map((i) => i.symbol.toUpperCase()))].slice(0, EOD_MAX_SYMBOLS);
-  const reply = nse.length ? await eodApi.closes(nse, signal) : { items: [], as_of: null };
+/** M90 B4: a last close changes once a day, so a read one is kept a few minutes - a 500-row list asks for it in
+ * requests of EOD_MAX_SYMBOLS once, not on every 10 s poll. */
+export const EOD_CACHE_MS = 5 * 60_000;
+const eodCache = new Map<string, { row: EodClose; asOf: string | null; at: number }>();
+export function resetEodCache(): void { eodCache.clear(); }
+
+export async function eodQuotes(items: readonly WatchItem[], signal?: AbortSignal, now: () => number = () => Date.now()): Promise<EodQuotesReply> {
+  const nse = [...new Set(items.filter((i) => i.exchange.toUpperCase() === "NSE").map((i) => i.symbol.toUpperCase()))];
+  const want = nse.filter((s) => { const hit = eodCache.get(s); return !hit || now() - hit.at > EOD_CACHE_MS; });
+  for (let i = 0; i < want.length; i += EOD_MAX_SYMBOLS) {      // M90 B4: every NSE row, EOD_MAX_SYMBOLS a request
+    const reply = await eodApi.closes(want.slice(i, i + EOD_MAX_SYMBOLS), signal);
+    for (const r of reply.items) eodCache.set(r.symbol, { row: r, asOf: reply.as_of, at: now() });
+  }
+  const got = nse.map((s) => eodCache.get(s)).filter((h): h is { row: EodClose; asOf: string | null; at: number } => !!h);
+  const dates = got.map((h) => h.asOf).filter((d): d is string => !!d).sort();
+  const reply = { items: got.map((h) => h.row), as_of: dates.length ? dates[dates.length - 1] : null };
   const bySymbol = new Map(reply.items.map((r) => [r.symbol, r]));
   const rows: QuoteRow[] = items.map((i) => {
     const r = i.exchange.toUpperCase() === "NSE" ? bySymbol.get(i.symbol.toUpperCase()) : undefined;

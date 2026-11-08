@@ -3,6 +3,7 @@ import { useAuth } from "../auth/AuthContext";
 import { readView, saveView, type ChartsView } from "../chart/chartsPage";
 import { systemListsApi } from "../chart/systemLists";
 import { WatchlistPanel } from "../chart/WatchlistPanel";
+import { withScreen, type ScreenFrom } from "../chart/watchScreen";
 import type { WatchItem } from "../chart/watchlistsV2";
 import { cx } from "../components/primitives/cx";
 import { CARD } from "../dashboard/CardV2";
@@ -43,6 +44,8 @@ export default function WatchlistPageV2(_props: PageProps) {
 
   const readyMade = useReadyMade();
   const open = (item: WatchItem) => inPlace.open(chartTabPath(item.symbol, item.exchange));
+  // M91 C1: a list with a screen chosen opens the chart (in place, as above) with that screen drawn on it.
+  const openRow = (item: WatchItem, from?: ScreenFrom) => (from ? inPlace.open(withScreen(chartTabPath(item.symbol, item.exchange), from)) : open(item));
 
   return (
     <div data-page="watchlist" className="mx-auto flex w-full max-w-[760px] flex-col gap-space-4">
@@ -52,7 +55,7 @@ export default function WatchlistPageV2(_props: PageProps) {
         {readyMade === "empty" && (
           <p role="status" data-ready-made="empty" className="border-b border-subtle px-space-4 py-space-2 text-t13 text-fg-muted">{NOT_FILLED_NOTE}</p>
         )}
-        <WatchlistPanel symbol="" exchange="" onOpen={open} listId={view.watchlist_id} onListId={(id) => keep({ watchlist_id: id })}
+        <WatchlistPanel symbol="" exchange="" onOpen={openRow} listId={view.watchlist_id} onListId={(id) => keep({ watchlist_id: id })}
           systemKey={view.watchlist_system} onSystemKey={(key) => keep({ watchlist_system: key })}
           storageKey={recentKeyFor(userId)} touch={phone} className="flex-1" liveTicks={features.on("data_hub")} />
       </div>

@@ -1,6 +1,7 @@
 import { BROKER_PATH } from "../broker/paths";
 import { LEGAL_TITLES } from "../legal/legal";
 import { SETTINGS_PATH } from "../settings/paths";
+import { SCREEN_PARAM, screenIdOf, withScreen } from "../chart/screenParam";
 import { chartTabPath, chartsSymbolFromPath } from "../shell/shellRoutes";
 import { askAiPath, askContextFrom } from "../copilot/askContext";
 import { copilotToolPath, signalsPanelPath } from "./copilotPaths";
@@ -49,16 +50,17 @@ function pagePanel(o: { kind: string; title: string; presentation: Presentation;
 /** A chart: `/charts/NIFTY?tf=15min&exchange=BSE`, or the classic chart window's `?chart=NIFTY&tf=5min`. */
 export const CHART_PANEL: PanelEntry = {
   kind: "chart",
-  keys: ["symbol", "tf", "exchange"],
+  // M91 C1: `wscreen` - the watchlist's chosen screen the chart draws (absent: none; trailing, so older addresses read as before)
+  keys: ["symbol", "tf", "exchange", "wscreen"],
   title: (p) => p.symbol ?? "Chart",
   presentation: "side-wide",
   match: ({ pathname, search }) => {
     const fromPath = chartsSymbolFromPath(pathname);
     const symbol = fromPath ?? search.get("chart")?.trim().toUpperCase() ?? null;
     if (!symbol) return null;
-    return only({ symbol, tf: search.get("tf"), exchange: search.get("exchange")?.trim().toUpperCase() });
+    return only({ symbol, tf: search.get("tf"), exchange: search.get("exchange")?.trim().toUpperCase(), wscreen: screenIdOf(search.get(SCREEN_PARAM)) });
   },
-  href: (p) => chartTabPath(p.symbol ?? "", p.exchange, p.tf),
+  href: (p) => withScreen(chartTabPath(p.symbol ?? "", p.exchange, p.tf), screenIdOf(p.wscreen) ? { screenId: Number(p.wscreen) } : null),
   load: () => import("./panels/ChartPanel"),
 };
 

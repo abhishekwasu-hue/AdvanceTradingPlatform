@@ -15,6 +15,7 @@ import json
 import logging
 import math
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
@@ -59,7 +60,8 @@ GALLERY_FLAG = "screener_gallery"   # U9 TX1: the taxonomy API and the gallery o
 LEGENDS_FLAG = lg.FLAG             # U7 LG1: the Legends cards (their screens are hidden from the taxonomy while off)
 # U5 D2 review: live previews make /run chattier; a per-user window keeps them (and Runs) to a sane rate.
 RUN_BUCKET, RUN_LIMIT, RUN_WINDOW = "screener_run", 60, 60
-run_rate_limit = user_rate_limit(RUN_BUCKET, limit=RUN_LIMIT, window_seconds=RUN_WINDOW)
+# M91: typed, so modules importing `routes as R` (watch_screen_routes) see its type through the import cycle
+run_rate_limit: Callable[..., Awaitable[None]] = user_rate_limit(RUN_BUCKET, limit=RUN_LIMIT, window_seconds=RUN_WINDOW)
 
 
 async def charge_runs(user: User, units: int) -> None:

@@ -206,3 +206,10 @@ def test_a_quote_429_is_retried_once_then_says_slowed_never_an_error(tokens, mon
     fill = _fill(always)
     _run(fill.batch(others))
     assert fill.slowed and all(fill.reasons[p] == quotes_routes.SLOWED_REASON for p in others)
+
+
+def test_the_plan_names_the_timeframes_the_store_reads_whole(screener_on):
+    headers, _ = _owner("m90-plan@example.com")
+    assert client.get("/api/screener/universes", headers=headers).json()["batch"]["store_timeframes"] == []   # flag off
+    _run(_flag(M.FLAG, True))
+    assert client.get("/api/screener/universes", headers=headers).json()["batch"]["store_timeframes"] == ["1d", "1w", "1M"]

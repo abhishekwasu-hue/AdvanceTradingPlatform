@@ -49,6 +49,8 @@ export interface NavItemV2 {
   offWhen?: string;
   /** M60: the bottom bar's word when the label does not fit a fifth of a 360 px phone on one line. */
   short?: string;
+  /** M85: a page without a sidebar entry that the phone's More sheet still lists as a tile, in its section. */
+  moreSheet?: boolean;
 }
 
 export interface NavSectionV2 {
@@ -174,7 +176,7 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   { ...item("orders", "Orders", "My trades", "/positions/orders", ClipboardList, { keywords: ["orders and fills", "fills", "trade history", "blotter"] }), section: "trade" },
   { ...item("portfolio", "Money", "My trades", "/positions/money", PieChart, { keywords: ["portfolio", "my portfolio", "exposure", "where my money is"] }), section: "trade" },
   { ...item("analytics", "Results", "How am I doing?", RESULTS_ADDRESS, BarChart3, { keywords: ["performance", "analytics", "p&l", "win rate"] }), section: "trade" },
-  { ...item("journal", "Journal", "How am I doing?", RESULTS_JOURNAL_ADDRESS, BookOpen, { flag: "discipline_engine", keywords: ["journal and discipline", "discipline"] }), section: "trade" },
+  { ...item("journal", "Journal", "How am I doing?", RESULTS_JOURNAL_ADDRESS, BookOpen, { flag: "discipline_engine", keywords: ["journal and discipline", "discipline"], moreSheet: true }), section: "trade" },
   // M60 default 3: the Coach is an AI Copilot tab; while the Copilot is off it stays a part of My trades › Results.
   { ...item("coach", "Coach", "How am I doing?", "/analytics/coach", GraduationCap,
     { offWhen: "ai_copilot", keywords: ["coach and guide", "trade coach", "guide", "review"] }), section: "trade" },
@@ -317,8 +319,10 @@ export function moreSheetPinned(ctx: NavContext): NavItemV2[] {
  * (the menu button in the top bar) lists every section, the bar's entries too. */
 export function moreSheetSections(ctx: NavContext, all = false): NavSectionV2[] {
   const inBar = new Set<ShellKey>(all ? [] : visibleBottomBar(ctx).map((b) => b.key));
+  // M85: the extras marked `moreSheet` (the Journal) join their section as tiles; the sidebar does not list them.
+  const extras = NAV_EXTRAS_V2.filter((i) => i.moreSheet && isItemVisible(i, ctx));
   return visibleSections(ctx)
-    .map((s) => ({ ...s, items: s.items.filter((i) => !inBar.has(i.key)) }))
+    .map((s) => ({ ...s, items: [...s.items, ...extras.filter((x) => x.section === s.id)].filter((i) => !inBar.has(i.key)) }))
     .filter((s) => s.items.length > 0);
 }
 

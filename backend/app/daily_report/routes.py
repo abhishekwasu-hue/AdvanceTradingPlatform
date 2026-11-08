@@ -3,6 +3,9 @@
 Users (any member; behind `ui_v2` + `shared_daily_report`, 404 while either is off) read the STORED report - no AI call:
 * `GET /api/daily-report/latest` - the newest stored report (null when none is stored yet);
 * `GET /api/daily-report/{report_id}/pdf` - that report as a PDF (rebuilt from the stored report).
+* M89: `GET` / `PUT /api/daily-report/telegram` - his own "Daily market report on Telegram" choice (ON by default) and
+  whether his Telegram reaches him; `GET` / `POST /api/daily-report/telegram/stop?t=` - the Stop button's signed link
+  (no sign-in; the GET page has one button, so a link preview stops nothing).
 
 Admin (SUPER_ADMIN with two-factor):
 * `GET /api/admin/daily-report` - the setting, the last runs (status, reason, tokens, cost) and whether his own AI key
@@ -14,12 +17,13 @@ Read-only data; nothing here places, blocks or changes an order.
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -57,6 +61,59 @@ async def latest(user: User = Depends(get_current_user), session: AsyncSession =
     return {"report": {"id": row.id, **json.loads(row.content_json)}}
 
 
+class TelegramBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    telegram: bool
+
+
+async def _telegram_state(session: AsyncSession, user: User) -> dict[str, Any]:
+    from app.daily_report import telegram
+    tenant_id, user_id = int(user.tenant_id), int(user.id)
+    return {"telegram": await telegram.wants(session, tenant_id, user_id),
+            "connected": await telegram.own_chat(session, tenant_id, user_id) is not None}
+
+
+@router.get("/telegram", dependencies=[Depends(read_limited)])
+async def telegram_get(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flags(session, user)
+    return await _telegram_state(session, user)
+
+
+@router.put("/telegram", dependencies=[Depends(read_limited)])
+async def telegram_put(body: TelegramBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    from app.daily_report import telegram
+    await _flags(session, user)
+    await telegram.set_wants(session, int(user.tenant_id), int(user.id), body.telegram)
+    return await _telegram_state(session, user)
+
+
+def _page(title: str, body: str) -> HTMLResponse:
+    return HTMLResponse(f"<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'><title>{html.escape(title)}</title>"
+                        f"<body style='font-family:system-ui,sans-serif;max-width:32rem;margin:2rem auto;padding:0 1rem'><h1>{html.escape(title)}</h1>{body}</body>")
+
+
+@router.get("/telegram/stop", response_class=HTMLResponse)
+async def telegram_stop_page(t: str = Query("", max_length=200)) -> HTMLResponse:
+    from app.daily_report import telegram
+    if telegram.read_stop_token(t) is None:
+        return _page("Link not valid", "<p>This link is not valid.</p>")
+    return _page("Stop the daily market report on Telegram", "<p>Stop getting the daily market report in this Telegram chat? You can turn "
+                 "it on again in Settings › Alerts.</p>"
+                 f"<form method='post' action='?t={html.escape(t)}'><button type='submit'>Stop</button></form>")
+
+
+@router.post("/telegram/stop", response_class=HTMLResponse)
+async def telegram_stop(t: str = Query("", max_length=200), session: AsyncSession = Depends(get_session)) -> HTMLResponse:
+    from app.daily_report import telegram
+    who = telegram.read_stop_token(t)
+    if who is None:
+        return _page("Link not valid", "<p>This link is not valid.</p>")
+    user = await session.get(User, who[1])
+    if user is not None and int(user.tenant_id) == who[0]:
+        await telegram.set_wants(session, who[0], who[1], False)
+    return _page("Stopped", "<p>The daily market report will not come to Telegram any more. Turn it on again in Settings › Alerts.</p>")
+
+
 @router.get("/{report_id}/pdf", dependencies=[Depends(pdf_limited)])
 async def report_pdf(report_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Response:
     import asyncio
@@ -90,8 +147,10 @@ async def admin_status(session: AsyncSession, user: User) -> dict[str, Any]:
     cfg = await S.read(session)
     runs = list(await session.scalars(select(SharedDailyReportRecord).order_by(SharedDailyReportRecord.trade_date.desc()).limit(RUNS_SHOWN)))
     flag = (await feature_flags(session)).get(FLAG) or {}
+    from app.daily_report import telegram
+    sends = await telegram.counts(session, [int(r.id) for r in runs])
     return {"settings": {"symbols": cfg["symbols"], "recent_bars": cfg["recent_bars"]}, "flag_on": bool(flag.get("on") or flag.get("tenants")),
-            "key": await _key_state(session, user), "runs": [build.run_summary(r) for r in runs],
+            "key": await _key_state(session, user), "runs": [{**build.run_summary(r), "telegram": sends[int(r.id)]} for r in runs],
             "examples": ["NIFTY 50", "NIFTY 50 constituents"]}
 
 

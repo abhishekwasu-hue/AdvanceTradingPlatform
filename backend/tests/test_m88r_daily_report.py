@@ -272,7 +272,7 @@ def test_run_due_uses_the_admins_key_and_stores_once(seeded):
     src = StaticSource({"constituents:NIFTY50": NSE_LIST})
     first = _run(job.run_due(_session_factory, provider=ai, source=src))
     again = _run(job.run_due(_session_factory, provider=ai, source=src))
-    assert first == {"ran": True, "day": "2026-11-06", "status": "ok"} and again == {"ran": False} and len(ai.prompts) == 1
+    assert first == {"ran": True, "day": "2026-11-06", "status": "ok"} and again == {"ran": False, "telegram": None} and len(ai.prompts) == 1
 
 
 def test_admin_card_settings_and_run_now(seeded, monkeypatch):

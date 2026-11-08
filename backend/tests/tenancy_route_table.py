@@ -497,6 +497,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # tenant data, no AI call on read); its admin card is SUPER_ADMIN with two-factor
     ("GET", "/api/daily-report/latest"): "member: M88-R - the one shared stored report built from the shared EOD files; no organisation data",
     ("GET", "/api/daily-report/{report_id}/pdf"): "member: M88-R - the shared stored report as a PDF; no organisation data",
+    # M89: his own "Daily market report on Telegram" choice, and the Stop button's signed link under the message
+    ("GET", "/api/daily-report/telegram"): "member: M89 - the caller's own Telegram choice for the daily report and whether his own chat is connected",
+    ("PUT", "/api/daily-report/telegram"): "self: M89 - turns the daily report on Telegram on / off for the caller only (his own prefs row)",
+    ("GET", "/api/daily-report/telegram/stop"): "public: M89 Stop button - a page with one button; the signed token in the link is the credential",
+    ("POST", "/api/daily-report/telegram/stop"): "public: M89 Stop button - the signed token (organisation and user) is the credential; it only turns that user's report off",
     ("GET", "/api/admin/daily-report"): "admin",
     ("PUT", "/api/admin/daily-report/settings"): "admin",
     ("POST", "/api/admin/daily-report/run"): "admin",

@@ -892,6 +892,11 @@ BREAKOUT_FITNESS_HISTORY_DAYS = _bounded_int("BREAKOUT_FITNESS_HISTORY_DAYS", 18
 DAILY_REPORT_RETRY_MINUTES = _bounded_int("DAILY_REPORT_RETRY_MINUTES", 30, 5, 24 * 60)
 DAILY_REPORT_MAX_ATTEMPTS = _bounded_int("DAILY_REPORT_MAX_ATTEMPTS", 3, 1, 10)
 DAILY_REPORT_MAX_OUTPUT_TOKENS = _bounded_int("DAILY_REPORT_MAX_OUTPUT_TOKENS", 12000, 1000, 64000)
+# M89: the stored report on Telegram - one message (+ the PDF) per user per report, paced inside Telegram's broadcast
+# limit (about 30 messages a second for a bot): DAILY_REPORT_TELEGRAM_PACE_MS between users, a 429's retry_after obeyed,
+# a failed send tried again on later passes up to DAILY_REPORT_TELEGRAM_ATTEMPTS times.
+DAILY_REPORT_TELEGRAM_PACE_MS = _bounded_int("DAILY_REPORT_TELEGRAM_PACE_MS", 250, 40, 5000)
+DAILY_REPORT_TELEGRAM_ATTEMPTS = _bounded_int("DAILY_REPORT_TELEGRAM_ATTEMPTS", 3, 1, 10)
 
 # PW6: the closed-beta cohort cap. With the `beta_cohort_gate` flag on, registration needs an invite code and stops once
 # this many accounts have been created through invite codes (the sum of every code's used_count, revoked codes

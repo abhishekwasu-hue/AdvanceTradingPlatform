@@ -63,3 +63,23 @@ describe("daily market report", () => {
     expect(html).toContain("Run now");
   });
 });
+
+describe("daily market report on Telegram (M89)", () => {
+  it("the admin card shows sent / failed per report", async () => {
+    const { telegramText } = await import("./DailyReportAdminCard");
+    const base = { id: 1, trade_date: "2026-11-06", status: "ok", error: null, attempts: 1, ai_requests: 1, input_tokens: 1, output_tokens: 1, tokens: 2,
+      cost_usd: 0, cost_inr: 0, symbols: 51, trigger: "schedule", stored: true, next_try_at: null, updated_at: null } as ReportRun;
+    expect(telegramText(base)).toBe("–");
+    expect(telegramText({ ...base, telegram: { queued: 0, sent: 12, failed: 1, blocked: 0, skipped: 2 } })).toBe("12 sent · 1 failed");
+    expect(telegramText({ ...base, telegram: { queued: 3, sent: 5, failed: 0, blocked: 2, skipped: 0 } })).toBe("5 sent · 0 failed · 2 blocked the bot · 3 waiting");
+  });
+
+  it("the Settings › Alerts switch needs his own Telegram and sits behind the flag", async () => {
+    const { telegramReportNote } = await import("./DailyReportTelegramV2");
+    const settingsSource = (await import("../settings/SettingsSectionV2.tsx?raw")).default;
+    expect(telegramReportNote({ telegram: true, connected: true })).toBeNull();
+    expect(telegramReportNote({ telegram: true, connected: false })).toContain("Connect Telegram above first");
+    expect(settingsSource).toContain('useFeatures().on("shared_daily_report")');
+    expect(settingsSource).toContain("<DailyReportTelegramV2 key={telegramChanged} />");
+  });
+});

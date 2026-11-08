@@ -55,3 +55,33 @@ for (const size of [{ name: "phone", width: 390, height: 844, mobile: true }, { 
     await context.close();
   });
 }
+
+test("M89: the daily report on Telegram switch in Settings › Alerts (phone)", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+    deviceScaleFactor: SHOTS ? 2 : 1, serviceWorkers: "block", colorScheme: "dark" });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("atp_appearance", JSON.stringify({ theme: "dark" }));
+      localStorage.setItem("atp_install_dismissed", "1");
+    } catch { /* intentional: storage unavailable in this browser */ }
+  });
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  await mockApi(page, { features: { ui_v2: true, shared_daily_report: true }, brokers: CONNECTED });
+  const saved: string[] = [];
+  await page.route(/\/api(?:\/v1)?\/daily-report\/telegram$/, (r) => {
+    if (r.request().method() === "PUT") { saved.push(r.request().postData() ?? ""); return r.fulfill({ json: { telegram: false, connected: true } }); }
+    return r.fulfill({ json: { telegram: true, connected: true } });
+  });
+  await page.goto("/settings/alerts");
+  const box = page.locator("[data-report-telegram-setting]");
+  await expect(box).toBeVisible();
+  const toggle = box.getByRole("checkbox", { name: "Daily market report on Telegram" });
+  await expect(toggle).toBeChecked();
+  await box.scrollIntoViewIfNeeded();
+  if (SHOTS) await page.locator("#daily-report").screenshot({ path: `${SHOTS}/settings-telegram-phone.png` });
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  expect(saved).toEqual([JSON.stringify({ telegram: false })]);
+  await context.close();
+});

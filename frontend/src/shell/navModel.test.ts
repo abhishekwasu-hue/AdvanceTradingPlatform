@@ -130,6 +130,7 @@ describe("M60 phone bottom bar = the first four entries + More", () => {
   it("More lists the rest under the same section titles; the menu button lists every section", () => {
     const sheet = moreSheetSections(full);
     expect(sheet.map((s) => [s.title, s.items.map((i) => i.label)])).toEqual([
+      ["Trade", ["Journal"]],                                        // M85: the Journal tile (no sidebar entry)
       ["Find", ["Signals", "Sectors & indices"]],
       ["Build", ["Strategies", "AI Trading Bot"]],
       ["Learn & AI", ["AI Copilot", "Learn"]],
@@ -139,8 +140,18 @@ describe("M60 phone bottom bar = the first four entries + More", () => {
     for (const k of bar) expect(sheet.flatMap((s) => s.items.map((i) => i.key))).not.toContain(k);
     expect(moreSheetSections(operator)[moreSheetSections(operator).length - 1].items.map((i) => i.label)).toEqual(["Settings", "Admin"]);
     const all = moreSheetSections(full, true);
-    expect(all.flatMap((s) => s.items)).toHaveLength(11);
-    expect(all[0].items.map((i) => i.label)).toEqual(["Today", "Terminal", "My trades"]);
+    expect(all.flatMap((s) => s.items)).toHaveLength(12);
+    expect(all[0].items.map((i) => i.label)).toEqual(["Today", "Terminal", "My trades", "Journal"]);
+  });
+
+  it("M85: More lists the Journal with its icon at its own address; the sidebar does not; off with discipline_engine", () => {
+    const tile = moreSheetSections(full).flatMap((s) => s.items).find((i) => i.key === "journal");
+    expect(tile?.path).toBe("/positions/results/journal");
+    expect(tile?.icon).toBeTruthy();
+    expect(visibleSections(full).flatMap((s) => s.items.map((i) => i.key))).not.toContain("journal");
+    const off: NavContext = { on: flags(...ALL_ON.filter((f) => f !== "discipline_engine")), role: "OWNER" };
+    expect(moreSheetSections(off, true).flatMap((s) => s.items.map((i) => i.key))).not.toContain("journal");
+    expect(searchPages("journal", full)[0].key).toBe("journal");
   });
 });
 

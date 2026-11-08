@@ -226,7 +226,7 @@ export default function AppShellV2() {
   // A page that shows the broker states itself (UI2-2: the dashboard) is not wrapped (src/shell/pagesV2.ts).
   else if (gate) {
     // Day-one fix 2: with stored history on, Find setups and Signals keep their Daily content before the broker login.
-    content = <BrokerGate storedDaily={gate.storedDaily}>{routes}</BrokerGate>;
+    content = <BrokerGate storedDaily={gate.storedDaily} noBrokerEod={gate.noBrokerEod}>{routes}</BrokerGate>;
   }
   else content = routes;
 

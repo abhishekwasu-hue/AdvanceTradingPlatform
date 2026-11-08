@@ -36,6 +36,7 @@ import { toggle as toggleIndicator } from "./indicatorsModel";
 import { CandlePool, START_PARAMS, startChartFrom } from "./multiChart";
 import MultiChartV2 from "./MultiChartV2";
 import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, type TimeframeId } from "./timeframes";
+import { useNoBroker } from "../ui/noBroker";
 import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs } from "./useChartPrefs";
 import { useFullscreen } from "./useFullscreen";
@@ -132,7 +133,12 @@ export default function ChartsPageV2(_props: PageProps) {
   }, [fromAddress, setParams]);
   // A stored week or month waits for the server's timeframes (it may not offer them) instead of loading 5m first.
   const waiting = timeframes === null && (view.timeframe === "week" || view.timeframe === "month");
-  const timeframe: TimeframeId = waiting || offered.includes(view.timeframe) ? view.timeframe : DEFAULT_TIMEFRAME;
+  const chosen: TimeframeId = waiting || offered.includes(view.timeframe) ? view.timeframe : DEFAULT_TIMEFRAME;
+  // M86 D2: without a broker an intraday chart has no bars - the chart opens on D (NSE's end-of-day files) until the
+  // trader picks a timeframe himself; his saved view is not changed.
+  const noBroker = useNoBroker();
+  const [picked, setPicked] = useState(false);
+  const timeframe: TimeframeId = noBroker && !picked && !fromAddress && !DAILY_OR_LONGER.has(chosen) ? "day" : chosen;
   const chip = marketChip(status, exchange, now);
 
   const prefs = useChartPrefs(userId);
@@ -227,6 +233,7 @@ export default function ChartsPageV2(_props: PageProps) {
   const emptyText = data.loading || waiting ? "Loading prices…" : data.error ? "" : data.empty ?? `No prices for ${symbol} on this timeframe yet.`;
   // UI2-4d: a cell's "Open in Chart tab" - its symbol on the Chart tab, with its timeframe.
   const openChart = (sym: string, exch: string, tf: TimeframeId) => {
+    setPicked(true);
     setView({ timeframe: tf });
     navigate(`${chartsPath(sym)}${exch && exch !== "NSE" ? `?exchange=${encodeURIComponent(exch)}` : ""}`);
   };
@@ -287,7 +294,7 @@ export default function ChartsPageV2(_props: PageProps) {
                   {shownChip.text}
                 </span>
               )}
-              timeframe={{ offered, value: timeframe, onChange: (tf) => setView({ timeframe: tf }), typeToOpen: true, tour: "charts-timeframes",
+              timeframe={{ offered, value: timeframe, onChange: (tf) => { setPicked(true); setView({ timeframe: tf }); }, typeToOpen: true, tour: "charts-timeframes",
                 favourites: prefs.prefs.timeframe_favourites, onFavourites: (next) => prefs.update({ timeframe_favourites: next }) }}
               chartType={{ id: "charts-type", value: view.type, onChange: (t) => setView({ type: t }) }}
               indicators={{ state: indicatorState, on: features.on, onToggle: onIndicator }}

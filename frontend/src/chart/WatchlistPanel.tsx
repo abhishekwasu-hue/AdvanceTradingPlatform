@@ -2,6 +2,9 @@ import { ArrowDown, ArrowUp, ChevronDown, Copy, GripVertical, Lock, PanelRightCl
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from "react";
 import { cx } from "../components/primitives/cx";
 import { EMPTY, formatDateIST, formatPct, formatPrice } from "../ui/format";
+import { NoBrokerLine } from "../ui/ConnectLive";
+import { lastCloseText } from "../ui/lastClose";
+import { type EodQuotesReply, withEodFallback } from "./eodQuotes";
 import { SymbolPicker } from "../ui/SymbolPicker";
 import { useLiveTicks } from "../live/liveTicks";
 import { SkeletonRows } from "../components/primitives/Feedback";
@@ -68,9 +71,10 @@ const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:rin
 
 /** The prices of the first 50 rows (QuotePoller: a reorder asks for nothing new; a changed set waits out the 10 s). */
 function useQuotes(items: readonly WatchItem[], live = false) {
-  const [quotes, setQuotes] = useState<{ rows: Map<string, QuoteRow>; failed: boolean }>({ rows: new Map(), failed: false });
-  const poller = useMemo(() => new QuotePoller(watchlistsV2Api.quotes, {
-    data: (reply) => setQuotes({ rows: new Map(reply.items.map((r) => [itemKey(r), r])), failed: false }),
+  const [quotes, setQuotes] = useState<{ rows: Map<string, QuoteRow>; failed: boolean; eodAsOf?: string | null }>({ rows: new Map(), failed: false });
+  // M86 D2: without a broker of his own the rows carry the last end-of-day close (chart/eodQuotes.ts) and its date.
+  const poller = useMemo(() => new QuotePoller(withEodFallback(watchlistsV2Api.quotes), {
+    data: (reply: EodQuotesReply) => setQuotes({ rows: new Map(reply.items.map((r) => [itemKey(r), r])), failed: false, eodAsOf: reply.eod_as_of }),
     error: () => setQuotes((q) => ({ ...q, failed: true })),
   }), []);
   useEffect(() => () => poller.close(), [poller]);
@@ -429,6 +433,11 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
           {state.note && <p className="text-fg-muted">{state.note}</p>}
           {notice && <p className="text-fg-muted">{notice}</p>}
         </div>
+      )}
+
+      {/* M86 D2: the prices are the last end-of-day close - one line with its date. */}
+      {quotes.eodAsOf !== undefined && !quotes.failed && (
+        <NoBrokerLine testId="watchlist" className="border-b border-subtle px-space-3 py-space-2">{lastCloseText(quotes.eodAsOf)}</NoBrokerLine>
       )}
 
       {!state.loaded && <SkeletonRows label="Loading your watchlists…" />}

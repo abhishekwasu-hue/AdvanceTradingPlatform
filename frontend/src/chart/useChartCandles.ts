@@ -18,6 +18,7 @@ import { serverReasonOr } from "../api/errors";
 import type { CandleVolumeSource, CandlesResponse, OHLCVBar } from "../types";
 import { mergeBars, istDate } from "../components/chartHistory";
 import { liveTicks } from "../live/liveTicks";
+import { candlesWithEod } from "./eodCandles";
 import { useBarCloseReload } from "../live/livePush";
 import { DAILY_OR_LONGER, historyDaysFor, olderPageDaysFor, timeframeSeconds, type ChartBar, type TimeframeId } from "./timeframes";
 
@@ -199,7 +200,7 @@ export interface ChartCandles {
   retry: () => void;
 }
 
-export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshMs = 60_000, paused = false, fetchCandles = api.marketDataCandles, livePush = false }: {
+export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshMs = 60_000, paused = false, fetchCandles = candlesWithEod, livePush = false }: {
   enabled: boolean; symbol: string; exchange: string; timeframe: TimeframeId; refreshMs?: number;
   /** AUD-G2.2 (flag `live_push`): intraday candles are read again when a pushed tick falls in a new bar, and the
    * minute timer makes no request while the symbol has a fresh tick (it stays the fallback). Day / week / month keep
@@ -207,7 +208,8 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
   livePush?: boolean;
   /** UI2-4d: nothing is read while true (the chart is off screen or its tab hidden); a missed read follows on resume. */
   paused?: boolean;
-  /** UI2-4d: the candle read (a Multi-chart cell passes its tab's shared pool). */
+  /** UI2-4d: the candle read (a Multi-chart cell passes its tab's shared pool). M86: the default falls back to NSE's
+   * end-of-day files for a Daily / Weekly chart the route refuses for want of a broker (chart/eodCandles.ts). */
   fetchCandles?: FetchCandles;
 }): ChartCandles {
   const [candles, setCandles] = useState<ChartBar[]>([]);

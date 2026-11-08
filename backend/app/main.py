@@ -98,6 +98,7 @@ from app.learn.routes import router as learn_router
 from app.legal.routes import router as legal_router
 from app.live.routes import router as live_router
 from app.market_data.candles_routes import router as market_candles_router
+from app.market_data.eod_routes import router as market_eod_router
 from app.market_data.probe import admin_router as market_probe_admin_router
 from app.market_data.quotes_routes import router as market_quotes_router
 from app.market_data.routes import router as market_holidays_router
@@ -424,6 +425,7 @@ app.include_router(market_candles_router)  # Phase AA: broker candles for the re
 app.include_router(market_probe_admin_router)  # C1: the owner's read-only broker probe (SUPER_ADMIN + two-factor)
 app.include_router(market_quotes_router)  # UI2-4a2-pre: batch watchlist quotes (one multi-quote broker call)
 app.include_router(market_strip_router)  # UI2-2: the v2 dashboard's market strip (read-only, one call)
+app.include_router(market_eod_router)  # M86 D2: shared end-of-day reads (NSE bhavcopy rows only) for users without a broker
 app.include_router(market_lake_router)  # Part B5: point-in-time history from the market data lake
 app.include_router(history_import_admin_router)  # HB0: R2 history import progress (SUPER_ADMIN, read-only)
 app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill progress + manual uploads (SUPER_ADMIN, flag)

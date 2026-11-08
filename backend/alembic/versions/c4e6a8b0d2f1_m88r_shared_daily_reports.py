@@ -3,7 +3,7 @@
 Additive: one new table nothing else reads. The previous release ignores it, so a rollback leaves it in place unused.
 
 Revision ID: c4e6a8b0d2f1
-Revises: b3d5f7a9c1e4
+Revises: d5f7b9c1e3a8
 Create Date: 2026-11-08 12:00:00
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c4e6a8b0d2f1'
-down_revision: Union[str, Sequence[str], None] = 'b3d5f7a9c1e4'
+down_revision: Union[str, Sequence[str], None] = 'd5f7b9c1e3a8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 ROLLBACK_SAFE = True     # Z11: additive - a new table the previous release never reads

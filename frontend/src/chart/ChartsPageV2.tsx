@@ -1,4 +1,4 @@
-import { LayoutGrid, ListTree, Maximize2, Minimize2, ScanSearch, ScanText, Square } from "lucide-react";
+import { Filter, LayoutGrid, ListTree, Maximize2, Minimize2, ScanSearch, ScanText, Square } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
@@ -45,6 +45,8 @@ import { useTradesLayer } from "./useTradesLayer";
 import { ReadChartPanel, useReadChart } from "./ReadChartV2";
 import { readTimeframe } from "./readChart";
 import { WatchlistPanel } from "./WatchlistPanel";
+import { ScreenLegend, useScreenOverlay } from "./ScreenOverlay";
+import { SCREEN_PARAM, screenParam, type ScreenFrom } from "./watchScreen";
 import type { WatchItem } from "./watchlistsV2";
 import { Skeleton } from "../components/primitives";
 
@@ -69,6 +71,10 @@ import { Skeleton } from "../components/primitives";
  * FNO-3: the symbol hub's tab row "Chart | Option chain | Futures | Overview" on top (src/fno/SymbolHubTabsV2.tsx;
  * Option chain and Futures only when the symbol has F&O). Futures (`?hub=futures`) and Overview (`?hub=overview`) show
  * here in place of the chart, which then reads nothing; the expiry and the timeframe carry across the tabs.
+ *
+ * M91 C1 (flag `watchlist_screen`): a stock opened from a watchlist with a screen chosen carries it in the address
+ * (`?wscreen=`); the chart then draws that screen (src/chart/ScreenOverlay.tsx) with its legend below, and the toolbar's
+ * "Screen overlay" hides it. A symbol picked any other way opens without it: nothing is drawn.
  */
 type Tools = ReturnType<typeof useDrawingTools>;
 
@@ -153,6 +159,11 @@ export default function ChartsPageV2(_props: PageProps) {
 
   const [engine, setEngine] = useState<LightweightEngine | null>(null);
   const [tools, setTools] = useState<Tools | null>(null);
+  // M91 C1: the screen of the watchlist this stock was opened from (none: nothing drawn), and its one toggle.
+  const screenId = watchOn && features.on("watchlist_screen") ? Number(params.get(SCREEN_PARAM)) || null : null;
+  const [screenShown, setScreenShown] = useState(true);
+  const screen = useScreenOverlay(engine, { screenId, symbol, exchange, timeframe, candles: data.candles,
+    on: screenShown && tab === "chart" && !hubView });
   const tradesNote = useTradesLayer(engine, `${exchange}:${symbol}`, data.candles, view.layers.includes("trades") && features.on("chart_trades_layer"));
   // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
   const readOn = features.on("read_chart");
@@ -189,11 +200,11 @@ export default function ChartsPageV2(_props: PageProps) {
   const busy = useCallback(() => !!tools?.controller?.view().tool || !!root.current?.querySelector("[role='dialog'], [role='alertdialog'], [role='listbox']"), [tools]);
   const fs = useFullscreen(root, busy, tab === "chart");
 
-  const pick = (p: PickedSymbol) => {
-    const q = p.exchange && p.exchange !== "NSE" ? `?exchange=${encodeURIComponent(p.exchange)}` : "";
-    if (p.symbol !== symbol || p.exchange !== exchange) navigate(`${chartsPath(p.symbol)}${q}`);
+  const pick = (p: PickedSymbol, from?: ScreenFrom) => {
+    const q = screenParam(p.exchange && p.exchange !== "NSE" ? `?exchange=${encodeURIComponent(p.exchange)}` : "", from);
+    if (p.symbol !== symbol || p.exchange !== exchange || (from?.screenId ?? null) !== screenId) navigate(`${chartsPath(p.symbol)}${q}`);
   };
-  const openItem = (item: WatchItem) => { setSheet(false); pick(item); };
+  const openItem = (item: WatchItem, from?: ScreenFrom) => { setSheet(false); pick(item, from); };
   const toggleWatchlist = () => (wide ? setView({ watchlist_open: !view.watchlist_open }) : setSheet(true));
   const column = watchOn && wide && view.watchlist_open;
   const watchlist = (touch: boolean, onClose?: () => void) => (
@@ -216,6 +227,9 @@ export default function ChartsPageV2(_props: PageProps) {
   const drawingText = drawingNote(tools?.view?.message) ?? placeHint(tools?.view?.tool, phone);
   // CT-1 C1: the host's actions in the one ChartToolbar - icon buttons from 768 px, labelled rows under More on a phone.
   const actions: ToolbarAction[] = [
+    ...(screenId != null ? [{ id: "screen-overlay", label: "Screen overlay", title: screenShown ? "Hide the screen overlay" : "Show the screen overlay",
+      moreLabel: screenShown ? "Hide the screen overlay" : "Show the screen overlay", pressed: screenShown, testId: "screen-overlay-button",
+      icon: <Filter size={16} aria-hidden />, onClick: () => setScreenShown((v) => !v) }] : []),
     // Analyze a chart (flag chart_analyze, off by default): a short way from the chart to the reading page.
     ...(!shellAsk && features.on("chart_analyze") && !fs.on ? [{ id: "analyze", label: "Analyze a chart", icon: <ScanSearch size={16} aria-hidden />, to: pathFor("chart-analyze") }] : []),
     ...(!shellAsk && readOn && readTf ? [{ id: "read", label: "Read this chart", title: reading ? "Hide the reading" : "Read this chart", moreLabel: reading ? "Hide the reading" : "Read this chart",
@@ -305,9 +319,13 @@ export default function ChartsPageV2(_props: PageProps) {
               <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
                 prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
+                levels={screen.levels} markers={screen.markers}
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} captureTouch={fs.on} rememberViewFor={userId}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
+            {screenId != null && screenShown && !fs.on && (
+              <ScreenLegend state={screen} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} />
+            )}
             {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}
             {(data.error || tradesNote || data.loadingOlder || drawingText) && (
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">

@@ -49,6 +49,22 @@ export const STORED_DAILY_PAGES: Readonly<Record<string, string>> = {
   "/signals": "Until then, your Daily watch reads ATP's stored end-of-day history; your signals and approvals are all here.",
 };
 
+/**
+ * M86 D2 (owner: live data only from the user's own broker; NSE's end-of-day files for everyone): with NO broker stored,
+ * these pages show their content - on the last end-of-day close - under one line saying so (src/ui/ConnectLive.tsx),
+ * instead of the full gate.
+ */
+export const NO_BROKER_EOD_PAGES: Readonly<Record<string, string>> = {
+  "/charts": "Daily and weekly charts show the last close from NSE's end-of-day files. Live and intraday prices need your own broker.",
+};
+
+/** The no-broker sentence for a path (its sub-paths too), or null. */
+export function noBrokerEodFor(pathname: string): string | null {
+  const clean = `/${pathname.replace(/^\/+|\/+$/g, "")}`;
+  const hit = Object.keys(NO_BROKER_EOD_PAGES).find((p) => clean === p || clean.startsWith(`${p}/`));
+  return hit ? NO_BROKER_EOD_PAGES[hit] : null;
+}
+
 /** The stored-Daily sentence for a path (its sub-paths too), or null. */
 export function storedDailyFor(pathname: string): string | null {
   const clean = `/${pathname.replace(/^\/+|\/+$/g, "")}`;

@@ -96,7 +96,7 @@ describe("the rules", () => {
     expect(dishLines(DEMO_OVERVIEW, "month")[0]).toBe("NIFTY 50 fell over the month (−0.80%).");
     const unknown = { ...DEMO_OVERVIEW, benchmark: { name: "NIFTY 50", change: { day: null, week: null, month: null } } };
     expect(dishLines(unknown, "day")[0]).toBe("I don't know how NIFTY 50 moved on the day: its close is not stored.");
-    expect(asOfText("2026-10-21", "day")).toBe("At the close of 21 Oct 2026");
+    expect(asOfText("2026-10-21", "day")).toBe("Last close · 21 Oct 2026");
     expect(asOfText("2026-10-21", "week")).toBe("Over the week to 21 Oct 2026");
   });
 });
@@ -105,7 +105,7 @@ describe("the page", () => {
   it("opens ready: the dish, leaders and laggards, a heat map (desktop) and a list (phone) of every sector", () => {
     const html = bodyHtml();
     const words = text(html);
-    expect(words).toContain("At the close of 21 Oct 2026");
+    expect(words).toContain("Last close · 21 Oct 2026");
     // UX-11b C4: the dish as numbers - leader / laggard chips, Signed moves, the sectors-up bar.
     expect(html).toMatch(/data-chip="leader"[^>]*>.*Banking/);
     expect(html).toMatch(/data-chip="laggard"[^>]*>.*IT/);

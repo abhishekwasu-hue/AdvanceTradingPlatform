@@ -49,10 +49,12 @@ INTRADAY_DAYS_PER_REQUEST = 30   # SCR-FIX A1: an intraday history window goes o
 
 
 def _cache_key(broker_name: str, exchange: str, symbol: str, interval: str, namespace: Optional[str] = None) -> str:
-    if namespace:
-        # BT1: candles fetched through one user's own broker session are cached for that session only.
-        return f"md:byob:{namespace}:candles:{broker_name}:{exchange}:{symbol}:{interval}"
-    return f"md:candles:{broker_name}:{exchange}:{symbol}:{interval}"
+    """BT1 / M86 D4: candles fetched through one user's broker session are cached for that session only - `namespace`
+    is the session's scope (never None: the platform-wide `md:candles:*` keys another user would read are gone)."""
+    if not namespace:
+        from app.market_data.feed_scope import UnscopedFeed
+        raise UnscopedFeed("candles are cached only under the fetching user's own session")
+    return f"md:byob:{namespace}:candles:{broker_name}:{exchange}:{symbol}:{interval}"
 
 
 def merge_bars(*series: List[OHLCVBar]) -> List[OHLCVBar]:
@@ -178,12 +180,19 @@ class MarketDataService:
         # None = the broker's bars only (the worker, a reader without his own lake).
         self.lake_fill: Optional[LakeFill] = None
 
+    @property
+    def feed_scope(self) -> str:
+        """M86 D4: whose session fetches through this service - every cache entry it writes or reads is keyed by it
+        (`feed_scope.fetch_scope`: the adapter's credential holder, else the session namespace, else this adapter only)."""
+        from app.market_data.feed_scope import fetch_scope
+        return fetch_scope(self.broker, self.cache_namespace)
+
     async def get_candles(
         self, symbol: str, exchange: str = "NSE", interval: str = "1min", now: Optional[datetime] = None, fresh: bool = False,
     ) -> List[OHLCVBar]:
         """Recent history plus today's bars so far, ascending, from cache when fresh. `fresh` skips the cache read (the
         result is still cached for others): S4b-2 intrabar alerts need the bar forming now, not a copy up to a TTL old."""
-        key = _cache_key(self.broker.name, exchange, symbol, interval, self.cache_namespace)
+        key = _cache_key(self.broker.name, exchange, symbol, interval, self.cache_namespace or self.feed_scope)
         lookback = self._lookback(interval)
         if lookback != DEFAULT_LOOKBACK_DAYS:
             # Phase AA: the research pages ask for longer windows than the worker; a 5-day
@@ -236,7 +245,7 @@ class MarketDataService:
         start = datetime.combine(before - timedelta(days=self.lookback_days), dtime(0, 0), tzinfo=IST)
         end = datetime.combine(before - timedelta(days=1), dtime(23, 59), tzinfo=IST)
         # LD-10: whole IST days, so the same request for every user and broker - one shared copy (shared_candles).
-        key = shared_candles.key(self.broker.name, exchange, symbol, interval, "page", window_anchor_dates(start, end))
+        key = shared_candles.key(self.broker.name, exchange, symbol, interval, "page", window_anchor_dates(start, end), scope=self.feed_scope)
 
         async def fetch() -> List[OHLCVBar]:
             return merge_bars(await self.broker.get_historical_data(symbol, exchange, interval, start, end))
@@ -272,7 +281,7 @@ class MarketDataService:
                 break
             lo_dt = datetime.combine(lo, dtime(0, 0), tzinfo=IST)
             hi_dt = datetime.combine(hi, dtime(23, 59), tzinfo=IST)
-            key = shared_candles.key(self.broker.name, exchange, symbol, "day", "page", window_anchor_dates(lo_dt, hi_dt))
+            key = shared_candles.key(self.broker.name, exchange, symbol, "day", "page", window_anchor_dates(lo_dt, hi_dt), scope=self.feed_scope)
             # A chunk holding the last few days lives as long as LD-10's history copies (a broker's late correction of
             # yesterday's bar shows within minutes); older chunks are final.
             ttl = shared_candles.HISTORY_TTL_SECONDS if hi >= today - timedelta(days=RECENT_CHUNK_DAYS) else HISTORY_CACHE_TTL_SECONDS
@@ -315,7 +324,7 @@ class MarketDataService:
         """UI2-4a2: today's one-minute bars so far - the same shared copy (LD-10 `today` part) an intraday chart of the
         symbol reads, fetched through this service's adapter when none is fresh."""
         now_utc = now or datetime.now(timezone.utc)
-        key = shared_candles.key(self.broker.name, exchange, symbol, "1min", "today", shared_candles.today_anchor(now_utc))
+        key = shared_candles.key(self.broker.name, exchange, symbol, "1min", "today", shared_candles.today_anchor(now_utc), scope=self.feed_scope)
 
         async def call() -> List[OHLCVBar]:
             return await self.broker.get_intraday_candles(symbol, exchange, "1min")
@@ -383,7 +392,7 @@ class MarketDataService:
         # whoever asks; the fetch, when one is needed, goes through this service's own adapter (the user's budget).
         by_date = bool(getattr(self.broker, "history_by_date", False))
         history_key = shared_candles.key(self.broker.name, exchange, symbol, interval, "hist",
-                                         shared_candles.window_anchor(by_date, history_from, history_to))
+                                         shared_candles.window_anchor(by_date, history_from, history_to), scope=self.feed_scope)
         history_ttl = shared_candles.HISTORY_TTL_SECONDS if by_date else shared_candles.HISTORY_MINUTE_TTL_SECONDS
 
         async def history_call() -> List[OHLCVBar]:
@@ -395,7 +404,7 @@ class MarketDataService:
             # strategy decides on closed bars (entries go in the next session).
             logger.debug("Fetched %d daily candles for %s:%s", len(history), exchange, symbol)
             return _SharedBars(merge_bars(history), left)
-        today_key = shared_candles.key(self.broker.name, exchange, symbol, interval, "today", shared_candles.today_anchor(now_utc))
+        today_key = shared_candles.key(self.broker.name, exchange, symbol, interval, "today", shared_candles.today_anchor(now_utc), scope=self.feed_scope)
 
         async def today_call() -> List[OHLCVBar]:
             return await self.broker.get_intraday_candles(symbol, exchange, interval)

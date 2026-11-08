@@ -212,9 +212,10 @@ def test_tick_cache_namespaces_never_meet(monkeypatch):
     tick_cache.clear()
 
 
-def test_candle_cache_is_per_session_with_a_namespace_over_one_shared_broker_copy(monkeypatch):
-    """The per-request cache stays per session (its keys carry the namespace); LD-10: under it, the broker's bars are
-    one copy for every session of the same broker - B's request makes no broker call - and never another broker's."""
+def test_candle_cache_and_broker_copies_are_per_session(monkeypatch):
+    """Updated to M86 D4 (supersedes LD-10's cross-session copy): the per-request cache stays per session and so do the
+    broker's bars - B's request makes its own broker call through B's session, never reads A's copy, never another
+    broker's; without a namespace the adapter's own scope keys them (no platform-wide copy)."""
     memory = _MemoryCache()
     _install_cache(monkeypatch, memory)
 
@@ -226,17 +227,16 @@ def test_candle_cache_is_per_session_with_a_namespace_over_one_shared_broker_cop
         bars_a = await MarketDataService(a, cache_namespace="u1.c1").get_candles("RELIANCE", "NSE", "1min")
         bars_b = await MarketDataService(b, cache_namespace="u2.c2").get_candles("RELIANCE", "NSE", "1min")
         assert bars_a[0].close == 100.0 and a.calls
-        assert bars_b == bars_a and not b.calls                                   # the shared copy, no second broker call
-        # No session-level copy of the shared bars is written (it would only repeat them), and never a platform-wide one.
-        assert not [k for k in memory.store if ":candles:" in k]
+        assert bars_b[0].close == 200.0 and b.calls                               # B's own fetch, never A's bars
+        assert not [k for k in memory.store if ":candles:" in k]                  # no session-level copy of a copy
         other = _OtherBroker(300.0)
         bars_o = await MarketDataService(other, cache_namespace="u3.c3").get_candles("RELIANCE", "NSE", "1min")
         assert bars_o[0].close == 300.0 and other.calls                           # another broker: its own bars
-        # Without a namespace (flag off, the worker) the cache is shared exactly as before.
         c, d = _PriceBroker(300.0), _PriceBroker(400.0)
         await MarketDataService(c).get_candles("TCS", "NSE", "1min")
-        shared = await MarketDataService(d).get_candles("TCS", "NSE", "1min")
-        assert shared[0].close == 300.0 and not d.calls
+        own = await MarketDataService(d).get_candles("TCS", "NSE", "1min")
+        assert own[0].close == 400.0 and d.calls                                  # no platform-wide cache any more
+        assert not [k for k in memory.store if k.startswith("md:candles:")]
     run(go())
 
 
@@ -328,9 +328,10 @@ def _candle_cache_keys(store: _MemoryCache) -> List[str]:
     return [k for k in store.store if ":candles:" in k]
 
 
-def test_user_b_never_gets_user_a_session_data_but_shares_the_public_feed_and_candles(monkeypatch):
-    """B never reads A's own session (A's tick, A's per-session cache keys). LD-10 (owner, 20 Oct): B's price comes from
-    the shared live feed of the same broker before B's broker is called, and B's candles from the one shared copy."""
+def test_user_b_never_gets_user_a_session_data_nor_the_shared_feed(monkeypatch):
+    """B never reads A's own session (A's tick, A's per-session cache keys). Updated to M86 D4 (supersedes LD-10's shared
+    live feed and shared candle copy): B's price never comes from the platform's shared feed either - B's own broker
+    answers - and B's candles come through B's own session."""
     shared_redis = _MemoryCache()
     _install_cache(monkeypatch, shared_redis)    # one Redis shared by the users, as in production
     a_headers, a = _owner(_email("a"))
@@ -349,17 +350,15 @@ def test_user_b_never_gets_user_a_session_data_but_shares_the_public_feed_and_ca
     body_a = client.get("/api/market-data/ltp?symbol=NIFTY%2050", headers=a_headers).json()
     assert body_a["source"] == "tick" and body_a["ltp"] == 26000.0
     body_b = client.get("/api/market-data/ltp?symbol=NIFTY%2050", headers=b_headers).json()
-    assert body_b["source"] == "tick" and body_b["ltp"] == 25999.0 and broker_b.quote_calls == 0   # the shared feed, never A's tick
+    assert body_b["source"] == "quote" and body_b["ltp"] == 222.0 and broker_b.quote_calls == 1   # neither A's nor the shared tick
     tick_cache.clear()
-    shared_redis.store.pop(st._tick_key("upstox", "NSE", "NIFTY 50"), None)                         # no shared tick any more
-    body_b = client.get("/api/market-data/ltp?symbol=NIFTY%2050", headers=b_headers).json()
-    assert body_b["source"] == "quote" and body_b["ltp"] == 222.0 and broker_b.quote_calls == 1   # B's own session, not A's tick
+    shared_redis.store.pop(st._tick_key("upstox", "NSE", "NIFTY 50"), None)
 
-    # Candles: A's fetch fills the shared copy through A's session; B's request reads it - no call through B's broker.
+    # Candles: A's fetch goes through A's session, B's through B's - B never reads A's copy.
     ca = client.post("/api/market-data/candles", headers=a_headers, json={"symbols": ["RELIANCE"], "timeframe": "1min"}).json()
     cb = client.post("/api/market-data/candles", headers=b_headers, json={"symbols": ["RELIANCE"], "timeframe": "1min"}).json()
-    assert ca["symbols"]["RELIANCE"]["bars"][0]["close"] == 111.0 and cb["symbols"]["RELIANCE"]["bars"] == ca["symbols"]["RELIANCE"]["bars"]
-    assert broker_a.calls and not broker_b.calls
+    assert ca["symbols"]["RELIANCE"]["bars"][0]["close"] == 111.0 and cb["symbols"]["RELIANCE"]["bars"][0]["close"] == 222.0
+    assert broker_a.calls and broker_b.calls
     keys = _candle_cache_keys(shared_redis)                       # no session-level or platform-wide copy of A's fetch
     assert keys == []
     tick_cache.clear()

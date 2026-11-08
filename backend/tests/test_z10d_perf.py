@@ -112,7 +112,7 @@ def test_bar_close_scan_meets_the_target(factor):
     last_day = data[0].frames["5m"].index[-1].astimezone(IST).date()
     now = datetime(last_day.year, last_day.month, last_day.day, 15, 31, tzinfo=IST)
 
-    async def fetch(session, tenant_id, symbols, exchange, base_tf, lookback):
+    async def fetch(session, tenant_id, symbols, exchange, base_tf, lookback, **kw):
         return [barclose.SymbolData(s, {base_tf: frames[s]}) for s in symbols if s in frames], {}, "synthetic"
 
     async def setup():

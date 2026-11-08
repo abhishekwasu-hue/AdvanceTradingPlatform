@@ -269,13 +269,18 @@ def test_every_broker_call_takes_a_token_and_none_left_answers_429(monkeypatch):
     assert _Counting.calls == 1                                                    # the refused request never reached the broker
     now = datetime.now(timezone.utc)
     try:
-        run(tick_cache.put(Tick(broker="upstox", exchange="NSE", symbol=sym, ltp=2875.0, exchange_ts=now, received_at=now)))
+        # M86 D4: the user's own session's tick (his credential's namespace), never the platform-wide feed
+        from app.market_data.stream import TickCache
+        from tests.test_bt1_byob_data_tier import _ns
+        namespace = _ns(me)
+        run(TickCache(namespace=namespace).put(Tick(broker="upstox", exchange="NSE", symbol=sym, ltp=2875.0, exchange_ts=now,
+                                                    received_at=now)))
         assert client_get(headers, sym).json()["source"] == "tick"           # a fresh tick costs no token
     finally:
-        # tick_cache.clear() empties only the process-local dict; the Redis mirror (CI, 180 s TTL) is overwritten too
-        # (an empty value reads as no tick) - see claude/n4-ch5 1e3425c, where a RELIANCE tick leaked into the exit tests
+        # the Redis mirror (CI, 180 s TTL) is overwritten (an empty value reads as no tick) - see claude/n4-ch5 1e3425c,
+        # where a RELIANCE tick leaked into the exit tests
         tick_cache.clear()
-        run(cache_set(_tick_key("upstox", "NSE", sym), "", 1))
+        run(cache_set(_tick_key("upstox", "NSE", sym, namespace), "", 1))
         api_budget.reset()
 
 

@@ -301,7 +301,9 @@ def test_another_members_broker_bars_are_never_read():
     other_tenant = SimpleNamespace(id=owner.id, tenant_id=owner.tenant_id + 100000, role="OWNER")
     assert not _read("M71OTHER", "1h", now - timedelta(days=3), now, user=other_tenant, now=now).served
     assert not R.may_top_up(member, SimpleNamespace(id=1, tenant_id=owner.tenant_id, user_id=owner.id))
-    assert R.may_top_up(owner, SimpleNamespace(id=1, tenant_id=owner.tenant_id, user_id=owner.id + 5))   # the tenant's OWNER
+    # Updated to M86 D4: the tenant's OWNER no longer tops up through a member's credential (owner / admin included)
+    assert not R.may_top_up(owner, SimpleNamespace(id=1, tenant_id=owner.tenant_id, user_id=owner.id + 5))
+    assert R.may_top_up(owner, SimpleNamespace(id=1, tenant_id=owner.tenant_id, user_id=owner.id))       # his own
     _clear(key)
 
 

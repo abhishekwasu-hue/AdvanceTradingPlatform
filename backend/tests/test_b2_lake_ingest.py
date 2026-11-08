@@ -93,15 +93,15 @@ class _Broker:
         return [OHLCVBar(timestamp=_t(i), open=10 + i, high=11 + i, low=9 + i, close=10.5 + i, volume=100) for i in range(3)]
 
 
-def test_broker_backfill_relabels_start_to_end():
+def test_broker_backfill_never_writes_the_shared_lake():
+    """Updated to M86 D4: one user's broker history is refused by the shared lake (before any broker call)."""
+    import pytest
     key = "TEST|B2-BROKER"
     _clear(key)
-    res = _session_call(lambda s: ingest.backfill_from_broker(s, _Broker(), instrument_key=key, symbol="X", exchange="NSE",
-                                                               timeframe="1m", start=_t(0), end=_t(3)))
-    assert res.inserted == 3
-    rows = _session_call(lambda s: asof.candles_as_of(s, key, "1m", _t(0), _t(3)))
-    assert [r.ts.replace(tzinfo=timezone.utc) if r.ts.tzinfo is None else r.ts for r in rows] == [_t(1), _t(2), _t(3)]
-    assert {r.source for r in rows} == {"broker:fakebroker"} and float(rows[0].open) == 10
+    with pytest.raises(ingest.SharedLakeRefused):
+        _session_call(lambda s: ingest.backfill_from_broker(s, _Broker(), instrument_key=key, symbol="X", exchange="NSE",
+                                                            timeframe="1m", start=_t(0), end=_t(3)))
+    assert _session_call(lambda s: asof.candles_as_of(s, key, "1m", _t(0), _t(3))) == []
 
 
 def test_vendor_seam_with_the_mock_vendor():
@@ -127,17 +127,18 @@ def _tick(minutes: float, ltp: float, symbol="B2REC") -> Tick:
     return Tick(broker="teststream", exchange="NSE", symbol=symbol, ltp=ltp, exchange_ts=_t(minutes), received_at=_t(minutes))
 
 
-def test_recorder_writes_closed_bars_only_and_caps_its_backlog():
+def test_recorder_builds_closed_bars_only_never_shares_them_and_caps_its_backlog():
+    """Updated to M86 D4: the closed bar is built (minute 2 still forming) but the shared lake refuses `stream:*` rows -
+    a user's streamed ticks never become bars another user reads; the bar is dropped and counted."""
     key = "NSE:B2REC"
     _clear(key)
     rec = LakeRecorder("1m")
     for m, p in ((0.2, 10), (0.7, 12), (1.1, 11)):
         rec.on_tick(_tick(m, p))
     res = _session_call(lambda s: rec.drain(s, _t(1.5)))               # bar ending at minute 1 closed; minute 2 forming
-    assert res.inserted == 1
-    rows = _session_call(lambda s: asof.candles_as_of(s, key, "1m", _t(0), _t(5)))
-    assert [(float(r.open), float(r.high), float(r.close), r.source) for r in rows] == [(10, 12, 12, "stream:teststream")]
-    assert _session_call(lambda s: rec.drain(s, _t(2))).inserted == 1  # the quiet instrument's bar, flushed on time
+    assert res.inserted == 0 and rec.refused == 1
+    assert _session_call(lambda s: asof.candles_as_of(s, key, "1m", _t(0), _t(5))) == []
+    assert _session_call(lambda s: rec.drain(s, _t(2))).inserted == 0 and rec.refused == 2  # the quiet one, on time
     small = LakeRecorder("1m", max_backlog=1)
     for i in range(3):
         small.on_tick(_tick(i + 0.5, 1, symbol="B2CAP"))               # two bars close, room for one

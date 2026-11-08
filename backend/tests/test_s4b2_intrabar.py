@@ -39,7 +39,7 @@ class FormingFetch:
     def __init__(self, frames):
         self.frames, self.calls = frames, []
 
-    async def __call__(self, session, tenant_id, symbols, exchange, base_tf, lookback, forming=False):
+    async def __call__(self, session, tenant_id, symbols, exchange, base_tf, lookback, forming=False, **kw):
         self.calls.append(forming)
         return [SymbolData(s, {base_tf: self.frames[s]}) for s in symbols if s in self.frames], {}, "test"
 
@@ -179,7 +179,8 @@ def test_fetch_frames_keeps_the_forming_bar_and_skips_the_cache_only_for_intraba
 def test_fresh_skips_the_cache_read_but_still_writes(monkeypatch):
     from app.market_data import service as svc
 
-    store = {"md:candles:fake:NSE:TCS:1min": "[]"}
+    key = "md:byob:u1.c1:candles:fake:NSE:TCS:1min"          # M86 D4: the session's own key (no platform-wide one)
+    store = {key: "[]"}
     fetched = []
 
     async def get(key):
@@ -194,8 +195,10 @@ def test_fresh_skips_the_cache_read_but_still_writes(monkeypatch):
     monkeypatch.setattr(svc, "cache_get", get)
     monkeypatch.setattr(svc, "cache_set", put)
     monkeypatch.setattr(svc.MarketDataService, "_fetch", fetch)
-    s = svc.MarketDataService(type("B", (), {"name": "fake"})())
-    store["md:candles:fake:NSE:TCS:1min"] = '[{"timestamp": "2026-03-10T03:45:00Z", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 0}]'
+    broker = type("B", (), {"name": "fake"})()
+    broker.atp_credential_id, broker.atp_user_id = 1, 1                  # as token_lifecycle.build_adapter stamps it
+    s = svc.MarketDataService(broker)
+    store[key] = '[{"timestamp": "2026-03-10T03:45:00Z", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 0}]'
     assert len(_run(s.get_candles("TCS"))) == 1 and fetched == []                              # cached copy served
     assert _run(s.get_candles("TCS", fresh=True)) == [] and fetched == ["TCS"]                 # broker asked
 

@@ -177,7 +177,7 @@ async def evaluate_template(session: AsyncSession, tpl: ScanThenTemplateRecord, 
         # otherwise abort the whole cycle's transaction - other templates and the exits after them).
         async with session.begin_nested():
             universe, problems, _source = await fetch(session, tpl.tenant_id, pending, exchange, tf, {tf: BAR_LOOKBACK},
-                                                      user_id=owner.id if per_user else None)
+                                                      user_id=owner.id if owner is not None else None)   # M86 D4: the owner's own session
     except Exception as exc:  # noqa: BLE001 - no bars, no gate (retried on the next cycle)
         tpl.last_problem = f"bars: {type(exc).__name__}: {str(exc)[:150]}"
         return

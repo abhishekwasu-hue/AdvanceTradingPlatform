@@ -228,7 +228,7 @@ class FakeFetch:
     def __init__(self, frames):
         self.frames = frames
 
-    async def __call__(self, session, tenant_id, symbols, exchange, base_tf, lookback):
+    async def __call__(self, session, tenant_id, symbols, exchange, base_tf, lookback, **kw):
         return [SymbolData(s, {base_tf: self.frames[s]}) for s in symbols if s in self.frames], {}, "test"
 
 

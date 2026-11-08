@@ -878,7 +878,10 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
     from app.market_data.calendar import IST
     from app.market_data.service import HISTORY_CACHE_TTL_SECONDS
     session_day = (now or datetime.now(UTC)).astimezone(IST).date().isoformat()
-    scope = f"{getattr(service, 'cache_namespace', None) or 'shared'}:{getattr(getattr(service, 'broker', None), 'name', 'broker')}"
+    # M86 D4: the fetching user's session scope (never one copy for everyone: `feed_scope.fetch_scope`).
+    from app.market_data.feed_scope import fetch_scope
+    holder = getattr(service, "feed_scope", None) or fetch_scope(getattr(service, "broker", None), getattr(service, "cache_namespace", None))
+    scope = f"{holder}:{getattr(getattr(service, 'broker', None), 'name', 'broker')}"
     span = int(getattr(service, "lookback_days", 0) or 0)
     for data in universe:
         # BK1 verification F2: completed sessions do not change during the day - one fetch per symbol per session date

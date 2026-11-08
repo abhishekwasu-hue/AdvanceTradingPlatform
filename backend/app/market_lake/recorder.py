@@ -3,6 +3,9 @@
 The stream calls `on_tick` for every tick it caches (never awaits, never raises into the stream); the worker calls
 `drain` once a cycle to publish the bars that have closed. A bar is written only after its end (CandleBuilder), as
 source `stream:<broker>`, instrument key `<EXCHANGE>:<SYMBOL>`. A bounded backlog protects memory if the database is down.
+M86 D4: the shared lake refuses `stream:*` rows (`ingest.refuse_private_source`): a user's streamed ticks never become
+bars another user reads; the bars are dropped and counted (`refused`). The holder's own bars are the universe feed's
+(`LiveBarRecorder`, his private store).
 
 M71 PL-1b: `write_live_bars` is the universe feed's write path (app/market_data/universe_feed.py) - the holder's own
 private store, never the shared lake.
@@ -13,7 +16,7 @@ from typing import Dict, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.market_lake.ingest import CandleBuilder, LakeBar, WriteResult, write_candles, write_candles_bulk
+from app.market_lake.ingest import CandleBuilder, LakeBar, SharedLakeRefused, WriteResult, write_candles, write_candles_bulk
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,7 @@ class LakeRecorder:
         self._builders: Dict[str, CandleBuilder] = {}
         self._pending: Dict[str, List[LakeBar]] = {}
         self.dropped = 0
+        self.refused = 0          # M86 D4: bars the shared lake refused (a user's streamed ticks are never shared)
 
     def _queue(self, broker: str, bars: List[LakeBar]) -> None:
         if not bars:
@@ -51,7 +55,12 @@ class LakeRecorder:
         for broker in list(self._pending):
             bars = self._pending.pop(broker)
             if bars:
-                res = await write_candles(session, bars, f"stream:{broker}")
+                try:
+                    res = await write_candles(session, bars, f"stream:{broker}")
+                except SharedLakeRefused:
+                    # M86 D4: streamed ticks of a user's session never become shared lake bars; dropped and counted.
+                    self.refused += len(bars)
+                    continue
                 total.inserted += res.inserted
                 total.corrected += res.corrected
                 total.skipped += res.skipped

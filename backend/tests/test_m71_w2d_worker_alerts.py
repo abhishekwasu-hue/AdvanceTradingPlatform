@@ -342,7 +342,7 @@ def test_run_due_passes_the_store_flag_and_keys_the_cycle_cache_per_member(alert
     assert next(iter(cache.frames))[1] == 42
     seen.clear()
     _run(barclose._current_universe(None, rule, ["XYZ"], datetime(2026, 10, 28, 5, 0, tzinfo=UTC), {"15m": 10}, fetch, cache))
-    assert seen == [{}]                                                               # OFF: the call exactly as before
+    assert seen == [{"user_id": 42}]          # OFF: no store flag; updated to M86 D4 - still the creator's own session
 
 
 # --- the India VIX gate ----------------------------------------------------------------------------------------------------

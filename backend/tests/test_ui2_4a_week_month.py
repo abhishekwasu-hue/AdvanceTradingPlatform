@@ -271,14 +271,14 @@ def test_chunking_respects_the_brokers_cap_and_the_chunks_are_shared(monkeypatch
     assert wins[0][1].date() == end and wins[-1][0].date() == start
     assert _json_rows(body["symbols"][sym]["bars"]) == hand([b for b in daily if start <= b.timestamp.date() <= end], "week")
 
-    # Another user's monthly chart the same day: the newest chunks are the same windows - shared, not fetched again.
+    # Another user's monthly chart the same day: updated to M86 D4 - fetched through his own session, never A's copy.
     other = DailyBroker({sym: daily})
     other.daily_days_per_request = 365
     monkeypatch.setattr(candles_routes, "build_adapter", lambda record: other)
     headers2, me2 = _owner(_email("chunks2"))
     _store_credentials(me2)
     _post(headers2, symbols=[sym], timeframe="month", lookback_days=1826)
-    assert len(other.windows) <= 1                                                 # at most the one older partial chunk
+    assert len(other.windows) > 1                                                  # his own chunks, not the first user's
 
     # A broker serving 2,000 days a request (Kite, Angel One): one call for five years.
     kite = DailyBroker({sym: daily})
@@ -353,14 +353,16 @@ def test_before_pages_back_by_whole_periods(monkeypatch, period, page):
     assert body["symbols"][sym]["bars"][-1] == older[-1]
 
 
-def test_service_daily_range_reads_the_shared_page_copy_of_its_dates():
+def test_service_daily_range_reads_the_sessions_page_copy_of_its_dates():
     async def go():
         shared_candles.reset()
         sym = _sym()
         broker = DailyBroker(default=daily_series(date(2024, 1, 1), date(2024, 12, 31)))
         now = datetime(2025, 1, 6, 12, 0, tzinfo=IST)
-        got = await MarketDataService(broker).get_daily_range(sym, "NSE", date(2024, 1, 1), date(2025, 1, 10), now=now)
-        again = await MarketDataService(DailyBroker()).get_daily_range(sym, "NSE", date(2024, 1, 1), date(2025, 1, 10), now=now)
+        # M86 D4: one user's two reads (his session's copy); another user's session never reads it
+        got = await MarketDataService(broker, cache_namespace="u1.c1").get_daily_range(sym, "NSE", date(2024, 1, 1), date(2025, 1, 10), now=now)
+        again = await MarketDataService(DailyBroker(), cache_namespace="u1.c1").get_daily_range(sym, "NSE", date(2024, 1, 1),
+                                                                                               date(2025, 1, 10), now=now)
         return broker, got, again
     broker, got, again = run(go())
     assert _ist(broker.windows[0][4]).date() == date(2025, 1, 5)                  # never today (or later)

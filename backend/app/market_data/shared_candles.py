@@ -1,4 +1,9 @@
-"""LD-10: broker candles shared by every user who asks for the same bars, with one broker fetch at a time.
+"""LD-10: broker candles shared by every request of the SAME broker session for the same bars, with one fetch at a time.
+
+M86 D4 (owner decision, supersedes the cross-user part of LD-10 below): no live / intraday data fetched with one user's
+broker session is served to another user. Every key now carries the fetching session's scope
+(`app.market_data.feed_scope`, `u<user>.c<credential>`): concurrent requests of one user (a chart, its history page, the
+screener, the Copilot) still share one fetch; another user's request - same broker or not - never reads that copy.
 
 The owner's decision (load test, 20 Oct): the API's broker budget stays at 1 call a second per credential
 (`api_budget`), and a chart spends fewer calls instead. Candles are public market data: the bars a broker returns for
@@ -56,8 +61,12 @@ _LOCAL: Dict[str, Tuple[float, List[OHLCVBar]]] = {}
 _INFLIGHT: Dict[str, "asyncio.Future[List[OHLCVBar]]"] = {}
 
 
-def key(broker: str, exchange: str, symbol: str, interval: str, part: str, anchor: str) -> str:
-    return f"md:shared:{(broker or '').lower()}:{exchange.upper()}:{symbol.upper()}:{interval}:{part}:{anchor}"
+def key(broker: str, exchange: str, symbol: str, interval: str, part: str, anchor: str, *, scope: str) -> str:
+    """M86 D4: `scope` = the fetching user's session (`feed_scope.fetch_scope`); a copy is read only under it."""
+    if not scope:
+        from app.market_data.feed_scope import UnscopedFeed
+        raise UnscopedFeed("a shared candle copy is kept only under the fetching user's own session")
+    return f"md:shared:{scope}:{(broker or '').lower()}:{exchange.upper()}:{symbol.upper()}:{interval}:{part}:{anchor}"
 
 
 def _ist(dt: datetime) -> datetime:
@@ -269,7 +278,7 @@ async def get_or_fetch(name: str, fetch: Fetch, ttl_for: TtlFor, *, read: bool =
 def _count(name: str, outcome: str) -> None:
     try:
         from app.observability.metrics import SHARED_CANDLES
-        SHARED_CANDLES.labels(part=name.split(":")[6] if name.count(":") >= 6 else "?", outcome=outcome).inc()
+        SHARED_CANDLES.labels(part=name.split(":")[7] if name.count(":") >= 7 else "?", outcome=outcome).inc()
     except Exception:  # noqa: BLE001 - a metric never fails a read
         pass
 

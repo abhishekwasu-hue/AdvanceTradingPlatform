@@ -441,13 +441,17 @@ def test_ltp_reads_the_organisations_hub_tick_not_the_shared_feed(monkeypatch):
     assert ("NIFTY", "NSE") in plan.kept                                    # the chart's symbol is now on the hub stream
 
 
-def test_ltp_with_the_hub_off_reads_the_shared_feed_as_before():
+def test_ltp_with_the_hub_off_reads_the_users_own_session_ticks_never_the_shared_feed():
+    """Updated to M86 D4: the platform-wide feed (another session's stream) is not this user's price; his own is."""
+    from tests.test_bt1_byob_data_tier import _ns
     headers, me = _owner(_email("ltp-off"))
     _store_credentials(me)
     now = datetime.now(UTC)
-    run(st.tick_cache.put(Tick(broker="upstox", exchange="NSE", symbol="NIFTY", ltp=24020.0, exchange_ts=now, received_at=now)))
-    body = client.get("/api/market-data/ltp?symbol=NIFTY", headers=headers).json()
-    assert body["source"] == "tick" and body["ltp"] == 24020.0
+    sym = f"HUBOFF{uuid.uuid4().hex[:6].upper()}"
+    run(st.tick_cache.put(Tick(broker="upstox", exchange="NSE", symbol=sym, ltp=24020.0, exchange_ts=now, received_at=now)))
+    run(st.TickCache(namespace=_ns(me)).put(Tick(broker="upstox", exchange="NSE", symbol=sym, ltp=24021.0, exchange_ts=now, received_at=now)))
+    body = client.get(f"/api/market-data/ltp?symbol={sym}", headers=headers).json()
+    assert body["source"] == "tick" and body["ltp"] == 24021.0
 
 
 def test_quotes_read_hub_ticks_for_the_organisation():

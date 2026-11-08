@@ -51,11 +51,14 @@ export const STORED_DAILY_PAGES: Readonly<Record<string, string>> = {
 
 /**
  * M86 D2 (owner: live data only from the user's own broker; NSE's end-of-day files for everyone): with NO broker stored,
- * these pages show their content - on the last end-of-day close - under one line saying so (src/ui/ConnectLive.tsx),
- * instead of the full gate.
+ * these pages show their content - on the last end-of-day close - under one line with the one in-place "Connect your
+ * broker for live prices" button (src/ui/ConnectLive.tsx), instead of the full gate. The sentence says what is shown.
  */
 export const NO_BROKER_EOD_PAGES: Readonly<Record<string, string>> = {
-  "/charts": "Daily and weekly charts show the last close from NSE's end-of-day files. Live and intraday prices need your own broker.",
+  "/charts": "Daily and weekly charts show the last close from NSE's end-of-day files.",
+  "/option-chain": "The option chain shows the last close from NSE's end-of-day file.",
+  "/screener": "Daily scans run on the last close from NSE's end-of-day files; intraday scans need your broker.",
+  "/signals": "Your signals and approvals are all here; prices are the last close from NSE's end-of-day files.",
 };
 
 /** The no-broker sentence for a path (its sub-paths too), or null. */

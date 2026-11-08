@@ -61,6 +61,12 @@ import type { GroupExitAsk } from "../fno/groupExits";
 import type { RollAsk } from "../fno/roll";
 import { areaWords } from "../fno/strikeArea";
 import type { MyDayArea } from "../dashboard/myDay";
+import type { EodClose } from "../api/eod";
+import { NoBrokerLine } from "../ui/ConnectLive";
+import { lastCloseText } from "../ui/lastClose";
+import { useEodCloses } from "../ui/useEodCloses";
+
+const NO_SYMBOLS: readonly string[] = [];
 
 // N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
@@ -192,15 +198,21 @@ export default function PositionsV2(_props: PageProps = {}) {
     fno: fnoOn ? { facts: fno.facts, onAdd: (target, side) => setTicket({ target, side }), alertsOn: features.on("screener_v2"), onCompare: setCompare } : undefined,
   };
 
+  // M86 D2: no broker stored - each open position's last end-of-day close (NSE's files), read once per set of symbols.
+  const lastCloses = useEodCloses(broker.kind === "no-broker" && signedIn ? (list ?? []).map((p) => p.symbol) : NO_SYMBOLS);
+
   if (!connected) {
     return (
       <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="positions-v2">
         <PageTitleV2 title="My positions" subtitle="What you hold now and how it is doing." />
-        <div>
-          <BrokerGateView state={broker} onConnect={() => inPlace.open(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)}
-            onLogin={login.login} onRetry={refreshBroker} busy={login.busy} error={login.error} codeStep={login.codeStep} onSubmitCode={login.submitCode}
-            positionsShown={signedIn} />
-        </div>
+        {/* M86 D3: no broker stored - one line with the in-place connect button (the positions below show the last close). */}
+        {broker.kind === "no-broker" && signedIn ? <NoBrokerLine testId="positions">Prices are the last close from NSE&apos;s end-of-day files.</NoBrokerLine> : (
+          <div>
+            <BrokerGateView state={broker} onConnect={() => inPlace.open(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)}
+              onLogin={login.login} onRetry={refreshBroker} busy={login.busy} error={login.error} codeStep={login.codeStep} onSubmitCode={login.submitCode}
+              positionsShown={signedIn} />
+          </div>
+        )}
         {signedIn && (
           // Shown whatever the broker state - even while the broker check is still running or never answers - so the
           // trader's own paper positions keep their exits and the paper account keeps its pause (ADR-0004).
@@ -212,9 +224,9 @@ export default function PositionsV2(_props: PageProps = {}) {
               ) : (
                 <>
                   {/* UX-15: one chip, not a sentence (the Exit button below each paper position says the rest). */}
-                  <div className="mb-space-3"><Chip tone="warn" variant="meaning" icon="!" name="no-price">Live prices: connect your broker</Chip></div>
+                  {broker.kind !== "no-broker" && <div className="mb-space-3"><Chip tone="warn" variant="meaning" icon="!" name="no-price">Live prices: connect your broker</Chip></div>}
                   {accountFilter}
-                  <PositionList rows={shownRows} byId={byId} actions={actions} prices={false} groups={fno.groups}
+                  <PositionList rows={shownRows} byId={byId} actions={actions} prices={false} groups={fno.groups} lastCloses={lastCloses}
                     exitAll={{ onChanged: reload, onNote: (text, ok) => setNotice({ kind: ok ? "done" : "warn", text }) }} />
                   {groupSheet}
                 </>
@@ -416,8 +428,10 @@ function groupExits(group: PositionGroup, actions: RowActions): boolean {
 
 /** `prices: false` (no broker session): no LTP or P&L columns at all - an entry-price row with nothing made up.
  * FNO-4: legs placed together show together under one line with their combined P&L; every leg keeps its own Exit. */
-export function PositionList({ rows, byId, actions, prices = true, groups = [], exitAll }: {
+export function PositionList({ rows, byId, actions, prices = true, groups = [], exitAll, lastCloses }: {
   rows: HeldRow[]; byId: Map<number, TradeRecord>; actions: RowActions; prices?: boolean; groups?: PositionGroup[];
+  /** M86 D2 (no broker stored): each symbol's last end-of-day close, shown as "Last close" - never a P&L made from it. */
+  lastCloses?: ReadonlyMap<string, EodClose>;
   /** CT-1 T4: "Exit all" in the list itself (My trades and the Terminal, one code path); shown with two or more
    * positions while "Exit now" is on - each position keeps its own Exit, never hidden or blocked (ADR-0004). */
   exitAll?: ExitAllHooks;
@@ -427,7 +441,8 @@ export function PositionList({ rows, byId, actions, prices = true, groups = [], 
   const row = (r: HeldRow, inGroup = false, group?: PositionGroup) => {
     const p = byId.get(r.id);
     const groupLeg = group && groupExits(group, actions) ? { hedge: (group.hedge_ids ?? []).includes(r.id) } : undefined;
-    return p ? <PositionRowV2 key={r.id} row={r} position={p} actions={actions} prices={prices} inGroup={inGroup} groupLeg={groupLeg} /> : null;
+    return p ? <PositionRowV2 key={r.id} row={r} position={p} actions={actions} prices={prices} inGroup={inGroup} groupLeg={groupLeg}
+      lastClose={prices ? undefined : lastCloses?.get(p.symbol.trim().toUpperCase())} /> : null;
   };
   return (
     <div className="space-y-space-3">
@@ -496,8 +511,10 @@ function GroupInsights({ group, byId, actions }: { group: GroupedLegs<HeldRow>; 
   );
 }
 
-export function PositionRowV2({ row, position, actions, prices = true, inGroup = false, groupLeg }: {
+export function PositionRowV2({ row, position, actions, prices = true, inGroup = false, groupLeg, lastClose }: {
   row: HeldRow; position: TradeRecord; actions: RowActions; prices?: boolean; inGroup?: boolean;
+  /** M86 D2: the symbol's last end-of-day close (no broker stored). */
+  lastClose?: EodClose;
   /** TT-8: a leg of one basket - "Exit this leg" in place of "Exit now" (`hedge`: it protects an open sold leg). */
   groupLeg?: { hedge: boolean };
 }) {
@@ -536,6 +553,9 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
             <span><span className="text-fg-muted">Qty </span><span className="text-fg">{row.qtyText}</span></span>
             <span><span className="text-fg-muted">Avg. </span><span className="text-fg">{formatPrice(row.avg)}</span></span>
             {prices && row.ltp !== null && <span><span className="text-fg-muted">LTP </span><span className="text-fg">{formatPrice(row.ltp)}</span></span>}
+            {!prices && lastClose && !lastClose.missing && lastClose.close !== null && (
+              <span data-last-close><span className="text-fg-muted">{lastCloseText(lastClose.date)} </span><span className="text-fg">{formatPrice(lastClose.close)}</span></span>
+            )}
           </div>
           <div className="mt-space-1 flex flex-wrap items-center gap-space-1" data-levels>
             {row.levelsOn && <span className="text-t12 text-fg-muted">{row.levelsOn.replace(/:$/, "")}</span>}

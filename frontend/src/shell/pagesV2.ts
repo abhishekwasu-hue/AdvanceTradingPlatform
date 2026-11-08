@@ -3,7 +3,7 @@ import type { PageProps } from "../routes";
 import type { ShellKey } from "./navModel";
 import { SETTINGS_SECTIONS } from "../settings/paths";
 import { STORED_HISTORY_PATHS, noBrokerEodFor, storedDailyFor } from "../ui/dataPages";
-import { shellGates } from "./shellRoutes";
+import { routerPath, shellGates } from "./shellRoutes";
 
 // Settings redesign B: one chunk for every Settings section page (it reads its section from the address).
 const SettingsSection = lazy(() => import("../settings/SettingsSectionV2"));
@@ -76,12 +76,19 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
  */
 export const OWN_BROKER_STATES: readonly string[] = ["/", "/positions", "/copilot"];
 
+/** M86: the no-broker sentence for an address as the router reads it (`/%63harts` is Charts); an undecodable one: none
+ * (the full gate - fail closed). */
+function noBrokerEod(pathname: string): string | null {
+  const { path, malformed } = routerPath(pathname);
+  return malformed ? null : noBrokerEodFor(path);
+}
+
 /** The broker gate the shell puts in front of an address (null: none) - for the tab, and for the same page shown in an
  * in-place panel (M75 NAV-2). Day-one fix 2: with stored history on, Find setups and Signals keep their Daily content
  * before the broker login. */
 export function brokerGateFor(pathname: string, on: (flag: string) => boolean): { storedDaily: string | null; noBrokerEod: string | null } | null {
   const stored = on("backtest_stored_history");
   if (!shellGates(pathname, stored ? [...OWN_BROKER_STATES, ...STORED_HISTORY_PATHS] : OWN_BROKER_STATES)) return null;
-  // M86 D2: with no broker stored, these pages show the last end-of-day close under one line.
-  return { storedDaily: stored ? storedDailyFor(pathname) : null, noBrokerEod: noBrokerEodFor(pathname) };
+  // M86 D2: with no broker stored, these pages show the last end-of-day close under the one connect line.
+  return { storedDaily: stored ? storedDailyFor(pathname) : null, noBrokerEod: noBrokerEod(pathname) };
 }

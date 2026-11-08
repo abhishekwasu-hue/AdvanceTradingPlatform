@@ -140,7 +140,8 @@ describe("OC1 automatic symbol and expiry", () => {
     });
 
     it("a hidden tab reads nothing (the effect waits for the page to be shown)", () => {
-      expect(hookSource).toMatch(/if \(!listReady \|\| !visible\) return undefined;/);
+      // M86: and nothing at all while the user has no broker (the page shows the end-of-day chain).
+      expect(hookSource).toMatch(/if \(!listReady \|\| !visible \|\| paused\) return undefined;/);
     });
   });
 });

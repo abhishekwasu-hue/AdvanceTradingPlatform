@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-export { lastCloseText } from "./lastClose";
+export { CONNECT_LIVE, lastCloseText } from "./lastClose";
 
 /**
- * M86 D2: whether the signed-in user has NO broker stored - his charts then open on the last end-of-day close (NSE's
- * files) instead of an empty intraday chart.
+ * M86 D2 / D3: what a user WITHOUT a connected broker sees - the last end-of-day close with its date, and one in-place
+ * "Connect your broker for live prices" button per card (src/ui/ConnectLive.tsx).
  */
 
 // One broker-status read shared by every card of the page (a chart, the chain, the watchlist), re-read after 30 s.

@@ -342,28 +342,42 @@ test.describe("v2 shell 1440 desktop", () => {
 test.describe("v2 broker gate on data pages", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
-  test("no broker stored: every data page shows 'Connect your broker' and none of its content", async ({ page }) => {
+  test("no broker stored (M86): the market pages show the last close under ONE connect button; the rest keep the gate", async ({ page }) => {
     // UX1: Find setups and the Copilot open only while their flags are on (off, the address says "Coming soon" - tested
     // below); `ai_copilot` is ON by default on the server.
     await open(page, "/", "light", { features: { ui_v2: true, screener_v2: true, ai_copilot: true }, brokers: [] });
-    for (const path of ["/", "/charts", "/option-chain", "/screener", "/signals", "/positions", "/portfolio", "/copilot/market-pulse"]) {
+    // M86 D2 / D3: Charts, Option chain, Find setups and Signals show their content under one line with the one button.
+    for (const path of ["/charts", "/option-chain", "/screener", "/signals"]) {
+      await page.goto(path);
+      const line = page.locator("[data-no-broker='page']");
+      await expect(line, path).toContainText("last close");
+      await expect(line.locator("[data-connect-live]"), path).toHaveCount(1);
+      await expect(page.locator("[data-broker-gate]"), path).toHaveCount(0);
+      await expect(page.getByText(/sample/i), path).toHaveCount(0);
+    }
+    // Today shows its own page (the strip carries the one button); My positions its line and the trader's own exits.
+    await page.goto("/");
+    await expect(page.locator("[data-broker-gate]")).toHaveCount(0);
+    await expect(page.locator("[data-block='strip'] [data-connect-live]")).toHaveCount(1);
+    await page.goto("/positions");
+    await expect(page.locator("[data-no-broker='positions'] [data-connect-live]")).toHaveCount(1);
+    // UI2-9a: never the summary, the closed trades or any price or P&L figure without a broker.
+    await expect(page.locator("[data-block='summary']")).toHaveCount(0);
+    await expect(page.locator("[data-block='history']")).toHaveCount(0);
+    await expect(page.locator("main [data-col]")).toHaveCount(0);
+    await expect(page.locator("main").getByText(/[+−]₹/)).toHaveCount(0);
+    // The pages that need the broker itself keep the gate.
+    for (const path of ["/portfolio", "/copilot/market-pulse"]) {
       await page.goto(path);
       const gate = page.locator("[data-broker-gate='no-broker']");
       await expect(gate, path).toBeVisible();
       await expect(gate.getByRole("heading", { name: "Connect your broker" })).toBeVisible();
       await expect(page.locator("main [data-broker-gate] ~ *")).toHaveCount(0);
-      if (path === "/positions") {
-        // UI2-9a: My positions shows the gate itself and, under it, only the trader's own open positions with their exits
-        // (ADR-0004) - never the summary, the closed trades or any price or P&L figure.
-        await expect(page.locator("[data-block='summary']")).toHaveCount(0);
-        await expect(page.locator("[data-block='history']")).toHaveCount(0);
-        await expect(page.locator("main [data-col]")).toHaveCount(0);
-        await expect(page.locator("main").getByText(/[+−]₹/)).toHaveCount(0);
-      }
     }
-    await page.getByRole("link", { name: "Connect a broker" }).click();
+    await page.goto("/charts");
+    await page.locator("[data-no-broker='page'] [data-connect-live]").click();
     // M75 NAV: it opens in place over the tab (the path stays; the panel is on top).
-    await expect(page).toHaveURL(/\?panel=broker$/);
+    await expect(page).toHaveURL(/\/charts\?panel=broker$/);
     const panel = page.locator("[data-inplace-panel='broker']");
     await expect(panel).toBeVisible({ timeout: 15_000 });
     await expect(panel.locator("[data-broker-gate]")).toHaveCount(0);       // the Broker page is not a data page
@@ -371,9 +385,11 @@ test.describe("v2 broker gate on data pages", () => {
 
   test("percent-encoded and undecodable addresses are gated too (review M1)", async ({ page }) => {
     await open(page, "/", "light", { features: { ui_v2: true }, brokers: [] });
-    for (const path of ["/option%2Dchain", "/%70ositions", "/p%6Frtfolio", "/%63harts"]) {
+    // M86: decoded as the router does - the market pages show their no-broker line, the portfolio its gate.
+    for (const [path, shown] of [["/option%2Dchain", "[data-no-broker='page']"], ["/%70ositions", "[data-no-broker='positions']"],
+      ["/p%6Frtfolio", "[data-broker-gate='no-broker']"], ["/%63harts", "[data-no-broker='page']"]] as const) {
       await page.goto(path);
-      await expect(page.locator("[data-broker-gate='no-broker']"), path).toBeVisible();
+      await expect(page.locator(shown), path).toBeVisible();
       await expect(page.getByText(/sample/i), path).toHaveCount(0);
     }
     // An undecodable address (the preview server refuses to serve one, so it is reached inside the app): fails closed.
@@ -393,10 +409,10 @@ test.describe("v2 broker gate on data pages", () => {
     await expect(page.getByText(/sample/i)).toHaveCount(0);
     await expect(page.locator("main")).toHaveCount(0);
     release();
-    await expect(page.locator("[data-broker-gate='no-broker']")).toBeVisible();
+    await expect(page.locator("[data-no-broker='page']")).toBeVisible();          // M86: the no-broker line, never sample data
   });
 
-  test("flag on, flags 1 s late: the waiting screen, then the gate - never ungated content", async ({ page }) => {
+  test("flag on, flags 1 s late: the waiting screen, then the page's no-broker state - never ungated content", async ({ page }) => {
     await open(page, "/settings", "light", { features: { ui_v2: true }, brokers: [] });
     await page.route(/\/api(?:\/v1)?\/system\/features$/, async (route) => {
       await new Promise((r) => setTimeout(r, 1000));
@@ -413,7 +429,7 @@ test.describe("v2 broker gate on data pages", () => {
       }).observe(document, { childList: true, subtree: true });
     });
     await page.goto("/positions");
-    await expect(page.locator("[data-broker-gate='no-broker']")).toBeVisible();
+    await expect(page.locator("[data-no-broker='positions']")).toBeVisible();     // M86: one line, then his own exits
     const seen = await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen);
     expect(seen).toContain("waiting");
     expect(seen).not.toContain("today");

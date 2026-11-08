@@ -203,9 +203,10 @@ test.describe("v2 positions 1440 desktop", () => {
     await expect.poll(() => writes.calls.filter((c) => c.url === "/positions/202/exit-now").length).toBe(1);
   });
 
-  test("no broker stored: 'Connect your broker', the paper exits and 'Pause new PAPER entries' still work", async ({ page }) => {
+  test("no broker stored (M86): one connect line, the paper exits and 'Pause new PAPER entries' still work", async ({ page }) => {
     const writes = await open(page, "light", { broker: "none", paperAccount: true });
-    await expect(page.locator("[data-broker-gate='no-broker']")).toBeVisible();
+    await expect(page.locator("[data-no-broker='positions'] [data-connect-live]")).toHaveCount(1);
+    await expect(page.locator("[data-broker-gate]")).toHaveCount(0);
     await expect(page.locator("[data-block='exits'] [data-testid='exit-now']")).toHaveCount(2);
     await expect(page.locator("[data-block='summary']")).toHaveCount(0);
     await expect(page.locator("[data-block='exits'] [data-col]")).toHaveCount(0);             // no price or P&L columns

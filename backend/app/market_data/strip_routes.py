@@ -11,6 +11,8 @@ instead of three rate-limited `/api/market-data/ltp` calls from the browser:
   (`market_snapshots`: the Copilot's CUE / SYMBOL reads and the VIX gate's reading, captured by the worker through the
   organisation's broker). It is marked `source: "memory"` with its time. With neither, the index is `missing` with
   `ltp: null` - never a made-up price (owner brief: no sample data).
+* **M86: last close.** Still unpriced: the last close from the shared NSE daily files (`source: "eod"`, the trade
+  date as `as_of`) - never a broker row (app/market_data/eod_routes.py).
 * **Market state.** Open / pre-open / closed with the next open, from the exchange calendar and `market_holidays` (the
   holiday's name when today is one). No worker heartbeat or internals.
 
@@ -133,6 +135,19 @@ def _from_memory(base: Dict[str, Any], record: MarketSnapshotRecord, market_open
             "stale": market_open, "source": "memory", "missing": False}
 
 
+async def _from_eod(session: AsyncSession, base: Dict[str, Any]) -> Dict[str, Any]:
+    """M86 D2: the index's last close from the shared NSE daily files (`eod_routes.last_close`), `source: "eod"`, with
+    the trade date as `as_of`; the base unchanged when none is stored."""
+    from app.market_data.eod_routes import last_close
+    got = await last_close(session, base["symbol"])
+    if got["missing"] or not isinstance(got["close"], (int, float)) or not got["close"] > 0:
+        return base
+    return {**base, "ltp": round(float(got["close"]), 2), "prev_close": got["prev_close"],
+            "change": round(got["change"], 2) if got["change"] is not None else None,
+            "change_pct": round(got["change_pct"], 2) if got["change_pct"] is not None else None,
+            "as_of": got["date"], "stale": False, "source": "eod", "missing": False}
+
+
 async def _memory(session: AsyncSession, tenant_id: int, symbols: List[str], now: datetime) -> Dict[str, MarketSnapshotRecord]:
     """The newest market-memory reading per symbol, of this organisation only, at most MEMORY_MAX_AGE old. One small
     query per symbol (newest first, one row): a symbol whose captures stopped is still found however many newer rows
@@ -186,6 +201,12 @@ async def strip(user: User = Depends(get_current_user), session: AsyncSession = 
             record = remembered.get(item["symbol"])
             if item["missing"] and record is not None:
                 indices[n] = _from_memory(item, record, market["is_open"]) or item
+    unpriced = [i["symbol"] for i in indices if i["missing"]]
+    if unpriced:
+        # M86 D2: still no price - the last close from the NSE daily files (shared, never a broker row), with its date.
+        for n, item in enumerate(indices):
+            if item["missing"]:
+                indices[n] = await _from_eod(session, item)
     sources = {i["source"] for i in indices if not i["missing"]}
     source = "none" if not sources else sources.pop() if len(sources) == 1 else "mixed"
     open_or_soon = market["phase"] in ("open", "pre-open")

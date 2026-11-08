@@ -351,7 +351,7 @@ export function StoredDailyNote({ state, what, onConnect, onLogin, busy = null, 
 export const DAILY_LOGIN_PATHS: readonly string[] = ["/portfolio"];
 
 export function BrokerGate({ children, storedDaily = null, noBrokerEod = null }: { children: ReactNode; storedDaily?: string | null;
-  /** M86 D2: with no broker stored, the page's content on the last end-of-day close under one line (this sentence). */
+  /** M86 D2: with no broker stored, the page's content on the last end-of-day close under one connect line (this sentence). */
   noBrokerEod?: string | null }) {
   const { pathname } = useLocation();
   const dataOnly = !DAILY_LOGIN_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
@@ -365,7 +365,7 @@ export function BrokerGate({ children, storedDaily = null, noBrokerEod = null }:
     return () => gateShowing.set(false);
   }, [state.kind]);
 
-  // M86 D2: no broker stored - the page on the last end-of-day close, under ONE line saying so.
+  // M86 D2 / D3: no broker stored - the page on the last end-of-day close, under ONE line with the in-place connect button.
   if (noBrokerEod && state.kind === "no-broker") {
     return (
       <>

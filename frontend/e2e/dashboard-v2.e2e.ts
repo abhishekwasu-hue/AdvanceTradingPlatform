@@ -233,25 +233,23 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await expect(first.getByRole("button", { name: "Log in" })).toHaveClass(/bg-brand/);
   });
 
-  test("no broker stored: the Get started card and nothing else, 'Connect your broker' first", async ({ page }) => {
+  test("no broker stored (M86): the strip on the last close with ONE connect button, Get started leading its broker step", async ({ page }) => {
     await open(page, "light", { state: "none" });
     const card = page.locator("[data-block='get-started']");
     await expect(card).toContainText("0 of 3 done");
-    await expect(page.locator("[data-block]")).toHaveCount(1);
     await expect(page.locator("[data-broker-gate]")).toHaveCount(0);
+    await expect(page.locator("[data-block='strip'] [data-connect-live]")).toHaveCount(1);
     const connect = card.getByRole("link", { name: "Connect your broker" });
-    await expect(connect).toHaveClass(/bg-brand/);                                      // the one primary button here
+    await expect(connect).toHaveClass(/bg-brand/);                                      // the card's own primary step
     await expect(connect).toHaveAttribute("href", /^\/(broker|settings)$/);       // /broker once the Broker page exists
   });
 
-  test("no broker stored and Get started hidden: the broker gate's 'Connect your broker' and nothing else", async ({ page }) => {
+  test("no broker stored and Get started hidden (M86): the page, and the strip's button opens the broker in place", async ({ page }) => {
     const a = setupAnswer("none");
     await open(page, "light", { state: "none", setup: { ...a, stored: { ...a.stored, get_started_hidden_at: "2026-10-18T09:00:00Z" } } });
-    const gate = page.locator("[data-broker-gate='no-broker']");
-    await expect(gate).toBeVisible();
-    await expect(gate.getByRole("heading", { name: "Connect your broker" })).toBeVisible();
-    await expect(page.locator("[data-block]")).toHaveCount(0);
-    await gate.getByRole("link", { name: "Connect a broker" }).click();
+    await expect(page.locator("[data-broker-gate]")).toHaveCount(0);
+    await expect(page.locator("[data-block='get-started']")).toHaveCount(0);
+    await page.locator("[data-block='strip'] [data-connect-live]").click();
     // M75 NAV: it opens in place over the tab (the path stays; the panel is on top).
     await expect(page).toHaveURL(/\/\?panel=broker$/);
     const panel = page.locator("[data-inplace-panel='broker']");

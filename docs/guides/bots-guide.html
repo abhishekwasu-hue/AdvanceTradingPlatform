@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Bots Guide</title>
+<style>
+:root{
+  --ink:#1b2430; --muted:#5a6675; --line:#d9dee5; --soft:#f4f6f9; --brand:#1f5fbf; --brand-soft:#e8f0fc;
+  --up:#1e7a46; --up-soft:#e6f4ec; --down:#b3261e; --down-soft:#fbeaea; --warn:#9a6200; --warn-soft:#fff4dc;
+  --t-body:10.5pt; --t-small:9pt; --t-tiny:8pt; --t-h1:20pt; --t-h2:14pt; --t-h3:11.5pt;
+}
+@page{ size:A4; margin:16mm 15mm 20mm 15mm; }
+*{ box-sizing:border-box; }
+html,body{ background:#fff; color:var(--ink); }
+body{ font-family:"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; font-size:var(--t-body); line-height:1.45; margin:0; }
+h1{ font-size:var(--t-h1); margin:0 0 6pt; color:var(--brand); }
+h2{ font-size:var(--t-h2); margin:14pt 0 6pt; padding-bottom:3pt; border-bottom:2px solid var(--brand-soft); }
+h3{ font-size:var(--t-h3); margin:10pt 0 4pt; }
+p{ margin:0 0 6pt; }
+ul,ol{ margin:0 0 6pt; padding-left:16pt; }
+li{ margin:0 0 2pt; }
+.chapter{ break-before:page; }
+.keep{ break-inside:avoid; }
+table{ width:100%; border-collapse:collapse; margin:4pt 0 8pt; font-size:var(--t-small); break-inside:auto; }
+th,td{ border:1px solid var(--line); padding:4pt 6pt; text-align:left; vertical-align:top; }
+th{ background:var(--soft); font-weight:600; }
+tr{ break-inside:avoid; }
+.ui{ font-weight:600; color:var(--brand); }
+.msg{ font-family:Consolas,"Courier New",monospace; font-size:var(--t-small); background:var(--soft); border:1px solid var(--line); border-radius:3px; padding:0 3pt; }
+.path{ font-weight:600; }
+.box{ border:1px solid var(--line); border-left:5px solid var(--brand); background:var(--brand-soft); border-radius:4px; padding:7pt 9pt; margin:8pt 0; break-inside:avoid; }
+.box.safe{ border-left-color:var(--up); background:var(--up-soft); }
+.box.warn{ border-left-color:var(--warn); background:var(--warn-soft); }
+.box.stop{ border-left-color:var(--down); background:var(--down-soft); }
+.box h3{ margin-top:0; }
+.check{ border:1px dashed var(--up); background:var(--up-soft); border-radius:4px; padding:5pt 8pt; margin:6pt 0 10pt; font-size:var(--t-small); break-inside:avoid; }
+.check b{ color:var(--up); }
+.step{ display:flex; gap:8pt; margin:0 0 6pt; break-inside:avoid; }
+.step .n{ flex:0 0 22pt; height:22pt; border-radius:50%; background:var(--brand); color:#fff; font-weight:700; display:flex; align-items:center; justify-content:center; font-size:var(--t-small); }
+.step .b{ flex:1; }
+.see{ color:var(--muted); font-size:var(--t-small); }
+.small{ font-size:var(--t-small); color:var(--muted); }
+.tag{ display:inline-block; font-size:var(--t-tiny); font-weight:700; border-radius:3px; padding:0 4pt; border:1px solid var(--line); background:var(--soft); color:var(--muted); vertical-align:1px; }
+.tag.on{ border-color:var(--warn); color:var(--warn); background:var(--warn-soft); }
+.tag.paper{ border-color:var(--up); color:var(--up); background:var(--up-soft); }
+.tag.live{ border-color:var(--down); color:var(--down); background:var(--down-soft); }
+figure{ margin:6pt 0 10pt; break-inside:avoid; }
+figcaption{ font-size:var(--t-small); color:var(--muted); margin-top:3pt; }
+svg text{ font-family:"Segoe UI",Roboto,Arial,sans-serif; }
+/* cover */
+.cover{ height:250mm; display:flex; flex-direction:column; justify-content:center; }
+.cover .kicker{ font-size:11pt; color:var(--muted); letter-spacing:1px; text-transform:uppercase; }
+.cover h1{ font-size:28pt; line-height:1.15; margin:8pt 0 10pt; }
+.cover .sub{ font-size:13pt; color:var(--muted); max-width:150mm; }
+.cover .strip{ margin-top:18pt; display:flex; gap:8pt; flex-wrap:wrap; }
+.cover .strip span{ border:1px solid var(--line); border-radius:14pt; padding:3pt 10pt; font-size:var(--t-small); background:var(--soft); }
+/* toc */
+.toc ol{ list-style:none; padding:0; margin:0; }
+.toc > ol > li{ display:flex; align-items:baseline; gap:4pt; padding:3pt 0; border-bottom:1px dotted var(--line); }
+.toc > ol > li.sub{ padding-left:14pt; font-size:var(--t-small); color:var(--muted); }
+.toc a{ color:var(--ink); text-decoration:none; flex:1; }
+.toc .pg{ min-width:18pt; text-align:right; font-variant-numeric:tabular-nums; color:var(--muted); }
+.two{ display:grid; grid-template-columns:1fr 1fr; gap:8pt; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="cover">
+  <div class="kicker">ATP education guide</div>
+  <h1>Automatic trading bots:<br>how to create one, how to deploy it, and how it works</h1>
+  <p class="sub">A step-by-step manual for a brand-new user. Every screen name, field and message in this guide is taken from the ATP screens as they are built. Practice (PAPER) money only.</p>
+  <div class="strip"><span>Sign in</span><span>Connect broker</span><span>Your own settings</span><span>Strategy</span><span>Test</span><span>Start on paper</span><span>Watch</span><span>Pause / stop / exit</span></div>
+  <div class="box warn" style="margin-top:22pt">
+    <b>Information and education only, not investment advice.</b> This guide explains how the software works. It does not say what to trade, when, or how much. Results on past prices or on paper say nothing about the future.
+  </div>
+</section>
+
+<!-- ============ TOC ============ -->
+<section class="chapter toc">
+  <h1>Contents</h1>
+  <ol>
+    <li><a href="#c1">1. What a "bot" is in ATP</a><span class="pg" data-for="c1">3</span></li>
+    <li><a href="#c2">2. Before you start: what you need</a><span class="pg" data-for="c2">4</span></li>
+    <li><a href="#c3">3. Step 1 - Sign in</a><span class="pg" data-for="c3">5</span></li>
+    <li><a href="#c4">4. Step 2 - Connect your broker (or practise without one)</a><span class="pg" data-for="c4">6</span></li>
+    <li><a href="#c5">5. Step 3 - Save your own Trade settings and Risk limits</a><span class="pg" data-for="c5">7</span></li>
+    <li><a href="#c6">6. Step 4 - Pick or build a strategy (every way that exists)</a><span class="pg" data-for="c6">9</span></li>
+    <li><a href="#c7">7. Step 5 - Test first: the backtest</a><span class="pg" data-for="c7">11</span></li>
+    <li><a href="#c8">8. Step 6 - Deploy on PAPER: "Start a trading bot"</a><span class="pg" data-for="c8">12</span></li>
+    <li><a href="#c9">9. Step 7 - Watch the bot card, approvals and notifications</a><span class="pg" data-for="c9">14</span></li>
+    <li><a href="#c10">10. Step 8 - Pause, stop and exit</a><span class="pg" data-for="c10">16</span></li>
+    <li><a href="#c11">11. How a bot works after you start it (one cycle)</a><span class="pg" data-for="c11">17</span></li>
+    <li><a href="#c12">12. PAPER first, and how LIVE is switched</a><span class="pg" data-for="c12">18</span></li>
+    <li><a href="#c13">13. Safety boxes</a><span class="pg" data-for="c13">19</span></li>
+    <li><a href="#c14">14. Worked example: from template to paper bot (made-up numbers)</a><span class="pg" data-for="c14">20</span></li>
+    <li><a href="#c15">15. FAQ and troubleshooting</a><span class="pg" data-for="c15">22</span></li>
+    <li><a href="#c16">16. Glossary</a><span class="pg" data-for="c16">24</span></li>
+    <li><a href="#c17">Appendix - For the administrator</a><span class="pg" data-for="c17">25</span></li>
+  </ol>
+  <div class="box" style="margin-top:14pt">
+    <h3>How to read this guide</h3>
+    <ul>
+      <li><span class="ui">Blue bold words</span> are the exact names you see on the screen (pages, buttons, fields).</li>
+      <li><span class="msg">Grey boxed words</span> are the exact messages ATP shows.</li>
+      <li>A path such as <span class="path">Settings › Trade settings › Position size</span> means: open Settings, then Trade settings, then the Position size section.</li>
+      <li>Each big step ends with a green <b>Check</b> line. If you do not see what it says, read the FAQ (section 15).</li>
+      <li>Some parts appear only when your platform has switched them on. They are marked <span class="tag on">may be off</span>.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 1 ============ -->
+<section class="chapter" id="c1">
+  <h1 data-h="c1">1. What a "bot" is in ATP</h1>
+  <p>A <b>trading bot</b> is your own strategy, switched on for one symbol, that ATP checks again and again on its own. When the strategy's conditions are met on a closed candle, the bot sends one entry through the same order path that a manual order uses. Your own settings decide the size, the exits and whether it asks you first.</p>
+  <p>On the screen the menu entry is <span class="ui">AI Trading Bot</span> (in the BUILD section). The page itself is titled <span class="ui">Trading bot</span>. The bot does not think for you. It only follows the rules you picked.</p>
+
+  <h3>The pieces</h3>
+  <table>
+    <tr><th style="width:24%">Piece</th><th>What it is, in plain words</th><th style="width:26%">Where you see it</th></tr>
+    <tr><td><b>Strategy</b> (the rules)</td><td>The conditions that must be true on the chart for an entry, for example "a level breaks and the price comes back to it". It produces a <b>signal</b>, not advice.</td><td><span class="path">Strategies › Library / Build</span></td></tr>
+    <tr><td><b>Backtest</b> (the test)</td><td>The same rules run over past candles, to see how often they fired and what those trades did. It is a test of the rules, not a promise.</td><td><span class="path">Strategies › Test</span>, or the <span class="ui">Result</span> step of Build</td></tr>
+    <tr><td><b>Deployment</b> (the running bot)</td><td>One strategy + one symbol + your choices (size, how entries are sent, Ask me first or not). Each one is a card under <span class="ui">Your bots</span>.</td><td><span class="ui">AI Trading Bot</span> page</td></tr>
+    <tr><td><b>Trading worker</b> (the engine)</td><td>A program on the ATP server that checks every running bot on a fixed rhythm, even when your browser or phone is closed.</td><td>You see its result on the bot card: <span class="msg">Checked just now</span></td></tr>
+    <tr><td><b>PAPER vs LIVE</b></td><td>PAPER = practice money at real market prices; nothing reaches your broker. LIVE = real orders at your broker. Today the platform is PAPER only.</td><td>Badge on each bot card and approval</td></tr>
+    <tr><td><b>Your own settings</b></td><td>Position size, Risk limits, exits, holding, order type, paper capital. ATP pre-chooses none of them. Each starts as <span class="msg">Not set</span>.</td><td><span class="path">Settings › Trade settings</span>, <span class="path">Settings › Risk limits</span></td></tr>
+  </table>
+
+  <figure>
+  <svg viewBox="0 0 720 170" width="100%" role="img" aria-label="From strategy to paper fill">
+    <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5a6675"/></marker></defs>
+    <g font-size="12">
+      <rect x="5" y="40" width="110" height="60" rx="8" fill="#e8f0fc" stroke="#1f5fbf"/><text x="60" y="65" text-anchor="middle" font-weight="700">Strategy</text><text x="60" y="83" text-anchor="middle" fill="#5a6675" font-size="10">your rules</text>
+      <rect x="150" y="40" width="110" height="60" rx="8" fill="#e8f0fc" stroke="#1f5fbf"/><text x="205" y="65" text-anchor="middle" font-weight="700">Backtest</text><text x="205" y="83" text-anchor="middle" fill="#5a6675" font-size="10">past candles</text>
+      <rect x="295" y="40" width="120" height="60" rx="8" fill="#e8f0fc" stroke="#1f5fbf"/><text x="355" y="65" text-anchor="middle" font-weight="700">Bot (deployment)</text><text x="355" y="83" text-anchor="middle" fill="#5a6675" font-size="10">strategy + symbol + you</text>
+      <rect x="450" y="40" width="110" height="60" rx="8" fill="#f4f6f9" stroke="#5a6675"/><text x="505" y="65" text-anchor="middle" font-weight="700">Worker</text><text x="505" y="83" text-anchor="middle" fill="#5a6675" font-size="10">checks + order path</text>
+      <rect x="595" y="15" width="120" height="50" rx="8" fill="#e6f4ec" stroke="#1e7a46"/><text x="655" y="37" text-anchor="middle" font-weight="700" fill="#1e7a46">PAPER fill</text><text x="655" y="53" text-anchor="middle" fill="#1e7a46" font-size="10">practice money</text>
+      <rect x="595" y="85" width="120" height="50" rx="8" fill="#fbeaea" stroke="#b3261e" stroke-dasharray="4 3"/><text x="655" y="107" text-anchor="middle" font-weight="700" fill="#b3261e">LIVE order</text><text x="655" y="123" text-anchor="middle" fill="#b3261e" font-size="10">locked (owner / admin)</text>
+      <line x1="115" y1="70" x2="148" y2="70" stroke="#5a6675" marker-end="url(#ar)"/>
+      <line x1="260" y1="70" x2="293" y2="70" stroke="#5a6675" marker-end="url(#ar)"/>
+      <line x1="415" y1="70" x2="448" y2="70" stroke="#5a6675" marker-end="url(#ar)"/>
+      <line x1="560" y1="62" x2="593" y2="45" stroke="#1e7a46" marker-end="url(#ar)"/>
+      <line x1="560" y1="78" x2="593" y2="105" stroke="#b3261e" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+      <text x="355" y="150" text-anchor="middle" fill="#5a6675" font-size="10.5">Your Trade settings and Risk limits are read at every entry. Exits are never blocked.</text>
+    </g>
+  </svg>
+  <figcaption>Figure 1. The pieces of a bot, left to right.</figcaption>
+  </figure>
+
+  <div class="box safe"><b>One idea to keep:</b> the strategy gives a <b>signal</b>. Everything about the trade itself - lots or quantity, exits, how the order is sent, whether you approve first - comes only from <b>your own</b> settings. If one of them is <span class="msg">Not set</span>, the bot places nothing and tells you which setting it needs.</div>
+</section>
+
+<!-- ============ 2 ============ -->
+<section class="chapter" id="c2">
+  <h1 data-h="c2">2. Before you start: what you need</h1>
+  <table>
+    <tr><th style="width:30%">You need</th><th>Why</th><th style="width:28%">Where</th></tr>
+    <tr><td>An ATP account</td><td>Every bot, setting and trade belongs to your account.</td><td>The sign-in screen</td></tr>
+    <tr><td>A connected broker</td><td>Even a <b>paper</b> bot reads live prices through your broker. Without one, <span class="ui">Start on paper</span> is refused.</td><td><span class="path">Settings › Account &amp; broker › Broker accounts</span></td></tr>
+    <tr><td>Your own Trade settings</td><td>Holding, order type, position size, paper starting capital, New entries. Each starts <span class="msg">Not set</span>.</td><td><span class="path">Settings › Trade settings</span></td></tr>
+    <tr><td>Your own Risk limits (optional)</td><td>Each check is a switch, <b>off by default</b>. Turn on only what you want.</td><td><span class="path">Settings › Risk limits</span></td></tr>
+    <tr><td>A strategy</td><td>From the Library, a template, the builder or the Copilot.</td><td><span class="path">Strategies</span></td></tr>
+  </table>
+
+  <h3>The order of the steps</h3>
+  <figure>
+  <svg viewBox="0 0 720 90" width="100%" role="img" aria-label="Eight steps">
+    <g font-size="11" text-anchor="middle">
+      <g><circle cx="45" cy="30" r="17" fill="#1f5fbf"/><text x="45" y="34" fill="#fff" font-weight="700">1</text><text x="45" y="66">Sign in</text></g>
+      <g><circle cx="135" cy="30" r="17" fill="#1f5fbf"/><text x="135" y="34" fill="#fff" font-weight="700">2</text><text x="135" y="66">Broker</text></g>
+      <g><circle cx="225" cy="30" r="17" fill="#1f5fbf"/><text x="225" y="34" fill="#fff" font-weight="700">3</text><text x="225" y="66">Your settings</text></g>
+      <g><circle cx="315" cy="30" r="17" fill="#1f5fbf"/><text x="315" y="34" fill="#fff" font-weight="700">4</text><text x="315" y="66">Strategy</text></g>
+      <g><circle cx="405" cy="30" r="17" fill="#1f5fbf"/><text x="405" y="34" fill="#fff" font-weight="700">5</text><text x="405" y="66">Backtest</text></g>
+      <g><circle cx="495" cy="30" r="17" fill="#1e7a46"/><text x="495" y="34" fill="#fff" font-weight="700">6</text><text x="495" y="66">Start on paper</text></g>
+      <g><circle cx="585" cy="30" r="17" fill="#1f5fbf"/><text x="585" y="34" fill="#fff" font-weight="700">7</text><text x="585" y="66">Watch</text></g>
+      <g><circle cx="675" cy="30" r="17" fill="#1f5fbf"/><text x="675" y="34" fill="#fff" font-weight="700">8</text><text x="675" y="66">Pause / stop / exit</text></g>
+      <g stroke="#9aa5b1"><line x1="62" y1="30" x2="118" y2="30"/><line x1="152" y1="30" x2="208" y2="30"/><line x1="242" y1="30" x2="298" y2="30"/><line x1="332" y1="30" x2="388" y2="30"/><line x1="422" y1="30" x2="478" y2="30"/><line x1="512" y1="30" x2="568" y2="30"/><line x1="602" y1="30" x2="658" y2="30"/></g>
+    </g>
+  </svg>
+  <figcaption>Figure 2. The eight steps of this manual.</figcaption>
+  </figure>
+
+  <h3>Where things are in the menu</h3>
+  <table>
+    <tr><th>Menu section</th><th>Entries</th></tr>
+    <tr><td>TRADE</td><td><span class="ui">Today</span>, <span class="ui">Terminal</span> (or Charts and Option chain), <span class="ui">My trades</span> (Positions · Orders · Money · Results)</td></tr>
+    <tr><td>FIND</td><td><span class="ui">Find setups</span>, <span class="ui">Signals</span>, <span class="ui">Sectors &amp; indices</span></td></tr>
+    <tr><td>BUILD</td><td><span class="ui">Strategies</span> (Library · Build · Test), <span class="ui">AI Trading Bot</span></td></tr>
+    <tr><td>LEARN &amp; AI</td><td><span class="ui">AI Copilot</span>, <span class="ui">Learn</span></td></tr>
+    <tr><td>ACCOUNT</td><td><span class="ui">Settings</span> (Broker accounts are inside Settings)</td></tr>
+  </table>
+  <p class="small">On a phone, the bottom bar shows the first four entries and a <span class="ui">More</span> button. Every page can also be found with the search in the top bar.</p>
+  <p class="small">Tip: <span class="path">Settings › Set up your account</span> has a short "Get started" list: <span class="ui">Connect your broker</span>, <span class="ui">Start your trading bot</span>, <span class="ui">Get alerts on your phone (Telegram)</span>.</p>
+</section>
+
+<!-- ============ 3 ============ -->
+<section class="chapter" id="c3">
+  <h1 data-h="c3">3. Step 1 - Sign in</h1>
+  <div class="step"><div class="n">1.1</div><div class="b">Open the ATP website. You see the sign-in screen with the heading <span class="ui">Sign in</span>.</div></div>
+  <div class="step"><div class="n">1.2</div><div class="b">New user: press <span class="ui">Create an account</span> (under "New here?"). Type your <span class="ui">Email</span> and a <span class="ui">Password</span> (at least 10 characters, not a common password). If you were given a beta code, press <span class="ui">Have a beta invite code?</span> and type it. Accept the terms if the screen asks, then press <span class="ui">Create account</span>.
+    <div class="see">If the screen says "New here? Ask your team owner for an invite link.", sign-up is by invitation: ask the person who runs your team.</div></div></div>
+  <div class="step"><div class="n">1.3</div><div class="b">Existing user: type <span class="ui">Email</span> and <span class="ui">Password</span>, then press <span class="ui">Sign in</span>. Other sign-in ways may be listed above the email box (for example <span class="ui">Continue with your broker</span>).</div></div>
+  <div class="step"><div class="n">1.4</div><div class="b">If two-step sign-in is on for your account, the screen <span class="ui">Two-factor check</span> asks for the 6-digit <span class="ui">Authenticator code</span>; press <span class="ui">Verify</span>.</div></div>
+  <div class="step"><div class="n">1.5</div><div class="b">Forgot the password? Press <span class="ui">Forgot password?</span>, then <span class="ui">Send reset link</span>, and follow the email.</div></div>
+  <div class="check"><b>Check:</b> you should now see the <span class="ui">Today</span> page and the menu (TRADE, FIND, BUILD, LEARN &amp; AI, ACCOUNT).</div>
+</section>
+
+<!-- ============ 4 ============ -->
+<section class="chapter" id="c4">
+  <h1 data-h="c4">4. Step 2 - Connect your broker (or practise without one)</h1>
+  <h3>Connect</h3>
+  <div class="step"><div class="n">2.1</div><div class="b">Open <span class="path">Settings › Account &amp; broker › Broker accounts</span> (search "broker" also finds it). The page is about one thing: <span class="ui">Connect your broker</span>, with a tile for each broker. A tile marked <span class="ui">Coming soon</span> cannot be connected yet.</div></div>
+  <div class="step"><div class="n">2.2</div><div class="b">Press your broker's tile. A connect panel opens with the fields that broker needs, each with a short hint ("From step N"). Fill them in and confirm.</div></div>
+  <div class="step"><div class="n">2.3</div><div class="b">When it works, the panel says <span class="msg">Connected ✓</span> and the broker appears under your brokers with its status.</div></div>
+
+  <h3>The daily login for orders</h3>
+  <p>Some brokers end their login every morning. For Upstox the screen explains two kinds of connection:</p>
+  <table>
+    <tr><th style="width:28%">Connection</th><th>What it does (words from the screen)</th></tr>
+    <tr><td><b>Analytics Token</b></td><td>"charts and market data, saved once a year. It cannot place orders."</td></tr>
+    <tr><td><b>Upstox login</b></td><td>"needed for orders. Upstox ends it every morning." The dialog title is <span class="ui">Upstox login for orders</span>: "Once each trading day, before orders."</td></tr>
+  </table>
+  <p>A data-only Upstox row shows the button <span class="ui">Log in for orders</span>. Other rows may show <span class="ui">Connect again</span> or <span class="ui">Remove</span>. When a login has ended, the top bar's price dot says <span class="msg">Broker login needed</span>.</p>
+  <div class="box"><b>For a PAPER bot:</b> ATP needs a stored broker connection to read prices. The start check refuses a paper bot only when <b>no</b> broker is stored. The daily "login for orders" matters for orders at the broker (LIVE). If the worker cannot read prices, the bot card shows a waiting line such as <span class="msg">Waiting: broker login needed</span>.</div>
+
+  <h3>Practise without a broker</h3>
+  <p>Without a broker you can still: sign in, read <span class="ui">Learn</span>, browse <span class="path">Strategies › Library</span>, save your <span class="path">Trade settings</span> and <span class="path">Risk limits</span>, and set up a strategy in <span class="path">Strategies › Build</span>.</p>
+  <p>You cannot start a trading bot. The page shows <span class="msg">A trading bot reads live prices from your broker. Connect your broker first.</span> and the server says <span class="msg">Connect your broker on the Broker page first: even a paper bot reads live prices through your broker.</span></p>
+  <p>Tests on past prices also ask for the broker: <span class="msg">Connect your broker on the Broker page to run this on real prices.</span> (Made-up "sample" prices are kept for the platform administrator only.)</p>
+  <div class="check"><b>Check:</b> you should now see your broker listed on <span class="ui">Broker accounts</span>, and the Settings row in the menu without a red or amber dot.</div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section class="chapter" id="c5">
+  <h1 data-h="c5">5. Step 3 - Save your own Trade settings and Risk limits</h1>
+  <p>Open <span class="path">Settings › Trade settings</span>. The page opens with: <span class="msg">ATP sets no trading value for you. Every choice starts as Not set until you save your own.</span> Each section is a card with its own Save button (for example <span class="ui">Save position size</span>). After a save you see <span class="msg">Saved.</span> (or <span class="msg">Nothing changed.</span>). Under each field it says <b>Saved: …</b> or that it is Not set. Facts set by the exchange or your broker sit under <span class="ui">Set by the exchange or your broker</span>; you cannot change those.</p>
+
+  <h3>The sections and the fields a bot reads</h3>
+  <table>
+    <tr><th style="width:18%">Section</th><th style="width:30%">Field (screen name)</th><th>What it decides for a bot</th></tr>
+    <tr><td rowspan="3"><b>Order defaults</b></td><td><span class="ui">Holding</span>: Intraday / Carry forward</td><td>Close the same day or carry forward. A bot with no holding of its own and this Not set places nothing.</td></tr>
+    <tr><td><span class="ui">Order type</span> (incl. <span class="ui">Limit with price protection</span>), <span class="ui">Price protection</span> %</td><td>How the bot sends its entries. If Not set, the bot form asks.</td></tr>
+    <tr><td><span class="ui">Product</span> (MIS / NRML)</td><td>The broker product for a futures or options order.</td></tr>
+    <tr><td rowspan="2"><b>Position size</b></td><td><span class="ui">Size by</span>: Fixed lots / Fixed quantity / % of capital / Risk-based (Risk limits)</td><td>How the size of a new entry is worked out.</td></tr>
+    <tr><td><span class="ui">Lots</span>, <span class="ui">Quantity</span>, <span class="ui">Share of capital</span></td><td>The number for the way chosen. If none, the bot form asks "Lots for this bot" or "Shares for each entry".</td></tr>
+    <tr><td><b>Exits</b></td><td><span class="ui">Square-off time</span> and the multi-leg answers</td><td>"Intraday positions are closed at this time. Not set: ATP closes nothing by itself." The fact <b>Exits always work</b> is listed here.</td></tr>
+    <tr><td><b>Options</b></td><td><span class="ui">Expiry</span>, <span class="ui">Strike</span>, <span class="ui">Strikes away from ATM</span>, <span class="ui">Option side</span>, <span class="ui">Spread width</span></td><td>Which contract an option or futures bot trades. If Not set, the bot form asks.</td></tr>
+    <tr><td><b>Risk limits</b></td><td>A few switches (India VIX check, overnight written straddles / strangles)</td><td>The main checks are on their own page (below).</td></tr>
+    <tr><td rowspan="2"><b>Automation</b></td><td><span class="ui">New entries</span>: Placed automatically / Ask me first</td><td>Whether your bots place an entry by themselves or ask you first. Not set and not chosen on the bot = the bot places nothing.</td></tr>
+    <tr><td><span class="ui">An entry request waits</span> (minutes), <span class="ui">New entries from</span> / <span class="ui">New entries until</span></td><td>How long an "Ask me first" request stays open; a time window for new entries. "Exits always work."</td></tr>
+    <tr><td><b>Paper account</b></td><td><span class="ui">Starting capital</span> (₹), <span class="ui">Charges</span>, <span class="ui">Brokerage per order</span>, <span class="ui">Slippage</span></td><td>The practice money. If Starting capital is Not set, an automatic paper entry places nothing. Charges Not set = statutory charges only, no brokerage, no slippage.</td></tr>
+  </table>
+  <p class="small">Stop-loss and target values for a bot are not typed here. They come from the strategy (the builder's <span class="ui">Exits: your own values</span>, a template's <span class="ui">Exits for this bot</span>, or the full form under <span class="ui">More ways to trade</span>). See sections 6 and 8.</p>
+  <p class="small"><span class="path">Settings › My trading defaults</span> is different: it holds starting values that pre-fill a new bot form. On the bot form you can untick <span class="ui">Use my defaults for this bot</span>.</p>
+
+  <h3>Risk limits</h3>
+  <p>Open <span class="path">Settings › Risk limits</span>. It says: "Turn on only the checks you want. Off: your order is the lots you type. Exits are never checked." Every switch is <b>off by default</b>.</p>
+  <table>
+    <tr><th style="width:32%">Check (screen name)</th><th>What it does when on</th></tr>
+    <tr><td>Max lots per order</td><td>An order above this size is not placed; you are offered this size instead.</td></tr>
+    <tr><td>Max open positions</td><td>No new entry while you hold this many. A spread counts as one.</td></tr>
+    <tr><td>Daily loss limit (% or ₹)</td><td>Once today's loss reaches it, no new entry today. Exits always work.</td></tr>
+    <tr><td>Max new entries per day</td><td>No new entry after this many today.</td></tr>
+    <tr><td>Cool-down after losses in a row</td><td>After this many losses in a row, new entries pause for these minutes.</td></tr>
+    <tr><td>Minimum reward:risk</td><td>A trade whose target pays less than this for each rupee at risk is not placed. (Only if you turn it on.)</td></tr>
+    <tr><td>Margin safety</td><td>Plan to use at most this share of your available margin.</td></tr>
+    <tr><td>Risk-based sizing</td><td>The size is your risk per trade divided by the stop distance, in whole lots.</td></tr>
+    <tr><td colspan="2"><b>More checks:</b> Risk across open positions · Cool-down after a stop-out · Drawdown steps · Market event days · Two bots on opposite sides of one symbol · Account basis for the % limits (₹)</td></tr>
+  </table>
+  <p>Press <span class="ui">Save risk limits</span>. A block message later links straight to the check that held an entry back.</p>
+
+  <h3>The minimum before a first paper bot</h3>
+  <table>
+    <tr><th>Set this</th><th>Where</th><th>Or</th></tr>
+    <tr><td>Starting capital</td><td><span class="path">Trade settings › Paper account</span></td><td>-</td></tr>
+    <tr><td>Holding</td><td><span class="path">Trade settings › Order defaults</span></td><td>Some bots carry their own (a daily strategy holds for days)</td></tr>
+    <tr><td>Order type</td><td><span class="path">Trade settings › Order defaults</span></td><td>Pick it on the bot form</td></tr>
+    <tr><td>Size</td><td><span class="path">Trade settings › Position size</span></td><td>Type it on the bot form</td></tr>
+    <tr><td>New entries</td><td><span class="path">Trade settings › Automation</span></td><td>Pick it on the bot form</td></tr>
+  </table>
+  <div class="box warn"><b>Nothing is pre-chosen.</b> ATP never fills a trading value for you. Next to a field on a form you can tick <span class="ui">Save as my default</span> to store it in your Trade settings.</div>
+  <div class="check"><b>Check:</b> you should now see <b>Saved: …</b> under Starting capital, Holding, Order type, your size and New entries, and the count of checks that are on at the top of Risk limits.</div>
+</section>
+
+<!-- ============ 6 ============ -->
+<section class="chapter" id="c6">
+  <h1 data-h="c6">6. Step 4 - Pick or build a strategy (every way that exists)</h1>
+  <table>
+    <tr><th style="width:22%">Way</th><th>Where</th><th style="width:30%">What you get</th><th style="width:12%">Switch</th></tr>
+    <tr><td><b>A. Library</b> (ready-made)</td><td><span class="path">Strategies › Library</span></td><td>Built-in strategies with their settings; <span class="ui">Try it on a symbol</span></td><td>always</td></tr>
+    <tr><td><b>B. Templates</b></td><td><span class="path">Strategies › Library</span>, section <span class="ui">Templates</span></td><td>Signal recipes; <span class="ui">Use on the trading bot</span> / <span class="ui">Test it first</span>. Paper only.</td><td><span class="tag on">may be off</span></td></tr>
+    <tr><td><b>C. The builder</b></td><td><span class="path">Strategies › Build</span></td><td>Your own rules in five steps, then a test</td><td>always</td></tr>
+    <tr><td><b>D. Copilot chat card</b></td><td><span class="ui">AI Copilot</span> › Ask</td><td>A draft from your words; you fill every value</td><td><span class="tag on">may be off</span></td></tr>
+    <tr><td><b>E. Strategy interview</b></td><td><span class="ui">AI Copilot</span> › Advanced › Idea builder › <span class="ui">Advanced: the strategy interview</span></td><td>Questions first, then a plan you can start on paper</td><td><span class="tag on">may be off</span></td></tr>
+    <tr><td><b>F. Pine Script</b></td><td><span class="ui">Find setups</span> › Advanced › <span class="ui">Pine Script</span></td><td>Translates a TradingView Pine condition into a <b>screen</b>. It is not a bot.</td><td><span class="tag on">may be off</span></td></tr>
+  </table>
+  <p class="small">"May be off" means your platform switches that part on. If you do not see it, it is not on for your account yet (a template card then says <span class="msg">Not switched on for your account yet</span>).</p>
+
+  <h3>A. Library</h3>
+  <div class="step"><div class="n">A1</div><div class="b">Open <span class="path">Strategies › Library</span> ("Ready-made strategies to try on paper."). Filter by category or search.</div></div>
+  <div class="step"><div class="n">A2</div><div class="b">Open a card: <span class="ui">Main settings</span>, <span class="ui">More settings</span>, <span class="ui">How it reads the chart</span>. A built-in's stop and targets are shown apart with <span class="msg">Suggested — change in settings</span>.</div></div>
+  <div class="step"><div class="n">A3</div><div class="b"><span class="ui">Try it on a symbol</span> opens a drawer: type a <span class="ui">Symbol</span> and see how the strategy reads it now (with <span class="ui">Open chart</span>). Nothing starts.</div></div>
+
+  <h3>B. Templates <span class="tag on">may be off</span></h3>
+  <div class="step"><div class="n">B1</div><div class="b">Under <span class="ui">Templates</span>, each card shows the idea and "A signal reads: …", and <span class="ui">Settings and rules</span>.</div></div>
+  <div class="step"><div class="n">B2</div><div class="b">Press <span class="ui">Test it first</span> (opens Strategies › Test with the template picked) or <span class="ui">Use on the trading bot</span> (opens the bot form with it picked). Nothing starts from the Library.</div></div>
+
+  <h3>C. The builder (Strategies › Build)</h3>
+  <p>"Five short steps: start, market, entry, exits, result. Then start it on paper."</p>
+  <table>
+    <tr><th style="width:15%">Step</th><th>What you do</th></tr>
+    <tr><td><b>Start</b></td><td><span class="ui">Pick a starting point</span>: Bull put spread · Bear call spread · Iron condor · Pullback to a demand / supply area · Breakout and retest · My own rules. Or <span class="ui">Or describe it in your own words</span> → type <span class="ui">Your idea</span> → <span class="ui">Read my words</span>. It lists <b>Understood</b>, <b>Not in the builder yet (left out)</b> and <b>Not understood</b>. (A card marked <span class="ui">Coming soon</span> cannot be picked yet.)</td></tr>
+    <tr><td><b>Market</b></td><td><span class="ui">Symbol</span> (or <span class="ui">Other</span> → <span class="ui">Symbol name</span>), <span class="ui">Timeframe</span> (1m … 1D), side: Long / Short / Both.</td></tr>
+    <tr><td><b>Entry</b></td><td>Blocks: an indicator compared with a number or another indicator. A block with a missing value says <span class="msg">Needs your value</span>. A template brings its own entry.</td></tr>
+    <tr><td><b>Exit &amp; risk</b></td><td><span class="ui">Exits: your own values</span>: Stop (x ATR), Target 1 (R), Target 2 (R), Minimum R:R. <span class="msg">A blank box is off: no stop-loss, no target, no minimum R:R.</span> Then <span class="ui">What to trade</span> (option structure, strikes, width, <span class="ui">Lots</span>).</td></tr>
+    <tr><td><b>Result</b></td><td><span class="ui">Save and test on past prices</span> → <span class="ui">Result on past prices</span> → <span class="ui">Start on paper</span> ("Opens the Trading bot with this strategy picked. Nothing starts until you press Start on paper there.")</td></tr>
+  </table>
+  <p class="small">The older full builder is still under <span class="ui">Advanced</span> on the Build page.</p>
+
+  <h3>D. The Copilot chat strategy card <span class="tag on">may be off</span></h3>
+  <div class="step"><div class="n">D1</div><div class="b">In <span class="ui">AI Copilot</span>, describe your rules in your own words.</div></div>
+  <div class="step"><div class="n">D2</div><div class="b">The answer's button opens the Trading bot page with the card <span class="ui">Your draft from the Copilot</span>: the rules per side, <span class="ui">Values you decide</span> (empty until you fill them - the Copilot never suggests a number), and <span class="ui">Left out of this draft</span>.</div></div>
+  <div class="step"><div class="n">D3</div><div class="b">Press <span class="ui">Save as my strategy</span> (or <span class="ui">Save and go to Start</span> after a test), or <span class="ui">Discard the draft</span>. The saved strategy is then picked in the start form. Only a complete draft tested on past data shows the button <span class="ui">Start this strategy</span> in the chat.</div></div>
+
+  <h3>E. The strategy interview <span class="tag on">may be off</span></h3>
+  <p>It asks before it answers: capital, how much loss you can carry, how you want to trade, what and how much time you have. Then it reads the market candles, builds a plan and can start it on <b>PAPER</b>. Values it proposes are shown for you to accept; nothing is placed by it.</p>
+
+  <h3>F. Pine Script <span class="tag on">may be off</span></h3>
+  <p>"Paste a TradingView Pine script: see what translates, read each condition in plain words and run it as a screen. The script is never run." It makes a <b>screen</b> (a list of matching symbols), not a bot.</p>
+  <div class="check"><b>Check:</b> you should now see your strategy in the <span class="ui">Pick a strategy</span> list of the Trading bot page - under <b>Ready-made</b>, <b>My strategies</b>, <b>More from the Library</b> or <b>Strategy templates</b>.</div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section class="chapter" id="c7">
+  <h1 data-h="c7">7. Step 5 - Test first: the backtest</h1>
+  <p>A backtest runs the same rules over past candles: one entry per signal bar, your exits, and Indian charges. Two places:</p>
+  <ul>
+    <li><span class="path">Strategies › Build</span>, step <span class="ui">Result</span>: <span class="ui">Save and test on past prices</span> (or <span class="ui">Test on past prices</span> for a template).</li>
+    <li><span class="path">Strategies › Test</span> (page <span class="ui">Backtesting</span>): pick <span class="ui">Strategy</span>, <span class="ui">Symbol</span>, optional <span class="ui">Advanced settings</span> and <span class="ui">Trade as</span> (underlying or options), then <span class="ui">Run Backtest</span>.</li>
+  </ul>
+
+  <h3>What the numbers mean</h3>
+  <table>
+    <tr><th style="width:24%">Number</th><th>Meaning</th></tr>
+    <tr><td>Trades / Total Trades</td><td>How many entries the rules made on those candles.</td></tr>
+    <tr><td>Win rate</td><td>Share of trades that closed with a profit.</td></tr>
+    <tr><td>Net P&amp;L</td><td>Total profit or loss after the charges counted, in rupees.</td></tr>
+    <tr><td>Max drawdown</td><td>The deepest fall from a high point of the equity line.</td></tr>
+    <tr><td>Average R</td><td>Average result as a multiple of the risk per trade. Shows <span class="msg">Needs your stop</span> when you set no stop.</td></tr>
+    <tr><td>Profit factor</td><td>Gross profit divided by gross loss.</td></tr>
+    <tr><td>Avg win / Avg loss</td><td>The average winning and losing trade.</td></tr>
+    <tr><td>Expectancy (per trade)</td><td>The average result of one trade.</td></tr>
+    <tr><td>Equity</td><td>A small line of the account value trade by trade.</td></tr>
+  </table>
+  <p>Behind tabs you see the trades list, a chart with entries and exits, and more analytics (for example most wins / losses in a row). <span class="msg">No trades: the entry did not fire on these prices.</span> means the rules never met.</p>
+  <div class="box stop"><b>No performance claims.</b> The page footnote says: "Backtests use past prices; past results do not promise future ones. Paper money only." A good or bad test does not tell you what will happen. Use it to check that the rules do what you meant.</div>
+  <div class="check"><b>Check:</b> you should now see <span class="ui">Result on past prices</span> with Net P&amp;L, Win rate, Max drawdown, Trades, Average R and Equity, and the button <span class="ui">Start on paper</span>.</div>
+</section>
+
+<!-- ============ 8 ============ -->
+<section class="chapter" id="c8">
+  <h1 data-h="c8">8. Step 6 - Deploy on PAPER: "Start a trading bot"</h1>
+  <p>Open <span class="ui">AI Trading Bot</span>. The page <span class="ui">Trading bot</span> says: "Your strategy trades with paper money here, so you can watch how it does. No real money is used." Press <span class="ui">Start a trading bot</span> (it jumps to the form). There is <b>no LIVE switch</b> on this page.</p>
+
+  <div class="step"><div class="n">6.1</div><div class="b"><b>Pick a strategy</b> (field 1). Groups: Ready-made, My strategies, More from the Library, Strategy templates. One line under it says what it waits for. For a template, also choose <span class="ui">Chart timeframe</span>; <span class="ui">About this template</span> says it starts with the template's usual settings.</div></div>
+  <div class="step"><div class="n">6.2</div><div class="b"><b>Pick a symbol</b> (field 2). Pick from the list or type it as the exchange writes it. If empty: <span class="msg">Pick or type a symbol.</span> An index is traded through its options or futures, not as shares.</div></div>
+  <div class="step"><div class="n">6.3</div><div class="b"><b>Exits for this bot</b> (templates only): <span class="ui">Stop</span> (for example "Where the idea is wrong") and <span class="ui">Take profit</span> ("No fixed target", "At a multiple of my risk" → <span class="ui">Times my risk</span>, "When the template says the idea has ended", "Where the wave projection points"). Notes under it say what still applies, e.g. "Trailing, break-even and time exits work as before."</div></div>
+  <div class="step"><div class="n">6.4</div><div class="b"><b>Option choices</b> (option symbols only), shown only if your Trade settings do not have them: <span class="ui">How this bot trades the option</span>, <span class="ui">Expiry</span>, <span class="ui">Strike</span>, <span class="ui">Strikes away from ATM</span>, width. "The strategy only gives the side. Nothing is chosen for you."</div></div>
+  <div class="step"><div class="n">6.5</div><div class="b"><b>Size</b>, shown if your Position size is Not set: <span class="ui">Lots for this bot</span> (options / futures) or <span class="ui">Shares for each entry</span> (shares), 1 to 500.</div></div>
+  <div class="step"><div class="n">6.6</div><div class="b"><b>New entries</b>, shown if Automation › New entries is Not set: <span class="ui">Placed automatically</span> or <span class="ui">Ask me first</span>.</div></div>
+  <div class="step"><div class="n">6.7</div><div class="b"><b>How this bot sends its entries</b>, shown if your Order type is Not set: <span class="ui">Market</span> or <span class="ui">Limit with price protection</span> (then <span class="ui">Price protection (%)</span>, 0.05 to 5).</div></div>
+  <div class="step"><div class="n">6.8</div><div class="b">Read the summary line, for example "Trades … shares, 2 per entry." Under <b>Details</b>: how long it holds and "Paper money only; your risk limits apply." If your defaults apply, a box says so with <span class="ui">Use my defaults for this bot</span>. For a derived contract a preview shows what each side would trade now.</div></div>
+  <div class="step"><div class="n">6.9</div><div class="b">Press <span class="ui">Start on paper</span>. It stays off, with one line saying why, until every needed field is set.</div></div>
+
+  <h3>If the form shows a "needs" line</h3>
+  <table>
+    <tr><th style="width:46%">Message under the button</th><th>What to do</th></tr>
+    <tr><td><span class="msg">Pick or type a symbol.</span></td><td>Fill field 2.</td></tr>
+    <tr><td><span class="msg">Enter how many lots this bot trades (1 to 500).</span> / <span class="msg">Enter how many shares this bot trades on each entry (1 to 500).</span></td><td>Type the size, or save it once in <span class="path">Settings › Trade settings › Position size</span>.</td></tr>
+    <tr><td><span class="msg">Choose whether this bot places entries by itself or asks you first.</span></td><td>Pick New entries, or save it in <span class="path">Trade settings › Automation</span>.</td></tr>
+    <tr><td><span class="msg">Choose how this bot sends its entries.</span></td><td>Pick Market or Limit with price protection.</td></tr>
+    <tr><td><span class="msg">Enter the price protection % (0.05 to 5).</span></td><td>Type the band.</td></tr>
+    <tr><td><span class="msg">Needs your setting: Expiry.</span> / <span class="msg">Strike.</span> / <span class="msg">Strikes away from ATM.</span></td><td>Pick it in the option box, or save it in <span class="path">Trade settings › Options</span>.</td></tr>
+  </table>
+  <p>Tick <span class="ui">Save as my default</span> beside a field to store it for next time.</p>
+
+  <h3>After you press Start on paper</h3>
+  <p>Success: <span class="msg">Started on paper: SYMBOL. It shows under Your bots and starts checking the market on its next round.</span></p>
+  <table>
+    <tr><th style="width:50%">Refusal</th><th>Meaning</th></tr>
+    <tr><td><span class="msg">Connect your broker on the Broker page first: even a paper bot reads live prices through your broker.</span></td><td>Go back to Step 2.</td></tr>
+    <tr><td><span class="msg">This strategy already runs for this symbol in your organisation. Stop that bot first, or pick another strategy or symbol.</span></td><td>One running bot per strategy + symbol.</td></tr>
+    <tr><td>"The … options are not loaded yet, so the bot cannot pick a contract. Ask your admin to sync the instrument list, or check the symbol."</td><td>The contract list is missing on the platform.</td></tr>
+    <tr><td>"The … plan allows N active deployment(s); you have N."</td><td>Your plan's bot count is reached.</td></tr>
+    <tr><td><span class="msg">Your role cannot start a bot. Ask your organisation's owner.</span></td><td>Your team role has no permission.</td></tr>
+  </table>
+  <p class="small"><span class="ui">More ways to trade (options, futures, exits, filters)</span> on the same page opens the full form (option structures, exits such as trailing stop, break-even and time exit, filters). It is paper only here.</p>
+  <div class="check"><b>Check:</b> you should now see your bot under <span class="ui">Your bots</span> with <span class="msg">Running</span>, <span class="msg">Not checked yet</span> or <span class="msg">Checked just now</span>, and <span class="msg">No signal yet</span>.</div>
+</section>
+
+<!-- ============ 9 ============ -->
+<section class="chapter" id="c9">
+  <h1 data-h="c9">9. Step 7 - Watch the bot card, approvals and notifications</h1>
+  <h3>What the bot card shows</h3>
+  <table>
+    <tr><th style="width:30%">Part of the card</th><th>Example words</th></tr>
+    <tr><td>Name and mode</td><td>The strategy name; a LIVE badge only on a live bot</td></tr>
+    <tr><td>What it trades</td><td>Chips: "SYMBOL options" / "SYMBOL futures" / the symbol, and "During the day" or "Held for days"</td></tr>
+    <tr><td>State</td><td><span class="msg">Running</span>, <span class="msg">Paused</span> (with a reason, e.g. <span class="msg">Paused by you</span>), <span class="msg">Stopped</span></td></tr>
+    <tr><td>Last check</td><td><span class="msg">Checked just now</span>, <span class="msg">Checked 3 min ago</span>, <span class="msg">Not checked yet</span></td></tr>
+    <tr><td>Last signal</td><td><span class="msg">Last signal 12 min ago</span> or <span class="msg">No signal yet</span></td></tr>
+    <tr><td>Waiting line</td><td><span class="msg">Waiting: market closed</span>, <span class="msg">Waiting: more candles needed</span>, <span class="msg">Waiting: market data is behind</span>, <span class="msg">Waiting: broker login needed</span>, <span class="msg">Waiting: practice (PAPER) only for now</span></td></tr>
+    <tr><td>Problem chip</td><td><span class="msg">Last check failed · retrying</span></td></tr>
+    <tr><td>New entries</td><td>"Asks you first" / "Places entries by itself" / "New entries not set - places nothing", with "(from your Trade settings)" or "(this bot's own choice)"</td></tr>
+    <tr><td>Open trades</td><td>The bot's own open positions with P&amp;L and an exit button</td></tr>
+    <tr><td><span class="ui">Why no trade? Last bars</span> <span class="tag on">may be off</span></td><td>The last closed bars, newest first, each with its reason (table below)</td></tr>
+  </table>
+  <p>If the engine itself is silent, the list shows <span class="msg">Bots are not being checked right now</span>.</p>
+
+  <h3>"Why no trade?" reasons</h3>
+  <table>
+    <tr><th>Reason on the card</th><th>Reason on the card</th></tr>
+    <tr><td>A trade was placed</td><td>Sent to you for approval</td></tr>
+    <tr><td>No setup on this bar</td><td>Same setup as before - already handled</td></tr>
+    <tr><td>A position from this bot is already open</td><td>Another of your bots holds the other direction on this symbol</td></tr>
+    <tr><td><b>Needs your setting in Trade settings - nothing was placed</b></td><td>Your risk settings held the entry back</td></tr>
+    <tr><td>Past your last time for new entries</td><td>Prices were late - the bar was skipped</td></tr>
+    <tr><td>Not enough bars yet to read the chart</td><td>No contract matched your option / future settings</td></tr>
+    <tr><td>The broker account was not ready</td><td>The market was closed</td></tr>
+    <tr><td>A short cannot be carried overnight in cash shares</td><td>Your OI checks held the entry back</td></tr>
+  </table>
+  <p>The detail line under a "Needs your setting" row names the field and where to set it, for example <span class="msg">Needs your setting: Holding (Settings › Trade settings › Order defaults)</span>, <span class="msg">Needs your setting: New entries (Settings › Trade settings › Automation)</span>, <span class="msg">Needs your setting: Lots (Settings › Trade settings › Position size) - nothing was placed</span>, <span class="msg">Needs your setting: Starting capital (Settings › Trade settings › Paper account)</span>.</p>
+
+  <h3>"Ask me first": approving an entry</h3>
+  <div class="step"><div class="n">7.1</div><div class="b">When the bot's rules meet, it sends you a request instead of placing (card reason: <span class="msg">Sent to you for approval</span>).</div></div>
+  <div class="step"><div class="n">7.2</div><div class="b">Open <span class="ui">Signals</span> ("Trades your trading bots, scans and Copilot suggest."). The item shows a <span class="ui">PAPER</span> chip.</div></div>
+  <div class="step"><div class="n">7.3</div><div class="b">Press <span class="ui">Approve paper trade</span> or <span class="ui">Skip</span>. A request you do not answer expires after your <span class="ui">An entry request waits</span> minutes. The page footnote: "You approve every order."</div></div>
+
+  <h3>Notifications</h3>
+  <ul>
+    <li><b>Inbox</b>: <span class="path">Settings › Trading › Inbox</span>. Entries, exits, refusals, risk blocks, a daily loss limit, a bot paused after repeated failures, approvals waiting, and an end-of-day summary.</li>
+    <li><b>Telegram</b> <span class="tag on">may be off</span>: <span class="path">Settings › Alerts</span> → <span class="ui">Connect Telegram</span>. Use <span class="ui">Send test</span> to check.</li>
+  </ul>
+  <div class="check"><b>Check:</b> you should now see the card's last check time moving (for example <span class="msg">Checked just now</span>) while the market is open, and new items in Signals or the Inbox when the rules meet.</div>
+</section>
+
+<!-- ============ 10 ============ -->
+<section class="chapter" id="c10">
+  <h1 data-h="c10">10. Step 8 - Pause, stop and exit</h1>
+  <table>
+    <tr><th style="width:16%">Action</th><th style="width:28%">Where</th><th>What happens</th></tr>
+    <tr><td><b>Pause</b></td><td>Bot card › <span class="ui">Pause</span></td><td>No new entries while paused. State shows <span class="msg">Paused by you</span>. <span class="ui">Resume</span> starts it again.</td></tr>
+    <tr><td><b>Stop</b></td><td>Bot card › <span class="ui">Stop</span> → <span class="ui">Yes, stop it</span> (or <span class="ui">Keep it running</span>)</td><td>"It takes no new trades. An open paper trade is still watched until it closes." A stopped bot cannot be resumed; start a new one.</td></tr>
+    <tr><td><b>Remove</b></td><td>Stopped bot › <span class="ui">Remove</span> (shown only when it has no open trade)</td><td>"It leaves your list of bots. Its closed trades stay in your trade history…" <span class="ui">Show stopped bots (N)</span> lists them.</td></tr>
+    <tr><td><b>Exit a trade</b></td><td>The bot card's open trade, or <span class="path">My trades › Positions</span> › <span class="ui">Exit now</span></td><td>Closes that paper position at the current price. Never blocked.</td></tr>
+    <tr><td><b>Exit all</b></td><td><span class="path">My trades › Positions</span> › <span class="ui">Exit all</span> (two or more positions)</td><td>It asks first, with the open P&amp;L: "Exit all N open positions at the current price? Sold legs close first, then the legs that protect them." It closes PAPER positions; a LIVE one closes in your broker's app, as its row says.</td></tr>
+  </table>
+  <div class="box"><b>Order of safe stopping:</b> (1) <span class="ui">Pause</span> or <span class="ui">Stop</span> the bot so it takes no new entries; (2) close any open trade with <span class="ui">Exit now</span> or <span class="ui">Exit all</span> if you want it closed now. Stopping alone does not close an open trade.</div>
+  <p class="small">ATP also pauses a bot by itself after several failed checks in a row (the card says why), and new entries wait when a kill switch is on (section 11).</p>
+  <div class="check"><b>Check:</b> you should now see the bot as <span class="msg">Paused</span> or <span class="msg">Stopped</span>, and no open position for it in <span class="path">My trades › Positions</span> if you exited.</div>
+</section>
+
+<!-- ============ 11 ============ -->
+<section class="chapter" id="c11">
+  <h1 data-h="c11">11. How a bot works after you start it (one cycle)</h1>
+  <p>The trading worker runs on the server, apart from the website. Closing your browser or phone does not stop it. About once every minute (one base candle; the platform sets the exact rhythm) it does one <b>cycle</b>:</p>
+
+  <figure>
+  <svg viewBox="0 0 720 300" width="100%" role="img" aria-label="Timeline of one worker cycle">
+    <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1f5fbf"/></marker></defs>
+    <g font-size="10.5">
+      <line x1="20" y1="60" x2="705" y2="60" stroke="#1f5fbf" stroke-width="3" marker-end="url(#ar2)"/>
+      <text x="20" y="22" font-weight="700" font-size="12">One cycle (about one candle long)</text>
+      <!-- ticks -->
+      <g fill="#1f5fbf"><circle cx="40" cy="60" r="6"/><circle cx="125" cy="60" r="6"/><circle cx="210" cy="60" r="6"/><circle cx="300" cy="60" r="6"/><circle cx="390" cy="60" r="6"/><circle cx="480" cy="60" r="6"/><circle cx="570" cy="60" r="6"/><circle cx="660" cy="60" r="6"/></g>
+      <g text-anchor="middle" font-weight="700"><text x="40" y="45">1</text><text x="125" y="45">2</text><text x="210" y="45">3</text><text x="300" y="45">4</text><text x="390" y="45">5</text><text x="480" y="45">6</text><text x="570" y="45">7</text><text x="660" y="45">8</text></g>
+      <g text-anchor="middle">
+        <text x="40" y="84">Candle</text><text x="40" y="97">closes</text>
+        <text x="125" y="84">Market</text><text x="125" y="97">open?</text><text x="125" y="110" fill="#5a6675">else wait</text>
+        <text x="210" y="84">Broker</text><text x="210" y="97">login check</text>
+        <text x="300" y="84" fill="#1e7a46" font-weight="700">Exits first</text><text x="300" y="97">stops, targets,</text><text x="300" y="110">square-off</text>
+        <text x="390" y="84">Read closed</text><text x="390" y="97">candles only</text><text x="390" y="110" fill="#5a6675">forming bar dropped</text>
+        <text x="480" y="84">Strategy</text><text x="480" y="97">reads: signal</text><text x="480" y="110">or no setup</text>
+        <text x="570" y="84">Entry checks</text><text x="570" y="97">+ order path</text>
+        <text x="660" y="84">Card and</text><text x="660" y="97">notification</text>
+      </g>
+      <!-- detail box -->
+      <rect x="20" y="130" width="685" height="160" rx="8" fill="#f4f6f9" stroke="#d9dee5"/>
+      <text x="35" y="150" font-weight="700" font-size="11.5">Step 7 in detail: a signal goes through these, in order. Any "no" = nothing placed, the card says why.</text>
+      <g font-size="10.5">
+        <rect x="35" y="162" width="150" height="26" rx="5" fill="#fff" stroke="#9aa5b1"/><text x="110" y="179" text-anchor="middle">New bar? (not handled yet)</text>
+        <rect x="195" y="162" width="150" height="26" rx="5" fill="#fff" stroke="#9aa5b1"/><text x="270" y="179" text-anchor="middle">Holding set?</text>
+        <rect x="355" y="162" width="160" height="26" rx="5" fill="#fff" stroke="#9aa5b1"/><text x="435" y="179" text-anchor="middle">Inside your entry window?</text>
+        <rect x="525" y="162" width="165" height="26" rx="5" fill="#fff" stroke="#9aa5b1"/><text x="607" y="179" text-anchor="middle">No position of this bot open?</text>
+        <rect x="35" y="198" width="210" height="26" rx="5" fill="#fff" stroke="#9aa5b1"/><text x="140" y="215" text-anchor="middle">Opposite-side rule (if you set it)</text>
+        <rect x="255" y="198" width="210" height="26" rx="5" fill="#fff4dc" stroke="#9a6200"/><text x="360" y="215" text-anchor="middle">Ask me first? → request to you</text>
+        <rect x="475" y="198" width="215" height="26" rx="5" fill="#fff" stroke="#9aa5b1"/><text x="582" y="215" text-anchor="middle">New entries set? Contract found?</text>
+        <rect x="35" y="234" width="655" height="44" rx="5" fill="#e8f0fc" stroke="#1f5fbf"/>
+        <text x="362" y="252" text-anchor="middle" font-weight="700">The one order path (same as a manual order)</text>
+        <text x="362" y="268" text-anchor="middle">kill switch → your Risk limits → size and capital → order record → PAPER fill → stop / target stored → notification</text>
+      </g>
+    </g>
+  </svg>
+  <figcaption>Figure 3. Timeline of one worker cycle. Exits are handled before any new entry.</figcaption>
+  </figure>
+
+  <h3>The main rules of the cycle</h3>
+  <table>
+    <tr><th style="width:30%">Rule</th><th>In plain words</th></tr>
+    <tr><td>Closed candles only</td><td>The decision uses closed candles. The candle still forming is dropped, the same as in the backtest.</td></tr>
+    <tr><td>Exits before entries</td><td>Open positions are checked against live prices (stops, targets, your square-off time if you set one) before any new entry.</td></tr>
+    <tr><td>One entry per signal bar</td><td>The same bar is never entered twice. If the strategy is still "in signal" on later bars, the card says "Same setup as before - already handled".</td></tr>
+    <tr><td>One position per bot</td><td>While its trade is open, the bot takes no new entry.</td></tr>
+    <tr><td>Late prices are skipped</td><td>If the candle feed is behind the clock, no signal is taken on it.</td></tr>
+    <tr><td>Same order path</td><td>A bot entry goes through the same checks and order record as an order you place yourself.</td></tr>
+    <tr><td>Your settings decide</td><td>Missing Holding, New entries, size or Starting capital = nothing placed, with "Needs your setting".</td></tr>
+    <tr><td>Kill switch</td><td>While a kill switch is on (whole platform, your account, or one strategy), no new entries go out. Exits still work. A risk-limit block on PAPER never turns a kill switch on.</td></tr>
+    <tr><td>Auto-pause</td><td>A bot that fails several checks in a row is paused, with an alert. A data problem resumes by itself when data returns.</td></tr>
+  </table>
+</section>
+
+<!-- ============ 12 ============ -->
+<section class="chapter" id="c12">
+  <h1 data-h="c12">12. PAPER first, and how LIVE is switched</h1>
+  <div class="box stop">
+    <h3>Said plainly</h3>
+    <ul>
+      <li>Today the platform is in <b>Phase 0: PAPER only</b>. Every new LIVE entry is refused.</li>
+      <li>The LIVE switches belong to the <b>platform owner / administrator only</b>. A user cannot turn LIVE on from his own screens.</li>
+      <li>The <span class="ui">Trading bot</span> page has no LIVE switch at all. Strategy templates run on paper only.</li>
+    </ul>
+  </div>
+  <h3>Why PAPER first</h3>
+  <ul>
+    <li>Paper uses real market prices but practice money. Nothing reaches your broker.</li>
+    <li>You see how your rules, your size and your limits behave, with no money at risk.</li>
+    <li>You learn the screens: approvals, "Needs your setting", exits, pause and stop.</li>
+  </ul>
+  <h3>What LIVE needs (when the owner allows it later)</h3>
+  <table>
+    <tr><th style="width:5%">#</th><th>Condition (from the code)</th><th style="width:22%">Who</th></tr>
+    <tr><td>1</td><td>The platform's PAPER-only lock is off and LIVE trading is switched on</td><td>Owner / admin</td></tr>
+    <tr><td>2</td><td>Your role has live permission and your plan includes live trading</td><td>Admin</td></tr>
+    <tr><td>3</td><td>Your email is verified; two-step sign-in; a fresh authenticator check when creating a LIVE bot</td><td>You</td></tr>
+    <tr><td>4</td><td>A usable broker login (the daily login for orders)</td><td>You</td></tr>
+    <tr><td>5</td><td>The go-live checklist (<span class="path">Settings › Advanced</span>, shown only once the PAPER-only lock is off)</td><td>You + admin</td></tr>
+  </table>
+  <p class="small">Even with "Ask me first" on a live bot, Phase 0 places an approved entry as a paper order ("Approve (paper order)").</p>
+</section>
+
+<!-- ============ 13 ============ -->
+<section class="chapter" id="c13">
+  <h1 data-h="c13">13. Safety boxes</h1>
+  <div class="box safe">
+    <h3>The AI never places orders</h3>
+    <p>The AI Copilot can draft a strategy, explain a chart or propose an alert. It never places, blocks or changes an order. An order happens only when <b>you press Place / Approve</b>, or when <b>your own saved bot rules</b> do it inside the order path. A Copilot draft must be saved by you and started by you.</p>
+  </div>
+  <div class="box safe">
+    <h3>Exits are never blocked</h3>
+    <p>No setting, limit, window or kill switch holds back a stop, a target or <span class="ui">Exit now</span>. Trade settings lists it as a fact: "No setting holds back a stop, a target or Exit now." Risk limits: "Exits are never checked."</p>
+  </div>
+  <div class="box safe">
+    <h3>Your own limits</h3>
+    <p>Every Risk limit is your own switch, off by default. Turn on what you want: daily loss, max open positions, max lots, cool-downs and more. A team admin may set a ceiling above yours; then a message says <span class="msg">Ask your admin</span>.</p>
+  </div>
+  <div class="box">
+    <h3>Nothing is pre-chosen</h3>
+    <p>ATP never fills in lots, quantity, capital, exits, order type or holding for you. Templates and the Copilot may <i>suggest</i>; nothing applies until you save it.</p>
+  </div>
+  <div class="box warn">
+    <h3>Signals, not advice</h3>
+    <p>A bot's signal says that <b>your</b> rules were met on the chart. It is not a recommendation. Past results and paper results do not promise anything.</p>
+  </div>
+</section>
+
+<!-- ============ 14 ============ -->
+<section class="chapter" id="c14">
+  <h1 data-h="c14">14. Worked example: from template to paper bot (made-up numbers)</h1>
+  <div class="box warn"><b>Everything here is synthetic.</b> "DEMO" is not a real symbol. The numbers only show how to read the screens. They are not a result of any real strategy and say nothing about the future.</div>
+  <h3>A. The trader's own settings (his choices, not ATP's)</h3>
+  <table>
+    <tr><th>Setting</th><th>Where</th><th>His value</th></tr>
+    <tr><td>Starting capital</td><td>Trade settings › Paper account</td><td>₹2,00,000 (practice)</td></tr>
+    <tr><td>Charges</td><td>Trade settings › Paper account</td><td>Statutory charges only</td></tr>
+    <tr><td>Holding</td><td>Trade settings › Order defaults</td><td>Intraday</td></tr>
+    <tr><td>Order type</td><td>Trade settings › Order defaults</td><td>Market</td></tr>
+    <tr><td>Size by / Quantity</td><td>Trade settings › Position size</td><td>Fixed quantity / 10</td></tr>
+    <tr><td>New entries</td><td>Trade settings › Automation</td><td>Ask me first</td></tr>
+    <tr><td>Daily loss limit</td><td>Settings › Risk limits</td><td>On, ₹2,000</td></tr>
+    <tr><td>Max open positions</td><td>Settings › Risk limits</td><td>On, 2</td></tr>
+  </table>
+  <h3>B. Pick and test</h3>
+  <ol>
+    <li><span class="path">Strategies › Library › Templates</span> → a breakout-and-retest template → <span class="ui">Test it first</span>.</li>
+    <li>On <span class="ui">Backtesting</span>: Symbol "DEMO", the template's timeframe → <span class="ui">Run Backtest</span>.</li>
+    <li>He reads the (made-up) result:</li>
+  </ol>
+  <table>
+    <tr><th>Total Trades</th><th>Win Rate</th><th>Net P&amp;L</th><th>Max Drawdown</th><th>Profit Factor</th><th>Expectancy</th></tr>
+    <tr><td>24</td><td>41.7%</td><td style="color:var(--down)">−1,180.00</td><td>3,450.00</td><td>0.93</td><td>−49.17</td></tr>
+  </table>
+  <p class="small">How to read it: 24 entries; 10 closed with a profit (41.7%); after charges the total was a loss of ₹1,180; the deepest fall was ₹3,450; gross profit was a little less than gross loss (0.93). He decides himself whether the rules did what he meant. ATP gives no verdict.</p>
+  <h3>C. Start on paper</h3>
+  <ol>
+    <li><span class="ui">Use on the trading bot</span> → the form opens with the template picked.</li>
+    <li>Pick a symbol: "DEMO". <span class="ui">Exits for this bot</span>: Stop "Where the idea is wrong", Take profit "At a multiple of my risk", Times my risk "2".</li>
+    <li>No size, entry style or New entries box appears: his Trade settings already hold them.</li>
+    <li>Summary: "Trades DEMO shares." → <span class="ui">Start on paper</span> → <span class="msg">Started on paper: DEMO. …</span></li>
+  </ol>
+  <h3>D. One cycle, with made-up prices</h3>
+  <table>
+    <tr><th style="width:17%">Moment</th><th>What happens</th><th style="width:28%">What he sees</th></tr>
+    <tr><td>Candle closes</td><td>The rules are met on the closed candle; the area is ₹101.20 - ₹101.60 (synthetic).</td><td>-</td></tr>
+    <tr><td>Checks</td><td>New bar, Intraday set, no open position, inside the window.</td><td>-</td></tr>
+    <tr><td>Ask me first</td><td>A request is sent instead of an order.</td><td>Card: "Sent to you for approval". Signals: <span class="ui">Approve paper trade</span> / <span class="ui">Skip</span></td></tr>
+    <tr><td>He approves</td><td>Order path: limits pass (no loss today, 0 of 2 positions), 10 shares, paper fill at ₹101.50, stop stored at ₹100.40.</td><td>Inbox: an entry notice. Card: open trade with P&amp;L</td></tr>
+    <tr><td>Later cycles</td><td>Exits first: the stop and target (2 × risk = ₹103.70) are checked on live prices.</td><td>P&amp;L moves on the card</td></tr>
+    <tr><td>Exit</td><td>Either level is reached, or he presses <span class="ui">Exit now</span>.</td><td>Inbox: an exit notice; the trade moves to history</td></tr>
+  </table>
+  <p class="small">Risk per share = 101.50 − 100.40 = ₹1.10. Risk for 10 shares = ₹11. The target at 2 × risk = 101.50 + 2.20 = ₹103.70. All synthetic.</p>
+</section>
+
+<!-- ============ 15 ============ -->
+<section class="chapter" id="c15">
+  <h1 data-h="c15">15. FAQ and troubleshooting</h1>
+  <h3>Common "Needs your setting" messages</h3>
+  <table>
+    <tr><th style="width:52%">Message</th><th>Fix</th></tr>
+    <tr><td><span class="msg">Needs your setting: Holding (Settings › Trade settings › Order defaults)</span></td><td>Save Holding, or start the bot with its own holding.</td></tr>
+    <tr><td>… "your Carry forward setting does not fit this bot (it reads … candles) - set this bot's own holding"</td><td>Carry forward fits a daily-candle bot or a spread held for days. Give this bot its own holding.</td></tr>
+    <tr><td><span class="msg">Needs your setting: New entries (Settings › Trade settings › Automation)</span></td><td>Choose Placed automatically or Ask me first.</td></tr>
+    <tr><td><span class="msg">Needs your setting: Lots (Settings › Trade settings › Position size) - nothing was placed</span></td><td>Save a size, or type it on the bot form.</td></tr>
+    <tr><td><span class="msg">Needs your setting: Starting capital (Settings › Trade settings › Paper account)</span></td><td>Save your paper starting capital.</td></tr>
+    <tr><td><span class="msg">Needs your setting: Expiry.</span> / Strike / Strikes away from ATM</td><td>Pick them on the form or save them in Trade settings › Options.</td></tr>
+    <tr><td>Card: "New entries not set - places nothing"</td><td>Same as New entries above.</td></tr>
+  </table>
+  <h3>"Why did my bot not trade?"</h3>
+  <table>
+    <tr><th style="width:40%">What you see</th><th>Meaning / what to do</th></tr>
+    <tr><td>No setup on this bar</td><td>The rules were not met. Normal.</td></tr>
+    <tr><td>Waiting: market closed</td><td>The bot checks only while the exchange session is open.</td></tr>
+    <tr><td>Waiting: more candles needed / Not enough bars yet</td><td>The strategy needs more history first. It goes on by itself.</td></tr>
+    <tr><td>Prices were late / Waiting: market data is behind</td><td>The feed fell behind; the bar was skipped.</td></tr>
+    <tr><td>Waiting: broker login needed</td><td>Log in to your broker again on Broker accounts.</td></tr>
+    <tr><td>Past your last time for new entries</td><td>Your New entries until time has passed. Exits still work.</td></tr>
+    <tr><td>A position from this bot is already open</td><td>One position per bot.</td></tr>
+    <tr><td>Your risk settings held the entry back</td><td>A Risk limit you turned on said no. The message links to the check.</td></tr>
+    <tr><td>Sent to you for approval</td><td>"Ask me first" is on. Approve it in Signals.</td></tr>
+    <tr><td>No contract matched your option / future settings</td><td>Check Expiry / Strike rules and the symbol.</td></tr>
+    <tr><td>Last check failed · retrying / Paused after failures</td><td>Read the reason on the card; resume when fixed.</td></tr>
+    <tr><td>Bots are not being checked right now</td><td>The engine is silent. Tell your platform admin.</td></tr>
+    <tr><td>Waiting: practice (PAPER) only for now</td><td>A LIVE bot during Phase 0. Use PAPER.</td></tr>
+  </table>
+  <h3>Short answers</h3>
+  <ul>
+    <li><b>Does the bot stop when I close the app?</b> No. It runs on the server.</li>
+    <li><b>Can I start two bots on the same strategy and symbol?</b> Not while one is running or paused; stop it first.</li>
+    <li><b>Does Stop close my trade?</b> No. Close it with Exit now / Exit all.</li>
+    <li><b>Can a limit block my exit?</b> No. Exits are never blocked.</li>
+    <li><b>Can I switch a bot to LIVE?</b> No. LIVE is the owner's / admin's switch, and Phase 0 is PAPER only.</li>
+  </ul>
+</section>
+
+<!-- ============ 16 ============ -->
+<section class="chapter" id="c16">
+  <h1 data-h="c16">16. Glossary</h1>
+  <table>
+    <tr><th style="width:24%">Word</th><th>Meaning</th></tr>
+    <tr><td>Bot / deployment</td><td>A strategy switched on for one symbol, checked by the worker.</td></tr>
+    <tr><td>Strategy</td><td>Your set of chart conditions that produce a signal.</td></tr>
+    <tr><td>Signal</td><td>The moment your conditions are met on a closed candle. Not advice.</td></tr>
+    <tr><td>Template</td><td>A ready signal recipe with settings you can change.</td></tr>
+    <tr><td>Backtest</td><td>Running the rules over past candles.</td></tr>
+    <tr><td>Worker</td><td>The server program that checks bots on a fixed rhythm.</td></tr>
+    <tr><td>Cycle</td><td>One round of the worker over all running bots.</td></tr>
+    <tr><td>Closed candle</td><td>A candle whose time is over; its open, high, low and close are final.</td></tr>
+    <tr><td>PAPER</td><td>Practice money at real prices. Nothing goes to the broker.</td></tr>
+    <tr><td>LIVE</td><td>Real orders at your broker. Locked in Phase 0.</td></tr>
+    <tr><td>Phase 0</td><td>The current stage: PAPER only.</td></tr>
+    <tr><td>Not set</td><td>A setting you have not saved. ATP does not fill it.</td></tr>
+    <tr><td>Ask me first</td><td>The bot sends you a request; nothing is placed until you approve.</td></tr>
+    <tr><td>Holding</td><td>Intraday (close the same day) or Carry forward.</td></tr>
+    <tr><td>Lot</td><td>The exchange's unit for futures and options; a size is a whole number of lots.</td></tr>
+    <tr><td>R / R-multiple</td><td>Result measured in units of the risk taken (entry to stop).</td></tr>
+    <tr><td>ATR</td><td>Average true range: a measure of how much price usually moves per candle.</td></tr>
+    <tr><td>Drawdown</td><td>A fall from a high point of the account value.</td></tr>
+    <tr><td>Price protection</td><td>A market entry sent as a limit a set % past the price.</td></tr>
+    <tr><td>Square-off</td><td>Closing intraday positions at a time you set. Not set: ATP closes nothing by itself.</td></tr>
+    <tr><td>Kill switch</td><td>A stop for new entries (platform, account or one strategy). Exits still work.</td></tr>
+    <tr><td>Analytics Token</td><td>A broker connection for data only; it cannot place orders.</td></tr>
+  </table>
+</section>
+
+<!-- ============ ADMIN ============ -->
+<section class="chapter" id="c17">
+  <h1 data-h="c17">Appendix - For the administrator</h1>
+  <p>Platform switches (feature flags) that change what a user sees in this guide. Users never see these names.</p>
+  <table>
+    <tr><th style="width:28%">Flag</th><th>Effect on this guide</th></tr>
+    <tr><td><code>ui_v2</code></td><td>The screens described here (Trading bot page, Build in five steps, Settings index, Trade settings).</td></tr>
+    <tr><td><code>strategy_templates</code></td><td>Templates in Library, Build start cards, Test and the bot list.</td></tr>
+    <tr><td><code>ai_copilot</code></td><td>The Copilot, its draft card, the strategy interview, the strategist.</td></tr>
+    <tr><td><code>strategy_lab_pine</code></td><td>Pine Script panel on Find setups (screen only).</td></tr>
+    <tr><td><code>why_no_trade</code></td><td>"Why no trade? Last bars" on the bot card.</td></tr>
+    <tr><td><code>telegram_inbound</code></td><td>Two-way Telegram (commands and PAPER approvals).</td></tr>
+    <tr><td><code>phase0_paper_only</code></td><td>ON: every new LIVE entry refused. Owner only.</td></tr>
+    <tr><td><code>live_trading</code></td><td>New LIVE deployments. Owner only. Also needs the user scope <code>trading:live</code>, a live-capable plan, verified email and step-up.</td></tr>
+    <tr><td><code>multi_account</code></td><td>"Practice accounts" (extra paper accounts) on the Broker page.</td></tr>
+    <tr><td><code>market_store_reads</code></td><td>Store-first candles for the worker and backtests.</td></tr>
+  </table>
+  <p class="small">Operator settings: worker cycle length (default 60 s), auto-pause after consecutive failures (default 5). Sample data is visible to the platform admin only under the new UI.</p>
+
+  <h3>Points the code did not make fully clear (to confirm before the video)</h3>
+  <ol class="small">
+    <li><b>Python Strategy Lab:</b> no Python strategy lab was found in the code. The only "code" path is the Pine Script translator, which makes a screen, not a bot.</li>
+    <li><b>User kill switch button:</b> the server has account and strategy kill switches; no button to press one was found in the user screens (the Terminal status bar shows "New orders stopped / allowed"; the admin console has the global switch).</li>
+    <li><b>Library stop / targets:</b> a built-in's stop and targets are labelled "Suggested — change in settings", but the three-step bot form has no field to change them; the start request carries no strategy settings. Where a user edits them for a Library bot is not clear.</li>
+    <li><b>Paper bot and the daily login:</b> a paper start needs only a stored broker connection; whether an Analytics-token-only connection keeps a paper bot's candles flowing all day for every broker was not proven from the code.</li>
+    <li><b>Build test without a broker:</b> the builder's test asks for stored history first; whether it runs with no broker for a new user was not proven.</li>
+    <li><b>Ready-made strategy lines</b> say "Closes before the market does", while Square-off time Not set means "ATP closes nothing by itself". Which applies to a ready-made intraday bot with no square-off saved needs confirming.</li>
+    <li><b>Telegram:</b> "Connect Telegram" depends on the platform's own Telegram bot token, which is an owner item.</li>
+  </ol>
+</section>
+
+</body>
+</html>

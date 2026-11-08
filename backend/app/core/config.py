@@ -886,6 +886,12 @@ BREAKOUT_FITNESS_UNIVERSE = os.environ.get("BREAKOUT_FITNESS_UNIVERSE", "platfor
 BREAKOUT_FITNESS_HOUR_IST = _bounded_int("BREAKOUT_FITNESS_HOUR_IST", 21, 0, 23)
 BREAKOUT_FITNESS_BUDGET_SECONDS = _bounded_int("BREAKOUT_FITNESS_BUDGET_SECONDS", 1800, 10, 6 * 3600)
 BREAKOUT_FITNESS_HISTORY_DAYS = _bounded_int("BREAKOUT_FITNESS_HISTORY_DAYS", 1825, 400, 3650)
+# M88-R: the shared daily AI market report (flag shared_daily_report, off) - operational only: it runs once the day's
+# bhavcopy is in the store; a failed run is tried again after DAILY_REPORT_RETRY_MINUTES, at most DAILY_REPORT_MAX_ATTEMPTS
+# times a day (the admin's "Run now" is always allowed); DAILY_REPORT_MAX_OUTPUT_TOKENS caps the one AI answer.
+DAILY_REPORT_RETRY_MINUTES = _bounded_int("DAILY_REPORT_RETRY_MINUTES", 30, 5, 24 * 60)
+DAILY_REPORT_MAX_ATTEMPTS = _bounded_int("DAILY_REPORT_MAX_ATTEMPTS", 3, 1, 10)
+DAILY_REPORT_MAX_OUTPUT_TOKENS = _bounded_int("DAILY_REPORT_MAX_OUTPUT_TOKENS", 12000, 1000, 64000)
 
 # PW6: the closed-beta cohort cap. With the `beta_cohort_gate` flag on, registration needs an invite code and stops once
 # this many accounts have been created through invite codes (the sum of every code's used_count, revoked codes

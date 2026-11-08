@@ -4057,6 +4057,34 @@ class CopilotStudyRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
 
 
+class SharedDailyReportRecord(Base):
+    """M88-R (owner order M88, research R39): the shared daily market report - ONE per trading day (`trade_date`, the
+    bhavcopy day it reads), built from end-of-day data only (the licensed NSE daily files and ATP's own EOD reading) with
+    ONE AI request on the admin's own key, stored and read by every user without a per-user AI call. Descriptive only:
+    `content_json` is stored only when the output passed the recommendation-word check; a run that failed keeps
+    `content_json` NULL and the plain reason in `error` for the admin. Platform-wide (no tenant): the same EOD files are
+    shared by every user (M86). Read-only data: never read by a trading decision or an order path."""
+
+    __tablename__ = "shared_daily_reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="running")     # running | ok | failed
+    content_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ai_requests: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    symbols: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    run_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    trigger: Mapped[str] = mapped_column(String(10), nullable=False, default="schedule")    # schedule | run_now
+    next_try_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
 class TriggerPlanRecord(Base):
     """M75 W-8 (owner order M75 CW-6, DECISIONS 1 Nov M75Q-1 / M75Q-2): one trigger plan of one member - "set and wait":
     a condition (the underlying's price crossing his level, by touch or by a closed candle of his timeframe, inside his

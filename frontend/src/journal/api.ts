@@ -3,7 +3,8 @@ import { API_V1 } from "../api/base";
 import { apiErrorFrom, NETWORK_MESSAGE } from "../api/errors";
 import type {
   ChecklistItem, DisciplineSettings, EntryKind, JournalAttachment, JournalEntryFull, JournalFilters, JournalList, JournalSettingsResponse,
-  JournalStatsResponse, JournalTag, JournalWeek, JournalWeekV2, ManualTradeBody, TagStatus, WeeklyReview,
+  ImportMapping, ImportPreview, ImportResult, JournalStatsResponse, JournalTag, JournalWeek, JournalWeekV2, ManualTradeBody, TagStatus,
+  TradeChart, WeeklyReview,
 } from "./types";
 
 /** The query string of the journal filters (empty values left out; manual entries are in unless asked otherwise). */
@@ -88,6 +89,20 @@ export const journalApi = {
   image: async (serverPath: string): Promise<Blob> => (await authed(apiPath(serverPath))).blob(),
   addManual: (body: ManualTradeBody) => request<JournalEntryFull>("/journal/manual", { method: "POST", body: JSON.stringify(body) }),
   removeManual: (id: number) => request<{ deleted: number }>(`/journal/manual/${id}`, { method: "DELETE" }),
+
+  // M88: import outside-ATP trades from a file (a preview first; nothing is stored until Import), each on its own chart
+  importPreview: async (file: Blob, name: string, mapping?: ImportMapping): Promise<ImportPreview> =>
+    (await authed("/journal/import/preview", { method: "POST", body: importForm(file, name, mapping) })).json() as Promise<ImportPreview>,
+  importFile: async (file: Blob, name: string, mapping?: ImportMapping): Promise<ImportResult> =>
+    (await authed("/journal/import", { method: "POST", body: importForm(file, name, mapping) })).json() as Promise<ImportResult>,
+  tradeChart: (serverPath: string) => request<TradeChart>(apiPath(serverPath)),
 };
+
+function importForm(file: Blob, name: string, mapping?: ImportMapping): FormData {
+  const form = new FormData();
+  form.append("file", file, name);
+  if (mapping) form.append("mapping", JSON.stringify(mapping));
+  return form;
+}
 
 export type JournalApi = typeof journalApi;

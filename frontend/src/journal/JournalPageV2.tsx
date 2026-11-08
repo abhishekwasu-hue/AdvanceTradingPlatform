@@ -13,6 +13,7 @@ import { isoWeekOf, shiftWeek } from "./format";
 import { ExportButtonsV2, JournalListV2, type ListState } from "./JournalListV2";
 import { JournalStatsV2, type StatsState } from "./JournalStatsV2";
 import { saveBlob } from "./journalModel";
+import { ImportTradesSheetV2 } from "./ImportTradesV2";
 import { ManualTradeSheetV2 } from "./ManualTradeV2";
 import { OwnListsV2 } from "./OwnListsV2";
 import { journalTarget } from "./recall";
@@ -55,6 +56,7 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
   const [off, setOff] = useState(false);
   const [sheet, setSheet] = useState<EntryTarget | null>(target0.tradeId ? { kind: "trade", id: target0.tradeId } : null);
   const [manualOpen, setManualOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState<"csv" | "pdf" | null>(null);
   const [customTags, setCustomTags] = useState<string[]>([]);
   const refresh = useCallback(() => setRound((r) => r + 1), []);
@@ -118,7 +120,7 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
       <div role="tabpanel" id={`journal-panel-${tab}`} aria-labelledby={`journal-tab-${tab}`}>
         {tab === "trades" && (
           <JournalListV2 state={list} filters={filters} onFilters={changeFilters} api={api} onRetry={refresh}
-            onOpen={(r) => setSheet({ kind: r.kind, id: r.id })} onAddManual={() => setManualOpen(true)} onMore={() => setLimit((l) => l + PAGE)}
+            onOpen={(r) => setSheet({ kind: r.kind, id: r.id })} onAddManual={() => setManualOpen(true)} onImport={() => setImportOpen(true)} onMore={() => setLimit((l) => l + PAGE)}
             exportButtons={<ExportButtonsV2 onExport={exportAs} busy={exporting} />} />
         )}
         {tab === "stats" && <JournalStatsV2 state={stats} onRetry={refresh} />}
@@ -136,6 +138,7 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
       </div>
       <EntrySheetV2 target={sheet} api={api} customTags={customTags} onClose={() => setSheet(null)} onChanged={refresh}
         extra={recallOn ? (e) => (e.kind === "trade" ? <SimilarSetupsV2 kind="trade" id={e.id} /> : null) : undefined} />
+      <ImportTradesSheetV2 open={importOpen} api={api} onClose={() => setImportOpen(false)} onImported={refresh} />
       <ManualTradeSheetV2 open={manualOpen} api={api} onClose={() => setManualOpen(false)} onSaved={(e) => { refresh(); setSheet({ kind: "manual", id: e.id }); }} />
     </div>
   );

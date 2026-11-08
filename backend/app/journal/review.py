@@ -53,6 +53,7 @@ class ReviewTrade:
     risk: float                    # initial stop distance x quantity, a structure's max loss (0 = no valid stop)
     holding_minutes: Optional[float]
     trade_ids: Tuple[int, ...] = ()   # the trade rows (legs) in this decision; empty = just `id`
+    manual: bool = False              # M88: an outside-ATP entry (`id` is its manual entry id): no detector tag sits on it
 
     @property
     def rows(self) -> Tuple[int, ...]:
@@ -148,12 +149,13 @@ def accepted_summary(trades: Sequence[ReviewTrade], accepted: Iterable[tuple[int
     """M76 MP-5 (W-4): per check-card type he pressed Place with, the decisions it was on and how they ended - numbers
     only (trades, closed, won, lost, net P&L of the closed ones). `accepted`: (trade_id, type) from the journal entries.
     A decision counts once per type even when several of its legs carry it. No judgement, no fix line."""
-    by_row = {row: t for t in trades for row in t.rows}
+    atp = [t for t in trades if not t.manual]                # M88: a check card is on an ATP trade only
+    by_row = {row: t for t in atp for row in t.rows}
     on: dict[str, set[int]] = defaultdict(set)
     for trade_id, wid in accepted:
         if trade_id in by_row:
             on[wid].add(by_row[trade_id].id)
-    by_id = {t.id: t for t in trades}
+    by_id = {t.id: t for t in atp}
     out = []
     for wid in sorted(on):
         stats = _stats([by_id[i] for i in sorted(on[wid])])
@@ -167,9 +169,11 @@ def build_review(week: str, trades: Sequence[ReviewTrade], counted_tags: Iterabl
                  accepted: Sequence[dict[str, Any]] = ()) -> Dict[str, Any]:
     """`counted_tags`: (trade_id, tag) pairs that count under the trader's settings (dismissed ones left out).
     `accepted`: M76 MP-5 - the week's `accepted_summary` (empty: no section, no line)."""
-    by_row = {row: t for t in trades for row in t.rows}     # a tag sits on a trade row; it counts once for its decision
-    by_id = {t.id: t for t in trades}
+    atp = [t for t in trades if not t.manual]                # a tag sits on an ATP trade row; manual ids are another series
+    by_row = {row: t for t in atp for row in t.rows}         # it counts once for its decision
+    by_id = {t.id: t for t in atp}
     totals = _stats(trades)
+    totals["outside_atp"] = sum(1 for t in trades if t.manual)
 
     setups: Dict[str, List[ReviewTrade]] = defaultdict(list)
     for t in trades:
@@ -207,7 +211,8 @@ def lines(review: Dict[str, Any]) -> List[str]:
         out.append(f"No trades were journaled in {review['week']}.")
         return out
     legs = f" ({t['legs']} order legs)" if t.get("legs", t["trades"]) > t["trades"] else ""
-    out.append(f"{review['week']}: {_n(t['trades'], 'trade')}{legs}, {t['closed']} closed and {t['open']} still open.")
+    outside = f", {t['outside_atp']} of them done outside ATP" if t.get("outside_atp") else ""
+    out.append(f"{review['week']}: {_n(t['trades'], 'trade')}{legs}{outside}, {t['closed']} closed and {t['open']} still open.")
     if t["closed"]:
         win_rate = f"{t['win_rate']:g}%" if t["win_rate"] is not None else "n/a"
         out.append(f"Closed trades: {t['wins']} won, {t['losses']} lost, win rate {win_rate}; net P&L {_money(t['net_pnl'])} "

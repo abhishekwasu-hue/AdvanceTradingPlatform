@@ -271,14 +271,18 @@ async def load_frames(session: AsyncSession, key: str, s: ZoneSettings, now: dat
         own = await own_bars.fetch_rows(session, private, key, label, start, now, point_in_time="ingested")
         return own if own_bars.prefer_own(rows, own) else rows
     for tf in sorted(starts):
+        # owner 8 Nov: the label whose bars run newest (a tie keeps the earlier label, as before) - a stopped "1d"
+        # history never hides the "day" bars of the newer sessions (the chart layer's `_load_frame` reads the same way)
+        found: tuple[str, list[RowTuple], datetime] | None = None
         for label in LAKE_LABELS.get(tf, (tf,)):
             rows = await pick(label, starts[tf])
-            if rows:
-                native[tf] = (label, rows)
-                break
-        else:
-            if tf in INTRADAY_MINUTES and tf != "1m":
-                missing.append(tf)
+            newest = own_bars.newest_bar(rows)
+            if newest is not None and (found is None or newest > found[2]):
+                found = (label, rows, newest)
+        if found is not None:
+            native[tf] = (found[0], found[1])
+        elif tf in INTRADAY_MINUTES and tf != "1m":
+            missing.append(tf)
     m1: List[RowTuple] = []
     if missing:                                              # one 1-minute read for every rebuilt timeframe
         start = max(min(starts[tf] for tf in missing), now - timedelta(days=REBUILD_MAX_DAYS))

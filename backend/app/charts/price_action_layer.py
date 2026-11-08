@@ -382,18 +382,29 @@ async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, 
 
 async def _load_frame(session: AsyncSession, key: str, tf: str, start: datetime, end: datetime, max_bars: int | None,
                       private: tuple[int, int] | None, provisional: bool) -> tuple[pd.DataFrame, str | None]:
-    from app.market_lake.own_bars import is_shared, prefer_own, stitch
+    from app.market_lake.own_bars import is_shared, newest_bar, prefer_own, stitch
     whose = "shared" if is_shared(private) else "own"         # M55 T4: the owner's index intraday rows read by another reader
+    # Owner 8 Nov: every label of the timeframe is read and the one whose bars run newest is used (a tie keeps the
+    # earlier label, as before) - a stopped "1d" history no longer hides the "day" bars of the newer sessions, so the
+    # reading runs through the same last session `own_bars.official_close` states (it reads both labels).
+    best: tuple[Any, list[RowTuple], str] | None = None
     for label in LAKE_LABELS[tf]:
         rows = await _fetch(session, key, label, start, end, (max_bars or MAX_BARS) * ROWS_PER_BAR)
         own = await _own(session, private, key, label, start, end, (max_bars or MAX_BARS) * ROWS_PER_BAR)
-        if prefer_own(rows, own):
-            return await asyncio.to_thread(_to_frame, own, tf, key, end, False), f"{whose}:{label}"
         joined = stitch(rows, own) if not is_shared(private) else []
-        if joined:
-            return await asyncio.to_thread(_to_frame, joined, tf, key, end, False), f"own+lake:{label}"
-        if rows:
-            return await asyncio.to_thread(_to_frame, rows, tf, key, end, False), f"lake:{label}"
+        if prefer_own(rows, own):
+            pick, label_source = list(own), f"{whose}:{label}"
+        elif joined:
+            pick, label_source = joined, f"own+lake:{label}"
+        elif rows:
+            pick, label_source = rows, f"lake:{label}"
+        else:
+            continue
+        newest = newest_bar(pick)
+        if best is None or (newest is not None and (best[0] is None or newest > best[0])):
+            best = (newest, pick, label_source)
+    if best is not None:
+        return await asyncio.to_thread(_to_frame, best[1], tf, key, end, False), best[2]
     if tf == "1w":
         daily, src = await load_frame(session, key, "1d", start, end, private=private, provisional=provisional)
         return (await asyncio.to_thread(PC.weekly_from_daily, daily), src) if len(daily) else (daily, None)
@@ -462,11 +473,14 @@ async def _mtf_base_key(session: AsyncSession, key: str, tf: str, start: datetim
                         private: tuple[int, int] | None) -> tuple[Any, ...]:
     labels = list(LAKE_LABELS[tf]) + (["1d"] if tf == "1w" else ["1m"] if tf in INTRADAY_MINUTES and tf != "1m" else [])
     base: Tuple[Any, ...] = (key, tf, start, None, None)
+    found: list[tuple[str, tuple[Any, int, int]]] = []
     for label in labels:
         probe = await _probe(session, key, label, start, end)
         if probe[1]:
-            base = (key, tf, start, label, probe)
-            break
+            found.append((label, probe))
+    if found:
+        # owner 8 Nov: every label's probe keys the row (load_frame reads the newest label, not the first)
+        base = (key, tf, start, found[0][0], found[0][1], tuple(found[1:]))
     if private is None:
         return base
     from app.market_lake import own_bars

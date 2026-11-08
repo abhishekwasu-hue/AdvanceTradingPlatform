@@ -13,6 +13,7 @@ import { useFeatures } from "../ui/useFeatures";
 import AlertsPanelV2 from "./AlertsPanelV2";
 import GrowthSettingsPanelV2 from "./GrowthSettingsPanelV2";
 import ChainHistoryCard from "./ChainHistoryCard";
+import DailyReportAdminCard from "../dailyReport/DailyReportAdminCard";
 import CompliancePanelV2 from "./CompliancePanelV2";
 import { ActivationPanel, AiCostPanel, BUTTON, Phase0Notice, Pill, SupportPanel, SystemPanels, TestingToolsPanel, UsersPanel } from "./AdminSectionsV2";
 import { SupportDeskSettingsPanel, SupportTicketsPanel } from "./SupportDeskV2";
@@ -62,7 +63,7 @@ export default function AdminConsoleV2(_props: PageProps) {
       <PageTabs kind="links" label="Admin sections" value={section} onChange={pick}
         items={ADMIN_SECTIONS.map((s) => ({ key: s.id, label: s.label, to: s.id === "system" ? "/admin" : `/admin?section=${s.id}` }))} />
 
-      {section === "system" && <><AlertsPanelV2 /><SystemPanels /><ChainHistoryCard /></>}
+      {section === "system" && <><AlertsPanelV2 /><SystemPanels /><ChainHistoryCard /><DailyReportAdminCard /></>}
       {section === "controls" && (
         <>
           <SubTabs kind="links" label="Control groups" value={group} data={{ "data-controls-groups": group }}

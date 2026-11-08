@@ -232,6 +232,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     # M77 SX-2..SX-7: Save study (same tab), My studies (Copilot and Journal), PDF / image / CSV / JSON downloads, the
     # studies in "Download my data", and (SX-6) the trade plan, check card, scenarios and similar setups sections work;
     # the structure-only shared copy follows
+    "shared_daily_report": _setup("The admin's own AI key and the Shared report symbols setting", "Admin › System › Daily market report"),
     "study_export": _ready("Save study and My studies in the Copilot's chart workspace and the Journal, with the trade plan, check "
                            "card, scenarios and similar setups sections; the shared copy follows (M77 share)"),
     "ai_platform_key": _setup("The platform AI key on the server, each plan's AI budget and the per-user daily cap",

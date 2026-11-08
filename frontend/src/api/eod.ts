@@ -21,6 +21,12 @@ export interface EodClosesReply { items: EodClose[]; as_of: string | null; sourc
 export interface EodBar { timestamp: string; open: number; high: number; low: number; close: number; volume: number }
 export interface EodBarsReply { symbol: string; exchange: string; timeframe: "day" | "week"; candles: EodBar[]; last_date: string | null; source: "eod" }
 
+export interface EodChainSide { close: number; oi: number | null }
+export interface EodChainRow { strike: number; call: EodChainSide | null; put: EodChainSide | null }
+export interface EodChainReply {
+  underlying: string; date: string | null; expiry: string | null; expiries: string[]; rows: EodChainRow[]; spot: number | null; source: "eod";
+}
+
 /** The server's limit per closes request. */
 export const EOD_MAX_SYMBOLS = 60;
 
@@ -29,4 +35,6 @@ export const eodApi = {
     request<EodClosesReply>(`/market-data/eod/closes?symbols=${encodeURIComponent(symbols.slice(0, EOD_MAX_SYMBOLS).join(","))}`, { signal }),
   bars: (symbol: string, timeframe: "day" | "week", lookbackDays = 730, signal?: AbortSignal) =>
     request<EodBarsReply>(`/market-data/eod/bars?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&lookback_days=${lookbackDays}`, { signal }),
+  chain: (underlying: string, expiry?: string | null, signal?: AbortSignal) =>
+    request<EodChainReply>(`/market-data/eod/chain?underlying=${encodeURIComponent(underlying)}${expiry ? `&expiry=${expiry}` : ""}`, { signal }),
 };

@@ -80,7 +80,8 @@ export interface OptionChainData {
 
 /** FNO-3: `wanted` is the expiry the address carried (the symbol hub's tabs keep it); used for the first list only,
  * while that list holds it. */
-export function useOptionChain(symbol: string, marketOpen: boolean | null, wanted: string | null = null): OptionChainData {
+/** M86 D2: `paused` (no broker stored) reads no live chain at all - the page shows the end-of-day chain instead. */
+export function useOptionChain(symbol: string, marketOpen: boolean | null, wanted: string | null = null, paused = false): OptionChainData {
   const visible = usePageVisible();
   const [expiries, setExpiries] = useState<ChainExpiries | null>(null);
   // The symbol whose expiry list has answered: the chain is read only for that symbol (never the old expiry under a
@@ -137,7 +138,7 @@ export function useOptionChain(symbol: string, marketOpen: boolean | null, wante
   const hasLive = useRef(false);
   hasLive.current = live !== null;
   useEffect(() => {
-    if (!listReady || !visible) return undefined;
+    if (!listReady || !visible || paused) return undefined;
     const since = Date.now() - lastRead.current;
     return startChainPolling({
       read: () => api.optionChainLive(symbol, expiry),
@@ -164,7 +165,7 @@ export function useOptionChain(symbol: string, marketOpen: boolean | null, wante
         setLoading(false);
       },
     });
-  }, [symbol, expiry, listReady, visible]);
+  }, [symbol, expiry, listReady, visible, paused]);
 
   return { expiries, expiry, setExpiry, live, loading, problem, problemReason };
 }

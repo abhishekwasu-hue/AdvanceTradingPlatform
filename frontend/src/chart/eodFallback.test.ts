@@ -19,11 +19,13 @@ describe("M86 words", () => {
     expect(lastCloseText("not a date")).toBe("Last close");
   });
 
-  it("Charts (and its sub-paths) show the last close without a broker; other pages keep their gate here", () => {
-    expect(noBrokerEodFor("/charts")).toMatch(/last close/);
-    expect(noBrokerEodFor("/charts/RELIANCE")).toMatch(/last close/);
-    expect(noBrokerEodFor("/option-chain")).toBeNull();
+  it("Charts, Option chain, Find setups and Signals (and their sub-paths) show the last close without a broker", () => {
+    for (const path of ["/charts", "/charts/RELIANCE", "/option-chain", "/screener", "/screener/custom", "/signals"]) {
+      expect(noBrokerEodFor(path), path).toMatch(/last close|Last close/);
+    }
+    // Their own no-broker layout: Today, My trades and the Copilot (not gated by the shell).
     expect(noBrokerEodFor("/positions")).toBeNull();
+    expect(noBrokerEodFor("/")).toBeNull();
   });
 });
 

@@ -14,6 +14,7 @@ import type { MarketStrip, StripIndex } from "./types";
 import { Signed } from "../ui/numbersFirst";
 import { Freshness } from "../ui/Freshness";
 import { Skeleton } from "../components/primitives/Feedback";
+import { ConnectLiveButton } from "../ui/ConnectLive";
 
 /**
  * UI2-2 (UI v2 proposal §5 block 3): the market strip - NIFTY 50, BANK NIFTY and INDIA VIX (last price, change, %
@@ -34,6 +35,8 @@ export interface MarketStripProps {
   nowMs: number;
   /** Colour v2: each index's closes in its last session, by key (left out or empty: no line). */
   sparks?: Record<string, number[]>;
+  /** M86 D3: no broker stored - the one in-place "Connect your broker for live prices" button in the chip row. */
+  connect?: boolean;
 }
 
 function Change({ index }: { index: StripIndex }) {
@@ -92,7 +95,7 @@ export function stripAsOf(strip: MarketStrip): string {
   return times[times.length - 1] ?? strip.fetched_at;
 }
 
-export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowMs, sparks }: MarketStripProps) {
+export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowMs, sparks, connect = false }: MarketStripProps) {
   const data = strip.status === "ok" ? strip.data : null;
   const total = pnl.total;
   // U3.8: live prices carry their time in the market chip ("Market open · closes 15:30 · as of 10:59", like the page's
@@ -135,6 +138,7 @@ export default function MarketStripV2({ strip, oi, marketText, broker, pnl, nowM
       <div className={`flex flex-wrap items-center gap-space-2 border-t border-subtle pt-space-4 ${L("xl:flex-col xl:items-stretch xl:justify-center xl:border-r xl:border-t-0 xl:p-space-5")}`}>
         {live && stale && <Freshness at={stripAsOf(data)} stale />}
         {marketText && <StatusChip tone="neutral"><span aria-hidden className="h-1.5 w-1.5 rounded-pill bg-fg" />{live && !stale && fresh ? `${marketText} · ${fresh}` : marketText}</StatusChip>}
+        {connect && <ConnectLiveButton />}
         {broker && (
           <StatusChip tone={broker.tone}>
             {broker.tone === "warn" ? <TriangleAlert size={14} aria-hidden /> : <Check size={14} aria-hidden />}

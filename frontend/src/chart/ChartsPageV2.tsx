@@ -197,7 +197,7 @@ export default function ChartsPageV2(_props: PageProps) {
   const toggleWatchlist = () => (wide ? setView({ watchlist_open: !view.watchlist_open }) : setSheet(true));
   const column = watchOn && wide && view.watchlist_open;
   const watchlist = (touch: boolean, onClose?: () => void) => (
-    <WatchlistPanel symbol={symbol} exchange={exchange} onOpen={openItem} listId={view.watchlist_id} onListId={(id) => setView({ watchlist_id: id })}
+    <WatchlistPanel connectButton={false} symbol={symbol} exchange={exchange} onOpen={openItem} listId={view.watchlist_id} onListId={(id) => setView({ watchlist_id: id })}
       systemKey={view.watchlist_system} onSystemKey={(key) => setView({ watchlist_system: key })}
       storageKey={recentKeyFor(userId)} onClose={onClose} touch={touch} className="h-full" liveTicks={hubOn} />
   );

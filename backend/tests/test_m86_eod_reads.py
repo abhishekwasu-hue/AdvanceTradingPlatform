@@ -1,4 +1,4 @@
-"""M86 D2: a user without a broker sees the last end-of-day close (app/market_data/eod_routes.py).
+"""M86 D2: a user without a broker sees the last end-of-day close (app/market_data/eod_routes.py, the strip's fallback).
 
 Shared by design and never a broker's row: only the licensed NSE daily files (`nse_bhav:*`) are read - a newer Daily
 row a broker session wrote, an intraday row and the tenant-private store are never served. Fake lake data only.
@@ -16,6 +16,7 @@ from tests.test_deployments_api import _auth, _me
 
 SYM = "EODTEST"
 KEY = f"NSE:{SYM}"
+NIFTY = "NSE_INDEX:NIFTY50"
 
 
 def _run(coro):
@@ -45,6 +46,14 @@ def _clear(*keys: str) -> None:
         async with _session_factory() as session:
             for model in (MdCandleRecord, MdTenantCandleRecord):
                 await session.execute(delete(model).where(model.instrument_key.in_(keys)))
+            await session.commit()
+    _run(go())
+
+
+def _clear_prefix(prefix: str) -> None:
+    async def go():
+        async with _session_factory() as session:
+            await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key.startswith(prefix)))
             await session.commit()
     _run(go())
 
@@ -107,3 +116,35 @@ def test_closes_limits_and_auth():
     assert client.get("/api/market-data/eod/closes", params={"symbols": many}, headers=headers).status_code == 422
     assert client.get("/api/market-data/eod/closes", params={"symbols": " , "}, headers=headers).status_code == 422
     assert client.get("/api/market-data/eod/closes", params={"symbols": SYM}).status_code == 401
+
+
+def test_chain_from_the_fo_file_or_empty():
+    _clear_prefix("NFO:EODIDX:")
+    headers = _auth("m86-chain@example.com")
+    empty = client.get("/api/market-data/eod/chain", params={"underlying": "EODIDX"}, headers=headers).json()
+    assert empty["rows"] == [] and empty["date"] is None
+    end = bar_end(date(2026, 11, 6))
+    for expiry in ("2026-11-11", "2026-11-18"):
+        for strike, ce, pe in ((24000, 210.5, 95.0), (24100, 150.0, 140.25)):
+            _write(f"NFO:EODIDX:CE:{expiry}:{strike}", [(end, ce)], "nse_bhav:fo")
+            _write(f"NFO:EODIDX:PE:{expiry}:{strike}", [(end, pe)], "nse_bhav:fo")
+    _write("NFO:EODIDX:CE:2026-11-11:24200", [(end, 1.0)], "broker:upstox")     # never a broker's row
+    got = client.get("/api/market-data/eod/chain", params={"underlying": "EODIDX"}, headers=headers).json()
+    assert got["date"] == "2026-11-06" and got["expiry"] == "2026-11-11" and got["expiries"] == ["2026-11-11", "2026-11-18"]
+    assert [r["strike"] for r in got["rows"]] == [24000.0, 24100.0]
+    assert got["rows"][0]["call"]["close"] == 210.5 and got["rows"][1]["put"]["close"] == 140.25
+    later = client.get("/api/market-data/eod/chain", params={"underlying": "EODIDX", "expiry": "2026-11-18"}, headers=headers).json()
+    assert later["expiry"] == "2026-11-18"
+    _clear_prefix("NFO:EODIDX:")
+
+
+def test_strip_without_a_broker_shows_the_last_close():
+    _clear(NIFTY)
+    _daily(NIFTY, base=24000.0)
+    headers = _auth("m86-strip@example.com")
+    body = client.get("/api/market/strip", headers=headers).json()
+    nifty = next(i for i in body["indices"] if i["symbol"] == "NIFTY 50")
+    assert nifty["source"] == "eod" and nifty["missing"] is False
+    assert nifty["ltp"] == 24029.0 and nifty["prev_close"] == 24028.0 and nifty["as_of"] == "2026-11-06"
+    assert body["broker"] is None
+    _clear(NIFTY)

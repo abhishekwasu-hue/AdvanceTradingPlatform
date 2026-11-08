@@ -1,12 +1,14 @@
 """M86 D2: the end-of-day reads a user WITHOUT a connected broker sees - `GET /api/market-data/eod/*`.
 
 Owner decision M86: live data for a user comes only from that user's own connected broker; the NSE bhavcopy (EOD) is
-shown to everyone. These reads serve ONLY the shared daily rows of the licensed exchange files
+shown to everyone. These three reads serve ONLY the shared daily rows of the licensed exchange files
 (`bar_source.lake_sources`: `nse_bhav:*`, plus `r2:*` only when BACKTEST_STORED_SOURCES allows it), so they are shared
 by design and can never return an intraday bar or a row a broker session fetched:
 
 * `/closes?symbols=` - each symbol's last stored close, the close before it and the date ("Last close <date>").
 * `/bars?symbol=&timeframe=day|week` - Daily bars, and Weekly bars built from them (the backtest's `weekly`).
+* `/chain?underlying=` - the last stored F&O bhavcopy chain (calls / puts close and OI per strike) of the nearest
+  expiry on that day, when the options file was loaded; empty otherwise (the page then shows its connect line).
 
 Read-only: no broker call, no write, no cache shared with any broker path. Nothing here places an order.
 """
@@ -32,6 +34,8 @@ eod_rate_limit = user_rate_limit("market_data_eod", limit=60, window_seconds=60)
 MAX_SYMBOLS = 60
 CLOSE_WINDOW_DAYS = 20                 # the two newest closes are looked for in this many days before the newest one
 MAX_LOOKBACK_DAYS = 3650
+FO_SOURCE = "nse_bhav:fo"
+CHAIN_ROWS = 400
 
 
 def _clean(symbol: str) -> str:
@@ -120,4 +124,50 @@ async def bars(symbol: str = Query(min_length=1, max_length=40), timeframe: str 
             "last_date": _day(rows[-1].ts).isoformat() if rows else None, "source": "eod"}
 
 
-__all__ = ["router", "last_close", "closes", "bars"]
+def _chain_key(underlying: str) -> str:
+    return underlying.replace(" ", "")
+
+
+@router.get("/chain", dependencies=[Depends(eod_rate_limit)])
+async def chain(underlying: str = Query(min_length=1, max_length=40), expiry: date | None = None,
+                user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """The last stored option chain from the F&O bhavcopy (closes and OI); `rows` empty when no options file is stored."""
+    from app.backtest import bar_source
+    name = _clean(underlying)
+    prefix = f"NFO:{_chain_key(name)}:"
+    calls, puts = f"{prefix}CE:", f"{prefix}PE:"
+    base = (MdCandleRecord.timeframe == bar_source.LAKE_TIMEFRAME, MdCandleRecord.source == FO_SOURCE)
+    is_option = MdCandleRecord.instrument_key.startswith(calls) | MdCandleRecord.instrument_key.startswith(puts)
+    out: dict[str, Any] = {"underlying": name, "date": None, "expiry": None, "expiries": [], "rows": [], "spot": None, "source": "eod"}
+    newest = await session.scalar(select(func.max(MdCandleRecord.ts)).where(*base, is_option))
+    if newest is None:
+        return out
+    found = (await session.execute(select(MdCandleRecord.instrument_key, MdCandleRecord.close, MdCandleRecord.oi, MdCandleRecord.version)
+                                   .where(*base, is_option, MdCandleRecord.ts == newest))).all()
+    latest: dict[str, tuple[float, int | None, int]] = {}
+    for key, close, oi, version in found:
+        if key not in latest or version > latest[key][2]:
+            latest[key] = (float(close), oi, version)
+    by_expiry: dict[str, dict[float, dict[str, Any]]] = {}
+    for key, (close, oi, _version) in latest.items():
+        parts = key.split(":")                       # NFO:<UL>:<CE|PE>:<expiry>:<strike>
+        if len(parts) != 5:
+            continue
+        try:
+            strike = float(parts[4])
+        except ValueError:
+            continue
+        side = "call" if parts[2] == "CE" else "put"
+        by_expiry.setdefault(parts[3], {}).setdefault(strike, {"strike": strike, "call": None, "put": None})[side] = {"close": close, "oi": oi}
+    expiries = sorted(by_expiry)
+    if not expiries:
+        return out
+    pick = expiry.isoformat() if expiry is not None and expiry.isoformat() in by_expiry else expiries[0]
+    rows = [by_expiry[pick][k] for k in sorted(by_expiry[pick])][:CHAIN_ROWS]
+    spot = await last_close(session, name)
+    out.update(date=_day(newest).isoformat(), expiry=pick, expiries=expiries, rows=rows,
+               spot=spot["close"] if spot["date"] == _day(newest).isoformat() else None)
+    return out
+
+
+__all__ = ["router", "last_close", "closes", "bars", "chain"]

@@ -8,3 +8,6 @@ export function lastCloseText(date: string | null | undefined): string {
   const text = formatDateIST(date, { year: false });
   return text === "–" || text === "" ? "Last close" : `Last close · ${text}`;
 }
+
+/** The one button's words (D3). */
+export const CONNECT_LIVE = "Connect your broker for live prices";

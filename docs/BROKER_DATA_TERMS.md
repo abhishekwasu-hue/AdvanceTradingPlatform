@@ -83,6 +83,14 @@ referenced here.
   (`md:shared:<broker>:...`, `app/market_data/shared_candles.py`): the broker fetch that fills it goes through the
   requesting user's own session and budget, and another broker's bars are never served. `/ltp` reads the shared live
   feed's tick for the same broker before it calls the user's broker. Nothing per account is shared.
+  **Superseded by M86 D4 (owner decision, 8 Nov):** no live or intraday data fetched with one user's broker session
+  (the owner's and an admin's included) is served to another user, flag on or off. Every copy is keyed by the fetching
+  session (`app/market_data/feed_scope.py`, `u<user>.c<credential>`; `md:shared:<scope>:...`,
+  `md:byob:<scope>:candles:...`, the screener's `md:dailyctx:<scope>:...`); `/ltp` and the watchlist read only the user's
+  own session's ticks, then his own broker; the shared lake (`md_candles`) refuses `broker:*` / `stream:*` rows and its
+  readers skip old ones; the owner's index intraday history is not read by anyone else (`own_bars.shared_scope` is
+  None). EOD bhavcopy rows stay shared. Open: OPEN_QUESTIONS M86-Q1 (the exit-price fallback), M86-Q2 (per-tenant
+  organisation stores). Enforced by `backend/tests/test_m86_no_shared_feed.py`.
 - A per-user websocket stream never feeds platform-wide consumers (the lake recorder); nothing is pooled.
 - Symbols per session: open positions > open charts > watchlist > screener universe, up to the cap; beyond it the
   symbol is EOD for that user (a symbol already held keeps its slot; the latest scan wins among screener symbols), with

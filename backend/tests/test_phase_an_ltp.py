@@ -71,7 +71,11 @@ def test_fresh_tick_wins_over_the_rest_call(monkeypatch):
     _store_credentials(me)
     tick_cache.clear()
     now = datetime.now(timezone.utc)
-    run(tick_cache.put(Tick(broker="upstox", exchange="NSE", symbol="NIFTY 50", ltp=26012.5, exchange_ts=now - timedelta(seconds=1), received_at=now)))
+    # M86 D4: the user's own session's tick (his credential's namespace), never the platform-wide feed
+    from app.market_data.stream import TickCache
+    from tests.test_bt1_byob_data_tier import _ns
+    run(TickCache(namespace=_ns(me)).put(Tick(broker="upstox", exchange="NSE", symbol="NIFTY 50", ltp=26012.5,
+                                              exchange_ts=now - timedelta(seconds=1), received_at=now)))
     monkeypatch.setattr(candles_routes, "build_adapter", lambda record: _QuoteBroker(fail=True))   # must not be called
     body = client_get(headers, "NIFTY%2050").json()
     assert body["ltp"] == 26012.5 and body["source"] == "tick" and body["stale"] is False

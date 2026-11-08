@@ -37,6 +37,10 @@ Parameters (current values in the JSON):
 
 ## Data licences: shared intraday index history (M55 T4)
 
+- **Superseded by M86 D4 (owner decision, 8 Nov).** Nothing below is served any more: the history owner's index
+  intraday rows are read only by him, whatever `byob_data_tier` says (`own_bars.shared_scope` returns None for every
+  reader; `backend/tests/test_m86_no_shared_feed.py`). Kept as the record of what M55 T4 did.
+
 - **The licence question.** The 15M / 1H index history (NIFTY, BANKNIFTY, FINNIFTY, SENSEX and the other indices the
   backfill covers) is read through ONE broker account's API session, the history owner's (DATA-H,
   `backend/app/market_lake/index_history.py`). Showing those candles to other users may breach that broker's API terms

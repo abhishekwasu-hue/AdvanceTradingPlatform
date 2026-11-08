@@ -295,7 +295,7 @@ def test_alert_universe_keeps_the_daily_frame_closed_by_the_bar():
     intraday = _bars(ist(TUE, 9, 15), [100.0] * 13)
     daily = generate(272, 100.0, 5, daily=True, end=ist(TUE, 0, 0) + timedelta(days=2))            # runs past "today"
 
-    async def fetch(session, tenant_id, symbols, exchange, base_tf, lookback):
+    async def fetch(session, tenant_id, symbols, exchange, base_tf, lookback, **kw):
         assert lookback.get("1d", 0) >= 100                                                      # the fetch is sized for the trend
         return [SymbolData(s, {base_tf: intraday, "1d": daily}) for s in symbols], {}, "test"
 
@@ -317,7 +317,7 @@ def test_alert_rules_fetch_the_trend_history_they_read():
     rid = _rule(me["tenant_id"], condition='DowTrend(0)@1h != "DOWN"', tf="5m")
     seen = []
 
-    async def fetch(session, tenant_id, symbols, exchange, base_tf, lookback):
+    async def fetch(session, tenant_id, symbols, exchange, base_tf, lookback, **kw):
         seen.append(dict(lookback))
         return [SymbolData(s, {base_tf: _bars(ist(TUE, 9, 15), [100.0, 101.0])}) for s in symbols], {}, "test"
     _evaluate(rid, ist(TUE, 9, 27), fetch, breakouts_enabled=True)
@@ -335,7 +335,7 @@ def test_cycle_cache_reuses_a_frame_only_when_it_covers_every_timeframe():
     daily = generate(272, 100.0, 5, daily=True, end=ist(TUE, 0, 0))
     calls = []
 
-    async def fetch(session, tenant_id, symbols, exchange, base_tf, lookback):
+    async def fetch(session, tenant_id, symbols, exchange, base_tf, lookback, **kw):
         calls.append(dict(lookback))
         frames = {base_tf: intraday}
         if any(t in ("1d", "1w", "1M") for t in lookback):                     # what fetch_frames does

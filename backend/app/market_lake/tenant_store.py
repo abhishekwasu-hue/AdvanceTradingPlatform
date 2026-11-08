@@ -13,11 +13,11 @@ As-of and versioning follow the shared lake exactly (B1): `as_of` hides rows ing
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config
-from app.db.models import MdTenantCandleRecord
+from app.db.models import MdTenantCandleRecord, User
 from app.market_data.calendar import EXCHANGE_SESSIONS, IST, session_family
 from app.market_lake import adjust as adjust_mod
 from app.market_lake.ingest import LakeBar, timeframe_minutes
@@ -51,16 +51,25 @@ def _rank(sources: Optional[Sequence[str]], source: str) -> int:
     return list(sources).index(source) if source in sources else len(sources)
 
 
+OWNER_ROLES = ("OWNER", "UserRole.OWNER")          # M86 D4: who reads the tenant's own (non broker-session) private rows
 HOLDER_PREFIX = "broker:"        # HB2 rows: source broker:<name>:u<holder>, read through ONE member's own broker session
 
 
 def holder_visible(source_column, reader_user_id: Optional[int]):
     """BT1b inside a tenant: rows from a member's own broker session (`broker:<name>:u<id>`) are visible only to that
-    member; every other row of the private store is the tenant's. `reader_user_id=None` sees no such rows."""
+    member. M86 D4 (owner decision; M71Q-2's rule of `market_store.reader.own_rows`): every other row of the private
+    store (the owner's own imports - `seed:*`, `r2:*` 1-minute history, read through HIS broker sessions) is visible
+    only to the tenant's OWNER (or the configured history owner, HISTORY_OWNER_USER_ID), never to another member.
+    `reader_user_id=None` (an organisation-level job with no reader) sees no broker-session row."""
     others = source_column.not_like(f"{HOLDER_PREFIX}%")
     if reader_user_id is None:
         return others
-    return or_(others, source_column.like(f"{HOLDER_PREFIX}%:u{int(reader_user_id)}"))
+    uid = int(reader_user_id)
+    own = source_column.like(f"{HOLDER_PREFIX}%:u{uid}")
+    if config.HISTORY_OWNER_USER_ID == uid:
+        return or_(others, own)
+    is_owner = exists(select(User.id).where(User.id == uid, User.role.in_(OWNER_ROLES)))   # one look-up, not per row
+    return or_(and_(others, is_owner), own)
 
 
 async def rows_as_of(session: AsyncSession, tenant_id: int, instrument_key: str, timeframe: str, start: datetime, end: datetime, *,

@@ -13,9 +13,9 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
-from typing import Dict, Iterable, List, Optional, Protocol, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence, Tuple
 
-from sqlalchemy import func, insert, select
+from sqlalchemy import and_, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import MdCandleRecord, MdTenantCandleRecord
@@ -120,9 +120,31 @@ class WriteResult:
     skipped: int = 0
 
 
+# M86 D4 (owner decision): the shared lake (`md_candles`, read by every user) never takes a row fetched through one user's
+# broker session - a broker REST answer (`broker:*`) or a streamed tick (`stream:*`). Those go to the holder's private
+# store (`md_tenant_candles`, `broker:<name>:u<holder>`). EOD exchange files and licensed vendors stay shared.
+PRIVATE_SOURCE_PREFIXES = ("broker:", "stream:")
+
+
+class SharedLakeRefused(ValueError):
+    """A broker-session row was offered to the shared lake (M86 D4)."""
+
+
+def refuse_private_source(source: str) -> None:
+    if str(source or "").lower().startswith(PRIVATE_SOURCE_PREFIXES):
+        raise SharedLakeRefused(f"{source}: data fetched through one user's broker session is never written to the shared "
+                                "lake (M86) - it belongs in that user's private store")
+
+
+def public_rows(source_column: Any) -> Any:
+    """SQL condition: a shared-lake row that is not a broker session's (M86 D4, for rows written before the guard)."""
+    return and_(*[source_column.not_like(f"{p}%") for p in PRIVATE_SOURCE_PREFIXES])
+
+
 async def write_candles(session: AsyncSession, bars: Iterable[LakeBar], source: str, *,
                         ingested_at: Optional[datetime] = None) -> WriteResult:
     """Inserts new bars, skips identical ones, writes a changed bar as the next version. Commits once."""
+    refuse_private_source(source)                 # M86 D4: the shared lake only
     result = WriteResult()
     now = ingested_at or datetime.now(timezone.utc)
     for bar in bars:
@@ -158,6 +180,8 @@ async def write_candles_bulk(session: AsyncSession, bars: Sequence[LakeBar], sou
     `tenant_id` set writes that tenant's private store (md_tenant_candles) instead of the shared lake. Two bars with the
     same END in one batch are refused (ValueError): the caller must decide which one is true, never this function."""
     model = MdTenantCandleRecord if tenant_id is not None else MdCandleRecord
+    if tenant_id is None:
+        refuse_private_source(source)             # M86 D4: a broker-session row goes to the holder's private store only
     now = ingested_at or datetime.now(timezone.utc)
     result = WriteResult()
     groups: Dict[Tuple[str, str], List[LakeBar]] = defaultdict(list)
@@ -210,7 +234,10 @@ async def write_candles_bulk(session: AsyncSession, bars: Sequence[LakeBar], sou
 
 async def backfill_from_broker(session: AsyncSession, adapter, *, instrument_key: str, symbol: str, exchange: str,
                                timeframe: str, start: datetime, end: datetime) -> WriteResult:
-    """Broker history -> lake. Adapters label bars by START; the lake labels by END (start + timeframe)."""
+    """Broker history -> lake. Adapters label bars by START; the lake labels by END (start + timeframe).
+    M86 D4: refused before any broker call - one user's broker history never goes to the shared lake (`write_candles`);
+    the holder's own backfill (`intraday_history`) writes his private store instead."""
+    refuse_private_source(f"broker:{adapter.name}")
     period = timedelta(minutes=timeframe_minutes(timeframe))
     raw = await adapter.get_historical_data(symbol, exchange, timeframe, start, end)
     bars = [LakeBar(instrument_key, timeframe, (b.timestamp if b.timestamp.tzinfo else b.timestamp.replace(tzinfo=timezone.utc))

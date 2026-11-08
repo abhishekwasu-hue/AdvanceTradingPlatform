@@ -65,7 +65,7 @@ from app.market_data.fanin import Priority
 from app.market_data.freshness import quote_is_stale
 from app.market_data.reader_credential import credential_for_reader
 from app.market_data.service import CHUNK_LIMIT, MarketDataService, build_frames, merge_bars
-from app.market_data.stream import TickCache, tick_cache
+from app.market_data.stream import TickCache
 from app.platform.controls import flag_enabled
 
 logger = logging.getLogger(__name__)
@@ -145,6 +145,15 @@ def own_ticks(namespace: str) -> TickCache:
     """A user's own session's ticks (BT1): its per-symbol keys, or - TM Part 1, the data hub - its connection snapshot."""
     from app.market_data.hub import tick_cache_for
     return tick_cache_for(namespace)
+
+
+def reader_ticks(record: BrokerCredentialRecord) -> TickCache:
+    """M86 D4: the ticks streamed through this credential's own session (its holder's namespace, `u<user>.c<credential>`:
+    the per-user stream's keys, or its hub snapshot) - never the platform-wide `md:tick:*` keys another user's or
+    organisation's stream wrote. No own tick: the caller asks the reader's own broker."""
+    from app.market_data.feed_scope import record_scope
+    scope = record_scope(record)
+    return own_ticks(scope) if scope else TickCache(namespace=f"none.{id(record)}")
 
 
 async def _byob(session: AsyncSession, user: User) -> bool:
@@ -685,8 +694,8 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
         ent = await entitlement.resolve(session, user, symbol, exchange, broker=broker, account_label=account_label if broker else None, now=now)
         if not ent.live or ent.record is None or ent.session is None:
             raise _tier_c({(symbol, exchange): ent})
-        # LD-10: the user's own session's tick first, then the shared live feed's for the same broker, then the broker.
-        body = await _ltp_body(ent.record, own_ticks(ent.session.namespace), symbol, exchange, now, shared_feed=tick_cache)
+        # M86 D4: the user's own session's tick, then his own broker (LD-10's shared live feed of other users is gone).
+        body = await _ltp_body(ent.record, own_ticks(ent.session.namespace), symbol, exchange, now)
         # The tick's / quote's own time; a bare LTP has none, so its age is unknown and the badge says stale.
         as_of = datetime.fromisoformat(body["timestamp"]) if body["timestamp"] else None
         body["data_tier"] = ent.badge(as_of=as_of, now=now)
@@ -698,7 +707,7 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
     # TM Part 1 (flag data_hub): the organisation's own hub stream (registered for this symbol), never the shared keys.
     from app.market_data import hub as data_hub
     own = await data_hub.org_feed(session, user.tenant_id, record.broker_name, [(symbol, exchange)], reader_id=user.id)
-    return await _ltp_body(record, own if own is not None else tick_cache, symbol, exchange, now)
+    return await _ltp_body(record, own if own is not None else reader_ticks(record), symbol, exchange, now)
 
 
 async def _ltp_body(record: BrokerCredentialRecord, ticks: TickCache, symbol: str, exchange: str, now: datetime,

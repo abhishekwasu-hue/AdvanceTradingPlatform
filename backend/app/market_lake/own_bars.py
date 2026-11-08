@@ -17,6 +17,12 @@ member of every organisation through a `SharedScope` (`shared_scope`) - only whi
 licences"; OPEN_QUESTIONS M55Q-1). A shared scope reads 1-minute rows of an index key only (never his Daily rows, never
 another symbol) and compares unequal to the owner's own scope (no cache keyed by a scope mixes the two); the reader's
 own rows still come first (`scope_for`). Nothing here writes a bar.
+
+M86 D4 (owner decision, supersedes M55 T4): NO intraday row fetched with one user's broker session (the owner's / the
+history owner's included) is served to another user. `shared_scope` therefore returns None for every reader and every
+flag state, and `shared_off` is always True: each reader reads only his own private rows (`scope_for`) and the shared
+lake (EOD exchange files, which stay shared with everyone). `SharedScope` stays as a type so a stored scope reads the
+same, but nothing builds one any more.
 """
 from __future__ import annotations
 
@@ -42,8 +48,8 @@ PROVISIONAL_LABEL = "dayprov"
 DAILY_LABELS = ("day", "1d", "1w", "week", PROVISIONAL_LABEL)
 SHARED_TAG = "shared-index-intraday"
 SEED_PREFIX = "seed:"          # M71 PL-7: rows seeded from the owner's private data (app.market_lake.seed_import)
-SHARED_OFF_LINE = ("Longer intraday index history is not shared while each organisation brings its own broker data, so "
-                   "only your broker's own history is shown.")
+SHARED_OFF_LINE = ("Longer intraday index history comes only from your own broker, so only your broker's own history "
+                   "is shown.")
 
 
 class SharedScope(tuple):
@@ -99,28 +105,17 @@ async def scope_for(session: AsyncSession, user: Any, key: str) -> Optional[Scop
 
 
 async def shared_off(session: AsyncSession, tenant_id: int | None, holder_tenant: int | None = None) -> bool:
-    """True while the bring-your-own-broker data tier is on for the reader's organisation or the owner's: then no
-    broker-sourced row of one session is served to another reader (licence; docs/COMPLIANCE_IN.md)."""
-    from app.market_data import live_access
-    if await live_access.byob_on(session, tenant_id):
-        return True
-    return holder_tenant is not None and await live_access.byob_on(session, holder_tenant)
+    """M86 D4: always True - no broker-sourced row of one session is served to another reader, whatever the data tier
+    flag says (licence; docs/COMPLIANCE_IN.md, docs/BROKER_DATA_TERMS.md). Kept as the one place callers ask."""
+    del session, tenant_id, holder_tenant
+    return True
 
 
 async def shared_scope(session: AsyncSession, tenant_id: int | None, key: str) -> SharedScope | None:
-    """M55 T4: the history owner's index intraday rows for a reader of `tenant_id` - a `SharedScope` when `key` is a
-    backfilled index key, the owner is configured and holds rows of it, and the data tier is off for both
-    organisations; else None. Never a non-index key, never Daily rows."""
-    if not tenant_id or int(tenant_id) <= 0:
-        return None
-    from app.market_lake.index_history import is_target_key
-    if not is_target_key(key):
-        return None
-    holder = await history_owner(session)
-    if holder is None or await shared_off(session, int(tenant_id), holder[0]):
-        return None
-    scope = SharedScope(*holder)
-    return scope if await has_rows(session, scope, key) else None
+    """M55 T4 (superseded by M86 D4): the history owner's index intraday rows are no longer read by anyone else - None
+    for every reader, key and flag state. A reader's own rows come through `scope_for`; EOD rows from the shared lake."""
+    del session, tenant_id, key
+    return None
 
 
 async def flags(session: AsyncSession, tenant_id: int, key: str, label: str, start: datetime, end: datetime) -> Dict[datetime, Dict[str, Optional[float]]]:

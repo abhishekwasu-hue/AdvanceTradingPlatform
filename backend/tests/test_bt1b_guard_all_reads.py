@@ -150,9 +150,9 @@ def test_screener_run_reads_only_the_users_own_session(monkeypatch):
     assert ra.status_code == 200, ra.text
     rb = client.post("/api/screener/run", headers=b_headers, json=body).json()
     assert ra.json()["matched"] == ["RELIANCE"] and rb["matched"] == ["RELIANCE"]
-    # LD-10 (owner, 20 Oct): public candles are one shared copy per broker - B's run reads the bars A's session fetched,
-    # with no call through B's broker; no session-level or platform-wide request cache is written over the shared copy.
-    assert feeds[a["tenant_id"]].reads and not feeds[b["tenant_id"]].reads
+    # Updated to M86 D4 (supersedes LD-10's cross-session copy): B's run reads through B's own session, never the bars
+    # A's session fetched; no session-level or platform-wide request cache is written over a copy.
+    assert feeds[a["tenant_id"]].reads and feeds[b["tenant_id"]].reads
     keys = [k for k in shared.store if ":candles:" in k]
     assert keys == []
     badge = ra.json()["data_tier"]
@@ -211,8 +211,9 @@ def test_alert_rules_fetch_through_the_rule_owners_session_and_cache_per_user():
     run(go())
     # Flag on: each rule owner's own session (user_id passed), user 8's second rule reuses user 8's bars only.
     assert [c.get("user_id") for c in calls[:2]] == [7, 8]
-    # Flag off: the organisation's session, one fetch shared by both rules, no user_id passed (old six-argument shape).
-    assert calls[2:] == [{"symbols": ["TCS"]}]
+    # Updated to M86 D4: flag off too, each rule creator's own session (never the organisation's first credential, maybe
+    # a teammate's) and his own cached bars - user 7 and user 8 each fetch once.
+    assert calls[2:] == [{"symbols": ["TCS"], "user_id": 7}, {"symbols": ["TCS"], "user_id": 8}]
 
 
 # --- the Copilot, the strategist and market memory ----------------------------------------------------------------------

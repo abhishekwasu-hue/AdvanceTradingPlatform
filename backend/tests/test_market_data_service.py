@@ -143,8 +143,15 @@ def test_get_ltp_is_never_cached(monkeypatch):
     assert cache.sets == 0
 
 
-def test_cache_key_is_shared_across_tenants_but_split_by_broker_symbol_interval():
-    a = md_service._cache_key("upstox", "NSE", "RELIANCE", "1min")
-    assert a == md_service._cache_key("upstox", "NSE", "RELIANCE", "1min")
-    assert a != md_service._cache_key("zerodha", "NSE", "RELIANCE", "1min")
-    assert a != md_service._cache_key("upstox", "NSE", "RELIANCE", "5min")
+def test_cache_key_is_per_session_and_split_by_broker_symbol_interval():
+    """Updated to M86 D4: the key carries the fetching session (never one key shared across tenants / users)."""
+    import pytest
+
+    from app.market_data.feed_scope import UnscopedFeed
+    a = md_service._cache_key("upstox", "NSE", "RELIANCE", "1min", "u1.c1")
+    assert a == md_service._cache_key("upstox", "NSE", "RELIANCE", "1min", "u1.c1")
+    assert a != md_service._cache_key("upstox", "NSE", "RELIANCE", "1min", "u2.c2")
+    assert a != md_service._cache_key("zerodha", "NSE", "RELIANCE", "1min", "u1.c1")
+    assert a != md_service._cache_key("upstox", "NSE", "RELIANCE", "5min", "u1.c1")
+    with pytest.raises(UnscopedFeed):
+        md_service._cache_key("upstox", "NSE", "RELIANCE", "1min")

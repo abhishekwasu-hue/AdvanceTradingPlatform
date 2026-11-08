@@ -275,12 +275,13 @@ def _is_owner(user: Any) -> bool:
 
 
 def may_top_up(user: Any, record: Any) -> bool:
-    """M71Q-2: a credential the reader linked himself, or - for the tenant's OWNER - the tenant's own credential."""
+    """M71Q-2 / M86 D4: only a credential the reader linked himself - never a teammate's, the OWNER's reads included
+    (no data fetched with one user's broker session is served to another user)."""
     if user is None or record is None:
         return False
     if getattr(record, "tenant_id", None) != getattr(user, "tenant_id", None):
         return False
-    return getattr(record, "user_id", None) == getattr(user, "id", None) or _is_owner(user)
+    return getattr(record, "user_id", None) == getattr(user, "id", None)
 
 
 async def own_rows(session: AsyncSession, user: Any, key: str, start: datetime, end: datetime, *, limit: int,

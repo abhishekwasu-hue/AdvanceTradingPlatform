@@ -51,11 +51,12 @@ from app.db.session import get_session, release_connection
 from app.market_data import api_budget, entitlement
 from app.market_data import hub as data_hub
 from app.market_data.candles_routes import _byob, _eod_context, _tier_c
+from app.market_data.candles_routes import reader_ticks as candles_reader_ticks
 from app.market_data.entitlement import Entitlement
 from app.market_data.fanin import Priority
 from app.market_data.freshness import quote_is_stale
 from app.market_data.reader_credential import credential_for_reader
-from app.market_data.stream import TickCache, tick_cache
+from app.market_data.stream import TickCache
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,12 @@ def _ltp_body(record: BrokerCredentialRecord, row: dict, quote: Optional[Quote],
 # --- the previous close, per broker, symbol and IST trading day ----------------------------------------------------------
 _PREV_LOCAL: Dict[str, Tuple[float, float]] = {}       # key -> (expires at, close); keys of one IST day only
 _PREV_DAY: List[Optional[date]] = [None]                # the IST day _PREV_LOCAL holds
+
+
+def _prev_scope(record: BrokerCredentialRecord) -> str:
+    """M86 D4: the previous close a quote carried is kept for that credential's session only (never one copy per broker)."""
+    from app.market_data.feed_scope import record_scope
+    return f"{record.broker_name}.{record_scope(record) or 'none'}"
 
 
 def _prev_key(broker: str, pair: Pair, day: date) -> str:
@@ -397,7 +404,7 @@ async def quotes(body: QuotesBody, user: User = Depends(get_current_user), sessi
         feeds = [data_hub.tick_cache_for(live.session.namespace)]
     else:
         record = await credential_for_reader(session, user.tenant_id, user.id, body.broker, body.account_label)   # M71Q-2
-        feeds = [tick_cache]
+        feeds = [candles_reader_ticks(record)]      # M86 D4: this credential's own streamed ticks, never md:tick:*
         # TM Part 1 (flag data_hub): the organisation's own hub stream carries the list; its ticks, never the shared keys.
         own = await data_hub.org_feed(session, user.tenant_id, record.broker_name, [(s, e) for e, s in pairs], Priority.WATCHLIST,
                                       reader_id=user.id)
@@ -430,9 +437,9 @@ async def quotes(body: QuotesBody, user: User = Depends(get_current_user), sessi
     day = now.astimezone(IST).date()
     for pair, row in list(fill.rows.items()):
         if row["prev_close"] is not None:
-            await _prev_close_put(record.broker_name, pair, day, row["prev_close"])
+            await _prev_close_put(_prev_scope(record), pair, day, row["prev_close"])
         else:
-            prev = await _prev_close_get(record.broker_name, pair, day)
+            prev = await _prev_close_get(_prev_scope(record), pair, day)
             if prev is not None:
                 fill.rows[pair] = _with_prev_close(row, prev)
 

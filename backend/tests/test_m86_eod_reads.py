@@ -35,6 +35,16 @@ def _weekdays(n: int, last: date) -> list[date]:
 def _write(key: str, rows: list[tuple[datetime, float]], source: str, timeframe: str = "day", tenant_id: int | None = None) -> None:
     async def go():
         async with _session_factory() as session:
+            if tenant_id is None and source.startswith("broker:"):
+                # M86 D4: the shared lake refuses broker-session rows (ingest.SharedLakeRefused); a row written before that
+                # guard is inserted directly, to prove the EOD reads still never serve it.
+                from datetime import UTC
+                now = datetime.now(UTC)
+                for ts, c in rows:
+                    session.add(MdCandleRecord(instrument_key=key, timeframe=timeframe, ts=ts, source=source, version=1, open=c - 1,
+                                               high=c + 2, low=c - 3, close=c, volume=1000, ingested_at=now))
+                await session.commit()
+                return
             bars = [ingest.LakeBar(key, timeframe, ts, c - 1, c + 2, c - 3, c, 1000) for ts, c in rows]
             await ingest.write_candles_bulk(session, bars, source, tenant_id=tenant_id)
             await session.commit()

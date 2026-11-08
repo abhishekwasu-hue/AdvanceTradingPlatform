@@ -1,9 +1,12 @@
 """LD-10 (owner, 20 Oct): a chart spends fewer broker calls instead of a larger per-user budget.
 
-* history and today's candles are one shared copy per (broker, exchange, symbol, interval, window) for every user and
-  tenant - one broker fetch, made through the requesting user's own adapter - with one fetch at a time (single-flight,
-  in one process and across processes through Redis); today's copy never outlives the bar forming when it was fetched;
-* `/ltp` takes a fresh tick of the shared live feed (same broker) before a broker call, and falls back as before;
+Updated to M86 D4 (owner decision: no live / intraday data fetched with one user's broker session is served to another
+user) - the tests that encoded cross-user sharing now assert the opposite:
+* history and today's candles are one copy per (SESSION, broker, exchange, symbol, interval, window): one user's
+  concurrent requests share one broker fetch (single-flight, in one process and across processes through Redis);
+  another user - same broker or not - fetches through his own session; today's copy never outlives the bar forming when
+  it was fetched;
+* `/ltp` reads only the user's own session's tick (never the platform's shared feed), else his own broker;
 * the API budget's per-second rate is a token bucket: a burst of API_BURST, the same sustained rate, the minute window
   still refusing beyond the budget."""
 import asyncio
@@ -64,7 +67,7 @@ TODAY = _bars(datetime(2026, 10, 21, 9, 15, tzinfo=IST), 48, base=200.0)   # 09:
 
 # --- sharing and single-flight ---------------------------------------------------------------------------------------------
 
-def test_two_users_of_two_tenants_share_one_broker_fetch_with_identical_bars(monkeypatch):
+def test_two_users_of_two_tenants_never_share_a_broker_fetch(monkeypatch):
     _install_cache(monkeypatch, None)                     # Redis down: no per-request cache, only the shared copy
 
     async def go():
@@ -76,19 +79,19 @@ def test_two_users_of_two_tenants_share_one_broker_fetch_with_identical_bars(mon
         unshared = await MarketDataService(_Slow(HISTORY, TODAY), cache_namespace="u2.c2").get_candles(sym, "NSE", "1min", now=NOW)
         return a, b, bars_a, bars_b, unshared
     a, b, bars_a, bars_b, unshared = run(go())
-    assert (a.history_calls, a.intraday_calls) == (1, 1) and (b.history_calls, b.intraday_calls) == (0, 0)
+    assert (a.history_calls, a.intraday_calls) == (1, 1) and (b.history_calls, b.intraday_calls) == (1, 1)   # M86: B's own
     assert bars_a == bars_b == unshared and len(bars_a) == 78                 # the same bars a fetch of one's own returns
     assert bars_a[-1].timestamp == TODAY[-1].timestamp                         # nothing after the broker's newest bar
 
 
-def test_five_hundred_concurrent_chart_opens_make_one_fetch_per_part(monkeypatch):
+def test_five_hundred_concurrent_chart_opens_of_one_user_make_one_fetch_per_part(monkeypatch):
     _install_cache(monkeypatch, None)
 
     async def go():
         sym = _sym()
         sessions = [_Slow(HISTORY, TODAY, delay=0.1) for _ in range(500)]
-        results = await asyncio.gather(*(MarketDataService(s, cache_namespace=f"u{i}.c{i}").get_candles(sym, "NSE", "1min", now=NOW)
-                                         for i, s in enumerate(sessions)))
+        results = await asyncio.gather(*(MarketDataService(s, cache_namespace="u1.c1").get_candles(sym, "NSE", "1min", now=NOW)
+                                         for s in sessions))
         return sessions, results
     sessions, results = run(go())
     assert sum(s.history_calls for s in sessions) == 1 and sum(s.intraday_calls for s in sessions) == 1
@@ -130,13 +133,13 @@ def test_single_flight_across_processes_waits_for_the_holder_and_takes_over_when
         fake.store.pop("lock:" + name, None)
 
     async def go():
-        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "hist", "d:x:y")
+        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "hist", "d:x:y", scope="u1.c1")
         fake.store["lock:" + name] = "another-process"                    # another API process is fetching
         filler = asyncio.ensure_future(other_process_fills(name))
         got = await shared_candles.get_or_fetch(name, fetch, lambda bars: 60)
         await filler
         shared_candles.reset()
-        gone = shared_candles.key("dhan", "NSE", _sym(), "1min", "hist", "d:x:y")
+        gone = shared_candles.key("dhan", "NSE", _sym(), "1min", "hist", "d:x:y", scope="u1.c1")
         fake.store["lock:" + gone] = "another-process"
 
         async def gives_up():
@@ -162,9 +165,8 @@ def test_the_window_key_follows_how_the_broker_reads_its_history_window():
     assert by_time[0] != by_time[1] and by_time[0] == "m:2026-10-16T09:20:2026-10-20T09:20"
     same_minute = shared_candles.window_anchor(False, morning + timedelta(seconds=40), morning + timedelta(seconds=40))
     assert same_minute == shared_candles.window_anchor(False, morning, morning)
-    k = shared_candles.key("Dhan", "nse", "reliance", "1min", "hist", by_date[0])
-    assert k == "md:shared:dhan:NSE:RELIANCE:1min:hist:d:2026-10-16:2026-10-20"
-    assert "byob" not in k and "u1" not in k                                # nothing per user or account in the key
+    k = shared_candles.key("Dhan", "nse", "reliance", "1min", "hist", by_date[0], scope="u1.c1")
+    assert k == "md:shared:u1.c1:dhan:NSE:RELIANCE:1min:hist:d:2026-10-16:2026-10-20"   # M86: the fetching session's copy
 
 
 def test_todays_copy_expires_when_the_forming_bar_closes_history_lives_longer(monkeypatch):
@@ -175,21 +177,21 @@ def test_todays_copy_expires_when_the_forming_bar_closes_history_lives_longer(mo
     real_store = shared_candles.store
 
     async def spy(name, bars, ttl):
-        stored[name.split(":")[6]] = ttl
+        stored[name.split(":")[7]] = ttl
         await real_store(name, bars, ttl)
     monkeypatch.setattr(shared_candles, "store", spy)
 
     async def go():
         sym = _sym()
         broker = _Slow(HISTORY, TODAY)
-        svc = MarketDataService(broker)
+        svc = MarketDataService(broker, cache_namespace="u1.c1")             # one user's requests (M86: never another's)
         await svc.get_candles(sym, "NSE", "1min", now=NOW)
         assert stored == {"hist": shared_candles.HISTORY_TTL_SECONDS, "today": 30}   # 10:02:30 -> the 10:02 bar closes at 10:03:00
         clock["t"] += 29
-        await MarketDataService(_Slow(HISTORY, TODAY)).get_candles(sym, "NSE", "1min", now=NOW)
+        await MarketDataService(_Slow(HISTORY, TODAY), cache_namespace="u1.c1").get_candles(sym, "NSE", "1min", now=NOW)
         later = _Slow(HISTORY, TODAY)
         clock["t"] += 1                                                     # 10:03:00: the copy of today's bars is gone
-        await MarketDataService(later).get_candles(sym, "NSE", "1min", now=NOW + timedelta(seconds=30))
+        await MarketDataService(later, cache_namespace="u1.c1").get_candles(sym, "NSE", "1min", now=NOW + timedelta(seconds=30))
         return broker, later
     broker, later = run(go())
     assert (broker.history_calls, broker.intraday_calls) == (1, 1)
@@ -202,8 +204,8 @@ def test_a_fresh_read_never_takes_todays_copy_but_still_shares_history(monkeypat
     async def go():
         sym = _sym()
         first, second = _Slow(HISTORY, TODAY), _Slow(HISTORY, TODAY)
-        await MarketDataService(first).get_candles(sym, "NSE", "1min", now=NOW)
-        await MarketDataService(second).get_candles(sym, "NSE", "1min", now=NOW, fresh=True)
+        await MarketDataService(first, cache_namespace="u1.c1").get_candles(sym, "NSE", "1min", now=NOW)
+        await MarketDataService(second, cache_namespace="u1.c1").get_candles(sym, "NSE", "1min", now=NOW, fresh=True)
         return second
     second = run(go())
     assert (second.history_calls, second.intraday_calls) == (0, 1)
@@ -223,7 +225,7 @@ def test_another_broker_never_reads_the_copy():
     assert (other.history_calls, other.intraday_calls) == (1, 1)
 
 
-# --- the route: two tenants, one fetch -------------------------------------------------------------------------------------
+# --- the route: two tenants, two fetches (M86) -------------------------------------------------------------------------------------
 
 class _RouteBroker(_PriceBroker):
     """The route's fake session: today's bars too (one closed bar, so the copy lives its full minute)."""
@@ -234,7 +236,7 @@ class _RouteBroker(_PriceBroker):
         return [OHLCVBar(timestamp=start, open=self.price, high=self.price, low=self.price, close=self.price, volume=1)]
 
 
-def test_candles_route_two_tenants_one_broker_fetch(monkeypatch):
+def test_candles_route_two_tenants_each_fetch_through_their_own_session(monkeypatch):
     _install_cache(monkeypatch, _MemoryCache())
     a_headers, a = _owner(_email("ld10-a"))
     b_headers, b = _owner(_email("ld10-b"))
@@ -248,9 +250,11 @@ def test_candles_route_two_tenants_one_broker_fetch(monkeypatch):
     body = {"symbols": [sym], "timeframe": "5min"}
     ra = client.post("/api/market-data/candles", headers=a_headers, json=body).json()
     rb = client.post("/api/market-data/candles", headers=b_headers, json=body).json()
-    assert ra["symbols"][sym]["error"] is None and rb["symbols"][sym]["bars"] == ra["symbols"][sym]["bars"]
+    assert ra["symbols"][sym]["error"] is None and rb["symbols"][sym]["error"] is None
+    assert rb["symbols"][sym]["bars"] != ra["symbols"][sym]["bars"]                      # M86: never A's bars for B
+    assert {b_["close"] for b_ in rb["symbols"][sym]["bars"]} == {222.0}
     assert sorted(c[1] for c in brokers[a["tenant_id"]].calls) == ["1min", "today"]   # history + today's, once, through A
-    assert brokers[b["tenant_id"]].calls == []
+    assert sorted(c[1] for c in brokers[b["tenant_id"]].calls) == ["1min", "today"]   # and B's own, through B
     assert rb["data_tier"]["tier"] == "A"
     api_budget.reset()
     _flag(False)
@@ -258,7 +262,8 @@ def test_candles_route_two_tenants_one_broker_fetch(monkeypatch):
 
 # --- /ltp: the shared live feed first ---------------------------------------------------------------------------------------
 
-def test_ltp_prefers_the_shared_live_feed_and_falls_back(monkeypatch):
+def test_ltp_never_takes_the_shared_live_feed_only_the_users_own_tick_or_broker(monkeypatch):
+    """M86 D4: the platform's shared feed (another session's stream, same broker) is never this user's price."""
     memory = _MemoryCache()
     _install_cache(monkeypatch, memory)
     headers, me = _owner(_email("ld10-ltp"))
@@ -273,27 +278,13 @@ def test_ltp_prefers_the_shared_live_feed_and_falls_back(monkeypatch):
 
     def ltp():
         return client.get(f"/api/market-data/ltp?symbol={sym}", headers=headers).json()
-    # The shared feed has the symbol (same broker): its tick, no broker call.
+    # The shared feed has the symbol (same broker): not his data - his own broker's quote instead.
     run(tick_cache.put(Tick(broker="upstox", exchange="NSE", symbol=sym, ltp=501.5, exchange_ts=now, received_at=now)))
     body = ltp()
-    assert body["source"] == "tick" and body["ltp"] == 501.5 and broker.quote_calls == 0 and body["data_tier"]["tier"] == "A"
-    # The user's own session tick wins over the shared feed.
+    assert body["source"] == "quote" and body["ltp"] == 500.0 and broker.quote_calls == 1 and body["data_tier"]["tier"] == "A"
+    # The user's own session tick is his price.
     run(TickCache(namespace=_ns(me)).put(Tick(broker="upstox", exchange="NSE", symbol=sym, ltp=502.0, exchange_ts=now, received_at=now)))
-    assert ltp()["ltp"] == 502.0 and broker.quote_calls == 0
-    for key in [k for k in memory.store if ":tick:" in k]:
-        memory.store.pop(key)
-    tick_cache.clear()
-    # Another broker's tick is not this user's data: fall back to the user's own broker.
-    run(tick_cache.put(Tick(broker="dhan", exchange="NSE", symbol=sym, ltp=499.0, exchange_ts=now, received_at=now)))
-    tick_cache.clear()                                                    # (only its Redis mirror remains, under "dhan")
-    body = ltp()
-    assert body["source"] == "quote" and body["ltp"] == 500.0 and broker.quote_calls == 1
-    # A stale shared tick is no price either.
-    api_budget.reset()
-    old = now - timedelta(minutes=10)
-    run(tick_cache.put(Tick(broker="upstox", exchange="NSE", symbol=sym + "X", ltp=1.0, exchange_ts=old, received_at=old)))
-    body = client.get(f"/api/market-data/ltp?symbol={sym}X", headers=headers).json()
-    assert body["source"] == "quote" and broker.quote_calls == 2
+    assert ltp()["ltp"] == 502.0 and broker.quote_calls == 1
     tick_cache.clear()
     api_budget.reset()
     _flag(False)
@@ -417,7 +408,7 @@ def test_a_joiner_never_waits_long_on_another_requests_slow_fetch(monkeypatch):
         return HISTORY[:3]
 
     async def go():
-        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "hist", "d:a:b")
+        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "hist", "d:a:b", scope="u1.c1")
         first = asyncio.ensure_future(shared_candles.get_or_fetch(name, slow, lambda bars: 60))
         await asyncio.sleep(0.05)
         started = time.monotonic()
@@ -469,7 +460,7 @@ def test_an_empty_answer_from_another_session_is_not_taken_as_ones_own():
         return HISTORY[:4]
 
     async def go():
-        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "today", "t:x")
+        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "today", "t:x", scope="u1.c1")
         first = asyncio.ensure_future(shared_candles.get_or_fetch(name, empty, lambda bars: 60))
         await asyncio.sleep(0.02)
         mine = await shared_candles.get_or_fetch(name, own, lambda bars: 60)
@@ -479,8 +470,8 @@ def test_an_empty_answer_from_another_session_is_not_taken_as_ones_own():
 
 
 def test_a_cache_built_from_a_shared_copy_never_outlives_it(monkeypatch):
-    """Review 3: the per-request cache (and the worker's md:candles) is capped at the copy's remaining life, so today's
-    bars stay at most 60 s old end to end."""
+    """Review 3: the per-request cache (the worker's, now under its session's scope) is capped at the copy's remaining
+    life, so today's bars stay at most 60 s old end to end; a chart session writes no copy of the copy at all."""
     class _Recording(_MemoryCache):
         def __init__(self):
             super().__init__()
@@ -496,15 +487,18 @@ def test_a_cache_built_from_a_shared_copy_never_outlives_it(monkeypatch):
 
     async def go():
         sym = _sym()
-        await MarketDataService(_Slow(HISTORY, TODAY), cache_namespace="u1.c1").get_candles(sym, "NSE", "1min", now=NOW)
+        # M86: one user's copies only - his chart session (no request cache of its own) fills the copy...
+        await MarketDataService(_Slow(HISTORY, TODAY), cache_namespace="u1.c5").get_candles(sym, "NSE", "1min", now=NOW)
         clock["t"] += 20                                                     # the copy of today's bars has 10 s left
-        await MarketDataService(_Slow(HISTORY, TODAY), cache_namespace="u2.c2").get_candles(sym, "NSE", "1min", now=NOW)
-        await MarketDataService(_Slow(HISTORY, TODAY)).get_candles(sym, "NSE", "1min", now=NOW)   # the worker's cache too
-        return sym
-    sym = run(go())
-    worker = next(v for k, v in memory.ttls.items() if k.startswith("md:candles:") and sym in k)
-    assert worker == 10                                                       # capped at the copy's 10 s left, not 60
-    assert not [k for k in memory.ttls if k.startswith("md:byob:")]           # sessions: no copy of the copy at all
+        worker = _Slow(HISTORY, TODAY)                                       # ...and his organisation's worker reads it
+        worker.atp_credential_id, worker.atp_user_id = 5, 1
+        await MarketDataService(worker).get_candles(sym, "NSE", "1min", now=NOW)
+        return sym, worker
+    sym, worker = run(go())
+    assert (worker.history_calls, worker.intraday_calls) == (0, 0)            # the same session's copy, no second fetch
+    written = [v for k, v in memory.ttls.items() if k.startswith("md:byob:u1.c5:candles:") and sym in k]
+    assert written == [10]                                                    # capped at the copy's 10 s left, not 60
+    assert not [k for k in memory.ttls if k.startswith("md:candles:")]        # no platform-wide candle key (M86)
 
 
 def test_redis_reports_the_seconds_a_shared_copy_has_left(monkeypatch):
@@ -524,7 +518,7 @@ def test_redis_reports_the_seconds_a_shared_copy_has_left(monkeypatch):
     async def go():
         client_ = redis_async.from_url(url, decode_responses=True)
         monkeypatch.setattr(cache_client, "_get_client", lambda: client_)
-        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "today", "t:r")
+        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "today", "t:r", scope="u1.c1")
         try:
             await shared_candles.store(name, HISTORY[:2], 30)
             shared_candles.reset()                                           # another process: Redis only
@@ -552,7 +546,7 @@ def test_a_worker_never_takes_the_fill_lock_nor_waits_on_an_api_processs_fill(mo
         return HISTORY[:2]
 
     async def go():
-        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "hist", "d:w:w")
+        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "hist", "d:w:w", scope="u1.c1")
         fake.store["lock:" + name] = "an-api-process"                         # an API process is filling
         started = time.monotonic()
         bars = await shared_candles.get_or_fetch(name, fetch, lambda bars: 60)
@@ -581,7 +575,7 @@ def test_the_api_reports_where_a_chart_waited(monkeypatch):
 
     async def go():
         sym = _sym()
-        for record in (111, 112):
+        for record in (111, 111):                                          # M86: one session's two charts share a copy
             await MarketDataService(api_budget.BudgetedAdapter(_Slow(HISTORY, TODAY, delay=0.0), record, "dhan")).get_candles(
                 sym, "NSE", "1min", now=NOW)
     run(go())

@@ -287,7 +287,7 @@ def test_without_a_multi_quote_call_ticks_first_then_one_call_per_symbol_within_
     _store_credentials(me)
     ticked, a, b, c = _sym("T"), _sym("A"), _sym("B"), _sym("C")
     now = datetime.now(UTC)
-    run(tick_cache.put(Tick(broker="upstox", exchange="NSE", symbol=ticked, ltp=321.5, exchange_ts=now - timedelta(seconds=1), received_at=now)))
+    run(TickCache(namespace=SessionRef.of(_record(me)).namespace).put(Tick(broker="upstox", exchange="NSE", symbol=ticked, ltp=321.5, exchange_ts=now - timedelta(seconds=1), received_at=now)))
     broker = _SingleBroker(zero={b})
     monkeypatch.setattr(quotes_routes, "build_adapter", lambda record: broker)
     taken = _count_tokens(monkeypatch, grant=lambda n: n <= 2)               # two tokens, then the budget is used
@@ -351,7 +351,7 @@ def test_the_previous_close_of_the_day_gives_a_tick_its_change(monkeypatch):
     assert _post(headers, [{"symbol": a}]).json()["items"][0]["prev_close"] == 98.0
     api_budget.reset()                                                         # the 8 s quote cache gone, the close kept
     now = datetime.now(UTC)
-    run(tick_cache.put(Tick(broker="upstox", exchange="NSE", symbol=a, ltp=103.0, exchange_ts=now, received_at=now)))
+    run(TickCache(namespace=SessionRef.of(_record(me)).namespace).put(Tick(broker="upstox", exchange="NSE", symbol=a, ltp=103.0, exchange_ts=now, received_at=now)))
     row = _post(headers, [{"symbol": a}]).json()["items"][0]
     assert row["source"] == "tick" and row["prev_close"] == 98.0 and row["change"] == 5.0
 

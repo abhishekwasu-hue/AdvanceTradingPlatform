@@ -38,7 +38,7 @@ class DailyFetch:
     def __init__(self, frames):
         self.frames, self.asked = frames, []
 
-    async def __call__(self, session, tenant_id, symbols, exchange, base_tf, lookback):
+    async def __call__(self, session, tenant_id, symbols, exchange, base_tf, lookback, **kw):
         self.asked.append(base_tf)
         return [SymbolData(s, {base_tf: self.frames[s]}) for s in symbols if s in self.frames], {}, "test"
 

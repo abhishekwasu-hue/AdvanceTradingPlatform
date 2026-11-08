@@ -63,7 +63,7 @@ def test_evaluation_resolves_the_list_and_fetches_in_batches(monkeypatch):
     seen = []
 
     class Recording(FakeFetch):
-        async def __call__(self, session, tenant_id, symbols, exchange, base_tf, lookback):
+        async def __call__(self, session, tenant_id, symbols, exchange, base_tf, lookback, **kw):
             seen.append(list(symbols))
             return await super().__call__(session, tenant_id, symbols, exchange, base_tf, lookback)
     fetch = Recording({n: _bars(ist(TUE, 9, 15), [99, 105]) for n in names})

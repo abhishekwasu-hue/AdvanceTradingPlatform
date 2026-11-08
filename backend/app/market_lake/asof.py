@@ -18,6 +18,12 @@ def _visible(model, as_of: Optional[datetime]):
     return [] if as_of is None else [model.ingested_at <= as_of]
 
 
+def _public(model) -> list:
+    """M86 D4: a shared-lake read never returns a row fetched through one user's broker session (`broker:*`, `stream:*`)."""
+    from app.market_lake.ingest import public_rows
+    return [public_rows(model.source)]
+
+
 def _rank(sources: Optional[Sequence[str]], source: str) -> int:
     """Lower is better: the caller's source preference order, unknown sources last."""
     if not sources:
@@ -30,7 +36,7 @@ async def candles_as_of(session: AsyncSession, instrument_key: str, timeframe: s
     """Bars with start < ts <= end (bar END labels), one per ts: the preferred source, then its highest visible version."""
     query = select(MdCandleRecord).where(
         MdCandleRecord.instrument_key == instrument_key, MdCandleRecord.timeframe == timeframe,
-        MdCandleRecord.ts > start, MdCandleRecord.ts <= end, *_visible(MdCandleRecord, as_of))
+        MdCandleRecord.ts > start, MdCandleRecord.ts <= end, *_visible(MdCandleRecord, as_of), *_public(MdCandleRecord))
     if sources:
         query = query.where(MdCandleRecord.source.in_(list(sources)))
     best: Dict[datetime, Tuple[Tuple[int, int], MdCandleRecord]] = {}
@@ -51,7 +57,7 @@ async def candle_values_as_of(session: AsyncSession, instrument_key: str, timefr
     query = select(MdCandleRecord.ts, MdCandleRecord.source, MdCandleRecord.version, MdCandleRecord.open, MdCandleRecord.high,
                    MdCandleRecord.low, MdCandleRecord.close).where(
         MdCandleRecord.instrument_key == instrument_key, MdCandleRecord.timeframe == timeframe,
-        MdCandleRecord.ts > start, MdCandleRecord.ts <= end, *_visible(MdCandleRecord, as_of))
+        MdCandleRecord.ts > start, MdCandleRecord.ts <= end, *_visible(MdCandleRecord, as_of), *_public(MdCandleRecord))
     if sources:
         query = query.where(MdCandleRecord.source.in_(list(sources)))
     best: Dict[datetime, Tuple[Tuple[int, int], Tuple[datetime, float, float, float, float]]] = {}

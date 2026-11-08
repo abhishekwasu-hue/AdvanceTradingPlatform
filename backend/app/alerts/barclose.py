@@ -71,8 +71,9 @@ SUPPORTED = set(INTRADAY) | {"1d"} | set(periods.PERIODS)
 # screener's `resample` keeps a period only after a later session, which would fire a week late); bar close only
 PERIOD_INTRABAR_REFUSAL = "weekly and monthly rules fire on bar close only, not intrabar"
 
-# fetch(session, tenant_id, symbols, exchange, base_tf, lookback[, forming=True]) -> (universe, per-symbol problems, data
-# source); `forming` is passed only for intrabar rules, so a bar-close fetch keeps the six-argument shape.
+# fetch(session, tenant_id, symbols, exchange, base_tf, lookback[, forming=True][, user_id=...][, store=True]) -> (universe,
+# per-symbol problems, data source); `forming` is passed only for intrabar rules; M86 D4: `user_id` (the rule creator) is
+# passed whenever the rule has one, so its bars come only through his own session.
 Fetch = Callable[..., Awaitable[Tuple[List[SymbolData], Dict[str, str], str]]]
 
 
@@ -244,8 +245,9 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
     the period's last session)."""
     exchange, tf = rule.exchange or "NSE", rule.base_tf
     fetch_tf = "1d" if tf in periods.PERIODS else tf
-    owner = rule.created_by if per_user or store else None
-    extra: Dict[str, Any] = {"user_id": owner} if per_user or store else {}
+    # M86 D4: always the rule creator's own session (flag on or off) - never a teammate's credential's bars.
+    owner = rule.created_by
+    extra: Dict[str, Any] = {"user_id": owner} if owner is not None else {}
     if store:
         extra["store"] = True
     key = lambda sym: (rule.tenant_id, owner, exchange, tf, bar, sym, forming)  # noqa: E731
@@ -419,7 +421,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             rule.last_problem = f"waiting for the {'forming' if intrabar else 'closed'} bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
             return "waiting", 0
         frames = {d.symbol: d.frames[rule.base_tf] for d in current}
-        result_key = (rule.tenant_id, rule.created_by if per_user or store_reads else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar,
+        result_key = (rule.tenant_id, rule.created_by, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar,
                       tuple(frames), json.dumps(params, sort_keys=True, default=str), intrabar, rule.exchange or "NSE")
         if result_key in cache.results:
             cache.reused_results += 1

@@ -118,7 +118,21 @@ def _rows(report_id):
 def bot(monkeypatch):
     monkeypatch.setattr(app_config, "ATP_TELEGRAM_BOT_TOKEN", "424242:PLATFORM-token-value", raising=False)
     monkeypatch.setattr(app_config, "PUBLIC_BASE_URL", "https://app.example.test", raising=False)
+
+    async def others(enabled: bool, ids: list[int] | None = None) -> list[int]:
+        # The shared test database keeps other tests' Telegram channels; the report goes to every connected user, so
+        # those are switched off while this test runs (only its own chats count) and switched back on after.
+        async with _session_factory() as session:
+            if ids is None:
+                ids = list((await session.scalars(select(AlertChannelRecord.id).where(
+                    AlertChannelRecord.channel_type == "TELEGRAM", AlertChannelRecord.enabled.is_(True)))).all())
+            for row in await session.scalars(select(AlertChannelRecord).where(AlertChannelRecord.id.in_(ids))):
+                row.enabled = enabled
+            await session.commit()
+            return ids
+    parked = _run(others(False))
     yield
+    _run(others(True, parked))
     _flags(ui_v2=False, shared_daily_report=False)
 
     async def disconnect():                                              # each test's chats are its own

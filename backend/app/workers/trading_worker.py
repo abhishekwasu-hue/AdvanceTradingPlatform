@@ -203,6 +203,7 @@ class CycleReport:
     news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
     market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
     breakout_fitness_started: bool = False   # U6 BK5: the nightly breakout-fitness task was started this cycle
+    daily_report_started: bool = False       # M88-R: the shared daily report run was started this cycle
     intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
     lake_backfill_started: bool = False      # DATA-H: the owner's index-history pass was started this cycle
     provisional_daily_started: bool = False  # owner 3 Nov: today's provisional Daily bar pass was started this cycle
@@ -349,6 +350,7 @@ class TradingWorker:
         self._market_zones_task: Optional["asyncio.Task[None]"] = None
         self._last_breakout_fitness_day: Optional[date] = None  # U6 BK5: the IST date the nightly breakout-fitness pass last COMPLETED
         self._breakout_fitness_task: Optional["asyncio.Task[None]"] = None
+        self._daily_report_task: asyncio.Task[None] | None = None   # M88-R: the shared daily report run
         # HB2: the IST date the owner's intraday-history pass last COMPLETED, its task, and when an unfinished pass may
         # be started again (monotonic seconds).
         self._last_intraday_day: Optional[date] = None
@@ -436,6 +438,8 @@ class TradingWorker:
             self._preopen_task.cancel()              # the day's claimed row stays "running"; the next day sends again
         if self._breakout_fitness_task is not None and not self._breakout_fitness_task.done():
             self._breakout_fitness_task.cancel()     # U6 BK5: resumable - stored templates are skipped next time
+        if self._daily_report_task is not None and not self._daily_report_task.done():
+            self._daily_report_task.cancel()         # M88-R: the day's row stays "running" until stale, then it is retried
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -975,6 +979,15 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Breakout fitness job not started")
                         report.errors.append(f"breakout fitness: {exc}")
+                        await session.rollback()
+                # M88-R: the shared daily market report - once the day's bhavcopy is in the store (flag `shared_daily_report`,
+                # off by default). Its own task and session; one AI request on the admin's own key; reference data, never trades.
+                if not nse.is_open:
+                    try:
+                        report.daily_report_started = await self._maybe_start_daily_report(session, now)
+                    except Exception as exc:  # noqa: BLE001 - an information report must never stop trading
+                        logger.exception("Daily report not started")
+                        report.errors.append(f"daily report: {exc}")
                         await session.rollback()
                 # HB2: the owner's intraday history (flag `history_intraday`, off by default) - after the close, through the
                 # owner's own broker session, drawing from that session's rate budget only while a reserve stays free for
@@ -2053,6 +2066,27 @@ class TradingWorker:
                 logger.exception("Breakout fitness job failed")
 
         self._breakout_fitness_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_daily_report(self, session: AsyncSession, now: datetime) -> bool:
+        """M88-R S4: starts the shared daily report run as a background task when one is due (app/daily_report/job.py:
+        the flag on, the setting not empty, the day's bhavcopy in the store, no stored report for that day, a failed run's
+        retry time come). One task per worker; the run itself holds a lock and marks the day's row "running"."""
+        from app.daily_report import job as report_job
+
+        if self._daily_report_task is not None and not self._daily_report_task.done():
+            return False
+        if not await report_job.work_waiting(session, now):
+            return False                                 # M89: also when Telegram sends of a stored report are waiting
+
+        async def run() -> None:
+            try:
+                result = await report_job.run_due(self.session_factory, now=now)
+                logger.info("Daily report: %s", result)
+            except Exception:  # noqa: BLE001 - information only; never reaches trading
+                logger.exception("Daily report run failed")
+
+        self._daily_report_task = asyncio.get_running_loop().create_task(run())
         return True
 
     def _spawn_engine_runner(self, now: datetime) -> None:

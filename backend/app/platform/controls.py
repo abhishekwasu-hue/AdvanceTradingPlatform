@@ -621,6 +621,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # when he chose so in his Trade settings - LIVE accounts only, never a plan that asks him first; any kill switch
     # cancels the GTTs first; the Phase 0 lock refuses the create. OFF: every plan waits in ATP's trigger engine.
     "broker_gtt": "Broker GTT: a simple price plan waits at his own broker (LIVE only, his own opt-in); kill switches cancel it first",
+    # M88-R (owner order M88; app/daily_report; needs `ui_v2`): the shared daily AI market report - EOD data only, one AI
+    # request a trading day on the admin's own key, stored and read by every user (no per-user AI call); descriptive only.
+    # OFF: /api/daily-report/* answers 404, the Copilot card is hidden and nothing is built.
+    "shared_daily_report": "Daily market report: one shared, stored end-of-day AI report a trading day (information only, not advice)",
     "study_export": "Save study: your own saved chart studies (Save study, My studies, PDF / image / CSV / JSON downloads) - information only",
     # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab

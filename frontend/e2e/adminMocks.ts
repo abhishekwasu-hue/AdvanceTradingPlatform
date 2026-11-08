@@ -208,6 +208,9 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
     active_deployments: 2, live_deployments: 0, open_positions: 1, open_live_positions: 0, global_kill_switch_engaged: false, global_kill_switch_reason: "",
     worker_running: true, worker_last_seen_at: T(0.15), worker_last_error: null }));
   await page.route(A("/admin/controls$"), ok({ maintenance_mode: false, maintenance_message: null, disabled_brokers: [] }));
+  // M88-R: the admin's daily market report card - not set up yet (flag off, no symbols, no runs), as on a fresh install.
+  await page.route(A("/admin/daily-report$"), ok({ settings: { symbols: [], recent_bars: 20 }, flag_on: false,
+    key: { connected: false, message: null }, runs: [], examples: ["NIFTY 50", "NIFTY 50 constituents"] }));
   await page.route(A("/admin/controls/flags$"), ok(FLAGS));
   let packOn = false;
   await page.route(A("/admin/controls/trader-pack(/undo)?$"), (r) => {

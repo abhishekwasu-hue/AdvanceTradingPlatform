@@ -23,6 +23,8 @@ const Watchtower = lazy(() => import("../tabs/WatchtowerTab"));
 const Guide = lazy(() => import("../../components/GuideChat"));
 // M75 W-2: the chart workspace (its own chunk, read only while `copilot_workspace` is on).
 const ChartWorkspace = lazy(() => import("../workspace/ChartWorkspaceV2"));
+// M88-R: the shared daily market report card (its own chunk; hidden while `shared_daily_report` is off).
+const DailyReport = lazy(() => import("../../dailyReport/DailyReportCardV2"));
 
 function Part({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -50,7 +52,7 @@ export function FoldedBody({ tab }: { tab: FoldedTab }) {
     return (
       <>
         {workspace && <Suspense fallback={<TabSkeleton />}><ChartWorkspace /></Suspense>}
-        <Part id="copilot-read-pulse" title={t("v2tabs.briefPulse")}><MarketPulse /></Part>
+        <Part id="copilot-read-pulse" title={t("v2tabs.briefPulse")}><DailyReport /><MarketPulse /></Part>
       </>
     );
   }

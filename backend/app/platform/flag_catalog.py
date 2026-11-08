@@ -198,6 +198,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "copilot_workspace": FlagInfo("Copilot chart workspace: a chart with its reading inside the Copilot", "charts", "a chart, a symbol search with futures and option contracts and the chart's reading in the Copilot's Read the chart tab", ("ui_v2", "read_chart"), "", "unfinished"),
     "broker_gtt": FlagInfo("Broker GTT: a simple price plan waits at your own broker (live accounts only)", "trading", "a Simple price plans choice in Trade settings > Automation", ("ui_v2", "trigger_plans"), "a live broker session that offers GTT", "unfinished"),
     "trigger_plans": FlagInfo("Trigger plans: your own set-and-wait plans (condition, orders, exits)", "trading", "a Trigger plans list under the Copilot's trade plan panel, with Save as trigger plan", ("ui_v2",), "the trading worker", "unfinished"),
+    "shared_daily_report": FlagInfo("Daily market report: one shared end-of-day AI report a trading day, stored and read by every user", "ai", "a Daily market report card in the Copilot's Read the chart tab, its full report and PDF", ("ui_v2",), "the admin's own AI key and the Shared report symbols setting (Admin › System)", "ready"),
     "study_export": FlagInfo("Save study: your own saved chart studies, My studies and the PDF / image / CSV / JSON downloads", "charts", "a Save study and a My studies button over the Copilot's chart, and a My studies tab in the Journal", ("ui_v2",), "", "unfinished"),
     "why_no_trade": FlagInfo("Why no trade: each bot's last closed bars with the reason it did or did not trade", "trading", "a Why no trade list on each bot (Bots page)", ("ui_v2",), "", "ready"),
 }
@@ -282,6 +283,7 @@ FLAG_GROUP: dict[str, str] = {
     "copilot_workspace": "charts",
     "trigger_plans": "orders",               # M75 W-8 (was the area name "trading", not a group)
     "broker_gtt": "orders",                  # M75 W-10 (the same group as its trigger plans)
+    "shared_daily_report": "ai",
     "study_export": "charts",
     "chart_studies": "charts",
     # Screens: the screener and its builder

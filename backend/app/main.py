@@ -73,6 +73,8 @@ from app.core.logging_config import configure_logging
 from app.core.route_cache import install as install_route_cache
 from app.core.validation_errors import request_validation_handler
 from app.custom_strategies.routes import router as custom_strategies_router
+from app.daily_report.routes import admin_router as daily_report_admin_router
+from app.daily_report.routes import router as daily_report_router
 from app.db.session import _session_factory as _startup_session_factory
 from app.db.session import init_models
 from app.decision_tools.routes import router as decision_tools_router
@@ -473,6 +475,8 @@ app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action char
 app.include_router(chart_read_router)               # AUD-T5: Read this chart as of the last closed bar, read-only (ui_v2 + read_chart)
 app.include_router(trigger_plan_router)             # M75 W-8: his trigger plans (ui_v2 + trigger_plans); only the worker fires them
 app.include_router(study_router)                    # M77 SX-2: saved Copilot studies (snapshot, My studies, JSON), read-only (ui_v2 + study_export)
+app.include_router(daily_report_router)             # M88-R: the shared daily AI market report, stored and read (ui_v2 + shared_daily_report)
+app.include_router(daily_report_admin_router)       # M88-R: its admin setting, runs and Run now (SUPER_ADMIN + two-factor)
 app.include_router(chart_trades_layer_router)  # N4 CH4a: the caller's own PAPER trades on the chart (flag chart_trades_layer, off)
 app.include_router(chart_contracts_router)  # N4 CH4b: daily contract / spread charts from the shared lake (flag chart_contracts, off)
 app.include_router(chart_futures_basis_router)  # N4 CH4c: futures basis / carry / rollover from the shared lake (flag chart_futures_basis, off)

@@ -8,15 +8,17 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
+from app.core.rate_limit import user_rate_limit
 from app.db.models import JournalTagRecord, User
 from app.db.session import get_session
-from app.journal import FLAG, entries, service
+from app.journal import FLAG, entries, importer, service
 from app.journal import settings as journal_settings
+from app.journal import trade_chart as trade_chart_view
 from app.journal.review import advice_in as review_advice_in
 from app.journal.settings import COMPONENT_TAGS, RANGES, TAGS, DisciplineSettings, SettingsError
 from app.platform.controls import require_flag
@@ -447,3 +449,79 @@ async def delete_manual_trade(manual_id: int, user: User = Depends(get_current_u
     assert ref.manual is not None
     await entries.delete_manual(session, user, ref.manual)
     return {"deleted": manual_id}
+
+
+# --- M88: import outside-ATP trades from a file, and each one on its own chart -------------------------------------------
+
+import_rate_limit = user_rate_limit("journal_import", limit=30, window_seconds=60)
+trade_chart_rate_limit = user_rate_limit("journal_trade_chart", limit=60, window_seconds=60)
+
+
+async def _import_file(file: UploadFile | None, mapping: str | None) -> tuple[str, bytes, dict[str, Any] | None]:
+    """The upload (at most the import limit plus one byte is read) and the column mapping he chose (JSON), if any."""
+    import json
+    if file is None:
+        raise HTTPException(status_code=422, detail="Choose a .csv, .xlsx or .xls file.")
+    data = bytearray()
+    while True:
+        chunk = await file.read(UPLOAD_CHUNK)
+        if not chunk:
+            break
+        data.extend(chunk)
+        if len(data) > importer.IMPORT_MAX_BYTES:
+            raise HTTPException(status_code=413, detail=f"The file is larger than {importer.IMPORT_MAX_BYTES // (1024 * 1024)} MB. "
+                                                        "Split it into smaller files.")
+    chosen: dict[str, Any] | None = None
+    if mapping:
+        try:
+            chosen = json.loads(mapping)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="The column choices could not be read. Choose them again.") from exc
+        if not isinstance(chosen, dict):
+            raise HTTPException(status_code=422, detail="The column choices could not be read. Choose them again.")
+    return file.filename or "file", bytes(data), chosen
+
+
+@router.post("/import/preview", dependencies=[Depends(import_rate_limit)])
+async def import_preview(file: UploadFile | None = File(default=None), mapping: str | None = Form(default=None, max_length=5000),
+                         user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """M88: what importing this file would add to the trader's journal - the rows read, the rows with a problem and why,
+    the round-trip trades and the ones already in his journal. Nothing is stored."""
+    await _flag(session, user)
+    name, data, chosen = await _import_file(file, mapping)
+    try:
+        return await importer.preview(session, user, name, data, chosen)
+    except importer.ImportFileError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+
+
+@router.post("/import", dependencies=[Depends(import_rate_limit)])
+async def import_commit(file: UploadFile | None = File(default=None), mapping: str | None = Form(default=None, max_length=5000),
+                        user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """M88: stores the file's new trades as his own manual (outside-ATP) journal entries; duplicates are skipped.
+    Journal data only: no order, position, broker call, P&L book or risk counter is touched."""
+    await _flag(session, user)
+    name, data, chosen = await _import_file(file, mapping)
+    try:
+        return await importer.commit(session, user, name, data, chosen)
+    except importer.ImportFileError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+
+
+@router.get("/manual/{manual_id}/trade-chart", dependencies=[Depends(trade_chart_rate_limit)])
+async def manual_trade_chart(manual_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """M88: the candles around his outside trade with its entry and exit marked (Daily, from the end-of-day files)."""
+    ref = await _ref(session, user, "manual", manual_id)
+    assert ref.manual is not None
+    return await trade_chart_view.chart(session, ref.manual)
+
+
+@router.get("/manual/{manual_id}/trade-chart.png", dependencies=[Depends(trade_chart_rate_limit)])
+async def manual_trade_chart_png(manual_id: int, cvd: bool = False, user: User = Depends(get_current_user),
+                                 session: AsyncSession = Depends(get_session)) -> Response:
+    """M88: "Save image" of that chart (the study renderer's pixels)."""
+    ref = await _ref(session, user, "manual", manual_id)
+    assert ref.manual is not None
+    data = await trade_chart_view.png(session, ref.manual, cvd=cvd)
+    name = f"{ref.manual.symbol.replace(' ', '-')}-trade-{ref.manual.id}.png"
+    return Response(content=data, media_type="image/png", headers={"Content-Disposition": f'attachment; filename="{name}"'})

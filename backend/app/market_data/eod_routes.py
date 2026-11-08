@@ -66,6 +66,9 @@ async def _daily(session: AsyncSession, symbol: str, start: datetime, end: datet
                                 sources=sources)
 
 
+daily_bars = _daily     # M88: the journal's trade chart reads the same licensed Daily bars (shared by design, never a broker row)
+
+
 async def last_close(session: AsyncSession, symbol: str) -> dict[str, Any]:
     """One symbol's last stored close (and the one before it) from the licensed daily files; `missing` when none."""
     from app.backtest import bar_source

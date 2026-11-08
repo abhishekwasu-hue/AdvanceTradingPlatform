@@ -25,7 +25,11 @@ export interface ReportRun {
   id: number; trade_date: string; status: "running" | "ok" | "failed"; error: string | null; attempts: number; ai_requests: number;
   input_tokens: number; output_tokens: number; tokens: number; cost_usd: number; cost_inr: number; symbols: number;
   trigger: "schedule" | "run_now"; stored: boolean; next_try_at: string | null; updated_at: string | null;
+  /** M89: this report's Telegram sends. */
+  telegram?: { queued: number; sent: number; failed: number; blocked: number; skipped: number };
 }
+/** M89: his own "Daily market report on Telegram" choice. */
+export interface ReportTelegram { telegram: boolean; connected: boolean }
 export interface ReportAdmin {
   settings: { symbols: string[]; recent_bars: number }; flag_on: boolean; key: { connected: boolean; message: string | null };
   runs: ReportRun[]; examples: string[];

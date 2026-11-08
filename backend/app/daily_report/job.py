@@ -9,6 +9,7 @@ rule). Asked every worker cycle; cheap reads only:
 """
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -21,6 +22,8 @@ from app.daily_report import settings as S
 from app.daily_report.build import RUNNING_STALE, _aware
 from app.db.models import HistoryBackfillFileRecord, MdCandleRecord, SharedDailyReportRecord
 from app.market_data.calendar import IST
+
+logger = logging.getLogger(__name__)
 
 WAIT_STATES = ("pending", "running")
 
@@ -84,7 +87,7 @@ async def run_due(session_factory: Any, now: datetime | None = None, *, provider
     async with session_factory() as session:
         day = await due_day(session, now)
         if day is None:
-            return {"ran": False}
+            return {"ran": False, "telegram": await send_pending_any(session)}
         cfg = await S.read(session)
         user = await session.get(User, cfg["key_user_id"])
         if user is None or not user.is_active or str(getattr(user.role, "value", user.role)) != "SUPER_ADMIN":
@@ -98,8 +101,31 @@ async def run_due(session_factory: Any, now: datetime | None = None, *, provider
 
 
 async def after_stored(session: AsyncSession, row: SharedDailyReportRecord) -> None:
-    """Hook for what follows a stored report (M89 adds the Telegram send here)."""
-    return None
+    """M89: a stored report goes to every user's own Telegram chat once (queued, paced; nothing while the flag is off)."""
+    from app.daily_report import telegram
+    try:
+        result = await telegram.deliver(session, int(row.id))
+        logger.info("Daily report %s on Telegram: %s", row.trade_date, result)
+    except Exception:  # noqa: BLE001 - the stored report stands; the worker's next pass sends what is still queued
+        logger.exception("Daily report Telegram send failed")
+        await session.rollback()
 
 
-__all__ = ["due_day", "run_due", "any_enabled", "newest_close_day", "files_loading", "after_stored"]
+async def send_pending_any(session: AsyncSession) -> dict[str, int] | None:
+    """M89: the retry pass - the newest report with sends still queued or retryable."""
+    from app.daily_report import telegram
+    if not await any_enabled(session):
+        return None
+    report_id = await telegram.pending_report(session)
+    return None if report_id is None else await telegram.send_pending(session, report_id)
+
+
+async def work_waiting(session: AsyncSession, now: datetime | None = None) -> bool:
+    """A report is due, or sends are waiting (the worker starts its task only then)."""
+    from app.daily_report import telegram
+    if await due_day(session, now) is not None:
+        return True
+    return await any_enabled(session) and await telegram.pending_report(session) is not None
+
+
+__all__ = ["due_day", "run_due", "any_enabled", "newest_close_day", "files_loading", "after_stored", "send_pending_any", "work_waiting"]

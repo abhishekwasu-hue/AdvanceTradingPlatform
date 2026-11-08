@@ -23,13 +23,23 @@ export function runTone(run: ReportRun): "ok" | "warn" | "off" {
   return run.status === "ok" ? "ok" : run.status === "failed" ? "warn" : "off";
 }
 
+/** M89: "12 sent · 1 failed" (blocked chats and waiting sends named only when there are some). */
+export function telegramText(run: ReportRun): string {
+  const t = run.telegram;
+  if (!t || t.queued + t.sent + t.failed + t.blocked + t.skipped === 0) return "–";
+  const parts = [`${formatNumber(t.sent)} sent`, `${formatNumber(t.failed)} failed`];
+  if (t.blocked) parts.push(`${formatNumber(t.blocked)} blocked the bot`);
+  if (t.queued) parts.push(`${formatNumber(t.queued)} waiting`);
+  return parts.join(" · ");
+}
+
 export function RunsTable({ runs }: { runs: ReportRun[] }) {
   if (!runs.length) return <p className="text-t13 text-fg-muted">No run yet.</p>;
   return (
     <div className="-mx-space-1 overflow-x-auto px-space-1">
       <table className="w-full text-t12" data-report-runs>
         <thead><tr><th className={TH}>Close</th><th className={TH}>Status</th><th className={TH}>AI requests</th><th className={TH}>Tokens</th>
-          <th className={TH}>Cost</th><th className={TH}>Started by</th></tr></thead>
+          <th className={TH}>Cost</th><th className={TH}>Telegram</th><th className={TH}>Started by</th></tr></thead>
         <tbody>
           {runs.map((r) => (
             <tr key={r.id} className="border-t border-subtle" data-report-run={r.status}>
@@ -43,6 +53,7 @@ export function RunsTable({ runs }: { runs: ReportRun[] }) {
               <td className={`${TD} whitespace-nowrap font-tabular text-fg`}>{formatNumber(r.tokens)}
                 <div className="text-fg-muted">{formatNumber(r.input_tokens)} in · {formatNumber(r.output_tokens)} out</div></td>
               <td className={`${TD} whitespace-nowrap font-tabular text-fg`}>{formatINR(r.cost_inr, { paise: true })}</td>
+              <td className={`${TD} whitespace-nowrap`} data-report-telegram>{telegramText(r)}</td>
               <td className={`${TD} text-fg-muted`}>{r.trigger === "run_now" ? "Run now" : "Schedule"}</td>
             </tr>
           ))}

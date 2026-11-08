@@ -1,7 +1,7 @@
 import { getToken, request, tryRefresh } from "../api/client";
 import { API_V1 } from "../api/base";
 import { ApiError, apiErrorFrom, NETWORK_MESSAGE } from "../api/errors";
-import type { DailyReport, ReportAdmin } from "./types";
+import type { DailyReport, ReportAdmin, ReportTelegram } from "./types";
 
 /** M88-R: `/api/daily-report` (the stored report, behind `ui_v2` + `shared_daily_report`; 404 while off) and its admin card. */
 async function pdf(id: number): Promise<{ blob: Blob; filename: string }> {
@@ -29,5 +29,7 @@ export const reportApi = {
   admin: () => request<ReportAdmin>("/admin/daily-report"),
   saveSettings: (symbols: string[], recentBars: number) =>
     request<ReportAdmin>("/admin/daily-report/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ symbols, recent_bars: recentBars }) }),
+  telegram: () => request<ReportTelegram>("/daily-report/telegram"),
+  saveTelegram: (on: boolean) => request<ReportTelegram>("/daily-report/telegram", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ telegram: on }) }),
   runNow: () => request<{ started: boolean; trade_date: string }>("/admin/daily-report/run", { method: "POST" }),
 };

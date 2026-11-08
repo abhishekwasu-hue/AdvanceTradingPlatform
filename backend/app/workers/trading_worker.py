@@ -2076,8 +2076,8 @@ class TradingWorker:
 
         if self._daily_report_task is not None and not self._daily_report_task.done():
             return False
-        if await report_job.due_day(session, now) is None:
-            return False
+        if not await report_job.work_waiting(session, now):
+            return False                                 # M89: also when Telegram sends of a stored report are waiting
 
         async def run() -> None:
             try:

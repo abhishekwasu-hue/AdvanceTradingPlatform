@@ -9,7 +9,8 @@ Routes (behind `screener_v2` like the rest of the screener; the page shows the p
 NIFTY 50 when the system lists are not built yet: the current NIFTY 50 membership the universe sync stores
 (`index_membership` + `securities`), when it has rows. With neither, the page uses its own names-only fallback list.
 
-Batches (the run route stays at MAX_SYMBOLS a call): a larger universe is sent as consecutive `/run` calls with
+Batches (M90: the run route reads the whole list from the store; through the broker it reads one batch a request and
+hands the rest back as `pending`): a larger universe is sent as consecutive `/run` calls with
 `batch: true`. Every broker call of such a run takes a token from the credential's shared API budget
 (app/market_data/api_budget.py - the same budget charts draw from, a share of app/brokers/rate_budget.py's conservative
 limits), so a batch can never spend past it; a symbol that gets no token is reported "budget used" and the rest still
@@ -40,7 +41,7 @@ DEFAULT_NAME = "NIFTY 50 stocks"
 # The groups a scan runs on: stock lists. The "Indices" list (index instruments, NSE and BSE) is left out.
 GROUPS = ("INDEX_STOCKS", "SECTORS", "FNO")
 MAX_UNIVERSE = 500                 # NIFTY 500; a longer list (NIFTY TOTAL MARKET) is cut to its first 500, said so
-BATCH_MAX = 50                     # = app.screener.routes.MAX_SYMBOLS (the run route's cap per call)
+BATCH_MAX = 50                     # the broker symbols one request reads at most (routes.broker_per_request)
 BATCH_MIN = 5
 BATCH_SECONDS = 10                 # a batch is what the per-second share fetches in about this long
 
@@ -52,6 +53,17 @@ def batch_plan(broker: Optional[str]) -> Dict[str, Any]:
     limits = api_limits(broker or "")
     size = max(BATCH_MIN, min(BATCH_MAX, int(limits.per_second * BATCH_SECONDS)))
     return {"size": size, "per_minute": limits.per_minute, "per_second": limits.per_second, "max_symbols": MAX_UNIVERSE}
+
+
+STORE_TIMEFRAMES = ("1d", "1w", "1M")   # M90 B2: the NSE daily files serve these for a whole list, no broker call
+
+
+async def store_timeframes(session: AsyncSession, tenant_id: int) -> List[str]:
+    """M90 B2: the scan timeframes whose run reads the store for the whole list in one request (flag
+    `market_store_reads`; the page's lists are NSE lists). Empty while the flag is off: every read is the broker's."""
+    from app.market_store.models import FLAG as STORE_FLAG
+    from app.platform.controls import flag_enabled
+    return list(STORE_TIMEFRAMES) if await flag_enabled(session, STORE_FLAG, tenant_id) else []
 
 
 def batch_wait_seconds(broker: str, symbols: int) -> float:
@@ -136,8 +148,9 @@ async def list_universes(user: User = Depends(get_current_user), session: AsyncS
     groups = await catalogue(session)
     from app.core import config
     # M55 T3: with the daily universe sync off the lists are the stored fallback copy; the page says so in one line.
-    return {"default_key": DEFAULT_KEY, "groups": groups, "batch": batch_plan(await _broker_name(session, user.tenant_id, user)),
-            "fallback": not config.UNIVERSE_SYNC_ENABLED}
+    plan = batch_plan(await _broker_name(session, user.tenant_id, user))
+    plan["store_timeframes"] = await store_timeframes(session, user.tenant_id)
+    return {"default_key": DEFAULT_KEY, "groups": groups, "batch": plan, "fallback": not config.UNIVERSE_SYNC_ENABLED}
 
 
 @router.get("/{key}")

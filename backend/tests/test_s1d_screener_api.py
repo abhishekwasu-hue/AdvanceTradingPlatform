@@ -82,7 +82,8 @@ def test_a_run_needs_a_broker_session(flag_on):
     headers, _ = _owner("s1d-nobroker@example.com")
     r = client.post("/api/screener/run", json={"source": "close > 1", "symbols": ["AAA"]}, headers=headers)
     assert r.status_code == 409 and "broker" in r.json()["detail"].lower()
-    assert client.post("/api/screener/run", json={"source": "close > 1", "symbols": ["A"] * 51}, headers=headers).status_code == 422
+    # M90 B3: the body's ceiling is a watchlist's 500 (was ["A"] * 51 before M90)
+    assert client.post("/api/screener/run", json={"source": "close > 1", "symbols": ["A"] * 501}, headers=headers).status_code == 422
 
 
 def _daily_bars(start_price, step, days=60):

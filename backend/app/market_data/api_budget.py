@@ -402,6 +402,7 @@ class BudgetedAdapter:
         self._deadline = time.monotonic() + (_default_run_wait() if wait_seconds is None else wait_seconds)
         self.refused = 0
         self.taken = 0
+        self.rate_limited = 0          # M90 B5: the broker's own 429 answers seen (each one slowed the calls after it)
 
     def __getattr__(self, name: str) -> Any:
         attr = getattr(self._inner, name)
@@ -432,6 +433,7 @@ class BudgetedAdapter:
             except Exception as exc:
                 if not broker_limits.is_rate_limited(exc):
                     raise
+                self.rate_limited += 1
                 await broker_limits.COUNTER.add(self._broker, broker_limits.DATA_POOL,
                                                 "history" if kind == "history" else "quote", rate_limited=True)
                 delay = broker_limits.backoff_delay(attempt)

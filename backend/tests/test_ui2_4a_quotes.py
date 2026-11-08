@@ -383,7 +383,8 @@ def test_validation_caps_the_list_and_refuses_keys_a_batch_could_be_split_by(mon
     broker = _MultiBroker()
     monkeypatch.setattr(quotes_routes, "build_adapter", lambda record: broker)
     _count_tokens(monkeypatch)
-    assert _post(headers, [{"symbol": f"S{i}"} for i in range(51)]).status_code == 422
+    # M90 B4: a whole watchlist (500) is one request; past it the body is refused (was 51 before M90)
+    assert _post(headers, [{"symbol": f"S{i}"} for i in range(quotes_routes.MAX_ITEMS + 1)]).status_code == 422
     assert _post(headers, []).status_code == 422
     for bad in ({"symbol": "   "}, {"symbol": "NSE_EQ|INE002A01018"}, {"symbol": "RELIANCE,TCS"}, {"symbol": "A" * 41},
                 {"symbol": "RELIANCE<x>"}, {"symbol": "RELIANCE", "exchange": "XYZ"}, {"symbol": "RELIANCE", "exchange": "NSE|X"},

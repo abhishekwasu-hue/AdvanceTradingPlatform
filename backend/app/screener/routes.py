@@ -90,7 +90,11 @@ RUN_REFERENCE: frozenset = reference_gate.LOADED
 # each symbol's last bar close; a caller that runs through `load_universe` passes missing_data(..., chain=True).
 RUN_CHAIN: frozenset = chain_gate.LOADED
 BUILDER_LOADS = ("option_chain",)
-MAX_SYMBOLS = 50
+# M90 B3: no fixed run size. The size of a run comes from its source: the store reads the whole list in one request; the
+# broker reads what its budget allows per request (`broker_per_request`) and the rest comes back as `pending`, which the
+# page sends next (streamed, with progress). MAX_REQUEST_SYMBOLS is only the request body's safety ceiling - a watchlist's
+# own maximum (app/watchlists/service.py MAX_SYMBOLS).
+MAX_REQUEST_SYMBOLS = 500
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
 HOLIDAY_PAD_DAYS = 4               # exchange holidays inside the window
@@ -98,6 +102,24 @@ MAX_INTRADAY_FETCH_DAYS = 60      # fetched in requests of at most 30 days each 
 HOLIDAYS_PER_YEAR = 16             # SCR-FIX A3: exchange holidays a year of daily bars loses (NSE: about 15)
 BUDGET_WAIT = "waited for the broker's limit - run again shortly"   # a batch symbol the API budget held back
 FETCH_CONCURRENCY = 3     # LD-7: one screen run's broker fetches in flight at once (capped by the broker's burst)
+
+
+def broker_per_request(broker_name: str, batched: bool) -> int:
+    """M90 B3: how many symbols one run request reads through the broker - a batch: what the credential's API budget
+    fetches in one batch (`universes.batch_plan`); an ordinary run: the per-request broker read as before
+    (`universes.BATCH_MAX`). The symbols past it are not read in this request; they come back as `pending`."""
+    from app.screener.universes import BATCH_MAX, batch_plan
+    return int(batch_plan(broker_name)["size"]) if batched else BATCH_MAX
+
+
+def _cut_to(original: List[str], symbols: List[str], held: List[str], cap: int, pending_out: List[str]) -> Tuple[List[str], List[str]]:
+    """M90 B3: keep the first `cap` of the symbols the broker would read now (in the list's order); the rest go to
+    `pending_out`, unread."""
+    live, wait = set(symbols), set(held)
+    order = [s for s in original if s in live or s in wait]
+    now = set(order[:cap])
+    pending_out.extend(order[cap:])
+    return [s for s in symbols if s in now], [s for s in held if s in now]
 
 
 def fetch_concurrency(broker_name: str) -> int:
@@ -137,7 +159,7 @@ class RunBody(BaseModel):
     source: Optional[Union[str, Dict[str, Any]]] = None
     base_tf: str = Field(default="1d", pattern=r"^(1m|3m|5m|15m|30m|1h|1d|1w|1M)$")
     params: Dict[str, Union[float, int, str, bool]] = Field(default_factory=dict)
-    symbols: List[str] = Field(min_length=1, max_length=MAX_SYMBOLS)
+    symbols: List[str] = Field(min_length=1, max_length=MAX_REQUEST_SYMBOLS)
     exchange: str = Field(default="NSE", pattern=r"^(NSE|BSE|NFO|BFO|MCX|CDS)$")
     preview: bool = Field(default=False, description="U5 D2 live counts while editing: the same evaluation, not stored as a run")
     batch: bool = Field(default=False, description="one batch of a larger universe (app/screener/universes.py): every broker "
@@ -482,7 +504,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
                        lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False, *,
                        user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None,
                        release: bool = False, budget_out: Optional[Dict[str, Any]] = None,
-                       store: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       store: bool = False, pending_out: Optional[List[str]] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
     M71 PL-3 (`store`, the run route under the flag `market_store_reads` - `store_first`): the bars come store-first
     (`_store_frames`, app/market_store) - a closed-bar screen only; `include_forming` (intrabar alerts) keeps the broker
@@ -505,7 +527,10 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
 
     SCR-FIX: the interval goes to the broker only when the broker serves it (A1, `screen_interval`); a daily window is
     sized by the lookback (A3); after the session's close a 1d / 1w / 1M screen gets today's finished bar (A4); an
-    index takes its near-month future's volume, as Charts do (A7)."""
+    index takes its near-month future's volume, as Charts do (A7).
+
+    M90 B3 (`pending_out`, the run route): the broker reads at most `broker_per_request` symbols in this request; the
+    rest are appended to `pending_out` unread (the page sends them next). Without it, every symbol is read as before."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import api_budget, live_access
     from app.market_data.candles_routes import _pick_record
@@ -515,7 +540,8 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     from app.screener.universes import batch_wait_seconds
     if store and not include_forming:
         return await _store_frames(session, tenant_id, symbols, exchange, base_tf, lookback, now, user_id=user_id, tier_out=tier_out,
-                                   release=release, budget_out=budget_out)
+                                   release=release, budget_out=budget_out, pending_out=pending_out)
+    original = list(symbols)
     now_utc = now or datetime.now(UTC)
     daily_tf = nodes.TF_MINUTES["1d"]
     want = _FETCH[base_tf]
@@ -548,6 +574,8 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     else:
         record = await _pick_record(session, tenant_id, None, "primary")   # a worker cycle with no reader: as before
         adapter = build_adapter(record)
+    if pending_out is not None:
+        symbols, held = _cut_to(original, symbols, held, broker_per_request(record.broker_name, budget_out is not None), pending_out)
     if budget_out is not None:
         adapter = api_budget.BudgetedAdapter(adapter, record.id, record.broker_name,
                                              wait_seconds=batch_wait_seconds(record.broker_name, len(symbols) + len(held)))
@@ -631,6 +659,8 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         from app.market_data.api_budget import api_limits
         budget_out.update({"broker_calls": int(getattr(adapter, "taken", 0)), "refused": int(getattr(adapter, "refused", 0)),
                            "per_minute": api_limits(record.broker_name).per_minute})
+        if int(getattr(adapter, "rate_limited", 0)) or (held_adapter is not None and int(getattr(held_adapter, "rate_limited", 0))):
+            budget_out["slowed"] = True               # M90 B5: the broker answered 429; the calls were paced and retried
     return universe, problems, f"broker:{record.broker_name}"
 
 
@@ -669,9 +699,13 @@ async def _store_rest(session: AsyncSession, tenant_id: int, user: Any, symbols:
 async def _store_frames(session: AsyncSession, tenant_id: int, symbols: list[str], exchange: str, base_tf: str,
                         lookback: dict[str, int], now: datetime | None, *, user_id: int | None,
                         tier_out: dict[str, Any] | None, release: bool,
-                        budget_out: dict[str, Any] | None) -> tuple[list[SymbolData], dict[str, str], str]:
+                        budget_out: dict[str, Any] | None,
+                        pending_out: list[str] | None = None) -> tuple[list[SymbolData], dict[str, str], str]:
     """M71 PL-3: a closed-bar screen's universe store-first (app/market_store, read order in its reader):
-    - 1d / 1w / 1M on NSE: the NSE daily files only - zero broker calls; a symbol not stored is "not stored yet".
+    - 1d / 1w / 1M on NSE: the NSE daily files only - zero broker calls for the stored symbols; a symbol not stored is
+      "not stored yet". M90 B2 (`pending_out`, the run route): a symbol not stored is read through the reader's OWN
+      broker session instead (`fetch_frames(store=False)`, paced, at most `broker_per_request` of them; the rest
+      `pending`); with no session of his own it stays "not stored yet" (M86: never another member's broker data).
     - intraday: the reader's own stored one-minute bars built into the screen's timeframe, plus only the newest bars
       by REST through his own session, paced by the credential's API budget; the daily context (@1d / @1w / @1M) of an
       NSE screen from the NSE files. A symbol the store holds nothing of, an index whose volume comes from its future
@@ -695,16 +729,33 @@ async def _store_frames(session: AsyncSession, tenant_id: int, symbols: list[str
         start = now_utc - timedelta(days=daily_fetch_days(lookback, base_tf))
         got = await ms.read_many(session, syms, "1d", start, now_utc, purpose="screener", exchange=exchange, now=now_utc,
                                  release=(lambda: release_connection(session)) if release else None)
+        missing: list[str] = []
         for s in syms:
             r = got[s]
             if not r.served:
                 problems[s] = reasons.Reason(bar_source.not_stored(s), reasons.NOT_STORED)
+                missing.append(s)
                 continue
             frame = r.frame if base_tf == "1d" else resample(r.frame, "1d", base_tf, keep_forming=False, exchange=exchange)
             universe.append(SymbolData(s, {base_tf: frame}, exchange=exchange))
         if budget_out is not None:
             budget_out.update({"broker_calls": 0, "refused": 0, "per_minute": api_budget.api_limits("").per_minute})
-        return universe, problems, bar_source.LAKE_SOURCE
+        source = bar_source.LAKE_SOURCE
+        if missing and pending_out is not None:
+            try:
+                more, more_problems, broker_source = await fetch_frames(session, tenant_id, missing, exchange, base_tf, lookback, now,
+                                                                        user_id=user_id, tier_out=tier_out, release=False,
+                                                                        budget_out=budget_out, store=False, pending_out=pending_out)
+            except HTTPException:
+                more, more_problems, broker_source = [], {}, ""   # no session of his own: "not stored yet" stays
+            else:
+                for s in missing:
+                    problems.pop(s, None)
+                problems.update(more_problems)
+                universe += more
+                if more:
+                    source = f"{source}+{broker_source}"
+        return universe, problems, source
     user = await load_user(session, user_id)
     if user is not None and user.tenant_id != tenant_id:
         user = None                                       # never another organisation's member
@@ -747,7 +798,7 @@ async def _store_frames(session: AsyncSession, tenant_id: int, symbols: list[str
         try:
             more, more_problems, legacy_source = await fetch_frames(session, tenant_id, legacy, exchange, base_tf, lookback, now,
                                                                     user_id=user_id, tier_out=tier_out, release=False,
-                                                                    budget_out=budget_out, store=False)
+                                                                    budget_out=budget_out, store=False, pending_out=pending_out)
         except HTTPException:
             if not universe:
                 raise                                     # nothing stored and no session: the broker path's own answer
@@ -762,6 +813,8 @@ async def _store_frames(session: AsyncSession, tenant_id: int, symbols: list[str
         budget_out["broker_calls"] = int(budget_out.get("broker_calls", 0)) + calls
         budget_out.setdefault("refused", int(getattr(budgeted, "refused", 0)))
         budget_out.setdefault("per_minute", api_budget.api_limits(rest.broker if rest is not None else "").per_minute)
+        if int(getattr(budgeted, "rate_limited", 0)):
+            budget_out["slowed"] = True               # M90 B5: a top-up met the broker's 429 and was paced
     return universe, problems, source
 
 
@@ -927,7 +980,8 @@ def screen_and_funnel(ast: Any, validated: Any, universe: List[SymbolData], *, b
 
 async def load_universe(session: AsyncSession, user: User, ast: Any, validated: Any, params: Dict[str, Any], symbols: List[str],
                         exchange: str, base_tf: str, tier: Optional[Dict[str, Any]] = None, *, release: bool = False,
-                        budget: Optional[Dict[str, Any]] = None, store: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str, Dict[str, Any]]:
+                        budget: Optional[Dict[str, Any]] = None, store: bool = False,
+                        pending: Optional[List[str]] = None) -> Tuple[List[SymbolData], Dict[str, str], str, Dict[str, Any]]:
     """A validated screen's universe on server bars with the data its functions read: (universe, per-symbol fetch
     problems, data source, RankScore's systems). The run route and the N3 S9 Copilot tools share it. `release` (LD-7,
     the run route only - its session has only read so far): fetch_frames gives the pool connection back before the
@@ -935,7 +989,7 @@ async def load_universe(session: AsyncSession, user: User, ast: Any, validated: 
     try:
         universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, exchange, base_tf, validated.fetch_lookback,
                                                                    user_id=user.id, tier_out=tier, release=release, budget_out=budget,
-                                                                   store=store)
+                                                                   store=store, pending_out=pending)
     except HTTPException as exc:
         # Day-one fix 2: before the day's broker login a Daily screen reads ATP's stored end-of-day history (flag
         # `backtest_stored_history`); anything else keeps the broker path's own answer.
@@ -1020,7 +1074,8 @@ def nothing_read_detail(scanned: int, grouped: Optional[Dict[str, Any]]) -> Dict
 
 @router.post("/run", dependencies=[Depends(run_rate_limit)])
 async def run(body: RunBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    """Runs a saved screen or ad-hoc source over up to 50 symbols, on server bars only; stores the run."""
+    """Runs a saved screen or ad-hoc source on server bars only; stores the run. M90 B3: the store reads the whole list;
+    the broker reads what its budget allows in one request and the rest come back as `pending` (sent next by the page)."""
     await _flag(session, user)
     started = time.monotonic()
     screen_id = None
@@ -1051,8 +1106,13 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     tier: Dict[str, Any] = {}
     budget: Optional[Dict[str, Any]] = {} if body.batch else None
     store = await store_first(session, user.tenant_id)   # M71 PL-3: the run and its batches read the own store first
+    pending: List[str] = []
     universe, fetch_problems, data_source, systems = await load_universe(session, user, ast, validated, params, symbols, body.exchange,
-                                                                         base_tf, tier, release=True, budget=budget, store=store)
+                                                                         base_tf, tier, release=True, budget=budget, store=store,
+                                                                         pending=pending)
+    if pending:                                  # M90 B3: not read in this request; the page sends them next
+        later = set(pending)
+        symbols = [s for s in symbols if s not in later]
     await release_connection(session)            # LD-7: reads only so far; no pool connection held while the screen runs
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
     # (RankScore's systems ride the context asyncio.to_thread copies into the worker - N3 S7a)
@@ -1080,6 +1140,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
         payload["notice"] = held_back_notice(held_back)
     if budget is not None:
         payload["budget"] = budget                        # a batch: its broker calls, so the page paces the next one
+    if pending:
+        payload["pending"] = pending
     if body.preview:
         # U5 D2 review: a preview is not stored, so it returns counts only - the match list itself comes from a Run,
         # which is stored and can be reproduced.
@@ -1095,6 +1157,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
             preview["notice"] = payload["notice"]
         if budget is not None:
             preview["budget"] = budget
+        if pending:
+            preview["pending"] = pending
         return preview
     ast_json = json.dumps(nodes.to_json(ast), sort_keys=True)
     run_row = ScreenRunRecord(tenant_id=user.tenant_id, user_id=user.id, screen_id=screen_id, ast_sha256=hashlib.sha256(ast_json.encode()).hexdigest(),

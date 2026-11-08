@@ -325,6 +325,7 @@ class FyersBroker(BrokerInterface):
                      prev_close=float(v["prev_close_price"]) if v.get("prev_close_price") not in (None, "", 0) else None)
 
     multi_quote = True
+    quote_batch_max = QUOTE_BATCH   # M90 B4: instruments one multi-quote call serves
 
     async def get_quotes_batch(self, items):
         """UI2-4a2-pre: one `/quotes` call for up to QUOTE_BATCH symbols; a symbol the master does not know is left out

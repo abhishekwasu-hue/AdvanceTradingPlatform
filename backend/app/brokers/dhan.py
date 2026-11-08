@@ -379,6 +379,7 @@ class DhanBroker(BrokerInterface):
                      prev_close=_prev_close(entry.get("last_price"), entry.get("net_change")))
 
     multi_quote = True
+    quote_batch_max = QUOTE_BATCH           # M90 B4: instruments one multi-quote call serves (the route sends one call per this many)
 
     async def get_quotes_batch(self, items):
         """UI2-4a2-pre: one `/marketfeed/quote` call (several segments, up to QUOTE_BATCH instruments); a symbol the

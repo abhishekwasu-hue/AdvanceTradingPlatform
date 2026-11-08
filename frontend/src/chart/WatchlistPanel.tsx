@@ -19,7 +19,7 @@ import {
   type ListRef, type RowSort, type SystemGroup, type SystemItem, type SystemList,
 } from "./systemLists";
 import {
-  MAX_ITEMS, NAME_MAX, QUOTE_ROWS, QuotePoller, SWITCHED_OFF, WatchlistsStore, direction, itemKey, moveItem, quoteItems, watchlistError,
+  MAX_ITEMS, NAME_MAX, QuotePoller, SWITCHED_OFF, WatchlistsStore, direction, itemKey, keepPrices, moveItem, quoteItems, watchlistError,
   watchlistsV2Api, withTicks,
   type QuoteRow, type WatchItem, type WatchlistV2,
 } from "./watchlistsV2";
@@ -29,7 +29,7 @@ import {
  * screens, a bottom sheet on a phone. Only while the `watchlists` flag is on (CHP-4; the page does not mount it
  * otherwise).
  * - The lists: switch, create, rename, delete (asks first). The server's limits apply (CHP-7).
- * - Rows: symbol, exchange, last price and change (sign and arrow as well as colour). One batch quote for the first 50
+ * - Rows: symbol, exchange, last price and change (sign and arrow as well as colour). M90 B4: every row is priced (one batch quote per 500 rows); before M90: one batch quote for the first 50
  *   rows every 10 s, skipped while the tab is hidden.
  * - Add with the symbol search, remove, reorder by dragging the handle or with the arrow keys on it (Alt+↑/↓ on a row).
  *   Every change is saved with the list's version (watchlistsV2.ts).
@@ -71,12 +71,13 @@ export interface WatchlistPanelProps {
 
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
-/** The prices of the first 50 rows (QuotePoller: a reorder asks for nothing new; a changed set waits out the 10 s). */
+/** The prices of every row (QuotePoller: a reorder asks for nothing new; a changed set waits out the 10 s). M90 B5: a
+ * row a slowed or budget-used reply did not fetch keeps its last price, and `slowed` says the broker's limit slowed it. */
 function useQuotes(items: readonly WatchItem[], live = false) {
-  const [quotes, setQuotes] = useState<{ rows: Map<string, QuoteRow>; failed: boolean; eodAsOf?: string | null }>({ rows: new Map(), failed: false });
+  const [quotes, setQuotes] = useState<{ rows: Map<string, QuoteRow>; failed: boolean; eodAsOf?: string | null; slowed?: boolean }>({ rows: new Map(), failed: false });
   // M86 D2: without a broker of his own the rows carry the last end-of-day close (chart/eodQuotes.ts) and its date.
   const poller = useMemo(() => new QuotePoller(withEodFallback(watchlistsV2Api.quotes), {
-    data: (reply: EodQuotesReply) => setQuotes({ rows: new Map(reply.items.map((r) => [itemKey(r), r])), failed: false, eodAsOf: reply.eod_as_of }),
+    data: (reply: EodQuotesReply) => setQuotes((q) => ({ rows: keepPrices(q.rows, reply.items), failed: false, eodAsOf: reply.eod_as_of, slowed: !!reply.slowed })),
     error: () => setQuotes((q) => ({ ...q, failed: true })),
   }), []);
   useEffect(() => () => poller.close(), [poller]);
@@ -365,7 +366,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
     setNotice(`Rolled ${f.label} to ${f.roll.label} in ${list.name}. Nothing was traded.`);
     void store.edit(list.id, edit);
   };
-  const priced = useMemo(() => new Map(matching.slice(0, QUOTE_ROWS).map((i) => [itemKey(i), quotes.rows.get(itemKey(i))]).filter((e): e is [string, QuoteRow] => !!e[1])),
+  const priced = useMemo(() => new Map(matching.map((i) => [itemKey(i), quotes.rows.get(itemKey(i))]).filter((e): e is [string, QuoteRow] => !!e[1])),
     [matching, quotes.rows]);
   const systemRows = useMemo(() => sortRows(matching, sort, priced), [matching, sort, priced]);
   const currentName = systemSummary?.name ?? list?.name ?? "Watchlist";
@@ -441,6 +442,10 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
       {quotes.eodAsOf !== undefined && !quotes.failed && (
         <NoBrokerLine testId="watchlist" button={connectButton} className="border-b border-subtle px-space-3 py-space-2">{lastCloseText(quotes.eodAsOf)}</NoBrokerLine>
       )}
+      {/* M90 B5: the broker answered "too many requests" - the prices refresh more slowly, the last ones stay shown */}
+      {quotes.slowed && !quotes.failed && (
+        <p role="status" className="border-b border-subtle px-space-3 py-space-2 text-t12 text-warn" data-testid="watchlist-slowed">Slowed by broker limit</p>
+      )}
 
       {!state.loaded && <SkeletonRows label="Loading your watchlists…" />}
 
@@ -472,7 +477,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
             <ul ref={rowsRef} aria-label={`Symbols in ${list.name}`} className="min-h-0 flex-1 overflow-y-auto px-space-1 pb-space-2">
               {shown.map((item) => {
                 const index = live.indexOf(item);
-                const q = items.indexOf(item) < QUOTE_ROWS ? quotes.rows.get(itemKey(item)) : undefined;
+                const q = quotes.rows.get(itemKey(item));
                 const current = item.symbol === symbol && item.exchange === exchange;
                 return (
                   <li key={itemKey(item)} data-row className={cx("flex items-center rounded-control", current && "bg-surface-2", drag && live[drag.from] === item && "opacity-60")}
@@ -499,10 +504,8 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
           )}
           <ExpiredRows rows={split.expired} facts={facts} listName={list.name} inList={(f) => holdsTarget(list, f)} onRoll={roll}
             onRemove={(item) => void store.edit(list.id, { kind: "remove", item })} iconBtn={iconBtn} touch={touch} />
-          {(items.length > QUOTE_ROWS || quotes.failed) && (
-            <p className="border-t border-subtle px-space-3 py-space-2 text-t12 text-fg-muted">
-              {quotes.failed ? "Prices could not be loaded just now. They try again every 10 seconds." : `Prices show for the first ${QUOTE_ROWS} symbols. Move a symbol up to see its price.`}
-            </p>
+          {quotes.failed && (
+            <p className="border-t border-subtle px-space-3 py-space-2 text-t12 text-fg-muted">Prices could not be loaded just now. They try again every 10 seconds.</p>
           )}
         </>
       )}
@@ -594,11 +597,9 @@ export function SystemListView({ summary, list, rows, total, matching, query, on
           })}
         </ul>
       )}
-      {list && list !== "failed" && (matching > QUOTE_ROWS || quotesFailed || matching < total) && (
+      {list && list !== "failed" && (quotesFailed || matching < total) && (
         <p className="border-t border-subtle px-space-3 py-space-2 text-t12 text-fg-muted">
-          {quotesFailed ? "Prices could not be loaded just now. They try again every 10 seconds."
-            : matching > QUOTE_ROWS ? `Prices show for the first ${QUOTE_ROWS} symbols. Search to see the price of another.`
-              : `${matching} of ${total} symbols match.`}
+          {quotesFailed ? "Prices could not be loaded just now. They try again every 10 seconds." : `${matching} of ${total} symbols match.`}
         </p>
       )}
     </div>

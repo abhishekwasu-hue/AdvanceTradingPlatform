@@ -86,6 +86,7 @@ export const COPILOT_EN = {
     noKeyLine: "Until then I answer from ATP's own data in short, fixed sentences.",
     noKeyAction: "Add an AI key",
     youAsked: "You asked",
+    askedEarlier: "Asked earlier",
     worked: "How I worked this out",
     workedNone: "No tool was needed for this answer.",
     toolsUsed: "Tools used",

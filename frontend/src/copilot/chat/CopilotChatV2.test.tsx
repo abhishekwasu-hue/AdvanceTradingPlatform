@@ -112,6 +112,35 @@ function view(props: Partial<ChatViewProps> = {}): string {
   return render(<ChatView home={HOME} homeError={null} turns={[]} draft="" busy={false} placement="inline" onDraft={noop} onAsk={noop} {...props} />);
 }
 
+describe("owner 8 Nov: a conversation already open", () => {
+  const kept: Turn[] = [{ id: 1, question: "Read the NIFTY chart", answer: HEADLINED, error: null, at: "2026-11-01T05:00:00+00:00" }];
+
+  it("a kept turn says it was asked earlier, with when; a turn asked on this screen does not", () => {
+    const html = view({ turns: [...kept, { id: 2, question: "Read the NIFTY chart", answer: null, error: null }] });
+    const earlier = /<li[^>]*data-turn="1"[^>]*>[\s\S]*?<\/li>/.exec(html)?.[0] ?? "";
+    expect(earlier).toContain("data-turn-at");
+    expect(text(earlier)).toMatch(/Asked earlier · 1 Nov/);
+    const mine = /<li[^>]*data-turn="2"[^>]*>[\s\S]*?<\/li>/.exec(html)?.[0] ?? "";
+    expect(mine).not.toContain("data-turn-at");
+    expect(text(mine)).toContain("Reading ATP's data");
+  });
+
+  it("while a question is read the four quick buttons are disabled AND look it", () => {
+    const html = view({ turns: kept, busy: true });
+    const chips = [...html.matchAll(/<button[^>]*data-quick="[a-z_]+"[^>]*>/g)].map((m) => m[0]);
+    expect(chips).toHaveLength(4);
+    for (const chip of chips) {
+      expect(chip).toContain("disabled");
+      expect(chip).toContain("disabled:opacity-50");
+    }
+  });
+
+  it("the asked turn is brought into view as soon as it is on screen, not only when its answer is back", () => {
+    expect(chatSource).toMatch(/reveal\.current = id;\n\s*setTurns\(\(all\) => withTurn\(all, \{ id, question, answer: null/);
+    expect(chatSource).toMatch(/useEffect\(\(\) => \{\n\s*if \(reveal\.current === null\) return;[\s\S]*?scrollIntoView[\s\S]*?\}, \[turns\]\);/);
+  });
+});
+
 describe("the chat-first Copilot page", () => {
   it("is the v2 Copilot, lazy, and keeps today's tabs at /copilot/<tab>", () => {
     expect(PAGE_COMPONENTS_V2.copilot).toBeDefined();

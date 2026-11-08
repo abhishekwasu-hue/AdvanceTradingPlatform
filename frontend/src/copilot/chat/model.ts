@@ -165,6 +165,9 @@ export interface Turn {
   id: number; question: string; answer: ChatAnswer | null; error: string | null;
   /** M59 CR-2: a chart the user attached (upload or TradingView snapshot link) and its analysis, shown in this turn. */
   chart?: ChartTurnState | null;
+  /** When a turn restored from the server's kept conversation was asked (null / absent: asked on this screen). Shown
+   * on the turn, so an earlier answer (its own close and date) is never taken for a fresh read. */
+  at?: string | null;
 }
 
 /** M59 CR-2: what the user attached in the Ask box - a chart image (picked or pasted) or a snapshot link. */
@@ -232,7 +235,7 @@ export const DEFAULT_KEEP = 20;
 export function restoredTurns(history: ChatHistory | null, unreadable: string): Turn[] {
   if (!history) return [];
   return history.turns.slice(-Math.max(1, history.keep)).map((s, i) => ({
-    id: i + 1, question: s.question, answer: s.answer, error: s.answer ? null : unreadable,
+    id: i + 1, question: s.question, answer: s.answer, error: s.answer ? null : unreadable, at: s.at ?? null,
   }));
 }
 

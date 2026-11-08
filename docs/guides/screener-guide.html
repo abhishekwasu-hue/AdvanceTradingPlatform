@@ -1,0 +1,1205 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Find Setups Guide</title>
+<style>
+:root{
+  --ink:#16202c; --ink-2:#3d4a5a; --muted:#66748a; --line:#d9dfe7; --line-2:#eef1f5;
+  --paper:#ffffff; --panel:#f6f8fb; --brand:#2456c7; --brand-soft:#e8eefb;
+  --up:#16794a; --up-soft:#e5f4ec; --down:#b3261e; --down-soft:#fbe9e7;
+  --warn:#9a5b00; --warn-soft:#fff3dc; --violet:#5b3fb8; --violet-soft:#efeafb;
+  --t11:8pt; --t12:8.6pt; --t13:9.4pt; --t15:11pt; --t18:13.5pt; --t24:19pt; --t32:27pt;
+  --r:6px;
+}
+@page{ size:A4; margin:16mm 15mm 18mm 15mm; }
+*{ box-sizing:border-box; }
+html,body{ background:var(--paper); }
+body{ margin:0; font-family:Inter, "DejaVu Sans", sans-serif; color:var(--ink); font-size:var(--t13); line-height:1.45; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+h1,h2,h3,h4{ margin:0; line-height:1.2; }
+h2{ font-size:var(--t24); font-weight:700; margin:0 0 3mm; padding-bottom:2mm; border-bottom:2px solid var(--brand); }
+h2 .num{ color:var(--brand); margin-right:2mm; }
+h3{ font-size:var(--t15); font-weight:700; margin:5mm 0 2mm; color:var(--ink); }
+h4{ font-size:var(--t13); font-weight:700; margin:3mm 0 1.5mm; color:var(--ink-2); }
+p{ margin:0 0 2mm; }
+ul,ol{ margin:0 0 2mm; padding-left:5.5mm; }
+li{ margin:0 0 .8mm; }
+code,.mono{ font-family:"JetBrains Mono","DejaVu Sans Mono",monospace; font-size:.9em; background:var(--line-2); padding:0 1mm; border-radius:3px; }
+.ui{ font-weight:600; color:var(--brand); }
+.ui::before{ content:"\201C"; color:var(--muted); font-weight:400; } .ui::after{ content:"\201D"; color:var(--muted); font-weight:400; }
+.section{ break-before:page; }
+.keep{ break-inside:avoid; }
+.lead{ font-size:var(--t15); color:var(--ink-2); margin-bottom:3mm; }
+.muted{ color:var(--muted); }
+.small{ font-size:var(--t12); }
+/* cover */
+.cover{ height:255mm; display:flex; flex-direction:column; justify-content:space-between; }
+.cover .band{ background:linear-gradient(135deg,#1d3f94,#2456c7 60%,#3b78e7); color:#fff; border-radius:10px; padding:16mm 12mm; }
+.cover .kicker{ font-size:var(--t13); letter-spacing:.12em; text-transform:uppercase; opacity:.85; }
+.cover h1{ font-size:var(--t32); font-weight:800; margin:4mm 0 3mm; }
+.cover .sub{ font-size:var(--t18); opacity:.95; }
+.cover .facts{ display:grid; grid-template-columns:repeat(4,1fr); gap:3mm; margin-top:8mm; }
+.cover .fact{ background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:4mm; }
+.cover .fact b{ display:block; font-size:var(--t24); color:var(--brand); }
+.cover .fact span{ font-size:var(--t12); color:var(--ink-2); }
+/* toc */
+.toc ol{ list-style:none; padding:0; margin:0; }
+.toc li{ display:flex; align-items:baseline; gap:2mm; padding:1.6mm 0; border-bottom:1px dotted var(--line); font-size:var(--t13); }
+.toc li .t{ flex:1; }
+.toc li .pg{ font-variant-numeric:tabular-nums; color:var(--brand); font-weight:700; min-width:8mm; text-align:right; }
+.toc li.sub{ padding-left:6mm; font-size:var(--t12); color:var(--ink-2); }
+/* boxes */
+.box{ border:1px solid var(--line); border-left:4px solid var(--brand); background:var(--panel); border-radius:var(--r); padding:3mm 4mm; margin:3mm 0; break-inside:avoid; }
+.box.not{ border-left-color:var(--down); background:var(--down-soft); }
+.box.warn{ border-left-color:var(--warn); background:var(--warn-soft); }
+.box.ok{ border-left-color:var(--up); background:var(--up-soft); }
+.box.violet{ border-left-color:var(--violet); background:var(--violet-soft); }
+.box h4{ margin-top:0; }
+.check{ border:1.5px solid var(--up); background:var(--up-soft); border-radius:var(--r); padding:2.5mm 4mm; margin:3mm 0 1mm; break-inside:avoid; font-size:var(--t13); }
+.check b{ color:var(--up); }
+/* steps */
+ol.steps{ counter-reset:st var(--start,0); list-style:none; padding:0; }
+ol.steps > li{ counter-increment:st; position:relative; padding:1.6mm 0 1.6mm 10mm; border-bottom:1px solid var(--line-2); break-inside:avoid; }
+ol.steps > li::before{ content:counter(st); position:absolute; left:0; top:1.4mm; width:7mm; height:7mm; border-radius:50%; background:var(--brand); color:#fff; font-weight:700; font-size:var(--t12); display:flex; align-items:center; justify-content:center; }
+ol.steps > li .see{ display:block; color:var(--ink-2); font-size:var(--t12); margin-top:.6mm; }
+ol.steps > li .see::before{ content:"You see: "; font-weight:700; color:var(--up); }
+/* tables */
+table{ width:100%; border-collapse:collapse; margin:2mm 0 3mm; font-size:var(--t12); }
+thead{ display:table-header-group; }
+th{ text-align:left; background:var(--ink); color:#fff; font-weight:600; padding:1.6mm 2mm; vertical-align:bottom; }
+td{ padding:1.5mm 2mm; border-bottom:1px solid var(--line); vertical-align:top; }
+tr{ break-inside:avoid; }
+tbody tr:nth-child(even) td{ background:#fafbfd; }
+td.n{ font-weight:700; white-space:normal; font-family:"JetBrains Mono","DejaVu Sans Mono",monospace; font-size:.92em; color:var(--brand); }
+td .tag, .tag{ display:inline-block; font-size:7.2pt; font-weight:700; padding:.2mm 1.4mm; border-radius:10px; margin:0 .8mm .5mm 0; vertical-align:middle; font-family:Inter,sans-serif; }
+.tag.ind{ background:var(--brand-soft); color:var(--brand); }
+.tag.fil{ background:var(--up-soft); color:var(--up); }
+.tag.cat{ background:var(--violet-soft); color:var(--violet); }
+.tag.rnk{ background:var(--warn-soft); color:var(--warn); }
+.tag.frm{ background:#eceff3; color:var(--ink-2); }
+.tag.sw{ background:var(--down-soft); color:var(--down); }
+.fn-table{ table-layout:fixed; } .fn-table td, .fn-table th{ overflow-wrap:anywhere; } .fn-table th:nth-child(1){ width:20%; } .fn-table th:nth-child(2){ width:24%; } .fn-table th:nth-child(3){ width:20%; } .fn-table th:nth-child(4){ width:17%; } .fn-table th:nth-child(5){ width:19%; }
+.fn-table td:nth-child(1){ width:20%; } .fn-table td:nth-child(2){ width:24%; } .fn-table td:nth-child(3){ width:20%; } .fn-table td:nth-child(4){ width:17%; } .fn-table td:nth-child(5){ width:19%; }
+.grouphead{ break-after:avoid; break-inside:avoid; display:flex; align-items:baseline; justify-content:space-between; gap:3mm; margin-top:5mm; }
+.grouphead h3{ margin:0; }
+.grouphead .count{ font-size:var(--t12); color:var(--muted); white-space:nowrap; }
+.grid2{ display:grid; grid-template-columns:1fr 1fr; gap:4mm; }
+.grid3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:3mm; }
+.card{ border:1px solid var(--line); border-radius:var(--r); padding:3mm; background:#fff; break-inside:avoid; }
+.card h4{ margin-top:0; color:var(--brand); }
+figure{ margin:3mm 0; break-inside:avoid; text-align:center; }
+figure svg{ max-width:100%; height:auto; }
+figcaption{ font-size:var(--t11); color:var(--muted); margin-top:1mm; }
+.legend-key{ display:flex; flex-wrap:wrap; gap:2mm; margin:1mm 0 2mm; font-size:var(--t11); color:var(--ink-2); }
+.msg{ font-family:Inter,sans-serif; background:#fff; border:1px solid var(--line); border-radius:4px; padding:.2mm 1.4mm; font-size:.95em; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="band">
+    <div class="kicker">ATP education guide</div>
+    <h1>Find setups: how the screener works and how to use it</h1>
+    <div class="sub">A step-by-step manual for a new user, from signing in to reading the results.</div>
+  </div>
+  <div>
+    <div class="facts">
+      <div class="fact"><b>5</b><span>steps: list, chart, scan, run, read</span></div>
+      <div class="fact"><b>169</b><span>building blocks in the function catalogue, in 18 groups</span></div>
+      <div class="fact"><b>9</b><span>chart timeframes, from 1 minute to Monthly</span></div>
+      <div class="fact"><b>500</b><span>stocks in the largest list a scan can take today</span></div>
+    </div>
+    <div class="box not" style="margin-top:8mm">
+      <h4>Read this first</h4>
+      <p>The screener shows which stocks meet <b>conditions you choose</b>, on the data shown. A match is not a recommendation, not a signal to trade and not advice. Every decision stays yours.</p>
+    </div>
+    <p class="muted small">What you see depends on the switches your administrator has turned on. This guide says so wherever a part may be missing. Charts in this guide are drawn from made-up data and carry no names or prices.</p>
+  </div>
+</div>
+
+<!-- ============ TOC ============ -->
+<div class="section toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><span class="t">1. What the screener is</span><span class="pg" data-for="s1">3</span></li>
+    <li><span class="t">2. Before you start: sign in and open Find setups</span><span class="pg" data-for="s2">4</span></li>
+    <li><span class="t">3. A tour of the page</span><span class="pg" data-for="s3">5</span></li>
+    <li><span class="t">4. Step 1 - Pick your list</span><span class="pg" data-for="s4">6</span></li>
+    <li><span class="t">5. Step 2 - Pick the chart (timeframe)</span><span class="pg" data-for="s5">8</span></li>
+    <li><span class="t">6. Step 3 - Start a scan: ready scans, templates, the library</span><span class="pg" data-for="s6">9</span></li>
+    <li><span class="t">7. Step 4 - Build and edit conditions</span><span class="pg" data-for="s7">11</span></li>
+    <li><span class="t">8. Step 5 - Run the scan and read the results</span><span class="pg" data-for="s8">13</span></li>
+    <li><span class="t">9. Where the data comes from</span><span class="pg" data-for="s9">15</span></li>
+    <li><span class="t">10. Every function you can use</span><span class="pg" data-for="s10">16</span></li>
+    <li><span class="t">11. Three example scans, step by step</span><span class="pg" data-for="s11">32</span></li>
+    <li><span class="t">12. Messages, problems and what to do</span><span class="pg" data-for="s12">34</span></li>
+    <li><span class="t">13. Glossary</span><span class="pg" data-for="s13">36</span></li>
+    <li><span class="t">14. For the administrator</span><span class="pg" data-for="s14">37</span></li>
+  </ol>
+  <div class="box" style="margin-top:6mm">
+    <h4>How to read this guide</h4>
+    <ul>
+      <li>Words in <span class="ui">blue quotes</span> are exactly what you see on the screen (a button, a tab or a message).</li>
+      <li>Numbered circles are steps. Do them in order.</li>
+      <li>A green <b>Check</b> box ends each main step. If your screen does not match it, see section 12.</li>
+      <li>Function tables mark where each block lives in the builder:
+        <span class="tag ind">Indicator</span><span class="tag fil">Filter</span><span class="tag cat">Category</span><span class="tag rnk">Rank</span><span class="tag frm">Formula</span>, and <span class="tag sw">Extra switch</span> when it shows only after your administrator turns on an extra part.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ 1 ============ -->
+<div class="section" id="s1">
+  <h2 data-toc="1. What the screener is"><span class="num">1.</span>What the screener is</h2>
+  <p class="lead">The screener (the page <b>Find setups</b>) checks a list of stocks against conditions you pick, on closed candles, and shows which stocks meet all of them right now. You choose the list, the chart timeframe and the conditions. ATP reads the candles, works out each condition for each stock, and gives you the count and the list of matches. You can then open a match on a chart, in the same place, to see why it matched.</p>
+
+  <figure>
+    <svg viewBox="0 0 720 120" width="720" height="120" role="img" aria-label="The five steps of a scan">
+      <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#66748a"></path></marker></defs>
+      <g font-family="Inter" font-size="12" text-anchor="middle">
+        <g><rect x="6" y="20" width="124" height="70" rx="8" fill="#e8eefb" stroke="#2456c7"></rect><text x="68" y="44" font-weight="700" fill="#2456c7">1 Pick a list</text><text x="68" y="62" fill="#3d4a5a" font-size="10.5">NIFTY 50, a sector,</text><text x="68" y="76" fill="#3d4a5a" font-size="10.5">your watchlist</text></g>
+        <line x1="132" y1="55" x2="150" y2="55" stroke="#66748a" stroke-width="2" marker-end="url(#ar)"></line>
+        <g><rect x="152" y="20" width="124" height="70" rx="8" fill="#e8eefb" stroke="#2456c7"></rect><text x="214" y="44" font-weight="700" fill="#2456c7">2 Pick a chart</text><text x="214" y="62" fill="#3d4a5a" font-size="10.5">Daily, Weekly,</text><text x="214" y="76" fill="#3d4a5a" font-size="10.5">15 min ...</text></g>
+        <line x1="278" y1="55" x2="296" y2="55" stroke="#66748a" stroke-width="2" marker-end="url(#ar)"></line>
+        <g><rect x="298" y="20" width="124" height="70" rx="8" fill="#efeafb" stroke="#5b3fb8"></rect><text x="360" y="44" font-weight="700" fill="#5b3fb8">3 Pick or build</text><text x="360" y="62" fill="#3d4a5a" font-size="10.5">a ready scan, a template</text><text x="360" y="76" fill="#3d4a5a" font-size="10.5">or your own conditions</text></g>
+        <line x1="424" y1="55" x2="442" y2="55" stroke="#66748a" stroke-width="2" marker-end="url(#ar)"></line>
+        <g><rect x="444" y="20" width="124" height="70" rx="8" fill="#e5f4ec" stroke="#16794a"></rect><text x="506" y="44" font-weight="700" fill="#16794a">4 Run</text><text x="506" y="62" fill="#3d4a5a" font-size="10.5">ATP reads closed</text><text x="506" y="76" fill="#3d4a5a" font-size="10.5">candles, checks each</text></g>
+        <line x1="570" y1="55" x2="588" y2="55" stroke="#66748a" stroke-width="2" marker-end="url(#ar)"></line>
+        <g><rect x="590" y="20" width="124" height="70" rx="8" fill="#fff3dc" stroke="#9a5b00"></rect><text x="652" y="44" font-weight="700" fill="#9a5b00">5 Read results</text><text x="652" y="62" fill="#3d4a5a" font-size="10.5">"Matched N of M",</text><text x="652" y="76" fill="#3d4a5a" font-size="10.5">open a chart in place</text></g>
+      </g>
+    </svg>
+    <figcaption>The whole flow. Each box is one section of this guide (sections 4 to 8).</figcaption>
+  </figure>
+
+  <h3>What happens when you press Run</h3>
+  <figure>
+    <svg viewBox="0 0 720 210" width="720" height="210" role="img" aria-label="A funnel: each condition narrows the list">
+      <g font-family="Inter" font-size="12">
+        <path d="M80,20 L640,20 L560,70 L160,70 Z" fill="#e8eefb" stroke="#2456c7"></path>
+        <text x="360" y="42" text-anchor="middle" font-weight="700" fill="#2456c7">Your list: 50 stocks</text>
+        <text x="360" y="60" text-anchor="middle" fill="#3d4a5a" font-size="10.5">ATP reads the closed candles of each one</text>
+        <path d="M160,78 L560,78 L500,122 L220,122 Z" fill="#efeafb" stroke="#5b3fb8"></path>
+        <text x="360" y="98" text-anchor="middle" font-weight="700" fill="#5b3fb8">Stage 1 - 18 still in</text>
+        <text x="360" y="114" text-anchor="middle" fill="#3d4a5a" font-size="10.5">32 did not meet condition 1</text>
+        <path d="M220,130 L500,130 L450,170 L270,170 Z" fill="#e5f4ec" stroke="#16794a"></path>
+        <text x="360" y="150" text-anchor="middle" font-weight="700" fill="#16794a">Stage 2 - 6 still in</text>
+        <text x="360" y="164" text-anchor="middle" fill="#3d4a5a" font-size="10.5">12 more did not meet condition 2</text>
+        <rect x="290" y="178" width="140" height="26" rx="13" fill="#16794a"></rect>
+        <text x="360" y="195" text-anchor="middle" font-weight="700" fill="#fff">Matched 6 of 50</text>
+        <g font-size="10.5" fill="#66748a"><text x="660" y="48">enters at the top</text><text x="590" y="102">every stage narrows</text><text x="530" y="154">all stages must pass</text></g>
+      </g>
+    </svg>
+    <figcaption>Illustration with made-up counts. The page draws this as a funnel: the count left after each stage shows on its right edge.</figcaption>
+  </figure>
+
+  <div class="box not keep" id="notbox">
+    <h4>What the screener does NOT do</h4>
+    <ul>
+      <li>It shows <b>conditions</b> that are true on the data shown. It is <b>not</b> a signal to trade and <b>not</b> advice.</li>
+      <li>It does not rank stocks as good or bad, and it makes no claim about what price does next.</li>
+      <li>It never places, changes or cancels an order. An alert from a scan only tells you.</li>
+      <li>It uses only the conditions you see. It adds no hidden rule. You can open every condition and see its settings.</li>
+      <li>It decides on <b>closed</b> candles. A candle still forming is not used by a scan.</li>
+      <li>The page says this in its own words under <span class="ui">About these results</span>: <i>"Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."</i></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ 2 ============ -->
+<div class="section" id="s2">
+  <h2 data-toc="2. Before you start: sign in and open Find setups"><span class="num">2.</span>Before you start: sign in and open Find setups</h2>
+  <p class="lead">You need an ATP account. A connected broker is not required for Daily, Weekly and Monthly scans; it is required for intraday scans (see section 9).</p>
+
+  <h3>2.1 Sign in</h3>
+  <ol class="steps">
+    <li>Open the ATP website in your browser (phone or computer).
+      <span class="see">the <span class="ui">Sign in</span> screen with the AiAlgoDesk name. Where offered, sign-in buttons such as <span class="ui">Continue with Google</span> sit at the top, then <span class="ui">or use email</span>.</span></li>
+    <li>Either tap a sign-in button at the top, or type your <span class="ui">Email</span> and <span class="ui">Password</span>.
+      <span class="see">If two-factor sign-in is on for your account, a box <span class="ui">Authenticator code</span> (format <code>123 456</code>).</span></li>
+    <li>Press <span class="ui">Sign in</span>.
+      <span class="see">the app opens on <span class="ui">Today</span>.</span></li>
+    <li>No account yet? Tap <span class="ui">Create an account</span> under <span class="ui">New here?</span>. If your team uses invites, the screen says <span class="ui">New here? Ask your team owner for an invite link.</span></li>
+    <li>Forgot the password? Tap <span class="ui">Forgot password?</span>, then <span class="ui">Send reset link</span>.</li>
+  </ol>
+
+  <h3>2.2 Open Find setups</h3>
+  <ol class="steps" style="--start:5">
+    <li><b>On a computer:</b> look at the menu on the left. Under the heading <span class="ui">Find</span>, click <span class="ui">Find setups</span>.
+      <span class="see">the page title <span class="ui">Find setups</span> with the line <span class="ui">Scan your list for the setups you pick.</span></span></li>
+    <li><b>On a phone:</b> tap <span class="ui">Find setups</span> in the bar at the bottom. If it is not there, tap <span class="ui">More</span> and type <code>screener</code> or <code>scan</code> in the search box; it finds Find setups.</li>
+    <li>If you see <span class="ui">Coming soon</span>, or Find setups is not in the menu at all, the screener is not switched on for your organisation yet. Ask your administrator (section 14).</li>
+  </ol>
+  <figure>
+    <svg viewBox="0 0 720 150" width="720" height="150" role="img" aria-label="Where Find setups is in the menu">
+      <g font-family="Inter" font-size="11">
+        <rect x="10" y="10" width="200" height="130" rx="8" fill="#f6f8fb" stroke="#d9dfe7"></rect>
+        <text x="24" y="30" font-weight="700" fill="#66748a" font-size="9.5">TRADE</text>
+        <text x="24" y="46" fill="#3d4a5a">Today</text><text x="24" y="60" fill="#3d4a5a">My trades</text>
+        <text x="24" y="80" font-weight="700" fill="#66748a" font-size="9.5">FIND</text>
+        <rect x="18" y="86" width="184" height="20" rx="5" fill="#e8eefb" stroke="#2456c7"></rect>
+        <text x="28" y="100" font-weight="700" fill="#2456c7">Find setups</text>
+        <text x="24" y="120" fill="#3d4a5a">Signals</text><text x="24" y="134" fill="#3d4a5a">Sectors &amp; indices</text>
+        <text x="110" y="148" text-anchor="middle" fill="#66748a" font-size="9.5">Computer: left menu</text>
+        <rect x="260" y="40" width="440" height="70" rx="10" fill="#f6f8fb" stroke="#d9dfe7"></rect>
+        <g text-anchor="middle"><text x="315" y="80" fill="#3d4a5a">Today</text><text x="400" y="80" fill="#3d4a5a">Terminal</text><text x="485" y="80" fill="#3d4a5a">My trades</text>
+        <rect x="528" y="58" width="84" height="34" rx="6" fill="#e8eefb" stroke="#2456c7"></rect><text x="570" y="80" font-weight="700" fill="#2456c7">Find setups</text><text x="655" y="80" fill="#3d4a5a">More</text></g>
+        <text x="480" y="128" text-anchor="middle" fill="#66748a" font-size="9.5">Phone: bottom bar (the exact tabs depend on what is switched on)</text>
+      </g>
+    </svg>
+    <figcaption>Simplified drawing of the menus. Some entries (for example Terminal) show only when switched on.</figcaption>
+  </figure>
+  <div class="check"><b>Check:</b> you should now see the Find setups page, with two small cards at the top (<span class="ui">Your list</span> and <span class="ui">Chart</span>) and a block <span class="ui">Start a scan</span>.</div>
+</div>
+
+<!-- ============ 3 ============ -->
+<div class="section" id="s3">
+  <h2 data-toc="3. A tour of the page"><span class="num">3.</span>A tour of the page</h2>
+  <p class="lead">The page has five parts, from top to bottom. Nothing shows in Results before your first run.</p>
+  <figure>
+    <svg viewBox="0 0 720 420" width="720" height="420" role="img" aria-label="Layout of the Find setups page">
+      <g font-family="Inter" font-size="11">
+        <rect x="10" y="8" width="700" height="404" rx="10" fill="#ffffff" stroke="#d9dfe7"></rect>
+        <!-- header -->
+        <text x="28" y="38" font-size="17" font-weight="800" fill="#16202c">Find setups</text>
+        <text x="28" y="54" fill="#66748a">Scan your list for the setups you pick.</text>
+        <rect x="438" y="24" width="92" height="26" rx="6" fill="#fff" stroke="#d9dfe7"></rect><text x="484" y="41" text-anchor="middle" fill="#3d4a5a">More tools</text>
+        <rect x="538" y="24" width="68" height="26" rx="6" fill="#fff" stroke="#d9dfe7"></rect><text x="572" y="41" text-anchor="middle" fill="#3d4a5a">Save</text>
+        <rect x="614" y="24" width="80" height="26" rx="6" fill="#2456c7"></rect><text x="654" y="41" text-anchor="middle" fill="#fff" font-weight="700">Run</text>
+        <circle cx="28" cy="74" r="9" fill="#2456c7"></circle><text x="28" y="78" text-anchor="middle" fill="#fff" font-weight="700" font-size="10">A</text>
+        <!-- hero -->
+        <rect x="44" y="66" width="200" height="56" rx="7" fill="#f6f8fb" stroke="#d9dfe7"></rect>
+        <text x="56" y="82" fill="#66748a" font-size="9.5">Your list</text><text x="230" y="82" text-anchor="end" fill="#2456c7" font-size="9.5">Change</text>
+        <text x="56" y="99" font-weight="700" fill="#16202c">NIFTY 50 stocks (50)</text><text x="56" y="114" fill="#66748a" font-size="9.5">50 stocks</text>
+        <rect x="254" y="66" width="160" height="56" rx="7" fill="#f6f8fb" stroke="#d9dfe7"></rect>
+        <text x="266" y="82" fill="#66748a" font-size="9.5">Chart</text><text x="400" y="82" text-anchor="end" fill="#2456c7" font-size="9.5">Change</text>
+        <text x="266" y="102" font-weight="700" fill="#16202c">Daily</text>
+        <circle cx="28" cy="146" r="9" fill="#5b3fb8"></circle><text x="28" y="150" text-anchor="middle" fill="#fff" font-weight="700" font-size="10">B</text>
+        <!-- start a scan -->
+        <rect x="44" y="134" width="320" height="140" rx="7" fill="#fff" stroke="#d9dfe7"></rect>
+        <text x="56" y="152" font-weight="700" fill="#16202c">Start a scan</text>
+        <rect x="56" y="160" width="86" height="22" rx="5" fill="#e8eefb" stroke="#2456c7"></rect><text x="99" y="175" text-anchor="middle" fill="#2456c7" font-weight="700" font-size="10">Ready scan</text>
+        <rect x="146" y="160" width="76" height="22" rx="5" fill="#fff" stroke="#d9dfe7"></rect><text x="184" y="175" text-anchor="middle" fill="#3d4a5a" font-size="10">Template</text>
+        <rect x="226" y="160" width="80" height="22" rx="5" fill="#fff" stroke="#d9dfe7"></rect><text x="266" y="175" text-anchor="middle" fill="#3d4a5a" font-size="10">Own words</text>
+        <g font-size="10"><rect x="56" y="190" width="296" height="22" rx="5" fill="#f6f8fb"></rect><text x="64" y="205" fill="#16202c">A ready scan's name</text><rect x="304" y="193" width="42" height="16" rx="4" fill="#2456c7"></rect><text x="325" y="205" text-anchor="middle" fill="#fff">Run</text>
+        <rect x="56" y="216" width="296" height="22" rx="5" fill="#f6f8fb"></rect><text x="64" y="231" fill="#16202c">Another ready scan</text><rect x="304" y="219" width="42" height="16" rx="4" fill="#2456c7"></rect><text x="325" y="231" text-anchor="middle" fill="#fff">Run</text>
+        <text x="64" y="258" fill="#2456c7">See all ready scans (N) &gt;</text></g>
+        <circle cx="28" cy="296" r="9" fill="#16794a"></circle><text x="28" y="300" text-anchor="middle" fill="#fff" font-weight="700" font-size="10">C</text>
+        <!-- conditions -->
+        <rect x="44" y="284" width="320" height="116" rx="7" fill="#fff" stroke="#d9dfe7"></rect>
+        <text x="56" y="302" font-weight="700" fill="#16202c">Conditions (2)</text><text x="352" y="302" text-anchor="end" fill="#2456c7" font-size="10">Hide</text>
+        <text x="56" y="320" fill="#66748a" font-size="9.5">All of these must pass</text>
+        <g font-size="10"><rect x="56" y="326" width="296" height="22" rx="5" fill="#f6f8fb"></rect><text x="64" y="341" fill="#16202c">RSI (14) above 60</text><text x="344" y="341" text-anchor="end" fill="#5b3fb8">18</text>
+        <rect x="56" y="352" width="296" height="22" rx="5" fill="#f6f8fb"></rect><text x="64" y="367" fill="#16202c">close above EMA (close, 20)</text><text x="344" y="367" text-anchor="end" fill="#16794a">6</text>
+        <text x="64" y="392" fill="#2456c7">+ Add a condition   [Indicator v]</text></g>
+        <circle cx="388" cy="146" r="9" fill="#9a5b00"></circle><text x="388" y="150" text-anchor="middle" fill="#fff" font-weight="700" font-size="10">D</text>
+        <!-- results -->
+        <rect x="404" y="134" width="292" height="266" rx="7" fill="#fff" stroke="#d9dfe7"></rect>
+        <text x="416" y="156" fill="#16202c">Matched <tspan font-weight="800" fill="#16794a" font-size="14">6</tspan> of 50</text>
+        <rect x="560" y="144" width="126" height="18" rx="9" fill="#fff" stroke="#d9dfe7"></rect><text x="623" y="157" text-anchor="middle" fill="#66748a" font-size="9.5">Ran at 16:05 IST</text>
+        <g font-size="10"><rect x="416" y="172" width="58" height="18" rx="4" fill="#e8eefb"></rect><text x="445" y="185" text-anchor="middle" fill="#2456c7">Table</text><text x="500" y="185" text-anchor="middle" fill="#66748a">Heatmap</text><text x="566" y="185" text-anchor="middle" fill="#66748a">Chart grid</text>
+        <line x1="416" y1="200" x2="686" y2="200" stroke="#16202c"></line><text x="420" y="196" fill="#16202c" font-weight="700">Symbol</text><text x="510" y="196" fill="#16202c" font-weight="700">Result</text>
+        <text x="420" y="218" fill="#16202c">STOCK A</text><text x="510" y="218" fill="#16794a">● Matched  Ask AI  Show on chart</text>
+        <text x="420" y="238" fill="#16202c">STOCK B</text><text x="510" y="238" fill="#16794a">● Matched  Ask AI  Show on chart</text>
+        <text x="420" y="258" fill="#16202c">...</text>
+        <rect x="416" y="300" width="270" height="24" rx="6" fill="#fff" stroke="#d9dfe7"></rect><text x="551" y="316" text-anchor="middle" fill="#3d4a5a">Save matches as a watchlist</text>
+        <rect x="416" y="330" width="270" height="24" rx="6" fill="#fff" stroke="#d9dfe7"></rect><text x="551" y="346" text-anchor="middle" fill="#3d4a5a">Tell me when it matches</text>
+        <text x="416" y="376" fill="#2456c7">About these results</text></g>
+      </g>
+    </svg>
+    <figcaption>Simplified drawing (computer layout). STOCK A / STOCK B stand for any symbol. On a phone the parts stack, and Save / Run sit in a bar just above the bottom menu.</figcaption>
+  </figure>
+  <table class="keep">
+    <thead><tr><th style="width:8%">Part</th><th style="width:22%">Name on screen</th><th>What it is for</th></tr></thead>
+    <tbody>
+      <tr><td><b>A</b></td><td><span class="ui">Your list</span>, <span class="ui">Chart</span></td><td>Which stocks are scanned, and on which candle timeframe. Each card has <span class="ui">Change</span>. Header buttons: <span class="ui">More tools</span>, <span class="ui">Save</span>, <span class="ui">Run</span>.</td></tr>
+      <tr><td><b>B</b></td><td><span class="ui">Start a scan</span></td><td>Three tabs: <span class="ui">Ready scan</span> (one tap runs it), <span class="ui">Template</span> (fills the conditions for you to edit), <span class="ui">Own words</span> (type an idea in plain words; shown only when switched on).</td></tr>
+      <tr><td><b>C</b></td><td><span class="ui">Conditions (N)</span></td><td>The conditions of the current scan, as a funnel. N is how many there are. Closed until you open it or a scan fills it.</td></tr>
+      <tr><td><b>D</b></td><td>Results</td><td>Before a run: <span class="ui">Results show here after you run a scan.</span> After a run: <span class="ui">Matched N of M</span>, the time it ran, the table, and the next steps.</td></tr>
+      <tr><td><b>More</b></td><td><span class="ui">More tools</span></td><td>A side panel (bottom sheet on a phone) with the less used tools: <span class="ui">Browse all screens</span>, <span class="ui">Past runs</span>, <span class="ui">Rankings</span>, <span class="ui">Look back</span>, <span class="ui">ETFs</span>, <span class="ui">Versions</span>, and <span class="ui">Advanced</span>. Each one appears only when it is switched on.</td></tr>
+    </tbody>
+  </table>
+  <div class="box small">If your app shows an older layout, with a column titled <span class="ui">Universe</span> on the left and <span class="ui">Start with a ready scan</span> lower down, the same steps apply; only the places of the parts differ. This guide follows the redesigned layout.</div>
+  <div class="check"><b>Check:</b> you should now be able to point to the five parts: the two cards, Start a scan, Conditions, Results, and the More tools button.</div>
+</div>
+
+<!-- ============ 4 ============ -->
+<div class="section" id="s4">
+  <h2 data-toc="4. Step 1 - Pick your list"><span class="num">4.</span>Step 1 - Pick your list</h2>
+  <p class="lead">The list (also called the universe) is the set of stocks the scan reads. The page opens on <b>NIFTY 50 stocks</b>.</p>
+  <ol class="steps" style="--start:8">
+    <li>On the <span class="ui">Your list</span> card, press <span class="ui">Change</span>.
+      <span class="see">a panel <span class="ui">Your list and chart</span> opens under the cards, with a box <span class="ui">Scan these stocks</span>.</span></li>
+    <li>Open <span class="ui">Scan these stocks</span>. You can type in it to search.
+      <span class="see">groups of lists: <span class="ui">Index stocks</span>, <span class="ui">Sectors</span>, <span class="ui">F&amp;O</span>, <span class="ui">My watchlists</span>, and <span class="ui">Other</span> with <span class="ui">Type my own symbols</span>. Each list shows its size in brackets.</span></li>
+    <li>Pick a list. To type your own, pick <span class="ui">Type my own symbols</span> and type the symbols in the box <span class="ui">Your symbols (up to 500)</span>, separated by commas or new lines.
+      <span class="see">under the box: <span class="ui">N stocks · list name</span>. If something is wrong, an amber note (see the table of notes below).</span></li>
+    <li>Press <span class="ui">Done</span>.
+      <span class="see">the <span class="ui">Your list</span> card shows the new name and the number of stocks.</span></li>
+  </ol>
+
+  <h3>Which lists exist</h3>
+  <table>
+    <thead><tr><th style="width:22%">Group</th><th style="width:40%">What is in it</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><b>Index stocks</b></td><td>The member stocks of an index, for example NIFTY 50, NIFTY NEXT 50, NIFTY 100, 200, 500, MIDCAP 150, SMALLCAP 250, sector indices (BANK, IT, AUTO, PHARMA, METAL ...) and theme indices. ATP's catalogue holds 37 indices.</td><td>A list shows only when ATP has stored its members. NIFTY 50 is always first.</td></tr>
+      <tr><td><b>Sectors</b></td><td>24 sector lists: Banking, Pharma, Financial Services, IT, Automobile, Healthcare, FMCG, Oil &amp; Gas, Metals &amp; Mining, Capital Goods, Power, Telecom, Chemicals, Construction, Construction Materials, Consumer Durables, Consumer Services, Realty, Media, Services, Textiles, Utilities, Forest Materials, Diversified.</td><td>Built from ATP's shared reference data.</td></tr>
+      <tr><td><b>F&amp;O</b></td><td>One list: <span class="ui">F&amp;O stocks (N)</span>, the stocks in the futures and options segment.</td><td></td></tr>
+      <tr><td><b>My watchlists</b></td><td>Your own watchlists.</td><td>Shown when watchlists are switched on.</td></tr>
+      <tr><td><b>Other</b></td><td><span class="ui">Type my own symbols</span>.</td><td>NSE symbols.</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">The list of the indices themselves (index instruments) is not offered here: a scan runs on stocks.</p>
+
+  <h3>How big a run can be - today</h3>
+  <table class="keep">
+    <thead><tr><th style="width:40%">Limit</th><th style="width:14%">Number</th><th>What it means for you</th></tr></thead>
+    <tbody>
+      <tr><td>Largest list</td><td><b>500</b></td><td>A longer list (for example NIFTY TOTAL MARKET) is cut to its first 500 stocks.</td></tr>
+      <tr><td>Stocks in one request to the server</td><td><b>50</b></td><td>A larger list is sent in parts, one after another. The page shows <span class="ui">Scanning X of Y stocks…</span> with a progress bar and a <span class="ui">Stop</span> button.</td></tr>
+      <tr><td>Part size</td><td><b>5 to 50</b></td><td>Set from your broker's request limits (10 when ATP cannot tell). The page waits between parts to stay inside your broker's limits.</td></tr>
+      <tr><td>Live counts while editing</td><td><b>50</b></td><td>For a larger list the page says <span class="ui">Live counts show for lists of up to 50 stocks. Run scans all N, K at a time, within your broker's limits.</span></td></tr>
+      <tr><td>Stocks one alert watches</td><td><b>50</b></td><td>An alert on a larger list watches the first 50, unless you tick <span class="ui">Run on the whole list</span> (section 8).</td></tr>
+    </tbody>
+  </table>
+  <div class="box violet keep">
+    <h4>Work in progress (not live yet when this guide was written)</h4>
+    <p>A change is being built that removes the fixed 50 per request. Daily, Weekly and Monthly scans will read ATP's own store for the whole list at once; only stocks missing from the store go to your own broker, paced. Results will come in as they are ready (for example <i>"120 / 500 done"</i>), you can cancel, and if the broker slows ATP down the page will say <i>"Slowed by broker limit"</i> instead of failing. Until it is released, the limits in the table above apply.</p>
+  </div>
+
+  <h3>Notes you may see under the list</h3>
+  <table class="keep">
+    <thead><tr><th style="width:52%">Message</th><th>What it means and what to do</th></tr></thead>
+    <tbody>
+      <tr><td class="msg">This list has no stocks yet, so the scan runs on NIFTY 50.</td><td>The list you picked is empty (for example a new watchlist). Add stocks to it, or pick another list.</td></tr>
+      <tr><td class="msg">Type at least one symbol. Until then the scan runs on NIFTY 50.</td><td>You chose <span class="ui">Type my own symbols</span> but the box is empty.</td></tr>
+      <tr><td class="msg">This list could not be loaded, so the scan runs on NIFTY 50.</td><td>A connection problem. Try again in a moment.</td></tr>
+      <tr><td class="msg">The latest NIFTY 50 list could not be loaded, so the built-in list (as of 23 Oct 2026) is used.</td><td>ATP uses a list it carries itself. The scan still runs.</td></tr>
+    </tbody>
+  </table>
+  <div class="check"><b>Check:</b> you should now see your chosen list's name and its number of stocks on the <span class="ui">Your list</span> card.</div>
+</div>
+
+<!-- ============ 5 ============ -->
+<div class="section" id="s5">
+  <h2 data-toc="5. Step 2 - Pick the chart (timeframe)"><span class="num">5.</span>Step 2 - Pick the chart (timeframe)</h2>
+  <p class="lead">The timeframe is the size of one candle. A Daily scan reads daily candles; a 15 min scan reads 15-minute candles.</p>
+  <ol class="steps" style="--start:12">
+    <li>On the <span class="ui">Chart</span> card, press <span class="ui">Change</span> (the same panel as the list opens).</li>
+    <li>Under <span class="ui">Chart</span>, open the box and pick one of: <span class="ui">1 min</span>, <span class="ui">3 min</span>, <span class="ui">5 min</span>, <span class="ui">15 min</span>, <span class="ui">30 min</span>, <span class="ui">1 hour</span>, <span class="ui">Daily</span>, <span class="ui">Weekly</span>, <span class="ui">Monthly</span>.</li>
+    <li>Press <span class="ui">Done</span>.
+      <span class="see">the <span class="ui">Chart</span> card shows the timeframe in words, for example <span class="ui">Daily</span>.</span></li>
+  </ol>
+  <div class="grid2">
+    <div class="card"><h4>Daily, Weekly, Monthly</h4><ul class="small"><li>Work with or without a broker (section 9).</li><li>Weekly and Monthly candles are built from daily candles.</li><li>A good place to start as a beginner: fewer candles, less noise.</li></ul></div>
+    <div class="card"><h4>1 min to 1 hour (intraday)</h4><ul class="small"><li>Need your own connected broker.</li><li>Some functions work only on some intraday timeframes (the tables in section 10 say which).</li><li>Session functions (opening range, previous day high) make most sense here.</li></ul></div>
+  </div>
+
+  <h3>Closed candle and forming candle</h3>
+  <figure>
+    <svg viewBox="0 0 720 170" width="720" height="170" role="img" aria-label="Closed candles and the forming candle">
+      <g font-family="Inter" font-size="11">
+        <line x1="30" y1="140" x2="690" y2="140" stroke="#d9dfe7"></line>
+        <g stroke-width="2">
+          <line x1="70" y1="60" x2="70" y2="125" stroke="#16794a"></line><rect x="60" y="75" width="20" height="35" fill="#16794a"></rect>
+          <line x1="130" y1="50" x2="130" y2="115" stroke="#16794a"></line><rect x="120" y="62" width="20" height="38" fill="#16794a"></rect>
+          <line x1="190" y1="45" x2="190" y2="110" stroke="#b3261e"></line><rect x="180" y="58" width="20" height="30" fill="#b3261e"></rect>
+          <line x1="250" y1="55" x2="250" y2="120" stroke="#16794a"></line><rect x="240" y="70" width="20" height="34" fill="#16794a"></rect>
+          <line x1="310" y1="38" x2="310" y2="100" stroke="#16794a"></line><rect x="300" y="48" width="20" height="40" fill="#16794a"></rect>
+          <line x1="370" y1="30" x2="370" y2="92" stroke="#b3261e"></line><rect x="360" y="40" width="20" height="34" fill="#b3261e"></rect>
+          <line x1="430" y1="34" x2="430" y2="96" stroke="#16794a"></line><rect x="420" y="44" width="20" height="38" fill="#16794a"></rect>
+        </g>
+        <rect x="474" y="20" width="62" height="114" rx="6" fill="none" stroke="#2456c7" stroke-dasharray="0"></rect>
+        <line x1="505" y1="38" x2="505" y2="96" stroke="#16794a" stroke-width="2"></line><rect x="495" y="48" width="20" height="36" fill="#16794a"></rect>
+        <rect x="568" y="20" width="62" height="114" rx="6" fill="none" stroke="#9a5b00" stroke-dasharray="5 4"></rect>
+        <line x1="599" y1="44" x2="599" y2="90" stroke="#9a5b00" stroke-width="2" stroke-dasharray="3 3"></line><rect x="589" y="54" width="20" height="22" fill="#fff3dc" stroke="#9a5b00" stroke-dasharray="3 3"></rect>
+        <text x="505" y="155" text-anchor="middle" font-weight="700" fill="#2456c7">last closed</text>
+        <text x="599" y="155" text-anchor="middle" font-weight="700" fill="#9a5b00">forming</text>
+        <text x="250" y="160" text-anchor="middle" fill="#66748a">closed candles: final, never change</text>
+      </g>
+    </svg>
+    <figcaption>Made-up candles. A scan reads up to the last closed candle. The forming candle can still change, so a scan does not use it.</figcaption>
+  </figure>
+  <ul>
+    <li><b>Scans use closed candles only.</b> The page says it under the list panel: <span class="ui">Closed bars only, read from your broker.</span></li>
+    <li>"The last bar" in this guide always means the last <b>closed</b> candle.</li>
+    <li>The only place a forming candle can be used is an <b>alert</b>, if you pick <span class="ui">While the bar is forming</span> (shown when that option is switched on; not offered for Weekly or Monthly). The app marks it <i>"earlier, but it can change before the close"</i>. The default is <span class="ui">When the bar closes</span>, marked <i>"recommended: the bar is final"</i>.</li>
+    <li>Inside a condition you can also read a candle further back with <b>bars ago</b>, and read one side on another timeframe (section 7).</li>
+  </ul>
+  <div class="check"><b>Check:</b> you should now see your timeframe in words (for example <span class="ui">Daily</span>) on the <span class="ui">Chart</span> card.</div>
+</div>
+
+<!-- ============ 6 ============ -->
+<div class="section" id="s6">
+  <h2 data-toc="6. Step 3 - Start a scan: ready scans, templates, the library"><span class="num">6.</span>Step 3 - Start a scan: ready scans, templates, the library</h2>
+  <p class="lead">There are four ways to start. All of them end in the same place: conditions you can see and change.</p>
+  <table class="keep">
+    <thead><tr><th style="width:20%">Way</th><th style="width:38%">Where</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td><b>Ready scan</b></td><td>Tab <span class="ui">Ready scan</span>; more under <span class="ui">See all ready scans (N)</span></td><td>One tap on <span class="ui">Run</span> fills the conditions and runs it on your list. The page says: <i>"One tap runs it on (your list). You can change every condition afterwards."</i></td></tr>
+      <tr><td><b>Template</b></td><td>Tab <span class="ui">Template</span></td><td>Fills the conditions; nothing runs until you press <span class="ui">Run</span>. If conditions are already there, ATP asks <i>Replace the current conditions with "name"?</i></td></tr>
+      <tr><td><b>Blank</b></td><td>Tab <span class="ui">Template</span>, last row <span class="ui">Blank: I add conditions</span></td><td>Opens empty Conditions; you add blocks one by one (section 7).</td></tr>
+      <tr><td><b>Own words</b></td><td>Tab <span class="ui">Own words</span> (only when switched on, and it needs an AI provider set up)</td><td>Type an idea in plain words. <i>"Each part becomes a condition you can check. Anything ATP cannot read is listed, never guessed."</i> Then <span class="ui">Make the scan</span> and <span class="ui">Open as blocks</span>.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.1 The three templates (always there)</h3>
+  <table class="keep">
+    <thead><tr><th style="width:22%">Name</th><th style="width:40%">The conditions it fills</th><th>Timeframe it was made for</th></tr></thead>
+    <tbody>
+      <tr><td><b>Momentum</b></td><td><code>RSI (14) above 60</code> and <code>close above EMA (close, 20)</code></td><td>Daily (works on any)</td></tr>
+      <tr><td><b>Oversold</b></td><td><code>RSI (14) at or below 30</code></td><td>Daily (works on any)</td></tr>
+      <tr><td><b>Trend on the daily</b></td><td><code>close on Daily above EMA (close, 50) on Daily</code></td><td>Daily, even when the scan's chart is different</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">The names are only labels. "Momentum" and "Oversold" describe the condition, not a view on the stock.</p>
+
+  <h3>6.2 The screen library</h3>
+  <ol class="steps" style="--start:15">
+    <li>Press <span class="ui">See all ready scans (N)</span>, or <span class="ui">More tools</span> then <span class="ui">Browse all screens</span>.
+      <span class="see">the <span class="ui">Screen library</span>, with a search box <span class="ui">Search names and definitions</span> and two filters <span class="ui">All methods</span> and <span class="ui">All setups</span>.</span></li>
+    <li>Filter by <b>method</b> (Price action, Indicator, Volume and order flow, Fundamental and ownership, Legends, My screens) and by <b>setup</b> (Breakout / breakdown, Pullback / continuation, Reversal, Range / mean reversion, Momentum / relative strength, Options and volatility, Events and flow, Market internals).</li>
+    <li>On a card, press <span class="ui">Open</span> (fills the conditions) or <span class="ui">Try as a scan</span>. A card that says <span class="ui">This screen opens in the builder soon</span> cannot be opened yet.</li>
+  </ol>
+  <p>The library holds <b>48 screens</b> in its file. Which ones you see depends on what is switched on:</p>
+  <table>
+    <thead><tr><th style="width:24%">Family</th><th style="width:8%">Count</th><th>Examples (names as in the library)</th><th style="width:22%">Shows when</th></tr></thead>
+    <tbody>
+      <tr><td>Starters</td><td>3</td><td>Momentum, Oversold, Trend on the daily</td><td>always</td></tr>
+      <tr><td>Breakouts, set 1</td><td>12</td><td>Swing 1H range breakout · Daily swing-high / low break (BOS / CHoCH) · Intraday 15m NR7 breakout · Daily / Weekly 52-week high breakout · Intraday 15m ATR expansion · Intraday 5m volume breakout · two opening-range breakouts · first-hour and previous-day high / low breaks · new high / low of day</td><td>"Breakout screens, set 1" is on</td></tr>
+      <tr><td>Breakouts, set 2</td><td>8</td><td>Daily VCP-style breakout and watchlist · Daily 20-day and 55-day Donchian breakouts · Daily Bollinger squeeze · Intraday 15m TTM squeeze fire · Daily 50-day moving-average breakout · Daily RSI / ADX regime breakout</td><td>"Breakout screens, set 2" is on</td></tr>
+      <tr><td>Breakouts, set 3</td><td>8</td><td>Daily trendline breakout · Swing 1H channel breakout · Daily flag and triangle breakouts · two gap screens · Daily and 1H range-breakout retests</td><td>"Breakout screens, set 3" is on</td></tr>
+      <tr><td>Legends</td><td>17</td><td>Screens named after published methods of well-known traders and investors, for example "Darvas-style box breakout", "Turtle-style 20-day channel breakout", "Connors-style 2-period RSI pullback", "Graham-style defensive value (Graham number)"</td><td>"Legends cards" is on; value / growth cards also need reported company figures</td></tr>
+    </tbody>
+  </table>
+  <p class="small">A Legends card shows <span class="ui">About the method</span>, <span class="ui">The screen</span>, a table <span class="ui">Editable parameters (default and documented range)</span> and <span class="ui">Public sources</span>. The "-style" in a name means the screen follows a published description; it is not endorsed by that person.</p>
+
+  <h3>6.3 Other tools under More tools</h3>
+  <table class="keep">
+    <thead><tr><th style="width:26%">Tool</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><span class="ui">Past runs</span></td><td><i>"Your own runs, newest first. Opening one shows its results as they were then; nothing runs again."</i> You can also save a past run's matches as a watchlist.</td></tr>
+      <tr><td><span class="ui">Rankings</span></td><td>Pick a <span class="ui">Ranking system</span>; the panel shows your list's symbols ranked 0 to 100 with their factors.</td></tr>
+      <tr><td><span class="ui">Look back</span> (or <span class="ui">Look back and backtest</span>)</td><td>Who met the scan on a past date, and what the candles did afterwards. It describes the past only.</td></tr>
+      <tr><td><span class="ui">ETFs</span></td><td>A ready screen for exchange-traded funds.</td></tr>
+      <tr><td><span class="ui">Versions (N)</span></td><td>Earlier saved versions of this scan; <span class="ui">Open this version</span> puts its conditions back.</td></tr>
+      <tr><td><span class="ui">Advanced</span></td><td>Opens extra tools for experienced users: <span class="ui">Run several screens together</span>, <span class="ui">Pine Script</span> (paste a TradingView script; ATP shows what it can translate), the Formula block and <span class="ui">Live counts while editing</span>.</td></tr>
+    </tbody>
+  </table>
+  <div class="box small"><b>"Today's setups from your scans"</b> - when switched on, a short card at the very top of the page lists what your saved scans found, so the page opens on something ready.</div>
+  <div class="check"><b>Check:</b> you should now see <span class="ui">Conditions (N)</span> with N above zero, and the scan's name in the name box (for example <span class="ui">Momentum</span>). If you started blank, N is 0 and the box says <span class="ui">Untitled scan</span>.</div>
+</div>
+
+<!-- ============ 7 ============ -->
+<div class="section" id="s7">
+  <h2 data-toc="7. Step 4 - Build and edit conditions"><span class="num">7.</span>Step 4 - Build and edit conditions</h2>
+  <p class="lead">Every condition is a <b>block</b>. Blocks sit under the line <span class="ui">All of these must pass</span>: a stock matches only when every switched-on block is true for it.</p>
+
+  <h3>7.1 The six kinds of block</h3>
+  <table class="keep">
+    <thead><tr><th style="width:15%">Block</th><th style="width:38%">Reads as</th><th>Use it for</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag ind">Indicator</span></td><td><code>RSI (14) above 60</code><br><code>close crosses above EMA (close, 20)</code></td><td>A number compared with <span class="ui">A number</span> or with <span class="ui">Another indicator</span>. Comparisons: <span class="ui">above</span>, <span class="ui">at or above</span>, <span class="ui">below</span>, <span class="ui">at or below</span>, <span class="ui">crosses above</span>, <span class="ui">crosses below</span>.</td></tr>
+      <tr><td><span class="tag fil">Filter</span></td><td><code>Pattern (hammer)</code><br><code>NearSupport (0.5)</code></td><td>A yes / no check, such as a candle pattern or a breakout.</td></tr>
+      <tr><td><span class="tag cat">Category</span></td><td><code>Trend is UPTREND</code><br><code>StructureEvent is not CHOCH_BEARISH</code></td><td>A label compared with one or more of its values. Choose <span class="ui">is</span> or <span class="ui">is not</span>; tick at least one value.</td></tr>
+      <tr><td><span class="tag rnk">Rank</span></td><td><code>Rank of PctChange (close, 5) at or below 10</code></td><td>Keeps the top of your list by a number. <span class="ui">Rank of</span>: 1 = highest in the list. <span class="ui">Percentile rank of</span>: 0 to 100.</td></tr>
+      <tr><td><b>Group</b></td><td><span class="ui">Any of these</span> / <span class="ui">Not all of these</span></td><td>"Either / or". A group passes when any one of its blocks passes (or, with Not all of these, unless every one passes).</td></tr>
+      <tr><td><span class="tag frm">Formula</span></td><td><code>high - low &lt; Min(high - low, 6)[1]</code></td><td>Type a condition as text. Only under <span class="ui">Advanced</span>, when switched on. It reaches functions the other blocks cannot.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.2 Add your first block</h3>
+  <ol class="steps" style="--start:18">
+    <li>Open <span class="ui">Conditions</span> with <span class="ui">Show</span> (if it is closed).</li>
+    <li>Next to <span class="ui">Add a condition</span>, pick the kind of block: <span class="ui">Indicator</span>, <span class="ui">Filter</span>, <span class="ui">Category</span>, <span class="ui">Rank</span> or <span class="ui">Group</span> (and <span class="ui">Formula</span> under Advanced).</li>
+    <li>Press <span class="ui">Add a condition</span>.
+      <span class="see">a new row, for example <code>RSI (14) above 60</code> for an Indicator block. Every underlined part can be changed.</span></li>
+    <li>Tap the first word (the function) to pick another one from the list. Tap a number in brackets to change a setting; type it and press Enter (Escape cancels).</li>
+    <li>Tap the comparison word (<span class="ui">above</span>) to change it, then the right side to change the number.</li>
+    <li>To compare with another indicator instead of a number, open the row's <b>advanced options</b> (the small arrow at the row's end) and choose <span class="ui">Compare with</span>: <span class="ui">Another indicator</span>.</li>
+  </ol>
+
+  <h3>7.3 Bars ago and another timeframe</h3>
+  <ul>
+    <li><b>Timeframe chip.</b> Each side has a small chip. Left alone it says <span class="ui">Scan</span> and uses the scan's chart. Pick another timeframe (for example <span class="ui">Daily</span>) to read that side on it. Example: the scan runs on 15 min, but <code>close on Daily above EMA (close, 50) on Daily</code>.</li>
+    <li><b>Bars ago.</b> In the row's advanced options, <span class="ui">Left side, bars ago</span> and <span class="ui">Right side, bars ago</span>: a whole number from 1 to 500; blank is the last closed candle. Example: <code>close above close 1 bar ago</code>.</li>
+    <li>Some functions are read on the <b>last bar only</b> (structure, patterns, zones, the option chain, ranks). They take no bars-ago and no other timeframe.</li>
+  </ul>
+
+  <h3>7.4 Manage blocks</h3>
+  <table class="keep">
+    <thead><tr><th style="width:28%">Action</th><th>How</th></tr></thead>
+    <tbody>
+      <tr><td>Switch a block off for a moment</td><td>The tick box at the start of the row (<i>Disable this block</i> / <i>Enable this block</i>). A switched-off block is kept but not checked.</td></tr>
+      <tr><td>Copy a block</td><td>The copy icon (<i>Duplicate</i>).</td></tr>
+      <tr><td>Remove a block</td><td>The bin icon (<i>Remove</i>).</td></tr>
+      <tr><td>Change the order</td><td>Drag the row, or press Alt and an arrow key on it.</td></tr>
+      <tr><td>See it in plain words</td><td>The row's advanced options show <span class="ui">Reads:</span> and the sentence. <span class="ui">Advanced: the code</span> shows the same block as text.</td></tr>
+      <tr><td>Name the scan</td><td>Type in the name box at the top of Conditions (shows <span class="ui">Untitled scan</span> until you do).</td></tr>
+      <tr><td>Keep the scan</td><td>Press <span class="ui">Save</span>. A saved scan can later have an alert and versions.</td></tr>
+      <tr><td>Start over</td><td><span class="ui">Blank: I add conditions</span>. ATP asks <i>"Clear the current conditions and start from zero?"</i></td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.5 When Run is greyed out</h3>
+  <p>The reason shows beside <span class="ui">Run</span> (on a phone, in the bottom bar):</p>
+  <table class="keep">
+    <thead><tr><th style="width:30%">Reason on screen</th><th>What to do</th></tr></thead>
+    <tbody>
+      <tr><td class="msg">Pick a scan first</td><td>Pick a ready scan or template, or add a condition.</td></tr>
+      <tr><td class="msg">Add a condition</td><td>There is no switched-on block. Add one.</td></tr>
+      <tr><td class="msg">Add symbols</td><td>Your list is empty. Go back to step 1.</td></tr>
+      <tr><td class="msg">Fix stage N</td><td>Block N has a problem; its red line says what, for example <i>"Pick at least one value for Trend."</i></td></tr>
+      <tr><td class="msg">Fix the conditions</td><td>The scan as a whole was refused; the message under Conditions says why (section 12).</td></tr>
+    </tbody>
+  </table>
+  <div class="check"><b>Check:</b> you should now see your blocks under <span class="ui">All of these must pass</span>, no red line under any block, and <span class="ui">Run</span> no longer greyed out.</div>
+</div>
+
+<!-- ============ 8 ============ -->
+<div class="section" id="s8">
+  <h2 data-toc="8. Step 5 - Run the scan and read the results"><span class="num">8.</span>Step 5 - Run the scan and read the results</h2>
+  <ol class="steps" style="--start:24">
+    <li>Press <span class="ui">Run</span> (header on a computer, bottom bar on a phone).
+      <span class="see">for a larger list, <span class="ui">Scanning X of Y stocks…</span> with a bar and <span class="ui">Stop</span>. Then the results header.</span></li>
+    <li>Read the header: <span class="ui">Matched N of M</span>. N is green when above 0 and amber when 0. If some stocks could not be read it adds <span class="ui">· K could not be read</span>, with one line giving the reason and one button (<span class="ui">Log in</span>, <span class="ui">Connect broker</span>, <span class="ui">Retry</span> or <span class="ui">Try another timeframe</span>).</li>
+    <li>Read the time pill: <span class="ui">Ran at HH:MM IST</span>. When it turns amber it adds <i>"x min ago, run again for newer bars"</i>. Hover (computer) to see where the data came from, for example <i>"Data from your broker"</i> or <i>"Data from ATP's stored end-of-day history"</i>. Where the data badge is switched on, a badge such as <span class="ui">EOD · date</span> shows the session the data is from.</li>
+    <li>Look at the table. By default only matches are listed; a line says how many did not match, with <span class="ui">Show the N that did not match</span> (or <span class="ui">Show all N</span>), and <span class="ui">Matches only</span> to go back.</li>
+    <li>Press <span class="ui">Show on chart</span> on a matched row to open its chart <b>in place</b> (a window over the page; you do not leave Find setups).</li>
+  </ol>
+
+  <h3>8.1 The results table</h3>
+  <table class="keep">
+    <thead><tr><th style="width:22%">Column / control</th><th>What it shows</th></tr></thead>
+    <tbody>
+      <tr><td><b>Symbol</b></td><td>The stock. Sort by tapping the header.</td></tr>
+      <tr><td><b>Result</b></td><td><span style="color:var(--up);font-weight:700">● Matched</span>, <span class="muted">Did not match</span>, or <span style="color:var(--warn);font-weight:700">Could not be read · reason</span>. A stock that could not be read is never counted as "did not match".</td></tr>
+      <tr><td><b>Stages</b></td><td>One chip per condition: filled when the stock passed it (wide screens; tick <span class="ui">Stages column</span>).</td></tr>
+      <tr><td><span class="ui">Ask AI</span></td><td>Opens the AI Copilot beside the page about this symbol (when the Copilot is on). It explains; it does not trade.</td></tr>
+      <tr><td><span class="ui">Show on chart</span></td><td>The evidence chart (below). Shown when match charts are switched on and stored for that row.</td></tr>
+      <tr><td><span class="ui">Auto-refresh 1m</span></td><td>While ticked and the page is open, the same scan runs again every minute.</td></tr>
+      <tr><td><span class="ui">Export (CSV)</span></td><td>Downloads the table as a spreadsheet file.</td></tr>
+      <tr><td><span class="ui">Table</span> / <span class="ui">Heatmap</span> / <span class="ui">Chart grid</span></td><td>Other views of the same answer (when switched on). Heatmap: boxes by sector, sized by market cap, coloured by the last day's change, matched ones ringed. Chart grid: a small chart per match.</td></tr>
+    </tbody>
+  </table>
+  <div class="box warn small"><b>This condition removes every symbol.</b> If one stage leaves nothing, a note says <i>"This condition removes every symbol. Loosen it or disable it to see candidates."</i> with <span class="ui">Show the stage</span> and <span class="ui">Disable it</span>. In the funnel, the count beside each stage shows how many are still in, and <i>See what this removes</i> lists the stocks it took out.</div>
+
+  <h3>8.2 The evidence chart (Show on chart)</h3>
+  <table class="keep">
+    <thead><tr><th style="width:26%">Part</th><th>What it shows</th></tr></thead>
+    <tbody>
+      <tr><td>Title</td><td><span class="ui">Why STOCK matched</span> - <i>"Only the screen's own conditions are drawn."</i></td></tr>
+      <tr><td>The chart</td><td>The candles up to the matched bar, with each condition drawn (you can hide one by its chip).</td></tr>
+      <tr><td><span class="ui">Why it matched</span></td><td>Each condition in words.</td></tr>
+      <tr><td>Verify table</td><td>Columns <span class="ui">Result</span>, <span class="ui">Condition</span>, <span class="ui">Values at the matched bar</span>. <span class="ui">Show failed conditions</span> adds the ones that were not true (for example the other side of an "any of these" group, marked "not needed").</td></tr>
+      <tr><td><span class="ui">Trend (Dow):</span> strip, <span class="ui">Replay:</span></td><td>When the extra chart context is switched on: the trend on other timeframes, and step back / forward one bar to see how the match formed.</td></tr>
+      <tr><td><span class="ui">Send to my Telegram</span></td><td>Sends this chart as an image to your own linked Telegram chat.</td></tr>
+      <tr><td><span class="ui">About these numbers</span>, <span class="ui">Advanced: the code</span></td><td>An explanation, and the conditions as text.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>8.3 After a run: keep or watch the matches</h3>
+  <ol class="steps" style="--start:29">
+    <li><span class="ui">Save matches as a watchlist</span>: type a name, press <span class="ui">Save</span>. The list appears at once under <span class="ui">My watchlists</span>.</li>
+    <li><span class="ui">Tell me when it matches</span> (when switched on): a window says <i>"ATP checks each time a daily bar closes for "My scan" on NIFTY 50 stocks (50 stocks), and tells you when one matches."</i></li>
+    <li>Pick <span class="ui">When to check</span>: <span class="ui">When the bar closes</span> or (where offered) <span class="ui">While the bar is forming</span>. For a long list, tick <span class="ui">Run on the whole list</span> if you want the alert to read the whole list.</li>
+    <li>Connect Telegram in the same window if you want messages there, then press <span class="ui">Turn on the alert</span>.
+      <span class="see"><i>"Alert on. ATP tells you when a symbol matches this scan."</i> Under <span class="ui">Alerts on this scan</span>, each alert with <span class="ui">Pause</span> / <span class="ui">Turn back on</span>. The foot says: <i>"An alert only tells you; it never places or changes an order."</i></span></li>
+  </ol>
+  <div class="box violet small"><b>A "Then" step on alerts.</b> When your administrator has switched it on, an alert rule in <b>Settings › Alerts</b> can have a <span class="ui">Then</span> step that keeps watching a matched symbol on 5 or 15 minute candles and then sends a notification, or a <b>PAPER</b> (practice) proposal you approve or reject. The app says: <i>"Setups are information for your own decision. They are not recommendations, and nothing is placed without your approval."</i> It is not part of a normal scan.</div>
+  <div class="check"><b>Check:</b> you should now see <span class="ui">Matched N of M</span>, the <span class="ui">Ran at</span> pill, the table, and (for a match) the chart window after <span class="ui">Show on chart</span>.</div>
+</div>
+
+<!-- ============ 9 ============ -->
+<div class="section" id="s9">
+  <h2 data-toc="9. Where the data comes from"><span class="num">9.</span>Where the data comes from</h2>
+  <figure>
+    <svg viewBox="0 0 720 250" width="720" height="250" role="img" aria-label="Which data a scan reads">
+      <defs><marker id="ar2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#66748a"></path></marker></defs>
+      <g font-family="Inter" font-size="11.5" text-anchor="middle">
+        <rect x="250" y="10" width="220" height="40" rx="20" fill="#16202c"></rect><text x="360" y="35" fill="#fff" font-weight="700">You press Run</text>
+        <line x1="360" y1="50" x2="360" y2="70" stroke="#66748a" stroke-width="2" marker-end="url(#ar2)"></line>
+        <rect x="230" y="72" width="260" height="40" rx="8" fill="#f6f8fb" stroke="#3d4a5a"></rect><text x="360" y="97" fill="#16202c" font-weight="700">Is your own broker connected?</text>
+        <line x1="290" y1="112" x2="160" y2="140" stroke="#66748a" stroke-width="2" marker-end="url(#ar2)"></line><text x="205" y="122" fill="#16794a" font-weight="700">Yes</text>
+        <line x1="430" y1="112" x2="560" y2="140" stroke="#66748a" stroke-width="2" marker-end="url(#ar2)"></line><text x="515" y="122" fill="#b3261e" font-weight="700">No</text>
+        <rect x="30" y="142" width="260" height="96" rx="8" fill="#e5f4ec" stroke="#16794a"></rect>
+        <text x="160" y="164" fill="#16794a" font-weight="700">Your own broker's candles</text>
+        <text x="160" y="184" fill="#3d4a5a" font-size="10.5">Every timeframe, 1 min to Monthly</text>
+        <text x="160" y="200" fill="#3d4a5a" font-size="10.5">Paced inside your broker's limits</text>
+        <text x="160" y="216" fill="#3d4a5a" font-size="10.5">ATP's own store may be read first</text>
+        <text x="160" y="230" fill="#3d4a5a" font-size="10.5">(fewer broker calls)</text>
+        <rect x="430" y="142" width="130" height="96" rx="8" fill="#e8eefb" stroke="#2456c7"></rect>
+        <text x="495" y="164" fill="#2456c7" font-weight="700">Daily / Weekly /</text><text x="495" y="180" fill="#2456c7" font-weight="700">Monthly</text>
+        <text x="495" y="200" fill="#3d4a5a" font-size="10.5">ATP's stored</text><text x="495" y="214" fill="#3d4a5a" font-size="10.5">end-of-day history</text>
+        <rect x="570" y="142" width="130" height="96" rx="8" fill="#fbe9e7" stroke="#b3261e"></rect>
+        <text x="635" y="164" fill="#b3261e" font-weight="700">1 min to 1 hour</text>
+        <text x="635" y="186" fill="#3d4a5a" font-size="10.5">Not available.</text><text x="635" y="202" fill="#3d4a5a" font-size="10.5">"Connect your</text><text x="635" y="216" fill="#3d4a5a" font-size="10.5">broker for</text><text x="635" y="230" fill="#3d4a5a" font-size="10.5">intraday bars."</text>
+      </g>
+    </svg>
+    <figcaption>Which candles a scan reads. The exchange here is NSE.</figcaption>
+  </figure>
+
+  <h3>With your own broker connected</h3>
+  <ul>
+    <li>The candles come from <b>your own</b> broker connection. The time pill's hover says <i>"Data from your broker"</i>.</li>
+    <li>ATP asks the broker in paced parts, so it stays inside the broker's request limits. A stock that waited for that limit is listed: <i>"N stocks waited for your broker's limit. Run again in a minute to include them."</i></li>
+    <li>Your broker login ends from time to time. Then the stocks say <i>"Your broker login has ended. Log in again to read the bars."</i> and the button <span class="ui">Log in</span> opens the broker panel in place.</li>
+  </ul>
+
+  <h3>Without a broker: end-of-day data</h3>
+  <ul>
+    <li>Daily, Weekly and Monthly scans read <b>ATP's stored end-of-day history</b> (the exchange's daily files). The hover says <i>"Data from ATP's stored end-of-day history"</i>. Where the data badge is on, it reads <span class="ui">EOD · date</span>. On other pages (charts, watchlists) the same data carries the label <b>"Last close &lt;date&gt;"</b>.</li>
+    <li>The stored window ends at the last stored session, so the newest candle in the scan is the last closed day. Today's session is never read from this store.</li>
+    <li>A stock that is not in the store says <i>"Daily history for SYMBOL is not stored yet."</i></li>
+    <li>Intraday scans (1 min to 1 hour) need your own broker: <i>"Connect your broker for intraday bars."</i></li>
+  </ul>
+  <div class="box keep">
+    <h4>Why there is no shared live data</h4>
+    <p>ATP does not pass live or intraday market data from one person's broker connection to anyone else, not even from the owner or an administrator. This follows the market regulator's circular of May 2024, broker terms and the exchange's data licence. Live data for you comes only from your own connected broker. End-of-day data from the exchange's daily files is shared with everyone.</p>
+  </div>
+  <h3>Store-first scans</h3>
+  <p>When the administrator has switched it on, scans read <b>ATP's own stored candles first</b>:</p>
+  <ul>
+    <li>Daily, Weekly, Monthly: from the stored exchange daily files only - no broker call at all.</li>
+    <li>Intraday: your own stored one-minute candles, built into the scan's timeframe, plus only the newest candles from <b>your own</b> broker, paced. An index (its volume comes from its future) and a stock the store does not hold go through your broker as before.</li>
+    <li>The candles are the same closed candles either way, so the same data gives the same matches.</li>
+  </ul>
+  <div class="check"><b>Check:</b> after a run, hover (or long-press) the <span class="ui">Ran at</span> pill: you should now see where the data came from.</div>
+</div>
+
+<!-- ============ 10 ============ -->
+<div class="section" id="s10">
+  <h2 data-toc="10. Every function you can use"><span class="num">10.</span>Every function you can use</h2>
+  <p class="lead">This is the full catalogue ATP's screener knows: <b>167 building blocks in 18 groups</b>. The name in the first column is the name the builder shows in its list. Settings in brackets are shown in the order the builder shows them; a value after "=" is the setting a new block starts with.</p>
+  <table class="keep">
+    <thead><tr><th style="width:5%">#</th><th style="width:43%">Group</th><th style="width:8%">Count</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>A</td><td>Price and volume of a candle</td><td>6</td><td>always</td></tr>
+      <tr><td>B</td><td>Moving averages</td><td>6</td><td>always</td></tr>
+      <tr><td>C</td><td>Momentum oscillators</td><td>10</td><td>always</td></tr>
+      <tr><td>D</td><td>Trend direction and strength</td><td>13</td><td>always</td></tr>
+      <tr><td>E</td><td>Volatility and bands</td><td>10</td><td>1 needs "Extra screen functions"; 1 needs breakouts</td></tr>
+      <tr><td>F</td><td>Volume measures</td><td>3</td><td>2 need breakouts</td></tr>
+      <tr><td>G</td><td>Maths and history helpers</td><td>16</td><td>some only as Formula or as a comparison word</td></tr>
+      <tr><td>H</td><td>Ranks across your list</td><td>3</td><td>Rank block; one needs "Rank a universe"</td></tr>
+      <tr><td>I</td><td>Session and intraday levels</td><td>9</td><td>2 need extra switches</td></tr>
+      <tr><td>J</td><td>Market structure, swings and levels</td><td>15</td><td>1 needs "Extra screen functions"</td></tr>
+      <tr><td>K</td><td>Candle patterns</td><td>3</td><td>18 pattern names</td></tr>
+      <tr><td>L</td><td>RSI divergence</td><td>2</td><td>needs "Extra screen functions"</td></tr>
+      <tr><td>M</td><td>Option chain and futures</td><td>4</td><td>needs stored option-chain data</td></tr>
+      <tr><td>N</td><td>Breakouts (yes / no and labels)</td><td>22</td><td>need "Breakout screens"</td></tr>
+      <tr><td>O</td><td>Breakout levels (prices of a breakout)</td><td>11</td><td>need "Breakout screens"</td></tr>
+      <tr><td>P</td><td>Market zones</td><td>4</td><td>need "zones"; Formula only</td></tr>
+      <tr><td>Q</td><td>Wave count</td><td>16</td><td>need "Wave count" (marked unfinished)</td></tr>
+      <tr><td>R</td><td>Company data: classification, figures, ownership, events</td><td>14</td><td>Formula only, extra switches and data</td></tr>
+    </tbody>
+  </table>
+  <div class="box small keep">
+    <b>Three rules that apply to every function</b>
+    <ul>
+      <li><b>Units must match.</b> ATP refuses to compare a price with an oscillator, for example <code>close above RSI (14)</code> ("compares price with index"). A plain number takes the unit of the other side.</li>
+      <li><b>Windows are whole numbers from 1 to 500</b> candles. A function needs enough candles before the last one; with too few, the stock says <i>"The screen has no value on the last bar (too little history for its indicators)."</i></li>
+      <li><b>A setting with a fixed set of choices</b> (for example <code>side</code> = up / down) must be one of those choices.</li>
+    </ul>
+  </div>
+
+  <!-- A -->
+  <div class="grouphead"><h3>A. Price and volume of a candle</h3><span class="count">6 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">open, high, low, close</td><td>The candle's open, highest, lowest and closing price. <span class="tag ind">Indicator</span></td><td>None. Use bars ago or another timeframe on the chip.</td><td><code>close above high 1 bar ago</code></td><td>Forgetting it is the last <b>closed</b> candle, not the live price.</td></tr>
+      <tr><td class="n">volume</td><td>Shares traded in the candle. <span class="tag ind">Indicator</span></td><td>None.</td><td><code>volume above SMA (volume, 20)</code></td><td>Comparing volume with a price (refused: different units).</td></tr>
+      <tr><td class="n">oi</td><td>Open interest of a derivative. <span class="tag ind">Indicator</span></td><td>None.</td><td><code>oi above oi 1 bar ago</code></td><td>Using it on a cash stock, which has no open interest.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- B -->
+  <div class="grouphead"><h3>B. Moving averages</h3><span class="count">6 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">SMA</td><td>Simple average of a value over n candles. <span class="tag ind">Indicator</span></td><td><b>x</b> (close, open, high, low, volume); <b>n</b> candles (starts at 20).</td><td><code>close above SMA (close, 50)</code></td><td>Taking n so large the stock lacks history (no value on the last bar).</td></tr>
+      <tr><td class="n">EMA</td><td>Exponential average: newer candles weigh more. <span class="tag ind">Indicator</span></td><td><b>x</b>, <b>n</b>.</td><td><code>EMA (close, 20) crosses above EMA (close, 50)</code></td><td>Expecting "crosses above" to be true for days; it is true only on the candle of the cross.</td></tr>
+      <tr><td class="n">WMA</td><td>Weighted average: the newest candle weighs n, the oldest 1. <span class="tag ind">Indicator</span></td><td><b>x</b>, <b>n</b>.</td><td><code>close above WMA (close, 20)</code></td><td>Mixing WMA and EMA values in one rule and expecting equal results.</td></tr>
+      <tr><td class="n">HMA</td><td>Hull average, a fast-reacting smooth average. <span class="tag ind">Indicator</span></td><td><b>x</b>, <b>n</b> (at least 2).</td><td><code>HMA (close, 21) above HMA (close, 21) 1 bar ago</code></td><td>n = 1 (refused).</td></tr>
+      <tr><td class="n">TMA</td><td>Triangular average: an average of an average. <span class="tag ind">Indicator</span></td><td><b>x</b>, <b>n</b>.</td><td><code>close above TMA (close, 20)</code></td><td>Expecting it to turn quickly; it is the slowest of these.</td></tr>
+      <tr><td class="n">MA</td><td>One block, choose the type. <span class="tag ind">Indicator</span></td><td><b>x</b>, <b>n</b>, <b>type</b> = EMA / SMA / WMA / HMA.</td><td><code>close above MA (close, 50, SMA)</code></td><td>Leaving type at EMA while reading a chart drawn with SMA.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- C -->
+  <div class="grouphead"><h3>C. Momentum oscillators</h3><span class="count">10 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">RSI</td><td>Relative strength index of the close, 0 to 100. <span class="tag ind">Indicator</span></td><td><b>n</b> = 14.</td><td><code>RSI (14) crosses above 30</code></td><td>Comparing RSI with close (refused) - compare it with a number.</td></tr>
+      <tr><td class="n">StochK, StochD</td><td>Stochastic %K and its average %D, 0 to 100: where the close sits in the recent high-low range. <span class="tag ind">Indicator</span></td><td>%K: <b>n</b> = 14, <b>smooth</b> = 3. %D adds <b>d</b> = 3.</td><td><code>StochK (14, 3) crosses above StochD (14, 3, 3)</code></td><td>Using different n on %K and %D in one comparison.</td></tr>
+      <tr><td class="n">StochRSI</td><td>Stochastic of RSI, 0 to 100, unsmoothed. <span class="tag ind">Indicator</span></td><td><b>n</b> = 14.</td><td><code>StochRSI (14) below 20</code></td><td>It needs about twice n candles of history.</td></tr>
+      <tr><td class="n">CCI</td><td>Commodity channel index of the typical price. <span class="tag ind">Indicator</span></td><td><b>n</b> = 20.</td><td><code>CCI (20) above 100</code></td><td>Thinking it stops at 100; it has no fixed range.</td></tr>
+      <tr><td class="n">MFI</td><td>Money flow index, 0 to 100: RSI of the typical price weighted by volume. <span class="tag ind">Indicator</span></td><td><b>n</b> = 14.</td><td><code>MFI (14) below 20</code></td><td>Using it on something without volume.</td></tr>
+      <tr><td class="n">WilliamsR</td><td>Williams %R, from -100 to 0. <span class="tag ind">Indicator</span></td><td><b>n</b> = 14.</td><td><code>WilliamsR (14) above -20</code></td><td>Typing 80 instead of -80 (the scale is negative).</td></tr>
+      <tr><td class="n">MACD, MACDSignal, MACDHist</td><td>MACD line (fast EMA minus slow EMA), its signal line, and their difference. <span class="tag ind">Indicator</span></td><td><b>fast</b> = 12, <b>slow</b> = 26, <b>signal</b> = 9 (fast must be below slow).</td><td><code>MACD (12, 26, 9) crosses above MACDSignal (12, 26, 9)</code></td><td>Setting fast above slow (refused).</td></tr>
+    </tbody>
+  </table>
+
+  <!-- D -->
+  <div class="grouphead"><h3>D. Trend direction and strength</h3><span class="count">13 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">ADX</td><td>Strength of a trend, 0 to 100 (not its direction). <span class="tag ind">Indicator</span></td><td><b>n</b> = 14.</td><td><code>ADX (14) above 25</code></td><td>Reading a high ADX as "up"; it can be a strong fall too.</td></tr>
+      <tr><td class="n">PlusDI, MinusDI</td><td>The upward and downward direction lines of the ADX system. <span class="tag ind">Indicator</span></td><td><b>n</b> = 14.</td><td><code>PlusDI (14) above MinusDI (14)</code></td><td>Using a different n than the ADX it is read with.</td></tr>
+      <tr><td class="n">AroonUp, AroonDown</td><td>0 to 100: how recently the highest high (Up) or lowest low (Down) of n candles happened. <span class="tag ind">Indicator</span></td><td><b>n</b> = 25.</td><td><code>AroonUp (25) above 70</code></td><td>Reading it as a price.</td></tr>
+      <tr><td class="n">Supertrend</td><td>The Supertrend line (a price). <span class="tag ind">Indicator</span></td><td><b>n</b> = 10, <b>k</b> = 3.0 (0.1 to 20).</td><td><code>close above Supertrend (10, 3)</code></td><td>Expecting the same line as a chart that uses other settings.</td></tr>
+      <tr><td class="n">SupertrendDir</td><td>+1 while the line is below price, -1 while above. A change of sign is a flip. <span class="tag ind">Indicator</span></td><td><b>n</b> = 10, <b>k</b> = 3.0.</td><td><code>SupertrendDir (10, 3) crosses above 0</code></td><td>Comparing with a price instead of 0 or 1.</td></tr>
+      <tr><td class="n">PSAR</td><td>Parabolic SAR, a trailing level below or above price. <span class="tag ind">Indicator</span></td><td><b>start</b> = 0.02, <b>step</b> = 0.02, <b>max</b> = 0.2 (start not above max).</td><td><code>close above PSAR (0.02, 0.02, 0.2)</code></td><td>Making start larger than max (refused).</td></tr>
+      <tr><td class="n">PSARDir</td><td>+1 while SAR is below price, -1 while above. <span class="tag ind">Indicator</span></td><td>As PSAR.</td><td><code>PSARDir (0.02, 0.02, 0.2) above 0</code></td><td>As SupertrendDir.</td></tr>
+      <tr><td class="n">IchimokuTenkan, IchimokuKijun</td><td>Ichimoku conversion and base lines: middle of the high-low of n candles. <span class="tag ind">Indicator</span></td><td>Tenkan <b>n</b> = 9; Kijun <b>n</b> = 26.</td><td><code>IchimokuTenkan (9) above IchimokuKijun (26)</code></td><td>Swapping 9 and 26.</td></tr>
+      <tr><td class="n">IchimokuSpanA, IchimokuSpanB</td><td>The two cloud edges, computed <b>shift</b> candles earlier. <span class="tag ind">Indicator</span></td><td>A: <b>tenkan</b> = 9, <b>kijun</b> = 26, <b>shift</b> = 26. B: <b>n</b> = 52, <b>shift</b> = 26.</td><td><code>close above IchimokuSpanA (9, 26, 26)</code></td><td>Expecting a future cloud; ATP reads only past candles.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- E -->
+  <div class="grouphead"><h3>E. Volatility and bands</h3><span class="count">10 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">ATR</td><td>Average true range: the usual candle size, in price. <span class="tag ind">Indicator</span></td><td><b>n</b> = 14.</td><td><code>ATR (14) above ATR (14) 5 bars ago</code></td><td>Comparing ATR of two stocks with very different prices.</td></tr>
+      <tr><td class="n">MedianRange</td><td>Median candle size (high minus low) of the n candles before this one: the market's own noise. <span class="tag ind">Indicator</span></td><td><b>n</b> = 20.</td><td><code>MedianRange (20) below MedianRange (20) 20 bars ago</code></td><td>Expecting it to include the last candle; it does not.</td></tr>
+      <tr><td class="n">ATRPercentile</td><td>0 to 100: where the previous candle's ATR (as a share of the close) sits among the last lookback candles. <span class="tag ind">Indicator</span> <span class="tag sw">Breakouts</span></td><td><b>n</b> = 14, <b>lookback</b> = 100.</td><td><code>ATRPercentile (14, 100) below 20</code></td><td>It needs n + lookback candles.</td></tr>
+      <tr><td class="n">BBUpper, BBMid, BBLower</td><td>Bollinger bands: an average and k standard deviations above and below. <span class="tag ind">Indicator</span></td><td><b>n</b> = 20, <b>k</b> = 2.0.</td><td><code>close crosses above BBUpper (20, 2)</code></td><td>Expecting BBMid to change with k (it does not).</td></tr>
+      <tr><td class="n">KeltnerUpper, KeltnerMid, KeltnerLower</td><td>Keltner channel: an EMA and k times the average true range around it. <span class="tag ind">Indicator</span></td><td><b>n</b> = 20, <b>k</b> = 2.0.</td><td><code>BBUpper (20, 2) below KeltnerUpper (20, 1.5)</code></td><td>Same as Bollinger: k does not move the middle line.</td></tr>
+      <tr><td class="n">StDev</td><td>Standard deviation of a value over n candles. <span class="tag ind">Indicator</span> <span class="tag sw">Extra functions</span></td><td><b>x</b>, <b>n</b>.</td><td><code>StDev (close, 20) below StDev (close, 20) 10 bars ago</code></td><td>Comparing it with a price level.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- F -->
+  <div class="grouphead"><h3>F. Volume measures</h3><span class="count">3 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">OBV</td><td>On-balance volume: a running total, added on a higher close, taken off on a lower one. <span class="tag ind">Indicator</span></td><td>None.</td><td><code>OBV above OBV 10 bars ago</code></td><td>Comparing OBV values between two stocks; only its direction means something.</td></tr>
+      <tr><td class="n">RelVolume</td><td>This candle's volume divided by the average of the n candles before. <span class="tag ind">Indicator</span> <span class="tag sw">Breakouts</span></td><td><b>n</b> = 20 (2 to 200).</td><td><code>RelVolume (20) at or above 1.5</code></td><td>Typing 150 for "1.5 times".</td></tr>
+      <tr><td class="n">RelVolumeTOD</td><td>Volume against the same time of day in past sessions (intraday). <span class="tag ind">Indicator</span> <span class="tag sw">Breakouts</span></td><td><b>sessions</b> = 20; <b>mode</b> = bar / cumulative. Intraday timeframes only.</td><td><code>RelVolumeTOD (20, bar) above 2</code></td><td>Using it on Daily (not offered there).</td></tr>
+    </tbody>
+  </table>
+
+  <!-- G -->
+  <div class="grouphead"><h3>G. Maths and history helpers</h3><span class="count">16 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">Max, Min</td><td>Highest / lowest value of x over n candles. <span class="tag ind">Indicator</span></td><td><b>x</b>, <b>n</b>.</td><td><code>close above Max (high, 20) 1 bar ago</code></td><td>Forgetting "1 bar ago": the close can never be above the max that includes its own candle's high.</td></tr>
+      <tr><td class="n">PctChange</td><td>% change of x over n candles. <span class="tag ind">Indicator</span></td><td><b>x</b>, <b>n</b>.</td><td><code>PctChange (close, 5) above 3</code></td><td>Typing 0.03 for 3 % (it is already in %).</td></tr>
+      <tr><td class="n">ZScore</td><td>How many standard deviations x is from its n-candle average. <span class="tag ind">Indicator</span></td><td><b>x</b>, <b>n</b>.</td><td><code>ZScore (close, 20) below -2</code></td><td>Reading it as a percent.</td></tr>
+      <tr><td class="n">Lag</td><td>x as it was n candles ago. <span class="tag ind">Indicator</span></td><td><b>x</b>, <b>n</b>.</td><td><code>close above Lag (close, 5)</code></td><td>Same as "bars ago"; use whichever is clearer to you.</td></tr>
+      <tr><td class="n">Abs, Round, Floor, Ceil, Sqrt</td><td>Absolute value, rounding (Round has <b>digits</b> = 0), whole number down / up, square root. <span class="tag ind">Indicator</span></td><td><b>x</b>.</td><td><code>Abs (PctChange (close, 1)) above 2</code></td><td>Sqrt of a negative value gives no value.</td></tr>
+      <tr><td class="n">Greatest, Least</td><td>The largest / smallest of several values. <span class="tag frm">Formula</span></td><td>Two or more values.</td><td><code>close &gt; Greatest(EMA(close,20), EMA(close,50))</code></td><td>Mixing units inside it.</td></tr>
+      <tr><td class="n">Count</td><td>How many of the last n candles met a condition. <span class="tag frm">Formula</span></td><td><b>n</b>, a condition.</td><td><code>Count(10, close &gt; open) &gt;= 7</code></td><td>Putting a last-bar-only function inside (refused).</td></tr>
+      <tr><td class="n">CountStreak</td><td>Candles in a row, up to now, where a condition held. <span class="tag frm">Formula</span></td><td>A condition.</td><td><code>CountStreak(close &gt; EMA(close, 20)) &gt;= 5</code></td><td>As Count.</td></tr>
+      <tr><td class="n">CrossAbove, CrossBelow</td><td>One value crossed above / below another on this candle. In the Indicator block these are the comparison words <span class="ui">crosses above</span> / <span class="ui">crosses below</span>.</td><td>Two values of the same unit.</td><td><code>close crosses above EMA (close, 20)</code></td><td>Expecting a match on later candles; a cross is one candle.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- H -->
+  <div class="grouphead"><h3>H. Ranks across your list</h3><span class="count">3 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">Rank</td><td>Position of a value inside your scanned list; 1 = highest. <span class="tag rnk">Rank</span> (<span class="ui">Rank of</span>)</td><td>The indicator to rank; <span class="ui">at or below</span> / <span class="ui">at or above</span> a number.</td><td><code>Rank of PctChange (close, 20) at or below 10</code></td><td>Forgetting it depends on the list: the same stock ranks differently in NIFTY 50 and NIFTY 500.</td></tr>
+      <tr><td class="n">PercentileRank</td><td>The same as a percentile, 0 to 100. <span class="tag rnk">Rank</span> (<span class="ui">Percentile rank of</span>)</td><td>As Rank.</td><td><code>Percentile rank of RSI (14) at or above 90</code></td><td>Reading 90 as "rank 90".</td></tr>
+      <tr><td class="n">RankScore</td><td>0 to 100 score of a stock in a ranking system (a saved one, or a built-in one such as Momentum). Daily only. <span class="tag frm">Formula</span> <span class="tag sw">Rankings</span></td><td><b>system</b> (name).</td><td><code>RankScore("platform:Momentum") &gt;= 80</code></td><td>Using it on an intraday chart (refused).</td></tr>
+    </tbody>
+  </table>
+
+  <!-- I -->
+  <div class="grouphead"><h3>I. Session and intraday levels</h3><span class="count">9 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">DayOpen</td><td>The session's opening price. <span class="tag ind">Indicator</span></td><td>None.</td><td><code>close above DayOpen</code></td><td>Using it on Weekly, where a candle spans many sessions.</td></tr>
+      <tr><td class="n">PDH, PDL, PDC</td><td>Previous session's high, low and close. <span class="tag ind">Indicator</span></td><td>None.</td><td><code>close crosses above PDH</code></td><td>Expecting the previous candle on an intraday chart; it is the previous <b>session</b>.</td></tr>
+      <tr><td class="n">ORHigh, ORLow</td><td>High / low of the session's first <b>minutes</b>; known only after that range is complete. <span class="tag ind">Indicator</span></td><td><b>minutes</b> (starts at 15).</td><td><code>close above ORHigh (15)</code></td><td>Choosing minutes that are not a whole number of the chart's candles.</td></tr>
+      <tr><td class="n">VWAP</td><td>The session's volume-weighted average price. <span class="tag ind">Indicator</span></td><td>None.</td><td><code>close above VWAP</code></td><td>Using it on Daily and expecting an intraday VWAP line.</td></tr>
+      <tr><td class="n">SessionVWAP</td><td>VWAP from the session open on the exchange calendar (pre-open left out). Intraday only. <span class="tag ind">Indicator</span> <span class="tag sw">Breakouts</span></td><td>None.</td><td><code>close above SessionVWAP</code></td><td>As VWAP.</td></tr>
+      <tr><td class="n">TimeOfDay</td><td>True when the candle starts between two clock times (exchange time). Intraday only. <span class="tag fil">Filter</span> <span class="tag sw">Extra functions</span></td><td><b>start</b>, <b>end</b> as HH:MM.</td><td><code>TimeOfDay (09:30, 11:00)</code></td><td>Typing 9:30 instead of 09:30 (refused).</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <!-- J -->
+  <div class="grouphead" style="margin-top:0"><h3>J. Market structure, swings and levels</h3><span class="count">15 functions</span></div>
+  <figure>
+    <svg viewBox="0 0 720 200" width="720" height="200" role="img" aria-label="Swings, BOS and CHoCH on made-up data">
+      <g font-family="Inter" font-size="11">
+        <polyline points="20,170 90,110 130,140 210,70 250,105 330,40 380,95 430,60 470,120 520,95 600,170 650,135 700,150" fill="none" stroke="#16202c" stroke-width="2.2"></polyline>
+        <g fill="#2456c7" font-weight="700" text-anchor="middle">
+          <circle cx="90" cy="110" r="4"></circle><text x="90" y="100">HH</text>
+          <circle cx="130" cy="140" r="4"></circle><text x="130" y="158">HL</text>
+          <circle cx="210" cy="70" r="4"></circle><text x="210" y="60">HH</text>
+          <circle cx="250" cy="105" r="4"></circle><text x="250" y="123">HL</text>
+          <circle cx="330" cy="40" r="4"></circle><text x="330" y="30">HH</text>
+          <circle cx="380" cy="95" r="4"></circle><text x="380" y="113">HL</text>
+          <circle cx="430" cy="60" r="4"></circle><text x="430" y="50">LH</text>
+        </g>
+        <line x1="210" y1="70" x2="300" y2="70" stroke="#16794a" stroke-dasharray="4 3"></line><text x="300" y="66" fill="#16794a" font-weight="700">BOS up</text>
+        <line x1="380" y1="95" x2="470" y2="95" stroke="#b3261e" stroke-dasharray="4 3"></line><text x="452" y="140" fill="#b3261e" font-weight="700">CHoCH down</text>
+        <text x="150" y="190" fill="#66748a">UPTREND: higher highs and higher lows</text>
+        <text x="520" y="190" fill="#66748a">close below the last higher low</text>
+      </g>
+    </svg>
+    <figcaption>Made-up price path. A swing is confirmed only after price has moved away from it, so the labels appear some candles after the turn.</figcaption>
+  </figure>
+  <p class="small"><b>Two settings appear often here.</b> <b>swing</b> (a window, starts at 3): a candle is a swing high (low) when it is the highest (lowest) of the swing candles on each side. <b>degree</b> (0, 1, 2 or 3): the size of the swings, 0 smallest. A larger degree needs more history: about 100, 250, 600 and 1,200 candles.</p>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">Trend</td><td>Market-structure trend: UPTREND, DOWNTREND or RANGE. Last bar only. <span class="tag cat">Category</span></td><td><b>swing</b> = 3.</td><td><code>Trend is UPTREND</code></td><td>Trying to read it on another timeframe or bars ago (it reads the scan's chart, last bar).</td></tr>
+      <tr><td class="n">StructureEvent</td><td>The latest structure event: BOS_BULLISH, BOS_BEARISH (break of structure), CHOCH_BULLISH, CHOCH_BEARISH (change of character); empty when none. <span class="tag cat">Category</span></td><td><b>swing</b> = 3.</td><td><code>StructureEvent is CHOCH_BULLISH</code></td><td>Expecting it on every stock; many have no event.</td></tr>
+      <tr><td class="n">SwingHigh, SwingLow</td><td>The last <b>confirmed</b> swing high / low (a price). <span class="tag ind">Indicator</span></td><td><b>degree</b> = 0.</td><td><code>close above SwingHigh (0)</code></td><td>Expecting the very latest peak; it shows only once confirmed.</td></tr>
+      <tr><td class="n">PriorSwingHigh, PriorSwingLow</td><td>The confirmed swing before the last one (or two / three before). <span class="tag ind">Indicator</span></td><td><b>degree</b> = 0, <b>back</b> = one / two / three.</td><td><code>SwingLow (0) above PriorSwingLow (0, one)</code></td><td>No value until enough swings are confirmed.</td></tr>
+      <tr><td class="n">SwingDirection</td><td>UP after a confirmed swing low, DOWN after a confirmed swing high. <span class="tag cat">Category</span></td><td><b>degree</b> = 0.</td><td><code>SwingDirection is UP</code></td><td>Reading it as the trend; it is only the last swing's side.</td></tr>
+      <tr><td class="n">SwingLabel</td><td>HH / LH (for highs) or HL / LL (for lows): the last confirmed swing against the one before. An equal high reads LH, an equal low HL. <span class="tag cat">Category</span> <span class="tag sw">Extra functions</span></td><td><b>kind</b> = high / low; <b>degree</b> = 0.</td><td><code>SwingLabel (low, 0) is HL</code></td><td>Picking kind = high and looking for HL (never matches).</td></tr>
+      <tr><td class="n">DowTrend</td><td>Dow trend from confirmed swings: UP (higher high and higher low), DOWN, RANGE. <span class="tag cat">Category</span> <span class="tag sw">Breakouts</span></td><td><b>degree</b> = 0.</td><td><code>DowTrend on Weekly is UP</code></td><td>Short history: it needs 40 / 250 / 600 / 1,200 candles by degree.</td></tr>
+      <tr><td class="n">SwingZoneStrength</td><td>0 to 100 strength of the zone at the last confirmed swing low (support) or high (resistance). <span class="tag ind">Indicator</span></td><td><b>side</b> = low / high; <b>degree</b> = 0.</td><td><code>SwingZoneStrength (low, 0) above 60</code></td><td>Reading the number as a chance of anything; it scores the zone's shape only.</td></tr>
+      <tr><td class="n">SwingZoneDistance</td><td>Close minus the middle of that zone, in median candle sizes (positive = above). <span class="tag ind">Indicator</span></td><td><b>side</b>, <b>degree</b>.</td><td><code>SwingZoneDistance (low, 0) below 1</code></td><td>Reading it as rupees or %.</td></tr>
+      <tr><td class="n">NearSupport, NearResistance</td><td>The close is within a % of a support / resistance zone edge. Last bar only. <span class="tag fil">Filter</span></td><td><b>tolerance_pct</b> (starts at 0.5), <b>swing</b> = 3.</td><td><code>NearSupport (0.5, 3)</code></td><td>Typing 50 for 0.5 % (it is already in %).</td></tr>
+      <tr><td class="n">ReversalAt</td><td>Price turned at a level on this candle (touch, reclaim, strength, close location). Bullish at support, bearish at resistance. <span class="tag fil">Filter</span></td><td><b>level</b> = PDH / PDL / PDC / DayOpen / close; <b>direction</b> = bullish / bearish.</td><td><code>ReversalAt (PDL, bullish)</code></td><td>Picking a level far from price; it needs a touch.</td></tr>
+      <tr><td class="n">RealBreak</td><td>A real break of a level confirmed within the last n candles: a close beyond it by a buffer, then follow-through, acceptance or a failed retest. A wick or a reclaimed close is a false break. <span class="tag fil">Filter</span></td><td><b>level</b>; <b>side</b> = above / below; <b>n</b> = 20.</td><td><code>RealBreak (PDH, above, 20)</code></td><td>Expecting it on the break candle itself; it needs the confirmation.</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">A further swing function, SwingZoneEdge, belongs to the wave group (Q).</p>
+
+  <!-- K -->
+  <div class="grouphead"><h3>K. Candle patterns</h3><span class="count">3 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">Pattern</td><td>A named candle pattern on this candle (uses it and up to two before). <span class="tag fil">Filter</span></td><td><b>name</b>: doji, hammer, shooting_star, bullish_engulfing, bearish_engulfing, morning_star, evening_star, bullish_pin_bar, bearish_pin_bar, inside_bar, bullish_outside_bar, bearish_outside_bar, bullish_rejection, bearish_rejection; with extra functions also bullish_strong_body, bearish_strong_body, bullish_gap_reversal, bearish_gap_reversal. <b>confirm</b> = any / confirmed / failed / unconfirmed (extra functions).</td><td><code>Pattern (hammer, any)</code></td><td>Picking "confirmed" and expecting the pattern candle itself; "confirmed" is the next candle closing beyond the pattern's far side.</td></tr>
+      <tr><td class="n">PatternBullish, PatternBearish</td><td>Any bullish / bearish pattern on the last candle. Last bar only. <span class="tag fil">Filter</span></td><td><b>confirm</b> = any.</td><td><code>PatternBullish (any)</code></td><td>Doji and inside bar have no direction, so they never count here.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- L -->
+  <div class="grouphead"><h3>L. RSI divergence</h3><span class="count">2 functions</span></div>
+  <figure>
+    <svg viewBox="0 0 720 170" width="720" height="170" role="img" aria-label="Bullish RSI divergence on made-up data">
+      <g font-family="Inter" font-size="11">
+        <text x="20" y="18" fill="#66748a" font-weight="700">Price</text>
+        <polyline points="20,30 120,70 180,50 290,95 360,55 470,105 540,60 700,40" fill="none" stroke="#16202c" stroke-width="2"></polyline>
+        <line x1="290" y1="95" x2="470" y2="105" stroke="#b3261e" stroke-width="2" stroke-dasharray="5 3"></line><text x="380" y="125" fill="#b3261e" font-weight="700" text-anchor="middle">lower low</text>
+        <text x="20" y="140" fill="#66748a" font-weight="700">RSI</text>
+        <polyline points="20,130 120,150 180,140 290,162 360,140 470,150 540,135 700,128" fill="none" stroke="#5b3fb8" stroke-width="2" transform="translate(0,0)"></polyline>
+        <line x1="290" y1="162" x2="470" y2="150" stroke="#16794a" stroke-width="2" stroke-dasharray="5 3"></line><text x="560" y="160" fill="#16794a" font-weight="700">higher low</text>
+      </g>
+    </svg>
+    <figcaption>Made-up data. Regular bullish divergence: price makes a lower swing low while RSI makes a higher low.</figcaption>
+  </figure>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">RsiDivergence</td><td>RSI divergence between the last two <b>confirmed</b> swing lows (bullish: lower low with higher RSI) or highs (bearish: higher high with lower RSI). Hidden kind: bullish = higher low with lower RSI; bearish = lower high with higher RSI. <span class="tag fil">Filter</span> <span class="tag sw">Extra functions</span></td><td><b>side</b> = bullish / bearish; <b>lookback</b> = 15 (the latest swing at most this many candles back); <b>degree</b> = 0; <b>period</b> = 14; <b>kind</b> = regular / hidden.</td><td><code>RsiDivergence (bullish, 15, 0)</code></td><td>A too-small lookback: the swing is confirmed only some candles after it, so few stocks pass.</td></tr>
+      <tr><td class="n">RsiDivergenceRef</td><td>The prices of the latest divergence: <b>extreme</b> (the divergent swing's low / high) or <b>confirm_bar</b> (the far side of the candle that confirmed the swing). <span class="tag ind">Indicator</span> <span class="tag sw">Extra functions</span></td><td><b>what</b>, <b>side</b>, <b>degree</b>, <b>period</b>, <b>kind</b>.</td><td><code>close above RsiDivergenceRef (confirm_bar, bullish)</code></td><td>No value until a first divergence is found.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- M -->
+  <div class="grouphead"><h3>M. Option chain and futures</h3><span class="count">4 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">PCR</td><td>Put-call open-interest ratio of the stored option chain. Last bar only. <span class="tag ind">Indicator</span></td><td>None.</td><td><code>PCR above 1.2</code></td><td>Running it on a list without options: those stocks have no chain and are not checked.</td></tr>
+      <tr><td class="n">ChainBias</td><td>A label from the option chain: BULLISH, BEARISH, NEUTRAL or CONFLICTING. <span class="tag cat">Category</span></td><td>None.</td><td><code>ChainBias is BULLISH</code></td><td>Reading the label as advice; it only summarises open-interest numbers.</td></tr>
+      <tr><td class="n">MaxPainDistancePct</td><td>Distance between the underlying and the max-pain strike, as % of the underlying. <span class="tag ind">Indicator</span></td><td>None.</td><td><code>MaxPainDistancePct below 1</code></td><td>Expecting a sign; it is always positive.</td></tr>
+      <tr><td class="n">FuturesOI</td><td>Open interest of the near-month future, from the stored snapshot at or before the candle's close. <span class="tag ind">Indicator</span></td><td>None.</td><td><code>FuturesOI above 0</code></td><td>Expecting a value where the snapshot has none (not checked).</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">Under Conditions, <span class="ui">More filters: indicator, structure, option chain</span> opens the older filter panel with ready choices such as "Trend: Uptrend", "Break of Structure (Bullish)", "Near support zone", "PCR threshold" and "Near Max Pain". It is kept for users who know it; the blocks above do the same work.</p>
+</div>
+
+<div class="section">
+  <!-- N -->
+  <div class="grouphead" style="margin-top:0"><h3>N. Breakouts (yes / no and labels)</h3><span class="count">22 functions</span></div>
+  <figure>
+    <svg viewBox="0 0 720 150" width="720" height="150" role="img" aria-label="A range breakout on made-up data">
+      <g font-family="Inter" font-size="11">
+        <rect x="40" y="40" width="440" height="70" fill="#e8eefb" stroke="#2456c7" stroke-dasharray="5 3"></rect>
+        <text x="50" y="34" fill="#2456c7" font-weight="700">n-candle range</text>
+        <line x1="480" y1="28" x2="700" y2="28" stroke="#16794a" stroke-dasharray="3 3"></line><text x="610" y="22" fill="#16794a">level + k x ATR buffer</text>
+        <g stroke-width="2">
+          <line x1="70" y1="55" x2="70" y2="100" stroke="#16794a"></line><line x1="110" y1="48" x2="110" y2="95" stroke="#b3261e"></line><line x1="150" y1="60" x2="150" y2="105" stroke="#16794a"></line><line x1="190" y1="50" x2="190" y2="98" stroke="#b3261e"></line><line x1="230" y1="58" x2="230" y2="104" stroke="#16794a"></line><line x1="270" y1="46" x2="270" y2="92" stroke="#b3261e"></line><line x1="310" y1="55" x2="310" y2="100" stroke="#16794a"></line><line x1="350" y1="50" x2="350" y2="96" stroke="#b3261e"></line><line x1="390" y1="60" x2="390" y2="103" stroke="#16794a"></line><line x1="430" y1="48" x2="430" y2="94" stroke="#16794a"></line>
+          <line x1="520" y1="10" x2="520" y2="70" stroke="#16794a"></line><rect x="510" y="18" width="20" height="44" fill="#16794a"></rect>
+        </g>
+        <rect x="508" y="118" width="24" height="20" fill="#16794a" opacity=".85"></rect><rect x="70" y="128" width="400" height="10" fill="#d9dfe7"></rect>
+        <text x="560" y="134" fill="#3d4a5a">volume at or above v x average</text>
+        <text x="560" y="60" fill="#16794a" font-weight="700">close beyond the range</text>
+      </g>
+    </svg>
+    <figcaption>Made-up candles. Most breakout functions share three settings: <b>side</b> (up / down), <b>k</b> (the ATR buffer the close must clear, starts 0.2) and <b>v</b> (volume as a multiple of its average, starts 1.5).</figcaption>
+  </figure>
+  <p class="small">All in this group show only when "Breakout screens" is switched on (VCP, Donchian, squeeze, MA and regime need set 2; trendline, channel, pattern, gap and retest need set 3). Most come ready-made in the library (section 6.2), so a beginner rarely needs to set them by hand.</p>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings (besides side / k / v)</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">RangeBreakout</td><td>Close beyond the n-candle range (mode auto: the consolidation before the candle) by k ATR, on volume. <span class="tag fil">Filter</span></td><td><b>n</b> = 20, <b>mode</b> = fixed / auto.</td><td><code>RangeBreakout (up, 20, 0.2, 1.5)</code></td><td>Setting v very high and getting no matches.</td></tr>
+      <tr><td class="n">SwingBreakout</td><td>Close beyond the last confirmed swing high / low by k ATR. <span class="tag fil">Filter</span></td><td><b>degree</b> = 1.</td><td><code>SwingBreakout (up, 1, 0.2)</code></td><td>Degree too large for the history.</td></tr>
+      <tr><td class="n">SwingBreakType</td><td>On a swing-breakout candle: BOS (with the swing trend), CHOCH (against it) or BREAK. <span class="tag cat">Category</span></td><td>As SwingBreakout.</td><td><code>SwingBreakType (up, 1, 0.2) is CHOCH</code></td><td>Empty on candles that are not a breakout.</td></tr>
+      <tr><td class="n">NRBreakout</td><td>The candle after an inside / NR4 / NR7 candle closes beyond it. <span class="tag fil">Filter</span></td><td><b>setup</b> = inside / nr4 / nr7.</td><td><code>NRBreakout (up, nr7)</code></td><td>Looking on the NR7 candle itself; it is the next one.</td></tr>
+      <tr><td class="n">NewHighBreakout</td><td>Close beyond the high / low of the previous N weeks. Daily / Weekly. <span class="tag fil">Filter</span></td><td><b>weeks</b> = 52.</td><td><code>NewHighBreakout (up, 52)</code></td><td>Running it on an intraday chart.</td></tr>
+      <tr><td class="n">RangeExpansion</td><td>A candle at least k ATR wide, closing in its top / bottom third, on volume. <span class="tag fil">Filter</span></td><td><b>k</b> = 2.0.</td><td><code>RangeExpansion (up, 2, 1.5)</code></td><td>Forgetting k here means candle width, not the buffer.</td></tr>
+      <tr><td class="n">VolumeBreakout</td><td>Volume at least v times average with a directional candle at / through the n-candle high / low. <span class="tag fil">Filter</span></td><td><b>v</b> = 2.0, <b>n</b> = 20.</td><td><code>VolumeBreakout (up, 2, 20)</code></td><td>Using it on a list with very thin volume.</td></tr>
+      <tr><td class="n">DonchianBreakout</td><td>Close beyond the highest high / lowest low of the previous n candles. <span class="tag fil">Filter</span></td><td><b>n</b> = 20.</td><td><code>DonchianBreakout (up, 55)</code></td><td>-</td></tr>
+      <tr><td class="n">SqueezeBreakout</td><td>Bollinger mode: close outside the band after its width was at a low; TTM mode: bands back outside the Keltner channel. <span class="tag fil">Filter</span></td><td><b>mode</b> = bollinger / ttm, <b>n</b> = 20, <b>lookback</b> = 125.</td><td><code>SqueezeBreakout (up, bollinger)</code></td><td>Needs n + lookback candles.</td></tr>
+      <tr><td class="n">MABreakout</td><td>Close above / below a flat or rising (falling) n-candle average by k ATR. <span class="tag fil">Filter</span></td><td><b>n</b> = 50, <b>type</b> = sma / ema.</td><td><code>MABreakout (up, 50, sma)</code></td><td>-</td></tr>
+      <tr><td class="n">RegimeBreakout</td><td>RSI leaves the 50 ± band it held for n candles, ADX rises from at or below a level, close clears the range. <span class="tag fil">Filter</span></td><td><b>band</b> = 10, <b>n</b> = 20, <b>adx</b> = 20.</td><td><code>RegimeBreakout (up)</code></td><td>-</td></tr>
+      <tr><td class="n">TrendlineBreakout</td><td>First close beyond a trendline (falling resistance / rising support) or a channel's far edge. <span class="tag fil">Filter</span></td><td><b>mode</b> = line / channel, <b>touches</b> = 2.</td><td><code>TrendlineBreakout (up, line, 2)</code></td><td>Too many touches: few lines qualify.</td></tr>
+      <tr><td class="n">ChannelLine</td><td>The channel's trend-side line at this candle (a price). <span class="tag ind">Indicator</span></td><td><b>touches</b> = 2, <b>edge_touches</b> = 0.</td><td><code>close above ChannelLine (up, 2, 0)</code></td><td>-</td></tr>
+      <tr><td class="n">PatternBreakout</td><td>Close beyond a flag, pennant or converging triangle. <span class="tag fil">Filter</span></td><td><b>pattern</b> = flag / pennant / triangle.</td><td><code>PatternBreakout (up, flag)</code></td><td>-</td></tr>
+      <tr><td class="n">GapBreakout</td><td>The session opened beyond the previous high / low (or a base) and held for the hold window. <span class="tag fil">Filter</span></td><td><b>level</b> = prev_day / base, <b>hold</b> = 30 minutes.</td><td><code>GapBreakout (up, prev_day, 30)</code></td><td>Timeframes: 1, 3, 5, 15 min and Daily only.</td></tr>
+      <tr><td class="n">GapType</td><td>At the end of the hold window: GAP_AND_GO, GAP_HOLD or GAP_FILL. <span class="tag cat">Category</span></td><td>As GapBreakout.</td><td><code>GapType (up) is GAP_AND_GO</code></td><td>-</td></tr>
+      <tr><td class="n">VCPBreakout, VCPReady</td><td>Daily volatility-contraction base: the first close above its pivot (Breakout), or every candle the base is ready within pct % under the pivot (Ready). <span class="tag frm">Formula</span> (or the library screen)</td><td><b>contractions</b> = 2, <b>ratio</b> = 1.0, <b>template</b>, <b>dryup</b> (yes / no); Ready: <b>pct</b> = 5.</td><td>Library: "Daily volatility-contraction (VCP-style) breakout"</td><td>Daily only; needs about a year of candles.</td></tr>
+      <tr><td class="n">ORBreakout</td><td>First close beyond the opening range of the first <b>minutes</b>, with time-of-day volume and VWAP side; once per side a session. <span class="tag frm">Formula</span> (or the library screen)</td><td><b>minutes</b> = 15, <b>vwap</b>, <b>skip</b> = 15.</td><td>Library: "Intraday ORB: 15-minute opening range on 5m"</td><td>1 to 15 min only.</td></tr>
+      <tr><td class="n">DayLevelBreak</td><td>First close beyond the first hour's, previous session's or first candle's high / low. <span class="tag frm">Formula</span></td><td><b>level</b> = first_hour ...</td><td>Library: "Intraday first-hour high / low break on 15m"</td><td>1 to 15 min only.</td></tr>
+      <tr><td class="n">DayExtremeBreak</td><td>A close beyond the session's high / low so far, with volume and VWAP agreement. <span class="tag frm">Formula</span></td><td>As above.</td><td>Library: "Intraday new high / low of day on 5m"</td><td>1 to 15 min only.</td></tr>
+      <tr><td class="n">RetestEntry</td><td>After a range / swing / Donchian / trendline / channel breakout, price came back within <b>bars</b> candles and held the level (a reversal or a touch). <span class="tag frm">Formula</span> (or the library screen)</td><td><b>of</b>, <b>bars</b> = 10, <b>reversal</b> = yes.</td><td>Library: "Daily range-breakout retest"</td><td>Once per breakout only.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- O -->
+  <div class="grouphead"><h3>O. Breakout levels (prices of a breakout)</h3><span class="count">11 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Names in the app</th><th>What they measure</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">RangeBreakoutRef, SwingBreakoutRef, NRBreakoutRef, VolumeBreakoutRef, DonchianBreakoutRef, MABreakoutRef, LineBreakoutRef, PatternBreakoutRef, GapBreakoutRef, VCPBreakoutRef, RetestEntryRef</td><td>The prices of the same breakout as the matching function with the same settings: <b>level</b> (the broken level), <b>base_high</b>, <b>base_low</b>, and other reference levels. <span class="tag ind">Indicator</span> (VCP and Retest: <span class="tag frm">Formula</span>)</td><td><b>what</b> (which price), then the same settings as the breakout.</td><td><code>close above RangeBreakoutRef (level, up, 20)</code></td><td>Using different settings than the breakout it belongs to: it then describes another breakout.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- P -->
+  <div class="grouphead"><h3>P. Market zones</h3><span class="count">4 functions</span></div>
+  <table class="fn-table">
+    <thead><tr><th>Name in the app</th><th>What it measures</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">NearZone</td><td>A live zone of that role (demand below, supply above) within a % of the close, from the stored nightly zones. <span class="tag frm">Formula</span> <span class="tag sw">Zones</span></td><td><b>role</b> = any / demand / supply; <b>tolerance_pct</b> = 0.5; <b>family</b> = all / zones / levels.</td><td><code>NearZone("demand", 0.5)</code></td><td>Expecting zones the nightly job has not built yet.</td></tr>
+      <tr><td class="n">ZoneRole</td><td>DEMAND or SUPPLY for that nearest zone. <span class="tag frm">Formula</span></td><td><b>tolerance_pct</b>, <b>family</b>.</td><td><code>ZoneRole(0.5) == "DEMAND"</code></td><td>-</td></tr>
+      <tr><td class="n">ZoneState</td><td>FRESH, TESTED or FLIPPED. <span class="tag frm">Formula</span></td><td><b>role</b>, <b>tolerance_pct</b>, <b>family</b>.</td><td><code>ZoneState("demand") == "FRESH"</code></td><td>-</td></tr>
+      <tr><td class="n">ZoneStrength</td><td>0 to 100 strength of that zone. <span class="tag frm">Formula</span></td><td>As ZoneState.</td><td><code>ZoneStrength("demand") &gt;= 60</code></td><td>-</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Q -->
+  <div class="grouphead"><h3>Q. Wave count</h3><span class="count">16 functions</span></div>
+  <p class="small">Shown only with "Wave count in screens" switched on; that part is marked unfinished. All read confirmed swings of <b>degree</b> 1, 2 or 3 (default 1).</p>
+  <table class="fn-table">
+    <thead><tr><th>Names in the app</th><th>What they measure</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">WaveState, WaveType, WaveAlt, WaveClarity</td><td>The running wave (IMP_1 to IMP_5, COR_A to COR_E, UNCLEAR); the count's type (IMPULSE, ZIGZAG, FLAT ...); the alternate reading; how clear the count is (CLEAR, ALT_AGREES ...). <span class="tag cat">Category</span></td><td><b>degree</b>.</td><td><code>WaveState (1) is COR_A</code></td><td>Reading a count as certain; the alternate exists for that reason.</td></tr>
+      <tr><td class="n">WaveOrigin, WaveEnd, WaveInvalidation, WaveCap</td><td>Prices of the count: its start, the end of a finished wave, its hard-rule invalidation level, and a cap level (evidence only). <span class="tag ind">Indicator</span></td><td><b>degree</b>; WaveEnd also <b>wave</b>.</td><td><code>close above WaveInvalidation (1)</code></td><td>No value before the count exists.</td></tr>
+      <tr><td class="n">WaveRetrace, WaveProjection, WaveRatio</td><td>A ratio back from the previous wave's end; a projection from the running wave's start; the running wave's length against a base wave. <span class="tag ind">Indicator</span></td><td><b>degree</b>, <b>ratio</b> (0 to 10), <b>base_wave</b>.</td><td><code>WaveRatio (1) below 0.618</code></td><td>-</td></tr>
+      <tr><td class="n">WaveLineLevel, WaveLineBreak, SwingZoneEdge</td><td>A line through the count's own pivots at this candle; its first close beyond by k ATR; the far side of the area around the last swing zone. <span class="tag ind">Indicator</span> / <span class="tag fil">Filter</span></td><td><b>degree</b>, <b>line</b>, <b>side</b>; SwingZoneEdge <b>width</b>.</td><td><code>WaveLineBreak (1, zero_two, up)</code></td><td>-</td></tr>
+      <tr><td class="n">WaveBeyondOrigin, WaveVolumeLower</td><td>A counter wave went beyond the count's start; a wave's mean volume is lower than its base wave's. <span class="tag fil">Filter</span></td><td><b>degree</b>; <b>wave</b>, <b>base_wave</b>.</td><td><code>WaveVolumeLower (1, ...)</code></td><td>-</td></tr>
+    </tbody>
+  </table>
+
+  <!-- R -->
+  <div class="grouphead"><h3>R. Company data, ownership and events</h3><span class="count">14 functions</span></div>
+  <p class="small">Formula only (under <span class="ui">Advanced</span>). Most need extra switches and data that are marked unfinished; your app may not offer them yet. Figures are "point in time": only what was published by the candle's close.</p>
+  <table class="fn-table">
+    <thead><tr><th>Names in the app</th><th>What they measure</th><th>Settings</th><th>Example condition</th><th>Common beginner mistake</th></tr></thead>
+    <tbody>
+      <tr><td class="n">Sector, Industry, McapBucket, IndexMember, IsFnO</td><td>NSE sector and industry; large / mid / small cap; member of an index; in the F&amp;O segment - all as of the run date. <span class="tag frm">Formula</span></td><td>IndexMember: <b>index</b>.</td><td><code>IsFnO() AND Sector() == "IT"</code></td><td>Using these when a list (section 4) already does the same job more simply.</td></tr>
+      <tr><td class="n">EPSGrowthYoY, SalesGrowthYoY, EarningsYield, ReturnOnCapital, GrahamNumber, NCAVPerShare</td><td>Quarter-on-same-quarter EPS and sales growth %; EBIT over enterprise value %; return on capital %; Graham number; net current asset value per share. <span class="tag frm">Formula</span> <span class="tag sw">Company figures</span></td><td>None.</td><td><code>close &lt; GrahamNumber()</code></td><td>Expecting the latest restated figure; ATP uses only what was known then.</td></tr>
+      <tr><td class="n">Holding, HoldingChange, DaysToEvent</td><td>A holder's stake % (promoter, pledge, FII, DII, public); its change over quarters; calendar days to the next known event (results, board meeting, AGM, buyback, dividend, ex-date). <span class="tag frm">Formula</span> <span class="tag sw">Ownership</span></td><td><b>holder</b>, <b>quarters</b> = 1; <b>kind</b>.</td><td><code>DaysToEvent("results") &gt; 5</code></td><td>-</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 11 ============ -->
+<div class="section" id="s11">
+  <h2 data-toc="11. Three example scans, step by step"><span class="num">11.</span>Three example scans, step by step</h2>
+  <p class="lead">Each example uses only functions that exist in ATP. The numbers are examples of settings, not recommendations. Change them to your own.</p>
+
+  <h3>Example 1 - A ready template: "Momentum" on NIFTY 50, Daily</h3>
+  <ol class="steps" style="--start:0">
+    <li>Open Find setups. The <span class="ui">Your list</span> card shows <span class="ui">NIFTY 50 stocks (50)</span> and <span class="ui">Chart</span> shows <span class="ui">Daily</span>. If not, set them (sections 4 and 5).</li>
+    <li>In <span class="ui">Start a scan</span>, tap the tab <span class="ui">Template</span>.</li>
+    <li>Tap <span class="ui">Momentum</span>.
+      <span class="see"><span class="ui">Conditions (2)</span> opens with <code>RSI (14) above 60</code> and <code>close above EMA (close, 20)</code>.</span></li>
+    <li>Press <span class="ui">Run</span>.
+      <span class="see"><span class="ui">Matched N of 50</span>; the count beside each condition shows how many stayed in after it.</span></li>
+    <li>Press <span class="ui">Show on chart</span> on a match. Read <span class="ui">Why it matched</span>: the RSI value and the close vs the average at the matched candle.</li>
+  </ol>
+  <div class="check"><b>Check:</b> you should now see two conditions, a <span class="ui">Matched N of 50</span> header and, for a match, its chart window.</div>
+
+  <h3>Example 2 - Build your own: uptrend, near support, a bullish candle</h3>
+  <ol class="steps" style="--start:0">
+    <li>Pick a list, for example <span class="ui">F&amp;O stocks</span>, and the chart <span class="ui">Daily</span>.</li>
+    <li>Tab <span class="ui">Template</span> → <span class="ui">Blank: I add conditions</span>.</li>
+    <li>Beside <span class="ui">Add a condition</span>, pick <span class="ui">Category</span>, then press <span class="ui">Add a condition</span>. Tap the function and choose <b>Trend</b>; keep <span class="ui">is</span>; tick <b>UPTREND</b>.
+      <span class="see"><code>Trend (3) is UPTREND</code></span></li>
+    <li>Pick <span class="ui">Filter</span>, press <span class="ui">Add a condition</span>, choose <b>NearSupport</b>, set tolerance to <code>1</code>.
+      <span class="see"><code>NearSupport (1, 3)</code></span></li>
+    <li>Pick <span class="ui">Filter</span> again, add, choose <b>PatternBullish</b> with <b>any</b>.
+      <span class="see"><code>PatternBullish (any)</code></span></li>
+    <li>Type a name in the name box, for example <code>Uptrend at support</code>, press <span class="ui">Save</span>, then <span class="ui">Run</span>.</li>
+    <li>If one stage leaves nothing, the note <i>"This condition removes every symbol..."</i> appears. Press <span class="ui">Show the stage</span>, then raise the tolerance or switch the block off for a moment to see which part removes the stocks.</li>
+  </ol>
+  <div class="check"><b>Check:</b> you should now see <span class="ui">Conditions (3)</span> under <span class="ui">All of these must pass</span>, a saved name, and the results header.</div>
+
+  <h3>Example 3 - Structure with RSI divergence, and an alert</h3>
+  <p class="small muted">Needs "Extra screen functions" switched on (for RsiDivergence). If RsiDivergence is not in the Filter list, your app does not offer it yet.</p>
+  <ol class="steps" style="--start:0">
+    <li>Pick a list (for example a sector) and the chart <span class="ui">Daily</span>. Start blank.</li>
+    <li>Add a <span class="ui">Filter</span>: <b>RsiDivergence</b> with side <b>bullish</b>, lookback <code>15</code>, degree <code>0</code>.
+      <span class="see"><code>RsiDivergence (bullish, 15, 0)</code></span></li>
+    <li>Add a <span class="ui">Group</span>. Keep <span class="ui">Any of these</span>. The group starts with two example blocks: remove them with the bin icon. Inside the group, pick <span class="ui">Category</span> as the kind of block to add and add two: <code>StructureEvent is CHOCH_BULLISH</code> and <code>SwingLabel (low, 0) is HL</code>.
+      <span class="see">the group passes when either of the two is true.</span></li>
+    <li>Add an <span class="ui">Indicator</span>: <code>volume above SMA (volume, 20)</code> (pick <b>volume</b> on the left, then <span class="ui">Compare with</span> → <span class="ui">Another indicator</span> → <b>SMA</b> with x = volume).</li>
+    <li>Press <span class="ui">Save</span>, then <span class="ui">Run</span>. Open a match with <span class="ui">Show on chart</span> and tick <span class="ui">Show failed conditions</span>: in the group, the branch that was not needed is marked so.</li>
+    <li>Press <span class="ui">Tell me when it matches</span>, keep <span class="ui">When the bar closes</span>, press <span class="ui">Turn on the alert</span>.</li>
+  </ol>
+  <div class="check"><b>Check:</b> you should now see three top-level conditions (one of them a group of two), the results, and under <span class="ui">Alerts on this scan</span> a line like <i>"On · checks each time a daily bar closes · N symbols"</i>.</div>
+</div>
+
+<!-- ============ 12 ============ -->
+<div class="section" id="s12">
+  <h2 data-toc="12. Messages, problems and what to do"><span class="num">12.</span>Messages, problems and what to do</h2>
+  <h3>12.1 Why a stock "could not be read"</h3>
+  <table>
+    <thead><tr><th style="width:44%">Message</th><th style="width:20%">Button</th><th>What it means</th></tr></thead>
+    <tbody>
+      <tr><td class="msg">Your broker login has ended. Log in again to read the bars.</td><td><span class="ui">Log in</span></td><td>Your daily broker login expired. The button opens the broker panel in place.</td></tr>
+      <tr><td class="msg">Daily history for SYMBOL is not stored yet.</td><td><span class="ui">Log in</span></td><td>No broker, and ATP's end-of-day store lacks this stock.</td></tr>
+      <tr><td class="msg">Connect your broker for intraday bars.</td><td><span class="ui">Log in</span></td><td>An intraday chart without your own broker.</td></tr>
+      <tr><td class="msg">The broker's request limit was reached. Run again in a minute.</td><td><span class="ui">Retry</span></td><td>Too many requests at once. Wait a minute.</td></tr>
+      <tr><td class="msg">N stocks waited for your broker's limit. Run again in a minute to include them.</td><td>-</td><td>Part of a long list waited; run again.</td></tr>
+      <tr><td class="msg">The broker did not send the bars. / The broker could not be reached.</td><td><span class="ui">Retry</span></td><td>A problem at the broker or the connection.</td></tr>
+      <tr><td class="msg">The broker does not send bars for this timeframe.</td><td><span class="ui">Try another timeframe</span></td><td>Pick another chart.</td></tr>
+      <tr><td class="msg">No closed bars came back for this timeframe.</td><td><span class="ui">Try another timeframe</span></td><td>For example a new listing, or a candle not closed yet.</td></tr>
+      <tr><td class="msg">The screen has no value on the last bar (too little history for its indicators).</td><td><span class="ui">Try another timeframe</span></td><td>A window or degree needs more candles than the stock has. Use a smaller window or a larger timeframe.</td></tr>
+      <tr><td class="msg">not enough history on (timeframe)</td><td><span class="ui">Try another timeframe</span></td><td>The same, for a side read on another timeframe.</td></tr>
+      <tr><td class="msg">Could not read any of the N stocks. (reason)</td><td>one of the above</td><td>Not one stock could be read; the reason tells you which button to use.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>12.2 When the scan itself is refused</h3>
+  <table class="keep">
+    <thead><tr><th style="width:44%">Message (parts)</th><th>What to change</th></tr></thead>
+    <tbody>
+      <tr><td class="msg">compares price with index</td><td>Units do not match (for example close against RSI). Compare like with like.</td></tr>
+      <tr><td class="msg">... the window must be a whole number from 1 to 500</td><td>Fix the window setting.</td></tr>
+      <tr><td class="msg">... must be one of ...</td><td>Pick one of the listed choices.</td></tr>
+      <tr><td class="msg">... must be between ... and ...</td><td>The number is outside its allowed range (shown in the message).</td></tr>
+      <tr><td class="msg">... must be a time as HH:MM (00:00 to 23:59)</td><td>Type times like 09:30.</td></tr>
+      <tr><td class="msg">... is known for the last bar only, so ... cannot read its earlier values</td><td>A last-bar-only function was put inside one that reads history (for example inside an average). Use it on its own.</td></tr>
+      <tr><td class="msg">... takes no [offset] or @timeframe</td><td>Remove bars ago / the other timeframe from that function.</td></tr>
+      <tr><td class="msg">... is one of ...; '...' never matches</td><td>A category value that does not exist.</td></tr>
+      <tr><td class="msg">Pick at least one value for (name).</td><td>Tick a value in the Category block.</td></tr>
+      <tr><td class="msg">Type the (setting) for (name).</td><td>A text setting is empty.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>12.3 Common questions</h3>
+  <table>
+    <thead><tr><th style="width:36%">Question</th><th>Answer</th></tr></thead>
+    <tbody>
+      <tr><td>Find setups is missing, or shows "Coming soon".</td><td>The screener is not switched on for your organisation. Ask your administrator.</td></tr>
+      <tr><td>"Matched 0 of 50". Is something broken?</td><td>No. No stock met all conditions on the last closed candle. Look at the count beside each condition to see which one removes the most, switch it off or loosen it, and run again.</td></tr>
+      <tr><td>Results differ from what I see on a live chart.</td><td>The scan uses closed candles; a live chart also shows the forming one. Settings (for example SMA vs EMA) may also differ.</td></tr>
+      <tr><td>The time pill turned amber.</td><td>The results are older than two candles of your timeframe. Press <span class="ui">Run</span> again for newer candles.</td></tr>
+      <tr><td>My 200-stock list ran in parts. Why?</td><td>Today one request takes up to 50 stocks, and the page paces the parts inside your broker's limits (section 4).</td></tr>
+      <tr><td>I have no broker. What can I scan?</td><td>Daily, Weekly and Monthly, on ATP's stored end-of-day data. Intraday needs your own broker.</td></tr>
+      <tr><td>A function in this guide is not in my list.</td><td>It needs an extra switch, or it is a Formula-only function (section 10 marks both).</td></tr>
+      <tr><td>Does a match mean I can take a trade?</td><td>No. A match only says the conditions you chose were true on the data shown. It is information for your own study, not advice.</td></tr>
+      <tr><td>Can the scan place an order?</td><td>No. Scans and alerts never place, change or cancel an order.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 13 ============ -->
+<div class="section" id="s13">
+  <h2 data-toc="13. Glossary"><span class="num">13.</span>Glossary</h2>
+  <table>
+    <thead><tr><th style="width:24%">Word</th><th>Meaning in ATP's screener</th></tr></thead>
+    <tbody>
+      <tr><td><b>Scan / screen</b></td><td>A set of conditions run on a list. Both words are used.</td></tr>
+      <tr><td><b>List (universe)</b></td><td>The stocks a scan reads.</td></tr>
+      <tr><td><b>Timeframe (chart)</b></td><td>The size of one candle: 1 min to Monthly.</td></tr>
+      <tr><td><b>Candle / bar</b></td><td>One period's open, high, low, close and volume. The app uses both words.</td></tr>
+      <tr><td><b>Closed candle</b></td><td>A finished candle; it never changes. Scans use only these.</td></tr>
+      <tr><td><b>Forming candle</b></td><td>The current candle, still changing. Only an alert can be set to read it.</td></tr>
+      <tr><td><b>Block / stage / condition</b></td><td>One line of the scan. A stage is a top-level block.</td></tr>
+      <tr><td><b>Funnel</b></td><td>The drawing of the conditions: each stage narrows the list.</td></tr>
+      <tr><td><b>Match</b></td><td>A stock for which every switched-on condition was true on the last closed candle.</td></tr>
+      <tr><td><b>Bars ago</b></td><td>Read a value that many candles back (1 to 500).</td></tr>
+      <tr><td><b>Window (n)</b></td><td>How many candles a function looks at.</td></tr>
+      <tr><td><b>Swing high / low</b></td><td>A turning point; confirmed only after price has moved away from it.</td></tr>
+      <tr><td><b>Degree</b></td><td>The size of swings, 0 (smallest) to 3.</td></tr>
+      <tr><td><b>HH, HL, LH, LL</b></td><td>Higher high, higher low, lower high, lower low: a swing compared with the one before.</td></tr>
+      <tr><td><b>BOS</b></td><td>Break of structure: a close beyond a swing in the direction of the trend.</td></tr>
+      <tr><td><b>CHoCH</b></td><td>Change of character: a break against the trend.</td></tr>
+      <tr><td><b>ATR</b></td><td>Average true range: the usual size of a candle in price.</td></tr>
+      <tr><td><b>Median range</b></td><td>The middle candle size of recent candles: the market's own noise.</td></tr>
+      <tr><td><b>Divergence</b></td><td>Price and RSI make swings in opposite directions.</td></tr>
+      <tr><td><b>PCR</b></td><td>Put-call ratio of open interest in the option chain.</td></tr>
+      <tr><td><b>Max pain</b></td><td>The strike at which the total value of all open options would be lowest at expiry.</td></tr>
+      <tr><td><b>Open interest (OI)</b></td><td>Derivative contracts still open.</td></tr>
+      <tr><td><b>EOD</b></td><td>End of day: data from the exchange's daily files.</td></tr>
+      <tr><td><b>Evidence chart</b></td><td>The chart that opens with Show on chart, drawing only the scan's own conditions.</td></tr>
+      <tr><td><b>PAPER</b></td><td>Practice trading with no real money.</td></tr>
+    </tbody>
+  </table>
+  <div class="box not keep">
+    <h4>Remember</h4>
+    <p>The screener shows conditions on data. It does not tell anyone what to do. Every match is information for your own study and decision.</p>
+  </div>
+</div>
+
+<!-- ============ 14 ============ -->
+<div class="section" id="s14">
+  <h2 data-toc="14. For the administrator"><span class="num">14.</span>For the administrator</h2>
+  <p class="lead">This appendix maps each part of the guide to the switch (flag) that shows it. The user-facing text above uses plain names only.</p>
+  <table>
+    <thead><tr><th style="width:34%">Part of the guide</th><th style="width:30%">Flag</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>Find setups page at all</td><td><code>screener_v2</code></td><td>Off: the page leaves the menu / shows Coming soon.</td></tr>
+      <tr><td>Redesigned layout (cards, Start a scan, list picker)</td><td><code>ui_v2</code></td><td>Off: the older "Universe" column layout.</td></tr>
+      <tr><td>Screen library, ready scans</td><td><code>screener_gallery</code></td><td>The taxonomy API.</td></tr>
+      <tr><td>Breakout screens set 1 / 2 / 3; group N, O, parts of E, F, I, J</td><td><code>screener_breakouts</code>, <code>screener_breakouts_bk3</code>, <code>screener_breakouts_bk4</code></td><td>bk3 / bk4 need screener_breakouts.</td></tr>
+      <tr><td>Legends cards</td><td><code>screener_legends</code>, <code>screener_legends_lg2</code>, <code>screener_legends_lg3</code></td><td>lg3 needs screener_fundamentals.</td></tr>
+      <tr><td>Opening Legends / breakout screens in the builder; Formula block</td><td><code>screener_builder_u2</code></td><td>Formula also needs the user's Advanced toggle.</td></tr>
+      <tr><td>Extra screen functions (StDev, RsiDivergence, RsiDivergenceRef, SwingLabel, TimeOfDay, v2 candles, Pattern confirm)</td><td><code>screenql_amw_functions</code></td><td></td></tr>
+      <tr><td>Market zones (group P)</td><td><code>market_zones</code></td><td>Needs the nightly zone job.</td></tr>
+      <tr><td>Wave count (group Q)</td><td><code>screener_waves</code></td><td>Status: unfinished.</td></tr>
+      <tr><td>Company figures / ownership (group R)</td><td><code>screener_fundamentals</code>, <code>screener_ownership</code></td><td>Status: unfinished; need data.</td></tr>
+      <tr><td>RankScore and the Rankings panel</td><td><code>screener_rankings</code></td><td></td></tr>
+      <tr><td>Own words, Tell me when it matches, Versions</td><td><code>screener_copilot</code> (+ <code>ui_v2</code>, <code>ai_copilot</code>)</td><td>Own words needs an AI provider.</td></tr>
+      <tr><td>While the bar is forming (alerts)</td><td><code>screener_intrabar</code></td><td>Not offered on Weekly / Monthly.</td></tr>
+      <tr><td>Show on chart; Trend strip and Replay</td><td><code>evidence_charts</code>; <code>evidence_context</code></td><td></td></tr>
+      <tr><td>Heatmap / Chart grid views</td><td><code>screener_board_views</code></td><td></td></tr>
+      <tr><td>Run several screens together</td><td><code>screener_tx2</code></td><td>Under Advanced.</td></tr>
+      <tr><td>Past runs; Look back; backtest</td><td>(menu); <code>screener_history</code>; <code>screener_backtest</code></td><td>Past runs shows when More tools exists.</td></tr>
+      <tr><td>ETFs; Pine Script</td><td><code>screener_etf</code>; <code>strategy_lab_pine</code></td><td>Pine: status unfinished.</td></tr>
+      <tr><td>My watchlists; Save matches</td><td><code>watchlists</code></td><td></td></tr>
+      <tr><td>Today's setups card</td><td><code>growth_v2</code> + <code>ui_v2</code></td><td>Status: unfinished.</td></tr>
+      <tr><td>Stored EOD scans without a broker</td><td><code>backtest_stored_history</code></td><td>Daily / Weekly / Monthly, NSE.</td></tr>
+      <tr><td>Store-first scans</td><td><code>market_store_reads</code></td><td>Behind the scenes.</td></tr>
+      <tr><td>Data badge "EOD · date"; own-broker-only data</td><td><code>byob_data_tier</code></td><td>Status: decision.</td></tr>
+      <tr><td>Alert "Then" step; Auto PAPER</td><td><code>scan_then</code>; <code>scan_auto_paper</code></td><td>Need execution_core; PAPER only.</td></tr>
+    </tbody>
+  </table>
+  <h3>Numbers used in this guide (code constants)</h3>
+  <p class="small">Per-request cap 50 (screener run route); largest list 500; part size 5 to 50 from the broker's per-second share (fallback 10); bars ago 1 to 500; windows 1 to 500; swing degree history 100 / 250 / 600 / 1,200 candles; alert symbols 50; library file 48 screens; catalogue 163 functions + 6 fields = 169.</p>
+  <h3>What the code does not settle (open)</h3>
+  <ul class="small">
+    <li>Which of the flags above are ON in production is not known from the code; this guide does not assume it.</li>
+    <li>Which index-stock lists appear depends on the membership data stored on the server.</li>
+    <li>On Find setups the no-broker label is the hover text and the "EOD · date" badge (when <code>byob_data_tier</code> is on); the exact words "Last close &lt;date&gt;" were found on other pages, not on the screener.</li>
+    <li>M90 (no fixed 50 per request) is on a branch, not merged, when this guide was written.</li>
+  </ul>
+</div>
+
+
+
+</body></html>

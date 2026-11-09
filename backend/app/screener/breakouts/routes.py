@@ -229,7 +229,10 @@ def _grade_all(spec: Dict[str, Any], frames: Dict[str, Dict[str, pd.DataFrame]],
     rows: List[Dict[str, Any]] = []
     reasons: Dict[str, str] = {}
     hidden = 0
+    from app.market_data.index_volume import is_index, screen_frame
     for symbol, fr in frames.items():
+        if is_index(symbol):                    # M93-Q3: an index's 0 volume is no volume data (the screener's rule)
+            fr = {tf: screen_frame(f) for tf, f in fr.items()}
         try:
             result = quality.run_breakout(spec["screen"], fr, spec["signal_tf"], params=spec["params"], within=within, calendar=calendar)
         except ValueError as exc:

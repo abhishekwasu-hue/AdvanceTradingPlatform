@@ -49,14 +49,13 @@ def _whole_bars(minutes: int, b: "Bars", what: str) -> None:
 
 
 def confirmations(b: "Bars", s: "_Side", p: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
-    """(volume ok, VWAP ok) on every bar, in the side's orientation. NaN (no history, no volume) never passes."""
-    mult = float(p["tod_vol_mult"])
-    rv = b.tod_rvol()
-    vol_ok = np.ones(b.n, dtype=bool) if mult <= 0 else np.nan_to_num(rv, nan=-1.0) >= mult
+    """(volume ok, VWAP ok) on every bar, in the side's orientation. NaN (no history) never passes; a bar with no volume
+    data follows the screener's no-volume rule (M93-Q3, `Bars.allow_missing`: not applied, and the run says so)."""
+    vol_ok = b.tod_vol_ok(float(p["tod_vol_mult"]))
     if p["vwap_agree"]:
         vw = s.sign * b.vwap()
         with np.errstate(invalid="ignore"):
-            vwap_ok = np.isfinite(vw) & (s.c > vw)
+            vwap_ok = b.allow_missing(np.isfinite(vw) & (s.c > vw), b.vwap_missing())
     else:
         vwap_ok = np.ones(b.n, dtype=bool)
     return vol_ok, vwap_ok

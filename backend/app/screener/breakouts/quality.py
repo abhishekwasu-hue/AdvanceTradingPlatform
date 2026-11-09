@@ -31,7 +31,17 @@ import pandas as pd
 from app.screener.breakouts import params as bp
 from app.screener.breakouts import session as ses
 from app.screener.breakouts import style
-from app.screener.breakouts.screens import INTRADAY_SCREENS, SCREEN_TIMEFRAMES, SCREENS, Bars, evaluate_screen, is_state
+from app.screener.breakouts.screens import (
+    INTRADAY_SCREENS,
+    SCREEN_TIMEFRAMES,
+    SCREENS,
+    VOLUME_REQUIRED_NOTE,
+    VOLUME_SKIPPED_NOTE,
+    Bars,
+    evaluate_screen,
+    is_state,
+    skip_missing_volume,
+)
 
 DISCLAIMER = "Breakout matches are symbols whose bars passed the screen's rules; they are not recommendations."
 
@@ -242,7 +252,8 @@ def run_breakout(screen: str, frames: Dict[str, pd.DataFrame], signal_tf: str, *
     if intraday:
         b.use_time_of_day()
     sides = ("up", "down") if p["direction"] == "both" else (p["direction"],)
-    result = evaluate_screen(f, screen, p, bars=b, sides=sides)
+    with skip_missing_volume():                         # M93-Q3: no volume data -> the volume condition is not applied
+        result = evaluate_screen(f, screen, p, bars=b, sides=sides)
     trends = context_trends(all_frames, signal_tf, context, p)
     run = BreakoutRun(screen, signal_tf, context, p)
     if intraday:
@@ -284,6 +295,11 @@ def run_breakout(screen: str, frames: Dict[str, pd.DataFrame], signal_tf: str, *
                 **(_intraday_fields(b, int(j)) if intraday else {}),
             })
     run.signals.sort(key=lambda r: (r["bar"], r["side"]))
+    # M93-Q3: the result says when a volume condition was not applied (no volume data) or a volume screen could not be checked
+    if any(b.volume_skipped[r["bar"]] for r in run.signals):
+        run.notes.append(VOLUME_SKIPPED_NOTE)
+    if b.volume_required[first:].any():
+        run.notes.append(VOLUME_REQUIRED_NOTE)
     return run
 
 

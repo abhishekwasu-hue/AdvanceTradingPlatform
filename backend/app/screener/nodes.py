@@ -7,7 +7,7 @@ JSON form, so a builder-made tree and a parsed one compare equal.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 VERSION = "screenql/1"
 TIMEFRAMES = ("1m", "3m", "5m", "15m", "30m", "1h", "1d", "1w", "1M")
@@ -252,23 +252,27 @@ def to_text(node: Node) -> str:
     raise TypeError(f"not a ScreenQL node: {node!r}")
 
 
+def children(node: Node) -> tuple[Any, ...]:
+    """A node's direct children, in order."""
+    if isinstance(node, Call):
+        return (*node.args, *node.kwargs.values())
+    if isinstance(node, Unary):
+        return (node.operand,)
+    if isinstance(node, (Binary, Compare)):
+        return (node.left, node.right)
+    if isinstance(node, Between):
+        return (node.value, node.low, node.high)
+    if isinstance(node, In):
+        return (node.value, *node.items)
+    if isinstance(node, Logic):
+        return tuple(node.items)
+    if isinstance(node, Not):
+        return (node.item,)
+    return ()
+
+
 def walk(node: Node):
     """Every node, depth first (the node itself first)."""
     yield node
-    children: Tuple[Any, ...] = ()
-    if isinstance(node, Call):
-        children = (*node.args, *node.kwargs.values())
-    elif isinstance(node, Unary):
-        children = (node.operand,)
-    elif isinstance(node, (Binary, Compare)):
-        children = (node.left, node.right)
-    elif isinstance(node, Between):
-        children = (node.value, node.low, node.high)
-    elif isinstance(node, In):
-        children = (node.value, *node.items)
-    elif isinstance(node, Logic):
-        children = tuple(node.items)
-    elif isinstance(node, Not):
-        children = (node.item,)
-    for child in children:
+    for child in children(node):
         yield from walk(child)

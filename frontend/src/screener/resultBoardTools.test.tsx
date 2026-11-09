@@ -32,4 +32,12 @@ describe("UI-28 U5.3: the results board tools", () => {
     expect(empty).not.toContain('data-testid="results-csv"');
     expect(empty).not.toContain("Auto-refresh");
   });
+
+  it("M93-Q3: a row's note (a volume condition not applied for want of volume data) is shown under its result", () => {
+    const note = "Volume not available: the volume condition was not applied.";
+    const html = renderToStaticMarkup(<ResultBoard results={[{ symbol: "NIFTY50", matched: true, reason: null, note }, ...ROWS]} />);
+    expect(html).toContain('data-testid="result-note"');
+    expect(html).toContain(note);
+    expect(renderToStaticMarkup(<ResultBoard results={ROWS} />)).not.toContain('data-testid="result-note"');
+  });
 });

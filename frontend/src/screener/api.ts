@@ -14,7 +14,9 @@ export interface ValidateResponse { ok: boolean; problems: Problem[]; text: stri
 /** U8: `evidence_id` - the stored evidence pack of a matched symbol (flag evidence_charts; absent while it is off). */
 /** SCR-FIX B1: a symbol that could not be read or checked carries `reason` (a plain sentence), its machine `code` and the
  * ONE `action` that may fix it; a symbol that was read and did not match has no reason. */
-export interface RunResult { symbol: string; matched: boolean; reason: string | null; code?: string; action?: ReadAction; evidence_id?: number | null }
+export interface RunResult { symbol: string; matched: boolean; reason: string | null; code?: string; action?: ReadAction; evidence_id?: number | null;
+  /** M93-Q3: what the answer could not use (e.g. "Volume not available: the volume condition was not applied."). */
+  note?: string }
 export type ReadAction = "login" | "connect" | "retry" | "timeframe";
 /** SCR-FIX B1 / B2: the grouped reason in one line (the largest group of unread symbols) and its one action. */
 export interface UnreadReason { code: string; text: string; action: ReadAction; count: number }

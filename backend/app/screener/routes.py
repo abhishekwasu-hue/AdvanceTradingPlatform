@@ -1123,7 +1123,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                   vectorized=vectorized)
     # SCR-FIX B1: a symbol that could not be read (fetch problem) or checked (too little history, no value) carries its
     # reason code + action and is counted apart from the symbols that were read and did not match
-    results: List[Dict[str, Any]] = [reasons.row(m.symbol, m.matched, m.reason) for m in matches]
+    results: list[dict[str, Any]] = [reasons.row(m.symbol, m.matched, m.reason, m.note) for m in matches]
     results += [reasons.row(s, False, reasons.as_reason(why)) for s, why in fetch_problems.items()]
     unread = read_counts(results)
     if unread["unread"] and unread["unread"] >= len(symbols) and not body.preview and not body.batch:

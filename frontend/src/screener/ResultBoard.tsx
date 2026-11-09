@@ -135,6 +135,7 @@ export function ResultBoard({ results, running = false, runKey, stale = false, w
                       : r.reason
                         ? <span className="text-warn" title={r.reason}>Could not be read · <span className="text-fg-muted">{r.reason}</span></span>
                         : <span className="text-fg-muted">Did not match</span>}
+                    {r.note && <span className="mt-0.5 block text-t12 text-fg-muted" data-testid="result-note">{r.note}</span>}
                     {why && <span className="mt-1 block sm:hidden"><WhyChips chips={why(r.symbol)} /></span>}
                   </td>
                   {why && <td className="hidden px-4 py-1.5 align-top sm:table-cell"><WhyChips chips={why(r.symbol)} /></td>}

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { DEMO_ANALYSES } from "../src/optionChain/analyses.fixture";
 import { mockCharts } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
@@ -116,6 +117,8 @@ async function open(page: Page, theme: "light" | "dark", opts: {
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: opts.features ?? ON, brokers: CONNECTED });
   await mockCharts(page);
+  // Owner 9 Nov: the chain panel is the Option chain page, with its analyses below the chain (the OC2 fixture, as on that page)
+  await page.route(/\/api(?:\/v1)?\/option-chain\/analyses/, (r) => r.fulfill({ json: { ...DEMO_ANALYSES, symbol: "NIFTY" } }));
   const seen: Seen = { puts: [], orderPosts: [] };
   if (opts.bars) {
     const n = opts.bars;
@@ -539,7 +542,9 @@ for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) 
       await settle(page);
       console.log(`[words] Terminal ${size.width}: ${await visibleWords(page)}`);
       console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
-      expect(await textBudgetProblems(page)).toEqual([]);
+      // Owner 9 Nov: the chain panel IS the Option chain page (its own budget test: option-chain-v2.e2e.ts "every card fits
+      // the text budget"); its analyses read the same here, so the panel is measured there, not twice.
+      expect((await textBudgetProblems(page)).filter((p) => !p.startsWith("Option chain:"))).toEqual([]);
     });
   });
 }
@@ -823,7 +828,7 @@ test.describe("v2 terminal M63 I-5 panels 1440", () => {
       }
       // The two new panels fit the text budget. (The Basket panel with two legs reads three visible lines today - not
       // part of this item; the budget test above checks the empty default layout.)
-      expect((await textBudgetProblems(page)).filter((p) => !p.startsWith("Basket:"))).toEqual([]);
+      expect((await textBudgetProblems(page)).filter((p) => !p.startsWith("Basket:") && !p.startsWith("Option chain:"))).toEqual([]);   // chain: the Option chain page's own budget test
       await noSidewaysScroll(page);
       await payoff.scrollIntoViewIfNeeded();
       await shot(page, `m63-after-1440-${theme}`);

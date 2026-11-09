@@ -20,7 +20,7 @@ import ChainCharts from "./ChartsViewV2";
 import OiViewV2 from "./OiViewV2";
 import ColumnsMenuV2 from "./ColumnsMenuV2";
 import {
-  chainNotes, initialSymbol, readColumns, writeColumns, type ColumnPrefs,
+  chainNotes, initialSymbol, readColumns, writeColumns, type ColumnKey, type ColumnPrefs,
 } from "./model";
 import RowDetailsV2 from "./RowDetailsV2";
 import { ChainLadderV2, Note } from "./ChainLadderV2";
@@ -128,7 +128,7 @@ export default function OptionChainPageV2(_props: PageProps) {
 import { expiryComboOptions, symbolOptions } from "./model";
 export { expiryComboOptions, symbolOptions };
 
-export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal, autoTrade = false }: {
+export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal, autoTrade = false, onTicket, areaMarks, hide }: {
   symbol: string;
   onSymbol: (symbol: string) => void;
   chain: OptionChainData;
@@ -141,6 +141,12 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   onClearSignal?: () => void;
   /** 8b-b: opened from the signal card's "Trade this setup": open the pre-filled ticket / basket once, by itself. */
   autoTrade?: boolean;
+  /** Owner 9 Nov (the page inside the Terminal): a price's ticket goes to the Terminal's own order panel when it shows one. */
+  onTicket?: Parameters<typeof useChainTrading>[0]["onTicket"];
+  /** TERM-2 R3 (in the Terminal): each short strike's distance to the nearest area. */
+  areaMarks?: ReadonlyMap<string, string>;
+  /** M58 T4-5 (in the Terminal): the columns a narrow chain panel leaves out. */
+  hide?: readonly ColumnKey[];
 }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [askOpen, setAskOpen] = useState(false);
@@ -165,7 +171,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   const shellAsk = useHasAskAiEntry();
   const askExpiry = live?.expiry ?? chain.expiry;
   useRegisterAskAi(shellAsk ? { symbol, expiry: askExpiry, chain: { symbol, expiry: askExpiry, refreshKey: live?.fetched_at ?? undefined } } : null);
-  const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions, signal });
+  const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions, signal, onTicket });
   const setupState = useSetupStrikes(signal, live?.summary.spot ?? null);
   const setupData = setupState.status === "ready" && setupState.data.underlying === symbol ? setupState.data : null;
   const marks = useMemo(() => setupMarks(setupData, live?.expiry ?? chain.expiry), [setupData, live?.expiry, chain.expiry]);
@@ -240,7 +246,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       {view === "chain" && !noBroker && <section aria-label="Chain" data-block="chain" data-tour="oc-chain" className="relative">
         {/* The toggle sits in the gap above the chain, centred over the strike column, so the chain does not move. */}
         <ChainLadderV2 symbol={symbol} live={live} loading={chain.loading} problem={chain.problem} problemReason={chain.problemReason} prefs={prefs} centreSuffix={trading.centreSuffix}
-          onPick={(row) => setPicked(row.strike)} onPickLeg={trading.onPickLeg} held={trading.held} setup={marks.size ? marks : undefined}
+          onPick={(row) => setPicked(row.strike)} onPickLeg={trading.onPickLeg} held={trading.held} setup={marks.size ? marks : undefined} areaMarks={areaMarks} hide={hide}
           toggle={(placed) => placed === "empty"
             ? <div className="mb-space-3 flex justify-center"><ViewToggle view={view} onView={setView} /></div>
             : <ViewToggle view={view} onView={setView} className="absolute -top-space-5 left-1/2 z-10 -translate-x-1/2 md:-top-space-4" />} />

@@ -413,7 +413,7 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
     let live = true;
     chatApi.history().then((h) => {
       if (!live) return;
-      if (!keptIsToday(h)) {
+      if (h.turns.length > 0 && !keptIsToday(h)) {                  // nothing kept: as before (no new_chat sent)
         setKeep(h.keep);
         if (!convoRef.current) fresh.current = true;
         return;

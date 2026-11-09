@@ -587,7 +587,7 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          cost=4.0, min_bars=BREAKOUT_MIN_BARS, window_sum=True, flag=BREAKOUT_FLAG, also_flags=_BK3,
          doc="B11: mode bollinger - a close outside the n-bar Bollinger band on volume >= v x average within a few bars of the band"
              " width's lowest of `lookback` bars; mode ttm - the release of the TTM squeeze (bands back outside the Keltner channel)"
-             " with momentum on the breakout side"),
+             " with momentum on the breakout side (lookback and v are read in bollinger mode only)"),
     Spec("MABreakout", "filter", BOOL, None, (_SIDE, _bk("ma_n", "n", "window"), _bk("ma_type", "type", STR), _K), cost=3.0,
          min_bars=BREAKOUT_MIN_BARS, extra_bars=MA_EXTRA_BARS, flag=BREAKOUT_FLAG, also_flags=_BK3,
          doc="B12: a close above (up) / below (down) a flat or rising (falling) n-bar moving average by k ATR and beyond every close of"
@@ -617,7 +617,7 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("GapBreakout", "filter", BOOL, None, (_SIDE, _bk("gap_level", "level", STR), _bk("gap_hold_min", "hold", NUM)), cost=3.0,
          min_bars=BREAKOUT_MIN_BARS, min_sessions=2, timeframes=GAP_TFS, tf_multiple_args=("hold",), flag=BREAKOUT_FLAG, also_flags=_BK4,
          doc="B8: the session opened beyond the previous session's high (up) / low (down) - level base: the last 20 sessions' - and every"
-             " close of its first `hold` minutes stayed beyond it (Daily: the day's close); true on the bar that ends the window"),
+             " close of its first `hold` minutes stayed beyond it (Daily: the day's close; hold has no effect there); true on the bar that ends the window"),
     Spec("GapType", "classifier", CAT, None, (_SIDE, _bk("gap_level", "level", STR), _bk("gap_hold_min", "hold", NUM)), cost=3.0,
          min_bars=BREAKOUT_MIN_BARS, min_sessions=2, timeframes=GAP_TFS, tf_multiple_args=("hold",), values=GAP_CLASSES + ("",),
          flag=BREAKOUT_FLAG, also_flags=_BK4,

@@ -112,59 +112,73 @@ class Template:
 
 
 TEMPLATES: Tuple[Template, ...] = (
-    Template("swing_1h_range", "Swing 1H range breakout", "B1", "1h", note="20-bar range on 1H, context Daily + Weekly"),
-    Template("daily_swing_break", "Daily swing-high / low break (BOS / CHoCH)", "B2", "1d", note="D1 swing on Daily, context Weekly"),
-    Template("intraday_15m_nr7", "Intraday 15m NR7 breakout", "B4", "15m", note="NR7 setup bar, next-bar break, context 1H + Daily"),
-    Template("daily_52w_high", "Daily 52-week high breakout", "B7", "1d", direction="up", note="close above the prior 52-week high on volume"),
+    Template("swing_1h_range", "Swing 1H range breakout", "B1", "1h", note="20-bar range on 1H; Daily and Weekly trends not against the break"),
+    Template("daily_swing_break", "Daily swing-high / low break (BOS / CHoCH)", "B2", "1d",
+             note="last confirmed swing high / low on Daily; context: weekly trend, not against the break"),
+    Template("intraday_15m_nr7", "Intraday 15m NR7 breakout", "B4", "15m", note="NR7 setup bar, next-bar break; 1H and Daily trends not against it"),
+    Template("daily_52w_high", "Daily 52-week high breakout", "B7", "1d", direction="up",
+             note="close above the prior 52-week high on volume; weekly trend not down"),
     Template("weekly_52w_high", "Weekly 52-week high breakout", "B7", "1w", direction="up", params={"htf_filter": "off"},
-             note="weekly close above the prior 52-week high; no context filter - a monthly trend needs 40 months of history (BK1-2)"),
-    Template("intraday_15m_expansion", "Intraday 15m ATR expansion", "B13", "15m", note="wide-range bar >= 2 ATR with a directional close"),
-    Template("intraday_5m_volume", "Intraday 5m volume breakout", "B14", "5m", note="volume shock at the 20-bar high / low"),
+             note="weekly close above the prior 52-week high; no higher-timeframe trend filter (a monthly trend needs 40 months of history)"),
+    Template("intraday_15m_expansion", "Intraday 15m ATR expansion", "B13", "15m",
+             note="wide-range bar >= 2 ATR with a directional close; 1H and Daily trends not against it"),
+    Template("intraday_5m_volume", "Intraday 5m volume breakout", "B14", "5m", note="volume shock at the 20-bar high / low; 15m and 1H trends not against it"),
     # U6 BK2 (spec §4 "Intraday ORB"): stop reference = the opening-range midpoint for the "Then" template (spec B16)
     Template("intraday_5m_orb15", "Intraday ORB: 15-minute opening range on 5m", "B16", "5m", params={"or_minutes": 15, "stop_mode": "midpoint"},
-             note="first close beyond the 09:15-09:30 range, VWAP side, time-of-day volume; stop = range midpoint; context 15m + 1H"),
+             note="first close beyond the 09:15-09:30 range that passes the volume / VWAP checks; invalidation level = range midpoint; 15m and 1H trends not against it"),
     Template("intraday_15m_orb30", "Intraday ORB: 30-minute opening range on 15m", "B16", "15m", params={"or_minutes": 30, "stop_mode": "midpoint"},
-             note="first close beyond the 09:15-09:45 range; stop = range midpoint; context 1H + Daily"),
+             note="first close beyond the 09:15-09:45 range that passes the volume / VWAP checks; invalidation level = range midpoint; 1H and Daily trends not against it"),
     Template("intraday_15m_first_hour", "Intraday first-hour high / low break on 15m", "B17", "15m", params={"day_level": "first_hour", "stop_mode": "base"},
-             note="first close beyond the 09:15-10:15 range; stop = the other side of the first hour"),
+             note="first close beyond the 09:15-10:15 range that passes the volume / VWAP checks; invalidation level = the other side of the first hour;"
+             " 1H and Daily trends not against it"),
     Template("intraday_5m_prev_day", "Intraday previous-day high / low break on 5m", "B17", "5m", params={"day_level": "prev_day"},
-             note="first close beyond yesterday's high / low after the first 15 minutes"),
+             note="first close beyond yesterday's high / low after the first 15 minutes that passes the volume / VWAP checks;"
+             " 15m and 1H trends not against it"),
     Template("intraday_5m_day_extreme", "Intraday new high / low of day on 5m", "B18", "5m",
-             note="close beyond the session's high / low so far with time-of-day volume and VWAP agreement, once per leg"),
+             note="close beyond the session's high / low so far with time-of-day volume and VWAP agreement, once per leg; 15m and 1H trends not against it"),
     # U6 BK3 (flag screener_breakouts_bk3 on top of screener_breakouts)
     Template("daily_vcp", "Daily volatility-contraction (VCP-style) breakout", "B3", "1d", direction="up",
-             note="two or more contractions each shallower than the last, volume drying up, trend template; close above the pivot (the base high) on volume"),
+             note="two or more contractions each shallower than the last, volume drying up, trend template (without the RS rating);"
+             " close above the pivot (the base high) on volume; weekly trend not down"),
     Template("daily_vcp_watchlist", "Daily volatility-contraction (VCP-style) watchlist: ready, not yet broken", "B3", "1d", direction="up",
              params={"vcp_mode": "watchlist"},
-             note="the same base rules, close at most 5 % under the pivot (the base high) and not yet above it; listed every day it stays ready"),
-    Template("daily_donchian_20", "Daily 20-day Donchian breakout", "B10", "1d", note="close beyond the previous 20 days' high / low by an ATR buffer"),
+             note="the same base rules, close at most 5 % under the pivot (the base high) and not yet above it; listed every day it stays ready;"
+             " weekly trend not down"),
+    Template("daily_donchian_20", "Daily 20-day Donchian breakout", "B10", "1d",
+             note="close beyond the previous 20 days' high / low by an ATR buffer; weekly trend not against it"),
     Template("daily_donchian_55", "Daily 55-day Donchian breakout", "B10", "1d", params={"donchian_n": 55},
-             note="Turtle System 2 channel: close beyond the previous 55 days' high / low by an ATR buffer"),
+             note="Turtle System 2 channel: close beyond the previous 55 days' high / low by an ATR buffer; weekly trend not against it"),
     Template("daily_bb_squeeze", "Daily Bollinger squeeze breakout", "B11", "1d",
-             note="band width at its six-month low, then a close outside the band on volume within two weeks"),
+             note="band width at its six-month low, then a close outside the band on volume within two weeks; weekly trend not against it"),
     Template("intraday_15m_ttm_squeeze", "Intraday 15m TTM squeeze fire", "B11", "15m", params={"squeeze_mode": "ttm"},
-             note="Bollinger bands leave the Keltner channel with momentum on the breakout side; context 1H + Daily"),
+             note="Bollinger bands leave the Keltner channel with momentum on the breakout side (no volume check); 1H and Daily trends not against it"),
     Template("daily_50ma_breakout", "Daily 50-day moving-average breakout", "B12", "1d",
-             note="first close beyond a flat or rising 50-day SMA after two weeks of closes around it"),
+             note="first close beyond a 50-day SMA (flat or rising for up, flat or falling for down) after two weeks of closes around it;"
+             " weekly trend not against it"),
     Template("daily_rsi_adx_regime", "Daily RSI / ADX regime breakout", "B15", "1d",
-             note="RSI leaves the 40-60 band it held for a month, ADX rises from below 20, price clears the month's range"),
+             note="RSI leaves the 40-60 band it held for a month, ADX (20 or less in that month) rises, price clears the month's range;"
+             " weekly trend not against it"),
     # U6 BK4 (flag screener_breakouts_bk4 on top of screener_breakouts)
     Template("daily_trendline_break", "Daily trendline breakout", "B5", "1d",
-             note="first close beyond a falling resistance / rising support line with two or more touches, by an ATR buffer"),
+             note="first close beyond a falling resistance / rising support line through two confirmed swing points, by an ATR buffer;"
+             " weekly trend not against it"),
     Template("swing_1h_channel_break", "Swing 1H channel breakout", "B5", "1h", params={"tl_mode": "channel"},
-             note="close beyond the far edge of a rising / falling channel on 1H; measured move = the channel's width beyond the edge"),
+             note="close beyond the far edge of a rising / falling channel on 1H; measured move = the channel's width beyond the edge;"
+             " Daily and Weekly trends not against it"),
     Template("daily_flag", "Daily flag breakout", "B6", "1d", direction="up",
-             note="a fast pole of 3+ ATR, a shallow consolidation of one to three weeks, then a close above it on volume; measured move"),
+             note="a fast pole of 3+ ATR, a shallow consolidation of one to three weeks, then a close above it on volume; measured move;"
+             " weekly trend not down"),
     Template("daily_triangle", "Daily triangle breakout", "B6", "1d", params={"pattern": "triangle"},
-             note="converging resistance and support lines, then a close beyond on volume; measured move = the triangle's height"),
+             note="two sloped lines converging (flat-sided triangles are not detected), then a close beyond on volume;"
+             " measured move = the triangle's height; weekly trend not against it"),
     Template("intraday_5m_gap_and_go", "Intraday gap beyond the previous day's high / low on 5m", "B8", "5m",
-             note="the session opens beyond yesterday's high / low and every close of the first 30 minutes holds it"),
+             note="the session opens beyond yesterday's high / low and every close of the first 30 minutes holds it; 15m and 1H trends not against it"),
     Template("daily_gap_base", "Daily gap beyond a 20-day base", "B8", "1d", direction="up", params={"gap_level": "base"},
-             note="the day opens above the last 20 sessions' high and closes above it"),
+             note="the day opens above the last 20 sessions' high and closes above it (the 30-minute hold applies intraday only); weekly trend not down"),
     Template("daily_range_retest", "Daily range-breakout retest", "B9", "1d",
-             note="after a 20-day range breakout, price leaves the level, comes back within two weeks and reverses there"),
+             note="after a 20-day range breakout, price leaves the level, comes back within two weeks and reverses there; weekly trend not against it"),
     Template("swing_1h_range_retest", "Swing 1H range-breakout retest", "B9", "1h",
-             note="the 1H version: a reversal at the broken 20-bar range within 10 bars; context Daily + Weekly"),
+             note="the 1H version: a reversal at the broken 20-bar range within 10 bars; Daily and Weekly trends not against it"),
 )
 BK3_TEMPLATE_SCREENS: Tuple[str, ...] = ("B3", "B10", "B11", "B12", "B15")
 BK4_TEMPLATE_SCREENS: Tuple[str, ...] = ("B5", "B6", "B8", "B9")

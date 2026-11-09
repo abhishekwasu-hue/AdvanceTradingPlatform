@@ -41,7 +41,7 @@ PARAMS: Tuple[Param, ...] = (
           "Wilder (1978) original ATR length; the platform-wide default.", 2, 200),
     Param("vol_avg_n", 20, "relative volume = this bar's volume / the mean of the previous n bars",
           "20 bars = about one trading month on Daily, the usual relative-volume window.", 2, 200),
-    Param("vol_mult", 1.5, "breakout-bar volume >= vol_mult x average (0 = no volume condition; indices without volume need 0)",
+    Param("vol_mult", 1.5, "breakout-bar volume >= vol_mult x average (0 = no volume condition; indices without volume need 0; not read by the TTM squeeze)",
           "Low end of the 1.5-2x practitioner range (O'Neil: 40-50% above average; Minervini / Qullamaggie: 1.5-2x).", 0.0, 20.0),
     Param("min_break_atr", 0.2, "the close must be beyond the level by at least this many ATRs (B1, B2, B4, B7, B14 'through')",
           "ATR-scaled minimum distance, not fixed points (spec §1 false-break filter); 0 = any close beyond.", 0.0, 5.0),
@@ -285,7 +285,7 @@ PARAMS: Tuple[Param, ...] = (
     Param("gap_min_atr", 0.0, "the session opens beyond the level by at least this many daily ATRs (ATR of the sessions before; 0 = any gap)",
           "ATR-scaled, not points; 0 keeps every open beyond the level - raise it for larger gaps only.", 0.0, 10.0, group="B8"),
     Param("gap_hold_min", 30, "intraday: every close of the session's first N minutes stays beyond the level; the signal is the bar that ends "
-          "them (a whole number of bars); Daily: the day's close", "Spec B8 'holding above the level by the end of the first N minutes'; 30 "
+          "them (a whole number of bars); Daily: the day's close (N has no effect)", "Spec B8 'holding above the level by the end of the first N minutes'; 30 "
           "minutes = the second opening-range window of spec B16.", 1, 240, group="B8"),
     # --- B9 retest entry (U6 BK4) -----------------------------------------------------------------------------------------
     Param("retest_of", "range", "the breakout a retest follows: range (B1), swing (B2), donchian (B10), trendline or channel (B5), with their own "

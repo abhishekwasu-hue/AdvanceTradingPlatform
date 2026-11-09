@@ -214,7 +214,7 @@
    "review": "verified",
    "who": {"text": "Futures trader; co-author with Laurence Connors of the 1995 book Street Smarts.", "cite": ["raschke_connors_1995"]},
    "style": {"text": "Short-term reversals: fading a new 20-day extreme that fails, when the previous extreme is some days old.", "cite": ["raschke_connors_1995"]},
-   "looks_for": {"text": "A new 20-day low while the previous 20-day low is at least four sessions old, with price back above that earlier low the same day.", "cite": ["raschke_connors_1995"]},
+   "looks_for": {"text": "A new 20-day low while the previous 20-day low is at least four sessions old, with the day's high back above that earlier low.", "cite": ["raschke_connors_1995"]},
    "timeframe": {"text": "Daily bars; a short-term setup lasting a few days.", "cite": ["raschke_connors_1995"]},
    "approximation": "Long side only here; the book's entry order just above the earlier low is read as the day's high reaching above it; the variant a day later and the short-side mirror are not included.",
    "screen": {

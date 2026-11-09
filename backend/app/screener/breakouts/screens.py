@@ -86,7 +86,7 @@ class VolumeNotes:
     required: bool = False
 
 
-_VOLUME_NOTES: ContextVar[Optional[VolumeNotes]] = ContextVar("breakout_volume_notes", default=None)
+_VOLUME_NOTES: ContextVar[VolumeNotes | None] = ContextVar("breakout_volume_notes", default=None)
 VOLUME_SKIPPED_NOTE = "Volume not available: the volume condition was not applied."
 VOLUME_REQUIRED_NOTE = "Volume not available: this screen needs volume, so it could not be checked."
 

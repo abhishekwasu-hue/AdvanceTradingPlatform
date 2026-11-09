@@ -7,7 +7,7 @@ JSON form, so a builder-made tree and a parsed one compare equal.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 VERSION = "screenql/1"
 TIMEFRAMES = ("1m", "3m", "5m", "15m", "30m", "1h", "1d", "1w", "1M")
@@ -252,7 +252,7 @@ def to_text(node: Node) -> str:
     raise TypeError(f"not a ScreenQL node: {node!r}")
 
 
-def children(node: Node) -> Tuple[Any, ...]:
+def children(node: Node) -> tuple[Any, ...]:
     """A node's direct children, in order."""
     if isinstance(node, Call):
         return (*node.args, *node.kwargs.values())

@@ -97,7 +97,7 @@ class Match:
     symbol: str
     matched: bool
     reason: Optional[str] = None                           # why a symbol could not be evaluated (history too short...)
-    note: Optional[str] = None                             # M93-Q3: what the answer could not use (a volume condition not applied)
+    note: str | None = None                             # M93-Q3: what the answer could not use (a volume condition not applied)
 
 
 # SCR-FIX A5: the NSE-family session close (09:15-15:30 IST). A 30m / 1h session is not a whole number of buckets, so
@@ -1529,7 +1529,7 @@ def last_match(symbol: str, value: Any) -> Match:
 VOLUME_FUNCTIONS = frozenset({"VWAP", "MFI", "OBV", "RelVolume", "RelVolumeTOD", "SessionVWAP", "WaveVolumeLower"})
 
 
-def no_index_volume(universe: List[SymbolData]) -> None:
+def no_index_volume(universe: list[SymbolData]) -> None:
     """M93-Q3: an index's 0 volume is no volume data - its frames get NaN there (in place; idempotent). Stocks unchanged."""
     from app.market_data.index_volume import is_index, screen_frame
     for d in universe:
@@ -1544,7 +1544,7 @@ def _reads_volume(node: Any) -> bool:
                for x in n.walk(node))
 
 
-def _volume_timeframes(node: Any, tf: Optional[str], out: Set[Optional[str]]) -> Set[Optional[str]]:
+def _volume_timeframes(node: Any, tf: str | None, out: set[str | None]) -> set[str | None]:
     """The timeframes the screen reads volume on (None = the base timeframe): a node's own @tf, else its parent's."""
     own = getattr(node, "tf", None) or tf
     if (isinstance(node, n.Field) and node.name == "volume") or (isinstance(node, n.Call) and node.name in VOLUME_FUNCTIONS):
@@ -1554,12 +1554,12 @@ def _volume_timeframes(node: Any, tf: Optional[str], out: Set[Optional[str]]) ->
     return out
 
 
-def _fundamental_calls(ast: Any) -> List[n.Call]:
+def _fundamental_calls(ast: Any) -> list[n.Call]:
     return [x for x in n.walk(ast) if isinstance(x, n.Call) and FUNCTIONS.get(x.name) is not None
             and FUNCTIONS[x.name].flag == FUNDAMENTALS_FLAG]
 
 
-def _no_volume(frame: Optional[pd.DataFrame]) -> bool:
+def _no_volume(frame: pd.DataFrame | None) -> bool:
     return frame is not None and ("volume" not in frame.columns or bool(frame["volume"].isna().any()))
 
 
@@ -1569,7 +1569,7 @@ def _needs_own_check(ast: Any, data: SymbolData, base_tf: str) -> bool:
     return _no_volume(data.frames.get(base_tf)) or bool(_fundamental_calls(ast))
 
 
-def _volume_unavailable(ev: _Eval, ast: Any, base_tf: str) -> Optional[reasons.Reason]:
+def _volume_unavailable(ev: _Eval, ast: Any, base_tf: str) -> reasons.Reason | None:
     """The reason when a part of the screen that reads volume has no value on the last bar because the symbol's bars have
     no volume data there; None otherwise (the part is evaluated as always). Only symbols with missing volume on a
     timeframe the screen reads volume on are looked at, so a stock with real volume costs nothing here."""
@@ -1596,7 +1596,7 @@ def _volume_unavailable(ev: _Eval, ast: Any, base_tf: str) -> Optional[reasons.R
     return None
 
 
-def _figures_unavailable(ev: _Eval, ast: Any, base_tf: str) -> Optional[reasons.Reason]:
+def _figures_unavailable(ev: _Eval, ast: Any, base_tf: str) -> reasons.Reason | None:
     """The reason when the screen reads fundamentals and the company has no stored figures (or none the screen can use
     on the last bar: not reported yet, too old, or not computable); None otherwise."""
     calls = _fundamental_calls(ast)

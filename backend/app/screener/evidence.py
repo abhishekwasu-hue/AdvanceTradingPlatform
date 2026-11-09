@@ -709,9 +709,9 @@ def build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, para
                            context=context)
 
 
-def _build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, params: Optional[Dict[str, Any]], as_of: Optional[datetime],
-                window: int, debug: bool, constants: Optional[Dict[int, float]], exchange: str, data_source: Optional[str],
-                run_id: Optional[int], screen_name: Optional[str], context: bool) -> Dict[str, Any]:
+def _build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, params: dict[str, Any] | None, as_of: datetime | None,
+                window: int, debug: bool, constants: dict[int, float] | None, exchange: str, data_source: str | None,
+                run_id: int | None, screen_name: str | None, context: bool) -> dict[str, Any]:
     if not getattr(validated, "ok", False):
         raise ScreenRuntimeError("the screen did not pass validation")
     params = dict(params or {})

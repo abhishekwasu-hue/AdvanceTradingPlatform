@@ -131,7 +131,7 @@ def not_checked(exc: BaseException, symbol: str) -> Reason:
     return of(NOT_CHECKED)
 
 
-def row(symbol: str, matched: bool, reason: Optional[str], note: Optional[str] = None) -> Dict[str, Any]:
+def row(symbol: str, matched: bool, reason: str | None, note: str | None = None) -> dict[str, Any]:
     """One result row: `reason` (the sentence), `code` and `action` when the symbol could not be read or checked; `note`
     (M93-Q3) when the answer could not use something (a volume condition not applied for want of volume data)."""
     out: Dict[str, Any] = {"symbol": symbol, "matched": matched, "reason": str(reason) if reason is not None else None}

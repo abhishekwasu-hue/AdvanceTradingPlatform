@@ -219,8 +219,8 @@ def series_at_dates(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], d
         return _series_at_dates(ast, validated, frames, dates, params, scales, out, symbols)
 
 
-def _series_at_dates(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], dates: List[date], params: Dict[str, Any],
-                     scales: Optional[Dict[str, Dict[date, Scale]]], out: pd.DataFrame, symbols: List[str]) -> pd.DataFrame:
+def _series_at_dates(ast: Any, validated: Any, frames: dict[str, pd.DataFrame], dates: list[date], params: dict[str, Any],
+                     scales: dict[str, dict[date, Scale]] | None, out: pd.DataFrame, symbols: list[str]) -> pd.DataFrame:
     from app.market_data.index_volume import is_index, screen_frame
     from app.screener.runtime import _no_volume
     lookback = int((validated.lookback or {}).get(BASE_TF, 1) or 1)

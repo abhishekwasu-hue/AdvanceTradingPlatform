@@ -62,6 +62,8 @@ export const SCROLLING = "data-scrolling";
  * `--chat-bubble-end`: the bubble's height (a list that scrolls on its own ends with at least this, plus a gap).
  */
 export const CLEAR_VAR = "--chat-bubble-clear";
+/** On <html> while the bubble is shown: index.css gives the room at its usual place from it (no measurement). */
+export const SHOWN = "data-chat-bubble-shown";
 export const END_VAR = "--chat-bubble-end";
 
 /** The end padding of a list that scrolls on its own (the shared watchlist): its last row scrolls clear of the bubble. */
@@ -98,14 +100,11 @@ function useClearOfBottomBars(ref: RefObject<HTMLElement>, active: boolean) {
       const bars = [...document.querySelectorAll(`[${BOTTOM_ACTION}]`)].map((b) => b.getBoundingClientRect());
       const lift = liftAbove(box(), bars, window.innerHeight);
       if (lift !== null) el.style.bottom = `calc(${Math.round(lift)}px + var(--space-3))`;
-      const room = bubbleRoom(box(), window.innerHeight);
-      if (room) {
-        root.style.setProperty(CLEAR_VAR, `${room.clear}px`);
-        root.style.setProperty(END_VAR, `${room.end}px`);
-      } else {
-        root.style.removeProperty(CLEAR_VAR);
-        root.style.removeProperty(END_VAR);
-      }
+      // At its usual place the room comes from CSS (html[data-chat-bubble-shown], index.css): the page's height never waits on
+      // a measurement. Only a bar that lifts it sets the measured room.
+      const room = lift === null ? null : bubbleRoom(box(), window.innerHeight);
+      if (room) root.style.setProperty(CLEAR_VAR, `${room.clear}px`);
+      else root.style.removeProperty(CLEAR_VAR);
     };
     const schedule = () => { if (!frame) frame = window.requestAnimationFrame(place); };
     const rest = () => { idle = 0; el.removeAttribute(SCROLLING); };
@@ -119,6 +118,7 @@ function useClearOfBottomBars(ref: RefObject<HTMLElement>, active: boolean) {
       idle = window.setTimeout(rest, SCROLL_IDLE_MS);
     };
     const onFocus = () => { if (idle) window.clearTimeout(idle); rest(); };
+    root.setAttribute(SHOWN, "");
     schedule();
     const watch = new MutationObserver(schedule);
     watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });   // never "style": the bubble sets its own
@@ -135,7 +135,7 @@ function useClearOfBottomBars(ref: RefObject<HTMLElement>, active: boolean) {
       el.style.bottom = "";
       el.removeAttribute(SCROLLING);
       root.style.removeProperty(CLEAR_VAR);
-      root.style.removeProperty(END_VAR);
+      root.removeAttribute(SHOWN);
     };
   }, [ref, active]);
 }

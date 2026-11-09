@@ -7,7 +7,10 @@ import chainSource from "../fno/ChainTradingV2.tsx?raw";
 import ticketSource from "../fno/OrderTicketV2.tsx?raw";
 import watchlistSource from "../chart/WatchlistPanel.tsx?raw";
 import tokensSource from "../styles/tokens.css?raw";
-import { BOTTOM_ACTION, CLEAR_VAR, END_VAR, LIST_END_PAD, SCROLL_IDLE_MS, SCROLLING, bubbleRoom, chatContext, liftAbove, starterQuestions } from "./ChatBubbleV2";
+import { readFileSync } from "node:fs";
+import { BOTTOM_ACTION, CLEAR_VAR, END_VAR, LIST_END_PAD, SCROLL_IDLE_MS, SCROLLING, SHOWN, bubbleRoom, chatContext, liftAbove, starterQuestions } from "./ChatBubbleV2";
+
+const cssSource = readFileSync("src/styles/index.css", "utf8");   // index.css?raw comes back empty (Tailwind directives)
 
 describe("CH-1 the Copilot chat bubble on every page", () => {
   it("ready questions and the context carry the page's symbol; none without one", () => {
@@ -72,5 +75,14 @@ describe("CH-1 the Copilot chat bubble on every page", () => {
     // the shared list (Charts, the Watchlist page, the Terminal): both of its scrolling lists
     expect(LIST_END_PAD).toBe("pb-[max(var(--space-2),calc(var(--chat-bubble-end,0px)+var(--space-3)))]");
     expect(watchlistSource.match(/overflow-y-auto px-space-1 \$\{LIST_END_PAD\}/g)).toHaveLength(2);
+    // at its usual place the room is CSS (no measurement, so a page's height never shifts after it loads); only a bar
+    // that lifts it sets the measured room
+    expect(SHOWN).toBe("data-chat-bubble-shown");
+    expect(cssSource).toContain("html[data-chat-bubble-shown] {\n  --chat-bubble-clear: calc(env(safe-area-inset-bottom) + 4.75rem + 3rem);\n  --chat-bubble-end: 3rem;");
+    expect(cssSource).toContain("html[data-chat-bubble-shown] { --chat-bubble-clear: calc(var(--space-6) + 3rem); }");
+    expect(bubbleSource).toContain("const room = lift === null ? null : bubbleRoom(box(), window.innerHeight);");
+    expect(bubbleSource).toContain("bottom-[calc(env(safe-area-inset-bottom)+4.75rem)]");   // the CSS room above matches it
+    expect(bubbleSource).toContain("h-12 w-12");
+    expect(bubbleSource).toContain("md:bottom-space-6");
   });
 });

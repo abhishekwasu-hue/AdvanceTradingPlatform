@@ -81,7 +81,8 @@ def test_vcp_breakout_with_three_contractions_volume_dry_up_and_the_trend_templa
     out = evaluate_screen(f, "B3", bp.settings())["up"]
     assert list(np.flatnonzero(out["signal"].to_numpy())) == [len(f) - 1]
     row = out.iloc[-1]
-    assert row["event"] == "VCP3" and row["level"] == pytest.approx(f["high"].iloc[-12:-1].max())     # the pivot: the last high
+    assert row["event"] == "VCP3" and row["level"] == pytest.approx(f["high"].iloc[:-1].max())        # the pivot: the base high (M93-Q2)
+    assert row["level"] > f["high"].iloc[-12:-1].max() and row["base_high"] == row["level"]          # above the last contraction's high
     assert row["base_low"] < row["level"] and row["base_len"] > 15
     run = run_breakout("B3", {"1d": f}, "1d", within=1)
     assert len(run.signals) == 1 and run.signals[0]["htf_pass"] and run.signals[0]["status"] == "pending"
@@ -115,6 +116,27 @@ def test_vcp_rules_can_be_turned_off():
 
 def _zz(piv):
     return [(p.kind, p.bar, p.confirmed, p.price) for p in piv]
+
+
+def test_vcp_pivot_is_the_base_high_not_the_last_contraction_high():
+    """M93-Q2 (spec B3 "close above the pivot (base high)"): a close above the last contraction's high but at or under the
+    base high is still inside the base - no breakout, and the watchlist still lists it as ready; the next close above the
+    base high is the breakout (the close inside the base before it is not "broken before")."""
+    f0 = vcp()
+    base_high = f0["high"].iloc[:-1].max()
+    last_high = f0["high"].iloc[-12:-1].max()
+    atr = Bars(f0, bp.settings()).atr_prev[-1]
+    inside = base_high - 0.3                                                   # above the last high + the 0.2 ATR buffer, under the base high
+    assert inside > last_high + 0.2 * atr
+    f = vcp(closes_after=[inside])
+    assert _sig(f, "B3") == []
+    w = evaluate_screen(f, "B3", bp.settings(vcp_mode="watchlist"))["up"]
+    assert w["signal"].iloc[-1] and w["level"].iloc[-1] == pytest.approx(base_high)
+    g = vcp(closes_after=[inside, base_high + 2.0])
+    assert _sig(g, "B3") == [len(g) - 1]
+    row = evaluate_screen(g, "B3", bp.settings())["up"].iloc[-1]
+    assert row["level"] == pytest.approx(base_high) and row["event"] == "VCP3"
+    assert _sig(vcp(closes_after=[base_high]), "B3") == []                     # a close at the base high: not above it
 
 
 def test_vcp_zigzag_reseeds_the_opposite_extreme_from_the_bars_after_the_pivot():

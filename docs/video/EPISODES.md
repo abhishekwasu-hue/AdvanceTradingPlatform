@@ -4,17 +4,17 @@ Source: the 19-scene outline and the Find setups guide (screener guide). Six epi
 ends with "Information and education only, not investment advice." Scripts: `scripts/<E>.<lang>.json`; stills:
 `frontend/e2e/video/scenes.ts` (one function per scene).
 
-| Episode | Scenes | Title | Guide sections | Length with the placeholder voice (English / Marathi) |
+| Episode | Scenes | Title | Guide sections | Length with the Indic-TTS voices (English / Marathi) |
 |---|---|---|---|---|
-| E1 | 1 What a screener is, 2 What it does NOT do, 3 Sign in, 4 Open Find setups, 5 Page tour | What it is, and the page | 1, 2.1, 2.2, 3 | 3:02 / 3:28 (rendered) |
-| E2 | 6 Pick a list, 7 Pick a chart | Your list and your chart | 4, 5 | 2:39 / 3:00 |
-| E3 | 8 Start a scan, 9 Build blocks, 10 Bars ago and timeframe chip | Start a scan and build it | 6, 7, 7.3 | 2:36 / 2:56 |
-| E4 | 11 Run, 12 Read results, 13 Data source | Run, results, and the data | 7.5, 8, 8.1, 8.2, 9 | 2:25 / 2:52 |
-| E5 | 15 Example 1, 16 Example 2, 17 Example 3 + alert | Three examples and an alert | 11, 8.3 | 2:29 / 2:49 |
-| E6 | 14 Function families, 18 Troubleshooting, 19 Close | Building blocks, problems, and the close | 10, 12, 13 | 2:32 / 2:58 |
+| E1 | 1 What a screener is, 2 What it does NOT do, 3 Sign in, 4 Open Find setups, 5 Page tour | What it is, and the page | 1, 2.1, 2.2, 3 | 3:10 / 3:22 |
+| E2 | 6 Pick a list, 7 Pick a chart | Your list and your chart | 4, 5 | 2:54 / 3:19 |
+| E3 | 8 Start a scan, 9 Build blocks, 10 Bars ago and timeframe chip | Start a scan and build it | 6, 7, 7.3 | 2:53 / 3:05 |
+| E4 | 11 Run, 12 Read results, 13 Data source | Run, results, and the data | 7.5, 8, 8.1, 8.2, 9 | 2:44 / 3:10 |
+| E5 | 15 Example 1, 16 Example 2, 17 Example 3 + alert | Three examples and an alert | 11, 8.3 | 2:46 / 3:13 |
+| E6 | 14 Function families, 18 Troubleshooting, 19 Close | Building blocks, problems, and the close | 10, 12, 13 | 2:45 / 3:08 |
 
-Lengths are the sum of the placeholder (espeak-ng) clips plus the pauses and cards; a neural voice will differ. Real lengths depend on the voice: the build prints each scene's length against its `target_s` and warns when an episode
-is outside 2 to 4 minutes.
+Lengths are the rendered episodes with the free Indic-TTS voices (female / male alternating per scene; English at pace
+1.15, as it speaks faster), cards and pauses included. The build prints each scene's length against its `target_s`.
 
 ## Lines checked against the shipped app (M86 + M90 live)
 

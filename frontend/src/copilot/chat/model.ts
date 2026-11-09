@@ -239,6 +239,23 @@ export function restoredTurns(history: ChatHistory | null, unreadable: string): 
   }));
 }
 
+/** India date (YYYY-MM-DD) of a moment. */
+function istDay(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+/**
+ * Owner 9 Nov (Copilot opened on an answer of 30 Oct, read as today's): the kept conversation comes back on its own only
+ * when its newest turn was asked today (India date); an older one stays under "Earlier conversation" and the page opens
+ * on a fresh chat, so an old close and an old date are never the first thing on screen.
+ */
+export function keptIsToday(history: ChatHistory | null, now: Date = new Date()): boolean {
+  if (!history || history.turns.length === 0) return false;
+  const newest = history.turns.map((t) => (t.at ? new Date(t.at) : null)).filter((d): d is Date => !!d && !Number.isNaN(d.getTime()))
+    .reduce<Date | null>((a, b) => (a && a > b ? a : b), null);
+  return newest !== null && istDay(newest) === istDay(now);
+}
+
 export const MAX_QUESTION = 1000;
 export const PHONE_MAX_WIDTH = 767;
 

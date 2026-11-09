@@ -33,7 +33,7 @@ import { VoiceButtonV2 } from "../language/VoiceButtonV2";
 import { AttachMenu, imageFrom } from "./ChartAttachV2";
 import {
   chartQuestion, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
-  hybridPick, restoredTurns, settled, stampText, withChart, withTurn,
+  hybridPick, keptIsToday, restoredTurns, settled, stampText, withChart, withTurn,
   type ChartSource, type ChatAnswer, type ChatHome, type Conversation, type ConversationTarget, type Turn,
 } from "./model";
 import { chartAnalyzeApi, isFeatureOff } from "../../chartAnalyze/api";
@@ -382,6 +382,8 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
   // CH-2: the conversation on screen (null: none yet, or "New chat" pressed - the next question starts a new one)
   const [convo, setConvo] = useState<Conversation | null>(null);
   const fresh = useRef(false);
+  const convoRef = useRef<Conversation | null>(null);
+  convoRef.current = convo;
   const target = (): ConversationTarget => (fresh.current || !convo ? { newChat: fresh.current } : { sessionId: convo.id });
   const opened = (answer: ChatAnswer) => { if (answer.conversation) { setConvo(answer.conversation); fresh.current = false; } };
   const placement = usePlacement();
@@ -404,11 +406,18 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
   const images = useRef<string[]>([]);
   useEffect(() => () => { for (const url of images.current) URL.revokeObjectURL(url); }, []);
 
-  // CU6: the conversation the server kept for this person comes back after a reload (read once, before any new turn).
+  // CU6: the conversation the server kept for this person comes back after a reload (read once, before any new turn) -
+  // owner 9 Nov: only when it is from today (keptIsToday); an older one stays under "Earlier conversation" and the first
+  // question starts a new chat.
   useEffect(() => {
     let live = true;
     chatApi.history().then((h) => {
       if (!live) return;
+      if (h.turns.length > 0 && !keptIsToday(h)) {                  // nothing kept: as before (no new_chat sent)
+        setKeep(h.keep);
+        if (!convoRef.current) fresh.current = true;
+        return;
+      }
       const restored = restoredTurns(h, t("chat.unreadable"));
       setKeep(h.keep);
       setTurns((now) => (now.length ? now : restored));

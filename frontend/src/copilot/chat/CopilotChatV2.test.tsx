@@ -12,7 +12,7 @@ import { ChatView, type ChatViewProps } from "./CopilotChatV2";
 import pageSource from "./CopilotPageV2.tsx?raw";
 import {
   answerParts, areaText, cardAreaText, cardTrendText, cleanQuestion, hasRawMarkdown, notReadyText, swingText, composerPlacement, distanceText, headlineAreas, jobCards, marketLineText, needsKey, notSetUpLine,
-  numbersCells, quickChips, settled, stampText, toolsUsedLine, withTurn, workedLine,
+  keptIsToday, numbersCells, quickChips, settled, stampText, toolsUsedLine, withTurn, workedLine,
   type ChatAnswer, type ChatHome, type Turn,
 } from "./model";
 import type { MarketStrip } from "../../dashboard/types";
@@ -432,5 +432,19 @@ describe("the chat-first Copilot page", () => {
     }
     const strings = JSON.stringify(COPILOT_EN.chat);
     expect(strings).not.toMatch(/\brecommend|\bbest\b|guarantee|sure[- ]?shot/i);
+  });
+});
+
+describe("owner 9 Nov: the Copilot never opens on an old day's answer", () => {
+  const turn = (at: string | null) => ({ id: 1, question: "Read the NIFTY chart", answer: null, at });
+  const now = new Date("2026-11-09T04:30:00Z");                          // 10:00 IST, 9 Nov
+  it("restores the kept conversation only when its newest turn was asked today (India date)", () => {
+    expect(keptIsToday({ turns: [turn("2026-10-30T16:57:00Z")], keep: 20 }, now)).toBe(false);          // 30 Oct, 22:27 IST
+    expect(keptIsToday({ turns: [turn("2026-10-30T16:57:00Z"), turn("2026-11-09T03:50:00Z")], keep: 20 }, now)).toBe(true);
+    expect(keptIsToday({ turns: [turn("2026-11-08T19:00:00Z")], keep: 20 }, now)).toBe(true);           // 00:30 IST 9 Nov
+    expect(keptIsToday({ turns: [turn("2026-11-08T18:00:00Z")], keep: 20 }, now)).toBe(false);          // 23:30 IST 8 Nov
+    expect(keptIsToday({ turns: [turn(null)], keep: 20 }, now)).toBe(false);
+    expect(keptIsToday({ turns: [], keep: 20 }, now)).toBe(false);
+    expect(keptIsToday(null, now)).toBe(false);
   });
 });

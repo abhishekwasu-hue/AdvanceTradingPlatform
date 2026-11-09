@@ -377,7 +377,8 @@ def test_the_kill_switch_refuses_the_basket_and_exits_still_run(condor):  # noqa
     expiry, _, legs = condor
     t = _smart(_org_tenant("se-kill"))
     out = _post(t, "execute", {"legs": _condor_legs(expiry, legs)[2:], "basket_ref": uuid.uuid4().hex})   # the two hedges
-    assert out["state"] == se.COMPLETE
+    # a refused run has no "state" - say why (main CI 9 Nov: KeyError 'state' once in the full suite, not reproduced alone)
+    assert out.get("state") == se.COMPLETE, {k: out.get(k) for k in ("status", "reasons", "next_steps")}
     assert client.post("/api/kill-switch/tenant/engage", headers=t["headers"], json={"reason": "test"}).status_code == 200
     try:
         refused = _post(t, "execute", {"legs": _condor_legs(expiry, legs), "basket_ref": uuid.uuid4().hex})

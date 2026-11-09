@@ -197,6 +197,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "screener_tx2": _ready(),
     "ui_v2": _ready(),
     "watchlists": _ready(),
+    "watchlist_screen": _ready(),
     "decision_tools": _ready(),
     "backtest_models": _ready(),
     "backtest_stored_history": _decision("Other organisations wait for the lawyer on the exchange data terms", LEGAL),

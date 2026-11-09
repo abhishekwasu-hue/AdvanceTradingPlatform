@@ -9,17 +9,20 @@ import { SymbolPicker } from "../ui/SymbolPicker";
 import { useLiveTicks } from "../live/liveTicks";
 import { SkeletonRows } from "../components/primitives/Feedback";
 import { flashClass, useTickFlash } from "../ui/useTickFlash";
+import { useFeatures } from "../ui/useFeatures";
 import {
   contractItems, contractSubline, contractsApi, contractsKey, holdsTarget, known, rollEdit, splitExpired, type ContractFacts, type KnownContract,
 } from "../fno/contracts";
 import { ConfirmBox } from "./ConfirmBox";
+import { WatchScreenBar, useScreenChoices, useWatchScreen } from "./WatchScreenBar";
+import { NO_CHOICE, listKeyOf, shownRows, type ScreenFrom } from "./watchScreen";
 import { ListBrowser } from "./ListBrowser";
 import {
   LISTS_FALLBACK_NOTE, MY_LISTS, ROW_SORTS, browserGroups, copyNote, filterRows, groupOf, namesCount, pickList, sortRows, systemListsApi,
   type ListRef, type RowSort, type SystemGroup, type SystemItem, type SystemList,
 } from "./systemLists";
 import {
-  MAX_ITEMS, NAME_MAX, QUOTE_ROWS, QuotePoller, SWITCHED_OFF, WatchlistsStore, direction, itemKey, moveItem, quoteItems, watchlistError,
+  MAX_ITEMS, NAME_MAX, QuotePoller, SWITCHED_OFF, WatchlistsStore, direction, itemKey, keepPrices, moveItem, quoteItems, watchlistError,
   watchlistsV2Api, withTicks,
   type QuoteRow, type WatchItem, type WatchlistV2,
 } from "./watchlistsV2";
@@ -29,7 +32,7 @@ import {
  * screens, a bottom sheet on a phone. Only while the `watchlists` flag is on (CHP-4; the page does not mount it
  * otherwise).
  * - The lists: switch, create, rename, delete (asks first). The server's limits apply (CHP-7).
- * - Rows: symbol, exchange, last price and change (sign and arrow as well as colour). One batch quote for the first 50
+ * - Rows: symbol, exchange, last price and change (sign and arrow as well as colour). M90 B4: every row is priced (one batch quote per 500 rows); before M90: one batch quote for the first 50
  *   rows every 10 s, skipped while the tab is hidden.
  * - Add with the symbol search, remove, reorder by dragging the handle or with the arrow keys on it (Alt+↑/↓ on a row).
  *   Every change is saved with the list's version (watchlistsV2.ts).
@@ -40,12 +43,18 @@ import {
  * A system list has a search on symbol or company, a sort (list order, A to Z, top gainers / losers, price) and "Copy
  * to my list" (a list of the trader's own, which he can change). On a first open with no list of his own, the
  * "Indices" list shows. Without system lists the panel is exactly as before.
+ *
+ * M91 (flag `watchlist_screen`, src/chart/watchScreen.ts): each list's "Screen" row at its top - None / his own saved
+ * screens, remembered per list. With a screen chosen the matching rows move to the top, marked; the rest stay below,
+ * dimmed; "Matches only" and the "n of m match" count. Checked while the list shows and again on the next bar close of
+ * the screen's timeframe. While a screen orders the rows, dragging is off (None gives the list's own order back).
  */
 export interface WatchlistPanelProps {
   /** The symbol on the chart (its row is marked). */
   symbol: string;
   exchange: string;
-  onOpen: (item: WatchItem) => void;
+  /** M91 C1: `from` - the list's chosen screen when one is chosen (the chart draws it); absent otherwise. */
+  onOpen: (item: WatchItem, from?: ScreenFrom) => void;
   /** The list shown (null: the first), kept by the page. */
   listId: number | null;
   onListId: (id: number | null) => void;
@@ -70,13 +79,16 @@ export interface WatchlistPanelProps {
 }
 
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
+/** M91 W2: "Matches only" and no row meets the screen at the last check. */
+const NONE_MATCH = "No stock in this list meets the screen just now. Turn off Matches only to see them all.";
 
-/** The prices of the first 50 rows (QuotePoller: a reorder asks for nothing new; a changed set waits out the 10 s). */
+/** The prices of every row (QuotePoller: a reorder asks for nothing new; a changed set waits out the 10 s). M90 B5: a
+ * row a slowed or budget-used reply did not fetch keeps its last price, and `slowed` says the broker's limit slowed it. */
 function useQuotes(items: readonly WatchItem[], live = false) {
-  const [quotes, setQuotes] = useState<{ rows: Map<string, QuoteRow>; failed: boolean; eodAsOf?: string | null }>({ rows: new Map(), failed: false });
+  const [quotes, setQuotes] = useState<{ rows: Map<string, QuoteRow>; failed: boolean; eodAsOf?: string | null; slowed?: boolean }>({ rows: new Map(), failed: false });
   // M86 D2: without a broker of his own the rows carry the last end-of-day close (chart/eodQuotes.ts) and its date.
   const poller = useMemo(() => new QuotePoller(withEodFallback(watchlistsV2Api.quotes), {
-    data: (reply: EodQuotesReply) => setQuotes({ rows: new Map(reply.items.map((r) => [itemKey(r), r])), failed: false, eodAsOf: reply.eod_as_of }),
+    data: (reply: EodQuotesReply) => setQuotes((q) => ({ rows: keepPrices(q.rows, reply.items), failed: false, eodAsOf: reply.eod_as_of, slowed: !!reply.slowed })),
     error: () => setQuotes((q) => ({ ...q, failed: true })),
   }), []);
   useEffect(() => () => poller.close(), [poller]);
@@ -365,11 +377,28 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
     setNotice(`Rolled ${f.label} to ${f.roll.label} in ${list.name}. Nothing was traded.`);
     void store.edit(list.id, edit);
   };
-  const priced = useMemo(() => new Map(matching.slice(0, QUOTE_ROWS).map((i) => [itemKey(i), quotes.rows.get(itemKey(i))]).filter((e): e is [string, QuoteRow] => !!e[1])),
+  const priced = useMemo(() => new Map(matching.map((i) => [itemKey(i), quotes.rows.get(itemKey(i))]).filter((e): e is [string, QuoteRow] => !!e[1])),
     [matching, quotes.rows]);
   const systemRows = useMemo(() => sortRows(matching, sort, priced), [matching, sort, priced]);
   const currentName = systemSummary?.name ?? list?.name ?? "Watchlist";
   const currentCount = systemSummary?.count ?? list?.items.length ?? 0;
+
+  // M91: the list's Screen (W1-W4). Only the list on screen is checked; the flag off (503) hides the row.
+  const choices = useScreenChoices(useFeatures().on("watchlist_screen"));
+  const listKey = ref ? listKeyOf(ref) : list ? listKeyOf({ kind: "own", id: list.id }) : null;
+  const stored = (listKey && choices.lists[listKey]) || NO_CHOICE;
+  const screen = choices.screens?.find((x) => x.id === stored.screen_id) ?? null;
+  const choice = screen ? stored : NO_CHOICE;            // a screen since archived or deleted reads as None
+  const screenRows = useMemo(() => (systemList ? systemList.items : live), [systemList, live]);
+  const screenShown = !state.off && !browsing && !!listKey && !choices.off && choices.screens !== null && (!!list || !!systemSummary);
+  const watch = useWatchScreen({ listKey: listKey ?? "", listName: currentName, items: screenRows, choice, screen, active: screenShown });
+  const screenOn = screenShown && !!screen?.usable;
+  const from = (item: WatchItem): ScreenFrom | undefined => (screenOn && screen && listKey
+    ? { symbol: item.symbol, exchange: item.exchange, screenId: screen.id, screenName: screen.name, listKey } : undefined);
+  const openRow = (item: WatchItem) => onOpen(item, from(item));
+  const isMatch = (item: WatchItem) => watch.matched.has(itemKey(item));
+  const ownRows = screenOn ? shownRows(shown, watch.matched, choice.matches_only) : shown;
+  const sysRows = screenOn ? shownRows(systemRows, watch.matched, choice.matches_only) : systemRows;
 
   return (
     <section aria-label="Watchlist" data-watchlist className={cx("flex min-h-0 flex-col text-t14 text-fg", className)}>
@@ -441,6 +470,15 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
       {quotes.eodAsOf !== undefined && !quotes.failed && (
         <NoBrokerLine testId="watchlist" button={connectButton} className="border-b border-subtle px-space-3 py-space-2">{lastCloseText(quotes.eodAsOf)}</NoBrokerLine>
       )}
+      {/* M90 B5: the broker answered "too many requests" - the prices refresh more slowly, the last ones stay shown */}
+      {quotes.slowed && !quotes.failed && (
+        <p role="status" className="border-b border-subtle px-space-3 py-space-2 text-t12 text-warn" data-testid="watchlist-slowed">Slowed by broker limit</p>
+      )}
+
+      {screenShown && listKey && choices.screens && (
+        <WatchScreenBar listKey={listKey} screens={choices.screens} choice={choice} onChoose={(c) => void choices.choose(listKey, c)} state={watch}
+          items={screenRows} touch={touch} error={choices.error} />
+      )}
 
       {!state.loaded && <SkeletonRows label="Loading your watchlists…" />}
 
@@ -454,10 +492,11 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
       )}
 
       {systemSummary && !state.off && !browsing && (
-        <SystemListView summary={systemSummary} list={sys.list} rows={systemRows} total={systemList?.items.length ?? systemSummary.count} matching={matching.length}
+        <SystemListView summary={systemSummary} list={sys.list} rows={sysRows} total={systemList?.items.length ?? systemSummary.count} matching={matching.length}
           query={rowQuery} onQuery={setRowQuery} sort={sort} onSort={setSort} quotes={priced} quotesFailed={quotes.failed}
-          current={(i) => i.symbol === symbol && i.exchange === exchange} onOpen={onOpen} onCopy={() => void copyList()} copying={copying}
-          onRetry={() => sys.retry(systemSummary.key)} touch={touch} field={field} textBtn={textBtn} narrow={narrow} />
+          current={(i) => i.symbol === symbol && i.exchange === exchange} onOpen={openRow} onCopy={() => void copyList()} copying={copying}
+          onRetry={() => sys.retry(systemSummary.key)} touch={touch} field={field} textBtn={textBtn} narrow={narrow}
+          screen={screenOn ? { isMatch, only: choice.matches_only } : undefined} />
       )}
 
       {list && !state.off && !browsing && (
@@ -468,21 +507,27 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
           </div>
           {items.length === 0 ? (
             <p className="px-space-3 pb-space-4 text-t13 text-fg-muted">This list is empty. Search a symbol above to add it.</p>
-          ) : live.length === 0 ? null : (
+          ) : live.length === 0 ? null : ownRows.length === 0 ? (
+            <p className="px-space-3 pb-space-4 text-t13 text-fg-muted" data-testid="watch-screen-none">{NONE_MATCH}</p>
+          ) : (
             <ul ref={rowsRef} aria-label={`Symbols in ${list.name}`} className="min-h-0 flex-1 overflow-y-auto px-space-1 pb-space-2">
-              {shown.map((item) => {
+              {ownRows.map((item) => {
                 const index = live.indexOf(item);
-                const q = items.indexOf(item) < QUOTE_ROWS ? quotes.rows.get(itemKey(item)) : undefined;
+                const q = quotes.rows.get(itemKey(item));
                 const current = item.symbol === symbol && item.exchange === exchange;
+                const match = screenOn ? isMatch(item) : undefined;
                 return (
-                  <li key={itemKey(item)} data-row className={cx("flex items-center rounded-control", current && "bg-surface-2", drag && live[drag.from] === item && "opacity-60")}
-                    onKeyDown={(e) => keyMove(e, index)}>
-                    <button type="button" data-handle aria-label={`Move ${item.symbol}`} title="Drag, or use the arrow keys, to move"
+                  <li key={itemKey(item)} data-row data-match={match === undefined ? undefined : match ? "yes" : "no"}
+                    className={cx("flex items-center rounded-control", current && "bg-surface-2", drag && live[drag.from] === item && "opacity-60",
+                      match === true && "border-l-2 border-up", match === false && "opacity-60")}
+                    onKeyDown={(e) => { if (!screenOn) keyMove(e, index); }}>
+                    <button type="button" data-handle aria-label={`Move ${item.symbol}`} disabled={screenOn}
+                      title={screenOn ? "Choose Screen: None to reorder the list" : "Drag, or use the arrow keys, to move"}
                       onPointerDown={(e) => dragStart(e, index)} onPointerMove={dragMove} onPointerUp={dragEnd} onPointerCancel={() => setDrag(null)}
                       className={cx(iconBtn, "cursor-grab touch-none", !touch && "md:min-w-7")}>
                       <GripVertical size={14} aria-hidden />
                     </button>
-                    <button type="button" aria-current={current ? "true" : undefined} onClick={() => onOpen(item)}
+                    <button type="button" aria-current={current ? "true" : undefined} onClick={() => openRow(item)}
                       className={cx("flex min-w-0 flex-1 rounded-control px-space-1 text-left hover:bg-surface-2", touch ? "min-h-11" : "min-h-11 md:min-h-9",
                         narrow ? "flex-col justify-center gap-px py-space-1" : "items-center gap-space-2", focus)}>
                       <RowName item={item} facts={facts.get(itemKey(item))} q={q} narrow={narrow} />
@@ -499,10 +544,8 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
           )}
           <ExpiredRows rows={split.expired} facts={facts} listName={list.name} inList={(f) => holdsTarget(list, f)} onRoll={roll}
             onRemove={(item) => void store.edit(list.id, { kind: "remove", item })} iconBtn={iconBtn} touch={touch} />
-          {(items.length > QUOTE_ROWS || quotes.failed) && (
-            <p className="border-t border-subtle px-space-3 py-space-2 text-t12 text-fg-muted">
-              {quotes.failed ? "Prices could not be loaded just now. They try again every 10 seconds." : `Prices show for the first ${QUOTE_ROWS} symbols. Move a symbol up to see its price.`}
-            </p>
+          {quotes.failed && (
+            <p className="border-t border-subtle px-space-3 py-space-2 text-t12 text-fg-muted">Prices could not be loaded just now. They try again every 10 seconds.</p>
           )}
         </>
       )}
@@ -534,12 +577,14 @@ export interface SystemListViewProps {
   textBtn: string;
   /** UX-3: the Terminal's narrow column (see WatchlistPanelProps.narrow). */
   narrow?: boolean;
+  /** M91 W2: a screen is chosen - its matches are marked, the rest dimmed (the rows come ordered). */
+  screen?: { isMatch: (item: WatchItem) => boolean; only: boolean };
 }
 
 /** WL1: one read-only system list - "read-only" and "Copy to my list" on top, a search and a sort, then the rows (no
  * handle, no remove: the list is the exchange's, rebuilt by the server). */
 export function SystemListView({ summary, list, rows, total, matching, query, onQuery, sort, onSort, quotes, quotesFailed, current, onOpen, onCopy,
-  copying, onRetry, touch, field, textBtn, narrow = false }: SystemListViewProps) {
+  copying, onRetry, touch, field, textBtn, narrow = false, screen }: SystemListViewProps) {
   return (
     <div data-system-list={summary.key} className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-space-2 border-b border-subtle px-space-3 py-space-2">
@@ -569,15 +614,17 @@ export function SystemListView({ summary, list, rows, total, matching, query, on
         </div>
       )}
       {list && list !== "failed" && rows.length === 0 && (
-        <p className="px-space-3 pb-space-4 text-t13 text-fg-muted">{query.trim() ? `No symbol or company in this list matches "${query.trim()}".` : "This list is empty just now."}</p>
+        <p className="px-space-3 pb-space-4 text-t13 text-fg-muted">{screen?.only && total > 0 ? NONE_MATCH : query.trim() ? `No symbol or company in this list matches "${query.trim()}".` : "This list is empty just now."}</p>
       )}
       {list && list !== "failed" && rows.length > 0 && (
         <ul aria-label={`Symbols in ${summary.name}`} className="min-h-0 flex-1 overflow-y-auto px-space-1 pb-space-2">
           {rows.map((item) => {
             const q = quotes.get(itemKey(item));
             const on = current(item);
+            const match = screen ? screen.isMatch(item) : undefined;
             return (
-              <li key={itemKey(item)} data-row className={cx("flex items-center rounded-control", on && "bg-surface-2")}>
+              <li key={itemKey(item)} data-row data-match={match === undefined ? undefined : match ? "yes" : "no"}
+                className={cx("flex items-center rounded-control", on && "bg-surface-2", match === true && "border-l-2 border-up", match === false && "opacity-60")}>
                 <button type="button" aria-current={on ? "true" : undefined} onClick={() => onOpen({ symbol: item.symbol, exchange: item.exchange })}
                   className={cx("flex min-w-0 flex-1 rounded-control px-space-2 text-left hover:bg-surface-2", touch ? "min-h-11" : "min-h-11 md:min-h-9",
                     narrow ? "flex-col justify-center gap-px py-space-1" : "items-center gap-space-2", focus)}>
@@ -594,11 +641,9 @@ export function SystemListView({ summary, list, rows, total, matching, query, on
           })}
         </ul>
       )}
-      {list && list !== "failed" && (matching > QUOTE_ROWS || quotesFailed || matching < total) && (
+      {list && list !== "failed" && (quotesFailed || matching < total) && (
         <p className="border-t border-subtle px-space-3 py-space-2 text-t12 text-fg-muted">
-          {quotesFailed ? "Prices could not be loaded just now. They try again every 10 seconds."
-            : matching > QUOTE_ROWS ? `Prices show for the first ${QUOTE_ROWS} symbols. Search to see the price of another.`
-              : `${matching} of ${total} symbols match.`}
+          {quotesFailed ? "Prices could not be loaded just now. They try again every 10 seconds." : `${matching} of ${total} symbols match.`}
         </p>
       )}
     </div>

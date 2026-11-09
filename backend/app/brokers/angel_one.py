@@ -320,6 +320,7 @@ class AngelOneBroker(BrokerInterface):
                      prev_close=float(entry["close"]) if entry.get("close") not in (None, "", 0, "0") else None)
 
     multi_quote = True
+    quote_batch_max = QUOTE_BATCH   # M90 B4: instruments one multi-quote call serves
 
     async def get_quotes_batch(self, items):
         """UI2-4a2-pre: ONE quote request for the whole list - SmartAPI takes several exchanges in `exchangeTokens` in

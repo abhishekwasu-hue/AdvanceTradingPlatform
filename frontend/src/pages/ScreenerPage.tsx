@@ -50,7 +50,7 @@ import { ideaScanFromSearch, scanName } from "../ideas/model";
 import { builderOf, clearStore, readStore, readsOf, snapshot, syncDeviceHistory, writeStore } from "../screener/versions";
 import { UniversePicker } from "../screener/UniversePicker";
 import { CUSTOM, DEFAULT_CHOICE, DEFAULT_KEY, FALLBACK_PLAN, NIFTY50_FALLBACK, NIFTY50_FALLBACK_NOTE, RUN_MAX, effectiveUniverse, heldBack, isUniverses, listLabel,
-  runInBatches, serverHasDefault, universesApi, type UniverseSymbols, type UniversesResponse } from "../screener/universe";
+  batchSize, runInBatches, serverHasDefault, universesApi, type UniverseSymbols, type UniversesResponse } from "../screener/universe";
 import { LISTS_FALLBACK_NOTE } from "../chart/systemLists";
 import { isWatchlists, watchlistsApi, type Watchlist } from "../screener/watchlists";
 
@@ -166,7 +166,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   const [choice, setChoice] = useState(DEFAULT_CHOICE);
   const [lists, setLists] = useState<Record<string, UniverseSymbols | "failed">>({});
   const [myLists, setMyLists] = useState<Watchlist[] | null>(null);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number; slowed?: boolean } | null>(null);
   const stopRef = useRef(false);
   const [pendingRun, setPendingRun] = useState(false);         // one tap: run as soon as the opened scan is checked
   const [checkedText, setCheckedText] = useState("");          // the text the last finished check was for
@@ -423,13 +423,13 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
         let first = true;
         const out = await runInBatches(symbols, plan, {
           run: (batch) => screenerApi.runBatch(text, scanTf, batch),
-          onProgress: (done, total, merged) => {
+          onProgress: (done, total, merged, slowed) => {
             setRun(merged);
             if (first) { setRan(stamp); setRanAt(new Date()); setRunKey((k) => k + 1); first = false; }
-            setProgress({ done, total });
+            setProgress({ done, total, slowed });
           },
           stopped: () => stopRef.current,
-        });
+        }, batchSize(plan, scanTf));                 // M90 B2: a timeframe the store serves goes as one batch of the whole list
         if (out) { setRun(out); setRanAt(new Date()); }
       } else {
         const out = await screenerApi.run(text, scanTf, symbols);
@@ -763,7 +763,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
                           options={TIMEFRAMES.map((tf) => ({ value: tf, label: timeframeWords(tf, true) }))} />
                 {symbols.length > RUN_MAX && (
                   <p className="mt-3 text-t12 text-fg-muted" data-testid="universe-batches">
-                    Live counts show for lists of up to {RUN_MAX} stocks. Run scans all {symbols.length}, {plan.size} at a time, within your broker&apos;s limits.
+                    Live counts show for lists of up to {RUN_MAX} stocks. Run scans all {symbols.length}{batchSize(plan, scanTf) < symbols.length ? `, ${batchSize(plan, scanTf)} at a time` : ""}, within your broker&apos;s limits.
                   </p>
                 )}
                 {advanced && (
@@ -865,7 +865,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
             {progress && (
               <div role="status" className="rounded-panel border border-border bg-surface-1 p-3 text-t13 text-fg" data-testid="scan-progress">
                 <div className="flex items-center justify-between gap-3">
-                  <p>Scanning <span className="font-mono font-tabular">{progress.done}</span> of <span className="font-mono font-tabular">{progress.total}</span> stocks…</p>
+                  <p><span className="font-mono font-tabular">{progress.done}</span> / <span className="font-mono font-tabular">{progress.total}</span> done{progress.slowed && <span className="text-warn" data-testid="scan-slowed"> · Slowed by broker limit</span>}</p>
                   <Button size="sm" onClick={() => { stopRef.current = true; }} data-testid="scan-stop">Stop</Button>
                 </div>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
@@ -1038,7 +1038,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
           </div>
           {universeV2 && symbols.length > RUN_MAX && (
             <p className="mt-3 text-t12 text-fg-muted" data-testid="universe-batches">
-              Live counts show for lists of up to {RUN_MAX} stocks. Run scans all {symbols.length}, {plan.size} at a time, within your broker&apos;s limits.
+              Live counts show for lists of up to {RUN_MAX} stocks. Run scans all {symbols.length}{batchSize(plan, scanTf) < symbols.length ? `, ${batchSize(plan, scanTf)} at a time` : ""}, within your broker&apos;s limits.
             </p>
           )}
           {advanced && (
@@ -1083,7 +1083,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
           {progress && (
             <div role="status" className="rounded-panel border border-border bg-surface-1 p-3 text-t13 text-fg" data-testid="scan-progress">
               <div className="flex items-center justify-between gap-3">
-                <p>Scanning <span className="font-mono font-tabular">{progress.done}</span> of <span className="font-mono font-tabular">{progress.total}</span> stocks…</p>
+                <p><span className="font-mono font-tabular">{progress.done}</span> / <span className="font-mono font-tabular">{progress.total}</span> done{progress.slowed && <span className="text-warn" data-testid="scan-slowed"> · Slowed by broker limit</span>}</p>
                 <Button size="sm" onClick={() => { stopRef.current = true; }} data-testid="scan-stop">Stop</Button>
               </div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">

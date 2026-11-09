@@ -8,9 +8,13 @@
  * - A universe larger than one run (50 symbols) goes in batches, one at a time. Each batch is a `/run` with
  *   `batch: true`: every broker call takes a token from the broker session's shared API budget, and the page waits
  *   after each batch for the calls it made at the per-minute share (`waitAfter`), so a long list never spends past it.
+ * - M90: no fixed 50. A timeframe the store serves (`store_timeframes`) goes as one batch of the whole list
+ *   (`batchSize`); symbols the server did not read in a request come back `pending` and are sent next; a symbol the
+ *   broker's limit held back is tried again later, more slowly, and a broker 429 or a busy server slows the queue down
+ *   ("Slowed by broker limit") instead of failing the run. The trader can stop at any time and keeps what ran.
  * A universe is a list of names: choosing one runs nothing but the scan, and a scan lists matches, never advice.
  */
-import { request } from "../api/client";
+import { ApiError, request } from "../api/client";
 import type { RunResponse } from "./api";
 
 /** NIFTY 50 by name only, for when the server has no NIFTY 50 list yet (no prices, no weights). The system list, built
@@ -30,17 +34,30 @@ export const NIFTY50_FALLBACK_AS_OF = "2026-10-23";
 export const NIFTY50_FALLBACK_NOTE = "The latest NIFTY 50 list could not be loaded, so the built-in list (as of 23 Oct 2026) is used.";
 
 export const DEFAULT_KEY = "index-nifty50";
-export const RUN_MAX = 50;                    // the run route's cap per call (app/screener/routes.py MAX_SYMBOLS)
+// M90: the largest list sent as one ordinary run (and the most "Live counts" previews) - a longer one is streamed in
+// batches. Not a cap on the list: the server reads the store's whole list, the broker's share per request.
+export const RUN_MAX = 50;
 export const CUSTOM = "custom";
 export const DEFAULT_CHOICE = `sys:${DEFAULT_KEY}`;
 
 export interface UniverseList { key: string; name: string; count: number }
 export interface UniverseGroup { group: string; label: string; lists: UniverseList[] }
-export interface BatchPlan { size: number; per_minute: number; per_second: number; max_symbols: number }
+export interface BatchPlan { size: number; per_minute: number; per_second: number; max_symbols: number;
+  /** M90 B2: the scan timeframes the store reads for the whole list in one request (empty: every read is the broker's). */
+  store_timeframes?: string[] }
 export interface UniversesResponse { default_key: string; groups: UniverseGroup[]; batch: BatchPlan; fallback?: boolean }
 export interface UniverseSymbols { key: string; name: string; symbols: string[]; truncated: boolean; source_count: number }
-/** A batch's broker calls (and the ones refused for want of a token), so the page paces the next batch. */
-export interface BatchBudget { broker_calls: number; refused: number; per_minute: number }
+/** A batch's broker calls (and the ones refused for want of a token), so the page paces the next batch. M90 B5:
+ * `slowed` - the broker answered "too many requests" and the calls were paced and retried. */
+export interface BatchBudget { broker_calls: number; refused: number; per_minute: number; slowed?: boolean }
+/** M90: one batch's answer - its budget, and the symbols it did not read (sent in the next batch). */
+export type BatchReply = RunResponse & { budget?: BatchBudget; pending?: string[] };
+
+/** M90 B2: how many symbols one batch sends - the whole list (up to the request's ceiling) on a timeframe the store
+ * serves, else the broker plan's batch. */
+export function batchSize(plan: BatchPlan, scanTf: string): number {
+  return plan.store_timeframes?.includes(scanTf) ? Math.max(plan.size, plan.max_symbols) : plan.size;
+}
 
 /** The most careful plan (the share of a broker without a recorded limit), used until the server's plan is read. */
 export const FALLBACK_PLAN: BatchPlan = { size: 10, per_minute: 50, per_second: 1, max_symbols: 500 };
@@ -73,9 +90,9 @@ export function effectiveUniverse(chosen: readonly string[], nifty50: readonly s
   return { symbols: [...(nifty50.length ? nifty50 : NIFTY50_FALLBACK)], fellBack: true };
 }
 
-/** Consecutive slices of at most `size` (and never more than one run takes). */
-export function planBatches(symbols: readonly string[], size: number): string[][] {
-  const step = Math.max(1, Math.min(RUN_MAX, Math.floor(size) || 1));
+/** Consecutive slices of at most `size` (and never more than one request takes, `limit`). */
+export function planBatches(symbols: readonly string[], size: number, limit = RUN_MAX): string[][] {
+  const step = Math.max(1, Math.min(limit, Math.floor(size) || 1));
   const out: string[][] = [];
   for (let i = 0; i < symbols.length; i += step) out.push(symbols.slice(i, i + step));
   return out;
@@ -115,30 +132,99 @@ export function heldBack(run: RunResponse | null): string[] {
 }
 
 export interface BatchDeps {
-  run: (batch: string[]) => Promise<RunResponse & { budget?: BatchBudget }>;
-  onProgress: (done: number, total: number, merged: RunResponse) => void;
+  run: (batch: string[]) => Promise<BatchReply>;
+  /** `slowed` (M90 B5): the queue is going more slowly because of the broker's limit (said on the screen). */
+  onProgress: (done: number, total: number, merged: RunResponse, slowed: boolean) => void;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
   stopped?: () => boolean;
 }
 
+export const RATE_LIMITED = "rate_limited";        // a row's code when the broker's limit held the symbol back
+export const HELD_TEXT = "waited for the broker's limit - run again shortly";
+export const RETRY_ROUNDS = 2;                     // M90 B5: a held-back symbol is tried again at most this often
+export const ERROR_RETRIES = 3;                    // a busy server / network answer: the same batch again, more slowly
+export const SLOW_PAUSE_MS = 2_000;                // the pause a slowed queue waits at least, doubled each time
+const SLOW_MAX = 8;
+
+/** M90 B3: a batch that failed for a passing reason (a 429, a busy server, the network) is tried again, never ends the run. */
+export function passing(e: unknown): boolean {
+  if (e instanceof ApiError) return e.status === 429 || e.status >= 500 || e.status === 0;
+  return e instanceof TypeError;                   // fetch's own network failure
+}
+
+/** Rows for symbols that could not be read after every retry: the broker's limit held them (run again in a minute). */
+function heldRows(batch: readonly string[], first: RunResponse | undefined): RunResponse | null {
+  if (!first) return null;
+  return { ...first, scanned: batch.length, matched: [],
+    results: batch.map((symbol) => ({ symbol, matched: false, reason: HELD_TEXT, code: RATE_LIMITED, action: "retry" as const })),
+    funnel: { universe: batch.length, with_data: 0, stages: first.funnel.stages.map((st) => ({ text: st.text, survivors: 0 })) } };
+}
+
 /** Runs `symbols` batch after batch (one in flight at a time), reporting the merged answer after each one, and waits
  * between batches for the broker calls each made (`waitAfter`). A batch reply without its budget counts every symbol
- * as a call (the careful reading). Stops early when `stopped()` says so; null when nothing ran. */
-export async function runInBatches(symbols: readonly string[], plan: BatchPlan, deps: BatchDeps): Promise<RunResponse | null> {
+ * as a call (the careful reading). Stops early when `stopped()` says so; null when nothing ran.
+ * M90: `pending` symbols of a reply are sent next; symbols the broker's limit held back (code `rate_limited`) are tried
+ * again at the end of the queue (RETRY_ROUNDS); a slowed reply or a passing failure doubles the pause (up to 8x) and
+ * the screen says so - the run never fails on the broker's limit. `size`: the symbols one request sends (`batchSize`). */
+export async function runInBatches(symbols: readonly string[], plan: BatchPlan, deps: BatchDeps, size = plan.size): Promise<RunResponse | null> {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => { window.setTimeout(resolve, ms); }));
   const now = deps.now ?? (() => Date.now());
-  const batches = planBatches(symbols, plan.size);
+  const step = Math.max(1, Math.min(plan.max_symbols || RUN_MAX, Math.floor(size) || 1));
+  const queue: string[] = [...symbols];
+  const tries = new Map<string, number>();
   const done: RunResponse[] = [];
-  for (let i = 0; i < batches.length; i += 1) {
+  let factor = 1;
+  let slowed = false;
+  let failures = 0;
+  const report = () => { if (done.length) deps.onProgress(done.reduce((n, r) => n + r.scanned, 0), symbols.length, mergeRuns(done), slowed); };
+  while (queue.length > 0) {
     if (deps.stopped?.()) break;
+    const batch = queue.splice(0, step);
     const started = now();
-    const out = await deps.run(batches[i]);
+    let out: BatchReply;
+    try {
+      out = await deps.run(batch);
+      failures = 0;
+    } catch (e) {
+      if (!passing(e)) throw e;
+      failures += 1;
+      slowed = true;
+      factor = Math.min(SLOW_MAX, factor * 2);
+      if (failures > ERROR_RETRIES) {
+        const rows = heldRows(batch, done[0]);
+        if (!rows) throw e;                          // not one batch answered: the run's own error
+        done.push(rows);
+        failures = 0;
+      } else {
+        queue.unshift(...batch);
+      }
+      report();
+      if (queue.length && !deps.stopped?.()) await sleep(SLOW_PAUSE_MS * factor);
+      continue;
+    }
+    let pending = (out.pending ?? []).filter((s) => batch.includes(s));
+    if (pending.length >= batch.length) {            // nothing read at all: held back, never sent round again
+      out = heldRows(batch, out) ?? out;
+      pending = [];
+    }
+    const again = out.results.filter((r) => r.code === RATE_LIMITED && (tries.get(r.symbol) ?? 0) < RETRY_ROUNDS).map((r) => r.symbol);
+    for (const s of again) tries.set(s, (tries.get(s) ?? 0) + 1);
+    if (again.length) {
+      const later = new Set(again);
+      out = { ...out, scanned: out.scanned - again.length, results: out.results.filter((r) => !later.has(r.symbol)),
+        funnel: { ...out.funnel, universe: out.funnel.universe - again.length } };
+    }
     done.push(out);
-    deps.onProgress(done.reduce((n, r) => n + r.scanned, 0), symbols.length, mergeRuns(done));
-    if (i < batches.length - 1) {
-      const calls = out.budget ? out.budget.broker_calls : batches[i].length;
-      const wait = waitAfter(calls, out.budget?.per_minute ?? plan.per_minute, now() - started);
+    queue.unshift(...pending);                       // not read in this request: next
+    queue.push(...again);                            // held back by the broker's limit: again, later
+    const slowNow = !!out.budget?.slowed || again.length > 0;
+    if (slowNow) { slowed = true; factor = Math.min(SLOW_MAX, factor * 2); }
+    report();
+    if (queue.length > 0) {
+      const calls = out.budget ? out.budget.broker_calls : batch.length - pending.length;
+      let wait = waitAfter(calls, out.budget?.per_minute ?? plan.per_minute, now() - started) * factor;
+      if (slowNow) wait = Math.max(wait, SLOW_PAUSE_MS * factor);
       if (wait > 0) await sleep(wait);
     }
   }

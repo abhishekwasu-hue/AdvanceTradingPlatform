@@ -176,6 +176,7 @@ from app.screener.scanner.run_routes import router as scanner_run_router
 from app.screener.then.routes import router as scan_then_router
 from app.screener.universes import router as screener_universes_router
 from app.screener.version_routes import router as screener_version_router
+from app.screener.watch_screen_routes import router as watchlist_screen_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 from app.setup_recall.routes import router as setup_recall_router
 from app.signals_feed.day_one_routes import router as signals_day_one_router
@@ -455,6 +456,7 @@ app.include_router(screener_history_router)  # N3 S6a: who passed on a date, scr
 app.include_router(screener_rankings_router)  # N3 S7a: ranking systems (flag screener_rankings, off)
 app.include_router(screener_breakouts_router)
 app.include_router(screener_evidence_router)  # U8 EV1/EV2: evidence charts (flag evidence_charts, off)
+app.include_router(watchlist_screen_router)  # M91: a watchlist's Screen and its chart overlay (flag watchlist_screen, off)
 app.include_router(screener_board_router)  # U5 D3a: result-board heatmap / chart-grid context (flag screener_board_views, off)
 app.include_router(screener_library_router)  # U9 TX2: confluence, mirrors, watch-then-trigger lists (flag screener_tx2, off)
 app.include_router(screener_version_router)  # LAB-18 (AMW-7): a saved screen's versions (flag screener_copilot, off)

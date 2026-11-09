@@ -925,6 +925,13 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/legends/{card_id}"): "member",
     ("GET", "/api/screener/registry"): "member",
     ("POST", "/api/screener/run"): "trader",
+    # M91: a watchlist's Screen - the caller's own saved screens only (created by him; another member's or organisation's is a
+    # 404), his own list choices, his own bars (M86); the check and the overlay run like /run (trader, the run limit)
+    ("GET", "/api/screener/watchlist-screen/screens"): "member: the caller's own saved screens only (tenant and creator)",
+    ("GET", "/api/screener/watchlist-screen/settings"): "member: the caller's own list choices only (tenant and user)",
+    ("PUT", "/api/screener/watchlist-screen/settings/{list_key}"): S_OWN_PREFS,
+    ("POST", "/api/screener/watchlist-screen/check"): "trader",
+    ("POST", "/api/screener/watchlist-screen/overlay"): "trader",
     ("POST", "/api/screener/history/asof"): "trader",        # N3 S6a: shared lake bars; the caller's own screens only
     ("POST", "/api/screener/history/fitness"): "trader",     # N3 S6a: writes one trial to the caller's organisation's ledger
     ("POST", "/api/screener/history/backtest"): "trader",    # N3 S6b: a simulation; writes one trial to the ledger

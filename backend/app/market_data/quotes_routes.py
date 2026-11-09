@@ -13,7 +13,8 @@ Where the prices come from, cheapest for the broker allowance first:
 2. **Quotes cached for this credential** in the last seconds (`api_budget.cached_quote`: what `/ltp` or another
    watchlist poll fetched) (free).
 3. **The broker's multi-quote call** where the adapter has one (`BrokerInterface.multi_quote`: Kite, Upstox, Dhan,
-   Fyers, Angel One), for the symbols still unpriced: ONE broker call, counted ONCE against the credential's quote
+   Fyers, Angel One), for the symbols still unpriced: ONE broker call per `quote_batch_max` instruments (M90 B4: 500 at
+   Upstox, Kite and Dhan; 50 where the broker serves 50), each counted ONCE against the credential's quote
    budget (`api_budget.take`, the `/ltp` budget - a quote never uses the history burst). One such fetch per credential
    at a time (single-flight): a second poll waits for the first one's rows in the shared cache. Every row it brings is
    stored per credential and symbol for BATCH_CACHE_SECONDS, so `/ltp` and the next poll reuse it.
@@ -62,7 +63,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 
-MAX_ITEMS = 50
+MAX_ITEMS = 500                # M90 B4: a whole watchlist (app/watchlists/service.py MAX_SYMBOLS) in one request
+QUOTE_BATCH_DEFAULT = 50       # M90 B4: instruments per multi-quote call for an adapter that does not say its own
 QUOTE_WAIT_SECONDS = 2.0       # per request: no broker call starts after this, and no token wait runs past it
 PER_SYMBOL_MAX_CALLS = 5       # per request, on the per-symbol path (an adapter without a multi-quote call)
 BATCH_CACHE_SECONDS = 8        # a batch row shared per credential and symbol (the panel polls every 10 s)
@@ -75,6 +77,7 @@ Pair = Tuple[str, str]          # (exchange, symbol)
 _SYMBOL = re.compile(SYMBOL_RE)
 _EXCHANGE = re.compile(EXCHANGE_RE)
 BUDGET_REASON = "budget used - the broker's rate budget for this session is in use; the price loads on the next refresh"
+SLOWED_REASON = "slowed by broker limit - the price loads on the next refresh"
 NO_PRICE_REASON = "no price from the broker for this symbol - check it is the broker's trading symbol on this exchange"
 
 
@@ -256,16 +259,26 @@ async def _from_cache(record: BrokerCredentialRecord, pair: Pair, now: datetime,
     return {**row, "shared": True} if row is not None else None
 
 
-def _has_quote_call(adapter: Any) -> bool:
-    """Whether the adapter (under its wrappers) has its own single-symbol quote call - the interface default answers
-    None without asking the broker, so a token spent on it would buy nothing."""
+def _innermost(adapter: Any) -> Any:
     inner = adapter
     for _ in range(4):
         nxt = vars(inner).get("inner") if hasattr(inner, "__dict__") else None
         if nxt is None:
             break
         inner = nxt
-    return type(inner).get_quote_for_symbol is not BrokerInterface.get_quote_for_symbol
+    return inner
+
+
+def _batch_keys(adapter: Any) -> int:
+    """M90 B4: how many instruments the adapter's multi-quote call serves (its `quote_batch_max`, under any wrapper)."""
+    size = getattr(type(_innermost(adapter)), "quote_batch_max", None)
+    return max(1, int(size)) if isinstance(size, int) else QUOTE_BATCH_DEFAULT
+
+
+def _has_quote_call(adapter: Any) -> bool:
+    """Whether the adapter (under its wrappers) has its own single-symbol quote call - the interface default answers
+    None without asking the broker, so a token spent on it would buy nothing."""
+    return type(_innermost(adapter)).get_quote_for_symbol is not BrokerInterface.get_quote_for_symbol
 
 
 class _Fill:
@@ -278,6 +291,7 @@ class _Fill:
         self.broker_calls = 0
         self.spare_tokens = 0                       # a batch token taken for a call the adapter then did not make
         self.warnings: List[str] = []
+        self.slowed = False                         # M90 B5: the broker answered 429; the page polls more slowly
 
     def unpriced(self, pairs: List[Pair]) -> List[Pair]:
         return [p for p in pairs if p not in self.rows]
@@ -311,31 +325,55 @@ class _Fill:
             wanted = self.unpriced(pairs)
             if not wanted:
                 return True
-            if not await api_budget.take(self.record.id, self.record.broker_name, max(0.0, deadline - time.monotonic())):
-                return True
-            try:
-                got = await self.adapter.get_quotes_batch(wanted)
-            except Exception as exc:  # noqa: BLE001 - the broker's words next to each symbol
-                self.broker_calls += 1
-                logger.info("Batch quote failed via %s: %s", self.record.broker_name, exc)
-                error = f"{self.record.broker_name}: {type(exc).__name__}: {exc}"[:300]
-                self.warnings.append(error)
-                self.reasons.update({p: error for p in wanted})
-                return True
-            if got is None:
-                self.spare_tokens += 1
-                return False
-            self.broker_calls += 1
-            for pair in wanted:
-                quote = got.get(pair)
-                row = _from_quote(pair, quote, "quote", self.now, self.byob)
-                if row is not None:
-                    await self.keep(pair, row, quote)
-                else:
-                    self.reasons[pair] = NO_PRICE_REASON
+            size = _batch_keys(self.adapter)
+            for start in range(0, len(wanted), size):          # M90 B4: one call per `quote_batch_max` instruments
+                chunk = wanted[start:start + size]
+                if not await api_budget.take(self.record.id, self.record.broker_name, max(0.0, deadline - time.monotonic())):
+                    return True
+                got = await self._one_batch(chunk, deadline)
+                if got is None:
+                    if start == 0:
+                        self.spare_tokens += 1
+                        return False
+                    continue
+                for pair in chunk:
+                    quote = got.get(pair)
+                    row = _from_quote(pair, quote, "quote", self.now, self.byob)
+                    if row is not None:
+                        await self.keep(pair, row, quote)
+                    elif pair not in self.reasons:
+                        self.reasons[pair] = NO_PRICE_REASON
             return True
         finally:
             await api_budget.release_fetch(self.record.id, *BATCH_LOCK, holder)
+
+    async def _one_batch(self, chunk: List[Pair], deadline: float) -> Optional[Dict[Pair, Quote]]:
+        """One multi-quote call. M90 B5: a broker 429 is retried once after the back-off pause when it fits this request's
+        time; otherwise its symbols say "slowed by broker limit" (the page polls more slowly) - never an error."""
+        from app.brokers import broker_limits
+        for attempt in range(2):
+            try:
+                got = await self.adapter.get_quotes_batch(chunk)
+            except Exception as exc:  # noqa: BLE001 - the broker's words next to each symbol
+                self.broker_calls += 1
+                if broker_limits.is_rate_limited(exc):
+                    self.slowed = True
+                    delay = broker_limits.backoff_delay(attempt)
+                    if attempt == 0 and time.monotonic() + delay < deadline and await api_budget.take(
+                            self.record.id, self.record.broker_name, max(0.0, deadline - time.monotonic())):
+                        await asyncio.sleep(delay)
+                        continue
+                    self.reasons.update({p: SLOWED_REASON for p in chunk})
+                    return {}
+                logger.info("Batch quote failed via %s: %s", self.record.broker_name, exc)
+                error = f"{self.record.broker_name}: {type(exc).__name__}: {exc}"[:300]
+                self.warnings.append(error)
+                self.reasons.update({p: error for p in chunk})
+                return {}
+            if got is not None:
+                self.broker_calls += 1
+            return got
+        return {}
 
     async def per_symbol(self, pairs: List[Pair]) -> None:
         """One broker call per symbol (its quote call, or its LTP call when it has none), each taking a token: at most
@@ -446,7 +484,10 @@ async def quotes(body: QuotesBody, user: User = Depends(get_current_user), sessi
     rows: Dict[Pair, dict] = {**eod_rows, **fill.rows}
     for pair in fill.unpriced(wanted):
         reason = fill.reasons.get(pair)
-        rows[pair] = _missing(pair, reason) if reason else _missing(pair, BUDGET_REASON, budget_used=True)
+        if reason == SLOWED_REASON:
+            rows[pair] = _missing(pair, reason, slowed=True)
+        else:
+            rows[pair] = _missing(pair, reason) if reason else _missing(pair, BUDGET_REASON, budget_used=True)
     warnings = list(fill.warnings)
     if any(r.get("budget_used") for r in rows.values()):
         warnings.append("budget used: some prices were not fetched this time to keep the broker's rate limit for the trading worker")
@@ -455,6 +496,8 @@ async def quotes(body: QuotesBody, user: User = Depends(get_current_user), sessi
     result: Dict[str, Any] = {"source": {"broker": record.broker_name, "account_label": record.account_label},
                               "fetched_at": datetime.now(timezone.utc).isoformat(), "broker_calls": fill.broker_calls,
                               "items": items, "missing": sum(1 for r in items if r["missing"]), "warnings": warnings}
+    if fill.slowed:
+        result["slowed"] = True                     # M90 B5: the page says "Slowed by broker limit" and polls more slowly
     if live is not None:
         priced = [r for r in items if not r["missing"]]
         # The stalest price decides (a list is only as fresh as its oldest price); a price without a time has an unknown

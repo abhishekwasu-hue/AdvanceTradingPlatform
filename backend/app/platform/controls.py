@@ -563,6 +563,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # and the Scanner ("Load watchlist") load as their universe. OFF: /api/watchlists/* answers 404 and neither page
     # shows them. A list of names only: nothing scans, alerts or places an order.
     "watchlists": "Watchlists: your own named symbol lists, loadable as the Screener and Scanner universe",
+    # M91 (owner order): each watchlist's "Screen" dropdown (his own saved screens): matches on top, the rest dimmed, re-checked
+    # on bar close for the list on screen; the same screen drawn on a stock's chart from the one shared evaluation; an alert
+    # on new matches only when he turns it on. Needs `watchlists` and `screener_v2`. OFF: no dropdown, the routes answer 503.
+    "watchlist_screen": "Watchlist screen: your own saved screen on a watchlist (matches on top) and drawn on the stock's chart (informational, places no orders)",
     # N2-3 (P1 spec 1.5, docs/design/N2_P1FGH.md): decision tools - the risk-of-ruin / Kelly calculator on typed inputs
     # (prefilled from the user's own figures) and the what-if for the user's own open positions (P&L now, on a later
     # day with an IV shift, and at expiry, at the spot and IVs typed in). OFF: /api/decision/* answers 404. Information

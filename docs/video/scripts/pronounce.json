@@ -8,6 +8,7 @@
   "words": {
    "0": "शून्य",
    "1": "एक",
+   "0 / 500 done": "पाचशेपैकी शून्य डन",
    "120 / 500 done": "पाचशेपैकी एकशे वीस डन",
    "15": "पंधरा",
    "169": "एकशे एकोणसत्तर",
@@ -157,6 +158,7 @@
    "F and O": "F and O",
    "IST": "I S T",
    "end-of-day": "end of day",
+   "0 / 500 done": "zero of 500 done",
    "120 / 500 done": "120 of 500 done",
    "Matched N of M": "Matched N of M",
    "N": "N",

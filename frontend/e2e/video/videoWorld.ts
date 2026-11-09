@@ -111,7 +111,8 @@ export async function videoWorld(page: Page, opts: WorldOptions = {}): Promise<V
     if (/\/run$/.test(url)) {
       const b = body(route) as { source: string; symbols: string[]; preview?: boolean };
       if (!b.preview) world.runs.push({ symbols: b.symbols, source: b.source });
-      // A short pause per request, so the progress line ("120 / 500 done") is on screen long enough to be recorded.
+      // A short pause per request, so the progress line is on screen long enough to be recorded. On Daily (a store
+      // timeframe) the whole list is one request, so the line reads "0 / 500 done" until the answer comes (scene 6 says so).
       if (!b.preview) await new Promise((r) => setTimeout(r, b.symbols.length > 50 ? 900 : 300));
       const stages = b.source.split(" AND ");
       // A scan of three or more stages: the third removes every symbol (scene 16 shows that note and what to do).

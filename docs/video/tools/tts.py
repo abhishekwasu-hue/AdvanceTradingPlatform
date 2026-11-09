@@ -186,8 +186,9 @@ class IndicTTS(Provider):
     SPEAKERS = ("female", "male")
     LANGS = ("mr", "en")
     # Speaking pace per language (FastPitch `length_scale`: above 1 = slower). The English model speaks fast (about
-    # 160 words a minute); 1.15 brings it near a calm tutorial pace. ATP_INDICTTS_PACE_EN / _MR override it.
-    PACE = {"mr": 1.0, "en": 1.15}
+    # 160 words a minute); 1.3 brings it to a calm tutorial pace (about 125 words a minute) and the English episodes
+    # to the length of the Marathi ones (3 to 3.5 minutes). ATP_INDICTTS_PACE_EN / _MR override it.
+    PACE = {"mr": 1.0, "en": 1.3}
 
     def pace(self, lang: str) -> float:
         return float(os.environ.get(f"ATP_INDICTTS_PACE_{lang.upper()}", self.PACE.get(lang, 1.0)))
@@ -283,7 +284,10 @@ def _pronounce_rules(lang: str) -> Tuple[List[Tuple[re.Pattern, str]], Dict[str,
         path = SCRIPTS / "pronounce.json"
         table = json.loads(path.read_text(encoding="utf-8")).get(lang, {}) if path.exists() else {}
         words = sorted((table.get("words") or {}).items(), key=lambda kv: -len(kv[0]))
-        rules = [(re.compile(r"(?<![A-Za-z0-9])" + re.escape(k) + r"(?![A-Za-z0-9])", re.I), v) for k, v in words]
+        # A key in capitals only (an abbreviation such as IT or RSI) matches only in capitals: "IT" (the sector) is
+        # spelled, the word "it" is not. Any other key matches in any case.
+        rules = [(re.compile(r"(?<![A-Za-z0-9])" + re.escape(k) + r"(?![A-Za-z0-9])", 0 if k == k.upper() else re.I), v)
+                 for k, v in words]
         _PRONOUNCE[lang] = (rules, table.get("chars") or {})
     return _PRONOUNCE[lang]
 

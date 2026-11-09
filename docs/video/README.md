@@ -57,7 +57,7 @@ capture when the stills are there), `--keep-shots`, `--skip-build` (the frontend
 4. **Picture**: one clip per still, as long as its lines; a 0.7 s eased zoom onto the focus box.
 5. **Join**: intro card (3.5 s), scenes, outro card (4 s); the SRT from the real clip lengths; subtitles burned in from
    an ASS file in frame pixels through libass with **complex shaping** (HarfBuzz). ffmpeg's `subtitles` filter on an
-   SRT uses simple shaping, which splits Devanagari conjuncts (स्क्रीनर drawn as स्‌क्‌रीनर); the `ass` filter with
+   SRT uses simple shaping, which splits Devanagari conjuncts (the word for "screener" is drawn with a broken halant mark in each conjunct); the `ass` filter with
    `shaping=complex` joins them.
 
 A scene step that fails after a UI change does not stop the build: the line keeps the frame before it, and the build
@@ -93,11 +93,12 @@ rm -rf /dev/shm/atp-indictts /dev/shm/atp-video-work          # when done
   scene numbers - the default, the owner said "use both"). Change it there; a scene may set its own `"voice"`.
 - **Pronunciation**: the Marathi model reads Devanagari only (no Latin letters, only some digits); the English model
   reads plain Latin letters (no capital X, no `/`) and spells nothing on its own. Before a line is spoken it goes
-  through `scripts/pronounce.json` (Marathi: "Find setups" -> फाइंड सेटअप्स, "Run" -> रन, numbers in words; English:
+  through `scripts/pronounce.json` (Marathi: "Find setups", "Run" and other app words -> the same sounds in Devanagari letters, numbers in words; English:
   "RSI" -> "R S I", "NIFTY" -> "Nifty", "120 / 500" -> "120 of 500"). The subtitles keep the script as written. The build stops before any clip if a line still has a character
   the model cannot say, and lists it; `python3 docs/video/tools/tts.py say E1 mr` prints every line as it is spoken.
 - A scene is as long as its voice: a line is never cut; a scene longer than its `target_s` is extended and the build
-  says so. The English voice speaks faster than the Marathi one, so the same script is shorter in English.
+  says so. The English model speaks faster than the Marathi one, so it runs at pace 1.3 (`PACE` in `tools/tts.py`):
+  both languages then come to about 3 to 3.5 minutes per episode.
 
 ## Other voices (owner decision first)
 

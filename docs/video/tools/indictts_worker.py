@@ -61,7 +61,9 @@ def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] == "--check":
         synth, known = load(Path(sys.argv[2]))
         with tempfile.TemporaryDirectory() as d:
-            word = "नमस्कार." if "न" in known else "Hello."          # the model's own script: Marathi or English
+            # The check line: the education line of the model's language (scripts/rules.json; the folder is named mr / en).
+            rules = json.loads((Path(__file__).resolve().parent.parent / "scripts" / "rules.json").read_text(encoding="utf-8"))
+            word = rules.get(Path(sys.argv[2]).name, rules["en"])["end_line"]
             r = say(synth, known, word, "female", str(Path(d) / "check.wav"))
         print(f"[indictts] model OK ({r['seconds']:.1f} s test clip)", file=sys.stderr)
         return 0

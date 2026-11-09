@@ -118,7 +118,8 @@ def test_the_allow_list_is_narrow():
         "backend/tests/test_phase_ap_interview.py", "backend/tests/test_phase_aq_advisor.py",
         "frontend/e2e/fixtures/interview_plan.json",
         # M92 owner order: the Marathi scripts of the "Find setups" tutorial videos (video sources, not app text)
-        *(f"docs/video/scripts/E{n}.mr.json" for n in range(1, 7)), "docs/video/scripts/rules.json"}
+        *(f"docs/video/scripts/E{n}.mr.json" for n in range(1, 7)), "docs/video/scripts/rules.json",
+        "docs/video/scripts/cards.json", "docs/video/scripts/pronounce.json"}
     assert check_english_only.NAMESPACE_FILE == "frontend/src/i18n/interviewSecondary.ts"
     assert check_english_only.NAMESPACE_OBJECTS == ("INTERVIEW_MR", "INTERVIEW_HI")
 

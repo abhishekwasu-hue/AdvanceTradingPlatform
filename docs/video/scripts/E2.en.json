@@ -67,7 +67,7 @@
     },
     {
      "shot": "s06.progress",
-     "text": "During a run, a line shows the progress, for example 120 / 500 done. If your broker's limit slows it, it says Slowed by broker limit."
+     "text": "During a run, a line counts the stocks done out of the list: here 0 / 500 done, as the run starts. If your broker's limit slows it, it says Slowed by broker limit."
     },
     {
      "shot": "s06.result",

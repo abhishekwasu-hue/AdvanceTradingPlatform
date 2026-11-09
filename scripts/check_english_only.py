@@ -54,6 +54,8 @@ ALLOWED_FILES: Dict[str, str] = {
     "docs/video/scripts/E5.mr.json": "M92 tutorial video E5: the Marathi voice-over script",
     "docs/video/scripts/E6.mr.json": "M92 tutorial video E6: the Marathi voice-over script",
     "docs/video/scripts/rules.json": "M92 tutorial videos: the Marathi education line and the words a script never uses",
+    "docs/video/scripts/cards.json": "M92 tutorial videos: the Marathi words of the drawn cards",
+    "docs/video/scripts/pronounce.json": "M92 tutorial videos: how the Marathi voice says app words and numbers (voice input only)",
 }
 
 # The interview namespace of the frontend: Devanagari only as the value of a key of these objects.

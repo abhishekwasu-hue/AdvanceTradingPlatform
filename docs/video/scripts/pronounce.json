@@ -126,7 +126,41 @@
    "Weekly": "वीकली",
    "When the bar closes": "व्हेन द बार क्लोजेस",
    "Why it matched": "व्हाय इट मॅच्ड",
-   "Your list": "युअर लिस्ट"
+   "Your list": "युअर लिस्ट",
+   "Slowed by broker limit": "स्लोड बाय ब्रोकर लिमिट",
+   "RsiDivergence": "आर एस आय डायव्हर्जन्स",
+   "matches": "मॅचेस"
+  }
+ },
+ "en": {
+  "note": "The Indian English model reads plain Latin letters, digits and a few signs (no capital X, no slash); letters of an abbreviation are spaced so it spells them.",
+  "chars": {
+   "/": " of ",
+   "&": " and ",
+   "X": "Ex",
+   "’": "'"
+  },
+  "words": {
+   "ATP": "A T P",
+   "RSI": "R S I",
+   "RSI 14": "R S I 14",
+   "EMA": "E M A",
+   "SMA": "S M A",
+   "20-bar EMA": "20 bar E M A",
+   "NIFTY": "Nifty",
+   "NIFTY 50": "Nifty 50",
+   "NIFTY 500": "Nifty 500",
+   "UPTREND": "uptrend",
+   "NearSupport": "Near Support",
+   "PatternBullish": "Pattern Bullish",
+   "RsiDivergence": "R S I Divergence",
+   "F and O": "F and O",
+   "IST": "I S T",
+   "end-of-day": "end of day",
+   "120 / 500 done": "120 of 500 done",
+   "Matched N of M": "Matched N of M",
+   "N": "N",
+   "IT": "I T"
   }
  }
 }

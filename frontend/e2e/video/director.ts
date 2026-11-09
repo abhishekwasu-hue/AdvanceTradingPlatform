@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -46,9 +46,20 @@ export const CARD_CSS = `
   [data-video-focus]{outline:3px solid #f59e0b !important;outline-offset:3px !important;border-radius:6px}
 `;
 
+/** The words of the drawn cards in the episode's language: VIDEO_LANG (en / mr) and VIDEO_TEXT (docs/video/scripts/
+ * cards.json, {lang: {English text: text in that language}}). English needs no table. */
+function cardWords(): { lang: string; table: Record<string, string> } {
+  const lang = process.env.VIDEO_LANG ?? "en";
+  const file = process.env.VIDEO_TEXT;
+  if (lang === "en" || !file || !existsSync(file)) return { lang, table: {} };
+  const all = JSON.parse(readFileSync(file, "utf8")) as Record<string, Record<string, string>>;
+  return { lang, table: all[lang] ?? {} };
+}
+
 export class Director {
   private readonly beats: Record<string, Beat> = {};
   readonly problems: string[] = [];
+  private readonly words = cardWords();
   /** The API calls no mock answered (videoWorld), saved with the beats so a scene can be given what it lacks. */
   unmocked: string[] = [];
 
@@ -57,6 +68,17 @@ export class Director {
   }
 
   get phone(): boolean { return this.form === "phone"; }
+
+  /** A card's text in the episode's language (HTML-escaped); a missing translation keeps the English and is listed. */
+  t(en: string): string {
+    let out = en;
+    if (this.words.lang !== "en") {
+      const said = this.words.table[en];
+      if (said) out = said;
+      else this.problems.push(`no ${this.words.lang} text for the card words: ${en}`);
+    }
+    return out.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] as string);
+  }
 
   private async style(): Promise<void> {
     await this.page.evaluate(([css]) => {

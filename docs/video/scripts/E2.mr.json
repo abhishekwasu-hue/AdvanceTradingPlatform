@@ -1,9 +1,12 @@
 {
  "episode": "E2",
  "lang": "mr",
- "narrator": {"odd": "female", "even": "male"},
  "title": "Find setups 2: तुमची यादी आणि चार्ट",
- "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `verify` marks a line written for shipped behaviour to check on the live site before recording.",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
  "intro": {
   "kicker": "ATP शिक्षण",
   "title": "Find setups 2: तुमची यादी आणि चार्ट",
@@ -24,40 +27,31 @@
   {
    "n": 6,
    "title": "यादी निवडा",
-   "target_s": 60,
+   "target_s": 110,
    "lines": [
     {
      "shot": "s06.change",
-     "text": "पहिला टप्पा: यादी निवडा. Your list कार्डवर Change दाबा."
+     "text": "पहिला टप्पा: यादी. Your list कार्डवर Change दाबा."
     },
     {
      "shot": "s06.panel",
-     "text": "Scan these stocks हा बॉक्स असलेले पॅनल उघडते."
-    },
-    {
-     "shot": "s06.panel",
-     "text": "बॉक्समध्ये टाइप करून शोधता येते."
+     "text": "Scan these stocks बॉक्स असलेले पॅनल उघडते; टाइप करून शोधा."
     },
     {
      "shot": "s06.groups",
-     "text": "याद्या गटांमध्ये आहेत: Index stocks, Sectors, F&O, My watchlists, आणि Type my own symbols. प्रत्येक यादीचा आकार कंसात दिसतो."
+     "text": "याद्यांचे गट: Index stocks, Sectors, F&O, My watchlists, आणि Type my own symbols; प्रत्येकाचा आकार कंसात."
     },
     {
      "shot": "s06.groups",
-     "text": "Index stocks मध्ये एखाद्या इंडेक्सचे सदस्य असतात, उदाहरणार्थ NIFTY 50 किंवा NIFTY 500. Sectors मध्ये Banking किंवा IT सारख्या याद्या असतात."
+     "text": "Index stocks मध्ये इंडेक्सचे सदस्य असतात, जसे NIFTY 50 किंवा NIFTY 500. Sectors मध्ये Banking किंवा IT सारख्या याद्या."
     },
     {
      "shot": "s06.pick",
-     "text": "यादी निवडा. इथे पाचशे स्टॉक्सची यादी."
-    },
-    {
-     "shot": "s06.pick",
-     "text": "स्वतःची यादी हवी असेल तर Type my own symbols निवडा, आणि symbols स्वल्पविराम किंवा नव्या ओळीने वेगळे करून टाइप करा."
+     "text": "इथे पाचशे स्टॉक्सची यादी. स्वतःची यादी हवी तर Type my own symbols निवडा, symbols स्वल्पविरामाने वेगळे करा."
     },
     {
      "shot": "s06.big",
-     "text": "एका यादीत पाचशे स्टॉक्सपर्यंत असू शकतात, आणि Run संपूर्ण यादी स्कॅन करते. पन्नास-पन्नासची ठराविक मर्यादा नाही.",
-     "verify": "verify after M90 deploy"
+     "text": "एका यादीत पाचशे स्टॉक्सपर्यंत; Run सगळे स्कॅन करते, तुमच्या ब्रोकरच्या मर्यादेत. पन्नासची ठराविक मर्यादा नाही."
     },
     {
      "shot": "s06.done",
@@ -65,20 +59,19 @@
     },
     {
      "shot": "s06.done",
-     "text": "एखादी यादी लोड झाली नाही, तर पिवळसर सूचना तसे सांगते, आणि स्कॅन NIFTY 50 वर चालतो."
+     "text": "नवी यादी लोड झाली नाही, तर पिवळसर सूचना तसे सांगते, आणि आतली NIFTY 50 यादी वापरली जाते."
     },
     {
      "shot": "s06.list",
-     "text": "आता कार्डवर यादीचे नाव आणि स्टॉक्सची संख्या दिसते."
+     "text": "कार्डवर यादीचे नाव आणि आकार दिसतो."
     },
     {
      "shot": "s06.progress",
-     "text": "Run चालू असताना एक ओळ प्रगती दाखवते, उदाहरणार्थ 120 / 500 done. ब्रोकरच्या मर्यादेमुळे वेग कमी झाला, तर ती ओळ तसे सांगते.",
-     "verify": "verify after M90 deploy"
+     "text": "Run चालू असताना ओळ प्रगती दाखवते, जसे 120 / 500 done. ब्रोकरच्या मर्यादेमुळे वेग कमी झाला, तर Slowed by broker limit दिसते."
     },
     {
      "shot": "s06.result",
-     "text": "Run संपल्यावर निकालाच्या शीर्षकात किती match झाले ते दिसते."
+     "text": "शेवटी शीर्षकात किती match झाले ते दिसते."
     },
     {
      "shot": "s06.result",
@@ -90,19 +83,19 @@
   {
    "n": 7,
    "title": "चार्ट निवडा",
-   "target_s": 50,
+   "target_s": 85,
    "lines": [
     {
      "shot": "s07.change",
-     "text": "दुसरा टप्पा: चार्ट निवडा. Chart कार्डवर Change दाबा."
+     "text": "दुसरा टप्पा: चार्ट. Chart कार्डवर Change दाबा."
     },
     {
      "shot": "s07.options",
-     "text": "नऊपैकी एक टाइमफ्रेम निवडा: 1, 3, 5, 15 किंवा 30 मिनिटे, 1 तास, Daily, Weekly किंवा Monthly."
+     "text": "नऊ टाइमफ्रेम: 1, 3, 5, 15, 30 मिनिटे, 1 तास, Daily, Weekly, Monthly."
     },
     {
      "shot": "s07.daily",
-     "text": "Daily, Weekly आणि Monthly ब्रोकरसह किंवा ब्रोकरशिवाय चालतात. 1 मिनिट ते 1 तास यासाठी तुमचा स्वतःचा ब्रोकर जोडलेला असणे आवश्यक आहे."
+     "text": "Daily, Weekly, Monthly ब्रोकरशिवायही चालतात. 1 मिनिट ते 1 तास यासाठी तुमचा ब्रोकर लागतो."
     },
     {
      "shot": "s07.daily",
@@ -110,11 +103,11 @@
     },
     {
      "shot": "s07.candles",
-     "text": "स्कॅन फक्त बंद झालेल्या कॅन्डल्स वाचतो. बंद कॅन्डल अंतिम असते. तयार होत असलेली कॅन्डल अजून बदलू शकते, म्हणून स्कॅन ती वापरत नाही."
+     "text": "स्कॅन फक्त बंद कॅन्डल्स वाचतो. बंद कॅन्डल अंतिम असते; तयार होणारी अजून बदलू शकते."
     },
     {
      "shot": "s07.candles",
-     "text": "फक्त alert ला तयार होत असलेली कॅन्डल वाचायला सांगता येते, आणि ॲप त्या पर्यायावर लिहिते: लवकर, पण close आधी बदलू शकते."
+     "text": "फक्त alert तयार होणारी कॅन्डल वाचू शकतो, आणि तसे लिहिलेले असते: लवकर, पण बदलू शकते."
     },
     {
      "shot": "s07.done",
@@ -122,7 +115,7 @@
     },
     {
      "shot": "s07.chart",
-     "text": "Chart कार्डवर टाइमफ्रेम शब्दांत दिसते. सुरुवातीसाठी सोपा पर्याय: Daily."
+     "text": "कार्डवर टाइमफ्रेम शब्दांत दिसते. सुरुवातीला Daily सोपे."
     },
     {
      "shot": "s07.chart",

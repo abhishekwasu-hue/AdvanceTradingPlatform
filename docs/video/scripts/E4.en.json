@@ -2,7 +2,11 @@
  "episode": "E4",
  "lang": "en",
  "title": "Find setups 4: Run, results, and the data",
- "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `verify` marks a line written for shipped behaviour to check on the live site before recording.",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
  "intro": {
   "kicker": "ATP education",
   "title": "Find setups 4: Run, results, and the data",
@@ -23,27 +27,27 @@
   {
    "n": 11,
    "title": "Run",
-   "target_s": 35,
+   "target_s": 50,
    "lines": [
     {
      "shot": "s11.why",
-     "text": "Step five: run. Is Run greyed out? The reason sits beside it, for example Pick a scan first."
+     "text": "Step five: run. Run greyed out? The reason is beside it, such as Pick a scan first."
     },
     {
      "shot": "s11.ready",
-     "text": "With conditions in place and no red line under any block, Run is ready."
+     "text": "With conditions in place and no red line, Run is ready."
     },
     {
      "shot": "s11.run",
-     "text": "Press Run. On a phone, it sits in the bar at the bottom."
+     "text": "Press Run. On a phone, it is in the bottom bar."
     },
     {
      "shot": "s11.done",
-     "text": "For a long list, a progress line shows while it runs. Then the results header appears."
+     "text": "A long list shows a progress line; the button beside it ends the run early and keeps what was read."
     },
     {
      "shot": "s11.done",
-     "text": "While it runs, the button beside the progress line ends the run early; the stocks already read stay shown."
+     "text": "If your broker's limit held some stocks back, a note says so. Run again in a minute to include them."
     },
     {
      "shot": "s11.done",
@@ -55,23 +59,23 @@
   {
    "n": 12,
    "title": "Read the results",
-   "target_s": 50,
+   "target_s": 70,
    "lines": [
     {
      "shot": "s12.header",
-     "text": "Read the header: Matched N of M. N is green when above zero, and amber when zero."
+     "text": "The header reads Matched N of M: green above zero, amber at zero."
     },
     {
      "shot": "s12.pill",
-     "text": "The time pill says when it ran. Hover over it, or long-press on a phone, to see where the data came from."
+     "text": "The time pill says when it ran."
     },
     {
      "shot": "s12.table",
-     "text": "The table lists the matches first. Each row says Matched, Did not match, or Could not be read, with the reason."
+     "text": "The table lists matches first. Each row says Matched, Did not match, or Could not be read, with the reason."
     },
     {
      "shot": "s12.table",
-     "text": "Could not be read is never counted as did not match."
+     "text": "Could not be read never counts as did not match."
     },
     {
      "shot": "s12.table",
@@ -87,7 +91,7 @@
     },
     {
      "shot": "s12.chart",
-     "text": "Show on chart opens the matched chart in place, with only the scan's own conditions drawn."
+     "text": "Show on chart opens the chart in place, with only the scan's own conditions drawn."
     },
     {
      "shot": "s12.chart",
@@ -99,32 +103,30 @@
   {
    "n": 13,
    "title": "Where the data comes from",
-   "target_s": 50,
+   "target_s": 65,
    "lines": [
     {
      "shot": "s13.card",
-     "text": "Where does the data come from? With your own broker connected: every timeframe, from your broker, paced inside its limits."
+     "text": "Where does the data come from? With your own broker: every timeframe, 1 minute to Monthly, within its limits."
     },
     {
      "shot": "s13.card",
-     "text": "Without a broker: Daily, Weekly and Monthly from ATP's stored end-of-day history. These candles carry the label Last close, with the date.",
-     "verify": "verify after M90 deploy"
+     "text": "Without a broker: Daily, Weekly and Monthly from ATP's stored end-of-day history. For 1 minute to 1 hour, connect your broker."
     },
     {
-     "shot": "s13.banner",
-     "text": "The page says it at the top: Daily scans run on the last close from the end-of-day files; intraday scans need your broker.",
-     "verify": "verify after M90 deploy"
+     "shot": "s13.card",
+     "text": "A stock not stored yet is read through your own broker; without one, its row says so."
+    },
+    {
+     "shot": "s13.card",
+     "text": "There is no shared live data: live data comes only from your own broker."
     },
     {
      "shot": "s13.pill",
-     "text": "After a run, the time pill shows the source: your broker, or the stored end-of-day history."
+     "text": "After a run, hover over the time pill: it names the source, your broker or ATP's stored end-of-day history."
     },
     {
-     "shot": "s13.card",
-     "text": "There is no shared live data. Live data for you comes only from your own broker."
-    },
-    {
-     "shot": "s13.card",
+     "shot": "s13.pill",
      "end": true,
      "text": "Information and education only, not investment advice."
     }

@@ -1,9 +1,12 @@
 {
  "episode": "E3",
  "lang": "mr",
- "narrator": {"odd": "female", "even": "male"},
  "title": "Find setups 3: स्कॅन सुरू करा आणि तयार करा",
- "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `verify` marks a line written for shipped behaviour to check on the live site before recording.",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
  "intro": {
   "kicker": "ATP शिक्षण",
   "title": "Find setups 3: स्कॅन सुरू करा आणि तयार करा",
@@ -24,35 +27,35 @@
   {
    "n": 8,
    "title": "स्कॅन सुरू करा",
-   "target_s": 55,
+   "target_s": 70,
    "lines": [
     {
      "shot": "s08.tabs",
-     "text": "तिसरा टप्पा: स्कॅन सुरू करा. तीन टॅब आहेत: Ready scan, Template, आणि Own words."
+     "text": "तिसरा टप्पा: स्कॅन सुरू करा. तीन टॅब: Ready scan, Template, Own words."
     },
     {
      "shot": "s08.ready",
-     "text": "Ready scan: Run वर एक टॅप केल्यावर अटी भरल्या जातात आणि तुमच्या यादीवर चालतात. नंतर प्रत्येक अट बदलता येते."
+     "text": "Ready scan: Run वर एक टॅप; अटी भरतात आणि चालतात. नंतर प्रत्येक अट बदलता येते."
     },
     {
      "shot": "s08.template",
-     "text": "Template अटी भरते, आणि तुम्ही Run दाबेपर्यंत काहीही चालत नाही."
+     "text": "Template फक्त अटी भरते; Run दाबेपर्यंत काही चालत नाही."
     },
     {
      "shot": "s08.three",
-     "text": "तीन templates नेहमी असतात: Momentum, Oversold, आणि Trend on the daily. ही नावे फक्त अटींची लेबले आहेत."
+     "text": "तीन templates नेहमी असतात: Momentum, Oversold, Trend on the daily. नावे फक्त लेबले आहेत."
     },
     {
      "shot": "s08.words",
-     "text": "Own words सुरू असेल, तर साध्या शब्दांत लिहिलेली कल्पना तपासता येणाऱ्या अटींमध्ये बदलते. ATP ला जे वाचता येत नाही ते यादीत दाखवले जाते, अंदाज लावला जात नाही."
+     "text": "Own words सुरू असेल, तर साध्या शब्दांतील कल्पना अटींमध्ये बदलते. न वाचता आलेले दाखवले जाते, अंदाज नाही."
     },
     {
      "shot": "s08.seeall",
-     "text": "See all ready scans स्क्रीन लायब्ररी उघडते."
+     "text": "See all ready scans लायब्ररी उघडते."
     },
     {
      "shot": "s08.library",
-     "text": "पद्धत आणि सेटअपनुसार फिल्टर करा, मग अटी भरण्यासाठी एखादे कार्ड उघडा."
+     "text": "पद्धत आणि सेटअपनुसार फिल्टर करा, मग कार्ड उघडा."
     },
     {
      "shot": "s08.library",
@@ -64,23 +67,23 @@
   {
    "n": 9,
    "title": "ब्लॉक्स तयार करा",
-   "target_s": 55,
+   "target_s": 60,
    "lines": [
     {
      "shot": "s09.all",
-     "text": "चौथा टप्पा: अटी. प्रत्येक अट एक ब्लॉक आहे, All of these must pass या ओळीखाली."
+     "text": "चौथा टप्पा: अटी. प्रत्येक अट All of these must pass खालील एक ब्लॉक आहे."
     },
     {
      "shot": "s09.row",
-     "text": "सुरू असलेला प्रत्येक ब्लॉक खरा ठरला तरच स्टॉक match होतो. अधोरेखित प्रत्येक भाग बदलता येतो: फंक्शन, त्याचे आकडे, आणि तुलना."
+     "text": "सुरू असलेले सगळे ब्लॉक खरे असतील तरच match. अधोरेखित प्रत्येक भाग बदलता येतो: फंक्शन, आकडे, तुलना."
     },
     {
      "shot": "s09.kind",
-     "text": "ब्लॉक जोडण्यासाठी आधी त्याचा प्रकार निवडा."
+     "text": "ब्लॉक जोडायला आधी प्रकार निवडा."
     },
     {
      "shot": "s09.kinds",
-     "text": "Indicator आकड्याची तुलना करतो. Filter म्हणजे हो किंवा नाही अशी तपासणी, उदाहरणार्थ कॅन्डल पॅटर्न. Category लेबलची तुलना करते, उदाहरणार्थ ट्रेंड. Rank यादीतील वरचे स्टॉक्स ठेवतो. Group म्हणजे हे किंवा ते."
+     "text": "Indicator आकड्याची तुलना करतो. Filter म्हणजे हो-नाही तपासणी. Category लेबलची तुलना करते, जसे ट्रेंड. Rank यादीतील वरचे ठेवतो. Group म्हणजे हे किंवा ते."
     },
     {
      "shot": "s09.add",
@@ -88,7 +91,7 @@
     },
     {
      "shot": "s09.new",
-     "text": "नवी ओळ दिसते. कोणताही अधोरेखित भाग बदला, किंवा टिक बॉक्सने ब्लॉक तात्पुरता बंद करा."
+     "text": "नवी ओळ दिसते. ती बदला, किंवा टिक बॉक्सने बंद करा."
     },
     {
      "shot": "s09.new",
@@ -100,27 +103,27 @@
   {
    "n": 10,
    "title": "Bars ago आणि टाइमफ्रेम चिप",
-   "target_s": 45,
+   "target_s": 55,
    "lines": [
     {
      "shot": "s10.chip",
-     "text": "ओळीच्या प्रत्येक बाजूला एक छोटी टाइमफ्रेम चिप आहे. ती बाजू दुसऱ्या टाइमफ्रेमवर वाचायची असेल तर ती निवडा, उदाहरणार्थ स्कॅन 15 मिनिटांवर असताना Daily."
+     "text": "ओळीच्या प्रत्येक बाजूला टाइमफ्रेम चिप आहे; ती बाजू दुसऱ्या टाइमफ्रेमवर वाचता येते, जसे 15 मिनिटांच्या स्कॅनमध्ये Daily."
     },
     {
      "shot": "s10.open",
-     "text": "ओळीच्या शेवटचा छोटा बाण तिचे advanced options उघडतो."
+     "text": "ओळीच्या शेवटचा बाण advanced options उघडतो."
     },
     {
      "shot": "s10.field",
-     "text": "Bars ago मागची कॅन्डल वाचतो: 1 ते 500 मधील पूर्ण संख्या. रिकामे ठेवले तर शेवटची बंद कॅन्डल."
+     "text": "Bars ago मागची कॅन्डल वाचतो, 1 ते 500. रिकामे म्हणजे शेवटची बंद कॅन्डल."
     },
     {
      "shot": "s10.three",
-     "text": "इथे RSI तीन bars मागे वाचला जातो, आणि ओळ ते साध्या शब्दांत सांगते."
+     "text": "इथे RSI तीन bars मागे वाचला जातो, ओळ ते साध्या शब्दांत सांगते."
     },
     {
      "shot": "s10.three",
-     "text": "स्ट्रक्चर आणि पॅटर्नसारखी काही फंक्शन्स फक्त शेवटच्या bar वर वाचली जातात. त्यांना bars ago किंवा दुसरी टाइमफ्रेम लागू होत नाही."
+     "text": "स्ट्रक्चर आणि पॅटर्न फंक्शन्स फक्त शेवटचा bar वाचतात; bars ago किंवा दुसरी टाइमफ्रेम नाही."
     },
     {
      "shot": "s10.three",

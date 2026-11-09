@@ -1,18 +1,19 @@
 # "Find setups" tutorial videos (owner order M92)
 
-Six short episodes (2-4 minutes) in English and Marathi, each as a 1920x1080 desktop cut and a 1080x1920 (9:16) phone
+Six short episodes (3-4 minutes) in English and Marathi, each as a 1920x1080 desktop cut and a 1080x1920 (9:16) phone
 cut, made from the real app with made-up data. Every part is reproducible: after a UI change, one command rebuilds an
 episode.
 
 | File | What it is |
 |---|---|
-| `EPISODES.md` | V1: the episode map (scenes 1-19 -> E1-E6), lengths, the lines to verify after the M90 deploy |
+| `EPISODES.md` | V1: the episode map (scenes 1-19 -> E1-E6), lengths, the lines checked against the shipped app |
 | `scripts/E1.en.json` ... `E6.mr.json` | V3: one scene-timed script per episode and language; each line = one voice clip + one subtitle, spoken over a still (`shot`) |
 | `scripts/rules.json` | The education line every scene ends with, and the words a script never uses (per language) |
-| `scripts/pronounce.json` | How the local voice says the words it cannot read (Latin letters, digits), per language; TTS input only |
+| `scripts/pronounce.json` | How the local voice says the words it cannot read (Marathi: Latin letters, digits; English: abbreviations, `/`), per language; TTS input only |
+| `scripts/cards.json` | The words of the drawn cards (scenes 1, 2, 7, 13, 14, 18, 19) in Marathi; the cards of a Marathi cut are drawn in Marathi |
 | `../../frontend/e2e/video/` | V2: the Playwright scene files: `scenes.ts` (19 scenes), `videoWorld.ts` (the made-up world), `director.ts` (cursor ring, outline, zoom box), `cards.ts`, `capture.video.ts`, `playwright.video.config.ts` |
-| `tools/tts.py` | The TTS adapter: `indictts` (free local Marathi voice, female + male), `placeholder` (espeak-ng, offline), `silent`, `azure`, `sarvam` (paid, off without a key and `--allow-paid`) |
-| `tools/indictts_worker.py`, `setup_indictts.sh` | The local Marathi voice: the worker that runs in its own venv, and the script that installs it |
+| `tools/tts.py` | The TTS adapter: `indictts` (free local voices, Marathi and Indian English, female + male), `placeholder` (espeak-ng, offline), `silent`, `azure`, `sarvam` (paid, off without a key and `--allow-paid`) |
+| `tools/indictts_worker.py`, `setup_indictts.sh` | The local voices: the worker that runs in its own venv, and the script that installs it |
 | `tools/build.py`, `build.sh` | V4 / V5: capture, voice, picture, subtitles, MP4 + SRT |
 | `TTS_COST.md` | Characters per episode and the cost per provider (prices to confirm) |
 
@@ -27,13 +28,17 @@ docs/video/build.sh E2 en --check-only    # only check the script
 Outputs (outside git, default `../atp-video-out`, or `--out DIR` / `ATP_VIDEO_OUT`):
 `<E>.<lang>.desktop.mp4`, `<E>.<lang>.phone.mp4` (H.264 + AAC, subtitles burned in) and the `.srt` next to each.
 
-Options: `--tts indictts|placeholder|silent|azure|sarvam`, `--allow-paid`, `--suffix TAG` (`<E>.<lang>.<form>.<TAG>.mp4`), `--reuse-shots` (skip the capture when the stills are
-there), `--keep-shots`, `--skip-build` (the frontend `dist/` is current).
+Options: `--tts indictts|placeholder|silent|azure|sarvam`, `--allow-paid`, `--suffix TAG` (`<E>.<lang>.<form>.<TAG>.mp4`), `--work DIR`
+(stills, voice cache and temporary clips; e.g. `/dev/shm/...` on a small disk; or `ATP_VIDEO_WORK`), `--reuse-shots` (skip the
+capture when the stills are there), `--keep-shots`, `--skip-build` (the frontend `dist/` is current). `ATP_VIDEO_CRF` (default
+28) sets the final quality: an episode is about 3-8 MB. `VIDEO_PORT` sets the preview port of the capture (default 4190).
 
 ## Needs
 
-- `ffmpeg` with libx264 and libass; `espeak-ng` for the placeholder voice (without it the build uses a silent timing
-  track); a font with Devanagari for the Marathi subtitles and cards (`fonts-lohit-deva-marathi`, or FreeSans).
+- `ffmpeg` with libx264 and libass built with HarfBuzz (`ffmpeg -buildconf` lists `--enable-libharfbuzz`; Ubuntu's
+  ffmpeg has it); `espeak-ng` for the placeholder voice (without it the build uses a silent timing track); a Devanagari
+  font with its own shaping tables for the Marathi subtitles and cards (`fonts-lohit-deva-marathi`, the default; or
+  `ATP_VIDEO_FONT_MR="Noto Sans Devanagari"` with `fonts-noto-core`).
 - `frontend/node_modules` (run `npm ci` in `frontend/`) and a Chromium for Playwright (`PW_CHROMIUM`, or the one in
   `PLAYWRIGHT_BROWSERS_PATH`).
 - No backend, no account and no network: every `/api` call is answered by `videoWorld.ts`.
@@ -45,10 +50,15 @@ there), `--keep-shots`, `--skip-build` (the frontend `dist/` is current).
 2. **Capture** (`frontend/e2e/video/`): `npm run build`, then `vite preview` on port 4190 (its own server every run,
    never a running one), one Playwright test per scene in both cuts. Each beat is a still with an amber cursor ring and
    outline on the element the line is about; its box is saved in `beats.json` for the zoom. The drawings of scenes 1, 2,
-   7, 13, 14, 18 and 19 are cards over the page. The intro / outro cards are drawn in the episode's language.
+   7, 13, 14, 18 and 19 are cards over the page, drawn in the episode's language (`scripts/cards.json`; a missing
+   Marathi entry is listed in the scene's `beats.json`), as are the intro / outro cards. The stills are kept per
+   language (`shots/<E>.<lang>/`).
 3. **Voice**: one clip per line from the TTS provider, cached by provider, voice and text (`<out>/tts-cache`).
 4. **Picture**: one clip per still, as long as its lines; a 0.7 s eased zoom onto the focus box.
-5. **Join**: intro card (3.5 s), scenes, outro card (4 s); the SRT from the real clip lengths; subtitles burned in.
+5. **Join**: intro card (3.5 s), scenes, outro card (4 s); the SRT from the real clip lengths; subtitles burned in from
+   an ASS file in frame pixels through libass with **complex shaping** (HarfBuzz). ffmpeg's `subtitles` filter on an
+   SRT uses simple shaping, which splits Devanagari conjuncts (स्क्रीनर drawn as स्‌क्‌रीनर); the `ass` filter with
+   `shaping=complex` joins them.
 
 A scene step that fails after a UI change does not stop the build: the line keeps the frame before it, and the build
 prints the problems (also in `shots/<E>/<form>/scene-NN/beats.json`). `VIDEO_DEBUG=1` saves the page's accessibility
@@ -60,27 +70,34 @@ Lists are the app's own group labels with generic members (STOCK01 ...), never a
 next to a name (the Today page is blurred while the menu is shown, and the evidence chart is pointed at, not opened);
 the account has no email; no server address, token or key is used or shown. Counts and matches are made up.
 
-## The Marathi voice: AI4Bharat Indic-TTS (owner decision: both voices)
+## The voices: AI4Bharat Indic-TTS, Marathi and Indian English (owner decision: both voices)
 
-Free and local: AI4Bharat Indic-TTS, Marathi (FastPitch + HiFi-GAN, MIT licence), on the CPU, no key, no network at
-run time. Two speakers, `female` and `male`.
+Free and local: AI4Bharat Indic-TTS (FastPitch + HiFi-GAN, MIT licence), on the CPU, no key, no network at run time.
+One model per language from the same release: Marathi (`mr`) and Indian English (`en`), each with two speakers,
+`female` and `male`.
 
 ```sh
-ATP_INDICTTS_DIR=/dev/shm/atp-indictts docs/video/setup_indictts.sh      # once: venv (~6 GB) + model (1.6 GB)
-ATP_INDICTTS_DIR=/dev/shm/atp-indictts docs/video/build.sh E1 mr --tts indictts --suffix both
-rm -rf /dev/shm/atp-indictts                                              # when done
+export ATP_INDICTTS_DIR=/dev/shm/atp-indictts
+ATP_INDICTTS_LANGS="mr en" docs/video/setup_indictts.sh     # once: venv (~6 GB) + one model per language
+docs/video/build.sh E1 mr --tts indictts --work /dev/shm/atp-video-work
+docs/video/build.sh E1 en --tts indictts --work /dev/shm/atp-video-work
+rm -rf /dev/shm/atp-indictts /dev/shm/atp-video-work          # when done
 ```
 
-- The model is downloaded from the GitHub release of AI4Bharat/Indic-TTS (`v1-checkpoints-release/mr.zip`, checked by
-  its SHA-256) into `ATP_INDICTTS_DIR` (default `../atp-indictts`, outside git). torch comes from PyPI.
-- **Narrator per scene**: each Marathi script has `"narrator": {"odd": "female", "even": "male"}` (the speaker for odd
-  and even scene numbers - the default, the owner said "use both"). Change it there; a scene may set its own `"voice"`.
-- **Pronunciation**: the model reads Devanagari only (no Latin letters, only some digits). Before a line is spoken it
-  goes through `scripts/pronounce.json` ("Find setups" -> फाइंड सेटअप्स, "Run" -> रन, "NIFTY" -> निफ्टी, numbers in
-  words). The subtitles keep the script as written. The build stops before any clip if a line still has a character
+- The models are downloaded from the GitHub release of AI4Bharat/Indic-TTS (`v1-checkpoints-release/<lang>.zip`,
+  each checked by its SHA-256) into `ATP_INDICTTS_DIR` (default `../atp-indictts`, outside git); the setup keeps only
+  the weights (the training optimizer state is dropped: about 540 MB per model). torch comes from PyPI.
+- Memory: a worker loads one model (about 1.5 GB of memory); one build uses one language, so one worker. With the venv
+  on `/dev/shm`, keep about 4 GB of memory free for the worker and the capture's browser.
+- **Narrator per scene**: each script has `"narrator": {"odd": "female", "even": "male"}` (the speaker for odd and even
+  scene numbers - the default, the owner said "use both"). Change it there; a scene may set its own `"voice"`.
+- **Pronunciation**: the Marathi model reads Devanagari only (no Latin letters, only some digits); the English model
+  reads plain Latin letters (no capital X, no `/`) and spells nothing on its own. Before a line is spoken it goes
+  through `scripts/pronounce.json` (Marathi: "Find setups" -> फाइंड सेटअप्स, "Run" -> रन, numbers in words; English:
+  "RSI" -> "R S I", "NIFTY" -> "Nifty", "120 / 500" -> "120 of 500"). The subtitles keep the script as written. The build stops before any clip if a line still has a character
   the model cannot say, and lists it; `python3 docs/video/tools/tts.py say E1 mr` prints every line as it is spoken.
 - A scene is as long as its voice: a line is never cut; a scene longer than its `target_s` is extended and the build
-  says so.
+  says so. The English voice speaks faster than the Marathi one, so the same script is shorter in English.
 
 ## Other voices (owner decision first)
 
@@ -96,8 +113,7 @@ environment **and** `--allow-paid`:
 
 ## Before the final recording
 
-1. M86 and M90 live on the site (M90 = PR #953: no 50 cap, "120 / 500 done").
-2. Check the lines marked `verify` (EPISODES.md) on the live site; re-capture E2 and E4.
-3. Check which parts are switched on for the recording account; drop or re-word a scene whose part is off.
-4. Owner approves the TTS service and voice (TTS_COST.md); build each episode with `--tts <service> --allow-paid`.
-5. Review E1 in both languages and both cuts with the owner, then the rest.
+1. Done: M86 and M90 are live; scenes 6 and 13 are written against the shipped code (EPISODES.md).
+2. Check which parts are switched on for the recording account; drop or re-word a scene whose part is off.
+3. Voice: the free Indic-TTS voices (owner decision); a paid one only after the owner approves it (TTS_COST.md).
+4. Review E1 in both languages and both cuts with the owner, then the rest.

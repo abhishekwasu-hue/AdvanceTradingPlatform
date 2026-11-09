@@ -1,9 +1,12 @@
 {
  "episode": "E5",
  "lang": "mr",
- "narrator": {"odd": "female", "even": "male"},
  "title": "Find setups 5: तीन उदाहरणे आणि एक alert",
- "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `verify` marks a line written for shipped behaviour to check on the live site before recording.",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
  "intro": {
   "kicker": "ATP शिक्षण",
   "title": "Find setups 5: तीन उदाहरणे आणि एक alert",
@@ -24,19 +27,19 @@
   {
    "n": 15,
    "title": "उदाहरण 1: तयार template",
-   "target_s": 45,
+   "target_s": 70,
    "lines": [
     {
      "shot": "s15.list",
-     "text": "उदाहरण एक: तयार template. यादी NIFTY 50 stocks, आणि चार्ट Daily."
+     "text": "उदाहरण एक: template. यादी NIFTY 50 stocks, चार्ट Daily."
     },
     {
      "shot": "s15.template",
-     "text": "Start a scan मध्ये Template वर टॅप करा, मग Momentum."
+     "text": "Start a scan मध्ये Template, मग Momentum वर टॅप करा."
     },
     {
      "shot": "s15.conds",
-     "text": "दोन अटी भरल्या जातात: RSI 14, 60 च्या वर, आणि close त्याच्या 20-bar EMA च्या वर. हे आकडे फक्त उदाहरणाच्या सेटिंग्ज आहेत, शिफारस नाही."
+     "text": "दोन अटी भरतात: RSI 14, 60 च्या वर, आणि close त्याच्या 20-bar EMA च्या वर. ही फक्त उदाहरणाची सेटिंग्ज, शिफारस नाही."
     },
     {
      "shot": "s15.run",
@@ -44,11 +47,11 @@
     },
     {
      "shot": "s15.result",
-     "text": "शीर्षकात Matched N of 50 दिसते. प्रत्येक अटीशेजारचा आकडा त्या अटीनंतर किती स्टॉक्स उरले ते सांगतो."
+     "text": "शीर्षकात Matched N of 50; प्रत्येक अटीचा आकडा किती उरले ते सांगतो."
     },
     {
      "shot": "s15.chart",
-     "text": "match वरचे Show on chart ते का match झाले हे प्रत्येक अटीनुसार दाखवते."
+     "text": "match वरचे Show on chart प्रत्येक अटीनुसार कारण दाखवते."
     },
     {
      "shot": "s15.chart",
@@ -64,39 +67,39 @@
   {
    "n": 16,
    "title": "उदाहरण 2: स्वतःचा स्कॅन",
-   "target_s": 55,
+   "target_s": 60,
    "lines": [
     {
      "shot": "s16.list",
-     "text": "उदाहरण दोन: स्वतःचा स्कॅन. यादी निवडा, इथे F&O stocks, Daily वर."
+     "text": "उदाहरण दोन: स्वतःचा स्कॅन. इथे F&O stocks, Daily वर."
     },
     {
      "shot": "s16.blank",
-     "text": "Template वर टॅप करा, मग Blank: I add conditions."
+     "text": "Template, मग Blank: I add conditions वर टॅप करा."
     },
     {
      "shot": "s16.category",
-     "text": "Category निवडा आणि जोडा. Trend निवडा, is तसेच ठेवा, आणि UPTREND वर टिक करा."
+     "text": "Category जोडा: Trend, is, UPTREND."
     },
     {
      "shot": "s16.filter",
-     "text": "Filter निवडा आणि NearSupport जोडा."
+     "text": "Filter जोडा: NearSupport."
     },
     {
      "shot": "s16.pattern",
-     "text": "अजून एक Filter जोडा: PatternBullish."
+     "text": "अजून एक Filter: PatternBullish."
     },
     {
      "shot": "s16.conds",
-     "text": "तीन अटी; तिन्ही पूर्ण झाल्या तरच match होतो."
+     "text": "तीन अटी; तिन्ही पूर्ण झाल्या तरच match."
     },
     {
      "shot": "s16.run",
-     "text": "स्कॅनला नाव द्या, Save करा, आणि Run दाबा."
+     "text": "नाव द्या, Save करा, Run दाबा."
     },
     {
      "shot": "s16.empty",
-     "text": "एखाद्या अटीने सगळे स्टॉक्स बाद झाले, तर एक सूचना तसे सांगते. कोणता भाग स्टॉक्स काढतो ते पाहण्यासाठी ती अट सैल करा, किंवा थोडा वेळ बंद करा."
+     "text": "एखाद्या अटीने सगळे स्टॉक्स बाद झाले, तर सूचना सांगते. कोणती अट ते पाहण्यासाठी ती सैल करा, किंवा थोडा वेळ बंद करा."
     },
     {
      "shot": "s16.empty",
@@ -108,19 +111,19 @@
   {
    "n": 17,
    "title": "उदाहरण 3: group आणि alert",
-   "target_s": 55,
+   "target_s": 65,
    "lines": [
     {
      "shot": "s17.group",
-     "text": "उदाहरण तीनमध्ये group वापरतो. Group निवडा आणि जोडा."
+     "text": "उदाहरण तीन: group. Group निवडा आणि जोडा."
     },
     {
      "shot": "s17.any",
-     "text": "Any of these group त्यातील कोणताही एक ब्लॉक पूर्ण झाला तरी पास होतो: हे किंवा ते."
+     "text": "Any of these group मधील कोणताही एक ब्लॉक पूर्ण झाला तरी पास."
     },
     {
      "shot": "s17.any",
-     "text": "Extra screen functions सुरू असतील, तर RsiDivergence filter आणि volume ची अट याच पद्धतीने जोडता येते."
+     "text": "Extra screen functions सुरू असतील, तर RsiDivergence आणि volume ची अट अशीच जोडता येते."
     },
     {
      "shot": "s17.open",
@@ -128,11 +131,7 @@
     },
     {
      "shot": "s17.dialog",
-     "text": "When the bar closes हा पर्याय तसाच ठेवा; bar अंतिम असतो म्हणून तो सुचवलेला पर्याय आहे."
-    },
-    {
-     "shot": "s17.dialog",
-     "text": "संदेश Telegram वर हवा असेल, तर त्याच विंडोमध्ये Telegram जोडा."
+     "text": "When the bar closes तसाच ठेवा; bar अंतिम असतो म्हणून हा सुचवलेला पर्याय. Telegram इथेच जोडता येतो."
     },
     {
      "shot": "s17.create",
@@ -140,7 +139,7 @@
     },
     {
      "shot": "s17.done",
-     "text": "Alert सुरू झाला. Alert फक्त तुम्हाला कळवतो; तो कधीही ऑर्डर टाकत नाही किंवा बदलत नाही."
+     "text": "Alert सुरू झाला. तो फक्त कळवतो; कधीही ऑर्डर टाकत किंवा बदलत नाही."
     },
     {
      "shot": "s17.done",

@@ -5,7 +5,8 @@ import { settle, videoWorld, type WorldOptions } from "./videoWorld";
 /**
  * M92 V2: the 19 scenes of the "Find setups" series (docs/video/EPISODES.md; the outline's scene numbers). Each scene
  * opens its own made-up world and takes one still per beat; the beat ids are the `shot` ids of the script lines
- * (docs/video/scripts/E*.json). The drawings (scenes 1, 2, 13, 14, 19) are cards drawn over the page.
+ * (docs/video/scripts/E*.json). The drawings (scenes 1, 2, 7, 13, 14, 18, 19) are cards drawn over the page, in the
+ * episode's language (Director.t, docs/video/scripts/cards.json).
  */
 
 export const EPISODES: Record<string, number[]> = {
@@ -84,8 +85,8 @@ const SECTIONS: [string, string, number][] = [
   ["P", "Market zones", 4], ["Q", "Wave count", 16], ["R", "Company data, ownership, events", 16],
 ];
 
-/** Made-up candles: closed ones in solid colour, the forming one dashed. No axis, no numbers. */
-const CANDLES = (() => {
+/** Made-up candles: closed ones in solid colour, the forming one dashed. No axis, no numbers. Labels in the card's language. */
+const CANDLES = (d: Director) => {
   const c = [[60, 40, 70, 30], [42, 55, 62, 36], [55, 48, 66, 44], [48, 62, 70, 45], [62, 74, 80, 58], [74, 68, 82, 64], [68, 80, 88, 66]];
   const y = (v: number) => 260 - v * 2.6;
   const bars = c.map(([o, cl, h, l], i) => {
@@ -95,38 +96,40 @@ const CANDLES = (() => {
         stroke="${last ? "#94a3b8" : col}" stroke-width="3" ${last ? "stroke-dasharray=\"6 5\"" : ""}/>`;
   }).join("");
   return `<svg viewBox="0 0 540 280" style="width:70%;display:block;margin:2vmin auto">${bars}
-    <text x="40" y="275" fill="#cbd5e1" font-size="16">closed candles: final, never change</text>
-    <text x="440" y="275" fill="#94a3b8" font-size="16">forming</text></svg>`;
-})();
+    <text x="40" y="275" fill="#cbd5e1" font-size="16">${d.t("closed candles: final, never change")}</text>
+    <text x="440" y="275" fill="#94a3b8" font-size="16">${d.t("forming")}</text></svg>`;
+};
 
-const STEP = (n: number, title: string, sub: string) => `<div class="step"><b>${n}. ${title}</b><span>${sub}</span></div>`;
+const STEP = (d: Director, n: number, title: string, sub: string) =>
+  `<div class="step"><b>${n}. ${d.t(title)}</b><span>${d.t(sub)}</span></div>`;
 
 export const SCENES: Record<number, (d: Director) => Promise<void>> = {
   // 1 - what a screener is: the five-step flow, then the funnel
   1: async (d) => {
     await open(d, "/screener");
     await d.card("s01.flow", `<h1>Find setups</h1><div class="flow">${[
-      STEP(1, "Pick a list", "an index, a sector, your watchlist"),
-      STEP(2, "Pick a chart", "Daily, Weekly, 15 min ..."),
-      STEP(3, "Pick a scan", "ready scan, template or your own"),
-      STEP(4, "Run", "closed candles, each stock"),
-      STEP(5, "Read results", "Matched N of M")].join("")}</div>`);
-    await d.card("s01.funnel", `<h2>What happens when you press Run</h2><div class="flow" style="flex-direction:column;max-width:70%">
-      <div class="step"><b>Your list: 50 stocks</b><span>closed candles of each one are read</span></div>
-      <div class="step" style="margin:0 6%"><b>Condition 1: 18 still in</b><span>32 did not meet it</span></div>
-      <div class="step" style="margin:0 14%"><b>Condition 2: 6 still in</b><span>12 more did not meet it</span></div>
-      <div class="step yes" style="margin:0 22%"><b>Matched 6 of 50</b><span>every condition passed</span></div></div>
-      <p class="note">Made-up counts.</p>`);
+      STEP(d, 1, "Pick a list", "an index, a sector, your watchlist"),
+      STEP(d, 2, "Pick a chart", "Daily, Weekly, 15 min ..."),
+      STEP(d, 3, "Pick a scan", "ready scan, template or your own"),
+      STEP(d, 4, "Run", "closed candles, each stock"),
+      STEP(d, 5, "Read results", "Matched N of M")].join("")}</div>`);
+    await d.card("s01.funnel", `<h2>${d.t("What happens when you press Run")}</h2><div class="flow" style="flex-direction:column;max-width:70%">
+      <div class="step"><b>${d.t("Your list: 50 stocks")}</b><span>${d.t("closed candles of each one are read")}</span></div>
+      <div class="step" style="margin:0 6%"><b>${d.t("Condition 1: 18 still in")}</b><span>${d.t("32 did not meet it")}</span></div>
+      <div class="step" style="margin:0 14%"><b>${d.t("Condition 2: 6 still in")}</b><span>${d.t("12 more did not meet it")}</span></div>
+      <div class="step yes" style="margin:0 22%"><b>${d.t("Matched 6 of 50")}</b><span>${d.t("every condition passed")}</span></div></div>
+      <p class="note">${d.t("Made-up counts.")}</p>`);
   },
   // 2 - what it does NOT do: the red box
   2: async (d) => {
     await open(d, "/screener");
-    await d.card("s02.red", `<h1>What Find setups does NOT do</h1><div class="red"><ul>
-      <li>A match is information: not a signal to trade and not advice.</li>
-      <li>It does not rank stocks as good or bad, and says nothing about what price does next.</li>
-      <li>It never places, changes or cancels an order. An alert only tells you.</li>
-      <li>It adds no hidden rule: every condition is on screen.</li>
-      <li>It decides on closed candles only.</li></ul></div>`);
+    const red = ["A match is information: not a signal to trade and not advice.",
+      "It does not rank stocks as good or bad, and says nothing about what price does next.",
+      "It never places, changes or cancels an order. An alert only tells you.",
+      "It adds no hidden rule: every condition is on screen.",
+      "It decides on closed candles only."];
+    await d.card("s02.red", `<h1>${d.t("What Find setups does NOT do")}</h1><div class="red"><ul>
+      ${red.map((l) => `<li>${d.t(l)}</li>`).join("")}</ul></div>`);
   },
   // 3 - sign in (nothing is typed: no email on screen)
   3: async (d) => {
@@ -176,7 +179,16 @@ export const SCENES: Record<number, (d: Director) => Promise<void>> = {
     await d.shot("s05.chart", page.getByTestId("hero-chart"));
     await d.shot("s05.start", page.getByRole("tablist", { name: "Start a scan" }));
     await d.step("s05.conditions", () => d.shot("s05.conditions", page.getByTestId("conditions-toggle").first()));
-    await d.step("s05.results", () => d.shot("s05.results", page.getByTestId("results-empty")));
+    // The empty-results line shows only on a wide page (the app hides it on a phone, where the results appear under
+    // Conditions after a run): the phone cut points at Run in the bottom bar instead, with the page scrolled down.
+    await d.step("s05.results", async () => {
+      if (d.phone) {
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await d.shot("s05.results", runButton(d));
+      } else {
+        await d.shot("s05.results", page.getByTestId("results-empty"));
+      }
+    });
     await d.step("s05.more", async () => {
       await d.click("s05.more", page.getByTestId("screener-more"));
       await d.shot("s05.tools", page.getByTestId("screener-more-list"), { cursor: false });
@@ -216,7 +228,7 @@ export const SCENES: Record<number, (d: Director) => Promise<void>> = {
       await page.keyboard.press("Escape");
     });
     await d.shot("s07.daily", tf);
-    await d.card("s07.candles", `<h1>Closed candle and forming candle</h1>${CANDLES}<p class="note">Made-up candles.</p>`);
+    await d.card("s07.candles", `<h1>${d.t("Closed candle and forming candle")}</h1>${CANDLES(d)}<p class="note">${d.t("Made-up candles.")}</p>`);
     await d.step("s07.done", () => d.click("s07.done", page.getByTestId("list-done")));
     await d.shot("s07.chart", page.getByTestId("hero-chart"));
   },
@@ -288,14 +300,14 @@ export const SCENES: Record<number, (d: Director) => Promise<void>> = {
     await d.step("s12.hidden", () => d.shot("s12.hidden", page.getByTestId("results-hidden").first()));
     await d.step("s12.chart", () => d.shot("s12.chart", page.getByTestId("show-on-chart").first()));
   },
-  // 13 - where the data comes from (M86 shipped: end-of-day for users without a broker)
+  // 13 - where the data comes from (M86 + M90 shipped: the store's end-of-day history for users without a broker; the
+  // source is named in the "Ran at" pill's tooltip - the Find setups page itself has no "Last close" label or banner)
   13: async (d) => {
     const page = await findSetups(d);
-    await d.card("s13.card", `<h1>Where the data comes from</h1><div class="flow">
-      <div class="step yes"><b>Your own broker connected</b><span>Every chart, 1 min to Monthly. Paced inside your broker's limits.</span></div>
-      <div class="step no"><b>No broker</b><span>Daily, Weekly, Monthly from ATP's stored end-of-day history (Last close &lt;date&gt;). 1 min to 1 hour: connect your broker.</span></div>
-      </div><p class="note">No shared live data: live data comes only from your own broker.</p>`);
-    await d.step("s13.banner", () => d.shot("s13.banner", page.getByText(/end-of-day/i).first()));
+    await d.card("s13.card", `<h1>${d.t("Where the data comes from")}</h1><div class="flow">
+      <div class="step yes"><b>${d.t("Your own broker connected")}</b><span>${d.t("Every chart, 1 min to Monthly. Paced inside your broker's limits.")}</span></div>
+      <div class="step no"><b>${d.t("No broker")}</b><span>${d.t("Daily, Weekly, Monthly from ATP's stored end-of-day history. 1 min to 1 hour: connect your broker.")}</span></div>
+      </div><p class="note">${d.t("No shared live data: live data comes only from your own broker.")}</p>`);
     await template(d, "Momentum");
     await run(d);
     await d.step("s13.pill", () => d.shot("s13.pill", page.getByRole("status").filter({ hasText: "Ran at" }).first()));
@@ -303,8 +315,8 @@ export const SCENES: Record<number, (d: Director) => Promise<void>> = {
   // 14 - function families: the groups A to R with their counts
   14: async (d) => {
     await findSetups(d);
-    await d.card("s14.groups", `<h2>169 building blocks in 18 groups</h2><div class="grid">${SECTIONS.map(([k, name, n]) =>
-      `<div>${k}. ${name}<i>${n}</i></div>`).join("")}</div><p class="note">Some groups show only when switched on.</p>`);
+    await d.card("s14.groups", `<h2>${d.t("169 building blocks in 18 groups")}</h2><div class="grid">${SECTIONS.map(([k, name, n]) =>
+      `<div>${k}. ${d.t(name)}<i>${n}</i></div>`).join("")}</div><p class="note">${d.t("Some groups show only when switched on.")}</p>`);
     await d.step("s14.kinds", async () => {
       const page = d.page;
       await template(d, "Momentum");
@@ -365,22 +377,23 @@ export const SCENES: Record<number, (d: Director) => Promise<void>> = {
   18: async (d) => {
     const page = await findSetups(d);
     await d.step("s18.why", () => d.shot("s18.why", runWhy(d)));
-    await d.card("s18.table", `<h2>Messages and what to do</h2><div class="grid" style="grid-template-columns:1fr">
-      <div>Your broker login has ended.<i>Log in</i></div>
-      <div>Daily history for this stock is not stored yet.<i>Log in</i></div>
-      <div>Connect your broker for intraday bars.<i>Log in</i></div>
-      <div>The broker's request limit was reached.<i>Retry</i></div>
-      <div>The broker could not be reached.<i>Retry</i></div>
-      <div>No closed bars came back for this timeframe.<i>Try another timeframe</i></div>
-      <div>Too little history for its indicators.<i>Try another timeframe</i></div>
-      <div>Matched 0 of 50: no stock met all the conditions.<i>Loosen or switch off one</i></div></div>`);
+    const rows: [string, string][] = [
+      ["Your broker login has ended.", "Log in"], ["Daily history for this stock is not stored yet.", "Log in"],
+      ["Connect your broker for intraday bars.", "Log in"], ["The broker's request limit was reached.", "Retry"],
+      ["The broker could not be reached.", "Retry"], ["No closed bars came back for this timeframe.", "Try another timeframe"],
+      ["Too little history for its indicators.", "Try another timeframe"],
+      ["Matched 0 of 50: no stock met all the conditions.", "Loosen or switch off one"]];
+    // The button names stay as the app shows them (English UI); only the explanation is in the episode's language.
+    const button = (b: string) => (b === "Loosen or switch off one" ? d.t(b) : b);
+    await d.card("s18.table", `<h2>${d.t("Messages and what to do")}</h2><div class="grid" style="grid-template-columns:1fr">
+      ${rows.map(([m, b]) => `<div>${d.t(m)}<i>${button(b)}</i></div>`).join("")}</div>`);
     void page;
   },
   // 19 - close
   19: async (d) => {
     await findSetups(d);
-    await d.card("s19.close", `<h1>Conditions on data</h1><p>For your own study and your own decision.</p>
-      <div class="red"><ul><li>A match is information, not a signal and not advice.</li>
-      <li>Scans and alerts never place, change or cancel an order.</li></ul></div>`);
+    await d.card("s19.close", `<h1>${d.t("Conditions on data")}</h1><p>${d.t("For your own study and your own decision.")}</p>
+      <div class="red"><ul><li>${d.t("A match is information, not a signal and not advice.")}</li>
+      <li>${d.t("Scans and alerts never place, change or cancel an order.")}</li></ul></div>`);
   },
 };

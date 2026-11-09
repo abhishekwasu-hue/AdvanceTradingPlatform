@@ -2,7 +2,11 @@
  "episode": "E1",
  "lang": "en",
  "title": "Find setups 1: What it is, and the page",
- "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `verify` marks a line written for shipped behaviour to check on the live site before recording.",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
  "intro": {
   "kicker": "ATP education",
   "title": "Find setups 1: What it is, and the page",
@@ -23,7 +27,7 @@
   {
    "n": 1,
    "title": "What a screener is",
-   "target_s": 30,
+   "target_s": 40,
    "lines": [
     {
      "shot": "s01.flow",
@@ -31,15 +35,11 @@
     },
     {
      "shot": "s01.flow",
-     "text": "Five steps: pick a list, pick a chart, pick a scan, run it, and read the results."
+     "text": "Five steps: pick a list, a chart and a scan, run it, and read the results."
     },
     {
      "shot": "s01.funnel",
-     "text": "When you press Run, every condition narrows the list. A stock is a match only when it passes all of them."
-    },
-    {
-     "shot": "s01.funnel",
-     "text": "The counts in this drawing are made up."
+     "text": "Each condition narrows the list. A stock matches only when it passes all of them. The counts here are made up."
     },
     {
      "shot": "s01.funnel",
@@ -51,15 +51,15 @@
   {
    "n": 2,
    "title": "What it does not do",
-   "target_s": 25,
+   "target_s": 35,
    "lines": [
     {
      "shot": "s02.red",
-     "text": "Now, what it does not do. A match is information: not a signal to trade, and not advice."
+     "text": "What it does not do: a match is information, not a signal to trade and not advice."
     },
     {
      "shot": "s02.red",
-     "text": "It does not rank stocks as good or bad, and it says nothing about what price does next."
+     "text": "It does not rank stocks as good or bad, or say what price does next."
     },
     {
      "shot": "s02.red",
@@ -75,23 +75,19 @@
   {
    "n": 3,
    "title": "Sign in",
-   "target_s": 30,
+   "target_s": 45,
    "lines": [
     {
      "shot": "s03.screen",
-     "text": "Open the ATP website on your phone or computer. You see the Sign in screen."
+     "text": "Open the ATP website on your phone or computer. The Sign in screen appears."
     },
     {
      "shot": "s03.screen",
-     "text": "Where your team has set them up, sign-in buttons such as Continue with Google sit at the top."
+     "text": "Where your team set them up, buttons such as Continue with Google sit at the top."
     },
     {
      "shot": "s03.email",
-     "text": "Or type your email here."
-    },
-    {
-     "shot": "s03.password",
-     "text": "Then your password."
+     "text": "Or type your email here, then your password."
     },
     {
      "shot": "s03.submit",
@@ -111,15 +107,15 @@
   {
    "n": 4,
    "title": "Open Find setups",
-   "target_s": 30,
+   "target_s": 40,
    "lines": [
     {
      "shot": "s04.menu",
-     "text": "On a computer, Find setups is in the left menu, under Find. On a phone, tap it in the bar at the bottom."
+     "text": "On a computer, Find setups is in the left menu, under Find. On a phone, tap it in the bottom bar."
     },
     {
      "shot": "s04.more",
-     "text": "Not in the bar? Tap More, and type scan in the search box."
+     "text": "Not in the bar? Tap More and search for scan."
     },
     {
      "shot": "s04.search",
@@ -127,11 +123,7 @@
     },
     {
      "shot": "s04.page",
-     "text": "The page opens: Find setups. Scan your list for the setups you pick."
-    },
-    {
-     "shot": "s04.page",
-     "text": "If you see Coming soon instead, the screener is not switched on for your organisation yet. Ask your administrator."
+     "text": "If you see Coming soon, it is not switched on for your organisation yet. Ask your administrator."
     },
     {
      "shot": "s04.page",
@@ -143,15 +135,15 @@
   {
    "n": 5,
    "title": "A tour of the page",
-   "target_s": 45,
+   "target_s": 50,
    "lines": [
     {
      "shot": "s05.overview",
-     "text": "Here is a tour of the page, from top to bottom."
+     "text": "A quick tour of the page, top to bottom."
     },
     {
      "shot": "s05.list",
-     "text": "Your list: which stocks are scanned. Press Change to pick another list."
+     "text": "Your list: the stocks that are scanned. Change picks another list."
     },
     {
      "shot": "s05.chart",
@@ -159,30 +151,26 @@
     },
     {
      "shot": "s05.start",
-     "text": "Start a scan: three ways in. A ready scan, a template, or your own words."
+     "text": "Start a scan: a ready scan, a template, or your own words."
     },
     {
      "shot": "s05.conditions",
-     "text": "Conditions: the conditions of the current scan. It opens when you pick a scan."
+     "text": "Conditions: the current scan's conditions."
     },
     {
      "shot": "s05.results",
-     "text": "Results: empty until your first run."
+     "text": "Results: they appear after your first run."
     },
     {
      "shot": "s05.more",
-     "text": "More tools holds the less used tools."
+     "text": "More tools holds the rest."
     },
     {
      "shot": "s05.tools",
-     "text": "Browse all screens, Past runs, Rankings, Look back and Advanced. Each one shows only when it is switched on."
+     "text": "Each one shows only when it is switched on."
     },
     {
-     "shot": "s05.overview",
-     "text": "Your list, Chart, Start a scan, Conditions, Results. The next episode starts with your list."
-    },
-    {
-     "shot": "s05.overview",
+     "shot": "s05.tools",
      "end": true,
      "text": "Information and education only, not investment advice."
     }

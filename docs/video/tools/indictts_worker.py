@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""M92: the local Marathi voice (AI4Bharat Indic-TTS, FastPitch + HiFi-GAN), run inside its own venv by tools/tts.py.
+"""M92: the local voice (AI4Bharat Indic-TTS, FastPitch + HiFi-GAN; one model per language: Marathi, Indian English),
+run inside its own venv by tools/tts.py.
 
 The model is loaded once; then one request per line on stdin, one answer per line on stdout:
 
-    {"text": "...", "speaker": "female" | "male", "out": "/path/clip.wav"}
+    {"text": "...", "speaker": "female" | "male", "out": "/path/clip.wav", "pace": 1.0}
     -> {"ok": true, "seconds": 4.2, "unknown": []}      (unknown = characters the model cannot read, dropped by it)
 
     python -I indictts_worker.py --check MODEL_DIR       (load the model, say one word, exit)
@@ -43,9 +44,10 @@ def load(model_dir: Path):
     return synth, known
 
 
-def say(synth, known: set, text: str, speaker: str, out: str) -> dict:
+def say(synth, known: set, text: str, speaker: str, out: str, pace: float = 1.0) -> dict:
     if speaker not in SPEAKERS:
         return {"ok": False, "error": f"unknown speaker {speaker!r}; one of {', '.join(SPEAKERS)}"}
+    synth.tts_model.length_scale = float(pace)          # FastPitch durations x pace (above 1 = slower)
     unknown = sorted({c for c in text if c not in known and not c.isspace()})
     wav = synth.tts(text, speaker_name=speaker)
     synth.save_wav(wav, out)
@@ -59,7 +61,8 @@ def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] == "--check":
         synth, known = load(Path(sys.argv[2]))
         with tempfile.TemporaryDirectory() as d:
-            r = say(synth, known, "नमस्कार.", "female", str(Path(d) / "check.wav"))
+            word = "नमस्कार." if "न" in known else "Hello."          # the model's own script: Marathi or English
+            r = say(synth, known, word, "female", str(Path(d) / "check.wav"))
         print(f"[indictts] model OK ({r['seconds']:.1f} s test clip)", file=sys.stderr)
         return 0
     if len(sys.argv) != 2:
@@ -72,7 +75,7 @@ def main() -> int:
             continue
         try:
             req = json.loads(raw)
-            res = say(synth, known, req["text"], req.get("speaker", "female"), req["out"])
+            res = say(synth, known, req["text"], req.get("speaker", "female"), req["out"], req.get("pace", 1.0))
         except Exception as e:                       # one bad line must not kill the worker; the caller decides
             res = {"ok": False, "error": f"{type(e).__name__}: {e}"}
         answers.write(json.dumps(res, ensure_ascii=False) + "\n")

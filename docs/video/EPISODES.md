@@ -1,6 +1,6 @@
 # M92 V1 - "Find setups" episode map
 
-Source: the 19-scene outline and the Find setups guide (screener guide). Six episodes, 2 to 4 minutes each. Every scene
+Source: the 19-scene outline and the Find setups guide (screener guide). Six episodes, 3 to 4 minutes each (Marathi; the English voice is faster). Every scene
 ends with "Information and education only, not investment advice." Scripts: `scripts/<E>.<lang>.json`; stills:
 `frontend/e2e/video/scenes.ts` (one function per scene).
 
@@ -16,18 +16,17 @@ ends with "Information and education only, not investment advice." Scripts: `scr
 Lengths are the sum of the placeholder (espeak-ng) clips plus the pauses and cards; a neural voice will differ. Real lengths depend on the voice: the build prints each scene's length against its `target_s` and warns when an episode
 is outside 2 to 4 minutes.
 
-## Lines written for the shipped behaviour - verify after the M90 deploy
+## Lines checked against the shipped app (M86 + M90 live)
 
-| Scene | Line | Shipped by |
+| Scene | Line | Shipped code it follows |
 |---|---|---|
-| 6 | "A list can hold up to five hundred stocks, and Run scans the whole list. There is no fixed batch of fifty." | M90 (PR #953, not merged when written) |
-| 6 | "During a run, a line shows how far it is, for example 120 / 500 done. If your broker's limit slows it down, the line says so." | M90 |
-| 13 | "Without a broker: Daily, Weekly and Monthly from ATP's stored end-of-day history. These candles carry the label Last close, with the date." | M86 (on main) |
-| 13 | "The page says it at the top: Daily scans run on the last close from the end-of-day files; intraday scans need your broker." | M86 |
+| 6 | "A list holds up to five hundred stocks, and Run scans all of them, within your broker's limits. There is no fixed fifty." | `screener/universe.ts` (`max_symbols` 500, `RUN_MAX` 50 = one ordinary run; a longer list is streamed in batches), `universe-batches` note |
+| 6 | "During a run, a line shows the progress, for example 120 / 500 done. If your broker's limit slows it, it says Slowed by broker limit." | `ScreenerPage.tsx` `scan-progress` ("N / M done", "Slowed by broker limit") |
+| 13 | "Without a broker: Daily, Weekly and Monthly from ATP's stored end-of-day history. For 1 minute to 1 hour, connect your broker." | `screener/routes.py` `_store_frames` (1d / 1w / 1M from the NSE daily files; intraday from the reader's own broker) |
+| 13 | "After a run, hover over the time pill: it names the source, your broker or ATP's stored end-of-day history." | `FreshnessPill.tsx` (`sourceWords`: the pill's tooltip) |
 
-These lines carry `"verify": "verify after M90 deploy"` in both scripts. Before the final recording: check them on the
-live site, re-capture E2 and E4 (the stills then show the deployed screens), and adjust a line only if the live wording
-differs.
+Dropped: the "Last close, with the date" label and the "end-of-day banner at the top" - the Find setups page has
+neither (the "Last close <date>" line belongs to the watchlist on Charts); the scene 13 card no longer shows it.
 
 ## Before recording (from the outline)
 

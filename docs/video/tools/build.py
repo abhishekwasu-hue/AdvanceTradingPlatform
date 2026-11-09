@@ -8,8 +8,8 @@ Steps (each one re-runnable; nothing is written into the repository):
              intro / outro cards - frontend/e2e/video/*.ts, one test per scene;
   3. voice   one clip per script line with the chosen TTS provider (tools/tts.py; offline placeholder by default);
   4. picture one clip per run of lines on the same still: a slow zoom on the element the line talks about;
-  5. join    intro card, scenes, outro card; the SRT from the real clip lengths; subtitles burned in;
-             H.264 + AAC MP4 and the SRT next to it.
+  5. join    intro card, scenes, outro card; the SRT from the real clip lengths; subtitles burned in (an ASS file
+             rendered by libass with complex text shaping, so Devanagari conjuncts join); H.264 + AAC MP4 and the SRT.
 
 Outputs: <out>/<E>.<lang>.<form>.mp4 and <out>/<E>.<lang>.<form>.srt (form = desktop 1920x1080 or phone 1080x1920).
 """
@@ -43,11 +43,15 @@ SIZE = {"desktop": (1920, 1080), "phone": (1080, 1920)}
 RULES = json.loads((SCRIPTS / "rules.json").read_text(encoding="utf-8"))
 END_LINE: Dict[str, str] = {lang: r["end_line"] for lang, r in RULES.items()}
 FORBIDDEN = {lang: re.compile(r["forbidden"], re.I) for lang, r in RULES.items()}
-SUB_STYLE = {
-    "desktop": {"en": "FontName=Inter,FontSize=15,MarginV=14", "mr": "FontName=Lohit Marathi,FontSize=17,MarginV=14"},
-    "phone": {"en": "FontName=Inter,FontSize=9,MarginV=34", "mr": "FontName=Lohit Marathi,FontSize=10,MarginV=34"},
-}
-SUB_COMMON = "BorderStyle=3,Outline=2,Shadow=0,BackColour=&H90000000,PrimaryColour=&H00FFFFFF,Alignment=2,WrapStyle=0"
+# Burned-in subtitles: an ASS file in frame pixels (PlayRes = the frame), drawn by libass with COMPLEX shaping
+# (HarfBuzz) - ffmpeg's `subtitles` filter on an SRT uses simple shaping, which splits Devanagari conjuncts. The fonts:
+# a Devanagari font with its own shaping tables (Lohit Marathi: apt fonts-lohit-deva-marathi; or ATP_VIDEO_FONT_MR,
+# e.g. "Noto Sans Devanagari"); English: Inter, else the system sans.
+FONT = {"en": os.environ.get("ATP_VIDEO_FONT_EN", "Inter"), "mr": os.environ.get("ATP_VIDEO_FONT_MR", "Lohit Marathi")}
+LATIN_FONT = os.environ.get("ATP_VIDEO_FONT_LATIN", "FreeSans")     # the Latin words inside a Marathi subtitle
+SUB_SIZE = {"desktop": {"en": 52, "mr": 58, "margin_v": 48, "margin_lr": 120},
+            "phone": {"en": 54, "mr": 60, "margin_v": 230, "margin_lr": 60}}
+CRF = int(os.environ.get("ATP_VIDEO_CRF", "28"))     # the final MP4: stills compress well; ~28 keeps an episode small
 
 
 def log(msg: str) -> None:
@@ -98,6 +102,8 @@ def chromium() -> Optional[str]:
 
 
 def capture(episode: str, lang: str, forms: List[str], shots: Path, script: dict, skip_build: bool) -> None:
+    """The stills of one episode in one language: the cards drawn over the page (scenes 1, 2, 7, 13, 14, 18, 19) are in
+    the episode's language (VIDEO_LANG; the words come from scripts/cards.json, VIDEO_TEXT)."""
     if not (FRONTEND / "node_modules").exists():
         raise SystemExit("frontend/node_modules is missing: run `npm ci` in frontend/ (or symlink it) first")
     if not skip_build:
@@ -107,7 +113,8 @@ def capture(episode: str, lang: str, forms: List[str], shots: Path, script: dict
     cards = [{"file": f"intro-{lang}.png", **script["intro"]}, {"file": f"outro-{lang}.png", **script["outro"]}]
     cards_file = shots / f"cards-{lang}.json"
     cards_file.write_text(json.dumps(cards, ensure_ascii=False), encoding="utf-8")
-    env = {**os.environ, "VIDEO_EPISODE": episode, "VIDEO_SHOTS": str(shots), "VIDEO_CARDS": str(cards_file)}
+    env = {**os.environ, "VIDEO_EPISODE": episode, "VIDEO_SHOTS": str(shots), "VIDEO_CARDS": str(cards_file),
+           "VIDEO_LANG": lang, "VIDEO_TEXT": str(SCRIPTS / "cards.json")}
     exe = chromium()
     if exe:
         env["PW_CHROMIUM"] = exe
@@ -170,6 +177,34 @@ def still_clip(png: Path, focus: Optional[dict], seconds: float, size: Tuple[int
 def srt_time(t: float) -> str:
     ms = int(round(t * 1000))
     return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
+
+
+def ass_time(t: float) -> str:
+    cs = int(round(t * 100))
+    return f"{cs // 360000:d}:{cs // 6000 % 60:02d}:{cs // 100 % 60:02d}.{cs % 100:02d}"
+
+
+def ass_file(subs: List[Tuple[float, float, str]], lang: str, form: str) -> str:
+    """The subtitles as ASS in frame pixels: white text on a dark box, bottom centre, smart wrapping."""
+    w, h = SIZE[form]
+    z = SUB_SIZE[form]
+    head = ("[Script Info]\nScriptType: v4.00+\nWrapStyle: 0\nScaledBorderAndShadow: yes\n"
+            f"PlayResX: {w}\nPlayResY: {h}\n\n[V4+ Styles]\n"
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
+            "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, "
+            "MarginV, Encoding\n"
+            f"Style: Default,{FONT[lang]},{z[lang]},&H00FFFFFF,&H00FFFFFF,&H00141414,&H00141414,0,0,0,0,100,100,0,0,3,10,0,2,"
+            f"{z['margin_lr']},{z['margin_lr']},{z['margin_v']},1\n\n[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
+    def clean(t: str) -> str:
+        t = t.replace("{", "(").replace("}", ")").replace("\n", " ")
+        if lang == "mr":
+            # The Devanagari font has no Latin letters of its own; the fallback draws them too big. App words in a
+            # Marathi line (Run, Matched 6 of 50 ...) get a Latin font at a matching size. (Opaque box: no seams.)
+            latin = f"{{\\fn{LATIN_FONT}\\fs{round(z[lang] * 0.86)}}}"
+            t = re.sub(r"[A-Za-z0-9][A-Za-z0-9&/' .:-]*[A-Za-z0-9]|[A-Za-z0-9]", lambda m: f"{latin}{m.group(0)}{{\\r}}", t)
+        return t
+    return head + "".join(f"Dialogue: 0,{ass_time(a)},{ass_time(b)},Default,,0,0,0,,{clean(t)}\n" for a, b, t in subs)
 
 
 def build_form(episode: str, lang: str, form: str, script: dict, shots: Path, out_dir: Path, work: Path,
@@ -257,11 +292,13 @@ def build_form(episode: str, lang: str, form: str, script: dict, shots: Path, ou
     srt = out_dir / f"{name}.srt"
     srt.write_text("".join(f"{i}\n{srt_time(a)} --> {srt_time(b)}\n{t}\n\n" for i, (a, b, t) in enumerate(subs, 1)), encoding="utf-8")
     mp4 = out_dir / f"{name}.mp4"
-    style = f"{SUB_STYLE[form][lang]},{SUB_COMMON}"
-    sub_arg = str(srt).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+    ass = work / "subs.ass"
+    ass.write_text(ass_file(subs, lang, form), encoding="utf-8")
+    sub_arg = str(ass).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
     run(["ffmpeg", "-v", "error", "-y", "-i", str(work / "picture.mp4"), "-i", str(work / "voice.wav"),
-         "-vf", f"subtitles='{sub_arg}':force_style='{style}'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
-         "-pix_fmt", "yuv420p", "-profile:v", "high", "-c:a", "aac", "-b:a", "96k", "-shortest", "-movflags", "+faststart", str(mp4)])
+         "-vf", f"ass='{sub_arg}':shaping=complex", "-c:v", "libx264", "-preset", "medium", "-crf", str(CRF), "-tune", "stillimage",
+         "-pix_fmt", "yuv420p", "-profile:v", "high", "-c:a", "aac", "-b:a", "80k", "-ac", "1", "-shortest",
+         "-movflags", "+faststart", str(mp4)])
     shutil.rmtree(work, ignore_errors=True)
     log(f"{name}: {clock:.0f} s - " + "; ".join(scene_lengths))
     return mp4, srt, clock, notes
@@ -276,6 +313,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--allow-paid", action="store_true", help="let a paid TTS service run (owner approval first)")
     ap.add_argument("--out", default=os.environ.get("ATP_VIDEO_OUT", str(REPO.parent / "atp-video-out")),
                     help="output folder (outside git; default ../atp-video-out)")
+    ap.add_argument("--work", default=os.environ.get("ATP_VIDEO_WORK", ""),
+                    help="folder for the stills, the voice cache and the temporary clips (default: the output folder; "
+                         "e.g. /dev/shm on a small disk)")
     ap.add_argument("--reuse-shots", action="store_true", help="skip the capture when the stills are there")
     ap.add_argument("--skip-build", action="store_true", help="skip `npm run build` (the dist/ is current)")
     ap.add_argument("--keep-shots", action="store_true", help="keep the stills after the build")
@@ -297,7 +337,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     for tool in ("ffmpeg", "npx"):
         if not shutil.which(tool):
             raise SystemExit(f"{tool} is not installed")
-    provider = tts.pick(a.tts, a.allow_paid)
+    provider = tts.pick(a.tts, a.allow_paid, a.lang)
     placeholder = provider.name in ("placeholder", "silent")
     log(f"voice: {provider.name}{' (placeholder - not for publishing)' if placeholder else ''}")
     unsaid = tts.unsayable(provider, script)
@@ -306,18 +346,19 @@ def main(argv: Optional[List[str]] = None) -> int:
               file=sys.stderr)
         return 1
     out = Path(a.out).resolve()
-    shots = out / "shots" / episode
+    work_root = Path(a.work).resolve() if a.work else out
+    shots = work_root / "shots" / f"{episode}.{a.lang}"          # per language: the cards are drawn in it
     forms = ["desktop", "phone"] if a.form == "both" else [a.form]
     have = all((shots / f / "cards" / f"intro-{a.lang}.png").exists() for f in forms)
     if not (a.reuse_shots and have):
         capture(episode, a.lang, forms, shots, script, a.skip_build)
     notes: List[str] = []
     for form in forms:
-        mp4, srt, secs, n = build_form(episode, a.lang, form, script, shots, out, out / "work" / f"{episode}-{a.lang}-{form}",
-                                       provider, out / "tts-cache", a.suffix)
+        mp4, srt, secs, n = build_form(episode, a.lang, form, script, shots, out, work_root / "work" / f"{episode}-{a.lang}-{form}",
+                                       provider, work_root / "tts-cache", a.suffix)
         notes += n
-        if not 120 <= secs <= 240:
-            notes.append(f"{form}: {secs:.0f} s is outside the 2-4 minute plan ({provider.name} voice timing)")
+        if not 150 <= secs <= 240:
+            notes.append(f"{form}: {secs:.0f} s is outside the plan (up to 4 minutes; {provider.name} voice timing)")
         log(f"wrote {mp4} ({mp4.stat().st_size / 1e6:.1f} MB) and {srt.name}")
     if not a.keep_shots:
         for form in forms:

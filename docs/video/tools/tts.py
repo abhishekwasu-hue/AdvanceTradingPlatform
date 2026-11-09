@@ -5,8 +5,8 @@
     silent       a silent track timed from the text length (when espeak-ng is not installed)
     azure        Azure AI Speech neural voices (mr-IN-AarohiNeural / mr-IN-ManoharNeural, en-IN) - PAID
     sarvam       Sarvam AI Bulbul (Indian languages) - PAID
-    indictts     AI4Bharat Indic-TTS, Marathi (FastPitch + HiFi-GAN, MIT licence) - free, local, CPU, no key; two
-                 speakers, female and male (install: docs/video/setup_indictts.sh)
+    indictts     AI4Bharat Indic-TTS, Marathi and Indian English (FastPitch + HiFi-GAN, MIT licence) - free, local, CPU,
+                 no key; two speakers per language, female and male (install: docs/video/setup_indictts.sh)
 
 A paid provider runs only with BOTH its key in the environment AND `--allow-paid` on the command line; without either it
 reports itself unavailable and nothing is sent. No key, address or token is ever written to the repository or the logs.
@@ -65,8 +65,11 @@ class Provider:
     def synth(self, text: str, lang: str, out: Path, speaker: Optional[str] = None) -> float:
         raise NotImplementedError
 
-    def unreadable(self, text: str) -> List[str]:
-        """The characters of `text` this provider cannot say (checked before any clip is made)."""
+    def supports(self, lang: str) -> bool:
+        return True
+
+    def unreadable(self, text: str, lang: str = "") -> List[str]:
+        """The characters of `text` this provider cannot say in `lang` (checked before any clip is made)."""
         return []
 
 
@@ -172,19 +175,26 @@ class SarvamTTS(Provider):
 
 
 class IndicTTS(Provider):
-    """AI4Bharat Indic-TTS, Marathi (FastPitch + HiFi-GAN; MIT licence). Free and local: CPU only, no key, no network at
-    run time. Two speakers, `female` (default) and `male`; the episode script picks them per scene (`narrator`).
-    Installed by docs/video/setup_indictts.sh into ATP_INDICTTS_DIR (default ../atp-indictts next to the repository,
-    outside git): its own venv runs tools/indictts_worker.py, which loads the model once for the whole build.
-    The model reads Devanagari only: every line goes through scripts/pronounce.json first."""
+    """AI4Bharat Indic-TTS (FastPitch + HiFi-GAN; MIT licence): Marathi (`mr`) and Indian English (`en`), one model per
+    language. Free and local: CPU only, no key, no network at run time. Two speakers per model, `female` (default) and
+    `male`; the episode script picks them per scene (`narrator`). Installed by docs/video/setup_indictts.sh into
+    ATP_INDICTTS_DIR (default ../atp-indictts next to the repository, outside git): its own venv runs
+    tools/indictts_worker.py, which loads a model once for the whole build. Each model reads only its own characters
+    (Marathi: Devanagari; English: plain Latin letters, some signs): every line goes through scripts/pronounce.json first."""
     name = "indictts"
     own_script_only = True
     SPEAKERS = ("female", "male")
-    LANGS = ("mr",)
+    LANGS = ("mr", "en")
+    # Speaking pace per language (FastPitch `length_scale`: above 1 = slower). The English model speaks fast (about
+    # 160 words a minute); 1.15 brings it near a calm tutorial pace. ATP_INDICTTS_PACE_EN / _MR override it.
+    PACE = {"mr": 1.0, "en": 1.15}
+
+    def pace(self, lang: str) -> float:
+        return float(os.environ.get(f"ATP_INDICTTS_PACE_{lang.upper()}", self.PACE.get(lang, 1.0)))
 
     def __init__(self) -> None:
-        self._proc: Optional[subprocess.Popen] = None
-        self._known: Optional[set] = None
+        self._procs: Dict[str, subprocess.Popen] = {}
+        self._known: Dict[str, set] = {}
 
     @staticmethod
     def home() -> Path:
@@ -193,43 +203,55 @@ class IndicTTS(Provider):
     def _python(self) -> Path:
         return self.home() / "venv" / "bin" / "python"
 
-    def _model(self) -> Path:
-        return self.home() / "mr"
+    def _model(self, lang: str = "mr") -> Path:
+        return self.home() / lang
 
     def voice(self, lang: str, speaker: Optional[str] = None) -> str:
-        return f"indictts:{lang}:{speaker or self.SPEAKERS[0]}"
+        pace = self.pace(lang)
+        return f"indictts:{lang}:{speaker or self.SPEAKERS[0]}" + (f":pace{pace:g}" if pace != 1.0 else "")
+
+    def installed(self) -> List[str]:
+        """The languages whose model is in place."""
+        return [lang for lang in self.LANGS
+                if all((self._model(lang) / d / "best_model.pth").exists() for d in ("fastpitch", "hifigan"))]
 
     def available(self, allow_paid: bool = False) -> Tuple[bool, str]:
         if not self._python().exists():
             return False, f"no venv in {self.home()} (run docs/video/setup_indictts.sh, or set ATP_INDICTTS_DIR)"
-        if not all((self._model() / d / "best_model.pth").exists() for d in ("fastpitch", "hifigan")):
-            return False, f"no model in {self._model()} (run docs/video/setup_indictts.sh)"
-        return True, f"model in {self.home()} (Marathi: female, male)"
+        langs = self.installed()
+        if not langs:
+            return False, f"no model in {self.home()} (run docs/video/setup_indictts.sh)"
+        return True, f"models in {self.home()} ({', '.join(langs)}: female, male)"
 
-    def unreadable(self, text: str) -> List[str]:
-        if self._known is None:
-            cfg = json.loads((self._model() / "fastpitch" / "config.json").read_text(encoding="utf-8"))["characters"]
-            self._known = set(cfg.get("characters") or "") | set(cfg.get("punctuations") or "")
-        return sorted({c for c in text if c not in self._known and not c.isspace()})
+    def supports(self, lang: str) -> bool:
+        return lang in self.installed()
 
-    def _worker(self) -> subprocess.Popen:
-        if self._proc is None or self._proc.poll() is not None:
-            self._proc = subprocess.Popen([str(self._python()), "-I", str(HERE / "indictts_worker.py"), str(self._model())],
-                                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                          text=True, encoding="utf-8", bufsize=1)
-            ready = self._proc.stdout.readline()
+    def unreadable(self, text: str, lang: str = "mr") -> List[str]:
+        if lang not in self._known:
+            cfg = json.loads((self._model(lang) / "fastpitch" / "config.json").read_text(encoding="utf-8"))["characters"]
+            self._known[lang] = set(cfg.get("characters") or "") | set(cfg.get("punctuations") or "")
+        return sorted({c for c in text if c not in self._known[lang] and not c.isspace()})
+
+    def _worker(self, lang: str) -> subprocess.Popen:
+        proc = self._procs.get(lang)
+        if proc is None or proc.poll() is not None:
+            proc = subprocess.Popen([str(self._python()), "-I", str(HERE / "indictts_worker.py"), str(self._model(lang))],
+                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                    text=True, encoding="utf-8", bufsize=1)
+            ready = proc.stdout.readline()
             if not ready.strip():
-                raise TtsUnavailable("indictts: the model did not load (run docs/video/setup_indictts.sh again)")
-        return self._proc
+                raise TtsUnavailable(f"indictts: the {lang} model did not load (run docs/video/setup_indictts.sh again)")
+            self._procs[lang] = proc
+        return proc
 
     def synth(self, text: str, lang: str, out: Path, speaker: Optional[str] = None) -> float:
-        if lang not in self.LANGS:
-            raise TtsUnavailable(f"indictts: no {lang} voice (Marathi only)")
+        if not self.supports(lang):
+            raise TtsUnavailable(f"indictts: no {lang} model in {self.home()} (docs/video/setup_indictts.sh {lang})")
         speaker = speaker or self.SPEAKERS[0]
         if speaker not in self.SPEAKERS:
             raise TtsUnavailable(f"indictts: unknown speaker {speaker!r}; one of {', '.join(self.SPEAKERS)}")
-        proc = self._worker()
-        proc.stdin.write(json.dumps({"text": text, "speaker": speaker, "out": str(out)}, ensure_ascii=False) + "\n")
+        proc = self._worker(lang)
+        proc.stdin.write(json.dumps({"text": text, "speaker": speaker, "out": str(out), "pace": self.pace(lang)}, ensure_ascii=False) + "\n")
         proc.stdin.flush()
         answer = json.loads(proc.stdout.readline() or '{"ok": false, "error": "the worker stopped"}')
         if not answer.get("ok"):
@@ -288,19 +310,21 @@ def unsayable(p: Provider, script: dict) -> List[str]:
     for scene in script["scenes"]:
         for line in scene["lines"]:
             said = tts_text(p, line["text"], lang)
-            bad = p.unreadable(said)
+            bad = p.unreadable(said, lang)
             if bad:
                 out.append(f"scene {scene['n']}: cannot say {' '.join(bad)} in: {said}")
     return out
 
 
-def pick(name: str, allow_paid: bool) -> Provider:
+def pick(name: str, allow_paid: bool, lang: Optional[str] = None) -> Provider:
     """The provider asked for; `placeholder` falls back to `silent` when espeak-ng is missing. A paid provider that
     cannot run raises TtsUnavailable - never a silent fallback that would hide a missing key."""
     p = PROVIDERS.get(name)
     if p is None:
         raise TtsUnavailable(f"unknown TTS provider {name!r}; one of {', '.join(PROVIDERS)}")
     ok, why = p.available(allow_paid)
+    if ok and lang and not p.supports(lang):
+        ok, why = False, f"no {lang} voice installed"
     if ok:
         return p
     if name == "placeholder":
@@ -361,7 +385,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"{p.name:12} {'paid' if p.paid else 'free':5} {'ready' if ok else 'off'}: {why}")
         return 0
     if cmd == "say" and len(args) >= 3:          # tts.py say <E> <lang>: the text each line is spoken as
-        p = PROVIDERS["indictts"]
         script = load(args[1].upper(), args[2])
         for scene in script["scenes"]:
             for line in scene["lines"]:

@@ -2,7 +2,11 @@
  "episode": "E3",
  "lang": "en",
  "title": "Find setups 3: Start a scan and build it",
- "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `verify` marks a line written for shipped behaviour to check on the live site before recording.",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
  "intro": {
   "kicker": "ATP education",
   "title": "Find setups 3: Start a scan and build it",
@@ -23,35 +27,35 @@
   {
    "n": 8,
    "title": "Start a scan",
-   "target_s": 55,
+   "target_s": 70,
    "lines": [
     {
      "shot": "s08.tabs",
-     "text": "Step three: start a scan. There are three tabs: Ready scan, Template, and Own words."
+     "text": "Step three: start a scan. Three tabs: Ready scan, Template, and Own words."
     },
     {
      "shot": "s08.ready",
-     "text": "Ready scan: one tap on Run fills the conditions and runs them on your list. You can change every condition afterwards."
+     "text": "Ready scan: one tap on Run fills the conditions and runs them. You can change each one afterwards."
     },
     {
      "shot": "s08.template",
-     "text": "Template fills the conditions, and nothing runs until you press Run."
+     "text": "Template only fills the conditions; nothing runs until you press Run."
     },
     {
      "shot": "s08.three",
-     "text": "Three templates are always there: Momentum, Oversold, and Trend on the daily. The names are only labels for the conditions."
+     "text": "Three templates are always there: Momentum, Oversold, and Trend on the daily. The names are just labels."
     },
     {
      "shot": "s08.words",
-     "text": "Own words, where switched on, turns an idea typed in plain words into conditions you can check. Anything ATP cannot read is listed, never guessed."
+     "text": "Own words, where switched on, turns a plain idea into conditions. Anything it cannot read is listed, never guessed."
     },
     {
      "shot": "s08.seeall",
-     "text": "See all ready scans opens the screen library."
+     "text": "See all ready scans opens the library."
     },
     {
      "shot": "s08.library",
-     "text": "Filter it by method and by setup, then open a card to fill the conditions."
+     "text": "Filter by method and setup, then open a card."
     },
     {
      "shot": "s08.library",
@@ -63,23 +67,23 @@
   {
    "n": 9,
    "title": "Build blocks",
-   "target_s": 55,
+   "target_s": 60,
    "lines": [
     {
      "shot": "s09.all",
-     "text": "Step four: the conditions. Every condition is a block, under the line All of these must pass."
+     "text": "Step four: the conditions. Each one is a block under All of these must pass."
     },
     {
      "shot": "s09.row",
-     "text": "A stock matches only when every switched-on block is true for it. Each underlined part can be changed: the function, its numbers, the comparison."
+     "text": "A stock matches only when every switched-on block is true. Each underlined part can be changed: the function, its numbers, the comparison."
     },
     {
      "shot": "s09.kind",
-     "text": "To add a block, first pick its kind."
+     "text": "To add a block, pick its kind."
     },
     {
      "shot": "s09.kinds",
-     "text": "Indicator compares a number. Filter is a yes or no check, such as a candle pattern. Category compares a label, such as a trend. Rank keeps the top of your list. Group means either, or."
+     "text": "Indicator compares a number. Filter is a yes or no check. Category compares a label, such as a trend. Rank keeps the top of your list. Group means either, or."
     },
     {
      "shot": "s09.add",
@@ -87,7 +91,7 @@
     },
     {
      "shot": "s09.new",
-     "text": "A new row appears. Change any underlined part, or switch the block off with its tick box."
+     "text": "A new row appears. Edit it, or switch it off with its tick box."
     },
     {
      "shot": "s09.new",
@@ -99,27 +103,27 @@
   {
    "n": 10,
    "title": "Bars ago and the timeframe chip",
-   "target_s": 45,
+   "target_s": 55,
    "lines": [
     {
      "shot": "s10.chip",
-     "text": "Each side of a row has a small timeframe chip. Pick another timeframe to read that side on it, for example Daily while the scan runs on 15 minutes."
+     "text": "Each side of a row has a timeframe chip, to read that side on another timeframe, such as Daily in a 15 minute scan."
     },
     {
      "shot": "s10.open",
-     "text": "The small arrow at the row's end opens its advanced options."
+     "text": "The arrow at the row's end opens advanced options."
     },
     {
      "shot": "s10.field",
-     "text": "Bars ago reads a candle further back: a whole number from 1 to 500. Blank means the last closed candle."
+     "text": "Bars ago reads a candle further back, 1 to 500. Blank means the last closed candle."
     },
     {
      "shot": "s10.three",
-     "text": "Here the RSI is read three bars ago, and the row says it in plain words."
+     "text": "Here RSI is read three bars ago, and the row says so in plain words."
     },
     {
      "shot": "s10.three",
-     "text": "Some functions, such as structure and patterns, are read on the last bar only. They take no bars ago and no other timeframe."
+     "text": "Structure and pattern functions read the last bar only, with no bars ago or other timeframe."
     },
     {
      "shot": "s10.three",

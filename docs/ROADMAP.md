@@ -299,7 +299,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | M85 | merged #901 (+ DATA-FIX D1 live price on the chart card); waits for deploy + owner ✅ | Upstox: Analytics Token asked once; no daily "login ended" while it works; daily login only for orders | ATP_ORDER_M85.md |
 | BRK-1 | merged #902 (A gates removed, B automatic logins, C guides; docs/brokers/EASIEST_LOGIN.md); waits for deploy + owner ✅; open questions BRK1Q-1..4 | Easy login + visible step-by-step guide for every broker: gates removed, easiest official login, numbered guide in each connect panel | ATP_ORDER_BRK1.md |
 | STRAT-X | not started (owner 30 Oct: "build what you think is right") | Built-in min R:R OFF, stop / target labelled suggested; 4 new templates (PDHL, 52WH, RS vs NIFTY, weekly + daily pullback) | claude/stratx-* |
-| SCR-AUDIT | in progress (owner 9 Nov) | audit of all 48 pre-built screens on real data, annotated charts per screen (private output) | DECISIONS 9 Nov (M93) |
+| SCR-AUDIT | waiting for owner (9 Nov) | report done: 48 screens on real data (17 OK, 13 problem, 9 bug, 5 data limit, 4 not run); private report + charts in trade-data review/atp_scanner_audit_2026-11-09; fixes wait for M93-Q1..Q3 | DECISIONS 9 Nov (M93) |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |

@@ -11,7 +11,6 @@ import { useBasket } from "../fno/basket";
 import type { Side } from "../fno/api";
 import type { TicketTarget } from "../fno/ticketModel";
 import { readColumns, writeColumns, type ColumnPrefs } from "../optionChain/model";
-import { TerminalChainV2 } from "./TerminalChainV2";
 import { AccountPanelV2 } from "./AccountPanelV2";
 import { terminalLevels } from "./chartLevels";
 import type { PageProps } from "../routes";
@@ -24,6 +23,7 @@ import { NARROW_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { useSearchParams } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { useOptionChain } from "../optionChain/useOptionChain";
+import { OptionChainView } from "../optionChain/OptionChainPageV2";
 import TerminalClassicV2 from "./TerminalClassicV2";
 import { ContextBarV2, useStripFigures } from "./ContextBarV2";
 import { modeChip } from "./statusModel";
@@ -233,10 +233,12 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
           live={(main ? spotSymbol : sym).toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot) : undefined}
           levels={main ? levels : undefined} onTimeframe={main ? (tf) => setMainTf(analyzeTimeframe(tf)) : undefined} />;
       }
-      // TERM-2 step 2: the Option chain page's own chain (summary strip, columns menu, ChainTableV2), not a copy.
-      case "chain": return <TerminalChainV2 symbol={underlying} chain={chain} spot={spot} prevClose={strip.prevClose} prefs={columns}
-        onPrefs={(next) => { setColumns(next); writeColumns(next); }} trading={trading} areaMarks={areaMarks.size ? areaMarks : undefined}
-        hide={place && !narrow ? chainHiddenColumns(place.w) : undefined} />;
+      // Owner 9 Nov: the Terminal's chain IS the Option chain page (summary, futures / IV / expiry / OI walls, Chain · Charts ·
+      // OI, analysis, Ask AI) on the Terminal's one symbol and its chain - the page itself, not a copy.
+      case "chain": return <div data-terminal-chain data-symbol={underlying} data-expiry={live?.expiry ?? chain.expiry ?? ""}><OptionChainView symbol={underlying} onSymbol={setUnderlying} chain={chain}
+        marketOpen={market.status?.sessions?.NSE?.is_open ?? null} prefs={columns} onPrefs={(next) => { setColumns(next); writeColumns(next); }}
+        onTicket={orderPanelShown ? (t) => setTicket(t) : undefined} areaMarks={areaMarks.size ? areaMarks : undefined}
+        hide={place && !narrow ? chainHiddenColumns(place.w) : undefined} /></div>;
       case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} paperBadge={false} />;
       case "positions": {
         const list = <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}

@@ -211,7 +211,9 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
                       'MABreakoutRef("held_level", "up", 10, "sma", 0)'],
     "PatternBreakoutRef": ['PatternBreakoutRef("stop_base", "up", "triangle", 0, 0)', 'PatternBreakoutRef("level", "down", "flag", 0, 0)',
                            'PatternBreakoutRef("held_level", "up", "triangle", 0, 0)'],
-    "VCPBreakoutRef": ['VCPBreakoutRef("level", "up", 2, 1, 0, 0, FALSE, FALSE)', 'VCPBreakoutRef("stop_base", "down", 2, 1, 0, 0, FALSE, FALSE)'],
+    # M93-Q2: the up pivot is the base high - a random walk almost never rallies from the last low past the first high without
+    # a swing high on the way, so the up side's look-ahead cases run on the VCP fixture (tests/test_z7_bk3_breakouts.py)
+    "VCPBreakoutRef": ['VCPBreakoutRef("level", "down", 2, 1, 0, 0, FALSE, FALSE)', 'VCPBreakoutRef("stop_base", "down", 2, 1, 0, 0, FALSE, FALSE)'],
     "RelVolume": ["RelVolume(20)", "RelVolume(10)@1h"],
     "ATRPercentile": ["ATRPercentile(14, 50)", "ATRPercentile(14, 20)@1h"],
     "DowTrend": ["DowTrend(0)", "DowTrend(0)@15m"],                    # @1h: 50 bars here, too few confirmed swings to read
@@ -223,7 +225,7 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "RelVolumeTOD": ["RelVolumeTOD(5)", 'RelVolumeTOD(3, "cumulative")@1h'],
     "SessionVWAP": ["SessionVWAP()", "SessionVWAP()@1h"],
     # U6 BK3: VCP (Daily in screens; daily cases below) and the indicator breakouts; volume and distance conditions off
-    "VCPBreakout": ['VCPBreakout("up", 2, 1, 0, 0, FALSE)', 'VCPBreakout("down", 2, 1, 0, 0, FALSE, FALSE)'],
+    "VCPBreakout": ['VCPBreakout("down", 2, 1, 0, 0, FALSE, FALSE)'],                       # up side: M93-Q2 note above
     "VCPReady": ['VCPReady("up", 2, 1, 5, FALSE)', 'VCPReady("down", 2, 1, 10, FALSE, FALSE)'],
     "DonchianBreakout": ['DonchianBreakout("up", 20, 0)', 'DonchianBreakout("down", 55, 0.1)', 'DonchianBreakout("up", 10, 0)@1h'],
     "SqueezeBreakout": ['SqueezeBreakout("up", "bollinger", 20, 50, 0)', 'SqueezeBreakout("down", "ttm", 20, 50, 0)',
@@ -281,12 +283,12 @@ SCREENQL_FIELDS: List[str] = ["close", "volume", "close@1h", "high@1d[1]", "low[
 # A daily screen: weekly and monthly bars built from the daily ones (W-MON / month-start buckets, close-time alignment).
 SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "close@1M[1]", "Max(high, 3)@1M", "PDH()",
                              'NewHighBreakout("up", 4, 0, 0)', 'NewHighBreakout("down", 26, 0, 0)', "DowTrend(0)@1w",   # U6 BK1
-                             'VCPBreakout("up", 2, 1, 0, 0, FALSE, FALSE)', 'VCPBreakout("down", 2, 1, 0, 0, FALSE)',   # U6 BK3
+                             'VCPBreakout("down", 2, 1, 0, 0, FALSE)',                                                  # U6 BK3 (up: M93-Q2)
                              'VCPReady("up", 2, 1, 10, FALSE)', 'DonchianBreakout("up", 55, 0)', 'SqueezeBreakout("up", "bollinger", 20, 125, 0)',
                              'SqueezeBreakout("down", "ttm")', 'MABreakout("down", 50, "sma", 0)', 'RegimeBreakout("up", 15, 10, 30, 0)',
                              'TrendlineBreakout("down", "line", 2, 0)', 'PatternBreakout("down", "flag", 0, 0)',      # U6 BK4
                              'RetestEntry("up", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)',   # daily synthetic bars open at the last close: no gaps
-                             'VCPBreakoutRef("stop_base", "up", 2, 1, 0, 0, FALSE, FALSE)', 'DonchianBreakoutRef("held_level", "down", 55, 0)',   # TPL-4
+                             'VCPBreakoutRef("stop_base", "down", 2, 1, 0, 0, FALSE, FALSE)', 'DonchianBreakoutRef("held_level", "down", 55, 0)',   # TPL-4
                              "StDev(close, 10)@1w", 'RsiDivergence("bullish", 40)', 'SwingLabel("low", 0)@1w',                     # AMW-3
                              "WaveState(1)", "WaveClarity(2)",                                                                    # waves W1
                              'Pattern("bullish_strong_body", "unconfirmed")']

@@ -131,7 +131,9 @@ How BK3 uses them:
   `vcp_max_bars`, deeper than `vcp_max_depth_pct`, or has a lower high than a later one. The trend template is applied as
   written except the RS rating: that rating ranks a stock's year against the whole market, which a per-symbol series
   cannot do (open question BK3-1). In ScreenQL it can be added with `PercentileRank(PctChange(close, 250)) >= 70` on a
-  universe run. The Watchlist variant is a state (every day the base stays ready), not an event.
+  universe run. The Watchlist variant is a state (every day the base stays ready), not an event. The pivot is the base
+  high, as spec B3 writes it ("close above the pivot (base high)"), not Minervini's top of the last contraction: the
+  highest high of the base, the first contraction's high (owner decision M93-Q2).
 - **B10 Donchian.** The spec's "ATR filter" is read as the common break distance `min_break_atr` x ATR (open question
   BK3-2). No volume condition: the Turtle rules have none; the quality overlay still grades volume.
 - **B11 squeeze.** Two forms. The Bollinger form needs volume on the close outside the band (spec wording); the TTM form
@@ -258,7 +260,7 @@ samples greyed.
 | `vcp_min_bars` | B3 | 15 | Three weeks on Daily, the shortest VCP base in Minervini's range (3 to 65 weeks). |
 | `vcp_max_bars` | B3 | 125 | About six months on Daily; bounds the walk (raise it for the longer bases in Minervini's 3-65 week range). |
 | `vcp_vol_dryup` | B3 | True | Minervini: volume contracts with the price contractions and dries up in the last one. |
-| `vcp_ready_pct` | B3 | 5 | The pivot level sits at the top of the last contraction; within about 5 % of it the base is 'ready'. |
+| `vcp_ready_pct` | B3 | 5 | The pivot is the base high (spec B3); within about 5 % under it the base is 'ready'. |
 | `tt_filter` | B3 | True | Minervini's trend template (2013), without the RS rating (open question BK3-1). |
 | `tt_ma_fast` | B3 | 50 | Minervini's trend template: the 50-day line. |
 | `tt_ma_mid` | B3 | 150 | Minervini's trend template: the 150-day line. |

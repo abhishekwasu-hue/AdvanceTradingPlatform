@@ -133,10 +133,10 @@ TEMPLATES: Tuple[Template, ...] = (
              note="close beyond the session's high / low so far with time-of-day volume and VWAP agreement, once per leg"),
     # U6 BK3 (flag screener_breakouts_bk3 on top of screener_breakouts)
     Template("daily_vcp", "Daily volatility-contraction (VCP-style) breakout", "B3", "1d", direction="up",
-             note="two or more contractions each shallower than the last, volume drying up, trend template; close above the pivot on volume"),
+             note="two or more contractions each shallower than the last, volume drying up, trend template; close above the pivot (the base high) on volume"),
     Template("daily_vcp_watchlist", "Daily volatility-contraction (VCP-style) watchlist: ready, not yet broken", "B3", "1d", direction="up",
              params={"vcp_mode": "watchlist"},
-             note="the same base rules, close at most 5 % under the pivot and not yet above it; listed every day it stays ready"),
+             note="the same base rules, close at most 5 % under the pivot (the base high) and not yet above it; listed every day it stays ready"),
     Template("daily_donchian_20", "Daily 20-day Donchian breakout", "B10", "1d", note="close beyond the previous 20 days' high / low by an ATR buffer"),
     Template("daily_donchian_55", "Daily 55-day Donchian breakout", "B10", "1d", params={"donchian_n": 55},
              note="Turtle System 2 channel: close beyond the previous 55 days' high / low by an ATR buffer"),

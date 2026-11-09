@@ -162,7 +162,7 @@ PARAMS: Tuple[Param, ...] = (
     Param("first_hour_min", 60, "B17 first_hour: the minutes from the open that make the 'first hour' (a whole number of signal bars)",
           "The first trading hour (09:15-10:15 on NSE) by name.", 1, 240, group="B17"),
     # --- B3 VCP (U6 BK3, flag screener_breakouts_bk3) ----------------------------------------------------------------------
-    Param("vcp_mode", "breakout", "breakout: the close above the pivot (the last contraction's high); watchlist: bases that are ready "
+    Param("vcp_mode", "breakout", "breakout: the close above the pivot (the base high: the first contraction's high, the top of the base); watchlist: bases that are ready "
           "(every rule holds, the close within vcp_ready_pct below the pivot) but not yet broken - listed on every bar they are ready",
           "Spec B3 names both: the pivot breakout and a 'Watchlist' of bases ready but not yet broken.",
           choices=("breakout", "watchlist"), group="B3"),
@@ -184,8 +184,8 @@ PARAMS: Tuple[Param, ...] = (
     Param("vcp_vol_dryup", True, "volume declines through the base: the last contraction's mean volume is below the first's "
           "(indices without volume need False)",
           "Minervini: volume contracts with the price contractions and dries up in the last one.", group="B3"),
-    Param("vcp_ready_pct", 5.0, "watchlist: a ready base closes at most this % below the pivot",
-          "The pivot level sits at the top of the last contraction; within about 5 % of it the base is 'ready'.", 0.1, 50.0, group="B3"),
+    Param("vcp_ready_pct", 5.0, "watchlist: a ready base closes at most this % below the pivot (the base high)",
+          "The pivot is the base high (spec B3); within about 5 % under it the base is 'ready'.", 0.1, 50.0, group="B3"),
     Param("tt_filter", True, "B3 trend template (prerequisite): close above the fast, mid and slow SMAs in that order (fast > mid > slow), "
           "the slow SMA rising, the close near the year's high and well above the year's low",
           "Minervini's trend template (2013), without the RS rating (open question BK3-1).", group="B3"),

@@ -34,14 +34,16 @@ def uptrend(start: float = 30.0, cycles: int = 6) -> List[Tuple[int, float]]:
 
 
 def vcp(contractions: Sequence[float] = (16.0, 8.0, 4.0), break_bar: bool = True, break_volume: float = 3000.0,
-        dry: bool = True, trend: bool = True, wick_only: bool = False) -> pd.DataFrame:
+        dry: bool = True, trend: bool = True, wick_only: bool = False, closes_after: Optional[Sequence[float]] = None) -> pd.DataFrame:
     """A trend (or, trend=False, a sideways stretch), then a base of contractions (each a % drop from its high, rallies back to just under the previous high),
-    then the last bar: a close 2 above the pivot on `break_volume` (or, wick_only, a high above it with the close under)."""
+    then the last bar: a close 2 above the pivot - the base high, the first contraction's high (M93-Q2) - on `break_volume` (or, wick_only, a high
+    above it with the close under the last contraction's high). `closes_after`: these closes instead of the break bar, each on `break_volume`."""
     legs = uptrend() if trend else [(20, 6.0), (12, -6.0)] * 6 + [(20, 6.0)]       # no trend: a sideways zigzag
     start = 30.0 if trend else 100.0
     closes = path(start, legs)
     vols = [1000.0] * len(closes)
     top = closes[-1]
+    base_high = top + HALF                                # the high of the bar that closes at the top of the trend (the first contraction's high)
     level_vol = [1200.0, 800.0, 500.0, 400.0, 300.0] if dry else [500.0, 800.0, 1200.0, 1400.0, 1500.0]
     for i, depth in enumerate(contractions):
         low = top * (1 - depth / 100.0)
@@ -53,10 +55,11 @@ def vcp(contractions: Sequence[float] = (16.0, 8.0, 4.0), break_bar: bool = True
         closes = closes + path(closes[-1], [(up, nxt - closes[-1])])[1:]
         vols += [level_vol[min(i, len(level_vol) - 1)] * 0.9] * up
         top = nxt
+    if closes_after is not None:
+        return frame(closes + list(closes_after), vols + [break_volume] * len(closes_after))
     if break_bar:
-        pivot_high = max(closes[-up - 1:]) + HALF if contractions else top
-        f = frame(closes + [top + 2.5 if not wick_only else top - 0.2], vols + [break_volume])
+        f = frame(closes + [base_high + 2.0 if not wick_only else top - 0.2], vols + [break_volume])
         if wick_only:
-            f.iloc[-1, f.columns.get_loc("high")] = pivot_high + 3.0
+            f.iloc[-1, f.columns.get_loc("high")] = base_high + 3.0
         return f
     return frame(closes, vols)

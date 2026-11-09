@@ -163,7 +163,9 @@ def with_source_closes(closes: pd.DatetimeIndex, index: pd.DatetimeIndex, period
     week, a Muhurat session after 15:30 on a day): each close is the later of its calendar close and that bar's close."""
     if not len(index) or not len(source_index):
         return closes
-    utc = lambda x: pd.DatetimeIndex(x).tz_localize("UTC") if getattr(x, "tz", None) is None else pd.DatetimeIndex(x).tz_convert("UTC")
+    def utc(x: Any) -> pd.DatetimeIndex:
+        i = pd.DatetimeIndex(x)
+        return i.tz_localize("UTC") if i.tz is None else i.tz_convert("UTC")
     idx, end, src, src_close = utc(index), utc(period_end), utc(source_index), utc(source_closes)
     pos = idx.searchsorted(src, side="right") - 1
     ok = pos >= 0

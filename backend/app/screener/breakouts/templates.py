@@ -125,11 +125,11 @@ TEMPLATES: Tuple[Template, ...] = (
     Template("intraday_5m_volume", "Intraday 5m volume breakout", "B14", "5m", note="volume shock at the 20-bar high / low; 15m and 1H trends not against it"),
     # U6 BK2 (spec §4 "Intraday ORB"): stop reference = the opening-range midpoint for the "Then" template (spec B16)
     Template("intraday_5m_orb15", "Intraday ORB: 15-minute opening range on 5m", "B16", "5m", params={"or_minutes": 15, "stop_mode": "midpoint"},
-             note="first close beyond the 09:15-09:30 range that passes the volume / VWAP checks; stop = range midpoint; 15m and 1H trends not against it"),
+             note="first close beyond the 09:15-09:30 range that passes the volume / VWAP checks; invalidation level = range midpoint; 15m and 1H trends not against it"),
     Template("intraday_15m_orb30", "Intraday ORB: 30-minute opening range on 15m", "B16", "15m", params={"or_minutes": 30, "stop_mode": "midpoint"},
-             note="first close beyond the 09:15-09:45 range that passes the volume / VWAP checks; stop = range midpoint; 1H and Daily trends not against it"),
+             note="first close beyond the 09:15-09:45 range that passes the volume / VWAP checks; invalidation level = range midpoint; 1H and Daily trends not against it"),
     Template("intraday_15m_first_hour", "Intraday first-hour high / low break on 15m", "B17", "15m", params={"day_level": "first_hour", "stop_mode": "base"},
-             note="first close beyond the 09:15-10:15 range that passes the volume / VWAP checks; stop = the other side of the first hour;"
+             note="first close beyond the 09:15-10:15 range that passes the volume / VWAP checks; invalidation level = the other side of the first hour;"
              " 1H and Daily trends not against it"),
     Template("intraday_5m_prev_day", "Intraday previous-day high / low break on 5m", "B17", "5m", params={"day_level": "prev_day"},
              note="first close beyond yesterday's high / low after the first 15 minutes that passes the volume / VWAP checks;"

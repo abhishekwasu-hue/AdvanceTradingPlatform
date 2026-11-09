@@ -100,6 +100,14 @@ describe("UX2 fix 4 model", () => {
     expect(READY.find((r) => r.id === "swing_ema_pullback_d")?.line).toMatch(/mirror in a downtrend: taken on an option or a future, skipped on shares/);
   });
 
+  it("bot-guide gap 3: an intraday ready-made line says its close is his own Square-off time, never 'before the market'", () => {
+    for (const id of ["orb_15m_5m", "vwap_supertrend_5m"]) {
+      const line = READY.find((r) => r.id === id)?.line ?? "";
+      expect(line).toContain("Closes at your Square-off time (Trade settings); if not set, it stays open until you or your exits close it.");
+    }
+    for (const r of READY) expect(r.line).not.toMatch(/before the market/i);
+  });
+
   it("the start summary says what is traded, how long it is held, and paper only", () => {
     expect(startSummary("NIFTY 50", intraday)).toBe("Trades a NIFTY 50 option at the expiry in your Trade settings, your Position size, closed before the market closes. Paper money only; your risk limits apply.");
     expect(startSummary("NIFTY 50", intraday, { ...paperBotRequest("orb_15m_5m", "NIFTY 50", intraday), max_lots: 2 }))

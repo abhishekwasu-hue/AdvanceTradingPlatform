@@ -20,8 +20,8 @@ export interface ReadyStrategy {
 /** The Library's built-in strategies a beginner starts with (the Setup wizard's three). One missing from the Library is
  * not offered. */
 export const READY: readonly ReadyStrategy[] = [
-  { id: "orb_15m_5m", symbol: "NIFTY 50", line: "Waits for the first 15 minutes' range to break, then follows the move. Closes before the market does." },
-  { id: "vwap_supertrend_5m", symbol: "NIFTY 50", line: "Follows the day's trend while it holds, and closes before the market does." },
+  { id: "orb_15m_5m", symbol: "NIFTY 50", line: "Waits for the first 15 minutes' range to break, then follows the move. Closes at your Square-off time (Trade settings); if not set, it stays open until you or your exits close it." },
+  { id: "vwap_supertrend_5m", symbol: "NIFTY 50", line: "Follows the day's trend while it holds. Closes at your Square-off time (Trade settings); if not set, it stays open until you or your exits close it." },
   // REV-B4: the strategy also reads the downtrend mirror; shares cannot be held short, so that side runs on an option or a future.
   { id: "swing_ema_pullback_d", symbol: "RELIANCE",
     line: "Waits for a pullback inside an uptrend and holds for days. It also reads the mirror in a downtrend: taken on an option or a future, skipped on shares." },

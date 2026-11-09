@@ -201,7 +201,7 @@ export function ChainBottomStripV2({ summary, pct, onPct, onRecentre, basketCoun
 }) {
   const seg = "min-h-9 rounded-control px-space-2 text-t12 font-semibold";
   return (
-    <section aria-label="Chain figures" data-block="chain-bottom-strip"
+    <section aria-label="Chain figures" data-bottom-action data-block="chain-bottom-strip"
       className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-[3] -mx-space-4 flex items-center gap-space-3 overflow-x-auto border-t border-subtle bg-surface-1 px-space-4 py-space-2 shadow-raised md:bottom-0 md:mx-0 md:rounded-panel md:border">
       <button type="button" onClick={onRecentre} data-strip="atm" aria-label={`Show the ATM strike ${formatStrike(summary.atm_strike)} in the middle`}
         className="inline-flex min-h-11 shrink-0 items-center gap-space-1 rounded-pill border border-border px-space-3 text-t13 font-semibold text-fg hover:bg-surface-2">

@@ -44,6 +44,16 @@ export async function expectPhoneLayout(page: Page): Promise<void> {
   expect([5, 6]).toContain(report.navItems.length);
   for (const [w, h] of report.navItems) { expect(w).toBeGreaterThanOrEqual(44); expect(h).toBeGreaterThanOrEqual(44); }
 
+  // The Copilot chat bubble (CH-1) never covers a page's bottom action bar (Find setups' Run, the terminal's status bar).
+  // It is placed on the next frame after a bar changes, so the check waits for it.
+  await expect.poll(() => page.evaluate(() => {
+    const bubble = document.querySelector("[data-chat-bubble]")?.getBoundingClientRect();
+    if (!bubble || !bubble.height) return [];
+    return [...document.querySelectorAll("[data-bottom-action]")].map((e) => [e, e.getBoundingClientRect()] as const)
+      .filter(([, b]) => b.height > 0 && b.width > 0 && b.top < bubble.bottom && b.bottom > bubble.top && b.left < bubble.right && b.right > bubble.left)
+      .map(([e]) => (e.getAttribute("aria-label") ?? e.getAttribute("data-testid") ?? e.tagName));
+  }), { message: "the chat bubble covers a bottom action bar" }).toEqual([]);
+
   // The end of the page scrolls clear of the fixed bottom bar.
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   const clear = await page.evaluate(() => {

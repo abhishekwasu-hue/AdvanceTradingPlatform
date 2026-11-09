@@ -937,7 +937,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
 
         {/* Phone: Save and Run stay in reach, just above the app's bottom navigation (the count is in the results) */}
         <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-between gap-3 border-t border-border bg-surface-1 px-4 py-2 sm:hidden"
-             data-testid="screener-bottom-bar">
+             data-testid="screener-bottom-bar" data-bottom-action>
           <div className="min-w-0">
             {runWhy && <p id="run-why-mobile" className="text-t12 text-fg-muted" data-testid="run-why-mobile">{runWhy}</p>}
           </div>
@@ -1142,7 +1142,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
 
       {/* Phone: the live count and Run stay in reach - PW2: just above the app's bottom navigation */}
       <div className={cx("fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-between gap-3 border-t border-border bg-surface-1 px-4 py-2 sm:hidden")}
-           data-testid="screener-bottom-bar">
+           data-testid="screener-bottom-bar" data-bottom-action>
         <div className="min-w-0">
           <p className="text-t12 text-fg-muted">
             Matched <span className="font-mono font-tabular text-t15 font-semibold text-signal">{matchedNow ?? "–"}</span>

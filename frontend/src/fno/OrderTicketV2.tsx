@@ -579,7 +579,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
         {problem && <p role="alert" className="rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-ticket="problem">{problem}</p>}
       </div>
 
-      <div data-ticket-actions={stickyActions ? "sticky" : undefined}
+      <div data-ticket-actions={stickyActions ? "sticky" : undefined} data-bottom-action={stickyActions ? "" : undefined}
         className={cx("flex gap-space-2 border-t border-subtle px-space-4 py-space-3",
           stickyActions
             // Phone: pinned just above the bottom navigation (the page scrolls the window, so "sticky" has no box to

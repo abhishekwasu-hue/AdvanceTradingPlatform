@@ -455,3 +455,23 @@ def test_the_engine_swings_are_the_causal_swing_engine_s(m15, mode, monkeypatch)
             assert [(p.kind, p.price, p.bar_idx, p.confirmed_idx) for p in b.pivots(degree)] == want, (mode, len(f), degree)
             assert want or degree == 3 or len(f) < 100
     assert Bars(m15.iloc[:2], bp.settings()).pivots(0) == []
+
+
+def test_vcp_up_side_reads_no_later_bar():
+    """M93-Q2: the up side's look-ahead check (the random-walk Z10-a data almost never breaks a base high): on VCP-shaped bars
+    the full series equals the value read on the bars cut at each bar, for the breakout, its level and the watchlist."""
+    from app.screener import compile_screen
+    from app.screener.runtime import SymbolData, evaluate
+    fired = 0
+    for f in (vcp(), vcp(closes_after=[130.0, 136.0, 137.0]), vcp(break_bar=False), vcp(wick_only=True)):
+        for text in ('VCPBreakout("up", 2, 1, 0, 0, FALSE)', 'VCPBreakoutRef("level", "up", 2, 1, 0, 0, FALSE, FALSE)',
+                     'VCPReady("up", 2, 1, 10, FALSE)'):
+            ast = compile_screen(text, base_tf="1d")[0]
+            full = evaluate(ast, SymbolData("V", {"1d": f}), base_tf="1d")
+            for t in range(200, len(f)):
+                cut = evaluate(ast, SymbolData("V", {"1d": f.iloc[:t + 1]}), base_tf="1d")
+                a, b = full.iloc[t], cut.iloc[-1]
+                assert (pd.isna(a) and pd.isna(b)) or a == b, (text, t, a, b)
+            if text.startswith("VCPBreakout("):
+                fired += int(full.fillna(False).astype(bool).sum())
+    assert fired >= 2                                                        # the check is not vacuous: breakouts do fire

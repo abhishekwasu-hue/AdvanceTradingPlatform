@@ -9,6 +9,17 @@ registry entry.
 * Cross-sectional functions (Rank, PercentileRank, RankScore) work on the last bar of every symbol in the universe; they are
   computed first (innermost first) and read back as constants per symbol.
 * NaN (not enough history, division by zero) never matches: every comparison with NaN is false.
+* M93-Q3 (owner decision: a missing or 0 volume is no volume data - the volume condition is not applied and the result
+  says "volume not available", never a silent pass or a silent no-match; fundamentals screens with no stored figures
+  say so), in `symbol_match`, the one per-symbol answer of every screen run:
+  - an index's 0 volume is "missing" (NaN, `no_index_volume`), and a bucket of missing volume stays missing when
+    resampled (never a 0);
+  - a comparison / function that reads volume (`volume`, VWAP, OBV, RelVolume ...) whose value on the last bar is
+    missing because of it: "not checked: volume not available" - never matched by `0 >= 0`, never "did not match";
+  - a breakout function's volume confirmation with no volume data is not applied (app/screener/breakouts/screens.py
+    `skip_missing_volume`), and the Match carries the note `VOLUME_SKIPPED_NOTE`;
+  - a fundamentals function with no stored figures (or none current on the last bar): "not checked" with the reason.
+  Symbols with real volume (and screens without volume or fundamentals) are evaluated exactly as before.
 """
 from __future__ import annotations
 
@@ -43,7 +54,7 @@ from app.indicators.volume import mfi as _mfi
 from app.indicators.volume import obv as _obv
 from app.screener import nodes as n
 from app.screener import reasons
-from app.screener.registry import FUNCTIONS, RETEST_WAVE_OF
+from app.screener.registry import FUNCTIONS, FUNDAMENTALS_FLAG, RETEST_WAVE_OF
 from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
@@ -86,6 +97,7 @@ class Match:
     symbol: str
     matched: bool
     reason: Optional[str] = None                           # why a symbol could not be evaluated (history too short...)
+    note: Optional[str] = None                             # M93-Q3: what the answer could not use (a volume condition not applied)
 
 
 # SCR-FIX A5: the NSE-family session close (09:15-15:30 IST). A 30m / 1h session is not a whole number of buckets, so
@@ -157,7 +169,13 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = Fal
         # U6 BK1 review (M6): sessions, weeks and months are exchange-calendar buckets. Daily bars stamped 00:00 IST are
         # 18:30 UTC the day before; bucketing them in UTC put a Monday into the previous week (a week seen a day early).
         src = base.tz_convert(EXCHANGE_TZ)
-    out = src.resample(_RESAMPLE[tf], **kwargs).agg(agg).dropna(subset=["close"])
+    buckets = src.resample(_RESAMPLE[tf], **kwargs)
+    out = buckets.agg(agg)
+    dtype = out["volume"].dtype
+    out["volume"] = buckets["volume"].sum(min_count=1)       # M93-Q3: a bucket with no volume data stays missing, never 0
+    out = out.dropna(subset=["close"])
+    if out["volume"].notna().all():
+        out["volume"] = out["volume"].astype(dtype)          # every bucket had volume: the sums exactly as before
     if src is not base:
         out.index = out.index.tz_convert(tz)
     if len(out) and len(base) and not keep_forming:
@@ -1450,9 +1468,21 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
     if not validated.ok:
         raise ScreenRuntimeError("the screen did not pass validation")
     params = dict(params or {})
+    no_index_volume(universe)
     if vectorized:
         from app.screener import panel
         if panel.supported(ast, validated, base_tf):
+            # M93-Q3: a symbol without volume data on some bar (an index) or a fundamentals screen takes the per-symbol
+            # path, where `symbol_match` says what could not be checked; every other symbol is vectorised as before
+            own = [i for i, d in enumerate(universe) if _needs_own_check(ast, d, base_tf)]
+            if own:
+                picked = set(own)
+                rest = [d for i, d in enumerate(universe) if i not in picked]
+                mine = iter(run_screen(ast, validated, [universe[i] for i in own], base_tf=base_tf, params=params,
+                                       check_history=check_history, memo=memo))
+                others = iter(run_screen(ast, validated, rest, base_tf=base_tf, params=params, check_history=check_history,
+                                         vectorized=True, memo=memo) if rest else [])
+                return [next(mine) if i in picked else next(others) for i in range(len(universe))]
             return panel.run_panel(ast, validated, universe, base_tf=base_tf, params=params, check_history=check_history,
                                    per_symbol=lambda rest: run_screen(ast, validated, rest, base_tf=base_tf, params=params, check_history=check_history))
     constants = _cross_sectional(ast, universe, base_tf, params) if validated.cross_sectional else {d.symbol: {} for d in universe}
@@ -1472,7 +1502,7 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
             out.append(Match(d.symbol, False, reasons.short_history(short)))
             continue
         try:
-            value = _last(ev.ev(ast, base_tf))
+            match = symbol_match(ev, ast, base_tf)
         except ScreenRuntimeError as exc:
             out.append(Match(d.symbol, False, reasons.Reason(str(exc), reasons.NOT_CHECKED)))
             continue
@@ -1480,7 +1510,7 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
             # SCR-FIX B3: the full text in the log, a plain sentence (never the exception's class name) for the user
             out.append(Match(d.symbol, False, reasons.not_checked(exc, d.symbol)))
             continue
-        out.append(last_match(d.symbol, value))
+        out.append(match)
     return out
 
 
@@ -1492,9 +1522,121 @@ def last_match(symbol: str, value: Any) -> Match:
     return Match(symbol, bool(value))
 
 
+# ---- M93-Q3: no volume data / no figures - "not checked" with the reason, never a silent pass or a silent no-match ------
+# Functions that read the bars' volume themselves (beside the `volume` field). The breakout functions' volume
+# CONFIRMATIONS are not here: they are not applied without volume data (breakouts/screens.py `skip_missing_volume`).
+# VolumeBreakout / VolumeBreakoutRef (B14) are volume itself: the breakout engine reports them `volume_required`.
+VOLUME_FUNCTIONS = frozenset({"VWAP", "MFI", "OBV", "RelVolume", "RelVolumeTOD", "SessionVWAP", "WaveVolumeLower"})
+
+
+def no_index_volume(universe: List[SymbolData]) -> None:
+    """M93-Q3: an index's 0 volume is no volume data - its frames get NaN there (in place; idempotent). Stocks unchanged."""
+    from app.market_data.index_volume import is_index, screen_frame
+    for d in universe:
+        if is_index(d.symbol):
+            for tf, frame in list(d.frames.items()):
+                if frame is not None:
+                    d.frames[tf] = screen_frame(frame)
+
+
+def _reads_volume(node: Any) -> bool:
+    return any((isinstance(x, n.Field) and x.name == "volume") or (isinstance(x, n.Call) and x.name in VOLUME_FUNCTIONS)
+               for x in n.walk(node))
+
+
+def _volume_timeframes(node: Any, tf: Optional[str], out: Set[Optional[str]]) -> Set[Optional[str]]:
+    """The timeframes the screen reads volume on (None = the base timeframe): a node's own @tf, else its parent's."""
+    own = getattr(node, "tf", None) or tf
+    if (isinstance(node, n.Field) and node.name == "volume") or (isinstance(node, n.Call) and node.name in VOLUME_FUNCTIONS):
+        out.add(own)
+    for child in n.children(node):
+        _volume_timeframes(child, own, out)
+    return out
+
+
+def _fundamental_calls(ast: Any) -> List[n.Call]:
+    return [x for x in n.walk(ast) if isinstance(x, n.Call) and FUNCTIONS.get(x.name) is not None
+            and FUNCTIONS[x.name].flag == FUNDAMENTALS_FLAG]
+
+
+def _no_volume(frame: Optional[pd.DataFrame]) -> bool:
+    return frame is not None and ("volume" not in frame.columns or bool(frame["volume"].isna().any()))
+
+
+def _needs_own_check(ast: Any, data: SymbolData, base_tf: str) -> bool:
+    """A symbol the vectorised path cannot answer for under the M93-Q3 rules (it has bars without volume data, or the
+    screen reads fundamentals)."""
+    return _no_volume(data.frames.get(base_tf)) or bool(_fundamental_calls(ast))
+
+
+def _volume_unavailable(ev: _Eval, ast: Any, base_tf: str) -> Optional[reasons.Reason]:
+    """The reason when a part of the screen that reads volume has no value on the last bar because the symbol's bars have
+    no volume data there; None otherwise (the part is evaluated as always). Only symbols with missing volume on a
+    timeframe the screen reads volume on are looked at, so a stock with real volume costs nothing here."""
+    if not _reads_volume(ast):
+        return None
+    tfs = {tf or base_tf for tf in _volume_timeframes(ast, None, set())}
+    if not any(_no_volume(ev.frame(tf)) for tf in tfs):
+        return None
+    for node in n.walk(ast):
+        if not isinstance(node, (n.Field, n.Call, n.Binary, n.Unary)) or not _reads_volume(node):
+            continue
+        if isinstance(node, n.Call) and node.name == "WaveVolumeLower":
+            value: Any = np.nan                                  # a filter of volume itself: it has no answer without volume
+        else:
+            value = _last(ev.ev(node, base_tf))
+        if isinstance(value, (bool, np.bool_)) or isinstance(value, str):
+            continue
+        try:
+            missing = value is None or bool(np.isnan(float(value)))
+        except (TypeError, ValueError):
+            continue
+        if missing:
+            return reasons.of(reasons.NO_VOLUME)
+    return None
+
+
+def _figures_unavailable(ev: _Eval, ast: Any, base_tf: str) -> Optional[reasons.Reason]:
+    """The reason when the screen reads fundamentals and the company has no stored figures (or none the screen can use
+    on the last bar: not reported yet, too old, or not computable); None otherwise."""
+    calls = _fundamental_calls(ast)
+    if not calls:
+        return None
+    versions = getattr(ev.data, "fundamentals", None)
+    if versions is not None and not len(versions):
+        return reasons.of(reasons.NO_FIGURES)
+    for node in calls:
+        value = _last(ev.ev(node, base_tf))
+        if isinstance(value, float) and np.isnan(value):
+            return reasons.of(reasons.NO_FIGURES_NOW)
+    return None
+
+
+def symbol_match(ev: _Eval, ast: Any, base_tf: str) -> Match:
+    """One symbol's answer on its last bar - `run_screen`'s, the watch list's and the chart's (app/screener/watch_screen.py).
+    M93-Q3: a part that reads volume with no volume data, or fundamentals with no figures, makes it "not checked" with the
+    reason; a breakout volume confirmation without volume data is not applied and the Match carries the note."""
+    from app.screener.breakouts.screens import VOLUME_SKIPPED_NOTE, skip_missing_volume
+    symbol = ev.data.symbol
+    with skip_missing_volume() as notes:
+        why = _volume_unavailable(ev, ast, base_tf)
+        if why is not None:
+            return Match(symbol, False, why)
+        value = _last(ev.ev(ast, base_tf))
+        why = _figures_unavailable(ev, ast, base_tf)
+    if why is not None:
+        return Match(symbol, False, why)
+    if notes.required:
+        return Match(symbol, False, reasons.of(reasons.NO_VOLUME))
+    match = last_match(symbol, value)
+    if notes.skipped and match.reason is None:
+        match.note = VOLUME_SKIPPED_NOTE
+    return match
+
+
 def evaluate(ast: Any, data: SymbolData, *, base_tf: str, params: Optional[Dict[str, Any]] = None) -> Any:
     """The full series (or constant) of an expression for one symbol - for tests, charts and the builder preview."""
     return _Eval(data, base_tf, dict(params or {}), {}).ev(ast, base_tf)
 
 
-__all__ = ["SymbolData", "Match", "last_match", "run_screen", "evaluate", "resample", "closed_only", "ScreenRuntimeError"]
+__all__ = ["SymbolData", "Match", "last_match", "symbol_match", "no_index_volume", "VOLUME_FUNCTIONS", "run_screen", "evaluate", "resample", "closed_only", "ScreenRuntimeError"]

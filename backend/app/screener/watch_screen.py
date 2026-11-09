@@ -5,7 +5,7 @@ the chart overlay (C1, `POST /api/screener/watchlist-screen/overlay`) read. It r
 (`runtime._Eval`, the code `run_screen` runs) on the same bars and parameters, so the list and the chart can never
 disagree: both give the same match and the same met / not met mark per condition on the same bars (tested).
 
-* `matched` - the whole screen on the last closed bar, exactly as `run_screen` reads it (`last_match`; too little history
+* `matched` - the whole screen on the last closed bar, exactly as `run_screen` reads it (`symbol_match`; too little history
   and a value that could not be computed are "not checked" with their reason, never "did not match").
 * `rows` - one per condition, in the screen's reading order and with the evidence pack's own ids (`b1.c1`, ...), the
   evidence pack's state rules (`evidence.condition_state`: an OR met by another branch is "not needed") and its value
@@ -29,7 +29,8 @@ import pandas as pd
 from app.screener import evidence as E
 from app.screener import nodes as n
 from app.screener import reasons
-from app.screener.runtime import ScreenRuntimeError, SymbolData, _Eval, _last, bar_close, last_match
+from app.screener.breakouts.screens import skip_missing_volume
+from app.screener.runtime import ScreenRuntimeError, SymbolData, _Eval, _last, bar_close, no_index_volume, symbol_match
 
 FLAG = "watchlist_screen"
 SETTINGS = "watchlist_screens"          # internal user_prefs row: each list's screen and alert choice (W1 / W4)
@@ -125,31 +126,38 @@ def screen_marks(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, pa
     base = data.frames.get(base_tf)
     if base is None or base.empty:
         return {"matched": False, "reason": reasons.Reason(f"no {base_tf} bars", reasons.NO_BARS), "rows": [], "hits": [], "bar": None}
+    no_index_volume([data])                                   # M93-Q3: as run_screen (an index's 0 volume is no volume data)
     ev = _Eval(data, base_tf, params, constants)
     why: reasons.Reason | None = None
     matched = False
+    note: str | None = None
     short = _short(validated, data, ev, base_tf)
     if short:
         why = reasons.short_history(short)
     else:
         try:
-            m = last_match(data.symbol, _last(ev.ev(ast, base_tf)))
-            matched, why = m.matched, (reasons.as_reason(m.reason) if m.reason else None)
+            m = symbol_match(ev, ast, base_tf)                # run_screen's own answer (M93-Q3 no-data rules included)
+            matched, why, note = m.matched, (reasons.as_reason(m.reason) if m.reason else None), m.note
         except ScreenRuntimeError as exc:
             why = reasons.Reason(str(exc), reasons.NOT_CHECKED)
         except Exception as exc:  # noqa: BLE001 - one symbol's bad data never fails the list (run_screen's rule)
             why = reasons.not_checked(exc, data.symbol)
     try:
-        rows = condition_rows(ev, ast, base_tf, params, base)
+        with skip_missing_volume():             # M93-Q3: each condition read as the list reads it
+            rows = condition_rows(ev, ast, base_tf, params, base)
     except Exception as exc:  # noqa: BLE001 - the marks of a symbol whose data broke the screen: none, with its reason
         rows = []
         why = why or reasons.not_checked(exc, data.symbol)
     hits: list[bool] = []
     if bars > 0:
-        hits = bar_hits(ast, validated, data, ev, base_tf=base_tf, params=params, constants=constants, bars=bars)
+        with skip_missing_volume():             # M93-Q3: the bars read as the list reads them
+            hits = bar_hits(ast, validated, data, ev, base_tf=base_tf, params=params, constants=constants, bars=bars)
         if hits:
             hits[-1] = bool(matched)            # the newest bar is the list's own answer, by construction
-    return {"matched": bool(matched), "reason": why, "rows": rows, "hits": hits, "bar": base.index[-1]}
+    out = {"matched": bool(matched), "reason": why, "rows": rows, "hits": hits, "bar": base.index[-1]}
+    if note:
+        out["note"] = note                      # M93-Q3: a volume condition not applied (no volume data)
+    return out
 
 
 def marks_of(rows: Iterable[dict[str, Any]]) -> list[str]:

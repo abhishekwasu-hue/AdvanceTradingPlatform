@@ -26,12 +26,20 @@ Each screen gives, per side ("up" = breakout, "down" = breakdown), a frame with:
   through     B14: the close went through the level by the minimum distance
   measured_move  BK4: the measured-move price (B5 channel: edge + width; B6: level + pole / triangle height)
 The down side is the up rule on mirrored prices (high <-> -low), so the two sides cannot drift apart.
+
+M93-Q3 (owner decision: a missing volume is no volume data): inside `skip_missing_volume()` (the screener's runs) a
+volume condition on a bar with no volume data - its volume is missing, or its average has bars without volume where a
+stock would have them - is NOT applied (treated as passed, `volume_skipped`), and the run says so (`VolumeNotes`). A
+screen whose own condition is volume (B14) cannot be checked there (`volume_required`). Outside it (the strategy
+templates) a missing volume fails the condition as before. Bars with real volume are never affected.
 """
 from __future__ import annotations
 
 import math
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -68,6 +76,31 @@ SIDES = ("up", "down")
 # params.py); D1-D3 keep the swing history (registry SWING_DEGREE_MIN_BARS), not measured for the trend.
 DOW_MIN_BARS: Tuple[int, ...] = (40, 250, 600, 1200)
 COLUMNS = ("raw", "signal", "level", "fail_level", "base_len", "base_high", "base_low", "wick", "event", "days_since", "through", "measured_move")
+
+
+@dataclass
+class VolumeNotes:
+    """M93-Q3: what one screen run met on its LAST bar - a volume condition not applied for want of volume data
+    (`skipped`), or a screen that is volume itself with no volume data (`required`: it could not be checked)."""
+    skipped: bool = False
+    required: bool = False
+
+
+_VOLUME_NOTES: ContextVar[Optional[VolumeNotes]] = ContextVar("breakout_volume_notes", default=None)
+VOLUME_SKIPPED_NOTE = "Volume not available: the volume condition was not applied."
+VOLUME_REQUIRED_NOTE = "Volume not available: this screen needs volume, so it could not be checked."
+
+
+@contextmanager
+def skip_missing_volume() -> Iterator[VolumeNotes]:
+    """M93-Q3: the screener's rule for the code inside - a volume condition with no volume data is not applied, and the
+    returned notes say so. Nested calls each get their own notes."""
+    notes = VolumeNotes()
+    token = _VOLUME_NOTES.set(notes)
+    try:
+        yield notes
+    finally:
+        _VOLUME_NOTES.reset(token)
 
 
 def _shift(x: np.ndarray, k: int = 1) -> np.ndarray:
@@ -155,6 +188,8 @@ class Bars:
         self._vwap: Optional[np.ndarray] = None
         self._tod: Optional[np.ndarray] = None
         self._memo: Dict[Any, Any] = {}
+        self.volume_skipped = np.zeros(self.n, dtype=bool)               # M93-Q3: a volume condition was not applied here
+        self.volume_required = np.zeros(self.n, dtype=bool)              # M93-Q3: a volume screen could not be checked here
 
     def _volume_average(self) -> None:
         n = int(self.p["vol_avg_n"])
@@ -264,10 +299,64 @@ class Bars:
             return _Side(1, self.o, self.h, self.l, self.c)
         return _Side(-1, -self.o, -self.l, -self.h, -self.c)
 
-    def vol_ok(self, mult: float) -> np.ndarray:
+    # ---- M93-Q3: no volume data -------------------------------------------------------------------------------------
+    def volume_missing(self, time_of_day: bool) -> np.ndarray:
+        """Per bar: no volume data for a volume check - the bar's own volume is missing (NaN), or its average is not
+        there while bars without volume sit in what it averages (the previous `vol_avg_n` bars; by time of day, any
+        earlier bar). Warm-up (too few bars, all with volume) and a real zero volume are NOT missing data."""
+        nan = ~np.isfinite(self.v)
+        if not nan.any():
+            return nan
+        if time_of_day:
+            before = (np.cumsum(nan) - nan) > 0
+            return nan | (~np.isfinite(self.tod_rvol()) & before)
+        n = int(self.p["vol_avg_n"])
+        before = pd.Series(nan.astype(float)).shift(1).rolling(n, min_periods=1).sum().to_numpy(float) > 0
+        return nan | (~np.isfinite(self.vol_avg) & before)
+
+    def vwap_missing(self) -> np.ndarray:
+        """Per bar: the session VWAP is not there because the session has no volume data so far (an index)."""
+        nan = ~np.isfinite(self.v)
+        if not nan.any():
+            return nan
+        return self.sessions().in_session & ~np.isfinite(self.vwap()) & nan
+
+    def allow_missing(self, ok: np.ndarray, missing: np.ndarray, required: bool = False) -> np.ndarray:
+        """`ok` with the screener's rule for bars without volume data (`skip_missing_volume`): a confirmation is not
+        applied there (passed, marked `volume_skipped`); a `required` volume condition stays False (`volume_required`).
+        Outside the screener's rule, or with no such bar, `ok` is returned unchanged."""
+        notes = _VOLUME_NOTES.get()
+        if notes is None or not missing.any():
+            return ok
+        if required:
+            self.volume_required |= missing
+            notes.required = notes.required or bool(missing[-1])
+            return ok
+        self.volume_skipped |= missing
+        notes.skipped = notes.skipped or bool(missing[-1])
+        return ok | missing
+
+    def skip_rule(self, t: int, has_data: bool) -> bool:
+        """One bar's volume rule (B3 dry-up) without volume data: True when the screener's rule does not apply it."""
+        notes = _VOLUME_NOTES.get()
+        if has_data or notes is None:
+            return False
+        self.volume_skipped[t] = True
+        notes.skipped = notes.skipped or t == self.n - 1
+        return True
+
+    def vol_ok(self, mult: float, required: bool = False) -> np.ndarray:
         if mult <= 0:
             return np.ones(self.n, dtype=bool)
-        return np.nan_to_num(self.rvol, nan=-1.0) >= mult
+        ok = np.nan_to_num(self.rvol, nan=-1.0) >= mult
+        return self.allow_missing(ok, self.volume_missing(self.intraday), required)
+
+    def tod_vol_ok(self, mult: float) -> np.ndarray:
+        """Time-of-day relative volume >= mult (the intraday screens' confirmation), with the no-volume rule."""
+        if mult <= 0:
+            return np.ones(self.n, dtype=bool)
+        ok = np.nan_to_num(self.tod_rvol(), nan=-1.0) >= mult
+        return self.allow_missing(ok, self.volume_missing(True))
 
     def pivots(self, degree: int) -> List[Any]:
         """Confirmed causal swings (app/price_action/causal_swings, default settings) in confirmation order."""
@@ -507,7 +596,7 @@ def _b14(b: Bars, s: _Side, p: Dict[str, Any], out: Dict[str, np.ndarray]) -> No
     with np.errstate(invalid="ignore"):
         at = np.isfinite(level) & np.isfinite(b.atr_prev) & (s.h >= level - p["level_tol_atr"] * b.atr_prev)
     through, _ = _beyond(s, b, level, p["min_break_atr"])
-    raw = at & _directional(s, p["close_loc"]) & b.vol_ok(p["shock_mult"])
+    raw = at & _directional(s, p["close_loc"]) & b.vol_ok(p["shock_mult"], required=True)    # volume IS the screen (M93-Q3)
     out["raw"][:] = raw
     out["through"][:] = through & raw
     out["level"][:] = np.where(through, level, s.l)                       # not through: the shock bar's low must hold
@@ -591,4 +680,4 @@ def evaluate_screen(f: pd.DataFrame, screen: str, p: Dict[str, Any], *, bars: Op
     return result
 
 
-__all__ = ["SCREENS", "SCREEN_TIMEFRAMES", "INTRADAY_SCREENS", "BK3_SCREENS", "BK4_SCREENS", "is_state", "SIDES", "COLUMNS", "Bars", "evaluate_screen", "one_per_leg"]
+__all__ = ["VolumeNotes", "skip_missing_volume", "VOLUME_SKIPPED_NOTE", "VOLUME_REQUIRED_NOTE", "SCREENS", "SCREEN_TIMEFRAMES", "INTRADAY_SCREENS", "BK3_SCREENS", "BK4_SCREENS", "is_state", "SIDES", "COLUMNS", "Bars", "evaluate_screen", "one_per_leg"]

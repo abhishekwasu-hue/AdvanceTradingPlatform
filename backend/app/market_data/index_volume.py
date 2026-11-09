@@ -15,6 +15,9 @@ index's near-month future instead, and says so (`volume_source`).
   do not serve expired contracts' history): older bars than its first one get 0, and the label says so.
 - **When not.** No contract in the master, or its bars could not be loaded: the index's own volume is left as it was and
   `volume_source` is null.
+- **Screens (M93-Q3, owner decision: a missing or 0 volume is no volume data).** An index has no traded volume, so a 0
+  in its bars (the NSE files, a broker's index bars, a bar the future has none for) is not volume: `screen_frame`
+  turns it into "missing" (NaN) for the screener, which then never treats it as traded volume. Charts keep their 0.
 Nothing here places an order.
 """
 from __future__ import annotations
@@ -23,6 +26,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Iterable, List, Optional
 
+import numpy as np
+import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import OHLCVBar
@@ -83,3 +88,27 @@ def replace_volume(bars: Iterable[OHLCVBar], future_bars: Iterable[OHLCVBar]) ->
     """Each bar with the volume of the future's bar at the same instant (0 where the future has none)."""
     volumes = {_utc(b.timestamp): float(b.volume or 0.0) for b in future_bars}
     return [b.model_copy(update={"volume": volumes.get(_utc(b.timestamp), 0.0)}) for b in bars]
+
+
+def is_index(symbol: str) -> bool:
+    """M93-Q3: `symbol` is an index (no traded volume of its own): an F&O index's candle symbol or underlying name
+    (`NIFTY 50`, `NIFTY BANK`, `SENSEX`), or a name the platform stores as an index (`NIFTY50` -> NSE_INDEX:NIFTY50)."""
+    key = " ".join((symbol or "").split()).upper()
+    if not key:
+        return False
+    if key in master.UNDERLYING_ALIASES:
+        return True
+    from app.ai.tools.copilot import lake_key
+    return lake_key(key).split(":", 1)[0].endswith("_INDEX")
+
+
+def screen_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """M93-Q3: an index's bars with "no volume data" (NaN) where its volume is 0 - a copy; the frame itself when there
+    is no 0 (or no volume column)."""
+    if "volume" not in frame.columns:
+        return frame
+    volume = frame["volume"].astype(float)
+    zero = (volume == 0).to_numpy()
+    if not zero.any():
+        return frame
+    return frame.assign(volume=volume.mask(zero, np.nan))

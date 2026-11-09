@@ -177,9 +177,18 @@ def _dry(v: np.ndarray, base: Base) -> bool:
     last_hi, last_lo, _ = base.contractions[-1]
     a = v[first_hi.bar:first_lo.bar + 1]
     z = v[last_hi.bar:last_lo.bar + 1]
-    if not len(a) or not len(z) or not np.isfinite(a).all() or not np.isfinite(z).all():
+    if not _has_volume(v, base):
         return False                                            # no volume data: the rule cannot hold (indices: turn it off)
     return bool(z.mean() < a.mean())
+
+
+def _has_volume(v: np.ndarray, base: Base) -> bool:
+    """M93-Q3: the base's first and last contractions have volume on every bar (else the dry-up has no data)."""
+    first_hi, first_lo, _ = base.contractions[0]
+    last_hi, last_lo, _ = base.contractions[-1]
+    a = v[first_hi.bar:first_lo.bar + 1]
+    z = v[last_hi.bar:last_lo.bar + 1]
+    return bool(len(a) and len(z) and np.isfinite(a).all() and np.isfinite(z).all())
 
 
 def b3(b: "Bars", s: "_Side", p: Dict[str, Any], out: Dict[str, np.ndarray]) -> None:
@@ -206,7 +215,7 @@ def b3(b: "Bars", s: "_Side", p: Dict[str, Any], out: Dict[str, np.ndarray]) -> 
         elif not (np.isfinite(buf[t]) and c > pivot_price + buf[t] and vol_ok[t]):
             continue
         base = base_at(piv, k, t, p)
-        if base is None or (dryup and not _dry(b.v, base)):
+        if base is None or (dryup and not _dry(b.v, base) and not b.skip_rule(t, _has_volume(b.v, base))):
             continue
         since = s.c[base.last_low.bar + 1:t]
         if np.any(since > pivot_price):                         # broken before: not the first close above, not "ready"

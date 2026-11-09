@@ -36,6 +36,9 @@ NOT_CHECKED = "not_checked"
 NOT_READ = "not_read"
 NOT_STORED = "not_stored"              # stored daily history (before the broker login) lacks the symbol
 NOTHING_READ = "nothing_read"          # the run-level error: not one symbol could be read
+NO_VOLUME = "no_volume"                # M93-Q3: the screen reads volume and the symbol's bars have none (an index)
+NO_FIGURES = "no_figures"              # M93-Q3: a fundamentals screen and no figures stored for the company
+NO_FIGURES_NOW = "no_figures_now"      # M93-Q3: figures stored, but none the screen can use on the last bar
 
 _SENTENCE = {
     LOGIN_ENDED: "Your broker login has ended. Log in again to read the bars.",
@@ -47,10 +50,14 @@ _SENTENCE = {
     NO_VALUE: "The screen has no value on the last bar (too little history for its indicators).",
     NOT_CHECKED: "This stock's bars could not be checked.",
     NOT_READ: "The bars could not be read.",
+    NO_VOLUME: "Not checked: volume not available for this symbol.",
+    NO_FIGURES: "Not checked: no figures stored for this company.",
+    NO_FIGURES_NOW: "Not checked: this company's figures for this screen are not available (not reported, too old or not computable).",
 }
 _ACTION = {
     LOGIN_ENDED: LOGIN, BROKER_REFUSED: RETRY, TIMEFRAME_REFUSED: TIMEFRAME, RATE_LIMITED: RETRY, UNREACHABLE: RETRY,
     NO_BARS: TIMEFRAME, NOT_STORED: LOGIN, SESSION_BUDGET: RETRY, SHORT_HISTORY: TIMEFRAME, NO_VALUE: TIMEFRAME, NOT_CHECKED: RETRY, NOT_READ: RETRY,
+    NO_VOLUME: TIMEFRAME, NO_FIGURES: RETRY, NO_FIGURES_NOW: RETRY,
 }
 # a tie between two groups of the same size: the action that fixes most first
 _PRIORITY = {LOGIN: 0, CONNECT: 1, TIMEFRAME: 2, RETRY: 3}
@@ -124,12 +131,15 @@ def not_checked(exc: BaseException, symbol: str) -> Reason:
     return of(NOT_CHECKED)
 
 
-def row(symbol: str, matched: bool, reason: Optional[str]) -> Dict[str, Any]:
-    """One result row: `reason` (the sentence), `code` and `action` when the symbol could not be read or checked."""
+def row(symbol: str, matched: bool, reason: Optional[str], note: Optional[str] = None) -> Dict[str, Any]:
+    """One result row: `reason` (the sentence), `code` and `action` when the symbol could not be read or checked; `note`
+    (M93-Q3) when the answer could not use something (a volume condition not applied for want of volume data)."""
     out: Dict[str, Any] = {"symbol": symbol, "matched": matched, "reason": str(reason) if reason is not None else None}
     if reason is not None:
         r = as_reason(reason)
         out["code"], out["action"] = r.code, r.action
+    if note:
+        out["note"] = str(note)
     return out
 
 
@@ -156,4 +166,4 @@ def summary(results: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
 
 __all__ = ["Reason", "ACTIONS", "of", "as_reason", "short_history", "from_exception", "not_checked", "row", "unread_rows", "summary",
            "LOGIN_ENDED", "BROKER_REFUSED", "TIMEFRAME_REFUSED", "RATE_LIMITED", "UNREACHABLE", "NO_BARS", "SESSION_BUDGET",
-           "SHORT_HISTORY", "NO_VALUE", "NOT_CHECKED", "NOT_READ", "NOT_STORED", "NOTHING_READ"]
+           "SHORT_HISTORY", "NO_VALUE", "NOT_CHECKED", "NOT_READ", "NOT_STORED", "NOTHING_READ", "NO_VOLUME", "NO_FIGURES", "NO_FIGURES_NOW"]

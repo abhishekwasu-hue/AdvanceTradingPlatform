@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import sample from "./evidenceSample.json";
 import {
-  barTimeText, chartSummary, drawableColor, evidenceGeometry, replaySteps, stepReplay, trendTone, verifyRows, visibleDrawables,
+  barCloseMs, barTimeText, chartSummary, drawableColor, evidenceGeometry, replaySteps, stepReplay, trendTone, verifyRows, visibleDrawables,
   type EvidenceDrawable, type EvidencePack,
 } from "./evidence";
 
@@ -76,7 +76,9 @@ describe("evidence context helpers (U8 EV3)", () => {
   it("replay steps are the window's bar closes up to the pack's own bar, oldest first; the last is the stored pack", () => {
     const steps = replaySteps(pack);
     expect(steps).toHaveLength(pack.bars.t.length);
-    expect(steps[0]).toBe(new Date(Date.parse(pack.bars.t[0]) + 86400e3).toISOString());
+    expect(steps[0]).toBe(new Date(barCloseMs(Date.parse(pack.bars.t[0]), "1d", 86400e3)).toISOString());   // 15:30 IST of that day
+    expect(barCloseMs(Date.parse("2025-02-20T03:45:00Z"), "1d", 86400e3)).toBe(Date.parse("2025-02-20T10:00:00Z"));
+    expect(barCloseMs(Date.parse("2025-02-19T18:30:00Z"), "1d", 86400e3)).toBe(Date.parse("2025-02-20T10:00:00Z"));
     expect(Date.parse(steps[steps.length - 1])).toBe(Date.parse(pack.as_of.bar_close));
     expect(steps.every((t, i) => i === 0 || Date.parse(t) > Date.parse(steps[i - 1]))).toBe(true);
     expect(replaySteps({ ...pack, base_tf: "1w" })).toEqual([]);                          // weekly screens are not replayed

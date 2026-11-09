@@ -12,7 +12,7 @@ import asyncio
 import json
 import random
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date
 
 import pytest
 from sqlalchemy import select
@@ -20,7 +20,6 @@ from sqlalchemy import select
 from app.ai import worker_bridge
 from app.core.models import RiskConfig
 from app.db.models import InstrumentRecord, OrderRecord, StrategyDeploymentRecord, TradeRecord
-from app.market_data.calendar import IST
 from app.me import prefs as P
 from app.paper import fno_basket, fno_ticket
 from app.platform import phase0_lock
@@ -29,6 +28,7 @@ from tests.test_trading_worker import _tenant
 from tests.test_z3b_paper_account import _member, _paper_flag
 from tests.test_z5_p1d_risk_by_default import _flag
 from tests.test_z10c_phase0_lock import _store_lock
+from tests.unique_expiry import unique_expiry
 
 LOT = 75
 SPOT = 30000.0
@@ -39,7 +39,7 @@ def _run(coro):
 
 
 def _expiry() -> date:
-    return datetime.now(IST).date() + timedelta(days=60 + random.randint(0, 2000))
+    return unique_expiry()
 
 
 def _contract(expiry: date, strike: float, right: str) -> str:

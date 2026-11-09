@@ -31,6 +31,7 @@ from tests.test_oc1_option_chain_view import _MemoryCache
 from tests.test_phase_aa_market_data_api import _Broker, _store_credentials
 from tests.test_phase_k_commercial import _owner
 from tests.test_z3_approval_entries import _price
+from tests.unique_expiry import unique_expiry
 
 run = asyncio.run
 LOT = 50
@@ -328,7 +329,7 @@ def _trade(trade_id) -> TradeRecord:
 @pytest.fixture
 def fut(monkeypatch):
     t = _org_tenant("fut")
-    expiry = datetime.now(IST).date() + timedelta(days=60 + random.randint(0, 2000))
+    expiry = unique_expiry()
     name = "NIFTY"
     row = _future(name, expiry)
     row.tradingsymbol = f"NIFTY{uuid.uuid4().hex[:6].upper()}FUT"

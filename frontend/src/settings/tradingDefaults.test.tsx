@@ -104,7 +104,7 @@ describe("pre-fill per form", () => {
     expect(request).toEqual({ ...paperBotRequest("orb_15m_5m", "NIFTY 50", intraday), expiry_rule: "NEXT", max_lots: 2, strike_rule: "OTM", strike_offset: 2,
       exit_rules: { trailing_stop_pct: 1.5 } });
     expect(applied).toEqual(["strike 2 steps out of the money", "next expiry", "2 lots", "trailing stop 1.5%"]);
-    expect(startSummary("NIFTY 50", intraday, request)).toBe("Trades a NIFTY 50 option at the next expiry, 2 lots, closed before the market closes. Paper money only; your risk limits apply.");
+    expect(startSummary("NIFTY 50", intraday, request)).toBe("Trades a NIFTY 50 option at the next expiry, 2 lots, closed at your Square-off time (Trade settings) if you set one. Paper money only; your risk limits apply.");
   });
 
   it("futures as the default: the option rules go, the expiry and lots stay", () => {

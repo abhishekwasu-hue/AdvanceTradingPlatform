@@ -173,7 +173,7 @@ def srt_time(t: float) -> str:
 
 
 def build_form(episode: str, lang: str, form: str, script: dict, shots: Path, out_dir: Path, work: Path,
-               provider: tts.Provider, cache: Path) -> Tuple[Path, Path, float, List[str]]:
+               provider: tts.Provider, cache: Path, suffix: str = "") -> Tuple[Path, Path, float, List[str]]:
     size = SIZE[form]
     work.mkdir(parents=True, exist_ok=True)
     notes: List[str] = []
@@ -198,6 +198,7 @@ def build_form(episode: str, lang: str, form: str, script: dict, shots: Path, ou
         notes += [f"{form} scene {scene['n']}: {p}" for p in problems]
         last_png: Optional[Path] = None
         last_focus: Optional[dict] = None
+        speaker = tts.scene_speaker(script, scene)          # the narrator of this scene (script `narrator` / scene `voice`)
         for line in scene["lines"]:
             beat = table.get(line["shot"])
             if beat:
@@ -206,9 +207,11 @@ def build_form(episode: str, lang: str, form: str, script: dict, shots: Path, ou
                 raise SystemExit(f"{form} scene {scene['n']}: no still for '{line['shot']}' (see beats.json problems)")
             else:
                 notes.append(f"{form} scene {scene['n']}: '{line['shot']}' missing, the line keeps the frame before it")
-            wav, _ = tts.speak(provider, line["text"], lang, cache)
+            wav, _ = tts.speak(provider, line["text"], lang, cache, speaker)
             voice = to_pcm(wav)
             secs = len(voice) / 2 / RATE
+            if secs < 0.3:
+                notes.append(f"{form} scene {scene['n']}: almost no voice ({secs:.2f} s) for: {line['text']}")
             gap = END_GAP_S if line.get("end") else GAP_S
             subs.append((clock, clock + secs + gap * 0.6, line["text"]))
             add_audio(bytes(voice) + silence(gap), secs + gap)
@@ -219,7 +222,11 @@ def build_form(episode: str, lang: str, form: str, script: dict, shots: Path, ou
                 segments[-1] = (p, f, s + secs + gap)
             else:
                 segments.append((last_png, focus, secs + gap))
-        scene_lengths.append(f"scene {scene['n']}: {clock - start:.0f} s (planned {scene.get('target_s', '?')} s)")
+        # The scene is as long as its voice (never cut): a scene longer than planned is extended, and said so.
+        planned = scene.get("target_s")
+        longer = f", extended by {clock - start - planned:.0f} s" if planned and clock - start > planned + 0.5 else ""
+        who = f", {speaker}" if speaker and provider.name == "indictts" else ""
+        scene_lengths.append(f"scene {scene['n']}: {clock - start:.0f} s (planned {planned or '?'} s{longer}{who})")
     segments.append((cards / f"outro-{lang}.png", None, OUTRO_S))
     add_audio(silence(OUTRO_S), OUTRO_S)
 
@@ -246,7 +253,7 @@ def build_form(episode: str, lang: str, form: str, script: dict, shots: Path, ou
         w.writeframes(bytes(pcm))
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    name = f"{episode}.{lang}.{form}"
+    name = f"{episode}.{lang}.{form}" + (f".{suffix}" if suffix else "")
     srt = out_dir / f"{name}.srt"
     srt.write_text("".join(f"{i}\n{srt_time(a)} --> {srt_time(b)}\n{t}\n\n" for i, (a, b, t) in enumerate(subs, 1)), encoding="utf-8")
     mp4 = out_dir / f"{name}.mp4"
@@ -265,7 +272,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("episode", help="E1 ... E6")
     ap.add_argument("lang", choices=["en", "mr"])
     ap.add_argument("--form", choices=["desktop", "phone", "both"], default="both")
-    ap.add_argument("--tts", default=os.environ.get("ATP_VIDEO_TTS", "placeholder"), help="placeholder | silent | azure | sarvam")
+    ap.add_argument("--tts", default=os.environ.get("ATP_VIDEO_TTS", "placeholder"), help="placeholder | silent | azure | sarvam | indictts")
     ap.add_argument("--allow-paid", action="store_true", help="let a paid TTS service run (owner approval first)")
     ap.add_argument("--out", default=os.environ.get("ATP_VIDEO_OUT", str(REPO.parent / "atp-video-out")),
                     help="output folder (outside git; default ../atp-video-out)")
@@ -273,6 +280,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--skip-build", action="store_true", help="skip `npm run build` (the dist/ is current)")
     ap.add_argument("--keep-shots", action="store_true", help="keep the stills after the build")
     ap.add_argument("--check-only", action="store_true", help="only check the scripts")
+    ap.add_argument("--suffix", default="", help="added to the output names: <E>.<lang>.<form>.<suffix>.mp4 (e.g. a voice tag)")
     a = ap.parse_args(argv)
 
     episode = a.episode.upper()
@@ -290,7 +298,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not shutil.which(tool):
             raise SystemExit(f"{tool} is not installed")
     provider = tts.pick(a.tts, a.allow_paid)
-    log(f"voice: {provider.name}{' (placeholder - not for publishing)' if not provider.paid else ''}")
+    placeholder = provider.name in ("placeholder", "silent")
+    log(f"voice: {provider.name}{' (placeholder - not for publishing)' if placeholder else ''}")
+    unsaid = tts.unsayable(provider, script)
+    if unsaid:
+        print("lines the voice cannot say (add the words to docs/video/scripts/pronounce.json):\n  " + "\n  ".join(unsaid),
+              file=sys.stderr)
+        return 1
     out = Path(a.out).resolve()
     shots = out / "shots" / episode
     forms = ["desktop", "phone"] if a.form == "both" else [a.form]
@@ -300,10 +314,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     notes: List[str] = []
     for form in forms:
         mp4, srt, secs, n = build_form(episode, a.lang, form, script, shots, out, out / "work" / f"{episode}-{a.lang}-{form}",
-                                       provider, out / "tts-cache")
+                                       provider, out / "tts-cache", a.suffix)
         notes += n
         if not 120 <= secs <= 240:
-            notes.append(f"{form}: {secs:.0f} s is outside the 2-4 minute plan (placeholder voice timing)")
+            notes.append(f"{form}: {secs:.0f} s is outside the 2-4 minute plan ({provider.name} voice timing)")
         log(f"wrote {mp4} ({mp4.stat().st_size / 1e6:.1f} MB) and {srt.name}")
     if not a.keep_shots:
         for form in forms:

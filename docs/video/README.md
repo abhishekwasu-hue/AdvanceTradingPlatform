@@ -9,8 +9,10 @@ episode.
 | `EPISODES.md` | V1: the episode map (scenes 1-19 -> E1-E6), lengths, the lines to verify after the M90 deploy |
 | `scripts/E1.en.json` ... `E6.mr.json` | V3: one scene-timed script per episode and language; each line = one voice clip + one subtitle, spoken over a still (`shot`) |
 | `scripts/rules.json` | The education line every scene ends with, and the words a script never uses (per language) |
+| `scripts/pronounce.json` | How the local voice says the words it cannot read (Latin letters, digits), per language; TTS input only |
 | `../../frontend/e2e/video/` | V2: the Playwright scene files: `scenes.ts` (19 scenes), `videoWorld.ts` (the made-up world), `director.ts` (cursor ring, outline, zoom box), `cards.ts`, `capture.video.ts`, `playwright.video.config.ts` |
-| `tools/tts.py` | The TTS adapter: `placeholder` (espeak-ng, offline), `silent`, `azure`, `sarvam` (paid, off without a key and `--allow-paid`) |
+| `tools/tts.py` | The TTS adapter: `indictts` (free local Marathi voice, female + male), `placeholder` (espeak-ng, offline), `silent`, `azure`, `sarvam` (paid, off without a key and `--allow-paid`) |
+| `tools/indictts_worker.py`, `setup_indictts.sh` | The local Marathi voice: the worker that runs in its own venv, and the script that installs it |
 | `tools/build.py`, `build.sh` | V4 / V5: capture, voice, picture, subtitles, MP4 + SRT |
 | `TTS_COST.md` | Characters per episode and the cost per provider (prices to confirm) |
 
@@ -25,7 +27,7 @@ docs/video/build.sh E2 en --check-only    # only check the script
 Outputs (outside git, default `../atp-video-out`, or `--out DIR` / `ATP_VIDEO_OUT`):
 `<E>.<lang>.desktop.mp4`, `<E>.<lang>.phone.mp4` (H.264 + AAC, subtitles burned in) and the `.srt` next to each.
 
-Options: `--tts placeholder|silent|azure|sarvam`, `--allow-paid`, `--reuse-shots` (skip the capture when the stills are
+Options: `--tts indictts|placeholder|silent|azure|sarvam`, `--allow-paid`, `--suffix TAG` (`<E>.<lang>.<form>.<TAG>.mp4`), `--reuse-shots` (skip the capture when the stills are
 there), `--keep-shots`, `--skip-build` (the frontend `dist/` is current).
 
 ## Needs
@@ -58,7 +60,29 @@ Lists are the app's own group labels with generic members (STOCK01 ...), never a
 next to a name (the Today page is blurred while the menu is shown, and the evidence chart is pointed at, not opened);
 the account has no email; no server address, token or key is used or shown. Counts and matches are made up.
 
-## The voice (owner decision first)
+## The Marathi voice: AI4Bharat Indic-TTS (owner decision: both voices)
+
+Free and local: AI4Bharat Indic-TTS, Marathi (FastPitch + HiFi-GAN, MIT licence), on the CPU, no key, no network at
+run time. Two speakers, `female` and `male`.
+
+```sh
+ATP_INDICTTS_DIR=/dev/shm/atp-indictts docs/video/setup_indictts.sh      # once: venv (~6 GB) + model (1.6 GB)
+ATP_INDICTTS_DIR=/dev/shm/atp-indictts docs/video/build.sh E1 mr --tts indictts --suffix both
+rm -rf /dev/shm/atp-indictts                                              # when done
+```
+
+- The model is downloaded from the GitHub release of AI4Bharat/Indic-TTS (`v1-checkpoints-release/mr.zip`, checked by
+  its SHA-256) into `ATP_INDICTTS_DIR` (default `../atp-indictts`, outside git). torch comes from PyPI.
+- **Narrator per scene**: each Marathi script has `"narrator": {"odd": "female", "even": "male"}` (the speaker for odd
+  and even scene numbers - the default, the owner said "use both"). Change it there; a scene may set its own `"voice"`.
+- **Pronunciation**: the model reads Devanagari only (no Latin letters, only some digits). Before a line is spoken it
+  goes through `scripts/pronounce.json` ("Find setups" -> फाइंड सेटअप्स, "Run" -> रन, "NIFTY" -> निफ्टी, numbers in
+  words). The subtitles keep the script as written. The build stops before any clip if a line still has a character
+  the model cannot say, and lists it; `python3 docs/video/tools/tts.py say E1 mr` prints every line as it is spoken.
+- A scene is as long as its voice: a line is never cut; a scene longer than its `target_s` is extended and the build
+  says so.
+
+## Other voices (owner decision first)
 
 The placeholder voice is for checking the timing and the pipeline only. A paid voice runs only with its key in the
 environment **and** `--allow-paid`:

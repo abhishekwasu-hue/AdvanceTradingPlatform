@@ -33,6 +33,7 @@ characters a month, which is more than the whole series. Sarvam reports INR 1,00
 | Provider | Price used above | Source (read on 8 Nov 2026) | Status |
 |---|---|---|---|
 | Azure AI Speech, neural voices (mr-IN-AarohiNeural, mr-IN-ManoharNeural, en-IN-NeerjaNeural / PrabhatNeural) | USD 16 per 1 million characters (pay as you go) | Web search summaries of the Azure pricing page and third-party price lists. Azure's own page shows prices only in its interactive table; another list gave USD 15. | **To confirm** on azure.microsoft.com/pricing/details/cognitive-services/speech-services for the account's region and currency. |
+| AI4Bharat Indic-TTS, Marathi (female + male; owner decision: both) | Free: runs locally on the CPU, MIT licence; no key, no per-character cost | github.com/AI4Bharat/Indic-TTS (LICENSE.txt, release `v1-checkpoints-release`) | **In use** for the Marathi videos (`--tts indictts`, README) |
 | Sarvam AI Bulbul v2 | INR 15 per 10,000 characters | Web search summary of Sarvam's API pricing page and docs (docs.sarvam.ai, sarvam.ai/api-pricing) | **To confirm** on sarvam.ai/api-pricing |
 | Sarvam AI Bulbul v3 | INR 30 per 10,000 characters (marked beta pricing) | as above | **To confirm** |
 | Sarvam AI Bulbul V4 Flash | INR 20 per 10,000 characters reported, with a launch offer of INR 10 until 12 Nov | News reports only; not on the pricing pages found | **Not used above**; to confirm |

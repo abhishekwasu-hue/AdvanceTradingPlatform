@@ -1,6 +1,7 @@
 {
  "episode": "E1",
  "lang": "mr",
+ "narrator": {"odd": "female", "even": "male"},
  "title": "Find setups 1: हे काय आहे, आणि पानाची ओळख",
  "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `verify` marks a line written for shipped behaviour to check on the live site before recording.",
  "intro": {

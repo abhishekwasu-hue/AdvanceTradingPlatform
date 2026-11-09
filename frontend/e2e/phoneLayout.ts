@@ -44,6 +44,16 @@ export async function expectPhoneLayout(page: Page): Promise<void> {
   expect([5, 6]).toContain(report.navItems.length);
   for (const [w, h] of report.navItems) { expect(w).toBeGreaterThanOrEqual(44); expect(h).toBeGreaterThanOrEqual(44); }
 
+  // The Copilot chat bubble (CH-1) never covers a page's bottom action bar (Find setups' Run, the terminal's status bar).
+  // It is placed on the next frame after a bar changes, so the check waits for it.
+  await expect.poll(() => page.evaluate(() => {
+    const bubble = document.querySelector("[data-chat-bubble]")?.getBoundingClientRect();
+    if (!bubble || !bubble.height) return [];
+    return [...document.querySelectorAll("[data-bottom-action]")].map((e) => [e, e.getBoundingClientRect()] as const)
+      .filter(([, b]) => b.height > 0 && b.width > 0 && b.top < bubble.bottom && b.bottom > bubble.top && b.left < bubble.right && b.right > bubble.left)
+      .map(([e]) => (e.getAttribute("aria-label") ?? e.getAttribute("data-testid") ?? e.tagName));
+  }), { message: "the chat bubble covers a bottom action bar" }).toEqual([]);
+
   // The end of the page scrolls clear of the fixed bottom bar.
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   const clear = await page.evaluate(() => {
@@ -54,6 +64,62 @@ export async function expectPhoneLayout(page: Page): Promise<void> {
     return last ? last.getBoundingClientRect().bottom <= nav.top + 1 : true;
   });
   expect(clear, "the last control on the page sits under the bottom navigation").toBe(true);
+
+  // Owner fix (bubble over the list): scrolled to the end, once the bubble is back (it steps aside while anything
+  // scrolls), nothing of the page's last rows is under it - the page's end padding and its lists' end room clear it.
+  await expectBubbleClearAtEnd(page);
+}
+
+/**
+ * The Copilot chat bubble (CH-1) at the end of the page: every list in <main> that scrolls on its own and the page itself
+ * are scrolled to their ends, the bubble comes back, and no visible piece of content (a leaf box, clipped by the boxes
+ * that scroll or clip it) lies under the bubble. Nothing to check while the bubble is not on the page.
+ */
+export async function expectBubbleClearAtEnd(page: Page): Promise<void> {
+  if (!(await page.locator("[data-chat-bubble]").count())) return;
+  await page.evaluate(() => {
+    for (const e of document.querySelectorAll("main *")) {
+      if (/(auto|scroll)/.test(getComputedStyle(e).overflowY) && e.scrollHeight > e.clientHeight + 1) e.scrollTop = e.scrollHeight;
+    }
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  });
+  await expect.poll(() => page.evaluate(() => {
+    const b = document.querySelector("[data-chat-bubble]");
+    return !!b && !b.hasAttribute("data-scrolling") && getComputedStyle(b).opacity === "1";
+  }), { message: "the chat bubble comes back after the scroll stops" }).toBe(true);
+  const covered = await page.evaluate(() => {
+    const bubble = document.querySelector("[data-chat-bubble]")!.getBoundingClientRect();
+    if (!bubble.height) return [];
+    const main = document.querySelector("main");
+    if (!main) return [];
+    const out: string[] = [];
+    for (const e of main.querySelectorAll("*")) {
+      const st = getComputedStyle(e);
+      if (st.visibility === "hidden" || st.display === "none" || st.opacity === "0") continue;
+      const d = e.closest("details:not([open])");
+      if (d && !e.closest("summary")) continue;
+      const leaf = ["SVG", "CANVAS", "IMG", "INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(e.tagName.toUpperCase())
+        || ![...e.children].some((c) => c.getBoundingClientRect().height > 0);
+      if (!leaf || (e.closest("svg") !== null && e.tagName.toLowerCase() !== "svg")) continue;   // an icon counts once
+      const box = e.getBoundingClientRect();
+      let r = { top: box.top, bottom: box.bottom, left: box.left, right: box.right };
+      let fixed = false;
+      for (let a: Element | null = e; a && a !== document.body; a = a.parentElement) {
+        const sa = getComputedStyle(a);
+        if (sa.position === "fixed") { fixed = true; break; }
+        if (a !== e && /(auto|scroll|hidden|clip)/.test(sa.overflowY + sa.overflowX)) {
+          const c = a.getBoundingClientRect();
+          r = { top: Math.max(r.top, c.top), bottom: Math.min(r.bottom, c.bottom), left: Math.max(r.left, c.left), right: Math.min(r.right, c.right) };
+        }
+      }
+      if (fixed || r.bottom - r.top <= 1 || r.right - r.left <= 1) continue;          // a fixed bar (checked above), clipped away, or sr-only
+      if (r.top < bubble.bottom - 1 && r.bottom > bubble.top + 1 && r.left < bubble.right - 1 && r.right > bubble.left + 1) {
+        out.push(`${e.tagName}:${(e.getAttribute("aria-label") ?? e.textContent ?? "").trim().slice(0, 30)}`);
+      }
+    }
+    return out;
+  });
+  expect(covered, "the chat bubble covers the last rows at the end of the page").toEqual([]);
 }
 
 /** SCR-FIX E2: what counts as a card - a page block, a v2 card, a panel, a dialog, the phone's fixed bottom bars. */

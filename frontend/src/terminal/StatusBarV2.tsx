@@ -54,7 +54,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
 
   if (!status) {
     return (
-      <section aria-label="Status bar" data-block="terminal-status" data-state={failed ? "error" : "loading"} className={shell}>
+      <section aria-label="Status bar" data-bottom-action data-block="terminal-status" data-state={failed ? "error" : "loading"} className={shell}>
         {failed ? (
           <p className="min-w-0 flex-1 text-t13 text-fg-muted" role="status">Your figures could not be read. We will try again in a moment.</p>
         ) : (
@@ -78,7 +78,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
   const today = signTone(status.today.mtm);
   if (compact) {
     return (
-      <section aria-label="Status bar" data-block="terminal-status" data-compact="" className={cx(shell, cx6 && "flex-wrap gap-y-space-1")}>
+      <section aria-label="Status bar" data-bottom-action data-block="terminal-status" data-compact="" className={cx(shell, cx6 && "flex-wrap gap-y-space-1")}>
         <div className={ITEM} data-status="today" title={status.today.note}>
           <span className={LABEL}>Today</span>
           <span className={cx(VALUE, masked ? "text-fg" : tone(today))}>{money(status.today.mtm, masked, true)}</span>
@@ -98,7 +98,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
   const feed = feedChip(status.feed.state);
   const caption = openCaption(status);
   return (
-    <section aria-label="Status bar" data-block="terminal-status" className={cx(shell, "flex-wrap gap-y-space-2")}>
+    <section aria-label="Status bar" data-bottom-action data-block="terminal-status" className={cx(shell, "flex-wrap gap-y-space-2")}>
       <div className={ITEM} data-status="today" title={status.today.note}>
         <span className={LABEL}>Today&apos;s MTM</span>
         <span className={cx(VALUE, masked ? "text-fg" : tone(today))}>{money(status.today.mtm, masked, true)}</span>

@@ -118,3 +118,14 @@ textarea::placeholder {
   border-left-width: 3px;
   background: linear-gradient(rgb(var(--soft-accent-2)), rgb(var(--soft-accent-2))) padding-box, var(--accent-gradient) border-box;
 }
+
+/* The Copilot bubble's room (ChatBubbleV2): set while it is shown at its usual place, so a page's end padding never
+   depends on a measurement. From the bottom of the screen to its top edge, and its height (3rem, h-12). A bottom
+   action bar that lifts it sets the measured room inline instead. */
+html[data-chat-bubble-shown] {
+  --chat-bubble-clear: calc(env(safe-area-inset-bottom) + 4.75rem + 3rem);
+  --chat-bubble-end: 3rem;
+}
+@media (min-width: 768px) {
+  html[data-chat-bubble-shown] { --chat-bubble-clear: calc(var(--space-6) + 3rem); }
+}

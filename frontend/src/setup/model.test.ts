@@ -150,6 +150,11 @@ describe("UI2-7 strategy step: PAPER only", () => {
     expect(paperDeployment(SUGGESTIONS[2])).not.toHaveProperty("strike_rule");
   });
 
+  it("bot-guide gap 3: the Intraday line says its close is his own Square-off time, never 'before the market'", () => {
+    expect(SUGGESTIONS[0].line).toBe("Trades NIFTY 50 during the day. Closes at your Square-off time (Trade settings); if not set, it stays open until you or your exits close it.");
+    for (const s of SUGGESTIONS) expect(s.line).not.toMatch(/before the market/i);
+  });
+
   it("REV-1 M2 (D3): Start a trading bot opens the form with nothing pre-chosen; no Buys wording", () => {
     expect(START_BOT_PATH).toBe("/deployments");
     for (const s of SUGGESTIONS) expect(s.line).not.toMatch(/\bbuys?\b|\bsells?\b/i);

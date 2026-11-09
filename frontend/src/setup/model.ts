@@ -301,7 +301,7 @@ export interface StrategySuggestion {
 /** One per style (§11). Ids are the Library's built-in strategies; one missing from the Library is not shown. */
 export const SUGGESTIONS: readonly StrategySuggestion[] = [
   { style: "Intraday", strategyId: "vwap_supertrend_5m", symbol: "NIFTY 50", timeframe: "1min",
-    line: "Trades NIFTY 50 during the day and closes before the market does." },
+    line: "Trades NIFTY 50 during the day. Closes at your Square-off time (Trade settings); if not set, it stays open until you or your exits close it." },
   { style: "Swing", strategyId: "swing_ema_pullback_d", symbol: "RELIANCE", timeframe: "day",
     line: "Looks for a pullback inside an uptrend on RELIANCE and holds for days." },
   { style: "Options", strategyId: "orb_15m_5m", symbol: "NIFTY 50", timeframe: "1min", option: true,

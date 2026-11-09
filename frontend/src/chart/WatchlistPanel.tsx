@@ -17,6 +17,7 @@ import { ConfirmBox } from "./ConfirmBox";
 import { WatchScreenBar, useScreenChoices, useWatchScreen } from "./WatchScreenBar";
 import { NO_CHOICE, listKeyOf, shownRows, type ScreenFrom } from "./watchScreen";
 import { ListBrowser } from "./ListBrowser";
+import { LIST_END_PAD } from "../shell/ChatBubbleV2";
 import {
   LISTS_FALLBACK_NOTE, MY_LISTS, ROW_SORTS, browserGroups, copyNote, filterRows, groupOf, namesCount, pickList, sortRows, systemListsApi,
   type ListRef, type RowSort, type SystemGroup, type SystemItem, type SystemList,
@@ -510,7 +511,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
           ) : live.length === 0 ? null : ownRows.length === 0 ? (
             <p className="px-space-3 pb-space-4 text-t13 text-fg-muted" data-testid="watch-screen-none">{NONE_MATCH}</p>
           ) : (
-            <ul ref={rowsRef} aria-label={`Symbols in ${list.name}`} className="min-h-0 flex-1 overflow-y-auto px-space-1 pb-space-2">
+            <ul ref={rowsRef} aria-label={`Symbols in ${list.name}`} className={`min-h-0 flex-1 overflow-y-auto px-space-1 ${LIST_END_PAD}`}>
               {ownRows.map((item) => {
                 const index = live.indexOf(item);
                 const q = quotes.rows.get(itemKey(item));
@@ -617,7 +618,7 @@ export function SystemListView({ summary, list, rows, total, matching, query, on
         <p className="px-space-3 pb-space-4 text-t13 text-fg-muted">{screen?.only && total > 0 ? NONE_MATCH : query.trim() ? `No symbol or company in this list matches "${query.trim()}".` : "This list is empty just now."}</p>
       )}
       {list && list !== "failed" && rows.length > 0 && (
-        <ul aria-label={`Symbols in ${summary.name}`} className="min-h-0 flex-1 overflow-y-auto px-space-1 pb-space-2">
+        <ul aria-label={`Symbols in ${summary.name}`} className={`min-h-0 flex-1 overflow-y-auto px-space-1 ${LIST_END_PAD}`}>
           {rows.map((item) => {
             const q = quotes.get(itemKey(item));
             const on = current(item);

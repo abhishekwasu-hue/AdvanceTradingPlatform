@@ -1,0 +1,12 @@
+{
+ "en": {
+  "end_line": "Information and education only, not investment advice.",
+  "forbidden": "\\b(buy|buying|sell|selling|target|targets|stop|stop-loss|should)\\b",
+  "note": "buy / sell / target / stop / should"
+ },
+ "mr": {
+  "end_line": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही.",
+  "forbidden": "(खरेदी|विक्री|विका|टार्गेट|लक्ष्य|स्टॉप|पाहिजे|करावे|करावा|करावी)",
+  "note": "buy / sell / target / stop / should in Marathi"
+ }
+}

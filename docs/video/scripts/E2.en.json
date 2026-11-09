@@ -1,0 +1,132 @@
+{
+ "episode": "E2",
+ "lang": "en",
+ "title": "Find setups 2: Your list and your chart",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
+ "intro": {
+  "kicker": "ATP education",
+  "title": "Find setups 2: Your list and your chart",
+  "lines": [
+   "Episode 2 of 6"
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "outro": {
+  "title": "Thank you for watching",
+  "lines": [
+   "Next: the following episode of Find setups.",
+   "The written guide has every step and every block."
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "scenes": [
+  {
+   "n": 6,
+   "title": "Pick a list",
+   "target_s": 110,
+   "lines": [
+    {
+     "shot": "s06.change",
+     "text": "Step one: your list. On the Your list card, press Change."
+    },
+    {
+     "shot": "s06.panel",
+     "text": "A panel opens with the box Scan these stocks. Type in it to search."
+    },
+    {
+     "shot": "s06.groups",
+     "text": "Lists come in groups: Index stocks, Sectors, F and O, My watchlists, and Type my own symbols, each with its size."
+    },
+    {
+     "shot": "s06.groups",
+     "text": "Index stocks holds the members of an index, such as NIFTY 50 or NIFTY 500. Sectors holds lists such as Banking or IT."
+    },
+    {
+     "shot": "s06.pick",
+     "text": "Here, a list of five hundred stocks. For your own, pick Type my own symbols and separate them with commas."
+    },
+    {
+     "shot": "s06.big",
+     "text": "A list holds up to five hundred stocks, and Run scans all of them, within your broker's limits. There is no fixed fifty."
+    },
+    {
+     "shot": "s06.done",
+     "text": "Press Done."
+    },
+    {
+     "shot": "s06.done",
+     "text": "If the latest list cannot be loaded, an amber note says so, and the built-in NIFTY 50 list is used."
+    },
+    {
+     "shot": "s06.list",
+     "text": "The card shows the list's name and size."
+    },
+    {
+     "shot": "s06.progress",
+     "text": "During a run, a line counts the stocks done out of the list: here 0 / 500 done, as the run starts. If your broker's limit slows it, it says Slowed by broker limit."
+    },
+    {
+     "shot": "s06.result",
+     "text": "When it ends, the header shows how many matched."
+    },
+    {
+     "shot": "s06.result",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 7,
+   "title": "Pick a chart",
+   "target_s": 85,
+   "lines": [
+    {
+     "shot": "s07.change",
+     "text": "Step two: the chart. On the Chart card, press Change."
+    },
+    {
+     "shot": "s07.options",
+     "text": "Nine timeframes: 1, 3, 5, 15 or 30 minutes, 1 hour, Daily, Weekly or Monthly."
+    },
+    {
+     "shot": "s07.daily",
+     "text": "Daily, Weekly and Monthly work without a broker. 1 minute to 1 hour need your own broker."
+    },
+    {
+     "shot": "s07.daily",
+     "text": "Weekly and Monthly candles are built from daily candles."
+    },
+    {
+     "shot": "s07.candles",
+     "text": "Scans read closed candles only. A closed candle is final; the forming one can still change."
+    },
+    {
+     "shot": "s07.candles",
+     "text": "Only an alert can read the forming candle, and it is marked: earlier, but it can change."
+    },
+    {
+     "shot": "s07.done",
+     "text": "Press Done."
+    },
+    {
+     "shot": "s07.chart",
+     "text": "The card shows the timeframe in words. Daily is a simple start."
+    },
+    {
+     "shot": "s07.chart",
+     "text": "Inside a condition, you can also read a candle further back, or one side on another timeframe. Episode three shows how."
+    },
+    {
+     "shot": "s07.chart",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,180 @@
+{
+ "episode": "E1",
+ "lang": "mr",
+ "title": "Find setups 1: हे काय आहे, आणि पानाची ओळख",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
+ "intro": {
+  "kicker": "ATP शिक्षण",
+  "title": "Find setups 1: हे काय आहे, आणि पानाची ओळख",
+  "lines": [
+   "भाग 1 / 6"
+  ],
+  "foot": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+ },
+ "outro": {
+  "title": "पाहिल्याबद्दल धन्यवाद",
+  "lines": [
+   "पुढे: Find setups चा पुढचा भाग.",
+   "लेखी मार्गदर्शकात प्रत्येक टप्पा आणि प्रत्येक ब्लॉक दिला आहे."
+  ],
+  "foot": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+ },
+ "scenes": [
+  {
+   "n": 1,
+   "title": "स्क्रीनर म्हणजे काय",
+   "target_s": 40,
+   "lines": [
+    {
+     "shot": "s01.flow",
+     "text": "Find setups तुमची यादी तुमच्या अटींवर तपासते, फक्त बंद कॅन्डल्सवर."
+    },
+    {
+     "shot": "s01.flow",
+     "text": "पाच टप्पे: यादी, चार्ट, स्कॅन निवडा, Run करा, निकाल वाचा."
+    },
+    {
+     "shot": "s01.funnel",
+     "text": "प्रत्येक अट यादी लहान करते. सगळ्या अटी पूर्ण करणारा स्टॉकच match होतो. हे आकडे काल्पनिक आहेत."
+    },
+    {
+     "shot": "s01.funnel",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 2,
+   "title": "हे काय करत नाही",
+   "target_s": 35,
+   "lines": [
+    {
+     "shot": "s02.red",
+     "text": "हे काय करत नाही: match म्हणजे फक्त माहिती; ट्रेडचा सिग्नल नाही, सल्लाही नाही."
+    },
+    {
+     "shot": "s02.red",
+     "text": "हे स्टॉक्सना चांगले-वाईट ठरवत नाही, किंमत पुढे काय करेल हेही सांगत नाही."
+    },
+    {
+     "shot": "s02.red",
+     "text": "हे कधीही ऑर्डर टाकत, बदलत किंवा रद्द करत नाही. निर्णय तुमचाच."
+    },
+    {
+     "shot": "s02.red",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 3,
+   "title": "साइन इन",
+   "target_s": 45,
+   "lines": [
+    {
+     "shot": "s03.screen",
+     "text": "फोन किंवा कॉम्प्युटरवर ATP ची वेबसाइट उघडा. Sign in स्क्रीन दिसेल."
+    },
+    {
+     "shot": "s03.screen",
+     "text": "टीमने सुरू केली असतील, तर Continue with Google सारखी बटणे वर दिसतात."
+    },
+    {
+     "shot": "s03.email",
+     "text": "किंवा इथे ईमेल, मग पासवर्ड टाइप करा."
+    },
+    {
+     "shot": "s03.submit",
+     "text": "Sign in दाबा. ॲप Today पानावर उघडते."
+    },
+    {
+     "shot": "s03.help",
+     "text": "पासवर्ड विसरलात? Forgot password दाबा; ATP रिसेट लिंक पाठवते."
+    },
+    {
+     "shot": "s03.help",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 4,
+   "title": "Find setups उघडा",
+   "target_s": 40,
+   "lines": [
+    {
+     "shot": "s04.menu",
+     "text": "कॉम्प्युटरवर डाव्या मेनूत Find खाली Find setups आहे. फोनवर खालच्या बारमध्ये टॅप करा."
+    },
+    {
+     "shot": "s04.more",
+     "text": "बारमध्ये नसेल, तर More दाबा आणि scan शोधा."
+    },
+    {
+     "shot": "s04.search",
+     "text": "Find setups वर टॅप करा."
+    },
+    {
+     "shot": "s04.page",
+     "text": "Coming soon दिसले, तर तुमच्या संस्थेसाठी ते अजून सुरू नाही. ॲडमिनिस्ट्रेटरला विचारा."
+    },
+    {
+     "shot": "s04.page",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 5,
+   "title": "पानाची ओळख",
+   "target_s": 50,
+   "lines": [
+    {
+     "shot": "s05.overview",
+     "text": "आता पानाची झटपट ओळख, वरपासून खाली."
+    },
+    {
+     "shot": "s05.list",
+     "text": "Your list: स्कॅन होणारे स्टॉक्स. Change ने दुसरी यादी निवडा."
+    },
+    {
+     "shot": "s05.chart",
+     "text": "Chart: एका कॅन्डलचा आकार, जसे Daily."
+    },
+    {
+     "shot": "s05.start",
+     "text": "Start a scan: Ready scan, Template, किंवा तुमचे शब्द."
+    },
+    {
+     "shot": "s05.conditions",
+     "text": "Conditions: चालू स्कॅनच्या अटी."
+    },
+    {
+     "shot": "s05.results",
+     "text": "Results: पहिल्या Run नंतर दिसतात."
+    },
+    {
+     "shot": "s05.more",
+     "text": "More tools मध्ये बाकीची साधने आहेत."
+    },
+    {
+     "shot": "s05.tools",
+     "text": "प्रत्येक साधन सुरू असेल तरच दिसते."
+    },
+    {
+     "shot": "s05.tools",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  }
+ ]
+}

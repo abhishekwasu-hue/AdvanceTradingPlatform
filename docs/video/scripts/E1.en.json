@@ -1,0 +1,180 @@
+{
+ "episode": "E1",
+ "lang": "en",
+ "title": "Find setups 1: What it is, and the page",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
+ "intro": {
+  "kicker": "ATP education",
+  "title": "Find setups 1: What it is, and the page",
+  "lines": [
+   "Episode 1 of 6"
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "outro": {
+  "title": "Thank you for watching",
+  "lines": [
+   "Next: the following episode of Find setups.",
+   "The written guide has every step and every block."
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "scenes": [
+  {
+   "n": 1,
+   "title": "What a screener is",
+   "target_s": 40,
+   "lines": [
+    {
+     "shot": "s01.flow",
+     "text": "Find setups checks your list against conditions you pick, on closed candles."
+    },
+    {
+     "shot": "s01.flow",
+     "text": "Five steps: pick a list, a chart and a scan, run it, and read the results."
+    },
+    {
+     "shot": "s01.funnel",
+     "text": "Each condition narrows the list. A stock matches only when it passes all of them. The counts here are made up."
+    },
+    {
+     "shot": "s01.funnel",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 2,
+   "title": "What it does not do",
+   "target_s": 35,
+   "lines": [
+    {
+     "shot": "s02.red",
+     "text": "What it does not do: a match is information, not a signal to trade and not advice."
+    },
+    {
+     "shot": "s02.red",
+     "text": "It does not rank stocks as good or bad, or say what price does next."
+    },
+    {
+     "shot": "s02.red",
+     "text": "It never places, changes or cancels an order. Every decision stays yours."
+    },
+    {
+     "shot": "s02.red",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 3,
+   "title": "Sign in",
+   "target_s": 45,
+   "lines": [
+    {
+     "shot": "s03.screen",
+     "text": "Open the ATP website on your phone or computer. The Sign in screen appears."
+    },
+    {
+     "shot": "s03.screen",
+     "text": "Where your team set them up, buttons such as Continue with Google sit at the top."
+    },
+    {
+     "shot": "s03.email",
+     "text": "Or type your email here, then your password."
+    },
+    {
+     "shot": "s03.submit",
+     "text": "Press Sign in. The app opens on Today."
+    },
+    {
+     "shot": "s03.help",
+     "text": "Forgot your password? Tap Forgot password, and ATP sends a reset link."
+    },
+    {
+     "shot": "s03.help",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 4,
+   "title": "Open Find setups",
+   "target_s": 40,
+   "lines": [
+    {
+     "shot": "s04.menu",
+     "text": "On a computer, Find setups is in the left menu, under Find. On a phone, tap it in the bottom bar."
+    },
+    {
+     "shot": "s04.more",
+     "text": "Not in the bar? Tap More and search for scan."
+    },
+    {
+     "shot": "s04.search",
+     "text": "Tap Find setups to open it."
+    },
+    {
+     "shot": "s04.page",
+     "text": "If you see Coming soon, it is not switched on for your organisation yet. Ask your administrator."
+    },
+    {
+     "shot": "s04.page",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 5,
+   "title": "A tour of the page",
+   "target_s": 50,
+   "lines": [
+    {
+     "shot": "s05.overview",
+     "text": "A quick tour of the page, top to bottom."
+    },
+    {
+     "shot": "s05.list",
+     "text": "Your list: the stocks that are scanned. Change picks another list."
+    },
+    {
+     "shot": "s05.chart",
+     "text": "Chart: the size of one candle, for example Daily."
+    },
+    {
+     "shot": "s05.start",
+     "text": "Start a scan: a ready scan, a template, or your own words."
+    },
+    {
+     "shot": "s05.conditions",
+     "text": "Conditions: the current scan's conditions."
+    },
+    {
+     "shot": "s05.results",
+     "text": "Results: they appear after your first run."
+    },
+    {
+     "shot": "s05.more",
+     "text": "More tools holds the rest."
+    },
+    {
+     "shot": "s05.tools",
+     "text": "Each one shows only when it is switched on."
+    },
+    {
+     "shot": "s05.tools",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  }
+ ]
+}

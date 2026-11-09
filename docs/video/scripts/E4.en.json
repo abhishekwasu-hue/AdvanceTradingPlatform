@@ -1,0 +1,136 @@
+{
+ "episode": "E4",
+ "lang": "en",
+ "title": "Find setups 4: Run, results, and the data",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
+ "intro": {
+  "kicker": "ATP education",
+  "title": "Find setups 4: Run, results, and the data",
+  "lines": [
+   "Episode 4 of 6"
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "outro": {
+  "title": "Thank you for watching",
+  "lines": [
+   "Next: the following episode of Find setups.",
+   "The written guide has every step and every block."
+  ],
+  "foot": "Information and education only, not investment advice."
+ },
+ "scenes": [
+  {
+   "n": 11,
+   "title": "Run",
+   "target_s": 50,
+   "lines": [
+    {
+     "shot": "s11.why",
+     "text": "Step five: run. Run greyed out? The reason is beside it, such as Pick a scan first."
+    },
+    {
+     "shot": "s11.ready",
+     "text": "With conditions in place and no red line, Run is ready."
+    },
+    {
+     "shot": "s11.run",
+     "text": "Press Run. On a phone, it is in the bottom bar."
+    },
+    {
+     "shot": "s11.done",
+     "text": "A long list shows a progress line; the button beside it ends the run early and keeps what was read."
+    },
+    {
+     "shot": "s11.done",
+     "text": "If your broker's limit held some stocks back, a note says so. Run again in a minute to include them."
+    },
+    {
+     "shot": "s11.done",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 12,
+   "title": "Read the results",
+   "target_s": 70,
+   "lines": [
+    {
+     "shot": "s12.header",
+     "text": "The header reads Matched N of M: green above zero, amber at zero."
+    },
+    {
+     "shot": "s12.pill",
+     "text": "The time pill says when it ran."
+    },
+    {
+     "shot": "s12.table",
+     "text": "The table lists matches first. Each row says Matched, Did not match, or Could not be read, with the reason."
+    },
+    {
+     "shot": "s12.table",
+     "text": "Could not be read never counts as did not match."
+    },
+    {
+     "shot": "s12.table",
+     "text": "Auto-refresh runs the same scan again every minute while the page is open. Export downloads the table as a spreadsheet file."
+    },
+    {
+     "shot": "s12.hidden",
+     "text": "The stocks that did not match are counted here; one tap lists them."
+    },
+    {
+     "shot": "s12.hidden",
+     "text": "Save matches as a watchlist keeps them under My watchlists."
+    },
+    {
+     "shot": "s12.chart",
+     "text": "Show on chart opens the chart in place, with only the scan's own conditions drawn."
+    },
+    {
+     "shot": "s12.chart",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  },
+  {
+   "n": 13,
+   "title": "Where the data comes from",
+   "target_s": 65,
+   "lines": [
+    {
+     "shot": "s13.card",
+     "text": "Where does the data come from? With your own broker: every timeframe, 1 minute to Monthly, within its limits."
+    },
+    {
+     "shot": "s13.card",
+     "text": "Without a broker: Daily, Weekly and Monthly from ATP's stored end-of-day history. For 1 minute to 1 hour, connect your broker."
+    },
+    {
+     "shot": "s13.card",
+     "text": "A stock not stored yet is read through your own broker; without one, its row says so."
+    },
+    {
+     "shot": "s13.card",
+     "text": "There is no shared live data: live data comes only from your own broker."
+    },
+    {
+     "shot": "s13.pill",
+     "text": "After a run, hover over the time pill: it names the source, your broker or ATP's stored end-of-day history."
+    },
+    {
+     "shot": "s13.pill",
+     "end": true,
+     "text": "Information and education only, not investment advice."
+    }
+   ]
+  }
+ ]
+}

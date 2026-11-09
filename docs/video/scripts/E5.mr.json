@@ -1,0 +1,152 @@
+{
+ "episode": "E5",
+ "lang": "mr",
+ "title": "Find setups 5: तीन उदाहरणे आणि एक alert",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
+ "intro": {
+  "kicker": "ATP शिक्षण",
+  "title": "Find setups 5: तीन उदाहरणे आणि एक alert",
+  "lines": [
+   "भाग 5 / 6"
+  ],
+  "foot": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+ },
+ "outro": {
+  "title": "पाहिल्याबद्दल धन्यवाद",
+  "lines": [
+   "पुढे: Find setups चा पुढचा भाग.",
+   "लेखी मार्गदर्शकात प्रत्येक टप्पा आणि प्रत्येक ब्लॉक दिला आहे."
+  ],
+  "foot": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+ },
+ "scenes": [
+  {
+   "n": 15,
+   "title": "उदाहरण 1: तयार template",
+   "target_s": 70,
+   "lines": [
+    {
+     "shot": "s15.list",
+     "text": "उदाहरण एक: template. यादी NIFTY 50 stocks, चार्ट Daily."
+    },
+    {
+     "shot": "s15.template",
+     "text": "Start a scan मध्ये Template, मग Momentum वर टॅप करा."
+    },
+    {
+     "shot": "s15.conds",
+     "text": "दोन अटी भरतात: RSI 14, 60 च्या वर, आणि close त्याच्या 20-bar EMA च्या वर. ही फक्त उदाहरणाची सेटिंग्ज, शिफारस नाही."
+    },
+    {
+     "shot": "s15.run",
+     "text": "Run दाबा."
+    },
+    {
+     "shot": "s15.result",
+     "text": "शीर्षकात Matched N of 50; प्रत्येक अटीचा आकडा किती उरले ते सांगतो."
+    },
+    {
+     "shot": "s15.chart",
+     "text": "match वरचे Show on chart प्रत्येक अटीनुसार कारण दाखवते."
+    },
+    {
+     "shot": "s15.chart",
+     "text": "Why it matched वाचा: match झालेल्या कॅन्डलवरचे RSI चे मूल्य, आणि close ची ॲव्हरेजशी तुलना."
+    },
+    {
+     "shot": "s15.chart",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 16,
+   "title": "उदाहरण 2: स्वतःचा स्कॅन",
+   "target_s": 60,
+   "lines": [
+    {
+     "shot": "s16.list",
+     "text": "उदाहरण दोन: स्वतःचा स्कॅन. इथे F&O stocks, Daily वर."
+    },
+    {
+     "shot": "s16.blank",
+     "text": "Template, मग Blank: I add conditions वर टॅप करा."
+    },
+    {
+     "shot": "s16.category",
+     "text": "Category जोडा: Trend, is, UPTREND."
+    },
+    {
+     "shot": "s16.filter",
+     "text": "Filter जोडा: NearSupport."
+    },
+    {
+     "shot": "s16.pattern",
+     "text": "अजून एक Filter: PatternBullish."
+    },
+    {
+     "shot": "s16.conds",
+     "text": "तीन अटी; तिन्ही पूर्ण झाल्या तरच match."
+    },
+    {
+     "shot": "s16.run",
+     "text": "नाव द्या, Save करा, Run दाबा."
+    },
+    {
+     "shot": "s16.empty",
+     "text": "एखाद्या अटीने सगळे स्टॉक्स बाद झाले, तर सूचना सांगते. कोणती अट ते पाहण्यासाठी ती सैल करा, किंवा थोडा वेळ बंद करा."
+    },
+    {
+     "shot": "s16.empty",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 17,
+   "title": "उदाहरण 3: group आणि alert",
+   "target_s": 65,
+   "lines": [
+    {
+     "shot": "s17.group",
+     "text": "उदाहरण तीन: group. Group निवडा आणि जोडा."
+    },
+    {
+     "shot": "s17.any",
+     "text": "Any of these group मधील कोणताही एक ब्लॉक पूर्ण झाला तरी पास."
+    },
+    {
+     "shot": "s17.any",
+     "text": "Extra screen functions सुरू असतील, तर RsiDivergence आणि volume ची अट अशीच जोडता येते."
+    },
+    {
+     "shot": "s17.open",
+     "text": "Run नंतर Tell me when it matches दाबा."
+    },
+    {
+     "shot": "s17.dialog",
+     "text": "When the bar closes तसाच ठेवा; bar अंतिम असतो म्हणून हा सुचवलेला पर्याय. Telegram इथेच जोडता येतो."
+    },
+    {
+     "shot": "s17.create",
+     "text": "Turn on the alert दाबा."
+    },
+    {
+     "shot": "s17.done",
+     "text": "Alert सुरू झाला. तो फक्त कळवतो; कधीही ऑर्डर टाकत किंवा बदलत नाही."
+    },
+    {
+     "shot": "s17.done",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  }
+ ]
+}

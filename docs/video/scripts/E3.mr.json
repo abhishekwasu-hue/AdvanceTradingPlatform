@@ -1,0 +1,136 @@
+{
+ "episode": "E3",
+ "lang": "mr",
+ "title": "Find setups 3: स्कॅन सुरू करा आणि तयार करा",
+ "note": "One script line = one subtitle and one voice clip; `shot` is the still it is spoken over (frontend/e2e/video/scenes.ts). `target_s` is the planned scene length; the build reports the real one. `narrator`: the voice for odd and even scene numbers.",
+ "narrator": {
+  "odd": "female",
+  "even": "male"
+ },
+ "intro": {
+  "kicker": "ATP शिक्षण",
+  "title": "Find setups 3: स्कॅन सुरू करा आणि तयार करा",
+  "lines": [
+   "भाग 3 / 6"
+  ],
+  "foot": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+ },
+ "outro": {
+  "title": "पाहिल्याबद्दल धन्यवाद",
+  "lines": [
+   "पुढे: Find setups चा पुढचा भाग.",
+   "लेखी मार्गदर्शकात प्रत्येक टप्पा आणि प्रत्येक ब्लॉक दिला आहे."
+  ],
+  "foot": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+ },
+ "scenes": [
+  {
+   "n": 8,
+   "title": "स्कॅन सुरू करा",
+   "target_s": 70,
+   "lines": [
+    {
+     "shot": "s08.tabs",
+     "text": "तिसरा टप्पा: स्कॅन सुरू करा. तीन टॅब: Ready scan, Template, Own words."
+    },
+    {
+     "shot": "s08.ready",
+     "text": "Ready scan: Run वर एक टॅप; अटी भरतात आणि चालतात. नंतर प्रत्येक अट बदलता येते."
+    },
+    {
+     "shot": "s08.template",
+     "text": "Template फक्त अटी भरते; Run दाबेपर्यंत काही चालत नाही."
+    },
+    {
+     "shot": "s08.three",
+     "text": "तीन templates नेहमी असतात: Momentum, Oversold, Trend on the daily. नावे फक्त लेबले आहेत."
+    },
+    {
+     "shot": "s08.words",
+     "text": "Own words सुरू असेल, तर साध्या शब्दांतील कल्पना अटींमध्ये बदलते. न वाचता आलेले दाखवले जाते, अंदाज नाही."
+    },
+    {
+     "shot": "s08.seeall",
+     "text": "See all ready scans लायब्ररी उघडते."
+    },
+    {
+     "shot": "s08.library",
+     "text": "पद्धत आणि सेटअपनुसार फिल्टर करा, मग कार्ड उघडा."
+    },
+    {
+     "shot": "s08.library",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 9,
+   "title": "ब्लॉक्स तयार करा",
+   "target_s": 60,
+   "lines": [
+    {
+     "shot": "s09.all",
+     "text": "चौथा टप्पा: अटी. प्रत्येक अट All of these must pass खालील एक ब्लॉक आहे."
+    },
+    {
+     "shot": "s09.row",
+     "text": "सुरू असलेले सगळे ब्लॉक खरे असतील तरच match. अधोरेखित प्रत्येक भाग बदलता येतो: फंक्शन, आकडे, तुलना."
+    },
+    {
+     "shot": "s09.kind",
+     "text": "ब्लॉक जोडायला आधी प्रकार निवडा."
+    },
+    {
+     "shot": "s09.kinds",
+     "text": "Indicator आकड्याची तुलना करतो. Filter म्हणजे हो-नाही तपासणी. Category लेबलची तुलना करते, जसे ट्रेंड. Rank यादीतील वरचे ठेवतो. Group म्हणजे हे किंवा ते."
+    },
+    {
+     "shot": "s09.add",
+     "text": "मग Add a condition दाबा."
+    },
+    {
+     "shot": "s09.new",
+     "text": "नवी ओळ दिसते. ती बदला, किंवा टिक बॉक्सने बंद करा."
+    },
+    {
+     "shot": "s09.new",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  },
+  {
+   "n": 10,
+   "title": "Bars ago आणि टाइमफ्रेम चिप",
+   "target_s": 55,
+   "lines": [
+    {
+     "shot": "s10.chip",
+     "text": "ओळीच्या प्रत्येक बाजूला टाइमफ्रेम चिप आहे; ती बाजू दुसऱ्या टाइमफ्रेमवर वाचता येते, जसे 15 मिनिटांच्या स्कॅनमध्ये Daily."
+    },
+    {
+     "shot": "s10.open",
+     "text": "ओळीच्या शेवटचा बाण advanced options उघडतो."
+    },
+    {
+     "shot": "s10.field",
+     "text": "Bars ago मागची कॅन्डल वाचतो, 1 ते 500. रिकामे म्हणजे शेवटची बंद कॅन्डल."
+    },
+    {
+     "shot": "s10.three",
+     "text": "इथे RSI तीन bars मागे वाचला जातो, ओळ ते साध्या शब्दांत सांगते."
+    },
+    {
+     "shot": "s10.three",
+     "text": "स्ट्रक्चर आणि पॅटर्न फंक्शन्स फक्त शेवटचा bar वाचतात; bars ago किंवा दुसरी टाइमफ्रेम नाही."
+    },
+    {
+     "shot": "s10.three",
+     "end": true,
+     "text": "ही माहिती फक्त माहिती आणि शिक्षणासाठी आहे, गुंतवणुकीचा सल्ला नाही."
+    }
+   ]
+  }
+ ]
+}

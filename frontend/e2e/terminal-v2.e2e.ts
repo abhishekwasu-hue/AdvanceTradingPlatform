@@ -1126,4 +1126,41 @@ test.describe("v2 terminal 390: the Watchlist tab (UX-3)", () => {
       await expect(page.locator("[data-block='terminal-context']")).toHaveAttribute("data-symbol", "BANKNIFTY");
     });
   }
+
+  // Owner fix (the chat bubble over the list's price column): a long list, the Copilot's bubble on. While the list
+  // scrolls the bubble steps aside and it comes back shortly after; the list's last row scrolls clear of it even with
+  // the list's bottom edge level with the bubble's; at the end of the page nothing is under it (the shared check).
+  test("a long list with the chat bubble: it steps aside while the list scrolls; the last row scrolls clear of it (dark)", async ({ page }) => {
+    const items = Array.from({ length: 40 }, (_, i) => ({ symbol: `STOCK${String(i + 1).padStart(2, "0")}`, exchange: "NSE_EQ" }));
+    await open(page, "dark", { features: { ...WL_ON, ai_copilot: true }, routes: async (p) => {
+      await p.route(/\/api(?:\/v1)?\/watchlists$/, (r) => (r.request().method() === "GET" ? r.fulfill({ json: [{ ...MY_LIST[0], items }] }) : r.fallback()));
+    } });
+    await page.locator("[data-tab='watchlist']").tap();
+    const rows = page.locator("[data-phone-panel='watchlist'] [data-row]");
+    await expect(rows).toHaveCount(40);
+    const bubble = page.locator("[data-chat-bubble]");
+    await expect(bubble).toBeVisible();
+    const resting = () => bubble.evaluate((b) => !b.hasAttribute("data-scrolling") && getComputedStyle(b).opacity === "1");
+    await expect.poll(resting).toBe(true);
+    const list = page.locator("[data-phone-panel='watchlist'] ul[aria-label^='Symbols in']");
+    await list.evaluate((e) => { e.scrollTop = e.scrollHeight / 2; });
+    await expect(bubble).toHaveAttribute("data-scrolling", "");
+    await expect(bubble).toHaveAttribute("aria-label", /^Chat with the Copilot/);          // still named and in the tab order
+    await expect(bubble).not.toHaveAttribute("tabindex", "-1");
+    await expect.poll(resting).toBe(true);
+    // the list's bottom edge level with the bubble's bottom edge (the worst place), the list at its end
+    const gap = await page.evaluate(() => document.querySelector("[data-phone-panel='watchlist'] ul[aria-label^='Symbols in']")!.getBoundingClientRect().bottom
+      - document.querySelector("[data-chat-bubble]")!.getBoundingClientRect().bottom);
+    await page.evaluate((dy) => window.scrollBy(0, dy), gap);
+    await list.evaluate((e) => { e.scrollTop = e.scrollHeight; });
+    await expect.poll(resting).toBe(true);
+    const [last, box, room] = await page.evaluate(() => {
+      const rect = (e: Element | null) => { const b = e!.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right }; };
+      const ul = document.querySelector("[data-phone-panel='watchlist'] ul[aria-label^='Symbols in']")!;
+      return [rect([...ul.querySelectorAll("[data-row]")].pop() ?? null), rect(document.querySelector("[data-chat-bubble]")), rect(ul)];
+    });
+    expect(Math.abs(room.bottom - box.bottom)).toBeLessThan(2);
+    expect(last.bottom, "the last row sits above the chat bubble").toBeLessThanOrEqual(box.top);
+    await expectPhoneLayout(page);
+  });
 });

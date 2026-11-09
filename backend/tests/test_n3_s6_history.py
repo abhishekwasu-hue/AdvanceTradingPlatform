@@ -380,15 +380,30 @@ def _sweep_frames():
     return frames, days
 
 
+# M93-Q2: a VCP breakout above the base high almost never happens on a random walk (the rally from the last low has to clear
+# the first high without a swing high on the way) - it is swept on VCP-shaped bars (a break, a base still waiting, a wick)
+FIXTURE_SWEEP = {"VCPBreakout": 'VCPBreakout("up", 2, 1, 0, 0, FALSE)'}
+
+
+def _vcp_frames():
+    from tests.breakout_bk3_fixtures import vcp
+    frames = {"V1": vcp(), "V2": vcp(break_bar=False), "V3": vcp(wick_only=True), "V4": vcp(closes_after=[130.0, 136.0, 137.0])}
+    days = sorted({d for f in frames.values() for d in H.session_dates(f.index)})
+    return frames, days
+
+
 @pytest.mark.parametrize("name, cond", _sweep_cases())
 def test_every_registry_function_reads_the_same_fast_as_on_cut_bars(name, cond):
     """HIGH: the fast path (one series read at each date) equals the as-of run on bars cut at each date, for every
     function the history path takes - including the last-bar-only ones, which now run date by date. Each case has both
     matches and non-matches on the fixture, so none passes vacuously."""
     frames, days = _sweep_frames()
+    if name in FIXTURE_SWEEP:
+        frames, days = _vcp_frames()
+        cond = FIXTURE_SWEEP[name]
     ast, validated = compile_screen(cond, base_tf="1d")
     assert validated.ok, (cond, validated.problems)
-    dates = days[200:] if name in SWEEP_DENSE else days[240::4]
+    dates = days[200:] if name in SWEEP_DENSE or name in FIXTURE_SWEEP else days[240::4]
     sig = H.signals(ast, validated, frames, dates)
     cells = sig.to_numpy()
     assert cells.any() and not cells.all(), (name, cond, int(cells.sum()), cells.size)

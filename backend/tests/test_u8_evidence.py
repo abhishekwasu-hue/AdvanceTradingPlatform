@@ -183,7 +183,9 @@ def test_a_bk3_breakout_draws_its_pivot_from_the_breakout_engine():
     _a, _v, pack = _pack(src, data)
     row = pack["rows"][0]
     assert row["engine_signal"] is True and row["passed"] is True and pack["matched"] is True
-    assert row["terms"][1]["text"] == "pivot" and row["terms"][1]["value"] == pytest.approx(f["high"].iloc[-12:-1].max(), abs=1e-4)
+    # M93-Q2: the pivot is the base high - the first contraction's high, the highest high before the break bar
+    assert row["terms"][1]["text"] == "pivot" and row["terms"][1]["value"] == pytest.approx(f["high"].iloc[:-1].max(), abs=1e-4)
+    assert row["terms"][1]["value"] > f["high"].iloc[-12:-1].max()                         # above the last contraction's high
     assert any(d["row"] == row["id"] for d in pack["drawables"]) and row["terms"][2]["value_text"].endswith(" ATR")
     ready = _pack('VCPReady("up")', SymbolData("VCP", {"1d": vcp(break_bar=False)}))[2]["rows"][0]
     assert ready["engine_signal"] == ready["passed"] is True

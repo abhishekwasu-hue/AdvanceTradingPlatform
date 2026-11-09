@@ -10,15 +10,17 @@ run of successive contractions that ends with the last confirmed swing low, walk
   * no later high is above an earlier one (the left side of the base is its top),
   * the first high is at most `vcp_max_bars` bars back (an older contraction ends the walk - it is not part of this base).
 A contraction that joins the run but is deeper than `vcp_max_depth_pct` rejects the base (its left side is too deep).
-The base needs `vcp_min_contractions` contractions and `vcp_min_bars` bars from its first high. The pivot is the last
-contraction's high. Optional rules (all editable, app/screener/breakouts/params.py):
+The base needs `vcp_min_contractions` contractions and `vcp_min_bars` bars from its first high. The pivot is the base
+high (spec B3: "close above the pivot (base high)"): the highest high of the base, i.e. the first contraction's high, as no
+later high may be above it (owner decision M93-Q2; the last contraction's high is inside the base). Optional rules (all
+editable, app/screener/breakouts/params.py):
   * volume dry-up (`vcp_vol_dryup`): the last contraction's mean volume is below the first's;
   * the trend template (`tt_filter`, Minervini): close > fast SMA > mid SMA > slow SMA, the slow SMA above its value
     `tt_slow_rising_n` bars ago, the close within `tt_near_high_pct` % of the year's high and at least `tt_above_low_pct` %
     above the year's low (`tt_year_bars`). The RS rating is not part of it (cross-sectional - open question BK3-1).
 
 Signals (`vcp_mode`):
-  * breakout: the first close above the pivot by `min_break_atr` x ATR (ATR of the bars before) on volume >= `vol_mult` x
+  * breakout: the first close above the pivot (the base high) by `min_break_atr` x ATR (ATR of the bars before) on volume >= `vol_mult` x
     average, with every rule holding on swings confirmed by the bar BEFORE (the break bar never confirms its own base);
     one per leg (screens.one_per_leg).
   * watchlist: on every bar where every rule holds on the swings confirmed by that bar, the close is at or below the pivot
@@ -111,6 +113,12 @@ class Base:
 
     @property
     def pivot(self) -> Pivot:
+        """The breakout pivot: the base high, the highest of the contraction highs (the first one - base_at stops the walk at
+        a later high above an earlier one; max() keeps it the base high even so). Spec B3, owner decision M93-Q2."""
+        return max(self.contractions, key=lambda c: c[0].price)[0]
+
+    @property
+    def last_high(self) -> Pivot:
         return self.contractions[-1][0]
 
     @property
@@ -198,15 +206,21 @@ def b3(b: "Bars", s: "_Side", p: Dict[str, Any], out: Dict[str, np.ndarray]) -> 
             k += 1
         if k < 2 or piv[k - 1].kind != "L" or not tt[t]:
             continue
-        pivot_price = piv[k - 2].price                         # the last high before the last low: the would-be pivot
         c = float(s.c[t])
+        # the base high is never below the last high before the last low (piv[k - 2]): a close not above that one cannot
+        # break the base high - an exact pre-check that skips the base walk on most bars
+        if not watch and not (np.isfinite(buf[t]) and c > piv[k - 2].price + buf[t] and vol_ok[t]):
+            continue
+        base = base_at(piv, k, t, p)
+        if base is None:
+            continue
+        pivot_price = base.pivot.price                          # the base high (spec B3, owner decision M93-Q2)
         if watch:
             if not (c <= pivot_price and c >= pivot_price - ready * abs(pivot_price)):
                 continue
-        elif not (np.isfinite(buf[t]) and c > pivot_price + buf[t] and vol_ok[t]):
+        elif not c > pivot_price + buf[t]:
             continue
-        base = base_at(piv, k, t, p)
-        if base is None or (dryup and not _dry(b.v, base)):
+        if dryup and not _dry(b.v, base):
             continue
         since = s.c[base.last_low.bar + 1:t]
         if np.any(since > pivot_price):                         # broken before: not the first close above, not "ready"

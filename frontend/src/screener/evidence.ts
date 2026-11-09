@@ -100,13 +100,20 @@ const TF_MS: Record<string, number> = { "1m": 60e3, "3m": 180e3, "5m": 300e3, "1
  * window's first bar up to the pack's own bar, oldest first. Empty for a timeframe that is not replayed. The last step is
  * the stored pack itself.
  */
+/** M93-Q1 (as runtime.bar_close): a daily bar closes at 15:30 IST of its own India date; an intraday bar after its length. */
+export function barCloseMs(start: number, tf: string, ms: number): number {
+  if (tf !== "1d" || !Number.isFinite(start)) return start + ms;
+  const ist = new Date(start + 5.5 * 3600e3);                                  // the India date of the bar
+  return Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 10, 0);   // 15:30 IST = 10:00 UTC
+}
+
 export function replaySteps(pack: Pick<EvidencePack, "base_tf" | "bars" | "as_of" | "matched_index">): string[] {
   const ms = TF_MS[pack.base_tf];
   if (!ms || !REPLAY_TFS.has(pack.base_tf)) return [];
   const last = Date.parse(pack.as_of.bar_close);
   const out: string[] = [];
   for (const t of pack.bars.t) {
-    const close = Date.parse(t) + ms;
+    const close = barCloseMs(Date.parse(t), pack.base_tf, ms);
     if (Number.isFinite(close) && close <= last) out.push(new Date(close).toISOString());
   }
   return out;

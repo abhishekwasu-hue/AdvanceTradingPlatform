@@ -214,10 +214,19 @@ def series_at_dates(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], d
         return out
     if last_bar_only_calls(ast) or validated.cross_sectional:
         raise HistoryError("this expression is answered for the last bar only (or across the universe): it cannot be read back in time")
+    from app.screener.breakouts.screens import skip_missing_volume
+    with skip_missing_volume():                 # M93-Q3: as the live run (`runtime.symbol_match`): scan = history = live
+        return _series_at_dates(ast, validated, frames, dates, params, scales, out, symbols)
+
+
+def _series_at_dates(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], dates: List[date], params: Dict[str, Any],
+                     scales: Optional[Dict[str, Dict[date, Scale]]], out: pd.DataFrame, symbols: List[str]) -> pd.DataFrame:
+    from app.market_data.index_volume import is_index, screen_frame
+    from app.screener.runtime import _no_volume
     lookback = int((validated.lookback or {}).get(BASE_TF, 1) or 1)
     last = dates[-1]
     cut_frames = {s: cut(frames[s], last) for s in symbols}
-    cut_frames = {s: f for s, f in cut_frames.items() if f is not None and not f.empty}
+    cut_frames = {s: (screen_frame(f) if is_index(s) else f) for s, f in cut_frames.items() if f is not None and not f.empty}
 
     def mark(s: str, values: Any, frame: pd.DataFrame, only: Optional[Set[date]] = None) -> None:
         if not isinstance(values, pd.Series):
@@ -234,8 +243,10 @@ def series_at_dates(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], d
     from app.screener import panel as P
     if P.supported(ast, validated, BASE_TF):
         # Z10-d: symbols sharing one bar index are evaluated at once (bit for bit the per-symbol series).
-        universe = [SymbolData(symbol=s, frames={BASE_TF: f}) for s, f in cut_frames.items() if s not in scaled]
-        rest = sorted(scaled)
+        # M93-Q3: a symbol with bars without volume data (an index) is read per symbol, as run_screen does
+        own = {s for s, f in cut_frames.items() if _no_volume(f)}
+        universe = [SymbolData(symbol=s, frames={BASE_TF: f}) for s, f in cut_frames.items() if s not in scaled and s not in own]
+        rest = sorted(scaled | own)
         for members in P._groups(universe, BASE_TF):
             names = [universe[i].symbol for i in members]
             if len(members) < P.MIN_GROUP:

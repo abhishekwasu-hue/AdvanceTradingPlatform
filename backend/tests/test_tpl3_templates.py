@@ -72,10 +72,14 @@ def range_level(f):
 def test_r7_retest_entry_forwards_the_base_breakouts_own_settings():
     """C1 runs on the user's range breakout settings: every retest follows a RangeBreakout signal with the same settings;
     left out, the settings are the breakout platform's defaults (volume 1.5x - never on an index without volume)."""
+    from app.screener.runtime import _Eval
     df = synthetic_bars(900, tf="15m", seed=7).drop(columns=["volume"])          # an index: no volume
-    plain = ev('RetestEntry("up", "range", 20, FALSE)', df)
+    # the strategy templates' own read (strategy_templates/engine.py: `_Eval`, no M93-Q3 screener rule): never with volume 1.5x
+    plain = _Eval(SymbolData("S", {"15m": df}), "15m", {}, {}).ev(parse('RetestEntry("up", "range", 20, FALSE)'), "15m")
     forwarded = ev('RetestEntry("up", "range", 20, FALSE, k=0.2, n=20, v=0, mode="auto")', df)
     assert not plain.any() and forwarded.any()
+    # M93-Q3 (owner decision): the screener's read does not apply a volume confirmation where there is no volume data
+    assert ev('RetestEntry("up", "range", 20, FALSE)', df).any()
     p = bp.settings(retest_of="range", retest_max_bars=20, retest_reversal=False, min_break_atr=0.2, range_n=20, vol_mult=0.0,
                     range_mode="auto")
     b = Bars(df, p)

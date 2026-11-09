@@ -1635,8 +1635,13 @@ def symbol_match(ev: _Eval, ast: Any, base_tf: str) -> Match:
 
 
 def evaluate(ast: Any, data: SymbolData, *, base_tf: str, params: Optional[Dict[str, Any]] = None) -> Any:
-    """The full series (or constant) of an expression for one symbol - for tests, charts and the builder preview."""
-    return _Eval(data, base_tf, dict(params or {}), {}).ev(ast, base_tf)
+    """The full series (or constant) of an expression for one symbol - for tests, charts, history and the builder preview.
+    M93-Q3: read as `run_screen` reads it (an index's 0 volume is no volume data; a breakout volume confirmation without
+    volume data is not applied), so a series at each date equals the live run on bars cut at that date."""
+    from app.screener.breakouts.screens import skip_missing_volume
+    no_index_volume([data])
+    with skip_missing_volume():
+        return _Eval(data, base_tf, dict(params or {}), {}).ev(ast, base_tf)
 
 
 __all__ = ["SymbolData", "Match", "last_match", "symbol_match", "no_index_volume", "VOLUME_FUNCTIONS", "run_screen", "evaluate", "resample", "closed_only", "ScreenRuntimeError"]

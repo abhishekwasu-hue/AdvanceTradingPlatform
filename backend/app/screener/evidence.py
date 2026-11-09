@@ -36,7 +36,7 @@ import numpy as np
 import pandas as pd
 
 from app.screener import nodes as n
-from app.screener.runtime import ScreenRuntimeError, SymbolData, _Eval, _last, bar_close, closed_only
+from app.screener.runtime import ScreenRuntimeError, SymbolData, _Eval, _last, bar_close, closed_only, no_index_volume
 
 SCHEMA = "evidence/1"
 DEFAULT_WINDOW = 120
@@ -702,10 +702,21 @@ def build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, para
     """The evidence pack of one symbol (module docstring). Raises ScreenRuntimeError when the screen cannot run or the
     symbol has no closed bar up to `as_of`. `context` (EV3, flag `evidence_context`): the option-chain drawables and the
     multi-timeframe strip."""
+    from app.screener.breakouts.screens import skip_missing_volume
+    with skip_missing_volume():                 # M93-Q3: the screen read as the live run reads it
+        return _build_pack(ast, validated, data, base_tf=base_tf, params=params, as_of=as_of, window=window, debug=debug,
+                           constants=constants, exchange=exchange, data_source=data_source, run_id=run_id, screen_name=screen_name,
+                           context=context)
+
+
+def _build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, params: Optional[Dict[str, Any]], as_of: Optional[datetime],
+                window: int, debug: bool, constants: Optional[Dict[int, float]], exchange: str, data_source: Optional[str],
+                run_id: Optional[int], screen_name: Optional[str], context: bool) -> Dict[str, Any]:
     if not getattr(validated, "ok", False):
         raise ScreenRuntimeError("the screen did not pass validation")
     params = dict(params or {})
     trimmed = _trim(data, base_tf, as_of)
+    no_index_volume([trimmed])                  # M93-Q3: an index's 0 volume is no volume data (as run_screen)
     base = trimmed.frames.get(base_tf)
     if base is None or base.empty:
         raise ScreenRuntimeError(f"{data.symbol}: no closed {base_tf} bar up to the evidence time")

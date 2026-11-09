@@ -241,3 +241,61 @@ def test_greenblatt_ranks_say_which_company_has_no_figures():
     universe = [SymbolData("NOFIGS", {"1d": _darvas_frame()}, fundamentals=[]), SymbolData("NOFIGS2", {"1d": _darvas_frame()}, fundamentals=[])]
     for m in run_screen(ast, validated, universe, base_tf="1d", params=params):
         assert not m.matched and reasons.as_reason(m.reason).code == reasons.NO_FIGURES
+
+
+# ------------------------------------------------------------------------- scan = history = live (review of PR #966)
+def _index_days(n=420):
+    from app.screener import history as H
+    days = [d.date() for d in pd.bdate_range("2024-06-03", periods=n)]
+    i = np.arange(n, dtype=float)
+    c = 100.0 + 0.25 * i + 4.0 * np.sin(i / 6.0)                     # a rising sawtooth: new 52-week highs now and then
+    return days, pd.DataFrame({"open": c - 0.3, "high": c + 0.6, "low": c - 0.6, "close": c, "volume": np.zeros(n)},
+                              index=H.bar_index(days))
+
+
+def _parity(text, frame, days, symbol="NIFTY50"):
+    from app.screener import history as H
+    ast, validated = compile_screen(text, base_tf="1d")
+    assert validated.ok, validated.problems
+    dates = days[-60:]
+    series = H.series_at_dates(ast, validated, {symbol: frame}, dates)[symbol]
+    live, reasons_seen = [], set()
+    for d in dates:
+        [m] = run_screen(ast, validated, [SymbolData(symbol, {"1d": H.cut(frame, d)})], base_tf="1d")
+        live.append(m.matched)
+        if m.reason is not None:
+            reasons_seen.add(reasons.as_reason(m.reason).code)
+    hist = [bool(v) if v is not None and not (isinstance(v, float) and np.isnan(v)) else False for v in series]
+    full = evaluate(ast, SymbolData(symbol, {"1d": frame}), base_tf="1d")
+    at = [bool(full.iloc[H.session_dates(frame.index).index(d)]) for d in dates]
+    return hist, live, at, reasons_seen
+
+
+def test_history_and_the_full_series_equal_the_live_run_on_an_index():
+    from app.screener.breakouts import templates
+    days, frame = _index_days()
+    t = templates.BY_ID["daily_52w_high"]
+    text = templates.screenql(t.screen, t.signal_tf, templates.template_params(t))[0]
+    hist, live, at, _ = _parity(text, frame, days)
+    assert hist == live == at and any(live)                         # the confirmation is not applied on every path alike
+    darvas = lg.load().card("legends.darvas_box_breakout")
+    text = darvas.source
+    for name, value in darvas.defaults().items():
+        text = text.replace(f"${name}", str(value))
+    hist, live, at, seen = _parity(text, frame, days)
+    assert hist == live == at and not any(live) and seen == {reasons.NO_VOLUME}   # never "0 >= 0" on any path
+
+
+def test_history_on_a_stock_is_unchanged():
+    from app.screener import history as H
+    from app.screener.breakouts import templates
+    days, frame = _index_days()
+    stock = frame.assign(volume=1000.0 + 500.0 * (np.arange(len(frame)) % 7 == 0))
+    t = templates.BY_ID["daily_52w_high"]
+    ast, validated = compile_screen(templates.screenql(t.screen, t.signal_tf, templates.template_params(t))[0], base_tf="1d")
+    dates = days[-60:]
+    got = H.series_at_dates(ast, validated, {"STOCK": stock}, dates)["STOCK"]
+    from app.screener.runtime import _Eval
+    old = _Eval(SymbolData("STOCK", {"1d": stock}), "1d", {}, {}).ev(ast, "1d")    # no M93-Q3 rule at all
+    pos = H.session_dates(stock.index)
+    assert [bool(v) for v in got] == [bool(old.iloc[pos.index(d)]) for d in dates]

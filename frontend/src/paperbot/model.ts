@@ -140,7 +140,7 @@ function summaryWords(symbol: string, info: Pick<StrategyInfo, "timeframes"> | n
     : req?.instrument_kind === "FUTURE" ? `a ${s} future at ${expiry}, ${size}`
     : structure ? `${s} options as a ${structureLabel(structure).toLowerCase()} at ${expiry}, ${size}`
     : `a ${s} option at ${expiry}, ${size}`;
-  const when = isSwing(info) ? "held for days" : "closed before the market closes";
+  const when = isSwing(info) ? "held for days" : "closed at your Square-off time (Trade settings) if you set one";
   return { what, when };
 }
 

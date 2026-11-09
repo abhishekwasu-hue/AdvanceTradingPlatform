@@ -109,13 +109,13 @@ describe("UX2 fix 4 model", () => {
   });
 
   it("the start summary says what is traded, how long it is held, and paper only", () => {
-    expect(startSummary("NIFTY 50", intraday)).toBe("Trades a NIFTY 50 option at the expiry in your Trade settings, your Position size, closed before the market closes. Paper money only; your risk limits apply.");
+    expect(startSummary("NIFTY 50", intraday)).toBe("Trades a NIFTY 50 option at the expiry in your Trade settings, your Position size, closed at your Square-off time (Trade settings) if you set one. Paper money only; your risk limits apply.");
     expect(startSummary("NIFTY 50", intraday, { ...paperBotRequest("orb_15m_5m", "NIFTY 50", intraday), max_lots: 2 }))
-      .toBe("Trades a NIFTY 50 option at the expiry in your Trade settings, 2 lots, closed before the market closes. Paper money only; your risk limits apply.");
+      .toBe("Trades a NIFTY 50 option at the expiry in your Trade settings, 2 lots, closed at your Square-off time (Trade settings) if you set one. Paper money only; your risk limits apply.");
     expect(startSummary("RELIANCE", daily)).toBe("Trades RELIANCE shares, held for days. Paper money only; your risk limits apply.");
     // UX-11 U1: one visible line, the rest on demand - the same words, none dropped.
     expect(startSummaryParts("NIFTY 50", intraday)).toEqual({ line: "Trades a NIFTY 50 option at the expiry in your Trade settings, your Position size.",
-      more: "Closed before the market closes. Paper money only; your risk limits apply." });
+      more: "Closed at your Square-off time (Trade settings) if you set one. Paper money only; your risk limits apply." });
     expect(startSummaryParts("RELIANCE", daily).line).toBe("Trades RELIANCE shares.");
   });
 

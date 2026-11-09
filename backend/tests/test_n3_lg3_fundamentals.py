@@ -156,7 +156,8 @@ def test_a_bar_sees_only_what_was_known_by_its_close_and_restatements_count_from
     restated = _v("Q4", QUARTERS[-1], datetime(2026, 6, 10, 3, 45, tzinfo=UTC), version=2,
                   **{**book[-1].figures, "eps": 20.0})
     s = evaluate(compile_screen("EPSGrowthYoY()", base_tf="1d")[0], SymbolData("X", {"1d": f}, fundamentals=book + [restated]), base_tf="1d")
-    closes = f.index + pd.Timedelta(days=1)                                                                 # a daily bar's close
+    from app.screener.runtime import bar_close
+    closes = bar_close(f.index, "1d")                                                       # a daily bar's close (M93-Q1: 15:30 IST of its day)
     assert s[closes < known].isna().all()                                                                   # before the report
     mid = s[(closes >= known) & (closes < pd.Timestamp("2026-06-10 03:45", tz="UTC"))]
     late = s[closes >= pd.Timestamp("2026-06-10 03:45", tz="UTC")]

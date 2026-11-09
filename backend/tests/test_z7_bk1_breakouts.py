@@ -608,11 +608,13 @@ def test_weeks_and_months_are_exchange_calendar_buckets():
         assert start.weekday() == 0 and start.hour == 0                                 # Monday 00:00 IST
         members = d[(d.index >= label) & (d.index < label + pd.Timedelta(days=7))]
         assert {t.tz_convert("Asia/Kolkata").isocalendar()[1] for t in members.index} == {start.isocalendar()[1]}
-    # a weekly value reaches the daily bars only after the week's last session closed
+    # a weekly value reaches the daily bars only after the week's last session closed (M93-Q1: Friday 15:30 IST, the
+    # close of that Friday's own daily bar - so the Friday bar already reads the week that just closed)
     trend = pd.Series(range(len(w)), index=w.index, dtype=float)
     seen = style.align_closed(trend, "1w", d.index, "1d")
     for i, t in enumerate(d.index):
-        done = w.index[w.index + pd.Timedelta(days=7) <= t + pd.Timedelta(days=1)]
+        last_session = [d.index[(d.index >= lbl) & (d.index < lbl + pd.Timedelta(days=7))].max() for lbl in w.index]
+        done = w.index[[max(lbl + pd.Timedelta(days=4), last) <= t for lbl, last in zip(w.index, last_session)]]
         want = trend[done[-1]] if len(done) else np.nan
         assert (np.isnan(want) and np.isnan(seen.iloc[i])) or seen.iloc[i] == want
     m = resample(d, "1d", "1M")

@@ -117,11 +117,39 @@ def _session_capped(tf: str, exchange: Optional[str]) -> bool:
     return session_family(exchange) == "NSE"
 
 
+def _nse_family(exchange: Optional[str]) -> bool:
+    if exchange is None:
+        return True
+    from app.market_data.calendar import session_family
+    return session_family(exchange) == "NSE"
+
+
+def _session_end(index: pd.DatetimeIndex, tf: str) -> pd.DatetimeIndex:
+    """M93-Q1 (owner 9 Nov, "Default ho"): a day / week / month on the NSE-family clock closes at its LAST REGULAR
+    SESSION's close (15:30 IST): the day's own, the week's Friday, the month's last weekday - not at the next calendar
+    boundary (a week closing at the next Monday 00:00 read the week before on the week's last session and all weekend).
+    No holiday calendar here: a holiday Friday or month end still waits for the calendar day (later, never early); a
+    session on a weekend (Budget, Muhurat) is covered by `session_closes`, which never puts a bar's close before its
+    own last source bar's close."""
+    tz = getattr(index, "tz", None)
+    local = (index.tz_localize("UTC") if tz is None else index).tz_convert(EXCHANGE_TZ).normalize()
+    if tf == "1w":
+        local = local + pd.to_timedelta(np.maximum(0, 4 - local.weekday), unit="D")
+    elif tf == "1M":
+        last = local + pd.offsets.MonthEnd(0)
+        local = last - pd.to_timedelta(np.maximum(0, last.weekday - 4), unit="D")
+    end = local + _SESSION_CLOSE_IST
+    return end.tz_convert("UTC").tz_localize(None) if tz is None else end.tz_convert(tz)
+
+
 def bar_close(index: pd.DatetimeIndex, tf: str, exchange: Optional[str] = None) -> pd.DatetimeIndex:
     """When a bar that starts at `index` has closed. Months are counted in exchange time (BK1 verification B): a month
     labelled 1 Aug 00:00 IST is 31 Jul 18:30 UTC, and one calendar month on from the UTC stamp clipped to 30 Aug -
     a day before the month's last session - so the month was visible early. SCR-FIX A5: a 30m / 1h bar that starts
-    before the session close and would end after it closes at the session close (`_SESSION_CLOSE_IST`)."""
+    before the session close and would end after it closes at the session close (`_SESSION_CLOSE_IST`). M93-Q1: on the
+    NSE-family clock a 1d / 1w / 1M bar closes at its last regular session's close (`_session_end`)."""
+    if tf in ("1d", "1w", "1M") and len(index) and _nse_family(exchange):
+        return _session_end(index, tf)
     if tf == "1M" and getattr(index, "tz", None) is not None:
         return (index.tz_convert(EXCHANGE_TZ) + _DURATION[tf]).tz_convert(index.tz)
     end = index + _DURATION[tf]
@@ -132,6 +160,36 @@ def bar_close(index: pd.DatetimeIndex, tf: str, exchange: Optional[str] = None) 
         close = close.tz_convert("UTC").tz_localize(None) if tz is None else close.tz_convert(tz)
         end = end.where(~((index < close) & (close < end)), close)
     return end
+
+
+def _period_end(index: pd.DatetimeIndex, tf: str) -> pd.DatetimeIndex:
+    """The calendar end of each bucket (the next bucket's start): a source bar belongs to the bucket it starts in."""
+    if tf == "1M" and getattr(index, "tz", None) is not None:
+        return (index.tz_convert(EXCHANGE_TZ) + _DURATION[tf]).tz_convert(index.tz)
+    return index + _DURATION[tf]
+
+
+def with_source_closes(closes: pd.DatetimeIndex, index: pd.DatetimeIndex, period_end: pd.DatetimeIndex,
+                       source_index: pd.DatetimeIndex, source_closes: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """M93-Q1: a bucket is never closed before the close of the last finer bar it holds (a Saturday / Sunday session in a
+    week, a Muhurat session after 15:30 on a day): each close is the later of its calendar close and that bar's close."""
+    if not len(index) or not len(source_index):
+        return closes
+    def utc(x: Any) -> pd.DatetimeIndex:
+        i = pd.DatetimeIndex(x)
+        return i.tz_localize("UTC") if i.tz is None else i.tz_convert("UTC")
+    idx, end, src, src_close = utc(index), utc(period_end), utc(source_index), utc(source_closes)
+    pos = idx.searchsorted(src, side="right") - 1
+    ok = pos >= 0
+    ok[ok] = src[ok] < end[pos[ok]]
+    if not ok.any():
+        return closes
+    latest = pd.Series(src_close[ok].asi8).groupby(pos[ok]).max()
+    out = utc(closes).asi8.copy()
+    out[latest.index.to_numpy()] = np.maximum(out[latest.index.to_numpy()], latest.to_numpy())
+    res = pd.DatetimeIndex(out, tz="UTC")
+    tz = getattr(closes, "tz", None)
+    return res.tz_localize(None) if tz is None else res.tz_convert(tz)
 
 
 def closed_only(df: pd.DataFrame, tf: str, now: datetime, exchange: Optional[str] = None) -> pd.DataFrame:
@@ -203,6 +261,7 @@ class _Eval:
         if base_tf not in data.frames or data.frames[base_tf].empty:
             raise ScreenRuntimeError(f"{data.symbol}: no {base_tf} bars")
         self.frames: Dict[str, pd.DataFrame] = dict(data.frames)
+        self._sources: Dict[str, str] = {}                        # M93-Q1: tf -> the frame it was resampled from
         self._session_bars: Dict[Tuple[Any, ...], Any] = {}      # U6 BK2: one session map / VWAP / time-of-day series per frame
         # LD-7: this symbol's evaluated nodes, (id(node), timeframe) -> value, shared by the evaluations of one screen run
         # (`ScreenMemo`): the funnel's stages are the screen's own top-level items, already evaluated by the full screen.
@@ -248,15 +307,34 @@ class _Eval:
             if "1d" in self.frames and n.TF_MINUTES[self.base_tf] < n.TF_MINUTES["1d"] < n.TF_MINUTES[tf]:
                 src = "1d"
             self.frames[tf] = resample(self.frames[src], src, tf, exchange=getattr(self.data, "exchange", None))
+            self.__dict__.setdefault("_sources", {})[tf] = src
         return self.frames[tf]
+
+    def closes(self, tf: str) -> pd.DatetimeIndex:
+        """M93-Q1: when each `tf` bar closed - its calendar close, never before the close of the last finer bar it holds
+        (the frame it was built from, or the base bars for a coarser frame given as it is)."""
+        cache = self.__dict__.setdefault("_closes", {})
+        if tf not in cache:
+            exchange = getattr(self.data, "exchange", None)
+            f = self.frame(tf)
+            out = bar_close(f.index, tf, exchange)
+            src = getattr(self, "_sources", {}).get(tf)
+            if src is None and tf != self.base_tf and n.TF_MINUTES.get(tf, 0) > n.TF_MINUTES.get(self.base_tf, 0):
+                src = self.base_tf
+            if src is not None and src != tf and len(f):
+                out = with_source_closes(out, f.index, _period_end(f.index, tf), self.frame(src).index, self.closes(src))
+            cache[tf] = out
+        return cache[tf]
 
     def align(self, value: Any, src_tf: str, dst_tf: str) -> Any:
         """A src_tf series onto dst_tf bars by close time (look-ahead safe)."""
         if not isinstance(value, pd.Series) or src_tf == dst_tf:
             return value
-        avail = pd.Series(value.to_numpy(), index=bar_close(value.index, src_tf, getattr(self.data, "exchange", None)))
+        src_closes = self.closes(src_tf) if len(value) == len(self.frame(src_tf)) and value.index.equals(self.frame(src_tf).index) \
+            else bar_close(value.index, src_tf, getattr(self.data, "exchange", None))
+        avail = pd.Series(value.to_numpy(), index=src_closes)
         avail = avail[~avail.index.duplicated(keep="last")].sort_index()
-        dst_close = bar_close(self.frame(dst_tf).index, dst_tf, getattr(self.data, "exchange", None))
+        dst_close = self.closes(dst_tf)
         with pd.option_context("future.no_silent_downcasting", True):       # a category series stays object (no dtype guess)
             out = avail.reindex(avail.index.union(dst_close)).ffill().reindex(dst_close)
         return pd.Series(out.to_numpy(), index=self.frame(dst_tf).index)

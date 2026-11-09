@@ -94,10 +94,16 @@ def frames_for(frames: Dict[str, pd.DataFrame], signal_tf: str, context: Tuple[s
 
 def align_closed(values: pd.Series, src_tf: str, dst_index: pd.DatetimeIndex, dst_tf: str) -> pd.Series:
     """A `src_tf` series onto `dst_tf` bars by close time: each destination bar sees the last source bar that had closed
-    by the destination bar's own close (never a source bar still forming). The ScreenQL runtime's alignment, verbatim."""
+    by the destination bar's own close (never a source bar still forming). The ScreenQL runtime's alignment, verbatim
+    (M93-Q1: a source bar never closes before the last destination bar it holds - a weekend / Muhurat session)."""
     if src_tf == dst_tf:
         return values
-    avail = pd.Series(values.to_numpy(), index=bar_close(values.index, src_tf))
+    from app.screener import nodes as n
+    from app.screener.runtime import _period_end, with_source_closes
+    closes = bar_close(values.index, src_tf)
+    if src_tf in n.TF_MINUTES and dst_tf in n.TF_MINUTES and n.TF_MINUTES[src_tf] > n.TF_MINUTES[dst_tf]:
+        closes = with_source_closes(closes, values.index, _period_end(values.index, src_tf), dst_index, bar_close(dst_index, dst_tf))
+    avail = pd.Series(values.to_numpy(), index=closes)
     avail = avail[~avail.index.duplicated(keep="last")].sort_index()
     dst_close = bar_close(dst_index, dst_tf)
     with pd.option_context("future.no_silent_downcasting", True):        # a trend series stays object (no dtype guess)

@@ -125,11 +125,15 @@ def test_higher_timeframe_values_appear_only_after_their_bar_closes():
     d = SymbolData("S", {"5m": base})
     daily_close = _ev("close@1d", d)
     first_day = daily_close[daily_close.index < "2026-03-03"]
-    assert first_day.isna().all()                                                           # day 1 has not closed while it is trading
+    assert first_day.iloc[:-1].isna().all()                                                 # day 1 has not closed while it is trading
+    assert first_day.iloc[-1] == 174.0                                                      # M93-Q1: its last bar closes at 15:30 = the day's close
     second_day = daily_close[daily_close.index >= "2026-03-03"]
-    assert (second_day == 174.0).all()                                                     # day 1's close, never day 2's own (still open)
-    assert len(resample(base, "5m", "1d")) == 1                                             # the trading day is dropped as incomplete
-    assert _ev("close@1d[1]", d).dropna().empty                                             # yesterday's yesterday: no data yet
+    assert (second_day.iloc[:-1] == 174.0).all()                                           # day 1's close, never day 2's own (still open)
+    assert second_day.iloc[-1] == 124.0                                                    # day 2 closed with its 15:25 bar
+    assert len(resample(base, "5m", "1d")) == 2                                             # both sessions ended at 15:30
+    assert len(resample(base.iloc[:-1], "5m", "1d")) == 1                                   # a session still trading is dropped as incomplete
+    prev = _ev("close@1d[1]", d).dropna()
+    assert list(prev) == [174.0] and prev.index[0] == base.index[-1]                       # yesterday's close: only once day 2 closed
 
 
 def test_screen_over_a_universe_with_cross_sectional_ranks():
